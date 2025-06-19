@@ -1,0 +1,10 @@
+services:
+  frontend:
+    build: ./Frontend-Atlas
+    ports:
+      - "3000:5173"
+    volumes:
+      - ./Frontend-Atlas:/app
+      - /app/node_modules
+    env_file:
+      - .env
