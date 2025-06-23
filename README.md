@@ -1,4 +1,5 @@
 # Atlas
+
 This is our PMC for university : Atlas
 
 ## 📚 Git & Jira Naming Conventions
@@ -24,9 +25,9 @@ ATLAS-123-add-login-feature
 
 ---
 
-### ✅ Commit Message Convention
+### ✅ Pull Request Message Convention
 
-All commit messages must follow this format:
+All pull request messages must follow this format:
 
 ATLAS-[issue-number]: [type]-[short-description]
 
@@ -50,4 +51,3 @@ ATLAS-210: bugfix-fix-auth-error
 - Always open Pull Requests into the `dev` branch unless otherwise instructed.
 - Avoid pushing directly to `main` or `dev`.
 - Keep commit history clean and readable.
-
