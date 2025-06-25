@@ -1,0 +1,12 @@
+services:
+  backend:
+    build:
+      context: ./Backend-Atlas
+    container_name: atlas-backend
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    # Uncomment if you want to mount code for live reload during development
+    volumes:
+      - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/requirements.txt:/app/requirements.txt

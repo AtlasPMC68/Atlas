@@ -1,5 +1,5 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI # type: ignore *****Comment to remove unused import warning*****
+from fastapi.middleware.cors import CORSMiddleware # type: ignore *******Comment to remove unused import warning*****
 
 app = FastAPI(
     title="Maps Processing API",
