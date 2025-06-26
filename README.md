@@ -43,7 +43,6 @@ Where:
 ATLAS-123: feature-add-login
 ATLAS-210: bugfix-fix-auth-error
 
----
 
 ### 📌 Additional Notes
 
@@ -51,3 +50,47 @@ ATLAS-210: bugfix-fix-auth-error
 - Always open Pull Requests into the `dev` branch unless otherwise instructed.
 - Avoid pushing directly to `main` or `dev`.
 - Keep commit history clean and readable.
+
+---
+
+### 🐳 Running the Project with Docker Compose
+
+To run the project using Docker Compose, follow these steps:
+
+1. **Install Docker Desktop**
+   - Download and install Docker Desktop from [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/).
+   - Start Docker Desktop and wait until it is fully running (the whale icon should appear in your system tray).
+
+2. **Build the Docker images (first time or after changes to dependencies):**
+   ```sh
+   docker-compose build
+   ```
+
+3. **Start the services:**
+   ```sh
+   docker-compose up
+   ```
+   - This will start the backend service (http://localhost:8000) and the frontend (http://localhost:3000).
+
+4. **Test the backend:**
+   - In a new terminal, run:
+     ```sh
+     curl http://localhost:8000/ping
+     ```
+   - You should receive a response like `{ "message": "pong" }`.
+
+5. **Test the frontend:**
+   - Open your browser and go to [http://localhost:3000]
+   - You should see the Atlas web application.
+
+6. **Live Reload (Development):**
+   - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
+   - **Frontend:** The frontend uses the Vite dev server with hot reload. Any changes to files will instantly reload the app in your browser.
+
+7. **Stopping the services:**
+   - Press `Ctrl+C` in the terminal running Docker Compose, or run:
+     ```sh
+     docker-compose down
+     ```
+
+---
