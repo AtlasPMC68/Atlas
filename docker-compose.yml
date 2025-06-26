@@ -40,5 +40,25 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./Backend-Atlas/db/init.sql:/docker-entrypoint-initdb.d/init.sql
   
+  test-backend:
+    build:
+      context: ./Backend-Atlas
+    command: pytest tests/
+    depends_on:
+      - backend
+      - db
+    volumes:
+      - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+
+  test-frontend:
+    build:
+      context: ./Frontend-Atlas
+    command: npm test
+    volumes:
+      - ./Frontend-Atlas:/app
+      - /app/node_modules
+  
 volumes:
   postgres-data:

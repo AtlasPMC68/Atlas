@@ -1,18 +1,26 @@
-# Use official Python image
+# Use a lightweight official Python image
 FROM python:3.11-slim
 
-# Set working directory
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copy requirements and install dependencies
+# Install system dependencies (e.g., curl, build tools for psycopg2)
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python dependencies and install them
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the app code
+# Copy application code and test suite into the container
 COPY app ./app
+COPY tests ./tests
 
-# Expose FastAPI default port
+# Expose the default FastAPI port
 EXPOSE 8000
 
-# Run the FastAPI app with uvicorn (with live reload for development)
+# Default command to run the FastAPI app in development mode
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
