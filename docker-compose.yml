@@ -5,10 +5,13 @@ services:
     container_name: atlas-backend
     ports:
       - "8000:8000"
+    env_file:
+      - ./Backend-Atlas/.env.dev
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./Backend-Atlas/.env.dev:/app/.env.dev
 
   frontend:
     build:
@@ -17,6 +20,25 @@ services:
     ports:
       - "3000:5173"              # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
+    env_file:
+      - ./Frontend-Atlas/.env.dev
     volumes:
       - ./Frontend-Atlas:/app          # bind mount pour hot reload
       - /app/node_modules        # éviter conflit node_modules
+
+  db:
+    image: postgis/postgis:latest
+    container_name: atlas-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: atlas
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./Backend-Atlas/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+  
+volumes:
+  postgres-data:
