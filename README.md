@@ -70,7 +70,7 @@ To run the project using Docker Compose, follow these steps:
    ```sh
    docker-compose up
    ```
-   - This will start the backend service and expose it on [http://localhost:8000](http://localhost:8000).
+   - This will start the backend service (http://localhost:8000) and the frontend (http://localhost:3000).
 
 4. **Test the backend:**
    - In a new terminal, run:
@@ -79,11 +79,15 @@ To run the project using Docker Compose, follow these steps:
      ```
    - You should receive a response like `{ "message": "pong" }`.
 
-5. **Live Reload (Development):**
-   - With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
-   - No need to rebuild or restart the container for code changes.
+5. **Test the frontend:**
+   - Open your browser and go to [http://localhost:3000]
+   - You should see the Atlas web application.
 
-6. **Stopping the services:**
+6. **Live Reload (Development):**
+   - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
+   - **Frontend:** The frontend uses the Vite dev server with hot reload. Any changes to files will instantly reload the app in your browser.
+
+7. **Stopping the services:**
    - Press `Ctrl+C` in the terminal running Docker Compose, or run:
      ```sh
      docker-compose down
