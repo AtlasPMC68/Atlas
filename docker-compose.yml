@@ -6,7 +6,6 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
-    # Uncomment if you want to mount code for live reload during development
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
@@ -16,12 +15,8 @@ services:
       context: ./Frontend-Atlas
     container_name: atlas-frontend
     ports:
-      - "3000:5173"
-    volumes:
-      - ./Frontend-Atlas/src:/app/src
-      - ./Frontend-Atlas/public:/app/public
-      - ./Frontend-Atlas/vite.config.ts:/app/vite.config.ts
-      - ./Frontend-Atlas/tailwind.config.js:/app/tailwind.config.js
-      - ./Frontend-Atlas/package.json:/app/package.json
-      - ./Frontend-Atlas/tsconfig.json:/app/tsconfig.json
+      - "3000:5173"              # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
+    volumes:
+      - ./Frontend-Atlas:/app          # bind mount pour hot reload
+      - /app/node_modules        # éviter conflit node_modules
