@@ -10,3 +10,11 @@ services:
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+
+  frontend:
+    build:
+      context: ./Frontend-Atlas
+    container_name: atlas-frontend
+    ports:
+      - "3000:80"
+    restart: unless-stopped
