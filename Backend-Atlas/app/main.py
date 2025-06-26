@@ -1,5 +1,6 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI # type: ignore *****Comment to remove unused import warning*****
+from fastapi.middleware.cors import CORSMiddleware # type: ignore *******Comment to remove unused import warning*****
+from app.db import get_db_connection
 
 app = FastAPI(
     title="Maps Processing API",
@@ -23,3 +24,16 @@ def read_root():
 @app.get("/ping")
 def ping():
     return {"message": "pong"}
+
+@app.get("/db-test")
+def db_test():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1;")
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return {"db_status": "connected", "result": result}
+    except Exception as e:
+        return {"db_status": "error", "error": str(e)}

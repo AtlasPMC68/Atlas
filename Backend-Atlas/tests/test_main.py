@@ -1,5 +1,5 @@
-import pytest
-from fastapi.testclient import TestClient
+import pytest # type: ignore *****Comment to remove unused import warning*****
+from fastapi.testclient import TestClient # type: ignore *****Comment to remove unused import warning*****
 from app.main import app
 
 client = TestClient(app)
