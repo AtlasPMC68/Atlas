@@ -71,6 +71,9 @@ To run the project using Docker Compose, follow these steps:
    docker-compose up
    ```
    - This will start the backend service (http://localhost:8000) and the frontend (http://localhost:3000).
+   - Redis (localhost:6379)
+   - PostgreSQL : localhost:5432
+   - Flower (Celery Monitoring): http://localhost:5555
 
 4. **Test the backend:**
    - In a new terminal, run:
@@ -83,11 +86,23 @@ To run the project using Docker Compose, follow these steps:
    - Open your browser and go to [http://localhost:3000]
    - You should see the Atlas web application.
 
-6. **Live Reload (Development):**
+6. **Test db:**
+   - In a terminal, run:
+   ```sh
+   curl http://localhost:8000/db-test
+   ```
+   - You should receive a response like `{"db_status":"connected","result":[1]}`
+
+7. **Test Celery and Redis:**
+   - In terminal, run:
+      curl -X POST "http://localhost:8000/test/simple"
+   - You should receive: {"task_id": random Id,"status":"Task started","message":"Task launched for World"}
+
+8. **Live Reload (Development):**
    - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
    - **Frontend:** The frontend uses the Vite dev server with hot reload. Any changes to files will instantly reload the app in your browser.
 
-7. **Stopping the services:**
+9. **Stopping the services:**
    - Press `Ctrl+C` in the terminal running Docker Compose, or run:
      ```sh
      docker-compose down
