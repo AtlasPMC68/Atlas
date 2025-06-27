@@ -7,8 +7,6 @@ services:
       - "8000:8000"
     env_file:
       - ./Backend-Atlas/.env.dev
-    env_file:
-      - ./Backend-Atlas/.env.dev
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
