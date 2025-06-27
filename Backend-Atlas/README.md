@@ -18,3 +18,10 @@
 curl http://localhost:8000/ping
 
 La reponse recue devrait etre "pong"
+
+# Test bd
+
+curl http://localhost:8000/db-test
+
+La reponse reçu devrait être {"db_status":"connected","result":[1]}
+
