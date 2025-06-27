@@ -7,10 +7,13 @@ services:
       - "8000:8000"
     env_file:
       - ./Backend-Atlas/.env.dev
+    env_file:
+      - ./Backend-Atlas/.env.dev
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./Backend-Atlas/.env.dev:/app/.env.dev
       - ./Backend-Atlas/.env.dev:/app/.env.dev
 
   frontend:
@@ -18,13 +21,57 @@ services:
       context: ./Frontend-Atlas
     container_name: atlas-frontend
     ports:
-      - "3000:5173"              # localhost:3000 → Vite (5173 dans le conteneur)
+      - "3000:5173" # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
     env_file:
       - ./Frontend-Atlas/.env.dev
     volumes:
-      - ./Frontend-Atlas:/app          # bind mount pour hot reload
-      - /app/node_modules        # éviter conflit node_modules
+      - ./Frontend-Atlas:/app # bind mount pour hot reload
+      - /app/node_modules # éviter conflit node_modules
+
+  redis:
+    image: redis:7-alpine
+    container_name: atlas-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  celery-worker:
+    build:
+      context: ./Backend-Atlas
+    container_name: atlas-celery-worker
+    restart: unless-stopped
+    env_file:
+      - ./Backend-Atlas/.env.dev
+    volumes:
+      - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./Backend-Atlas/.env.dev:/app/.env.dev
+    depends_on:
+      - redis
+      - db
+    command: celery -A app.celery_app worker --loglevel=info -E
+
+  # ESSENTIEL : Interface web Flower pour monitoring (important pour OCR/ML)
+  flower:
+    build:
+      context: ./Backend-Atlas
+    container_name: atlas-flower
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    env_file:
+      - ./Backend-Atlas/.env.dev
+    volumes:
+      - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./Backend-Atlas/.env.dev:/app/.env.dev
+    depends_on:
+      - redis
+    command: celery -A app.celery_app flower --port=5555
 
   db:
     image: postgis/postgis:latest
@@ -36,9 +83,12 @@ services:
       POSTGRES_DB: atlas
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+    env_file:
+      - ./Frontend-Atlas/.env.dev
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./Backend-Atlas/db/init.sql:/docker-entrypoint-initdb.d/init.sql
-  
+
 volumes:
   postgres-data:
+  redis-data:
