@@ -1,12 +1,15 @@
 from fastapi import FastAPI # type: ignore *****Comment to remove unused import warning*****
 from fastapi.middleware.cors import CORSMiddleware # type: ignore *******Comment to remove unused import warning*****
 from app.db import get_db_connection
+from .routers import test_celery  # ou le nom de ton router
+
 
 app = FastAPI(
     title="Maps Processing API",
     description="API pour traitement et analyse de cartes historiques",
     version="0.1.0"
 )
+app.include_router(test_celery.router)
 
 # CORS pour frontend local
 app.add_middleware(
