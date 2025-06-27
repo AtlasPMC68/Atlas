@@ -12,6 +12,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./Backend-Atlas/.env.dev:/app/.env.dev
 
   frontend:
     build:
