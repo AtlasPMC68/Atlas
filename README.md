@@ -95,8 +95,10 @@ To run the project using Docker Compose, follow these steps:
 
 7. **Test Celery and Redis:**
    - In terminal, run:
+   ```sh
       curl -X POST "http://localhost:8000/test/simple"
-   - You should receive: {"task_id": random Id,"status":"Task started","message":"Task launched for World"}
+   ```
+   - You should receive: `{"task_id": random Id,"status":"Task started","message":"Task launched for World"}`
 
 8. **Live Reload (Development):**
    - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
