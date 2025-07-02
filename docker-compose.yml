@@ -24,8 +24,8 @@ services:
     env_file:
       - ./Frontend-Atlas/.env.dev
     volumes:
-      - ./Frontend-Atlas:/app # bind mount pour hot reload
-      - /app/node_modules # éviter conflit node_modules
+        - ./Frontend-Atlas/src:/app/src
+        - ./Frontend-Atlas/public:/app/public
 
   redis:
     image: redis:7-alpine
