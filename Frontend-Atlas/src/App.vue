@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import Header from './components/Header.vue'
 import Hero from './components/Hero.vue'
 import FeatureCard from './components/FeatureCard.vue'
+import 'leaflet/dist/leaflet.css';
 
 const features = ref<Array<{
   title: string
@@ -35,6 +36,7 @@ const features = ref<Array<{
     <Header />
     
     <main>
+      <router-view />
       <Hero />
       
       <!-- Features Section -->

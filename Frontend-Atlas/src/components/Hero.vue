@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Component logic can be added here
+import { RouterLink } from 'vue-router';
 </script>
 
 <template>
@@ -36,10 +36,13 @@
             <span class="mr-2">📤</span>
             Commencer l'upload
           </button>
-          <button class="btn-secondary px-8 py-4 text-lg hover:scale-105 transform transition-all">
+          <RouterLink
+            to="/demo"
+            class="btn-secondary px-8 py-4 text-lg hover:scale-105 transform transition-all inline-flex items-center justify-center"
+          >
             <span class="mr-2">👁️</span>
             Voir la démo
-          </button>
+          </RouterLink>
         </div>
         
         <!-- Stats -->
