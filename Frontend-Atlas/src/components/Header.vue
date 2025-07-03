@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { MapIcon } from '@heroicons/vue/24/outline'
 
 const isMenuOpen = ref(false)
 
@@ -16,7 +17,7 @@ const toggleMenu = () => {
         <div class="flex items-center">
           <div class="flex-shrink-0 flex items-center">
             <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center mr-3">
-              <span class="text-white font-bold text-lg">🗺️</span>
+              <MapIcon class="h-6 w-6 text-white" />
             </div>
             <h1 class="text-xl font-bold text-gray-900">
               Plateforme Cartes
