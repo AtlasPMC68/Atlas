@@ -11,7 +11,7 @@ app = FastAPI(
     description="API pour traitement et analyse de cartes historiques",
     version="0.1.0"
 )
-#app.include_router(celery_router.router)
+app.include_router(celery_router.router)
 app.include_router(maps.router)  # Ajoutez cette ligne
 
 # CORS pour frontend local
