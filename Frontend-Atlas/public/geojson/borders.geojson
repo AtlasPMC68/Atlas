@@ -1,0 +1,77 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Nouvelle-France",
+        "start_year": 1608,
+        "end_year": 1763
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-80, 45],
+          [-70, 45],
+          [-70, 52],
+          [-80, 52],
+          [-80, 45]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Province of Quebec (British)",
+        "start_year": 1763,
+        "end_year": 1791
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79, 44],
+          [-69, 44],
+          [-69, 51],
+          [-79, 51],
+          [-79, 44]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Bas-Canada",
+        "start_year": 1791,
+        "end_year": 1867
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-78, 43],
+          [-68, 43],
+          [-68, 50],
+          [-78, 50],
+          [-78, 43]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Québec (Canada)",
+        "start_year": 1867,
+        "end_year": 2025
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-77, 42],
+          [-67, 42],
+          [-67, 49],
+          [-77, 49],
+          [-77, 42]
+        ]]
+      }
+    }
+  ]
+}
