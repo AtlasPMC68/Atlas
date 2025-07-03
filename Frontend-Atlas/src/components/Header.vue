@@ -43,9 +43,11 @@ const toggleMenu = () => {
 
         <!-- Desktop CTA -->
         <div class="hidden md:flex items-center space-x-4">
-          <button class="btn-secondary text-sm">
+          <RouterLink 
+            to="/connexion"
+            class="btn-secondary text-sm">
             Connexion
-          </button>
+          </RouterLink>
           <button class="btn-primary text-sm">
             S'inscrire
           </button>
