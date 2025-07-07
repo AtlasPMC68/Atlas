@@ -51,9 +51,6 @@
               <input type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
               <span class="ml-2 text-sm text-gray-600">Se souvenir de moi</span>
             </label>
-            <a href="#" class="text-sm text-primary-600 hover:text-primary-700">
-              Mot de passe oublié ?
-            </a>
           </div>
 
           <div class="w-full max-w-sm mx-auto">

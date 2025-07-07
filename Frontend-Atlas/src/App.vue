@@ -1,7 +1,7 @@
 <template>
   <Header />
   <main>
-    <router-view /> <!-- Ici s’affichent tes pages (Home, Map, etc.) -->
+    <router-view />
   </main>
   <Footer />
 </template>
