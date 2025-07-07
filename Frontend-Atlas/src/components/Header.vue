@@ -20,26 +20,10 @@ const toggleMenu = () => {
               <MapIcon class="h-6 w-6 text-white" />
             </div>
             <h1 class="text-xl font-bold text-gray-900">
-              Plateforme Cartes
+              Atlas
             </h1>
           </div>
         </div>
-
-        <!-- Desktop Navigation -->
-        <nav class="hidden md:flex space-x-8">
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
-            Accueil
-          </a>
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
-            Upload
-          </a>
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
-            Galerie
-          </a>
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
-            À propos
-          </a>
-        </nav>
 
         <!-- Desktop CTA -->
         <div class="hidden md:flex items-center space-x-4">
@@ -70,22 +54,12 @@ const toggleMenu = () => {
       <!-- Mobile Navigation -->
       <div v-if="isMenuOpen" class="md:hidden py-4 border-t border-gray-200">
         <div class="flex flex-col space-y-2">
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-base font-medium">
-            Accueil
-          </a>
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-base font-medium">
-            Upload
-          </a>
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-base font-medium">
-            Galerie
-          </a>
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-base font-medium">
-            À propos
-          </a>
           <div class="pt-4 flex flex-col space-y-2">
-            <button class="btn-secondary w-full justify-center">
-              Connexion
-            </button>
+            <RouterLink 
+            to="/connexion"
+            class="btn-secondary text-sm">
+            Connexion
+            </RouterLink>
             <button class="btn-primary w-full justify-center">
               S'inscrire
             </button>
