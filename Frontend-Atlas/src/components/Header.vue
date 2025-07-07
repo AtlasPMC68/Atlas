@@ -32,9 +32,11 @@ const toggleMenu = () => {
             class="btn-secondary text-sm">
             Connexion
           </RouterLink>
-          <button class="btn-primary text-sm">
+          <RouterLink 
+            to="/inscription"
+            class="btn-primary text-sm">
             S'inscrire
-          </button>
+          </RouterLink>
         </div>
 
         <!-- Mobile menu button -->
