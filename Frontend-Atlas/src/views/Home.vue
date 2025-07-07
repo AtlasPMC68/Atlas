@@ -90,7 +90,3 @@ const features = ref<Array<{
     }
 ])
 </script>
-
-<style scoped>
-/* Additional component-specific styles can go here */
-</style>
