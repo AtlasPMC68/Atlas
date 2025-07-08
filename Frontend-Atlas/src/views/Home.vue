@@ -1,6 +1,5 @@
 <template>
   <div class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-    <Header />
     
     <main>
       <Hero />
@@ -51,15 +50,11 @@
       </section>
     </main>
     
-    <!-- Footer -->
-    <Footer />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import Header from '../components/Header.vue'
-import Footer from '../components/Footer.vue'
 import Hero from '../components/Hero.vue'
 import FeatureCard from '../components/FeatureCard.vue'
 import 'leaflet/dist/leaflet.css';
