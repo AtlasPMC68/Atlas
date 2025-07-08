@@ -1,6 +1,5 @@
 <template>
   <div class="min-h-screen bg-base-200 p-6">
-     
     <div class="max-w-4xl mx-auto">
       <!-- Header -->
       <div class="mb-8">
@@ -31,13 +30,14 @@
       <!-- Contenu principal selon l'étape -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
+          
           <!-- Étape 1: Drag & Drop -->
           <FileDropZone 
             v-if="currentStep === 1"
             @file-selected="handleFileSelected"
             :is-loading="isUploading"
           />
-
+          
           <!-- Étape 2: Prévisualisation + Contrôles -->
           <div v-else-if="currentStep === 2" class="space-y-6">
             <ImportPreview 
@@ -50,6 +50,7 @@
               :is-processing="isProcessing"
             />
           </div>
+          
         </div>
       </div>
     </div>
@@ -66,41 +67,37 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useImportStore } from '../../stores/import'
+import { useFileUpload } from '../../composables/useFileUpload'
+import { useImportProcess } from '../../composables/useImportProcess'
+
+// Components
+import FileDropZone from '../../components/import/FileDropZone.vue'
+import ImportPreview from '../../components/import/ImportPreview.vue'
+import ImportControls from '../../components/import/ImportControls.vue'
+import ProcessingModal from '../../components/import/ProcessingModal.vue'
 
 const router = useRouter()
+const importStore = useImportStore()
 
-// Mock composables
-const selectedFile = ref(null)
-const previewUrl = ref('')
-const isUploading = ref(false)
+// Composables
+const { 
+  selectedFile, 
+  previewUrl, 
+  isUploading, 
+  handleFileSelected: onFileSelected 
+} = useFileUpload()
 
-const isProcessing = ref(false)
-const processingStep = ref(1)
-const processingProgress = ref(0)
-const showProcessingModal = ref(false)
-
-// Mock composable functions
-const onFileSelected = (file) => {
-  selectedFile.value = file
-  previewUrl.value = URL.createObjectURL(file)
-  console.log('Mock file selected:', file)
-}
-
-const startImport = async () => {
-  return new Promise((resolve) =>
-    setTimeout(() => resolve({ success: true, mapId: 'demo123' }), 1000)
-  )
-}
-
-const cancelImport = () => {
-  console.log('Import canceled')
-}
-
-const importStore = {
-  resetImport: () => console.log('Resetting import state')
-}
+const { 
+  isProcessing, 
+  processingStep, 
+  processingProgress,
+  showProcessingModal,
+  startImport,
+  cancelImport
+} = useImportProcess()
 
 // État local
 const currentStep = ref(1)
@@ -113,58 +110,22 @@ const handleFileSelected = (file) => {
 
 const startImportProcess = async () => {
   currentStep.value = 3
+  
   try {
     const result = await startImport(selectedFile.value)
+    
     if (result.success) {
+      // Rediriger vers l'éditeur avec l'ID de la carte
       router.push(`/maps/${result.mapId}/edit`)
     }
   } catch (error) {
-    console.error("Erreur lors de l'importation:", error)
+    console.error('Erreur lors de l\'importation:', error)
+    // Gérer l'erreur (toast, modal, etc.)
   }
 }
 
 const resetImport = () => {
   currentStep.value = 1
   importStore.resetImport()
-}
-
-// Mock components
-const FileDropZone = {
-  props: ['isLoading'],
-  emits: ['file-selected'],
-  template: `
-    <div class="p-6 border border-dashed text-center cursor-pointer" @click="$emit('file-selected', new File([], 'mock.png'))">
-      [Zone de drop simulée] Cliquez ici pour simuler un fichier
-    </div>
-  `
-}
-
-const ImportPreview = {
-  props: ['imageFile', 'imageUrl'],
-  template: `<div class="border p-4 text-center">Prévisualisation (mock) : {{ imageUrl }}</div>`
-}
-
-const ImportControls = {
-  props: ['isProcessing'],
-  emits: ['start-import', 'cancel'],
-  template: `
-    <div class="flex gap-4 justify-center">
-      <button class="btn btn-primary" @click="$emit('start-import')">Démarrer</button>
-      <button class="btn btn-secondary" @click="$emit('cancel')">Annuler</button>
-    </div>
-  `
-}
-
-const ProcessingModal = {
-  props: ['isOpen', 'currentStep', 'progress'],
-  emits: ['cancel'],
-  template: `
-    <div class="fixed inset-0 bg-white bg-opacity-90 z-50 flex items-center justify-center">
-      <div class="bg-base-100 p-6 rounded-lg shadow-lg text-center space-y-4">
-        <p>Étape : {{ currentStep }} / Progression : {{ progress }}%</p>
-        <button class="btn btn-error" @click="$emit('cancel')">Annuler</button>
-      </div>
-    </div>
-  `
 }
 </script>
