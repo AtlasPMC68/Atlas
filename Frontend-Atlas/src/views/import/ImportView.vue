@@ -108,19 +108,14 @@ const handleFileSelected = (file) => {
   currentStep.value = 2
 }
 
-const startImportProcess = async () => {
-  currentStep.value = 3
-  
-  try {
-    const result = await startImport(selectedFile.value)
-    
-    if (result.success) {
-      // Rediriger vers l'éditeur avec l'ID de la carte
-      router.push(`/maps/${result.mapId}/edit`)
-    }
-  } catch (error) {
-    console.error('Erreur lors de l\'importation:', error)
-    // Gérer l'erreur (toast, modal, etc.)
+async function startImportProcess() {
+  if (!selectedFile.value) return;
+
+  const result = await startImport(selectedFile.value)
+  if (result.success) {
+    currentStep.value = 3
+  } else {
+    console.error('Erreur importation:', result.error)
   }
 }
 
