@@ -12,27 +12,18 @@
     />
     </div>
 
-    <div v-if="selectedFile" class="mt-6">
-      <p class="font-medium">Fichier sélectionné :</p>
-      <ul class="list-disc pl-5">
-        <li><strong>Nom :</strong> {{ selectedFile.name }}</li>
-        <li><strong>Taille :</strong> {{ (selectedFile.size / 1024).toFixed(2) }} KB</li>
-        <li><strong>Type :</strong> {{ selectedFile.type }}</li>
-      </ul>
-
-      <img 
-        v-if="previewUrl" 
-        :src="previewUrl" 
-        alt="Preview" 
-        class="mt-4 rounded border w-96 max-w-full"
-      />
-    </div>
+    <ImportPreview
+    v-if="selectedFile && previewUrl"
+    :image-file="selectedFile"
+    :image-url="previewUrl"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import FileDropZone from '../components/import/FileDropZone.vue'
+import ImportPreview from '../components/import/ImportPreview.vue'
 
 const selectedFile = ref<File | null>(null)
 const previewUrl = ref<string>('')
