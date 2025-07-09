@@ -38,14 +38,13 @@
             Découvrez la puissance de notre plateforme de gestion de cartes
           </p>
           <div class="flex flex-col sm:flex-row gap-4 justify-center">
-            <RouterLink to="/connexion" class="btn-primary px-8 py-3 text-lg">
+            <RouterLink to="/inscription" class="btn-primary px-8 py-3 text-lg">
               Commencer maintenant
             </RouterLink>
           </div>
         </div>
       </section>
     </main>
-    
   </div>
 </template>
 
