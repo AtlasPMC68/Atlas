@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { MapIcon } from '@heroicons/vue/24/outline'
 
 const isMenuOpen = ref(false)
 
@@ -16,7 +17,7 @@ const toggleMenu = () => {
         <div class="flex items-center">
           <div class="flex-shrink-0 flex items-center">
             <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center mr-3">
-              <span class="text-white font-bold text-lg">🗺️</span>
+              <MapIcon class="h-6 w-6 text-white" />
             </div>
             <h1 class="text-xl font-bold text-gray-900">
               Plateforme Cartes
@@ -29,9 +30,10 @@ const toggleMenu = () => {
           <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
             Accueil
           </a>
-          <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
-            Upload
-          </a>
+          <router-link
+            to="/demo/upload"
+            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
+          > Upload </router-link>
           <a href="#" class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
             Galerie
           </a>
@@ -42,9 +44,11 @@ const toggleMenu = () => {
 
         <!-- Desktop CTA -->
         <div class="hidden md:flex items-center space-x-4">
-          <button class="btn-secondary text-sm">
+          <RouterLink 
+            to="/connexion"
+            class="btn-secondary text-sm">
             Connexion
-          </button>
+          </RouterLink>
           <button class="btn-primary text-sm">
             S'inscrire
           </button>

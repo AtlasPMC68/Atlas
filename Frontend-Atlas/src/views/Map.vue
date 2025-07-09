@@ -3,6 +3,7 @@
     <h1 class="text-2xl font-bold text-center py-6">Carte démo</h1>
     <MapGeoJSON />
   </div>
+
 </template>
 
 <script setup>
