@@ -10,10 +10,12 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@heroicons/vue": "2.2.0",
+    "daisyui": "^5.0.46",
     "leaflet": "^1.9.4",
+    "pinia": "^3.0.3",
     "vue": "^3.4.38",
-    "vue-router": "^4.5.1",
-    "@heroicons/vue": "2.2.0"
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.3",

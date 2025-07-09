@@ -41,7 +41,9 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             state="PROGRESS",
             meta={"current": 1, "total": 4, "status": "Saving uploaded file"}
         )
-
+        logger.info("Before sleep")
+        time.sleep(2)
+        logger.info("afternoon")
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
@@ -51,6 +53,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             state="PROGRESS", 
             meta={"current": 2, "total": 4, "status": "Loading and validating image"}
         )
+        time.sleep(2)
 
         image = Image.open(tmp_file_path)
         logger.info(f"Image loaded: {image.size}, mode: {image.mode}")
@@ -68,7 +71,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             state="PROGRESS",
             meta={"current": 3, "total": 4, "status": "Extracting text with TesseractOCR"}
         )
-
+        time.sleep(2)
         custom_config = r'--oem 3 --psm 6'
         extracted_text = pytesseract.image_to_string(image, config=custom_config)
 
@@ -77,7 +80,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             state="PROGRESS",
             meta={"current": 4, "total": 4, "status": "Cleaning up and finalizing"}
         )
-
+        time.sleep(2)
         os.unlink(tmp_file_path)
 
         current_dir = os.path.dirname(os.path.abspath(__file__))
