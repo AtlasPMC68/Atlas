@@ -10,9 +10,9 @@ import { onMounted, ref, watch } from "vue";
 import L from "leaflet";
 import TimelineSlider from "../components/TimelineSlider.vue";
 
-const selectedYear = ref(1740); // année initiale affichée
+const selectedYear = ref(1740); // initial displayed year
 
-// Liste des années disponibles
+// List of available years
 const availableYears = [
   1400, 1500, 1530, 1600, 1650, 1700, 1715, 1783, 1800, 1815, 1880, 1900, 1914,
   1920, 1930, 1938, 1945, 1960, 1994, 2000, 2010,
@@ -24,11 +24,11 @@ let currentCitiesLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
 
-// Fonction de display de la carte
+// Function to display the map
 onMounted(() => {
   map = L.map("map").setView([52.9399, -73.5491], 5);
 
-  // Map en background
+  // Background map
   baseTileLayer = L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
     {
@@ -41,16 +41,16 @@ onMounted(() => {
   loadAllLayersForYear(selectedYear.value);
 });
 
-// Retourne la plus grande année disponible selon l'année demandée
+// Returns the closest available year that is less than or equal to the requested year
 function getClosestAvailableYear(year) {
   const sorted = [...availableYears].sort((a, b) => a - b);
   for (let i = sorted.length - 1; i >= 0; i--) {
     if (year >= sorted[i]) return sorted[i];
   }
-  return sorted[0]; // par défaut, retourne la plus ancienne
+  return sorted[0]; // default to the earliest year
 }
 
-// Cherche le geojson qui s'appel world_(year) et affiche son contenu sur la carte
+// Loads the GeoJSON file named world_(year) and displays its content on the map
 function loadRegionsForYear(year) {
   const closestYear = getClosestAvailableYear(year);
 
@@ -58,7 +58,7 @@ function loadRegionsForYear(year) {
 
   fetch(filename)
     .then((res) => {
-      if (!res.ok) throw new Error("Fichier non trouvé : " + filename);
+      if (!res.ok) throw new Error("File not found: " + filename);
       return res.json();
     })
     .then((data) => {
@@ -69,7 +69,7 @@ function loadRegionsForYear(year) {
           fill: false,
         },
         onEachFeature: (feature, layer) => {
-          layer.bindPopup(feature.properties.name || "Sans nom");
+          layer.bindPopup(feature.properties.name || "Unnamed");
         },
       }).addTo(map);
     })
@@ -78,16 +78,15 @@ function loadRegionsForYear(year) {
     });
 }
 
-// Cherche le geojson qui s'appel cities et affiche sur la carte les villes fondée avant ou à la même année que celle sélectionnée
+// Loads the GeoJSON file called cities and displays only cities founded before or at the selected year
 function loadCitiesForYear(year) {
   fetch(`/geojson/cities.geojson`)
     .then((res) => {
-      if (!res.ok)
-        throw new Error("Fichier /geojson/cities.geojson introuvable");
+      if (!res.ok) throw new Error("File /geojson/cities.geojson not found");
       return res.json();
     })
     .then((data) => {
-      // Filtrer les villes selon foundation_year
+      // Filter cities based on foundation_year
       const filteredFeatures = data.features.filter(
         (feature) =>
           feature.properties.foundation_year !== undefined &&
@@ -103,9 +102,9 @@ function loadCitiesForYear(year) {
         const coords = [
           feature.geometry.coordinates[1],
           feature.geometry.coordinates[0],
-        ]; // Leaflet veut [lat, lng]
+        ]; // Leaflet requires [lat, lng]
 
-        // Cercle noir (point)
+        // Black circle (point)
         const circleMarker = L.circleMarker(coords, {
           radius: 6,
           fillColor: "#000",
@@ -115,18 +114,18 @@ function loadCitiesForYear(year) {
           fillOpacity: 1,
         });
 
-        // Texte comme DivIcon
+        // Label as DivIcon
         const label = L.marker(coords, {
           icon: L.divIcon({
             className: "city-label-text",
             html: feature.properties.name,
-            iconSize: [100, 20], // largeur/hauteur approximative
-            iconAnchor: [-8, 15], // décale le texte pour être au-dessus du point
+            iconSize: [100, 20], // approximate width/height
+            iconAnchor: [-8, 15], // shifts the label above the point
           }),
-          interactive: false, // évite d’interférer avec la carte
+          interactive: false, // avoids interfering with map interactions
         });
 
-        // Groupe pour point + label
+        // Group for point + label
         return L.layerGroup([circleMarker, label]);
       });
 
@@ -137,7 +136,7 @@ function loadCitiesForYear(year) {
     });
 }
 
-// Retire toutes les couches sauf la couche de base contenant la carte de référence
+// Removes all layers except for the base tile layer
 function removeGeoJSONLayers() {
   map.eachLayer((layer) => {
     if (layer !== baseTileLayer) {
@@ -145,19 +144,19 @@ function removeGeoJSONLayers() {
     }
   });
 
-  // Réinitialise les références
+  // Reset references
   currentRegionsLayer = null;
   currentCitiesLayer = null;
 }
 
-// Load tous les layers nécessaires
+// Loads all necessary layers for the given year
 function loadAllLayersForYear(year) {
   removeGeoJSONLayers();
   loadRegionsForYear(year);
   loadCitiesForYear(year);
 }
 
-// Crée un délai entre les mise à jour de la carte pour éviter des erreurs causer par un changement rapide des années
+// Creates a delay between map updates to prevent issues caused by rapid year changes
 function debounce(fn, delay) {
   let timeout;
   return (...args) => {
@@ -166,12 +165,12 @@ function debounce(fn, delay) {
   };
 }
 
-// Appel le debounce pour charger les geoJSON
+// Uses debounce to load GeoJSON layers
 const debouncedUpdate = debounce((year) => {
   loadAllLayersForYear(year);
-}, 300); // attend 300ms sans nouveau changement
+}, 300); // wait 300ms without changes
 
-// Retransmet l'année sélectionnée dans le slider
+// Watches the selected year and updates the map accordingly
 watch(selectedYear, (year) => {
   debouncedUpdate(year);
 });
