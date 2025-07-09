@@ -19,10 +19,12 @@ const availableYears = [
 ];
 
 let map = null;
-let currentGeoJsonLayer = null;
+let currentRegionsLayer = null;
+let currentCitiesLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
 
+// Fonction de display de la carte
 onMounted(() => {
   map = L.map("map").setView([52.9399, -73.5491], 5);
 
@@ -36,8 +38,7 @@ onMounted(() => {
     }
   ).addTo(map);
 
-  // Appel la fonction avec l'année 1740 (phase de test sans timeline)
-  loadGeoJSONForYear(selectedYear.value);
+  loadAllLayersForYear(selectedYear.value);
 });
 
 // Retourne la plus grande année disponible selon l'année demandée
@@ -49,20 +50,9 @@ function getClosestAvailableYear(year) {
   return sorted[0]; // par défaut, retourne la plus ancienne
 }
 
-let lastRequestedYear = null;
-
 // Cherche le geojson qui s'appel world_(year) et affiche son contenu sur la carte
-function loadGeoJSONForYear(year) {
-  removeGeoJSONLayers();
-
+function loadRegionsForYear(year) {
   const closestYear = getClosestAvailableYear(year);
-  lastRequestedYear = closestYear;
-
-  // Supprime l'ancien layer immédiatement
-  /*if (currentGeoJsonLayer) {
-    map.removeLayer(currentGeoJsonLayer);
-    currentGeoJsonLayer = null;
-  }*/
 
   const filename = `/geojson/world_${closestYear}.geojson`;
 
@@ -72,13 +62,7 @@ function loadGeoJSONForYear(year) {
       return res.json();
     })
     .then((data) => {
-      // Vérifie si cette réponse est encore pertinente
-      if (lastRequestedYear !== closestYear) {
-        // La réponse est obsolète, on ne l'ajoute pas
-        return;
-      }
-
-      currentGeoJsonLayer = L.geoJSON(data, {
+      currentRegionsLayer = L.geoJSON(data, {
         style: {
           color: "#444",
           weight: 2,
@@ -94,23 +78,86 @@ function loadGeoJSONForYear(year) {
     });
 }
 
+// Cherche le geojson qui s'appel cities et affiche sur la carte les villes fondée avant ou à la même année que celle sélectionnée
+function loadCitiesForYear(year) {
+  fetch(`/geojson/cities.geojson`)
+    .then((res) => {
+      if (!res.ok)
+        throw new Error("Fichier /geojson/cities.geojson introuvable");
+      return res.json();
+    })
+    .then((data) => {
+      // Filtrer les villes selon foundation_year
+      const filteredFeatures = data.features.filter(
+        (feature) =>
+          feature.properties.foundation_year !== undefined &&
+          feature.properties.foundation_year <= year
+      );
+
+      const filteredGeoJSON = {
+        type: "FeatureCollection",
+        features: filteredFeatures,
+      };
+
+      const cityMarkers = filteredFeatures.map((feature) => {
+        const coords = [
+          feature.geometry.coordinates[1],
+          feature.geometry.coordinates[0],
+        ]; // Leaflet veut [lat, lng]
+
+        // Cercle noir (point)
+        const circleMarker = L.circleMarker(coords, {
+          radius: 6,
+          fillColor: "#000",
+          color: "#000",
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 1,
+        });
+
+        // Texte comme DivIcon
+        const label = L.marker(coords, {
+          icon: L.divIcon({
+            className: "city-label-text",
+            html: feature.properties.name,
+            iconSize: [100, 20], // largeur/hauteur approximative
+            iconAnchor: [-8, 15], // décale le texte pour être au-dessus du point
+          }),
+          interactive: false, // évite d’interférer avec la carte
+        });
+
+        // Groupe pour point + label
+        return L.layerGroup([circleMarker, label]);
+      });
+
+      currentCitiesLayer = L.layerGroup(cityMarkers).addTo(map);
+    })
+    .catch((err) => {
+      console.warn(err.message);
+    });
+}
+
+// Retire toutes les couches sauf la couche de base contenant la carte de référence
 function removeGeoJSONLayers() {
   map.eachLayer((layer) => {
-    if (
-      layer !== baseTileLayer && // ne supprime pas la couche de fond
-      layer !== labelLayer && // ne supprime pas le layer de labels
-      layer instanceof L.GeoJSON // supprime les autres GeoJSON
-    ) {
+    if (layer !== baseTileLayer) {
       map.removeLayer(layer);
     }
   });
+
+  // Réinitialise les références
+  currentRegionsLayer = null;
+  currentCitiesLayer = null;
 }
 
+// Load tous les layers nécessaires
 function loadAllLayersForYear(year) {
-  loadGeoJSONForYear(year);
-  //loadCitiesForYear(year);
+  removeGeoJSONLayers();
+  loadRegionsForYear(year);
+  loadCitiesForYear(year);
 }
 
+// Crée un délai entre les mise à jour de la carte pour éviter des erreurs causer par un changement rapide des années
 function debounce(fn, delay) {
   let timeout;
   return (...args) => {
@@ -119,10 +166,12 @@ function debounce(fn, delay) {
   };
 }
 
+// Appel le debounce pour charger les geoJSON
 const debouncedUpdate = debounce((year) => {
   loadAllLayersForYear(year);
 }, 300); // attend 300ms sans nouveau changement
 
+// Retransmet l'année sélectionnée dans le slider
 watch(selectedYear, (year) => {
   debouncedUpdate(year);
 });

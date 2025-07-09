@@ -1,0 +1,60 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Montréal",
+        "foundation_year": 1642
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-73.5673, 45.5017]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Québec",
+        "foundation_year": 1608
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-71.2082, 46.8139]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Trois-Rivières",
+        "foundation_year": 1634
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-72.5486, 46.3456]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Sherbrooke",
+        "foundation_year": 1802
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-71.8963, 45.4042]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Gatineau",
+        "foundation_year": 2002
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-75.5603, 45.4765]
+      }
+    }
+  ]
+}
