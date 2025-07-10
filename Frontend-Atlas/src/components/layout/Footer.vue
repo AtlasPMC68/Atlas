@@ -1,7 +1,7 @@
 <template>
     <footer class="bg-gray-900 text-white py-12 px-4 sm:px-6 lg:px-8">
       <div class="max-w-7xl mx-auto text-center">
-        <h3 class="text-xl font-semibold mb-4">Plateforme de Cartes</h3>
+        <h3 class="text-xl font-semibold mb-4">Atlas</h3>
         <p class="text-gray-400 mb-6">
           Solution moderne pour la gestion et visualisation de cartes
         </p>

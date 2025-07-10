@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router';
+import { RocketLaunchIcon } from '@heroicons/vue/24/outline'
+import { EyeIcon } from '@heroicons/vue/24/outline';
 </script>
 
 <template>
-  <section class="relative py-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
+  <section class="relative py-10 px-4 sm:px-6 lg:px-8 overflow-hidden">
     <!-- Background decoration -->
     <div class="absolute inset-0 bg-gradient-to-br from-primary-50 to-secondary-50 opacity-50"></div>
     
@@ -11,7 +12,7 @@ import { RouterLink } from 'vue-router';
       <div class="text-center">
         <!-- Badge -->
         <div class="inline-flex items-center px-4 py-2 rounded-full bg-primary-100 text-primary-800 text-sm font-medium mb-8 animate-fade-in">
-          <span class="mr-2">🚀</span>
+          <RocketLaunchIcon class="w-5 h-5 mr-2 text-primary-600" />
           Nouvelle plateforme de gestion de cartes
         </div>
         
@@ -31,34 +32,13 @@ import { RouterLink } from 'vue-router';
         </p>
         
         <!-- CTA Buttons -->
-        <div class="flex flex-col sm:flex-row gap-4 justify-center mb-16 animate-slide-up">
-          <button class="btn-primary px-8 py-4 text-lg hover:scale-105 transform transition-all">
-            <span class="mr-2">📤</span>
-            Commencer l'upload
-          </button>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center animate-slide-up">
           <RouterLink
             to="/demo"
-            class="btn-secondary px-8 py-4 text-lg hover:scale-105 transform transition-all inline-flex items-center justify-center"
-          >
-            <span class="mr-2">👁️</span>
+            class="btn-secondary px-8 py-4 text-lg hover:scale-105 transform transition-all inline-flex items-center justify-center">
+            <EyeIcon class="w-5 h-5 mr-2 text-primary-600" />
             Voir la démo
           </RouterLink>
-        </div>
-        
-        <!-- Stats -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 max-w-2xl mx-auto">
-          <div class="text-center">
-            <div class="text-3xl font-bold text-primary-600 mb-2">100+</div>
-            <div class="text-gray-600">Formats supportés</div>
-          </div>
-          <div class="text-center">
-            <div class="text-3xl font-bold text-secondary-600 mb-2">24/7</div>
-            <div class="text-gray-600">Support disponible</div>
-          </div>
-          <div class="text-center">
-            <div class="text-3xl font-bold text-accent-600 mb-2">99.9%</div>
-            <div class="text-gray-600">Temps de disponibilité</div>
-          </div>
         </div>
       </div>
     </div>

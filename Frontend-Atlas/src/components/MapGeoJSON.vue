@@ -1,7 +1,7 @@
 <template>
   <div>
     <TimelineSlider v-model:year="selectedYear" />
-    <div id="map" style="height: 80vh; width: 100%"></div>
+    <div id="map" class="z-10" style="height: 80vh; width: 100%"></div>
   </div>
 </template>
 
