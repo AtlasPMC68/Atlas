@@ -24,7 +24,7 @@
           <RouterLink
             to="/demo/upload"
             class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
-          > Upload </RouterLink>
+          > Téléversement </RouterLink>
           <RouterLink 
             to="/tableau-de-bord"
             class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
