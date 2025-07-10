@@ -5,6 +5,13 @@ from dotenv import load_dotenv
 
 from app.db import get_db_connection
 
+def get_db_connection():
+    url = os.getenv("DATABASE_URL")
+    print("DATABASE_URL =", url)  # ← check si None
+    engine = create_engine(url)
+    return engine.connect()
+
+
 def test_get_db_connection_uses_env_variable():
     load_dotenv(dotenv_path=".env.dev")
 

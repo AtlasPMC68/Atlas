@@ -96,12 +96,40 @@ const loading = ref(false)
 const error = ref('')
 
 async function handleLogin() {
-  if (!email.value || !password.value) {
-    error.value = 'Veuillez remplir tous les champs'
-    return
-  }
-  else {
+  error.value = ''
+  loading.value = true
+
+  try {
+    const response = await fetch('http://localhost:8000/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: email.value,
+        password: password.value,
+      }),
+    })
+
+    if (!response.ok) {
+      const result = await response.json()
+      throw new Error(result.detail || "Échec de la connexion.")
+    }
+
+    const data = await response.json()
+    console.log('Connexion réussie:', data)
+
+    // Stockage du token JWT
+    localStorage.setItem('access_token', data.access_token)
+
+    // Rediriger l'utilisateur vers l'accueil ou un dashboard
     router.push('/')
+
+  } catch (err: any) {
+    error.value = err.message
+    console.error(err)
+  } finally {
+    loading.value = false
   }
 }
 </script>

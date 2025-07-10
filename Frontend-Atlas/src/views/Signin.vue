@@ -119,11 +119,35 @@ async function handleRegister() {
     return
   }
 
-  // Simulation de succès :
   loading.value = true
-  setTimeout(() => {
-    loading.value = false
+
+  try {
+    const response = await fetch('http://localhost:8000/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: email.value,
+        password: password.value,
+      }),
+    })
+
+    if (!response.ok) {
+      const result = await response.json()
+      throw new Error(result.detail || "Une erreur est survenue lors de l'inscription.")
+    }
+
+    const result = await response.json()
+    console.log('Inscription réussie:', result)
+    
     router.push('/')
-  }, 1000)
+
+  } catch (err: any) {
+    error.value = err.message
+    console.error(err)
+  } finally {
+    loading.value = false
+  }
 }
 </script>
