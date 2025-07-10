@@ -54,19 +54,6 @@ const saveSettings = () => {
         </select>
       </div>
 
-      <!-- Notifications -->
-      <div class="flex items-center">
-        <input
-          type="checkbox"
-          id="notifications"
-          v-model="notificationsEnabled"
-          class="mr-2"
-        />
-        <label for="notifications" class="text-sm text-gray-700">
-          Recevoir des notifications
-        </label>
-      </div>
-
       <!-- Bouton enregistrer -->
       <div class="pt-4">
         <button @click="saveSettings" class="btn-primary">

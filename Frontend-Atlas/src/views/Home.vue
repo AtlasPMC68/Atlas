@@ -77,7 +77,3 @@ const features = ref([
   }
 ])
 </script>
-
-<style scoped>
-/* Additional component-specific styles can go here */
-</style>

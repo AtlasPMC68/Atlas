@@ -16,7 +16,7 @@ const user = ref({
       
       <!-- Avatar Placeholder -->
       <div class="w-32 h-32 rounded-full border border-gray-300 bg-gray-100 flex items-center justify-center text-gray-400 text-xl">
-        <!--TODO: Placeholder icon or initials later -->
+        <!--TODO: Placeholder initials later -->
         ?
       </div>
 

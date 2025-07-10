@@ -45,19 +45,5 @@ const colorClasses = {
     <p class="text-gray-600 leading-relaxed">
       {{ description }}
     </p>
-    
-    <!--Je l'ai mis en commentaire au cas ou on voudrait le réutiliser-->
-    <!-- Learn more link
-    <div class="mt-4 pt-4 border-t border-gray-100">
-      <a href="#" 
-         class="inline-flex items-center text-sm font-medium transition-colors"
-         :class="colorClasses[color].text">
-        En savoir plus
-        <svg class="ml-1 w-4 h-4 group-hover:translate-x-1 transition-transform" 
-             fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-        </svg>
-      </a>
-    </div> -->
   </div>
 </template>
