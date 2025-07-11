@@ -61,11 +61,11 @@
                 <RouterLink to="/parametres" class="dropdown-item">Paramètres</RouterLink>
                 <div class="h-0.5 bg-gray-200 my-1"></div>
                 <!--TODO: Ajouter la logique de déconnexion-->
-                <RouterLink 
-                  to="/connexion"
-                  class="dropdown-item text-red-600 hover:text-red-800">
+                <button 
+                  @click="logout"
+                  class="dropdown-item text-red-600 hover:text-red-800 text-left">
                   Déconnexion
-                </RouterLink>
+                </button>
               </div>
             </div>
           </template>
@@ -89,14 +89,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { MapIcon, UserCircleIcon, ChevronDownIcon } from '@heroicons/vue/24/outline'
+import { useRouter } from 'vue-router'
 
 const isDropdownOpen = ref(false)
+const router = useRouter()
 
 const toggleDropdown = () => {
   isDropdownOpen.value = !isDropdownOpen.value
 }
 
-const isAuthenticated = ref(false) // Replace with actual authentication logic
+const isAuthenticated = computed(() => {
+  return !!localStorage.getItem('access_token')
+})
+
+const logout = () => {
+  localStorage.removeItem('access_token')
+  router.push('/connexion')
+}
+
 </script>

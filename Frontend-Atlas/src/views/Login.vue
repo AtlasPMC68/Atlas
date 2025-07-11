@@ -123,7 +123,7 @@ async function handleLogin() {
     localStorage.setItem('access_token', data.access_token)
 
     // Rediriger l'utilisateur vers l'accueil ou un dashboard
-    router.push('/')
+    router.push('/tableau-de-bord')
 
   } catch (err: any) {
     error.value = err.message
