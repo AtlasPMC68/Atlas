@@ -14,6 +14,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Set up fake .env.dev file
+        run: |
+          echo "SECRET_KEY=fakekey123" >> Backend-Atlas/.env.dev
+          echo "ACCESS_TOKEN_EXPIRE_MINUTES=30" >> Backend-Atlas/.env.dev
+          echo "ALGORITHM=HS256" >> Backend-Atlas/.env.dev
+          echo "DATABASE_URL=postgresql://postgres:postgres@db:5432/atlas" >> Backend-Atlas/.env.dev
+          echo "REDIS_URL=redis://redis:6379/0" >> Backend-Atlas/.env.dev
+          echo "CELERY_BROKER_URL=redis://redis:6379/0" >> Backend-Atlas/.env.dev
+          echo "CELERY_RESULT_BACKEND=redis://redis:6379/0" >> Backend-Atlas/.env.dev
+
       - name: Set up Docker Compose
         run: |
           docker compose version
