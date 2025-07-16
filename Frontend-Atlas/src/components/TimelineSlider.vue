@@ -7,17 +7,17 @@
       :max="max"
       v-model.number="internalYear"
       @input="onSliderInput"
-      class="slider"
+      class="range range-primary range-sm flex-1 [--range-fill:0]"
     />
 
     <!-- Input texte -->
     <input
       type="number"
       min="0"
-      max="9999"
+      max="2025"
       v-model="inputValue"
       @change="onInputChange"
-      class="year-input"
+      class="input input-bordered input-sm w-20"
     />
   </div>
 </template>
@@ -68,43 +68,15 @@ function onInputChange() {
 
 <style scoped>
 .timeline-container {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 100%;
   display: flex;
   align-items: center;
   gap: 2rem;
-  padding-left: 2rem; /* Décalage à gauche */
-  background: white; /* Optionnel : fond blanc pour bien voir */
-  box-sizing: border-box; /* Pour que padding ne déborde pas */
-  height: 4rem; /* Ajuste la hauteur pour contenir le slider et l'input */
-  border-top: 1px solid #ddd; /* Optionnel : une bordure en haut */
-  z-index: 1000; /* Pour que ça soit au-dessus des autres éléments */
-}
-
-.slider {
-  flex: 1;
-  height: 4px;
-  background: #ccc;
-  border-radius: 2px;
-  appearance: none;
-}
-
-.slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  background: #2c7be5;
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.4);
-}
-
-.year-input {
-  width: 80px;
-  padding: 4px;
-  font-size: 14px;
+  padding: 1rem 2rem;
+  background: white;
+  height: 4rem;
+  width: 100%;
+  box-sizing: border-box;
+  border-top: 1px solid #ddd;
 }
 </style>
+ 
