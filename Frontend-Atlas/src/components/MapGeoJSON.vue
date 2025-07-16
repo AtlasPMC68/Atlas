@@ -8,6 +8,8 @@
 <script setup>
 import { onMounted, ref, watch } from "vue";
 import L from "leaflet";
+import "leaflet-geometryutil"; // ← requis pour que arrowheads fonctionne
+import "leaflet-arrowheads";   // ← ajoute la méthode `arrowheads` aux polylines
 import TimelineSlider from "../components/TimelineSlider.vue";
 
 const selectedYear = ref(1740); // initial displayed year
@@ -20,9 +22,76 @@ const availableYears = [
 
 let map = null;
 let currentRegionsLayer = null;
-let currentCitiesLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
+const mockedCities = [
+  { name: "Montréal", lat: 45.5017, lng: -73.5673, foundation_year: 1642 },
+  { name: "Québec", lat: 46.8139, lng: -71.2082, foundation_year: 1608 },
+  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 }
+];
+
+let citiesLayer = null;
+
+const mockedZonesFromBackend = [
+  {
+    id: "zone-1",
+    name: "Canada",
+    fillColor: "#3366ff",
+    year: 1750,
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-71.2, 46.8],
+          [-71.3, 47.1],
+          [-70.9, 47.2],
+          [-70.8, 46.9],
+          [-71.2, 46.8]
+        ]
+      ]
+    }
+  },
+  {
+    id: "zone-2",
+    name: "British Colonies",
+    fillColor: "#ff3333",
+    year: 1750,
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-76.0, 39.0],
+          [-75.5, 39.5],
+          [-75.0, 39.0],
+          [-75.5, 38.5],
+          [-76.0, 39.0]
+        ]
+      ]
+    }
+  }
+];
+let zonesLayer = null;
+
+const mockedArrows = [
+  {
+    id: "arrow-1",
+    name: "Déplacement militaire",
+    from: { lat: 46.8139, lng: -71.2082 }, // Québec
+    to: { lat: 45.5017, lng: -73.5673 },   // Montréal
+    color: "#000",
+    year: 1750
+  },
+  {
+    id: "arrow-2",
+    name: "Migration",
+    from: { lat: 45.5017, lng: -73.5673 },
+    to: { lat: 47.5, lng: -70.0 },
+    color: "#ff0000",
+    year: 1750
+  }
+];
+let arrowsLayer = null;
+
 
 // Function to display the map
 onMounted(() => {
@@ -40,6 +109,25 @@ onMounted(() => {
 
   loadAllLayersForYear(selectedYear.value);
 });
+
+async function fetchCitiesFromDB(year) {
+  const mapId = "11111111-1111-1111-1111-111111111111"; // ← tu peux rendre ça dynamique si besoin
+
+  try {
+    const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
+    if (!res.ok) throw new Error("Failed to fetch features");
+
+    const allFeatures = await res.json();
+
+    // On filtre pour garder uniquement les villes visibles à cette année
+    return allFeatures.filter(f =>
+      f.type === "point" && new Date(f.start_date).getFullYear() <= year
+    );
+  } catch (err) {
+    console.warn("Erreur fetch features:", err);
+    return [];
+  }
+}
 
 // Returns the closest available year that is less than or equal to the requested year
 function getClosestAvailableYear(year) {
@@ -78,82 +166,121 @@ function loadRegionsForYear(year) {
     });
 }
 
-// Loads the GeoJSON file called cities and displays only cities founded before or at the selected year
-function loadCitiesForYear(year) {
-  fetch(`/geojson/cities.geojson`)
-    .then((res) => {
-      if (!res.ok) throw new Error("File /geojson/cities.geojson not found");
-      return res.json();
-    })
-    .then((data) => {
-      // Filter cities based on foundation_year
-      const filteredFeatures = data.features.filter(
-        (feature) =>
-          feature.properties.foundation_year !== undefined &&
-          feature.properties.foundation_year <= year
-      );
+async function renderCities(map, year) {
+  if (citiesLayer) {
+    map.removeLayer(citiesLayer);
+  }
 
-      const filteredGeoJSON = {
-        type: "FeatureCollection",
-        features: filteredFeatures,
-      };
+  const features = await fetchCitiesFromDB(year);
 
-      const cityMarkers = filteredFeatures.map((feature) => {
-        const coords = [
-          feature.geometry.coordinates[1],
-          feature.geometry.coordinates[0],
-        ]; // Leaflet requires [lat, lng]
+  const cityGroups = features.map(city => {
+    const [lng, lat] = city.geometry.coordinates;
+    const coord = [lat, lng]; // Leaflet = lat/lng
 
-        // Black circle (point)
-        const circleMarker = L.circleMarker(coords, {
-          radius: 6,
-          fillColor: "#000",
-          color: "#000",
-          weight: 1,
-          opacity: 1,
-          fillOpacity: 1,
-        });
-
-        // Label as DivIcon
-        const label = L.marker(coords, {
-          icon: L.divIcon({
-            className: "city-label-text",
-            html: feature.properties.name,
-            iconSize: [100, 20], // approximate width/height
-            iconAnchor: [-8, 15], // shifts the label above the point
-          }),
-          interactive: false, // avoids interfering with map interactions
-        });
-
-        // Group for point + label
-        return L.layerGroup([circleMarker, label]);
-      });
-
-      currentCitiesLayer = L.layerGroup(cityMarkers).addTo(map);
-    })
-    .catch((err) => {
-      console.warn(err.message);
+    const point = L.circleMarker(coord, {
+      radius: 6,
+      fillColor: city.color || "#000",
+      color: city.color || "#000",
+      weight: 1,
+      opacity: city.opacity ?? 1,
+      fillOpacity: city.opacity ?? 1,
     });
+
+    const label = L.marker(coord, {
+      icon: L.divIcon({
+        className: "city-label-text",
+        html: city.name,
+        iconSize: [100, 20],
+        iconAnchor: [-8, 15],
+      }),
+      interactive: false,
+    });
+
+    return L.layerGroup([point, label]);
+  });
+
+  citiesLayer = L.layerGroup(cityGroups).addTo(map);
 }
 
-// Removes all layers except for the base tile layer
+function renderZonesFromMock(year) {
+  if (zonesLayer) {
+    map.removeLayer(zonesLayer);
+  }
+
+  const filtered = mockedZonesFromBackend.filter(z => z.year <= year);
+
+  const features = filtered.map(zone => ({
+    type: "Feature",
+    geometry: zone.geometry,
+    properties: {
+      name: zone.name,
+      fillColor: zone.fillColor,
+      year: zone.year
+    }
+  }));
+
+  zonesLayer = L.geoJSON({ type: "FeatureCollection", features }, {
+    style: feature => ({
+      fillColor: feature.properties.fillColor || "#ccc",
+      fillOpacity: 0.5,
+      color: "#333",
+      weight: 1
+    }),
+    onEachFeature: (feature, layer) => {
+      if (feature.properties?.name) {
+        layer.bindPopup(feature.properties.name);
+      }
+    }
+  }).addTo(map);
+}
+
+function renderArrowsFromMock(year) {
+  if (arrowsLayer) {
+    map.removeLayer(arrowsLayer);
+  }
+
+  const filtered = mockedArrows.filter(arrow => arrow.year <= year);
+
+  const arrows = filtered.map(arrow => {
+    const line = L.polyline([
+      [arrow.from.lat, arrow.from.lng],
+      [arrow.to.lat, arrow.to.lng]
+    ], {
+      color: arrow.color || "#000",
+      weight: 2,
+      opacity: 1
+    }).addTo(map); // IMPORTANT: doit être ajouté à la carte avant d’ajouter les flèches
+
+    // Applique les flèches automatiquement
+    line.arrowheads({
+      size: '10px',
+      frequency: 'endonly', // autres options: 'allvertices', '20px', etc.
+      fill: true
+    });
+
+    line.bindPopup(arrow.name);
+    return line;
+  });
+
+  arrowsLayer = L.layerGroup(arrows).addTo(map);
+}
+
 function removeGeoJSONLayers() {
   map.eachLayer((layer) => {
     if (layer !== baseTileLayer) {
       map.removeLayer(layer);
     }
   });
-
-  // Reset references
   currentRegionsLayer = null;
-  currentCitiesLayer = null;
 }
 
 // Loads all necessary layers for the given year
 function loadAllLayersForYear(year) {
   removeGeoJSONLayers();
   loadRegionsForYear(year);
-  loadCitiesForYear(year);
+  renderCities(map, year);
+  renderZonesFromMock(year);
+  renderArrowsFromMock(year);
 }
 
 // Creates a delay between map updates to prevent issues caused by rapid year changes
@@ -175,3 +302,22 @@ watch(selectedYear, (year) => {
   debouncedUpdate(year);
 });
 </script>
+
+<style>
+.city-label-text {
+  font-size: 12px;
+  font-weight: bold;
+  color: black;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: transparent;
+}
+
+.arrow-head {
+  font-size: 20px;
+  color: black;
+  transform: rotate(0deg); /* statique pour l’instant */
+}
+
+</style>
