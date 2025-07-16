@@ -1,13 +1,17 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
   server: {
-    host: true,         // 👈 autorise l'accès via IP externe (nécessaire dans Docker)
-    port: 5173,         // 👈 par défaut, mais explicite
+    host: true,
+    port: 5173,
     watch: {
-      usePolling: true  // 👈 important pour que le bind mount détecte les changements !
+      usePolling: true
     }
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
   }
 })
