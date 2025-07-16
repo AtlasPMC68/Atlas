@@ -121,6 +121,18 @@ async function handleLogin() {
 
     localStorage.setItem('access_token', data.access_token)
 
+    const token = localStorage.getItem('access_token')
+
+    const meRes = await fetch('http://localhost:8000/me', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    if (!meRes.ok) {
+      throw new Error("Le token est invalide ou expiré.")
+    }
+
     router.push('/tableau-de-bord')
 
   } catch (err: any) {

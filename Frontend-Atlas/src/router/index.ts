@@ -52,14 +52,35 @@ export const router = createRouter({
   routes
 });
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('access_token')
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
 
-  if (requiresAuth && !token) {
+  if (!requiresAuth) {
+    return next()
+  }
+
+  if (!token) {
+    return next('/connexion')
+  }
+
+  try {
+    const res = await fetch('http://localhost:8000/me', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    if (res.ok) {
+      next()
+    } else {
+      localStorage.removeItem('access_token') // token expiré ou invalide
+      next('/connexion')
+    }
+  } catch (err) {
+    console.error('Erreur de vérification du token:', err)
+    localStorage.removeItem('access_token')
     next('/connexion')
-  } else {
-    next()
   }
 })
 
