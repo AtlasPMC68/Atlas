@@ -110,6 +110,25 @@ onMounted(() => {
   loadAllLayersForYear(selectedYear.value);
 });
 
+async function fetchCitiesFromDB(year) {
+  const mapId = "11111111-1111-1111-1111-111111111111"; // ← tu peux rendre ça dynamique si besoin
+
+  try {
+    const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
+    if (!res.ok) throw new Error("Failed to fetch features");
+
+    const allFeatures = await res.json();
+
+    // On filtre pour garder uniquement les villes visibles à cette année
+    return allFeatures.filter(f =>
+      f.type === "point" && new Date(f.start_date).getFullYear() <= year
+    );
+  } catch (err) {
+    console.warn("Erreur fetch features:", err);
+    return [];
+  }
+}
+
 // Returns the closest available year that is less than or equal to the requested year
 function getClosestAvailableYear(year) {
   const sorted = [...availableYears].sort((a, b) => a - b);
@@ -147,25 +166,25 @@ function loadRegionsForYear(year) {
     });
 }
 
-function renderCities(map, year) {
+async function renderCities(map, year) {
   if (citiesLayer) {
     map.removeLayer(citiesLayer);
   }
 
-  const filtered = mockedCities.filter(city => city.foundation_year <= year);
+  const features = await fetchCitiesFromDB(year);
 
-  const cityGroups = filtered.map(city => {
-    const coord = [city.lat, city.lng];
+  const cityGroups = features.map(city => {
+    const [lng, lat] = city.geometry.coordinates;
+    const coord = [lat, lng]; // Leaflet = lat/lng
 
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: "#000",
-      color: "#000",
+      fillColor: city.color || "#000",
+      color: city.color || "#000",
       weight: 1,
-      opacity: 1,
-      fillOpacity: 1,
+      opacity: city.opacity ?? 1,
+      fillOpacity: city.opacity ?? 1,
     });
-    
 
     const label = L.marker(coord, {
       icon: L.divIcon({
