@@ -1,7 +1,7 @@
 <template>
   <div>
-    <TimelineSlider v-model:year="selectedYear" />
     <div id="map" style="height: 80vh; width: 100%"></div>
+    <TimelineSlider v-model:year="selectedYear" />
   </div>
 </template>
 
@@ -16,8 +16,7 @@ import TimelineSlider from "../components/TimelineSlider.vue";
 const props = defineProps({
   mapId: String,
   features: Array,
-  featureVisibility: Map,
-  selectedYear: Number
+  featureVisibility: Map
 });
 
 // Émissions vers la vue parent
@@ -42,65 +41,7 @@ const mockedCities = [
 ];
 
 let citiesLayer = null;
-
-const mockedZonesFromBackend = [
-  {
-    id: "zone-1",
-    name: "Canada",
-    fillColor: "#3366ff",
-    year: 1750,
-    geometry: {
-      type: "Polygon",
-      coordinates: [
-        [
-          [-71.2, 46.8],
-          [-71.3, 47.1],
-          [-70.9, 47.2],
-          [-70.8, 46.9],
-          [-71.2, 46.8]
-        ]
-      ]
-    }
-  },
-  {
-    id: "zone-2",
-    name: "British Colonies",
-    fillColor: "#ff3333",
-    year: 1750,
-    geometry: {
-      type: "Polygon",
-      coordinates: [
-        [
-          [-76.0, 39.0],
-          [-75.5, 39.5],
-          [-75.0, 39.0],
-          [-75.5, 38.5],
-          [-76.0, 39.0]
-        ]
-      ]
-    }
-  }
-];
 let zonesLayer = null;
-
-const mockedArrows = [
-  {
-    id: "arrow-1",
-    name: "Déplacement militaire",
-    from: { lat: 46.8139, lng: -71.2082 }, // Québec
-    to: { lat: 45.5017, lng: -73.5673 },   // Montréal
-    color: "#000",
-    year: 1750
-  },
-  {
-    id: "arrow-2",
-    name: "Migration",
-    from: { lat: 45.5017, lng: -73.5673 },
-    to: { lat: 47.5, lng: -70.0 },
-    color: "#ff0000",
-    year: 1750
-  }
-];
 let arrowsLayer = null;
 
 
@@ -118,7 +59,47 @@ onMounted(() => {
     }
   ).addTo(map);
 
-  loadAllLayersForYear(selectedYear.value);
+  loadRegionsForYear(selectedYear.value);
+});
+
+// Gestionnaire de layers par feature
+const featureLayerManager = {
+  layers: new Map(),
+
+  addFeatureLayer(featureId, layer) {
+    if (this.layers.has(featureId)) {
+      map.removeLayer(this.layers.get(featureId));
+    }
+    this.layers.set(featureId, layer);
+
+    // Ajouter seulement si visible
+    if (props.featureVisibility.get(featureId)) {
+      map.addLayer(layer);
+    }
+  },
+
+  toggleFeature(featureId, visible) {
+    const layer = this.layers.get(featureId);
+    if (layer) {
+      if (visible) {
+        map.addLayer(layer);
+      } else {
+        map.removeLayer(layer);
+      }
+    }
+  },
+
+  clearAllFeatures() {
+    this.layers.forEach(layer => map.removeLayer(layer));
+    this.layers.clear();
+  }
+};
+ 
+const filteredFeatures = computed(() => {
+  return props.features.filter(feature => 
+    new Date(feature.start_date).getFullYear() <= selectedYear.value &&
+    (!feature.end_date || new Date(feature.end_date).getFullYear() >= selectedYear.value)
+  );
 });
 
 async function fetchFeaturesAndRender(map, year) {
@@ -185,103 +166,129 @@ function loadRegionsForYear(year) {
     });
 }
 
-function renderCities(map, cities) {
-  if (citiesLayer) {
-    map.removeLayer(citiesLayer);
-  }
+function renderCities(features) {
+  const safeFeatures = toArray(features);
 
-  const cityGroups = cities.map(city => {
-    const [lng, lat] = city.geometry.coordinates;
+  safeFeatures.forEach(feature => {
+    // Defensive check
+    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
+      return;
+    }
+
+    const [lng, lat] = feature.geometry.coordinates;
     const coord = [lat, lng];
 
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: city.color || "#000",
-      color: city.color || "#000",
+      fillColor: feature.color || "#000",
+      color: feature.color || "#000",
       weight: 1,
-      opacity: city.opacity ?? 1,
-      fillOpacity: city.opacity ?? 1,
+      opacity: feature.opacity ?? 1,
+      fillOpacity: feature.opacity ?? 1,
     });
 
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: city.name,
+        html: feature.name,
         iconSize: [100, 20],
         iconAnchor: [-8, 15],
       }),
       interactive: false,
     });
 
-    return L.layerGroup([point, label]);
+    const layerGroup = L.layerGroup([point, label]);
+    featureLayerManager.addFeatureLayer(feature.id, layerGroup);
   });
-
-  citiesLayer = L.layerGroup(cityGroups).addTo(map);
 }
 
-function renderZones(map, zones) {
-  if (zonesLayer) {
-    map.removeLayer(zonesLayer);
-  }
+function renderZones(features) {
+  const safeFeatures = toArray(features);
 
-  const features = zones.map(zone => ({
-    type: "Feature",
-    geometry: zone.geometry,
-    properties: {
-      name: zone.name,
-      fillColor: zone.color || "#ccc",
+
+  safeFeatures.forEach(feature => {
+
+    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
+      return;
     }
-  }));
 
-  zonesLayer = L.geoJSON({ type: "FeatureCollection", features }, {
-    style: feature => ({
-      fillColor: feature.properties.fillColor,
-      fillOpacity: 0.5,
-      color: "#333",
-      weight: 1
-    }),
-    onEachFeature: (feature, layer) => {
-      if (feature.properties?.name) {
-        layer.bindPopup(feature.properties.name);
+    const layer = L.geoJSON(feature.geometry, {
+      style: {
+        fillColor: feature.color || "#ccc",
+        fillOpacity: 0.5,
+        color: "#333",
+        weight: 1
       }
+    });
+
+    if (feature.name) {
+      layer.bindPopup(feature.name);
     }
-  }).addTo(map);
+
+    featureLayerManager.addFeatureLayer(feature.id, layer);
+  });
 }
 
-function renderArrows(map, arrows) {
-  if (arrowsLayer) {
-    map.removeLayer(arrowsLayer);
-  }
+function renderArrows(features) {
+  const safeFeatures = toArray(features);
 
-  const arrowLines = arrows.map(arrow => {
-    const coords = arrow.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+  safeFeatures.forEach(feature => {
 
-    const line = L.polyline(coords, {
-      color: arrow.color || "#000",
-      weight: arrow.stroke_width ?? 2,
-      opacity: arrow.opacity ?? 1
-    }).addTo(map);
+    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
+      return;
+    }
+    // Convert GeoJSON [lng, lat] → Leaflet [lat, lng]
+    const latLngs = feature.geometry.coordinates.map(
+      ([lng, lat]) => [lat, lng]
+    );
 
+    const line = L.polyline(latLngs, {
+      color: feature.color || "#000",
+      weight: feature.stroke_width ?? 2,
+      opacity: feature.opacity ?? 1
+    });
+
+    line.addTo(map);
+
+    // Apply arrowheads (after addTo(map))
     line.arrowheads({
       size: '10px',
       frequency: 'endonly',
       fill: true
     });
 
-    line.bindPopup(arrow.name);
-    return line;
-  });
+    if (feature.name) {
+      line.bindPopup(feature.name);
+    }
 
-  arrowsLayer = L.layerGroup(arrowLines).addTo(map);
+    featureLayerManager.addFeatureLayer(feature.id, line);
+  });
 }
 
+ 
+
+function renderAllFeatures() {
+  featureLayerManager.clearAllFeatures();
+
+  const featuresByType = {
+    point: filteredFeatures.value.filter(f => f.type === 'point'),
+    polygon: filteredFeatures.value.filter(f => f.type === 'polygon'),
+    arrow: filteredFeatures.value.filter(f => f.type === 'arrow')
+  };
+
+  renderCities(featuresByType.point);
+  renderZones(featuresByType.polygon);
+  renderArrows(featuresByType.arrow);
+
+  emit('features-loaded', filteredFeatures.value);
+}
+ 
+
 function removeGeoJSONLayers() {
-  map.eachLayer((layer) => {
-    if (layer !== baseTileLayer) {
-      map.removeLayer(layer);
-    }
-  });
-  currentRegionsLayer = null;
+  if (currentRegionsLayer) {
+    map.removeLayer(currentRegionsLayer);
+    currentRegionsLayer = null;
+  }
 }
 
 // Loads all necessary layers for the given year
@@ -292,9 +299,11 @@ async function loadAllLayersForYear(year) {
   isLoading = true;
 
   try {
-    removeGeoJSONLayers();
-    loadRegionsForYear(year);
-    await fetchFeaturesAndRender(map, year);
+    removeGeoJSONLayers();         
+    loadRegionsForYear(year);     
+
+    await fetchFeaturesAndRender(map, year); 
+    renderAllFeatures();                     
   } catch (e) {
     console.warn("Error loading layers:", e);
   } finally {
@@ -310,15 +319,35 @@ function debounce(fn, delay) {
   };
 }
 
+function toArray(maybeArray) {
+  if (Array.isArray(maybeArray)) return maybeArray;
+  if (maybeArray == null) return []; // null or undefined
+  return [maybeArray]; // wrap single object
+}
+
+
 // Uses debounce to load GeoJSON layers
 const debouncedUpdate = debounce((year) => {
   loadAllLayersForYear(year);
-}, 300); // wait 300ms without changes
+}, 2);
 
-// Watches the selected year and updates the map accordingly
-watch(selectedYear, (year) => {
-  debouncedUpdate(year);
+// Watchers
+watch(selectedYear, () => {
+  debouncedUpdate();
 });
+
+watch(() => props.features, () => {
+  renderAllFeatures();
+}, { deep: true });
+
+watch(() => props.featureVisibility, (newVisibility) => {
+  newVisibility.forEach((visible, featureId) => {
+    featureLayerManager.toggleFeature(featureId, visible);
+  });
+}, { deep: true });
+ 
+
+
 </script>
 
 <style>
