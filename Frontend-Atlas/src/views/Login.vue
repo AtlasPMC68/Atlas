@@ -119,10 +119,8 @@ async function handleLogin() {
     const data = await response.json()
     console.log('Connexion réussie:', data)
 
-    // Stockage du token JWT
     localStorage.setItem('access_token', data.access_token)
 
-    // Rediriger l'utilisateur vers l'accueil ou un dashboard
     router.push('/tableau-de-bord')
 
   } catch (err: any) {

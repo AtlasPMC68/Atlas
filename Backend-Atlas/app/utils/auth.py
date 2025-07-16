@@ -1,10 +1,14 @@
 import bcrypt
 from datetime import datetime, timedelta, timezone
 from jose import jwt
+from dotenv import load_dotenv
+import os
 
-SECRET_KEY = "ton_secret_ultra_secret" # a modif avec snitch
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+load_dotenv(dotenv_path=".env.dev")
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM", "HS256") # Default to HS256 if not set
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30)) # Default to 60 minutes if not set
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
