@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS "users" (
   "id" UUID PRIMARY KEY,
   "email" TEXT UNIQUE NOT NULL,
   "username" TEXT UNIQUE NOT NULL,
-  "icone" IMAGE NOT NULL DEFAULT 'basic_icone.png',
+  "icone" TEXT NOT NULL DEFAULT 'basic_icone.png',
   "post" TEXT DEFAULT null,
   "organisation" TEXT DEFAULT null,
   "tag_line" TEXT DEFAULT null,

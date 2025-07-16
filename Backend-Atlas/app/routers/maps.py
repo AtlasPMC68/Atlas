@@ -2,6 +2,14 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from ..tasks import process_map_extraction
 from ..celery_app import celery_app
+from fastapi import Depends, APIRouter
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from app.database.session import get_async_session
+from app.models.features import Feature
+
+router = APIRouter()
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -103,3 +111,9 @@ async def get_extraction_results(task_id: str):
         raise HTTPException(status_code=500, detail=f"Task failed: {task.info}")
     else:
         raise HTTPException(status_code=202, detail=f"Task not completed yet. Current state: {task.state}")
+    
+@router.get("features/{map_id}")
+async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
+    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
+    features = result.scalars().all()
+    return [f.__dict__ for f in features]
