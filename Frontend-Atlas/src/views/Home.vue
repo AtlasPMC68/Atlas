@@ -5,7 +5,7 @@
       <Hero />
       
       <!-- Features Section -->
-      <section class="py-16 px-4 sm:px-6 lg:px-8">
+      <section class="px-4 py-4 sm:px-6 lg:px-8">
         <div class="max-w-7xl mx-auto">
           <div class="text-center mb-12">
             <h2 class="text-3xl font-bold text-gray-900 mb-4">
@@ -23,7 +23,6 @@
               :title="feature.title"
               :description="feature.description"
               :icon="feature.icon"
-              :color="feature.color"
             />
           </div>
         </div>
@@ -39,17 +38,13 @@
             Découvrez la puissance de notre plateforme de gestion de cartes
           </p>
           <div class="flex flex-col sm:flex-row gap-4 justify-center">
-            <button class="btn-primary px-8 py-3 text-lg">
+            <RouterLink to="/inscription" class="btn-primary px-8 py-3 text-lg">
               Commencer maintenant
-            </button>
-            <button class="btn-secondary px-8 py-3 text-lg">
-              En savoir plus
-            </button>
+            </RouterLink>
           </div>
         </div>
       </section>
     </main>
-    
   </div>
 </template>
 
@@ -58,30 +53,27 @@ import { ref } from 'vue'
 import Hero from '../components/Hero.vue'
 import FeatureCard from '../components/FeatureCard.vue'
 import 'leaflet/dist/leaflet.css';
+import { ArrowUpTrayIcon, MapIcon, ClipboardDocumentListIcon } from '@heroicons/vue/24/outline'
 
 
-const features = ref<Array<{
-  title: string
-  description: string
-  icon: string
-  color: 'primary' | 'secondary' | 'accent'}>>([
-    {
-      title: 'Upload de cartes',
-      description: 'Importez facilement vos cartes depuis votre ordinateur avec support de multiples formats.',
-      icon: '📤',
-      color: 'primary'
-    },
-    {
-      title: 'Visualisation avancée',
-      description: 'Explorez vos cartes avec des outils de visualisation interactifs et intuitifs.',
-      icon: '🗺️',
-      color: 'secondary'
-    },
-    {
-      title: 'Gestion organisée',
-      description: 'Organisez et gérez votre collection de cartes avec des outils de classement.',
-      icon: '📋',
-      color: 'accent'
-    }
+const features = ref([
+  {
+    title: 'Upload de cartes',
+    description: 'Importez facilement vos cartes depuis votre ordinateur avec support de multiples formats.',
+    icon: ArrowUpTrayIcon,
+    color: 'primary'
+  },
+  {
+    title: 'Visualisation avancée',
+    description: 'Explorez vos cartes avec des outils de visualisation interactifs et intuitifs.',
+    icon: MapIcon,
+    color: 'secondary'
+  },
+  {
+    title: 'Gestion organisée',
+    description: 'Organisez et gérez votre collection de cartes avec des outils de classement.',
+    icon: ClipboardDocumentListIcon,
+    color: 'accent'
+  }
 ])
 </script>
