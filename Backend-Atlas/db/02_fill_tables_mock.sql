@@ -1,13 +1,10 @@
 -- Exemple d'utilisateur (owner)
 INSERT INTO users (
-  id, email, username, icone, "DOB", emplacement
+  id, email, password
 ) VALUES (
   '00000000-0000-0000-0000-000000000001',
   'admin@example.com',
-  'admin',
-  'basic_icone.png',
-  '1990-01-01',
-  'Québec'
+  'hashed_or_plaintext_password_here'
 );
 
 -- Exemple de base_layer
