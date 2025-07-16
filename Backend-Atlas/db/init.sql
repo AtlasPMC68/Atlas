@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Exemple de table de test
 CREATE TABLE IF NOT EXISTS lieux (
@@ -8,22 +9,9 @@ CREATE TABLE IF NOT EXISTS lieux (
 );
 
 CREATE TABLE IF NOT EXISTS "users" (
-  "id" UUID PRIMARY KEY,
+  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "email" TEXT UNIQUE NOT NULL,
-  "username" TEXT UNIQUE NOT NULL,
-  "icone" IMAGE NOT NULL DEFAULT 'basic_icone.png',
-  "post" TEXT DEFAULT null,
-  "organisation" TEXT DEFAULT null,
-  "tag_line" TEXT DEFAULT null,
-  "bio" TEXT DEFAULT null,
-  "language" TEXT DEFAULT 'fr',
-  "theme" TEXT DEFAULT 'light',
-  "notification_prefs" JSONB,
-  "DOB" date NOT NULL,
-  "emplacement" TEXT NOT NULL,
-  "last_login_at" TIMESTAMP,
-  "followers_count" int,
-  "maps_created" int,
+  "password" TEXT NOT NULL,
   "created_at" TIMESTAMP DEFAULT (now())
 );
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
+
 interface Props {
   title: string
   description: string
-  icon: string
+  icon: any // Accepts a Vue component (Heroicon)
   color?: 'primary' | 'secondary' | 'accent'
 }
 
@@ -34,7 +35,7 @@ const colorClasses = {
     <!-- Icon -->
     <div class="flex items-center justify-center w-12 h-12 rounded-lg mb-4 transition-colors"
          :class="[colorClasses[color].bg, colorClasses[color].border, 'border']">
-      <span class="text-2xl">{{ icon }}</span>
+      <component :is="icon" class="w-8 h-8" :class="colorClasses[color].text" />
     </div>
     
     <!-- Content -->
@@ -44,18 +45,5 @@ const colorClasses = {
     <p class="text-gray-600 leading-relaxed">
       {{ description }}
     </p>
-    
-    <!-- Learn more link -->
-    <div class="mt-4 pt-4 border-t border-gray-100">
-      <a href="#" 
-         class="inline-flex items-center text-sm font-medium transition-colors"
-         :class="colorClasses[color].text">
-        En savoir plus
-        <svg class="ml-1 w-4 h-4 group-hover:translate-x-1 transition-transform" 
-             fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-        </svg>
-      </a>
-    </div>
   </div>
 </template>
