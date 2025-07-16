@@ -95,6 +95,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./Backend-Atlas/.env.dev:/app/.env.dev
 
   test-frontend:
     build:
