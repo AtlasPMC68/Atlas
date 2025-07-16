@@ -147,14 +147,12 @@ function loadRegionsForYear(year, isFirstTime = false) {
 
   if (isFirstTime) {
     lastCurrentYear = closestYear;
-    console.log("is first time called mounting your mom");
   } else {
     if (lastCurrentYear == closestYear) {
-      console.log("returning because same year");
       return;
     }
   }
-  console.log("not returning because not the same year last \ncurrentyear: " + lastCurrentYear + " \nclosest year: " + closestYear);
+  
   lastCurrentYear = closestYear;
   const filename = `/geojson/world_${closestYear}.geojson`;
 
@@ -286,19 +284,34 @@ function renderArrows(features) {
  
 
 function renderAllFeatures() {
-  featureLayerManager.clearAllFeatures();
+  const currentFeatures = filteredFeatures.value;
+  const currentIds = new Set(currentFeatures.map(f => f.id));
+  const previousIds = previousFeatureIds.value;
 
+  previousIds.forEach(oldId => {
+    if (!currentIds.has(oldId)) {
+      const layer = featureLayerManager.layers.get(oldId);
+      if (layer) {
+        map.removeLayer(layer);
+        featureLayerManager.layers.delete(oldId);
+      }
+    }
+  });
+
+  const newFeatures = currentFeatures.filter(f => !previousIds.has(f.id));
   const featuresByType = {
-    point: filteredFeatures.value.filter(f => f.type === 'point'),
-    polygon: filteredFeatures.value.filter(f => f.type === 'zone'),
-    arrow: filteredFeatures.value.filter(f => f.type === 'arrow')
+    point: newFeatures.filter(f => f.type === 'point'),
+    polygon: newFeatures.filter(f => f.type === 'zone'),
+    arrow: newFeatures.filter(f => f.type === 'arrow')
   };
 
   renderCities(featuresByType.point);
   renderZones(featuresByType.polygon);
   renderArrows(featuresByType.arrow);
 
-  emit('features-loaded', filteredFeatures.value);
+  previousFeatureIds.value = currentIds;
+
+  emit('features-loaded', currentFeatures);
 }
  
 

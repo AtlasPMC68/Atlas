@@ -46,7 +46,6 @@ async function loadInitialFeatures() {
     if (!res.ok) throw new Error("Failed to fetch features");
     
     const allFeatures = await res.json();
-    console.log("we got this for the features my friend", allFeatures);
     features.value = allFeatures;
     
     // Initialiser la visibilité (toutes visibles par défaut)
