@@ -110,8 +110,8 @@ onMounted(() => {
   loadAllLayersForYear(selectedYear.value);
 });
 
-async function fetchCitiesFromDB(year) {
-  const mapId = "11111111-1111-1111-1111-111111111111"; // ← tu peux rendre ça dynamique si besoin
+async function fetchFeaturesAndRender(map, year) {
+  const mapId = "11111111-1111-1111-1111-111111111111";
 
   try {
     const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
@@ -119,16 +119,24 @@ async function fetchCitiesFromDB(year) {
 
     const allFeatures = await res.json();
 
-    // On filtre pour garder uniquement les villes visibles à cette année
-    return allFeatures.filter(f =>
-      f.type === "point" && new Date(f.start_date).getFullYear() <= year
+    // Filtrer par année
+    const features = allFeatures.filter(f =>
+      new Date(f.start_date).getFullYear() <= year
     );
+
+    // Dispatcher selon le type
+    const cities = features.filter(f => f.type === "point");
+    const zones = features.filter(f => f.type === "zone");
+    const arrows = features.filter(f => f.type === "arrow");
+
+    renderCities(map, cities);
+    renderZones(map, zones);
+    renderArrows(map, arrows);
+
   } catch (err) {
     console.warn("Erreur fetch features:", err);
-    return [];
   }
 }
-
 // Returns the closest available year that is less than or equal to the requested year
 function getClosestAvailableYear(year) {
   const sorted = [...availableYears].sort((a, b) => a - b);
@@ -166,16 +174,14 @@ function loadRegionsForYear(year) {
     });
 }
 
-async function renderCities(map, year) {
+function renderCities(map, cities) {
   if (citiesLayer) {
     map.removeLayer(citiesLayer);
   }
 
-  const features = await fetchCitiesFromDB(year);
-
-  const cityGroups = features.map(city => {
+  const cityGroups = cities.map(city => {
     const [lng, lat] = city.geometry.coordinates;
-    const coord = [lat, lng]; // Leaflet = lat/lng
+    const coord = [lat, lng];
 
     const point = L.circleMarker(coord, {
       radius: 6,
@@ -202,26 +208,23 @@ async function renderCities(map, year) {
   citiesLayer = L.layerGroup(cityGroups).addTo(map);
 }
 
-function renderZonesFromMock(year) {
+function renderZones(map, zones) {
   if (zonesLayer) {
     map.removeLayer(zonesLayer);
   }
 
-  const filtered = mockedZonesFromBackend.filter(z => z.year <= year);
-
-  const features = filtered.map(zone => ({
+  const features = zones.map(zone => ({
     type: "Feature",
     geometry: zone.geometry,
     properties: {
       name: zone.name,
-      fillColor: zone.fillColor,
-      year: zone.year
+      fillColor: zone.color || "#ccc",
     }
   }));
 
   zonesLayer = L.geoJSON({ type: "FeatureCollection", features }, {
     style: feature => ({
-      fillColor: feature.properties.fillColor || "#ccc",
+      fillColor: feature.properties.fillColor,
       fillOpacity: 0.5,
       color: "#333",
       weight: 1
@@ -234,27 +237,23 @@ function renderZonesFromMock(year) {
   }).addTo(map);
 }
 
-function renderArrowsFromMock(year) {
+function renderArrows(map, arrows) {
   if (arrowsLayer) {
     map.removeLayer(arrowsLayer);
   }
 
-  const filtered = mockedArrows.filter(arrow => arrow.year <= year);
+  const arrowLines = arrows.map(arrow => {
+    const coords = arrow.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 
-  const arrows = filtered.map(arrow => {
-    const line = L.polyline([
-      [arrow.from.lat, arrow.from.lng],
-      [arrow.to.lat, arrow.to.lng]
-    ], {
+    const line = L.polyline(coords, {
       color: arrow.color || "#000",
-      weight: 2,
-      opacity: 1
-    }).addTo(map); // IMPORTANT: doit être ajouté à la carte avant d’ajouter les flèches
+      weight: arrow.stroke_width ?? 2,
+      opacity: arrow.opacity ?? 1
+    }).addTo(map);
 
-    // Applique les flèches automatiquement
     line.arrowheads({
       size: '10px',
-      frequency: 'endonly', // autres options: 'allvertices', '20px', etc.
+      frequency: 'endonly',
       fill: true
     });
 
@@ -262,7 +261,7 @@ function renderArrowsFromMock(year) {
     return line;
   });
 
-  arrowsLayer = L.layerGroup(arrows).addTo(map);
+  arrowsLayer = L.layerGroup(arrowLines).addTo(map);
 }
 
 function removeGeoJSONLayers() {
@@ -275,14 +274,22 @@ function removeGeoJSONLayers() {
 }
 
 // Loads all necessary layers for the given year
-function loadAllLayersForYear(year) {
-  removeGeoJSONLayers();
-  loadRegionsForYear(year);
-  renderCities(map, year);
-  renderZonesFromMock(year);
-  renderArrowsFromMock(year);
-}
+let isLoading = false;
 
+async function loadAllLayersForYear(year) {
+  if (isLoading) return;
+  isLoading = true;
+
+  try {
+    removeGeoJSONLayers();
+    loadRegionsForYear(year);
+    await fetchFeaturesAndRender(map, year);
+  } catch (e) {
+    console.warn("Error loading layers:", e);
+  } finally {
+    isLoading = false;
+  }
+}
 // Creates a delay between map updates to prevent issues caused by rapid year changes
 function debounce(fn, delay) {
   let timeout;
