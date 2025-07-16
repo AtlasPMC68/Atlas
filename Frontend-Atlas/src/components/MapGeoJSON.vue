@@ -6,11 +6,22 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { onMounted, ref, watch, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil"; // ← requis pour que arrowheads fonctionne
 import "leaflet-arrowheads";   // ← ajoute la méthode `arrowheads` aux polylines
 import TimelineSlider from "../components/TimelineSlider.vue";
+
+// Props reçues de la vue parent
+const props = defineProps({
+  mapId: String,
+  features: Array,
+  featureVisibility: Map,
+  selectedYear: Number
+});
+
+// Émissions vers la vue parent
+const emit = defineEmits(['features-loaded']);
 
 const selectedYear = ref(1740); // initial displayed year
 
