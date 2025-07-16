@@ -23,6 +23,8 @@ const props = defineProps({
 const emit = defineEmits(['features-loaded']);
 
 const selectedYear = ref(1740); // initial displayed year
+const previousFeatureIds = ref(new Set());
+
 
 // List of available years
 const availableYears = [
@@ -58,8 +60,8 @@ onMounted(() => {
       maxZoom: 19,
     }
   ).addTo(map);
-
-  loadRegionsForYear(selectedYear.value);
+  
+  loadRegionsForYear(selectedYear.value, true);
 });
 
 // Gestionnaire de layers par feature
@@ -102,7 +104,7 @@ const filteredFeatures = computed(() => {
   );
 });
 
-async function fetchFeaturesAndRender(map, year) {
+async function fetchFeaturesAndRender(year) {
   const mapId = "11111111-1111-1111-1111-111111111111";
 
   try {
@@ -121,9 +123,9 @@ async function fetchFeaturesAndRender(map, year) {
     const zones = features.filter(f => f.type === "zone");
     const arrows = features.filter(f => f.type === "arrow");
 
-    renderCities(map, cities);
-    renderZones(map, zones);
-    renderArrows(map, arrows);
+    renderCities(cities);
+    renderZones(zones);
+    renderArrows(arrows);
 
   } catch (err) {
     console.warn("Erreur fetch features:", err);
@@ -138,18 +140,34 @@ function getClosestAvailableYear(year) {
   return sorted[0]; // default to the earliest year
 }
 
+let lastCurrentYear;
 // Loads the GeoJSON file named world_(year) and displays its content on the map
-function loadRegionsForYear(year) {
+function loadRegionsForYear(year, isFirstTime = false) {
   const closestYear = getClosestAvailableYear(year);
 
+  if (isFirstTime) {
+    lastCurrentYear = closestYear;
+    console.log("is first time called mounting your mom");
+  } else {
+    if (lastCurrentYear == closestYear) {
+      console.log("returning because same year");
+      return;
+    }
+  }
+  console.log("not returning because not the same year last \ncurrentyear: " + lastCurrentYear + " \nclosest year: " + closestYear);
+  lastCurrentYear = closestYear;
   const filename = `/geojson/world_${closestYear}.geojson`;
 
-  fetch(filename)
-    .then((res) => {
+  return fetch(filename)
+    .then(res => {
       if (!res.ok) throw new Error("File not found: " + filename);
       return res.json();
     })
-    .then((data) => {
+    .then(data => {
+      if (currentRegionsLayer) {
+        map.removeLayer(currentRegionsLayer);
+        currentRegionsLayer = null;
+      }
       currentRegionsLayer = L.geoJSON(data, {
         style: {
           color: "#444",
@@ -161,7 +179,7 @@ function loadRegionsForYear(year) {
         },
       }).addTo(map);
     })
-    .catch((err) => {
+    .catch(err => {
       console.warn(err.message);
     });
 }
@@ -272,7 +290,7 @@ function renderAllFeatures() {
 
   const featuresByType = {
     point: filteredFeatures.value.filter(f => f.type === 'point'),
-    polygon: filteredFeatures.value.filter(f => f.type === 'polygon'),
+    polygon: filteredFeatures.value.filter(f => f.type === 'zone'),
     arrow: filteredFeatures.value.filter(f => f.type === 'arrow')
   };
 
@@ -299,11 +317,8 @@ async function loadAllLayersForYear(year) {
   isLoading = true;
 
   try {
-    removeGeoJSONLayers();         
-    loadRegionsForYear(year);     
-
-    await fetchFeaturesAndRender(map, year); 
-    renderAllFeatures();                     
+    await loadRegionsForYear(year);  // <-- ici on attend le chargement complet
+    renderAllFeatures();
   } catch (e) {
     console.warn("Error loading layers:", e);
   } finally {
@@ -329,11 +344,11 @@ function toArray(maybeArray) {
 // Uses debounce to load GeoJSON layers
 const debouncedUpdate = debounce((year) => {
   loadAllLayersForYear(year);
-}, 2);
+}, 100);
 
 // Watchers
-watch(selectedYear, () => {
-  debouncedUpdate();
+watch(selectedYear, (newYear) => {
+  debouncedUpdate(newYear);
 });
 
 watch(() => props.features, () => {

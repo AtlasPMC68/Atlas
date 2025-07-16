@@ -62,7 +62,7 @@ const emit = defineEmits(['toggle-feature']);
 const featureGroups = computed(() => {
   const groups = [
     { type: 'point', label: 'Villes', features: [] },
-    { type: 'polygon', label: 'Zones', features: [] },
+    { type: 'zone', label: 'Zones', features: [] },
     { type: 'arrow', label: 'Flèches', features: [] }
   ];
   
