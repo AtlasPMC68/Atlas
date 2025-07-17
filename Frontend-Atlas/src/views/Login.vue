@@ -119,10 +119,20 @@ async function handleLogin() {
     const data = await response.json()
     console.log('Connexion réussie:', data)
 
-    // Stockage du token JWT
     localStorage.setItem('access_token', data.access_token)
 
-    // Rediriger l'utilisateur vers l'accueil ou un dashboard
+    const token = localStorage.getItem('access_token')
+
+    const meRes = await fetch('http://localhost:8000/me', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    if (!meRes.ok) {
+      throw new Error("Le token est invalide ou expiré.")
+    }
+
     router.push('/tableau-de-bord')
 
   } catch (err: any) {

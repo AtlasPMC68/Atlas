@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { FunctionalComponent } from 'vue';
 
 interface Props {
   title: string
   description: string
-  icon: any // Accepts a Vue component (Heroicon)
+  icon: FunctionalComponent // Accepts a Vue component (Heroicon)
   color?: 'primary' | 'secondary' | 'accent'
 }
 
