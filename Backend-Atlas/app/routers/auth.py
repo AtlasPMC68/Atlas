@@ -39,4 +39,4 @@ def get_me(user_id: str = Depends(get_current_user), db: Session = Depends(get_d
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"id": user.id, "email": user.email, "created_at": user.created_at}
+    return {"id": user.id, "username": user.username, "email": user.email, "created_at": user.created_at}
