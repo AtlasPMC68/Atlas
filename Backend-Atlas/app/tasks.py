@@ -9,7 +9,7 @@ import tempfile
 from typing import BinaryIO
 from datetime import datetime
 from PIL import Image, ImageEnhance 
-from utils.color_extraction import extract_colors  
+from app.utils.color_extraction import extract_colors
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         )
         time.sleep(2)
 
-        extract_colors(tmp_file_path)
+        color_result = extract_colors(tmp_file_path)
         logger.info(f"[DEBUG] Résultat color_extraction : {color_result}")
 
         # Étape 5: Nettoyage
