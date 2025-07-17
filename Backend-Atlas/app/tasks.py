@@ -1,8 +1,9 @@
 from celery import current_task
 from .celery_app import celery_app
+from .utils import text_extraction
+
 import time
 import logging
-import pytesseract
 from PIL import Image
 import os
 import tempfile
@@ -35,11 +36,13 @@ def process_map_extraction(self, filename: str, file_content: bytes):
     """Tâche pour extraire le texte d'une carte avec TesseractOCR"""
     logger.info(f"Starting map processing for {filename}")
 
+    total_steps = 4
+
     try:
         # Étape 1: Sauvegarde temporaire
         self.update_state(
             state="PROGRESS",
-            meta={"current": 1, "total": 4, "status": "Saving uploaded file"}
+            meta={"current": 1, "total": total_steps, "status": "Saving uploaded file"}
         )
         logger.info("Before sleep")
         time.sleep(2)
@@ -51,34 +54,24 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         # Étape 2: Ouverture et validation de l'image
         self.update_state(
             state="PROGRESS", 
-            meta={"current": 2, "total": 4, "status": "Loading and validating image"}
+            meta={"current": 2, "total": total_steps, "status": "Loading and validating image"}
         )
         time.sleep(2)
-
-        image = Image.open(tmp_file_path)
-        logger.info(f"Image loaded: {image.size}, mode: {image.mode}")
-
-        image = image.convert("L")  # Conversion en niveaux de gris
-
-        enhancer = ImageEnhance.Contrast(image)  # Création d’un enhanceur de contraste
-        image = enhancer.enhance(2.0)  # Augmentation du contraste (2.0 = facteur d’amélioration)
-
-        # Binarisation : pixels < 140 -> noir, >= 140 -> blanc
-        image = image.point(lambda x: 0 if x < 140 else 255, '1')
 
         # Étape 3: Extraction OCR
         self.update_state(
             state="PROGRESS",
-            meta={"current": 3, "total": 4, "status": "Extracting text with TesseractOCR"}
+            meta={"current": 3, "total": total_steps, "status": "Extracting text with EasyOCR"}
         )
         time.sleep(2)
-        custom_config = r'--oem 3 --psm 6'
-        extracted_text = pytesseract.image_to_string(image, config=custom_config)
+
+        # TODO: Passing langages as parameter, taken from frontend
+        extracted_text = text_extraction.read_text_from_image(tmp_file_path, languages=['en', 'de'])
 
         # Étape 4: Nettoyage
         self.update_state(
             state="PROGRESS",
-            meta={"current": 4, "total": 4, "status": "Cleaning up and finalizing"}
+            meta={"current": 4, "total": total_steps, "status": "Cleaning up and finalizing"}
         )
         time.sleep(2)
         os.unlink(tmp_file_path)
@@ -97,6 +90,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         output_path = os.path.join(output_dir, output_filename)
 
         try:
+
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(f"=== EXTRACTION OCR ===\n")
                 f.write(f"Fichier source: {filename}\n")
@@ -104,7 +98,11 @@ def process_map_extraction(self, filename: str, file_content: bytes):
                 f.write(f"Caractères extraits: {len(extracted_text.strip())}\n")
                 f.write(f"Configuration Tesseract: {custom_config}\n")
                 f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
-                f.write(extracted_text.strip())
+                for bbox, text, conf in extracted_text:
+                    f.write(f"Texte: {text}\n")
+                    f.write(f"Position: {bbox}\n")
+                    f.write(f"Confiance: {conf:.2f}\n")
+                    f.write("-" * 40 + "\n")
 
             logger.info(f"Text saved to: {output_path}")
 
