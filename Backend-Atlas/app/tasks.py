@@ -9,8 +9,11 @@ import tempfile
 from typing import BinaryIO
 from datetime import datetime
 from PIL import Image, ImageEnhance 
+from utils.color_extraction import extract_colors  
 
 logger = logging.getLogger(__name__)
+
+nombre_de_taches = 5
 
 @celery_app.task(bind=True)
 def test_task(self, name: str = "World"):
@@ -23,7 +26,7 @@ def test_task(self, name: str = "World"):
         # Mettre à jour le statut
         self.update_state(
             state="PROGRESS",
-            meta={"current": i + 1, "total": 5, "status": f"Processing step {i + 1}"}
+            meta={"current": i + 1, "total": nombre_de_taches , "status": f"Processing step {i + 1}"}
         )
     
     result = f"Hello {name}! Task completed successfully."
@@ -39,7 +42,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         # Étape 1: Sauvegarde temporaire
         self.update_state(
             state="PROGRESS",
-            meta={"current": 1, "total": 4, "status": "Saving uploaded file"}
+            meta={"current": 1, "total": nombre_de_taches , "status": "Saving uploaded file"}
         )
         logger.info("Before sleep")
         time.sleep(2)
@@ -51,7 +54,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         # Étape 2: Ouverture et validation de l'image
         self.update_state(
             state="PROGRESS", 
-            meta={"current": 2, "total": 4, "status": "Loading and validating image"}
+            meta={"current": 2, "total": nombre_de_taches , "status": "Loading and validating image"}
         )
         time.sleep(2)
 
@@ -69,16 +72,26 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         # Étape 3: Extraction OCR
         self.update_state(
             state="PROGRESS",
-            meta={"current": 3, "total": 4, "status": "Extracting text with TesseractOCR"}
+            meta={"current": 3, "total": nombre_de_taches , "status": "Extracting text with TesseractOCR"}
         )
         time.sleep(2)
         custom_config = r'--oem 3 --psm 6'
         extracted_text = pytesseract.image_to_string(image, config=custom_config)
 
-        # Étape 4: Nettoyage
+        # Étape 4: Extraction des couleurs
         self.update_state(
             state="PROGRESS",
-            meta={"current": 4, "total": 4, "status": "Cleaning up and finalizing"}
+            meta={"current": 4, "total": nombre_de_taches , "status": "Extracting colors from image"}
+        )
+        time.sleep(2)
+
+        extract_colors(tmp_file_path)
+        logger.info(f"[DEBUG] Résultat color_extraction : {color_result}")
+
+        # Étape 5: Nettoyage
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": 5, "total": nombre_de_taches , "status": "Cleaning up and finalizing"}
         )
         time.sleep(2)
         os.unlink(tmp_file_path)
