@@ -139,10 +139,7 @@ async def get_maps(
     user_id: str | None = None,
     session: AsyncSession = Depends(get_async_session),
 ):
-    import logging
     from sqlalchemy import select
-
-    logging.info(f"Début get_maps avec user_id={user_id}")
 
     if user_id:
         query = select(Map).where(Map.owner_id == user_id)
@@ -152,5 +149,4 @@ async def get_maps(
     result = await session.execute(query)
     maps = result.scalars().all()
 
-    logging.info(f"Maps récupérées : {len(maps)}")
     return maps

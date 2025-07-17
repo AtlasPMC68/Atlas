@@ -6,8 +6,6 @@ import {
   MagnifyingGlassIcon,
 } from "@heroicons/vue/24/outline";
 
-//TODO: Importer les composants nécessaires
-//ONlY MOCK DATA
 interface Projet {
   id: string;
   titre: string;
@@ -22,15 +20,13 @@ onMounted(() => {
 });
 
 async function fetchMapsAndRender() {
-  const userId = "433a5898-a3de-4e96-b090-c7ff1a162245"; // ID actuel de l’utilisateur (à remplacer dynamiquement)
+  const userId = fetchUserId();
 
   try {
-    const res = await fetch(
-      `http://localhost:8000/maps/map?user_id=${userId}`
-    );
+    const res = await fetch(`http://localhost:8000/maps/map?user_id=${userId}`);
 
     if (!res.ok) {
-      throw new Error(`Erreur HTTP : ${res.status}`);
+      throw new Error(`HTTP error : ${res.status}`);
     }
 
     const data = await res.json();
@@ -44,18 +40,34 @@ async function fetchMapsAndRender() {
       };
     });
   } catch (err) {
-    console.error("Erreur attrapée :", err);
+    console.error("Catched error :", err);
+  }
+}
+
+async function fetchUserId() {
+  try {
+    const res = await fetch(`http://localhost:8000/maps/me`);
+
+    if (!res.ok) {
+      throw new Error(`HTTP error : ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    return data.id;
+  } catch (err) {
+    console.error("Catched error :", err);
   }
 }
 </script>
 
 <template>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Barre de recherche + boutons -->
+    <!-- Search bar + buttons -->
     <div
       class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6"
     >
-      <!-- Champ de recherche + filtre -->
+      <!-- Search field + filter -->
       <div class="flex flex-1 gap-2">
         <div class="relative flex-1">
           <MagnifyingGlassIcon
@@ -75,7 +87,7 @@ async function fetchMapsAndRender() {
         </button>
       </div>
 
-      <!-- Bouton nouveau projet -->
+      <!-- "Nouveau projet" button -->
       <RouterLink
         to="/demo/upload"
         class="btn-primary flex items-center gap-2 self-start md:self-auto"
@@ -85,7 +97,7 @@ async function fetchMapsAndRender() {
       </RouterLink>
     </div>
 
-    <!-- Grille des projets -->
+    <!-- Projects grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
         v-for="projet in projets"
