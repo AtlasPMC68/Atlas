@@ -18,7 +18,6 @@ jobs:
         run: |
           echo "${{ secrets.ENV_DEV }}" > ./Backend-Atlas/.env.dev
       
-
       - name: Set up Docker Compose
         run: |
           docker compose version
