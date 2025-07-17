@@ -84,13 +84,13 @@ router.beforeEach(async (to, from, next) => {
 
     if (res.ok) {
       if (guestOnly.includes(to.path)) {
-        return next('/tableau-de-bord') // Rediriger vers le tableau de bord si l'utilisateur est déjà connecté
+        return next('/tableau-de-bord')
       }
       else{
         next()
       }
     } else {
-      localStorage.removeItem('access_token') // token expiré ou invalide
+      localStorage.removeItem('access_token')
       next('/connexion')
     }
   } catch (err) {
