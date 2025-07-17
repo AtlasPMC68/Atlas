@@ -55,8 +55,12 @@ export const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('access_token')
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
+  const guestOnly = [ '/connexion', '/inscription' ]
 
   if (!requiresAuth) {
+    if (token && (to.path === '/connexion' || to.path === '/inscription')) {
+      return next('/tableau-de-bord')
+    }
     return next()
   }
 
@@ -72,7 +76,12 @@ router.beforeEach(async (to, from, next) => {
     })
 
     if (res.ok) {
-      next()
+      if (guestOnly.includes(to.path)) {
+        return next('/tableau-de-bord') // Rediriger vers le tableau de bord si l'utilisateur est déjà connecté
+      }
+      else{
+        next()
+      }
     } else {
       localStorage.removeItem('access_token') // token expiré ou invalide
       next('/connexion')
