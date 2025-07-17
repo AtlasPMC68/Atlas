@@ -4,6 +4,7 @@ from ..db import get_db
 from ..models.user import User
 from ..schemas.user import UserCreate, UserLogin
 from ..utils.auth import hash_password, verify_password, create_access_token, get_current_user
+from ..services.auth import generate_username
 
 router = APIRouter()
 
@@ -11,15 +12,19 @@ router = APIRouter()
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
+    username = generate_username(db)
+    if not username:
+        raise HTTPException(status_code=500, detail="Could not generate a unique username")
     hashed_pw = hash_password(user.password)
     db_user = User(
         email=user.email,
         password=hashed_pw,
+        username=username
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return {"message": "user created successfully", "user_id": db_user.id}
+    return {"message": "User created successfully", "user_id": db_user.id, "username": db_user.username}
 
 @router.post("/login")
 def login(data: UserLogin, db: Session = Depends(get_db)):
