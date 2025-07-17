@@ -7,6 +7,7 @@ import Signin from '../views/Signin.vue';
 import Dashboard from '../views/Dashboard.vue';
 import Profile from '../views/Profile.vue';
 import Settings from '../views/Settings.vue';
+import Discover from '../views/Discover.vue';
 
 const routes = [
   {
@@ -33,6 +34,11 @@ const routes = [
   {
     path: '/tableau-de-bord',
     component: Dashboard,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projets-publiques',
+    component: Discover,
     meta: { requiresAuth: true }
   },
   {

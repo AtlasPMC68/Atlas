@@ -10,6 +10,8 @@ from app.database.session import get_async_session
 from app.models.features import Feature
 from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
+from app.models.map import Map
+from app.schemas.map import MapOut
 
 router = APIRouter()
 
@@ -131,3 +133,20 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
         return d
 
     return [feature_to_dict(f) for f in features]
+
+@router.get("/map", response_model=list[MapOut])
+async def get_maps(
+    user_id: str | None = None,
+    session: AsyncSession = Depends(get_async_session),
+):
+    from sqlalchemy import select
+
+    if user_id:
+        query = select(Map).where(Map.owner_id == user_id)
+    else:
+        query = select(Map).where(Map.access_level == "public")
+
+    result = await session.execute(query)
+    maps = result.scalars().all()
+
+    return maps
