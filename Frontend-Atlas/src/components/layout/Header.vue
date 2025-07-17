@@ -46,13 +46,15 @@
         <!-- Desktop CTA -->
         <div class="hidden md:flex items-center space-x-4 relative">
           <template v-if="isAuthenticated">
-            <div class="relative group">
-              <button
-                @click="toggleDropdown" 
-                class="flex items-center space-x-0 text-gray-700 hover:text-primary-600 focus:outline-none">
+            <div 
+              class="relative group"
+              @mouseenter="openDropdown"
+              @mouseleave="closeDropdown"
+            >
+              <div class="flex items-center space-x-0 text-gray-700 hover:text-primary-600 cursor-pointer">
                 <UserCircleIcon class="h-10 w-10" />
                 <ChevronDownIcon class="h-5 w-5" />
-              </button>
+              </div>
 
               <!-- Dropdown menu -->
               <div
@@ -62,7 +64,6 @@
                 <RouterLink to="/profil" class="dropdown-item">Mon profil</RouterLink>
                 <RouterLink to="/parametres" class="dropdown-item">Paramètres</RouterLink>
                 <div class="h-0.5 bg-gray-200 my-1"></div>
-                <!--TODO: Ajouter la logique de déconnexion-->
                 <button 
                   @click="logout"
                   class="dropdown-item text-red-600 hover:text-red-800 text-left">
@@ -73,16 +74,8 @@
           </template>
 
           <template v-else>
-            <RouterLink 
-              to="/connexion"
-              class="btn-secondary text-sm">
-              Connexion
-            </RouterLink>
-            <RouterLink 
-              to="/inscription"
-              class="btn-primary text-sm">
-              S'inscrire
-            </RouterLink>
+            <RouterLink to="/connexion" class="btn-secondary text-sm">Connexion</RouterLink>
+            <RouterLink to="/inscription" class="btn-primary text-sm">S'inscrire</RouterLink>
           </template>
         </div>
     </div>
@@ -98,8 +91,20 @@ import { useRouter } from 'vue-router'
 const isDropdownOpen = ref(false)
 const router = useRouter()
 
-const toggleDropdown = () => {
-  isDropdownOpen.value = !isDropdownOpen.value
+let closeTimeout: ReturnType<typeof setTimeout> | null = null
+
+const openDropdown = () => {
+  if (closeTimeout) {
+    clearTimeout(closeTimeout)
+    closeTimeout = null
+  }
+  isDropdownOpen.value = true
+}
+
+const closeDropdown = () => {
+  closeTimeout = setTimeout(() => {
+    isDropdownOpen.value = false
+  }, 100) 
 }
 
 const isAuthenticated = computed(() => {

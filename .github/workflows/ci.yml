@@ -14,6 +14,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Create .env.dev file from secret
+        run: |
+          echo "${{ secrets.ENV_DEV }}" > ./Backend-Atlas/.env.dev
+      
       - name: Set up Docker Compose
         run: |
           docker compose version
