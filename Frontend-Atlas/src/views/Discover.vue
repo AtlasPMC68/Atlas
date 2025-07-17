@@ -22,12 +22,8 @@ onMounted(() => {
 });
 
 async function fetchMapsAndRender() {
-  const userId = "433a5898-a3de-4e96-b090-c7ff1a162245"; // ID actuel de l’utilisateur (à remplacer dynamiquement)
-
   try {
-    const res = await fetch(
-      `http://localhost:8000/maps/map?user_id=${userId}`
-    );
+    const res = await fetch(`http://localhost:8000/maps/map`);
 
     if (!res.ok) {
       throw new Error(`Erreur HTTP : ${res.status}`);
@@ -43,6 +39,7 @@ async function fetchMapsAndRender() {
         image: "/images/default.jpg",
       };
     });
+
   } catch (err) {
     console.error("Erreur attrapée :", err);
   }

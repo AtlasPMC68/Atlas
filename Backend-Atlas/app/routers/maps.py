@@ -134,12 +134,23 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
 
     return [feature_to_dict(f) for f in features]
 
-@router.get("/map/{user_id}", response_model=list[MapOut])
-async def get_maps_by_user(user_id: str, session: AsyncSession = Depends(get_async_session)):
+@router.get("/map", response_model=list[MapOut])
+async def get_maps(
+    user_id: str | None = None,
+    session: AsyncSession = Depends(get_async_session),
+):
     import logging
-    logging.info(f"Début get_maps_by_user pour user_id={user_id}")
-    result = await session.execute(select(Map).where(Map.owner_id == user_id))
-    logging.info("Requête SQL exécutée")
+    from sqlalchemy import select
+
+    logging.info(f"Début get_maps avec user_id={user_id}")
+
+    if user_id:
+        query = select(Map).where(Map.owner_id == user_id)
+    else:
+        query = select(Map).where(Map.access_level == "public")
+
+    result = await session.execute(query)
     maps = result.scalars().all()
+
     logging.info(f"Maps récupérées : {len(maps)}")
     return maps
