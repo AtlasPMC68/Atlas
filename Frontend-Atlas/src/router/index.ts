@@ -94,7 +94,7 @@ router.beforeEach(async (to, from, next) => {
       next('/connexion')
     }
   } catch (err) {
-    console.error('Erreur de vérification du token:', err)
+    console.error('Token verification failed:', err)
     localStorage.removeItem('access_token')
     next('/connexion')
   }

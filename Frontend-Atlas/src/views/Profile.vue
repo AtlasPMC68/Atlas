@@ -17,7 +17,7 @@ onMounted(async () => {
         Authorization: `Bearer ${token}`,
       },
     })
-    if (!res.ok) throw new Error('Erreur lors du chargement du profil')
+    if (!res.ok) throw new Error('Error fetching user data')
     const data = await res.json()
     user.value.email = data.email
     user.value.createdAt = data.created_at
@@ -41,14 +41,6 @@ onMounted(async () => {
             <h2 class="text-2xl font-bold text-gray-900">Profil</h2>
             <p class="text-sm text-gray-500">{{ user.email }}</p>
           </div>
-
-          <button
-            class="btn-secondary flex items-center gap-2 text-sm"
-            @click="console.log('Change password')"
-          >
-            <KeyIcon class="h-5 w-5" />
-            Changer le mot de passe
-          </button>
         </div>
 
         <p class="mt-4 text-sm text-gray-400">
