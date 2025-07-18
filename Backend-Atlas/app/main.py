@@ -9,9 +9,7 @@ app = FastAPI(
     description="API pour traitement et analyse de cartes historiques",
     version="0.1.0"
 )
-app.include_router(celery_router.router)
-app.include_router(maps.router)
-app.include_router(auth.router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
@@ -19,6 +17,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(celery_router.router)
+app.include_router(maps.router)
+app.include_router(auth.router)
 
 @app.get("/")
 def read_root():
