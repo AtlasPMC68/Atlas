@@ -10,20 +10,22 @@
 
     <div
       v-if="isOpen"
-      class="absolute left-0 z-10 mt-2 w-40 origin-top-left rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+      class="absolute left-0 z-10 mt-2 w-44 origin-top-left rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
     >
       <div class="py-1">
         <button
           @click="onSave"
-          class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+          class="flex items-center w-full gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
         >
-          💾 Enregistrer
+          <ArrowDownTrayIcon class="w-5 h-5" />
+          Enregistrer
         </button>
         <button
           @click="onSaveAs"
-          class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+          class="flex items-center w-full gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
         >
-          📝 Enregistrer Sous...
+          <ArchiveBoxArrowDownIcon class="w-5 h-5" />
+          Enregistrer Sous...
         </button>
       </div>
     </div>
@@ -32,7 +34,7 @@
 
 <script setup>
 import { ref } from "vue";
-import { Bars3Icon } from "@heroicons/vue/24/outline";
+import { Bars3Icon, ArrowDownTrayIcon, ArchiveBoxArrowDownIcon } from '@heroicons/vue/24/outline'
 
 const isOpen = ref(false);
 

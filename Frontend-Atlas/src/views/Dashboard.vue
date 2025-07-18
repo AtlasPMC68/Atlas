@@ -23,7 +23,7 @@ async function fetchMapsAndRender() {
   const token = localStorage.getItem("access_token");
 
   if (!token) {
-    console.error("Aucun token trouvé dans le localStorage.");
+    console.error("No token found in the localStorage.");
     return;
   }
 
@@ -39,12 +39,12 @@ async function fetchMapsAndRender() {
     });
 
     if (!res.ok) {
-      throw new Error(`Erreur lors de la récupération de l'utilisateur : ${res.status}`);
+      throw new Error(`Error while getting the user : ${res.status}`);
     }
 
     userData = await res.json();
   } catch (err) {
-    console.error("Erreur lors du fetch /me :", err);
+    console.error("Error while fetching /me :", err);
     return;
   }
 
@@ -60,7 +60,7 @@ async function fetchMapsAndRender() {
     });
 
     if (!res.ok) {
-      throw new Error(`Erreur lors de la récupération des cartes : ${res.status}`);
+      throw new Error(`Error while fetching the maps : ${res.status}`);
     }
 
     const mapsData = await res.json();
@@ -73,7 +73,7 @@ async function fetchMapsAndRender() {
     }));
 
   } catch (err) {
-    console.error("Erreur lors du fetch des cartes :", err);
+    console.error("Eroor while fetching the maps :", err);
   }
 }
 </script>

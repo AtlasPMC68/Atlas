@@ -30,7 +30,7 @@
       </div>
     </div>
 
-    <!-- Modal de sauvegarde -->
+    <!-- Save modal -->
     <SaveAsModal
       v-if="showSaveAsModal"
       @save="handleSaveAs"
@@ -55,7 +55,6 @@ const router = useRouter();
 
 const showSaveAsModal = ref(false);
 
-// Optionnel : garder les champs en mémoire
 const title = ref("");
 const description = ref("");
 const access_level = ref("");
@@ -110,7 +109,7 @@ async function handleSaveAs(data) {
   const token = localStorage.getItem("access_token");
 
   if (!token) {
-    console.error("Aucun token trouvé dans le localStorage.");
+    console.error("No token found in the localStorage.");
     return;
   }
 
@@ -127,21 +126,17 @@ async function handleSaveAs(data) {
 
     if (!res.ok) {
       throw new Error(
-        `Erreur lors de la récupération de l'utilisateur : ${res.status}`
+        `Error while getting the user : ${res.status}`
       );
     }
 
     userData = await res.json();
   } catch (err) {
-    console.error("Erreur lors du fetch /me :", err);
+    console.error("Error while fetching user :", err);
     return;
   }
 
   const userId = userData.id;
-
-  console.log(`Title : ${title.value}`);
-  console.log(`description : ${description.value}`);
-  console.log(`access_level : ${access_level.value}`);
 
   try {
     const response = await fetch("http://localhost:8000/maps/save", {
@@ -161,15 +156,15 @@ async function handleSaveAs(data) {
     if (!response.ok) {
       const result = await response.json();
       throw new Error(
-        result.detail || "Erreur lors de l'enregistrement de la carte."
+        result.detail || "Error while loading the maps."
       );
     }
 
     const result = await response.json();
-    console.log("Carte enregistrée avec succès:", result);
+    console.log("Map saved successfuly:", result);
   } catch (err) {
     error.value =
-      err instanceof Error ? err.message : "Une erreur inconnue est survenue.";
+      err instanceof Error ? err.message : "Unknown error.";
   }
 
   showSaveAsModal.value = false;

@@ -3,7 +3,7 @@
     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
   >
     <div class="bg-white rounded-xl shadow-lg p-6 w-full max-w-md">
-      <h2 class="text-xl font-bold mb-4">Sauvegarder sous...</h2>
+      <h2 class="text-xl font-bold mb-4">Enregistrer sous...</h2>
 
       <form @submit.prevent="handleSubmit">
         <div class="mb-4">
