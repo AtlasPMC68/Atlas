@@ -46,7 +46,7 @@ async function fetchMapsAndRender() {
 
 async function fetchUserId() {
   try {
-    const res = await fetch(`http://localhost:8000/maps/me`);
+    const res = await fetch(`http://localhost:8000/auth/me`);
 
     if (!res.ok) {
       throw new Error(`HTTP error : ${res.status}`);
