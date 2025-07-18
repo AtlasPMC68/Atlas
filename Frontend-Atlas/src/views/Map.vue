@@ -29,6 +29,8 @@
         />
       </div>
     </div>
+
+    <!-- Modal de sauvegarde -->
     <SaveAsModal
       v-if="showSaveAsModal"
       @save="handleSaveAs"
@@ -50,11 +52,13 @@ const features = ref([]);
 const featureVisibility = ref(new Map());
 const error = ref("");
 const router = useRouter();
+
+const showSaveAsModal = ref(false);
+
+// Optionnel : garder les champs en mémoire
 const title = ref("");
 const description = ref("");
 const access_level = ref("");
-
-const showSaveAsModal = ref(false);
 
 async function loadInitialFeatures() {
   try {
@@ -98,20 +102,53 @@ function saveCarteAs() {
   showSaveAsModal.value = true;
 }
 
-function handleSaveAs() {
-  console.log("Save as data :");
-  saveMap();
-  showSaveAsModal.value = false;
-}
+async function handleSaveAs(data) {
+  title.value = data.title;
+  description.value = data.description;
+  access_level.value = data.access_level;
 
-async function saveMap() {
-  const userId = fetchUserId();
+  const token = localStorage.getItem("access_token");
+
+  if (!token) {
+    console.error("Aucun token trouvé dans le localStorage.");
+    return;
+  }
+
+  let userData;
+
+  try {
+    const res = await fetch(`http://localhost:8000/me`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Erreur lors de la récupération de l'utilisateur : ${res.status}`
+      );
+    }
+
+    userData = await res.json();
+  } catch (err) {
+    console.error("Erreur lors du fetch /me :", err);
+    return;
+  }
+
+  const userId = userData.id;
+
+  console.log(`Title : ${title.value}`);
+  console.log(`description : ${description.value}`);
+  console.log(`access_level : ${access_level.value}`);
 
   try {
     const response = await fetch("http://localhost:8000/maps/save", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         owner_id: userId,
@@ -131,27 +168,10 @@ async function saveMap() {
     const result = await response.json();
     console.log("Carte enregistrée avec succès:", result);
   } catch (err) {
-    if (err instanceof Error) {
-      error.value = err.message;
-    } else {
-      error.value = "Une erreur inconnue est survenue.";
-    }
+    error.value =
+      err instanceof Error ? err.message : "Une erreur inconnue est survenue.";
   }
-}
 
-async function fetchUserId() {
-  try {
-    const res = await fetch(`http://localhost:8000/auth/me`);
-
-    if (!res.ok) {
-      throw new Error(`HTTP error : ${res.status}`);
-    }
-
-    const data = await res.json();
-
-    return data.id;
-  } catch (err) {
-    console.error("Catched error :", err);
-  }
+  showSaveAsModal.value = false;
 }
 </script>

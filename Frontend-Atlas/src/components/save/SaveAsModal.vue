@@ -7,9 +7,9 @@
 
       <form @submit.prevent="handleSubmit">
         <div class="mb-4">
-          <label for="title" class="block font-medium mb-1"
-            >Titre <span class="text-red-500">*</span></label
-          >
+          <label for="title" class="block font-medium mb-1">
+            Titre <span class="text-red-500">*</span>
+          </label>
           <input
             id="title"
             type="text"
@@ -21,9 +21,9 @@
         </div>
 
         <div class="mb-4">
-          <label for="description" class="block font-medium mb-1"
-            >Description (optionnel)</label
-          >
+          <label for="description" class="block font-medium mb-1">
+            Description (optionnel)
+          </label>
           <textarea
             id="description"
             v-model="description"
@@ -35,20 +35,22 @@
 
         <div class="mb-4">
           <span class="block font-medium mb-1">Visibilité</span>
-          <label class="inline-flex items-center mr-6">
+          <label class="inline-flex items-center mr-6" for="access_level_public">
             <input
+              id="access_level_public"
               type="radio"
               value="public"
-              v-model="visibility"
+              v-model="access_level"
               class="radio mr-2"
             />
             Publique
           </label>
-          <label class="inline-flex items-center">
+          <label class="inline-flex items-center" for="access_level_private">
             <input
+              id="access_level_private"
               type="radio"
               value="private"
-              v-model="visibility"
+              v-model="access_level"
               class="radio mr-2"
             />
             Privée
@@ -71,16 +73,17 @@ import { ref } from "vue";
 
 const title = ref("");
 const description = ref("");
-const visibility = ref("private");
+const access_level = ref("private");
 
 const emit = defineEmits(["save", "cancel"]);
 
 function handleSubmit() {
   if (!title.value.trim()) return;
+
   emit("save", {
     title: title.value.trim(),
     description: description.value.trim(),
-    visibility: visibility.value,
+    access_level: access_level.value,
   });
 }
 </script>
