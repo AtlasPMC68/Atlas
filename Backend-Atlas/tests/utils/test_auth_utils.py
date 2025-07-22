@@ -1,9 +1,10 @@
+import os
 from app.utils.auth import hash_password, verify_password, create_access_token
 from jose import jwt
 from datetime import datetime, timezone
 
-SECRET_KEY = "ton_secret_ultra_secret"
-ALGORITHM = "HS256"
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
 
 def test_hash_password_and_verify():
     password = "securepassword123"
