@@ -1,10 +1,12 @@
 
 <template>
-  <Header v-if="!noHeaderRoutes.includes(route.path)" />
-  <main>
-    <router-view />
-  </main>
-  <Footer v-if="!noFooterRoutes.includes(route.path)" />
+  <div class="min-h-screen flex flex-col">
+    <Header v-if="!noHeaderRoutes.includes(route.path)" />
+    <main class="flex-1">
+      <router-view />
+    </main>
+    <Footer v-if="!noFooterRoutes.includes(route.path)" />
+  </div>
 </template>
 
 <script setup lang="ts">

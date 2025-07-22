@@ -20,13 +20,11 @@ onMounted(() => {
 });
 
 async function fetchMapsAndRender() {
-  const userId = fetchUserId();
-
   try {
-    const res = await fetch(`http://localhost:8000/maps/map?user_id=${userId}`);
+    const res = await fetch(`http://localhost:8000/maps/map`);
 
     if (!res.ok) {
-      throw new Error(`HTTP error : ${res.status}`);
+      throw new Error(`Erreur HTTP : ${res.status}`);
     }
 
     const data = await res.json();
@@ -40,23 +38,7 @@ async function fetchMapsAndRender() {
       };
     });
   } catch (err) {
-    console.error("Catched error :", err);
-  }
-}
-
-async function fetchUserId() {
-  try {
-    const res = await fetch(`http://localhost:8000/maps/me`);
-
-    if (!res.ok) {
-      throw new Error(`HTTP error : ${res.status}`);
-    }
-
-    const data = await res.json();
-
-    return data.id;
-  } catch (err) {
-    console.error("Catched error :", err);
+    console.error("Erreur attrapée :", err);
   }
 }
 </script>

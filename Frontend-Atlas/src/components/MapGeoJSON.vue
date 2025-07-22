@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="relative h-full w-full z-0">
     <div id="map" style="height: 80vh; width: 100%"></div>
     <TimelineSlider v-model:year="selectedYear" />
   </div>
