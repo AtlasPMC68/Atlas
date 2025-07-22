@@ -29,11 +29,11 @@ describe('router auth guard integration', () => {
     expect(router.currentRoute.value.fullPath).toBe('/connexion')
   })
 
-  it('allows access if authenticated', async () => {
+  it('does not allows access if access_token is wrong', async () => {
     localStorage.setItem('access_token', 'token123')
 
     await router.push('/demo/upload')
-    expect(router.currentRoute.value.fullPath).toBe('/demo/upload')
+    expect(router.currentRoute.value.fullPath).toBe('/connexion')
   })
 
   it('allows access to unprotected route', async () => {
