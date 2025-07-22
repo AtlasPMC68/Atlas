@@ -73,7 +73,7 @@ async function fetchMapsAndRender() {
     }));
 
   } catch (err) {
-    console.error("Eroor while fetching the maps :", err);
+    console.error("Error while fetching the maps :", err);
   }
 }
 </script>
