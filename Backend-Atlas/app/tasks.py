@@ -9,21 +9,22 @@ import tempfile
 from typing import BinaryIO
 from datetime import datetime
 from PIL import Image, ImageEnhance 
+from app.utils.color_extraction import extract_colors
 
 logger = logging.getLogger(__name__)
 
+nb_task = 5
+
 @celery_app.task(bind=True)
 def test_task(self, name: str = "World"):
-    """Tâche de test simple"""
+    """simple test task"""
     logger.info(f"Starting test task for {name}")
     
-    # Simuler du travail
     for i in range(5):
         time.sleep(1)
-        # Mettre à jour le statut
         self.update_state(
             state="PROGRESS",
-            meta={"current": i + 1, "total": 5, "status": f"Processing step {i + 1}"}
+            meta={"current": i + 1, "total": nb_task , "status": f"Processing step {i + 1}"}
         )
     
     result = f"Hello {name}! Task completed successfully."
@@ -32,14 +33,14 @@ def test_task(self, name: str = "World"):
 
 @celery_app.task(bind=True)
 def process_map_extraction(self, filename: str, file_content: bytes):
-    """Tâche pour extraire le texte d'une carte avec TesseractOCR"""
+    """Text extraction with TesseractOCR"""
     logger.info(f"Starting map processing for {filename}")
 
     try:
-        # Étape 1: Sauvegarde temporaire
+        # Step 1: temp save
         self.update_state(
             state="PROGRESS",
-            meta={"current": 1, "total": 4, "status": "Saving uploaded file"}
+            meta={"current": 1, "total": nb_task , "status": "Saving uploaded file"}
         )
         logger.info("Before sleep")
         time.sleep(2)
@@ -48,37 +49,47 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
 
-        # Étape 2: Ouverture et validation de l'image
+        # Step 2: opening the picture
         self.update_state(
             state="PROGRESS", 
-            meta={"current": 2, "total": 4, "status": "Loading and validating image"}
+            meta={"current": 2, "total": nb_task , "status": "Loading and validating image"}
         )
         time.sleep(2)
 
         image = Image.open(tmp_file_path)
         logger.info(f"Image loaded: {image.size}, mode: {image.mode}")
 
-        image = image.convert("L")  # Conversion en niveaux de gris
+        image = image.convert("L")  # Convert in grey tone
 
-        enhancer = ImageEnhance.Contrast(image)  # Création d’un enhanceur de contraste
-        image = enhancer.enhance(2.0)  # Augmentation du contraste (2.0 = facteur d’amélioration)
+        enhancer = ImageEnhance.Contrast(image)  
+        image = enhancer.enhance(2.0)
 
-        # Binarisation : pixels < 140 -> noir, >= 140 -> blanc
+        # pixels < 140 -> black, >= 140 -> white
         image = image.point(lambda x: 0 if x < 140 else 255, '1')
 
-        # Étape 3: Extraction OCR
+        # Step 3: Extraction OCR
         self.update_state(
             state="PROGRESS",
-            meta={"current": 3, "total": 4, "status": "Extracting text with TesseractOCR"}
+            meta={"current": 3, "total": nb_task , "status": "Extracting text with TesseractOCR"}
         )
         time.sleep(2)
         custom_config = r'--oem 3 --psm 6'
         extracted_text = pytesseract.image_to_string(image, config=custom_config)
 
-        # Étape 4: Nettoyage
+        # Step 4: Color Extraction
         self.update_state(
             state="PROGRESS",
-            meta={"current": 4, "total": 4, "status": "Cleaning up and finalizing"}
+            meta={"current": 4, "total": nb_task , "status": "Extracting colors from image"}
+        )
+        time.sleep(2)
+
+        color_result = extract_colors(tmp_file_path)
+        logger.info(f"[DEBUG] Résultat color_extraction : {color_result}")
+
+        # Step 5: Cleanning
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": 5, "total": nb_task , "status": "Cleaning up and finalizing"}
         )
         time.sleep(2)
         os.unlink(tmp_file_path)
@@ -98,11 +109,11 @@ def process_map_extraction(self, filename: str, file_content: bytes):
 
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== EXTRACTION OCR ===\n")
-                f.write(f"Fichier source: {filename}\n")
+                f.write(f"=== OCR EXTRACTION  ===\n")
+                f.write(f"Source File: {filename}\n")
                 f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Caractères extraits: {len(extracted_text.strip())}\n")
-                f.write(f"Configuration Tesseract: {custom_config}\n")
+                f.write(f"Character extract: {len(extracted_text.strip())}\n")
+                f.write(f"Tesseract Configuration: {custom_config}\n")
                 f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
                 f.write(extracted_text.strip())
 
