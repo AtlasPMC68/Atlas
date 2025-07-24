@@ -28,15 +28,15 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
     pixels = list(quantized.getdata())
 
     for color_index, rgb in enumerate(palette_rgb[:quantized.getcolors().__len__()]):
-        mask = Image.new("1", (width, height))  # 1-bit image (noir/blanc)
+        mask = Image.new("1", (width, height))  # 1-bit image (black/white)
         mask_pixels = mask.load()
 
         for y in range(height):
             for x in range(width):
                 if quantized.getpixel((x, y)) == color_index:
-                    mask_pixels[x, y] = 1  # blanc
+                    mask_pixels[x, y] = 1  # white
                 else:
-                    mask_pixels[x, y] = 0  # noir
+                    mask_pixels[x, y] = 0  # black
 
         color_name = get_nearest_color_name(rgb)
         mask_path = os.path.join(image_output_dir, f"{color_name}.png")

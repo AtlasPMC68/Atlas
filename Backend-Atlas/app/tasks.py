@@ -112,7 +112,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
                 f.write(f"=== OCR EXTRACTION  ===\n")
                 f.write(f"Source File: {filename}\n")
                 f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Caracter extract: {len(extracted_text.strip())}\n")
+                f.write(f"Character extract: {len(extracted_text.strip())}\n")
                 f.write(f"Tesseract Configuration: {custom_config}\n")
                 f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
                 f.write(extracted_text.strip())
