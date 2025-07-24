@@ -8,17 +8,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
 
 def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_colors: int = 6):
-    # Charger l'image dans un format uniforme
+    # Load the image and convert to standard RGB format
     image = Image.open(image_path).convert("RGB")
 
-    # Réduire le nombre de couleurs
+    # Reduce the number of colors to extract dominant zones ***Needs test***
     quantized = image.quantize(colors=nb_colors, method=2)
 
-    # Convertir en palette RGB pour accès
+    # Extract the color palette from the quantized image
     palette = quantized.getpalette()
     palette_rgb = [tuple(palette[i:i+3]) for i in range(0, len(palette), 3)]
 
-    # Taille conservée
     width, height = image.size
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
