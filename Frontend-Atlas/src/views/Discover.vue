@@ -24,7 +24,7 @@ async function fetchMapsAndRender() {
     const res = await fetch(`http://localhost:8000/maps/map`);
 
     if (!res.ok) {
-      throw new Error(`Erreur HTTP : ${res.status}`);
+      throw new Error(`HTTP error : ${res.status}`);
     }
 
     const data = await res.json();
@@ -38,7 +38,7 @@ async function fetchMapsAndRender() {
       };
     });
   } catch (err) {
-    console.error("Erreur attrapée :", err);
+    console.error("Catched error :", err);
   }
 }
 </script>

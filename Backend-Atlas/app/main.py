@@ -21,6 +21,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(celery_router.router)
+app.include_router(maps.router)
+app.include_router(auth.router)
 
 @app.get("/")
 def read_root():

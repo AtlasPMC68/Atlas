@@ -20,43 +20,60 @@ onMounted(() => {
 });
 
 async function fetchMapsAndRender() {
-  const userId = fetchUserId();
+  const token = localStorage.getItem("access_token");
 
-  try {
-    const res = await fetch(`http://localhost:8000/maps/map?user_id=${userId}`);
-
-    if (!res.ok) {
-      throw new Error(`HTTP error : ${res.status}`);
-    }
-
-    const data = await res.json();
-
-    projets.value = data.map((item: any) => {
-      return {
-        id: item.id,
-        titre: item.title,
-        auteur: item.owner_id,
-        image: "/images/default.jpg",
-      };
-    });
-  } catch (err) {
-    console.error("Catched error :", err);
+  if (!token) {
+    console.error("No token found in the localStorage.");
+    return;
   }
-}
 
-async function fetchUserId() {
+  let userData;
+
   try {
-    const res = await fetch(`http://localhost:8000/maps/me`);
+    const res = await fetch(`http://localhost:8000/me`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+    });
 
     if (!res.ok) {
-      throw new Error(`HTTP error : ${res.status}`);
+      throw new Error(`Error while getting the user : ${res.status}`);
     }
 
-    const data = await res.json();
-
-    return data.id;
+    userData = await res.json();
   } catch (err) {
-    console.error("Catched error :", err);
+    console.error("Error while fetching /me :", err);
+    return;
+  }
+
+  const userId = userData.id;
+
+  try {
+    const res = await fetch(`http://localhost:8000/maps/map?user_id=${userId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Error while fetching the maps : ${res.status}`);
+    }
+
+    const mapsData = await res.json();
+
+    projets.value = mapsData.map((item: any) => ({
+      id: item.id,
+      titre: item.title,
+      auteur: item.owner_id,
+      image: "/images/default.jpg",
+    }));
+
+  } catch (err) {
+    console.error("Error while fetching the maps :", err);
   }
 }
 </script>

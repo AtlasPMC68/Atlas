@@ -12,6 +12,11 @@ from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
 from app.models.map import Map
 from app.schemas.map import MapOut
+from uuid import UUID
+from datetime import date
+from sqlalchemy.orm import Session
+from ..db import get_db
+from app.schemas.mapCreateRequest import MapCreateRequest
 
 router = APIRouter()
 
@@ -150,3 +155,25 @@ async def get_maps(
     maps = result.scalars().all()
 
     return maps
+
+@router.post("/save")
+async def create_map(
+    request: MapCreateRequest,
+    db: Session = Depends(get_db)
+):
+    new_map = Map(
+        owner_id=request.owner_id,
+        base_layer_id=UUID("00000000-0000-0000-0000-000000000100"),
+        title=request.title,
+        description=request.description,
+        access_level=request.access_level,
+        start_date=date(1400, 1, 1),
+        end_date=date.today(),
+        style_id="light",
+        parent_map_id=None,
+        precision=None
+    )
+    db.add(new_map)
+    db.commit()
+    db.refresh(new_map)
+    return {"id": new_map.id}
