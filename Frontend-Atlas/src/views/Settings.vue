@@ -1,18 +1,54 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 
-const name = ref('Alexis Guerard')
-const email = ref('alexis@example.com')
-const language = ref('fr')
-const notificationsEnabled = ref(true)
+const username = ref('')
+const email = ref('')
+const token = localStorage.getItem('access_token')
+const errorMessage = ref('')
+const router = useRouter()
 
-const saveSettings = () => {
-  console.log('Saving settings:', {
-    name: name.value,
-    email: email.value,
-    language: language.value,
-    notifications: notificationsEnabled.value,
-  })
+onMounted(async () => {
+  if (!token) return
+  try {
+    const res = await fetch('http://localhost:8000/me', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    if (!res.ok) throw new Error('Erreur chargement du profil')
+    const data = await res.json()
+    username.value = data.username
+    email.value = data.email
+  } catch (err) {
+    console.error(err)
+  }
+})
+
+const saveSettings = async () => {
+errorMessage.value = ''
+
+  try {
+    const res = await fetch('http://localhost:8000/user/update-user', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ username: username.value }),
+    })
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      errorMessage.value = data.detail || 'Erreur lors de la mise à jour'
+      return
+    }
+    router.push('/profil')
+  } catch (err) {
+    console.error(err)
+    errorMessage.value = 'Erreur lors de la communication avec le serveur.'
+  }
 }
 </script>
 
@@ -21,45 +57,37 @@ const saveSettings = () => {
     <h1 class="text-2xl font-bold text-gray-900 mb-6">Paramètres</h1>
 
     <div class="bg-white shadow rounded-lg p-6 space-y-6">
-
-      <!-- Nom -->
+      
+      <!-- Username -->
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Nom complet</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Nom d’utilisateur</label>
         <input
           type="text"
-          v-model="name"
+          v-model="username"
           class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
       </div>
 
-      <!-- Courriel -->
+      <!-- Email (readonly) -->
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Adresse courriel</label>
         <input
           type="email"
-          v-model="email"
-          class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          :value="email"
+          disabled
+          class="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-100 text-gray-500"
         />
       </div>
 
-      <!-- Langue -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Langue préférée</label>
-        <select
-          v-model="language"
-          class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-        >
-          <option value="fr">Français</option>
-          <option value="en">Anglais</option>
-        </select>
-      </div>
-
-      <!-- Bouton enregistrer -->
+      <!-- Save -->
       <div class="pt-4">
         <button @click="saveSettings" class="btn-primary">
           Enregistrer les modifications
         </button>
       </div>
+      <p v-if="errorMessage" class="text-sm text-red-600 mt-2">
+        {{ errorMessage }}
+      </p>
     </div>
   </div>
 </template>

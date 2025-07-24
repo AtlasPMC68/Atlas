@@ -1,10 +1,11 @@
 -- Exemple d'utilisateur (owner)
 INSERT INTO users (
-  id, email, password
+  id, username, email, password
 ) VALUES (
   '00000000-0000-0000-0000-000000000001',
-  'admin@example.com',
-  'hashed_or_plaintext_password_here'
+  'AtlasAdmin',
+  'admin@atlas.ca',
+  '$2b$12$ExZzCfrn8.YJ4b0dOx4Y1OGx8Uyi15oigTeViTJ612kuYVjh.ljh.'
 );
 
 -- Exemple de base_layer
