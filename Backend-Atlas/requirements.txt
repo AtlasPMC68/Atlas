@@ -3,7 +3,7 @@ uvicorn[standard]==0.24.0
 pytest==7.4.3
 httpx==0.25.2
 python-dotenv==1.0.0
-psycopg2-binary==2.9.6
+psycopg[binary]==3.3.2
 celery[redis]==5.3.4
 redis==4.6.0
 flower==2.0.1
@@ -14,11 +14,11 @@ sqlalchemy
 asyncpg
 geoalchemy2
 numpy<2
-shapely==2.0.1
+shapely==2.1.2
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 pytest-asyncio==0.21.0
 bcrypt==4.0.0
-pydantic==1.10.12
+pydantic==2.12.5
 email-validator
 matplotlib

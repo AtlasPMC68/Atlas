@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv(".env")
+load_dotenv(dotenv_path=".env.dev")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 

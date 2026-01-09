@@ -1,5 +1,5 @@
 # Use a lightweight official Python image
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     libpq-dev \
+    libgeos-dev \
     && rm -rf /var/lib/apt/lists/*
 
 #Install Tesseract
