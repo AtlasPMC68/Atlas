@@ -6,14 +6,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv(".env")
+load_dotenv(dotenv_path=".env.dev")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Convert DATABASE_URL to use asyncpg
-# e.g. postgresql:// → postgresql+asyncpg://
-if DATABASE_URL.startswith("postgresql://"): #pipi
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 

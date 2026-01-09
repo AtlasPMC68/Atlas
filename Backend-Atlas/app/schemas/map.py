@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 from typing import Optional
 from uuid import UUID
@@ -17,5 +17,4 @@ class MapOut(BaseModel):
     precision: Optional[str]
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

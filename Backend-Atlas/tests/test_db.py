@@ -13,7 +13,7 @@ def test_get_db_connection_uses_env_variable():
     DATABASE_URL = os.getenv("DATABASE_URL")
     assert DATABASE_URL is not None, "DATABASE_URL must not be None"
 
-    with patch("app.db.psycopg2.connect") as mock_connect:
+    with patch("app.db.psycopg.connect") as mock_connect:
         mock_conn = MagicMock()
         mock_connect.return_value = mock_conn
 
