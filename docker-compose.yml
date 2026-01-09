@@ -88,7 +88,6 @@ services:
   test-backend:
     build:
       context: ./Backend-Atlas
-      no-cache: true
     command: pytest tests/
     depends_on:
       - backend
