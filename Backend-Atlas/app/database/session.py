@@ -12,8 +12,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Convert DATABASE_URL to use asyncpg
 # e.g. postgresql:// → postgresql+asyncpg://
-if DATABASE_URL.startswith("postgresql://"): #pipi
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+if DATABASE_URL:
+    if "://" in DATABASE_URL:
+        payload = DATABASE_URL.split("://")[1]
+        DATABASE_URL = f"postgresql+asyncpg://{payload}"
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 
