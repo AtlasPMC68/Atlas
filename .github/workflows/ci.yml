@@ -23,7 +23,7 @@ jobs:
           docker compose version
 
       - name: Build all services
-        run: docker compose build --no-cache
+        run: docker compose build
 
       - name: Run backend tests
         run: docker compose run --rm test-backend
