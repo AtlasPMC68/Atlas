@@ -11,7 +11,6 @@ pytesseract
 Pillow
 python-multipart
 sqlalchemy
-asyncpg
 geoalchemy2
 numpy<2
 shapely==2.1.2
