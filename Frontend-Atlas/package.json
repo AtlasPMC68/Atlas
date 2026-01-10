@@ -12,6 +12,7 @@
   "dependencies": {
     "@heroicons/vue": "^2.2.0",
     "daisyui": "^5.0.46",
+    "keycloak-js": "^26.2.2",
     "leaflet": "^1.9.4",
     "leaflet-arrowheads": "^1.4.0",
     "leaflet-geometryutil": "^0.10.3",
