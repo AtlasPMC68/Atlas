@@ -1,55 +1,55 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from "vue";
+import { useRouter } from "vue-router";
 
-const username = ref('')
-const email = ref('')
-const token = localStorage.getItem('access_token')
-const errorMessage = ref('')
-const router = useRouter()
+const username = ref("");
+const email = ref("");
+const token = localStorage.getItem("access_token");
+const errorMessage = ref("");
+const router = useRouter();
 
 onMounted(async () => {
-  if (!token) return
+  if (!token) return;
   try {
-    const res = await fetch('http://localhost:8000/me', {
+    const res = await fetch("http://localhost:8000/me", {
       headers: {
         Authorization: `Bearer ${token}`,
       },
-    })
-    if (!res.ok) throw new Error('Erreur chargement du profil')
-    const data = await res.json()
-    username.value = data.username
-    email.value = data.email
+    });
+    if (!res.ok) throw new Error("Erreur chargement du profil");
+    const data = await res.json();
+    username.value = data.username;
+    email.value = data.email;
   } catch (err) {
-    console.error(err)
+    console.error(err);
   }
-})
+});
 
 const saveSettings = async () => {
-errorMessage.value = ''
+  errorMessage.value = "";
 
   try {
-    const res = await fetch('http://localhost:8000/user/update-user', {
-      method: 'PUT',
+    const res = await fetch("http://localhost:8000/user/update-user", {
+      method: "PUT",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ username: username.value }),
-    })
+    });
 
-    const data = await res.json()
+    const data = await res.json();
 
     if (!res.ok) {
-      errorMessage.value = data.detail || 'Erreur lors de la mise à jour'
-      return
+      errorMessage.value = data.detail || "Erreur lors de la mise à jour";
+      return;
     }
-    router.push('/profil')
+    router.push("/profil");
   } catch (err) {
-    console.error(err)
-    errorMessage.value = 'Erreur lors de la communication avec le serveur.'
+    console.error(err);
+    errorMessage.value = "Erreur lors de la communication avec le serveur.";
   }
-}
+};
 </script>
 
 <template>
@@ -57,10 +57,11 @@ errorMessage.value = ''
     <h1 class="text-2xl font-bold text-gray-900 mb-6">Paramètres</h1>
 
     <div class="bg-white shadow rounded-lg p-6 space-y-6">
-      
       <!-- Username -->
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Nom d’utilisateur</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1"
+          >Nom d’utilisateur</label
+        >
         <input
           type="text"
           v-model="username"
@@ -70,7 +71,9 @@ errorMessage.value = ''
 
       <!-- Email (readonly) -->
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Adresse courriel</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1"
+          >Adresse courriel</label
+        >
         <input
           type="email"
           :value="email"

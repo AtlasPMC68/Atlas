@@ -1,5 +1,5 @@
-import { defineConfig } from 'vitest/config'
-import vue from '@vitejs/plugin-vue'
+import { defineConfig } from "vitest/config";
+import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
   plugins: [vue()],
@@ -7,11 +7,11 @@ export default defineConfig({
     host: true,
     port: 5173,
     watch: {
-      usePolling: true
-    }
+      usePolling: true,
+    },
   },
   test: {
     globals: true,
-    environment: 'jsdom',
-  }
-})
+    environment: "jsdom",
+  },
+});

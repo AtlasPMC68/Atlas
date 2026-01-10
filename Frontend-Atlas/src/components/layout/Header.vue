@@ -5,53 +5,64 @@
         <!-- Logo -->
         <div class="flex items-center">
           <div class="flex-shrink-0 flex items-center">
-            <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center mr-3">
+            <div
+              class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center mr-3"
+            >
               <MapIcon class="h-6 w-6 text-white" />
             </div>
-            <h1 class="text-xl font-bold text-gray-900">
-              Atlas
-            </h1>
+            <h1 class="text-xl font-bold text-gray-900">Atlas</h1>
           </div>
         </div>
 
         <!-- Desktop Navigation -->
-        <nav class="hidden lg:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
-          <RouterLink 
-            to ="/"
-            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
+        <nav
+          class="hidden lg:flex space-x-8 absolute left-1/2 transform -translate-x-1/2"
+        >
+          <RouterLink
+            to="/"
+            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
+          >
             Accueil
           </RouterLink>
           <RouterLink
             to="/demo/upload"
             class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
-          > Téléversement </RouterLink>
-          <RouterLink 
+          >
+            Téléversement
+          </RouterLink>
+          <RouterLink
             to="/tableau-de-bord"
-            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
+            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
+          >
             Mes projets
           </RouterLink>
           <RouterLink
             to="/projets-publiques"
-            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
+            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
+          >
             Explorer
           </RouterLink>
-          <a href="https://youtu.be/xvFZjo5PgG0?si=u_0AuFzmGPL6cjRC"
+          <a
+            href="https://youtu.be/xvFZjo5PgG0?si=u_0AuFzmGPL6cjRC"
             target="_blank"
             rel="noopener"
-            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors">
+            class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
+          >
             À propos
           </a>
         </nav>
-        
+
         <!-- Desktop CTA -->
         <div class="hidden md:flex items-center space-x-4 relative">
           <template v-if="isAuthenticated">
-            <div 
+            <div
               class="relative group"
               @mouseenter="openDropdown"
               @mouseleave="closeDropdown"
             >
-              <div class="flex items-center space-x-0 text-gray-700 hover:text-primary-600 cursor-pointer">
+              <div
+                class="flex items-center space-x-0 text-gray-700 hover:text-primary-600 cursor-pointer"
+              >
                 <UserCircleIcon class="h-10 w-10" />
                 <ChevronDownIcon class="h-5 w-5" />
               </div>
@@ -61,12 +72,17 @@
                 v-show="isDropdownOpen"
                 class="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg p-4 space-y-4 flex flex-col z-50"
               >
-                <RouterLink to="/profil" class="dropdown-item">Mon profil</RouterLink>
-                <RouterLink to="/parametres" class="dropdown-item">Paramètres</RouterLink>
+                <RouterLink to="/profil" class="dropdown-item"
+                  >Mon profil</RouterLink
+                >
+                <RouterLink to="/parametres" class="dropdown-item"
+                  >Paramètres</RouterLink
+                >
                 <div class="h-0.5 bg-gray-200 my-1"></div>
-                <button 
+                <button
                   @click="logout"
-                  class="dropdown-item text-red-600 hover:text-red-800 text-left">
+                  class="dropdown-item text-red-600 hover:text-red-800 text-left"
+                >
                   Déconnexion
                 </button>
               </div>
@@ -74,46 +90,53 @@
           </template>
 
           <template v-else>
-            <RouterLink to="/connexion" class="btn-secondary text-sm">Connexion</RouterLink>
-            <RouterLink to="/inscription" class="btn-primary text-sm">S'inscrire</RouterLink>
+            <RouterLink to="/connexion" class="btn-secondary text-sm"
+              >Connexion</RouterLink
+            >
+            <RouterLink to="/inscription" class="btn-primary text-sm"
+              >S'inscrire</RouterLink
+            >
           </template>
         </div>
-    </div>
+      </div>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { MapIcon, UserCircleIcon, ChevronDownIcon } from '@heroicons/vue/24/outline'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from "vue";
+import {
+  MapIcon,
+  UserCircleIcon,
+  ChevronDownIcon,
+} from "@heroicons/vue/24/outline";
+import { useRouter } from "vue-router";
 
-const isDropdownOpen = ref(false)
-const router = useRouter()
+const isDropdownOpen = ref(false);
+const router = useRouter();
 
-let closeTimeout: ReturnType<typeof setTimeout> | null = null
+let closeTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const openDropdown = () => {
   if (closeTimeout) {
-    clearTimeout(closeTimeout)
-    closeTimeout = null
+    clearTimeout(closeTimeout);
+    closeTimeout = null;
   }
-  isDropdownOpen.value = true
-}
+  isDropdownOpen.value = true;
+};
 
 const closeDropdown = () => {
   closeTimeout = setTimeout(() => {
-    isDropdownOpen.value = false
-  }, 100) 
-}
+    isDropdownOpen.value = false;
+  }, 100);
+};
 
 const isAuthenticated = computed(() => {
-  return !!localStorage.getItem('access_token')
-})
+  return !!localStorage.getItem("access_token");
+});
 
 const logout = () => {
-  localStorage.removeItem('access_token')
-  router.push('/connexion')
-}
-
+  localStorage.removeItem("access_token");
+  router.push("/connexion");
+};
 </script>
