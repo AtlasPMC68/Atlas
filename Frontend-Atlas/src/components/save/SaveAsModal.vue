@@ -35,7 +35,10 @@
 
         <div class="mb-4">
           <span class="block font-medium mb-1">Visibilité</span>
-          <label class="inline-flex items-center mr-6" for="access_level_public">
+          <label
+            class="inline-flex items-center mr-6"
+            for="access_level_public"
+          >
             <input
               id="access_level_public"
               type="radio"

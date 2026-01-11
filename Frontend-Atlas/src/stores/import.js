@@ -1,27 +1,27 @@
-import { defineStore } from 'pinia'
+import { defineStore } from "pinia";
 
-export const useImportStore = defineStore('import', {
+export const useImportStore = defineStore("import", {
   state: () => ({
     currentImport: null,
     importHistory: [],
-    isImporting: false
+    isImporting: false,
   }),
 
   actions: {
     setCurrentImport(importData) {
-      this.currentImport = importData
+      this.currentImport = importData;
     },
 
     addToHistory(importData) {
       this.importHistory.push({
         ...importData,
-        timestamp: new Date().toISOString()
-      })
+        timestamp: new Date().toISOString(),
+      });
     },
 
     resetImport() {
-      this.currentImport = null
-      this.isImporting = false
-    }
-  }
-})
+      this.currentImport = null;
+      this.isImporting = false;
+    },
+  },
+});

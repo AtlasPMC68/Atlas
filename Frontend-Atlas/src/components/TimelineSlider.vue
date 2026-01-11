@@ -49,7 +49,7 @@ watch(
       internalYear.value = val;
       inputValue.value = String(val);
     }
-  }
+  },
 );
 
 function onSliderInput() {
@@ -79,4 +79,3 @@ function onInputChange() {
   border-top: 1px solid #ddd;
 }
 </style>
- 
