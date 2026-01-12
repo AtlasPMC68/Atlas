@@ -1,4 +1,3 @@
-from celery import current_task
 from .celery_app import celery_app
 import time
 import logging
@@ -6,14 +5,14 @@ import pytesseract
 from PIL import Image
 import os
 import tempfile
-from typing import BinaryIO
 from datetime import datetime
-from PIL import Image, ImageEnhance 
+from PIL import ImageEnhance 
 from app.utils.color_extraction import extract_colors
+from app.utils.shapes_extractions import extract_shapes
 
 logger = logging.getLogger(__name__)
 
-nb_task = 5
+nb_task = 6
 
 @celery_app.task(bind=True)
 def test_task(self, name: str = "World"):
@@ -86,7 +85,16 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         color_result = extract_colors(tmp_file_path)
         logger.info(f"[DEBUG] Résultat color_extraction : {color_result}")
 
-        # Step 5: Cleanning
+        # Step 5: Shapes Extraction
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": 5, "total": nb_task , "status": "Extracting shapes from image"}
+        )
+        time.sleep(2)
+        shapes_result = extract_shapes(tmp_file_path)
+        logger.info(f"[DEBUG] Résultat shapes_extraction : {shapes_result}")
+
+        # Step 6: Cleanning
         self.update_state(
             state="PROGRESS",
             meta={"current": 5, "total": nb_task , "status": "Cleaning up and finalizing"}
@@ -109,12 +117,12 @@ def process_map_extraction(self, filename: str, file_content: bytes):
 
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== OCR EXTRACTION  ===\n")
+                f.write("=== OCR EXTRACTION  ===\n")
                 f.write(f"Source File: {filename}\n")
                 f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"Character extract: {len(extracted_text.strip())}\n")
                 f.write(f"Tesseract Configuration: {custom_config}\n")
-                f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
+                f.write("\n=== TEXTE EXTRAIT ===\n\n")
                 f.write(extracted_text.strip())
 
             logger.info(f"Text saved to: {output_path}")
@@ -128,6 +136,8 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
+            "shapes_result": shapes_result,
+            "color_result": color_result,
             "status": "completeded"
         }
 
