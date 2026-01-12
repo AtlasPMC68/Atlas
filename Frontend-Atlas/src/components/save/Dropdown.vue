@@ -34,7 +34,11 @@
 
 <script setup>
 import { ref } from "vue";
-import { Bars3Icon, ArrowDownTrayIcon, ArchiveBoxArrowDownIcon } from '@heroicons/vue/24/outline'
+import {
+  Bars3Icon,
+  ArrowDownTrayIcon,
+  ArchiveBoxArrowDownIcon,
+} from "@heroicons/vue/24/outline";
 
 const isOpen = ref(false);
 

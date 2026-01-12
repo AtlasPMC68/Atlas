@@ -59,7 +59,6 @@ ATLAS-210: bugfix-fix-auth-error
 To run the project using Docker Compose, follow these steps:
 
 1. **Install Docker Desktop**
-
    - Download and install Docker Desktop from [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/).
    - Start Docker Desktop and wait until it is fully running (the whale icon should appear in your system tray).
 
@@ -81,7 +80,6 @@ To run the project using Docker Compose, follow these steps:
    - Flower (Celery Monitoring): http://localhost:5555
 
 4. **Test the backend:**
-
    - In a new terminal, run:
      ```sh
      curl http://localhost:8000/ping
@@ -89,12 +87,10 @@ To run the project using Docker Compose, follow these steps:
    - You should receive a response like `{ "message": "pong" }`.
 
 5. **Test the frontend:**
-
    - Open your browser and go to [http://localhost:3000]
    - You should see the Atlas web application.
 
 6. **Test db:**
-
    - In a terminal, run:
 
    ```sh
@@ -104,7 +100,6 @@ To run the project using Docker Compose, follow these steps:
    - You should receive a response like `{"db_status":"connected","result":[1]}`
 
 7. **Test Celery and Redis:**
-
    - In terminal, run:
 
    ```sh
@@ -114,7 +109,6 @@ To run the project using Docker Compose, follow these steps:
    - You should receive: `{"task_id": random Id,"status":"Task started","message":"Task launched for World"}`
 
 8. **Live Reload (Development):**
-
    - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
    - **Frontend:** The frontend uses the Vite dev server with hot reload. Any changes to files will instantly reload the app in your browser.
 
@@ -142,7 +136,6 @@ To ensure reliability and consistency across the project, a Continuous Integrati
 1. **Builds Docker images for frontend and backend**
 
 2. **Runs unit and integration tests inside containers:**
-
    - Backend: Python tests using pytest
    - Frontend: TypeScript tests using vitest
 
