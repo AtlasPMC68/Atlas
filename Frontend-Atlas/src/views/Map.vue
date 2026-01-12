@@ -222,6 +222,7 @@ function cancelPolygon() {
 
 function selectShape(shapeId) {
   selectedShape.value = shapeId;
+  console.log('Selected shape:', shapeId);
 }
 
 function cancelShape() {
@@ -231,10 +232,13 @@ function cancelShape() {
 function getShapeInstructions(shapeId) {
   switch (shapeId) {
     case 'square':
-    case 'circle':
-    case 'triangle':
       return 'Clic pour placer le centre → Glisser pour ajuster la taille → Clic pour valider';
     case 'rectangle':
+      return 'Maintenir clic gauche pour définir le premier coin → Glisser pour ajuster → Relâcher pour placer';
+    case 'circle':
+      return 'Clic pour placer le centre → Glisser pour ajuster la taille → Clic pour valider';
+    case 'triangle':
+      return 'Clic pour placer le centre → Glisser pour ajuster la taille → Clic pour valider';
     case 'oval':
       return 'Clic pour placer le centre → Glisser pour ajuster la hauteur → Clic pour valider → Glisser pour ajuster la largeur → Clic pour finaliser';
     default:

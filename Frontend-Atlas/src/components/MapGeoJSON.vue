@@ -66,8 +66,9 @@ let tempPolygon = null;
 let allCircles = new Set(); // Collection de tous les cercles pour les mettre à jour
 
 // Variables pour les formes prédéfinies
-let shapeState = null; // 'drawing' | null
-let shapeStartPoint = null; // Point de départ (coin du carré)
+let shapeState = null; // 'drawing' | 'adjusting_height' | 'adjusting_width' | null
+let shapeStartPoint = null; // Point de départ (coin du carré ou centre pour cercle/triangle)
+let shapeEndPoint = null; // Point d'arrivée (coin opposé ou point pour ajuster taille)
 let tempShape = null;
 let lastMousePos = null; // Dernière position connue de la souris
 let isDrawingShape = false; // Indicateur global pour empêcher le dragging
@@ -367,6 +368,32 @@ function renderArrows(features) {
   });
 }
 
+function renderShapes(features) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach(feature => {
+    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates) || !feature.geometry.coordinates[0]) {
+      return;
+    }
+
+    // Convertir les coordonnées GeoJSON en LatLng
+    const latLngs = feature.geometry.coordinates[0].map(coord => [coord[1], coord[0]]);
+
+    const square = L.polygon(latLngs, {
+      color: feature.color || "#000000",
+      weight: 2,
+      fillColor: feature.color || "#cccccc",
+      fillOpacity: feature.opacity ?? 0.5
+    });
+
+    if (feature.name) {
+      square.bindPopup(feature.name);
+    }
+
+    featureLayerManager.addFeatureLayer(feature.id, square);
+  });
+}
+
  
 function renderAllFeatures() {
   const currentFeatures = filteredFeatures.value;
@@ -387,12 +414,22 @@ function renderAllFeatures() {
   const featuresByType = {
     point: newFeatures.filter(f => f.type === 'point'),
     polygon: newFeatures.filter(f => f.type === 'zone'),
-    arrow: newFeatures.filter(f => f.type === 'arrow')
+    arrow: newFeatures.filter(f => f.type === 'arrow'),
+    square: newFeatures.filter(f => f.type === 'square'),
+    rectangle: newFeatures.filter(f => f.type === 'rectangle'),
+    circle: newFeatures.filter(f => f.type === 'circle'),
+    triangle: newFeatures.filter(f => f.type === 'triangle'),
+    oval: newFeatures.filter(f => f.type === 'oval')
   };
 
   renderCities(featuresByType.point);
   renderZones(featuresByType.polygon);
   renderArrows(featuresByType.arrow);
+  renderShapes(featuresByType.square);
+  renderShapes(featuresByType.rectangle);
+  renderShapes(featuresByType.circle);
+  renderShapes(featuresByType.triangle);
+  renderShapes(featuresByType.oval);
 
   previousFeatureIds.value = currentIds;
 
@@ -475,22 +512,36 @@ onMounted(() => {
 function initializeEditControls() {
   if (!props.editMode) return;
 
+  console.log('Initializing edit controls:', { editMode: props.editMode, activeEditMode: props.activeEditMode, selectedShape: props.selectedShape });
+
   // Layer pour les éléments dessinés
   drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
-  // Écouter les événements de souris pour le tracé de ligne
-  map.on('mousedown', handleMouseDown);
-  map.on('mousemove', handleMouseMove);
-  map.on('mouseup', handleMouseUp);
-  map.on('contextmenu', handleRightClick); // Clic droit pour finir le polygone
+  // Écouter les événements selon le mode actif
+  console.log('🎛️ Initializing edit controls:', {
+    editMode: props.editMode,
+    activeEditMode: props.activeEditMode,
+    selectedShape: props.selectedShape
+  });
 
-  // Écouter les événements souris pour les formes
-  if (props.activeEditMode === 'CREATE_SHAPES') {
+  if (props.activeEditMode === 'CREATE_LINE' || props.activeEditMode === 'CREATE_FREE_LINE') {
+    console.log('📏 Setting up line drawing events');
+    // Événements pour le tracé de ligne
+    map.on('mousedown', handleMouseDown);
+    map.on('mousemove', handleMouseMove);
+    map.on('mouseup', handleMouseUp);
+  } else if (props.activeEditMode === 'CREATE_SHAPES') {
+    console.log('🔷 Setting up shape drawing events');
+    // Événements pour les formes
     map.on('mousedown', handleShapeMouseDown);
     map.on('mousemove', handleShapeMouseMove);
     map.on('mouseup', handleShapeMouseUp);
     map.on('dragstart', preventDragDuringShapeDrawing);
+  } else if (props.activeEditMode === 'CREATE_POLYGON') {
+    console.log('⬡ Setting up polygon drawing events');
+    // Événements pour les polygones
+    map.on('contextmenu', handleRightClick); // Clic droit pour finir le polygone
   }
 
   // Écouter les clics sur la carte selon le mode
@@ -500,6 +551,7 @@ function initializeEditControls() {
 
 // Gestion des événements de souris pour le tracé
 function handleMouseDown(e) {
+  console.log('General mouse down triggered:', { editMode: props.editMode, activeEditMode: props.activeEditMode, selectedShape: props.selectedShape });
   if (!props.editMode) return;
 
   if (props.activeEditMode === 'CREATE_LINE') {
@@ -625,6 +677,8 @@ function preventDragDuringShapeDrawing(e) {
 
 // Gérer les clics sur la carte en mode édition
 function handleMapClick(e) {
+  console.log('Map click triggered:', { editMode: props.editMode, activeEditMode: props.activeEditMode, selectedShape: props.selectedShape });
+
   if (!props.editMode || !props.activeEditMode) return;
 
   switch (props.activeEditMode) {
@@ -635,94 +689,399 @@ function handleMapClick(e) {
       handlePolygonClick(e.latlng);
       break;
     case 'CREATE_SHAPES':
-      handleShapeClick(e.latlng);
+      // Les formes sont gérées par les événements souris mousedown/mousemove/mouseup
       break;
   }
 }
 
 // Gérer les événements souris pour les formes (comme pour les lignes)
 function handleShapeMouseDown(e) {
-  if (!props.selectedShape || props.selectedShape !== 'square') return;
+  console.log('🔽 Shape mouse down triggered:', {
+    selectedShape: props.selectedShape,
+    activeEditMode: props.activeEditMode,
+    editMode: props.editMode,
+    shapeState: shapeState,
+    latlng: e.latlng
+  });
+
+  if (props.activeEditMode !== 'CREATE_SHAPES' || !props.selectedShape) {
+    console.log('❌ Shape drawing not allowed - returning', {
+      activeEditMode: props.activeEditMode,
+      selectedShape: props.selectedShape,
+      expectedMode: 'CREATE_SHAPES'
+    });
+    return;
+  }
+
+  console.log('✅ Shape drawing allowed - starting', props.selectedShape);
 
   // Marquer qu'on commence à dessiner
   isDrawingShape = true;
+
+  // Désactiver le dragging de la carte pendant le tracé
+  map.dragging.disable();
 
   // Empêcher complètement le dragging
   e.originalEvent.preventDefault();
   e.originalEvent.stopPropagation();
   e.originalEvent.stopImmediatePropagation();
 
-  shapeState = 'drawing';
-  shapeStartPoint = e.latlng;
+  const shapeType = props.selectedShape;
 
-  console.log('Started drawing square at:', e.latlng);
+  // Logique selon le type de forme
+  switch (shapeType) {
+    case 'square':
+      // Approche : centre + taille (comme le cercle, mais carré parfait)
+      shapeState = 'drawing';
+      shapeStartPoint = e.latlng;
+      // On créera la forme temporaire au mouvement de souris
+      console.log('Started drawing square center at:', e.latlng);
+      break;
+
+    case 'rectangle':
+      // Approche : deux coins opposés
+      shapeState = 'drawing';
+      shapeStartPoint = e.latlng;
+      tempShape = L.rectangle([
+        [shapeStartPoint.lat, shapeStartPoint.lng],
+        [shapeStartPoint.lat, shapeStartPoint.lng]
+      ], {
+        color: '#000000',
+        weight: 2,
+        fillColor: '#cccccc',
+        fillOpacity: 0.5
+      });
+      drawnItems.addLayer(tempShape);
+      console.log('Started drawing rectangle at:', e.latlng);
+      break;
+
+    case 'circle':
+    case 'triangle':
+      // Approche : centre + taille
+      shapeState = 'drawing';
+      shapeStartPoint = e.latlng;
+      // On créera la forme temporaire au mouvement de souris
+      console.log('Started drawing', shapeType, 'center at:', e.latlng);
+      break;
+
+    case 'oval':
+      // Approche : centre + hauteur d'abord, puis largeur
+      if (shapeState === null) {
+        // Première étape : définir le centre
+        shapeState = 'adjusting_height';
+        shapeStartPoint = e.latlng;
+        console.log('Started drawing oval center at:', e.latlng);
+      }
+      break;
+
+    default:
+      console.log('❌ Unknown shape type:', shapeType);
+      isDrawingShape = false;
+      map.dragging.enable();
+      return;
+  }
 }
 
 function handleShapeMouseUp(e) {
-  if (shapeState !== 'drawing' || !shapeStartPoint) return;
+  console.log('🔺 Shape mouse up triggered:', {
+    shapeState,
+    selectedShape: props.selectedShape,
+    hasStartPoint: !!shapeStartPoint,
+    distance: shapeStartPoint ? map.distance(shapeStartPoint, e.latlng) : null
+  });
 
-  isDrawingShape = false;
-
-  // Réactiver le dragging de la carte
-  map.dragging.enable();
-
-  // Calculer la distance pour éviter les clics accidentels
-  const distance = map.distance(shapeStartPoint, e.latlng);
-  if (distance < 5) {
-    // Annuler si mouvement trop petit
-    cleanupTempShape();
+  if (!shapeStartPoint || !props.selectedShape) {
+    console.log('❌ No start point or shape selected');
     return;
   }
 
-  // Finaliser le carré
-  finishShapeDrawing(e.latlng);
+  const shapeType = props.selectedShape;
+
+  switch (shapeType) {
+    case 'square':
+      if (shapeState === 'drawing') {
+        isDrawingShape = false;
+        map.dragging.enable();
+
+        const distance = map.distance(shapeStartPoint, e.latlng);
+        if (distance < 5) {
+          cleanupTempShape();
+          return;
+        }
+
+        console.log('✅ Creating final square');
+        if (tempShape) {
+          drawnItems.removeLayer(tempShape);
+          tempShape = null;
+        }
+        createSquare(shapeStartPoint, e.latlng);
+
+        shapeState = null;
+        shapeStartPoint = null;
+        lastMousePos = null;
+      }
+      break;
+
+    case 'rectangle':
+      if (shapeState === 'drawing') {
+        isDrawingShape = false;
+        map.dragging.enable();
+
+        const distance = map.distance(shapeStartPoint, e.latlng);
+        if (distance < 5) {
+          cleanupTempShape();
+          return;
+        }
+
+        console.log('✅ Creating final rectangle');
+        if (tempShape) {
+          drawnItems.removeLayer(tempShape);
+          tempShape = null;
+        }
+        createRectangle(shapeStartPoint, e.latlng);
+
+        shapeState = null;
+        shapeStartPoint = null;
+        lastMousePos = null;
+      }
+      break;
+
+    case 'circle':
+      if (shapeState === 'drawing') {
+        // Pour le cercle, mouseup finalise la forme (pas comme les autres)
+        isDrawingShape = false;
+        map.dragging.enable();
+
+        const distance = map.distance(shapeStartPoint, e.latlng);
+        if (distance < 5) {
+          cleanupTempShape();
+          return;
+        }
+
+        console.log('✅ Creating final circle');
+        if (tempShape) {
+          drawnItems.removeLayer(tempShape);
+          tempShape = null;
+        }
+        createCircle(shapeStartPoint, e.latlng);
+
+        shapeState = null;
+        shapeStartPoint = null;
+        lastMousePos = null;
+      }
+      break;
+
+    case 'triangle':
+      if (shapeState === 'drawing') {
+        isDrawingShape = false;
+        map.dragging.enable();
+
+        const distance = map.distance(shapeStartPoint, e.latlng);
+        if (distance < 5) {
+          cleanupTempShape();
+          return;
+        }
+
+        console.log('✅ Creating final triangle');
+        if (tempShape) {
+          drawnItems.removeLayer(tempShape);
+          tempShape = null;
+        }
+        createTriangle(shapeStartPoint, e.latlng);
+
+        shapeState = null;
+        shapeStartPoint = null;
+        lastMousePos = null;
+      }
+      break;
+
+    case 'oval':
+      if (shapeState === 'adjusting_height') {
+        // Première étape terminée : hauteur définie, passer à la largeur
+        shapeState = 'adjusting_width';
+        shapeEndPoint = e.latlng;
+        console.log('✅ Oval height set, now adjusting width');
+      } else if (shapeState === 'adjusting_width') {
+        // Deuxième étape terminée : créer l'ovale final
+        isDrawingShape = false;
+        map.dragging.enable();
+
+        console.log('✅ Creating final oval');
+        if (tempShape) {
+          drawnItems.removeLayer(tempShape);
+          tempShape = null;
+        }
+        createOval(shapeStartPoint, shapeEndPoint, e.latlng);
+
+        shapeState = null;
+        shapeStartPoint = null;
+        shapeEndPoint = null;
+        lastMousePos = null;
+      }
+      break;
+  }
 }
 
 
-// Terminer le dessin d'une forme
-function finishShapeDrawing(endPoint) {
-  if (!shapeStartPoint || !tempShape) {
-    console.log('Cannot finish drawing: missing startPoint or tempShape');
-    return;
-  }
+// Créer un carré avec centre et taille (comme un cercle)
+function createSquare(center, sizePoint) {
+  // Utiliser les coordonnées pixels pour un carré parfaitement visuel
+  const centerPixel = map.latLngToContainerPoint(center);
+  const sizePixel = map.latLngToContainerPoint(sizePoint);
 
-  // Utiliser la dernière position connue de la souris plutôt que la position du clic
-  const actualEndPoint = lastMousePos || endPoint;
-  console.log('Finishing square drawing:', { startPoint: shapeStartPoint, endPoint: actualEndPoint, lastMousePos });
+  // Calculer la distance en pixels
+  const pixelDistance = centerPixel.distanceTo(sizePixel);
+  const halfSidePixels = pixelDistance / Math.sqrt(2);
 
-  // Convertir le carré temporaire en feature permanente
-  const feature = squareToFeature(shapeStartPoint, actualEndPoint);
+  // Calculer les coins du carré en pixels
+  const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
+  const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
 
-  // Nettoyer la forme temporaire
-  drawnItems.removeLayer(tempShape);
-  tempShape = null;
+  // Convertir en coordonnées géographiques
+  const topLeft = map.containerPointToLatLng(topLeftPixel);
+  const bottomRight = map.containerPointToLatLng(bottomRightPixel);
 
-  // Sauvegarder la feature
+  const square = L.rectangle([
+    [topLeft.lat, topLeft.lng],
+    [bottomRight.lat, bottomRight.lng]
+  ], {
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(square);
+
+  // Créer et sauvegarder automatiquement la feature
+  const feature = squareToFeatureFromCenter(center, sizePoint);
+
   saveFeature(feature);
-
-  // Réinitialiser l'état
-  shapeState = null;
-  shapeStartPoint = null;
-  lastMousePos = null;
 }
 
-// Mettre à jour le carré temporaire avec centre fixe et coin mobile
-function updateTempSquareFromCenter(center, corner) {
+// Créer un rectangle entre deux coins opposés
+function createRectangle(startCorner, endCorner) {
+  // Même logique que le carré
+  const minLat = Math.min(startCorner.lat, endCorner.lat);
+  const maxLat = Math.max(startCorner.lat, endCorner.lat);
+  const minLng = Math.min(startCorner.lng, endCorner.lng);
+  const maxLng = Math.max(startCorner.lng, endCorner.lng);
+
+  const rectangle = L.rectangle([
+    [minLat, minLng],
+    [maxLat, maxLng]
+  ], {
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(rectangle);
+
+  const feature = rectangleToFeatureFromCorners(startCorner, endCorner);
+  saveFeature(feature);
+}
+
+// Créer un cercle avec centre et rayon
+function createCircle(center, edgePoint) {
+  const radius = map.distance(center, edgePoint);
+
+  const circle = L.circle(center, {
+    radius: radius,
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(circle);
+
+  const feature = circleToFeatureFromCenter(center, edgePoint);
+  saveFeature(feature);
+}
+
+// Créer un triangle avec centre et taille
+function createTriangle(center, sizePoint) {
+  const distance = map.distance(center, sizePoint);
+
+  const points = [];
+  for (let i = 0; i < 3; i++) {
+    const angle = (i * 120 + 90) * Math.PI / 180; // Triangle pointant vers le haut
+    const lat = center.lat + (distance / 111320) * Math.sin(angle);
+    const lng = center.lng + (distance / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    points.push([lat, lng]);
+  }
+
+  const triangle = L.polygon(points, {
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(triangle);
+
+  const feature = triangleToFeatureFromCenter(center, sizePoint);
+  saveFeature(feature);
+}
+
+// Créer un ovale avec centre, hauteur et largeur
+function createOval(center, heightPoint, widthPoint) {
+  const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
+  const widthRadius = Math.abs(center.lng - widthPoint.lng) * 111320 * Math.cos(center.lat * Math.PI / 180);
+
+  const points = [];
+  const steps = 32;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * 2 * Math.PI;
+    const lat = center.lat + (heightRadius / 111320) * Math.sin(angle);
+    const lng = center.lng + (widthRadius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    points.push([lat, lng]);
+  }
+
+  const oval = L.polygon(points, {
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(oval);
+
+  const feature = ovalToFeatureFromCenter(center, heightPoint, widthPoint);
+  saveFeature(feature);
+}
+
+// Mettre à jour le carré temporaire avec centre et taille (comme un cercle)
+function updateTempSquareFromCenter(center, sizePoint) {
   // Nettoyer la forme précédente
   if (tempShape) {
     drawnItems.removeLayer(tempShape);
   }
 
-  // Calculer la distance depuis le centre jusqu'au coin
-  const distance = Math.max(
-    Math.abs(corner.lat - center.lat),
-    Math.abs(corner.lng - center.lng)
-  );
+  // Utiliser les coordonnées pixels pour créer un carré parfaitement visuel
+  const centerPixel = map.latLngToContainerPoint(center);
+  const sizePixel = map.latLngToContainerPoint(sizePoint);
 
-  // Créer un carré centré avec cette distance
+  // Calculer la distance en pixels
+  const pixelDistance = centerPixel.distanceTo(sizePixel);
+
+  // Créer un carré parfait en pixels : côté = distance / √2
+  const halfSidePixels = pixelDistance / Math.sqrt(2);
+
+  // Calculer les coins du carré en pixels
+  const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
+  const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
+
+  // Convertir les coordonnées pixels en coordonnées géographiques
+  const topLeft = map.containerPointToLatLng(topLeftPixel);
+  const bottomRight = map.containerPointToLatLng(bottomRightPixel);
+
+  // Créer les coins du carré
   const bounds = [
-    [center.lat - distance, center.lng - distance],
-    [center.lat + distance, center.lng + distance]
+    [topLeft.lat, topLeft.lng],
+    [bottomRight.lat, bottomRight.lng]
   ];
 
   tempShape = L.rectangle(bounds, {
@@ -735,23 +1094,156 @@ function updateTempSquareFromCenter(center, corner) {
   drawnItems.addLayer(tempShape);
 }
 
-// Convertir un carré défini par centre et coin en feature GeoJSON
-function squareToFeature(center, corner) {
-  // Calculer la distance depuis le centre jusqu'au coin
-  const distance = Math.max(
-    Math.abs(corner.lat - center.lat),
-    Math.abs(corner.lng - center.lng)
-  );
+// Mettre à jour le rectangle temporaire avec deux coins opposés
+function updateTempRectangleFromCorners(startCorner, endCorner) {
+  // Nettoyer la forme précédente
+  if (tempShape) {
+    drawnItems.removeLayer(tempShape);
+  }
 
-  // Créer les coordonnées du carré centré
+  // Calculer les coordonnées des quatre coins du rectangle
+  const minLat = Math.min(startCorner.lat, endCorner.lat);
+  const maxLat = Math.max(startCorner.lat, endCorner.lat);
+  const minLng = Math.min(startCorner.lng, endCorner.lng);
+  const maxLng = Math.max(startCorner.lng, endCorner.lng);
+
+  // Créer un rectangle avec ces limites
+  const bounds = [
+    [minLat, minLng],
+    [maxLat, maxLng]
+  ];
+
+  tempShape = L.rectangle(bounds, {
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(tempShape);
+}
+
+// Mettre à jour le cercle temporaire avec centre et point sur le cercle
+function updateTempCircleFromCenter(center, edgePoint) {
+  // Nettoyer la forme précédente
+  if (tempShape) {
+    drawnItems.removeLayer(tempShape);
+  }
+
+  // Calculer le rayon en mètres
+  const radius = map.distance(center, edgePoint);
+
+  tempShape = L.circle(center, {
+    radius: radius,
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(tempShape);
+}
+
+// Mettre à jour le triangle temporaire avec centre et taille
+function updateTempTriangleFromCenter(center, sizePoint) {
+  // Nettoyer la forme précédente
+  if (tempShape) {
+    drawnItems.removeLayer(tempShape);
+  }
+
+  // Calculer la distance depuis le centre
+  const distance = map.distance(center, sizePoint);
+
+  // Créer un triangle équilatéral pointant vers le haut
+  // Calculer les trois points du triangle
+  const points = [];
+  for (let i = 0; i < 3; i++) {
+    const angle = (i * 120 + 90) * Math.PI / 180; // Commencer par le point du haut (90°)
+    const lat = center.lat + (distance / 111320) * Math.sin(angle); // Approximation en degrés
+    const lng = center.lng + (distance / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    points.push([lat, lng]);
+  }
+
+  tempShape = L.polygon(points, {
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(tempShape);
+}
+
+// Mettre à jour l'ovale temporaire - hauteur
+function updateTempOvalHeight(center, heightPoint) {
+  // Nettoyer la forme précédente
+  if (tempShape) {
+    drawnItems.removeLayer(tempShape);
+  }
+
+  // Pour l'instant, créer un cercle temporaire pour visualiser la hauteur
+  const radius = Math.abs(center.lat - heightPoint.lat) * 111320; // Distance en mètres
+
+  tempShape = L.circle(center, {
+    radius: radius,
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(tempShape);
+}
+
+// Mettre à jour l'ovale temporaire - largeur
+function updateTempOvalWidth(center, heightPoint, widthPoint) {
+  // Nettoyer la forme précédente
+  if (tempShape) {
+    drawnItems.removeLayer(tempShape);
+  }
+
+  // Calculer les rayons
+  const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
+  const widthRadius = Math.abs(center.lng - widthPoint.lng) * 111320 * Math.cos(center.lat * Math.PI / 180);
+
+  // Créer une ellipse approximative avec un polygone
+  const points = [];
+  const steps = 32;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * 2 * Math.PI;
+    const lat = center.lat + (heightRadius / 111320) * Math.sin(angle);
+    const lng = center.lng + (widthRadius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    points.push([lat, lng]);
+  }
+
+  tempShape = L.polygon(points, {
+    color: '#000000',
+    weight: 2,
+    fillColor: '#cccccc',
+    fillOpacity: 0.5
+  });
+
+  drawnItems.addLayer(tempShape);
+}
+
+// Convertir un carré défini par centre et taille en feature GeoJSON
+function squareToFeatureFromCenter(center, sizePoint) {
+  const distance = map.distance(center, sizePoint);
+  const halfSide = distance / Math.sqrt(2);
+
+  // Convertir en degrés
+  const latOffset = halfSide / 111320;
+  const lngOffset = halfSide / (111320 * Math.cos(center.lat * Math.PI / 180));
+
+  // Créer les coordonnées du carré (sens horaire)
   const geometry = {
     type: 'Polygon',
     coordinates: [[
-      [center.lng - distance, center.lat + distance], // Coin nord-ouest
-      [center.lng + distance, center.lat + distance], // Coin nord-est
-      [center.lng + distance, center.lat - distance], // Coin sud-est
-      [center.lng - distance, center.lat - distance], // Coin sud-ouest
-      [center.lng - distance, center.lat + distance]  // Retour au point de départ
+      [center.lng - lngOffset, center.lat + latOffset], // Coin nord-ouest
+      [center.lng + lngOffset, center.lat + latOffset], // Coin nord-est
+      [center.lng + lngOffset, center.lat - latOffset], // Coin sud-est
+      [center.lng - lngOffset, center.lat - latOffset], // Coin sud-ouest
+      [center.lng - lngOffset, center.lat + latOffset]  // Retour au point de départ
     ]]
   };
 
@@ -765,13 +1257,168 @@ function squareToFeature(center, corner) {
   };
 }
 
+// Convertir un rectangle défini par deux coins opposés en feature GeoJSON
+function rectangleToFeatureFromCorners(startCorner, endCorner) {
+  const minLat = Math.min(startCorner.lat, endCorner.lat);
+  const maxLat = Math.max(startCorner.lat, endCorner.lat);
+  const minLng = Math.min(startCorner.lng, endCorner.lng);
+  const maxLng = Math.max(startCorner.lng, endCorner.lng);
+
+  const geometry = {
+    type: 'Polygon',
+    coordinates: [[
+      [minLng, maxLat], // Coin nord-ouest
+      [maxLng, maxLat], // Coin nord-est
+      [maxLng, minLat], // Coin sud-est
+      [minLng, minLat], // Coin sud-ouest
+      [minLng, maxLat]  // Retour au point de départ
+    ]]
+  };
+
+  return {
+    map_id: props.mapId,
+    type: 'rectangle',
+    geometry: geometry,
+    color: '#cccccc',
+    opacity: 0.5,
+    z_index: 1
+  };
+}
+
+// Convertir un cercle défini par centre et point sur le cercle en feature GeoJSON
+function circleToFeatureFromCenter(center, edgePoint) {
+  const radius = map.distance(center, edgePoint);
+
+  // Créer un polygone approximant le cercle
+  const points = [];
+  const steps = 32;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * 2 * Math.PI;
+    const lat = center.lat + (radius / 111320) * Math.sin(angle);
+    const lng = center.lng + (radius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    points.push([lng, lat]); // GeoJSON format [lng, lat]
+  }
+  points.push(points[0]); // Fermer le polygone
+
+  const geometry = {
+    type: 'Polygon',
+    coordinates: [points]
+  };
+
+  return {
+    map_id: props.mapId,
+    type: 'circle',
+    geometry: geometry,
+    color: '#cccccc',
+    opacity: 0.5,
+    z_index: 1
+  };
+}
+
+// Convertir un triangle défini par centre et taille en feature GeoJSON
+function triangleToFeatureFromCenter(center, sizePoint) {
+  const distance = map.distance(center, sizePoint);
+
+  const points = [];
+  for (let i = 0; i < 3; i++) {
+    const angle = (i * 120 + 90) * Math.PI / 180; // Triangle pointant vers le haut
+    const lat = center.lat + (distance / 111320) * Math.sin(angle);
+    const lng = center.lng + (distance / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    points.push([lng, lat]); // GeoJSON format [lng, lat]
+  }
+  points.push(points[0]); // Fermer le polygone
+
+  const geometry = {
+    type: 'Polygon',
+    coordinates: [points]
+  };
+
+  return {
+    map_id: props.mapId,
+    type: 'triangle',
+    geometry: geometry,
+    color: '#cccccc',
+    opacity: 0.5,
+    z_index: 1
+  };
+}
+
+// Convertir un ovale défini par centre, hauteur et largeur en feature GeoJSON
+function ovalToFeatureFromCenter(center, heightPoint, widthPoint) {
+  const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
+  const widthRadius = Math.abs(center.lng - widthPoint.lng) * 111320 * Math.cos(center.lat * Math.PI / 180);
+
+  const points = [];
+  const steps = 32;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * 2 * Math.PI;
+    const lat = center.lat + (heightRadius / 111320) * Math.sin(angle);
+    const lng = center.lng + (widthRadius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    points.push([lng, lat]); // GeoJSON format [lng, lat]
+  }
+  points.push(points[0]); // Fermer le polygone
+
+  const geometry = {
+    type: 'Polygon',
+    coordinates: [points]
+  };
+
+  return {
+    map_id: props.mapId,
+    type: 'oval',
+    geometry: geometry,
+    color: '#cccccc',
+    opacity: 0.5,
+    z_index: 1
+  };
+}
+
 // Gérer le mouvement de la souris pour ajuster la forme
 function handleShapeMouseMove(e) {
   lastMousePos = e.latlng; // Stocker la dernière position
 
-  if (shapeState === 'drawing' && shapeStartPoint && props.selectedShape === 'square') {
-    // Le centre est shapeStartPoint, le coin suit la souris
-    updateTempSquareFromCenter(shapeStartPoint, e.latlng);
+  if (!props.activeEditMode === 'CREATE_SHAPES' || !props.selectedShape) return;
+
+  const shapeType = props.selectedShape;
+
+  switch (shapeType) {
+    case 'square':
+      if (shapeState === 'drawing' && shapeStartPoint) {
+        console.log('🔄 Updating square center', shapeStartPoint, 'size to', e.latlng);
+        updateTempSquareFromCenter(shapeStartPoint, e.latlng);
+      }
+      break;
+
+    case 'rectangle':
+      if (shapeState === 'drawing' && shapeStartPoint) {
+        console.log('🔄 Updating rectangle from', shapeStartPoint, 'to', e.latlng);
+        updateTempRectangleFromCorners(shapeStartPoint, e.latlng);
+      }
+      break;
+
+    case 'circle':
+      if (shapeState === 'drawing' && shapeStartPoint) {
+        console.log('🔄 Updating circle center', shapeStartPoint, 'radius to', e.latlng);
+        updateTempCircleFromCenter(shapeStartPoint, e.latlng);
+      }
+      break;
+
+    case 'triangle':
+      if (shapeState === 'drawing' && shapeStartPoint) {
+        console.log('🔄 Updating triangle center', shapeStartPoint, 'size to', e.latlng);
+        updateTempTriangleFromCenter(shapeStartPoint, e.latlng);
+      }
+      break;
+
+    case 'oval':
+      if (shapeState === 'adjusting_height' && shapeStartPoint) {
+        console.log('🔄 Adjusting oval height from', shapeStartPoint, 'to', e.latlng);
+        updateTempOvalHeight(shapeStartPoint, e.latlng);
+      } else if (shapeState === 'adjusting_width' && shapeStartPoint && shapeEndPoint) {
+        console.log('🔄 Adjusting oval width from', shapeStartPoint, 'to', e.latlng);
+        updateTempOvalWidth(shapeStartPoint, shapeEndPoint, e.latlng);
+      }
+      break;
   }
 }
 
@@ -1020,6 +1667,13 @@ async function saveFeature(featureData) {
       case 'polygon':
         renderZones([savedFeature]);
         break;
+      case 'square':
+      case 'rectangle':
+      case 'circle':
+      case 'triangle':
+      case 'oval':
+        renderShapes([savedFeature]);
+        break;
     }
     
     // Notifier le parent pour mettre à jour la liste complète
@@ -1051,6 +1705,12 @@ function cleanupEditMode() {
   map.off('click', handleMapClick);
   map.off('dblclick', handleMapDoubleClick);
   map.off('zoomend', updateCircleSizes);
+
+  // Nettoyer les événements des formes
+  map.off('mousedown', handleShapeMouseDown);
+  map.off('mousemove', handleShapeMouseMove);
+  map.off('mouseup', handleShapeMouseUp);
+  map.off('dragstart', preventDragDuringShapeDrawing);
 
   // Nettoyer les événements des formes
   map.off('mousedown', handleShapeMouseDown);
@@ -1100,10 +1760,44 @@ watch(() => props.editMode, (newEditMode) => {
 
 // Watcher pour changer de mode d'édition
 watch(() => props.activeEditMode, (newMode, oldMode) => {
+  console.log('🔄 Edit mode changed:', { oldMode, newMode });
+
   // Nettoyer l'état précédent
   if (oldMode) {
     cleanupCurrentDrawing();
   }
+
+  // Nettoyer tous les événements d'édition
+  map.off('mousedown', handleMouseDown);
+  map.off('mousemove', handleMouseMove);
+  map.off('mouseup', handleMouseUp);
+  map.off('contextmenu', handleRightClick);
+  map.off('mousedown', handleShapeMouseDown);
+  map.off('mousemove', handleShapeMouseMove);
+  map.off('mouseup', handleShapeMouseUp);
+  map.off('dragstart', preventDragDuringShapeDrawing);
+
+  // Réattacher les événements selon le nouveau mode
+  if (newMode === 'CREATE_LINE' || newMode === 'CREATE_FREE_LINE') {
+    console.log('📏 Reattaching line drawing events');
+    map.on('mousedown', handleMouseDown);
+    map.on('mousemove', handleMouseMove);
+    map.on('mouseup', handleMouseUp);
+  } else if (newMode === 'CREATE_SHAPES') {
+    console.log('🔷 Reattaching shape drawing events');
+    map.on('mousedown', handleShapeMouseDown);
+    map.on('mousemove', handleShapeMouseMove);
+    map.on('mouseup', handleShapeMouseUp);
+    map.on('dragstart', preventDragDuringShapeDrawing);
+  } else if (newMode === 'CREATE_POLYGON') {
+    console.log('⬡ Reattaching polygon drawing events');
+    map.on('contextmenu', handleRightClick);
+  }
+});
+
+// Watcher pour la forme sélectionnée
+watch(() => props.selectedShape, (newShape, oldShape) => {
+  console.log('Shape changed:', { oldShape, newShape });
 });
 
 function cleanupCurrentDrawing() {
