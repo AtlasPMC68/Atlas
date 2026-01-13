@@ -19,7 +19,7 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
     filename = "dummy.png"
 
     with patch("app.tasks.process_map_extraction.update_state") as mock_update_state, \
-         patch("pytesseract.image_to_string", return_value="Mocked OCR text"), \
+         #patch("pytesseract.image_to_string", return_value="Mocked OCR text"), \
          patch("PIL.Image.open", return_value=real_image), \
          patch("os.makedirs") as mock_makedirs, \
          patch("builtins.open", mock_open()) as mock_file:

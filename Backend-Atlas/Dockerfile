@@ -12,13 +12,6 @@ RUN apt-get update && apt-get install -y \
     libgeos-dev \
     && rm -rf /var/lib/apt/lists/*
 
-#Install Tesseract
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-fra \
-    tesseract-ocr-eng \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy Python dependencies and install them
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

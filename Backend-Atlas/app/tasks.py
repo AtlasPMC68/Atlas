@@ -1,15 +1,15 @@
+import cv2
 from celery import current_task
 from .celery_app import celery_app
 import time
 import logging
-import pytesseract
-from PIL import Image
 import os
 import tempfile
 from typing import BinaryIO
 from datetime import datetime
 from PIL import Image, ImageEnhance 
 from app.utils.color_extraction import extract_colors
+from app.utils.text_extraction import extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +22,7 @@ def test_task(self, name: str = "World"):
     
     for i in range(5):
         time.sleep(1)
-        self.update_state(
-            state="PROGRESS",
-            meta={"current": i + 1, "total": nb_task , "status": f"Processing step {i + 1}"}
-        )
+        self.update_state(state="PROGRESS",meta={"current": i + 1, "total": nb_task , "status": f"Processing step {i + 1}"})
     
     result = f"Hello {name}! Task completed successfully."
     logger.info(f"Test task completed: {result}")
@@ -33,7 +30,7 @@ def test_task(self, name: str = "World"):
 
 @celery_app.task(bind=True)
 def process_map_extraction(self, filename: str, file_content: bytes):
-    """Text extraction with TesseractOCR"""
+    """"""
     logger.info(f"Starting map processing for {filename}")
 
     try:
@@ -50,32 +47,20 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             tmp_file_path = tmp_file.name
 
         # Step 2: opening the picture
-        self.update_state(
-            state="PROGRESS", 
-            meta={"current": 2, "total": nb_task , "status": "Loading and validating image"}
+        self.update_state(state="PROGRESS", meta={"current": 2, "total": nb_task , "status": "Loading and validating image"}
         )
         time.sleep(2)
 
-        image = Image.open(tmp_file_path)
-        logger.info(f"Image loaded: {image.size}, mode: {image.mode}")
-
-        image = image.convert("L")  # Convert in grey tone
-
-        enhancer = ImageEnhance.Contrast(image)  
-        image = enhancer.enhance(2.0)
-
-        # pixels < 140 -> black, >= 140 -> white
-        image = image.point(lambda x: 0 if x < 140 else 255, '1')
+        image = cv2.imread(tmp_file_path)
+        image.flags.writeable = False # Makes image immutable
 
         # Step 3: Extraction OCR
-        self.update_state(
-            state="PROGRESS",
-            meta={"current": 3, "total": nb_task , "status": "Extracting text with TesseractOCR"}
-        )
+        self.update_state(state="PROGRESS",meta={"current": 3, "total": nb_task , "status": "Text extraction and erasing"})
         time.sleep(2)
-        custom_config = r'--oem 3 --psm 6'
-        extracted_text = pytesseract.image_to_string(image, config=custom_config)
 
+        # TODO: Link gpu_acc to a config parameter indicating the precense of GPU
+        extracted_text = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
+        
         # Step 4: Color Extraction
         self.update_state(
             state="PROGRESS",
@@ -86,7 +71,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         color_result = extract_colors(tmp_file_path)
         logger.info(f"[DEBUG] Résultat color_extraction : {color_result}")
 
-        # Step 5: Cleanning
+        # Step 5: Cleaning
         self.update_state(
             state="PROGRESS",
             meta={"current": 5, "total": nb_task , "status": "Cleaning up and finalizing"}
@@ -113,7 +98,6 @@ def process_map_extraction(self, filename: str, file_content: bytes):
                 f.write(f"Source File: {filename}\n")
                 f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"Character extract: {len(extracted_text.strip())}\n")
-                f.write(f"Tesseract Configuration: {custom_config}\n")
                 f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
                 f.write(extracted_text.strip())
 
@@ -128,7 +112,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
-            "status": "completeded"
+            "status": "completed"
         }
 
         logger.info(f"Map processing completed for {filename}: {len(extracted_text)} characters extracted")
@@ -143,3 +127,9 @@ def process_map_extraction(self, filename: str, file_content: bytes):
 
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
+    
+def validate_file_extension(file_path: str) -> None:
+    supported_file_ext = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp', '.ppm', '.pgm', '.pbm')
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in supported_file_ext:
+        raise ValueError(f"Extension {ext} non autorisée pour le système du consortium.")
