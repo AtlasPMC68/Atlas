@@ -37,19 +37,21 @@
           
           <!-- Modes d'édition -->
           <div class="space-y-2">
+            <p class="text-xs text-gray-500 mb-2">Cliquez sur un mode actif pour le désélectionner</p>
             <button
               v-for="mode in editModes"
               :key="mode.id"
               @click="setEditMode(mode.id)"
               :class="[
-                'w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors',
+                'w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors relative',
                 activeEditMode === mode.id
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               ]"
             >
               <i :class="mode.icon" class="mr-2"></i>
               {{ mode.label }}
+              <span v-if="activeEditMode === mode.id" class="absolute right-2 text-xs opacity-75">✕</span>
             </button>
           </div>
 
@@ -150,7 +152,6 @@ const editModes = [
   { id: 'CREATE_FREE_LINE', label: 'Crayon libre', icon: 'fas fa-pencil-alt' },
   { id: 'CREATE_POLYGON', label: 'Ajouter un polygone', icon: 'fas fa-draw-polygon' },
   { id: 'CREATE_SHAPES', label: 'Formes', icon: 'fas fa-shapes' },
-  { id: 'MOVE_FEATURE', label: 'Déplacer', icon: 'fas fa-arrows-alt' },
   { id: 'DELETE_FEATURE', label: 'Supprimer', icon: 'fas fa-trash' }
 ];
 
@@ -208,7 +209,13 @@ function toggleEditMode() {
 }
 
 function setEditMode(modeId) {
-  activeEditMode.value = modeId;
+  // Si on clique sur le mode déjà actif, le désélectionner
+  if (activeEditMode.value === modeId) {
+    activeEditMode.value = null;
+    selectedShape.value = null; // Désélectionner aussi la forme
+  } else {
+    activeEditMode.value = modeId;
+  }
 }
 
 function cancelPolygon() {
@@ -242,7 +249,7 @@ function getShapeInstructions(shapeId) {
     case 'oval':
       return 'Clic pour placer le centre → Glisser pour ajuster la hauteur → Clic pour valider → Glisser pour ajuster la largeur → Clic pour finaliser';
     default:
-      return '';
+      return 'Clic pour sélectionner/désélectionner • CTRL pour sélection multiple';
   }
 }
 

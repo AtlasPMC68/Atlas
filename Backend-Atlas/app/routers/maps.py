@@ -17,7 +17,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
-from app.schemas.feature import FeatureCreateRequest
+from app.schemas.feature import FeatureCreateRequest, FeatureUpdateRequest
 from geoalchemy2 import WKTElement
 from shapely.geometry import shape
 from datetime import datetime
@@ -231,50 +231,46 @@ async def create_feature(
 @router.put("/features/{feature_id}")
 async def update_feature(
     feature_id: str,
-    request: FeatureCreateRequest,
+    request: FeatureUpdateRequest,
     session: AsyncSession = Depends(get_async_session)
 ):
     """Mettre à jour une feature existante"""
-    
+
     try:
         # Récupérer la feature existante
         result = await session.execute(
             select(Feature).where(Feature.id == feature_id)
         )
         feature = result.scalar_one_or_none()
-        
+
         if not feature:
             raise HTTPException(status_code=404, detail="Feature not found")
-        
-        # Convertir la géométrie
-        geom_shape = shape(request.geometry.dict())
-        wkt_geom = WKTElement(geom_shape.wkt, srid=4326)
-        
-        # Mettre à jour les champs
-        feature.name = request.name
-        feature.type = request.type
-        feature.geometry = wkt_geom
-        feature.color = request.color
-        feature.stroke_width = request.stroke_width
-        feature.opacity = request.opacity
-        feature.z_index = request.z_index
-        feature.tags = request.tags or {}
-        feature.start_date = request.start_date
-        feature.end_date = request.end_date
-        feature.precision = request.precision
-        feature.source = request.source
-        
+
+        # Mettre à jour seulement les champs fournis
+        update_data = request.dict(exclude_unset=True)
+
+        for field, value in update_data.items():
+            if field == 'geometry' and value is not None:
+                # Convertir la géométrie GeoJSON en WKT pour PostGIS
+                geom_shape = shape(value)
+                wkt_geom = WKTElement(geom_shape.wkt, srid=4326)
+                setattr(feature, field, wkt_geom)
+            elif field == 'tags' and value is not None:
+                setattr(feature, field, value or {})
+            elif value is not None:
+                setattr(feature, field, value)
+
         await session.commit()
         await session.refresh(feature)
-        
+
         # Convertir pour la réponse
         response = feature.__dict__.copy()
         if feature.geometry:
             shape_geom = to_shape(feature.geometry)
             response['geometry'] = json.loads(json.dumps(mapping(shape_geom)))
-        
+
         return response
-        
+
     except Exception as e:
         logger.error(f"Error updating feature: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update feature: {str(e)}")

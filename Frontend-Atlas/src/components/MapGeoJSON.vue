@@ -9,7 +9,7 @@
 import { onMounted, ref, watch, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil"; // ← requis pour que arrowheads fonctionne
-import "leaflet-arrowheads";   // ← ajoute la méthode `arrowheads` aux polylines
+import "leaflet-arrowheads"; // ← ajoute la méthode `arrowheads` aux polylines
 import TimelineSlider from "../components/TimelineSlider.vue";
 
 // Props reçues de la vue parent
@@ -19,20 +19,20 @@ const props = defineProps({
   featureVisibility: Map,
   editMode: {
     type: Boolean,
-    default: false
+    default: false,
   },
   activeEditMode: {
     type: String,
-    default: null
+    default: null,
   },
   selectedShape: {
     type: String,
-    default: null
-  }
+    default: null,
+  },
 });
 
 // Émissions vers la vue parent
-const emit = defineEmits(['features-loaded']);
+const emit = defineEmits(["features-loaded"]);
 
 const selectedYear = ref(1740); // initial displayed year
 const previousFeatureIds = ref(new Set());
@@ -50,7 +50,7 @@ let labelLayer = null;
 const mockedCities = [
   { name: "Montréal", lat: 45.5017, lng: -73.5673, foundation_year: 1642 },
   { name: "Québec", lat: 46.8139, lng: -71.2082, foundation_year: 1608 },
-  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 }
+  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 },
 ];
 
 let citiesLayer = null;
@@ -72,6 +72,13 @@ let shapeEndPoint = null; // Point d'arrivée (coin opposé ou point pour ajuste
 let tempShape = null;
 let lastMousePos = null; // Dernière position connue de la souris
 let isDrawingShape = false; // Indicateur global pour empêcher le dragging
+
+// Variables pour la sélection et le déplacement de formes
+let selectedFeatures = new Set(); // Ensemble des IDs des features sélectionnées
+let isDraggingFeatures = false; // Si on est en train de déplacer des formes
+let dragStartPoint = null; // Point de départ du drag
+let originalPositions = new Map(); // Positions originales des formes avant déplacement
+let justFinishedDrag = false; // Flag pour éviter la désélection après un drag
 
 // Variables pour le tracé de ligne
 let isDrawingLine = false;
@@ -96,9 +103,9 @@ function smoothFreeLinePoints(points) {
     const currentPoint = points[i];
 
     // Calculer la distance en pixels à l'écran
-    const pixelDistance = map.latLngToContainerPoint(lastPoint).distanceTo(
-      map.latLngToContainerPoint(currentPoint)
-    );
+    const pixelDistance = map
+      .latLngToContainerPoint(lastPoint)
+      .distanceTo(map.latLngToContainerPoint(currentPoint));
 
     // Ajouter le point seulement s'il est assez éloigné du précédent
     if (pixelDistance >= SMOOTHING_MIN_DISTANCE) {
@@ -126,7 +133,7 @@ function updateCircleSizes() {
   const newRadius = getRadiusForZoom(currentZoom);
 
   // Mettre à jour tous les cercles de la collection
-  allCircles.forEach(circle => {
+  allCircles.forEach((circle) => {
     circle.setRadius(newRadius);
   });
 }
@@ -151,10 +158,64 @@ const featureLayerManager = {
       allCircles.add(layer);
     }
 
+    // Rendre le layer cliquable si on est en mode édition
+    if (props.editMode) {
+      this.makeLayerClickable(featureId, layer);
+    }
+
     // Ajouter seulement si visible
     if (props.featureVisibility.get(featureId)) {
       map.addLayer(layer);
     }
+  },
+
+  makeLayerClickable(featureId, layer) {
+    console.log(
+      "🔧 Making layer clickable:",
+      featureId,
+      layer.constructor.name
+    );
+
+    // Forcer l'interactivité
+    layer.options.interactive = true;
+
+    // Éviter les doublons d'événements
+    layer.off("click");
+    layer.off("mousedown");
+    layer.off("mouseup");
+
+    // Attacher les événements avec priorité
+    layer.on("mousedown", (e) => {
+      console.log(
+        "🖱️ LAYER MOUSEDOWN:",
+        featureId,
+        "Interactive:",
+        layer.options.interactive
+      );
+      e.originalEvent.stopPropagation();
+      e.originalEvent.preventDefault();
+      // Marquer que c'est un clic sur une forme
+      e.target._isFeatureClick = true;
+      e.target._featureId = featureId;
+    });
+
+    layer.on("click", (e) => {
+      console.log(
+        "🖱️ LAYER CLICK EVENT:",
+        featureId,
+        "CTRL:",
+        e.originalEvent.ctrlKey,
+        "Layer:",
+        layer.constructor.name,
+        "Interactive:",
+        layer.options.interactive
+      );
+      e.originalEvent.stopPropagation();
+      e.originalEvent.preventDefault();
+      handleFeatureClick(featureId, e.originalEvent.ctrlKey);
+    });
+
+    console.log("✅ Layer made clickable:", featureId);
   },
 
   toggleFeature(featureId, visible) {
@@ -169,7 +230,7 @@ const featureLayerManager = {
   },
 
   clearAllFeatures() {
-    this.layers.forEach(layer => {
+    this.layers.forEach((layer) => {
       // Retirer les cercles de la collection
       if (layer instanceof L.CircleMarker) {
         allCircles.delete(layer);
@@ -177,13 +238,15 @@ const featureLayerManager = {
       map.removeLayer(layer);
     });
     this.layers.clear();
-  }
+  },
 };
 
 const filteredFeatures = computed(() => {
-  return props.features.filter(feature => 
-    new Date(feature.start_date).getFullYear() <= selectedYear.value &&
-    (!feature.end_date || new Date(feature.end_date).getFullYear() >= selectedYear.value)
+  return props.features.filter(
+    (feature) =>
+      new Date(feature.start_date).getFullYear() <= selectedYear.value &&
+      (!feature.end_date ||
+        new Date(feature.end_date).getFullYear() >= selectedYear.value)
   );
 });
 
@@ -197,22 +260,21 @@ async function fetchFeaturesAndRender(year) {
     const allFeatures = await res.json();
 
     // Mettre à jour les features dans le parent
-    emit('features-loaded', allFeatures);
+    emit("features-loaded", allFeatures);
 
     // Filtrer par année
-    const features = allFeatures.filter(f =>
-      new Date(f.start_date).getFullYear() <= year
+    const features = allFeatures.filter(
+      (f) => new Date(f.start_date).getFullYear() <= year
     );
 
     // Dispatcher selon le type
-    const cities = features.filter(f => f.type === "point");
-    const zones = features.filter(f => f.type === "zone");
-    const arrows = features.filter(f => f.type === "arrow");
+    const cities = features.filter((f) => f.type === "point");
+    const zones = features.filter((f) => f.type === "zone");
+    const arrows = features.filter((f) => f.type === "arrow");
 
     renderCities(cities);
     renderZones(zones);
     renderArrows(arrows);
-
   } catch (err) {
     console.warn("Erreur fetch features:", err);
   }
@@ -238,16 +300,16 @@ function loadRegionsForYear(year, isFirstTime = false) {
       return;
     }
   }
-  
+
   lastCurrentYear = closestYear;
   const filename = `/geojson/world_${closestYear}.geojson`;
 
   return fetch(filename)
-    .then(res => {
+    .then((res) => {
       if (!res.ok) throw new Error("File not found: " + filename);
       return res.json();
     })
-    .then(data => {
+    .then((data) => {
       if (currentRegionsLayer) {
         map.removeLayer(currentRegionsLayer);
         currentRegionsLayer = null;
@@ -263,7 +325,7 @@ function loadRegionsForYear(year, isFirstTime = false) {
         },
       }).addTo(map);
     })
-    .catch(err => {
+    .catch((err) => {
       console.warn(err.message);
     });
 }
@@ -273,7 +335,7 @@ function renderCities(features) {
   const currentZoom = map.getZoom();
   const radius = getRadiusForZoom(currentZoom);
 
-  safeFeatures.forEach(feature => {
+  safeFeatures.forEach((feature) => {
     // Defensive check
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
@@ -296,8 +358,8 @@ function renderCities(features) {
     if (feature.name) {
       circle.bindTooltip(feature.name, {
         permanent: false,
-        direction: 'top',
-        offset: [0, -5]
+        direction: "top",
+        offset: [0, -5],
       });
     }
 
@@ -308,9 +370,7 @@ function renderCities(features) {
 function renderZones(features) {
   const safeFeatures = toArray(features);
 
-
-  safeFeatures.forEach(feature => {
-
+  safeFeatures.forEach((feature) => {
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
     }
@@ -320,8 +380,8 @@ function renderZones(features) {
         fillColor: feature.color || "#ccc",
         fillOpacity: 0.5,
         color: "#333",
-        weight: 1
-      }
+        weight: 1,
+      },
     });
 
     if (feature.name) {
@@ -335,29 +395,29 @@ function renderZones(features) {
 function renderArrows(features) {
   const safeFeatures = toArray(features);
 
-  safeFeatures.forEach(feature => {
-
+  safeFeatures.forEach((feature) => {
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
     }
     // Convert GeoJSON [lng, lat] → Leaflet [lat, lng]
-    const latLngs = feature.geometry.coordinates.map(
-      ([lng, lat]) => [lat, lng]
-    );
+    const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [
+      lat,
+      lng,
+    ]);
 
     const line = L.polyline(latLngs, {
       color: feature.color || "#000",
       weight: feature.stroke_width ?? 2,
-      opacity: feature.opacity ?? 1
+      opacity: feature.opacity ?? 1,
     });
 
     line.addTo(map);
 
     // Apply arrowheads (after addTo(map))
     line.arrowheads({
-      size: '10px',
-      frequency: 'endonly',
-      fill: true
+      size: "10px",
+      frequency: "endonly",
+      fill: true,
     });
 
     if (feature.name) {
@@ -371,19 +431,27 @@ function renderArrows(features) {
 function renderShapes(features) {
   const safeFeatures = toArray(features);
 
-  safeFeatures.forEach(feature => {
-    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates) || !feature.geometry.coordinates[0]) {
+  safeFeatures.forEach((feature) => {
+    if (
+      !feature.geometry ||
+      !Array.isArray(feature.geometry.coordinates) ||
+      !feature.geometry.coordinates[0]
+    ) {
       return;
     }
 
     // Convertir les coordonnées GeoJSON en LatLng
-    const latLngs = feature.geometry.coordinates[0].map(coord => [coord[1], coord[0]]);
+    const latLngs = feature.geometry.coordinates[0].map((coord) => [
+      coord[1],
+      coord[0],
+    ]);
 
     const square = L.polygon(latLngs, {
       color: feature.color || "#000000",
       weight: 2,
       fillColor: feature.color || "#cccccc",
-      fillOpacity: feature.opacity ?? 0.5
+      fillOpacity: feature.opacity ?? 0.5,
+      interactive: true, // Rendre interactif par défaut
     });
 
     if (feature.name) {
@@ -394,13 +462,12 @@ function renderShapes(features) {
   });
 }
 
- 
 function renderAllFeatures() {
   const currentFeatures = filteredFeatures.value;
-  const currentIds = new Set(currentFeatures.map(f => f.id));
+  const currentIds = new Set(currentFeatures.map((f) => f.id));
   const previousIds = previousFeatureIds.value;
 
-  previousIds.forEach(oldId => {
+  previousIds.forEach((oldId) => {
     if (!currentIds.has(oldId)) {
       const layer = featureLayerManager.layers.get(oldId);
       if (layer) {
@@ -410,16 +477,16 @@ function renderAllFeatures() {
     }
   });
 
-  const newFeatures = currentFeatures.filter(f => !previousIds.has(f.id));
+  const newFeatures = currentFeatures.filter((f) => !previousIds.has(f.id));
   const featuresByType = {
-    point: newFeatures.filter(f => f.type === 'point'),
-    polygon: newFeatures.filter(f => f.type === 'zone'),
-    arrow: newFeatures.filter(f => f.type === 'arrow'),
-    square: newFeatures.filter(f => f.type === 'square'),
-    rectangle: newFeatures.filter(f => f.type === 'rectangle'),
-    circle: newFeatures.filter(f => f.type === 'circle'),
-    triangle: newFeatures.filter(f => f.type === 'triangle'),
-    oval: newFeatures.filter(f => f.type === 'oval')
+    point: newFeatures.filter((f) => f.type === "point"),
+    polygon: newFeatures.filter((f) => f.type === "zone"),
+    arrow: newFeatures.filter((f) => f.type === "arrow"),
+    square: newFeatures.filter((f) => f.type === "square"),
+    rectangle: newFeatures.filter((f) => f.type === "rectangle"),
+    circle: newFeatures.filter((f) => f.type === "circle"),
+    triangle: newFeatures.filter((f) => f.type === "triangle"),
+    oval: newFeatures.filter((f) => f.type === "oval"),
   };
 
   renderCities(featuresByType.point);
@@ -433,9 +500,8 @@ function renderAllFeatures() {
 
   previousFeatureIds.value = currentIds;
 
-  emit('features-loaded', currentFeatures);
+  emit("features-loaded", currentFeatures);
 }
- 
 
 function removeGeoJSONLayers() {
   if (currentRegionsLayer) {
@@ -452,7 +518,7 @@ async function loadAllLayersForYear(year) {
   isLoading = true;
 
   try {
-    await loadRegionsForYear(year);  // <-- ici on attend le chargement complet
+    await loadRegionsForYear(year); // <-- ici on attend le chargement complet
     renderAllFeatures();
   } catch (e) {
     console.warn("Error loading layers:", e);
@@ -475,7 +541,6 @@ function toArray(maybeArray) {
   return [maybeArray]; // wrap single object
 }
 
-
 // Uses debounce to load GeoJSON layers
 const debouncedUpdate = debounce((year) => {
   loadAllLayersForYear(year);
@@ -494,12 +559,12 @@ onMounted(() => {
       maxZoom: 19,
     }
   ).addTo(map);
-  
+
   loadRegionsForYear(selectedYear.value, true);
-  
+
   // Ajouter l'événement zoom pour adapter la taille des cercles
-  map.on('zoomend', updateCircleSizes);
-  
+  map.on("zoomend", updateCircleSizes);
+
   // Initialiser l'édition si nécessaire
   if (props.editMode) {
     initializeEditControls();
@@ -512,49 +577,71 @@ onMounted(() => {
 function initializeEditControls() {
   if (!props.editMode) return;
 
-  console.log('Initializing edit controls:', { editMode: props.editMode, activeEditMode: props.activeEditMode, selectedShape: props.selectedShape });
+  console.log("Initializing edit controls:", {
+    editMode: props.editMode,
+    activeEditMode: props.activeEditMode,
+    selectedShape: props.selectedShape,
+  });
 
   // Layer pour les éléments dessinés
   drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
   // Écouter les événements selon le mode actif
-  console.log('🎛️ Initializing edit controls:', {
+  console.log("🎛️ Initializing edit controls:", {
     editMode: props.editMode,
     activeEditMode: props.activeEditMode,
-    selectedShape: props.selectedShape
+    selectedShape: props.selectedShape,
   });
 
-  if (props.activeEditMode === 'CREATE_LINE' || props.activeEditMode === 'CREATE_FREE_LINE') {
-    console.log('📏 Setting up line drawing events');
+  // Événements de sélection/déplacement toujours disponibles en mode édition
+  if (props.editMode) {
+    console.log("🎯 Setting up selection and move events");
+    map.on("mousedown", handleMoveMouseDown);
+    map.on("mousemove", handleMoveMouseMove);
+    map.on("mouseup", handleMoveMouseUp);
+    map.on("keydown", handleKeyDown);
+    // Rendre les formes existantes cliquables
+    makeFeaturesClickable();
+  }
+
+  if (
+    props.activeEditMode === "CREATE_LINE" ||
+    props.activeEditMode === "CREATE_FREE_LINE"
+  ) {
+    console.log("📏 Setting up line drawing events");
     // Événements pour le tracé de ligne
-    map.on('mousedown', handleMouseDown);
-    map.on('mousemove', handleMouseMove);
-    map.on('mouseup', handleMouseUp);
-  } else if (props.activeEditMode === 'CREATE_SHAPES') {
-    console.log('🔷 Setting up shape drawing events');
+    map.on("mousedown", handleMouseDown);
+    map.on("mousemove", handleMouseMove);
+    map.on("mouseup", handleMouseUp);
+  } else if (props.activeEditMode === "CREATE_SHAPES") {
+    console.log("🔷 Setting up shape drawing events");
     // Événements pour les formes
-    map.on('mousedown', handleShapeMouseDown);
-    map.on('mousemove', handleShapeMouseMove);
-    map.on('mouseup', handleShapeMouseUp);
-    map.on('dragstart', preventDragDuringShapeDrawing);
-  } else if (props.activeEditMode === 'CREATE_POLYGON') {
-    console.log('⬡ Setting up polygon drawing events');
+    map.on("mousedown", handleShapeMouseDown);
+    map.on("mousemove", handleShapeMouseMove);
+    map.on("mouseup", handleShapeMouseUp);
+    map.on("dragstart", preventDragDuringShapeDrawing);
+  } else if (props.activeEditMode === "CREATE_POLYGON") {
+    console.log("⬡ Setting up polygon drawing events");
     // Événements pour les polygones
-    map.on('contextmenu', handleRightClick); // Clic droit pour finir le polygone
+    map.on("contextmenu", handleRightClick); // Clic droit pour finir le polygone
   }
 
   // Écouter les clics sur la carte selon le mode
-  map.on('click', handleMapClick);
-  map.on('dblclick', handleMapDoubleClick);
+  map.on("click", handleMapClick);
+  map.on("dblclick", handleMapDoubleClick);
 }
 
 // Gestion des événements de souris pour le tracé
 function handleMouseDown(e) {
-  console.log('General mouse down triggered:', { editMode: props.editMode, activeEditMode: props.activeEditMode, selectedShape: props.selectedShape });
+  console.log("General mouse down triggered:", {
+    editMode: props.editMode,
+    activeEditMode: props.activeEditMode,
+    selectedShape: props.selectedShape,
+  });
   if (!props.editMode) return;
 
-  if (props.activeEditMode === 'CREATE_LINE') {
+  if (props.activeEditMode === "CREATE_LINE") {
     isDrawingLine = true;
     lineStartPoint = e.latlng;
 
@@ -563,13 +650,12 @@ function handleMouseDown(e) {
 
     // Créer la ligne temporaire (invisible au départ)
     tempLine = L.polyline([lineStartPoint, lineStartPoint], {
-      color: '#000000',
+      color: "#000000",
       weight: 2,
-      opacity: 0.7
+      opacity: 0.7,
     });
     drawnItems.addLayer(tempLine);
-  }
-  else if (props.activeEditMode === 'CREATE_FREE_LINE') {
+  } else if (props.activeEditMode === "CREATE_FREE_LINE") {
     isDrawingFree = true;
     freeLinePoints = [e.latlng];
 
@@ -578,9 +664,9 @@ function handleMouseDown(e) {
 
     // Créer la ligne libre temporaire
     tempFreeLine = L.polyline([e.latlng], {
-      color: '#000000',
+      color: "#000000",
       weight: 2,
-      opacity: 0.7
+      opacity: 0.7,
     });
     drawnItems.addLayer(tempFreeLine);
   }
@@ -590,8 +676,7 @@ function handleMouseMove(e) {
   if (isDrawingLine && lineStartPoint && tempLine) {
     // Mettre à jour les coordonnées de la ligne droite temporaire
     tempLine.setLatLngs([lineStartPoint, e.latlng]);
-  }
-  else if (isDrawingFree && tempFreeLine) {
+  } else if (isDrawingFree && tempFreeLine) {
     // Ajouter le point actuel à la ligne libre
     freeLinePoints.push(e.latlng);
 
@@ -677,18 +762,24 @@ function preventDragDuringShapeDrawing(e) {
 
 // Gérer les clics sur la carte en mode édition
 function handleMapClick(e) {
-  console.log('Map click triggered:', { editMode: props.editMode, activeEditMode: props.activeEditMode, selectedShape: props.selectedShape });
+  console.log("🗺️ MAP CLICK:", {
+    editMode: props.editMode,
+    activeEditMode: props.activeEditMode,
+    selectedShape: props.selectedShape,
+    latlng: e.latlng,
+    target: e.target,
+  });
 
   if (!props.editMode || !props.activeEditMode) return;
 
   switch (props.activeEditMode) {
-    case 'CREATE_POINT':
+    case "CREATE_POINT":
       createPointAt(e.latlng);
       break;
-    case 'CREATE_POLYGON':
+    case "CREATE_POLYGON":
       handlePolygonClick(e.latlng);
       break;
-    case 'CREATE_SHAPES':
+    case "CREATE_SHAPES":
       // Les formes sont gérées par les événements souris mousedown/mousemove/mouseup
       break;
   }
@@ -696,24 +787,31 @@ function handleMapClick(e) {
 
 // Gérer les événements souris pour les formes (comme pour les lignes)
 function handleShapeMouseDown(e) {
-  console.log('🔽 Shape mouse down triggered:', {
+  console.log("🔽 SHAPE MOUSE DOWN:", {
     selectedShape: props.selectedShape,
     activeEditMode: props.activeEditMode,
     editMode: props.editMode,
     shapeState: shapeState,
-    latlng: e.latlng
+    latlng: e.latlng,
+    target: e.target,
   });
 
-  if (props.activeEditMode !== 'CREATE_SHAPES' || !props.selectedShape) {
-    console.log('❌ Shape drawing not allowed - returning', {
+  // Vérifier si c'est un clic sur une forme existante
+  if (e.target && e.target._isFeatureClick) {
+    console.log("🔽 Click on existing feature, skipping shape creation");
+    return;
+  }
+
+  if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape) {
+    console.log("❌ Shape drawing not allowed - returning", {
       activeEditMode: props.activeEditMode,
       selectedShape: props.selectedShape,
-      expectedMode: 'CREATE_SHAPES'
+      expectedMode: "CREATE_SHAPES",
     });
     return;
   }
 
-  console.log('✅ Shape drawing allowed - starting', props.selectedShape);
+  console.log("✅ Shape drawing allowed - starting", props.selectedShape);
 
   // Marquer qu'on commence à dessiner
   isDrawingShape = true;
@@ -730,52 +828,55 @@ function handleShapeMouseDown(e) {
 
   // Logique selon le type de forme
   switch (shapeType) {
-    case 'square':
+    case "square":
       // Approche : centre + taille (comme le cercle, mais carré parfait)
-      shapeState = 'drawing';
+      shapeState = "drawing";
       shapeStartPoint = e.latlng;
       // On créera la forme temporaire au mouvement de souris
-      console.log('Started drawing square center at:', e.latlng);
+      console.log("Started drawing square center at:", e.latlng);
       break;
 
-    case 'rectangle':
+    case "rectangle":
       // Approche : deux coins opposés
-      shapeState = 'drawing';
+      shapeState = "drawing";
       shapeStartPoint = e.latlng;
-      tempShape = L.rectangle([
-        [shapeStartPoint.lat, shapeStartPoint.lng],
-        [shapeStartPoint.lat, shapeStartPoint.lng]
-      ], {
-        color: '#000000',
-        weight: 2,
-        fillColor: '#cccccc',
-        fillOpacity: 0.5
-      });
+      tempShape = L.rectangle(
+        [
+          [shapeStartPoint.lat, shapeStartPoint.lng],
+          [shapeStartPoint.lat, shapeStartPoint.lng],
+        ],
+        {
+          color: "#000000",
+          weight: 2,
+          fillColor: "#cccccc",
+          fillOpacity: 0.5,
+        }
+      );
       drawnItems.addLayer(tempShape);
-      console.log('Started drawing rectangle at:', e.latlng);
+      console.log("Started drawing rectangle at:", e.latlng);
       break;
 
-    case 'circle':
-    case 'triangle':
+    case "circle":
+    case "triangle":
       // Approche : centre + taille
-      shapeState = 'drawing';
+      shapeState = "drawing";
       shapeStartPoint = e.latlng;
       // On créera la forme temporaire au mouvement de souris
-      console.log('Started drawing', shapeType, 'center at:', e.latlng);
+      console.log("Started drawing", shapeType, "center at:", e.latlng);
       break;
 
-    case 'oval':
+    case "oval":
       // Approche : centre + hauteur d'abord, puis largeur
       if (shapeState === null) {
         // Première étape : définir le centre
-        shapeState = 'adjusting_height';
+        shapeState = "adjusting_height";
         shapeStartPoint = e.latlng;
-        console.log('Started drawing oval center at:', e.latlng);
+        console.log("Started drawing oval center at:", e.latlng);
       }
       break;
 
     default:
-      console.log('❌ Unknown shape type:', shapeType);
+      console.log("❌ Unknown shape type:", shapeType);
       isDrawingShape = false;
       map.dragging.enable();
       return;
@@ -783,23 +884,23 @@ function handleShapeMouseDown(e) {
 }
 
 function handleShapeMouseUp(e) {
-  console.log('🔺 Shape mouse up triggered:', {
+  console.log("🔺 Shape mouse up triggered:", {
     shapeState,
     selectedShape: props.selectedShape,
     hasStartPoint: !!shapeStartPoint,
-    distance: shapeStartPoint ? map.distance(shapeStartPoint, e.latlng) : null
+    distance: shapeStartPoint ? map.distance(shapeStartPoint, e.latlng) : null,
   });
 
   if (!shapeStartPoint || !props.selectedShape) {
-    console.log('❌ No start point or shape selected');
+    console.log("❌ No start point or shape selected");
     return;
   }
 
   const shapeType = props.selectedShape;
 
   switch (shapeType) {
-    case 'square':
-      if (shapeState === 'drawing') {
+    case "square":
+      if (shapeState === "drawing") {
         isDrawingShape = false;
         map.dragging.enable();
 
@@ -809,7 +910,7 @@ function handleShapeMouseUp(e) {
           return;
         }
 
-        console.log('✅ Creating final square');
+        console.log("✅ Creating final square");
         if (tempShape) {
           drawnItems.removeLayer(tempShape);
           tempShape = null;
@@ -822,8 +923,8 @@ function handleShapeMouseUp(e) {
       }
       break;
 
-    case 'rectangle':
-      if (shapeState === 'drawing') {
+    case "rectangle":
+      if (shapeState === "drawing") {
         isDrawingShape = false;
         map.dragging.enable();
 
@@ -833,7 +934,7 @@ function handleShapeMouseUp(e) {
           return;
         }
 
-        console.log('✅ Creating final rectangle');
+        console.log("✅ Creating final rectangle");
         if (tempShape) {
           drawnItems.removeLayer(tempShape);
           tempShape = null;
@@ -846,8 +947,8 @@ function handleShapeMouseUp(e) {
       }
       break;
 
-    case 'circle':
-      if (shapeState === 'drawing') {
+    case "circle":
+      if (shapeState === "drawing") {
         // Pour le cercle, mouseup finalise la forme (pas comme les autres)
         isDrawingShape = false;
         map.dragging.enable();
@@ -858,7 +959,7 @@ function handleShapeMouseUp(e) {
           return;
         }
 
-        console.log('✅ Creating final circle');
+        console.log("✅ Creating final circle");
         if (tempShape) {
           drawnItems.removeLayer(tempShape);
           tempShape = null;
@@ -871,8 +972,8 @@ function handleShapeMouseUp(e) {
       }
       break;
 
-    case 'triangle':
-      if (shapeState === 'drawing') {
+    case "triangle":
+      if (shapeState === "drawing") {
         isDrawingShape = false;
         map.dragging.enable();
 
@@ -882,7 +983,7 @@ function handleShapeMouseUp(e) {
           return;
         }
 
-        console.log('✅ Creating final triangle');
+        console.log("✅ Creating final triangle");
         if (tempShape) {
           drawnItems.removeLayer(tempShape);
           tempShape = null;
@@ -895,18 +996,18 @@ function handleShapeMouseUp(e) {
       }
       break;
 
-    case 'oval':
-      if (shapeState === 'adjusting_height') {
+    case "oval":
+      if (shapeState === "adjusting_height") {
         // Première étape terminée : hauteur définie, passer à la largeur
-        shapeState = 'adjusting_width';
+        shapeState = "adjusting_width";
         shapeEndPoint = e.latlng;
-        console.log('✅ Oval height set, now adjusting width');
-      } else if (shapeState === 'adjusting_width') {
+        console.log("✅ Oval height set, now adjusting width");
+      } else if (shapeState === "adjusting_width") {
         // Deuxième étape terminée : créer l'ovale final
         isDrawingShape = false;
         map.dragging.enable();
 
-        console.log('✅ Creating final oval');
+        console.log("✅ Creating final oval");
         if (tempShape) {
           drawnItems.removeLayer(tempShape);
           tempShape = null;
@@ -922,7 +1023,6 @@ function handleShapeMouseUp(e) {
   }
 }
 
-
 // Créer un carré avec centre et taille (comme un cercle)
 function createSquare(center, sizePoint) {
   // Utiliser les coordonnées pixels pour un carré parfaitement visuel
@@ -934,29 +1034,59 @@ function createSquare(center, sizePoint) {
   const halfSidePixels = pixelDistance / Math.sqrt(2);
 
   // Calculer les coins du carré en pixels
-  const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
-  const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
+  const topLeftPixel = L.point(
+    centerPixel.x - halfSidePixels,
+    centerPixel.y - halfSidePixels
+  );
+  const bottomRightPixel = L.point(
+    centerPixel.x + halfSidePixels,
+    centerPixel.y + halfSidePixels
+  );
 
   // Convertir en coordonnées géographiques
   const topLeft = map.containerPointToLatLng(topLeftPixel);
   const bottomRight = map.containerPointToLatLng(bottomRightPixel);
 
-  const square = L.rectangle([
-    [topLeft.lat, topLeft.lng],
-    [bottomRight.lat, bottomRight.lng]
-  ], {
-    color: '#000000',
-    weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
-  });
+  const square = L.rectangle(
+    [
+      [topLeft.lat, topLeft.lng],
+      [bottomRight.lat, bottomRight.lng],
+    ],
+    {
+      color: "#000000",
+      weight: 2,
+      fillColor: "#cccccc",
+      fillOpacity: 0.5,
+    }
+  );
 
   drawnItems.addLayer(square);
 
-  // Créer et sauvegarder automatiquement la feature
+  // Créer la feature
   const feature = squareToFeatureFromCenter(center, sizePoint);
 
-  saveFeature(feature);
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
+
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, square);
+  featureLayerManager.makeLayerClickable(layerKey, square);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un rectangle entre deux coins opposés
@@ -967,20 +1097,45 @@ function createRectangle(startCorner, endCorner) {
   const minLng = Math.min(startCorner.lng, endCorner.lng);
   const maxLng = Math.max(startCorner.lng, endCorner.lng);
 
-  const rectangle = L.rectangle([
-    [minLat, minLng],
-    [maxLat, maxLng]
-  ], {
-    color: '#000000',
-    weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
-  });
+  const rectangle = L.rectangle(
+    [
+      [minLat, minLng],
+      [maxLat, maxLng],
+    ],
+    {
+      color: "#000000",
+      weight: 2,
+      fillColor: "#cccccc",
+      fillOpacity: 0.5,
+    }
+  );
 
   drawnItems.addLayer(rectangle);
 
   const feature = rectangleToFeatureFromCorners(startCorner, endCorner);
-  saveFeature(feature);
+
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
+
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, rectangle);
+  featureLayerManager.makeLayerClickable(layerKey, rectangle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un cercle avec centre et rayon
@@ -989,16 +1144,38 @@ function createCircle(center, edgePoint) {
 
   const circle = L.circle(center, {
     radius: radius,
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(circle);
 
   const feature = circleToFeatureFromCenter(center, edgePoint);
-  saveFeature(feature);
+
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
+
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, circle);
+  featureLayerManager.makeLayerClickable(layerKey, circle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un triangle avec centre et taille
@@ -1007,50 +1184,103 @@ function createTriangle(center, sizePoint) {
 
   const points = [];
   for (let i = 0; i < 3; i++) {
-    const angle = (i * 120 + 90) * Math.PI / 180; // Triangle pointant vers le haut
+    const angle = ((i * 120 + 90) * Math.PI) / 180; // Triangle pointant vers le haut
     const lat = center.lat + (distance / 111320) * Math.sin(angle);
-    const lng = center.lng + (distance / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    const lng =
+      center.lng +
+      ((distance / 111320) * Math.cos(angle)) /
+        Math.cos((center.lat * Math.PI) / 180);
     points.push([lat, lng]);
   }
 
   const triangle = L.polygon(points, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(triangle);
 
   const feature = triangleToFeatureFromCenter(center, sizePoint);
-  saveFeature(feature);
+
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
+
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, triangle);
+  featureLayerManager.makeLayerClickable(layerKey, triangle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un ovale avec centre, hauteur et largeur
 function createOval(center, heightPoint, widthPoint) {
   const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
-  const widthRadius = Math.abs(center.lng - widthPoint.lng) * 111320 * Math.cos(center.lat * Math.PI / 180);
+  const widthRadius =
+    Math.abs(center.lng - widthPoint.lng) *
+    111320 *
+    Math.cos((center.lat * Math.PI) / 180);
 
   const points = [];
   const steps = 32;
   for (let i = 0; i < steps; i++) {
     const angle = (i / steps) * 2 * Math.PI;
     const lat = center.lat + (heightRadius / 111320) * Math.sin(angle);
-    const lng = center.lng + (widthRadius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    const lng =
+      center.lng +
+      ((widthRadius / 111320) * Math.cos(angle)) /
+        Math.cos((center.lat * Math.PI) / 180);
     points.push([lat, lng]);
   }
 
   const oval = L.polygon(points, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(oval);
 
   const feature = ovalToFeatureFromCenter(center, heightPoint, widthPoint);
-  saveFeature(feature);
+
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
+
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, oval);
+  featureLayerManager.makeLayerClickable(layerKey, oval);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Mettre à jour le carré temporaire avec centre et taille (comme un cercle)
@@ -1071,8 +1301,14 @@ function updateTempSquareFromCenter(center, sizePoint) {
   const halfSidePixels = pixelDistance / Math.sqrt(2);
 
   // Calculer les coins du carré en pixels
-  const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
-  const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
+  const topLeftPixel = L.point(
+    centerPixel.x - halfSidePixels,
+    centerPixel.y - halfSidePixels
+  );
+  const bottomRightPixel = L.point(
+    centerPixel.x + halfSidePixels,
+    centerPixel.y + halfSidePixels
+  );
 
   // Convertir les coordonnées pixels en coordonnées géographiques
   const topLeft = map.containerPointToLatLng(topLeftPixel);
@@ -1081,14 +1317,14 @@ function updateTempSquareFromCenter(center, sizePoint) {
   // Créer les coins du carré
   const bounds = [
     [topLeft.lat, topLeft.lng],
-    [bottomRight.lat, bottomRight.lng]
+    [bottomRight.lat, bottomRight.lng],
   ];
 
   tempShape = L.rectangle(bounds, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(tempShape);
@@ -1110,14 +1346,14 @@ function updateTempRectangleFromCorners(startCorner, endCorner) {
   // Créer un rectangle avec ces limites
   const bounds = [
     [minLat, minLng],
-    [maxLat, maxLng]
+    [maxLat, maxLng],
   ];
 
   tempShape = L.rectangle(bounds, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(tempShape);
@@ -1135,10 +1371,10 @@ function updateTempCircleFromCenter(center, edgePoint) {
 
   tempShape = L.circle(center, {
     radius: radius,
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(tempShape);
@@ -1158,17 +1394,20 @@ function updateTempTriangleFromCenter(center, sizePoint) {
   // Calculer les trois points du triangle
   const points = [];
   for (let i = 0; i < 3; i++) {
-    const angle = (i * 120 + 90) * Math.PI / 180; // Commencer par le point du haut (90°)
+    const angle = ((i * 120 + 90) * Math.PI) / 180; // Commencer par le point du haut (90°)
     const lat = center.lat + (distance / 111320) * Math.sin(angle); // Approximation en degrés
-    const lng = center.lng + (distance / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    const lng =
+      center.lng +
+      ((distance / 111320) * Math.cos(angle)) /
+        Math.cos((center.lat * Math.PI) / 180);
     points.push([lat, lng]);
   }
 
   tempShape = L.polygon(points, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(tempShape);
@@ -1186,10 +1425,10 @@ function updateTempOvalHeight(center, heightPoint) {
 
   tempShape = L.circle(center, {
     radius: radius,
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(tempShape);
@@ -1204,7 +1443,10 @@ function updateTempOvalWidth(center, heightPoint, widthPoint) {
 
   // Calculer les rayons
   const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
-  const widthRadius = Math.abs(center.lng - widthPoint.lng) * 111320 * Math.cos(center.lat * Math.PI / 180);
+  const widthRadius =
+    Math.abs(center.lng - widthPoint.lng) *
+    111320 *
+    Math.cos((center.lat * Math.PI) / 180);
 
   // Créer une ellipse approximative avec un polygone
   const points = [];
@@ -1212,15 +1454,18 @@ function updateTempOvalWidth(center, heightPoint, widthPoint) {
   for (let i = 0; i < steps; i++) {
     const angle = (i / steps) * 2 * Math.PI;
     const lat = center.lat + (heightRadius / 111320) * Math.sin(angle);
-    const lng = center.lng + (widthRadius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    const lng =
+      center.lng +
+      ((widthRadius / 111320) * Math.cos(angle)) /
+        Math.cos((center.lat * Math.PI) / 180);
     points.push([lat, lng]);
   }
 
   tempShape = L.polygon(points, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(tempShape);
@@ -1233,27 +1478,30 @@ function squareToFeatureFromCenter(center, sizePoint) {
 
   // Convertir en degrés
   const latOffset = halfSide / 111320;
-  const lngOffset = halfSide / (111320 * Math.cos(center.lat * Math.PI / 180));
+  const lngOffset =
+    halfSide / (111320 * Math.cos((center.lat * Math.PI) / 180));
 
   // Créer les coordonnées du carré (sens horaire)
   const geometry = {
-    type: 'Polygon',
-    coordinates: [[
-      [center.lng - lngOffset, center.lat + latOffset], // Coin nord-ouest
-      [center.lng + lngOffset, center.lat + latOffset], // Coin nord-est
-      [center.lng + lngOffset, center.lat - latOffset], // Coin sud-est
-      [center.lng - lngOffset, center.lat - latOffset], // Coin sud-ouest
-      [center.lng - lngOffset, center.lat + latOffset]  // Retour au point de départ
-    ]]
+    type: "Polygon",
+    coordinates: [
+      [
+        [center.lng - lngOffset, center.lat + latOffset], // Coin nord-ouest
+        [center.lng + lngOffset, center.lat + latOffset], // Coin nord-est
+        [center.lng + lngOffset, center.lat - latOffset], // Coin sud-est
+        [center.lng - lngOffset, center.lat - latOffset], // Coin sud-ouest
+        [center.lng - lngOffset, center.lat + latOffset], // Retour au point de départ
+      ],
+    ],
   };
 
   return {
     map_id: props.mapId,
-    type: 'square',
+    type: "square",
     geometry: geometry,
-    color: '#cccccc',
+    color: "#cccccc",
     opacity: 0.5,
-    z_index: 1
+    z_index: 1,
   };
 }
 
@@ -1265,23 +1513,25 @@ function rectangleToFeatureFromCorners(startCorner, endCorner) {
   const maxLng = Math.max(startCorner.lng, endCorner.lng);
 
   const geometry = {
-    type: 'Polygon',
-    coordinates: [[
-      [minLng, maxLat], // Coin nord-ouest
-      [maxLng, maxLat], // Coin nord-est
-      [maxLng, minLat], // Coin sud-est
-      [minLng, minLat], // Coin sud-ouest
-      [minLng, maxLat]  // Retour au point de départ
-    ]]
+    type: "Polygon",
+    coordinates: [
+      [
+        [minLng, maxLat], // Coin nord-ouest
+        [maxLng, maxLat], // Coin nord-est
+        [maxLng, minLat], // Coin sud-est
+        [minLng, minLat], // Coin sud-ouest
+        [minLng, maxLat], // Retour au point de départ
+      ],
+    ],
   };
 
   return {
     map_id: props.mapId,
-    type: 'rectangle',
+    type: "rectangle",
     geometry: geometry,
-    color: '#cccccc',
+    color: "#cccccc",
     opacity: 0.5,
-    z_index: 1
+    z_index: 1,
   };
 }
 
@@ -1295,23 +1545,26 @@ function circleToFeatureFromCenter(center, edgePoint) {
   for (let i = 0; i < steps; i++) {
     const angle = (i / steps) * 2 * Math.PI;
     const lat = center.lat + (radius / 111320) * Math.sin(angle);
-    const lng = center.lng + (radius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    const lng =
+      center.lng +
+      ((radius / 111320) * Math.cos(angle)) /
+        Math.cos((center.lat * Math.PI) / 180);
     points.push([lng, lat]); // GeoJSON format [lng, lat]
   }
   points.push(points[0]); // Fermer le polygone
 
   const geometry = {
-    type: 'Polygon',
-    coordinates: [points]
+    type: "Polygon",
+    coordinates: [points],
   };
 
   return {
     map_id: props.mapId,
-    type: 'circle',
+    type: "circle",
     geometry: geometry,
-    color: '#cccccc',
+    color: "#cccccc",
     opacity: 0.5,
-    z_index: 1
+    z_index: 1,
   };
 }
 
@@ -1321,55 +1574,64 @@ function triangleToFeatureFromCenter(center, sizePoint) {
 
   const points = [];
   for (let i = 0; i < 3; i++) {
-    const angle = (i * 120 + 90) * Math.PI / 180; // Triangle pointant vers le haut
+    const angle = ((i * 120 + 90) * Math.PI) / 180; // Triangle pointant vers le haut
     const lat = center.lat + (distance / 111320) * Math.sin(angle);
-    const lng = center.lng + (distance / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    const lng =
+      center.lng +
+      ((distance / 111320) * Math.cos(angle)) /
+        Math.cos((center.lat * Math.PI) / 180);
     points.push([lng, lat]); // GeoJSON format [lng, lat]
   }
   points.push(points[0]); // Fermer le polygone
 
   const geometry = {
-    type: 'Polygon',
-    coordinates: [points]
+    type: "Polygon",
+    coordinates: [points],
   };
 
   return {
     map_id: props.mapId,
-    type: 'triangle',
+    type: "triangle",
     geometry: geometry,
-    color: '#cccccc',
+    color: "#cccccc",
     opacity: 0.5,
-    z_index: 1
+    z_index: 1,
   };
 }
 
 // Convertir un ovale défini par centre, hauteur et largeur en feature GeoJSON
 function ovalToFeatureFromCenter(center, heightPoint, widthPoint) {
   const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
-  const widthRadius = Math.abs(center.lng - widthPoint.lng) * 111320 * Math.cos(center.lat * Math.PI / 180);
+  const widthRadius =
+    Math.abs(center.lng - widthPoint.lng) *
+    111320 *
+    Math.cos((center.lat * Math.PI) / 180);
 
   const points = [];
   const steps = 32;
   for (let i = 0; i < steps; i++) {
     const angle = (i / steps) * 2 * Math.PI;
     const lat = center.lat + (heightRadius / 111320) * Math.sin(angle);
-    const lng = center.lng + (widthRadius / 111320) * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+    const lng =
+      center.lng +
+      ((widthRadius / 111320) * Math.cos(angle)) /
+        Math.cos((center.lat * Math.PI) / 180);
     points.push([lng, lat]); // GeoJSON format [lng, lat]
   }
   points.push(points[0]); // Fermer le polygone
 
   const geometry = {
-    type: 'Polygon',
-    coordinates: [points]
+    type: "Polygon",
+    coordinates: [points],
   };
 
   return {
     map_id: props.mapId,
-    type: 'oval',
+    type: "oval",
     geometry: geometry,
-    color: '#cccccc',
+    color: "#cccccc",
     opacity: 0.5,
-    z_index: 1
+    z_index: 1,
   };
 }
 
@@ -1377,51 +1639,84 @@ function ovalToFeatureFromCenter(center, heightPoint, widthPoint) {
 function handleShapeMouseMove(e) {
   lastMousePos = e.latlng; // Stocker la dernière position
 
-  if (!props.activeEditMode === 'CREATE_SHAPES' || !props.selectedShape) return;
+  if (!props.activeEditMode === "CREATE_SHAPES" || !props.selectedShape) return;
 
   const shapeType = props.selectedShape;
 
   switch (shapeType) {
-    case 'square':
-      if (shapeState === 'drawing' && shapeStartPoint) {
-        console.log('🔄 Updating square center', shapeStartPoint, 'size to', e.latlng);
+    case "square":
+      if (shapeState === "drawing" && shapeStartPoint) {
+        console.log(
+          "🔄 Updating square center",
+          shapeStartPoint,
+          "size to",
+          e.latlng
+        );
         updateTempSquareFromCenter(shapeStartPoint, e.latlng);
       }
       break;
 
-    case 'rectangle':
-      if (shapeState === 'drawing' && shapeStartPoint) {
-        console.log('🔄 Updating rectangle from', shapeStartPoint, 'to', e.latlng);
+    case "rectangle":
+      if (shapeState === "drawing" && shapeStartPoint) {
+        console.log(
+          "🔄 Updating rectangle from",
+          shapeStartPoint,
+          "to",
+          e.latlng
+        );
         updateTempRectangleFromCorners(shapeStartPoint, e.latlng);
       }
       break;
 
-    case 'circle':
-      if (shapeState === 'drawing' && shapeStartPoint) {
-        console.log('🔄 Updating circle center', shapeStartPoint, 'radius to', e.latlng);
+    case "circle":
+      if (shapeState === "drawing" && shapeStartPoint) {
+        console.log(
+          "🔄 Updating circle center",
+          shapeStartPoint,
+          "radius to",
+          e.latlng
+        );
         updateTempCircleFromCenter(shapeStartPoint, e.latlng);
       }
       break;
 
-    case 'triangle':
-      if (shapeState === 'drawing' && shapeStartPoint) {
-        console.log('🔄 Updating triangle center', shapeStartPoint, 'size to', e.latlng);
+    case "triangle":
+      if (shapeState === "drawing" && shapeStartPoint) {
+        console.log(
+          "🔄 Updating triangle center",
+          shapeStartPoint,
+          "size to",
+          e.latlng
+        );
         updateTempTriangleFromCenter(shapeStartPoint, e.latlng);
       }
       break;
 
-    case 'oval':
-      if (shapeState === 'adjusting_height' && shapeStartPoint) {
-        console.log('🔄 Adjusting oval height from', shapeStartPoint, 'to', e.latlng);
+    case "oval":
+      if (shapeState === "adjusting_height" && shapeStartPoint) {
+        console.log(
+          "🔄 Adjusting oval height from",
+          shapeStartPoint,
+          "to",
+          e.latlng
+        );
         updateTempOvalHeight(shapeStartPoint, e.latlng);
-      } else if (shapeState === 'adjusting_width' && shapeStartPoint && shapeEndPoint) {
-        console.log('🔄 Adjusting oval width from', shapeStartPoint, 'to', e.latlng);
+      } else if (
+        shapeState === "adjusting_width" &&
+        shapeStartPoint &&
+        shapeEndPoint
+      ) {
+        console.log(
+          "🔄 Adjusting oval width from",
+          shapeStartPoint,
+          "to",
+          e.latlng
+        );
         updateTempOvalWidth(shapeStartPoint, shapeEndPoint, e.latlng);
       }
       break;
   }
 }
-
 
 // Finaliser le tracé libre
 function finishFreeLine() {
@@ -1438,9 +1733,9 @@ function finishFreeLine() {
 
   // Créer la ligne finale lissée
   const freeLine = L.polyline(smoothedPoints, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    opacity: 1.0
+    opacity: 1.0,
   });
 
   drawnItems.addLayer(freeLine);
@@ -1448,15 +1743,15 @@ function finishFreeLine() {
   // Créer et sauvegarder automatiquement la feature
   const feature = {
     map_id: props.mapId,
-    type: 'polyline',
+    type: "polyline",
     geometry: {
-      type: 'LineString',
-      coordinates: smoothedPoints.map(point => [point.lng, point.lat])
+      type: "LineString",
+      coordinates: smoothedPoints.map((point) => [point.lng, point.lat]),
     },
-    color: '#000000',
+    color: "#000000",
     stroke_width: 2,
     opacity: 1.0,
-    z_index: 1
+    z_index: 1,
   };
 
   saveFeature(feature);
@@ -1464,7 +1759,7 @@ function finishFreeLine() {
 
 // Gérer les clics droits pour finir les polygones
 function handleRightClick(e) {
-  if (!props.editMode || props.activeEditMode !== 'CREATE_POLYGON') return;
+  if (!props.editMode || props.activeEditMode !== "CREATE_POLYGON") return;
 
   // Empêcher le menu contextuel par défaut
   e.originalEvent.preventDefault();
@@ -1476,7 +1771,7 @@ function handleRightClick(e) {
 
 // Gérer les double-clics pour finir les polygones (gardé en fallback)
 function handleMapDoubleClick(e) {
-  if (!props.editMode || props.activeEditMode !== 'CREATE_POLYGON') return;
+  if (!props.editMode || props.activeEditMode !== "CREATE_POLYGON") return;
 
   if (currentPolygonPoints.length >= 3) {
     finishPolygon();
@@ -1491,12 +1786,12 @@ function createPointAt(latlng) {
   // Utiliser un circleMarker avec taille adaptative au zoom
   const circle = L.circleMarker(latlng, {
     radius: radius, // Taille qui s'adapte au zoom
-    fillColor: '#000000',
-    color: '#333333',
+    fillColor: "#000000",
+    color: "#333333",
     weight: 1,
     opacity: 0.8,
     fillOpacity: 0.8,
-    draggable: true
+    draggable: true,
   });
 
   // Ajouter à la collection des cercles
@@ -1504,51 +1799,92 @@ function createPointAt(latlng) {
 
   drawnItems.addLayer(circle);
 
-  // Créer et sauvegarder automatiquement la feature
+  // Créer la feature
   const feature = {
     map_id: props.mapId,
-    type: 'point',
+    type: "point",
     geometry: {
-      type: 'Point',
-      coordinates: [latlng.lng, latlng.lat]
+      type: "Point",
+      coordinates: [latlng.lng, latlng.lat],
     },
-    color: '#000000',
+    color: "#000000",
     opacity: 0.8,
-    z_index: 1
+    z_index: 1,
   };
 
-  saveFeature(feature);
-}
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
 
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, circle);
+  featureLayerManager.makeLayerClickable(layerKey, circle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
+}
 
 // Créer une ligne entre deux points
 function createLine(startLatLng, endLatLng) {
   const line = L.polyline([startLatLng, endLatLng], {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    opacity: 1.0
+    opacity: 1.0,
   });
-  
+
   drawnItems.addLayer(line);
-  
-  // Créer et sauvegarder automatiquement la feature
+
+  // Créer la feature
   const feature = {
     map_id: props.mapId,
-    type: 'polyline',
+    type: "polyline",
     geometry: {
-      type: 'LineString',
+      type: "LineString",
       coordinates: [
         [startLatLng.lng, startLatLng.lat],
-        [endLatLng.lng, endLatLng.lat]
-      ]
+        [endLatLng.lng, endLatLng.lat],
+      ],
     },
-    color: '#000000',
+    color: "#000000",
     stroke_width: 2,
     opacity: 1.0,
-    z_index: 1
+    z_index: 1,
   };
-  
-  saveFeature(feature);
+
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
+
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, line);
+  featureLayerManager.makeLayerClickable(layerKey, line);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Gérer les clics pour créer un polygone
@@ -1578,15 +1914,18 @@ function updatePolygonLines() {
 
   // Ligne de fermeture temporaire (dernier point vers premier)
   if (currentPolygonPoints.length >= 3) {
-    lines.push(currentPolygonPoints[currentPolygonPoints.length - 1], currentPolygonPoints[0]);
+    lines.push(
+      currentPolygonPoints[currentPolygonPoints.length - 1],
+      currentPolygonPoints[0]
+    );
   }
 
   // Créer une polyligne avec tous les segments
   if (lines.length > 0) {
     tempPolygon = L.polyline(lines, {
-      color: '#000000',
+      color: "#000000",
       weight: 2,
-      opacity: 1.0
+      opacity: 1.0,
     });
     drawnItems.addLayer(tempPolygon);
   }
@@ -1607,28 +1946,49 @@ function finishPolygon() {
 
   // Créer le polygone final
   const polygon = L.polygon(points, {
-    color: '#000000',
+    color: "#000000",
     weight: 2,
-    fillColor: '#cccccc',
-    fillOpacity: 0.5
+    fillColor: "#cccccc",
+    fillOpacity: 0.5,
   });
 
   drawnItems.addLayer(polygon);
 
-  // Créer et sauvegarder automatiquement la feature
+  // Créer la feature
   const feature = {
     map_id: props.mapId,
-    type: 'polygon',
+    type: "polygon",
     geometry: {
-      type: 'Polygon',
-      coordinates: [points.map(p => [p.lng, p.lat])]
+      type: "Polygon",
+      coordinates: [points.map((p) => [p.lng, p.lat])],
     },
-    color: '#cccccc',
+    color: "#cccccc",
     opacity: 0.5,
-    z_index: 1
+    z_index: 1,
   };
 
-  saveFeature(feature);
+  // Générer un ID temporaire pour la feature locale
+  const tempFeature = {
+    ...feature,
+    id: `temp_${Date.now()}_${Math.random()}`,
+    _isTemporary: true,
+  };
+
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
+  const layerKey = tempFeature.id;
+  featureLayerManager.layers.set(layerKey, polygon);
+  featureLayerManager.makeLayerClickable(layerKey, polygon);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 
   // RÉINITIALISER pour permettre un nouveau polygone
   currentPolygonPoints = [];
@@ -1637,54 +1997,548 @@ function finishPolygon() {
 // Fonction pour sauvegarder automatiquement une feature
 async function saveFeature(featureData) {
   try {
-    const response = await fetch('http://localhost:8000/maps/features', {
-      method: 'POST',
+    const response = await fetch("http://localhost:8000/maps/features", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(featureData)
+      body: JSON.stringify(featureData),
     });
-    
+
     if (!response.ok) {
-      throw new Error('Failed to save feature');
+      throw new Error("Failed to save feature");
     }
-    
+
     const savedFeature = await response.json();
-    console.log('Feature saved:', savedFeature);
-    
+    console.log("Feature saved:", savedFeature);
+
     // Ajouter immédiatement la feature sauvegardée aux features actuelles
     // pour qu'elle soit visible même en mode édition
     const updatedFeatures = [...props.features, savedFeature];
-    
+
     // Mettre à jour l'affichage selon le type de feature
     switch (savedFeature.type) {
-      case 'point':
+      case "point":
         renderCities([savedFeature]);
         break;
-      case 'polyline':
+      case "polyline":
         renderArrows([savedFeature]);
         break;
-      case 'polygon':
+      case "polygon":
         renderZones([savedFeature]);
         break;
-      case 'square':
-      case 'rectangle':
-      case 'circle':
-      case 'triangle':
-      case 'oval':
+      case "square":
+      case "rectangle":
+      case "circle":
+      case "triangle":
+      case "oval":
         renderShapes([savedFeature]);
         break;
     }
-    
+
     // Notifier le parent pour mettre à jour la liste complète
-    emit('features-loaded', updatedFeatures);
-    
+    emit("features-loaded", updatedFeatures);
+
+    // Rendre la nouvelle forme cliquable immédiatement si on est en mode édition
+    if (props.editMode) {
+      const newLayer = featureLayerManager.layers.get(savedFeature.id);
+      console.log(
+        "🔍 Looking for layer with ID:",
+        savedFeature.id,
+        "Found:",
+        !!newLayer
+      );
+      if (newLayer) {
+        console.log(
+          "🎯 Making layer clickable:",
+          savedFeature.id,
+          newLayer.constructor.name
+        );
+        featureLayerManager.makeLayerClickable(savedFeature.id, newLayer);
+        console.log("✅ Made newly saved feature clickable:", savedFeature.id);
+      } else {
+        console.log(
+          "❌ Layer not found for ID:",
+          savedFeature.id,
+          "Available layers:",
+          Array.from(featureLayerManager.layers.keys())
+        );
+      }
+    }
   } catch (error) {
-    console.error('Erreur lors de la sauvegarde automatique:', error);
+    console.error("Erreur lors de la sauvegarde automatique:", error);
   }
 }
 
 // Nettoyer le mode édition
+// Fonctions pour la sélection et le déplacement de formes
+
+// Rendre les formes existantes cliquables pour la sélection
+function makeFeaturesClickable() {
+  console.log(
+    "🎯 Making features clickable for selection - Total layers:",
+    featureLayerManager.layers.size
+  );
+
+  // Pour chaque layer existant dans featureLayerManager, le rendre cliquable
+  featureLayerManager.layers.forEach((layer, featureId) => {
+    featureLayerManager.makeLayerClickable(featureId, layer);
+    console.log(
+      "✅ Made feature layer clickable:",
+      featureId,
+      layer.constructor.name
+    );
+  });
+
+  // Aussi rendre cliquables les layers temporaires dans drawnItems
+  if (drawnItems) {
+    drawnItems.eachLayer((layer) => {
+      // Pour les layers temporaires, on utilise un ID temporaire
+      const tempId = "temp_" + Math.random();
+      featureLayerManager.makeLayerClickable(tempId, layer);
+      console.log(
+        "✅ Made drawn layer clickable:",
+        tempId,
+        layer.constructor.name
+      );
+    });
+  }
+}
+
+// Gérer le clic sur une forme pour la sélection/désélection
+function handleFeatureClick(featureId, isCtrlPressed) {
+  console.log(
+    "🎯 FEATURE CLICK HANDLER CALLED:",
+    featureId,
+    "CTRL:",
+    isCtrlPressed,
+    "Current selection:",
+    Array.from(selectedFeatures),
+    "Just finished drag:",
+    justFinishedDrag
+  );
+
+  // Si on vient de terminer un drag, ignorer ce clic pour éviter la désélection accidentelle
+  if (justFinishedDrag) {
+    console.log(
+      "🚫 Ignoring click after drag to prevent accidental deselection"
+    );
+    justFinishedDrag = false; // Remettre le flag à false
+    return;
+  }
+
+  if (isCtrlPressed) {
+    // Sélection multiple : toggle la sélection
+    if (selectedFeatures.has(featureId)) {
+      selectedFeatures.delete(featureId);
+      console.log("❌ Deselected feature:", featureId);
+    } else {
+      selectedFeatures.add(featureId);
+      console.log("✅ Selected feature:", featureId);
+    }
+  } else {
+    // Clic simple : logique selon le nombre d'éléments sélectionnés
+    if (selectedFeatures.size === 1 && selectedFeatures.has(featureId)) {
+      // Un seul élément sélectionné et c'est celui-ci : le désélectionner
+      selectedFeatures.clear();
+      console.log("❌ Deselected single feature:", featureId);
+    } else {
+      // Plusieurs éléments sélectionnés OU clic sur un élément non sélectionné :
+      // Désélectionner tout et sélectionner seulement cet élément
+      selectedFeatures.clear();
+      selectedFeatures.add(featureId);
+      console.log("🔄 Single selection (cleared others):", featureId);
+    }
+  }
+
+  console.log("📊 New selection:", Array.from(selectedFeatures));
+  updateFeatureSelectionVisual();
+}
+
+// Mettre à jour l'apparence visuelle des formes sélectionnées
+function updateFeatureSelectionVisual() {
+  featureLayerManager.layers.forEach((layer, featureId) => {
+    if (selectedFeatures.has(featureId)) {
+      // Style pour les formes sélectionnées
+      if (layer instanceof L.CircleMarker) {
+        layer.setStyle({
+          color: "#ff6b6b",
+          weight: 3,
+          fillColor: "#ff6b6b",
+          fillOpacity: 0.8,
+        });
+      } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+        layer.setStyle({
+          color: "#ff6b6b",
+          weight: 3,
+          fillColor: layer.options.fillColor,
+          fillOpacity: layer.options.fillOpacity,
+        });
+      } else if (layer instanceof L.Polyline) {
+        layer.setStyle({
+          color: "#ff6b6b",
+          weight: 4,
+        });
+      }
+    } else {
+      // Remettre le style original
+      const originalFeature = props.features.find((f) => f.id === featureId);
+
+      // Valeurs par défaut basées sur la création des formes
+      const defaultBorderColor = "#000000"; // Noir par défaut
+      const defaultFillColor = "#cccccc"; // Gris clair par défaut
+      const defaultOpacity = 0.5;
+      const defaultStrokeWidth = 2;
+
+      if (layer instanceof L.CircleMarker) {
+        layer.setStyle({
+          color: originalFeature?.color || defaultBorderColor,
+          weight: 1,
+          fillColor: originalFeature?.color || defaultBorderColor,
+          fillOpacity: originalFeature?.opacity ?? 0.8,
+        });
+      } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+        layer.setStyle({
+          color: originalFeature?.color || defaultBorderColor,
+          weight: 2, // Même épaisseur que lors de la création
+          fillColor: originalFeature?.color || defaultFillColor,
+          fillOpacity: originalFeature?.opacity ?? defaultOpacity,
+        });
+      } else if (layer instanceof L.Polyline) {
+        layer.setStyle({
+          color: originalFeature?.color || defaultBorderColor,
+          weight: originalFeature?.stroke_width ?? defaultStrokeWidth,
+          opacity: originalFeature?.opacity ?? 1,
+        });
+      }
+    }
+  });
+}
+
+// Gestionnaire pour le mode déplacement - mousedown
+function handleMoveMouseDown(e) {
+  console.log(
+    "🎯 MOVE MOUSE DOWN:",
+    e.latlng,
+    "Selected features:",
+    selectedFeatures.size,
+    "Target:",
+    e.target,
+    "Target type:",
+    e.target ? e.target.constructor.name : "null"
+  );
+
+  // Remettre le flag de drag terminé à false au début d'une nouvelle action
+  justFinishedDrag = false;
+
+  // Vérifier si c'est un clic sur une forme existante (via les événements des layers)
+  // Les événements mousedown/click des layers individuels gèrent déjà la sélection
+  // Ici on ne gère que les clics dans le vide pour le drag ou la désélection
+
+  // Si on clique dans le vide et qu'on a des formes sélectionnées, préparer le drag
+  if (selectedFeatures.size > 0) {
+    // Préparer le drag mais ne pas le commencer encore
+    // Le drag commencera au mousemove si on bouge assez
+    dragStartPoint = e.latlng;
+    console.log(
+      "🎯 Prepared drag of",
+      selectedFeatures.size,
+      "features at",
+      e.latlng
+    );
+  } else {
+    // Si on clique dans le vide sans sélection, désélectionner tout
+    console.log("🗺️ Click on empty space, clearing selection");
+    selectedFeatures.clear();
+    updateFeatureSelectionVisual();
+  }
+}
+
+// Fonction pour détecter quelle forme se trouve à une position donnée
+function getFeatureAtPosition(latlng) {
+  // Vérifier tous les layers pour voir lequel contient le point
+  for (const [featureId, layer] of featureLayerManager.layers.entries()) {
+    try {
+      if (layer instanceof L.CircleMarker) {
+        // Pour les cercles, vérifier la distance
+        const center = layer.getLatLng();
+        const radius = layer.getRadius();
+        const distance = map.distance(center, latlng);
+        if (distance <= radius) {
+          return featureId;
+        }
+      } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+        // Pour les polygones, vérifier si le point est à l'intérieur ou près des bords
+        if (layer.getBounds().contains(latlng)) {
+          // Vérification plus précise : le point doit être dans le polygone
+          // Pour Leaflet, on peut utiliser une approche simple : vérifier la distance avec les bords
+          const bounds = layer.getBounds();
+          const northEast = bounds.getNorthEast();
+          const southWest = bounds.getSouthWest();
+
+          // Distance maximale depuis les bords pour considérer que c'est un clic sur la forme
+          const toleranceLat = (northEast.lat - southWest.lat) * 0.1; // 10% de tolérance
+          const toleranceLng = (northEast.lng - southWest.lng) * 0.1;
+
+          // Vérifier si le point est près des bords ou à l'intérieur
+          const nearBorder =
+            latlng.lat >= southWest.lat - toleranceLat &&
+            latlng.lat <= northEast.lat + toleranceLat &&
+            latlng.lng >= southWest.lng - toleranceLng &&
+            latlng.lng <= northEast.lng + toleranceLng;
+
+          if (nearBorder) {
+            return featureId;
+          }
+        }
+      } else if (layer instanceof L.Polyline) {
+        // Pour les lignes, vérifier la proximité
+        const latlngs = layer.getLatLngs();
+        for (let i = 0; i < latlngs.length - 1; i++) {
+          const distance = map.distance(latlngs[i], latlng);
+          if (distance < 10) {
+            // 10 mètres de tolérance
+            return featureId;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("Error checking feature at position:", error);
+    }
+  }
+  return null;
+}
+
+// Gestionnaire pour le mode déplacement - mousemove
+function handleMoveMouseMove(e) {
+  // Si on n'est pas encore en train de draguer mais qu'on a un point de départ
+  if (!isDraggingFeatures && dragStartPoint && selectedFeatures.size > 0) {
+    // Vérifier si on a bougé assez pour commencer le drag
+    const distance = map.distance(dragStartPoint, e.latlng);
+    if (distance > 5) {
+      // Seuil de 5 mètres
+      console.log("🚀 Starting drag after moving", distance, "meters");
+
+      // Commencer le drag
+      isDraggingFeatures = true;
+
+      // Désactiver complètement TOUTES les interactions de la carte
+      map.dragging.disable();
+      map.doubleClickZoom.disable();
+      map.scrollWheelZoom.disable();
+      map.keyboard.disable();
+      map.touchZoom.disable();
+      map.boxZoom.disable();
+
+      // Sauvegarder les positions originales
+      originalPositions.clear();
+      selectedFeatures.forEach((featureId) => {
+        const layer = featureLayerManager.layers.get(featureId);
+        if (layer) {
+          // Pour les polygones, on sauvegarde les coordonnées
+          if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+            originalPositions.set(featureId, layer.getBounds());
+          } else if (layer instanceof L.CircleMarker) {
+            originalPositions.set(featureId, layer.getLatLng());
+          } else if (layer instanceof L.Polyline) {
+            originalPositions.set(featureId, layer.getLatLngs());
+          }
+        }
+      });
+    }
+  }
+
+  // Si on est en train de draguer
+  if (isDraggingFeatures && dragStartPoint) {
+    // Calculer le delta de déplacement
+    const deltaLat = e.latlng.lat - dragStartPoint.lat;
+    const deltaLng = e.latlng.lng - dragStartPoint.lng;
+
+    // Appliquer le déplacement à toutes les formes sélectionnées
+    selectedFeatures.forEach((featureId) => {
+      const layer = featureLayerManager.layers.get(featureId);
+      if (layer && originalPositions.has(featureId)) {
+        if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+          const originalBounds = originalPositions.get(featureId);
+          const newBounds = L.latLngBounds([
+            [
+              originalBounds.getSouthWest().lat + deltaLat,
+              originalBounds.getSouthWest().lng + deltaLng,
+            ],
+            [
+              originalBounds.getNorthEast().lat + deltaLat,
+              originalBounds.getNorthEast().lng + deltaLng,
+            ],
+          ]);
+          layer.setBounds(newBounds);
+        } else if (layer instanceof L.CircleMarker) {
+          const originalPos = originalPositions.get(featureId);
+          const newPos = L.latLng(
+            originalPos.lat + deltaLat,
+            originalPos.lng + deltaLng
+          );
+          layer.setLatLng(newPos);
+        } else if (layer instanceof L.Polyline) {
+          const originalLatLngs = originalPositions.get(featureId);
+          const newLatLngs = originalLatLngs.map((latLng) =>
+            L.latLng(latLng.lat + deltaLat, latLng.lng + deltaLng)
+          );
+          layer.setLatLngs(newLatLngs);
+        }
+      }
+    });
+  }
+}
+
+// Gestionnaire pour le mode déplacement - mouseup
+function handleMoveMouseUp(e) {
+  if (isDraggingFeatures && dragStartPoint) {
+    console.log("🏁 Drag finished, saving changes");
+
+    // Réactiver TOUTES les interactions de la carte
+    map.dragging.enable();
+    map.doubleClickZoom.enable();
+    map.scrollWheelZoom.enable();
+    map.keyboard.enable();
+    map.touchZoom.enable();
+    map.boxZoom.enable();
+
+    // Calculer le delta final
+    const deltaLat = e.latlng.lat - dragStartPoint.lat;
+    const deltaLng = e.latlng.lng - dragStartPoint.lng;
+
+    // Sauvegarder les nouvelles positions dans la base de données
+    selectedFeatures.forEach((featureId) => {
+      const feature = props.features.find((f) => f.id === featureId);
+      if (feature) {
+        updateFeaturePosition(feature, deltaLat, deltaLng);
+      }
+    });
+
+    // Réinitialiser l'état
+    isDraggingFeatures = false;
+    dragStartPoint = null;
+    originalPositions.clear();
+
+    // Marquer qu'on vient de terminer un drag pour éviter la désélection
+    justFinishedDrag = true;
+
+    // Remettre le flag à false après un court délai
+    setTimeout(() => {
+      justFinishedDrag = false;
+    }, 100);
+  } else if (dragStartPoint) {
+    // On avait préparé un drag mais on n'a pas bougé assez, juste nettoyer
+    console.log("🖱️ Click without drag, cleaning up");
+    dragStartPoint = null;
+  }
+}
+
+// Gestionnaire pour les événements clavier
+function handleKeyDown(e) {
+  if (e.originalEvent.key === "Escape") {
+    console.log("⎋ Escape pressed, clearing selection");
+    selectedFeatures.clear();
+    updateFeatureSelectionVisual();
+  }
+}
+
+// Mettre à jour la position d'une feature dans la base de données
+async function updateFeaturePosition(feature, deltaLat, deltaLng) {
+  console.log(
+    "💾 Saving moved feature:",
+    feature.id,
+    "Delta:",
+    deltaLat,
+    deltaLng
+  );
+
+  try {
+    // Créer une copie des nouvelles coordonnées GeoJSON
+    const updatedGeometry = updateGeometryCoordinates(
+      feature.geometry,
+      deltaLat,
+      deltaLng
+    );
+
+    // Préparer les données pour la requête PUT
+    const updateData = {
+      geometry: updatedGeometry,
+    };
+
+    // Envoyer la requête PUT
+    const response = await fetch(
+      `http://localhost:8000/maps/features/${feature.id}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updateData),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const updatedFeature = await response.json();
+    console.log("✅ Feature position updated successfully:", updatedFeature.id);
+
+    // Mettre à jour la feature dans la liste locale
+    const featureIndex = props.features.findIndex((f) => f.id === feature.id);
+    if (featureIndex !== -1) {
+      const updatedFeatures = [...props.features];
+      updatedFeatures[featureIndex] = updatedFeature;
+      emit("features-loaded", updatedFeatures);
+    }
+  } catch (error) {
+    console.error("❌ Error updating feature position:", error);
+    // En cas d'erreur, on pourrait vouloir recharger les features depuis le serveur
+    // ou afficher un message d'erreur à l'utilisateur
+  }
+}
+
+// Fonction pour mettre à jour les coordonnées d'une géométrie GeoJSON
+function updateGeometryCoordinates(geometry, deltaLat, deltaLng) {
+  if (!geometry || !geometry.coordinates) {
+    return geometry;
+  }
+
+  const updatedGeometry = { ...geometry };
+
+  switch (geometry.type) {
+    case "Point":
+      // Point: [lng, lat]
+      updatedGeometry.coordinates = [
+        geometry.coordinates[0] + deltaLng,
+        geometry.coordinates[1] + deltaLat,
+      ];
+      break;
+
+    case "LineString":
+      // LineString: [[lng, lat], [lng, lat], ...]
+      updatedGeometry.coordinates = geometry.coordinates.map((coord) => [
+        coord[0] + deltaLng,
+        coord[1] + deltaLat,
+      ]);
+      break;
+
+    case "Polygon":
+      // Polygon: [[[lng, lat], [lng, lat], ...]]
+      updatedGeometry.coordinates = geometry.coordinates.map((ring) =>
+        ring.map((coord) => [coord[0] + deltaLng, coord[1] + deltaLat])
+      );
+      break;
+
+    default:
+      console.warn(`Unsupported geometry type: ${geometry.type}`);
+      return geometry;
+  }
+
+  return updatedGeometry;
+}
+
 function cleanupEditMode() {
   if (drawnItems) {
     // Nettoyer les cercles de drawnItems de la collection
@@ -1698,25 +2552,27 @@ function cleanupEditMode() {
   }
 
   // Nettoyer tous les événements
-  map.off('mousedown', handleMouseDown);
-  map.off('mousemove', handleMouseMove);
-  map.off('mouseup', handleMouseUp);
-  map.off('contextmenu', handleRightClick);
-  map.off('click', handleMapClick);
-  map.off('dblclick', handleMapDoubleClick);
-  map.off('zoomend', updateCircleSizes);
+  map.off("mousedown", handleMouseDown);
+  map.off("mousemove", handleMouseMove);
+  map.off("mouseup", handleMouseUp);
+  map.off("contextmenu", handleRightClick);
+  map.off("click", handleMapClick);
+  map.off("dblclick", handleMapDoubleClick);
+  map.off("zoomend", updateCircleSizes);
 
   // Nettoyer les événements des formes
-  map.off('mousedown', handleShapeMouseDown);
-  map.off('mousemove', handleShapeMouseMove);
-  map.off('mouseup', handleShapeMouseUp);
-  map.off('dragstart', preventDragDuringShapeDrawing);
+  map.off("mousedown", handleShapeMouseDown);
+  map.off("mousemove", handleShapeMouseMove);
+  map.off("mouseup", handleShapeMouseUp);
+  map.off("dragstart", preventDragDuringShapeDrawing);
 
-  // Nettoyer les événements des formes
-  map.off('mousedown', handleShapeMouseDown);
-  map.off('mousemove', handleShapeMouseMove);
-  map.off('mouseup', handleShapeMouseUp);
-  map.off('dragstart', preventDragDuringShapeDrawing);
+  // Nettoyer les événements de déplacement (seulement si on sort du mode édition)
+  if (!props.editMode) {
+    map.off("mousedown", handleMoveMouseDown);
+    map.off("mousemove", handleMoveMouseMove);
+    map.off("mouseup", handleMoveMouseUp);
+    map.off("keydown", handleKeyDown);
+  }
 
   // Nettoyer les variables d'état
   currentLinePoints = [];
@@ -1741,6 +2597,14 @@ function cleanupEditMode() {
     tempShape = null;
   }
 
+  // Nettoyer la sélection et le déplacement
+  selectedFeatures.clear();
+  isDraggingFeatures = false;
+  dragStartPoint = null;
+  originalPositions.clear();
+  justFinishedDrag = false;
+  updateFeatureSelectionVisual();
+
   // Recharger toutes les features quand on quitte le mode édition
   setTimeout(() => {
     fetchFeaturesAndRender(selectedYear.value);
@@ -1748,57 +2612,77 @@ function cleanupEditMode() {
 }
 
 // Watcher pour le mode édition
-watch(() => props.editMode, (newEditMode) => {
-  if (newEditMode) {
-    initializeEditControls();
-    // Recharger les features quand on entre en mode édition
-    fetchFeaturesAndRender(selectedYear.value);
-  } else {
-    cleanupEditMode();
+watch(
+  () => props.editMode,
+  (newEditMode) => {
+    if (newEditMode) {
+      initializeEditControls();
+      // Recharger les features quand on entre en mode édition
+      fetchFeaturesAndRender(selectedYear.value);
+    } else {
+      cleanupEditMode();
+    }
   }
-});
+);
 
 // Watcher pour changer de mode d'édition
-watch(() => props.activeEditMode, (newMode, oldMode) => {
-  console.log('🔄 Edit mode changed:', { oldMode, newMode });
+watch(
+  () => props.activeEditMode,
+  (newMode, oldMode) => {
+    console.log("🔄 Edit mode changed:", { oldMode, newMode });
 
-  // Nettoyer l'état précédent
-  if (oldMode) {
-    cleanupCurrentDrawing();
+    // Nettoyer l'état précédent
+    if (oldMode) {
+      cleanupCurrentDrawing();
+    }
+
+    // Nettoyer tous les événements d'édition
+    map.off("mousedown", handleMouseDown);
+    map.off("mousemove", handleMouseMove);
+    map.off("mouseup", handleMouseUp);
+    map.off("contextmenu", handleRightClick);
+    map.off("mousedown", handleShapeMouseDown);
+    map.off("mousemove", handleShapeMouseMove);
+    map.off("mouseup", handleShapeMouseUp);
+    map.off("dragstart", preventDragDuringShapeDrawing);
+    map.off("mousedown", handleMoveMouseDown);
+    map.off("mousemove", handleMoveMouseMove);
+    map.off("mouseup", handleMoveMouseUp);
+    map.off("keydown", handleKeyDown);
+
+    // Réattacher les événements selon le nouveau mode
+    if (newMode === "CREATE_LINE" || newMode === "CREATE_FREE_LINE") {
+      console.log("📏 Reattaching line drawing events");
+      map.on("mousedown", handleMouseDown);
+      map.on("mousemove", handleMouseMove);
+      map.on("mouseup", handleMouseUp);
+    } else if (newMode === "CREATE_SHAPES") {
+      console.log("🔷 Reattaching shape drawing events");
+      map.on("mousedown", handleShapeMouseDown);
+      map.on("mousemove", handleShapeMouseMove);
+      map.on("mouseup", handleShapeMouseUp);
+      map.on("dragstart", preventDragDuringShapeDrawing);
+    } else if (newMode === "CREATE_POLYGON") {
+      console.log("⬡ Reattaching polygon drawing events");
+      map.on("contextmenu", handleRightClick);
+    } else {
+      // Mode sélection/déplacement (pas de mode actif ou mode par défaut)
+      console.log("🎯 Reattaching selection and move events for default mode");
+      map.on("mousedown", handleMoveMouseDown);
+      map.on("mousemove", handleMoveMouseMove);
+      map.on("mouseup", handleMoveMouseUp);
+      map.on("keydown", handleKeyDown);
+    }
   }
-
-  // Nettoyer tous les événements d'édition
-  map.off('mousedown', handleMouseDown);
-  map.off('mousemove', handleMouseMove);
-  map.off('mouseup', handleMouseUp);
-  map.off('contextmenu', handleRightClick);
-  map.off('mousedown', handleShapeMouseDown);
-  map.off('mousemove', handleShapeMouseMove);
-  map.off('mouseup', handleShapeMouseUp);
-  map.off('dragstart', preventDragDuringShapeDrawing);
-
-  // Réattacher les événements selon le nouveau mode
-  if (newMode === 'CREATE_LINE' || newMode === 'CREATE_FREE_LINE') {
-    console.log('📏 Reattaching line drawing events');
-    map.on('mousedown', handleMouseDown);
-    map.on('mousemove', handleMouseMove);
-    map.on('mouseup', handleMouseUp);
-  } else if (newMode === 'CREATE_SHAPES') {
-    console.log('🔷 Reattaching shape drawing events');
-    map.on('mousedown', handleShapeMouseDown);
-    map.on('mousemove', handleShapeMouseMove);
-    map.on('mouseup', handleShapeMouseUp);
-    map.on('dragstart', preventDragDuringShapeDrawing);
-  } else if (newMode === 'CREATE_POLYGON') {
-    console.log('⬡ Reattaching polygon drawing events');
-    map.on('contextmenu', handleRightClick);
-  }
-});
+);
 
 // Watcher pour la forme sélectionnée
-watch(() => props.selectedShape, (newShape, oldShape) => {
-  console.log('Shape changed:', { oldShape, newShape });
-});
+watch(
+  () => props.selectedShape,
+  (newShape, oldShape) => {
+    console.log("Shape changed:", { oldShape, newShape });
+  }
+);
 
 function cleanupCurrentDrawing() {
   currentLinePoints = [];
@@ -1821,17 +2705,23 @@ watch(selectedYear, (newYear) => {
   debouncedUpdate(newYear);
 });
 
-watch(() => props.features, () => {
-  renderAllFeatures();
-}, { deep: true });
+watch(
+  () => props.features,
+  () => {
+    renderAllFeatures();
+  },
+  { deep: true }
+);
 
-watch(() => props.featureVisibility, (newVisibility) => {
-  newVisibility.forEach((visible, featureId) => {
-    featureLayerManager.toggleFeature(featureId, visible);
-  });
-}, { deep: true });
- 
-
+watch(
+  () => props.featureVisibility,
+  (newVisibility) => {
+    newVisibility.forEach((visible, featureId) => {
+      featureLayerManager.toggleFeature(featureId, visible);
+    });
+  },
+  { deep: true }
+);
 </script>
 
 <style>
