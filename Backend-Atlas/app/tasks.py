@@ -55,11 +55,14 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         image.flags.writeable = False # Makes image immutable
 
         # Step 3: Extraction OCR
-        self.update_state(state="PROGRESS",meta={"current": 3, "total": nb_task , "status": "Text extraction and erasing"})
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": 3, "total": nb_task , "status": "Text extraction and erasing"}
+        )
         time.sleep(2)
 
         # TODO: Link gpu_acc to a config parameter indicating the precense of GPU
-        extracted_text = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
+        extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
         
         # Step 4: Color Extraction
         self.update_state(
@@ -89,17 +92,18 @@ def process_map_extraction(self, filename: str, file_content: bytes):
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name = os.path.splitext(filename)[0]
-        output_filename = f"{base_name}_{timestamp}.txt"
+        output_filename = f"{timestamp}_{base_name}.txt"
         output_path = os.path.join(output_dir, output_filename)
 
+        lines = [block[1] for block in extracted_text]
+        full_text = "\n".join(lines)
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(f"=== OCR EXTRACTION  ===\n")
                 f.write(f"Source File: {filename}\n")
                 f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Character extract: {len(extracted_text.strip())}\n")
                 f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
-                f.write(extracted_text.strip())
+                f.write(full_text)
 
             logger.info(f"Text saved to: {output_path}")
 
@@ -109,8 +113,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
 
         result = {
             "filename": filename,
-            "extracted_text": extracted_text.strip(),
-            "text_length": len(extracted_text.strip()),
+            "extracted_text": lines,
             "output_path": output_path,
             "status": "completed"
         }
