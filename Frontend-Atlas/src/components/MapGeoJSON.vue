@@ -9,22 +9,21 @@
 import { onMounted, ref, watch, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil"; // ← requis pour que arrowheads fonctionne
-import "leaflet-arrowheads";   // ← ajoute la méthode `arrowheads` aux polylines
+import "leaflet-arrowheads"; // ← ajoute la méthode `arrowheads` aux polylines
 import TimelineSlider from "../components/TimelineSlider.vue";
 
 // Props reçues de la vue parent
 const props = defineProps({
   mapId: String,
   features: Array,
-  featureVisibility: Map
+  featureVisibility: Map,
 });
 
 // Émissions vers la vue parent
-const emit = defineEmits(['features-loaded']);
+const emit = defineEmits(["features-loaded"]);
 
 const selectedYear = ref(1740); // initial displayed year
 const previousFeatureIds = ref(new Set());
-
 
 // List of available years
 const availableYears = [
@@ -39,13 +38,12 @@ let labelLayer = null;
 const mockedCities = [
   { name: "Montréal", lat: 45.5017, lng: -73.5673, foundation_year: 1642 },
   { name: "Québec", lat: 46.8139, lng: -71.2082, foundation_year: 1608 },
-  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 }
+  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 },
 ];
 
 let citiesLayer = null;
 let zonesLayer = null;
 let arrowsLayer = null;
-
 
 // Function to display the map
 onMounted(() => {
@@ -58,9 +56,9 @@ onMounted(() => {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       subdomains: "abcd",
       maxZoom: 19,
-    }
+    },
   ).addTo(map);
-  
+
   loadRegionsForYear(selectedYear.value, true);
 });
 
@@ -92,15 +90,17 @@ const featureLayerManager = {
   },
 
   clearAllFeatures() {
-    this.layers.forEach(layer => map.removeLayer(layer));
+    this.layers.forEach((layer) => map.removeLayer(layer));
     this.layers.clear();
-  }
+  },
 };
- 
+
 const filteredFeatures = computed(() => {
-  return props.features.filter(feature => 
-    new Date(feature.start_date).getFullYear() <= selectedYear.value &&
-    (!feature.end_date || new Date(feature.end_date).getFullYear() >= selectedYear.value)
+  return props.features.filter(
+    (feature) =>
+      new Date(feature.start_date).getFullYear() <= selectedYear.value &&
+      (!feature.end_date ||
+        new Date(feature.end_date).getFullYear() >= selectedYear.value),
   );
 });
 
@@ -114,19 +114,18 @@ async function fetchFeaturesAndRender(year) {
     const allFeatures = await res.json();
 
     // Filtrer par année
-    const features = allFeatures.filter(f =>
-      new Date(f.start_date).getFullYear() <= year
+    const features = allFeatures.filter(
+      (f) => new Date(f.start_date).getFullYear() <= year,
     );
 
     // Dispatcher selon le type
-    const cities = features.filter(f => f.type === "point");
-    const zones = features.filter(f => f.type === "zone");
-    const arrows = features.filter(f => f.type === "arrow");
+    const cities = features.filter((f) => f.type === "point");
+    const zones = features.filter((f) => f.type === "zone");
+    const arrows = features.filter((f) => f.type === "arrow");
 
     renderCities(cities);
     renderZones(zones);
     renderArrows(arrows);
-
   } catch (err) {
     console.warn("Erreur fetch features:", err);
   }
@@ -152,16 +151,16 @@ function loadRegionsForYear(year, isFirstTime = false) {
       return;
     }
   }
-  
+
   lastCurrentYear = closestYear;
   const filename = `/geojson/world_${closestYear}.geojson`;
 
   return fetch(filename)
-    .then(res => {
+    .then((res) => {
       if (!res.ok) throw new Error("File not found: " + filename);
       return res.json();
     })
-    .then(data => {
+    .then((data) => {
       if (currentRegionsLayer) {
         map.removeLayer(currentRegionsLayer);
         currentRegionsLayer = null;
@@ -177,7 +176,7 @@ function loadRegionsForYear(year, isFirstTime = false) {
         },
       }).addTo(map);
     })
-    .catch(err => {
+    .catch((err) => {
       console.warn(err.message);
     });
 }
@@ -185,7 +184,7 @@ function loadRegionsForYear(year, isFirstTime = false) {
 function renderCities(features) {
   const safeFeatures = toArray(features);
 
-  safeFeatures.forEach(feature => {
+  safeFeatures.forEach((feature) => {
     // Defensive check
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
@@ -221,9 +220,7 @@ function renderCities(features) {
 function renderZones(features) {
   const safeFeatures = toArray(features);
 
-
-  safeFeatures.forEach(feature => {
-
+  safeFeatures.forEach((feature) => {
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
     }
@@ -233,8 +230,8 @@ function renderZones(features) {
         fillColor: feature.color || "#ccc",
         fillOpacity: 0.5,
         color: "#333",
-        weight: 1
-      }
+        weight: 1,
+      },
     });
 
     if (feature.name) {
@@ -248,29 +245,29 @@ function renderZones(features) {
 function renderArrows(features) {
   const safeFeatures = toArray(features);
 
-  safeFeatures.forEach(feature => {
-
+  safeFeatures.forEach((feature) => {
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
     }
     // Convert GeoJSON [lng, lat] → Leaflet [lat, lng]
-    const latLngs = feature.geometry.coordinates.map(
-      ([lng, lat]) => [lat, lng]
-    );
+    const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [
+      lat,
+      lng,
+    ]);
 
     const line = L.polyline(latLngs, {
       color: feature.color || "#000",
       weight: feature.stroke_width ?? 2,
-      opacity: feature.opacity ?? 1
+      opacity: feature.opacity ?? 1,
     });
 
     line.addTo(map);
 
     // Apply arrowheads (after addTo(map))
     line.arrowheads({
-      size: '10px',
-      frequency: 'endonly',
-      fill: true
+      size: "10px",
+      frequency: "endonly",
+      fill: true,
     });
 
     if (feature.name) {
@@ -281,14 +278,12 @@ function renderArrows(features) {
   });
 }
 
- 
-
 function renderAllFeatures() {
   const currentFeatures = filteredFeatures.value;
-  const currentIds = new Set(currentFeatures.map(f => f.id));
+  const currentIds = new Set(currentFeatures.map((f) => f.id));
   const previousIds = previousFeatureIds.value;
 
-  previousIds.forEach(oldId => {
+  previousIds.forEach((oldId) => {
     if (!currentIds.has(oldId)) {
       const layer = featureLayerManager.layers.get(oldId);
       if (layer) {
@@ -298,11 +293,11 @@ function renderAllFeatures() {
     }
   });
 
-  const newFeatures = currentFeatures.filter(f => !previousIds.has(f.id));
+  const newFeatures = currentFeatures.filter((f) => !previousIds.has(f.id));
   const featuresByType = {
-    point: newFeatures.filter(f => f.type === 'point'),
-    polygon: newFeatures.filter(f => f.type === 'zone'),
-    arrow: newFeatures.filter(f => f.type === 'arrow')
+    point: newFeatures.filter((f) => f.type === "point"),
+    polygon: newFeatures.filter((f) => f.type === "zone"),
+    arrow: newFeatures.filter((f) => f.type === "arrow"),
   };
 
   renderCities(featuresByType.point);
@@ -311,9 +306,8 @@ function renderAllFeatures() {
 
   previousFeatureIds.value = currentIds;
 
-  emit('features-loaded', currentFeatures);
+  emit("features-loaded", currentFeatures);
 }
- 
 
 function removeGeoJSONLayers() {
   if (currentRegionsLayer) {
@@ -330,7 +324,7 @@ async function loadAllLayersForYear(year) {
   isLoading = true;
 
   try {
-    await loadRegionsForYear(year);  // <-- ici on attend le chargement complet
+    await loadRegionsForYear(year); // <-- ici on attend le chargement complet
     renderAllFeatures();
   } catch (e) {
     console.warn("Error loading layers:", e);
@@ -353,7 +347,6 @@ function toArray(maybeArray) {
   return [maybeArray]; // wrap single object
 }
 
-
 // Uses debounce to load GeoJSON layers
 const debouncedUpdate = debounce((year) => {
   loadAllLayersForYear(year);
@@ -364,18 +357,23 @@ watch(selectedYear, (newYear) => {
   debouncedUpdate(newYear);
 });
 
-watch(() => props.features, () => {
-  renderAllFeatures();
-}, { deep: true });
+watch(
+  () => props.features,
+  () => {
+    renderAllFeatures();
+  },
+  { deep: true },
+);
 
-watch(() => props.featureVisibility, (newVisibility) => {
-  newVisibility.forEach((visible, featureId) => {
-    featureLayerManager.toggleFeature(featureId, visible);
-  });
-}, { deep: true });
- 
-
-
+watch(
+  () => props.featureVisibility,
+  (newVisibility) => {
+    newVisibility.forEach((visible, featureId) => {
+      featureLayerManager.toggleFeature(featureId, visible);
+    });
+  },
+  { deep: true },
+);
 </script>
 
 <style>
@@ -394,5 +392,4 @@ watch(() => props.featureVisibility, (newVisibility) => {
   color: black;
   transform: rotate(0deg); /* statique pour l’instant */
 }
-
 </style>

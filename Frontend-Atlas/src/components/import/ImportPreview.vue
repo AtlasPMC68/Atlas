@@ -4,9 +4,9 @@
 
     <div class="bg-base-200 rounded-lg p-6 flex flex-col items-center">
       <!-- Aperçu de l'image -->
-      <img 
-        :src="imageUrl" 
-        :alt="imageFile?.name || 'Carte importée'" 
+      <img
+        :src="imageUrl"
+        :alt="imageFile?.name || 'Carte importée'"
         class="max-h-96 w-auto object-contain rounded shadow"
       />
 
@@ -19,25 +19,25 @@
 </template>
 
 <script setup>
-import { defineProps } from 'vue'
+import { defineProps } from "vue";
 
 const props = defineProps({
   imageFile: {
     type: File,
-    required: true
+    required: true,
   },
   imageUrl: {
     type: String,
-    required: true
-  }
-})
+    required: true,
+  },
+});
 
 // Format taille du fichier (ex: "234.56 KB")
 const formatFileSize = (bytes) => {
-  if (!bytes) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
+  if (!bytes) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
 </script>

@@ -62,7 +62,7 @@ const access_level = ref("");
 async function loadInitialFeatures() {
   try {
     const res = await fetch(
-      `http://localhost:8000/maps/features/${mapId.value}`
+      `http://localhost:8000/maps/features/${mapId.value}`,
     );
     if (!res.ok) throw new Error("Failed to fetch features");
 
@@ -125,9 +125,7 @@ async function handleSaveAs(data) {
     });
 
     if (!res.ok) {
-      throw new Error(
-        `Error while getting the user : ${res.status}`
-      );
+      throw new Error(`Error while getting the user : ${res.status}`);
     }
 
     userData = await res.json();
@@ -155,16 +153,13 @@ async function handleSaveAs(data) {
 
     if (!response.ok) {
       const result = await response.json();
-      throw new Error(
-        result.detail || "Error while loading the maps."
-      );
+      throw new Error(result.detail || "Error while loading the maps.");
     }
 
     const result = await response.json();
     console.log("Map saved successfuly:", result);
   } catch (err) {
-    error.value =
-      err instanceof Error ? err.message : "Unknown error.";
+    error.value = err instanceof Error ? err.message : "Unknown error.";
   }
 
   showSaveAsModal.value = false;
