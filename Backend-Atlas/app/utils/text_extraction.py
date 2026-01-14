@@ -25,7 +25,9 @@ def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False)
     extractor.check_language_code_validity()
 
     text_info =  extractor.read_text_from_image()
-    clean_image = extractor.remove_text_from_image(image, text_info)
+    #TODO : image cleaning, just send a copy for now
+    #clean_image = extractor.remove_text_from_image(image, text_info)
+    clean_image = copy.deepcopy(image)
 
     logger.debug("Completed text extraction")
     return text_info, clean_image
