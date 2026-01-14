@@ -10,6 +10,8 @@ from app.database.session import get_async_session
 from app.models.features import Feature
 from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
+from shapely.geometry import shape
+from geoalchemy2.shape import from_shape
 from app.models.map import Map
 from app.schemas.map import MapOut
 from uuid import UUID
@@ -17,6 +19,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
+from app.schemas.featuresCreate import FeatureCreate
 
 router = APIRouter()
 
@@ -123,21 +126,23 @@ async def get_extraction_results(task_id: str):
         raise HTTPException(status_code=202, detail=f"Task not completed yet. Current state: {task.state}")
     
 @router.get("/features/{map_id}")
-async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
-    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
-    features = result.scalars().all()
+async def get_features(
+    map_id: str,
+    session: AsyncSession = Depends(get_async_session)
+):
+    try:
+        map_uuid = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    def feature_to_dict(f: Feature):
-        d = f.__dict__.copy()
-        # Convert geometry WKBElement to GeoJSON dict
-        if f.geometry:
-            shape = to_shape(f.geometry)  # shapely geometry
-            d['geometry'] = json.loads(json.dumps(mapping(shape)))
-        else:
-            d['geometry'] = None
-        return d
+    result = await session.execute(select(Feature).where(Feature.map_id == map_uuid))
+    features_rows = result.scalars().all()
 
-    return [feature_to_dict(f) for f in features]
+    all_features = []
+    for f in features_rows:
+        all_features.extend(f.data.get("features", []))
+
+    return all_features
 
 @router.get("/map", response_model=list[MapOut])
 async def get_maps(
@@ -177,3 +182,20 @@ async def create_map(
     db.commit()
     db.refresh(new_map)
     return {"id": new_map.id}
+
+
+@router.post("/save/feature")
+async def save_feature(
+    request: FeatureCreate,
+    db: Session = Depends(get_db)
+):
+    feature = Feature(
+        map_id=request.map_id,
+        data=request.data
+    )
+
+    db.add(feature)
+    db.commit()
+    db.refresh(feature)
+
+    return {"id": feature.id}

@@ -113,15 +113,17 @@ async function fetchFeaturesAndRender(year) {
 
     const allFeatures = await res.json();
 
+    // allFeatures is now an array of GeoJSON features
     // Filtrer par année
-    const features = allFeatures.filter(
-      (f) => new Date(f.start_date).getFullYear() <= year,
-    );
+    const features = allFeatures.filter(f => {
+      const startDate = f.properties.start_date ? new Date(f.properties.start_date) : null;
+      return !startDate || startDate.getFullYear() <= year;
+    });
 
-    // Dispatcher selon le type
-    const cities = features.filter((f) => f.type === "point");
-    const zones = features.filter((f) => f.type === "zone");
-    const arrows = features.filter((f) => f.type === "arrow");
+    // Dispatcher selon le type dans properties.mapElementType
+    const cities = features.filter(f => f.properties.mapElementType === "point");
+    const zones = features.filter(f => f.properties.mapElementType === "zone");
+    const arrows = features.filter(f => f.properties.mapElementType === "arrow");
 
     renderCities(cities);
     renderZones(zones);
@@ -130,6 +132,7 @@ async function fetchFeaturesAndRender(year) {
     console.warn("Erreur fetch features:", err);
   }
 }
+
 // Returns the closest available year that is less than or equal to the requested year
 function getClosestAvailableYear(year) {
   const sorted = [...availableYears].sort((a, b) => a - b);
