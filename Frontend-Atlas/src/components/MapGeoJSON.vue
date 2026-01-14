@@ -111,19 +111,18 @@ async function fetchFeaturesAndRender(year) {
     const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
     if (!res.ok) throw new Error("Failed to fetch features");
 
-    const allFeatures = await res.json();
+    const allFeatures = await res.json(); // Array of GeoJSON features
 
-    // allFeatures is now an array of GeoJSON features
-    // Filtrer par année
+    // Filter by year only if start_date exists in properties
     const features = allFeatures.filter(f => {
-      const startDate = f.properties.start_date ? new Date(f.properties.start_date) : null;
-      return !startDate || startDate.getFullYear() <= year;
+        const startDate = f.start_date ? new Date(f.start_date) : null;
+        return !startDate || startDate.getFullYear() <= year;
     });
 
-    // Dispatcher selon le type dans properties.mapElementType
-    const cities = features.filter(f => f.properties.mapElementType === "point");
-    const zones = features.filter(f => f.properties.mapElementType === "zone");
-    const arrows = features.filter(f => f.properties.mapElementType === "arrow");
+    // Split by type (mapElementType)
+    const cities = features.filter(f => f.properties?.mapElementType === "point");
+    const zones = features.filter(f => f.properties?.mapElementType === "zone");
+    const arrows = features.filter(f => f.properties?.mapElementType === "arrow");
 
     renderCities(cities);
     renderZones(zones);
@@ -185,30 +184,39 @@ function loadRegionsForYear(year, isFirstTime = false) {
 }
 
 function renderCities(features) {
-  const safeFeatures = toArray(features);
+  console.log("starting the funciton");
+  const safeFeatures = features;
 
+  console.log("safe features are", features)
   safeFeatures.forEach((feature) => {
-    // Defensive check
-    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
-      return;
-    }
+
+    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) return;
+
+    console.log("starting the funciton2");
+
 
     const [lng, lat] = feature.geometry.coordinates;
     const coord = [lat, lng];
 
+    const name = feature.properties.name;
+    const [r, g, b] = feature.properties.color_rgb ?? [0, 0, 0];
+    const color = `rgb(${r},${g},${b})`;
+
+    console.log("starting the funciton3");
+
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: feature.color || "#000",
-      color: feature.color || "#000",
+      fillColor: color || "#000",
+      color: color || "#000",
       weight: 1,
-      opacity: feature.opacity ?? 1,
-      fillOpacity: feature.opacity ?? 1,
+      opacity: 1,
+      fillOpacity: 1,
     });
 
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: feature.name,
+        html: name,
         iconSize: [100, 20],
         iconAnchor: [-8, 15],
       }),
@@ -217,6 +225,7 @@ function renderCities(features) {
 
     const layerGroup = L.layerGroup([point, label]);
     featureLayerManager.addFeatureLayer(feature.id, layerGroup);
+    console.log("Finished the whole funciton");
   });
 }
 

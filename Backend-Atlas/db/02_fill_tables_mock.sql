@@ -46,9 +46,11 @@ VALUES (
         "type": "Feature",
         "properties": {
           "name": "Ville de Québec",
-          "mapElementType": "point",
+          "mapElementType": "point", 
           "color_name": "blue",
-          "color_rgb": [0, 0, 255]
+          "color_rgb": [0, 0, 255],
+          "start_date": "1608-01-01",
+          "end_date": "2025-01-01"
         },
         "geometry": {
           "type": "Point",

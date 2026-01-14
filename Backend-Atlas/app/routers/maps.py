@@ -140,7 +140,17 @@ async def get_features(
 
     all_features = []
     for f in features_rows:
-        all_features.extend(f.data.get("features", []))
+        for feature in f.data.get("features", []):
+            feature["id"] = str(f.id)
+
+            props = feature.get("properties", {})
+            start_date = props.get("start_date")  
+            end_date = props.get("end_date")      
+
+            feature["start_date"] = start_date
+            feature["end_date"] = end_date
+
+            all_features.append(feature)
 
     return all_features
 
