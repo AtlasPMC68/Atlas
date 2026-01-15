@@ -62,20 +62,33 @@ def test_process_map_extraction(real_image_np):
     mock_shapes = {"circles": 1, "lines": 5}
 
     with patch("app.tasks.process_map_extraction.update_state") as mock_update_state, \
-            patch("app.tasks.cv2.imread", return_value=real_image_np), \
-            patch("app.tasks.extract_text", return_value=(mock_ocr_result, real_image_np)), \
-            patch("app.tasks.extract_colors", return_value=mock_colors), \
-            patch("app.tasks.extract_shapes", return_value=mock_shapes), \
-            patch("app.tasks.persist_features", return_value=None), \
-            patch("os.makedirs"), \
-            patch("os.unlink"), \
-            patch("builtins.open", mock_open()):
+         patch("app.tasks.cv2.imread", return_value=real_image_np), \
+         patch("app.tasks.extract_text", return_value=(mock_ocr_result, real_image_np)), \
+         patch("app.tasks.extract_colors", return_value=mock_colors), \
+         patch("app.tasks.extract_shapes", return_value=mock_shapes), \
+         patch("app.tasks.asyncio.run", return_value=None), \
+         patch("tempfile.NamedTemporaryFile") as mock_tempfile, \
+         patch("os.makedirs") as mock_makedirs, \
+         patch("os.unlink") as mock_unlink, \
+         patch("builtins.open", mock_open()) as mock_file:
+
+        # Mock tempfile to return a file-like object
+        mock_tmp_file = MagicMock()
+        mock_tmp_file.name = "/tmp/test_map.png"
+        mock_tmp_file.__enter__ = MagicMock(return_value=mock_tmp_file)
+        mock_tmp_file.__exit__ = MagicMock(return_value=None)
+        mock_tempfile.return_value = mock_tmp_file
 
         result = process_map_extraction.apply(args=[filename, file_bytes, map_id]).get(timeout=20)
 
     assert result["status"] == "completed"
-    assert "Hello World" in result["extracted_text"]
-    assert "World Map" in result["extracted_text"]
+    assert result["filename"] == filename
+    assert "output_path" in result
+    # extracted_text is a list of text blocks, so check if the text is in the list
+    extracted_text_list = result["extracted_text"]
+    assert isinstance(extracted_text_list, list)
+    assert "Hello World" in extracted_text_list
+    assert "World Map" in extracted_text_list
     assert result["color_result"] == mock_colors
     assert result["shapes_result"] == mock_shapes
     assert mock_update_state.call_count == 6
