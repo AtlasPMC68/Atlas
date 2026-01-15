@@ -8,7 +8,6 @@ import imageio.v3 as iio
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
 from skimage.morphology import binary_opening, disk
 from skimage.util import img_as_float
-
 from matplotlib import colors as mcolors
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -139,7 +138,6 @@ def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
     for name, hex_value in mcolors.CSS4_COLORS.items():
         r_c, g_c, b_c = mcolors.to_rgb(hex_value)
         r_c, g_c, b_c = [int(x * 255) for x in (r_c, g_c, b_c)]
-        distance = math.sqrt((rgb_tuple[0] - r_c) ** 2 + (rgb_tuple[1] - g_c) ** 2 + (rgb_tuple[2] - b_c) ** 2)
         distance = math.sqrt((rgb_tuple[0] - r_c) ** 2 + (rgb_tuple[1] - g_c) ** 2 + (rgb_tuple[2] - b_c) ** 2)
         if distance < min_distance:
             min_distance = distance
