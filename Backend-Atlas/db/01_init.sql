@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS "maps" (
 CREATE TABLE IF NOT EXISTS "features" (
   id UUID PRIMARY KEY,
   map_id UUID,
+  is_feature_collection BOOLEAN DEFAULT FALSE,
   data JSONB NOT NULL,
   created_at TIMESTAMP DEFAULT now()
 );

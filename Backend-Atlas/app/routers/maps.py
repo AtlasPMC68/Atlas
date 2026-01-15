@@ -33,8 +33,32 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
 @router.post("/upload")
-async def upload_and_process_map(file: UploadFile = File(...)):
+async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)):
     """Upload une carte et lance l'extraction de données"""
+
+    mock_data = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": "Mock Ville",
+                    "mapElementType": "point",
+                    "color_name": "red",
+                    "color_rgb": [255, 0, 0]
+                },
+                "geometry": {"type": "Point", "coordinates": [-71.2, 46.8]}
+            }
+        ]
+    }
+
+    request = FeatureCreate(
+        map_id=UUID("11111111-1111-1111-1111-111111111111"),
+        data=mock_data,
+        is_feature_collection=True
+    )
+
+    result = await save_feature(request, session)
     
     # Validation du type de fichier
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
@@ -72,6 +96,7 @@ async def upload_and_process_map(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error starting map processing: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to start processing")
+
 
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
@@ -194,18 +219,18 @@ async def create_map(
     return {"id": new_map.id}
 
 
-@router.post("/save/feature")
 async def save_feature(
     request: FeatureCreate,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_session)
 ):
     feature = Feature(
         map_id=request.map_id,
+        is_feature_collection=request.is_feature_collection,
         data=request.data
     )
 
     db.add(feature)
-    db.commit()
-    db.refresh(feature)
+    await db.commit()
+    await db.refresh(feature)
 
-    return {"id": feature.id}
+    return {"id": str(feature.id)}

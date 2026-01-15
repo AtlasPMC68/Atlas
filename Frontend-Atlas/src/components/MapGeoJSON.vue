@@ -115,8 +115,9 @@ async function fetchFeaturesAndRender(year) {
 
     // Filter by year only if start_date exists in properties
     const features = allFeatures.filter(f => {
-        const startDate = f.start_date ? new Date(f.start_date) : null;
-        return !startDate || startDate.getFullYear() <= year;
+    const startDateStr = f.start_date ?? f.properties?.start_date;
+    const startDate = startDateStr ? new Date(startDateStr) : null;
+    return !startDate || startDate.getFullYear() <= year;
     });
 
     // Split by type (mapElementType)
