@@ -34,7 +34,7 @@ async function fetchMapsAndRender() {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -51,13 +51,16 @@ async function fetchMapsAndRender() {
   const userId = userData.id;
 
   try {
-    const res = await fetch(`http://localhost:8000/maps/map?user_id=${userId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
+    const res = await fetch(
+      `http://localhost:8000/maps/map?user_id=${userId}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
       },
-    });
+    );
 
     if (!res.ok) {
       throw new Error(`Error while fetching the maps : ${res.status}`);
@@ -71,7 +74,6 @@ async function fetchMapsAndRender() {
       auteur: item.owner_id,
       image: "/images/default.jpg",
     }));
-
   } catch (err) {
     console.error("Error while fetching the maps :", err);
   }
