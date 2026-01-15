@@ -18,6 +18,12 @@ def real_image():
 
 def test_process_map_extraction(dummy_image_bytes, real_image):
     filename = "dummy.png"
+    
+    mock_color_result = {
+        "colors_detected": ["red", "blue"],
+        "masks": {"red": "/path/red.png", "blue": "/path/blue.png"},
+        "ratios": {"red": 0.6, "blue": 0.4}
+    }
 
     with patch("app.tasks.process_map_extraction.update_state") as mock_update_state, \
          patch("pytesseract.image_to_string", return_value="Mocked OCR text"), \
