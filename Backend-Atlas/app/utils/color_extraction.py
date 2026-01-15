@@ -1,5 +1,13 @@
-from PIL import Image
 import os
+import math
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import imageio.v3 as iio
+
+from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
+from skimage.morphology import binary_opening, disk
+from skimage.util import img_as_float
 from matplotlib import colors as mcolors
 import math
 from collections import defaultdict
@@ -150,10 +158,92 @@ def get_nearest_color_name(rgb_tuple):
     for name, hex_value in mcolors.CSS4_COLORS.items():
         r_c, g_c, b_c = mcolors.to_rgb(hex_value)
         r_c, g_c, b_c = [int(x * 255) for x in (r_c, g_c, b_c)]
-
-        distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(rgb_tuple, (r_c, g_c, b_c))))
+        distance = math.sqrt((rgb_tuple[0] - r_c) ** 2 + (rgb_tuple[1] - g_c) ** 2 + (rgb_tuple[2] - b_c) ** 2)
         if distance < min_distance:
             min_distance = distance
             closest_name = name
 
     return closest_name
+
+
+def save_mask_png(mask_bool: np.ndarray, out_path: str) -> None:
+    """
+    Save a boolean mask as an 8-bit PNG (0 or 255).
+    """
+    mask_u8 = (mask_bool.astype(np.uint8) * 255)
+    iio.imwrite(out_path, mask_u8)
+
+
+def extract_colors(
+    image_path: str,
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+    top_n: int = 8,
+    bin_L: float = 4.0,
+    bin_a: float = 8.0,
+    bin_b: float = 8.0,
+    text_tolerance: int = 25,
+    deltaE_threshold: float = 10.0,
+    opening_radius: int = 1,
+) -> Dict:
+    """
+    Extract dominant color layers using LAB binning + ΔE masks.
+    Also extracts a near-black text layer.
+
+    Returns a dict with detected colors, mask paths, and ratios.
+    """
+    rgb, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
+    lab = compute_lab(rgb)
+
+    # Output folder
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    image_output_dir = os.path.join(output_dir, base_name)
+    os.makedirs(image_output_dir, exist_ok=True)
+
+    # Text layer (optional, near-black)
+    text_mask = detect_text_mask_rgb(rgb, opaque_mask, text_tolerance=text_tolerance, opening_radius=2)
+    text_path = os.path.join(image_output_dir, "text_layer_black.png")
+    save_mask_png(text_mask, text_path)
+
+    # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
+    dom = dominant_bins_lab(lab, opaque_mask, top_n=top_n, bin_L=bin_L, bin_a=bin_a, bin_b=bin_b)
+
+    masks: Dict[str, str] = {"text_layer": text_path}
+    ratios: Dict[str, float] = {}
+
+    color_index = 1
+    for entry in dom:
+        lab_center = entry["lab_center"]
+
+        # Build ΔE mask against the LAB center.
+        # deltaE_ciede2000 expects (...,3) arrays; we broadcast center to image shape.
+        center = np.array(lab_center, dtype=np.float64).reshape(1, 1, 3)
+        dE = deltaE_ciede2000(lab, center)  # shape (H, W)
+
+        mask = (dE <= deltaE_threshold) & opaque_mask
+
+        # Optional: remove text from color layers
+        mask = mask & (~text_mask)
+
+        # Clean small noise
+        if opening_radius > 0:
+            mask = binary_opening(mask, disk(opening_radius))
+
+        # Name the layer based on approximate RGB -> nearest CSS name
+        rgb_u8 = lab_center_to_rgb_u8(lab_center)
+        color_name = get_nearest_css4_color_name(rgb_u8)
+
+        file_name = f"color_{color_index}_{color_name}_ratio_{entry['ratio']:.4f}.png"
+        out_path = os.path.join(image_output_dir, file_name)
+        save_mask_png(mask, out_path)
+
+        masks[color_name] = out_path
+        ratios[color_name] = entry["ratio"]
+        color_index += 1
+
+    return {
+        "colors_detected": list(masks.keys()),
+        "masks": masks,
+        "ratios": ratios,
+        "dominant_bins": dom,
+        "output_dir": image_output_dir,
+    }
