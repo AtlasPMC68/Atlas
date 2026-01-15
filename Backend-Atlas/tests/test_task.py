@@ -14,37 +14,16 @@ def real_image_np():
 
 def get_mock_color_extraction():
     return {
-    "colors_detected": ["royal-blue"],
-    "masks": {
-        "royal-blue": "/app/extracted_color/test_map/royal-blue.png"
-    },
-    "normalized_features": [
-        {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "properties": {
-                        "color_name": "royal-blue",
-                        "color_rgb": (65, 105, 225),
-                        "color_hex": "#4169e1",
-                        "mapElementType": "zone",
-                        "name": "Zone royal-blue",
-                        "start_date": "1700-01-01",
-                        "end_date": "2026-01-01",
-                        "is_normalized": True,
-                    },
-                    "geometry": {
-                        "type": "MultiPolygon",
-                        "coordinates": [
-                            [[[0.1, 0.1], [0.1, 0.2], [0.2, 0.2], [0.2, 0.1], [0.1, 0.1]]]
-                        ]
-                    }
-                }
-            ]
-        }
-    ]
-}
+        "colors_detected": ["royal-blue"],
+        "masks": {
+            "royal-blue": "/app/extracted_color/test_map/royal-blue.png"
+        },
+        "ratios": {
+            "royal-blue": 0.5
+        },
+        "dominant_bins": [],
+        "output_dir": "/app/extracted_color/test_map"
+    }
 
 def test_process_map_extraction(real_image_np):
     filename = "test_map.png"
