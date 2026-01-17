@@ -1,6 +1,4 @@
-import json
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 from ..tasks import process_map_extraction
 from ..celery_app import celery_app
 from fastapi import Depends, APIRouter
@@ -8,8 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database.session import get_async_session
 from app.models.features import Feature
-from geoalchemy2.shape import to_shape
-from shapely.geometry import mapping
 from app.models.map import Map
 from app.schemas.map import MapOut
 from uuid import UUID
@@ -17,6 +13,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
+from app.schemas.featuresCreate import FeatureCreate
 
 router = APIRouter()
 
@@ -30,8 +27,32 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
 @router.post("/upload")
-async def upload_and_process_map(file: UploadFile = File(...)):
+async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)):
     """Upload une carte et lance l'extraction de données"""
+
+    mock_data = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": "Mock Ville",
+                    "mapElementType": "point",
+                    "color_name": "red",
+                    "color_rgb": [255, 0, 0]
+                },
+                "geometry": {"type": "Point", "coordinates": [-71.2, 46.8]}
+            }
+        ]
+    }
+
+    request = FeatureCreate(
+        map_id=UUID("11111111-1111-1111-1111-111111111111"),
+        data=mock_data,
+        is_feature_collection=True
+    )
+
+    result = await save_feature(request, session)
     
     # Validation du type de fichier
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
@@ -69,6 +90,7 @@ async def upload_and_process_map(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error starting map processing: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to start processing")
+
 
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
@@ -123,21 +145,33 @@ async def get_extraction_results(task_id: str):
         raise HTTPException(status_code=202, detail=f"Task not completed yet. Current state: {task.state}")
     
 @router.get("/features/{map_id}")
-async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
-    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
-    features = result.scalars().all()
+async def get_features(
+    map_id: str,
+    session: AsyncSession = Depends(get_async_session)
+):
+    try:
+        map_uuid = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    def feature_to_dict(f: Feature):
-        d = f.__dict__.copy()
-        # Convert geometry WKBElement to GeoJSON dict
-        if f.geometry:
-            shape = to_shape(f.geometry)  # shapely geometry
-            d['geometry'] = json.loads(json.dumps(mapping(shape)))
-        else:
-            d['geometry'] = None
-        return d
+    result = await session.execute(select(Feature).where(Feature.map_id == map_uuid))
+    features_rows = result.scalars().all()
 
-    return [feature_to_dict(f) for f in features]
+    all_features = []
+    for f in features_rows:
+        for feature in f.data.get("features", []):
+            feature["id"] = str(f.id)
+
+            props = feature.get("properties", {})
+            start_date = props.get("start_date")  
+            end_date = props.get("end_date")      
+
+            feature["start_date"] = start_date
+            feature["end_date"] = end_date
+
+            all_features.append(feature)
+
+    return all_features
 
 @router.get("/map", response_model=list[MapOut])
 async def get_maps(
@@ -177,3 +211,20 @@ async def create_map(
     db.commit()
     db.refresh(new_map)
     return {"id": new_map.id}
+
+
+async def save_feature(
+    request: FeatureCreate,
+    db: AsyncSession = Depends(get_async_session)
+):
+    feature = Feature(
+        map_id=request.map_id,
+        is_feature_collection=request.is_feature_collection,
+        data=request.data
+    )
+
+    db.add(feature)
+    await db.commit()
+    await db.refresh(feature)
+
+    return {"id": str(feature.id)}
