@@ -1,6 +1,4 @@
-import json
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 from ..tasks import process_map_extraction
 from ..celery_app import celery_app
 from fastapi import Depends, APIRouter
@@ -8,10 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database.session import get_async_session
 from app.models.features import Feature
-from geoalchemy2.shape import to_shape
-from shapely.geometry import mapping
-from shapely.geometry import shape
-from geoalchemy2.shape import from_shape
 from app.models.map import Map
 from app.schemas.map import MapOut
 from uuid import UUID
