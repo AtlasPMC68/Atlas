@@ -15,6 +15,7 @@ from shapely import affinity
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
 
+
 def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_colors: int = 6) -> Dict[str, Any]:
     # Load the image and convert to standard RGB format
     image = Image.open(image_path).convert("RGB")
@@ -59,66 +60,10 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
 
         # Build a vector geometry (possibly MultiPolygon) for this color in pixel space
         if pixel_polygons:
-            merged: BaseGeometry = unary_union(pixel_polygons)
-            # We scale the geometry uniformly so that its largest dimension becomes 1, and
-            # then center it inside the [0, 1] x [0, 1] box. This way the
-            # normalized shape looks the same as in the original image, just
-            # resized and repositioned.
-            minx, miny, maxx, maxy = merged.bounds
-            width_px = maxx - minx
-            height_px = maxy - miny
-
-            max_dim = max(width_px, height_px)
-            scale = 1.0 / max_dim if max_dim != 0 else 1.0
-
-            translated = affinity.translate(merged, xoff=-minx, yoff=-miny)
-
-            # Uniform scale to preserve aspect ratio
-            scaled = affinity.scale(
-                translated,
-                xfact=scale,
-                yfact=scale,
-                origin=(0.0, 0.0),
+            normalized_feature = build_normalized_feature(
+                color_name, rgb, pixel_polygons, image_output_dir
             )
-
-            width_norm = width_px * scale
-            height_norm = height_px * scale
-            offset_x = (1.0 - width_norm) / 2.0
-            offset_y = (1.0 - height_norm) / 2.0
-
-            normalized_geom = affinity.translate(
-                scaled,
-                xoff=offset_x,
-                yoff=offset_y,
-            )
-
-            normalized_feature = {
-                "type": "Feature",
-                "properties": {
-                    "color_name": color_name,
-                    "color_rgb": rgb,
-                    # Hex string for direct styling usage on the frontend
-                    "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb)
-                },
-                "geometry": normalized_geom.__geo_interface__,
-            }
-
             normalized_features.append(normalized_feature)
-
-            normalized_color_geojson_path = os.path.join(
-                image_output_dir, f"{color_name}_normalized.geojson"
-            )
-            # NOTE: In a future iteration, this on-disk GeoJSON export will be
-            # replaced by persisting the normalized geometry to the database
-            # (one feature/FeatureCollection per color) via an API or direct call.
-            with open(normalized_color_geojson_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "type": "FeatureCollection",
-                        "features": [normalized_feature],
-                    },
-                    f,
-                )
 
     normalized_geojson = {
         "type": "FeatureCollection",
@@ -131,6 +76,78 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
         "masks": masks,
         "normalized_geojson": normalized_geojson,
     }
+
+def build_normalized_feature(
+    color_name: str,
+    rgb: tuple,
+    pixel_polygons,
+    image_output_dir: str,
+):
+    """From pixel-space polygons, build a normalized GeoJSON feature and write it to disk.
+
+    - Merges all pixel polygons into a single geometry (possibly MultiPolygon).
+    - Scales it uniformly so the largest dimension becomes 1.
+    - Recenters it into the [0, 1] x [0, 1] box.
+    - Returns the normalized GeoJSON feature dict.
+    """
+
+    merged: BaseGeometry = unary_union(pixel_polygons)
+
+    # Preserve original aspect ratio while normalizing into a unit box
+    minx, miny, maxx, maxy = merged.bounds
+    width_px = maxx - minx
+    height_px = maxy - miny
+
+    max_dim = max(width_px, height_px)
+    scale = 1.0 / max_dim if max_dim != 0 else 1.0
+
+    translated = affinity.translate(merged, xoff=-minx, yoff=-miny)
+
+    scaled = affinity.scale(
+        translated,
+        xfact=scale,
+        yfact=scale,
+        origin=(0.0, 0.0),
+    )
+
+    width_norm = width_px * scale
+    height_norm = height_px * scale
+    offset_x = (1.0 - width_norm) / 2.0
+    offset_y = (1.0 - height_norm) / 2.0
+
+    normalized_geom = affinity.translate(
+        scaled,
+        xoff=offset_x,
+        yoff=offset_y,
+    )
+
+    normalized_feature = {
+        "type": "Feature",
+        "properties": {
+            "color_name": color_name,
+            "color_rgb": rgb,
+            # Hex string for direct styling usage on the frontend
+            "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
+        },
+        "geometry": normalized_geom.__geo_interface__,
+    }
+
+    normalized_color_geojson_path = os.path.join(
+        image_output_dir, f"{color_name}_normalized.geojson"
+    )
+    # NOTE: In a future iteration, this on-disk GeoJSON export will be
+    # replaced by persisting the normalized geometry to the database
+    # (one feature/FeatureCollection per color) via an API or direct call.
+    with open(normalized_color_geojson_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "type": "FeatureCollection",
+                "features": [normalized_feature],
+            },
+            f,
+        )
+
+    return normalized_feature
 
 def get_nearest_color_name(rgb_tuple):
     min_distance = float('inf')
