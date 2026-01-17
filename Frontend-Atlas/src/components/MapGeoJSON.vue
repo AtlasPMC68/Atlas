@@ -1,6 +1,11 @@
 <template>
   <div class="relative h-full w-full z-0">
     <div id="map" style="height: 80vh; width: 100%"></div>
+    <!-- Debug map to visualize normalized GeoJSON in a simple pixel-like CRS -->
+    <!-- <div
+      id="normalized-map"
+      style="height: 40vh; width: 100%; margin-top: 1rem"
+    ></div> -->
     <TimelineSlider v-model:year="selectedYear" />
   </div>
 </template>
@@ -35,6 +40,8 @@ let map = null;
 let currentRegionsLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
+// Separate debug map using a simple CRS to visualize normalized GeoJSON
+let normalizedMap = null;
 const mockedCities = [
   { name: "Montréal", lat: 45.5017, lng: -73.5673, foundation_year: 1642 },
   { name: "Québec", lat: 46.8139, lng: -71.2082, foundation_year: 1608 },
@@ -60,6 +67,12 @@ onMounted(() => {
   ).addTo(map);
 
   loadRegionsForYear(selectedYear.value, true);
+
+  loadTestNormalizedShape();
+
+  // DEBUG: visualize the normalized GeoJSON directly in a simple, non-world CRS
+  // Comment out the next line when you don't need this comparison view.
+  loadDebugNormalizedShapeSimpleCRS();
 });
 
 // Gestionnaire de layers par feature
@@ -339,6 +352,137 @@ function debounce(fn, delay) {
     clearTimeout(timeout);
     timeout = setTimeout(() => fn(...args), delay);
   };
+}
+
+function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
+  // Use the same projected CRS as the basemap (Web Mercator).
+  const crs = L.CRS.EPSG3857;
+  const center = crs.project(L.latLng(anchorLat, anchorLng)); // { x, y } in meters
+  const halfSize = sizeMeters / 2;
+
+  // Transform a single coordinate [x, y] in [0,1]×[0,1] into [lng, lat]
+  const transformCoord = ([x, y]) => {
+    // Center the shape around (0,0) in its local space
+    const nx = x - 0.5;
+    const ny = y - 0.5;
+
+    // Work in projected meters with a uniform scale so aspect ratio is preserved
+    const mx = center.x + nx * 2 * halfSize;
+    const my = center.y - ny * 2 * halfSize; // minus because y grows downward
+
+    const latlng = crs.unproject(L.point(mx, my));
+    return [latlng.lng, latlng.lat]; // GeoJSON order = [lng, lat]
+  };
+
+  const transformCoords = (coords) => {
+    if (typeof coords[0] === "number") {
+      // [x, y]
+      return transformCoord(coords);
+    }
+    return coords.map(transformCoords);
+  };
+
+  return {
+    ...geojson,
+    features: geojson.features.map((f) => ({
+      ...f,
+      geometry: {
+        ...f.geometry,
+        coordinates: transformCoords(f.geometry.coordinates),
+      },
+    })),
+  };
+}
+
+async function loadTestNormalizedShape() {
+  const url = "/geojson/blue_normalized.geojson"; // adjust filename
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("File not found: " + url);
+    const normalized = await res.json();
+
+    // Arbitrary anchor somewhere in central Canada
+    const anchorLat = 56;
+    const anchorLng = -100;
+
+    // Choose a base size in meters for the projected shape
+    // (e.g. 1,000,000 m ≈ 1000 km across). Adjust to taste.
+    const sizeMeters = 1_000_000;
+
+    const worldGeojson = transformNormalizedToWorld(
+      normalized,
+      anchorLat,
+      anchorLng,
+      sizeMeters,
+    );
+
+    const layer = L.geoJSON(worldGeojson, {
+      // Use the color provided in GeoJSON properties when available
+      style: (feature) => ({
+        color: feature?.properties?.color_hex || "#ff0000",
+        fillColor: feature?.properties?.color_hex || "#ff0000",
+        weight: 2,
+        fillOpacity: 0.5,
+      }),
+    }).addTo(map);
+
+    // Optionally zoom the map to this test shape
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds);
+      // Zoom in a bit more so the shape appears larger
+      map.zoomIn(1);
+    }
+  } catch (err) {
+    console.warn("Error loading normalized test shape:", err);
+  }
+}
+
+// Debug helper: display the normalized GeoJSON without transforming it
+// to world coordinates, using Leaflet's simple CRS. This lets you compare
+// the raw normalized shape (0-1 x 0-1) with the world-projected one.
+async function loadDebugNormalizedShapeSimpleCRS() {
+  if (!normalizedMap) {
+    normalizedMap = L.map("normalized-map", {
+      crs: L.CRS.Simple,
+      center: [0.5, 0.5],
+      zoom: 0,
+      minZoom: -4,
+      maxZoom: 10,
+    });
+  }
+
+  const url = "/geojson/blue_normalized.geojson";
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("File not found: " + url);
+    const normalized = await res.json();
+
+    const layer = L.geoJSON(normalized, {
+      // Interpret [x, y] normalized coordinates as [lat, lng] = [y, x]
+      coordsToLatLng: (coords) => {
+        const [x, y] = coords;
+        return L.latLng(y, x);
+      },
+      style: (feature) => ({
+        color: feature?.properties?.color_hex || "#ff0000",
+        fillColor: feature?.properties?.color_hex || "#ff0000",
+        weight: 2,
+        fillOpacity: 0.5,
+      }),
+    }).addTo(normalizedMap);
+
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      normalizedMap.fitBounds(bounds);
+      // Zoom in a bit more so the normalized shape appears larger
+      normalizedMap.zoomIn(9);
+    }
+  } catch (err) {
+    console.warn("Error loading normalized shape in simple CRS:", err);
+  }
 }
 
 function toArray(maybeArray) {
