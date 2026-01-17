@@ -10,6 +10,7 @@ from PIL import ImageEnhance
 from app.utils.color_extraction import extract_colors
 from app.utils.shapes_extractions import extract_shapes
 
+
 logger = logging.getLogger(__name__)
 
 nb_task = 6
@@ -142,6 +143,7 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         }
 
         logger.info(f"Map processing completed for {filename}: {len(extracted_text)} characters extracted")
+
         return result
 
     except Exception as e:
