@@ -21,3 +21,7 @@ bcrypt==4.0.0
 pydantic==2.12.5
 email-validator
 matplotlib
+scikit-image
+scikit-learn
+imageio
+scipy
