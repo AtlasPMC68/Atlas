@@ -60,6 +60,10 @@ onMounted(() => {
   ).addTo(map);
 
   loadRegionsForYear(selectedYear.value, true);
+
+  // uncomment when link to db is done
+  // loadTestNormalizedShape();
+
 });
 
 // Gestionnaire de layers par feature
@@ -339,6 +343,94 @@ function debounce(fn, delay) {
     clearTimeout(timeout);
     timeout = setTimeout(() => fn(...args), delay);
   };
+}
+
+function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
+  // Use the same projected CRS as the basemap (Web Mercator).
+  const crs = L.CRS.EPSG3857;
+  const center = crs.project(L.latLng(anchorLat, anchorLng)); // { x, y } in meters
+  const halfSize = sizeMeters / 2;
+
+  // Transform a single coordinate [x, y] in [0,1]×[0,1] into [lng, lat]
+  const transformCoord = ([x, y]) => {
+    // Center the shape around (0,0) in its local space
+    const nx = x - 0.5;
+    const ny = y - 0.5;
+
+    // Work in projected meters with a uniform scale so aspect ratio is preserved
+    const mx = center.x + nx * 2 * halfSize;
+    const my = center.y - ny * 2 * halfSize; // minus because y grows downward
+
+    const latlng = crs.unproject(L.point(mx, my));
+    return [latlng.lng, latlng.lat]; // GeoJSON order = [lng, lat]
+  };
+
+  const transformCoords = (coords) => {
+    if (typeof coords[0] === "number") {
+      // [x, y]
+      return transformCoord(coords);
+    }
+    return coords.map(transformCoords);
+  };
+
+  return {
+    ...geojson,
+    features: geojson.features.map((f) => ({
+      ...f,
+      geometry: {
+        ...f.geometry,
+        coordinates: transformCoords(f.geometry.coordinates),
+      },
+    })),
+  };
+}
+
+async function loadTestNormalizedShape() {
+  // file doesnt exist in project, in future code we will access
+  // geojson with the db but code rest of code can be reused so its best to
+  // keep it imo
+  const url = "/geojson/blue_normalized.geojson";
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("File not found: " + url);
+    const normalized = await res.json();
+
+    // Arbitrary anchor somewhere in central Canada
+    const anchorLat = 56;
+    const anchorLng = -100;
+
+    // Choose a base size in meters for the projected shape
+    // (e.g. 1,000,000 m ≈ 1000 km across). Adjust to taste.
+    const sizeMeters = 1_000_000;
+
+    const worldGeojson = transformNormalizedToWorld(
+      normalized,
+      anchorLat,
+      anchorLng,
+      sizeMeters,
+    );
+
+    const layer = L.geoJSON(worldGeojson, {
+      // Use the color provided in GeoJSON properties when available
+      style: (feature) => ({
+        color: feature?.properties?.color_hex || "#ff0000",
+        fillColor: feature?.properties?.color_hex || "#ff0000",
+        weight: 2,
+        fillOpacity: 0.5,
+      }),
+    }).addTo(map);
+
+    // Optionally zoom the map to this test shape
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds);
+      // Zoom in a bit more so the shape appears larger
+      map.zoomIn(1);
+    }
+  } catch (err) {
+    console.warn("Error loading normalized test shape:", err);
+  }
 }
 
 function toArray(maybeArray) {
