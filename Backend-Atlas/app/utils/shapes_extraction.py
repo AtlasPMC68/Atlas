@@ -1,0 +1,398 @@
+import json
+import os
+from typing import Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
+
+
+def extract_shapes(
+    image_path: str,
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+    min_area: int = 10,
+    max_area: int = 100000,
+    threshold_value: int = 127,
+    min_confidence: float = 0.6,
+):
+    image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError(f"Unable to load image: {image_path}")
+
+    height, width = image.shape[:2]
+    image_area = width * height
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    image_output_dir = os.path.join(output_dir, base_name)
+    os.makedirs(image_output_dir, exist_ok=True)
+
+    binary_mask = preprocess_image(gray, threshold_value)
+
+    debug_mask_path = os.path.join(image_output_dir, "DEBUG_mask.png")
+    cv2.imwrite(debug_mask_path, binary_mask)
+
+    contours = detect_contours(binary_mask)
+
+    filtered_contours, filter_stats = filter_contours(
+        contours, min_area, max_area, image_area
+    )
+
+    shapes_with_contours = []
+    for idx, contour in enumerate(filtered_contours, 1):
+        shape_data = extract_contour_properties(contour, image, binary_mask, idx)
+        if shape_data:
+            shapes_with_contours.append((shape_data, contour))
+
+    shapes = [shape for shape, contour in shapes_with_contours]
+
+    print(f"[SHAPE EXTRACT] Classifying {len(shapes)} shapes...")
+    filtered_shapes, classification_stats = classify_and_filter_shapes(
+        shapes, min_confidence, image_area
+    )
+    print(f"[SHAPE EXTRACT] Classification stats: {classification_stats}")
+
+    final_shapes_with_contours = []
+    for filtered_shape in filtered_shapes:
+        for shape, contour in shapes_with_contours:
+            if shape["id"] == filtered_shape["id"]:
+                final_shapes_with_contours.append((filtered_shape, contour))
+                break
+
+    print(
+        f"[SHAPE EXTRACT] Saving debug images and metadata for {len(final_shapes_with_contours)} filtered shapes..."
+    )
+
+    # Prepare detailed metadata for each shape
+    shapes_metadata = []
+    for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
+        saved_path = save_shape_image(image, contour, image_output_dir, idx)
+        shape["image_path"] = saved_path
+
+        # Calculate relative size for metadata
+        relative_size = shape["area"] / image_area if image_area else 0
+
+        # Add the classification properties used
+        classification_details = {
+            "shape_id": idx,
+            "type": shape["type"],
+            "confidence": shape["confidence"],
+            "image_path": saved_path,
+            # Morphological properties used for classification
+            "morphology": {
+                "area": shape["area"],
+                "relative_size": relative_size,
+                "aspect_ratio": shape["aspect_ratio"],
+                "solidity": shape["solidity"],
+                "extent": shape["extent"],
+                "num_vertices": shape.get("num_vertices", 0),
+                "perimeter": shape.get("perimeter", 0),
+            },
+            # Bounding box
+            "bounding_box": shape.get("bounding_box", {}),
+            # Center of mass
+            "center": shape.get("center", {}),
+            # Geometry for GeoJSON
+            "geometry": shape.get("geometry", {}),
+            # Calculated properties
+            "properties": shape.get("properties", {}),
+        }
+
+        shapes_metadata.append(classification_details)
+        print(
+            f"[SHAPE EXTRACT] Saved shape {idx}: {shape['type']} (area={shape['area']:.1f}, conf={shape['confidence']:.2f})"
+        )
+
+    # Save metadata to a JSON file
+    metadata_path = os.path.join(image_output_dir, "shapes_metadata.json")
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "image_info": {
+                    "source_path": image_path,
+                    "dimensions": f"{width}x{height}",
+                    "total_area": image_area,
+                    "extraction_date": "2024-01-14",  # ou datetime.now().isoformat()
+                },
+                "extraction_params": {
+                    "min_area": min_area,
+                    "max_area": max_area,
+                    "min_confidence": min_confidence,
+                    "threshold_value": threshold_value,
+                },
+                "classification_stats": classification_stats,
+                "total_shapes_extracted": len(shapes_metadata),
+                "shapes": shapes_metadata,
+            },
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    print(f"[SHAPE EXTRACT] Metadata saved to: {metadata_path}")
+
+    print(
+        f"[EXTRACT] {len(filtered_shapes)} relevant shapes extracted from {image_path}"
+    )
+
+    final_shapes = [shape for shape, contour in final_shapes_with_contours]
+    return {
+        "total_shapes": len(filtered_shapes),
+        "shapes": final_shapes,
+        "output_directory": image_output_dir,
+        "classification_stats": classification_stats,
+        "debug_mask_path": debug_mask_path,
+        "metadata_path": metadata_path,
+    }
+
+
+def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray:
+    unique_values = np.unique(gray)
+
+    if len(unique_values) <= 3:
+        binary = (gray > 127).astype(np.uint8) * 255
+    else:
+        binary = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
+        )
+
+    # kernel = np.ones((2, 2), np.uint8)
+    # binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    return binary
+
+
+def detect_contours(binary_mask: np.ndarray) -> List[np.ndarray]:
+    contours, hierarchy = cv2.findContours(
+        binary_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    return contours if contours else []
+
+
+def filter_contours(
+    contours: List[np.ndarray], min_area: int, max_area: int, image_area: int
+) -> Tuple[List[np.ndarray], Dict]:
+    filtered = []
+    stats = {
+        "total": len(contours),
+        "filtered_by_min_area": 0,
+        "filtered_by_max_area": 0,
+        "filtered_by_ratio": 0,
+        "filtered_by_points": 0,
+        "kept": 0,
+    }
+
+    for contour in contours:
+        area = cv2.contourArea(contour)
+
+        if area < min_area:
+            stats["filtered_by_min_area"] += 1
+            continue
+
+        if area > max_area:
+            stats["filtered_by_max_area"] += 1
+            continue
+
+        ratio = area / image_area
+        if ratio > 0.5:
+            stats["filtered_by_ratio"] += 1
+            continue
+
+        if len(contour) < 3:
+            stats["filtered_by_points"] += 1
+            continue
+
+        stats["kept"] += 1
+        filtered.append(contour)
+
+    return filtered, stats
+
+
+def extract_contour_properties(
+    contour: np.ndarray,
+    original_image: np.ndarray,
+    binary_mask: np.ndarray,
+    shape_id: int,
+) -> Optional[Dict]:
+    area = cv2.contourArea(contour)
+    perimeter = cv2.arcLength(contour, True)
+
+    x, y, w, h = cv2.boundingRect(contour)
+    aspect_ratio = float(w) / h if h > 0 else 0
+    extent = area / (w * h) if (w * h) > 0 else 0
+
+    moments = cv2.moments(contour)
+    if moments["m00"] != 0:
+        cx = int(moments["m10"] / moments["m00"])
+        cy = int(moments["m01"] / moments["m00"])
+    else:
+        cx, cy = x + w // 2, y + h // 2
+
+    hull = cv2.convexHull(contour)
+    hull_area = cv2.contourArea(hull)
+    solidity = area / hull_area if hull_area > 0 else 0
+
+    epsilon = 0.02 * perimeter
+    approx = cv2.approxPolyDP(contour, epsilon, True)
+    num_vertices = len(approx)
+
+    return {
+        "id": shape_id,
+        "area": float(area),
+        "perimeter": float(perimeter),
+        "bounding_box": {"x": int(x), "y": int(y), "width": int(w), "height": int(h)},
+        "center": {"x": int(cx), "y": int(cy)},
+        "aspect_ratio": round(aspect_ratio, 2),
+        "extent": round(extent, 3),
+        "solidity": round(solidity, 3),
+        "num_vertices": num_vertices,
+        "geometry": {
+            "type": "Polygon",
+            "pixel_coords": {
+                "contour_points": contour.tolist(),
+                "bounding_box": {
+                    "x": int(x),
+                    "y": int(y),
+                    "width": int(w),
+                    "height": int(h),
+                },
+                "center": {"x": int(cx), "y": int(cy)},
+            },
+        },
+        "properties": {
+            "area": float(area),
+            "perimeter": float(perimeter),
+            "bounding_box": {
+                "x": int(x),
+                "y": int(y),
+                "width": int(w),
+                "height": int(h),
+            },
+        },
+    }
+
+
+def save_shape_image(
+    image: np.ndarray, contour: np.ndarray, output_dir: str, shape_id: int
+) -> str:
+    mask = np.zeros(image.shape[:2], dtype=np.uint8)
+    cv2.drawContours(mask, [contour], 0, 255, -1)
+
+    shape_image = cv2.bitwise_and(image, image, mask=mask)
+
+    x, y, w, h = cv2.boundingRect(contour)
+    cropped = shape_image[y : y + h, x : x + w]
+
+    shape_filename = f"shape_{shape_id:04d}.png"
+    shape_path = os.path.join(output_dir, shape_filename)
+
+    cv2.imwrite(shape_path, cropped)
+
+    return shape_path
+
+
+def classify_and_filter_shapes(
+    shapes: List[Dict], min_confidence: float = 0.6, image_area: int = None
+) -> Tuple[List[Dict], Dict]:
+    filtered_shapes = []
+    stats = {
+        "total_input": len(shapes),
+        "rejected_too_small": 0,
+        "rejected_noise": 0,
+        "rejected_artifacts": 0,
+        "classified_as": {
+            "point": 0,
+            "symbol": 0,
+            "arrow": 0,
+            "legend": 0,
+            "unknown": 0,
+        },
+    }
+
+    for shape in shapes:
+        area = shape["area"]
+        aspect_ratio = shape["aspect_ratio"]
+        solidity = shape["solidity"]
+        extent = shape["extent"]
+
+        # Main filter: Highly elongated shapes are artifacts (stray lines)
+        if aspect_ratio > 15 or aspect_ratio < 0.06:
+            stats["rejected_artifacts"] += 1
+            continue
+
+        # Low solidity shapes are likely noise (holes)
+        if solidity < 0.2:
+            stats["rejected_noise"] += 1
+            continue
+
+        # Classify shape based on morphology
+        classification, confidence = classify_shape_type(shape, image_area)
+
+        # Lower confidence threshold for small, compact symbols
+        required_confidence = min_confidence
+        if area < 50 and extent > 0.7:
+            required_confidence = 0.5  # More tolerant for compact city symbols
+
+        # FOR DEBUGGING: Remove this line to accept unknown shapes
+        # if classification == "unknown":
+        #     required_confidence = 0.0
+
+        if confidence < required_confidence:
+            stats["rejected_noise"] += 1
+            continue
+
+        # Add classification info to shape
+        shape["type"] = classification
+        shape["confidence"] = confidence
+        filtered_shapes.append(shape)
+        stats["classified_as"][classification] += 1
+
+    return filtered_shapes, stats
+
+
+def classify_shape_type(shape: Dict, image_area: int = None) -> Tuple[str, float]:
+    area = shape["area"]
+    aspect_ratio = shape["aspect_ratio"]
+    solidity = shape["solidity"]
+    extent = shape["extent"]
+    num_vertices = shape["num_vertices"]
+
+    # Proportion of area relative to the whole image
+    relative_size = area / image_area if image_area else 0
+
+    # LEGEND: Rectangles/squares that cover a significant portion
+    # Criteria: reasonable aspect ratio, large relative size, regular shape
+    if (
+        relative_size > 0.01  # At least 5% of image
+        and 0.3 < aspect_ratio < 3.0  # Rectangle/square (not too elongated)
+        and solidity > 0.7
+        and extent > 0.6
+        and num_vertices <= 8
+    ):
+        if relative_size > 0.15:
+            return "legend", 0.9
+        else:
+            return "legend", 0.8
+
+    # POINT: Small, compact symbols
+    if area < 100 and extent > 0.75 and solidity > 0.8:
+        return "point", 0.9
+
+    # SYMBOL: Medium icons
+    if 100 <= area < 1000:
+        if extent > 0.6 and solidity > 0.7:
+            return "symbol", 0.8
+
+    # ARROW: Moderately elongated shapes
+    if 3 < aspect_ratio < 12 and solidity > 0.8 and extent > 0.5:
+        return "arrow", 0.7
+
+    # SECONDARY POINT: Small/medium compact symbols
+    if area < 200 and extent > 0.5:
+        return "point", 0.6
+
+    return "unknown", 0.4
