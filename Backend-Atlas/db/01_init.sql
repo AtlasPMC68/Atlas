@@ -37,22 +37,11 @@ CREATE TABLE IF NOT EXISTS "maps" (
 );
 
 CREATE TABLE IF NOT EXISTS "features" (
-  "id" UUID PRIMARY KEY,
-  "map_id" UUID,
-  "name" TEXT,
-  "type" TEXT,
-  "geometry" GEOMETRY(GEOMETRY,4326),
-  "start_date" TIMESTAMP,
-  "end_date" TIMESTAMP,
-  "precision" TEXT,
-  "color" TEXT,
-  "stroke_width" INT,
-  "icon" TEXT,
-  "tags" JSONB,
-  "source" TEXT,
-  "opacity" float DEFAULT 1,
-  "z_index" int DEFAULT 1,
-  "created_at" TIMESTAMP DEFAULT (now())
+  id UUID PRIMARY KEY,
+  map_id UUID,
+  is_feature_collection BOOLEAN DEFAULT FALSE,
+  data JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS "map_collaborators" (

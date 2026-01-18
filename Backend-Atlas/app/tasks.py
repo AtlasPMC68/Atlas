@@ -1,3 +1,5 @@
+from uuid import UUID
+from celery import current_task
 from .celery_app import celery_app
 import time
 import logging
@@ -5,9 +7,14 @@ import pytesseract
 from PIL import Image
 import os
 import tempfile
+from typing import BinaryIO, Any, List
 from datetime import datetime
 from PIL import Image, ImageEnhance 
 from app.utils.color_extraction import extract_colors
+from app.services.features import insert_feature_in_db
+from app.database.session import AsyncSessionLocal
+import asyncio
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +37,12 @@ def test_task(self, name: str = "World"):
     return result
 
 @celery_app.task(bind=True)
-def process_map_extraction(self, filename: str, file_content: bytes):
+def process_map_extraction(self, filename: str, file_content: bytes, map_id: str):
     """Text extraction with TesseractOCR"""
     logger.info(f"Starting map processing for {filename}")
+
+    # Ensure we are working with a UUID instance inside the task
+    map_uuid = UUID(map_id)
 
     try:
         # Step 1: temp save
@@ -82,9 +92,12 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         time.sleep(2)
 
         color_result = extract_colors(tmp_file_path)
-        logger.info(f"[DEBUG] Résultat color_extraction : {color_result}")
+        normalized_features = color_result["normalized_features"]
 
-        # Step 5: Cleanning
+        asyncio.run(persist_features(map_uuid, normalized_features))
+        logger.info(f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}")
+
+        # Step 5: Cleaning
         self.update_state(
             state="PROGRESS",
             meta={"current": 5, "total": nb_task , "status": "Cleaning up and finalizing"}
@@ -126,10 +139,12 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
-            "status": "completeded"
+            "status": "completed",
+            "map_id": map_id
         }
 
         logger.info(f"Map processing completed for {filename}: {len(extracted_text)} characters extracted")
+
         return result
 
     except Exception as e:
@@ -141,3 +156,18 @@ def process_map_extraction(self, filename: str, file_content: bytes):
 
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
+
+async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
+    async with AsyncSessionLocal() as db:
+        for feature in normalized_features:
+            try:
+                await insert_feature_in_db(
+                    db=db,
+                    map_id=map_uuid,
+                    is_feature_collection=True,
+                    data=feature,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to persist feature for map {map_uuid}: {str(e)}"
+                )
