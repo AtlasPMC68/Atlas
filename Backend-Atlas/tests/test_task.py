@@ -1,5 +1,6 @@
 from unittest.mock import patch, mock_open
 import io
+import uuid
 from PIL import Image
 import pytest
 from app.tasks import process_map_extraction
@@ -22,9 +23,12 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
          patch("pytesseract.image_to_string", return_value="Mocked OCR text"), \
          patch("PIL.Image.open", return_value=real_image), \
          patch("os.makedirs") as mock_makedirs, \
-         patch("builtins.open", mock_open()) as mock_file:
-        
-        result = process_map_extraction.apply(args=[filename, dummy_image_bytes]).get(timeout=20)
+         patch("builtins.open", mock_open()) as mock_file, \
+         patch("app.tasks.asyncio.run", return_value=None):
+
+        result = process_map_extraction.apply(
+            args=[filename, dummy_image_bytes, uuid.uuid4()]
+        ).get(timeout=20)
 
     assert result["filename"] == filename
     assert result["extracted_text"] == "Mocked OCR text"
