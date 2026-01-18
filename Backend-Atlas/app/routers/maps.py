@@ -1,6 +1,5 @@
 import json
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 from ..tasks import process_map_extraction
 from ..celery_app import celery_app
 from fastapi import Depends, APIRouter

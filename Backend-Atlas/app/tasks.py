@@ -1,4 +1,3 @@
-from celery import current_task
 from .celery_app import celery_app
 import time
 import logging
@@ -6,7 +5,6 @@ import pytesseract
 from PIL import Image
 import os
 import tempfile
-from typing import BinaryIO
 from datetime import datetime
 from PIL import Image, ImageEnhance 
 from app.utils.color_extraction import extract_colors

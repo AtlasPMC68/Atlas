@@ -2,7 +2,6 @@ from PIL import Image
 import os
 from matplotlib import colors as mcolors
 import math
-from collections import defaultdict
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")

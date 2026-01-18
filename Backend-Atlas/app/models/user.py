@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import Column, Text, TIMESTAMP, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()

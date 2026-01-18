@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from ..keycloak import verify_token
 
@@ -7,7 +7,6 @@ security = HTTPBearer()
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     
-    # Nettoyer le token si nécessaire
     if ',' in token:
         token = token.split(',')[0]
     
@@ -18,7 +17,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     if not token_info:
         raise HTTPException(status_code=401, detail="Invalid token or expired")
     
-    # Utiliser les infos du token d'introspection
     return {
         "sid": token_info.get("sid"),
         "email": token_info.get("email"),

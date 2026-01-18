@@ -1,8 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from uuid import UUID
 from ..db import get_db
-from ..models.user import User
 from ..utils.auth import get_current_user
 from ..utils.user import get_or_create_user
 from ..keycloak import get_keycloak_public_key
