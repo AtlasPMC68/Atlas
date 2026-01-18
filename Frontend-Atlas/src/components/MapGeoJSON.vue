@@ -2,6 +2,22 @@
   <div class="relative h-full w-full z-0">
     <div id="map" style="height: 80vh; width: 100%"></div>
     <TimelineSlider v-model:year="selectedYear" />
+
+    <!-- Bouton de suppression visible seulement en mode édition -->
+    <div v-if="editMode" class="absolute top-4 right-4 z-10">
+      <button
+        @click="toggleDeleteMode()"
+        :class="[
+          'px-4 py-2 rounded-lg font-medium transition-colors duration-200 active:bg-red-800',
+          isDeleteMode.value
+            ? 'bg-red-600 text-white hover:bg-red-700'
+            : 'bg-gray-600 text-white hover:bg-gray-700',
+        ]"
+      >
+        {{ isDeleteMode.value ? "Mode Suppression" : "Supprimer" }}
+        <span class="ml-2 text-xs text-black">{{ isDeleteMode.value }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -32,10 +48,11 @@ const props = defineProps({
 });
 
 // Émissions vers la vue parent
-const emit = defineEmits(["features-loaded"]);
+const emit = defineEmits(["features-loaded", "mode-change"]);
 
 const selectedYear = ref(1740); // initial displayed year
 const previousFeatureIds = ref(new Set());
+const isDeleteMode = ref(false); // Si on est en mode suppression
 
 // List of available years
 const availableYears = [
@@ -411,9 +428,7 @@ function renderArrows(features) {
       opacity: feature.opacity ?? 1,
     });
 
-    line.addTo(map);
-
-    // Apply arrowheads (after addTo(map))
+    // Apply arrowheads (before addTo)
     line.arrowheads({
       size: "10px",
       frequency: "endonly",
@@ -573,6 +588,24 @@ onMounted(() => {
 
 // NOUVELLES FONCTIONS POUR L'ÉDITION
 
+// Mettre à jour le curseur de la carte selon le mode d'édition
+function updateMapCursor() {
+  if (!map) return;
+
+  const mapContainer = map.getContainer();
+
+  if (props.editMode && props.activeEditMode) {
+    // En mode d'édition avec un mode actif, utiliser un curseur en croix
+    mapContainer.style.cursor = "crosshair";
+  } else if (props.editMode) {
+    // En mode d'édition mais pas de mode actif (sélection/déplacement), curseur normal
+    mapContainer.style.cursor = "";
+  } else {
+    // Pas en mode d'édition, curseur normal
+    mapContainer.style.cursor = "";
+  }
+}
+
 // Initialiser les contrôles d'édition
 function initializeEditControls() {
   if (!props.editMode) return;
@@ -587,6 +620,9 @@ function initializeEditControls() {
   drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
+  // Changer le curseur selon le mode d'édition
+  updateMapCursor();
+
   // Écouter les événements selon le mode actif
   console.log("🎛️ Initializing edit controls:", {
     editMode: props.editMode,
@@ -600,6 +636,7 @@ function initializeEditControls() {
     map.on("mousedown", handleMoveMouseDown);
     map.on("mousemove", handleMoveMouseMove);
     map.on("mouseup", handleMoveMouseUp);
+    // Attacher handleKeyDown toujours en mode édition pour permettre la suppression
     map.on("keydown", handleKeyDown);
     // Rendre les formes existantes cliquables
     makeFeaturesClickable();
@@ -1754,6 +1791,13 @@ function finishFreeLine() {
     z_index: 1,
   };
 
+  // Générer un ID temporaire pour rendre la ligne cliquable immédiatement
+  const tempId = `temp_freeline_${Date.now()}_${Math.random()}`;
+  featureLayerManager.layers.set(tempId, freeLine);
+  if (props.editMode) {
+    featureLayerManager.makeLayerClickable(tempId, freeLine);
+  }
+
   saveFeature(feature);
 }
 
@@ -2105,18 +2149,28 @@ function makeFeaturesClickable() {
   }
 }
 
-// Gérer le clic sur une forme pour la sélection/désélection
+// Gérer le clic sur une forme pour la sélection/désélection ou suppression
 function handleFeatureClick(featureId, isCtrlPressed) {
   console.log(
     "🎯 FEATURE CLICK HANDLER CALLED:",
     featureId,
     "CTRL:",
     isCtrlPressed,
+    "Delete mode:",
+    isDeleteMode.value,
     "Current selection:",
     Array.from(selectedFeatures),
     "Just finished drag:",
     justFinishedDrag
   );
+
+  // Si on est en mode suppression, supprimer l'élément cliqué
+  console.log("🗑️ Checking delete mode - isDeleteMode:", isDeleteMode.value);
+  if (isDeleteMode.value) {
+    console.log("🗑️ Delete mode active, deleting feature:", featureId);
+    deleteFeature(featureId);
+    return;
+  }
 
   // Si on vient de terminer un drag, ignorer ce clic pour éviter la désélection accidentelle
   if (justFinishedDrag) {
@@ -2211,6 +2265,13 @@ function updateFeatureSelectionVisual() {
           opacity: originalFeature?.opacity ?? 1,
         });
       }
+    }
+
+    // Changer le curseur selon le mode
+    if (isDeleteMode.value) {
+      layer.getElement()?.style.setProperty("cursor", "crosshair");
+    } else {
+      layer.getElement()?.style.setProperty("cursor", "");
     }
   });
 }
@@ -2434,9 +2495,33 @@ function handleMoveMouseUp(e) {
   }
 }
 
+// Basculer le mode suppression
+function toggleDeleteMode() {
+  console.log(
+    "🔄 toggleDeleteMode called, current mode:",
+    props.activeEditMode
+  );
+
+  // Émettre un événement pour changer le mode
+  if (props.activeEditMode === "DELETE_FEATURE") {
+    emit("mode-change", null); // Revenir au mode par défaut
+  } else {
+    emit("mode-change", "DELETE_FEATURE"); // Activer le mode suppression
+  }
+}
+
 // Gestionnaire pour les événements clavier
 function handleKeyDown(e) {
-  if (e.originalEvent.key === "Escape") {
+  console.log(
+    "⌨️ Key pressed:",
+    e.originalEvent.key,
+    "Selected features:",
+    selectedFeatures.size
+  );
+  if (e.originalEvent.key === "Delete" && selectedFeatures.size > 0) {
+    console.log("🗑️ Delete key pressed, deleting selected features");
+    deleteSelectedFeatures();
+  } else if (e.originalEvent.key === "Escape") {
     console.log("⎋ Escape pressed, clearing selection");
     selectedFeatures.clear();
     updateFeatureSelectionVisual();
@@ -2497,6 +2582,102 @@ async function updateFeaturePosition(feature, deltaLat, deltaLng) {
     // En cas d'erreur, on pourrait vouloir recharger les features depuis le serveur
     // ou afficher un message d'erreur à l'utilisateur
   }
+}
+
+// Supprimer les features sélectionnées
+async function deleteSelectedFeatures() {
+  if (selectedFeatures.size === 0) return;
+
+  console.log("🗑️ Deleting features:", Array.from(selectedFeatures));
+
+  const featuresToDelete = Array.from(selectedFeatures);
+
+  // Supprimer de la carte d'abord
+  for (const featureId of featuresToDelete) {
+    const layer = featureLayerManager.layers.get(featureId);
+    if (layer) {
+      // Retirer les cercles de la collection
+      if (layer instanceof L.CircleMarker) {
+        allCircles.delete(layer);
+      }
+      map.removeLayer(layer);
+      featureLayerManager.layers.delete(featureId);
+    }
+  }
+
+  // Supprimer de la base de données
+  for (const featureId of featuresToDelete) {
+    try {
+      const response = await fetch(
+        `http://localhost:8000/maps/features/${featureId}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!response.ok) {
+        console.error(
+          `❌ Failed to delete feature ${featureId}:`,
+          response.status
+        );
+      } else {
+        console.log(`✅ Successfully deleted feature ${featureId}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error deleting feature ${featureId}:`, error);
+    }
+  }
+
+  // Mettre à jour la liste des features dans le parent
+  const remainingFeatures = props.features.filter(
+    (f) => !featuresToDelete.includes(f.id)
+  );
+  emit("features-loaded", remainingFeatures);
+
+  // Vider la sélection
+  selectedFeatures.clear();
+  updateFeatureSelectionVisual();
+}
+
+// Supprimer une feature spécifique
+async function deleteFeature(featureId) {
+  console.log("🗑️ Deleting single feature:", featureId);
+
+  // Supprimer de la carte
+  const layer = featureLayerManager.layers.get(featureId);
+  if (layer) {
+    // Retirer les cercles de la collection
+    if (layer instanceof L.CircleMarker) {
+      allCircles.delete(layer);
+    }
+    map.removeLayer(layer);
+    featureLayerManager.layers.delete(featureId);
+  }
+
+  // Supprimer de la base de données
+  try {
+    const response = await fetch(
+      `http://localhost:8000/maps/features/${featureId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `❌ Failed to delete feature ${featureId}:`,
+        response.status
+      );
+    } else {
+      console.log(`✅ Successfully deleted feature ${featureId}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error deleting feature ${featureId}:`, error);
+  }
+
+  // Mettre à jour la liste des features dans le parent
+  const remainingFeatures = props.features.filter((f) => f.id !== featureId);
+  emit("features-loaded", remainingFeatures);
 }
 
 // Fonction pour mettre à jour les coordonnées d'une géométrie GeoJSON
@@ -2605,6 +2786,9 @@ function cleanupEditMode() {
   justFinishedDrag = false;
   updateFeatureSelectionVisual();
 
+  // Mettre à jour le curseur
+  updateMapCursor();
+
   // Recharger toutes les features quand on quitte le mode édition
   setTimeout(() => {
     fetchFeaturesAndRender(selectedYear.value);
@@ -2615,6 +2799,16 @@ function cleanupEditMode() {
 watch(
   () => props.editMode,
   (newEditMode) => {
+    // Si on quitte le mode édition et qu'il y a un polygone en cours, le terminer
+    if (
+      !newEditMode &&
+      props.activeEditMode === "CREATE_POLYGON" &&
+      currentPolygonPoints.length >= 3
+    ) {
+      console.log("🔺 Auto-finishing polygon when leaving edit mode");
+      finishPolygon();
+    }
+
     if (newEditMode) {
       initializeEditControls();
       // Recharger les features quand on entre en mode édition
@@ -2622,7 +2816,25 @@ watch(
     } else {
       cleanupEditMode();
     }
+
+    // Mettre à jour le curseur
+    updateMapCursor();
   }
+);
+
+// Watcher pour mettre à jour isDeleteMode
+watch(
+  () => props.activeEditMode,
+  (newMode) => {
+    isDeleteMode.value = newMode === "DELETE_FEATURE";
+    console.log(
+      "🔄 isDeleteMode updated to:",
+      isDeleteMode.value,
+      "from mode:",
+      newMode
+    );
+  },
+  { immediate: true } // Pour exécuter immédiatement au montage
 );
 
 // Watcher pour changer de mode d'édition
@@ -2630,6 +2842,16 @@ watch(
   () => props.activeEditMode,
   (newMode, oldMode) => {
     console.log("🔄 Edit mode changed:", { oldMode, newMode });
+
+    // Si on quitte le mode CREATE_POLYGON, terminer automatiquement le polygone
+    if (
+      oldMode === "CREATE_POLYGON" &&
+      newMode !== "CREATE_POLYGON" &&
+      currentPolygonPoints.length >= 3
+    ) {
+      console.log("🔺 Auto-finishing polygon when leaving CREATE_POLYGON mode");
+      finishPolygon();
+    }
 
     // Nettoyer l'état précédent
     if (oldMode) {
@@ -2671,8 +2893,16 @@ watch(
       map.on("mousedown", handleMoveMouseDown);
       map.on("mousemove", handleMoveMouseMove);
       map.on("mouseup", handleMoveMouseUp);
+    }
+
+    // TOUJOURS attacher handleKeyDown en mode édition pour permettre la suppression
+    if (props.editMode) {
+      console.log("🔄 Attaching keydown event for delete functionality");
       map.on("keydown", handleKeyDown);
     }
+
+    // Mettre à jour le curseur
+    updateMapCursor();
   }
 );
 
