@@ -54,7 +54,8 @@ async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSes
     try:
         map_id = await create_map_in_db(
             db=session,
-            owner_id=UUID("11111111-1111-1111-1111-111111111111"),  # replace with real owner
+            #TODO: replace with real owner
+            owner_id=UUID("11111111-1111-1111-1111-111111111111"),
             title=file.filename,
             description=None,
             access_level="private",
