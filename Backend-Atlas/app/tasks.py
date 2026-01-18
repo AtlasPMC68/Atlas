@@ -152,7 +152,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
-            "status": "completeded",
+            "status": "completed",
             "map_id": map_id
         }
 
