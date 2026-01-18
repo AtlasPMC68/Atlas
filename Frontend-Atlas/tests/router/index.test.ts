@@ -1,44 +1,60 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { nextTick } from "vue";
+
+vi.mock("../../src/keycloak", () => ({
+  default: {
+    authenticated: false,
+    token: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    init: vi.fn(),
+    updateToken: vi.fn().mockResolvedValue(true),
+  },
+}));
+
+global.fetch = vi.fn().mockResolvedValue({
+  ok: true,
+});
+
+Object.defineProperty(window, "scrollTo", {
+  value: vi.fn(),
+  writable: true,
+});
+
+import keycloak from "../../src/keycloak";
 import { router } from "../../src/router";
 
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => (store[key] = value),
-    removeItem: (key: string) => delete store[key],
-    clear: () => (store = {}),
-  };
-})();
+describe("router auth guard with Keycloak", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
 
-Object.defineProperty(window, "localStorage", { value: localStorageMock });
+    keycloak.authenticated = false;
+    keycloak.token = null;
 
-describe("router auth guard integration", () => {
-  beforeEach(() => {
-    localStorage.clear();
+    await router.replace("/");
+    await nextTick();
   });
 
-  it("redirects to /connexion if not authenticated and route requires auth", async () => {
-    localStorage.removeItem("access_token");
+  it("calls keycloak.login and blocks navigation if not authenticated", async () => {
+    await router.push("/demo/upload");
+    await nextTick();
 
-    try {
-      await router.push("/demo/upload");
-    } catch (e) {}
+    expect(router.currentRoute.value.fullPath).toBe("/");
 
-    expect(router.currentRoute.value.fullPath).toBe("/connexion");
+    expect(keycloak.login).toHaveBeenCalledOnce();
+
+    expect(keycloak.login).toHaveBeenCalledWith({
+      redirectUri: expect.stringContaining("/demo/upload"),
+    });
   });
 
-  it("does not allows access if access_token is wrong", async () => {
-    localStorage.setItem("access_token", "token123");
+  it("allows navigation if authenticated", async () => {
+    keycloak.authenticated = true;
+    keycloak.token = "fake-token";
 
     await router.push("/demo/upload");
-    expect(router.currentRoute.value.fullPath).toBe("/connexion");
-  });
+    await nextTick();
 
-  it("allows access to unprotected route", async () => {
-    localStorage.removeItem("access_token");
-
-    await router.push("/inscription");
-    expect(router.currentRoute.value.fullPath).toBe("/inscription");
+    expect(router.currentRoute.value.fullPath).toBe("/demo/upload");
   });
 });
