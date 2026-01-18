@@ -12,8 +12,7 @@ app.config.globalProperties.$keycloak = keycloak;
 
 keycloak
   .init({ onLoad: "check-sso", pkceMethod: "S256" })
-  .then((authenticated) => {
-    console.log("Keycloak authenticated?", authenticated);
+  .then(() => {
     app.mount("#app");
   })
   .catch(() => {

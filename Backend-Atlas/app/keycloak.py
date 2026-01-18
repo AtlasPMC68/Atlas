@@ -31,7 +31,7 @@ def verify_token(token: str):
             algorithms=["RS256"],
             options={"verify_aud": False}
         )
-        if payload.get("azp") != "atlas-frontend":
+        if payload.get("azp") != os.getenv("KEYCLOAK_FRONT_END_CLIENT_ID"):
             print("Token not for this client")
             return None
         return payload

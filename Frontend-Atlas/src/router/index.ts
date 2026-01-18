@@ -16,6 +16,8 @@ const routes = [
   { path: "/projets-publiques", component: Discover, meta: { requiresAuth: true } },
   { path: "/profil", component: Profile, meta: { requiresAuth: true } },
   { path: "/parametres", component: Settings, meta: { requiresAuth: true } },
+  { path: "/connexion", component: Home }, // Dummy route
+  { path: "/inscription", component: Home }, // Dummy route
 ];
 
 export const router = createRouter({
