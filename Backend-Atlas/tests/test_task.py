@@ -34,4 +34,4 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
     assert result["extracted_text"] == "Mocked OCR text"
     assert isinstance(result["text_length"], int)
     assert "output_path" in result
-    assert result["status"] == "completeded"
+    assert result["status"] == "completed"

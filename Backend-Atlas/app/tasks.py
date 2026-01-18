@@ -7,11 +7,11 @@ import pytesseract
 from PIL import Image
 import os
 import tempfile
-from typing import BinaryIO
+from typing import BinaryIO, Any, List
 from datetime import datetime
 from PIL import Image, ImageEnhance 
 from app.utils.color_extraction import extract_colors
-from app.services.features import create_feature_in_db
+from app.services.features import insert_feature_in_db
 from app.database.session import AsyncSessionLocal
 import asyncio
 
@@ -94,20 +94,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         color_result = extract_colors(tmp_file_path)
         normalized_features = color_result["normalized_features"]
 
-        async def persist_features():
-            async with AsyncSessionLocal() as db:
-                for feature in normalized_features:
-                    try:
-                        await create_feature_in_db(
-                            db=db,
-                            map_id=map_uuid,
-                            is_feature_collection=True,
-                            data=feature,
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to persist feature for map {map_id}: {str(e)}")
-
-        asyncio.run(persist_features())
+        asyncio.run(persist_features(map_uuid, normalized_features))
         logger.info(f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}")
 
         # Step 5: Cleanning
@@ -169,3 +156,18 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
+
+async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
+    async with AsyncSessionLocal() as db:
+        for feature in normalized_features:
+            try:
+                await insert_feature_in_db(
+                    db=db,
+                    map_id=map_uuid,
+                    is_feature_collection=True,
+                    data=feature,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to persist feature for map {map_uuid}: {str(e)}"
+                )

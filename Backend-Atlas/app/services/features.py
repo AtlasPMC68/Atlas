@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.features import Feature
 
 
-async def create_feature_in_db(
+async def insert_feature_in_db(
     db: AsyncSession,
     map_id: UUID,
     is_feature_collection: bool,
@@ -16,6 +16,10 @@ async def create_feature_in_db(
         data=data,
     )
     db.add(feature)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     await db.refresh(feature)
     return str(feature.id)
