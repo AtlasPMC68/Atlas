@@ -47,7 +47,7 @@ import { EyeIcon } from "@heroicons/vue/24/outline";
           class="flex flex-col sm:flex-row gap-4 justify-center animate-slide-up"
         >
           <RouterLink
-            to="/demo"
+            to="/maps/11111111-1111-1111-1111-111111111111"
             class="btn-secondary px-8 py-4 text-lg hover:scale-105 transform transition-all inline-flex items-center justify-center"
           >
             <EyeIcon class="w-5 h-5 mr-2 text-primary-600" />
