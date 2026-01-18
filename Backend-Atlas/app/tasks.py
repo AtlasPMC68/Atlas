@@ -183,7 +183,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
             "output_path": output_path,
             "shapes_result": shapes_result,
             "color_result": color_result,
-            "status": "completeded",
+            "status": "completed",
         }
 
         logger.info(
