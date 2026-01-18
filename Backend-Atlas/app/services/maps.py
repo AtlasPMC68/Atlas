@@ -14,8 +14,7 @@ async def create_map_in_db(
 ) -> UUID:
     new_map = Map(
         owner_id=owner_id,
-        #random uuid
-        base_layer_id=uuid4(),
+        base_layer_id=UUID("00000000-0000-0000-0000-000000000100"),
         title=title,
         description=description,
         access_level=access_level,

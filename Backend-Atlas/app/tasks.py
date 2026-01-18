@@ -12,7 +12,7 @@ from datetime import datetime
 from PIL import Image, ImageEnhance 
 from app.utils.color_extraction import extract_colors
 from app.services.features import create_feature_in_db
-from app.database.session import get_async_session  # whatever your factory is called
+from app.database.session import AsyncSessionLocal
 import asyncio
 
 
@@ -90,8 +90,9 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: UUI
 
         color_result = extract_colors(tmp_file_path)
         normalized_features = color_result["normalized_features"]
+
         async def persist_features():
-            async with get_async_session() as db:
+            async with AsyncSessionLocal() as db:
                 for feature in normalized_features:
                     await create_feature_in_db(
                         db=db,
