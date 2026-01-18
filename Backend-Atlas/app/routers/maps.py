@@ -70,7 +70,8 @@ async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSes
             "task_id": task.id,
             "filename": file.filename,
             "status": "processing_started",
-            "message": f"Map upload successful. Processing started for {file.filename}"
+            "message": f"Map upload successful. Processing started for {file.filename}",
+            "map_id": str(map_id)
         }
         
     except Exception as e:

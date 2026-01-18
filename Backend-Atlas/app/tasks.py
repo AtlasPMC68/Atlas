@@ -146,8 +146,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: UUI
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
-            "status": "completeded",
-            "map_id": str(map_id)
+            "status": "completeded"
         }
 
         logger.info(f"Map processing completed for {filename}: {len(extracted_text)} characters extracted")
