@@ -48,6 +48,7 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
                 if quantized.getpixel((x, y)) == color_index:
                     mask_pixels[x, y] = 1  # white
                     # In simple CRS, treat each pixel as a 1x1 square at (x, y)
+                    #TODO: optmize because could be very slow for large images
                     pixel_polygons.append(box(x, y, x + 1, y + 1))
                 else:
                     mask_pixels[x, y] = 0  # black

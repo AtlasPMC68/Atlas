@@ -97,12 +97,15 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         async def persist_features():
             async with AsyncSessionLocal() as db:
                 for feature in normalized_features:
-                    await create_feature_in_db(
-                        db=db,
-                        map_id=map_uuid,
-                        is_feature_collection=True,
-                        data=feature,
-                    )
+                    try:
+                        await create_feature_in_db(
+                            db=db,
+                            map_id=map_uuid,
+                            is_feature_collection=True,
+                            data=feature,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to persist feature for map {map_id}: {str(e)}")
 
         asyncio.run(persist_features())
         logger.info(f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}")
