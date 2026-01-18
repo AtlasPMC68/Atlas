@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Dict, Any
 import json
 
-import numpy as np
+from uuid import UUID
 from shapely.geometry import box
 from shapely.ops import unary_union
 from shapely.geometry.base import BaseGeometry
@@ -65,16 +65,12 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
             )
             normalized_features.append(normalized_feature)
 
-    normalized_geojson = {
-        "type": "FeatureCollection",
-        "features": normalized_features,
-    }
 
     print(f"[EXTRACT] {len(masks)} couleurs extraites depuis {image_path}")
     return {
         "colors_detected": list(masks.keys()),
         "masks": masks,
-        "normalized_geojson": normalized_geojson,
+        "normalized_features": normalized_features,
     }
 
 def build_normalized_feature(

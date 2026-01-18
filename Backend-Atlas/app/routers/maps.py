@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.schemas.featuresCreate import FeatureCreate
+from app.services.maps import create_map_in_db
 
 router = APIRouter()
 
@@ -29,30 +30,6 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 @router.post("/upload")
 async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)):
     """Upload une carte et lance l'extraction de données"""
-
-    mock_data = {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "properties": {
-                    "name": "Mock Ville",
-                    "mapElementType": "point",
-                    "color_name": "red",
-                    "color_rgb": [255, 0, 0]
-                },
-                "geometry": {"type": "Point", "coordinates": [-71.2, 46.8]}
-            }
-        ]
-    }
-
-    request = FeatureCreate(
-        map_id=UUID("11111111-1111-1111-1111-111111111111"),
-        data=mock_data,
-        is_feature_collection=True
-    )
-
-    result = await save_feature(request, session)
     
     # Validation du type de fichier
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
@@ -75,8 +52,15 @@ async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSes
         raise HTTPException(status_code=400, detail="Empty file")
     
     try:
+        map_id = await create_map_in_db(
+            db=session,
+            owner_id=UUID("11111111-1111-1111-1111-111111111111"),  # replace with real owner
+            title=file.filename,
+            description=None,
+            access_level="private",
+        )
         # Lancer la tâche Celery
-        task = process_map_extraction.delay(file.filename, file_content)
+        task = process_map_extraction.delay(file.filename, file_content, map_id)
         
         logger.info(f"Map processing task started: {task.id} for file {file.filename}")
         
@@ -211,20 +195,3 @@ async def create_map(
     db.commit()
     db.refresh(new_map)
     return {"id": new_map.id}
-
-
-async def save_feature(
-    request: FeatureCreate,
-    db: AsyncSession = Depends(get_async_session)
-):
-    feature = Feature(
-        map_id=request.map_id,
-        is_feature_collection=request.is_feature_collection,
-        data=request.data
-    )
-
-    db.add(feature)
-    await db.commit()
-    await db.refresh(feature)
-
-    return {"id": str(feature.id)}

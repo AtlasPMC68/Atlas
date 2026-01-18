@@ -1,3 +1,4 @@
+from uuid import UUID
 from celery import current_task
 from .celery_app import celery_app
 import time
@@ -10,6 +11,9 @@ from typing import BinaryIO
 from datetime import datetime
 from PIL import Image, ImageEnhance 
 from app.utils.color_extraction import extract_colors
+from app.services.features import create_feature_in_db
+from app.database.session import get_async_session  # whatever your factory is called
+import asyncio
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +37,7 @@ def test_task(self, name: str = "World"):
     return result
 
 @celery_app.task(bind=True)
-def process_map_extraction(self, filename: str, file_content: bytes):
+def process_map_extraction(self, filename: str, file_content: bytes, map_id: UUID):
     """Text extraction with TesseractOCR"""
     logger.info(f"Starting map processing for {filename}")
 
@@ -85,7 +89,19 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         time.sleep(2)
 
         color_result = extract_colors(tmp_file_path)
-        logger.info(f"[DEBUG] Résultat color_extraction : {color_result}")
+        normalized_features = color_result["normalized_features"]
+        async def persist_features():
+            async with get_async_session() as db:
+                for feature in normalized_features:
+                    await create_feature_in_db(
+                        db=db,
+                        map_id=map_id,
+                        is_feature_collection=True,
+                        data=feature,
+                    )
+
+        asyncio.run(persist_features())
+        logger.info(f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}")
 
         # Step 5: Cleanning
         self.update_state(
@@ -129,7 +145,8 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
-            "status": "completeded"
+            "status": "completeded",
+            "map_id": str(map_id)
         }
 
         logger.info(f"Map processing completed for {filename}: {len(extracted_text)} characters extracted")
