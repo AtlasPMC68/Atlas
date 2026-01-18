@@ -15,7 +15,6 @@ from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
 from uuid import UUID
 from ..utils.auth import get_current_user
-from app.schemas.featuresCreate import FeatureCreate
 from app.services.maps import create_map_in_db
 
 router = APIRouter()
