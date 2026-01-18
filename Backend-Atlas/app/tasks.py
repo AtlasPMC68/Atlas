@@ -13,6 +13,7 @@ from PIL import Image, ImageEnhance
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.color_extraction import extract_colors
+from app.utils.shapes_extraction import extract_shapes
 
 from .celery_app import celery_app
 
