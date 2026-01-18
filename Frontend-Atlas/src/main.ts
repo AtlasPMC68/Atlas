@@ -3,12 +3,18 @@ import { createPinia } from "pinia";
 import App from "./App.vue";
 import { router } from "./router";
 import "./style.css";
+import keycloak from "./keycloak";
 
 const app = createApp(App);
-
-// Créer et configurer Pinia
-const pinia = createPinia();
-app.use(pinia);
-
+app.use(createPinia());
 app.use(router);
-app.mount("#app");
+app.config.globalProperties.$keycloak = keycloak;
+
+keycloak
+  .init({ onLoad: "check-sso", pkceMethod: "S256" })
+  .then(() => {
+    app.mount("#app");
+  })
+  .catch(() => {
+    app.mount("#app");
+  });

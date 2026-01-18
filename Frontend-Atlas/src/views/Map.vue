@@ -46,6 +46,7 @@ import FeatureVisibilityControls from "../components/FeatureVisibilityControls.v
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import { useRouter } from "vue-router";
+import keycloak from "../keycloak";
 
 const mapId = ref("11111111-1111-1111-1111-111111111111");
 const features = ref([]);
@@ -106,7 +107,7 @@ async function handleSaveAs(data) {
   description.value = data.description;
   access_level.value = data.access_level;
 
-  const token = localStorage.getItem("access_token");
+  const token = keycloak.token;
 
   if (!token) {
     console.error("No token found in the localStorage.");

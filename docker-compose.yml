@@ -7,11 +7,16 @@ services:
       - "8000:8000"
     env_file:
       - ./Backend-Atlas/.env.dev
+    environment:
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/usager
+      KEYCLOAK_AUDIENCE: atlas-backend
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
+    depends_on:
+      - keycloak
 
   frontend:
     build:
@@ -21,7 +26,7 @@ services:
       - "3000:5173" # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
     env_file:
-      - ./Frontend-Atlas/.env.dev
+      - ./Frontend-Atlas/.env
     volumes:
       - ./Frontend-Atlas:/app # bind mount pour hot reload
       - /app/node_modules # éviter conflit node_modules
@@ -52,7 +57,6 @@ services:
       - db
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
 
-  # ESSENTIEL : Interface web Flower pour monitoring (important pour OCR/ML)
   flower:
     build:
       context: ./Backend-Atlas
@@ -85,6 +89,32 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./Backend-Atlas/db:/docker-entrypoint-initdb.d
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.0
+    container_name: atlas-keycloak
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes:
+      - ./keycloak:/var/tmp
+    entrypoint: sh -c "/var/tmp/init.sh"
+    depends_on:
+      - keycloak-db
+
+  keycloak-db:
+    image: postgres:16
+    container_name: atlas-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak-data:/var/lib/postgresql/data
+
   test-backend:
     build:
       context: ./Backend-Atlas
@@ -109,3 +139,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  keycloak-data:

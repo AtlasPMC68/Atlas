@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { PencilSquareIcon } from "@heroicons/vue/24/solid";
 import { useRouter } from "vue-router";
+import keycloak from "../keycloak";
 
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
@@ -13,7 +14,7 @@ const user = ref({
 });
 
 onMounted(async () => {
-  const token = localStorage.getItem("access_token");
+  const token = keycloak.token;
   if (!token) return;
 
   try {

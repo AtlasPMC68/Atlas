@@ -7,7 +7,7 @@ import pytesseract
 from PIL import Image
 import os
 import tempfile
-from typing import BinaryIO, Any, List
+from typing import Any, List
 from datetime import datetime
 from PIL import Image, ImageEnhance 
 from app.utils.color_extraction import extract_colors

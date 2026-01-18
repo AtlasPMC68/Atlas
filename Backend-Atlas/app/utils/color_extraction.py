@@ -2,7 +2,6 @@ from PIL import Image
 import os
 from matplotlib import colors as mcolors
 import math
-from collections import defaultdict
 from typing import Dict, Any
 import json
 
