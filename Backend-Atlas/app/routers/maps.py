@@ -60,8 +60,8 @@ async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSes
             description=None,
             access_level="private",
         )
-        # Lancer la tâche Celery
-        task = process_map_extraction.delay(file.filename, file_content, map_id)
+        # Lancer la tâche Celery (pass map_id as string for JSON serialization)
+        task = process_map_extraction.delay(file.filename, file_content, str(map_id))
         #TODO: either delete the created map if task fails or create cleanup mechanism
         
         logger.info(f"Map processing task started: {task.id} for file {file.filename}")

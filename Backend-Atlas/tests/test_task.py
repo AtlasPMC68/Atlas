@@ -27,7 +27,7 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
          patch("app.tasks.asyncio.run", return_value=None):
 
         result = process_map_extraction.apply(
-            args=[filename, dummy_image_bytes, uuid.uuid4()]
+            args=[filename, dummy_image_bytes, str(uuid.uuid4())]
         ).get(timeout=20)
 
     assert result["filename"] == filename

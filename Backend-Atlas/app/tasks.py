@@ -37,9 +37,12 @@ def test_task(self, name: str = "World"):
     return result
 
 @celery_app.task(bind=True)
-def process_map_extraction(self, filename: str, file_content: bytes, map_id: UUID):
+def process_map_extraction(self, filename: str, file_content: bytes, map_id: str):
     """Text extraction with TesseractOCR"""
     logger.info(f"Starting map processing for {filename}")
+
+    # Ensure we are working with a UUID instance inside the task
+    map_uuid = UUID(map_id)
 
     try:
         # Step 1: temp save
@@ -96,7 +99,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: UUI
                 for feature in normalized_features:
                     await create_feature_in_db(
                         db=db,
-                        map_id=map_id,
+                        map_id=map_uuid,
                         is_feature_collection=True,
                         data=feature,
                     )
@@ -146,7 +149,8 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: UUI
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
-            "status": "completeded"
+            "status": "completeded",
+            "map_id": map_id
         }
 
         logger.info(f"Map processing completed for {filename}: {len(extracted_text)} characters extracted")
