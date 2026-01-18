@@ -123,9 +123,15 @@ async function fetchFeaturesAndRender(year) {
     );
 
     // Dispatcher selon le type
-    const cities = features.filter((f) => f.type === "point");
-    const zones = features.filter((f) => f.type === "zone");
-    const arrows = features.filter((f) => f.type === "arrow");
+    const cities = features.filter(
+      (f) => f.properties?.mapElementType === "point",
+    );
+    const zones = features.filter(
+      (f) => f.properties?.mapElementType === "zone",
+    );
+    const arrows = features.filter(
+      (f) => f.properties?.mapElementType === "arrow",
+    );
 
     renderCities(cities);
     renderZones(zones);
@@ -197,10 +203,18 @@ function renderCities(features) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord = [lat, lng];
 
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const color = feature.color || colorFromRgb || "#000";
+
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: feature.color || "#000",
-      color: feature.color || "#000",
+      fillColor: color,
+      color,
       weight: 1,
       opacity: feature.opacity ?? 1,
       fillOpacity: feature.opacity ?? 1,
@@ -209,7 +223,7 @@ function renderCities(features) {
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: feature.name,
+        html: props.name || feature.name || "",
         iconSize: [100, 20],
         iconAnchor: [-8, 15],
       }),
@@ -229,17 +243,26 @@ function renderZones(features) {
       return;
     }
 
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const fillColor = feature.color || colorFromRgb || "#ccc";
+
     const layer = L.geoJSON(feature.geometry, {
       style: {
-        fillColor: feature.color || "#ccc",
+        fillColor,
         fillOpacity: 0.5,
         color: "#333",
         weight: 1,
       },
     });
 
-    if (feature.name) {
-      layer.bindPopup(feature.name);
+    const name = props.name || feature.name;
+    if (name) {
+      layer.bindPopup(name);
     }
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
@@ -259,8 +282,16 @@ function renderArrows(features) {
       lng,
     ]);
 
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const color = feature.color || colorFromRgb || "#000";
+
     const line = L.polyline(latLngs, {
-      color: feature.color || "#000",
+      color,
       weight: feature.stroke_width ?? 2,
       opacity: feature.opacity ?? 1,
     });
@@ -274,8 +305,9 @@ function renderArrows(features) {
       fill: true,
     });
 
-    if (feature.name) {
-      line.bindPopup(feature.name);
+    const name = props.name || feature.name;
+    if (name) {
+      line.bindPopup(name);
     }
 
     featureLayerManager.addFeatureLayer(feature.id, line);
@@ -299,9 +331,15 @@ function renderAllFeatures() {
 
   const newFeatures = currentFeatures.filter((f) => !previousIds.has(f.id));
   const featuresByType = {
-    point: newFeatures.filter((f) => f.type === "point"),
-    polygon: newFeatures.filter((f) => f.type === "zone"),
-    arrow: newFeatures.filter((f) => f.type === "arrow"),
+    point: newFeatures.filter(
+      (f) => f.properties?.mapElementType === "point",
+    ),
+    polygon: newFeatures.filter(
+      (f) => f.properties?.mapElementType === "zone",
+    ),
+    arrow: newFeatures.filter(
+      (f) => f.properties?.mapElementType === "arrow",
+    ),
   };
 
   renderCities(featuresByType.point);

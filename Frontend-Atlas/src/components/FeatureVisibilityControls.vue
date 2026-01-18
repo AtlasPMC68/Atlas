@@ -69,7 +69,9 @@ const featureGroups = computed(() => {
   ];
 
   props.features.forEach((feature) => {
-    const group = groups.find((g) => g.type === feature.type);
+    const elementType =
+      feature?.properties?.mapElementType || feature.type || "";
+    const group = groups.find((g) => g.type === elementType);
     if (group) {
       group.features.push(feature);
     }
