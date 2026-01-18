@@ -110,7 +110,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         asyncio.run(persist_features())
         logger.info(f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}")
 
-        # Step 5: Cleanning
+        # Step 5: Cleaning
         self.update_state(
             state="PROGRESS",
             meta={"current": 5, "total": nb_task , "status": "Cleaning up and finalizing"}
