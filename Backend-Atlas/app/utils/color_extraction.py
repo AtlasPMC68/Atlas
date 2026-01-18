@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Dict, Any
 import json
 
-from uuid import UUID
+
 from shapely.geometry import box
 from shapely.ops import unary_union
 from shapely.geometry.base import BaseGeometry

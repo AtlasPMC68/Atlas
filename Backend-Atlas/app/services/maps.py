@@ -1,6 +1,6 @@
 # app/services/maps.py
 from uuid import UUID
-from uuid import uuid4
+
 from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.map import Map
