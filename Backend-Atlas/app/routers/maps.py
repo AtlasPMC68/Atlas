@@ -167,7 +167,7 @@ async def create_map(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    owner_id = UUID(user["sub"])
+    owner_id = UUID(user["sid"])
 
     new_map = Map(
         owner_id,
