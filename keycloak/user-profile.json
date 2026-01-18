@@ -1,0 +1,6 @@
+{
+    "attributes": {
+      "firstName": {"required": false},
+      "lastName": {"required": false}
+    }
+}

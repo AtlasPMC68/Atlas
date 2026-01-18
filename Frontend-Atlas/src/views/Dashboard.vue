@@ -5,6 +5,7 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/vue/24/outline";
+import keycloak from "../keycloak";
 
 interface Projet {
   id: string;
@@ -20,7 +21,7 @@ onMounted(() => {
 });
 
 async function fetchMapsAndRender() {
-  const token = localStorage.getItem("access_token");
+  const token = keycloak.token;
 
   if (!token) {
     console.error("No token found in the localStorage.");

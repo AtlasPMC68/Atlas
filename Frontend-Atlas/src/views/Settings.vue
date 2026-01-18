@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import keycloak from "../keycloak";
 
 const username = ref("");
 const email = ref("");
-const token = localStorage.getItem("access_token");
+const token = keycloak.token;
 const errorMessage = ref("");
 const router = useRouter();
 

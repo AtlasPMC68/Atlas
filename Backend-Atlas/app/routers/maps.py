@@ -17,6 +17,8 @@ from datetime import date
 from sqlalchemy.orm import Session
 from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
+from uuid import UUID
+from ..utils.auth import get_current_user
 
 router = APIRouter()
 
@@ -147,7 +149,11 @@ async def get_maps(
     from sqlalchemy import select
 
     if user_id:
-        query = select(Map).where(Map.owner_id == user_id)
+        try:
+            owner_uuid = UUID(user_id)
+            query = select(Map).where(Map.owner_id == owner_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user_id format")
     else:
         query = select(Map).where(Map.access_level == "public")
 
@@ -159,10 +165,13 @@ async def get_maps(
 @router.post("/save")
 async def create_map(
     request: MapCreateRequest,
+    user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    owner_id = UUID(user["sub"])
+
     new_map = Map(
-        owner_id=request.owner_id,
+        owner_id,
         base_layer_id=UUID("00000000-0000-0000-0000-000000000100"),
         title=request.title,
         description=request.description,

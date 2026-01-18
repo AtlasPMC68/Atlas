@@ -1,0 +1,32 @@
+{
+    "clientId": "atlas-frontend",
+    "name": "Atlas Frontend",
+    "enabled": true,
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "bearerOnly": false,
+    "standardFlowEnabled": true,
+    "implicitFlowEnabled": false,
+    "directAccessGrantsEnabled": true,
+    "redirectUris": [
+      "http://localhost:3000/*"
+    ],
+    "webOrigins": [
+      "http://localhost:3000"
+    ],
+    "attributes": {
+      "pkce.code.challenge.method": "S256"
+    },
+    "defaultClientScopes": [
+      "openid",
+      "profile",
+      "email",
+      "roles"
+    ],
+    "optionalClientScopes": [
+      "address",
+      "phone",
+      "offline_access"
+    ]
+  }
+  

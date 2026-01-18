@@ -6,18 +6,16 @@ import "./style.css";
 import keycloak from "./keycloak";
 
 const app = createApp(App);
-
-const pinia = createPinia();
-app.use(pinia);
+app.use(createPinia());
 app.use(router);
-
 app.config.globalProperties.$keycloak = keycloak;
-
-app.mount("#app");
 
 keycloak
   .init({ onLoad: "check-sso", pkceMethod: "S256" })
   .then((authenticated) => {
     console.log("Keycloak authenticated?", authenticated);
+    app.mount("#app");
   })
-  .catch((err) => console.error("Erreur Keycloak :", err));
+  .catch(() => {
+    app.mount("#app");
+  });

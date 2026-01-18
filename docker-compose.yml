@@ -7,6 +7,9 @@ services:
       - "8000:8000"
     env_file:
       - ./Backend-Atlas/.env.dev
+    environment:
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/usager
+      KEYCLOAK_AUDIENCE: atlas-backend
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
@@ -23,7 +26,7 @@ services:
       - "3000:5173" # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
     env_file:
-      - ./Frontend-Atlas/.env.dev
+      - ./Frontend-Atlas/.env
     volumes:
       - ./Frontend-Atlas:/app # bind mount pour hot reload
       - /app/node_modules # éviter conflit node_modules
@@ -90,17 +93,14 @@ services:
     image: quay.io/keycloak/keycloak:26.0.0
     container_name: atlas-keycloak
     restart: unless-stopped
-    command: start-dev
     ports:
       - "8080:8080"
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak
-      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./keycloak:/var/tmp
+    entrypoint: sh -c "/var/tmp/init.sh"
     depends_on:
       - keycloak-db
 
