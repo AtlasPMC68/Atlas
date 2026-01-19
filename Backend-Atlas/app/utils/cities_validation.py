@@ -20,13 +20,6 @@ import unicodedata
 from typing import List, Dict, Any, Optional
 
 import geonamescache
-from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
-
-try:
-    import requests_cache
-except Exception:
-    requests_cache = None
 
 
 _WORD_RE = re.compile(r"\b[\w\-']+\b", flags=re.UNICODE)
@@ -57,18 +50,6 @@ for info in _gc.get_cities().values():
         "country": country,
         "population": info.get("population"),
     })
-
-
-# Setup Nominatim geolocator with requests cache and rate limiter
-if requests_cache is not None:
-    try:
-        requests_cache.install_cache("nominatim_cache", expire_after=60 * 60 * 24)
-    except Exception:
-        pass
-
-_geolocator = Nominatim(user_agent="atlas_geocoder")
-_geocode_rate_limited = RateLimiter(_geolocator.geocode, min_delay_seconds=1.0)
-
 
 def detect_cities_from_text(
     text: str, max_ngram: int = 4, use_search: bool = False, search_limit: int = 10
@@ -144,38 +125,7 @@ def detect_cities_from_text(
             i += 1
     return matches
 
-
-def geocode_fallback(place_name: str, countrycodes: Optional[List[str]] = None, limit: int = 3) -> List[Dict[str, Any]]:
-    """Use Nominatim to geocode place_name when local gazetteer fails.
-
-    Returns a list of candidate dicts with keys: name, lat, lon, raw.
-    """
-    params = {"exactly_one": False, "limit": limit}
-    if countrycodes:
-        params["country_codes"] = ",".join(countrycodes)
-
-    try:
-        results = _geocode_rate_limited(place_name, **params)
-    except Exception:
-        return []
-
-    if not results:
-        return []
-
-    out: List[Dict[str, Any]] = []
-    for r in results:
-        if r is None:
-            continue
-        try:
-            lat = float(r.latitude)
-            lon = float(r.longitude)
-        except Exception:
-            continue
-        out.append({"name": getattr(r, "address", None) or r.address, "lat": lat, "lon": lon, "raw": getattr(r, "raw", None)})
-    return out
-
-
-_all_ = ["detect_cities_from_text", "geocode_fallback", "_city_map", "find_first_city"]
+_all_ = ["detect_cities_from_text", "_city_map", "find_first_city"]
 
 
 def find_first_city(text: str) -> Dict[str, Any]:
