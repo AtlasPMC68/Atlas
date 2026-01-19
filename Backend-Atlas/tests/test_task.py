@@ -30,7 +30,6 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
          patch("PIL.Image.open", return_value=real_image), \
          patch("os.makedirs") as mock_makedirs, \
          patch("builtins.open", mock_open()) as mock_file, \
-<<<<<<< HEAD
          patch("app.tasks.asyncio.run", return_value=None):
 
         result = process_map_extraction.apply(
@@ -42,10 +41,3 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
     assert isinstance(result["text_length"], int)
     assert "output_path" in result
     assert result["status"] == "completed"
-=======
-         patch("app.tasks.extract_colors", return_value=mock_color_result) as mock_extract_colors:
-        
-        result = process_map_extraction.apply(args=[filename, dummy_image_bytes]).get(timeout=20)
-
-    mock_extract_colors.assert_called_once()
->>>>>>> 458fbe224b57a40003e306d11d9d1feff6370ba3
