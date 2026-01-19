@@ -63,7 +63,10 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
             normalized_feature = build_normalized_feature(
                 color_name, rgb, pixel_polygons, image_output_dir
             )
-            normalized_features.append(normalized_feature)
+            normalized_features.append({
+                "type": "FeatureCollection",
+                "features": [normalized_feature]
+            })
 
 
     print(f"[EXTRACT] {len(masks)} couleurs extraites depuis {image_path}")
@@ -124,6 +127,11 @@ def build_normalized_feature(
             "color_rgb": rgb,
             # Hex string for direct styling usage on the frontend
             "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
+            "mapElementType": "zone",
+            "name": f"Zone {color_name}",
+            "start_date": "1700-01-01",
+            "end_date": "2026-01-01",
+            "is_normalized": True,
         },
         "geometry": normalized_geom.__geo_interface__,
     }
@@ -131,17 +139,6 @@ def build_normalized_feature(
     normalized_color_geojson_path = os.path.join(
         image_output_dir, f"{color_name}_normalized.geojson"
     )
-    # NOTE: In a future iteration, this on-disk GeoJSON export will be
-    # replaced by persisting the normalized geometry to the database
-    # (one feature/FeatureCollection per color) via an API or direct call.
-    with open(normalized_color_geojson_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "type": "FeatureCollection",
-                "features": [normalized_feature],
-            },
-            f,
-        )
 
     return normalized_feature
 

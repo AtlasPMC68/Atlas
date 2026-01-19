@@ -18,6 +18,8 @@ const routes = [
   { path: "/parametres", component: Settings, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
   { path: "/inscription", component: Home }, // Dummy route
+  { path: "/maps/:mapId", component: Map, meta: { requiresAuth: true }
+  }
 ];
 
 export const router = createRouter({

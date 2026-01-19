@@ -60,79 +60,70 @@ VALUES (
     ]
   }'
 );
+ 
+-- Zone de Montréal (polygon)
+INSERT INTO features (id, map_id, is_feature_collection, data)
+VALUES (
+  '33333333-3333-3333-3333-333333333333',
+  '11111111-1111-1111-1111-111111111111',
+  FALSE,
+  '{
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "properties": {
+          "name": "Zone de Montréal",
+          "mapElementType": "zone",
+          "color_name": "green",
+          "color_rgb": [0, 255, 0],
+          "start_date": "1700-01-01",
+          "end_date": "2025-01-01"
+        },
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [-73.6, 45.5],
+              [-73.6, 45.6],
+              [-73.5, 45.6],
+              [-73.5, 45.5],
+              [-73.6, 45.5]
+            ]
+          ]
+        }
+      }
+    ]
+  }'
+);
 
--- data qui suce pour liv tripper pas
--- INSERT INTO features (
---   id, map_id, name, type, geometry,
---   start_date, end_date, precision, color, stroke_width,
---   icon, tags, source, opacity, z_index
--- ) VALUES (
---   '22222222-2222-2222-2222-222222222222',
---   '11111111-1111-1111-1111-111111111111', -- map_id existant
---   'Ville de Québec',
---   'point',
---   ST_SetSRID(ST_Point(-71.2080, 46.8139), 4326), -- latitude/longitude
---   '1608-01-01',
---   '2025-01-01',
---   'exact',
---   '#0000FF', -- couleur bleue
---   2,
---   'city-icon.png',
---   '{"category": "ville", "population": "moyenne"}',
---   'source historique',
---   1.0,
---   2
--- );
-
--- INSERT INTO features (
---   id, map_id, name, type, geometry,
---   start_date, end_date, precision, color, stroke_width,
---   icon, tags, source, opacity, z_index
--- ) VALUES (
---   '33333333-3333-3333-3333-333333333333',
---   '11111111-1111-1111-1111-111111111111',
---   'Zone de Montréal',
---   'zone',
---   ST_SetSRID(
---     ST_GeomFromText(
---       'POLYGON((-73.6 45.5, -73.6 45.6, -73.5 45.6, -73.5 45.5, -73.6 45.5))'
---     ), 4326
---   ),
---   '1700-01-01',
---   '2025-01-01',
---   'estimated',
---   '#00FF00',
---   1,
---   'zone-icon.png',
---   '{"category": "zone", "note": "centre urbain"}',
---   'cartographie ancienne',
---   0.8,
---   1
--- );
-
--- INSERT INTO features (
---   id, map_id, name, type, geometry,
---   start_date, end_date, precision, color, stroke_width,
---   icon, tags, source, opacity, z_index
--- ) VALUES (
---   '44444444-4444-4444-4444-444444444444',
---   '11111111-1111-1111-1111-111111111111',
---   'Flèche Montréal → Québec',
---   'arrow',
---   ST_SetSRID(
---     ST_MakeLine(
---       ST_Point(-73.5673, 45.5017),  -- Montréal
---       ST_Point(-71.2080, 46.8139)   -- Québec
---     ), 4326
---   ),
---   '1800-01-01',
---   '2025-01-01',
---   'approximate',
---   '#FF0000',
---   3,
---   'arrow-icon.png',
---   '{"direction": "Montréal à Québec"}',
---   'source militaire',
---   1.0,
---   3
--- );
+-- Flèche Montréal → Québec (arrow)
+INSERT INTO features (id, map_id, is_feature_collection, data)
+VALUES (
+  '44444444-4444-4444-4444-444444444444',
+  '11111111-1111-1111-1111-111111111111',
+  FALSE,
+  '{
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "properties": {
+          "name": "Flèche Montréal → Québec",
+          "mapElementType": "arrow",
+          "color_name": "red",
+          "color_rgb": [255, 0, 0],
+          "start_date": "1800-01-01",
+          "end_date": "2025-01-01"
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [-73.5673, 45.5017],
+            [-71.2080, 46.8139]
+          ]
+        }
+      }
+    ]
+  }'
+);
