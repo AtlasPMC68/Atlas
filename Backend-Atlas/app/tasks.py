@@ -50,9 +50,6 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
     """Text extraction with TesseractOCR"""
     logger.info(f"Starting map processing for {filename}")
 
-    logger.info("Starting processing for montreal", detect_cities_from_text("Montreal"))
-
-
     # Ensure we are working with a UUID instance inside the task
     map_uuid = UUID(map_id)
 
