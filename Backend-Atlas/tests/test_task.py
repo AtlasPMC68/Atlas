@@ -48,8 +48,7 @@ def test_process_map_extraction(real_image_np):
          patch("tempfile.NamedTemporaryFile") as mock_tempfile, \
          patch("os.makedirs") as mock_makedirs, \
          patch("os.unlink") as mock_unlink, \
-         patch("builtins.open", mock_open()) as mock_file, \
-         patch("app.tasks.asyncio.run", return_value=None):
+         patch("builtins.open", mock_open()) as mock_file:
 
         # Mock tempfile to return a file-like object
         mock_tmp_file = MagicMock()
