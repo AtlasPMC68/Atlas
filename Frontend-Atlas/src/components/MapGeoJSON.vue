@@ -35,11 +35,6 @@ let map = null;
 let currentRegionsLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
-const mockedCities = [
-  { name: "Montréal", lat: 45.5017, lng: -73.5673, foundation_year: 1642 },
-  { name: "Québec", lat: 46.8139, lng: -71.2082, foundation_year: 1608 },
-  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 },
-];
 
 let citiesLayer = null;
 let zonesLayer = null;
@@ -60,6 +55,10 @@ onMounted(() => {
   ).addTo(map);
 
   loadRegionsForYear(selectedYear.value, true);
+
+  // uncomment when link to db is done
+  // loadTestNormalizedShape();
+
 });
 
 // Gestionnaire de layers par feature
@@ -104,32 +103,6 @@ const filteredFeatures = computed(() => {
   );
 });
 
-async function fetchFeaturesAndRender(year) {
-  const mapId = "11111111-1111-1111-1111-111111111111";
-
-  try {
-    const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
-    if (!res.ok) throw new Error("Failed to fetch features");
-
-    const allFeatures = await res.json();
-
-    // Filtrer par année
-    const features = allFeatures.filter(
-      (f) => new Date(f.start_date).getFullYear() <= year,
-    );
-
-    // Dispatcher selon le type
-    const cities = features.filter((f) => f.type === "point");
-    const zones = features.filter((f) => f.type === "zone");
-    const arrows = features.filter((f) => f.type === "arrow");
-
-    renderCities(cities);
-    renderZones(zones);
-    renderArrows(arrows);
-  } catch (err) {
-    console.warn("Erreur fetch features:", err);
-  }
-}
 // Returns the closest available year that is less than or equal to the requested year
 function getClosestAvailableYear(year) {
   const sorted = [...availableYears].sort((a, b) => a - b);
@@ -193,10 +166,18 @@ function renderCities(features) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord = [lat, lng];
 
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const color = feature.color || colorFromRgb || "#000";
+
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: feature.color || "#000",
-      color: feature.color || "#000",
+      fillColor: color,
+      color,
       weight: 1,
       opacity: feature.opacity ?? 1,
       fillOpacity: feature.opacity ?? 1,
@@ -205,7 +186,7 @@ function renderCities(features) {
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: feature.name,
+        html: props.name || feature.name || "",
         iconSize: [100, 20],
         iconAnchor: [-8, 15],
       }),
@@ -225,17 +206,57 @@ function renderZones(features) {
       return;
     }
 
-    const layer = L.geoJSON(feature.geometry, {
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const fillColor = feature.color || colorFromRgb || "#ccc";
+    let targetGeometry = feature.geometry;
+
+    // If the geometry is normalized ([0,1] space), project it onto the world
+    if (props.is_normalized) {
+      const fc = {
+        type: "FeatureCollection",
+        features: [feature],
+      };
+
+      // Pick a random anchor on earth so shapes are visible but not overlapping deterministically
+      const anchorLat = -80 + Math.random() * 160; // between -80 and 80
+      const anchorLng = -170 + Math.random() * 340; // between -170 and 170
+
+      // Use a large size so the zone is easy to spot (e.g. ~2000km)
+      const sizeMeters = 2_000_000;
+
+      const worldFc = transformNormalizedToWorld(
+        fc,
+        anchorLat,
+        anchorLng,
+        sizeMeters,
+      );
+
+      if (
+        worldFc &&
+        Array.isArray(worldFc.features) &&
+        worldFc.features[0]?.geometry
+      ) {
+        targetGeometry = worldFc.features[0].geometry;
+      }
+    }
+
+    const layer = L.geoJSON(targetGeometry, {
       style: {
-        fillColor: feature.color || "#ccc",
+        fillColor,
         fillOpacity: 0.5,
         color: "#333",
         weight: 1,
       },
     });
 
-    if (feature.name) {
-      layer.bindPopup(feature.name);
+    const name = props.name || feature.name;
+    if (name) {
+      layer.bindPopup(name);
     }
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
@@ -255,8 +276,16 @@ function renderArrows(features) {
       lng,
     ]);
 
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const color = feature.color || colorFromRgb || "#000";
+
     const line = L.polyline(latLngs, {
-      color: feature.color || "#000",
+      color,
       weight: feature.stroke_width ?? 2,
       opacity: feature.opacity ?? 1,
     });
@@ -270,8 +299,9 @@ function renderArrows(features) {
       fill: true,
     });
 
-    if (feature.name) {
-      line.bindPopup(feature.name);
+    const name = props.name || feature.name;
+    if (name) {
+      line.bindPopup(name);
     }
 
     featureLayerManager.addFeatureLayer(feature.id, line);
@@ -295,9 +325,15 @@ function renderAllFeatures() {
 
   const newFeatures = currentFeatures.filter((f) => !previousIds.has(f.id));
   const featuresByType = {
-    point: newFeatures.filter((f) => f.type === "point"),
-    polygon: newFeatures.filter((f) => f.type === "zone"),
-    arrow: newFeatures.filter((f) => f.type === "arrow"),
+    point: newFeatures.filter(
+      (f) => f.properties?.mapElementType === "point",
+    ),
+    polygon: newFeatures.filter(
+      (f) => f.properties?.mapElementType === "zone",
+    ),
+    arrow: newFeatures.filter(
+      (f) => f.properties?.mapElementType === "arrow",
+    ),
   };
 
   renderCities(featuresByType.point);
@@ -338,6 +374,46 @@ function debounce(fn, delay) {
   return (...args) => {
     clearTimeout(timeout);
     timeout = setTimeout(() => fn(...args), delay);
+  };
+}
+
+function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
+  // Use the same projected CRS as the basemap (Web Mercator).
+  const crs = L.CRS.EPSG3857;
+  const center = crs.project(L.latLng(anchorLat, anchorLng)); // { x, y } in meters
+  const halfSize = sizeMeters / 2;
+
+  // Transform a single coordinate [x, y] in [0,1]×[0,1] into [lng, lat]
+  const transformCoord = ([x, y]) => {
+    // Center the shape around (0,0) in its local space
+    const nx = x - 0.5;
+    const ny = y - 0.5;
+
+    // Work in projected meters with a uniform scale so aspect ratio is preserved
+    const mx = center.x + nx * 2 * halfSize;
+    const my = center.y - ny * 2 * halfSize; // minus because y grows downward
+
+    const latlng = crs.unproject(L.point(mx, my));
+    return [latlng.lng, latlng.lat]; // GeoJSON order = [lng, lat]
+  };
+
+  const transformCoords = (coords) => {
+    if (typeof coords[0] === "number") {
+      // [x, y]
+      return transformCoord(coords);
+    }
+    return coords.map(transformCoords);
+  };
+
+  return {
+    ...geojson,
+    features: geojson.features.map((f) => ({
+      ...f,
+      geometry: {
+        ...f.geometry,
+        coordinates: transformCoords(f.geometry.coordinates),
+      },
+    })),
   };
 }
 

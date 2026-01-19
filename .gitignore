@@ -34,6 +34,7 @@ env/
 .idea/
 *.swp
 *.swo
+.cursor/
 
 # OS
 .DS_Store
