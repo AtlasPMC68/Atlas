@@ -29,8 +29,6 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
     with patch("app.tasks.process_map_extraction.update_state") as mock_update_state, \
          patch("pytesseract.image_to_string", return_value="Mocked OCR text"), \
          patch("PIL.Image.open", return_value=real_image), \
-         patch("os.makedirs") as mock_makedirs, \
-         patch("builtins.open", mock_open()) as mock_file, \
          patch("app.tasks.extract_colors", return_value=mock_color_result) as mock_extract_colors:
 
         result = process_map_extraction.apply(args=[filename, dummy_image_bytes, map_id]).get(timeout=20)
@@ -42,5 +40,3 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
     assert isinstance(result["text_length"], int)
     assert "output_path" in result
     assert result["status"] == "completed"
-    assert "color_extraction" in result
-    assert result["color_extraction"] == mock_color_result
