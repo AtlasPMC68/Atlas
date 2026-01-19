@@ -118,10 +118,10 @@ async function startImportProcess() {
 
 // Redirect when extraction is finished
 watch(
-  () => ({ processing: isProcessing.value, result: resultData.value }),
-  ({ processing, result }) => {
-    if (!processing && result && mapId.value) {
-      router.push(`/maps/${mapId.value}`);
+  [isProcessing, resultData, mapId],
+  ([processing, result, id]) => {
+    if (!processing && result && id) {
+      router.push(`/maps/${id}`);
     }
   }
 );

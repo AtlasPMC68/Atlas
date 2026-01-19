@@ -31,7 +31,7 @@
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <span class="label-text text-sm">
-                  {{ feature.properties?.name}}
+                  {{ feature.properties?.name || 'Unnamed Feature' }}
                 </span>
               </label>
             </div>
