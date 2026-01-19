@@ -83,7 +83,7 @@ def dominant_bins_lab(
     bq = np.floor((lab_px[:, 2] + 128.0) / bin_b).astype(np.int32)
 
     # Pack (Lq, aq, bq) into a single integer for fast counting.
-    # Assumption: aq and bq stay < 1000 (true with typical bin sizes).
+    # Assumption: aq and bq stay < 1000
     ids = (Lq * 1_000_000) + (aq * 1_000) + bq
 
     unique_ids, counts = np.unique(ids, return_counts=True)
@@ -119,32 +119,9 @@ def dominant_bins_lab(
 
     return dom
 
-
-def detect_text_mask_rgb(
-    rgb: np.ndarray,
-    opaque_mask: np.ndarray,
-    text_tolerance: int = 25,
-    opening_radius: int = 2,
-) -> np.ndarray:
-    """
-    Detect near-black text in RGB and return a boolean mask (H, W).
-    Uses tolerance in RGB space and excludes transparent pixels.
-    """
-    black = np.array([0, 0, 0], dtype=np.int32)
-    rgb_i = rgb.astype(np.int32)
-
-    text_mask = np.all(np.abs(rgb_i - black) <= text_tolerance, axis=2)
-    text_mask = text_mask & opaque_mask
-
-    if opening_radius > 0:
-        text_mask = binary_opening(text_mask, disk(opening_radius))
-
-    return text_mask
-
-
 def lab_center_to_rgb_u8(lab_center: Tuple[float, float, float]) -> Tuple[int, int, int]:
     """
-    Convert a single LAB color to an approximate RGB uint8 tuple for naming/debug.
+    Convert a single LAB color to an approximate RGB uint8.
     """
     lab_arr = np.array([[lab_center]], dtype=np.float64)  # shape (1, 1, 3)
     rgb = lab2rgb(lab_arr)  # float [0,1], shape (1,1,3)
@@ -202,11 +179,6 @@ def extract_colors(
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
     os.makedirs(image_output_dir, exist_ok=True)
-
-    # Text layer (optional, near-black)
-    text_mask = detect_text_mask_rgb(rgb, opaque_mask, text_tolerance=text_tolerance, opening_radius=2)
-    text_path = os.path.join(image_output_dir, "text_layer_black.png")
-    save_mask_png(text_mask, text_path)
 
     # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
     dom = dominant_bins_lab(lab, opaque_mask, top_n=top_n, bin_L=bin_L, bin_a=bin_a, bin_b=bin_b)
