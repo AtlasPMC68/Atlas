@@ -1,40 +1,48 @@
-from uuid import UUID
-from celery import current_task
-from .celery_app import celery_app
-import time
+import asyncio
 import logging
-import pytesseract
-from PIL import Image
 import os
 import tempfile
 from typing import Any, List
+import time
 from datetime import datetime
-from PIL import Image, ImageEnhance 
-from app.utils.color_extraction import extract_colors
-from app.services.features import insert_feature_in_db
-from app.database.session import AsyncSessionLocal
-import asyncio
+from typing import Any, List
+from uuid import UUID
 
+import pytesseract
+from PIL import Image, ImageEnhance
+
+from app.database.session import AsyncSessionLocal
+from app.services.features import insert_feature_in_db
+from app.utils.color_extraction import extract_colors
+from app.utils.shapes_extraction import extract_shapes
+
+from .celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-nb_task = 5
+nb_task = 6
+
 
 @celery_app.task(bind=True)
 def test_task(self, name: str = "World"):
     """simple test task"""
     logger.info(f"Starting test task for {name}")
-    
+
     for i in range(5):
         time.sleep(1)
         self.update_state(
             state="PROGRESS",
-            meta={"current": i + 1, "total": nb_task , "status": f"Processing step {i + 1}"}
+            meta={
+                "current": i + 1,
+                "total": nb_task,
+                "status": f"Processing step {i + 1}",
+            },
         )
-    
+
     result = f"Hello {name}! Task completed successfully."
     logger.info(f"Test task completed: {result}")
     return result
+
 
 @celery_app.task(bind=True)
 def process_map_extraction(self, filename: str, file_content: bytes, map_id: str):
@@ -48,19 +56,25 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         # Step 1: temp save
         self.update_state(
             state="PROGRESS",
-            meta={"current": 1, "total": nb_task , "status": "Saving uploaded file"}
+            meta={"current": 1, "total": nb_task, "status": "Saving uploaded file"},
         )
         logger.info("Before sleep")
         time.sleep(2)
         logger.info("afternoon")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=os.path.splitext(filename)[1]
+        ) as tmp_file:
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
 
         # Step 2: opening the picture
         self.update_state(
-            state="PROGRESS", 
-            meta={"current": 2, "total": nb_task , "status": "Loading and validating image"}
+            state="PROGRESS",
+            meta={
+                "current": 2,
+                "total": nb_task,
+                "status": "Loading and validating image",
+            },
         )
         time.sleep(2)
 
@@ -69,25 +83,33 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         image = image.convert("L")  # Convert in grey tone
 
-        enhancer = ImageEnhance.Contrast(image)  
+        enhancer = ImageEnhance.Contrast(image)
         image = enhancer.enhance(2.0)
 
         # pixels < 140 -> black, >= 140 -> white
-        image = image.point(lambda x: 0 if x < 140 else 255, '1')
+        image = image.point(lambda x: 0 if x < 140 else 255, "1")
 
         # Step 3: Extraction OCR
         self.update_state(
             state="PROGRESS",
-            meta={"current": 3, "total": nb_task , "status": "Extracting text with TesseractOCR"}
+            meta={
+                "current": 3,
+                "total": nb_task,
+                "status": "Extracting text with TesseractOCR",
+            },
         )
         time.sleep(2)
-        custom_config = r'--oem 3 --psm 6'
+        custom_config = r"--oem 3 --psm 6"
         extracted_text = pytesseract.image_to_string(image, config=custom_config)
 
         # Step 4: Color Extraction
         self.update_state(
             state="PROGRESS",
-            meta={"current": 4, "total": nb_task , "status": "Extracting colors from image"}
+            meta={
+                "current": 4,
+                "total": nb_task,
+                "status": "Extracting colors from image",
+            },
         )
         time.sleep(2)
 
@@ -95,12 +117,31 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         normalized_features = color_result["normalized_features"]
 
         asyncio.run(persist_features(map_uuid, normalized_features))
-        logger.info(f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}")
+        logger.info(
+            f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
+        )
 
-        # Step 5: Cleaning
+        # Step 5: Shapes Extraction
         self.update_state(
             state="PROGRESS",
-            meta={"current": 5, "total": nb_task , "status": "Cleaning up and finalizing"}
+            meta={
+                "current": 5,
+                "total": nb_task,
+                "status": "Extracting shapes from image",
+            },
+        )
+        time.sleep(2)
+        shapes_result = extract_shapes(tmp_file_path)
+        logger.info(f"[DEBUG] Résultat shapes_extraction : {shapes_result}")
+
+        # Step 6: Cleanning
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "current": 5,
+                "total": nb_task,
+                "status": "Cleaning up and finalizing",
+            },
         )
         time.sleep(2)
         os.unlink(tmp_file_path)
@@ -119,13 +160,15 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         output_path = os.path.join(output_dir, output_filename)
 
         try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== OCR EXTRACTION  ===\n")
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write("=== OCR EXTRACTION  ===\n")
                 f.write(f"Source File: {filename}\n")
-                f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(
+                    f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                )
                 f.write(f"Character extract: {len(extracted_text.strip())}\n")
                 f.write(f"Tesseract Configuration: {custom_config}\n")
-                f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
+                f.write("\n=== TEXTE EXTRAIT ===\n\n")
                 f.write(extracted_text.strip())
 
             logger.info(f"Text saved to: {output_path}")
@@ -139,16 +182,19 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
             "extracted_text": extracted_text.strip(),
             "text_length": len(extracted_text.strip()),
             "output_path": output_path,
+            "shapes_result": shapes_result,
+            "color_result": color_result,
             "status": "completed",
-            "map_id": map_id
         }
 
-        logger.info(f"Map processing completed for {filename}: {len(extracted_text)} characters extracted")
+        logger.info(
+            f"Map processing completed for {filename}: {len(extracted_text)} characters extracted"
+        )
 
         return result
 
     except Exception as e:
-        if 'tmp_file_path' in locals():
+        if "tmp_file_path" in locals():
             try:
                 os.unlink(tmp_file_path)
             except:
@@ -156,6 +202,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
+
 
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
@@ -168,6 +215,4 @@ async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, A
                     data=feature,
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to persist feature for map {map_uuid}: {str(e)}"
-                )
+                logger.error(f"Failed to persist feature for map {map_uuid}: {str(e)}")
