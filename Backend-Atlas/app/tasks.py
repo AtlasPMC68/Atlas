@@ -106,8 +106,8 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         custom_config = r"--oem 3 --psm 6"
         extracted_text = pytesseract.image_to_string(image, config=custom_config)
 
+        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
         # Tokenize OCR text to single words and run city detection per token
-        city = False
         try:
             tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
             for tok in tokens:
@@ -115,40 +115,40 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
                     candidate = find_first_city(tok)
                 except Exception as e:
                     logger.debug(f"find_first_city error for token '{tok}': {e}")
-                    candidate = False
+                    # treat as not found but persist the token
+                    candidate = {"found": False, "query": tok, "name": tok, "lat": 0.0, "lon": 0.0}
 
-                if candidate:
-                    logger.info(f"Detected city from token '{tok}': {candidate}")
-                    city = candidate
-
-                    city_feature = {
+                # Build feature using returned candidate; if not found, coordinates will be 0,0
+                logger.info(f"City detection result for token '{tok}': {candidate}")
+                city_feature = {
                     "type": "Feature",
                     "properties": {
-                        "name": city.get("name"),
+                        "name": candidate.get("name") or tok,
+                        "show": bool(candidate.get("found")),
                         "mapElementType": "point",
                         "color_name": "black",
                         "color_rgb": [0, 0, 0],
                         "start_date": "0-01-01",
                         "end_date": "5000-01-01",
                     },
-                        "geometry": {"type": "Point", "coordinates": [city.get("lon"), city.get("lat")]},
-                    }       
+                    "geometry": {"type": "Point", "coordinates": [candidate.get("lon") or 0.0, candidate.get("lat") or 0.0]},
+                }
 
-                    city_feature_collection = {
-                        "type": "FeatureCollection",
-                        "features": [city_feature],
-                    }
+                city_feature_collection = {
+                    "type": "FeatureCollection",
+                    "features": [city_feature],
+                }
 
-                    try:
-                        asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
-                        logger.info(f"Persisted detected city feature collection: {city.get('name')}")
-                    except Exception as e:
-                        logger.error(f"Failed to persist detected city: {e}")
-                        break
+                try:
+                    asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
+                    logger.info(f"Persisted city token feature: {candidate.get('name')}")
+                except Exception as e:
+                    logger.error(f"Failed to persist city token '{tok}': {e}")
 
         except Exception as e:
             logger.error(f"City detection failed: {e}")
-            city = False
+
+        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # Step 4: Color Extraction
         self.update_state(

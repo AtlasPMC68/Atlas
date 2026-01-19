@@ -178,22 +178,34 @@ def geocode_fallback(place_name: str, countrycodes: Optional[List[str]] = None, 
 _all_ = ["detect_cities_from_text", "geocode_fallback", "_city_map", "find_first_city"]
 
 
-def find_first_city(text: str):
-    """Return the best local city candidate found in `text` or False.
+def find_first_city(text: str) -> Dict[str, Any]:
+    """Return a standardized result for a city search.
 
-    The function calls `detect_cities_from_text(text)` and returns a dict with
-    keys `name`, `lat`, `lon`, and `matched_text` for the best candidate (by
-    population where available). If no local candidate is found, returns
-    False.
+    Always returns a dict with at least the keys:
+      - `found`: bool
+      - `query`: the original text passed in
+      - `name`, `lat`, `lon`: populated when `found` is True
+      - `matched_text`: phrase matched from the input when found, else None
+
+    This makes it easier for callers to persist a record even when no
+    local match is available (we can store coordinates as 0,0 in that case).
     """
-    matches = detect_cities_from_text(text)
+    result: Dict[str, Any] = {"found": False, "query": text, "name": text, "lat": 0.0, "lon": 0.0, "matched_text": None}
+
+    try:
+        matches = detect_cities_from_text(text)
+    except Exception:
+        # On error, return non-found with query preserved
+        return result
+
     if not matches:
-        return False
+        return result
 
     for m in matches:
         candidates = m.get("candidates") or []
         if not candidates:
             continue
+
         # pick candidate with largest population when available
         def pop_key(c):
             try:
@@ -202,11 +214,13 @@ def find_first_city(text: str):
                 return 0
 
         best = max(candidates, key=pop_key)
-        return {
+        result.update({
+            "found": True,
             "name": best.get("name"),
             "lat": best.get("lat"),
             "lon": best.get("lon"),
             "matched_text": m.get("text"),
-        }
+        })
+        return result
 
-    return False
+    return result
