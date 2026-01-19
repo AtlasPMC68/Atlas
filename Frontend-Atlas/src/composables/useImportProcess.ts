@@ -7,6 +7,7 @@ const processingProgress = ref(0);
 const showProcessingModal = ref(false);
 const taskId = ref(null);
 const resultData = ref(null);
+const map_id = ref(null);
 
 export function useImportProcess() {
   const startImport = async (file: File) => {
@@ -34,13 +35,16 @@ export function useImportProcess() {
 
       const data = await response.json();
       taskId.value = data.task_id;
+      map_id.value = data.map_id;
       if (!taskId.value) {
         throw new Error("taskId is null");
       }
       // Démarre le polling
       pollStatus(taskId.value);
 
-      return { success: true };
+      return { 
+        success: true
+      };
     } catch (err: any) {
       isProcessing.value = false;
       showProcessingModal.value = false;
@@ -104,5 +108,6 @@ export function useImportProcess() {
     resultData,
     startImport,
     cancelImport,
+    mapId: map_id
   };
 }

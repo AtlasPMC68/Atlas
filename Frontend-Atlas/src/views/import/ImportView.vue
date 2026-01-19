@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
@@ -92,6 +92,8 @@ const {
   showProcessingModal,
   startImport,
   cancelImport,
+  resultData,
+  mapId,
 } = useImportProcess();
 
 // État local
@@ -113,6 +115,16 @@ async function startImportProcess() {
     console.error("Erreur importation:", result.error);
   }
 }
+
+// Redirect when extraction is finished
+watch(
+  () => ({ processing: isProcessing.value, result: resultData.value }),
+  ({ processing, result }) => {
+    if (!processing && result && mapId.value) {
+      router.push(`/maps/${mapId.value}`);
+    }
+  }
+);
 
 const resetImport = () => {
   currentStep.value = 1;

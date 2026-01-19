@@ -35,11 +35,6 @@ let map = null;
 let currentRegionsLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
-const mockedCities = [
-  { name: "Montréal", lat: 45.5017, lng: -73.5673, foundation_year: 1642 },
-  { name: "Québec", lat: 46.8139, lng: -71.2082, foundation_year: 1608 },
-  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 },
-];
 
 let citiesLayer = null;
 let zonesLayer = null;
@@ -108,38 +103,6 @@ const filteredFeatures = computed(() => {
   );
 });
 
-async function fetchFeaturesAndRender(year) {
-  const mapId = "11111111-1111-1111-1111-111111111111";
-
-  try {
-    const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
-    if (!res.ok) throw new Error("Failed to fetch features");
-
-    const allFeatures = await res.json();
-
-    // Filtrer par année
-    const features = allFeatures.filter(
-      (f) => new Date(f.start_date).getFullYear() <= year,
-    );
-
-    // Dispatcher selon le type
-    const cities = features.filter(
-      (f) => f.properties?.mapElementType === "point",
-    );
-    const zones = features.filter(
-      (f) => f.properties?.mapElementType === "zone",
-    );
-    const arrows = features.filter(
-      (f) => f.properties?.mapElementType === "arrow",
-    );
-
-    renderCities(cities);
-    renderZones(zones);
-    renderArrows(arrows);
-  } catch (err) {
-    console.warn("Erreur fetch features:", err);
-  }
-}
 // Returns the closest available year that is less than or equal to the requested year
 function getClosestAvailableYear(year) {
   const sorted = [...availableYears].sort((a, b) => a - b);
@@ -250,8 +213,39 @@ function renderZones(features) {
         ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
         : null;
     const fillColor = feature.color || colorFromRgb || "#ccc";
+    let targetGeometry = feature.geometry;
 
-    const layer = L.geoJSON(feature.geometry, {
+    // If the geometry is normalized ([0,1] space), project it onto the world
+    if (props.is_normalized) {
+      const fc = {
+        type: "FeatureCollection",
+        features: [feature],
+      };
+
+      // Pick a random anchor on earth so shapes are visible but not overlapping deterministically
+      const anchorLat = -80 + Math.random() * 160; // between -80 and 80
+      const anchorLng = -170 + Math.random() * 340; // between -170 and 170
+
+      // Use a large size so the zone is easy to spot (e.g. ~2000km)
+      const sizeMeters = 2_000_000;
+
+      const worldFc = transformNormalizedToWorld(
+        fc,
+        anchorLat,
+        anchorLng,
+        sizeMeters,
+      );
+
+      if (
+        worldFc &&
+        Array.isArray(worldFc.features) &&
+        worldFc.features[0]?.geometry
+      ) {
+        targetGeometry = worldFc.features[0].geometry;
+      }
+    }
+
+    const layer = L.geoJSON(targetGeometry, {
       style: {
         fillColor,
         fillOpacity: 0.5,
@@ -421,54 +415,6 @@ function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
       },
     })),
   };
-}
-
-async function loadTestNormalizedShape() {
-  // file doesnt exist in project, in future code we will access
-  // geojson with the db but code rest of code can be reused so its best to
-  // keep it imo
-  const url = "/geojson/blue_normalized.geojson";
-
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("File not found: " + url);
-    const normalized = await res.json();
-
-    // Arbitrary anchor somewhere in central Canada
-    const anchorLat = 56;
-    const anchorLng = -100;
-
-    // Choose a base size in meters for the projected shape
-    // (e.g. 1,000,000 m ≈ 1000 km across). Adjust to taste.
-    const sizeMeters = 1_000_000;
-
-    const worldGeojson = transformNormalizedToWorld(
-      normalized,
-      anchorLat,
-      anchorLng,
-      sizeMeters,
-    );
-
-    const layer = L.geoJSON(worldGeojson, {
-      // Use the color provided in GeoJSON properties when available
-      style: (feature) => ({
-        color: feature?.properties?.color_hex || "#ff0000",
-        fillColor: feature?.properties?.color_hex || "#ff0000",
-        weight: 2,
-        fillOpacity: 0.5,
-      }),
-    }).addTo(map);
-
-    // Optionally zoom the map to this test shape
-    const bounds = layer.getBounds();
-    if (bounds.isValid()) {
-      map.fitBounds(bounds);
-      // Zoom in a bit more so the shape appears larger
-      map.zoomIn(1);
-    }
-  } catch (err) {
-    console.warn("Error loading normalized test shape:", err);
-  }
 }
 
 function toArray(maybeArray) {
