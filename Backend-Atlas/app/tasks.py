@@ -271,7 +271,7 @@ async def persist_city_feature(map_uuid: UUID, feature: dict[str, Any]):
         try:
             await insert_feature_in_db(
                 db=db,
-                map_id=UUID("11111111-1111-1111-1111-111111111111"),
+                map_id=map_uuid,
                 is_feature_collection=False,
                 data=feature,
             )
