@@ -18,6 +18,7 @@ def real_image():
 
 def test_process_map_extraction(dummy_image_bytes, real_image):
     filename = "dummy.png"
+    map_id = str(uuid.uuid4())
     
     mock_color_result = {
         "colors_detected": ["red", "blue"],
@@ -30,15 +31,16 @@ def test_process_map_extraction(dummy_image_bytes, real_image):
          patch("PIL.Image.open", return_value=real_image), \
          patch("os.makedirs") as mock_makedirs, \
          patch("builtins.open", mock_open()) as mock_file, \
-         patch("app.tasks.asyncio.run", return_value=None):
+         patch("app.tasks.extract_colors", return_value=mock_color_result) as mock_extract_colors:
 
-        result = process_map_extraction.apply(
-            args=[filename, dummy_image_bytes, str(uuid.uuid4())]
-        ).get(timeout=20)
+        result = process_map_extraction.apply(args=[filename, dummy_image_bytes, map_id]).get(timeout=20)
 
     mock_extract_colors.assert_called_once()
+    
     assert result["filename"] == filename
     assert result["extracted_text"] == "Mocked OCR text"
     assert isinstance(result["text_length"], int)
     assert "output_path" in result
     assert result["status"] == "completed"
+    assert "color_extraction" in result
+    assert result["color_extraction"] == mock_color_result
