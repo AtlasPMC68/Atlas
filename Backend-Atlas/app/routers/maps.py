@@ -146,12 +146,21 @@ async def get_features(
 
     all_features = []
     for f in features_rows:
-        for feature in f.data.get("features", []):
+        data = f.data or {}
+        # Support both FeatureCollection and single Feature stored in `data`
+        if isinstance(data, dict) and data.get("type") == "FeatureCollection":
+            features_list = data.get("features", [])
+        elif isinstance(data, dict) and data.get("type") == "Feature":
+            features_list = [data]
+        else:
+            features_list = data.get("features", []) if isinstance(data, dict) else []
+
+        for feature in features_list:
             feature["id"] = str(f.id)
 
             props = feature.get("properties", {})
-            start_date = props.get("start_date")  
-            end_date = props.get("end_date")      
+            start_date = props.get("start_date")
+            end_date = props.get("end_date")
 
             feature["start_date"] = start_date
             feature["end_date"] = end_date

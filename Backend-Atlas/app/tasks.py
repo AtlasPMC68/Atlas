@@ -3,6 +3,7 @@ import logging
 import os
 import tempfile
 import time
+import re
 from datetime import datetime
 from typing import Any, List
 from uuid import UUID
@@ -14,6 +15,7 @@ from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.color_extraction import extract_colors
 from app.utils.shapes_extraction import extract_shapes
+from app.utils.cities_validation import detect_cities_from_text, find_first_city
 
 from .celery_app import celery_app
 
@@ -47,6 +49,9 @@ def test_task(self, name: str = "World"):
 def process_map_extraction(self, filename: str, file_content: bytes, map_id: str):
     """Text extraction with TesseractOCR"""
     logger.info(f"Starting map processing for {filename}")
+
+    logger.info("Starting processing for montreal", detect_cities_from_text("Montreal"))
+
 
     # Ensure we are working with a UUID instance inside the task
     map_uuid = UUID(map_id)
@@ -100,6 +105,50 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         time.sleep(2)
         custom_config = r"--oem 3 --psm 6"
         extracted_text = pytesseract.image_to_string(image, config=custom_config)
+
+        # Tokenize OCR text to single words and run city detection per token
+        city = False
+        try:
+            tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
+            for tok in tokens:
+                try:
+                    candidate = find_first_city(tok)
+                except Exception as e:
+                    logger.debug(f"find_first_city error for token '{tok}': {e}")
+                    candidate = False
+
+                if candidate:
+                    logger.info(f"Detected city from token '{tok}': {candidate}")
+                    city = candidate
+
+                    city_feature = {
+                    "type": "Feature",
+                    "properties": {
+                        "name": city.get("name"),
+                        "mapElementType": "point",
+                        "color_name": "black",
+                        "color_rgb": [0, 0, 0],
+                        "start_date": "0-01-01",
+                        "end_date": "5000-01-01",
+                    },
+                        "geometry": {"type": "Point", "coordinates": [city.get("lon"), city.get("lat")]},
+                    }       
+
+                    city_feature_collection = {
+                        "type": "FeatureCollection",
+                        "features": [city_feature],
+                    }
+
+                    try:
+                        asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
+                        logger.info(f"Persisted detected city feature collection: {city.get('name')}")
+                    except Exception as e:
+                        logger.error(f"Failed to persist detected city: {e}")
+                        break
+
+        except Exception as e:
+            logger.error(f"City detection failed: {e}")
+            city = False
 
         # Step 4: Color Extraction
         self.update_state(
@@ -215,3 +264,16 @@ async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, A
                 )
             except Exception as e:
                 logger.error(f"Failed to persist feature for map {map_uuid}: {str(e)}")
+
+
+async def persist_city_feature(map_uuid: UUID, feature: dict[str, Any]):
+    async with AsyncSessionLocal() as db:
+        try:
+            await insert_feature_in_db(
+                db=db,
+                map_id=UUID("11111111-1111-1111-1111-111111111111"),
+                is_feature_collection=False,
+                data=feature,
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist city feature for map {map_uuid}: {str(e)}")
