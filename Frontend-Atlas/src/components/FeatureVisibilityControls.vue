@@ -30,7 +30,9 @@
                   "
                   class="checkbox checkbox-sm checkbox-primary"
                 />
-                <span class="label-text text-sm">{{ feature.name }}</span>
+                <span class="label-text text-sm">
+                  {{ feature.properties?.name}}
+                </span>
               </label>
             </div>
           </div>
