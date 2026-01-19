@@ -1,0 +1,2 @@
+# Force all shell scripts to use LF in the repo
+*.sh text eol=lf
