@@ -1,0 +1,9 @@
+=== OCR EXTRACTION  ===
+Source File: dummy.png
+Date extraction: 2026-01-19 22:28:51
+Character extract: 15
+Tesseract Configuration: --oem 3 --psm 6
+
+=== TEXTE EXTRAIT ===
+
+Mocked OCR text
