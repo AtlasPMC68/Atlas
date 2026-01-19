@@ -63,5 +63,5 @@ yarn-error.log*
 .cache/
 
 # Process folders
- Backend-Atlas/app/extracted_color
- Backend-Atlas/app/extracted_texts
+Backend-Atlas/app/extracted_color
+Backend-Atlas/app/extracted_texts
