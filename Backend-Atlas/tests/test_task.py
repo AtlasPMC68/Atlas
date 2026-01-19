@@ -66,7 +66,6 @@ def test_process_map_extraction(real_image_np):
          patch("app.tasks.extract_text", return_value=(mock_ocr_result, real_image_np)), \
          patch("app.tasks.extract_colors", return_value=mock_colors), \
          patch("app.tasks.extract_shapes", return_value=mock_shapes), \
-         patch("app.tasks.asyncio.run", return_value=None), \
          patch("tempfile.NamedTemporaryFile") as mock_tempfile, \
          patch("os.makedirs") as mock_makedirs, \
          patch("os.unlink") as mock_unlink, \
