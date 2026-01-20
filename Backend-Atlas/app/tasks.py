@@ -10,8 +10,6 @@ import time
 from datetime import datetime
 from typing import Any, List
 from uuid import UUID
-
-import pytesseract
 from PIL import Image, ImageEnhance
 
 from app.database.session import AsyncSessionLocal
@@ -49,7 +47,7 @@ def test_task(self, name: str = "World"):
 
 
 @celery_app.task(bind=True)
-def process_map_extraction(self, filename: str, file_content: bytes):
+def process_map_extraction(self, filename: str, file_content: bytes, map_id: str):
     """"""
     logger.info(f"Starting map processing for {filename}")
 
@@ -82,18 +80,9 @@ def process_map_extraction(self, filename: str, file_content: bytes):
         )
         time.sleep(2)
 
-        image = Image.open(tmp_file_path)
-        logger.info(f"Image loaded: {image.size}, mode: {image.mode}")
-
-        image = image.convert("L")  # Convert in grey tone
-
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2.0)
-
-        # pixels < 140 -> black, >= 140 -> white
-        image = image.point(lambda x: 0 if x < 140 else 255, "1")
         image = cv2.imread(tmp_file_path)
         image.flags.writeable = False # Makes image immutable
+        validate_file_extension(tmp_file_path)
 
         # Step 3: Extraction OCR
         self.update_state(
@@ -101,12 +90,12 @@ def process_map_extraction(self, filename: str, file_content: bytes):
             meta={
                 "current": 3,
                 "total": nb_task,
-                "status": "Extracting text with TesseractOCR",
+                "status": "Extracting text with EasyOCR",
             },
         )
         time.sleep(2)
 
-        # TODO: Link gpu_acc to a config parameter indicating the precense of GPU
+        # GPU acceleration make the text extraction MUCH faster i
         extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
 
         # Step 4: Color Extraction
