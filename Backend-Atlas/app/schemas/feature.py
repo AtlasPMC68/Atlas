@@ -1,17 +1,17 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Literal
 from datetime import datetime
 
 class GeometryPoint(BaseModel):
-    type: str = Field("Point", const=True)
+    type: Literal["Point"] = "Point"
     coordinates: List[float] = Field(..., min_items=2, max_items=2)  # [lng, lat]
 
 class GeometryLineString(BaseModel):
-    type: str = Field("LineString", const=True)
+    type: Literal["LineString"] = "LineString"
     coordinates: List[List[float]] = Field(..., min_items=2)  # [[lng, lat], [lng, lat], ...]
 
 class GeometryPolygon(BaseModel):
-    type: str = Field("Polygon", const=True)
+    type: Literal["Polygon"] = "Polygon"
     coordinates: List[List[List[float]]] = Field(..., min_items=1)  # [[[lng, lat], [lng, lat], ...]]
 
 class FeatureCreateRequest(BaseModel):

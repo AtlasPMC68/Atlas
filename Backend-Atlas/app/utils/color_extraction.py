@@ -25,7 +25,7 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
     os.makedirs(image_output_dir, exist_ok=True)
 
     masks = {}
-    pixels = list(quantized.get_flattened_data())
+    pixels = list(quantized.getdata())
 
     for color_index, rgb in enumerate(palette_rgb[:quantized.getcolors().__len__()]):
         mask = Image.new("1", (width, height))  # 1-bit image (black/white)
