@@ -66,13 +66,12 @@ def detect_cities_from_text(
     }
     """
     tokens = _WORD_RE.findall(text)
-    norm_tokens = [_normalize(t) for t in tokens]
     matches: List[Dict[str, Any]] = []
     i = 0
-    L = len(tokens)
-    while i < L:
+    length = len(tokens)
+    while i < length:
         found = False
-        for n in range(min(max_ngram, L - i), 0, -1):
+        for n in range(min(max_ngram, length - i), 0, -1):
             phrase = " ".join(tokens[i : i + n])
             key = _normalize(phrase)
             candidates: List[Dict[str, Any]] = []
