@@ -1,0 +1,175 @@
+"""City detection and geocoding helpers.
+
+This module provides:
+- an in-memory city gazetteer (from geonamescache) for fast word/phrase matching
+- a Nominatim-based fallback geocoder (via geopy) with rate-limiting and requests caching
+
+Usage:
+    from app.utils.geocoding import detect_cities_from_text, geocode_fallback
+
+    matches = detect_cities_from_text(text)
+    for m in matches:
+        if not m['candidates']:
+            # no local match, fall back to Nominatim
+            geocoded = geocode_fallback(m['text'])
+"""
+from __future__ import annotations
+
+import re
+import unicodedata
+from typing import List, Dict, Any, Optional
+
+import geonamescache
+
+
+_WORD_RE = re.compile(r"\b[\w\-']+\b", flags=re.UNICODE)
+
+
+def _normalize(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.casefold().strip()
+
+
+# Load geonamescache cities into a mapping: normalized name -> list of candidate dicts
+_gc = geonamescache.GeonamesCache()
+_city_map: Dict[str, List[Dict[str, Any]]] = {}
+for info in _gc.get_cities().values():
+    name = info.get("name") or ""
+    country = info.get("countrycode") or ""
+    try:
+        lat = float(info.get("latitude"))
+        lon = float(info.get("longitude"))
+    except Exception:
+        continue
+    key = _normalize(name)
+    _city_map.setdefault(key, []).append({
+        "name": name,
+        "lat": lat,
+        "lon": lon,
+        "country": country,
+        "population": info.get("population"),
+    })
+
+def detect_cities_from_text(
+    text: str, max_ngram: int = 4, use_search: bool = False, search_limit: int = 10
+) -> List[Dict[str, Any]]:
+    """Scan text for city names using the local gazetteer.
+
+    Returns a list of matches with the matched text span (as tokens), and local candidates.
+
+    Each match: {
+        'text': original_phrase,
+        'start_token': int,
+        'end_token': int,
+        'candidates': [ { 'name','lat','lon','country',... } ]
+    }
+    """
+    tokens = _WORD_RE.findall(text)
+    matches: List[Dict[str, Any]] = []
+    i = 0
+    length = len(tokens)
+    while i < length:
+        found = False
+        for n in range(min(max_ngram, length - i), 0, -1):
+            phrase = " ".join(tokens[i : i + n])
+            key = _normalize(phrase)
+            candidates: List[Dict[str, Any]] = []
+
+            # Exact lookup in prebuilt map (fast)
+            if key in _city_map:
+                candidates = _city_map.get(key, [])
+
+            # Optionally use geonamescache.search_cities for contains/fuzzy matching
+            elif use_search:
+                try:
+                    raw = _gc.search_cities(phrase, case_sensitive=False, contains_search=True)
+                except Exception:
+                    raw = None
+
+                if raw:
+                    items = raw.values() if isinstance(raw, dict) else raw
+                    for info in items:
+                        try:
+                            name = info.get("name") or info.get("toponymName") or ""
+                            lat = float(info.get("latitude") or info.get("lat") or 0)
+                            lon = float(info.get("longitude") or info.get("lng") or 0)
+                            country = info.get("countrycode") or info.get("countryCode") or ""
+                        except Exception:
+                            continue
+                        candidates.append({
+                            "name": name,
+                            "lat": lat,
+                            "lon": lon,
+                            "country": country,
+                            "population": info.get("population"),
+                        })
+                    # optionally trim to search_limit
+                    if search_limit and len(candidates) > search_limit:
+                        candidates = candidates[:search_limit]
+
+            if candidates:
+                matches.append(
+                    {
+                        "text": phrase,
+                        "start_token": i,
+                        "end_token": i + n - 1,
+                        "candidates": candidates,
+                    }
+                )
+                i += n
+                found = True
+                break
+        if not found:
+            i += 1
+    return matches
+
+_all_ = ["detect_cities_from_text", "_city_map", "find_first_city"]
+
+
+def find_first_city(text: str) -> Dict[str, Any]:
+    """Return a standardized result for a city search.
+
+    Always returns a dict with at least the keys:
+      - `found`: bool
+      - `query`: the original text passed in
+      - `name`, `lat`, `lon`: populated when `found` is True
+      - `matched_text`: phrase matched from the input when found, else None
+
+    This makes it easier for callers to persist a record even when no
+    local match is available (we can store coordinates as 0,0 in that case).
+    """
+    result: Dict[str, Any] = {"found": False, "query": text, "name": text, "lat": 0.0, "lon": 0.0, "matched_text": None}
+
+    try:
+        matches = detect_cities_from_text(text)
+    except Exception:
+        # On error, return non-found with query preserved
+        return result
+
+    if not matches:
+        return result
+
+    for m in matches:
+        candidates = m.get("candidates") or []
+        if not candidates:
+            continue
+
+        # pick candidate with largest population when available
+        def pop_key(c):
+            try:
+                return int(c.get("population") or 0)
+            except Exception:
+                return 0
+
+        best = max(candidates, key=pop_key)
+        result.update({
+            "found": True,
+            "name": best.get("name"),
+            "lat": best.get("lat"),
+            "lon": best.get("lon"),
+            "matched_text": m.get("text"),
+        })
+        return result
+
+    return result

@@ -24,3 +24,4 @@ easyocr
 opencv-python-headless
 scikit-image==0.26.0
 scipy==1.16.3
+geonamescache
