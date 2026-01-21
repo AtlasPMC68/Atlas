@@ -19,6 +19,7 @@ from app.utils.color_extraction import extract_colors
 from app.utils.text_extraction import extract_text
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.cities_validation import detect_cities_from_text, find_first_city
+from app.utils.georeferencing import georeference_pixel_features
 
 from .celery_app import celery_app
 
@@ -49,7 +50,14 @@ def test_task(self, name: str = "World"):
 
 
 @celery_app.task(bind=True)
-def process_map_extraction(self, filename: str, file_content: bytes, map_id: str):
+def process_map_extraction(
+    self,
+    filename: str,
+    file_content: bytes,
+    map_id: str,
+    pixel_control_polyline: list | None = None,
+    geo_control_polyline: list | None = None,
+):
     """"""
     logger.info(f"Starting map processing for {filename}")
 
@@ -157,11 +165,29 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         color_result = extract_colors(tmp_file_path)
         normalized_features = color_result["normalized_features"]
+        pixel_features = color_result["pixel_features"]
 
+        # Persist normalized (0-1 box) features as before
         asyncio.run(persist_features(map_uuid, normalized_features))
         logger.info(
             f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
         )
+
+        # Optional: georeference pixel-space features if control polylines are provided
+        if pixel_control_polyline and geo_control_polyline:
+            try:
+                georef_features = georeference_pixel_features(
+                    pixel_features,
+                    pixel_control_polyline,
+                    geo_control_polyline,
+                )
+                if georef_features:
+                    asyncio.run(persist_features(map_uuid, georef_features))
+                    logger.info(
+                        f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
+                    )
+            except Exception as e:
+                logger.error(f"Georeferencing step failed for map {map_uuid}: {e}")
 
         # Step 5: Shapes Extraction
         self.update_state(

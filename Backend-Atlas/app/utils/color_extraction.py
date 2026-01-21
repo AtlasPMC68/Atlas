@@ -36,6 +36,7 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
     masks: Dict[str, str] = {}
     # Normalized geometries (each shape scaled into a 0-1 box)
     normalized_features = []
+    pixel_features = []
 
     for color_index, rgb in enumerate(palette_rgb[:quantized.getcolors().__len__()]):
         mask = Image.new("1", (width, height))  # 1-bit image (black/white)
@@ -61,9 +62,13 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
 
         # Build a vector geometry (possibly MultiPolygon) for this color in pixel space
         if pixel_polygons:
-            normalized_feature = build_normalized_feature(
-                color_name, rgb, pixel_polygons, image_output_dir
+            pixel_feature, normalized_feature = build_features(
+                color_name, rgb, pixel_polygons, width, height
             )
+            pixel_features.append({
+                "type": "FeatureCollection",
+                "features": [pixel_feature]
+            })
             normalized_features.append({
                 "type": "FeatureCollection",
                 "features": [normalized_feature]
@@ -75,13 +80,42 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
         "colors_detected": list(masks.keys()),
         "masks": masks,
         "normalized_features": normalized_features,
+        "pixel_features": pixel_features,
     }
 
-def build_normalized_feature(
+def build_features(
     color_name: str,
     rgb: tuple,
     pixel_polygons,
-    image_output_dir: str,
+    image_width: int,
+    image_height: int,
+):
+    merged: BaseGeometry = unary_union(pixel_polygons)
+
+    pixel_feature = {
+        "type": "Feature",
+        "properties": {
+            "color_name": color_name,
+            "color_rgb": rgb,
+            "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
+            "mapElementType": "zone",
+            "name": f"Zone {color_name}",
+            "is_pixel_space": True,
+            "image_width": image_width,
+            "image_height": image_height,
+        },
+        "geometry": merged.__geo_interface__,
+    }
+
+    # Keep your normalized feature if you want, but DON'T use it for georeferencing
+    normalized_feature = build_normalized_feature_from_merged(color_name, rgb, merged)
+
+    return pixel_feature, normalized_feature
+
+def build_normalized_feature_from_merged(
+    color_name: str,
+    rgb: tuple,
+    merged,
 ):
     """From pixel-space polygons, build a normalized GeoJSON feature and write it to disk.
 
@@ -90,9 +124,6 @@ def build_normalized_feature(
     - Recenters it into the [0, 1] x [0, 1] box.
     - Returns the normalized GeoJSON feature dict.
     """
-
-    merged: BaseGeometry = unary_union(pixel_polygons)
-
     # Preserve original aspect ratio while normalizing into a unit box
     minx, miny, maxx, maxy = merged.bounds
     width_px = maxx - minx
@@ -136,10 +167,6 @@ def build_normalized_feature(
         },
         "geometry": normalized_geom.__geo_interface__,
     }
-
-    normalized_color_geojson_path = os.path.join(
-        image_output_dir, f"{color_name}_normalized.geojson"
-    )
 
     return normalized_feature
 
