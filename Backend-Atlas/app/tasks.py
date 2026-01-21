@@ -1,3 +1,7 @@
+import cv2
+from celery import current_task
+from .celery_app import celery_app
+import time
 import asyncio
 import logging
 import os
@@ -7,13 +11,12 @@ import re
 from datetime import datetime
 from typing import Any, List
 from uuid import UUID
-
-import pytesseract
 from PIL import Image, ImageEnhance
 
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.color_extraction import extract_colors
+from app.utils.text_extraction import extract_text
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.cities_validation import detect_cities_from_text, find_first_city
 
@@ -47,7 +50,7 @@ def test_task(self, name: str = "World"):
 
 @celery_app.task(bind=True)
 def process_map_extraction(self, filename: str, file_content: bytes, map_id: str):
-    """Text extraction with TesseractOCR"""
+    """"""
     logger.info(f"Starting map processing for {filename}")
 
     # Ensure we are working with a UUID instance inside the task
@@ -79,16 +82,9 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         )
         time.sleep(2)
 
-        image = Image.open(tmp_file_path)
-        logger.info(f"Image loaded: {image.size}, mode: {image.mode}")
-
-        image = image.convert("L")  # Convert in grey tone
-
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2.0)
-
-        # pixels < 140 -> black, >= 140 -> white
-        image = image.point(lambda x: 0 if x < 140 else 255, "1")
+        image = cv2.imread(tmp_file_path)
+        image.flags.writeable = False # Makes image immutable
+        validate_file_extension(tmp_file_path)
 
         # Step 3: Extraction OCR
         self.update_state(
@@ -96,12 +92,57 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
             meta={
                 "current": 3,
                 "total": nb_task,
-                "status": "Extracting text with TesseractOCR",
+                "status": "Extracting text with EasyOCR",
             },
         )
         time.sleep(2)
-        custom_config = r"--oem 3 --psm 6"
-        extracted_text = pytesseract.image_to_string(image, config=custom_config)
+
+        # GPU acceleration make the text extraction MUCH faster i
+        extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
+
+        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
+        # Tokenize OCR text to single words and run city detection per token
+        try:
+            tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
+            for tok in tokens:
+                try:
+                    candidate = find_first_city(tok)
+                except Exception as e:
+                    logger.debug(f"find_first_city error for token '{tok}': {e}")
+                    # treat as not found but persist the token
+                    candidate = {"found": False, "query": tok, "name": tok, "lat": 0.0, "lon": 0.0}
+
+                # Build feature using returned candidate; if not found, coordinates will be 0,0
+                logger.info(f"City detection result for token '{tok}': {candidate}")
+                city_feature = {
+                    "type": "Feature",
+                    "properties": {
+                        "name": candidate.get("name") or tok,
+                        "show": bool(candidate.get("found")),
+                        "mapElementType": "point",
+                        "color_name": "black",
+                        "color_rgb": [0, 0, 0],
+                        "start_date": "0-01-01",
+                        "end_date": "5000-01-01",
+                    },
+                    "geometry": {"type": "Point", "coordinates": [candidate.get("lon") or 0.0, candidate.get("lat") or 0.0]},
+                }
+
+                city_feature_collection = {
+                    "type": "FeatureCollection",
+                    "features": [city_feature],
+                }
+
+                try:
+                    asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
+                    logger.info(f"Persisted city token feature: {candidate.get('name')}")
+                except Exception as e:
+                    logger.error(f"Failed to persist city token '{tok}': {e}")
+
+        except Exception as e:
+            logger.error(f"City detection failed: {e}")
+
+        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
         # Tokenize OCR text to single words and run city detection per token
@@ -201,20 +242,18 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name = os.path.splitext(filename)[0]
-        output_filename = f"{base_name}_{timestamp}.txt"
+        output_filename = f"{timestamp}_{base_name}.txt"
         output_path = os.path.join(output_dir, output_filename)
 
+        lines = [block[1] for block in extracted_text]
+        full_text = "\n".join(lines)
         try:
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write("=== OCR EXTRACTION  ===\n")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(f"=== OCR EXTRACTION  ===\n")
                 f.write(f"Source File: {filename}\n")
-                f.write(
-                    f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                )
-                f.write(f"Character extract: {len(extracted_text.strip())}\n")
-                f.write(f"Tesseract Configuration: {custom_config}\n")
-                f.write("\n=== TEXTE EXTRAIT ===\n\n")
-                f.write(extracted_text.strip())
+                f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
+                f.write(full_text)
 
             logger.info(f"Text saved to: {output_path}")
 
@@ -224,8 +263,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         result = {
             "filename": filename,
-            "extracted_text": extracted_text.strip(),
-            "text_length": len(extracted_text.strip()),
+            "extracted_text": lines,
             "output_path": output_path,
             "shapes_result": shapes_result,
             "color_result": color_result,
@@ -247,6 +285,12 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
+
+def validate_file_extension(file_path: str) -> None:
+    supported_file_ext = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp', '.ppm', '.pgm', '.pbm')
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in supported_file_ext:
+        raise ValueError(f"Extension {ext} non autorisée pour le système du consortium.")
 
 
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
