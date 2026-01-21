@@ -8,6 +8,7 @@ from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
 from app.schemas.map import MapOut
+from app.schemas.georeference import GeoreferencePayload
 from uuid import UUID
 from datetime import date
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.schemas.featuresCreate import FeatureCreate
 from app.services.maps import create_map_in_db
+import json
 
 router = APIRouter()
 
@@ -198,3 +200,34 @@ async def create_map(
     db.commit()
     db.refresh(new_map)
     return {"id": new_map.id}
+
+
+@router.post("/{map_id}/georef")
+async def save_georeference(
+    map_id: str,
+    payload: GeoreferencePayload,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Attach georeferencing control polylines to a map.
+
+    For now this stores the payload JSON in the existing ``precision``
+    text column of the map. This can later be evolved into a dedicated
+    table without changing the API contract.
+    """
+
+    try:
+        map_uuid = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    result = await session.execute(select(Map).where(Map.id == map_uuid))
+    map_obj = result.scalar_one_or_none()
+
+    if map_obj is None:
+        raise HTTPException(status_code=404, detail="Map not found")
+
+    # Store as JSON in the precision field for now
+    map_obj.precision = json.dumps(payload.model_dump())
+    await session.commit()
+
+    return {"status": "ok"}

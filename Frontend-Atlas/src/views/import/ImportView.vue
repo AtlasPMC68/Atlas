@@ -50,6 +50,15 @@
       </div>
     </div>
 
+    <!-- Modal de géoréférencement -->
+    <GeoRefModal
+      v-if="showGeorefModal && previewUrl"
+      :is-open="showGeorefModal"
+      :image-url="previewUrl"
+      @close="showGeorefModal = false"
+      @confirmed="handleGeorefConfirmed"
+    />
+
     <!-- Modal de traitement -->
     <ProcessingModal
       v-if="showProcessingModal"
@@ -73,6 +82,7 @@ import FileDropZone from "../../components/import/FileDropZone.vue";
 import ImportPreview from "../../components/import/ImportPreview.vue";
 import ImportControls from "../../components/import/ImportControls.vue";
 import ProcessingModal from "../../components/import/ProcessingModal.vue";
+import GeoRefModal from "../../components/georef/GeoRefModal.vue";
 
 const router = useRouter();
 const importStore = useImportStore();
@@ -98,6 +108,9 @@ const {
 
 // État local
 const currentStep = ref(1);
+const showGeorefModal = ref(false);
+const worldPolyline = ref([]); // [ [lat,lng], ... ]
+const imagePolyline = ref([]); // [ [x,y], ... ]
 
 // Gestionnaires d'événements
 const handleFileSelected = (file) => {
@@ -107,10 +120,39 @@ const handleFileSelected = (file) => {
 
 async function startImportProcess() {
   if (!selectedFile.value) return;
+  // Ouvre d'abord la fenêtre de géoréférencement
+  showGeorefModal.value = true;
+}
+
+async function handleGeorefConfirmed(payload) {
+  imagePolyline.value = payload.imagePolyline;
+  worldPolyline.value = payload.worldPolyline;
+  showGeorefModal.value = false;
 
   const result = await startImport(selectedFile.value);
   if (result.success) {
     currentStep.value = 3;
+
+    // Une fois le mapId disponible, envoyer les polylignes de géoréférencement
+    if (mapId.value) {
+      try {
+        await fetch(`http://localhost:8000/maps/${mapId.value}/georef`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            image_polyline: imagePolyline.value.map(([x, y]) => ({ x, y })),
+            world_polyline: worldPolyline.value.map(([lat, lng]) => ({
+              lat,
+              lng,
+            })),
+          }),
+        });
+      } catch (e) {
+        console.error("Erreur lors de l'envoi des données de géoréférencement", e);
+      }
+    }
   } else {
     console.error("Erreur importation:", result.error);
   }
