@@ -70,11 +70,19 @@ function toggleDrawingMode() {
   isDrawingMode.value = !isDrawingMode.value;
   isDrawingActive = false;
   if (map) {
-    // Disable map dragging while drawing so mouse movements add points
+    // In drawing mode, completely freeze map interactions (no pan/zoom)
     if (isDrawingMode.value) {
       map.dragging.disable();
+      map.scrollWheelZoom.disable();
+      map.doubleClickZoom.disable();
+      map.boxZoom.disable();
+      map.keyboard.disable();
     } else {
       map.dragging.enable();
+      map.scrollWheelZoom.enable();
+      map.doubleClickZoom.enable();
+      map.boxZoom.enable();
+      map.keyboard.enable();
     }
   }
 }
@@ -110,9 +118,11 @@ function redrawPolyline(points, shouldFit = true) {
 
   polylineLayer = L.polyline(points, { color: "#2563eb", weight: 3 });
   polylineLayer.addTo(map);
-  // Only auto-fit when not actively drawing (e.g. initial load from props)
+  // Do not auto-fit while drawing; keep the current view stable.
   if (shouldFit) {
-    map.fitBounds(polylineLayer.getBounds(), { padding: [20, 20] });
+    // If you ever need an initial fit, you can call with shouldFit=true
+    // from outside, but we keep it false during freehand drawing.
+    // map.fitBounds(polylineLayer.getBounds(), { padding: [20, 20] });
   }
 }
 
@@ -120,8 +130,8 @@ watch(
   () => props.modelValue,
   (val) => {
     localPoints.value = val ? [...val] : [];
-    // Fit to the line only when value changes from outside (not during drag)
-    redrawPolyline(localPoints.value, true);
+    // Redraw without changing zoom/center to avoid jumping while drawing
+    redrawPolyline(localPoints.value, false);
   },
 );
 </script>
