@@ -62,3 +62,7 @@ yarn-error.log*
 # Vite cache / temp files
 .vite/
 .cache/
+
+# Process folders
+Backend-Atlas/app/extracted_color
+Backend-Atlas/app/extracted_texts

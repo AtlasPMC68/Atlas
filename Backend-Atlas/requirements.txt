@@ -7,7 +7,6 @@ psycopg[binary]==3.3.2
 celery[redis]==5.3.4
 redis==4.6.0
 flower==2.0.1
-pytesseract
 Pillow
 python-multipart
 sqlalchemy
@@ -21,8 +20,10 @@ bcrypt==4.0.0
 pydantic==2.12.5
 email-validator
 matplotlib
-python-keycloak==4.0.0
-PyJWT[crypto]==2.8.0
-opencv-python==4.12.0.88
+easyocr
+opencv-python-headless
 scikit-image==0.26.0
 scipy==1.16.3
+geonamescache
+python-keycloak==4.0.0
+PyJWT[crypto]==2.8.0
