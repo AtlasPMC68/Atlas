@@ -134,6 +134,12 @@ def georeference_pixel_features(
     if not pixel_feature_collections:
         return []
 
+    # Basic validation/logging to help debug unexpected input types
+    if pixel_polyline and isinstance(pixel_polyline[0], dict):
+        raise TypeError(f"pixel_polyline contains dicts, expected (x, y) pairs: first={pixel_polyline[0]}")
+    if geo_polyline_lonlat and isinstance(geo_polyline_lonlat[0], dict):
+        raise TypeError(f"geo_polyline_lonlat contains dicts, expected (lon, lat) pairs: first={geo_polyline_lonlat[0]}")
+
     tps = build_tps_from_control_polylines(pixel_polyline, geo_polyline_lonlat)
 
     def _tps_to_3857(x, y, z=None):

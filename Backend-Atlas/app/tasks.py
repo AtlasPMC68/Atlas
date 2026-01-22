@@ -20,6 +20,7 @@ from app.utils.text_extraction import extract_text
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.cities_validation import detect_cities_from_text, find_first_city
 from app.utils.georeferencing import georeference_pixel_features
+import numpy as np
 
 from .celery_app import celery_app
 
@@ -48,6 +49,77 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
+def bottom_edge_polyline_px(image_bytes: bytes, samples: int = 20):
+    # Decode image from bytes
+    img_array = np.frombuffer(image_bytes, dtype=np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # BGR
+
+    if img is None:
+        raise ValueError("Could not read image")
+
+    # 1) Mask the blue hexagon (simple threshold in HSV)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    # Blue range (adjust if needed)
+    lower = np.array([90, 50, 50])
+    upper = np.array([140, 255, 255])
+    mask = cv2.inRange(hsv, lower, upper)
+
+    # Clean up
+    mask = cv2.medianBlur(mask, 5)
+
+    # 2) Find the contour
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        raise ValueError("No contour found")
+
+    cnt = max(cnts, key=cv2.contourArea)
+
+    # 3) Approx to polygon vertices
+    peri = cv2.arcLength(cnt, True)
+    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)  # tweak 0.02 if needed
+    pts = approx.reshape(-1, 2)  # (N,2) as [x,y]
+
+    if len(pts) < 4:
+        raise ValueError(f"Polygon approximation too small: {len(pts)} vertices")
+
+    # Ensure consistent ordering around the shape
+    # Sort by angle around centroid
+    cx, cy = pts.mean(axis=0)
+    angles = np.arctan2(pts[:,1] - cy, pts[:,0] - cx)
+    pts = pts[np.argsort(angles)]
+
+    # 4) Find the bottom-most edge (edge with max average y)
+    best_edge = None
+    best_score = -1
+    n = len(pts)
+    for i in range(n):
+        a = pts[i]
+        b = pts[(i + 1) % n]
+        score = (a[1] + b[1]) / 2.0  # avg y
+        if score > best_score:
+            best_score = score
+            best_edge = (a, b)
+
+    (x1, y1), (x2, y2) = best_edge
+
+    # 5) Build a polyline along that edge (sample points)
+    xs = np.linspace(x1, x2, samples)
+    ys = np.linspace(y1, y2, samples)
+    polyline = [(float(x), float(y)) for x, y in zip(xs, ys)]
+
+    return {
+        "edge_endpoints": [(int(x1), int(y1)), (int(x2), int(y2))],
+        "polyline_px": polyline,
+        "vertices_px": pts.tolist(),
+    }
+
+# Example usage:
+# result = bottom_edge_polyline_px("hex.png", samples=10)
+# print(result["edge_endpoints"])
+# print(result["polyline_px"])
+
+
 
 @celery_app.task(bind=True)
 def process_map_extraction(
@@ -63,6 +135,33 @@ def process_map_extraction(
 
     # Ensure we are working with a UUID instance inside the task
     map_uuid = UUID(map_id)
+
+    # For now, derive the pixel-space control polyline automatically from the image
+    # bottom_edge_polyline_px returns a dict; we only need the list of (x, y) points
+    edge_info = bottom_edge_polyline_px(file_content)
+    pixel_control_polyline = edge_info["polyline_px"]
+    geo_control_polyline = [
+        [-73.6000, 45.5000],
+        [-73.5995, 45.5000],
+        [-73.5990, 45.5000],
+        [-73.5984, 45.5000],
+        [-73.5979, 45.5000],
+        [-73.5974, 45.5000],
+        [-73.5968, 45.5000],
+        [-73.5963, 45.5000],
+        [-73.5958, 45.5000],
+        [-73.5953, 45.5000],
+        [-73.5947, 45.5000],
+        [-73.5942, 45.5000],
+        [-73.5937, 45.5000],
+        [-73.5932, 45.5000],
+        [-73.5926, 45.5000],
+        [-73.5921, 45.5000],
+        [-73.5916, 45.5000],
+        [-73.5911, 45.5000],
+        [-73.5905, 45.5000],
+        [-73.5900, 45.5000]
+    ]
 
     try:
         # Step 1: temp save
@@ -175,6 +274,12 @@ def process_map_extraction(
 
         # Optional: georeference pixel-space features if control polylines are provided
         if pixel_control_polyline and geo_control_polyline:
+            logger.info(
+                f"[DEBUG] Georef input types: pixel_polyline[0]={type(pixel_control_polyline[0])}, geo_polyline[0]={type(geo_control_polyline[0])}"
+            )
+            logger.info(
+                f"[DEBUG] First pixel point: {pixel_control_polyline[0]}, first geo point: {geo_control_polyline[0]}"
+            )
             try:
                 georef_features = georeference_pixel_features(
                     pixel_features,
