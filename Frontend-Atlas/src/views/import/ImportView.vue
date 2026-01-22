@@ -120,7 +120,6 @@ const handleFileSelected = (file) => {
 
 async function startImportProcess() {
   if (!selectedFile.value) return;
-  // Ouvre d'abord la fenêtre de géoréférencement
   showGeorefModal.value = true;
 }
 
@@ -129,30 +128,10 @@ async function handleGeorefConfirmed(payload) {
   worldPolyline.value = payload.worldPolyline;
   showGeorefModal.value = false;
 
-  const result = await startImport(selectedFile.value);
+  // Pass polylines directly to startImport
+  const result = await startImport(selectedFile.value, imagePolyline.value, worldPolyline.value);
   if (result.success) {
     currentStep.value = 3;
-
-    // Une fois le mapId disponible, envoyer les polylignes de géoréférencement
-    if (mapId.value) {
-      try {
-        await fetch(`http://localhost:8000/maps/${mapId.value}/georef`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            image_polyline: imagePolyline.value.map(([x, y]) => ({ x, y })),
-            world_polyline: worldPolyline.value.map(([lat, lng]) => ({
-              lat,
-              lng,
-            })),
-          }),
-        });
-      } catch (e) {
-        console.error("Erreur lors de l'envoi des données de géoréférencement", e);
-      }
-    }
   } else {
     console.error("Erreur importation:", result.error);
   }

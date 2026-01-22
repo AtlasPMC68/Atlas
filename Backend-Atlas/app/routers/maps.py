@@ -30,7 +30,17 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
 @router.post("/upload")
-async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)):
+async def upload_and_process_map(
+    file: UploadFile = File(...), 
+    session: AsyncSession = Depends(get_async_session),
+    image_polyline: str = None,
+    world_polyline: str = None
+):
+    
+    logger.debug(f"Logger debug camarche tu")
+    logger.info(f"image polyline for the pixels{image_polyline}")
+    logger.info(f"world polyline for the coordinates{world_polyline}")
+    
     """Upload une carte et lance l'extraction de données"""
     
     # Validation du type de fichier
@@ -200,34 +210,3 @@ async def create_map(
     db.commit()
     db.refresh(new_map)
     return {"id": new_map.id}
-
-
-@router.post("/{map_id}/georef")
-async def save_georeference(
-    map_id: str,
-    payload: GeoreferencePayload,
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Attach georeferencing control polylines to a map.
-
-    For now this stores the payload JSON in the existing ``precision``
-    text column of the map. This can later be evolved into a dedicated
-    table without changing the API contract.
-    """
-
-    try:
-        map_uuid = UUID(map_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid map_id")
-
-    result = await session.execute(select(Map).where(Map.id == map_uuid))
-    map_obj = result.scalar_one_or_none()
-
-    if map_obj is None:
-        raise HTTPException(status_code=404, detail="Map not found")
-
-    # Store as JSON in the precision field for now
-    map_obj.precision = json.dumps(payload.model_dump())
-    await session.commit()
-
-    return {"status": "ok"}

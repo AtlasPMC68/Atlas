@@ -13,6 +13,7 @@
       ref="imageEl"
       class="w-full h-full object-contain select-none pointer-events-none"
       alt="Carte importée"
+      @load="updateSize"
     />
 
     <svg
