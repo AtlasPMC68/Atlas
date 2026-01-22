@@ -64,11 +64,6 @@ let map = null;
 let currentRegionsLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
-const mockedCities = [
-  { name: "Montréal", lat: 45.5017, lng: -73.5673, foundation_year: 1642 },
-  { name: "Québec", lat: 46.8139, lng: -71.2082, foundation_year: 1608 },
-  { name: "Trois-Rivières", lat: 46.343, lng: -72.5406, foundation_year: 1634 },
-];
 
 let citiesLayer = null;
 let zonesLayer = null;
@@ -97,7 +92,14 @@ let dragStartPoint = null; // Point de départ du drag
 let originalPositions = new Map(); // Positions originales des formes avant déplacement
 let justFinishedDrag = false; // Flag pour éviter la désélection après un drag
 
-// Variables pour le tracé de ligne
+let resizeHandles = new Map();
+let isResizing = false;
+let resizeStartPoint = null;
+let resizeHandle = null;
+let originalGeometry = null;
+let originalBounds = null;
+let tempResizeShape = null;
+
 let isDrawingLine = false;
 let lineStartPoint = null;
 
@@ -353,13 +355,20 @@ function renderCities(features) {
   const radius = getRadiusForZoom(currentZoom);
 
   safeFeatures.forEach((feature) => {
-    // Defensive check
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
     }
 
     const [lng, lat] = feature.geometry.coordinates;
     const coord = [lat, lng];
+
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const color = feature.color || colorFromRgb || "#000";
 
     // Utiliser circleMarker avec taille adaptative au zoom
     const circle = L.circleMarker(coord, {
@@ -392,17 +401,57 @@ function renderZones(features) {
       return;
     }
 
-    const layer = L.geoJSON(feature.geometry, {
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const fillColor = feature.color || colorFromRgb || "#ccc";
+    let targetGeometry = feature.geometry;
+
+    // If the geometry is normalized ([0,1] space), project it onto the world
+    if (props.is_normalized) {
+      const fc = {
+        type: "FeatureCollection",
+        features: [feature],
+      };
+
+      // Pick a random anchor on earth so shapes are visible but not overlapping deterministically
+      const anchorLat = -80 + Math.random() * 160; // between -80 and 80
+      const anchorLng = -170 + Math.random() * 340; // between -170 and 170
+
+      // Use a large size so the zone is easy to spot (e.g. ~2000km)
+      const sizeMeters = 2_000_000;
+
+      const worldFc = transformNormalizedToWorld(
+        fc,
+        anchorLat,
+        anchorLng,
+        sizeMeters,
+      );
+
+      if (
+        worldFc &&
+        Array.isArray(worldFc.features) &&
+        worldFc.features[0]?.geometry
+      ) {
+        targetGeometry = worldFc.features[0].geometry;
+      }
+    }
+
+    const layer = L.geoJSON(targetGeometry, {
       style: {
-        fillColor: feature.color || "#ccc",
+        fillColor,
         fillOpacity: 0.5,
         color: "#333",
         weight: 1,
       },
     });
 
-    if (feature.name) {
-      layer.bindPopup(feature.name);
+    const name = props.name || feature.name;
+    if (name) {
+      layer.bindPopup(name);
     }
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
@@ -416,14 +465,21 @@ function renderArrows(features) {
     if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
       return;
     }
-    // Convert GeoJSON [lng, lat] → Leaflet [lat, lng]
     const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [
       lat,
       lng,
     ]);
 
+    const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3
+        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+        : null;
+    const color = feature.color || colorFromRgb || "#000";
+
     const line = L.polyline(latLngs, {
-      color: feature.color || "#000",
+      color,
       weight: feature.stroke_width ?? 2,
       opacity: feature.opacity ?? 1,
     });
@@ -435,8 +491,9 @@ function renderArrows(features) {
       fill: true,
     });
 
-    if (feature.name) {
-      line.bindPopup(feature.name);
+    const name = props.name || feature.name;
+    if (name) {
+      line.bindPopup(name);
     }
 
     featureLayerManager.addFeatureLayer(feature.id, line);
@@ -547,6 +604,46 @@ function debounce(fn, delay) {
   return (...args) => {
     clearTimeout(timeout);
     timeout = setTimeout(() => fn(...args), delay);
+  };
+}
+
+function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
+  // Use the same projected CRS as the basemap (Web Mercator).
+  const crs = L.CRS.EPSG3857;
+  const center = crs.project(L.latLng(anchorLat, anchorLng)); // { x, y } in meters
+  const halfSize = sizeMeters / 2;
+
+  // Transform a single coordinate [x, y] in [0,1]×[0,1] into [lng, lat]
+  const transformCoord = ([x, y]) => {
+    // Center the shape around (0,0) in its local space
+    const nx = x - 0.5;
+    const ny = y - 0.5;
+
+    // Work in projected meters with a uniform scale so aspect ratio is preserved
+    const mx = center.x + nx * 2 * halfSize;
+    const my = center.y - ny * 2 * halfSize; // minus because y grows downward
+
+    const latlng = crs.unproject(L.point(mx, my));
+    return [latlng.lng, latlng.lat]; // GeoJSON order = [lng, lat]
+  };
+
+  const transformCoords = (coords) => {
+    if (typeof coords[0] === "number") {
+      // [x, y]
+      return transformCoord(coords);
+    }
+    return coords.map(transformCoords);
+  };
+
+  return {
+    ...geojson,
+    features: geojson.features.map((f) => ({
+      ...f,
+      geometry: {
+        ...f.geometry,
+        coordinates: transformCoords(f.geometry.coordinates),
+      },
+    })),
   };
 }
 

@@ -15,10 +15,6 @@ const routes = [
     component: Home,
   },
   {
-    path: "/demo",
-    component: Map,
-  },
-  {
     path: "/connexion",
     component: Login,
   },
@@ -51,6 +47,11 @@ const routes = [
     component: Settings,
     meta: { requiresAuth: true },
   },
+  {
+    path: "/maps/:mapId",
+    component: Map,
+    meta: { requiresAuth: true }
+  }
 ];
 
 export const router = createRouter({

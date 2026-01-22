@@ -135,8 +135,10 @@ import FeatureVisibilityControls from "../components/FeatureVisibilityControls.v
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import { useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 
-const mapId = ref("11111111-1111-1111-1111-111111111111");
+const route = useRoute();
+const mapId = ref(route.params.mapId);
 const features = ref([]);
 const featureVisibility = ref(new Map());
 const error = ref("");
