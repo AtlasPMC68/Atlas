@@ -8,6 +8,7 @@ from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
 from app.schemas.map import MapOut
+from app.schemas.georeference import GeoreferencePayload
 from uuid import UUID
 from datetime import date
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.schemas.featuresCreate import FeatureCreate
 from app.services.maps import create_map_in_db
+import json
 
 router = APIRouter()
 
@@ -28,7 +30,17 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
 @router.post("/upload")
-async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)):
+async def upload_and_process_map(
+    file: UploadFile = File(...), 
+    session: AsyncSession = Depends(get_async_session),
+    image_polyline: str = None,
+    world_polyline: str = None
+):
+    
+    logger.debug(f"Logger debug camarche tu")
+    logger.info(f"image polyline for the pixels{image_polyline}")
+    logger.info(f"world polyline for the coordinates{world_polyline}")
+    
     """Upload une carte et lance l'extraction de données"""
     
     # Validation du type de fichier
