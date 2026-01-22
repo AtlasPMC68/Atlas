@@ -5,7 +5,6 @@ import tempfile
 from typing import Any, List
 import time
 from datetime import datetime
-from typing import Any, List
 from uuid import UUID
 
 import pytesseract
@@ -203,7 +202,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
 
-
+# TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
         for feature in normalized_features:

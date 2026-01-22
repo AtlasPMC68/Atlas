@@ -5,16 +5,15 @@ import keycloak from "../keycloak";
 
 const username = ref("");
 const email = ref("");
-const token = keycloak.token;
 const errorMessage = ref("");
 const router = useRouter();
 
 onMounted(async () => {
-  if (!token) return;
+  if (!keycloak.token) return;
   try {
-    const res = await fetch("http://localhost:8000/me", {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${keycloak.token}`,
       },
     });
     if (!res.ok) throw new Error("Erreur chargement du profil");
@@ -30,11 +29,11 @@ const saveSettings = async () => {
   errorMessage.value = "";
 
   try {
-    const res = await fetch("http://localhost:8000/user/update-user", {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/user/update-user`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${keycloak.token}`,
       },
       body: JSON.stringify({ username: username.value }),
     });

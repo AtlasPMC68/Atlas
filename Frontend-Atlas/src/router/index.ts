@@ -18,8 +18,7 @@ const routes = [
   { path: "/parametres", component: Settings, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
   { path: "/inscription", component: Home }, // Dummy route
-  { path: "/maps/:mapId", component: Map, meta: { requiresAuth: true }
-  }
+  { path: "/maps/:mapId", component: Map, meta: { requiresAuth: true } },
 ];
 
 export const router = createRouter({
@@ -31,10 +30,26 @@ export const router = createRouter({
   },
 });
 
-router.beforeEach(async (to) => {
-  const requiresAuth = to.matched.some(r => r.meta.requiresAuth);
+let keycloakReady: Promise<void> | null = null;
 
-  if (!requiresAuth) return true;
+if (!keycloakReady) {
+  keycloakReady = new Promise((resolve) => {
+    const checkReady = () => {
+      if ((keycloak as any).didInitialize) {
+        setTimeout(() => {
+          resolve();
+        }, 500);
+      } else {
+        setTimeout(checkReady, 50);
+      }
+    };
+    checkReady();
+  });
+}
+
+router.beforeEach(async (to) => {
+  if (!to.matched.some(r => r.meta.requiresAuth)) return true;
+  await keycloakReady;
 
   if (!keycloak.authenticated) {
     keycloak.login({
@@ -44,22 +59,19 @@ router.beforeEach(async (to) => {
   }
 
   try {
-    const res = await fetch("http://localhost:8000/me", {
-      headers: { Authorization: `Bearer ${keycloak.token}` },
-    });
-
-    if (!res.ok) {
-      const refreshed = await keycloak.updateToken(30);
-      if (!refreshed) {
-        keycloak.login({
-          redirectUri: window.location.origin + to.fullPath,
-        });
-        return false;
-      }
+    const refreshed = await keycloak.updateToken(30);
+    if (!refreshed && keycloak.isTokenExpired()) {
+      keycloak.login({
+        redirectUri: window.location.origin + to.fullPath,
+      });
+      return false;
     }
-
+    
     return true;
   } catch (err) {
+    keycloak.login({
+      redirectUri: window.location.origin + to.fullPath,
+    });
     return false;
   }
 });

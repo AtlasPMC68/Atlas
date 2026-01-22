@@ -35,8 +35,8 @@ def verify_token(token: str):
             print("Token not for this client")
             return None
         return payload
-    except JWTError as e:
-        print(f"Invalid token: {e}")
+    except JWTError:
+        print(f"Invalid token")
         return None
 
 def get_user_from_token(token: str):

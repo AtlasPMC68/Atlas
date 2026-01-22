@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..utils.user import get_or_create_user
+from ..utils.auth import get_current_user
 
 router = APIRouter()
 
 @router.get("/profile")
-def profile(db: Session = Depends(get_db)):
-    db_user = get_or_create_user(db)
+def profile(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    db_user = get_or_create_user(db, user)
     return {
         "id": str(db_user.id),
         "username": db_user.username,

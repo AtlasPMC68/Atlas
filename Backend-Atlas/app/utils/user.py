@@ -6,8 +6,7 @@ from fastapi import HTTPException
 def get_or_create_user(db: Session, token_info: dict) -> User:
     user_id = UUID(token_info["sid"])
     email = token_info.get("email")
-    username = token_info.get("preferred_username") or email.split("@")[0]
-
+    username = token_info.get("preferred_username")
     user = db.query(User).filter((User.id == user_id) | (User.email == email)).first()
 
     if not user:

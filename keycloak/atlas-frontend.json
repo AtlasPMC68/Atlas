@@ -9,6 +9,7 @@
     "implicitFlowEnabled": false,
     "directAccessGrantsEnabled": true,
     "redirectUris": [
+      "http://localhost:3000",
       "http://localhost:3000/*"
     ],
     "webOrigins": [

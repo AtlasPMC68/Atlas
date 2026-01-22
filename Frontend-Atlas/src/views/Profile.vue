@@ -18,7 +18,7 @@ onMounted(async () => {
   if (!token) return;
 
   try {
-    const res = await fetch("http://localhost:8000/me", {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
