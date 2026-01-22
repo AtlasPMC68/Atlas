@@ -1,11 +1,14 @@
 import math
 from typing import List, Tuple, Dict, Any, Optional
+import logging
 
 import numpy as np
 from scipy.interpolate import Rbf
 from shapely.geometry import shape, mapping
 from shapely.ops import transform
 
+
+logger = logging.getLogger(__name__)
 
 LonLat = Tuple[float, float]
 XY = Tuple[float, float]
@@ -58,150 +61,190 @@ class ThinPlateSpline2D:
         return X, Y
 
 
-def build_affine_from_control_polylines(
+def build_affine_from_control_polylines_and_points(
     pixel_polyline: List[XY],
     geo_polyline_lonlat: List[LonLat],
+    pixel_points: Optional[List[XY]] = None,
+    geo_points_lonlat: Optional[List[LonLat]] = None,
 ) -> np.ndarray:
-    """Build an affine transform (3x3 matrix) from control polylines.
+    """Build affine transform from control polylines and optional points.
     
-    Computes scale, rotation, and translation based on the two polylines.
-    Much more stable than TPS when you only have a single control line.
-    
-    Returns: 3x3 affine matrix for transforming [x, y, 1] -> [X, Y, 1]
+    Uses least-squares fitting when additional control points are provided.
     """
-    if len(pixel_polyline) < 2 or len(geo_polyline_lonlat) < 2:
-        raise ValueError("Both polylines must contain at least 2 points")
-    
-    # Convert to arrays
-    src = np.array(pixel_polyline, dtype=float)
-    geo_xy = np.array([
-        _lonlat_to_webmercator(lon, lat) for lon, lat in geo_polyline_lonlat
-    ], dtype=float)
-    
-    # step 1: Compute centroids
-    src_center = src.mean(axis=0)
-    dst_center = geo_xy.mean(axis=0)
-    
-    # step 2: Compute average scale based on line lengths
-    src_diffs = np.diff(src, axis=0)
-    dst_diffs = np.diff(geo_xy, axis=0)
-    src_length = np.sum(np.hypot(src_diffs[:, 0], src_diffs[:, 1]))
-    dst_length = np.sum(np.hypot(dst_diffs[:, 0], dst_diffs[:, 1]))
-    scale = dst_length / src_length if src_length > 0 else 1.0
-    
-    # step 3: Compute rotation: angle from first to last point
-    src_vec = src[-1] - src[0]
-    dst_vec = geo_xy[-1] - geo_xy[0]
-    src_angle = np.arctan2(src_vec[1], src_vec[0])
-    dst_angle = np.arctan2(dst_vec[1], dst_vec[0])
-    rotation = dst_angle - src_angle
-    
-    # step 4: Build affine matrix: translate to origin, rotate, scale, translate to destination
-    cos_r = np.cos(rotation)
-    sin_r = np.sin(rotation)
-    
-    # Affine: [X, Y, 1] = M @ [x, y, 1]
-    # M combines: translate(-src_center), rotate, scale, translate(dst_center)
-    M = np.array([
-        [scale * cos_r, -scale * sin_r, 0],
-        [scale * sin_r,  scale * cos_r, 0],
-        [0, 0, 1]
-    ], dtype=float)
-    
-    # step 5: Apply translation
-    offset = dst_center - scale * np.array([
-        cos_r * src_center[0] - sin_r * src_center[1],
-        sin_r * src_center[0] + cos_r * src_center[1]
-    ])
-    M[0, 2] = offset[0]
-    M[1, 2] = offset[1]
-    
-    return M
+    try:
+        if len(pixel_polyline) < 2 or len(geo_polyline_lonlat) < 2:
+            raise ValueError("Both polylines must contain at least 2 points")
+        
+        logger.info(f"Building affine transform with {len(pixel_polyline)} polyline points")
+        
+        # Collect all control point pairs
+        src_points = list(pixel_polyline)
+        geo_xy_points = [_lonlat_to_webmercator(lon, lat) for lon, lat in geo_polyline_lonlat]
+        
+        # Add extra control points if provided
+        if pixel_points and geo_points_lonlat:
+            logger.info(f"Adding {len(pixel_points)} additional control points")
+            src_points.extend(pixel_points)
+            geo_xy_points.extend([
+                _lonlat_to_webmercator(lon, lat) for lon, lat in geo_points_lonlat
+            ])
+        
+        src = np.array(src_points, dtype=float)
+        dst = np.array(geo_xy_points, dtype=float)
+        
+        logger.info(f"Source points shape: {src.shape}, Destination points shape: {dst.shape}")
+        
+        # Solve for affine transformation using least squares
+        # [X]   [a  b  tx] [x]
+        # [Y] = [c  d  ty] [y]
+        # [1]   [0  0   1] [1]
+        
+        n = src.shape[0]
+        
+        # Build matrices for least squares: dst = A @ params
+        # For X: X = a*x + b*y + tx
+        # For Y: Y = c*x + d*y + ty
+        
+        A = np.zeros((2*n, 6))
+        b_vec = np.zeros(2*n)
+        
+        for i in range(n):
+            x, y = src[i]
+            X, Y = dst[i]
+            
+            # Row for X equation
+            A[2*i] = [x, y, 1, 0, 0, 0]
+            b_vec[2*i] = X
+            
+            # Row for Y equation  
+            A[2*i + 1] = [0, 0, 0, x, y, 1]
+            b_vec[2*i + 1] = Y
+        
+        # Solve least squares
+        params, residuals, rank, s = np.linalg.lstsq(A, b_vec, rcond=None)
+        
+        logger.info(f"Least squares - rank: {rank}, residuals shape: {residuals.shape if residuals.size > 0 else 'empty'}")
+        
+        if len(params) != 6:
+            raise ValueError(f"Expected 6 parameters, got {len(params)}")
+        
+        a, b_coef, tx, c, d, ty = params
+        
+        M = np.array([
+            [a, b_coef, tx],
+            [c, d, ty],
+            [0, 0, 1]
+        ], dtype=float)
+        
+        logger.info(f"Affine matrix computed successfully")
+        return M
+        
+    except Exception as e:
+        logger.error(f"Error building affine transform: {str(e)}", exc_info=True)
+        raise
 
 
 def georeference_pixel_features(
     pixel_feature_collections: List[Dict[str, Any]],
     pixel_polyline: List[XY],
     geo_polyline_lonlat: List[LonLat],
+    pixel_points: Optional[List[XY]] = None,
+    geo_points_lonlat: Optional[List[LonLat]] = None
 ) -> List[Dict[str, Any]]:
     """Apply affine-based georeferencing to pixel-space feature collections.
 
     Returns new FeatureCollections in EPSG:4326 (lon/lat).
     """
-    if not pixel_feature_collections:
-        return []
+    try:
+        if not pixel_feature_collections:
+            logger.warning("No pixel feature collections provided")
+            return []
 
-    # Basic validation/logging to help debug unexpected input types
-    if pixel_polyline and isinstance(pixel_polyline[0], dict):
-        raise TypeError(f"pixel_polyline contains dicts, expected (x, y) pairs: first={pixel_polyline[0]}")
-    if geo_polyline_lonlat and isinstance(geo_polyline_lonlat[0], dict):
-        raise TypeError(f"geo_polyline_lonlat contains dicts, expected (lon, lat) pairs: first={geo_polyline_lonlat[0]}")
+        # Basic validation/logging to help debug unexpected input types
+        if pixel_polyline and isinstance(pixel_polyline[0], dict):
+            raise TypeError(f"pixel_polyline contains dicts, expected (x, y) pairs: first={pixel_polyline[0]}")
+        if geo_polyline_lonlat and isinstance(geo_polyline_lonlat[0], dict):
+            raise TypeError(f"geo_polyline_lonlat contains dicts, expected (lon, lat) pairs: first={geo_polyline_lonlat[0]}")
 
-    affine_matrix = build_affine_from_control_polylines(pixel_polyline, geo_polyline_lonlat)
+        logger.info(f"Georeferencing {len(pixel_feature_collections)} feature collections")
+        affine_matrix = build_affine_from_control_polylines_and_points(
+            pixel_polyline, geo_polyline_lonlat, pixel_points, geo_points_lonlat
+        )
 
-    def _affine_to_3857(x, y, z=None):
-        """Apply affine transform: pixel coords -> WebMercator"""
-        x_arr = np.asarray(x, dtype=float).ravel()
-        y_arr = np.asarray(y, dtype=float).ravel()
-        
-        # Homogeneous coords
-        pts = np.vstack([x_arr, y_arr, np.ones_like(x_arr)])
-        transformed = affine_matrix @ pts
-        
-        X = transformed[0, :]
-        Y = transformed[1, :]
-        
-        if z is None:
-            return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape)
-        return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape), z
+        def _affine_to_3857(x, y, z=None):
+            """Apply affine transform: pixel coords -> WebMercator"""
+            x_arr = np.asarray(x, dtype=float).ravel()
+            y_arr = np.asarray(y, dtype=float).ravel()
+            
+            # Homogeneous coords
+            pts = np.vstack([x_arr, y_arr, np.ones_like(x_arr)])
+            transformed = affine_matrix @ pts
+            
+            X = transformed[0, :]
+            Y = transformed[1, :]
+            
+            if z is None:
+                return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape)
+            return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape), z
 
-    def _to_lonlat(x, y, z=None):
-        x_arr = np.asarray(x, dtype=float)
-        y_arr = np.asarray(y, dtype=float)
-        lons = np.empty_like(x_arr)
-        lats = np.empty_like(y_arr)
-        for i in range(x_arr.size):
-            lon, lat = _webmercator_to_lonlat(float(x_arr[i]), float(y_arr[i]))
-            lons[i] = lon
-            lats[i] = lat
-        if z is None:
-            return lons, lats
-        return lons, lats, z
+        def _to_lonlat(x, y, z=None):
+            x_arr = np.asarray(x, dtype=float)
+            y_arr = np.asarray(y, dtype=float)
+            lons = np.empty_like(x_arr)
+            lats = np.empty_like(y_arr)
+            for i in range(x_arr.size):
+                lon, lat = _webmercator_to_lonlat(float(x_arr.flat[i]), float(y_arr.flat[i]))
+                lons.flat[i] = lon
+                lats.flat[i] = lat
+            if z is None:
+                return lons, lats
+            return lons, lats, z
 
-    georef_collections: List[Dict[str, Any]] = []
+        georef_collections: List[Dict[str, Any]] = []
 
-    for fc in pixel_feature_collections:
-        if fc.get("type") != "FeatureCollection":
-            continue
-        new_features: List[Dict[str, Any]] = []
-        for feat in fc.get("features", []):
-            try:
-                geom = shape(feat.get("geometry"))
-            except Exception:
+        for fc_idx, fc in enumerate(pixel_feature_collections):
+            if fc.get("type") != "FeatureCollection":
+                logger.warning(f"Skipping non-FeatureCollection at index {fc_idx}")
                 continue
+            new_features: List[Dict[str, Any]] = []
+            for feat_idx, feat in enumerate(fc.get("features", [])):
+                try:
+                    geom = shape(feat.get("geometry"))
+                except Exception as e:
+                    logger.warning(f"Failed to parse geometry at feature {feat_idx}: {e}")
+                    continue
 
-            geom_3857 = transform(_affine_to_3857, geom)
-            geom_wgs84 = transform(_to_lonlat, geom_3857)
+                try:
+                    geom_3857 = transform(_affine_to_3857, geom)
+                    geom_wgs84 = transform(_to_lonlat, geom_3857)
+                except Exception as e:
+                    logger.error(f"Failed to transform feature {feat_idx}: {e}", exc_info=True)
+                    continue
 
-            props = dict(feat.get("properties", {}))
-            props["is_pixel_space"] = False
-            props["is_georeferenced"] = True
-            props["crs"] = "EPSG:4326"
+                props = dict(feat.get("properties", {}))
+                props["is_pixel_space"] = False
+                props["is_georeferenced"] = True
+                props["crs"] = "EPSG:4326"
 
-            new_features.append(
-                {
-                    "type": "Feature",
-                    "properties": props,
-                    "geometry": mapping(geom_wgs84),
-                }
-            )
+                new_features.append(
+                    {
+                        "type": "Feature",
+                        "properties": props,
+                        "geometry": mapping(geom_wgs84),
+                    }
+                )
 
-        if new_features:
-            georef_collections.append(
-                {
-                    "type": "FeatureCollection",
-                    "features": new_features,
-                }
-            )
+            if new_features:
+                georef_collections.append(
+                    {
+                        "type": "FeatureCollection",
+                        "features": new_features,
+                    }
+                )
 
-    return georef_collections
+        logger.info(f"Successfully georeferenced {len(georef_collections)} collections")
+        return georef_collections
+        
+    except Exception as e:
+        logger.error(f"Error in georeference_pixel_features: {str(e)}", exc_info=True)
+        raise

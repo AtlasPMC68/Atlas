@@ -33,6 +33,8 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 async def upload_and_process_map(
     image_polyline: str | None = Form(None),
     world_polyline: str  | None = Form(None),
+    image_point: str | None = Form(None),
+    world_point: str  | None = Form(None),
     file: UploadFile = File(...), 
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -40,6 +42,8 @@ async def upload_and_process_map(
     logger.debug(f"Logger debug camarche tu")
     logger.info(f"image polyline for the pixels{image_polyline}")
     logger.info(f"world polyline for the coordinates{world_polyline}")
+    logger.info(f"image point for the pixels{image_point}")
+    logger.info(f"world point for the coordinates{world_point}")
     
     """Upload une carte et lance l'extraction de données"""
     
@@ -52,6 +56,10 @@ async def upload_and_process_map(
     
     pixel_control_polyline = None
     geo_control_polyline = None
+    pixel_control_points = None
+    geo_control_points = None
+    
+    # Parse polyline (list of points)
     if image_polyline and world_polyline:
         img_points = json.loads(image_polyline)      # list of {"x":..,"y":..}
         world_points = json.loads(world_polyline)    # list of {"lat":..,"lng":..}
@@ -59,10 +67,18 @@ async def upload_and_process_map(
         pixel_control_polyline = [
             (float(p["x"]), float(p["y"])) for p in img_points
         ]
-        # note: TPS code expects (lon, lat)
         geo_control_polyline = [
             (float(p["lng"]), float(p["lat"])) for p in world_points
         ]
+
+    # Parse single point (not in a list)
+    if image_point and world_point:
+        img_point = json.loads(image_point)          # single {"x":..,"y":..}
+        world_pt = json.loads(world_point)           # single {"lat":..,"lng":..}
+
+        # Wrap in list for consistency with function signature
+        pixel_control_points = [(float(img_point["x"]), float(img_point["y"]))]
+        geo_control_points = [(float(world_pt["lng"]), float(world_pt["lat"]))]
     
     # Lire le contenu du fichier
     file_content = await file.read()
@@ -93,6 +109,8 @@ async def upload_and_process_map(
             str(map_id),
             pixel_control_polyline,
             geo_control_polyline,
+            pixel_control_points,
+            geo_control_points
         )
         #TODO: either delete the created map if task fails or create cleanup mechanism
         

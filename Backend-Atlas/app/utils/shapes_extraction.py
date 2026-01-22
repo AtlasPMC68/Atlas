@@ -102,9 +102,9 @@ def extract_shapes(
         }
 
         shapes_metadata.append(classification_details)
-        print(
-            f"[SHAPE EXTRACT] Saved shape {idx}: {shape['type']} (area={shape['area']:.1f}, conf={shape['confidence']:.2f})"
-        )
+        # print(
+        #     f"[SHAPE EXTRACT] Saved shape {idx}: {shape['type']} (area={shape['area']:.1f}, conf={shape['confidence']:.2f})"
+        # )
 
     # Save metadata to a JSON file
     metadata_path = os.path.join(image_output_dir, "shapes_metadata.json")

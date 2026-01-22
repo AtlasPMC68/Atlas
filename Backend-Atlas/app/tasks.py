@@ -129,6 +129,8 @@ def process_map_extraction(
     map_id: str,
     pixel_control_polyline: list | None = None,
     geo_control_polyline: list | None = None,
+    pixel_points: list | None = None,
+    geo_points_lonlat: list | None = None,
 ):
     """"""
     logger.info(f"Starting map processing for {filename}")
@@ -265,6 +267,8 @@ def process_map_extraction(
                     pixel_features,
                     pixel_control_polyline,
                     geo_control_polyline,
+                    pixel_points,
+                    geo_points_lonlat
                 )
                 if georef_features:
                     asyncio.run(persist_features(map_uuid, georef_features))
