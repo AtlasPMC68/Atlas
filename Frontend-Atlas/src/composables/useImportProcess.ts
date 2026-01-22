@@ -24,7 +24,7 @@ export function useImportProcess() {
     // Add polylines if provided
     if (imagePolyline && worldPolyline) {
       formData.append("image_polyline", JSON.stringify(imagePolyline.map(([x, y]) => ({ x, y }))));
-      formData.append("world_polyline", JSON.stringify(worldPolyline.map(([lng, lat]) => ({ lng, lat }))));
+      formData.append("world_polyline", JSON.stringify(worldPolyline.map(([lat, lng]) => ({ lat, lng }))));
       console.log("polines", formData);
     }
     formData.append("file", file);

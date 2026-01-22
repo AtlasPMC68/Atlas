@@ -68,19 +68,38 @@ function resetPolylines() {
 
 function onConfirm() {
   if (!canConfirm.value) return;
-  // Ensure both polylines have the same number of points
+  
   const world = worldPolyline.value || [];
   const image = imagePolyline.value || [];
 
-  const minLen = Math.min(world.length, image.length);
+  // Resample both polylines to exactly 20 evenly-spaced points
+  const resampledWorld = resamplePolyline(world, 20);
+  const resampledImage = resamplePolyline(image, 20);
 
-  const trimmedWorld = world.slice(0, 20);
-  const trimmedImage = image.slice(0, 20);
+  console.log("Resampled polylines:", {
+    originalWorld: world.length,
+    resampledWorld: resampledWorld.length,
+    originalImage: image.length,
+    resampledImage: resampledImage.length
+  });
 
   emit("confirmed", {
-    worldPolyline: trimmedWorld,
-    imagePolyline: trimmedImage,
+    worldPolyline: resampledWorld,
+    imagePolyline: resampledImage,
   });
+}
+
+function resamplePolyline(points, targetCount) {
+  if (points.length <= targetCount) {
+    return [...points];
+  }
+  
+  const resampled = [];
+  for (let i = 0; i < targetCount; i++) {
+    const index = Math.round((i / (targetCount - 1)) * (points.length - 1));
+    resampled.push(points[index]);
+  }
+  return resampled;
 }
 
 watch(

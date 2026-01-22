@@ -94,32 +94,65 @@ class ThinPlateSpline2D:
         return X, Y
 
 
-def build_tps_from_control_polylines(
+def build_affine_from_control_polylines(
     pixel_polyline: List[XY],
     geo_polyline_lonlat: List[LonLat],
-    n_samples: Optional[int] = None,
-) -> ThinPlateSpline2D:
-    """Build a TPS transform from a pixel-space polyline and geographic polyline.
-
-    pixel_polyline: list of (x_px, y_px)
-    geo_polyline_lonlat: list of (lon, lat)
-    n_samples: optional number of samples; if None uses max(len(px), len(geo)).
+) -> np.ndarray:
+    """Build an affine transform (3x3 matrix) from control polylines.
+    
+    Computes scale, rotation, and translation based on the two polylines.
+    Much more stable than TPS when you only have a single control line.
+    
+    Returns: 3x3 affine matrix for transforming [x, y, 1] -> [X, Y, 1]
     """
     if len(pixel_polyline) < 2 or len(geo_polyline_lonlat) < 2:
         raise ValueError("Both polylines must contain at least 2 points")
-
-    if n_samples is None:
-        n_samples = max(len(pixel_polyline), len(geo_polyline_lonlat))
-
-    src_resampled = _resample_polyline(pixel_polyline, n_samples)
-
-    # Convert geographic polyline to WebMercator first, then resample
+    
+    # Convert to arrays
+    src = np.array(pixel_polyline, dtype=float)
     geo_xy = np.array([
         _lonlat_to_webmercator(lon, lat) for lon, lat in geo_polyline_lonlat
     ], dtype=float)
-    dst_resampled = _resample_polyline(geo_xy.tolist(), n_samples)
-
-    return ThinPlateSpline2D(src_resampled, dst_resampled)
+    
+    # Compute centroids
+    src_center = src.mean(axis=0)
+    dst_center = geo_xy.mean(axis=0)
+    
+    # Compute average scale based on line lengths
+    src_diffs = np.diff(src, axis=0)
+    dst_diffs = np.diff(geo_xy, axis=0)
+    src_length = np.sum(np.hypot(src_diffs[:, 0], src_diffs[:, 1]))
+    dst_length = np.sum(np.hypot(dst_diffs[:, 0], dst_diffs[:, 1]))
+    scale = dst_length / src_length if src_length > 0 else 1.0
+    
+    # Compute rotation: angle from first to last point
+    src_vec = src[-1] - src[0]
+    dst_vec = geo_xy[-1] - geo_xy[0]
+    src_angle = np.arctan2(src_vec[1], src_vec[0])
+    dst_angle = np.arctan2(dst_vec[1], dst_vec[0])
+    rotation = dst_angle - src_angle
+    
+    # Build affine matrix: translate to origin, rotate, scale, translate to destination
+    cos_r = np.cos(rotation)
+    sin_r = np.sin(rotation)
+    
+    # Affine: [X, Y, 1] = M @ [x, y, 1]
+    # M combines: translate(-src_center), rotate, scale, translate(dst_center)
+    M = np.array([
+        [scale * cos_r, -scale * sin_r, 0],
+        [scale * sin_r,  scale * cos_r, 0],
+        [0, 0, 1]
+    ], dtype=float)
+    
+    # Apply translation
+    offset = dst_center - scale * np.array([
+        cos_r * src_center[0] - sin_r * src_center[1],
+        sin_r * src_center[0] + cos_r * src_center[1]
+    ])
+    M[0, 2] = offset[0]
+    M[1, 2] = offset[1]
+    
+    return M
 
 
 def georeference_pixel_features(
@@ -127,7 +160,7 @@ def georeference_pixel_features(
     pixel_polyline: List[XY],
     geo_polyline_lonlat: List[LonLat],
 ) -> List[Dict[str, Any]]:
-    """Apply TPS-based georeferencing to pixel-space feature collections.
+    """Apply affine-based georeferencing to pixel-space feature collections.
 
     Returns new FeatureCollections in EPSG:4326 (lon/lat).
     """
@@ -140,15 +173,23 @@ def georeference_pixel_features(
     if geo_polyline_lonlat and isinstance(geo_polyline_lonlat[0], dict):
         raise TypeError(f"geo_polyline_lonlat contains dicts, expected (lon, lat) pairs: first={geo_polyline_lonlat[0]}")
 
-    tps = build_tps_from_control_polylines(pixel_polyline, geo_polyline_lonlat)
+    affine_matrix = build_affine_from_control_polylines(pixel_polyline, geo_polyline_lonlat)
 
-    def _tps_to_3857(x, y, z=None):
-        x_arr = np.asarray(x, dtype=float)
-        y_arr = np.asarray(y, dtype=float)
-        X, Y = tps(x_arr, y_arr)
+    def _affine_to_3857(x, y, z=None):
+        """Apply affine transform: pixel coords -> WebMercator"""
+        x_arr = np.asarray(x, dtype=float).ravel()
+        y_arr = np.asarray(y, dtype=float).ravel()
+        
+        # Homogeneous coords
+        pts = np.vstack([x_arr, y_arr, np.ones_like(x_arr)])
+        transformed = affine_matrix @ pts
+        
+        X = transformed[0, :]
+        Y = transformed[1, :]
+        
         if z is None:
-            return X, Y
-        return X, Y, z
+            return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape)
+        return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape), z
 
     def _to_lonlat(x, y, z=None):
         x_arr = np.asarray(x, dtype=float)
@@ -168,7 +209,6 @@ def georeference_pixel_features(
     for fc in pixel_feature_collections:
         if fc.get("type") != "FeatureCollection":
             continue
-
         new_features: List[Dict[str, Any]] = []
         for feat in fc.get("features", []):
             try:
@@ -176,7 +216,7 @@ def georeference_pixel_features(
             except Exception:
                 continue
 
-            geom_3857 = transform(_tps_to_3857, geom)
+            geom_3857 = transform(_affine_to_3857, geom)
             geom_wgs84 = transform(_to_lonlat, geom_3857)
 
             props = dict(feat.get("properties", {}))
