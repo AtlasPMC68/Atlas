@@ -103,6 +103,8 @@ def build_features(
             "is_pixel_space": True,
             "image_width": image_width,
             "image_height": image_height,
+            "start_date": "1700-01-01",
+            "end_date": "2026-01-01",
         },
         "geometry": merged.__geo_interface__,
     }

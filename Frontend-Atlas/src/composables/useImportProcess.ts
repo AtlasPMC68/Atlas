@@ -20,14 +20,14 @@ export function useImportProcess() {
 
     // Upload fichier + polylines → POST /maps/upload
     const formData = new FormData();
-    formData.append("file", file);
     
     // Add polylines if provided
     if (imagePolyline && worldPolyline) {
       formData.append("image_polyline", JSON.stringify(imagePolyline.map(([x, y]) => ({ x, y }))));
-      formData.append("world_polyline", JSON.stringify(worldPolyline.map(([lat, lng]) => ({ lat, lng }))));
+      formData.append("world_polyline", JSON.stringify(worldPolyline.map(([lng, lat]) => ({ lng, lat }))));
       console.log("polines", formData);
     }
+    formData.append("file", file);
 
     try {
       const response = await fetch("http://localhost:8000/maps/upload", {

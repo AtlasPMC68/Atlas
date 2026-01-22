@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from ..tasks import process_map_extraction
 from ..celery_app import celery_app
 from fastapi import Depends, APIRouter
@@ -31,10 +31,10 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
 @router.post("/upload")
 async def upload_and_process_map(
+    image_polyline: str | None = Form(None),
+    world_polyline: str  | None = Form(None),
     file: UploadFile = File(...), 
     session: AsyncSession = Depends(get_async_session),
-    image_polyline: str = None,
-    world_polyline: str = None
 ):
     
     logger.debug(f"Logger debug camarche tu")
@@ -49,6 +49,20 @@ async def upload_and_process_map(
             status_code=400, 
             detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
         )
+    
+    pixel_control_polyline = None
+    geo_control_polyline = None
+    if image_polyline and world_polyline:
+        img_points = json.loads(image_polyline)      # list of {"x":..,"y":..}
+        world_points = json.loads(world_polyline)    # list of {"lat":..,"lng":..}
+
+        pixel_control_polyline = [
+            (float(p["x"]), float(p["y"])) for p in img_points
+        ]
+        # note: TPS code expects (lon, lat)
+        geo_control_polyline = [
+            (float(p["lng"]), float(p["lat"])) for p in world_points
+        ]
     
     # Lire le contenu du fichier
     file_content = await file.read()
@@ -73,7 +87,13 @@ async def upload_and_process_map(
             access_level="private",
         )
         # Lancer la tâche Celery (pass map_id as string for JSON serialization)
-        task = process_map_extraction.delay(file.filename, file_content, str(map_id))
+        task = process_map_extraction.delay(
+            file.filename, 
+            file_content, 
+            str(map_id),
+            pixel_control_polyline,
+            geo_control_polyline,
+        )
         #TODO: either delete the created map if task fails or create cleanup mechanism
         
         logger.info(f"Map processing task started: {task.id} for file {file.filename}")

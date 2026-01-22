@@ -68,9 +68,18 @@ function resetPolylines() {
 
 function onConfirm() {
   if (!canConfirm.value) return;
+  // Ensure both polylines have the same number of points
+  const world = worldPolyline.value || [];
+  const image = imagePolyline.value || [];
+
+  const minLen = Math.min(world.length, image.length);
+
+  const trimmedWorld = world.slice(0, 20);
+  const trimmedImage = image.slice(0, 20);
+
   emit("confirmed", {
-    worldPolyline: worldPolyline.value,
-    imagePolyline: imagePolyline.value,
+    worldPolyline: trimmedWorld,
+    imagePolyline: trimmedImage,
   });
 }
 

@@ -136,32 +136,12 @@ def process_map_extraction(
     # Ensure we are working with a UUID instance inside the task
     map_uuid = UUID(map_id)
 
-    # For now, derive the pixel-space control polyline automatically from the image
-    # bottom_edge_polyline_px returns a dict; we only need the list of (x, y) points
-    edge_info = bottom_edge_polyline_px(file_content)
-    pixel_control_polyline = edge_info["polyline_px"]
-    geo_control_polyline = [
-        [-73.6000, 45.5000],
-        [-73.5995, 45.5000],
-        [-73.5990, 45.5000],
-        [-73.5984, 45.5000],
-        [-73.5979, 45.5000],
-        [-73.5974, 45.5000],
-        [-73.5968, 45.5000],
-        [-73.5963, 45.5000],
-        [-73.5958, 45.5000],
-        [-73.5953, 45.5000],
-        [-73.5947, 45.5000],
-        [-73.5942, 45.5000],
-        [-73.5937, 45.5000],
-        [-73.5932, 45.5000],
-        [-73.5926, 45.5000],
-        [-73.5921, 45.5000],
-        [-73.5916, 45.5000],
-        [-73.5911, 45.5000],
-        [-73.5905, 45.5000],
-        [-73.5900, 45.5000]
-    ]
+    logger.info(
+        f"[DEBUG] Georef input types: pixel_polyline[0]={type(pixel_control_polyline[0])}, geo_polyline[0]={type(geo_control_polyline[0])}"
+    )
+    logger.info(
+        f"[DEBUG] First pixel point: {pixel_control_polyline[0]}, first geo point: {geo_control_polyline[0]}"
+    )
 
     try:
         # Step 1: temp save
@@ -193,61 +173,61 @@ def process_map_extraction(
         image.flags.writeable = False # Makes image immutable
         validate_file_extension(tmp_file_path)
 
-        # Step 3: Extraction OCR
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 3,
-                "total": nb_task,
-                "status": "Extracting text with EasyOCR",
-            },
-        )
-        time.sleep(2)
+        # # Step 3: Extraction OCR
+        # self.update_state(
+        #     state="PROGRESS",
+        #     meta={
+        #         "current": 3,
+        #         "total": nb_task,
+        #         "status": "Extracting text with EasyOCR",
+        #     },
+        # )
+        # time.sleep(2)
 
-        # GPU acceleration make the text extraction MUCH faster i
-        extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
+        # # GPU acceleration make the text extraction MUCH faster i
+        # extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
 
-        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
-        # Tokenize OCR text to single words and run city detection per token
-        try:
-            tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
-            for tok in tokens:
-                try:
-                    candidate = find_first_city(tok)
-                except Exception as e:
-                    logger.debug(f"find_first_city error for token '{tok}': {e}")
-                    # treat as not found but persist the token
-                    candidate = {"found": False, "query": tok, "name": tok, "lat": 0.0, "lon": 0.0}
+        # # TODO : Amener ca dans la fonction de detection de texte ===========================================================
+        # # Tokenize OCR text to single words and run city detection per token
+        # try:
+        #     tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
+        #     for tok in tokens:
+        #         try:
+        #             candidate = find_first_city(tok)
+        #         except Exception as e:
+        #             logger.debug(f"find_first_city error for token '{tok}': {e}")
+        #             # treat as not found but persist the token
+        #             candidate = {"found": False, "query": tok, "name": tok, "lat": 0.0, "lon": 0.0}
 
-                # Build feature using returned candidate; if not found, coordinates will be 0,0
-                logger.info(f"City detection result for token '{tok}': {candidate}")
-                city_feature = {
-                    "type": "Feature",
-                    "properties": {
-                        "name": candidate.get("name") or tok,
-                        "show": bool(candidate.get("found")),
-                        "mapElementType": "point",
-                        "color_name": "black",
-                        "color_rgb": [0, 0, 0],
-                        "start_date": "0-01-01",
-                        "end_date": "5000-01-01",
-                    },
-                    "geometry": {"type": "Point", "coordinates": [candidate.get("lon") or 0.0, candidate.get("lat") or 0.0]},
-                }
+        #         # Build feature using returned candidate; if not found, coordinates will be 0,0
+        #         logger.info(f"City detection result for token '{tok}': {candidate}")
+        #         city_feature = {
+        #             "type": "Feature",
+        #             "properties": {
+        #                 "name": candidate.get("name") or tok,
+        #                 "show": bool(candidate.get("found")),
+        #                 "mapElementType": "point",
+        #                 "color_name": "black",
+        #                 "color_rgb": [0, 0, 0],
+        #                 "start_date": "0-01-01",
+        #                 "end_date": "5000-01-01",
+        #             },
+        #             "geometry": {"type": "Point", "coordinates": [candidate.get("lon") or 0.0, candidate.get("lat") or 0.0]},
+        #         }
 
-                city_feature_collection = {
-                    "type": "FeatureCollection",
-                    "features": [city_feature],
-                }
+        #         city_feature_collection = {
+        #             "type": "FeatureCollection",
+        #             "features": [city_feature],
+        #         }
 
-                try:
-                    asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
-                    logger.info(f"Persisted city token feature: {candidate.get('name')}")
-                except Exception as e:
-                    logger.error(f"Failed to persist city token '{tok}': {e}")
+        #         try:
+        #             asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
+        #             logger.info(f"Persisted city token feature: {candidate.get('name')}")
+        #         except Exception as e:
+        #             logger.error(f"Failed to persist city token '{tok}': {e}")
 
-        except Exception as e:
-            logger.error(f"City detection failed: {e}")
+        # except Exception as e:
+        #     logger.error(f"City detection failed: {e}")
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
@@ -332,34 +312,34 @@ def process_map_extraction(
         output_filename = f"{timestamp}_{base_name}.txt"
         output_path = os.path.join(output_dir, output_filename)
 
-        lines = [block[1] for block in extracted_text]
-        full_text = "\n".join(lines)
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== OCR EXTRACTION  ===\n")
-                f.write(f"Source File: {filename}\n")
-                f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
-                f.write(full_text)
+        #lines = [block[1] for block in extracted_text]
+        #full_text = "\n".join(lines)
+        # try:
+        #     with open(output_path, 'w', encoding='utf-8') as f:
+        #         f.write(f"=== OCR EXTRACTION  ===\n")
+        #         f.write(f"Source File: {filename}\n")
+        #         f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        #         f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
+        # #         f.write(full_text)
 
-            logger.info(f"Text saved to: {output_path}")
+        #     logger.info(f"Text saved to: {output_path}")
 
-        except Exception as e:
-            logger.error(f"Failed to save text file: {str(e)}")
-            output_path = f"ERROR: Could not save to {output_path}"
+        # except Exception as e:
+        #     logger.error(f"Failed to save text file: {str(e)}")
+        #     output_path = f"ERROR: Could not save to {output_path}"
 
         result = {
             "filename": filename,
-            "extracted_text": lines,
+            # "extracted_text": lines,
             "output_path": output_path,
             "shapes_result": shapes_result,
             "color_result": color_result,
             "status": "completed",
         }
 
-        logger.info(
-            f"Map processing completed for {filename}: {len(extracted_text)} characters extracted"
-        )
+        # logger.info(
+        #     f"Map processing completed for {filename}: {len(extracted_text)} characters extracted"
+        # )
 
         return result
 
