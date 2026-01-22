@@ -31,42 +31,6 @@ def _webmercator_to_lonlat(x: float, y: float) -> LonLat:
     lat = math.degrees(2.0 * math.atan(math.exp(y / R_EARTH)) - math.pi / 2.0)
     return lon, lat
 
-
-def _resample_polyline(points: List[XY], n_samples: int) -> np.ndarray:
-    """Resample a polyline to n_samples points using arc-length parameterization.
-
-    points: list of (x, y)
-    returns: array of shape (n_samples, 2)
-    """
-    if len(points) < 2:
-        raise ValueError("Polyline must contain at least 2 points")
-
-    pts = np.asarray(points, dtype=float)
-    diffs = np.diff(pts, axis=0)
-    seg_lengths = np.hypot(diffs[:, 0], diffs[:, 1])
-    cumdist = np.concatenate([[0.0], np.cumsum(seg_lengths)])
-
-    if cumdist[-1] == 0:
-        # Degenerate polyline; all points identical
-        return np.repeat(pts[:1], n_samples, axis=0)
-
-    target_dist = np.linspace(0.0, cumdist[-1], n_samples)
-    resampled = np.empty((n_samples, 2), dtype=float)
-
-    j = 0
-    for i, td in enumerate(target_dist):
-        while j < len(cumdist) - 2 and td > cumdist[j + 1]:
-            j += 1
-        t0, t1 = cumdist[j], cumdist[j + 1]
-        if t1 == t0:
-            alpha = 0.0
-        else:
-            alpha = (td - t0) / (t1 - t0)
-        resampled[i] = (1 - alpha) * pts[j] + alpha * pts[j + 1]
-
-    return resampled
-
-
 class ThinPlateSpline2D:
     """Simple 2D Thin-Plate Spline wrapper using scipy's Rbf.
 
@@ -114,25 +78,25 @@ def build_affine_from_control_polylines(
         _lonlat_to_webmercator(lon, lat) for lon, lat in geo_polyline_lonlat
     ], dtype=float)
     
-    # Compute centroids
+    # step 1: Compute centroids
     src_center = src.mean(axis=0)
     dst_center = geo_xy.mean(axis=0)
     
-    # Compute average scale based on line lengths
+    # step 2: Compute average scale based on line lengths
     src_diffs = np.diff(src, axis=0)
     dst_diffs = np.diff(geo_xy, axis=0)
     src_length = np.sum(np.hypot(src_diffs[:, 0], src_diffs[:, 1]))
     dst_length = np.sum(np.hypot(dst_diffs[:, 0], dst_diffs[:, 1]))
     scale = dst_length / src_length if src_length > 0 else 1.0
     
-    # Compute rotation: angle from first to last point
+    # step 3: Compute rotation: angle from first to last point
     src_vec = src[-1] - src[0]
     dst_vec = geo_xy[-1] - geo_xy[0]
     src_angle = np.arctan2(src_vec[1], src_vec[0])
     dst_angle = np.arctan2(dst_vec[1], dst_vec[0])
     rotation = dst_angle - src_angle
     
-    # Build affine matrix: translate to origin, rotate, scale, translate to destination
+    # step 4: Build affine matrix: translate to origin, rotate, scale, translate to destination
     cos_r = np.cos(rotation)
     sin_r = np.sin(rotation)
     
@@ -144,7 +108,7 @@ def build_affine_from_control_polylines(
         [0, 0, 1]
     ], dtype=float)
     
-    # Apply translation
+    # step 5: Apply translation
     offset = dst_center - scale * np.array([
         cos_r * src_center[0] - sin_r * src_center[1],
         sin_r * src_center[0] + cos_r * src_center[1]
