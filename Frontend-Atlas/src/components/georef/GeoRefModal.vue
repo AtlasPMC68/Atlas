@@ -12,12 +12,34 @@
         sur l'image importée (pixels). Cliquez pour ajouter des points.
       </p>
 
+      <div class="flex gap-2 mb-2">
+        <button
+          class="btn btn-sm"
+          :class="{ 'btn-primary': drawingMode === 'polyline' }"
+          @click="drawingMode = 'polyline'"
+        >
+          Mode Ligne
+        </button>
+        <button
+          class="btn btn-sm"
+          :class="{ 'btn-primary': drawingMode === 'point' }"
+          @click="drawingMode = 'point'"
+        >
+          Mode Point
+        </button>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-[320px]">
         <div class="border rounded-md overflow-hidden">
           <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
             Carte de référence (Leaflet)
           </h3>
-          <GeoRefBaseMap v-model="worldPolyline" class="h-80" />
+          <GeoRefBaseMap 
+            v-model="worldPolyline" 
+            v-model:point="worldPoint"
+            :drawing-mode="drawingMode"
+            class="h-80" 
+          />
         </div>
 
         <div class="border rounded-md overflow-hidden">
@@ -26,6 +48,8 @@
           </h3>
           <GeoRefImageMap
             v-model="imagePolyline"
+            v-model:point="imagePoint"
+            :drawing-mode="drawingMode"
             :image-url="imageUrl"
             class="h-80"
           />
@@ -54,8 +78,11 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "confirmed"]);
 
+const drawingMode = ref("polyline"); // 'polyline' or 'point'
 const worldPolyline = ref([]); // [ [lat,lng], ... ]
 const imagePolyline = ref([]); // [ [x,y], ... ]
+const worldPoint = ref(null); // [lat, lng] or null
+const imagePoint = ref(null); // [x, y] or null
 
 const canConfirm = computed(
   () => worldPolyline.value.length >= 2 && imagePolyline.value.length >= 2,
@@ -64,6 +91,8 @@ const canConfirm = computed(
 function resetPolylines() {
   worldPolyline.value = [];
   imagePolyline.value = [];
+  worldPoint.value = null;
+  imagePoint.value = null;
 }
 
 function onConfirm() {
@@ -86,6 +115,8 @@ function onConfirm() {
   emit("confirmed", {
     worldPolyline: resampledWorld,
     imagePolyline: resampledImage,
+    worldPoint: worldPoint.value,
+    imagePoint: imagePoint.value,
   });
 }
 

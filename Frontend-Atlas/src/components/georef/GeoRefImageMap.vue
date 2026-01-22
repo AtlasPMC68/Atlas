@@ -17,17 +17,28 @@
     />
 
     <svg
-      v-if="points.length > 0 && imageEl"
+      v-if="(points.length > 0 || props.point) && imageEl"
       class="absolute pointer-events-none"
       :style="svgStyle"
       :viewBox="`0 0 ${imageNaturalWidth} ${imageNaturalHeight}`"
       preserveAspectRatio="none"
     >
       <polyline
+        v-if="points.length > 0"
         :points="svgPoints"
         fill="none"
         stroke="#dc2626"
         stroke-width="2"
+      />
+      <circle
+        v-if="props.point"
+        :cx="props.point[0]"
+        :cy="props.point[1]"
+        r="6"
+        fill="#dc2626"
+        stroke="#dc2626"
+        stroke-width="2"
+        opacity="0.8"
       />
     </svg>
   </div>
@@ -41,13 +52,21 @@ const props = defineProps({
     type: Array,
     default: () => [], // [ [x,y], ... ] in image pixel space
   },
+  point: {
+    type: Array,
+    default: null, // [x, y] or null
+  },
+  drawingMode: {
+    type: String,
+    default: "polyline", // 'polyline' or 'point'
+  },
   imageUrl: {
     type: String,
     required: true,
   },
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "update:point"]);
 
 const container = ref(null);
 const imageEl = ref(null);
@@ -103,17 +122,52 @@ function updateSize() {
 
 function onMouseDown(event) {
   if (!container.value) return;
-  isDrawing = true;
-  addPointFromEvent(event);
+  
+  if (props.drawingMode === "point") {
+    // Point mode: single click to place a point
+    setPointFromEvent(event);
+  } else {
+    // Polyline mode: hold and drag to draw
+    isDrawing = true;
+    addPointFromEvent(event);
+  }
 }
 
 function onMouseMove(event) {
   if (!isDrawing || !container.value) return;
-  addPointFromEvent(event);
+  if (props.drawingMode === "polyline") {
+    addPointFromEvent(event);
+  }
 }
 
 function onMouseUp() {
   isDrawing = false;
+}
+
+function setPointFromEvent(event) {
+  if (!container.value || !imageEl.value) return;
+
+  const containerRect = container.value.getBoundingClientRect();
+  const imgRect = imageEl.value.getBoundingClientRect();
+
+  const cx = event.clientX - containerRect.left;
+  const cy = event.clientY - containerRect.top;
+
+  const imgLeft = imgRect.left - containerRect.left;
+  const imgTop = imgRect.top - containerRect.top;
+
+  const ix = cx - imgLeft;
+  const iy = cy - imgTop;
+
+  if (ix < 0 || iy < 0 || ix > imgRect.width || iy > imgRect.height) return;
+
+  const scaleX = imageEl.value.naturalWidth / imgRect.width;
+  const scaleY = imageEl.value.naturalHeight / imgRect.height;
+
+  const xPx = ix * scaleX;
+  const yPx = iy * scaleY;
+
+  emit("update:point", [xPx, yPx]);
 }
 
 function addPointFromEvent(event) {

@@ -111,6 +111,8 @@ const currentStep = ref(1);
 const showGeorefModal = ref(false);
 const worldPolyline = ref([]); // [ [lat,lng], ... ]
 const imagePolyline = ref([]); // [ [x,y], ... ]
+const worldPoint = ref(null); // [lat, lng] or null
+const imagePoint = ref(null); // [x, y] or null
 
 // Gestionnaires d'événements
 const handleFileSelected = (file) => {
@@ -126,10 +128,18 @@ async function startImportProcess() {
 async function handleGeorefConfirmed(payload) {
   imagePolyline.value = payload.imagePolyline;
   worldPolyline.value = payload.worldPolyline;
+  imagePoint.value = payload.imagePoint;
+  worldPoint.value = payload.worldPoint;
   showGeorefModal.value = false;
 
-  // Pass polylines directly to startImport
-  const result = await startImport(selectedFile.value, imagePolyline.value, worldPolyline.value);
+  // Pass polylines and points to startImport
+  const result = await startImport(
+    selectedFile.value, 
+    imagePolyline.value, 
+    worldPolyline.value,
+    imagePoint.value,
+    worldPoint.value
+  );
   if (result.success) {
     currentStep.value = 3;
   } else {

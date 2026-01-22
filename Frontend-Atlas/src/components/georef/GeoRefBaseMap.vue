@@ -21,15 +21,24 @@ const props = defineProps({
     type: Array,
     default: () => [], // [ [lat,lng], ... ]
   },
+  point: {
+    type: Array,
+    default: null, // [lat, lng] or null
+  },
+  drawingMode: {
+    type: String,
+    default: "polyline", // 'polyline' or 'point'
+  },
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "update:point"]);
 
 const mapContainer = ref(null);
 const isDrawingMode = ref(false);
 let isDrawingActive = false;
 let map = null;
 let polylineLayer = null;
+let pointMarker = null;
 const localPoints = ref([]); // internal copy of the polyline
 
 onMounted(() => {
@@ -88,17 +97,45 @@ function toggleDrawingMode() {
 }
 
 function onMapMouseDown(e) {
-  if (!isDrawingMode.value) return;
-  isDrawingActive = true;
-  addPoint(e.latlng);
+  
+  if (props.drawingMode === "point") {
+    // Point mode: single click to place a point
+    setPoint(e.latlng);
+  } else {
+    // Polyline mode: hold and drag to draw
+    isDrawingActive = true;
+    addPoint(e.latlng);
+  }
 }
 
 function onMapMouseMove(e) {
   if (!isDrawingMode.value || !isDrawingActive) return;
-  addPoint(e.latlng);
+  if (props.drawingMode === "polyline") {
+    addPoint(e.latlng);
+  }
 }
 
 function onMapMouseUp() {
+  isDrawingActive = false;
+}
+
+function setPoint(latlng) {
+  const point = [latlng.lat, latlng.lng];
+  emit("update:point", point);
+  
+  // Draw a marker for the point
+  if (pointMarker) {
+    map.removeLayer(pointMarker);
+  }
+  pointMarker = L.circleMarker(latlng, {
+    radius: 6,
+    fillColor: "#dc2626",
+    color: "#dc2626",
+    weight: 2,
+    opacity: 1,
+    fillOpacity: 0.8,
+  });
+  pointMarker.addTo(map)
   isDrawingActive = false;
 }
 

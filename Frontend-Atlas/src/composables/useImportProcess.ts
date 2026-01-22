@@ -10,7 +10,13 @@ const resultData = ref(null);
 const mapId = ref(null);
 
 export function useImportProcess() {
-  const startImport = async (file: File, imagePolyline?: any[], worldPolyline?: any[]) => {
+  const startImport = async (
+    file: File, 
+    imagePolyline?: any[], 
+    worldPolyline?: any[],
+    imagePoint?: any,
+    worldPoint?: any
+  ) => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
     isProcessing.value = true;
@@ -18,16 +24,26 @@ export function useImportProcess() {
     processingStep.value = "upload";
     processingProgress.value = 0;
 
-    // Upload fichier + polylines → POST /maps/upload
+    // Upload fichier + polylines + points → POST /maps/upload
     const formData = new FormData();
     
     // Add polylines if provided
     if (imagePolyline && worldPolyline) {
       formData.append("image_polyline", JSON.stringify(imagePolyline.map(([x, y]) => ({ x, y }))));
       formData.append("world_polyline", JSON.stringify(worldPolyline.map(([lat, lng]) => ({ lat, lng }))));
-      console.log("polines", formData);
     }
+    
+    // Add points if provided
+    if (imagePoint) {
+      formData.append("pixel_point", JSON.stringify({ x: imagePoint[0], y: imagePoint[1] }));
+    }
+    if (worldPoint) {
+      formData.append("world_point", JSON.stringify({ lat: worldPoint[0], lng: worldPoint[1] }));
+    }
+    
     formData.append("file", file);
+
+    console.log("form data", formData)
 
     try {
       const response = await fetch("http://localhost:8000/maps/upload", {
