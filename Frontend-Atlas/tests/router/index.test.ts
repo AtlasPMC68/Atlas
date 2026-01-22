@@ -9,6 +9,8 @@ vi.mock("../../src/keycloak", () => ({
     logout: vi.fn(),
     init: vi.fn(),
     updateToken: vi.fn().mockResolvedValue(true),
+    isTokenExpired: vi.fn().mockReturnValue(false),
+    didInitialize: true,
   },
 }));
 
