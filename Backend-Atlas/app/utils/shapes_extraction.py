@@ -139,6 +139,14 @@ def extract_shapes(
     )
 
     final_shapes = [shape for shape, contour in final_shapes_with_contours]
+    # Reconstruct debug images from the final shapes and contours
+    try:
+        reconstructed_mask_path, reconstructed_overlay_path = reconstruct_shapes_debug(
+            image, final_shapes_with_contours, image_output_dir
+        )
+    except Exception:
+        reconstructed_mask_path, reconstructed_overlay_path = None, None
+
     return {
         "total_shapes": len(filtered_shapes),
         "shapes": final_shapes,
@@ -146,6 +154,8 @@ def extract_shapes(
         "classification_stats": classification_stats,
         "debug_mask_path": debug_mask_path,
         "metadata_path": metadata_path,
+        "reconstructed_mask_path": reconstructed_mask_path,
+        "reconstructed_overlay_path": reconstructed_overlay_path,
     }
 
 
@@ -295,6 +305,53 @@ def save_shape_image(
     return shape_path
 
 
+def reconstruct_shapes_debug(
+    image: np.ndarray,
+    final_shapes_with_contours: List[Tuple[Dict, np.ndarray]],
+    output_dir: str,
+) -> Tuple[str, str]:
+    """Reconstruct a debug image from extracted contours.
+
+    Produces:
+      - reconstructed_mask.png : binary mask of all filled contours
+      - reconstructed_overlay.png : colored overlay of shapes blended with original
+
+    Returns paths (mask_path, overlay_path).
+    """
+    h, w = image.shape[:2]
+
+    # Binary mask (grayscale)
+    mask = np.zeros((h, w), dtype=np.uint8)
+
+    # Color image where each shape gets a random color
+    color_img = np.full((h, w, 3), 255, dtype=np.uint8)
+
+    for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
+        # draw filled contour on mask
+        cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
+
+        # random but reproducible color per shape (seeded by id for stability)
+        rng = np.random.RandomState(idx)
+        color = tuple(int(c) for c in rng.randint(50, 230, size=3))
+        cv2.drawContours(color_img, [contour], -1, color, thickness=cv2.FILLED)
+
+    # Save mask
+    mask_path = os.path.join(output_dir, "reconstructed_mask.png")
+    cv2.imwrite(mask_path, mask)
+
+    # Blend color_img with original for overlay (keep background white where no shape)
+    overlay = image.copy()
+    colored_only = cv2.bitwise_and(color_img, color_img, mask=mask)
+    inv_mask = cv2.bitwise_not(mask)
+    background = cv2.bitwise_and(overlay, overlay, mask=inv_mask)
+    composed = cv2.addWeighted(background, 0.3, colored_only, 0.7, 0)
+
+    overlay_path = os.path.join(output_dir, "reconstructed_overlay.png")
+    cv2.imwrite(overlay_path, composed)
+
+    return mask_path, overlay_path
+
+
 def classify_and_filter_shapes(
     shapes: List[Dict], min_confidence: float = 0.6, image_area: int = None
 ) -> Tuple[List[Dict], Dict]:
@@ -338,8 +395,8 @@ def classify_and_filter_shapes(
             required_confidence = 0.5  # More tolerant for compact city symbols
 
         # FOR DEBUGGING: Remove this line to accept unknown shapes
-        # if classification == "unknown":
-        #     required_confidence = 0.0
+        if classification == "unknown":
+            required_confidence = 0.0
 
         if confidence < required_confidence:
             stats["rejected_noise"] += 1
