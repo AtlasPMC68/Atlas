@@ -39,15 +39,7 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
 
   // Attach edit event handlers based on mode
   function attachEditEventHandlers(map) {
-    // Always attach selection and move events in edit mode
-    if (props.editMode) {
-      map.on("mousedown", (e) => eventsComposable.handleMoveMouseDown(e, map));
-      map.on("mousemove", (e) => eventsComposable.handleMoveMouseMove(e, map));
-      map.on("mouseup", (e) => eventsComposable.handleMoveMouseUp(e, map));
-      map.on("keydown", (e) => eventsComposable.handleKeyDown(e, map));
-    }
-
-    // Attach mode-specific handlers
+    // Attach mode-specific handlers first
     if (props.activeEditMode === "CREATE_LINE" || props.activeEditMode === "CREATE_FREE_LINE") {
       map.on("mousedown", (e) => eventsComposable.handleMouseDown(e, map));
       map.on("mousemove", (e) => eventsComposable.handleMouseMove(e, map));
@@ -59,11 +51,23 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
       map.on("dragstart", (e) => eventsComposable.preventDragDuringShapeDrawing(e));
     } else if (props.activeEditMode === "CREATE_POLYGON") {
       map.on("contextmenu", (e) => eventsComposable.handleRightClick(e, map));
+      // Map click handler for polygon creation
+      map.on("click", (e) => eventsComposable.handleMapClick(e, map));
+      map.on("dblclick", (e) => eventsComposable.handleMapDoubleClick(e, map));
+    } else if (props.activeEditMode === "CREATE_POINT") {
+      // Map click handler for point creation
+      map.on("click", (e) => eventsComposable.handleMapClick(e, map));
+    } else if (props.editMode && !props.activeEditMode) {
+      // Only attach selection/move events when NOT in an active drawing mode
+      map.on("mousedown", (e) => eventsComposable.handleMoveMouseDown(e, map));
+      map.on("mousemove", (e) => eventsComposable.handleMoveMouseMove(e, map));
+      map.on("mouseup", (e) => eventsComposable.handleMoveMouseUp(e, map));
     }
 
-    // Map click handler for point and polygon creation
-    map.on("click", (e) => eventsComposable.handleMapClick(e, map));
-    map.on("dblclick", (e) => eventsComposable.handleMapDoubleClick(e, map));
+    // Always attach keyboard events in edit mode
+    if (props.editMode) {
+      map.on("keydown", (e) => eventsComposable.handleKeyDown(e, map));
+    }
   }
 
   // Detach all edit event handlers
@@ -86,8 +90,8 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
     });
 
     // Also make drawn items clickable
-    if (layersComposable.drawnItems) {
-      layersComposable.drawnItems.eachLayer((layer) => {
+    if (layersComposable.drawnItems.value) {
+      layersComposable.drawnItems.value.eachLayer((layer) => {
         // For temporary layers, use a temporary ID
         const tempId = "temp_" + Math.random();
         layersComposable.featureLayerManager.makeLayerClickable(tempId, layer);
@@ -96,7 +100,7 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
   }
 
   // Handle feature click (for selection/deselection/deletion)
-  function handleFeatureClick(featureId, isCtrlPressed) {
+  function handleFeatureClick(featureId, isCtrlPressed, map) {
     const fid = String(featureId);
 
     // If in delete mode, delete the clicked item
@@ -136,15 +140,15 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
 
   // Cleanup edit mode
   function cleanupEditMode(map) {
-    if (layersComposable.drawnItems) {
+    if (layersComposable.drawnItems.value) {
       // Clean circles from drawnItems collection
-      layersComposable.drawnItems.eachLayer((layer) => {
+      layersComposable.drawnItems.value.eachLayer((layer) => {
         if (layer instanceof L.CircleMarker) {
           layersComposable.allCircles.value.delete(layer);
         }
       });
-      map.removeLayer(layersComposable.drawnItems);
-      layersComposable.drawnItems = null;
+      map.removeLayer(layersComposable.drawnItems.value);
+      layersComposable.drawnItems.value = null;
     }
 
     // Clean all events

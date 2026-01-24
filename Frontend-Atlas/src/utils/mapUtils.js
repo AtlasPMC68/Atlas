@@ -17,14 +17,14 @@ export function smoothFreeLinePoints(points) {
     const lastPoint = smoothed[smoothed.length - 1];
     const currentPoint = points[i];
 
-    // Calculate distance in pixels at screen level
-    const pixelDistance = L.CRS.EPSG3857.distance(
-      L.CRS.EPSG3857.latLngToPoint(lastPoint, 10),
-      L.CRS.EPSG3857.latLngToPoint(currentPoint, 10)
-    );
+    // Calculate simple geographic distance (degrees)
+    const latDiff = currentPoint.lat - lastPoint.lat;
+    const lngDiff = currentPoint.lng - lastPoint.lng;
+    const distance = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff);
 
     // Add the point only if it's far enough from the previous one
-    if (pixelDistance >= MAP_CONFIG.SMOOTHING_MIN_DISTANCE) {
+    // Using a very small threshold (0.0001 degrees ≈ 11 meters at equator)
+    if (distance >= 0.00001) {
       smoothed.push(currentPoint);
     }
   }

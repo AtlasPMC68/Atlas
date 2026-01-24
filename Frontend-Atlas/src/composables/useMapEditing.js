@@ -46,7 +46,7 @@ export function useMapEditing(props, emit) {
       }
     );
 
-    layersComposable.drawnItems.addLayer(square);
+    layersComposable.drawnItems.value.addLayer(square);
 
     // Create feature
     const feature = squareToFeatureFromCenter(center, sizePoint, map);
@@ -84,7 +84,7 @@ export function useMapEditing(props, emit) {
       }
     );
 
-    layersComposable.drawnItems.addLayer(rectangle);
+    layersComposable.drawnItems.value.addLayer(rectangle);
 
     const feature = rectangleToFeatureFromCorners(startCorner, endCorner);
 
@@ -112,7 +112,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(circle);
+    layersComposable.drawnItems.value.addLayer(circle);
 
     const feature = circleToFeatureFromCenter(center, edgePoint, map);
 
@@ -150,7 +150,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(triangle);
+    layersComposable.drawnItems.value.addLayer(triangle);
 
     const feature = triangleToFeatureFromCenter(center, sizePoint, map);
 
@@ -193,7 +193,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(oval);
+    layersComposable.drawnItems.value.addLayer(oval);
 
     const feature = ovalToFeatureFromCenter(center, heightPoint, widthPoint);
 
@@ -228,7 +228,7 @@ export function useMapEditing(props, emit) {
     // Add to circle collection
     layersComposable.allCircles.value.add(circle);
 
-    layersComposable.drawnItems.addLayer(circle);
+    layersComposable.drawnItems.value.addLayer(circle);
 
     // Create feature
     const feature = {
@@ -264,7 +264,7 @@ export function useMapEditing(props, emit) {
       opacity: 1.0,
     });
 
-    layersComposable.drawnItems.addLayer(line);
+    layersComposable.drawnItems.value.addLayer(line);
 
     // Create feature
     const feature = {
@@ -304,7 +304,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(polygon);
+    layersComposable.drawnItems.value.addLayer(polygon);
 
     // Create feature
     const feature = {
@@ -340,7 +340,7 @@ export function useMapEditing(props, emit) {
 
     // Remove temporary line
     if (tempFreeLine) {
-      layersComposable.drawnItems.removeLayer(tempFreeLine);
+      layersComposable.drawnItems.value.removeLayer(tempFreeLine);
     }
 
     // Create final smoothed line WITHOUT arrowheads
@@ -350,7 +350,7 @@ export function useMapEditing(props, emit) {
       opacity: 1.0,
     });
 
-    layersComposable.drawnItems.addLayer(freeLine);
+    layersComposable.drawnItems.value.addLayer(freeLine);
 
     // Create and save feature automatically
     const feature = {
@@ -386,7 +386,7 @@ export function useMapEditing(props, emit) {
   function updateTempSquareFromCenter(center, sizePoint, map, layersComposable, tempShape) {
     // Clean previous shape
     if (tempShape) {
-      layersComposable.drawnItems.removeLayer(tempShape);
+      layersComposable.drawnItems.value.removeLayer(tempShape);
     }
 
     // Use pixel coordinates to create perfect square
@@ -426,7 +426,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(newTempShape);
+    layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
@@ -434,7 +434,7 @@ export function useMapEditing(props, emit) {
   function updateTempRectangleFromCorners(startCorner, endCorner, map, layersComposable, tempShape) {
     // Clean previous shape
     if (tempShape) {
-      layersComposable.drawnItems.removeLayer(tempShape);
+      layersComposable.drawnItems.value.removeLayer(tempShape);
     }
 
     // Calculate four rectangle corner coordinates
@@ -456,7 +456,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(newTempShape);
+    layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
@@ -464,7 +464,7 @@ export function useMapEditing(props, emit) {
   function updateTempCircleFromCenter(center, edgePoint, map, layersComposable, tempShape) {
     // Clean previous shape
     if (tempShape) {
-      layersComposable.drawnItems.removeLayer(tempShape);
+      layersComposable.drawnItems.value.removeLayer(tempShape);
     }
 
     // Calculate radius in meters
@@ -478,7 +478,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(newTempShape);
+    layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
@@ -486,7 +486,7 @@ export function useMapEditing(props, emit) {
   function updateTempTriangleFromCenter(center, sizePoint, map, layersComposable, tempShape) {
     // Clean previous shape
     if (tempShape) {
-      layersComposable.drawnItems.removeLayer(tempShape);
+      layersComposable.drawnItems.value.removeLayer(tempShape);
     }
 
     // Calculate distance from center
@@ -512,7 +512,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(newTempShape);
+    layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
@@ -520,7 +520,7 @@ export function useMapEditing(props, emit) {
   function updateTempOvalHeight(center, heightPoint, map, layersComposable, tempShape) {
     // Clean previous shape
     if (tempShape) {
-      layersComposable.drawnItems.removeLayer(tempShape);
+      layersComposable.drawnItems.value.removeLayer(tempShape);
     }
 
     // For now, create temporary circle to visualize height
@@ -534,7 +534,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(newTempShape);
+    layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
@@ -542,7 +542,7 @@ export function useMapEditing(props, emit) {
   function updateTempOvalWidth(center, heightPoint, widthPoint, map, layersComposable, tempShape) {
     // Clean previous shape
     if (tempShape) {
-      layersComposable.drawnItems.removeLayer(tempShape);
+      layersComposable.drawnItems.value.removeLayer(tempShape);
     }
 
     // Calculate radii
@@ -572,7 +572,7 @@ export function useMapEditing(props, emit) {
       fillOpacity: 0.5,
     });
 
-    layersComposable.drawnItems.addLayer(newTempShape);
+    layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
@@ -917,25 +917,28 @@ export function useMapEditing(props, emit) {
       featureLayerManager.layers.delete(fid);
     }
 
-    // Delete from database
-    try {
-      const response = await fetch(
-        `http://localhost:8000/maps/features/${featureId}`,
-        {
-          method: "DELETE",
+    // Only delete from database if it's not a temporary feature
+    if (!fid.startsWith('temp_')) {
+      try {
+        const response = await fetch(
+          `http://localhost:8000/maps/features/${featureId}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+        if (!response.ok) {
+          console.error(`Failed to delete feature ${featureId}`);
         }
-      );
-
-      if (!response.ok) {
-        console.error(`Failed to delete feature ${featureId}`);
+      } catch (error) {
+        console.error(`Error deleting feature ${featureId}:`, error);
       }
-    } catch (error) {
-      console.error(`Error deleting feature ${featureId}:`, error);
-    }
 
-    // Update features list in parent
-    const remainingFeatures = props.features.filter((f) => f.id !== featureId);
-    emit("features-loaded", remainingFeatures);
+      // Update features list in parent (only for real features)
+      const remainingFeatures = props.features.filter((f) => f.id !== featureId);
+      emit("features-loaded", remainingFeatures);
+    }
+    // For temporary features, no need to update parent features list
   }
 
   // Update geometry coordinates

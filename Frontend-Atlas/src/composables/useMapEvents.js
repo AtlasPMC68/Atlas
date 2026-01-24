@@ -48,6 +48,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function handleMouseDown(e, map) {
     if (!props.editMode) return;
 
+    // Prevent default browser behavior (text selection)
+    e.originalEvent?.preventDefault();
+    e.originalEvent?.stopPropagation();
+
     if (props.activeEditMode === "CREATE_LINE") {
       isDrawingLine.value = true;
       lineStartPoint.value = e.latlng;
@@ -61,7 +65,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         weight: 2,
         opacity: 0.7,
       });
-      layersComposable.drawnItems.addLayer(tempLine);
+      layersComposable.drawnItems.value.addLayer(tempLine);
     } else if (props.activeEditMode === "CREATE_FREE_LINE") {
       isDrawingFree.value = true;
       freeLinePoints.value = [e.latlng];
@@ -74,8 +78,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         color: "#000000",
         weight: 2,
         opacity: 0.7,
+        interactive: false,
+        pane: 'overlayPane'
       });
-      layersComposable.drawnItems.addLayer(tempFreeLine);
+      
+      layersComposable.drawnItems.value.addLayer(tempFreeLine);
+      tempFreeLine.bringToFront();
     }
   }
 
@@ -88,7 +96,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       // Add current point to free line
       freeLinePoints.value.push(e.latlng);
 
-      // Apply smoothing in real-time (optional, can be commented if too slow)
+      // Apply smoothing in real-time
       const smoothedPoints = editingComposable.smoothFreeLinePoints(freeLinePoints.value);
       tempFreeLine.setLatLngs(smoothedPoints);
     }
@@ -115,7 +123,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       // Remove temporary line
       if (tempLine) {
-        layersComposable.drawnItems.removeLayer(tempLine);
+        layersComposable.drawnItems.value.removeLayer(tempLine);
         tempLine = null;
       }
 
@@ -189,7 +197,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             fillOpacity: 0.5,
           }
         );
-        layersComposable.drawnItems.addLayer(tempShape);
+        layersComposable.drawnItems.value.addLayer(tempShape);
         break;
 
       case "circle":
@@ -280,7 +288,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           }
 
           if (tempShape) {
-            layersComposable.drawnItems.removeLayer(tempShape);
+            layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
           editingComposable.createSquare(shapeStartPoint, e.latlng, map, layersComposable);
@@ -303,7 +311,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           }
 
           if (tempShape) {
-            layersComposable.drawnItems.removeLayer(tempShape);
+            layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
           editingComposable.createRectangle(shapeStartPoint, e.latlng, map, layersComposable);
@@ -327,7 +335,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           }
 
           if (tempShape) {
-            layersComposable.drawnItems.removeLayer(tempShape);
+            layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
           editingComposable.createCircle(shapeStartPoint, e.latlng, map, layersComposable);
@@ -350,7 +358,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           }
 
           if (tempShape) {
-            layersComposable.drawnItems.removeLayer(tempShape);
+            layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
           editingComposable.createTriangle(shapeStartPoint, e.latlng, map, layersComposable);
@@ -372,7 +380,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           map.dragging.enable();
 
           if (tempShape) {
-            layersComposable.drawnItems.removeLayer(tempShape);
+            layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
           editingComposable.createOval(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable);
@@ -413,7 +421,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function updatePolygonLines(map) {
     // Remove existing temporary lines
     if (tempPolygon) {
-      layersComposable.drawnItems.removeLayer(tempPolygon);
+      layersComposable.drawnItems.value.removeLayer(tempPolygon);
     }
 
     if (currentPolygonPoints.value.length < 2) return;
@@ -441,7 +449,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         weight: 2,
         opacity: 1.0,
       });
-      layersComposable.drawnItems.addLayer(tempPolygon);
+      layersComposable.drawnItems.value.addLayer(tempPolygon);
     }
   }
 
@@ -454,7 +462,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     // Clean up ONLY temporary lines (keep previous polygons)
     if (tempPolygon) {
-      layersComposable.drawnItems.removeLayer(tempPolygon);
+      layersComposable.drawnItems.value.removeLayer(tempPolygon);
       tempPolygon = null;
     }
 
@@ -674,7 +682,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     freeLinePoints.value = [];
     isDrawingFree.value = false;
     if (tempFreeLine) {
-      layersComposable.drawnItems.removeLayer(tempFreeLine);
+      layersComposable.drawnItems.value.removeLayer(tempFreeLine);
       tempFreeLine = null;
     }
 

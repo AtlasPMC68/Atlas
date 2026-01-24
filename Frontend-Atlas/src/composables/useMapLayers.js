@@ -9,7 +9,7 @@ export function useMapLayers(props, emit) {
   let citiesLayer = null;
   let zonesLayer = null;
   let arrowsLayer = null;
-  let drawnItems = null;
+  const drawnItems = ref(null);
   let currentRegionsLayer = null;
   let baseTileLayer = null;
   let labelLayer = null;
@@ -367,8 +367,8 @@ export function useMapLayers(props, emit) {
     ).addTo(map);
 
     // Initialize drawnItems layer group
-    drawnItems = new L.FeatureGroup();
-    map.addLayer(drawnItems);
+    drawnItems.value = new L.FeatureGroup();
+    map.addLayer(drawnItems.value);
 
     // Add zoom event for adaptive circle sizes
     map.on("zoomend", () => updateCircleSizes(map));
