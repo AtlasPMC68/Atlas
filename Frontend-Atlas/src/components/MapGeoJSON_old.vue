@@ -1,21 +1,21 @@
 <template>
   <div class="relative h-full w-full z-0">
     <div id="map" style="height: 80vh; width: 100%"></div>
-    <TimelineSlider v-model:year="selectedYear" />
+    <TimelineSlider v-model:year="timeline.selectedYear" />
 
     <!-- Bouton de suppression visible seulement en mode édition -->
     <div v-if="editMode" class="absolute top-4 right-4 z-10">
       <button
-        @click="toggleDeleteMode()"
+        @click="editing.toggleDeleteMode()"
         :class="[
           'px-4 py-2 rounded-lg font-medium transition-colors duration-200 active:bg-red-800',
-          isDeleteMode.value
+          editing.isDeleteMode.value
             ? 'bg-red-600 text-white hover:bg-red-700'
             : 'bg-gray-600 text-white hover:bg-gray-700',
         ]"
       >
-        {{ isDeleteMode.value ? "Mode Suppression" : "Supprimer" }}
-        <span class="ml-2 text-xs text-black">{{ isDeleteMode.value }}</span>
+        {{ editing.isDeleteMode.value ? "Mode Suppression" : "Supprimer" }}
+        <span class="ml-2 text-xs text-black">{{ editing.isDeleteMode.value }}</span>
       </button>
     </div>
   </div>
@@ -27,6 +27,12 @@ import L from "leaflet";
 import "leaflet-geometryutil"; // ← requis pour que arrowheads fonctionne
 import "leaflet-arrowheads"; // ← ajoute la méthode `arrowheads` aux polylines
 import TimelineSlider from "../components/TimelineSlider.vue";
+
+// Composables
+import { useMapLayers } from '../composables/useMapLayers.js';
+import { useMapTimeline } from '../composables/useMapTimeline.js';
+import { useMapEditing } from '../composables/useMapEditing.js';
+import { useMapEvents } from '../composables/useMapEvents.js';
 
 // Props reçues de la vue parent
 const props = defineProps({
@@ -50,502 +56,39 @@ const props = defineProps({
 // Émissions vers la vue parent
 const emit = defineEmits(["features-loaded", "mode-change"]);
 
-const selectedYear = ref(1740); // initial displayed year
-const previousFeatureIds = ref(new Set());
-const isDeleteMode = ref(false); // Si on est en mode suppression
-
-// List of available years
-const availableYears = [
-  1400, 1500, 1530, 1600, 1650, 1700, 1715, 1783, 1800, 1815, 1880, 1900, 1914,
-  1920, 1930, 1938, 1945, 1960, 1994, 2000, 2010,
-];
-
 let map = null;
-let currentRegionsLayer = null;
-let baseTileLayer = null;
-let labelLayer = null;
 
-let citiesLayer = null;
-let zonesLayer = null;
-let arrowsLayer = null;
-let drawnItems = null;
+// Initialize composables
+const layers = useMapLayers(props, emit);
+const timeline = useMapTimeline();
+const editing = useMapEditing(props, emit);
+const events = useMapEvents(props, emit, layers, editing);
 
-// Variables d'état pour l'édition
-let currentLinePoints = [];
-let currentPolygonPoints = [];
-let tempLine = null;
-let tempPolygon = null;
-let allCircles = new Set(); // Collection de tous les cercles pour les mettre à jour
-
-// Variables pour les formes prédéfinies
-let shapeState = null; // 'drawing' | 'adjusting_height' | 'adjusting_width' | null
-let shapeStartPoint = null; // Point de départ (coin du carré ou centre pour cercle/triangle)
-let shapeEndPoint = null; // Point d'arrivée (coin opposé ou point pour ajuster taille)
-let tempShape = null;
-let lastMousePos = null; // Dernière position connue de la souris
-let isDrawingShape = false; // Indicateur global pour empêcher le dragging
-
-// Variables pour la sélection et le déplacement de formes
-let selectedFeatures = new Set(); // Ensemble des IDs des features sélectionnées
-let isDraggingFeatures = false; // Si on est en train de déplacer des formes
-let dragStartPoint = null; // Point de départ du drag
-let originalPositions = new Map(); // Positions originales des formes avant déplacement
-let justFinishedDrag = false; // Flag pour éviter la désélection après un drag
-
-let resizeHandles = new Map();
-let isResizing = false;
-let resizeStartPoint = null;
-let resizeHandle = null;
-let originalGeometry = null;
-let originalBounds = null;
-let tempResizeShape = null;
-
-let isDrawingLine = false;
-let lineStartPoint = null;
-
-// Variables pour le tracé libre (crayon)
-let isDrawingFree = false;
-let freeLinePoints = [];
-let tempFreeLine = null;
-
-// Configuration du lissage
-const SMOOTHING_MIN_DISTANCE = 3; // Distance minimale entre points en pixels
-
-// Fonction pour lisser les points de la ligne libre
-function smoothFreeLinePoints(points) {
-  if (points.length < 2) return points;
-
-  const smoothed = [points[0]]; // Garder le premier point
-
-  for (let i = 1; i < points.length; i++) {
-    const lastPoint = smoothed[smoothed.length - 1];
-    const currentPoint = points[i];
-
-    // Calculer la distance en pixels à l'écran
-    const pixelDistance = map
-      .latLngToContainerPoint(lastPoint)
-      .distanceTo(map.latLngToContainerPoint(currentPoint));
-
-    // Ajouter le point seulement s'il est assez éloigné du précédent
-    if (pixelDistance >= SMOOTHING_MIN_DISTANCE) {
-      smoothed.push(currentPoint);
-    }
-  }
-
-  return smoothed;
-}
-
-// Configuration du zoom-adaptatif pour les cercles
-const BASE_ZOOM = 5; // Zoom de départ où le rayon est de 3px
-const BASE_RADIUS = 3; // Rayon de base
-const ZOOM_FACTOR = 1.5; // Facteur de croissance (1.5 = croissance modérée)
-
-// Calculer le rayon en fonction du zoom actuel
-function getRadiusForZoom(currentZoom) {
-  const zoomDiff = currentZoom - BASE_ZOOM;
-  return Math.max(BASE_RADIUS, BASE_RADIUS * Math.pow(ZOOM_FACTOR, zoomDiff));
-}
-
-// Mettre à jour tous les cercles existants lors d'un changement de zoom
-function updateCircleSizes() {
-  const currentZoom = map.getZoom();
-  const newRadius = getRadiusForZoom(currentZoom);
-
-  // Mettre à jour tous les cercles de la collection
-  allCircles.forEach((circle) => {
-    circle.setRadius(newRadius);
-  });
-}
-
-// Gestionnaire de layers par feature
-const featureLayerManager = {
-  layers: new Map(),
-
-  addFeatureLayer(featureId, layer) {
-    if (this.layers.has(featureId)) {
-      // Si c'était un cercle, le retirer de la collection
-      const oldLayer = this.layers.get(featureId);
-      if (oldLayer instanceof L.CircleMarker) {
-        allCircles.delete(oldLayer);
-      }
-      map.removeLayer(this.layers.get(featureId));
-    }
-    this.layers.set(featureId, layer);
-
-    // Ajouter à la collection si c'est un cercle
-    if (layer instanceof L.CircleMarker) {
-      allCircles.add(layer);
-    }
-
-    // Rendre le layer cliquable si on est en mode édition
-    if (props.editMode) {
-      this.makeLayerClickable(featureId, layer);
-    }
-
-    // Ajouter seulement si visible
-    if (props.featureVisibility.get(featureId)) {
-      map.addLayer(layer);
-    }
-  },
-
-  makeLayerClickable(featureId, layer) {
-    console.log(
-      "🔧 Making layer clickable:",
-      featureId,
-      layer.constructor.name
-    );
-
-    // Forcer l'interactivité
-    layer.options.interactive = true;
-
-    // Éviter les doublons d'événements
-    layer.off("click");
-    layer.off("mousedown");
-    layer.off("mouseup");
-
-    // Attacher les événements avec priorité
-    layer.on("mousedown", (e) => {
-      console.log(
-        "🖱️ LAYER MOUSEDOWN:",
-        featureId,
-        "Interactive:",
-        layer.options.interactive
-      );
-      e.originalEvent.stopPropagation();
-      e.originalEvent.preventDefault();
-      // Marquer que c'est un clic sur une forme
-      e.target._isFeatureClick = true;
-      e.target._featureId = featureId;
-    });
-
-    layer.on("click", (e) => {
-      console.log(
-        "🖱️ LAYER CLICK EVENT:",
-        featureId,
-        "CTRL:",
-        e.originalEvent.ctrlKey,
-        "Layer:",
-        layer.constructor.name,
-        "Interactive:",
-        layer.options.interactive
-      );
-      e.originalEvent.stopPropagation();
-      e.originalEvent.preventDefault();
-      handleFeatureClick(featureId, e.originalEvent.ctrlKey);
-    });
-
-    console.log("✅ Layer made clickable:", featureId);
-  },
-
-  toggleFeature(featureId, visible) {
-    const layer = this.layers.get(featureId);
-    if (layer) {
-      if (visible) {
-        map.addLayer(layer);
-      } else {
-        map.removeLayer(layer);
-      }
-    }
-  },
-
-  clearAllFeatures() {
-    this.layers.forEach((layer) => {
-      // Retirer les cercles de la collection
-      if (layer instanceof L.CircleMarker) {
-        allCircles.delete(layer);
-      }
-      map.removeLayer(layer);
-    });
-    this.layers.clear();
-  },
-};
-
+// Computed properties
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature) =>
-      new Date(feature.start_date).getFullYear() <= selectedYear.value &&
+      new Date(feature.start_date).getFullYear() <= timeline.selectedYear.value &&
       (!feature.end_date ||
-        new Date(feature.end_date).getFullYear() >= selectedYear.value)
+        new Date(feature.end_date).getFullYear() >= timeline.selectedYear.value)
   );
 });
 
-async function fetchFeaturesAndRender(year) {
-  const mapId = "11111111-1111-1111-1111-111111111111";
+// Main rendering functions
 
-  try {
-    const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
-    if (!res.ok) throw new Error("Failed to fetch features");
+// Render all features based on current filters
 
-    const allFeatures = await res.json();
-
-    // Mettre à jour les features dans le parent
-    emit("features-loaded", allFeatures);
-
-    // Filtrer par année
-    const features = allFeatures.filter(
-      (f) => new Date(f.start_date).getFullYear() <= year
-    );
-
-    // Dispatcher selon le type
-    const cities = features.filter((f) => f.type === "point");
-    const zones = features.filter((f) => f.type === "zone");
-    const arrows = features.filter((f) => f.type === "arrow");
-
-    renderCities(cities);
-    renderZones(zones);
-    renderArrows(arrows);
-  } catch (err) {
-    console.warn("Erreur fetch features:", err);
-  }
-}
-// Returns the closest available year that is less than or equal to the requested year
-function getClosestAvailableYear(year) {
-  const sorted = [...availableYears].sort((a, b) => a - b);
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    if (year >= sorted[i]) return sorted[i];
-  }
-  return sorted[0]; // default to the earliest year
-}
-
-let lastCurrentYear;
-// Loads the GeoJSON file named world_(year) and displays its content on the map
-function loadRegionsForYear(year, isFirstTime = false) {
-  const closestYear = getClosestAvailableYear(year);
-
-  if (isFirstTime) {
-    lastCurrentYear = closestYear;
-  } else {
-    if (lastCurrentYear == closestYear) {
-      return;
-    }
-  }
-
-  lastCurrentYear = closestYear;
-  const filename = `/geojson/world_${closestYear}.geojson`;
-
-  return fetch(filename)
-    .then((res) => {
-      if (!res.ok) throw new Error("File not found: " + filename);
-      return res.json();
-    })
-    .then((data) => {
-      if (currentRegionsLayer) {
-        map.removeLayer(currentRegionsLayer);
-        currentRegionsLayer = null;
-      }
-      currentRegionsLayer = L.geoJSON(data, {
-        style: {
-          color: "#444",
-          weight: 2,
-          fill: false,
-        },
-        onEachFeature: (feature, layer) => {
-          layer.bindPopup(feature.properties.name || "Unnamed");
-        },
-      }).addTo(map);
-    })
-    .catch((err) => {
-      console.warn(err.message);
-    });
-}
-
-function renderCities(features) {
-  const safeFeatures = toArray(features);
-  const currentZoom = map.getZoom();
-  const radius = getRadiusForZoom(currentZoom);
-
-  safeFeatures.forEach((feature) => {
-    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
-      return;
-    }
-
-    const [lng, lat] = feature.geometry.coordinates;
-    const coord = [lat, lng];
-
-    const props = feature.properties || {};
-    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
-    const colorFromRgb =
-      rgb && rgb.length === 3
-        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
-        : null;
-    const color = feature.color || colorFromRgb || "#000";
-
-    // Utiliser circleMarker avec taille adaptative au zoom
-    const circle = L.circleMarker(coord, {
-      radius: radius, // Taille qui s'adapte au zoom
-      fillColor: feature.color || "#000000",
-      color: feature.color || "#333333",
-      weight: 1,
-      opacity: feature.opacity ?? 0.8,
-      fillOpacity: feature.opacity ?? 0.8,
-    });
-
-    // Ajouter un popup discret au survol si le nom existe
-    if (feature.name) {
-      circle.bindTooltip(feature.name, {
-        permanent: false,
-        direction: "top",
-        offset: [0, -5],
-      });
-    }
-
-    featureLayerManager.addFeatureLayer(feature.id, circle);
-  });
-}
-
-function renderZones(features) {
-  const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
-      return;
-    }
-
-    const props = feature.properties || {};
-    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
-    const colorFromRgb =
-      rgb && rgb.length === 3
-        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
-        : null;
-    const fillColor = feature.color || colorFromRgb || "#ccc";
-    let targetGeometry = feature.geometry;
-
-    // If the geometry is normalized ([0,1] space), project it onto the world
-    if (props.is_normalized) {
-      const fc = {
-        type: "FeatureCollection",
-        features: [feature],
-      };
-
-      // Pick a random anchor on earth so shapes are visible but not overlapping deterministically
-      const anchorLat = -80 + Math.random() * 160; // between -80 and 80
-      const anchorLng = -170 + Math.random() * 340; // between -170 and 170
-
-      // Use a large size so the zone is easy to spot (e.g. ~2000km)
-      const sizeMeters = 2_000_000;
-
-      const worldFc = transformNormalizedToWorld(
-        fc,
-        anchorLat,
-        anchorLng,
-        sizeMeters,
-      );
-
-      if (
-        worldFc &&
-        Array.isArray(worldFc.features) &&
-        worldFc.features[0]?.geometry
-      ) {
-        targetGeometry = worldFc.features[0].geometry;
-      }
-    }
-
-    const layer = L.geoJSON(targetGeometry, {
-      style: {
-        fillColor,
-        fillOpacity: 0.5,
-        color: "#333",
-        weight: 1,
-      },
-    });
-
-    const name = props.name || feature.name;
-    if (name) {
-      layer.bindPopup(name);
-    }
-
-    featureLayerManager.addFeatureLayer(feature.id, layer);
-  });
-}
-
-function renderArrows(features) {
-  const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
-      return;
-    }
-    const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [
-      lat,
-      lng,
-    ]);
-
-    const props = feature.properties || {};
-    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
-    const colorFromRgb =
-      rgb && rgb.length === 3
-        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
-        : null;
-    const color = feature.color || colorFromRgb || "#000";
-
-    const line = L.polyline(latLngs, {
-      color,
-      weight: feature.stroke_width ?? 2,
-      opacity: feature.opacity ?? 1,
-    });
-
-    // Pas de flèches sur les lignes
-    // line.arrowheads({
-    //   size: "10px",
-    //   frequency: "endonly",
-    //   fill: true,
-    // });
-
-    const name = props.name || feature.name;
-    if (name) {
-      line.bindPopup(name);
-    }
-
-    featureLayerManager.addFeatureLayer(feature.id, line);
-  });
-}
-
-function renderShapes(features) {
-  const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (
-      !feature.geometry ||
-      !Array.isArray(feature.geometry.coordinates) ||
-      !feature.geometry.coordinates[0]
-    ) {
-      return;
-    }
-
-    // Convertir les coordonnées GeoJSON en LatLng
-    const latLngs = feature.geometry.coordinates[0].map((coord) => [
-      coord[1],
-      coord[0],
-    ]);
-
-    const square = L.polygon(latLngs, {
-      color: feature.color || "#000000",
-      weight: 2,
-      fillColor: feature.color || "#cccccc",
-      fillOpacity: feature.opacity ?? 0.5,
-      interactive: true, // Rendre interactif par défaut
-    });
-
-    if (feature.name) {
-      square.bindPopup(feature.name);
-    }
-
-    featureLayerManager.addFeatureLayer(feature.id, square);
-  });
-}
-
+// Render all features based on current filters
 function renderAllFeatures() {
   const currentFeatures = filteredFeatures.value;
   const currentIds = new Set(currentFeatures.map((f) => f.id));
-  const previousIds = previousFeatureIds.value;
+  const previousIds = new Set(); // We'll track this differently
 
-  previousIds.forEach((oldId) => {
-    if (!currentIds.has(oldId)) {
-      const layer = featureLayerManager.layers.get(oldId);
-      if (layer) {
-        map.removeLayer(layer);
-        featureLayerManager.layers.delete(oldId);
-      }
+  // Clear features that are no longer visible
+  layers.featureLayerManager.layers.forEach((layer, featureId) => {
+    if (!currentIds.has(featureId)) {
+      map.removeLayer(layer);
+      layers.featureLayerManager.layers.delete(featureId);
     }
   });
 
@@ -561,137 +104,424 @@ function renderAllFeatures() {
     oval: newFeatures.filter((f) => f.type === "oval"),
   };
 
-  renderCities(featuresByType.point);
-  renderZones(featuresByType.polygon);
-  renderArrows(featuresByType.arrow);
-  renderShapes(featuresByType.square);
-  renderShapes(featuresByType.rectangle);
-  renderShapes(featuresByType.circle);
-  renderShapes(featuresByType.triangle);
-  renderShapes(featuresByType.oval);
-
-  previousFeatureIds.value = currentIds;
+  // Render features using layer composable
+  layers.renderCities(featuresByType.point, map);
+  layers.renderZones(featuresByType.polygon, map);
+  layers.renderArrows(featuresByType.arrow, map);
+  layers.renderShapes(featuresByType.square, map);
+  layers.renderShapes(featuresByType.rectangle, map);
+  layers.renderShapes(featuresByType.circle, map);
+  layers.renderShapes(featuresByType.triangle, map);
+  layers.renderShapes(featuresByType.oval, map);
 
   emit("features-loaded", currentFeatures);
 }
 
-function removeGeoJSONLayers() {
-  if (currentRegionsLayer) {
-    map.removeLayer(currentRegionsLayer);
-    currentRegionsLayer = null;
-  }
-}
-
-// Loads all necessary layers for the given year
-let isLoading = false;
-
-async function loadAllLayersForYear(year) {
-  if (isLoading) return;
-  isLoading = true;
-
-  try {
-    await loadRegionsForYear(year); // <-- ici on attend le chargement complet
-    renderAllFeatures();
-  } catch (e) {
-    console.warn("Error loading layers:", e);
-  } finally {
-    isLoading = false;
-  }
-}
-// Creates a delay between map updates to prevent issues caused by rapid year changes
-function debounce(fn, delay) {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
-  };
-}
-
-function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
-  // Use the same projected CRS as the basemap (Web Mercator).
-  const crs = L.CRS.EPSG3857;
-  const center = crs.project(L.latLng(anchorLat, anchorLng)); // { x, y } in meters
-  const halfSize = sizeMeters / 2;
-
-  // Transform a single coordinate [x, y] in [0,1]×[0,1] into [lng, lat]
-  const transformCoord = ([x, y]) => {
-    // Center the shape around (0,0) in its local space
-    const nx = x - 0.5;
-    const ny = y - 0.5;
-
-    // Work in projected meters with a uniform scale so aspect ratio is preserved
-    const mx = center.x + nx * 2 * halfSize;
-    const my = center.y - ny * 2 * halfSize; // minus because y grows downward
-
-    const latlng = crs.unproject(L.point(mx, my));
-    return [latlng.lng, latlng.lat]; // GeoJSON order = [lng, lat]
-  };
-
-  const transformCoords = (coords) => {
-    if (typeof coords[0] === "number") {
-      // [x, y]
-      return transformCoord(coords);
-    }
-    return coords.map(transformCoords);
-  };
-
-  return {
-    ...geojson,
-    features: geojson.features.map((f) => ({
-      ...f,
-      geometry: {
-        ...f.geometry,
-        coordinates: transformCoords(f.geometry.coordinates),
-      },
-    })),
-  };
-}
-
-function toArray(maybeArray) {
-  if (Array.isArray(maybeArray)) return maybeArray;
-  if (maybeArray == null) return []; // null or undefined
-  return [maybeArray]; // wrap single object
-}
-
-// Uses debounce to load GeoJSON layers
-const debouncedUpdate = debounce((year) => {
-  loadAllLayersForYear(year);
-}, 100);
-
-// Display the map
-onMounted(() => {
+// Initialize map and layers
+function initializeMap() {
   map = L.map("map").setView([52.9399, -73.5491], 5);
 
-  // Background map
-  baseTileLayer = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-    {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-    }
-  ).addTo(map);
+  // Initialize base layers
+  layers.initializeBaseLayers(map);
 
-  loadRegionsForYear(selectedYear.value, true);
+  // Load initial regions
+  timeline.loadRegionsForYear(timeline.selectedYear.value, map, true);
 
-  // Ajouter l'événement zoom pour adapter la taille des cercles
-  map.on("zoomend", updateCircleSizes);
-
-  // Initialiser l'édition si nécessaire
+  // Initialize edit controls if needed
   if (props.editMode) {
     initializeEditControls();
   }
+}
+
+
+
+// Make existing shapes clickable for selection
+function makeFeaturesClickable() {
+  console.log("🎯 Making features clickable for selection - Total layers:", layers.featureLayerManager.layers.size);
+
+  // For each existing layer in featureLayerManager, make it clickable
+  layers.featureLayerManager.layers.forEach((layer, featureId) => {
+    layers.featureLayerManager.makeLayerClickable(featureId, layer);
+    console.log("✅ Made feature layer clickable:", featureId, layer.constructor.name);
+  });
+
+  // Also make drawn items clickable
+  if (layers.drawnItems) {
+    layers.drawnItems.eachLayer((layer) => {
+      // For temporary layers, use temporary ID
+      const tempId = "temp_" + Math.random();
+      layers.featureLayerManager.makeLayerClickable(tempId, layer);
+      console.log("✅ Made drawn layer clickable:", tempId, layer.constructor.name);
+    });
+  }
+}
+
+// Handle feature click for selection/deletion or movement
+function handleFeatureClick(featureId, isCtrlPressed) {
+  console.log("🎯 FEATURE CLICK HANDLER CALLED:", featureId, "CTRL:", isCtrlPressed, "Delete mode:", editing.isDeleteMode.value, "Current selection:", Array.from(events.selectedFeatures));
+
+  // If in delete mode, delete clicked item
+  console.log("🗑️ Checking delete mode - isDeleteMode:", editing.isDeleteMode.value);
+  if (editing.isDeleteMode.value) {
+    console.log("🗑️ Delete mode active, deleting feature:", featureId);
+    editing.deleteSelectedFeatures([featureId], layers.featureLayerManager, map, emit);
+      return;
+    }
+
+  // If we just finished a drag, ignore this click to avoid accidental deselection
+  if (events.justFinishedDrag) {
+    console.log("🚫 Ignoring click after drag to prevent accidental deselection");
+    events.justFinishedDrag = false;
+    return;
+  }
+
+  if (isCtrlPressed) {
+    // Multi-selection: toggle selection
+    if (events.selectedFeatures.has(featureId)) {
+      events.selectedFeatures.delete(featureId);
+      console.log("❌ Deselected feature:", featureId);
+    } else {
+      events.selectedFeatures.add(featureId);
+      console.log("✅ Selected feature:", featureId);
+    }
+  } else {
+    // Single click: logic according to number of selected items
+    if (events.selectedFeatures.size === 1 && events.selectedFeatures.has(featureId)) {
+      // Single selected item and it's this one: deselect it
+      events.selectedFeatures.clear();
+      console.log("❌ Deselected single feature:", featureId);
+    } else {
+      // Multiple items selected OR click on unselected item:
+      // Deselect all and select only this item
+      events.selectedFeatures.clear();
+      events.selectedFeatures.add(featureId);
+      console.log("🔄 Single selection (cleared others):", featureId);
+    }
+  }
+
+  console.log("📊 New selection:", Array.from(events.selectedFeatures));
+  editing.updateFeatureSelectionVisual(map);
+}
+
+
+
+
+// Make existing shapes clickable for selection
+function makeFeaturesClickable() {
+  console.log("🎯 Making features clickable for selection - Total layers:", layers.featureLayerManager.layers.size);
+
+  // For each existing layer in featureLayerManager, make it clickable
+  layers.featureLayerManager.layers.forEach((layer, featureId) => {
+    layers.featureLayerManager.makeLayerClickable(featureId, layer);
+    console.log("✅ Made feature layer clickable:", featureId, layer.constructor.name);
+  });
+
+  // Also make drawn items clickable
+  if (layers.drawnItems) {
+    layers.drawnItems.eachLayer((layer) => {
+      // For temporary layers, use temporary ID
+      const tempId = "temp_" + Math.random();
+      layers.featureLayerManager.makeLayerClickable(tempId, layer);
+      console.log("✅ Made drawn layer clickable:", tempId, layer.constructor.name);
+    });
+  }
+}
+
+// Handle feature click for selection/deletion or movement
+function handleFeatureClick(featureId, isCtrlPressed) {
+  console.log("🎯 FEATURE CLICK HANDLER CALLED:", featureId, "CTRL:", isCtrlPressed, "Delete mode:", editing.isDeleteMode.value, "Current selection:", Array.from(events.selectedFeatures));
+
+  // If in delete mode, delete clicked item
+  console.log("🗑️ Checking delete mode - isDeleteMode:", editing.isDeleteMode.value);
+  if (editing.isDeleteMode.value) {
+    console.log("🗑️ Delete mode active, deleting feature:", featureId);
+    editing.deleteSelectedFeatures([featureId], layers.featureLayerManager, map, emit);
+      return;
+    }
+
+  // If we just finished a drag, ignore this click to avoid accidental deselection
+  if (events.justFinishedDrag) {
+    console.log("🚫 Ignoring click after drag to prevent accidental deselection");
+    events.justFinishedDrag = false;
+    return;
+  }
+
+  if (isCtrlPressed) {
+    // Multi-selection: toggle selection
+    if (events.selectedFeatures.has(featureId)) {
+      events.selectedFeatures.delete(featureId);
+      console.log("❌ Deselected feature:", featureId);
+    } else {
+      events.selectedFeatures.add(featureId);
+      console.log("✅ Selected feature:", featureId);
+    }
+  } else {
+    // Single click: logic according to number of selected items
+    if (events.selectedFeatures.size === 1 && events.selectedFeatures.has(featureId)) {
+      // Single selected item and it's this one: deselect it
+      events.selectedFeatures.clear();
+      console.log("❌ Deselected single feature:", featureId);
+    } else {
+      // Multiple items selected OR click on unselected item:
+      // Deselect all and select only this item
+      events.selectedFeatures.clear();
+      events.selectedFeatures.add(featureId);
+      console.log("🔄 Single selection (cleared others):", featureId);
+    }
+  }
+
+  console.log("📊 New selection:", Array.from(events.selectedFeatures));
+  editing.updateFeatureSelectionVisual(map);
+}
+
+// ===== LIFECYCLE AND WATCHERS =====
+
+// Display the map
+onMounted(() => {
+  initializeMap();
 });
 
-// NOUVELLES FONCTIONS POUR L'ÉDITION
+// Watchers
+watch(timeline.selectedYear, (newYear) => {
+  timeline.debouncedUpdate(newYear, map, emit, layers);
+});
 
-// Mettre à jour le curseur de la carte selon le mode d'édition
-function updateMapCursor() {
-  if (!map) return;
+watch(
+  () => props.features,
+  () => {
+    renderAllFeatures();
+  },
+  { deep: true }
+);
 
-  const mapContainer = map.getContainer();
+watch(
+  () => props.featureVisibility,
+  (newVisibility) => {
+    newVisibility.forEach((visible, featureId) => {
+      layers.featureLayerManager.toggleFeature(featureId, visible);
+    });
+  },
+  { deep: true }
+);
 
-  if (props.editMode && props.activeEditMode) {
+// Watcher for edit mode
+watch(
+  () => props.editMode,
+  (newEditMode) => {
+    // If leaving edit mode and there's an ongoing polygon, finish it
+    if (
+      !newEditMode &&
+      props.activeEditMode === "CREATE_POLYGON" &&
+      events.currentPolygonPoints.length >= 3
+    ) {
+      console.log("🔺 Auto-finishing polygon when leaving edit mode");
+      events.finishPolygon(map, emit);
+    }
+
+    if (newEditMode) {
+      initializeEditControls();
+      // Reload features when entering edit mode
+      timeline.debouncedUpdate(timeline.selectedYear.value, map, emit, layers);
+    } else {
+      cleanupEditMode();
+    }
+
+    // Update cursor
+    updateMapCursor();
+  }
+);
+
+// Watcher for delete mode
+watch(
+  () => props.activeEditMode,
+  (newMode) => {
+    editing.isDeleteMode.value = newMode === "DELETE_FEATURE";
+    console.log("🔄 isDeleteMode updated to:", editing.isDeleteMode.value, "from mode:", newMode);
+  },
+  { immediate: true } // Execute immediately on mount
+);
+
+// Watcher for changing edit mode
+watch(
+  () => props.activeEditMode,
+  (newMode, oldMode) => {
+    console.log("🔄 Edit mode changed:", { oldMode, newMode });
+
+    // If leaving CREATE_POLYGON mode, automatically finish polygon
+    if (
+      oldMode === "CREATE_POLYGON" &&
+      newMode !== "CREATE_POLYGON" &&
+      events.currentPolygonPoints.length >= 3
+    ) {
+      console.log("🔺 Auto-finishing polygon when leaving CREATE_POLYGON mode");
+      events.finishPolygon(map, emit);
+    }
+
+    // Clean up previous state
+    if (oldMode) {
+      cleanupCurrentDrawing();
+    }
+
+    // Clean up all edit events
+    map.off("mousedown", events.handleMouseDown);
+    map.off("mousemove", events.handleMouseMove);
+    map.off("mouseup", events.handleMouseUp);
+    map.off("contextmenu", events.handleRightClick);
+    map.off("mousedown", events.handleShapeMouseDown);
+    map.off("mousemove", events.handleShapeMouseMove);
+    map.off("mouseup", events.handleShapeMouseUp);
+    map.off("dragstart", events.preventDragDuringShapeDrawing);
+    map.off("mousedown", events.handleMoveMouseDown);
+    map.off("mousemove", events.handleMoveMouseMove);
+    map.off("mouseup", events.handleMoveMouseUp);
+    map.off("keydown", events.handleKeyDown);
+
+    // Reattach events according to new mode
+    if (newMode === "CREATE_LINE" || newMode === "CREATE_FREE_LINE") {
+      console.log("📏 Reattaching line drawing events");
+      map.on("mousedown", events.handleMouseDown);
+      map.on("mousemove", events.handleMouseMove);
+      map.on("mouseup", events.handleMouseUp);
+    } else if (newMode === "CREATE_SHAPES") {
+      console.log("🔷 Reattaching shape drawing events");
+      map.on("mousedown", events.handleShapeMouseDown);
+      map.on("mousemove", events.handleShapeMouseMove);
+      map.on("mouseup", events.handleShapeMouseUp);
+      map.on("dragstart", events.preventDragDuringShapeDrawing);
+    } else if (newMode === "CREATE_POLYGON") {
+      console.log("⬡ Reattaching polygon drawing events");
+      map.on("contextmenu", events.handleRightClick);
+    } else {
+      // Selection/movement mode (no active mode or default mode)
+      console.log("🎯 Reattaching selection and move events for default mode");
+      map.on("mousedown", events.handleMoveMouseDown);
+      map.on("mousemove", events.handleMoveMouseMove);
+      map.on("mouseup", events.handleMoveMouseUp);
+    }
+
+    // ALWAYS attach handleKeyDown in edit mode to allow deletion
+  if (props.editMode) {
+      console.log("🔄 Attaching keydown event for delete functionality");
+      map.on("keydown", events.handleKeyDown);
+    }
+
+    // Update cursor
+    updateMapCursor();
+  }
+);
+
+// Watcher for selected shape
+watch(
+  () => props.selectedShape,
+  (newShape, oldShape) => {
+    console.log("Shape changed:", { oldShape, newShape });
+  }
+);
+
+// Cleanup current drawing
+function cleanupCurrentDrawing() {
+  events.freeLinePoints = [];
+  events.isDrawingFree = false;
+  if (events.tempFreeLine) {
+    layers.drawnItems.removeLayer(events.tempFreeLine);
+    events.tempFreeLine = null;
+  }
+}
+
+// Cleanup edit mode
+function cleanupEditMode() {
+  if (layers.drawnItems) {
+    // Clean circles from drawnItems collection
+    layers.drawnItems.eachLayer((layer) => {
+      if (layer instanceof L.CircleMarker) {
+        layers.allCircles.value.delete(layer);
+      }
+    });
+    map.removeLayer(layers.drawnItems);
+    layers.drawnItems = null;
+  }
+
+  // Clean up all events
+  map.off("mousedown", events.handleMouseDown);
+  map.off("mousemove", events.handleMouseMove);
+  map.off("mouseup", events.handleMouseUp);
+  map.off("contextmenu", events.handleRightClick);
+  map.off("click", events.handleMapClick);
+  map.off("dblclick", events.handleMapDoubleClick);
+
+  // Clean up shape events
+  map.off("mousedown", events.handleShapeMouseDown);
+  map.off("mousemove", events.handleShapeMouseMove);
+  map.off("mouseup", events.handleShapeMouseUp);
+  map.off("dragstart", events.preventDragDuringShapeDrawing);
+
+  // Clean up movement events (only if leaving edit mode)
+  if (!props.editMode) {
+    map.off("mousedown", events.handleMoveMouseDown);
+    map.off("mousemove", events.handleMoveMouseMove);
+    map.off("mouseup", events.handleMoveMouseUp);
+    map.off("keydown", events.handleKeyDown);
+  }
+
+  // Clean up state variables
+  events.currentPolygonPoints = [];
+  events.cleanupTempLine();
+  events.cleanupTempShape();
+
+  // Clean up selection and movement
+  events.selectedFeatures.clear();
+  events.isDraggingFeatures = false;
+  events.dragStartPoint = null;
+  events.originalPositions.clear();
+  events.justFinishedDrag = false;
+
+  // Update cursor
+  updateMapCursor();
+
+  // Reload all features when leaving edit mode
+  setTimeout(() => {
+    timeline.debouncedUpdate(timeline.selectedYear.value, map, emit, layers);
+  }, 100);
+}
+
+</script>
+
+<style>
+.city-label-text {
+  font-size: 12px;
+  font-weight: bold;
+  color: black;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: transparent;
+}
+
+.arrow-head {
+  font-size: 20px;
+  color: black;
+  transform: rotate(0deg); /* statique pour l'instant */
+}
+
+.temp-marker {
+  background: none !important;
+  border: none !important;
+}
+
+.line-start-marker {
+  background: none !important;
+  border: none !important;
+}
+
+.polygon-marker {
+  background: white;
+  border: 2px solid #000;
+  border-radius: 50%;
+  text-align: center;
+  font-weight: bold;
+  color: #000;
+}
+</style>
     // En mode d'édition avec un mode actif, utiliser un curseur en croix
     mapContainer.style.cursor = "crosshair";
   } else if (props.editMode) {
@@ -1181,7 +1011,6 @@ function createSquare(center, sizePoint) {
   const topLeft = map.containerPointToLatLng(topLeftPixel);
   const bottomRight = map.containerPointToLatLng(bottomRightPixel);
 
-  // Créer le layer Leaflet avec bordures noires
   const square = L.rectangle(
     [
       [topLeft.lat, topLeft.lng],
@@ -1207,10 +1036,21 @@ function createSquare(center, sizePoint) {
     _isTemporary: true,
   };
 
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
   // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, square);
   featureLayerManager.makeLayerClickable(layerKey, square);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un rectangle entre deux coins opposés
@@ -1221,7 +1061,6 @@ function createRectangle(startCorner, endCorner) {
   const minLng = Math.min(startCorner.lng, endCorner.lng);
   const maxLng = Math.max(startCorner.lng, endCorner.lng);
 
-  // Créer le layer Leaflet avec bordures noires
   const rectangle = L.rectangle(
     [
       [minLat, minLng],
@@ -1246,17 +1085,27 @@ function createRectangle(startCorner, endCorner) {
     _isTemporary: true,
   };
 
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
   // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, rectangle);
   featureLayerManager.makeLayerClickable(layerKey, rectangle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un cercle avec centre et rayon
 function createCircle(center, edgePoint) {
   const radius = map.distance(center, edgePoint);
 
-  // Créer le layer Leaflet avec bordures noires
   const circle = L.circle(center, {
     radius: radius,
     color: "#000000",
@@ -1276,10 +1125,21 @@ function createCircle(center, edgePoint) {
     _isTemporary: true,
   };
 
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
   // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, circle);
   featureLayerManager.makeLayerClickable(layerKey, circle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un triangle avec centre et taille
@@ -1297,7 +1157,6 @@ function createTriangle(center, sizePoint) {
     points.push([lat, lng]);
   }
 
-  // Créer le layer Leaflet avec bordures noires
   const triangle = L.polygon(points, {
     color: "#000000",
     weight: 2,
@@ -1316,10 +1175,21 @@ function createTriangle(center, sizePoint) {
     _isTemporary: true,
   };
 
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
   // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, triangle);
   featureLayerManager.makeLayerClickable(layerKey, triangle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer un ovale avec centre, hauteur et largeur
@@ -1342,7 +1212,6 @@ function createOval(center, heightPoint, widthPoint) {
     points.push([lat, lng]);
   }
 
-  // Créer le layer Leaflet avec bordures noires
   const oval = L.polygon(points, {
     color: "#000000",
     weight: 2,
@@ -1361,10 +1230,21 @@ function createOval(center, heightPoint, widthPoint) {
     _isTemporary: true,
   };
 
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
   // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, oval);
   featureLayerManager.makeLayerClickable(layerKey, oval);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Mettre à jour le carré temporaire avec centre et taille (comme un cercle)
@@ -1815,7 +1695,7 @@ function finishFreeLine() {
     tempFreeLine = null;
   }
 
-  // Créer la ligne finale lissée SANS flèches
+  // Créer la ligne finale lissée
   const freeLine = L.polyline(smoothedPoints, {
     color: "#000000",
     weight: 2,
@@ -1824,7 +1704,7 @@ function finishFreeLine() {
 
   drawnItems.addLayer(freeLine);
 
-  // Créer la feature
+  // Créer et sauvegarder automatiquement la feature
   const feature = {
     map_id: props.mapId,
     type: "polyline",
@@ -1840,16 +1720,12 @@ function finishFreeLine() {
 
   // Générer un ID temporaire pour rendre la ligne cliquable immédiatement
   const tempId = `temp_freeline_${Date.now()}_${Math.random()}`;
-  const tempFeature = {
-    ...feature,
-    id: tempId,
-    _isTemporary: true,
-  };
-  
   featureLayerManager.layers.set(tempId, freeLine);
   if (props.editMode) {
     featureLayerManager.makeLayerClickable(tempId, freeLine);
   }
+
+  saveFeature(feature);
 }
 
 // Gérer les clics droits pour finir les polygones
@@ -1914,15 +1790,25 @@ function createPointAt(latlng) {
     _isTemporary: true,
   };
 
-  // Rendre le point cliquable immédiatement
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, circle);
   featureLayerManager.makeLayerClickable(layerKey, circle);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Créer une ligne entre deux points
 function createLine(startLatLng, endLatLng) {
-  // Créer le layer Leaflet SANS flèches
   const line = L.polyline([startLatLng, endLatLng], {
     color: "#000000",
     weight: 2,
@@ -1955,10 +1841,21 @@ function createLine(startLatLng, endLatLng) {
     _isTemporary: true,
   };
 
-  // Rendre la ligne cliquable immédiatement
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, line);
   featureLayerManager.makeLayerClickable(layerKey, line);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 }
 
 // Gérer les clics pour créer un polygone
@@ -2048,10 +1945,21 @@ function finishPolygon() {
     _isTemporary: true,
   };
 
-  // Rendre le polygone cliquable immédiatement
+  // Ajouter à la liste des features localement (pour l'affichage)
+  if (!props.features.some((f) => f.id === tempFeature.id)) {
+    const updatedFeatures = [...props.features, tempFeature];
+    emit("features-loaded", updatedFeatures);
+  }
+
+  // Rendre la forme cliquable immédiatement
   const layerKey = tempFeature.id;
   featureLayerManager.layers.set(layerKey, polygon);
   featureLayerManager.makeLayerClickable(layerKey, polygon);
+
+  // Essayer de sauvegarder (mais ne pas bloquer si ça échoue)
+  saveFeature(tempFeature).catch(() => {
+    console.log("⚠️ Sauvegarde temporaire - l'API n'est pas disponible");
+  });
 
   // RÉINITIALISER pour permettre un nouveau polygone
   currentPolygonPoints = [];
@@ -2949,9 +2857,16 @@ function cleanupCurrentDrawing() {
   }
 }
 
+// ===== LIFECYCLE AND WATCHERS =====
+
+// Display the map
+onMounted(() => {
+  initializeMap();
+});
+
 // Watchers
-watch(selectedYear, (newYear) => {
-  debouncedUpdate(newYear);
+watch(timeline.selectedYear, (newYear) => {
+  timeline.debouncedUpdate(newYear, map, emit, layers);
 });
 
 watch(
@@ -2966,11 +2881,191 @@ watch(
   () => props.featureVisibility,
   (newVisibility) => {
     newVisibility.forEach((visible, featureId) => {
-      featureLayerManager.toggleFeature(featureId, visible);
+      layers.featureLayerManager.toggleFeature(featureId, visible);
     });
   },
   { deep: true }
 );
+
+// Watcher for edit mode
+watch(
+  () => props.editMode,
+  (newEditMode) => {
+    // If leaving edit mode and there's an ongoing polygon, finish it
+    if (
+      !newEditMode &&
+      props.activeEditMode === "CREATE_POLYGON" &&
+      events.currentPolygonPoints.length >= 3
+    ) {
+      console.log("🔺 Auto-finishing polygon when leaving edit mode");
+      events.finishPolygon(map, emit);
+    }
+
+    if (newEditMode) {
+      initializeEditControls();
+      // Reload features when entering edit mode
+      timeline.debouncedUpdate(timeline.selectedYear.value, map, emit, layers);
+    } else {
+      cleanupEditMode();
+    }
+
+    // Update cursor
+    updateMapCursor();
+  }
+);
+
+// Watcher for delete mode
+watch(
+  () => props.activeEditMode,
+  (newMode) => {
+    editing.isDeleteMode.value = newMode === "DELETE_FEATURE";
+    console.log("🔄 isDeleteMode updated to:", editing.isDeleteMode.value, "from mode:", newMode);
+  },
+  { immediate: true } // Execute immediately on mount
+);
+
+// Watcher for changing edit mode
+watch(
+  () => props.activeEditMode,
+  (newMode, oldMode) => {
+    console.log("🔄 Edit mode changed:", { oldMode, newMode });
+
+    // If leaving CREATE_POLYGON mode, automatically finish polygon
+    if (
+      oldMode === "CREATE_POLYGON" &&
+      newMode !== "CREATE_POLYGON" &&
+      events.currentPolygonPoints.length >= 3
+    ) {
+      console.log("🔺 Auto-finishing polygon when leaving CREATE_POLYGON mode");
+      events.finishPolygon(map, emit);
+    }
+
+    // Clean up previous state
+    if (oldMode) {
+      cleanupCurrentDrawing();
+    }
+
+    // Clean up all edit events
+    map.off("mousedown", events.handleMouseDown);
+    map.off("mousemove", events.handleMouseMove);
+    map.off("mouseup", events.handleMouseUp);
+    map.off("contextmenu", events.handleRightClick);
+    map.off("mousedown", events.handleShapeMouseDown);
+    map.off("mousemove", events.handleShapeMouseMove);
+    map.off("mouseup", events.handleShapeMouseUp);
+    map.off("dragstart", events.preventDragDuringShapeDrawing);
+    map.off("mousedown", events.handleMoveMouseDown);
+    map.off("mousemove", events.handleMoveMouseMove);
+    map.off("mouseup", events.handleMoveMouseUp);
+    map.off("keydown", events.handleKeyDown);
+
+    // Reattach events according to new mode
+    if (newMode === "CREATE_LINE" || newMode === "CREATE_FREE_LINE") {
+      console.log("📏 Reattaching line drawing events");
+      map.on("mousedown", events.handleMouseDown);
+      map.on("mousemove", events.handleMouseMove);
+      map.on("mouseup", events.handleMouseUp);
+    } else if (newMode === "CREATE_SHAPES") {
+      console.log("🔷 Reattaching shape drawing events");
+      map.on("mousedown", events.handleShapeMouseDown);
+      map.on("mousemove", events.handleShapeMouseMove);
+      map.on("mouseup", events.handleShapeMouseUp);
+      map.on("dragstart", events.preventDragDuringShapeDrawing);
+    } else if (newMode === "CREATE_POLYGON") {
+      console.log("⬡ Reattaching polygon drawing events");
+      map.on("contextmenu", events.handleRightClick);
+    } else {
+      // Selection/movement mode (no active mode or default mode)
+      console.log("🎯 Reattaching selection and move events for default mode");
+      map.on("mousedown", events.handleMoveMouseDown);
+      map.on("mousemove", events.handleMoveMouseMove);
+      map.on("mouseup", events.handleMoveMouseUp);
+    }
+
+    // ALWAYS attach handleKeyDown in edit mode to allow deletion
+    if (props.editMode) {
+      console.log("🔄 Attaching keydown event for delete functionality");
+      map.on("keydown", events.handleKeyDown);
+    }
+
+    // Update cursor
+    updateMapCursor();
+  }
+);
+
+// Watcher for selected shape
+watch(
+  () => props.selectedShape,
+  (newShape, oldShape) => {
+    console.log("Shape changed:", { oldShape, newShape });
+  }
+);
+
+// Cleanup current drawing
+function cleanupCurrentDrawing() {
+  events.freeLinePoints = [];
+  events.isDrawingFree = false;
+  if (events.tempFreeLine) {
+    layers.drawnItems.removeLayer(events.tempFreeLine);
+    events.tempFreeLine = null;
+  }
+}
+
+// Cleanup edit mode
+function cleanupEditMode() {
+  if (layers.drawnItems) {
+    // Clean circles from drawnItems collection
+    layers.drawnItems.eachLayer((layer) => {
+      if (layer instanceof L.CircleMarker) {
+        layers.allCircles.value.delete(layer);
+      }
+    });
+    map.removeLayer(layers.drawnItems);
+    layers.drawnItems = null;
+  }
+
+  // Clean up all events
+  map.off("mousedown", events.handleMouseDown);
+  map.off("mousemove", events.handleMouseMove);
+  map.off("mouseup", events.handleMouseUp);
+  map.off("contextmenu", events.handleRightClick);
+  map.off("click", events.handleMapClick);
+  map.off("dblclick", events.handleMapDoubleClick);
+
+  // Clean up shape events
+  map.off("mousedown", events.handleShapeMouseDown);
+  map.off("mousemove", events.handleShapeMouseMove);
+  map.off("mouseup", events.handleShapeMouseUp);
+  map.off("dragstart", events.preventDragDuringShapeDrawing);
+
+  // Clean up movement events (only if leaving edit mode)
+  if (!props.editMode) {
+    map.off("mousedown", events.handleMoveMouseDown);
+    map.off("mousemove", events.handleMoveMouseMove);
+    map.off("mouseup", events.handleMoveMouseUp);
+    map.off("keydown", events.handleKeyDown);
+  }
+
+  // Clean up state variables
+  events.currentPolygonPoints = [];
+  events.cleanupTempLine();
+  events.cleanupTempShape();
+
+  // Clean up selection and movement
+  events.selectedFeatures.clear();
+  events.isDraggingFeatures = false;
+  events.dragStartPoint = null;
+  events.originalPositions.clear();
+  events.justFinishedDrag = false;
+
+  // Update cursor
+  updateMapCursor();
+
+  // Reload all features when leaving edit mode
+  setTimeout(() => {
+    timeline.debouncedUpdate(timeline.selectedYear.value, map, emit, layers);
+  }, 100);
+}
 </script>
 
 <style>

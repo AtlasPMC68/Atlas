@@ -11,7 +11,6 @@ celery_app = Celery(
     "atlas",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["app.tasks"],
     broker_connection_retry_on_startup=True
 )
 
