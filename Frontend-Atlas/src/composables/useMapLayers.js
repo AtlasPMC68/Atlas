@@ -17,6 +17,9 @@ export function useMapLayers(props, emit) {
   // Circle management
   const allCircles = ref(new Set());
 
+  // Track previous feature IDs for rendering optimization
+  const previousFeatureIds = ref(new Set());
+
   // Feature layer manager
   const featureLayerManager = {
     layers: new Map(),
@@ -26,19 +29,31 @@ export function useMapLayers(props, emit) {
       this.clickHandler = handler;
     },
 
-    addFeatureLayer(featureId, layer) {
-      if (this.layers.has(featureId)) {
+    addFeatureLayer(featureId, layer, feature) {
+      const fid = String(featureId);
+      
+      if (this.layers.has(fid)) {
         // If it was a circle, remove it from the collection
-        const oldLayer = this.layers.get(featureId);
+        const oldLayer = this.layers.get(fid);
         if (oldLayer instanceof L.CircleMarker) {
           allCircles.value.delete(oldLayer);
         }
         // Remove from map if exists
-        if (layer._map) {
-          layer._map.removeLayer(this.layers.get(featureId));
+        if (oldLayer._map) {
+          oldLayer._map.removeLayer(oldLayer);
         }
       }
-      this.layers.set(featureId, layer);
+      this.layers.set(fid, layer);
+
+      // Store original style on the layer for reliable reset
+      if (layer.setStyle && feature) {
+        layer.__atlas_originalStyle = {
+          color: feature.color || MAP_CONFIG.DEFAULT_STYLES.borderColor,
+          weight: 2,
+          fillColor: feature.color || MAP_CONFIG.DEFAULT_STYLES.fillColor,
+          fillOpacity: feature.opacity ?? MAP_CONFIG.DEFAULT_STYLES.opacity,
+        };
+      }
 
       // Add to collection if it's a circle
       if (layer instanceof L.CircleMarker) {
@@ -47,54 +62,57 @@ export function useMapLayers(props, emit) {
 
       // Make layer clickable if in edit mode
       if (props.editMode) {
-        this.makeLayerClickable(featureId, layer);
+        this.makeLayerClickable(fid, layer);
       }
 
       // Add only if visible
-      if (props.featureVisibility.get(featureId)) {
-        // We'll add to map in the render functions
+      if (props.featureVisibility.get(fid)) {
+        // Will be added to map in render functions
       }
     },
 
     makeLayerClickable(featureId, layer) {
+      const fid = String(featureId);
+      
       // Force interactivity
       layer.options.interactive = true;
 
-      // Avoid duplicate events
-      layer.off("click");
-      layer.off("mousedown");
-      layer.off("mouseup");
+      // Remove only OUR handlers (not all handlers)
+      if (layer.__atlas_onDown) layer.off("mousedown", layer.__atlas_onDown);
+      if (layer.__atlas_onClick) layer.off("click", layer.__atlas_onClick);
 
-      // Attach events with priority
-      layer.on("mousedown", (e) => {
-        e.originalEvent.stopPropagation();
+      // Store our handlers on the layer
+      layer.__atlas_onDown = (e) => {
+        e.originalEvent?.stopPropagation();
         // Mark that this is a click on a shape
-        e.originalEvent.target._isFeatureClick = true;
-        e.originalEvent.target._featureId = featureId;
-        if (e.originalEvent.target.parentElement) {
-          e.originalEvent.target.parentElement._isFeatureClick = true;
-        }
-      });
+        e.target._isFeatureClick = true;
+        e.target._featureId = fid;
+      };
 
-      layer.on("click", (e) => {
-        e.originalEvent.stopPropagation();
-        e.originalEvent.preventDefault();
+      layer.__atlas_onClick = (e) => {
+        e.originalEvent?.stopPropagation();
+        // Don't preventDefault on click - it can interfere with other interactions
         // Call the handler if available
         if (this.clickHandler) {
-          const isCtrlPressed = e.originalEvent.ctrlKey || e.originalEvent.metaKey;
-          this.clickHandler(featureId, isCtrlPressed);
+          const isCtrlPressed = e.originalEvent?.ctrlKey || e.originalEvent?.metaKey;
+          this.clickHandler(fid, isCtrlPressed);
         }
-      });
+      };
+
+      // Attach our handlers
+      layer.on("mousedown", layer.__atlas_onDown);
+      layer.on("click", layer.__atlas_onClick);
     },
 
     toggleFeature(featureId, visible) {
-      const layer = this.layers.get(featureId);
+      const fid = String(featureId);
+      const layer = this.layers.get(fid);
       if (layer) {
         // This will be called by the map instance
       }
     },
 
-    clearAllFeatures() {
+    clearAllFeatures(map) {
       this.layers.forEach((layer) => {
         // Remove circles from collection
         if (layer instanceof L.CircleMarker) {
@@ -102,7 +120,7 @@ export function useMapLayers(props, emit) {
         }
         // Remove from map if exists
         if (layer._map) {
-          layer._map.removeLayer(layer);
+          map.removeLayer(layer);
         }
       });
       this.layers.clear();
@@ -158,8 +176,10 @@ export function useMapLayers(props, emit) {
         });
       }
 
-      featureLayerManager.addFeatureLayer(feature.id, circle);
-      map.addLayer(circle);
+      featureLayerManager.addFeatureLayer(feature.id, circle, feature);
+      if (props.featureVisibility.get(String(feature.id))) {
+        map.addLayer(circle);
+      }
     });
   }
 
@@ -213,12 +233,14 @@ export function useMapLayers(props, emit) {
         layer.bindPopup(name);
       }
 
-      featureLayerManager.addFeatureLayer(feature.id, layer);
-      map.addLayer(layer);
+      featureLayerManager.addFeatureLayer(feature.id, layer, feature);
+      if (props.featureVisibility.get(String(feature.id))) {
+        map.addLayer(layer);
+      }
     });
   }
 
-  // Render arrows (polylines with arrowheads)
+  // Render arrows (polylines - NO arrowheads as per user request)
   function renderArrows(features, map) {
     const safeFeatures = toArray(features);
 
@@ -239,20 +261,22 @@ export function useMapLayers(props, emit) {
         opacity: feature.opacity ?? 1,
       });
 
-      // Apply arrowheads (before addTo)
-      line.arrowheads({
-        size: "10px",
-        frequency: "endonly",
-        fill: true,
-      });
+      // NO arrowheads - user explicitly requested to remove them
+      // line.arrowheads({
+      //   size: "10px",
+      //   frequency: "endonly",
+      //   fill: true,
+      // });
 
       const name = props.name || feature.name;
       if (name) {
         line.bindPopup(name);
       }
 
-      featureLayerManager.addFeatureLayer(feature.id, line);
-      map.addLayer(line);
+      featureLayerManager.addFeatureLayer(feature.id, line, feature);
+      if (props.featureVisibility.get(String(feature.id))) {
+        map.addLayer(line);
+      }
     });
   }
 
@@ -268,7 +292,7 @@ export function useMapLayers(props, emit) {
       // Convert GeoJSON coordinates to LatLng
       const latLngs = feature.geometry.coordinates[0].map((coord) => [coord[1], coord[0]]);
 
-      const square = L.polygon(latLngs, {
+      const shape = L.polygon(latLngs, {
         color: feature.color || "#000000",
         weight: 2,
         fillColor: feature.color || "#cccccc",
@@ -277,12 +301,57 @@ export function useMapLayers(props, emit) {
       });
 
       if (feature.name) {
-        square.bindPopup(feature.name);
+        shape.bindPopup(feature.name);
       }
 
-      featureLayerManager.addFeatureLayer(feature.id, square);
-      map.addLayer(square);
+      featureLayerManager.addFeatureLayer(feature.id, shape, feature);
+      if (props.featureVisibility.get(String(feature.id))) {
+        map.addLayer(shape);
+      }
     });
+  }
+
+  // Render all features with optimization
+  function renderAllFeatures(filteredFeatures, map) {
+    const currentIds = new Set(filteredFeatures.map((f) => String(f.id)));
+    const previousIds = previousFeatureIds.value;
+
+    // Remove old features that are no longer in the current list
+    previousIds.forEach((oldId) => {
+      if (!currentIds.has(oldId)) {
+        const layer = featureLayerManager.layers.get(oldId);
+        if (layer) {
+          map.removeLayer(layer);
+          featureLayerManager.layers.delete(oldId);
+        }
+      }
+    });
+
+    // Render only new features (not already rendered)
+    const newFeatures = filteredFeatures.filter((f) => !previousIds.has(String(f.id)));
+    const featuresByType = {
+      point: newFeatures.filter((f) => f.type === "point"),
+      polygon: newFeatures.filter((f) => f.type === "zone"),
+      arrow: newFeatures.filter((f) => f.type === "arrow" || f.type === "polyline"),
+      square: newFeatures.filter((f) => f.type === "square"),
+      rectangle: newFeatures.filter((f) => f.type === "rectangle"),
+      circle: newFeatures.filter((f) => f.type === "circle"),
+      triangle: newFeatures.filter((f) => f.type === "triangle"),
+      oval: newFeatures.filter((f) => f.type === "oval"),
+    };
+
+    renderCities(featuresByType.point, map);
+    renderZones(featuresByType.polygon, map);
+    renderArrows(featuresByType.arrow, map);
+    renderShapes(featuresByType.square, map);
+    renderShapes(featuresByType.rectangle, map);
+    renderShapes(featuresByType.circle, map);
+    renderShapes(featuresByType.triangle, map);
+    renderShapes(featuresByType.oval, map);
+
+    previousFeatureIds.value = currentIds;
+
+    emit("features-loaded", filteredFeatures);
   }
 
   // Initialize base layers
@@ -297,6 +366,10 @@ export function useMapLayers(props, emit) {
       }
     ).addTo(map);
 
+    // Initialize drawnItems layer group
+    drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
     // Add zoom event for adaptive circle sizes
     map.on("zoomend", () => updateCircleSizes(map));
   }
@@ -307,18 +380,16 @@ export function useMapLayers(props, emit) {
       map.removeLayer(currentRegionsLayer);
       currentRegionsLayer = null;
     }
-    featureLayerManager.clearAllFeatures();
+    featureLayerManager.clearAllFeatures(map);
   }
 
   return {
     // State
     allCircles,
     featureLayerManager,
+    previousFeatureIds,
 
     // Layer collections (for external access)
-    citiesLayer,
-    zonesLayer,
-    arrowsLayer,
     drawnItems,
     currentRegionsLayer,
     baseTileLayer,
@@ -329,6 +400,7 @@ export function useMapLayers(props, emit) {
     renderZones,
     renderArrows,
     renderShapes,
+    renderAllFeatures,
     updateCircleSizes,
     initializeBaseLayers,
     clearAllLayers,

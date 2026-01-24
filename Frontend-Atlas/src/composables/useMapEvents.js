@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import L from 'leaflet';
-import { getPixelDistance, degreesToRadians } from '../utils/mapUtils.js';
+import { getPixelDistance } from '../utils/mapUtils.js';
 import { MAP_CONFIG } from './useMapConfig.js';
 
 // Composable for managing map events (mouse, keyboard, etc.)
@@ -76,10 +76,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         opacity: 0.7,
       });
       layersComposable.drawnItems.addLayer(tempFreeLine);
-      
-      // Expose to window for finishFreeLine to access
-      window.freeLinePoints = freeLinePoints.value;
-      window.tempFreeLine = tempFreeLine;
     }
   }
 
@@ -91,9 +87,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     } else if (isDrawingFree.value && tempFreeLine) {
       // Add current point to free line
       freeLinePoints.value.push(e.latlng);
-      
-      // Update window reference
-      window.freeLinePoints = freeLinePoints.value;
 
       // Apply smoothing in real-time (optional, can be commented if too slow)
       const smoothedPoints = editingComposable.smoothFreeLinePoints(freeLinePoints.value);
@@ -127,7 +120,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
 
       // Create final line
-      editingComposable.createLine(lineStartPoint.value, e.latlng, map, emit);
+      editingComposable.createLine(lineStartPoint.value, e.latlng, map, layersComposable);
       lineStartPoint.value = null;
     }
 
@@ -139,11 +132,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       map.dragging.enable();
 
       // Finalize free line
-      editingComposable.finishFreeLine(map, emit);
+      editingComposable.finishFreeLine(freeLinePoints.value, tempFreeLine, map, layersComposable);
 
       // Clean up
       freeLinePoints.value = [];
-      window.freeLinePoints = null;
       tempFreeLine = null;
     }
   }
@@ -235,33 +227,33 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     switch (shapeType) {
       case "square":
         if (shapeState === "drawing" && shapeStartPoint) {
-          editingComposable.updateTempSquareFromCenter(shapeStartPoint, e.latlng, map);
+          tempShape = editingComposable.updateTempSquareFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "rectangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          editingComposable.updateTempRectangleFromCorners(shapeStartPoint, e.latlng, map);
+          tempShape = editingComposable.updateTempRectangleFromCorners(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "circle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          editingComposable.updateTempCircleFromCenter(shapeStartPoint, e.latlng, map);
+          tempShape = editingComposable.updateTempCircleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "triangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          editingComposable.updateTempTriangleFromCenter(shapeStartPoint, e.latlng, map);
+          tempShape = editingComposable.updateTempTriangleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "oval":
         if (shapeState === "adjusting_height" && shapeStartPoint) {
-          editingComposable.updateTempOvalHeight(shapeStartPoint, e.latlng, map);
+          tempShape = editingComposable.updateTempOvalHeight(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         } else if (shapeState === "adjusting_width" && shapeStartPoint && shapeEndPoint) {
-          editingComposable.updateTempOvalWidth(shapeStartPoint, shapeEndPoint, e.latlng, map);
+          tempShape = editingComposable.updateTempOvalWidth(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
     }
@@ -291,7 +283,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createSquare(shapeStartPoint, e.latlng, map, emit);
+          editingComposable.createSquare(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -314,7 +306,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createRectangle(shapeStartPoint, e.latlng, map, emit);
+          editingComposable.createRectangle(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -338,7 +330,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createCircle(shapeStartPoint, e.latlng, map, emit);
+          editingComposable.createCircle(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -361,7 +353,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createTriangle(shapeStartPoint, e.latlng, map, emit);
+          editingComposable.createTriangle(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -383,7 +375,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createOval(shapeStartPoint, shapeEndPoint, e.latlng, map, emit);
+          editingComposable.createOval(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -400,7 +392,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     switch (props.activeEditMode) {
       case "CREATE_POINT":
-        editingComposable.createPointAt(e.latlng, map, emit);
+        editingComposable.createPointAt(e.latlng, map, layersComposable);
         break;
       case "CREATE_POLYGON":
         handlePolygonClick(e.latlng, map);
@@ -454,7 +446,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   // Finish polygon
-  function finishPolygon(map, emit) {
+  function finishPolygon(map) {
     if (currentPolygonPoints.value.length < 3) return;
 
     // Close the polygon
@@ -467,7 +459,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
 
     // Create final polygon
-    editingComposable.createPolygon(points, map, emit);
+    editingComposable.createPolygon(points, map, layersComposable);
 
     // RESET to allow new polygon
     currentPolygonPoints.value = [];
@@ -481,7 +473,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     e.originalEvent.preventDefault();
 
     if (currentPolygonPoints.value.length >= 3) {
-      finishPolygon(map, emit);
+      finishPolygon(map);
     }
   }
 
@@ -490,7 +482,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!props.editMode || props.activeEditMode !== "CREATE_POLYGON") return;
 
     if (currentPolygonPoints.value.length >= 3) {
-      finishPolygon(map, emit);
+      finishPolygon(map);
     }
   }
 
@@ -541,7 +533,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         // Save original positions
         originalPositions.value.clear();
         selectedFeatures.value.forEach((featureId) => {
-          const layer = layersComposable.featureLayerManager.layers.get(featureId);
+          const layer = layersComposable.featureLayerManager.layers.get(String(featureId));
           if (layer) {
             // For polygons, save coordinates
             if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
@@ -564,7 +556,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       // Apply movement to all selected shapes
       selectedFeatures.value.forEach((featureId) => {
-        const layer = layersComposable.featureLayerManager.layers.get(featureId);
+        const layer = layersComposable.featureLayerManager.layers.get(String(featureId));
         if (layer && originalPositions.value.has(featureId)) {
           if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
             const originalBounds = originalPositions.value.get(featureId);
@@ -615,7 +607,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       // Save new positions in database
       selectedFeatures.value.forEach((featureId) => {
-        const feature = props.features.find((f) => f.id === featureId);
+        const feature = props.features.find((f) => String(f.id) === String(featureId));
         if (feature) {
           editingComposable.updateFeaturePosition(feature, deltaLat, deltaLng);
         }
@@ -671,6 +663,24 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
   }
 
+  function cleanupCurrentDrawing() {
+    // Clean up line drawing
+    if (tempLine) {
+      layersComposable.drawnItems.removeLayer(tempLine);
+      tempLine = null;
+    }
+    
+    // Clean up free line drawing
+    freeLinePoints.value = [];
+    isDrawingFree.value = false;
+    if (tempFreeLine) {
+      layersComposable.drawnItems.removeLayer(tempFreeLine);
+      tempFreeLine = null;
+    }
+
+    // Don't clean up polygon here to allow persistence when switching modes
+  }
+
   function preventDragDuringShapeDrawing(e) {
     if (isDrawingShape) {
       if (e.originalEvent) {
@@ -712,6 +722,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     finishPolygon,
     cleanupTempLine,
     cleanupTempShape,
+    cleanupCurrentDrawing,
     preventDragDuringShapeDrawing,
   };
 }
