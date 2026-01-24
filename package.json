@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "keycloak-js": "^26.2.2",
     "leaflet": "^1.9.4",
     "pinia": "^3.0.3",
     "prettier": "^3.7.4",
