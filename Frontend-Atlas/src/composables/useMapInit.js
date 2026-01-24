@@ -49,6 +49,10 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
       map.on("mousemove", (e) => eventsComposable.handleShapeMouseMove(e, map));
       map.on("mouseup", (e) => eventsComposable.handleShapeMouseUp(e, map));
       map.on("dragstart", (e) => eventsComposable.preventDragDuringShapeDrawing(e));
+    } else if (props.activeEditMode === "RESIZE_SHAPE") {
+      map.on("mousedown", (e) => eventsComposable.handleResizeMouseDown(e, map));
+      map.on("mousemove", (e) => eventsComposable.handleResizeMouseMove(e, map));
+      map.on("mouseup", (e) => eventsComposable.handleResizeMouseUp(e, map));
     } else if (props.activeEditMode === "CREATE_POLYGON") {
       map.on("contextmenu", (e) => eventsComposable.handleRightClick(e, map));
       // Map click handler for polygon creation

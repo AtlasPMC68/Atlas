@@ -666,7 +666,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     lastMousePos = null;
     isDrawingShape = false;
     if (tempShape) {
-      layersComposable.drawnItems.removeLayer(tempShape);
+      layersComposable.drawnItems.value.removeLayer(tempShape);
       tempShape = null;
     }
   }
@@ -674,9 +674,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function cleanupCurrentDrawing() {
     // Clean up line drawing
     if (tempLine) {
-      layersComposable.drawnItems.removeLayer(tempLine);
+      layersComposable.drawnItems.value.removeLayer(tempLine);
       tempLine = null;
     }
+    isDrawingLine.value = false;
+    lineStartPoint.value = null;
     
     // Clean up free line drawing
     freeLinePoints.value = [];
@@ -685,6 +687,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       layersComposable.drawnItems.value.removeLayer(tempFreeLine);
       tempFreeLine = null;
     }
+
+    // Clean up shape drawing
+    cleanupTempShape();
 
     // Don't clean up polygon here to allow persistence when switching modes
   }
@@ -697,6 +702,92 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
       return false;
     }
+  }
+
+  // ===== RESIZE HANDLERS =====
+
+  function handleResizeMouseDown(e, map) {
+    if (!props.editMode || props.activeEditMode !== "RESIZE_SHAPE") return;
+
+    e.originalEvent?.preventDefault();
+    e.originalEvent?.stopPropagation();
+
+    console.log("🔍 Resize mode: Checking for click on shape");
+
+    // Check if clicking on a resizable feature
+    const point = e.latlng;
+    let clickedFeature = null;
+    let clickedFeatureId = null;
+
+    // Check all features to see if we clicked on one
+    layersComposable.featureLayerManager.layers.forEach((layer, featureId) => {
+      console.log(`Checking layer ${featureId}:`, {
+        hasBounds: !!layer.getBounds,
+        bounds: layer.getBounds ? layer.getBounds() : null,
+        clickPoint: point,
+        hasFeatureData: !!layer.feature
+      });
+      
+      if (layer.getBounds && layer.getBounds().contains(point)) {
+        // Check if feature data is attached to the layer
+        if (layer.feature && layer.feature.properties && layer.feature.properties.resizable) {
+          clickedFeature = layer.feature;
+          clickedFeatureId = featureId;
+          console.log(`🎯 Resizable feature found: ${featureId}`, clickedFeature);
+        } else {
+          console.log(`⚠️ Feature in bounds but not resizable or no feature data attached`);
+        }
+      }
+    });
+
+    if (clickedFeature) {
+      console.log("Starting resize for feature:", clickedFeatureId);
+      // Start resizing this shape
+      const success = editingComposable.startResizeShape(
+        clickedFeatureId,
+        clickedFeature,
+        layersComposable.featureLayerManager,
+        map
+      );
+
+      if (success) {
+        console.log("✅ Resize started successfully");
+        // Disable map dragging during resize
+        map.dragging.disable();
+      } else {
+        console.log("❌ Failed to start resize");
+      }
+    } else {
+      console.log("❌ No resizable feature found at click position");
+    }
+  }
+
+  function handleResizeMouseMove(e, map) {
+    if (!editingComposable.isResizeMode.value || !editingComposable.resizingShape.value) return;
+
+    // Update the shape visual with current mouse position
+    editingComposable.updateResizeShape(
+      L.latLng(editingComposable.resizingShape.value.feature.properties.center),
+      e.latlng,
+      map,
+      layersComposable
+    );
+  }
+
+  function handleResizeMouseUp(e, map) {
+    if (!editingComposable.isResizeMode.value || !editingComposable.resizingShape.value) return;
+
+    console.log("✅ Finishing resize");
+
+    // Prevent default behavior and stop propagation
+    e.originalEvent?.preventDefault();
+    e.originalEvent?.stopPropagation();
+
+    // Finish resizing
+    editingComposable.finishResizeShape(e.latlng, map, layersComposable);
+
+    // Re-enable map dragging
+    map.dragging.enable();
   }
 
   // ===== EXPORTS =====
@@ -717,6 +808,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     handleShapeMouseDown,
     handleShapeMouseMove,
     handleShapeMouseUp,
+    handleResizeMouseDown,
+    handleResizeMouseMove,
+    handleResizeMouseUp,
     handleMapClick,
     handlePolygonClick,
     handleRightClick,

@@ -102,6 +102,15 @@
               </button>
             </div>
           </div>
+
+          <!-- Instructions pour le mode redimensionner -->
+          <div v-if="activeEditMode === 'RESIZE_SHAPE'" class="mt-3 pt-3 border-t border-gray-200">
+            <p class="text-xs text-gray-600 mb-2">
+              <i class="fas fa-info-circle mr-1"></i>
+              Cliquez sur un carré, cercle ou triangle existant pour le redimensionner.<br>
+              <span class="font-semibold">Maintenir le clic</span> et glisser pour ajuster la taille, puis <span class="font-semibold">relâcher</span> pour valider.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -155,6 +164,7 @@ const editModes = [
   { id: 'CREATE_FREE_LINE', label: 'Crayon libre', icon: 'fas fa-pencil-alt' },
   { id: 'CREATE_POLYGON', label: 'Ajouter un polygone', icon: 'fas fa-draw-polygon' },
   { id: 'CREATE_SHAPES', label: 'Formes', icon: 'fas fa-shapes' },
+  { id: 'RESIZE_SHAPE', label: 'Redimensionner', icon: 'fas fa-expand-arrows-alt' },
   { id: 'DELETE_FEATURE', label: 'Supprimer', icon: 'fas fa-trash' }
 ];
 
@@ -217,6 +227,10 @@ function setEditMode(modeId) {
     selectedShape.value = null; // Désélectionner aussi la forme
   } else {
     activeEditMode.value = modeId;
+    // Désélectionner la forme si on change de mode (sauf si on va vers CREATE_SHAPES)
+    if (modeId !== 'CREATE_SHAPES') {
+      selectedShape.value = null;
+    }
   }
 }
 

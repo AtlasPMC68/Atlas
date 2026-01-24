@@ -6,6 +6,9 @@ import { MAP_CONFIG } from './useMapConfig.js';
 // Composable for map editing functionality (creating shapes, managing selection, etc.)
 export function useMapEditing(props, emit) {
   const isDeleteMode = ref(false);
+  const isResizeMode = ref(false);
+  const resizingShape = ref(null); // Shape being resized
+  const resizeMetadata = ref(null); // Original shape metadata for resizing
 
   // ===== SHAPE CREATION FUNCTIONS =====
 
@@ -58,6 +61,9 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
+    // Attach feature data to the Leaflet layer
+    square.feature = tempFeature;
+
     // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, square);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, square);
@@ -95,6 +101,9 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
+    // Attach feature data to the Leaflet layer
+    rectangle.feature = tempFeature;
+
     // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, rectangle);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, rectangle);
@@ -122,6 +131,9 @@ export function useMapEditing(props, emit) {
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
+
+    // Attach feature data to the Leaflet layer
+    circle.feature = tempFeature;
 
     // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, circle);
@@ -160,6 +172,9 @@ export function useMapEditing(props, emit) {
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
+
+    // Attach feature data to the Leaflet layer
+    triangle.feature = tempFeature;
 
     // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, triangle);
@@ -203,6 +218,9 @@ export function useMapEditing(props, emit) {
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
+
+    // Attach feature data to the Leaflet layer
+    oval.feature = tempFeature;
 
     // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, oval);
@@ -609,6 +627,12 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
+      properties: {
+        shapeType: "square",
+        center: { lat: center.lat, lng: center.lng },
+        size: distance,
+        resizable: true,
+      },
     };
   }
 
@@ -672,6 +696,12 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
+      properties: {
+        shapeType: "circle",
+        center: { lat: center.lat, lng: center.lng },
+        size: radius,
+        resizable: true,
+      },
     };
   }
 
@@ -703,6 +733,12 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
+      properties: {
+        shapeType: "triangle",
+        center: { lat: center.lat, lng: center.lng },
+        size: distance,
+        resizable: true,
+      },
     };
   }
 
@@ -990,9 +1026,219 @@ export function useMapEditing(props, emit) {
     }
   }
 
+  // ===== RESIZE FUNCTIONS =====
+
+  // Start resizing a shape
+  function startResizeShape(featureId, feature, featureLayerManager, map) {
+    const layer = featureLayerManager.layers.get(featureId);
+    if (!layer || !feature.properties || !feature.properties.resizable) {
+      return false;
+    }
+
+    isResizeMode.value = true;
+    resizingShape.value = {
+      featureId,
+      feature,
+      layer,
+    };
+    resizeMetadata.value = {
+      shapeType: feature.properties.shapeType,
+      center: feature.properties.center,
+      size: feature.properties.size,
+      width: feature.properties.width,
+      height: feature.properties.height,
+    };
+
+    // Remove the original layer temporarily
+    map.removeLayer(layer);
+    featureLayerManager.layers.delete(featureId);
+
+    return true;
+  }
+
+  // Update shape during resize
+  function updateResizeShape(center, sizePoint, map, layersComposable) {
+    if (!resizingShape.value || !resizeMetadata.value) return null;
+
+    const shapeType = resizeMetadata.value.shapeType;
+    const originalCenter = resizeMetadata.value.center;
+
+    // Remove old temporary shape
+    if (resizingShape.value.tempLayer) {
+      layersComposable.drawnItems.value.removeLayer(resizingShape.value.tempLayer);
+    }
+
+    let tempLayer = null;
+
+    switch (shapeType) {
+      case "square":
+        tempLayer = updateTempSquareFromCenter(L.latLng(originalCenter), sizePoint, map, layersComposable, null);
+        break;
+      case "circle":
+        tempLayer = updateTempCircleFromCenter(L.latLng(originalCenter), sizePoint, map, layersComposable, null);
+        break;
+      case "triangle":
+        tempLayer = updateTempTriangleFromCenter(L.latLng(originalCenter), sizePoint, map, layersComposable, null);
+        break;
+      // Add more shapes as needed
+    }
+
+    resizingShape.value.tempLayer = tempLayer;
+    return tempLayer;
+  }
+
+  // Finish resizing and save
+  async function finishResizeShape(sizePoint, map, layersComposable) {
+    if (!resizingShape.value || !resizeMetadata.value) return;
+
+    const originalCenter = L.latLng(resizeMetadata.value.center);
+    const shapeType = resizeMetadata.value.shapeType;
+    const featureId = resizingShape.value.featureId;
+
+    // Remove temporary layer
+    if (resizingShape.value.tempLayer) {
+      layersComposable.drawnItems.value.removeLayer(resizingShape.value.tempLayer);
+    }
+
+    // Create updated feature
+    let updatedFeature = null;
+
+    switch (shapeType) {
+      case "square":
+        updatedFeature = squareToFeatureFromCenter(originalCenter, sizePoint, map);
+        break;
+      case "circle":
+        updatedFeature = circleToFeatureFromCenter(originalCenter, sizePoint, map);
+        break;
+      case "triangle":
+        updatedFeature = triangleToFeatureFromCenter(originalCenter, sizePoint, map);
+        break;
+      // Add more shapes as needed
+    }
+
+    if (!updatedFeature) {
+      cancelResizeShape(map, layersComposable);
+      return;
+    }
+
+    // Update in database if it's not a temporary feature
+    if (!featureId.startsWith('temp_')) {
+      try {
+        const response = await fetch(
+          `http://localhost:8000/maps/features/${featureId}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(updatedFeature),
+          }
+        );
+
+        if (!response.ok) {
+          console.error(`Failed to update feature ${featureId}`);
+          cancelResizeShape(map, layersComposable);
+          return;
+        }
+
+        const savedFeature = await response.json();
+        savedFeature.id = featureId;
+
+        // Re-render the updated feature
+        layersComposable.featureLayerManager.addFeature(featureId, savedFeature, map, props);
+        emit("features-loaded", [savedFeature]);
+      } catch (error) {
+        console.error(`Error updating feature ${featureId}:`, error);
+        cancelResizeShape(map, layersComposable);
+        return;
+      }
+    } else {
+      // For temporary features, just re-create the layer
+      const newLayer = createLayerFromFeature(updatedFeature, originalCenter, sizePoint, map, layersComposable);
+      if (newLayer) {
+        // Remove old layer first
+        const oldLayer = layersComposable.featureLayerManager.layers.get(featureId);
+        if (oldLayer) {
+          layersComposable.drawnItems.value.removeLayer(oldLayer);
+        }
+        
+        // Add new layer
+        layersComposable.drawnItems.value.addLayer(newLayer);
+        layersComposable.featureLayerManager.layers.set(featureId, newLayer);
+        layersComposable.featureLayerManager.makeLayerClickable(featureId, newLayer);
+      }
+    }
+
+    // Reset resize state
+    isResizeMode.value = false;
+    resizingShape.value = null;
+    resizeMetadata.value = null;
+  }
+
+  // Cancel resize and restore original
+  function cancelResizeShape(map, layersComposable) {
+    if (!resizingShape.value) return;
+
+    // Remove temporary layer
+    if (resizingShape.value.tempLayer) {
+      layersComposable.drawnItems.value.removeLayer(resizingShape.value.tempLayer);
+    }
+
+    // Restore original layer
+    const { featureId, layer } = resizingShape.value;
+    layersComposable.featureLayerManager.addFeature(featureId, resizingShape.value.feature, map, props);
+
+    // Reset resize state
+    isResizeMode.value = false;
+    resizingShape.value = null;
+    resizeMetadata.value = null;
+  }
+
+  // Helper to create layer from feature (for temporary shapes)
+  function createLayerFromFeature(feature, center, sizePoint, map, layersComposable) {
+    const shapeType = feature.properties?.shapeType;
+    
+    let layer = null;
+    
+    switch (shapeType) {
+      case "square": {
+        const distance = map.distance(center, sizePoint);
+        const halfSide = distance / Math.sqrt(2);
+        const centerPixel = map.latLngToContainerPoint(center);
+        const halfSidePixels = halfSide * (centerPixel.distanceTo(map.latLngToContainerPoint(sizePoint)) / distance);
+        
+        const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
+        const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
+        
+        const topLeft = map.containerPointToLatLng(topLeftPixel);
+        const bottomRight = map.containerPointToLatLng(bottomRightPixel);
+        
+        layer = L.rectangle([[topLeft.lat, topLeft.lng], [bottomRight.lat, bottomRight.lng]], {
+          color: "#000000",
+          weight: 2,
+          fillColor: "#cccccc",
+          fillOpacity: 0.5,
+        });
+        break;
+      }
+      // Add more shapes as needed
+      default:
+        return null;
+    }
+    
+    // Attach feature data to the layer
+    if (layer) {
+      layer.feature = feature;
+    }
+    
+    return layer;
+  }
+
   return {
     // State
     isDeleteMode,
+    isResizeMode,
+    resizingShape,
 
     // Shape creation functions
     createSquare,
@@ -1031,6 +1277,12 @@ export function useMapEditing(props, emit) {
 
     // Mode management
     toggleDeleteMode,
+    
+    // Resize functions
+    startResizeShape,
+    updateResizeShape,
+    finishResizeShape,
+    cancelResizeShape,
     
     // Utility functions
     smoothFreeLinePoints,
