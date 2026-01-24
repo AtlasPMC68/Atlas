@@ -187,7 +187,7 @@ async function loadInitialFeatures() {
     });
     featureVisibility.value = newVisibility;
   } catch (error) {
-    console.error("Erreur lors du chargement des features:", error);
+    // Error loading features
   }
 }
 
@@ -197,7 +197,6 @@ function toggleFeatureVisibility(featureId, visible) {
 }
 
 function handleFeaturesLoaded(loadedFeatures) {
-  console.log("Features chargées dans la map:", loadedFeatures);
   // Recharger les features après une sauvegarde automatique
   loadInitialFeatures();
 }
@@ -231,7 +230,6 @@ function cancelPolygon() {
 
 function selectShape(shapeId) {
   selectedShape.value = shapeId;
-  console.log('Selected shape:', shapeId);
 }
 
 function cancelShape() {
@@ -260,7 +258,6 @@ onMounted(() => {
 });
 
 function saveCarte() {
-  console.log("Quick save");
   // appel API ou logique de sauvegarde ici
 }
 
@@ -276,7 +273,6 @@ async function handleSaveAs(data) {
   const token = localStorage.getItem("access_token");
 
   if (!token) {
-    console.error("No token found in the localStorage.");
     return;
   }
 
@@ -297,7 +293,6 @@ async function handleSaveAs(data) {
 
     userData = await res.json();
   } catch (err) {
-    console.error("Error while fetching user :", err);
     return;
   }
 
@@ -324,7 +319,6 @@ async function handleSaveAs(data) {
     }
 
     const result = await response.json();
-    console.log("Map saved successfuly:", result);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "Unknown error.";
   }

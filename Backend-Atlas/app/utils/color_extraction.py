@@ -33,14 +33,9 @@ def extract_colors(image_path: str, output_dir: str = DEFAULT_OUTPUT_DIR, nb_col
     image_output_dir = os.path.join(output_dir, base_name)
     os.makedirs(image_output_dir, exist_ok=True)
 
-<<<<<<< HEAD
-    masks = {}
-    pixels = list(quantized.getdata())
-=======
     masks: Dict[str, str] = {}
     # Normalized geometries (each shape scaled into a 0-1 box)
     normalized_features = []
->>>>>>> main
 
     for color_index, rgb in enumerate(palette_rgb[:quantized.getcolors().__len__()]):
         mask = Image.new("1", (width, height))  # 1-bit image (black/white)

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from ..tasks import process_map_extraction
 from ..celery_app import celery_app
-from fastapi import Depends, APIRouter
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database.session import get_async_session
@@ -13,15 +13,8 @@ from datetime import date
 from sqlalchemy.orm import Session
 from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
-<<<<<<< HEAD
 from app.schemas.feature import FeatureCreateRequest, FeatureUpdateRequest
-from geoalchemy2 import WKTElement
-from shapely.geometry import shape
-from datetime import datetime
-=======
-from app.schemas.featuresCreate import FeatureCreate
 from app.services.maps import create_map_in_db
->>>>>>> main
 
 router = APIRouter()
 
@@ -214,38 +207,39 @@ async def create_feature(
     """Créer une nouvelle feature sur la carte"""
     
     try:
-        # Convertir la géométrie GeoJSON en WKT pour PostGIS
-        geom_shape = shape(request.geometry.dict())
-        wkt_geom = WKTElement(geom_shape.wkt, srid=4326)
-        
-        # Créer la nouvelle feature
+        geometry = request.geometry.dict() if hasattr(request.geometry, "dict") else request.geometry
+        feature_payload = {
+            "type": request.type,
+            "geometry": geometry,
+            "color": request.color or "#000000",
+            "stroke_width": request.stroke_width if request.stroke_width is not None else 2,
+            "opacity": request.opacity if request.opacity is not None else 1.0,
+            "z_index": request.z_index if request.z_index is not None else 1,
+            "properties": {
+                "name": request.name,
+                "tags": request.tags or {},
+                "start_date": request.start_date.isoformat() if request.start_date else None,
+                "end_date": request.end_date.isoformat() if request.end_date else None,
+                "precision": request.precision,
+                "source": request.source,
+            },
+        }
+
         new_feature = Feature(
-            map_id=request.map_id,
-            name=request.name,
-            type=request.type,
-            geometry=wkt_geom,
-            color=request.color,
-            stroke_width=request.stroke_width,
-            opacity=request.opacity,
-            z_index=request.z_index,
-            tags=request.tags or {},
-            start_date=request.start_date,
-            end_date=request.end_date,
-            precision=request.precision,
-            source=request.source,
-            created_at=datetime.utcnow()
+            map_id=UUID(request.map_id),
+            is_feature_collection=False,
+            data={
+                "type": "FeatureCollection",
+                "features": [feature_payload],
+            },
         )
         
         session.add(new_feature)
         await session.commit()
         await session.refresh(new_feature)
         
-        # Convertir pour la réponse
-        response = new_feature.__dict__.copy()
-        if new_feature.geometry:
-            shape_geom = to_shape(new_feature.geometry)
-            response['geometry'] = json.loads(json.dumps(mapping(shape_geom)))
-        
+        response = feature_payload.copy()
+        response["id"] = str(new_feature.id)
         return response
         
     except Exception as e:
@@ -270,29 +264,41 @@ async def update_feature(
         if not feature:
             raise HTTPException(status_code=404, detail="Feature not found")
 
-        # Mettre à jour seulement les champs fournis
         update_data = request.dict(exclude_unset=True)
+        data = feature.data or {}
+        features = data.get("features") or []
+        feature_payload = features[0] if features else {}
+        feature_payload.setdefault("properties", {})
 
         for field, value in update_data.items():
-            if field == 'geometry' and value is not None:
-                # Convertir la géométrie GeoJSON en WKT pour PostGIS
-                geom_shape = shape(value)
-                wkt_geom = WKTElement(geom_shape.wkt, srid=4326)
-                setattr(feature, field, wkt_geom)
-            elif field == 'tags' and value is not None:
-                setattr(feature, field, value or {})
-            elif value is not None:
-                setattr(feature, field, value)
+            if value is None:
+                continue
+            if field == "geometry":
+                feature_payload["geometry"] = value
+            elif field in {"type", "color", "stroke_width", "opacity", "z_index"}:
+                feature_payload[field] = value
+            else:
+                if field in {"start_date", "end_date"}:
+                    feature_payload["properties"][field] = value.isoformat() if value else None
+                elif field == "tags":
+                    feature_payload["properties"][field] = value or {}
+                else:
+                    feature_payload["properties"][field] = value
+
+        if not features:
+            features = [feature_payload]
+        else:
+            features[0] = feature_payload
+
+        data["features"] = features
+        data.setdefault("type", "FeatureCollection")
+        feature.data = data
 
         await session.commit()
         await session.refresh(feature)
 
-        # Convertir pour la réponse
-        response = feature.__dict__.copy()
-        if feature.geometry:
-            shape_geom = to_shape(feature.geometry)
-            response['geometry'] = json.loads(json.dumps(mapping(shape_geom)))
-
+        response = feature_payload.copy()
+        response["id"] = str(feature.id)
         return response
 
     except Exception as e:

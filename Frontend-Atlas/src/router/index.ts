@@ -19,6 +19,10 @@ const routes = [
     component: Login,
   },
   {
+    path: "/demo",
+    redirect: "/maps/11111111-1111-1111-1111-111111111111"
+  },
+  {
     path: "/demo/upload",
     component: ImportView,
     meta: { requiresAuth: true },
