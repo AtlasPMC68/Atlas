@@ -1221,7 +1221,37 @@ export function useMapEditing(props, emit) {
         });
         break;
       }
-      // Add more shapes as needed
+      
+      case "circle": {
+        const radius = map.distance(center, sizePoint);
+        layer = L.circle(center, {
+          radius: radius,
+          color: "#000000",
+          weight: 2,
+          fillColor: "#cccccc",
+          fillOpacity: 0.5,
+        });
+        break;
+      }
+      
+      case "triangle": {
+        const distance = map.distance(center, sizePoint);
+        const points = [];
+        for (let i = 0; i < 3; i++) {
+          const angle = (i / 3) * 2 * Math.PI - Math.PI / 2;
+          const lat = center.lat + (distance / 111320) * Math.sin(angle);
+          const lng = center.lng + ((distance / 111320) * Math.cos(angle)) / Math.cos((center.lat * Math.PI) / 180);
+          points.push([lat, lng]);
+        }
+        layer = L.polygon(points, {
+          color: "#000000",
+          weight: 2,
+          fillColor: "#cccccc",
+          fillOpacity: 0.5,
+        });
+        break;
+      }
+      
       default:
         return null;
     }

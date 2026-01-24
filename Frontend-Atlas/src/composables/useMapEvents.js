@@ -712,8 +712,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     e.originalEvent?.preventDefault();
     e.originalEvent?.stopPropagation();
 
-    console.log("🔍 Resize mode: Checking for click on shape");
-
     // Check if clicking on a resizable feature
     const point = e.latlng;
     let clickedFeature = null;
@@ -721,27 +719,16 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     // Check all features to see if we clicked on one
     layersComposable.featureLayerManager.layers.forEach((layer, featureId) => {
-      console.log(`Checking layer ${featureId}:`, {
-        hasBounds: !!layer.getBounds,
-        bounds: layer.getBounds ? layer.getBounds() : null,
-        clickPoint: point,
-        hasFeatureData: !!layer.feature
-      });
-      
       if (layer.getBounds && layer.getBounds().contains(point)) {
         // Check if feature data is attached to the layer
         if (layer.feature && layer.feature.properties && layer.feature.properties.resizable) {
           clickedFeature = layer.feature;
           clickedFeatureId = featureId;
-          console.log(`🎯 Resizable feature found: ${featureId}`, clickedFeature);
-        } else {
-          console.log(`⚠️ Feature in bounds but not resizable or no feature data attached`);
         }
       }
     });
 
     if (clickedFeature) {
-      console.log("Starting resize for feature:", clickedFeatureId);
       // Start resizing this shape
       const success = editingComposable.startResizeShape(
         clickedFeatureId,
@@ -751,14 +738,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       );
 
       if (success) {
-        console.log("✅ Resize started successfully");
         // Disable map dragging during resize
         map.dragging.disable();
-      } else {
-        console.log("❌ Failed to start resize");
       }
-    } else {
-      console.log("❌ No resizable feature found at click position");
     }
   }
 
@@ -776,8 +758,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
   function handleResizeMouseUp(e, map) {
     if (!editingComposable.isResizeMode.value || !editingComposable.resizingShape.value) return;
-
-    console.log("✅ Finishing resize");
 
     // Prevent default behavior and stop propagation
     e.originalEvent?.preventDefault();
