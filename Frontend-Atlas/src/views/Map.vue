@@ -135,6 +135,7 @@ import FeatureVisibilityControls from "../components/FeatureVisibilityControls.v
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import { useRouter } from "vue-router";
+import keycloak from "../keycloak";
 import { useRoute } from "vue-router";
 
 const route = useRoute();
@@ -174,7 +175,7 @@ const shapeTypes = [
 async function loadInitialFeatures() {
   try {
     const res = await fetch(
-      `http://localhost:8000/maps/features/${mapId.value}`,
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`,
     );
     if (!res.ok) throw new Error("Failed to fetch features");
 
@@ -270,20 +271,19 @@ async function handleSaveAs(data) {
   description.value = data.description;
   access_level.value = data.access_level;
 
-  const token = localStorage.getItem("access_token");
-
-  if (!token) {
+  if (!keycloak.token) {
+    console.error("No authentication token available from Keycloak");
     return;
   }
 
   let userData;
 
   try {
-    const res = await fetch(`http://localhost:8000/me`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${keycloak.token}`,
       },
     });
 
@@ -299,11 +299,11 @@ async function handleSaveAs(data) {
   const userId = userData.id;
 
   try {
-    const response = await fetch("http://localhost:8000/maps/save", {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/save`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${keycloak.token}`,
       },
       body: JSON.stringify({
         owner_id: userId,

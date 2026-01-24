@@ -6,10 +6,10 @@ import asyncio
 import logging
 import os
 import tempfile
+from typing import Any, List
 import time
 import re
 from datetime import datetime
-from typing import Any, List
 from uuid import UUID
 from PIL import Image, ImageEnhance
 
@@ -247,8 +247,8 @@ def validate_file_extension(file_path: str) -> None:
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in supported_file_ext:
         raise ValueError(f"Extension {ext} non autorisée pour le système du consortium.")
-
-
+        
+# TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
         for feature in normalized_features:

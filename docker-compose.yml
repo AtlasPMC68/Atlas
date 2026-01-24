@@ -7,13 +7,17 @@ services:
       - "8000:8000"
     env_file:
       - ./Backend-Atlas/.env.dev
+    environment:
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/atlas
+      KEYCLOAK_AUDIENCE: atlas-backend
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-
+    depends_on:
+      - keycloak
   frontend:
     build:
       context: ./Frontend-Atlas
@@ -22,7 +26,7 @@ services:
       - "3000:3000"
     restart: unless-stopped
     env_file:
-      - ./Frontend-Atlas/.env.dev
+      - ./Frontend-Atlas/.env
     volumes:
       - ./Frontend-Atlas:/app # bind mount pour hot reload
       - /app/node_modules # éviter conflit node_modules
@@ -53,7 +57,6 @@ services:
       - db
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
 
-  # ESSENTIEL : Interface web Flower pour monitoring (important pour OCR/ML)
   flower:
     build:
       context: ./Backend-Atlas
@@ -86,6 +89,57 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./Backend-Atlas/db:/docker-entrypoint-initdb.d
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.6  # Revenir à une version plus stable
+    container_name: atlas-keycloak
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Admin credentials
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      
+      # Database configuration
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      
+      # Simple development configuration
+      KC_HOSTNAME_STRICT: false
+      KC_HTTP_ENABLED: true
+      KC_PROXY: edge  # Important pour les environnements proxied
+      
+      # Disable health checks and metrics to avoid connection issues
+      KC_HEALTH_ENABLED: false
+      KC_METRICS_ENABLED: false
+      
+      # Logging
+      KC_LOG_LEVEL: WARN  # Reduce log noise
+    volumes:
+      - ./keycloak:/var/tmp
+    entrypoint: sh -c "/var/tmp/init.sh"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+  keycloak-db:
+    image: postgres:16
+    container_name: atlas-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   test-backend:
     build:
       context: ./Backend-Atlas
@@ -110,3 +164,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  keycloak-data:
