@@ -30,11 +30,11 @@ import TimelineSlider from "../components/TimelineSlider.vue";
 // ========================================
 // IMPORTS DES COMPOSABLES
 // ========================================
-import { useMapLayers } from '../composables/useMapLayers.js';
-import { useMapEditing } from '../composables/useMapEditing.js';
-import { useMapEvents } from '../composables/useMapEvents.js';
-import { useMapTimeline } from '../composables/useMapTimeline.js';
-import { useMapInit } from '../composables/useMapInit.js';
+import { useMapLayers } from "../composables/useMapLayers.js";
+import { useMapEditing } from "../composables/useMapEditing.js";
+import { useMapEvents } from "../composables/useMapEvents.js";
+import { useMapTimeline } from "../composables/useMapTimeline.js";
+import { useMapInit } from "../composables/useMapInit.js";
 
 // Props reçues de la vue parent
 const props = defineProps({
@@ -73,95 +73,17 @@ const init = useMapInit(props, emit, layers, events, editing, timeline);
 let map = null;
 let baseTileLayer = null;
 
-// /* ========================================
-//  * ANCIEN CODE - CONSERVÉ EN COMMENTAIRE
-//  * ========================================
-// const selectedYear = ref(1740); 
-// const previousFeatureIds = ref(new Set());
-// const isDeleteMode = ref(false);
-// 
-// const availableYears = [
-//   1400, 1500, 1530, 1600, 1650, 1700, 1715, 1783, 1800, 1815, 1880, 1900, 1914,
-//   1920, 1930, 1938, 1945, 1960, 1994, 2000, 2010,
-// ];
-// 
-// let currentRegionsLayer = null;
-// let labelLayer = null;
-// let citiesLayer = null;
-// let zonesLayer = null;
-// let arrowsLayer = null;
-// let drawnItems = null;
-// let currentLinePoints = [];
-// let currentPolygonPoints = [];
-// let tempLine = null;
-// let tempPolygon = null;
-// let allCircles = new Set();
-// let shapeState = null;
-// let shapeStartPoint = null;
-// let shapeEndPoint = null;
-// let tempShape = null;
-// let lastMousePos = null;
-// let isDrawingShape = false;
-// let selectedFeatures = new Set();
-// let isDraggingFeatures = false;
-// let dragStartPoint = null;
-// let originalPositions = new Map();
-// let justFinishedDrag = false;
-// let resizeHandles = new Map();
-// let isResizing = false;
-// let resizeStartPoint = null;
-// let resizeHandle = null;
-// let originalGeometry = null;
-// let originalBounds = null;
-// let tempResizeShape = null;
-// let isDrawingLine = false;
-// let lineStartPoint = null;
-// let isDrawingFree = false;
-// let freeLinePoints = [];
-// let tempFreeLine = null;
-// const SMOOTHING_MIN_DISTANCE = 3;
-// const BASE_ZOOM = 5;
-// const BASE_RADIUS = 3;
-// const ZOOM_FACTOR = 1.5;
-// 
-// function smoothFreeLinePoints(points) { ... }
-// function getRadiusForZoom(currentZoom) { ... }
-// function updateCircleSizes() { ... }
-// 
-// const featureLayerManager = {
-//   layers: new Map(),
-//   addFeatureLayer(featureId, layer) { ... },
-//   makeLayerClickable(featureId, layer) { ... },
-//   toggleFeature(featureId, visible) { ... },
-//   clearAllFeatures() { ... },
-// };
-// 
-// const filteredFeatures = computed(() => { ... });
-// async function fetchFeaturesAndRender(year) { ... }
-// function getClosestAvailableYear(year) { ... }
-// function loadRegionsForYear(year, isFirstTime = false) { ... }
-// function renderCities(features) { ... }
-// function renderZones(features) { ... }
-// function renderArrows(features) { ... }
-// function renderShapes(features) { ... }
-// function renderAllFeatures() { ... }
-// function removeGeoJSONLayers() { ... }
-// async function loadAllLayersForYear(year) { ... }
-// function debounce(fn, delay) { ... }
-// function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) { ... }
-// function toArray(maybeArray) { ... }
-// const debouncedUpdate = debounce((year) => { ... }, 100);
-// */ 
-
 // ========================================
 // COMPUTED PROPERTIES (UTILISANT LES COMPOSABLES)
 // ========================================
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature) =>
-      new Date(feature.start_date).getFullYear() <= timeline.selectedYear.value &&
+      new Date(feature.start_date).getFullYear() <=
+        timeline.selectedYear.value &&
       (!feature.end_date ||
-        new Date(feature.end_date).getFullYear() >= timeline.selectedYear.value)
+        new Date(feature.end_date).getFullYear() >=
+          timeline.selectedYear.value),
   );
 });
 
@@ -180,7 +102,7 @@ onMounted(() => {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       subdomains: "abcd",
       maxZoom: 19,
-    }
+    },
   ).addTo(map);
 
   // Initialiser les couches de base
@@ -225,63 +147,6 @@ function toggleDeleteMode() {
   }
 }
 
-// /* ========================================
-//  * ANCIENNES FONCTIONS - CONSERVÉES EN COMMENTAIRE
-//  * ========================================
-// 
-// function initializeEditControls() { ... }
-// function updateMapCursor() { ... }
-// function handleMouseDown(e) { ... }
-// function handleMouseMove(e) { ... }
-// function handleMouseUp(e) { ... }
-// function cleanupTempLine() { ... }
-// function cleanupTempShape() { ... }
-// function preventDragDuringShapeDrawing(e) { ... }
-// function handleMapClick(e) { ... }
-// function handleShapeMouseDown(e) { ... }
-// function handleShapeMouseUp(e) { ... }
-// function createSquare(center, sizePoint) { ... }
-// function createRectangle(startCorner, endCorner) { ... }
-// function createCircle(center, edgePoint) { ... }
-// function createTriangle(center, sizePoint) { ... }
-// function createOval(center, heightPoint, widthPoint) { ... }
-// function updateTempSquareFromCenter(center, sizePoint) { ... }
-// function updateTempRectangleFromCorners(startCorner, endCorner) { ... }
-// function updateTempCircleFromCenter(center, edgePoint) { ... }
-// function updateTempTriangleFromCenter(center, sizePoint) { ... }
-// function updateTempOvalHeight(center, heightPoint) { ... }
-// function updateTempOvalWidth(center, heightPoint, widthPoint) { ... }
-// function squareToFeatureFromCenter(center, sizePoint) { ... }
-// function rectangleToFeatureFromCorners(startCorner, endCorner) { ... }
-// function circleToFeatureFromCenter(center, edgePoint) { ... }
-// function triangleToFeatureFromCenter(center, sizePoint) { ... }
-// function ovalToFeatureFromCenter(center, heightPoint, widthPoint) { ... }
-// function handleShapeMouseMove(e) { ... }
-// function finishFreeLine() { ... }
-// function handleRightClick(e) { ... }
-// function handleMapDoubleClick(e) { ... }
-// function createPointAt(latlng) { ... }
-// function createLine(startLatLng, endLatLng) { ... }
-// function handlePolygonClick(latlng) { ... }
-// function updatePolygonLines() { ... }
-// function finishPolygon() { ... }
-// async function saveFeature(featureData) { ... }
-// function makeFeaturesClickable() { ... }
-// function handleFeatureClick(featureId, isCtrlPressed) { ... }
-// function updateFeatureSelectionVisual() { ... }
-// function handleMoveMouseDown(e) { ... }
-// function getFeatureAtPosition(latlng) { ... }
-// function handleMoveMouseMove(e) { ... }
-// function handleMoveMouseUp(e) { ... }
-// function handleKeyDown(e) { ... }
-// async function updateFeaturePosition(feature, deltaLat, deltaLng) { ... }
-// async function deleteSelectedFeatures() { ... }
-// async function deleteFeature(featureId) { ... }
-// function updateGeometryCoordinates(geometry, deltaLat, deltaLng) { ... }
-// function cleanupEditMode() { ... }
-// function cleanupCurrentDrawing() { ... }
-// */ 
-
 // ========================================
 // WATCHERS
 // ========================================
@@ -300,7 +165,7 @@ watch(
         events.currentPolygonPoints.value,
         events.tempPolygon.value,
         map,
-        layers
+        layers,
       );
     }
 
@@ -309,7 +174,7 @@ watch(
       if (!layers.drawnItems.value) {
         layers.initializeBaseLayers(map);
       }
-      
+
       init.initializeEditControls(map);
       // Définir le handler de clic
       layers.featureLayerManager.setClickHandler((featureId, isCtrlPressed) => {
@@ -323,7 +188,7 @@ watch(
 
     // Mettre à jour le curseur
     init.updateMapCursor(map);
-  }
+  },
 );
 
 // Watcher pour mettre à jour isDeleteMode
@@ -332,7 +197,7 @@ watch(
   (newMode) => {
     editing.isDeleteMode.value = newMode === "DELETE_FEATURE";
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 // Watcher pour changer de mode d'édition
@@ -349,7 +214,7 @@ watch(
         events.currentPolygonPoints.value,
         events.tempPolygon.value,
         map,
-        layers
+        layers,
       );
     }
 
@@ -366,7 +231,7 @@ watch(
 
     // Mettre à jour le curseur
     init.updateMapCursor(map);
-  }
+  },
 );
 
 // Watcher pour la forme sélectionnée
@@ -374,7 +239,7 @@ watch(
   () => props.selectedShape,
   (newShape, oldShape) => {
     // Shape selection changed
-  }
+  },
 );
 
 // Watcher pour l'année sélectionnée
@@ -383,7 +248,7 @@ watch(
   (newYear) => {
     timeline.loadRegionsForYear(newYear, map);
     layers.renderAllFeatures(filteredFeatures.value, map);
-  }
+  },
 );
 
 // Watcher pour les features
@@ -392,7 +257,7 @@ watch(
   () => {
     layers.renderAllFeatures(filteredFeatures.value, map);
   },
-  { deep: true }
+  { deep: true },
 );
 
 // Watcher pour la visibilité des features
@@ -403,7 +268,7 @@ watch(
       layers.featureLayerManager.toggleFeature(featureId, visible);
     });
   },
-  { deep: true }
+  { deep: true },
 );
 </script>
 
