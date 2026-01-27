@@ -12,6 +12,7 @@ def real_image_np():
     # OpenCV image (NumPy array)
     return np.zeros((100, 100, 3), dtype=np.uint8)
 
+
 def get_mock_color_extraction():
     return {
         "colors_detected": ["royal-blue"],
@@ -24,6 +25,7 @@ def get_mock_color_extraction():
         "dominant_bins": [],
         "output_dir": "/app/extracted_color/test_map"
     }
+
 
 def test_process_map_extraction(real_image_np):
     filename = "test_map.png"

@@ -8,7 +8,6 @@ import imageio.v3 as iio
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
 from skimage.morphology import binary_opening, disk
 from skimage.util import img_as_float
-
 from matplotlib import colors as mcolors
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -183,7 +182,7 @@ def extract_colors(
     # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
     dom = dominant_bins_lab(lab, opaque_mask, top_n=top_n, bin_L=bin_L, bin_a=bin_a, bin_b=bin_b)
 
-    masks: Dict[str, str] = {"text_layer": text_path}
+    masks: Dict[str, str] = {}
     ratios: Dict[str, float] = {}
 
     color_index = 1
@@ -196,9 +195,6 @@ def extract_colors(
         dE = deltaE_ciede2000(lab, center)  # shape (H, W)
 
         mask = (dE <= deltaE_threshold) & opaque_mask
-
-        # Optional: remove text from color layers
-        mask = mask & (~text_mask)
 
         # Clean small noise
         if opening_radius > 0:
