@@ -1,6 +1,6 @@
 import os
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 import imageio.v3 as iio
@@ -8,11 +8,16 @@ import imageio.v3 as iio
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
 from skimage.morphology import binary_opening, disk
 from skimage.util import img_as_float
+from skimage.measure import find_contours
 from matplotlib import colors as mcolors
+
+from shapely.geometry import Polygon, MultiPolygon
+from shapely.ops import unary_union
+from shapely.geometry.base import BaseGeometry
+from shapely import affinity
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
-
 
 def load_image_rgb_alpha_mask(image_path: str) -> Tuple[np.ndarray, Optional[np.ndarray], np.ndarray]:
     """
@@ -154,6 +159,119 @@ def save_mask_png(mask_bool: np.ndarray, out_path: str) -> None:
     iio.imwrite(out_path, mask_u8)
 
 
+def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
+    """
+    Convert a boolean numpy mask to a Shapely geometry (Polygon or MultiPolygon).
+    Uses skimage.measure.find_contours to extract contours from the mask.
+    """
+    if not np.any(mask):
+        return None
+    
+    # Find contours (returns list of (n, 2) arrays with (row, col) coordinates)
+    contours = find_contours(mask.astype(float), 0.5)
+    
+    if not contours:
+        return None
+    
+    polygons = []
+    height, width = mask.shape
+    
+    for contour in contours:
+        # Convert from (row, col) to (x, y) coordinates
+        # Note: skimage uses (row, col) but we want (x, y) = (col, row)
+        coords = [(point[1], point[0]) for point in contour]
+        
+        # Ensure polygon is closed
+        if len(coords) < 3:
+            continue
+            
+        # Close the polygon if not already closed
+        if coords[0] != coords[-1]:
+            coords.append(coords[0])
+        
+        try:
+            poly = Polygon(coords)
+            if poly.is_valid and poly.area > 0:
+                polygons.append(poly)
+        except Exception:
+            # Skip invalid polygons
+            continue
+    
+    if not polygons:
+        return None
+    
+    # Merge all polygons into a single geometry
+    merged = unary_union(polygons)
+    return merged
+
+
+def build_normalized_feature(
+    color_name: str,
+    rgb: tuple,
+    pixel_polygons,
+    image_output_dir: str,
+):
+    """From pixel-space polygons, build a normalized GeoJSON feature and write it to disk.
+
+    - Merges all pixel polygons into a single geometry (possibly MultiPolygon).
+    - Scales it uniformly so the largest dimension becomes 1.
+    - Recenters it into the [0, 1] x [0, 1] box.
+    - Returns the normalized GeoJSON feature dict.
+    """
+
+    merged: BaseGeometry = unary_union(pixel_polygons)
+
+    # Preserve original aspect ratio while normalizing into a unit box
+    minx, miny, maxx, maxy = merged.bounds
+    width_px = maxx - minx
+    height_px = maxy - miny
+
+    max_dim = max(width_px, height_px)
+    scale = 1.0 / max_dim if max_dim != 0 else 1.0
+
+    translated = affinity.translate(merged, xoff=-minx, yoff=-miny)
+
+    scaled = affinity.scale(
+        translated,
+        xfact=scale,
+        yfact=scale,
+        origin=(0.0, 0.0),
+    )
+
+    width_norm = width_px * scale
+    height_norm = height_px * scale
+    offset_x = (1.0 - width_norm) / 2.0
+    offset_y = (1.0 - height_norm) / 2.0
+
+    normalized_geom = affinity.translate(
+        scaled,
+        xoff=offset_x,
+        yoff=offset_y,
+    )
+
+    normalized_feature = {
+        "type": "Feature",
+        "properties": {
+            "color_name": color_name,
+            "color_rgb": rgb,
+            # Hex string for direct styling usage on the frontend
+            "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
+            "mapElementType": "zone",
+            "name": f"Zone {color_name}",
+            "start_date": "1700-01-01",
+            "end_date": "2026-01-01",
+            "is_normalized": True,
+        },
+        "geometry": normalized_geom.__geo_interface__,
+    }
+
+    normalized_color_geojson_path = os.path.join(
+        image_output_dir, f"{color_name}_normalized.geojson"
+    )
+
+    return normalized_feature
+
+
 def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
@@ -169,7 +287,7 @@ def extract_colors(
     Extract dominant color layers using LAB binning + ΔE masks.
     Also extracts a near-black text layer.
 
-    Returns a dict with detected colors, mask paths, and ratios.
+    Returns a dict with detected colors, mask paths, ratios, and normalized_features.
     """
     rgb, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
     lab = compute_lab(rgb)
@@ -184,6 +302,7 @@ def extract_colors(
 
     masks: Dict[str, str] = {}
     ratios: Dict[str, float] = {}
+    normalized_features = []
 
     color_index = 1
     for entry in dom:
@@ -210,6 +329,17 @@ def extract_colors(
 
         masks[color_name] = out_path
         ratios[color_name] = entry["ratio"]
+        
+        # Build normalized feature from mask
+        normalized_feature = build_normalized_feature(
+            color_name, rgb_u8, mask, image_output_dir
+        )
+        if normalized_feature:
+            normalized_features.append({
+                "type": "FeatureCollection",
+                "features": [normalized_feature]
+            })
+        
         color_index += 1
 
     return {
@@ -218,4 +348,5 @@ def extract_colors(
         "ratios": ratios,
         "dominant_bins": dom,
         "output_dir": image_output_dir,
+        "normalized_features": normalized_features,
     }

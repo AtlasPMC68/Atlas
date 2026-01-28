@@ -23,7 +23,33 @@ def get_mock_color_extraction():
             "royal-blue": 0.5
         },
         "dominant_bins": [],
-        "output_dir": "/app/extracted_color/test_map"
+        "output_dir": "/app/extracted_color/test_map",
+        "normalized_features": [
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "color_name": "royal-blue",
+                            "color_rgb": (65, 105, 225),
+                            "color_hex": "#4169e1",
+                            "mapElementType": "zone",
+                            "name": "Zone royal-blue",
+                            "start_date": "1700-01-01",
+                            "end_date": "2026-01-01",
+                            "is_normalized": True,
+                        },
+                        "geometry": {
+                            "type": "MultiPolygon",
+                            "coordinates": [
+                                [[[0.1, 0.1], [0.1, 0.2], [0.2, 0.2], [0.2, 0.1], [0.1, 0.1]]]
+                            ]
+                        }
+                    }
+                ]
+            }
+        ]
     }
 
 
@@ -47,6 +73,7 @@ def test_process_map_extraction(real_image_np):
          patch("app.tasks.extract_text", return_value=(mock_ocr_result, real_image_np)), \
          patch("app.tasks.extract_colors", return_value=mock_colors), \
          patch("app.tasks.extract_shapes", return_value=mock_shapes), \
+         patch("app.tasks.persist_features") as mock_persist_features, \
          patch("tempfile.NamedTemporaryFile") as mock_tempfile, \
          patch("os.makedirs") as mock_makedirs, \
          patch("os.unlink") as mock_unlink, \
@@ -72,3 +99,4 @@ def test_process_map_extraction(real_image_np):
     assert result["color_result"] == mock_colors
     assert result["shapes_result"] == mock_shapes
     assert mock_update_state.call_count == 6
+    mock_persist_features.assert_called_once()

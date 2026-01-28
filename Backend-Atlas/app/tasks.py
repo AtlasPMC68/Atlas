@@ -156,6 +156,10 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         time.sleep(2)
 
         color_result = extract_colors(tmp_file_path)
+        normalized_features = color_result.get("normalized_features", [])
+
+        if normalized_features:
+            asyncio.run(persist_features(map_uuid, normalized_features))
 
         logger.info(
             f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
