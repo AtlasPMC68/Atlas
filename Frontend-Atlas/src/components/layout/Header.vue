@@ -90,12 +90,12 @@
           </template>
 
           <template v-else>
-            <RouterLink to="/connexion" class="btn-secondary text-sm"
-              >Connexion</RouterLink
-            >
-            <RouterLink to="/inscription" class="btn-primary text-sm"
-              >S'inscrire</RouterLink
-            >
+            <button @click="login" class="btn-secondary text-sm">
+              Connexion
+            </button>
+            <button @click="register" class="btn-primary text-sm">
+              S'inscrire
+            </button>
           </template>
         </div>
       </div>
@@ -104,13 +104,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed } from "vue";
 import {
   MapIcon,
   UserCircleIcon,
   ChevronDownIcon,
 } from "@heroicons/vue/24/outline";
 import { useRouter } from "vue-router";
+import keycloak from "../../keycloak";
 
 const isDropdownOpen = ref(false);
 const router = useRouter();
@@ -132,11 +133,23 @@ const closeDropdown = () => {
 };
 
 const isAuthenticated = computed(() => {
-  return !!localStorage.getItem("access_token");
+  return keycloak.authenticated;
 });
 
-const logout = () => {
-  localStorage.removeItem("access_token");
-  router.push("/connexion");
+const logout = async () => {
+  await keycloak.logout();
+  router.push("/");
+};
+
+const login = () => {
+  (keycloak as any).loginToAtlas({
+    redirectUri: window.location.origin,
+  });
+};
+
+const register = () => {
+  keycloak.register({
+    redirectUri: window.location.origin,
+  });
 };
 </script>

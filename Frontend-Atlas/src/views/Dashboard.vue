@@ -5,6 +5,7 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/vue/24/outline";
+import keycloak from "../keycloak";
 
 interface Projet {
   id: string;
@@ -20,21 +21,20 @@ onMounted(() => {
 });
 
 async function fetchMapsAndRender() {
-  const token = localStorage.getItem("access_token");
 
-  if (!token) {
-    console.error("No token found in the localStorage.");
+  if (!keycloak.token) {
+    console.error("No authentication token found");
     return;
   }
 
   let userData;
 
   try {
-    const res = await fetch(`http://localhost:8000/me`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${keycloak.token}`,
       },
     });
 
@@ -52,12 +52,12 @@ async function fetchMapsAndRender() {
 
   try {
     const res = await fetch(
-      `http://localhost:8000/maps/map?user_id=${userId}`,
+      `${import.meta.env.VITE_API_URL}/maps/map?user_id=${userId}`,
       {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${keycloak.token}`,
         },
       },
     );
