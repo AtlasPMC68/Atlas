@@ -241,8 +241,8 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         result = {
             "filename": filename,
-            "extracted_text": [],
-            "output_path": None,
+            "extracted_text": lines,
+            "output_path": output_path,
             "shapes_result": shapes_result,
             "color_result": color_result,
             "status": "completed",
@@ -286,16 +286,23 @@ def validate_file_extension(file_path: str) -> None:
 # TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
-        for feature in normalized_features:
-            try:
-                await insert_feature_in_db(
-                    db=db,
-                    map_id=map_uuid,
-                    is_feature_collection=True,
-                    data=feature,
-                )
-            except Exception as e:
-                logger.error(f"Failed to persist feature for map {map_uuid}: {str(e)}")
+        for feature_collection in normalized_features:
+            for feature in feature_collection.get("features", []):
+                feature_data = {
+                    "type": "FeatureCollection",
+                    "features": [feature],
+                }
+                try:
+                    await insert_feature_in_db(
+                        db=db,
+                        map_id=map_uuid,
+                        is_feature_collection=False,
+                        data=feature_data,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to persist individual feature for map {map_uuid}: {str(e)}"
+                    )
 
 
 async def persist_city_feature(map_uuid: UUID, feature: dict[str, Any]):

@@ -152,15 +152,14 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
 
     all_features = []
     for f in features_rows:
-        for idx, feature in enumerate(f.data.get("features", [])):
-            feature["id"] = f"{f.id}_{idx}"
+        feature_data = f.data.get("features", [])
+        if feature_data:
+            feature = feature_data[0]
+            feature["id"] = str(f.id)
 
             props = feature.get("properties", {})
-            start_date = props.get("start_date")
-            end_date = props.get("end_date")
-
-            feature["start_date"] = start_date
-            feature["end_date"] = end_date
+            feature["start_date"] = props.get("start_date")
+            feature["end_date"] = props.get("end_date")
 
             all_features.append(feature)
 

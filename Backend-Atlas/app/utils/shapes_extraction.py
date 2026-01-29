@@ -4,6 +4,8 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from shapely import affinity
+from shapely.geometry import Polygon
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
@@ -132,7 +134,15 @@ def extract_shapes(
         reconstructed_mask_path, reconstructed_overlay_path = reconstruct_shapes_debug(
             image, final_shapes_with_contours, image_output_dir
         )
-    except Exception:
+    except cv2.error as e:
+        print(
+            f"[ERROR] OpenCV error while reconstructing debug images for {image_path}: {e}"
+        )
+        reconstructed_mask_path, reconstructed_overlay_path = None, None
+    except OSError as e:
+        print(
+            f"[ERROR] I/O error while reconstructing debug images for {image_path}: {e}"
+        )
         reconstructed_mask_path, reconstructed_overlay_path = None, None
 
     # Read the generated GeoJSON file to get normalized features
@@ -175,8 +185,6 @@ def export_shapes_to_normalized_geojson(
     Returns:
         Path to the saved GeoJSON file
     """
-    from shapely import affinity
-    from shapely.geometry import Polygon
 
     geojson_features = []
 

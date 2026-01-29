@@ -39,7 +39,6 @@ let labelLayer = null;
 let citiesLayer = null;
 let zonesLayer = null;
 let arrowsLayer = null;
-let shapeLayer = null;
 
 // Function to display the map
 onMounted(() => {
@@ -320,7 +319,6 @@ function renderShapes(features) {
         features: [feature],
       };
 
-      // Pick a random anchor on earth so shapes are visible but not overlapping deterministically
       const anchorLat = -80 + Math.random() * 160; // between -80 and 80
       const anchorLng = -170 + Math.random() * 340; // between -170 and 170
 
@@ -345,10 +343,10 @@ function renderShapes(features) {
 
     const layer = L.geoJSON(targetGeometry, {
       style: {
-        fillColor: "#3498db", // No fill for shapes
+        fillColor: "#3498db",
         fillOpacity: 1,
-        color: "#3498db", // Red for shape outlines
-        weight: 3, // Thicker outline than zones
+        color: "#3498db",
+        weight: 3,
         opacity: 0.8,
       },
     });
