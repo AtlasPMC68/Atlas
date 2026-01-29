@@ -336,14 +336,18 @@ def extract_colors(
         ratios[unique_color_name] = entry["ratio"]
         
         # Build normalized feature from mask
-        normalized_feature = build_normalized_feature(
-            unique_color_name, rgb_u8, mask, image_output_dir
-        )
-        if normalized_feature:
-            normalized_features.append({
-                "type": "FeatureCollection",
-                "features": [normalized_feature]
-            })
+        # Convert mask to geometry first (like the old RGB version did with pixel_polygons)
+        geometry = mask_to_geometry(mask)
+        if geometry:
+            # build_normalized_feature expects a list of polygons, so wrap the geometry in a list
+            normalized_feature = build_normalized_feature(
+                unique_color_name, rgb_u8, [geometry], image_output_dir
+            )
+            if normalized_feature:
+                normalized_features.append({
+                    "type": "FeatureCollection",
+                    "features": [normalized_feature]
+                })
         
         color_index += 1
 
