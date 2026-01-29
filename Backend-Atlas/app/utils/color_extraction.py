@@ -174,7 +174,6 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
         return None
     
     polygons = []
-    _height, _width = mask.shape
     
     for contour in contours:
         # Convert from (row, col) to (x, y) coordinates
@@ -208,8 +207,7 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
 def build_normalized_feature(
     color_name: str,
     rgb: tuple,
-    pixel_polygons,
-    image_output_dir: str,
+    merged_geometry: BaseGeometry
 ):
     """From pixel-space polygons, build a normalized GeoJSON feature and write it to disk.
 
@@ -219,17 +217,15 @@ def build_normalized_feature(
     - Returns the normalized GeoJSON feature dict.
     """
 
-    merged: BaseGeometry = unary_union(pixel_polygons)
-
     # Preserve original aspect ratio while normalizing into a unit box
-    minx, miny, maxx, maxy = merged.bounds
+    minx, miny, maxx, maxy = merged_geometry.bounds
     width_px = maxx - minx
     height_px = maxy - miny
 
     max_dim = max(width_px, height_px)
     scale = 1.0 / max_dim if max_dim != 0 else 1.0
 
-    translated = affinity.translate(merged, xoff=-minx, yoff=-miny)
+    translated = affinity.translate(merged_geometry, xoff=-minx, yoff=-miny)
 
     scaled = affinity.scale(
         translated,
@@ -265,10 +261,6 @@ def build_normalized_feature(
         "geometry": normalized_geom.__geo_interface__,
     }
 
-    normalized_color_geojson_path = os.path.join(
-        image_output_dir, f"{color_name}_normalized.geojson"
-    )
-
     return normalized_feature
 
 
@@ -288,7 +280,7 @@ def extract_colors(
 
     Returns a dict with detected colors, mask paths, ratios, and normalized_features.
     """
-    rgb, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
+    rgb, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
     lab = compute_lab(rgb)
 
     # Output folder
@@ -341,7 +333,7 @@ def extract_colors(
         if geometry:
             # build_normalized_feature expects a list of polygons, so wrap the geometry in a list
             normalized_feature = build_normalized_feature(
-                unique_color_name, rgb_u8, [geometry], image_output_dir
+                unique_color_name, rgb_u8, geometry, image_output_dir
             )
             if normalized_feature:
                 normalized_features.append({
