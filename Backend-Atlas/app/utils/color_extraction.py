@@ -11,7 +11,7 @@ from skimage.util import img_as_float
 from skimage.measure import find_contours
 from matplotlib import colors as mcolors
 
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from shapely.geometry.base import BaseGeometry
 from shapely import affinity
@@ -32,7 +32,7 @@ def load_image_rgb_alpha_mask(image_path: str) -> Tuple[np.ndarray, Optional[np.
     except FileNotFoundError:
         raise ValueError(f"Image file not found: {image_path}")
     except Exception as e:
-        raise ValueError(f"Error loading image: {str(e)}")
+        raise ValueError(f"Error loading image '{image_path}'") from e
 
     if img.ndim == 2:
         # Grayscale -> replicate into RGB
