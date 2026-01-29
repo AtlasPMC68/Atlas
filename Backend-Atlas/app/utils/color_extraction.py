@@ -174,7 +174,7 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
         return None
     
     polygons = []
-    height, width = mask.shape
+    _height, _width = mask.shape
     
     for contour in contours:
         # Convert from (row, col) to (x, y) coordinates

@@ -24,7 +24,6 @@ easyocr
 opencv-python-headless
 scikit-image==0.26.0
 scipy==1.16.3
-scikit-learn==1.8.0 
 imageio==2.37.2
 geonamescache
 python-keycloak==4.0.0
