@@ -1,0 +1,20 @@
+{
+    "clientId": "atlas-backend",
+    "name": "Atlas Backend",
+    "enabled": true,
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "clientAuthenticatorType": "client-secret",
+    "secret": "secret",
+    "bearerOnly": true,
+    "serviceAccountsEnabled": true,
+    "standardFlowEnabled": false,
+    "implicitFlowEnabled": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": [],
+    "webOrigins": [],
+    "attributes": {
+      "access.token.lifespan": "300"
+    }
+  }
+  

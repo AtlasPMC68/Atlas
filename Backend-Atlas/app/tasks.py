@@ -6,10 +6,10 @@ import asyncio
 import logging
 import os
 import tempfile
+from typing import Any, List
 import time
 import re
 from datetime import datetime
-from typing import Any, List
 from uuid import UUID
 from PIL import Image, ImageEnhance
 
@@ -189,10 +189,13 @@ def process_map_extraction(
         # # GPU acceleration make the text extraction MUCH faster i
         # extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
 
-        # # TODO : Amener ca dans la fonction de detection de texte ===========================================================
-        # # Tokenize OCR text to single words and run city detection per token
+        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
+        # Tokenize OCR text to single words and run city detection per token
         # try:
-        #     tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
+        #     # Extract just the text strings from the list of tuples [(coords, text, prob), ...]
+        #     text_strings = [block[1] for block in extracted_text]
+        #     full_text = " ".join(text_strings)
+        #     tokens = re.findall(r"\b[\w\-']+\b", full_text)
         #     for tok in tokens:
         #         try:
         #             candidate = find_first_city(tok)
@@ -362,8 +365,8 @@ def validate_file_extension(file_path: str) -> None:
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in supported_file_ext:
         raise ValueError(f"Extension {ext} non autorisée pour le système du consortium.")
-
-
+        
+# TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
         for feature in normalized_features:

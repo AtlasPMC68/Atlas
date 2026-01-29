@@ -21,7 +21,7 @@ onMounted(() => {
 
 async function fetchMapsAndRender() {
   try {
-    const res = await fetch(`http://localhost:8000/maps/map`);
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/map`);
 
     if (!res.ok) {
       throw new Error(`HTTP error : ${res.status}`);

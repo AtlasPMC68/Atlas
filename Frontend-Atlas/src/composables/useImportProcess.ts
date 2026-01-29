@@ -46,7 +46,7 @@ export function useImportProcess() {
     console.log("form data", formData)
 
     try {
-      const response = await fetch("http://localhost:8000/maps/upload", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/upload`, {
         method: "POST",
         body: formData,
       });
@@ -86,7 +86,7 @@ export function useImportProcess() {
   const pollStatus = (taskId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:8000/maps/status/${taskId}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/status/${taskId}`);
         const data = await res.json();
         console.log("[Polling]", data);
         processingProgress.value = data.progress_percentage || 0;
