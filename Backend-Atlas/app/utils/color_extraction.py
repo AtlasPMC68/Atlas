@@ -285,7 +285,7 @@ def extract_colors(
 ) -> Dict:
     """
     Extract dominant color layers using LAB binning + ΔE masks.
-    Also extracts a near-black text layer.
+
 
     Returns a dict with detected colors, mask paths, ratios, and normalized_features.
     """
@@ -310,6 +310,10 @@ def extract_colors(
 
         # Build ΔE mask against the LAB center.
         # deltaE_ciede2000 expects (...,3) arrays; we broadcast center to image shape.
+        # NOTE: This computes a full (H, W) distance map for each dominant color bin,
+        # so the overall complexity is roughly O(H * W * top_n). For very large images
+        # or many bins, consider downsampling earlier in the pipeline if full resolution
+        # is not required for color extraction.
         center = np.array(lab_center, dtype=np.float64).reshape(1, 1, 3)
         dE = deltaE_ciede2000(lab, center)  # shape (H, W)
 
@@ -322,17 +326,19 @@ def extract_colors(
         # Name the layer based on approximate RGB -> nearest CSS name
         rgb_u8 = lab_center_to_rgb_u8(lab_center)
         color_name = get_nearest_css4_color_name(rgb_u8)
+        # Ensure uniqueness of dictionary keys even if multiple bins share the same CSS4 color name
+        unique_color_name = f"{color_name}_{color_index}"
 
         file_name = f"color_{color_index}_{color_name}_ratio_{entry['ratio']:.4f}.png"
         out_path = os.path.join(image_output_dir, file_name)
         save_mask_png(mask, out_path)
 
-        masks[color_name] = out_path
-        ratios[color_name] = entry["ratio"]
+        masks[unique_color_name] = out_path
+        ratios[unique_color_name] = entry["ratio"]
         
         # Build normalized feature from mask
         normalized_feature = build_normalized_feature(
-            color_name, rgb_u8, mask, image_output_dir
+            unique_color_name, rgb_u8, mask, image_output_dir
         )
         if normalized_feature:
             normalized_features.append({
