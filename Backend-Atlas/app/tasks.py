@@ -102,7 +102,10 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
         # Tokenize OCR text to single words and run city detection per token
         try:
-            tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
+            # Extract just the text strings from the list of tuples [(coords, text, prob), ...]
+            text_strings = [block[1] for block in extracted_text]
+            full_text = " ".join(text_strings)
+            tokens = re.findall(r"\b[\w\-']+\b", full_text)
             for tok in tokens:
                 try:
                     candidate = find_first_city(tok)
