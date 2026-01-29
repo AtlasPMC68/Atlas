@@ -73,34 +73,63 @@ export function useMapLayers(props, emit) {
 
     makeLayerClickable(featureId, layer) {
       const fid = String(featureId);
-      
+
       // Force interactivity
       layer.options.interactive = true;
 
-      // Remove only OUR handlers (not all handlers)
+      // Laisse les events "bubbler" jusqu'à la map (important pour le drag objet via map handlers)
+      // Pour les Path Leaflet, c'est souvent true par défaut, mais on sécurise.
+      layer.options.bubblingMouseEvents = true;
+
+      // Remove only OUR handlers
       if (layer.__atlas_onDown) layer.off("mousedown", layer.__atlas_onDown);
       if (layer.__atlas_onClick) layer.off("click", layer.__atlas_onClick);
+      // Bonus: pointerdown/touchstart si tu veux support tactile
+      if (layer.__atlas_onPointerDown) layer.off("pointerdown", layer.__atlas_onPointerDown);
 
-      // Store our handlers on the layer
+      const markDom = (oe) => {
+        const t = oe?.target;
+        if (!t) return;
+        t._atlasFeatureId = fid;
+        if (t.parentElement) t.parentElement._atlasFeatureId = fid;
+      };
+
       layer.__atlas_onDown = (e) => {
-        e.originalEvent?.stopPropagation();
-        // Mark that this is a click on a shape
-        e.target._isFeatureClick = true;
-        e.target._featureId = fid;
+        const oe = e.originalEvent;
+        markDom(oe);
+
+        // En mode outil (draw/resize/etc.) on bloque pour éviter de dessiner "à travers"
+        if (props.activeEditMode) {
+          oe?.preventDefault();
+          oe?.stopPropagation();
+          oe?.stopImmediatePropagation?.();
+        }
+      };
+
+      // Optionnel mais utile sur certains navigateurs / touch
+      layer.__atlas_onPointerDown = (e) => {
+        const oe = e.originalEvent;
+        markDom(oe);
+
+        if (props.activeEditMode) {
+          oe?.preventDefault();
+          oe?.stopPropagation();
+          oe?.stopImmediatePropagation?.();
+        }
       };
 
       layer.__atlas_onClick = (e) => {
+        // On stoppe le click pour éviter que la map click/selection se mélange
         e.originalEvent?.stopPropagation();
-        // Don't preventDefault on click - it can interfere with other interactions
-        // Call the handler if available
+
         if (this.clickHandler) {
           const isCtrlPressed = e.originalEvent?.ctrlKey || e.originalEvent?.metaKey;
           this.clickHandler(fid, isCtrlPressed);
         }
       };
 
-      // Attach our handlers
       layer.on("mousedown", layer.__atlas_onDown);
+      layer.on("pointerdown", layer.__atlas_onPointerDown); // optionnel
       layer.on("click", layer.__atlas_onClick);
     },
 
