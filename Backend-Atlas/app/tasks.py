@@ -6,7 +6,9 @@ import asyncio
 import logging
 import os
 import tempfile
+from typing import Any, List
 import time
+import re
 from datetime import datetime
 from typing import Any, List
 from uuid import UUID
@@ -17,6 +19,7 @@ from app.services.features import insert_feature_in_db
 from app.utils.color_extraction import extract_colors
 from app.utils.text_extraction import extract_text
 from app.utils.shapes_extraction import extract_shapes
+from app.utils.cities_validation import detect_cities_from_text, find_first_city
 
 from .celery_app import celery_app
 
@@ -97,6 +100,50 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         # GPU acceleration make the text extraction MUCH faster i
         extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
+
+        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
+        # Tokenize OCR text to single words and run city detection per token
+        try:
+            tokens = re.findall(r"\b[\w\-']+\b", extracted_text or "")
+            for tok in tokens:
+                try:
+                    candidate = find_first_city(tok)
+                except Exception as e:
+                    logger.debug(f"find_first_city error for token '{tok}': {e}")
+                    # treat as not found but persist the token
+                    candidate = {"found": False, "query": tok, "name": tok, "lat": 0.0, "lon": 0.0}
+
+                # Build feature using returned candidate; if not found, coordinates will be 0,0
+                logger.info(f"City detection result for token '{tok}': {candidate}")
+                city_feature = {
+                    "type": "Feature",
+                    "properties": {
+                        "name": candidate.get("name") or tok,
+                        "show": bool(candidate.get("found")),
+                        "mapElementType": "point",
+                        "color_name": "black",
+                        "color_rgb": [0, 0, 0],
+                        "start_date": "0-01-01",
+                        "end_date": "5000-01-01",
+                    },
+                    "geometry": {"type": "Point", "coordinates": [candidate.get("lon") or 0.0, candidate.get("lat") or 0.0]},
+                }
+
+                city_feature_collection = {
+                    "type": "FeatureCollection",
+                    "features": [city_feature],
+                }
+
+                try:
+                    asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
+                    logger.info(f"Persisted city token feature: {candidate.get('name')}")
+                except Exception as e:
+                    logger.error(f"Failed to persist city token '{tok}': {e}")
+
+        except Exception as e:
+            logger.error(f"City detection failed: {e}")
+
+        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # Step 4: Color Extraction
         self.update_state(
@@ -202,7 +249,7 @@ def validate_file_extension(file_path: str) -> None:
     if ext not in supported_file_ext:
         raise ValueError(f"Extension {ext} non autorisée pour le système du consortium.")
 
-
+# TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
         for feature in normalized_features:
@@ -215,3 +262,16 @@ async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, A
                 )
             except Exception as e:
                 logger.error(f"Failed to persist feature for map {map_uuid}: {str(e)}")
+
+
+async def persist_city_feature(map_uuid: UUID, feature: dict[str, Any]):
+    async with AsyncSessionLocal() as db:
+        try:
+            await insert_feature_in_db(
+                db=db,
+                map_id=map_uuid,
+                is_feature_collection=False,
+                data=feature,
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist city feature for map {map_uuid}: {str(e)}")
