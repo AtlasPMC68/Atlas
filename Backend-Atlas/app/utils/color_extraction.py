@@ -1,6 +1,6 @@
 import os
 import math
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import imageio.v3 as iio
