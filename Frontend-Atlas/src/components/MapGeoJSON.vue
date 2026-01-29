@@ -345,9 +345,9 @@ function renderShapes(features) {
 
     const layer = L.geoJSON(targetGeometry, {
       style: {
-        fillColor: "transparent", // No fill for shapes
-        fillOpacity: 0,
-        color: "#e74c3c", // Red for shape outlines
+        fillColor: "#3498db", // No fill for shapes
+        fillOpacity: 1,
+        color: "#3498db", // Red for shape outlines
         weight: 3, // Thicker outline than zones
         opacity: 0.8,
       },
