@@ -10,6 +10,7 @@
     "test": "vitest --config vite.config.ts"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.1.0",
     "@heroicons/vue": "^2.2.0",
     "daisyui": "^5.0.46",
     "keycloak-js": "^26.2.2",
