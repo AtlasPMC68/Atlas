@@ -279,7 +279,6 @@ def extract_colors(
     bin_L: float = 4.0,
     bin_a: float = 8.0,
     bin_b: float = 8.0,
-    text_tolerance: int = 25,
     deltaE_threshold: float = 10.0,
     opening_radius: int = 1,
 ) -> Dict:
