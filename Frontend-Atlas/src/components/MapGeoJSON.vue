@@ -28,7 +28,7 @@ import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 
 // ========================================
-// IMPORTS DES COMPOSABLES
+// COMPOSABLES
 // ========================================
 import { useMapLayers } from "../composables/useMapLayers.js";
 import { useMapEditing } from "../composables/useMapEditing.js";
@@ -41,25 +41,21 @@ const props = defineProps({
   mapId: String,
   features: Array,
   featureVisibility: Map,
-  editMode: {
-    type: Boolean,
-    default: false,
-  },
-  activeEditMode: {
-    type: String,
-    default: null,
-  },
-  selectedShape: {
-    type: String,
-    default: null,
-  },
+  editMode: { type: Boolean, default: false },
+  activeEditMode: { type: String, default: null },
+  selectedShape: { type: String, default: null },
+
+  // === Resize manuel (inputs dans Map.vue) ===
+  resizeFeatureId: { type: [String, Number], default: null },
+  resizeWidthMeters: { type: Number, default: null },
+  resizeHeightMeters: { type: Number, default: null },
 });
 
 // Émissions vers la vue parent
-const emit = defineEmits(["features-loaded", "mode-change"]);
+const emit = defineEmits(["features-loaded", "mode-change", "resize-selection"]);
 
 // ========================================
-// INITIALISATION DES COMPOSABLES
+// INIT COMPOSABLES
 // ========================================
 const layers = useMapLayers(props, emit);
 const editing = useMapEditing(props, emit);
@@ -68,64 +64,130 @@ const timeline = useMapTimeline();
 const init = useMapInit(props, emit, layers, events, editing, timeline);
 
 // ========================================
-// VARIABLES LOCALES (NÉCESSAIRES)
+// LOCALS
 // ========================================
 let map = null;
 let baseTileLayer = null;
 
+// Debounce resize “auto-apply”
+let resizeCommitTimer = null;
+
 // ========================================
-// COMPUTED PROPERTIES (UTILISANT LES COMPOSABLES)
+// COMPUTED
 // ========================================
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature) =>
-      new Date(feature.start_date).getFullYear() <=
-        timeline.selectedYear.value &&
-      (!feature.end_date ||
-        new Date(feature.end_date).getFullYear() >=
-          timeline.selectedYear.value),
+      new Date(feature.start_date).getFullYear() <= timeline.selectedYear.value &&
+      (!feature.end_date || new Date(feature.end_date).getFullYear() >= timeline.selectedYear.value),
   );
 });
 
 // ========================================
-// FONCTIONS PRINCIPALES
+// HELPERS RESIZE (dimensions <-> sizePoint)
 // ========================================
+function getFeatureById(fid) {
+  const id = String(fid);
+  return props.features.find((f) => String(f.id) === id) || null;
+}
 
-// Display the map
+function isResizableFeature(feature) {
+  return !!feature?.properties?.resizable && !!feature?.properties?.shapeType && !!feature?.properties?.center;
+}
+
+// Retourne { widthMeters, heightMeters } à afficher dans les inputs
+function getDimsMetersFromFeature(feature) {
+  const shapeType = feature.properties.shapeType;
+  const R = Number(feature.properties.size);
+  if (!Number.isFinite(R) || R <= 0) return { widthMeters: null, heightMeters: null };
+
+  switch (shapeType) {
+    case "square": {
+      const side = Math.SQRT2 * R;
+      return { widthMeters: side, heightMeters: side };
+    }
+    case "circle": {
+      const d = 2 * R;
+      return { widthMeters: d, heightMeters: d };
+    }
+    case "triangle": {
+      const w = Math.sqrt(3) * R;
+      const h = 1.5 * R;
+      return { widthMeters: w, heightMeters: h };
+    }
+    default:
+      return { widthMeters: null, heightMeters: null };
+  }
+}
+
+function sizePointFromDims(feature, widthMeters, heightMeters) {
+  const { shapeType, center } = feature.properties;
+  const c = L.latLng(center.lat, center.lng);
+
+  const w = Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null;
+  const h = Number.isFinite(heightMeters) && heightMeters > 0 ? heightMeters : null;
+
+  let R = null;
+
+  if (shapeType === "circle") {
+    const d = w ?? h;
+    if (d == null) return null;
+    R = d / 2;
+  } else if (shapeType === "square") {
+    const side = w ?? h;
+    if (side == null) return null;
+    R = side / Math.SQRT2;
+  } else if (shapeType === "triangle") {
+    const candidates = [];
+    if (w != null) candidates.push(w / Math.sqrt(3));
+    if (h != null) candidates.push(h / 1.5);
+    if (candidates.length === 0) return null;
+    R = candidates.reduce((a, b) => a + b, 0) / candidates.length;
+  } else {
+    return null;
+  }
+
+  if (!Number.isFinite(R) || R <= 0) return null;
+
+  const dLat = R / 111320;
+  return L.latLng(c.lat + dLat, c.lng);
+}
+
+function clearResizeCommitTimer() {
+  if (resizeCommitTimer) {
+    clearTimeout(resizeCommitTimer);
+    resizeCommitTimer = null;
+  }
+}
+
+// ========================================
+// MAP INIT
+// ========================================
 onMounted(() => {
   map = L.map("map").setView([52.9399, -73.5491], 5);
 
-  // Background map
-  baseTileLayer = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-    {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-    },
-  ).addTo(map);
+  baseTileLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: "abcd",
+    maxZoom: 19,
+  }).addTo(map);
 
-  // Initialiser les couches de base
   layers.initializeBaseLayers(map);
-
-  // Charger les régions pour l'année initiale
   timeline.loadRegionsForYear(timeline.selectedYear.value, map, true);
 
-  // Ajouter l'événement zoom pour adapter la taille des cercles
   map.on("zoomend", () => layers.updateCircleSizes(map));
 
-  // Initialiser l'édition si nécessaire
   if (props.editMode) {
     init.initializeEditControls(map);
-    // Définir le handler de clic pour les features
+
     layers.featureLayerManager.setClickHandler((featureId, isCtrlPressed) => {
-      init.handleFeatureClick(featureId, isCtrlPressed, map);
+      handleFeatureClickLocal(featureId, isCtrlPressed);
     });
   }
 });
 
-// Nettoyage à la destruction du composant
 onBeforeUnmount(() => {
+  clearResizeCommitTimer();
   if (map) {
     init.cleanupEditMode(map);
     layers.clearAllLayers(map);
@@ -135,63 +197,73 @@ onBeforeUnmount(() => {
 });
 
 // ========================================
-// FONCTIONS POUR LA VUE PARENT
+// FEATURE CLICK LOCAL (INTERCEPT RESIZE MODE)
 // ========================================
+function handleFeatureClickLocal(featureId, isCtrlPressed) {
+  if (!props.editMode || !map) return;
 
-// Basculer le mode suppression
-function toggleDeleteMode() {
-  if (props.activeEditMode === "DELETE_FEATURE") {
-    emit("mode-change", null);
-  } else {
-    emit("mode-change", "DELETE_FEATURE");
+  // NEW: if selection was already handled via move mouseup (RESIZE_SHAPE reliability fix)
+  if (events.suppressNextFeatureClick?.value) {
+    events.suppressNextFeatureClick.value = false;
+    return;
   }
+
+  if (props.activeEditMode === "RESIZE_SHAPE") {
+    const feature = getFeatureById(featureId);
+    if (!feature) {
+      emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
+      return;
+    }
+
+    // Toujours signaler la sélection au panneau
+    const dims = isResizableFeature(feature)
+      ? getDimsMetersFromFeature(feature)
+      : { widthMeters: null, heightMeters: null };
+
+    emit("resize-selection", { featureId: String(featureId), ...dims });
+
+    events.selectedFeatures.value.clear();
+    events.selectedFeatures.value.add(String(featureId));
+    editing.updateFeatureSelectionVisual(map, layers.featureLayerManager, events.selectedFeatures.value);
+
+    return;
+  }
+
+  init.handleFeatureClick(String(featureId), isCtrlPressed, map);
+}
+
+// ========================================
+// SUPPRESSION
+// ========================================
+function toggleDeleteMode() {
+  if (props.activeEditMode === "DELETE_FEATURE") emit("mode-change", null);
+  else emit("mode-change", "DELETE_FEATURE");
 }
 
 // ========================================
 // WATCHERS
 // ========================================
-
-// Watcher pour le mode édition
 watch(
   () => props.editMode,
   (newEditMode) => {
-    // Si on quitte le mode édition et qu'il y a un polygone en cours, le terminer
-    if (
-      !newEditMode &&
-      props.activeEditMode === "CREATE_POLYGON" &&
-      events.currentPolygonPoints.value.length >= 3
-    ) {
-      editing.finishPolygon(
-        events.currentPolygonPoints.value,
-        events.tempPolygon.value,
-        map,
-        layers,
-      );
-    }
-
     if (newEditMode) {
-      // Réinitialiser drawnItems si nécessaire
-      if (!layers.drawnItems.value) {
-        layers.initializeBaseLayers(map);
-      }
+      if (!layers.drawnItems.value) layers.initializeBaseLayers(map);
 
       init.initializeEditControls(map);
-      // Définir le handler de clic
       layers.featureLayerManager.setClickHandler((featureId, isCtrlPressed) => {
-        init.handleFeatureClick(featureId, isCtrlPressed, map);
+        handleFeatureClickLocal(featureId, isCtrlPressed);
       });
-      // Recharger les features quand on entre en mode édition
+
       layers.renderAllFeatures(filteredFeatures.value, map);
     } else {
       init.cleanupEditMode(map);
     }
 
-    // Mettre à jour le curseur
     init.updateMapCursor(map);
   },
 );
 
-// Watcher pour mettre à jour isDeleteMode
+// delete mode sync
 watch(
   () => props.activeEditMode,
   (newMode) => {
@@ -200,67 +272,52 @@ watch(
   { immediate: true },
 );
 
-// Watcher pour changer de mode d'édition
+// mode change attach/detach handlers
 watch(
   () => props.activeEditMode,
   (newMode, oldMode) => {
-    // Si on quitte le mode CREATE_POLYGON, terminer automatiquement le polygone
-    if (
-      oldMode === "CREATE_POLYGON" &&
-      newMode !== "CREATE_POLYGON" &&
-      events.currentPolygonPoints.value.length >= 3
-    ) {
-      editing.finishPolygon(
-        events.currentPolygonPoints.value,
-        events.tempPolygon.value,
-        map,
-        layers,
-      );
-    }
+    if (!map) return;
 
-    // Nettoyer l'état précédent
-    if (oldMode) {
-      events.cleanupCurrentDrawing();
-    }
+    if (oldMode) events.cleanupCurrentDrawing();
 
-    // Nettoyer tous les événements d'édition
     init.detachEditEventHandlers(map);
-
-    // Réattacher les événements selon le nouveau mode
     init.attachEditEventHandlers(map);
-
-    // Mettre à jour le curseur
     init.updateMapCursor(map);
+
+    if (oldMode === "RESIZE_SHAPE" && newMode !== "RESIZE_SHAPE") {
+      events.selectedFeatures.value.clear();
+      editing.updateFeatureSelectionVisual(map, layers.featureLayerManager, events.selectedFeatures.value);
+      emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
+
+      if (editing.isResizeMode?.value && editing.resizingShape?.value) {
+        editing.cancelResizeShape(map, layers);
+      }
+      clearResizeCommitTimer();
+    }
   },
 );
 
-// Watcher pour la forme sélectionnée
-watch(
-  () => props.selectedShape,
-  (newShape, oldShape) => {
-    // Shape selection changed
-  },
-);
-
-// Watcher pour l'année sélectionnée
+// year change
 watch(
   () => timeline.selectedYear.value,
   (newYear) => {
+    if (!map) return;
     timeline.loadRegionsForYear(newYear, map);
     layers.renderAllFeatures(filteredFeatures.value, map);
   },
 );
 
-// Watcher pour les features
+// features change
 watch(
   () => props.features,
   () => {
+    if (!map) return;
     layers.renderAllFeatures(filteredFeatures.value, map);
   },
   { deep: true },
 );
 
-// Watcher pour la visibilité des features
+// visibility change
 watch(
   () => props.featureVisibility,
   (newVisibility) => {
@@ -269,6 +326,48 @@ watch(
     });
   },
   { deep: true },
+);
+
+// ========================================
+// APPLY RESIZE FROM INPUTS (NO DRAG)
+// ========================================
+watch(
+  () => [props.activeEditMode, props.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
+  ([mode, fid, w, h]) => {
+    if (!map) return;
+    if (!props.editMode) return;
+    if (mode !== "RESIZE_SHAPE") return;
+    if (!fid) return;
+
+    const feature = getFeatureById(fid);
+    if (!isResizableFeature(feature)) return;
+
+    const sizePoint = sizePointFromDims(feature, w, h);
+    if (!sizePoint) return;
+
+    const featureId = String(fid);
+
+    const current = editing.resizingShape?.value;
+    const isSame = current && String(current.featureId) === featureId;
+
+    if (editing.isResizeMode?.value && current && !isSame) {
+      editing.cancelResizeShape(map, layers);
+    }
+
+    if (!editing.isResizeMode?.value || !editing.resizingShape?.value) {
+      const ok = editing.startResizeShape(featureId, feature, layers.featureLayerManager, map);
+      if (!ok) return;
+    }
+
+    editing.updateResizeShape(L.latLng(feature.properties.center), sizePoint, map, layers);
+
+    clearResizeCommitTimer();
+    resizeCommitTimer = setTimeout(() => {
+      editing.finishResizeShape(sizePoint, map, layers);
+      resizeCommitTimer = null;
+    }, 300);
+  },
+  { immediate: false },
 );
 </script>
 

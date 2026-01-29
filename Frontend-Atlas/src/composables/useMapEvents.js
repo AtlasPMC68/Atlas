@@ -36,6 +36,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   const originalPositions = ref(new Map()); // Original positions before dragging
   const justFinishedDrag = ref(false); // Flag to avoid deselection after drag
 
+  // NEW: prevent double-processing when we handle selection via move handlers
+  const suppressNextFeatureClick = ref(false);
+
   // Movement internals (for "drag object / click empty = deselect / drag empty = pan")
   let moveDownClient = null; // L.point(clientX, clientY)
   let moveDownLatLng = null; // e.latlng at mousedown
@@ -64,6 +67,40 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       if (el._atlasFeatureId) return String(el._atlasFeatureId);
     }
     return null;
+  }
+
+  function getFeatureById(fid) {
+    const id = String(fid);
+    return props.features.find((f) => String(f.id) === id) || null;
+  }
+
+  function isResizableFeature(feature) {
+    return !!feature?.properties?.resizable && !!feature?.properties?.shapeType && !!feature?.properties?.center;
+  }
+
+  // Retourne { widthMeters, heightMeters } à afficher dans les inputs
+  function getDimsMetersFromFeature(feature) {
+    const shapeType = feature.properties.shapeType;
+    const R = Number(feature.properties.size); // distance center->sizePoint (m)
+    if (!Number.isFinite(R) || R <= 0) return { widthMeters: null, heightMeters: null };
+
+    switch (shapeType) {
+      case "square": {
+        const side = Math.SQRT2 * R;
+        return { widthMeters: side, heightMeters: side };
+      }
+      case "circle": {
+        const d = 2 * R;
+        return { widthMeters: d, heightMeters: d };
+      }
+      case "triangle": {
+        const w = Math.sqrt(3) * R;
+        const h = 1.5 * R;
+        return { widthMeters: w, heightMeters: h };
+      }
+      default:
+        return { widthMeters: null, heightMeters: null };
+    }
   }
 
   function cloneLatLngs(latlngs) {
@@ -95,6 +132,38 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         originalPositions.value.set(featureId, cloneLatLngs(layer.getLatLngs()));
       }
     });
+  }
+
+  function applySelectionClick(fid, isCtrl, map) {
+    const id = String(fid);
+
+    // Multi-selection: toggle
+    if (isCtrl) {
+      if (selectedFeatures.value.has(id)) selectedFeatures.value.delete(id);
+      else selectedFeatures.value.add(id);
+    } else {
+      // Simple click: select single (or deselect if already single-selected)
+      if (selectedFeatures.value.size === 1 && selectedFeatures.value.has(id)) {
+        selectedFeatures.value.clear();
+      } else {
+        selectedFeatures.value.clear();
+        selectedFeatures.value.add(id);
+      }
+    }
+
+    editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
+
+    // In RESIZE_SHAPE, also update the right panel with dims for the last clicked object
+    if (props.activeEditMode === "RESIZE_SHAPE") {
+      const f = getFeatureById(id);
+      const dims = f ? getDimsMetersFromFeature(f) : { widthMeters: null, heightMeters: null };
+
+      if (selectedFeatures.value.has(id)) {
+        emit("resize-selection", { featureId: id, ...dims });
+      } else {
+        emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
+      }
+    }
   }
 
   // =======================
@@ -194,9 +263,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   // Shape drawing handlers
   // =======================
   function handleShapeMouseDown(e, map) {
-    // If you're clicking a feature (layer-level), let selection/move logic handle it.
-    // Note: this depends on your layer wiring; if you keep _isFeatureClick somewhere else,
-    // it won't break anything because we also gate by activeEditMode below.
     if (e.target && e.target._isFeatureClick) return;
 
     if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape) return;
@@ -264,70 +330,33 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     switch (shapeType) {
       case "square":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempSquareFromCenter(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape
-          );
+          tempShape = editingComposable.updateTempSquareFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "rectangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempRectangleFromCorners(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape
-          );
+          tempShape = editingComposable.updateTempRectangleFromCorners(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "circle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempCircleFromCenter(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape
-          );
+          tempShape = editingComposable.updateTempCircleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "triangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempTriangleFromCenter(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape
-          );
+          tempShape = editingComposable.updateTempTriangleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "oval":
         if (shapeState === "adjusting_height" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempOvalHeight(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape
-          );
+          tempShape = editingComposable.updateTempOvalHeight(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         } else if (shapeState === "adjusting_width" && shapeStartPoint && shapeEndPoint) {
-          tempShape = editingComposable.updateTempOvalWidth(
-            shapeStartPoint,
-            shapeEndPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape
-          );
+          tempShape = editingComposable.updateTempOvalWidth(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
     }
@@ -494,10 +523,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
 
     if (currentPolygonPoints.value.length >= 3) {
-      lines.push(
-        currentPolygonPoints.value[currentPolygonPoints.value.length - 1],
-        currentPolygonPoints.value[0]
-      );
+      lines.push(currentPolygonPoints.value[currentPolygonPoints.value.length - 1], currentPolygonPoints.value[0]);
     }
 
     if (lines.length > 0) {
@@ -546,9 +572,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   // Movement handlers (fixed)
   // =======================
   function handleMoveMouseDown(e, map) {
-    // Move is only valid when editMode ON and no active tool (selection mode)
     if (!props.editMode) return;
-    if (props.activeEditMode) return;
+    if (props.activeEditMode && props.activeEditMode !== "RESIZE_SHAPE") return;
 
     justFinishedDrag.value = false;
 
@@ -560,10 +585,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     downFeatureId = getFeatureIdFromDomTarget(oe?.target);
 
     if (downFeatureId) {
-      // Disable map pan for object drag
       map.dragging.disable();
 
-      // Prepare drag
       isDraggingFeatures.value = false;
 
       if (selectedFeatures.value.has(downFeatureId)) {
@@ -574,46 +597,35 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
-    // Click on empty map: don't deselect yet (could be a pan).
-    // We'll decide on mouseup if it's a real click or a drag-pan.
     isDraggingFeatures.value = false;
     originalPositions.value.clear();
   }
 
   function handleMoveMouseMove(e, map) {
     if (!props.editMode) return;
-    if (props.activeEditMode) return;
+    if (props.activeEditMode && props.activeEditMode !== "RESIZE_SHAPE") return;
     if (!moveDownClient || !moveDownLatLng) return;
 
     const oe = e.originalEvent;
     const cur = oe ? L.point(oe.clientX, oe.clientY) : null;
     const distPx = cur ? moveDownClient.distanceTo(cur) : 0;
 
-    // Case 1: started on a feature -> move objects
     if (downFeatureId) {
-      // Start drag only after threshold
       if (!isDraggingFeatures.value && distPx > MAP_CONFIG.DRAG_THRESHOLD) {
         isDraggingFeatures.value = true;
 
         const isCtrl = !!(oe?.ctrlKey || oe?.metaKey);
 
-        // If user starts dragging a non-selected feature, select it NOW (not on mousedown)
         if (!selectedFeatures.value.has(downFeatureId)) {
           if (!isCtrl) selectedFeatures.value.clear();
           selectedFeatures.value.add(downFeatureId);
 
-          editingComposable.updateFeatureSelectionVisual(
-            map,
-            layersComposable.featureLayerManager,
-            selectedFeatures.value
-          );
+          editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
         }
 
-        // Ensure we have a snapshot for the current selection
         snapshotSelectedOriginalPositions();
       }
 
-      // If we are dragging, apply delta to layers
       if (isDraggingFeatures.value) {
         const dLat = e.latlng.lat - moveDownLatLng.lat;
         const dLng = e.latlng.lng - moveDownLatLng.lng;
@@ -623,13 +635,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           const orig = originalPositions.value.get(featureId);
           if (!layer || !orig) return;
 
-          // Circle / Marker-like (getLatLng but not getLatLngs)
           if (layer.getLatLng && typeof layer.setLatLng === "function" && !layer.getLatLngs) {
             layer.setLatLng(L.latLng(orig.lat + dLat, orig.lng + dLng));
             return;
           }
 
-          // Polyline / Polygon / Rectangle
           if (layer.getLatLngs && typeof layer.setLatLngs === "function") {
             layer.setLatLngs(translateLatLngs(orig, dLat, dLng));
           }
@@ -639,7 +649,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
-    // Case 2: started on empty map -> if user drags, it's a pan (cancel deselect)
     if (distPx > MAP_CONFIG.DRAG_THRESHOLD) {
       cancelDeselect = true;
     }
@@ -647,10 +656,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
   function handleMoveMouseUp(e, map) {
     if (!props.editMode) return;
-    if (props.activeEditMode) return;
+    if (props.activeEditMode && props.activeEditMode !== "RESIZE_SHAPE") return;
     if (!moveDownClient || !moveDownLatLng) return;
 
-    // Started on a feature: finish object drag
+    const oe = e.originalEvent;
+    const isCtrl = !!(oe?.ctrlKey || oe?.metaKey);
+
     if (downFeatureId) {
       map.dragging.enable();
 
@@ -667,23 +678,32 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         setTimeout(() => {
           justFinishedDrag.value = false;
         }, 100);
+      } else {
+        // NEW: In RESIZE_SHAPE, clicking a feature may not fire Leaflet "click".
+        // So we handle selection here and suppress the next feature-click handler.
+        if (props.activeEditMode === "RESIZE_SHAPE") {
+          suppressNextFeatureClick.value = true;
+          setTimeout(() => {
+            suppressNextFeatureClick.value = false;
+          }, 0);
+
+          applySelectionClick(downFeatureId, isCtrl, map);
+        }
       }
 
       isDraggingFeatures.value = false;
       originalPositions.value.clear();
     } else {
-      // Started on empty map: if it was a click (not a pan), deselect
       if (!cancelDeselect && selectedFeatures.value.size > 0) {
         selectedFeatures.value.clear();
-        editingComposable.updateFeatureSelectionVisual(
-          map,
-          layersComposable.featureLayerManager,
-          selectedFeatures.value
-        );
+        editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
+
+        if (props.activeEditMode === "RESIZE_SHAPE") {
+          emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
+        }
       }
     }
 
-    // Reset movement internals
     moveDownClient = null;
     moveDownLatLng = null;
     downFeatureId = null;
@@ -697,22 +717,17 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const key = e.originalEvent?.key;
 
     if (key === "Delete" && selectedFeatures.value.size > 0) {
-      editingComposable.deleteSelectedFeatures(
-        selectedFeatures.value,
-        layersComposable.featureLayerManager,
-        map,
-        emit
-      );
+      editingComposable.deleteSelectedFeatures(selectedFeatures.value, layersComposable.featureLayerManager, map, emit);
       return;
     }
 
     if (key === "Escape") {
       selectedFeatures.value.clear();
-      editingComposable.updateFeatureSelectionVisual(
-        map,
-        layersComposable.featureLayerManager,
-        selectedFeatures.value
-      );
+      editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
+
+      if (props.activeEditMode === "RESIZE_SHAPE") {
+        emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
+      }
     }
   }
 
@@ -756,7 +771,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
 
     cleanupTempShape();
-    // Polygon not cleaned here intentionally
   }
 
   function preventDragDuringShapeDrawing(e) {
@@ -792,12 +806,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     if (!clickedFeature) return;
 
-    const success = editingComposable.startResizeShape(
-      clickedFeatureId,
-      clickedFeature,
-      layersComposable.featureLayerManager,
-      map
-    );
+    const success = editingComposable.startResizeShape(clickedFeatureId, clickedFeature, layersComposable.featureLayerManager, map);
 
     if (success) map.dragging.disable();
   }
@@ -805,12 +814,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function handleResizeMouseMove(e, map) {
     if (!editingComposable.isResizeMode.value || !editingComposable.resizingShape.value) return;
 
-    editingComposable.updateResizeShape(
-      L.latLng(editingComposable.resizingShape.value.feature.properties.center),
-      e.latlng,
-      map,
-      layersComposable
-    );
+    editingComposable.updateResizeShape(L.latLng(editingComposable.resizingShape.value.feature.properties.center), e.latlng, map, layersComposable);
   }
 
   function handleResizeMouseUp(e, map) {
@@ -834,6 +838,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     isDrawingLine,
     isDrawingFree,
     justFinishedDrag,
+    suppressNextFeatureClick,
 
     // Event handlers
     handleMouseDown,

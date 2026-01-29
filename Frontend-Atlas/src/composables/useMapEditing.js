@@ -1,38 +1,30 @@
-import { ref } from 'vue';
-import L from 'leaflet';
-import { smoothFreeLinePoints } from '../utils/mapUtils.js';
-import { MAP_CONFIG } from './useMapConfig.js';
+import { ref } from "vue";
+import L from "leaflet";
+import { smoothFreeLinePoints } from "../utils/mapUtils.js";
+import { MAP_CONFIG } from "./useMapConfig.js";
 
 // Composable for map editing functionality (creating shapes, managing selection, etc.)
 export function useMapEditing(props, emit) {
   const isDeleteMode = ref(false);
+
+  // IMPORTANT:
+  // On garde ces refs pour compatibilité avec ton code existant,
+  // mais le redimensionnement par drag est désactivé (resize via inputs seulement).
   const isResizeMode = ref(false);
-  const resizingShape = ref(null); // Shape being resized
-  const resizeMetadata = ref(null); // Original shape metadata for resizing
+  const resizingShape = ref(null);
 
   // ===== SHAPE CREATION FUNCTIONS =====
 
-  // Create a square with center and size (like a circle)
   function createSquare(center, sizePoint, map, layersComposable) {
-    // Use pixel coordinates for a perfectly visual square
     const centerPixel = map.latLngToContainerPoint(center);
     const sizePixel = map.latLngToContainerPoint(sizePoint);
 
-    // Calculate distance in pixels
     const pixelDistance = centerPixel.distanceTo(sizePixel);
     const halfSidePixels = pixelDistance / Math.sqrt(2);
 
-    // Calculate square corners in pixels
-    const topLeftPixel = L.point(
-      centerPixel.x - halfSidePixels,
-      centerPixel.y - halfSidePixels
-    );
-    const bottomRightPixel = L.point(
-      centerPixel.x + halfSidePixels,
-      centerPixel.y + halfSidePixels
-    );
+    const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
+    const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
 
-    // Convert to geographic coordinates
     const topLeft = map.containerPointToLatLng(topLeftPixel);
     const bottomRight = map.containerPointToLatLng(bottomRightPixel);
 
@@ -41,37 +33,26 @@ export function useMapEditing(props, emit) {
         [topLeft.lat, topLeft.lng],
         [bottomRight.lat, bottomRight.lng],
       ],
-      {
-        color: "#000000",
-        weight: 2,
-        fillColor: "#cccccc",
-        fillOpacity: 0.5,
-      }
+      { color: "#000000", weight: 2, fillColor: "#cccccc", fillOpacity: 0.5 }
     );
 
     layersComposable.drawnItems.value.addLayer(square);
 
-    // Create feature
     const feature = squareToFeatureFromCenter(center, sizePoint, map);
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Attach feature data to the Leaflet layer
     square.feature = tempFeature;
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, square);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, square);
   }
 
-  // Create a rectangle between two opposite corners
   function createRectangle(startCorner, endCorner, map, layersComposable) {
-    // Same logic as square
     const minLat = Math.min(startCorner.lat, endCorner.lat);
     const maxLat = Math.max(startCorner.lat, endCorner.lat);
     const minLng = Math.min(startCorner.lng, endCorner.lng);
@@ -82,39 +63,30 @@ export function useMapEditing(props, emit) {
         [minLat, minLng],
         [maxLat, maxLng],
       ],
-      {
-        color: "#000000",
-        weight: 2,
-        fillColor: "#cccccc",
-        fillOpacity: 0.5,
-      }
+      { color: "#000000", weight: 2, fillColor: "#cccccc", fillOpacity: 0.5 }
     );
 
     layersComposable.drawnItems.value.addLayer(rectangle);
 
     const feature = rectangleToFeatureFromCorners(startCorner, endCorner);
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Attach feature data to the Leaflet layer
     rectangle.feature = tempFeature;
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, rectangle);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, rectangle);
   }
 
-  // Create a circle with center and edge point
   function createCircle(center, edgePoint, map, layersComposable) {
     const radius = map.distance(center, edgePoint);
 
     const circle = L.circle(center, {
-      radius: radius,
+      radius,
       color: "#000000",
       weight: 2,
       fillColor: "#cccccc",
@@ -125,28 +97,24 @@ export function useMapEditing(props, emit) {
 
     const feature = circleToFeatureFromCenter(center, edgePoint, map);
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Attach feature data to the Leaflet layer
     circle.feature = tempFeature;
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, circle);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, circle);
   }
 
-  // Create a triangle with center and size
   function createTriangle(center, sizePoint, map, layersComposable) {
     const distance = map.distance(center, sizePoint);
 
     const points = [];
     for (let i = 0; i < 3; i++) {
-      const angle = ((i * 120 + 90) * Math.PI) / 180; // Triangle pointing up
+      const angle = ((i * 120 + 90) * Math.PI) / 180;
       const lat = center.lat + (distance / 111320) * Math.sin(angle);
       const lng =
         center.lng +
@@ -166,22 +134,18 @@ export function useMapEditing(props, emit) {
 
     const feature = triangleToFeatureFromCenter(center, sizePoint, map);
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Attach feature data to the Leaflet layer
     triangle.feature = tempFeature;
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, triangle);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, triangle);
   }
 
-  // Create an oval with center, height and width
   function createOval(center, heightPoint, widthPoint, map, layersComposable) {
     const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
     const widthRadius =
@@ -212,29 +176,24 @@ export function useMapEditing(props, emit) {
 
     const feature = ovalToFeatureFromCenter(center, heightPoint, widthPoint);
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Attach feature data to the Leaflet layer
     oval.feature = tempFeature;
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, oval);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, oval);
   }
 
-  // Create a point at position
   function createPointAt(latlng, map, layersComposable) {
     const currentZoom = map.getZoom();
     const radius = getRadiusForZoom(currentZoom);
 
-    // Use circleMarker with adaptive size
     const circle = L.circleMarker(latlng, {
-      radius: radius,
+      radius,
       fillColor: "#000000",
       color: "#333333",
       weight: 1,
@@ -243,39 +202,29 @@ export function useMapEditing(props, emit) {
       draggable: true,
     });
 
-    // Add to circle collection
     layersComposable.allCircles.value.add(circle);
-
     layersComposable.drawnItems.value.addLayer(circle);
 
-    // Create feature
     const feature = {
       map_id: props.mapId,
       type: "point",
-      geometry: {
-        type: "Point",
-        coordinates: [latlng.lng, latlng.lat],
-      },
+      geometry: { type: "Point", coordinates: [latlng.lng, latlng.lat] },
       color: "#000000",
       opacity: 0.8,
       z_index: 1,
     };
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, circle);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, circle);
   }
 
-  // Create a line between two points
   function createLine(startLatLng, endLatLng, map, layersComposable) {
-    // NO arrowheads - user explicitly requested to remove them
     const line = L.polyline([startLatLng, endLatLng], {
       color: "#000000",
       weight: 2,
@@ -284,7 +233,6 @@ export function useMapEditing(props, emit) {
 
     layersComposable.drawnItems.value.addLayer(line);
 
-    // Create feature
     const feature = {
       map_id: props.mapId,
       type: "polyline",
@@ -301,19 +249,16 @@ export function useMapEditing(props, emit) {
       z_index: 1,
     };
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, line);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, line);
   }
 
-  // Create a polygon
   function createPolygon(points, map, layersComposable) {
     const polygon = L.polygon(points, {
       color: "#000000",
@@ -324,7 +269,6 @@ export function useMapEditing(props, emit) {
 
     layersComposable.drawnItems.value.addLayer(polygon);
 
-    // Create feature
     const feature = {
       map_id: props.mapId,
       type: "polygon",
@@ -337,31 +281,23 @@ export function useMapEditing(props, emit) {
       z_index: 1,
     };
 
-    // Generate temporary ID for local feature
     const tempFeature = {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
 
-    // Make shape clickable immediately
     layersComposable.featureLayerManager.layers.set(tempFeature.id, polygon);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, polygon);
   }
 
-  // Finalize free line
   function finishFreeLine(freeLinePoints, tempFreeLine, map, layersComposable) {
     if (freeLinePoints.length < 2) return;
 
-    // Apply final smoothing
     const smoothedPoints = smoothFreeLinePoints(freeLinePoints);
 
-    // Remove temporary line
-    if (tempFreeLine) {
-      layersComposable.drawnItems.value.removeLayer(tempFreeLine);
-    }
+    if (tempFreeLine) layersComposable.drawnItems.value.removeLayer(tempFreeLine);
 
-    // Create final smoothed line WITHOUT arrowheads
     const freeLine = L.polyline(smoothedPoints, {
       color: "#000000",
       weight: 2,
@@ -370,7 +306,6 @@ export function useMapEditing(props, emit) {
 
     layersComposable.drawnItems.value.addLayer(freeLine);
 
-    // Create and save feature automatically
     const feature = {
       map_id: props.mapId,
       type: "polyline",
@@ -384,14 +319,9 @@ export function useMapEditing(props, emit) {
       z_index: 1,
     };
 
-    // Generate temporary ID to make line clickable immediately
     const tempId = `temp_freeline_${Date.now()}_${Math.random()}`;
-    const tempFeature = {
-      ...feature,
-      id: tempId,
-      _isTemporary: true,
-    };
-    
+    const tempFeature = { ...feature, id: tempId, _isTemporary: true };
+
     layersComposable.featureLayerManager.layers.set(tempId, freeLine);
     if (props.editMode) {
       layersComposable.featureLayerManager.makeLayerClickable(tempId, freeLine);
@@ -400,96 +330,59 @@ export function useMapEditing(props, emit) {
 
   // ===== TEMPORARY SHAPE UPDATE FUNCTIONS =====
 
-  // Update temporary square from center and size (like circle)
   function updateTempSquareFromCenter(center, sizePoint, map, layersComposable, tempShape) {
-    // Clean previous shape
-    if (tempShape) {
-      layersComposable.drawnItems.value.removeLayer(tempShape);
-    }
+    if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
-    // Use pixel coordinates to create perfect square
     const centerPixel = map.latLngToContainerPoint(center);
     const sizePixel = map.latLngToContainerPoint(sizePoint);
-
-    // Calculate distance in pixels
     const pixelDistance = centerPixel.distanceTo(sizePixel);
-
-    // Create perfect square: side = distance / √2
     const halfSidePixels = pixelDistance / Math.sqrt(2);
 
-    // Calculate square corners in pixels
-    const topLeftPixel = L.point(
-      centerPixel.x - halfSidePixels,
-      centerPixel.y - halfSidePixels
-    );
-    const bottomRightPixel = L.point(
-      centerPixel.x + halfSidePixels,
-      centerPixel.y + halfSidePixels
-    );
+    const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
+    const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
 
-    // Convert pixel coordinates to geographic coordinates
     const topLeft = map.containerPointToLatLng(topLeftPixel);
     const bottomRight = map.containerPointToLatLng(bottomRightPixel);
 
-    // Create square corners
-    const bounds = [
-      [topLeft.lat, topLeft.lng],
-      [bottomRight.lat, bottomRight.lng],
-    ];
-
-    const newTempShape = L.rectangle(bounds, {
-      color: "#000000",
-      weight: 2,
-      fillColor: "#cccccc",
-      fillOpacity: 0.5,
-    });
+    const newTempShape = L.rectangle(
+      [
+        [topLeft.lat, topLeft.lng],
+        [bottomRight.lat, bottomRight.lng],
+      ],
+      { color: "#000000", weight: 2, fillColor: "#cccccc", fillOpacity: 0.5 }
+    );
 
     layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
-  // Update temporary rectangle from two opposite corners
   function updateTempRectangleFromCorners(startCorner, endCorner, map, layersComposable, tempShape) {
-    // Clean previous shape
-    if (tempShape) {
-      layersComposable.drawnItems.value.removeLayer(tempShape);
-    }
+    if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
-    // Calculate four rectangle corner coordinates
     const minLat = Math.min(startCorner.lat, endCorner.lat);
     const maxLat = Math.max(startCorner.lat, endCorner.lat);
     const minLng = Math.min(startCorner.lng, endCorner.lng);
     const maxLng = Math.max(startCorner.lng, endCorner.lng);
 
-    // Create rectangle with these bounds
-    const bounds = [
-      [minLat, minLng],
-      [maxLat, maxLng],
-    ];
-
-    const newTempShape = L.rectangle(bounds, {
-      color: "#000000",
-      weight: 2,
-      fillColor: "#cccccc",
-      fillOpacity: 0.5,
-    });
+    const newTempShape = L.rectangle(
+      [
+        [minLat, minLng],
+        [maxLat, maxLng],
+      ],
+      { color: "#000000", weight: 2, fillColor: "#cccccc", fillOpacity: 0.5 }
+    );
 
     layersComposable.drawnItems.value.addLayer(newTempShape);
     return newTempShape;
   }
 
-  // Update temporary circle from center and edge point
   function updateTempCircleFromCenter(center, edgePoint, map, layersComposable, tempShape) {
-    // Clean previous shape
-    if (tempShape) {
-      layersComposable.drawnItems.value.removeLayer(tempShape);
-    }
+    if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
-    // Calculate radius in meters
     const radius = map.distance(center, edgePoint);
 
     const newTempShape = L.circle(center, {
-      radius: radius,
+      radius,
       color: "#000000",
       weight: 2,
       fillColor: "#cccccc",
@@ -500,22 +393,15 @@ export function useMapEditing(props, emit) {
     return newTempShape;
   }
 
-  // Update temporary triangle from center and size
   function updateTempTriangleFromCenter(center, sizePoint, map, layersComposable, tempShape) {
-    // Clean previous shape
-    if (tempShape) {
-      layersComposable.drawnItems.value.removeLayer(tempShape);
-    }
+    if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
-    // Calculate distance from center
     const distance = map.distance(center, sizePoint);
 
-    // Create equilateral triangle pointing up
-    // Calculate three triangle points
     const points = [];
     for (let i = 0; i < 3; i++) {
-      const angle = ((i * 120 + 90) * Math.PI) / 180; // Start with top point (90°)
-      const lat = center.lat + (distance / 111320) * Math.sin(angle); // Approximation in degrees
+      const angle = ((i * 120 + 90) * Math.PI) / 180;
+      const lat = center.lat + (distance / 111320) * Math.sin(angle);
       const lng =
         center.lng +
         ((distance / 111320) * Math.cos(angle)) /
@@ -534,18 +420,13 @@ export function useMapEditing(props, emit) {
     return newTempShape;
   }
 
-  // Update temporary oval - height
   function updateTempOvalHeight(center, heightPoint, map, layersComposable, tempShape) {
-    // Clean previous shape
-    if (tempShape) {
-      layersComposable.drawnItems.value.removeLayer(tempShape);
-    }
+    if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
-    // For now, create temporary circle to visualize height
-    const radius = Math.abs(center.lat - heightPoint.lat) * 111320; // Distance in meters
+    const radius = Math.abs(center.lat - heightPoint.lat) * 111320;
 
     const newTempShape = L.circle(center, {
-      radius: radius,
+      radius,
       color: "#000000",
       weight: 2,
       fillColor: "#cccccc",
@@ -556,21 +437,15 @@ export function useMapEditing(props, emit) {
     return newTempShape;
   }
 
-  // Update temporary oval - width
   function updateTempOvalWidth(center, heightPoint, widthPoint, map, layersComposable, tempShape) {
-    // Clean previous shape
-    if (tempShape) {
-      layersComposable.drawnItems.value.removeLayer(tempShape);
-    }
+    if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
-    // Calculate radii
     const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
     const widthRadius =
       Math.abs(center.lng - widthPoint.lng) *
       111320 *
       Math.cos((center.lat * Math.PI) / 180);
 
-    // Create ellipse approximation with polygon
     const points = [];
     const steps = 32;
     for (let i = 0; i < steps; i++) {
@@ -596,26 +471,22 @@ export function useMapEditing(props, emit) {
 
   // ===== FEATURE CONVERSION FUNCTIONS =====
 
-  // Convert square defined by center and size to GeoJSON feature
   function squareToFeatureFromCenter(center, sizePoint, map) {
     const distance = map.distance(center, sizePoint);
     const halfSide = distance / Math.sqrt(2);
 
-    // Convert to degrees
     const latOffset = halfSide / 111320;
-    const lngOffset =
-      halfSide / (111320 * Math.cos((center.lat * Math.PI) / 180));
+    const lngOffset = halfSide / (111320 * Math.cos((center.lat * Math.PI) / 180));
 
-    // Create square coordinates (clockwise)
     const geometry = {
       type: "Polygon",
       coordinates: [
         [
-          [center.lng - lngOffset, center.lat + latOffset], // Top-left corner
-          [center.lng + lngOffset, center.lat + latOffset], // Top-right corner
-          [center.lng + lngOffset, center.lat - latOffset], // Bottom-right corner
-          [center.lng - lngOffset, center.lat - latOffset], // Bottom-left corner
-          [center.lng - lngOffset, center.lat + latOffset], // Back to start
+          [center.lng - lngOffset, center.lat + latOffset],
+          [center.lng + lngOffset, center.lat + latOffset],
+          [center.lng + lngOffset, center.lat - latOffset],
+          [center.lng - lngOffset, center.lat - latOffset],
+          [center.lng - lngOffset, center.lat + latOffset],
         ],
       ],
     };
@@ -623,7 +494,7 @@ export function useMapEditing(props, emit) {
     return {
       map_id: props.mapId,
       type: "square",
-      geometry: geometry,
+      geometry,
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
@@ -636,7 +507,6 @@ export function useMapEditing(props, emit) {
     };
   }
 
-  // Convert rectangle defined by two opposite corners to GeoJSON feature
   function rectangleToFeatureFromCorners(startCorner, endCorner) {
     const minLat = Math.min(startCorner.lat, endCorner.lat);
     const maxLat = Math.max(startCorner.lat, endCorner.lat);
@@ -647,11 +517,11 @@ export function useMapEditing(props, emit) {
       type: "Polygon",
       coordinates: [
         [
-          [minLng, maxLat], // Top-left corner
-          [maxLng, maxLat], // Top-right corner
-          [maxLng, minLat], // Bottom-right corner
-          [minLng, minLat], // Bottom-left corner
-          [minLng, maxLat], // Back to start
+          [minLng, maxLat],
+          [maxLng, maxLat],
+          [maxLng, minLat],
+          [minLng, minLat],
+          [minLng, maxLat],
         ],
       ],
     };
@@ -659,18 +529,16 @@ export function useMapEditing(props, emit) {
     return {
       map_id: props.mapId,
       type: "rectangle",
-      geometry: geometry,
+      geometry,
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
     };
   }
 
-  // Convert circle defined by center and edge point to GeoJSON feature
   function circleToFeatureFromCenter(center, edgePoint, map) {
     const radius = map.distance(center, edgePoint);
 
-    // Create polygon approximating the circle
     const points = [];
     const steps = 32;
     for (let i = 0; i < steps; i++) {
@@ -680,19 +548,16 @@ export function useMapEditing(props, emit) {
         center.lng +
         ((radius / 111320) * Math.cos(angle)) /
           Math.cos((center.lat * Math.PI) / 180);
-      points.push([lng, lat]); // GeoJSON format [lng, lat]
+      points.push([lng, lat]);
     }
-    points.push(points[0]); // Close polygon
+    points.push(points[0]);
 
-    const geometry = {
-      type: "Polygon",
-      coordinates: [points],
-    };
+    const geometry = { type: "Polygon", coordinates: [points] };
 
     return {
       map_id: props.mapId,
       type: "circle",
-      geometry: geometry,
+      geometry,
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
@@ -705,31 +570,27 @@ export function useMapEditing(props, emit) {
     };
   }
 
-  // Convert triangle defined by center and size to GeoJSON feature
   function triangleToFeatureFromCenter(center, sizePoint, map) {
     const distance = map.distance(center, sizePoint);
 
     const points = [];
     for (let i = 0; i < 3; i++) {
-      const angle = ((i * 120 + 90) * Math.PI) / 180; // Triangle pointing up
+      const angle = ((i * 120 + 90) * Math.PI) / 180;
       const lat = center.lat + (distance / 111320) * Math.sin(angle);
       const lng =
         center.lng +
         ((distance / 111320) * Math.cos(angle)) /
           Math.cos((center.lat * Math.PI) / 180);
-      points.push([lng, lat]); // GeoJSON format [lng, lat]
+      points.push([lng, lat]);
     }
-    points.push(points[0]); // Close polygon
+    points.push(points[0]);
 
-    const geometry = {
-      type: "Polygon",
-      coordinates: [points],
-    };
+    const geometry = { type: "Polygon", coordinates: [points] };
 
     return {
       map_id: props.mapId,
       type: "triangle",
-      geometry: geometry,
+      geometry,
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
@@ -742,7 +603,6 @@ export function useMapEditing(props, emit) {
     };
   }
 
-  // Convert oval defined by center, height and width to GeoJSON feature
   function ovalToFeatureFromCenter(center, heightPoint, widthPoint) {
     const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
     const widthRadius =
@@ -759,19 +619,16 @@ export function useMapEditing(props, emit) {
         center.lng +
         ((widthRadius / 111320) * Math.cos(angle)) /
           Math.cos((center.lat * Math.PI) / 180);
-      points.push([lng, lat]); // GeoJSON format [lng, lat]
+      points.push([lng, lat]);
     }
-    points.push(points[0]); // Close polygon
+    points.push(points[0]);
 
-    const geometry = {
-      type: "Polygon",
-      coordinates: [points],
-    };
+    const geometry = { type: "Polygon", coordinates: [points] };
 
     return {
       map_id: props.mapId,
       type: "oval",
-      geometry: geometry,
+      geometry,
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
@@ -780,22 +637,15 @@ export function useMapEditing(props, emit) {
 
   // ===== SELECTION AND VISUAL MANAGEMENT =====
 
-  // Update visual appearance of selected shapes
   function updateFeatureSelectionVisual(map, layerManager, selectedFeatures) {
     if (!map || !layerManager) return;
-    
+
     layerManager.layers.forEach((layer, featureId) => {
       const fid = String(featureId);
-      
+
       if (selectedFeatures.has(fid)) {
-        // Style for selected shapes - RED BORDER
         if (layer instanceof L.CircleMarker) {
-          layer.setStyle({
-            color: "#ff6b6b",
-            weight: 3,
-            fillColor: "#ff6b6b",
-            fillOpacity: 0.8,
-          });
+          layer.setStyle({ color: "#ff6b6b", weight: 3, fillColor: "#ff6b6b", fillOpacity: 0.8 });
         } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
           layer.setStyle({
             color: "#ff6b6b",
@@ -804,17 +654,12 @@ export function useMapEditing(props, emit) {
             fillOpacity: layer.options.fillOpacity,
           });
         } else if (layer instanceof L.Polyline) {
-          layer.setStyle({
-            color: "#ff6b6b",
-            weight: 4,
-          });
+          layer.setStyle({ color: "#ff6b6b", weight: 4 });
         }
       } else {
-        // Reset to original style using stored __atlas_originalStyle
         if (layer.__atlas_originalStyle && layer.setStyle) {
           layer.setStyle(layer.__atlas_originalStyle);
         } else if (layer.setStyle) {
-          // Fallback to default styles
           const feature = props.features.find((f) => String(f.id) === fid);
           const defaultBorderColor = "#000000";
           const defaultFillColor = "#cccccc";
@@ -849,36 +694,21 @@ export function useMapEditing(props, emit) {
 
   // ===== CRUD OPERATIONS =====
 
-  // Update feature position in database
   async function updateFeaturePosition(feature, deltaLat, deltaLng) {
     try {
-      // Create updated coordinates copy
       const updatedGeometry = updateGeometryCoordinates(feature.geometry, deltaLat, deltaLng);
+      const updateData = { geometry: updatedGeometry };
 
-      // Prepare data for PUT request
-      const updateData = {
-        geometry: updatedGeometry,
-      };
+      const response = await fetch(`http://localhost:8000/maps/features/${feature.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateData),
+      });
 
-      // Send PUT request
-      const response = await fetch(
-        `http://localhost:8000/maps/features/${feature.id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(updateData),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       const updatedFeature = await response.json();
 
-      // Update feature in local list
       const featureIndex = props.features.findIndex((f) => f.id === feature.id);
       if (featureIndex !== -1) {
         const updatedFeatures = [...props.features];
@@ -890,125 +720,78 @@ export function useMapEditing(props, emit) {
     }
   }
 
-  // Delete selected features
   async function deleteSelectedFeatures(selectedFeatures, featureLayerManager, map, emit) {
     if (selectedFeatures.size === 0) return;
 
     const featuresToDelete = Array.from(selectedFeatures);
 
-    // Remove from map first
     for (const featureId of featuresToDelete) {
       const layer = featureLayerManager.layers.get(String(featureId));
       if (layer) {
-        // Remove circles from collection
-        if (layer instanceof L.CircleMarker) {
-          // Will be handled by layers composable
-        }
         map.removeLayer(layer);
         featureLayerManager.layers.delete(String(featureId));
       }
     }
 
-    // Delete from database
     for (const featureId of featuresToDelete) {
       try {
-        const response = await fetch(
-          `http://localhost:8000/maps/features/${featureId}`,
-          {
-            method: "DELETE",
-          }
-        );
-
-        if (!response.ok) {
-          console.error(`Failed to delete feature ${featureId}`);
-        }
+        const response = await fetch(`http://localhost:8000/maps/features/${featureId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) console.error(`Failed to delete feature ${featureId}`);
       } catch (error) {
         console.error(`Error deleting feature ${featureId}:`, error);
       }
     }
 
-    // Update features list in parent
-    const remainingFeatures = props.features.filter(
-      (f) => !featuresToDelete.includes(f.id)
-    );
+    const remainingFeatures = props.features.filter((f) => !featuresToDelete.includes(f.id));
     emit("features-loaded", remainingFeatures);
 
-    // Clear selection
     selectedFeatures.clear();
     updateFeatureSelectionVisual(map, featureLayerManager, selectedFeatures);
   }
 
-  // Delete single feature
   async function deleteFeature(featureId, featureLayerManager, map, emit) {
     const fid = String(featureId);
-    
-    // Remove from map
+
     const layer = featureLayerManager.layers.get(fid);
     if (layer) {
-      // Remove circles from collection
-      if (layer instanceof L.CircleMarker) {
-        // Will be handled by layers composable
-      }
       map.removeLayer(layer);
       featureLayerManager.layers.delete(fid);
     }
 
-    // Only delete from database if it's not a temporary feature
-    if (!fid.startsWith('temp_')) {
+    if (!fid.startsWith("temp_")) {
       try {
-        const response = await fetch(
-          `http://localhost:8000/maps/features/${featureId}`,
-          {
-            method: "DELETE",
-          }
-        );
-
-        if (!response.ok) {
-          console.error(`Failed to delete feature ${featureId}`);
-        }
+        const response = await fetch(`http://localhost:8000/maps/features/${featureId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) console.error(`Failed to delete feature ${featureId}`);
       } catch (error) {
         console.error(`Error deleting feature ${featureId}:`, error);
       }
 
-      // Update features list in parent (only for real features)
       const remainingFeatures = props.features.filter((f) => f.id !== featureId);
       emit("features-loaded", remainingFeatures);
     }
-    // For temporary features, no need to update parent features list
   }
 
-  // Update geometry coordinates
   function updateGeometryCoordinates(geometry, deltaLat, deltaLng) {
-    if (!geometry || !geometry.coordinates) {
-      return geometry;
-    }
+    if (!geometry || !geometry.coordinates) return geometry;
 
     const updatedGeometry = { ...geometry };
 
     switch (geometry.type) {
       case "Point":
-        // Point: [lng, lat]
-        updatedGeometry.coordinates = [
-          geometry.coordinates[0] + deltaLng,
-          geometry.coordinates[1] + deltaLat,
-        ];
+        updatedGeometry.coordinates = [geometry.coordinates[0] + deltaLng, geometry.coordinates[1] + deltaLat];
         break;
-
       case "LineString":
-        // LineString: [[lng, lat], [lng, lat], ...]
-        updatedGeometry.coordinates = geometry.coordinates.map((coord) => [
-          coord[0] + deltaLng,
-          coord[1] + deltaLat,
-        ]);
+        updatedGeometry.coordinates = geometry.coordinates.map((coord) => [coord[0] + deltaLng, coord[1] + deltaLat]);
         break;
-
       case "Polygon":
-        // Polygon: [[[lng, lat], [lng, lat], ...]]
         updatedGeometry.coordinates = geometry.coordinates.map((ring) =>
           ring.map((coord) => [coord[0] + deltaLng, coord[1] + deltaLat])
         );
         break;
-
       default:
         return geometry;
     }
@@ -1016,252 +799,34 @@ export function useMapEditing(props, emit) {
     return updatedGeometry;
   }
 
-  // Toggle delete mode
   function toggleDeleteMode() {
-    // Emit event to change mode
-    if (props.activeEditMode === "DELETE_FEATURE") {
-      emit("mode-change", null); // Return to default mode
-    } else {
-      emit("mode-change", "DELETE_FEATURE"); // Activate delete mode
-    }
+    if (props.activeEditMode === "DELETE_FEATURE") emit("mode-change", null);
+    else emit("mode-change", "DELETE_FEATURE");
   }
 
-  // ===== RESIZE FUNCTIONS =====
-
-  // Start resizing a shape
-  function startResizeShape(featureId, feature, featureLayerManager, map) {
-    const layer = featureLayerManager.layers.get(featureId);
-    if (!layer || !feature.properties || !feature.properties.resizable) {
-      return false;
-    }
-
-    isResizeMode.value = true;
-    resizingShape.value = {
-      featureId,
-      feature,
-      layer,
-    };
-    resizeMetadata.value = {
-      shapeType: feature.properties.shapeType,
-      center: feature.properties.center,
-      size: feature.properties.size,
-      width: feature.properties.width,
-      height: feature.properties.height,
-    };
-
-    // Remove the original layer temporarily
-    map.removeLayer(layer);
-    featureLayerManager.layers.delete(featureId);
-
-    return true;
-  }
-
-  // Update shape during resize
-  function updateResizeShape(center, sizePoint, map, layersComposable) {
-    if (!resizingShape.value || !resizeMetadata.value) return null;
-
-    const shapeType = resizeMetadata.value.shapeType;
-    const originalCenter = resizeMetadata.value.center;
-
-    // Remove old temporary shape
-    if (resizingShape.value.tempLayer) {
-      layersComposable.drawnItems.value.removeLayer(resizingShape.value.tempLayer);
-    }
-
-    let tempLayer = null;
-
-    switch (shapeType) {
-      case "square":
-        tempLayer = updateTempSquareFromCenter(L.latLng(originalCenter), sizePoint, map, layersComposable, null);
-        break;
-      case "circle":
-        tempLayer = updateTempCircleFromCenter(L.latLng(originalCenter), sizePoint, map, layersComposable, null);
-        break;
-      case "triangle":
-        tempLayer = updateTempTriangleFromCenter(L.latLng(originalCenter), sizePoint, map, layersComposable, null);
-        break;
-      // Add more shapes as needed
-    }
-
-    resizingShape.value.tempLayer = tempLayer;
-    return tempLayer;
-  }
-
-  // Finish resizing and save
-  async function finishResizeShape(sizePoint, map, layersComposable) {
-    if (!resizingShape.value || !resizeMetadata.value) return;
-
-    const originalCenter = L.latLng(resizeMetadata.value.center);
-    const shapeType = resizeMetadata.value.shapeType;
-    const featureId = resizingShape.value.featureId;
-
-    // Remove temporary layer
-    if (resizingShape.value.tempLayer) {
-      layersComposable.drawnItems.value.removeLayer(resizingShape.value.tempLayer);
-    }
-
-    // Create updated feature
-    let updatedFeature = null;
-
-    switch (shapeType) {
-      case "square":
-        updatedFeature = squareToFeatureFromCenter(originalCenter, sizePoint, map);
-        break;
-      case "circle":
-        updatedFeature = circleToFeatureFromCenter(originalCenter, sizePoint, map);
-        break;
-      case "triangle":
-        updatedFeature = triangleToFeatureFromCenter(originalCenter, sizePoint, map);
-        break;
-      // Add more shapes as needed
-    }
-
-    if (!updatedFeature) {
-      cancelResizeShape(map, layersComposable);
-      return;
-    }
-
-    // Update in database if it's not a temporary feature
-    if (!featureId.startsWith('temp_')) {
-      try {
-        const response = await fetch(
-          `http://localhost:8000/maps/features/${featureId}`,
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(updatedFeature),
-          }
-        );
-
-        if (!response.ok) {
-          console.error(`Failed to update feature ${featureId}`);
-          cancelResizeShape(map, layersComposable);
-          return;
-        }
-
-        const savedFeature = await response.json();
-        savedFeature.id = featureId;
-
-        // Re-render the updated feature
-        layersComposable.featureLayerManager.addFeature(featureId, savedFeature, map, props);
-        emit("features-loaded", [savedFeature]);
-      } catch (error) {
-        console.error(`Error updating feature ${featureId}:`, error);
-        cancelResizeShape(map, layersComposable);
-        return;
-      }
-    } else {
-      // For temporary features, just re-create the layer
-      const newLayer = createLayerFromFeature(updatedFeature, originalCenter, sizePoint, map, layersComposable);
-      if (newLayer) {
-        // Remove old layer first
-        const oldLayer = layersComposable.featureLayerManager.layers.get(featureId);
-        if (oldLayer) {
-          layersComposable.drawnItems.value.removeLayer(oldLayer);
-        }
-        
-        // Add new layer
-        layersComposable.drawnItems.value.addLayer(newLayer);
-        layersComposable.featureLayerManager.layers.set(featureId, newLayer);
-        layersComposable.featureLayerManager.makeLayerClickable(featureId, newLayer);
-      }
-    }
-
-    // Reset resize state
+  // ===== RESIZE (DISABLED / LEGACY STUBS) =====
+  // Ces fonctions existent juste pour ne pas casser le code qui les appelle,
+  // mais ne font rien. Le resize doit être fait via les input box.
+  function startResizeShape() {
     isResizeMode.value = false;
     resizingShape.value = null;
-    resizeMetadata.value = null;
+    return false;
   }
 
-  // Cancel resize and restore original
-  function cancelResizeShape(map, layersComposable) {
-    if (!resizingShape.value) return;
+  function updateResizeShape() {
+    return null;
+  }
 
-    // Remove temporary layer
-    if (resizingShape.value.tempLayer) {
-      layersComposable.drawnItems.value.removeLayer(resizingShape.value.tempLayer);
-    }
-
-    // Restore original layer
-    const { featureId, layer } = resizingShape.value;
-    layersComposable.featureLayerManager.addFeature(featureId, resizingShape.value.feature, map, props);
-
-    // Reset resize state
+  async function finishResizeShape() {
     isResizeMode.value = false;
     resizingShape.value = null;
-    resizeMetadata.value = null;
+    return;
   }
 
-  // Helper to create layer from feature (for temporary shapes)
-  function createLayerFromFeature(feature, center, sizePoint, map, layersComposable) {
-    const shapeType = feature.properties?.shapeType;
-    
-    let layer = null;
-    
-    switch (shapeType) {
-      case "square": {
-        const distance = map.distance(center, sizePoint);
-        const halfSide = distance / Math.sqrt(2);
-        const centerPixel = map.latLngToContainerPoint(center);
-        const halfSidePixels = halfSide * (centerPixel.distanceTo(map.latLngToContainerPoint(sizePoint)) / distance);
-        
-        const topLeftPixel = L.point(centerPixel.x - halfSidePixels, centerPixel.y - halfSidePixels);
-        const bottomRightPixel = L.point(centerPixel.x + halfSidePixels, centerPixel.y + halfSidePixels);
-        
-        const topLeft = map.containerPointToLatLng(topLeftPixel);
-        const bottomRight = map.containerPointToLatLng(bottomRightPixel);
-        
-        layer = L.rectangle([[topLeft.lat, topLeft.lng], [bottomRight.lat, bottomRight.lng]], {
-          color: "#000000",
-          weight: 2,
-          fillColor: "#cccccc",
-          fillOpacity: 0.5,
-        });
-        break;
-      }
-      
-      case "circle": {
-        const radius = map.distance(center, sizePoint);
-        layer = L.circle(center, {
-          radius: radius,
-          color: "#000000",
-          weight: 2,
-          fillColor: "#cccccc",
-          fillOpacity: 0.5,
-        });
-        break;
-      }
-      
-      case "triangle": {
-        const distance = map.distance(center, sizePoint);
-        const points = [];
-        for (let i = 0; i < 3; i++) {
-          const angle = (i / 3) * 2 * Math.PI - Math.PI / 2;
-          const lat = center.lat + (distance / 111320) * Math.sin(angle);
-          const lng = center.lng + ((distance / 111320) * Math.cos(angle)) / Math.cos((center.lat * Math.PI) / 180);
-          points.push([lat, lng]);
-        }
-        layer = L.polygon(points, {
-          color: "#000000",
-          weight: 2,
-          fillColor: "#cccccc",
-          fillOpacity: 0.5,
-        });
-        break;
-      }
-      
-      default:
-        return null;
-    }
-    
-    // Attach feature data to the layer
-    if (layer) {
-      layer.feature = feature;
-    }
-    
-    return layer;
+  function cancelResizeShape() {
+    isResizeMode.value = false;
+    resizingShape.value = null;
+    return;
   }
 
   return {
@@ -1307,19 +872,18 @@ export function useMapEditing(props, emit) {
 
     // Mode management
     toggleDeleteMode,
-    
-    // Resize functions
+
+    // Resize functions (disabled but kept for compatibility)
     startResizeShape,
     updateResizeShape,
     finishResizeShape,
     cancelResizeShape,
-    
+
     // Utility functions
     smoothFreeLinePoints,
   };
 }
 
-// Helper function for radius calculation
 function getRadiusForZoom(currentZoom) {
   const BASE_ZOOM = 5;
   const BASE_RADIUS = 3;
