@@ -9,7 +9,7 @@ ASSETS_DIR = os.path.join(
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "extracted_shapes")
 
 
-# To run this script, use the command: python -m app.utils.run_shapes_extraction
+# To run this script, use the command: python -m app.utils.scripts.run_shapes_extraction
 def is_image_file(filename):
     return filename.lower().endswith(
         (

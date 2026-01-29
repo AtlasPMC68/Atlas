@@ -117,6 +117,11 @@ def extract_shapes(
 
     print(f"[SHAPE EXTRACT] Metadata saved to: {metadata_path}")
 
+    # Export shapes to normalized GeoJSON format
+    geojson_path = export_shapes_to_normalized_geojson(
+        final_shapes_with_contours, image_output_dir
+    )
+
     print(
         f"[EXTRACT] {len(final_shapes_with_contours)} shapes extracted from {image_path}"
     )
@@ -130,15 +135,144 @@ def extract_shapes(
     except Exception:
         reconstructed_mask_path, reconstructed_overlay_path = None, None
 
+    # Read the generated GeoJSON file to get normalized features
+    normalized_features = []
+    if geojson_path and os.path.exists(geojson_path):
+        try:
+            with open(geojson_path, "r", encoding="utf-8") as f:
+                geojson_data = json.load(f)
+                # Format correct : une seule FeatureCollection avec toutes les features
+                normalized_features = [geojson_data]  # FeatureCollection complète
+        except Exception as e:
+            print(f"[ERROR] Failed to read GeoJSON file {geojson_path}: {e}")
+
     return {
         "total_shapes": len(final_shapes_with_contours),
         "shapes": final_shapes,
         "output_directory": image_output_dir,
         "debug_mask_path": debug_mask_path,
         "metadata_path": metadata_path,
+        "geojson_path": geojson_path,
         "reconstructed_mask_path": reconstructed_mask_path,
         "reconstructed_overlay_path": reconstructed_overlay_path,
+        "normalized_features": normalized_features,
     }
+
+
+def export_shapes_to_normalized_geojson(
+    final_shapes_with_contours: List[Tuple[Dict, np.ndarray]],
+    image_output_dir: str,
+) -> str:
+    """Convert extracted shapes with contours to normalized GeoJSON format.
+
+    Each shape is normalized into a [0,1] x [0,1] coordinate space while preserving
+    aspect ratio, similar to the color extraction workflow.
+
+    Args:
+        final_shapes_with_contours: List of (shape_dict, contour) tuples
+        image_output_dir: Directory to save the GeoJSON file
+
+    Returns:
+        Path to the saved GeoJSON file
+    """
+    from shapely import affinity
+    from shapely.geometry import Polygon
+
+    geojson_features = []
+
+    for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
+        # Get bounding box dimensions for normalization
+        bbox = shape["bounding_box"]
+        x_min, y_min = bbox["x"], bbox["y"]
+        w, h = bbox["width"], bbox["height"]
+
+        # Prevent division by zero
+        if w == 0 or h == 0:
+            continue
+
+        # Convert contour points to normalized coordinates in [0,1] x [0,1]
+        normalized_coords = []
+        for pt in contour:
+            x_norm = (pt[0][0] - x_min) / w
+            y_norm = (pt[0][1] - y_min) / h
+            normalized_coords.append([x_norm, y_norm])
+
+        # Ensure coordinates form a valid polygon (close the ring if needed)
+        if len(normalized_coords) >= 3:
+            if normalized_coords[0] != normalized_coords[-1]:
+                normalized_coords.append(normalized_coords[0])
+
+        # Scale to preserve aspect ratio and center in [0,1] box
+        polygon = Polygon(normalized_coords)
+
+        # Get bounds of the normalized polygon
+        minx, miny, maxx, maxy = polygon.bounds
+        width_norm = maxx - minx
+        height_norm = maxy - miny
+        max_dim = max(width_norm, height_norm)
+
+        # Scale uniformly so largest dimension = 1
+        if max_dim > 0:
+            scale = 1.0 / max_dim
+        else:
+            scale = 1.0
+
+        # Translate to origin and scale
+        translated = affinity.translate(polygon, xoff=-minx, yoff=-miny)
+        scaled = affinity.scale(
+            translated,
+            xfact=scale,
+            yfact=scale,
+            origin=(0.0, 0.0),
+        )
+
+        # Center in [0,1] box
+        width_scaled = width_norm * scale
+        height_scaled = height_norm * scale
+        offset_x = (1.0 - width_scaled) / 2.0
+        offset_y = (1.0 - height_scaled) / 2.0
+
+        normalized_geom = affinity.translate(
+            scaled,
+            xoff=offset_x,
+            yoff=offset_y,
+        )
+
+        # Create GeoJSON feature
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "shape_id": idx,
+                "area": shape["area"],
+                "perimeter": shape["perimeter"],
+                "aspect_ratio": shape["aspect_ratio"],
+                "solidity": shape["solidity"],
+                "extent": shape["extent"],
+                "num_vertices": shape["num_vertices"],
+                "mapElementType": "shape",
+                "name": f"Shape {idx}",
+                "is_normalized": True,
+                "start_date": "1700-01-01",
+                "end_date": "2026-01-01",
+            },
+            "geometry": normalized_geom.__geo_interface__,
+        }
+
+        geojson_features.append(feature)
+
+    # Create and save FeatureCollection
+    feature_collection = {
+        "type": "FeatureCollection",
+        "features": geojson_features,
+    }
+
+    geojson_path = os.path.join(image_output_dir, "shapes_normalized.geojson")
+    with open(geojson_path, "w", encoding="utf-8") as f:
+        json.dump(feature_collection, f, indent=2, ensure_ascii=False)
+
+    print(f"[SHAPE EXTRACT] Normalized GeoJSON saved to: {geojson_path}")
+
+    return geojson_path
 
 
 def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray:

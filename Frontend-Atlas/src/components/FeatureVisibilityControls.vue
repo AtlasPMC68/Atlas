@@ -31,7 +31,7 @@
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <span class="label-text text-sm">
-                  {{ feature.properties?.name || 'Unnamed Feature' }}
+                  {{ feature.properties?.name || "Unnamed Feature" }}
                 </span>
               </label>
             </div>
@@ -68,6 +68,7 @@ const featureGroups = computed(() => {
     { type: "point", label: "Villes", features: [] },
     { type: "zone", label: "Zones", features: [] },
     { type: "arrow", label: "Flèches", features: [] },
+    { type: "shape", label: "Formes", features: [] },
   ];
 
   props.features.forEach((feature) => {

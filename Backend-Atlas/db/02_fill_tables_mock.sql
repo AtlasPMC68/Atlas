@@ -4,8 +4,8 @@ INSERT INTO users (
 ) VALUES (
   '00000000-0000-0000-0000-000000000001',
   'AtlasAdmin',
-  'admin@atlas.ca',
-);
+  'admin@atlas.ca'
+);  
 
 -- Exemple de base_layer
 INSERT INTO base_layers (
