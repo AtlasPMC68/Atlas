@@ -73,12 +73,10 @@ onMounted(async () => {
       // Limit panning so the user can't drag away from the continents.
       map.setMaxBounds(padded);
 
-      // Set the minimum zoom ("max dezoom") so you can't zoom out further than "show all land".
-      // (Lower zoom number = more zoomed out in Leaflet.)
-      const minZoom = map.getBoundsZoom(padded, false);
-      map.setMinZoom(minZoom);
-
+      // Fit to the layer once, then lock minZoom to that fitted zoom
+      // so you can't zoom out further.
       map.fitBounds(padded, { padding: [10, 10] });
+      map.setMinZoom(map.getZoom());
     }
   } catch (e) {
     console.error("Failed to load Natural Earth land basemap", e);
