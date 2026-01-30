@@ -18,6 +18,7 @@ from uuid import UUID
 from ..utils.auth import get_current_user
 from app.services.maps import create_map_in_db
 import json
+from app.utils.sift_key_points_finder import find_key_points
 
 router = APIRouter()
 
@@ -94,6 +95,8 @@ async def upload_and_process_map(
     if len(file_content) == 0:
         raise HTTPException(status_code=400, detail="Empty file")
     
+    find_key_points(file_content)
+
     try:
         map_id = await create_map_in_db(
             db=session,
@@ -103,27 +106,27 @@ async def upload_and_process_map(
             description=None,
             access_level="private",
         )
-        # Lancer la tâche Celery (pass map_id as string for JSON serialization)
-        task = process_map_extraction.delay(
-            file.filename, 
-            file_content, 
-            str(map_id),
-            pixel_control_polyline,
-            geo_control_polyline,
-            pixel_control_points,
-            geo_control_points
-        )
-        #TODO: either delete the created map if task fails or create cleanup mechanism
+#         # Lancer la tâche Celery (pass map_id as string for JSON serialization)
+#         task = process_map_extraction.delay(
+#             file.filename, 
+#             file_content, 
+#             str(map_id),
+#             pixel_control_polyline,
+#             geo_control_polyline,
+#             pixel_control_points,
+#             geo_control_points
+#         )
+#         #TODO: either delete the created map if task fails or create cleanup mechanism
         
-        logger.info(f"Map processing task started: {task.id} for file {file.filename}")
+#         logger.info(f"Map processing task started: {task.id} for file {file.filename}")
         
-        return {
-            "task_id": task.id,
-            "filename": file.filename,
-            "status": "processing_started",
-            "message": f"Map upload successful. Processing started for {file.filename}",
-            "map_id": str(map_id)
-        }
+#         return {
+#             "task_id": task.id,
+#             "filename": file.filename,
+#             "status": "processing_started",
+#             "message": f"Map upload successful. Processing started for {file.filename}",
+#             "map_id": str(map_id)
+#         }
         
     except Exception as e:
         logger.error(f"Error starting map processing: {str(e)}")
