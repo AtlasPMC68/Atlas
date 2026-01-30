@@ -91,6 +91,7 @@ import { useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
+import { useSiftPoints } from "../../composables/useSiftPoints";
 
 // Components
 import FileDropZone from "../../components/import/FileDropZone.vue";
@@ -121,6 +122,8 @@ const {
   resultData,
   mapId,
 } = useImportProcess();
+
+const { fetchCoastlineKeypoints } = useSiftPoints();
 
 // État local
 const currentStep = ref(1);
@@ -156,6 +159,15 @@ async function handleWorldAreaConfirmed(payload) {
   worldAreaBounds.value = payload.bounds;
   worldAreaZoom.value = payload.zoom;
   showWorldAreaPickerModal.value = false;
+
+  // Call backend to get coastline keypoints for this ROI.
+  // For now we just log the response so you can verify the wiring.
+  const res = await fetchCoastlineKeypoints(payload.bounds);
+  if (res.success) {
+    console.log("/maps/coastline-keypoints ->", res.data);
+  } else {
+    console.error("Failed to fetch coastline keypoints:", res.error);
+  }
 
   // Next step: georeferencing (existing modal)
   currentStep.value = 4;
