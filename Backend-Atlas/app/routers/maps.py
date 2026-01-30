@@ -33,7 +33,7 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 async def upload_and_process_map(
     file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)
 ):
-    """Upload une carte et lance l'extraction de données"""
+    """Upload a map and start data extraction"""
 
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
@@ -81,7 +81,7 @@ async def upload_and_process_map(
 
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
-    """Récupère l'état d'une tâche de traitement de carte"""
+    """Get the status of a map processing task"""
     task = celery_app.AsyncResult(task_id)
 
     if task.state == "PENDING":
@@ -121,7 +121,7 @@ async def get_processing_status(task_id: str):
 
 @router.get("/results/{task_id}")
 async def get_extraction_results(task_id: str):
-    """Récupère uniquement les résultats d'extraction (si terminé)"""
+    """Get extraction results only if completed"""
     task = celery_app.AsyncResult(task_id)
 
     if task.state == "SUCCESS":
