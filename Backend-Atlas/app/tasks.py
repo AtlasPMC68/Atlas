@@ -1,24 +1,22 @@
-import cv2
-from celery import current_task
-from .celery_app import celery_app
-import time
 import asyncio
 import logging
 import os
-import tempfile
-from typing import Any, List
-import time
 import re
+import tempfile
+import time
 from datetime import datetime
+from typing import Any, List
 from uuid import UUID
-from PIL import Image, ImageEnhance
+
+import cv2
 
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
+from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
-from app.utils.text_extraction import extract_text
+from app.utils.file_utils import validate_file_extension
 from app.utils.shapes_extraction import extract_shapes
-from app.utils.cities_validation import detect_cities_from_text, find_first_city
+from app.utils.text_extraction import extract_text
 
 from .celery_app import celery_app
 
@@ -83,8 +81,10 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         time.sleep(2)
 
         image = cv2.imread(tmp_file_path)
-        image.flags.writeable = False # Makes image immutable
-        validate_file_extension(tmp_file_path)
+        image.flags.writeable = False  # Makes image immutable
+        if not validate_file_extension(tmp_file_path):
+            ext = os.path.splitext(tmp_file_path)[1].lower()
+            raise ValueError(f"Extension {ext} is not allowed.")
 
         # Step 3: Extraction OCR
         self.update_state(
@@ -98,7 +98,9 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         time.sleep(2)
 
         # GPU acceleration make the text extraction MUCH faster i
-        extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
+        extracted_text, clean_image = extract_text(
+            image=image, languages=["en", "fr"], gpu_acc=False
+        )
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
         # Tokenize OCR text to single words and run city detection per token
@@ -113,7 +115,13 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
                 except Exception as e:
                     logger.debug(f"find_first_city error for token '{tok}': {e}")
                     # treat as not found but persist the token
-                    candidate = {"found": False, "query": tok, "name": tok, "lat": 0.0, "lon": 0.0}
+                    candidate = {
+                        "found": False,
+                        "query": tok,
+                        "name": tok,
+                        "lat": 0.0,
+                        "lon": 0.0,
+                    }
 
                 # Build feature using returned candidate; if not found, coordinates will be 0,0
                 logger.info(f"City detection result for token '{tok}': {candidate}")
@@ -128,7 +136,13 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
                         "start_date": "0-01-01",
                         "end_date": "5000-01-01",
                     },
-                    "geometry": {"type": "Point", "coordinates": [candidate.get("lon") or 0.0, candidate.get("lat") or 0.0]},
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [
+                            candidate.get("lon") or 0.0,
+                            candidate.get("lat") or 0.0,
+                        ],
+                    },
                 }
 
                 city_feature_collection = {
@@ -138,7 +152,9 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
                 try:
                     asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
-                    logger.info(f"Persisted city token feature: {candidate.get('name')}")
+                    logger.info(
+                        f"Persisted city token feature: {candidate.get('name')}"
+                    )
                 except Exception as e:
                     logger.error(f"Failed to persist city token '{tok}': {e}")
 
@@ -177,7 +193,10 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         )
         time.sleep(2)
         shapes_result = extract_shapes(tmp_file_path)
-        logger.info(f"[DEBUG] Résultat shapes_extraction : {shapes_result}")
+        shape_features = shapes_result["normalized_features"]
+
+        # Persist shapes to database
+        asyncio.run(persist_features(map_uuid, shape_features))
 
         # Step 6: Cleanning
         self.update_state(
@@ -207,11 +226,13 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         lines = [block[1] for block in extracted_text]
         full_text = "\n".join(lines)
         try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== OCR EXTRACTION  ===\n")
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write("=== OCR EXTRACTION  ===\n")
                 f.write(f"Source File: {filename}\n")
-                f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"\n=== TEXTE EXTRAIT ===\n\n")
+                f.write(
+                    f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                )
+                f.write("\n=== TEXTE EXTRAIT ===\n\n")
                 f.write(full_text)
 
             logger.info(f"Text saved to: {output_path}")
@@ -229,9 +250,7 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
             "status": "completed",
         }
 
-        logger.info(
-            f"Map processing completed for {filename}: {len(extracted_text)} characters extracted"
-        )
+        logger.info(f"Map processing completed for {filename}: 0 characters extracted")
 
         return result
 
@@ -245,25 +264,27 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
 
-def validate_file_extension(file_path: str) -> None:
-    supported_file_ext = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp', '.ppm', '.pgm', '.pbm')
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext not in supported_file_ext:
-        raise ValueError(f"Extension {ext} non autorisée pour le système du consortium.")
-        
+
 # TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
-        for feature in normalized_features:
-            try:
-                await insert_feature_in_db(
-                    db=db,
-                    map_id=map_uuid,
-                    is_feature_collection=True,
-                    data=feature,
-                )
-            except Exception as e:
-                logger.error(f"Failed to persist feature for map {map_uuid}: {str(e)}")
+        for feature_collection in normalized_features:
+            for feature in feature_collection.get("features", []):
+                feature_data = {
+                    "type": "FeatureCollection",
+                    "features": [feature],
+                }
+                try:
+                    await insert_feature_in_db(
+                        db=db,
+                        map_id=map_uuid,
+                        is_feature_collection=False,
+                        data=feature_data,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to persist individual feature for map {map_uuid}: {str(e)}"
+                    )
 
 
 async def persist_city_feature(map_uuid: UUID, feature: dict[str, Any]):
