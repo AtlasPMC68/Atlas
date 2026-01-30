@@ -300,3 +300,29 @@ async def create_map(
     db.commit()
     db.refresh(new_map)
     return {"id": new_map.id}
+
+@router.post("/coastline-keypoints")
+async def get_coastline_keypoints(
+    west: float = Form(...),
+    south: float = Form(...),
+    east: float = Form(...),
+    north: float = Form(...),
+    width: int = Form(1024),
+    height: int = Form(768)
+):
+    """Find SIFT keypoints on coastlines within geographic bounds."""
+    try:
+        from app.utils.sift_key_points_finder import find_coastline_keypoints
+        
+        bounds = {"west": west, "south": south, "east": east, "north": north}
+        result = find_coastline_keypoints(bounds, width, height)
+        
+        return {
+            "status": "success",
+            "keypoints": result["keypoints"],
+            "total": result["total"],
+            "bounds": bounds
+        }
+    except Exception as e:
+        logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
