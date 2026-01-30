@@ -45,7 +45,7 @@
               d="M14 5l7 7m0 0l-7 7m7-7H3"
             />
           </svg>
-          Commencer l'extraction
+          {{ startLabel }}
         </span>
         <span v-else class="flex items-center">
           <span class="loading loading-spinner loading-sm mr-2"></span>
@@ -61,6 +61,10 @@ defineProps({
   isProcessing: {
     type: Boolean,
     default: false,
+  },
+  startLabel: {
+    type: String,
+    default: "Commencer l'extraction",
   },
 });
 

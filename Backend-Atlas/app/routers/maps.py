@@ -31,6 +31,47 @@ router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
+
+@router.post("/sift")
+async def extract_sift_keypoints(
+    file: UploadFile = File(...),
+):
+    """Return SIFT keypoints (pixel coords) for an uploaded image.
+
+    Request: multipart/form-data with `file`.
+    Response: { image: {width,height}, count, keypoints: [{x,y,...}, ...] }
+    """
+
+    if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+
+    file_content = await file.read()
+
+    if len(file_content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB",
+        )
+
+    if len(file_content) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    # try:
+    #     return extract_sift_keypoints_from_image_bytes(
+    #         file_content,
+    #         max_features=max_features,
+    #     )
+    # except ValueError as e:
+    #     raise HTTPException(status_code=400, detail=str(e))
+    # except RuntimeError as e:
+    #     raise HTTPException(status_code=501, detail=str(e))
+    # except Exception:
+    #     logger.exception("Unexpected error extracting SIFT keypoints")
+    #     raise HTTPException(status_code=500, detail="Failed to extract SIFT keypoints")
+
 @router.post("/upload")
 async def upload_and_process_map(
     image_polyline: str | None = Form(None),
