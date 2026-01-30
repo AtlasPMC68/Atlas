@@ -1,6 +1,6 @@
 <template>
   <div class="relative w-full h-full">
-    <div ref="mapContainer" class="w-full h-full"></div>
+    <div ref="mapContainer" class="w-full h-full bg-[#cfe8ff]"></div>
 
     <button
       type="button"
@@ -37,21 +37,52 @@ const mapContainer = ref(null);
 const isDrawingMode = ref(false);
 let isDrawingActive = false;
 let map = null;
+let landLayer = null;
 let polylineLayer = null;
 let pointMarker = null;
 const localPoints = ref([]); // internal copy of the polyline
 
-onMounted(() => {
-  map = L.map(mapContainer.value).setView([20, 0], 2);
+onMounted(async () => {
+  map = L.map(mapContainer.value, {
+    // Prevents "throwing" the map outside bounds when max bounds are set.
+    maxBoundsViscosity: 1.0,
+  }).setView([20, 0], 2);
 
-  L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-    {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-    },
-  ).addTo(map);
+  // "Continents only" basemap using local Natural Earth land polygons (no rivers/roads/labels).
+  // Served from Frontend-Atlas/public/geojson/ne_land.geojson
+  try {
+    const res = await fetch("/geojson/ne_coastline.geojson");
+    if (!res.ok) throw new Error(`Failed to load ne_coastline.geojson: ${res.status}`);
+    const geojson = await res.json();
+
+    landLayer = L.geoJSON(geojson, {
+      style: {
+        fillColor: "#e5e7eb",
+        fillOpacity: 0.9,
+        color: "#9ca3af",
+        weight: 1,
+        opacity: 1,
+      },
+    }).addTo(map);
+
+    // Fit to land bounds and prevent panning/zooming outside that extent.
+    const bounds = landLayer.getBounds();
+    if (bounds.isValid()) {
+      const padded = bounds.pad(0.05);
+
+      // Limit panning so the user can't drag away from the continents.
+      map.setMaxBounds(padded);
+
+      // Set the minimum zoom ("max dezoom") so you can't zoom out further than "show all land".
+      // (Lower zoom number = more zoomed out in Leaflet.)
+      const minZoom = map.getBoundsZoom(padded, false);
+      map.setMinZoom(minZoom);
+
+      map.fitBounds(padded, { padding: [10, 10] });
+    }
+  } catch (e) {
+    console.error("Failed to load Natural Earth land basemap", e);
+  }
 
   localPoints.value = props.modelValue ? [...props.modelValue] : [];
   if (localPoints.value.length > 0) {
@@ -70,6 +101,12 @@ onBeforeUnmount(() => {
     map.off("mousemove", onMapMouseMove);
     map.off("mouseup", onMapMouseUp);
     map.off("mouseout", onMapMouseUp);
+
+    if (landLayer) {
+      map.removeLayer(landLayer);
+      landLayer = null;
+    }
+
     map.remove();
     map = null;
   }

@@ -20,10 +20,13 @@
           Prévisualisation
         </div>
         <div class="step" :class="{ 'step-primary': currentStep >= 3 }">
-          Extraction
+          Zone sur le monde
         </div>
         <div class="step" :class="{ 'step-primary': currentStep >= 4 }">
-          Personnalisation
+          Géoréférencement
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 5 }">
+          Extraction
         </div>
       </div>
 
@@ -44,11 +47,23 @@
               @start-import="startImportProcess"
               @cancel="resetImport"
               :is-processing="isProcessing"
+              start-label="Confirmer carte"
             />
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Modal de sélection de zone monde -->
+    <WorldAreaPickerModal
+      v-if="showWorldAreaPickerModal && previewUrl"
+      :is-open="showWorldAreaPickerModal"
+      :image-url="previewUrl"
+      :initial-bounds="worldAreaBounds"
+      :initial-zoom="worldAreaZoom ?? 2"
+      @close="handleWorldAreaClose"
+      @confirmed="handleWorldAreaConfirmed"
+    />
 
     <!-- Modal de géoréférencement -->
     <GeoRefModal
@@ -83,6 +98,7 @@ import ImportPreview from "../../components/import/ImportPreview.vue";
 import ImportControls from "../../components/import/ImportControls.vue";
 import ProcessingModal from "../../components/import/ProcessingModal.vue";
 import GeoRefModal from "../../components/georef/GeoRefModal.vue";
+import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
 
 const router = useRouter();
 const importStore = useImportStore();
@@ -108,7 +124,10 @@ const {
 
 // État local
 const currentStep = ref(1);
+const showWorldAreaPickerModal = ref(false);
 const showGeorefModal = ref(false);
+const worldAreaBounds = ref(null); // { west, south, east, north } or null
+const worldAreaZoom = ref(null);
 const worldPolyline = ref([]); // [ [lat,lng], ... ]
 const imagePolyline = ref([]); // [ [x,y], ... ]
 const worldPoint = ref(null); // [lat, lng] or null
@@ -122,6 +141,24 @@ const handleFileSelected = (file) => {
 
 async function startImportProcess() {
   if (!selectedFile.value) return;
+  currentStep.value = 3;
+  showWorldAreaPickerModal.value = true;
+}
+
+function handleWorldAreaClose() {
+  showWorldAreaPickerModal.value = false;
+  // Go back to preview step if the user cancels.
+  currentStep.value = 2;
+}
+
+async function handleWorldAreaConfirmed(payload) {
+  // payload: { bounds: {west,south,east,north}, zoom }
+  worldAreaBounds.value = payload.bounds;
+  worldAreaZoom.value = payload.zoom;
+  showWorldAreaPickerModal.value = false;
+
+  // Next step: georeferencing (existing modal)
+  currentStep.value = 4;
   showGeorefModal.value = true;
 }
 
@@ -141,7 +178,7 @@ async function handleGeorefConfirmed(payload) {
     worldPoint.value
   );
   if (result.success) {
-    currentStep.value = 3;
+    currentStep.value = 5;
   } else {
     console.error("Erreur importation:", result.error);
   }
@@ -159,6 +196,10 @@ watch(
 
 const resetImport = () => {
   currentStep.value = 1;
+  showWorldAreaPickerModal.value = false;
+  showGeorefModal.value = false;
+  worldAreaBounds.value = null;
+  worldAreaZoom.value = null;
   importStore.resetImport();
 };
 </script>
