@@ -14,6 +14,7 @@ from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
+from app.utils.file_utils import validate_file_extension
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
 
@@ -81,7 +82,9 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         image = cv2.imread(tmp_file_path)
         image.flags.writeable = False  # Makes image immutable
-        validate_file_extension(tmp_file_path)
+        if not validate_file_extension(tmp_file_path):
+            ext = os.path.splitext(tmp_file_path)[1].lower()
+            raise ValueError(f"Extension {ext} is not allowed.")
 
         # Step 3: Extraction OCR
         self.update_state(
@@ -191,13 +194,9 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
         time.sleep(2)
         shapes_result = extract_shapes(tmp_file_path)
         shape_features = shapes_result["normalized_features"]
-        # logger.info(f"[DEBUG] Résultat shapes_extraction : {shapes_result}")
 
         # Persist shapes to database
         asyncio.run(persist_features(map_uuid, shape_features))
-        logger.info(
-            f"[DEBUG] Shapes persisted: {len(shape_features)} feature collections"
-        )
 
         # Step 6: Cleanning
         self.update_state(
@@ -264,26 +263,6 @@ def process_map_extraction(self, filename: str, file_content: bytes, map_id: str
 
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
-
-
-def validate_file_extension(file_path: str) -> None:
-    supported_file_ext = (
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".bmp",
-        ".tif",
-        ".tiff",
-        ".webp",
-        ".ppm",
-        ".pgm",
-        ".pbm",
-    )
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext not in supported_file_ext:
-        raise ValueError(
-            f"Extension {ext} non autorisée pour le système du consortium."
-        )
 
 
 # TODO : Remove type Any

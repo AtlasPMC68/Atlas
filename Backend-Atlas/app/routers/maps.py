@@ -1,9 +1,10 @@
+import logging
 from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 
 from app.database.session import get_async_session
@@ -20,12 +21,10 @@ from ..utils.auth import get_current_user
 
 router = APIRouter()
 
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 
-# Tailles et types de fichiers autorisés
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
@@ -36,17 +35,14 @@ async def upload_and_process_map(
 ):
     """Upload une carte et lance l'extraction de données"""
 
-    # Validation du type de fichier
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400,
             detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    # Lire le contenu du fichier
     file_content = await file.read()
 
-    # Validation de la taille
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -65,7 +61,6 @@ async def upload_and_process_map(
             description=None,
             access_level="private",
         )
-        # Lancer la tâche Celery (pass map_id as string for JSON serialization)
         task = process_map_extraction.delay(file.filename, file_content, str(map_id))
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
@@ -171,8 +166,6 @@ async def get_maps(
     user_id: str | None = None,
     session: AsyncSession = Depends(get_async_session),
 ):
-    from sqlalchemy import select
-
     if user_id:
         try:
             owner_uuid = UUID(user_id)
