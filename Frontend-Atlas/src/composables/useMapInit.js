@@ -95,22 +95,7 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
       return;
     }
 
-    if (isCtrlPressed) {
-      if (eventsComposable.selectedFeatures.value.has(fid)) {
-        eventsComposable.selectedFeatures.value.delete(fid);
-      } else {
-        eventsComposable.selectedFeatures.value.add(fid);
-      }
-    } else {
-      if (eventsComposable.selectedFeatures.value.size === 1 && eventsComposable.selectedFeatures.value.has(fid)) {
-        eventsComposable.selectedFeatures.value.clear();
-      } else {
-        eventsComposable.selectedFeatures.value.clear();
-        eventsComposable.selectedFeatures.value.add(fid);
-      }
-    }
-
-    editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, eventsComposable.selectedFeatures.value);
+    eventsComposable.applySelectionClick(fid, isCtrlPressed, map);
   }
 
   function cleanupEditMode(map) {
@@ -133,7 +118,7 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
     eventsComposable.selectedFeatures.value.clear();
     eventsComposable.isDraggingFeatures.value = false;
     eventsComposable.justFinishedDrag.value = false;
-    editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, eventsComposable.selectedFeatures.value);
+    eventsComposable.clearSelectionBBoxes(map);
 
     updateMapCursor(map);
 

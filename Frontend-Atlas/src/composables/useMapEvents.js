@@ -61,6 +61,72 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   // =======================
   // Helpers
   // =======================
+  function ensureSelectionBBoxGroup(map) {
+    if (!map) return null;
+    if (!map._selectionBBoxGroup) {
+      map._selectionBBoxGroup = L.layerGroup().addTo(map);
+      map._selectionBBoxes = new Map(); // featureId -> L.Rectangle
+    }
+    return map._selectionBBoxGroup;
+  }
+
+  function upsertSelectionBBox(featureId, map, featureLayerManager) {
+    if (!map) return;
+    ensureSelectionBBoxGroup(map);
+
+    const id = String(featureId);
+    const layer = featureLayerManager.layers.get(id);
+    if (!layer || typeof layer.getBounds !== "function") return;
+
+    const bounds = layer.getBounds();
+    if (!bounds || !bounds.isValid?.()) return;
+
+    const existing = map._selectionBBoxes.get(id);
+
+    if (existing) {
+      existing.setBounds(bounds);
+      existing.bringToFront?.();
+      return;
+    }
+
+    const rect = L.rectangle(bounds, {
+      color: "#111",        // bbox visible (tu peux changer)
+      weight: 2,
+      dashArray: "6 6",
+      fill: false,
+      interactive: false,   // IMPORTANT: ne pas bloquer les clics sur la forme
+      pane: "overlayPane",
+    });
+
+    rect.addTo(map._selectionBBoxGroup);
+    rect.bringToFront?.();
+
+    map._selectionBBoxes.set(id, rect);
+  }
+
+  function removeSelectionBBox(featureId, map) {
+    if (!map || !map._selectionBBoxes) return;
+    const id = String(featureId);
+    const rect = map._selectionBBoxes.get(id);
+    if (rect) {
+      rect.remove();
+      map._selectionBBoxes.delete(id);
+    }
+  }
+
+  function clearSelectionBBoxes(map) {
+    if (!map || !map._selectionBBoxes) return;
+    for (const rect of map._selectionBBoxes.values()) rect.remove();
+    map._selectionBBoxes.clear();
+  }
+
+  function syncSelectionBBoxes(map) {
+    clearSelectionBBoxes(map);
+    selectedFeatures.value.forEach((fid) => {
+      upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+    });
+  }
+
   function getFeatureIdFromDomTarget(domTarget) {
     let el = domTarget;
     for (let i = 0; i < 6 && el; i += 1, el = el.parentElement) {
@@ -149,7 +215,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
     }
 
-    editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
+    syncSelectionBBoxes(map);
 
     // In RESIZE_SHAPE, also update the right panel with dims for the last clicked object
     if (props.activeEditMode === "RESIZE_SHAPE") {
@@ -616,7 +682,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           if (!isCtrl) selectedFeatures.value.clear();
           selectedFeatures.value.add(downFeatureId);
 
-          editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
+          syncSelectionBBoxes(map);
         }
 
         snapshotSelectedOriginalPositions();
@@ -639,6 +705,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           if (layer.getLatLngs && typeof layer.setLatLngs === "function") {
             layer.setLatLngs(translateLatLngs(orig, dLat, dLng));
           }
+        });
+        selectedFeatures.value.forEach((fid) => {
+          upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
         });
       }
 
@@ -692,7 +761,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     } else {
       if (!cancelDeselect && selectedFeatures.value.size > 0) {
         selectedFeatures.value.clear();
-        editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
+        syncSelectionBBoxes(map);
 
         if (props.activeEditMode === "RESIZE_SHAPE") {
           emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
@@ -713,13 +782,20 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const key = e.originalEvent?.key;
 
     if (key === "Delete" && selectedFeatures.value.size > 0) {
+      selectedFeatures.value.forEach((fid) => removeSelectionBBox(fid, map));
+
       editingComposable.deleteSelectedFeatures(selectedFeatures.value, layersComposable.featureLayerManager, map, emit);
+
+      selectedFeatures.value.clear();
+      if (props.activeEditMode === "RESIZE_SHAPE") {
+        emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
+      }
       return;
     }
 
     if (key === "Escape") {
       selectedFeatures.value.clear();
-      editingComposable.updateFeatureSelectionVisual(map, layersComposable.featureLayerManager, selectedFeatures.value);
+      syncSelectionBBoxes(map);
 
       if (props.activeEditMode === "RESIZE_SHAPE") {
         emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
@@ -811,6 +887,16 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!editingComposable.isResizeMode.value || !editingComposable.resizingShape.value) return;
 
     editingComposable.updateResizeShape(L.latLng(editingComposable.resizingShape.value.feature.properties.center), e.latlng, map, layersComposable);
+
+    const rs = editingComposable.resizingShape.value;
+    const rid =
+      rs?.featureId ??
+      rs?.id ??
+      rs?.feature?.id;
+
+    if (rid && selectedFeatures.value.has(String(rid))) {
+      upsertSelectionBBox(rid, map, layersComposable.featureLayerManager);
+    }
   }
 
   function handleResizeMouseUp(e, map) {
@@ -820,6 +906,15 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     e.originalEvent?.stopPropagation();
 
     editingComposable.finishResizeShape(e.latlng, map, layersComposable);
+    const rs = editingComposable.resizingShape.value;
+    const rid =
+      rs?.featureId ??
+      rs?.id ??
+      rs?.feature?.id;
+
+    if (rid && selectedFeatures.value.has(String(rid))) {
+      upsertSelectionBBox(rid, map, layersComposable.featureLayerManager);
+    }
     map.dragging.enable();
   }
 
@@ -861,5 +956,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     cleanupTempShape,
     cleanupCurrentDrawing,
     preventDragDuringShapeDrawing,
+    applySelectionClick,
+    syncSelectionBBoxes,
+    clearSelectionBBoxes,
   };
 }
