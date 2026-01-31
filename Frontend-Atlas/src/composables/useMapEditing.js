@@ -112,12 +112,17 @@ export function useMapEditing(props, emit) {
   async function applyResizeFromDims(featureId, widthMeters, heightMeters, map, featureLayerManager, emit) {
     const fid = String(featureId);
 
-    const feature = props.features.find((f) => String(f.id) === fid);
+    // Layer Leaflet = source de vérité immédiate
+    const layer = featureLayerManager.layers.get(fid);
+    if (!layer) return;
+
+    // Feature: soit celle du backend (props.features), soit celle attachée au layer (temp)
+    const featureFromProps = props.features.find((f) => String(f.id) === fid) || null;
+    const featureFromLayer = layer.feature || null;
+    const feature = featureFromProps || featureFromLayer;
     if (!feature) return;
 
-    const layer = featureLayerManager.layers.get(fid);
-    if (!layer || !layer.setLatLngs) return;
-
+    // Centre
     const center = feature?.properties?.center
       ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
       : getCenterFromLayer(layer);
@@ -135,16 +140,15 @@ export function useMapEditing(props, emit) {
     } else if (shapeType === "oval") {
       newGeom = ovalFromCenterWidthHeight({ lat: center.lat, lng: center.lng }, widthMeters, heightMeters);
     } else if (shapeType === "triangle") {
-      // On conserve ta logique existante : width/height -> "R" moyen
       const w = Number(widthMeters);
       const h = Number(heightMeters);
       const candidates = [];
       if (Number.isFinite(w) && w > 0) candidates.push(w / Math.sqrt(3));
       if (Number.isFinite(h) && h > 0) candidates.push(h / 1.5);
       if (!candidates.length) return;
+
       const R = candidates.reduce((a, b) => a + b, 0) / candidates.length;
-      const d = 2 * R; // on passe par diamètre “équivalent” pour construire un triangle via bbox est moins stable
-      // Ici, plus stable: reconstruire le triangle comme ton createTriangle (angles 90/210/330) avec distance R
+
       const points = [];
       for (let i = 0; i < 3; i++) {
         const angle = ((i * 120 + 90) * Math.PI) / 180;
@@ -166,11 +170,35 @@ export function useMapEditing(props, emit) {
 
     if (!newGeom) return;
 
-    // 1) feedback immédiat sur la map
+    // --- 1) Update immédiat sur la map ---
     const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
-    layer.setLatLngs([ringLatLngs]);
+    if (typeof layer.setLatLngs === "function") {
+      layer.setLatLngs([ringLatLngs]);
+    } else if (typeof layer.setBounds === "function") {
+      // fallback si un jour tu changes le rendu en L.rectangle
+      const b = L.latLngBounds(ringLatLngs);
+      layer.setBounds(b);
+    } else {
+      return;
+    }
 
-    // 2) commit backend (geometry + properties)
+    // --- 2) Si feature temporaire -> on met à jour layer.feature et on s'arrête ---
+    const isTemp = String(feature.id).startsWith("temp_") || feature._isTemporary === true;
+    if (isTemp) {
+      layer.feature = {
+        ...(layer.feature || feature),
+        geometry: newGeom,
+        properties: {
+          ...(feature.properties || {}),
+          resizable: true,
+          shapeType,
+          center: { lat: center.lat, lng: center.lng },
+        },
+      };
+      return;
+    }
+
+    // --- 3) Sinon commit backend ---
     try {
       const updateData = {
         geometry: newGeom,
