@@ -236,22 +236,7 @@ function handleFeatureClickLocal(featureId, isCtrlPressed) {
   }
 
   if (props.activeEditMode === "RESIZE_SHAPE") {
-    const feature = getFeatureById(featureId);
-    if (!feature) {
-      emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
-      return;
-    }
-
-    // Toujours signaler la sélection au panneau
-    const layer = getLayerById(featureId);
-    const dims = getDimsMetersFromLayer(layer);
-
-    emit("resize-selection", { featureId: String(featureId), ...dims });
-
-    events.selectedFeatures.value.clear();
-    events.selectedFeatures.value.add(String(featureId));
-    editing.updateFeatureSelectionVisual(map, layers.featureLayerManager, events.selectedFeatures.value);
-
+    events.applySelectionClick(String(featureId), isCtrlPressed, map);
     return;
   }
 

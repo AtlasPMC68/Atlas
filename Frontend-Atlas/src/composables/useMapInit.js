@@ -119,6 +119,7 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
     eventsComposable.isDraggingFeatures.value = false;
     eventsComposable.justFinishedDrag.value = false;
     eventsComposable.clearSelectionBBoxes(map);
+    eventsComposable.clearSelectionAnchors(map);
 
     updateMapCursor(map);
 
