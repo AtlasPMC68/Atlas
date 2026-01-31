@@ -78,31 +78,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return !!feature?.properties?.resizable && !!feature?.properties?.shapeType && !!feature?.properties?.center;
   }
 
-  // Retourne { widthMeters, heightMeters } à afficher dans les inputs
-  function getDimsMetersFromFeature(feature) {
-    const shapeType = feature.properties.shapeType;
-    const R = Number(feature.properties.size); // distance center->sizePoint (m)
-    if (!Number.isFinite(R) || R <= 0) return { widthMeters: null, heightMeters: null };
-
-    switch (shapeType) {
-      case "square": {
-        const side = Math.SQRT2 * R;
-        return { widthMeters: side, heightMeters: side };
-      }
-      case "circle": {
-        const d = 2 * R;
-        return { widthMeters: d, heightMeters: d };
-      }
-      case "triangle": {
-        const w = Math.sqrt(3) * R;
-        const h = 1.5 * R;
-        return { widthMeters: w, heightMeters: h };
-      }
-      default:
-        return { widthMeters: null, heightMeters: null };
-    }
-  }
-
   function cloneLatLngs(latlngs) {
     if (Array.isArray(latlngs)) return latlngs.map(cloneLatLngs);
     return L.latLng(latlngs.lat, latlngs.lng);
@@ -134,6 +109,29 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     });
   }
 
+  function getDimsMetersFromLayerId(fid, map) {
+    const id = String(fid);
+    const layer = layersComposable.featureLayerManager.layers.get(id);
+    if (!layer || !map) return { widthMeters: null, heightMeters: null };
+
+    if (typeof layer.getBounds === "function") {
+      const b = layer.getBounds();
+      if (!b || typeof b.getWest !== "function") return { widthMeters: null, heightMeters: null };
+
+      const c = b.getCenter();
+
+      const widthMeters = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
+      const heightMeters = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
+
+      return {
+        widthMeters: Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null,
+        heightMeters: Number.isFinite(heightMeters) && heightMeters > 0 ? heightMeters : null,
+      };
+    }
+
+    return { widthMeters: null, heightMeters: null };
+  }
+
   function applySelectionClick(fid, isCtrl, map) {
     const id = String(fid);
 
@@ -155,10 +153,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     // In RESIZE_SHAPE, also update the right panel with dims for the last clicked object
     if (props.activeEditMode === "RESIZE_SHAPE") {
-      const f = getFeatureById(id);
-      const dims = f ? getDimsMetersFromFeature(f) : { widthMeters: null, heightMeters: null };
-
       if (selectedFeatures.value.has(id)) {
+        const dims = getDimsMetersFromLayerId(id, map);
         emit("resize-selection", { featureId: id, ...dims });
       } else {
         emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });

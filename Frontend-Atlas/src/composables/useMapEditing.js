@@ -13,6 +13,196 @@ export function useMapEditing(props, emit) {
   const isResizeMode = ref(false);
   const resizingShape = ref(null);
 
+  function metersToLatLngOffsets(centerLat, halfWidthMeters, halfHeightMeters) {
+    const dLat = halfHeightMeters / 111320;
+    const dLng = halfWidthMeters / (111320 * Math.cos((centerLat * Math.PI) / 180));
+    return { dLat, dLng };
+  }
+
+  function polygonFromCenterWidthHeight(center, widthMeters, heightMeters, shapeType) {
+    const w = Number(widthMeters);
+    const h = Number(heightMeters);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+
+    // règles par forme
+    if (shapeType === "square") {
+      const s = Math.min(w, h);
+      return polygonFromCenterWidthHeight(center, s, s, "rectangle");
+    }
+
+    const halfW = w / 2;
+    const halfH = h / 2;
+    const { dLat, dLng } = metersToLatLngOffsets(center.lat, halfW, halfH);
+
+    // rectangle axis-aligned
+    const north = center.lat + dLat;
+    const south = center.lat - dLat;
+    const east  = center.lng + dLng;
+    const west  = center.lng - dLng;
+
+    // GeoJSON ring: [lng, lat]
+    return {
+      type: "Polygon",
+      coordinates: [[
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+        [west, north],
+      ]],
+    };
+  }
+
+  function circleFromCenterDiameter(center, diameterMeters) {
+    const d = Number(diameterMeters);
+    if (!Number.isFinite(d) || d <= 0) return null;
+    const r = d / 2;
+
+    const steps = 32;
+    const pts = [];
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * 2 * Math.PI;
+      const lat = center.lat + (r / 111320) * Math.sin(a);
+      const lng = center.lng + ((r / 111320) * Math.cos(a)) / Math.cos((center.lat * Math.PI) / 180);
+      pts.push([lng, lat]);
+    }
+    pts.push(pts[0]);
+    return { type: "Polygon", coordinates: [pts] };
+  }
+
+  function ovalFromCenterWidthHeight(center, widthMeters, heightMeters) {
+    const w = Number(widthMeters);
+    const h = Number(heightMeters);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+
+    const rx = w / 2;
+    const ry = h / 2;
+
+    const steps = 32;
+    const pts = [];
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * 2 * Math.PI;
+      const lat = center.lat + (ry / 111320) * Math.sin(a);
+      const lng = center.lng + ((rx / 111320) * Math.cos(a)) / Math.cos((center.lat * Math.PI) / 180);
+      pts.push([lng, lat]);
+    }
+    pts.push(pts[0]);
+    return { type: "Polygon", coordinates: [pts] };
+  }
+
+  function inferShapeType(feature) {
+    // priorité: properties.shapeType, sinon feature.type
+    const st = feature?.properties?.shapeType;
+    if (st) return st;
+    const t = feature?.type;
+    if (t === "rectangle") return "rectangle";
+    if (t === "square") return "square";
+    if (t === "circle") return "circle";
+    if (t === "triangle") return "triangle";
+    if (t === "oval") return "oval";
+    return null;
+  }
+
+  function getCenterFromLayer(layer) {
+    if (layer?.getBounds) return layer.getBounds().getCenter();
+    if (layer?.getLatLng) return layer.getLatLng();
+    return null;
+  }
+
+  async function applyResizeFromDims(featureId, widthMeters, heightMeters, map, featureLayerManager, emit) {
+    const fid = String(featureId);
+
+    const feature = props.features.find((f) => String(f.id) === fid);
+    if (!feature) return;
+
+    const layer = featureLayerManager.layers.get(fid);
+    if (!layer || !layer.setLatLngs) return;
+
+    const center = feature?.properties?.center
+      ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
+      : getCenterFromLayer(layer);
+
+    if (!center) return;
+
+    const shapeType = inferShapeType(feature);
+    if (!shapeType) return;
+
+    let newGeom = null;
+
+    if (shapeType === "circle") {
+      const d = widthMeters ?? heightMeters;
+      newGeom = circleFromCenterDiameter({ lat: center.lat, lng: center.lng }, d);
+    } else if (shapeType === "oval") {
+      newGeom = ovalFromCenterWidthHeight({ lat: center.lat, lng: center.lng }, widthMeters, heightMeters);
+    } else if (shapeType === "triangle") {
+      // On conserve ta logique existante : width/height -> "R" moyen
+      const w = Number(widthMeters);
+      const h = Number(heightMeters);
+      const candidates = [];
+      if (Number.isFinite(w) && w > 0) candidates.push(w / Math.sqrt(3));
+      if (Number.isFinite(h) && h > 0) candidates.push(h / 1.5);
+      if (!candidates.length) return;
+      const R = candidates.reduce((a, b) => a + b, 0) / candidates.length;
+      const d = 2 * R; // on passe par diamètre “équivalent” pour construire un triangle via bbox est moins stable
+      // Ici, plus stable: reconstruire le triangle comme ton createTriangle (angles 90/210/330) avec distance R
+      const points = [];
+      for (let i = 0; i < 3; i++) {
+        const angle = ((i * 120 + 90) * Math.PI) / 180;
+        const lat = center.lat + (R / 111320) * Math.sin(angle);
+        const lng = center.lng + ((R / 111320) * Math.cos(angle)) / Math.cos((center.lat * Math.PI) / 180);
+        points.push([lng, lat]);
+      }
+      points.push(points[0]);
+      newGeom = { type: "Polygon", coordinates: [points] };
+    } else {
+      // rectangle / square
+      newGeom = polygonFromCenterWidthHeight(
+        { lat: center.lat, lng: center.lng },
+        widthMeters,
+        heightMeters,
+        shapeType
+      );
+    }
+
+    if (!newGeom) return;
+
+    // 1) feedback immédiat sur la map
+    const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
+    layer.setLatLngs([ringLatLngs]);
+
+    // 2) commit backend (geometry + properties)
+    try {
+      const updateData = {
+        geometry: newGeom,
+        properties: {
+          ...(feature.properties || {}),
+          resizable: true,
+          shapeType,
+          center: { lat: center.lat, lng: center.lng },
+        },
+      };
+
+      const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      const updatedFeature = await response.json();
+
+      const idx = props.features.findIndex((f) => String(f.id) === fid);
+      if (idx !== -1) {
+        const updatedFeatures = [...props.features];
+        updatedFeatures[idx] = updatedFeature;
+        emit("features-loaded", updatedFeatures);
+      }
+    } catch (err) {
+      console.error("Error resizing feature:", err);
+    }
+  }
+
   // ===== SHAPE CREATION FUNCTIONS =====
 
   function createSquare(center, sizePoint, map, layersComposable) {
@@ -881,6 +1071,8 @@ export function useMapEditing(props, emit) {
 
     // Utility functions
     smoothFreeLinePoints,
+
+    applyResizeFromDims,
   };
 }
 

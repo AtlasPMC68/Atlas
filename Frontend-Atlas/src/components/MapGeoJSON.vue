@@ -160,6 +160,33 @@ function clearResizeCommitTimer() {
   }
 }
 
+function getLayerById(fid) {
+  return layers.featureLayerManager.layers.get(String(fid)) || null;
+}
+
+function getCenterFromLayer(layer) {
+  if (layer.getLatLng && !layer.getLatLngs) return layer.getLatLng(); // marker-like
+  if (layer.getBounds) return layer.getBounds().getCenter();
+  return null;
+}
+
+// width = distance Ouest-Est à la latitude du centre
+// height = distance Sud-Nord à la longitude du centre
+function getDimsMetersFromLayer(layer) {
+  if (!layer || !layer.getBounds || !map) return { widthMeters: null, heightMeters: null };
+
+  const b = layer.getBounds();
+  const c = b.getCenter();
+
+  const widthMeters = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
+  const heightMeters = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
+
+  return {
+    widthMeters: Number.isFinite(widthMeters) ? widthMeters : null,
+    heightMeters: Number.isFinite(heightMeters) ? heightMeters : null,
+  };
+}
+
 // ========================================
 // MAP INIT
 // ========================================
@@ -216,9 +243,8 @@ function handleFeatureClickLocal(featureId, isCtrlPressed) {
     }
 
     // Toujours signaler la sélection au panneau
-    const dims = isResizableFeature(feature)
-      ? getDimsMetersFromFeature(feature)
-      : { widthMeters: null, heightMeters: null };
+    const layer = getLayerById(featureId);
+    const dims = getDimsMetersFromLayer(layer);
 
     emit("resize-selection", { featureId: String(featureId), ...dims });
 
@@ -339,35 +365,12 @@ watch(
     if (mode !== "RESIZE_SHAPE") return;
     if (!fid) return;
 
-    const feature = getFeatureById(fid);
-    if (!isResizableFeature(feature)) return;
-
-    const sizePoint = sizePointFromDims(feature, w, h);
-    if (!sizePoint) return;
-
-    const featureId = String(fid);
-
-    const current = editing.resizingShape?.value;
-    const isSame = current && String(current.featureId) === featureId;
-
-    if (editing.isResizeMode?.value && current && !isSame) {
-      editing.cancelResizeShape(map, layers);
-    }
-
-    if (!editing.isResizeMode?.value || !editing.resizingShape?.value) {
-      const ok = editing.startResizeShape(featureId, feature, layers.featureLayerManager, map);
-      if (!ok) return;
-    }
-
-    editing.updateResizeShape(L.latLng(feature.properties.center), sizePoint, map, layers);
-
     clearResizeCommitTimer();
     resizeCommitTimer = setTimeout(() => {
-      editing.finishResizeShape(sizePoint, map, layers);
+      editing.applyResizeFromDims(String(fid), w, h, map, layers.featureLayerManager, emit);
       resizeCommitTimer = null;
-    }, 300);
+    }, 150);
   },
-  { immediate: false },
 );
 </script>
 

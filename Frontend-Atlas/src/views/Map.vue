@@ -110,7 +110,7 @@
             </p>
 
             <div v-if="resizeFeatureId" class="mt-3 grid grid-cols-2 gap-2">
-              <div class="col-span-2 text-sm font-medium">Dimensions (m)</div>
+              <div class="col-span-2 text-sm font-medium">Dimensions (km)</div>
 
               <label class="text-xs text-gray-600">Largeur</label>
               <input
@@ -191,15 +191,14 @@ const resizeFeatureId = ref(null);
 const resizeWidthInput = ref("");
 const resizeHeightInput = ref("");
 
-const resizeWidthMeters = computed(() => {
-  const v = parseFloat(String(resizeWidthInput.value).replace(",", "."));
-  return Number.isFinite(v) && v > 0 ? v : null;
-});
+const kmToMeters = (kmStr) => {
+  const n = parseFloat(String(kmStr ?? "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n * 1000 : null;
+};
 
-const resizeHeightMeters = computed(() => {
-  const v = parseFloat(String(resizeHeightInput.value).replace(",", "."));
-  return Number.isFinite(v) && v > 0 ? v : null;
-});
+const resizeWidthMeters = computed(() => kmToMeters(resizeWidthInput.value));
+
+const resizeHeightMeters = computed(() => kmToMeters(resizeHeightInput.value));
 
 function resetManualResizeUI() {
   resizeFeatureId.value = null;
@@ -216,11 +215,16 @@ function handleResizeSelection(payload) {
 
   resizeFeatureId.value = String(payload.featureId);
 
-  const w = Number(payload.widthMeters);
-  const h = Number(payload.heightMeters);
+  const fmtKm = (meters) => {
+    if (meters == null) return "";
+    const m = typeof meters === "number" ? meters : parseFloat(String(meters).replace(",", "."));
+    if (!Number.isFinite(m) || m <= 0) return "";
+    const km = m / 1000;
+    return String(Math.round(km * 100) / 100); // 2 décimales
+  };
 
-  resizeWidthInput.value = Number.isFinite(w) ? String(Math.round(w * 10) / 10) : "";
-  resizeHeightInput.value = Number.isFinite(h) ? String(Math.round(h * 10) / 10) : "";
+  resizeWidthInput.value = fmtKm(payload.widthMeters);
+  resizeHeightInput.value = fmtKm(payload.heightMeters);
 }
 
 // Si on quitte le mode édition ou le mode redimensionner, on nettoie l'UI
