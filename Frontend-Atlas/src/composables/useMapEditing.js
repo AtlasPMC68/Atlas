@@ -109,42 +109,49 @@ export function useMapEditing(props, emit) {
     return null;
   }
 
-  async function applyResizeFromDims(featureId, widthMeters, heightMeters, map, featureLayerManager, emit) {
+  async function applyResizeFromDims(featureId, widthMeters, heightMeters, map, featureLayerManager) {
     const fid = String(featureId);
 
-    // Layer Leaflet = source de vérité immédiate
     const layer = featureLayerManager.layers.get(fid);
     if (!layer) return;
 
-    // Feature: soit celle du backend (props.features), soit celle attachée au layer (temp)
-    const featureFromProps = props.features.find((f) => String(f.id) === fid) || null;
-    const featureFromLayer = layer.feature || null;
-    const feature = featureFromProps || featureFromLayer;
+    const feature =
+      props.features.find((f) => String(f.id) === fid) ||
+      layer.feature ||
+      null;
     if (!feature) return;
 
-    // Centre
     const center = feature?.properties?.center
       ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
       : getCenterFromLayer(layer);
-
     if (!center) return;
 
     const shapeType = inferShapeType(feature);
     if (!shapeType) return;
 
+    // Normalisation des dims (utiles à plusieurs endroits)
+    const w = Number(widthMeters);
+    const h = Number(heightMeters);
+
+    const hasW = Number.isFinite(w) && w > 0;
+    const hasH = Number.isFinite(h) && h > 0;
+
+    // Pour les formes qui acceptent 1 dimension (cercle) ou 2 (others)
+    const d = hasW ? w : (hasH ? h : null);
+    if (shapeType === "circle" && (d == null || d <= 0)) return;
+    if (shapeType !== "circle" && !hasW && !hasH) return;
+
+    // --- 1) Construire la nouvelle géométrie GeoJSON (pour temp + backend) ---
     let newGeom = null;
 
     if (shapeType === "circle") {
-      const d = widthMeters ?? heightMeters;
       newGeom = circleFromCenterDiameter({ lat: center.lat, lng: center.lng }, d);
     } else if (shapeType === "oval") {
-      newGeom = ovalFromCenterWidthHeight({ lat: center.lat, lng: center.lng }, widthMeters, heightMeters);
+      newGeom = ovalFromCenterWidthHeight({ lat: center.lat, lng: center.lng }, hasW ? w : null, hasH ? h : null);
     } else if (shapeType === "triangle") {
-      const w = Number(widthMeters);
-      const h = Number(heightMeters);
       const candidates = [];
-      if (Number.isFinite(w) && w > 0) candidates.push(w / Math.sqrt(3));
-      if (Number.isFinite(h) && h > 0) candidates.push(h / 1.5);
+      if (hasW) candidates.push(w / Math.sqrt(3));
+      if (hasH) candidates.push(h / 1.5);
       if (!candidates.length) return;
 
       const R = candidates.reduce((a, b) => a + b, 0) / candidates.length;
@@ -162,36 +169,31 @@ export function useMapEditing(props, emit) {
       // rectangle / square
       newGeom = polygonFromCenterWidthHeight(
         { lat: center.lat, lng: center.lng },
-        widthMeters,
-        heightMeters,
+        hasW ? w : null,
+        hasH ? h : null,
         shapeType
       );
     }
 
     if (!newGeom) return;
 
-    // --- 1) Update immédiat sur la map ---
-    const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
-    if (typeof layer.setLatLngs === "function") {
+    // --- 2) Update immédiat Leaflet ---
+    if (shapeType === "circle" && typeof layer.setRadius === "function") {
+      if (typeof layer.setLatLng === "function") layer.setLatLng(center);
+      layer.setRadius(d / 2);
+    } else if (typeof layer.setLatLngs === "function") {
+      const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
       layer.setLatLngs([ringLatLngs]);
-      if (map && map._selectionBBoxes?.has(fid)) {
-        const rect = map._selectionBBoxes.get(fid);
-        rect.setBounds(layer.getBounds());
-        rect.bringToFront?.();
-      }
-      if (map && map._selectionAnchors?.has(fid)) {
-        upsertSelectionBBox(fid, map, featureLayerManager);
-        upsertSelectionAnchors(fid, map, featureLayerManager);
-      }
     } else if (typeof layer.setBounds === "function") {
-      const b = L.latLngBounds(ringLatLngs);
-      layer.setBounds(b);
+      // fallback optionnel
+      const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
+      layer.setBounds(L.latLngBounds(ringLatLngs));
     } else {
       return;
     }
 
-    // --- 2) Si feature temporaire -> on met à jour layer.feature et on s'arrête ---
-    const isTemp = String(feature.id).startsWith("temp_") || feature._isTemporary === true;
+    // --- 3) Temp feature : update layer.feature seulement ---
+    const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
     if (isTemp) {
       layer.feature = {
         ...(layer.feature || feature),
@@ -206,7 +208,7 @@ export function useMapEditing(props, emit) {
       return;
     }
 
-    // --- 3) Sinon commit backend ---
+    // --- 4) Backend commit ---
     try {
       const updateData = {
         geometry: newGeom,

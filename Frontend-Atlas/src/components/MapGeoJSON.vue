@@ -342,6 +342,29 @@ watch(
 // ========================================
 // APPLY RESIZE FROM INPUTS (NO DRAG)
 // ========================================
+function getLayerDimsMeters(fid) {
+  const layer = layers.featureLayerManager.layers.get(String(fid));
+  if (!layer || !map) return { w: null, h: null };
+
+  // Cas cercle Leaflet
+  if (typeof layer.getRadius === "function") {
+    const d = 2 * layer.getRadius();
+    return { w: d, h: d };
+  }
+
+  // Cas bounds (rect/polygone)
+  if (typeof layer.getBounds === "function") {
+    const b = layer.getBounds();
+    if (!b?.isValid?.()) return { w: null, h: null };
+    const c = b.getCenter();
+    const w = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
+    const h = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
+    return { w, h };
+  }
+
+  return { w: null, h: null };
+}
+
 watch(
   () => [props.activeEditMode, props.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
   ([mode, fid, w, h]) => {
@@ -351,10 +374,23 @@ watch(
     if (!fid) return;
 
     clearResizeCommitTimer();
-    resizeCommitTimer = setTimeout(() => {
-      editing.applyResizeFromDims(String(fid), w, h, map, layers.featureLayerManager, emit);
-      events.upsertSelectionAnchors?.(String(fid), map, layers.featureLayerManager);
+    resizeCommitTimer = setTimeout(async () => {
+      const cur = getLayerDimsMeters(fid);
+      const tol = 25;
+
+      const wOk = (cur.w == null || w == null) ? true : Math.abs(cur.w - w) > tol;
+      const hOk = (cur.h == null || h == null) ? true : Math.abs(cur.h - h) > tol;
+
+      if (!wOk && !hOk) {
+        resizeCommitTimer = null;
+        return;
+      }
+
+      await editing.applyResizeFromDims(String(fid), w, h, map, layers.featureLayerManager, emit);
+
       events.upsertSelectionBBox?.(String(fid), map, layers.featureLayerManager);
+      events.upsertSelectionAnchors?.(String(fid), map, layers.featureLayerManager);
+
       resizeCommitTimer = null;
     }, 150);
   },
