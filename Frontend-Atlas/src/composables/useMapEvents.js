@@ -1249,5 +1249,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     syncSelectionOverlays,
     clearSelectionBBoxes,
     clearSelectionAnchors,
+    upsertSelectionBBox,
+    upsertSelectionAnchors,
   };
 }

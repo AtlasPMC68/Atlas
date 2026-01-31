@@ -174,8 +174,16 @@ export function useMapEditing(props, emit) {
     const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
     if (typeof layer.setLatLngs === "function") {
       layer.setLatLngs([ringLatLngs]);
+      if (map && map._selectionBBoxes?.has(fid)) {
+        const rect = map._selectionBBoxes.get(fid);
+        rect.setBounds(layer.getBounds());
+        rect.bringToFront?.();
+      }
+      if (map && map._selectionAnchors?.has(fid)) {
+        upsertSelectionBBox(fid, map, featureLayerManager);
+        upsertSelectionAnchors(fid, map, featureLayerManager);
+      }
     } else if (typeof layer.setBounds === "function") {
-      // fallback si un jour tu changes le rendu en L.rectangle
       const b = L.latLngBounds(ringLatLngs);
       layer.setBounds(b);
     } else {

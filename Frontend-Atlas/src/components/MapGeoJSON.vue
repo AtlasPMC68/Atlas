@@ -353,6 +353,8 @@ watch(
     clearResizeCommitTimer();
     resizeCommitTimer = setTimeout(() => {
       editing.applyResizeFromDims(String(fid), w, h, map, layers.featureLayerManager, emit);
+      events.upsertSelectionAnchors?.(String(fid), map, layers.featureLayerManager);
+      events.upsertSelectionBBox?.(String(fid), map, layers.featureLayerManager);
       resizeCommitTimer = null;
     }, 150);
   },

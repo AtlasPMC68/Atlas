@@ -154,6 +154,7 @@
           :resize-height-meters="resizeHeightMeters"
           @features-loaded="handleFeaturesLoaded"
           @resize-selection="handleResizeSelection"
+          @resize-applied="handleResizeApplied"
         />
       </div>
     </div>
@@ -199,6 +200,11 @@ const kmToMeters = (kmStr) => {
 const resizeWidthMeters = computed(() => kmToMeters(resizeWidthInput.value));
 
 const resizeHeightMeters = computed(() => kmToMeters(resizeHeightInput.value));
+
+function handleResizeApplied(featureId) {
+  // après un resize, on demande au composant carte de recalculer bbox + anchors
+  // (on va appeler une méthode via event côté MapGeoJSON, voir étape 2)
+}
 
 function resetManualResizeUI() {
   resizeFeatureId.value = null;
