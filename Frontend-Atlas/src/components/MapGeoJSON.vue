@@ -46,6 +46,28 @@ const props = defineProps({
 
   // NEW
   rotateAngleDeg: { type: Number, default: null },
+let citiesLayer = null;
+let zonesLayer = null;
+let arrowsLayer = null;
+
+// Function to display the map
+onMounted(() => {
+  map = L.map("map").setView([52.9399, -73.5491], 5);
+
+  // Background map
+  baseTileLayer = L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+    {
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 19,
+    },
+  ).addTo(map);
+
+  loadRegionsForYear(selectedYear.value, true);
+
+  // uncomment when link to db is done
+  // loadTestNormalizedShape();
 });
 
 const emit = defineEmits(["features-loaded", "mode-change", "resize-selection"]);
