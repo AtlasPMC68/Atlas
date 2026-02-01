@@ -1180,7 +1180,7 @@ export function useMapEditing(props, emit) {
 
     for (const featureId of featuresToDelete) {
       try {
-        const response = await fetch(`http://import.meta.env.VITE_API_URL/maps/features/${featureId}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${featureId}`, {
           method: "DELETE",
         });
         if (!response.ok) console.error(`Failed to delete feature ${featureId}`);
