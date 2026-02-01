@@ -502,7 +502,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const existing = map._selectionAnchors.get(id);
     if (existing) {
       const arr = existing.markers;
-      if (arr.length >= 9) {
+      if (arr.length >= 8) {
         arr[0].setLatLng(cornersMids.corners.nw);
         arr[1].setLatLng(cornersMids.corners.ne);
         arr[2].setLatLng(cornersMids.corners.se);
@@ -513,7 +513,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         arr[6].setLatLng(cornersMids.mids.s);
         arr[7].setLatLng(cornersMids.mids.w);
 
-        if (rotLatLng) arr[8].setLatLng(rotLatLng);
+        if (arr[8] && rotLatLng) arr[8].setLatLng(rotLatLng);
       }
       existing.group.bringToFront?.();
       return;
