@@ -10,8 +10,8 @@ RUN npm install && npm install daisyui
 # Copie le reste
 COPY . .
 
-# Expose le port Vite (3000)
-EXPOSE 3000
+# Expose le port Vite (5173)
+EXPOSE 5173
 
 # Hot reload pour l’extérieur du conteneur + fixer réseau
 CMD ["npm", "run", "dev", "--", "--host", "--port", "3000"]
