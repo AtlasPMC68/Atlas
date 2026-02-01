@@ -297,7 +297,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function computeRotationHandleLatLng(layer, map, angleDeg) {
-    if (!layer || !map || !layer.getLatLngs || typeof layer.getBounds !== "function") return null;
+    if (!layer || !map || !layer.getLatLngs) return null;
 
     const fd = getRotatedFrameData(layer, map, angleDeg);
     if (!fd) return null;
