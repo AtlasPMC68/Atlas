@@ -386,7 +386,7 @@
   
   // API calls
   async function createFeature(featureData) {
-    const response = await fetch('http://localhost:8000/maps/features', {
+    const response = await fetch('import.meta.env.VITE_API_URL/maps/features', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -402,7 +402,7 @@
   }
   
   async function updateFeature(featureData) {
-    const response = await fetch(`http://localhost:8000/maps/features/${featureData.id}`, {
+    const response = await fetch(`import.meta.env.VITE_API_URL/maps/features/${featureData.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -418,7 +418,7 @@
   }
   
   async function deleteFeature(featureId) {
-    const response = await fetch(`http://localhost:8000/maps/features/${featureId}`, {
+    const response = await fetch(`import.meta.env.VITE_API_URL/maps/features/${featureId}`, {
       method: 'DELETE'
     })
     
