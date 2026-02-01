@@ -120,8 +120,6 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
     eventsComposable.clearSelectionAnchors(map);
 
     updateMapCursor(map);
-
-    setTimeout(() => {}, 100);
   }
 
   return {
