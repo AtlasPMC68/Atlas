@@ -218,7 +218,7 @@ function resetManualResizeUI() {
 }
 
 function handleResizeSelection(payload) {
-  if (!payload || payload.featureId == null) {
+  if (!payload || payload.featureId === null || payload.featureId === undefined) {
     resetManualResizeUI();
     return;
   }
