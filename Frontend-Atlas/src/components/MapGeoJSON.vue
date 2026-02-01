@@ -44,7 +44,6 @@ const props = defineProps({
   resizeWidthMeters: { type: Number, default: null },
   resizeHeightMeters: { type: Number, default: null },
 
-  // NEW
   rotateAngleDeg: { type: Number, default: null },
 });
 
