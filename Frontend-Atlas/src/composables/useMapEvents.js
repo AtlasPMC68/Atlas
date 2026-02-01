@@ -698,7 +698,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!layer.getLatLngs || typeof layer.setLatLngs !== "function") return;
 
     const angleStartDeg = getAngleDegFor(id, layer);
-    const angleStartRad = (angleStartDeg * Math.PI) / 180;
 
     const fd = getRotatedFrameData(layer, map, angleStartDeg);
     if (!fd) return;
