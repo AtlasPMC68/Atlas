@@ -935,7 +935,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const geom = geometryFromLayer(layer);
     if (geom) {
       try {
-        const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${fid}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ geometry: geom, properties: feature?.properties }),
