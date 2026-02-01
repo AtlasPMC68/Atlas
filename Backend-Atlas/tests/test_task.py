@@ -75,7 +75,6 @@ def test_process_map_extraction(real_image_np):
          patch("os.unlink"), \
          patch("builtins.open", mock_open()):
 
-        # Configuration minimale pour tempfile
         mock_tmp_file = MagicMock()
         mock_tmp_file.name = "/tmp/test_map.png"
         mock_tmp_file.__enter__ = MagicMock(return_value=mock_tmp_file)
@@ -84,7 +83,6 @@ def test_process_map_extraction(real_image_np):
 
         result = process_map_extraction.apply(args=[filename, file_bytes, map_id]).get(timeout=20)
 
-    # Assertions essentielles seulement
     assert result["status"] == "completed"
     assert result["filename"] == filename
     assert "output_path" in result
