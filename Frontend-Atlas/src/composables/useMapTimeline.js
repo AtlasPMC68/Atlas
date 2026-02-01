@@ -13,7 +13,7 @@ export function useMapTimeline() {
     if (isFirstTime) {
       lastCurrentYear = closestYear;
     } else {
-      if (lastCurrentYear == closestYear) {
+      if (lastCurrentYear === closestYear) {
         return;
       }
     }
