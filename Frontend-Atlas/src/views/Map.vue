@@ -157,7 +157,6 @@
           :rotate-angle-deg="rotateAngleDeg"
           @features-loaded="handleFeaturesLoaded"
           @resize-selection="handleResizeSelection"
-          @resize-applied="handleResizeApplied"
         />
       </div>
     </div>
@@ -210,9 +209,6 @@ const parseAngleDeg = (degStr) => {
 };
 
 const rotateAngleDeg = computed(() => parseAngleDeg(rotateAngleInput.value));
-
-function handleResizeApplied(featureId) {
-}
 
 function resetManualResizeUI() {
   resizeFeatureId.value = null;
