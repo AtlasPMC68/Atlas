@@ -123,6 +123,63 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     if (!layer || typeof layer.getBounds !== "function") return;
 
+    const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
+    if (isLine && typeof layer.getLatLngs === "function") {
+      const latlngs = layer.getLatLngs();
+      if (!Array.isArray(latlngs) || latlngs.length < 2) return;
+
+      const a = latlngs[0];
+      const b = latlngs[latlngs.length - 1];
+
+      const existing = map._selectionAnchors.get(id);
+      if (existing && existing.markers?.length === 2) {
+        existing.markers[0].setLatLng(a);
+        existing.markers[1].setLatLng(b);
+        existing.group.bringToFront?.();
+        return;
+      }
+
+      // sinon on recrée
+      if (existing) {
+        existing.group.remove();
+        map._selectionAnchors.delete(id);
+      }
+
+      const group = L.layerGroup();
+
+      const mA = createAnchorMarker(a, "corner", map);
+      const mB = createAnchorMarker(b, "corner", map);
+
+      mA._isSelectionAnchor = true;
+      mB._isSelectionAnchor = true;
+
+      mA._atlasFeatureId = id;
+      mB._atlasFeatureId = id;
+
+      mA._anchorHandle = "lineStart";
+      mB._anchorHandle = "lineEnd";
+
+      mA.on("mousedown", (ev) => {
+        ev.originalEvent?.preventDefault();
+        ev.originalEvent?.stopPropagation();
+        startLineEndpointDrag(id, 0, ev, map);
+      });
+
+      mB.on("mousedown", (ev) => {
+        ev.originalEvent?.preventDefault();
+        ev.originalEvent?.stopPropagation();
+        startLineEndpointDrag(id, latlngs.length - 1, ev, map);
+      });
+
+      group.addLayer(mA);
+      group.addLayer(mB);
+
+      group.addTo(map._selectionAnchorGroup);
+      group.bringToFront?.();
+      map._selectionAnchors.set(id, { group, markers: [mA, mB] });
+      return;
+    }
+
     const bounds = layer.getBounds();
     if (!bounds || !bounds.isValid?.()) return;
 
@@ -291,9 +348,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
-    const latlngs = getLayerAllLatLngs(layer);
-    if (!latlngs) return;
-
     const pts = mapLatLngsToPoints(map, latlngs);
     const flat = flattenPoints(pts, []);
     const b = boundsFromPoints(flat);
@@ -315,12 +369,52 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     };
   }
 
+  function startLineEndpointDrag(fid, index, ev, map) {
+    const id = String(fid);
+    const layer = layersComposable.featureLayerManager.layers.get(id);
+    if (!layer || !map) return;
+
+    const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
+    if (!isLine || typeof layer.getLatLngs !== "function" || typeof layer.setLatLngs !== "function") return;
+
+    const latlngs = layer.getLatLngs();
+    if (!Array.isArray(latlngs) || latlngs.length < 2) return;
+
+    const idx = index === 0 ? 0 : latlngs.length - 1;
+
+    map.dragging.disable();
+
+    anchorDrag = {
+      kind: "lineEndpoint",
+      fid: id,
+      index: idx,
+    };
+  }
+
   function updateAnchorDrag(ev, map) {
     if (!anchorDrag) return;
 
     const fid = anchorDrag.fid;
     const layer = layersComposable.featureLayerManager.layers.get(String(fid));
     if (!layer) return;
+
+    if (anchorDrag.kind === "lineEndpoint") {
+      if (!layer.getLatLngs || !layer.setLatLngs) return;
+
+      const latlngs = layer.getLatLngs();
+      if (!Array.isArray(latlngs) || latlngs.length < 2) return;
+
+      const idx = anchorDrag.index === 0 ? 0 : latlngs.length - 1;
+
+      const next = latlngs.slice();
+      next[idx] = ev.latlng;
+
+      layer.setLatLngs(next);
+
+      upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+      upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+      return;
+    }
 
     if (anchorDrag.isCircle) {
       const c = anchorDrag.centerLatLng;
@@ -413,7 +507,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const layer = layersComposable.featureLayerManager.layers.get(String(fid));
 
     map.dragging.enable();
-    
+
     if (!layer) {
       anchorDrag = null;
       map.dragging.enable();
