@@ -3,7 +3,6 @@
     <div id="map" style="height: 80vh; width: 100%"></div>
     <TimelineSlider v-model:year="timeline.selectedYear.value" />
 
-    <!-- Bouton de suppression visible seulement en mode édition -->
     <div v-if="editMode" class="absolute top-4 right-4 z-10">
       <button
         @click="toggleDeleteMode()"
@@ -21,22 +20,18 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch, computed, onBeforeUnmount } from "vue";
+import { onMounted, watch, computed, onBeforeUnmount } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 
-// ========================================
-// COMPOSABLES
-// ========================================
 import { useMapLayers } from "../composables/useMapLayers.js";
 import { useMapEditing } from "../composables/useMapEditing.js";
 import { useMapEvents } from "../composables/useMapEvents.js";
 import { useMapTimeline } from "../composables/useMapTimeline.js";
 import { useMapInit } from "../composables/useMapInit.js";
 
-// Props reçues de la vue parent
 const props = defineProps({
   mapId: String,
   features: Array,
@@ -45,36 +40,28 @@ const props = defineProps({
   activeEditMode: { type: String, default: null },
   selectedShape: { type: String, default: null },
 
-  // === Resize manuel (inputs dans Map.vue) ===
   resizeFeatureId: { type: [String, Number], default: null },
   resizeWidthMeters: { type: Number, default: null },
   resizeHeightMeters: { type: Number, default: null },
+
+  // NEW
+  rotateAngleDeg: { type: Number, default: null },
 });
 
-// Émissions vers la vue parent
 const emit = defineEmits(["features-loaded", "mode-change", "resize-selection"]);
 
-// ========================================
-// INIT COMPOSABLES
-// ========================================
 const layers = useMapLayers(props, emit);
 const editing = useMapEditing(props, emit);
 const events = useMapEvents(props, emit, layers, editing);
 const timeline = useMapTimeline();
 const init = useMapInit(props, emit, layers, events, editing, timeline);
 
-// ========================================
-// LOCALS
-// ========================================
 let map = null;
 let baseTileLayer = null;
 
-// Debounce resize “auto-apply”
 let resizeCommitTimer = null;
+let rotateCommitTimer = null;
 
-// ========================================
-// COMPUTED
-// ========================================
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature) =>
@@ -83,76 +70,6 @@ const filteredFeatures = computed(() => {
   );
 });
 
-// ========================================
-// HELPERS RESIZE (dimensions <-> sizePoint)
-// ========================================
-function getFeatureById(fid) {
-  const id = String(fid);
-  return props.features.find((f) => String(f.id) === id) || null;
-}
-
-function isResizableFeature(feature) {
-  return !!feature?.properties?.resizable && !!feature?.properties?.shapeType && !!feature?.properties?.center;
-}
-
-// Retourne { widthMeters, heightMeters } à afficher dans les inputs
-function getDimsMetersFromFeature(feature) {
-  const shapeType = feature.properties.shapeType;
-  const R = Number(feature.properties.size);
-  if (!Number.isFinite(R) || R <= 0) return { widthMeters: null, heightMeters: null };
-
-  switch (shapeType) {
-    case "square": {
-      const side = Math.SQRT2 * R;
-      return { widthMeters: side, heightMeters: side };
-    }
-    case "circle": {
-      const d = 2 * R;
-      return { widthMeters: d, heightMeters: d };
-    }
-    case "triangle": {
-      const w = Math.sqrt(3) * R;
-      const h = 1.5 * R;
-      return { widthMeters: w, heightMeters: h };
-    }
-    default:
-      return { widthMeters: null, heightMeters: null };
-  }
-}
-
-function sizePointFromDims(feature, widthMeters, heightMeters) {
-  const { shapeType, center } = feature.properties;
-  const c = L.latLng(center.lat, center.lng);
-
-  const w = Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null;
-  const h = Number.isFinite(heightMeters) && heightMeters > 0 ? heightMeters : null;
-
-  let R = null;
-
-  if (shapeType === "circle") {
-    const d = w ?? h;
-    if (d == null) return null;
-    R = d / 2;
-  } else if (shapeType === "square") {
-    const side = w ?? h;
-    if (side == null) return null;
-    R = side / Math.SQRT2;
-  } else if (shapeType === "triangle") {
-    const candidates = [];
-    if (w != null) candidates.push(w / Math.sqrt(3));
-    if (h != null) candidates.push(h / 1.5);
-    if (candidates.length === 0) return null;
-    R = candidates.reduce((a, b) => a + b, 0) / candidates.length;
-  } else {
-    return null;
-  }
-
-  if (!Number.isFinite(R) || R <= 0) return null;
-
-  const dLat = R / 111320;
-  return L.latLng(c.lat + dLat, c.lng);
-}
-
 function clearResizeCommitTimer() {
   if (resizeCommitTimer) {
     clearTimeout(resizeCommitTimer);
@@ -160,36 +77,117 @@ function clearResizeCommitTimer() {
   }
 }
 
+function clearRotateCommitTimer() {
+  if (rotateCommitTimer) {
+    clearTimeout(rotateCommitTimer);
+    rotateCommitTimer = null;
+  }
+}
+
 function getLayerById(fid) {
   return layers.featureLayerManager.layers.get(String(fid)) || null;
 }
 
-function getCenterFromLayer(layer) {
-  if (layer.getLatLng && !layer.getLatLngs) return layer.getLatLng(); // marker-like
-  if (layer.getBounds) return layer.getBounds().getCenter();
-  return null;
+function normalizeAngleDeg(a) {
+  const n = Number(a);
+  if (!Number.isFinite(n)) return 0;
+  let x = n % 360;
+  if (x < 0) x += 360;
+  return x;
 }
 
-// width = distance Ouest-Est à la latitude du centre
-// height = distance Sud-Nord à la longitude du centre
-function getDimsMetersFromLayer(layer) {
-  if (!layer || !layer.getBounds || !map) return { widthMeters: null, heightMeters: null };
-
-  const b = layer.getBounds();
-  const c = b.getCenter();
-
-  const widthMeters = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
-  const heightMeters = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
-
-  return {
-    widthMeters: Number.isFinite(widthMeters) ? widthMeters : null,
-    heightMeters: Number.isFinite(heightMeters) ? heightMeters : null,
-  };
+function getFeatureAngleDeg(fid, layer) {
+  const id = String(fid);
+  const feature = props.features.find((f) => String(f.id) === id) || layer?.feature || null;
+  const p = feature?.properties || {};
+  const raw =
+    p.rotationDeg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0;
+  return normalizeAngleDeg(raw);
 }
 
-// ========================================
-// MAP INIT
-// ========================================
+// dims dans le référentiel "roté" (si angle != 0)
+function getLayerDimsMeters(fid) {
+  const layer = getLayerById(fid);
+  if (!layer || !map) return { w: null, h: null };
+
+  if (typeof layer.getRadius === "function") {
+    const d = 2 * layer.getRadius();
+    return { w: d, h: d };
+  }
+
+  if (typeof layer.getLatLngs === "function" && typeof layer.getBounds === "function") {
+    const angleDeg = getFeatureAngleDeg(fid, layer);
+    const angleRad = (angleDeg * Math.PI) / 180;
+
+    const bounds = layer.getBounds();
+    if (!bounds?.isValid?.()) return { w: null, h: null };
+
+    const centerLL = bounds.getCenter();
+    const centerPt = map.latLngToLayerPoint(centerLL);
+
+    const latlngs = layer.getLatLngs();
+    const toPts = (x) => (Array.isArray(x) ? x.map(toPts) : map.latLngToLayerPoint(x));
+    const pts = toPts(latlngs);
+
+    const rotPt = (p, rad) => {
+      const dx = p.x - centerPt.x;
+      const dy = p.y - centerPt.y;
+      const c = Math.cos(rad);
+      const s = Math.sin(rad);
+      return L.point(centerPt.x + dx * c - dy * s, centerPt.y + dx * s + dy * c);
+    };
+    const rotAll = (x, rad) => (Array.isArray(x) ? x.map((y) => rotAll(y, rad)) : rotPt(x, rad));
+    const pts0 = Math.abs(angleRad) > 1e-9 ? rotAll(pts, -angleRad) : pts;
+
+    const flat = [];
+    const flatten = (x) => (Array.isArray(x) ? x.forEach(flatten) : flat.push(x));
+    flatten(pts0);
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of flat) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return { w: null, h: null };
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const west0 = L.point(minX, cy);
+    const east0 = L.point(maxX, cy);
+    const north0 = L.point(cx, minY);
+    const south0 = L.point(cx, maxY);
+
+    const back = (p) => (Math.abs(angleRad) > 1e-9 ? rotPt(p, angleRad) : p);
+
+    const westLL = map.layerPointToLatLng(back(west0));
+    const eastLL = map.layerPointToLatLng(back(east0));
+    const northLL = map.layerPointToLatLng(back(north0));
+    const southLL = map.layerPointToLatLng(back(south0));
+
+    const w = map.distance(westLL, eastLL);
+    const h = map.distance(northLL, southLL);
+
+    return {
+      w: Number.isFinite(w) ? w : null,
+      h: Number.isFinite(h) ? h : null,
+    };
+  }
+
+  if (typeof layer.getBounds === "function") {
+    const b = layer.getBounds();
+    if (!b?.isValid?.()) return { w: null, h: null };
+    const c = b.getCenter();
+    const w = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
+    const h = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
+    return { w, h };
+  }
+
+  return { w: null, h: null };
+}
+
 onMounted(() => {
   map = L.map("map").setView([52.9399, -73.5491], 5);
 
@@ -215,6 +213,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearResizeCommitTimer();
+  clearRotateCommitTimer();
   if (map) {
     init.cleanupEditMode(map);
     layers.clearAllLayers(map);
@@ -223,13 +222,9 @@ onBeforeUnmount(() => {
   }
 });
 
-// ========================================
-// FEATURE CLICK LOCAL (INTERCEPT RESIZE MODE)
-// ========================================
 function handleFeatureClickLocal(featureId, isCtrlPressed) {
   if (!props.editMode || !map) return;
 
-  // NEW: if selection was already handled via move mouseup (RESIZE_SHAPE reliability fix)
   if (events.suppressNextFeatureClick?.value) {
     events.suppressNextFeatureClick.value = false;
     return;
@@ -243,17 +238,11 @@ function handleFeatureClickLocal(featureId, isCtrlPressed) {
   init.handleFeatureClick(String(featureId), isCtrlPressed, map);
 }
 
-// ========================================
-// SUPPRESSION
-// ========================================
 function toggleDeleteMode() {
   if (props.activeEditMode === "DELETE_FEATURE") emit("mode-change", null);
   else emit("mode-change", "DELETE_FEATURE");
 }
 
-// ========================================
-// WATCHERS
-// ========================================
 watch(
   () => props.editMode,
   (newEditMode) => {
@@ -274,7 +263,6 @@ watch(
   },
 );
 
-// delete mode sync
 watch(
   () => props.activeEditMode,
   (newMode) => {
@@ -283,7 +271,6 @@ watch(
   { immediate: true },
 );
 
-// mode change attach/detach handlers
 watch(
   () => props.activeEditMode,
   (newMode, oldMode) => {
@@ -298,17 +285,17 @@ watch(
     if (oldMode === "RESIZE_SHAPE" && newMode !== "RESIZE_SHAPE") {
       events.selectedFeatures.value.clear();
       editing.updateFeatureSelectionVisual(map, layers.featureLayerManager, events.selectedFeatures.value);
-      emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null });
+      emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null, angleDeg: null });
 
       if (editing.isResizeMode?.value && editing.resizingShape?.value) {
         editing.cancelResizeShape(map, layers);
       }
       clearResizeCommitTimer();
+      clearRotateCommitTimer();
     }
   },
 );
 
-// year change
 watch(
   () => timeline.selectedYear.value,
   (newYear) => {
@@ -318,7 +305,6 @@ watch(
   },
 );
 
-// features change
 watch(
   () => props.features,
   () => {
@@ -328,7 +314,6 @@ watch(
   { deep: true },
 );
 
-// visibility change
 watch(
   () => props.featureVisibility,
   (newVisibility) => {
@@ -339,32 +324,9 @@ watch(
   { deep: true },
 );
 
-// ========================================
-// APPLY RESIZE FROM INPUTS (NO DRAG)
-// ========================================
-function getLayerDimsMeters(fid) {
-  const layer = layers.featureLayerManager.layers.get(String(fid));
-  if (!layer || !map) return { w: null, h: null };
-
-  // Cas cercle Leaflet
-  if (typeof layer.getRadius === "function") {
-    const d = 2 * layer.getRadius();
-    return { w: d, h: d };
-  }
-
-  // Cas bounds (rect/polygone)
-  if (typeof layer.getBounds === "function") {
-    const b = layer.getBounds();
-    if (!b?.isValid?.()) return { w: null, h: null };
-    const c = b.getCenter();
-    const w = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
-    const h = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
-    return { w, h };
-  }
-
-  return { w: null, h: null };
-}
-
+// ==============================
+// APPLY RESIZE FROM INPUTS
+// ==============================
 watch(
   () => [props.activeEditMode, props.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
   ([mode, fid, w, h]) => {
@@ -392,6 +354,46 @@ watch(
       events.upsertSelectionAnchors?.(String(fid), map, layers.featureLayerManager);
 
       resizeCommitTimer = null;
+    }, 150);
+  },
+);
+
+// ==============================
+// APPLY ROTATION FROM INPUT
+// ==============================
+watch(
+  () => [props.activeEditMode, props.resizeFeatureId, props.rotateAngleDeg],
+  ([mode, fid, angleDeg]) => {
+    if (!map) return;
+    if (!props.editMode) return;
+    if (mode !== "RESIZE_SHAPE") return;
+    if (!fid) return;
+    if (angleDeg == null) return;
+
+    clearRotateCommitTimer();
+    rotateCommitTimer = setTimeout(async () => {
+      const layer = getLayerById(fid);
+      if (!layer) {
+        rotateCommitTimer = null;
+        return;
+      }
+
+      const curA = getFeatureAngleDeg(fid, layer);
+      const nextA = normalizeAngleDeg(angleDeg);
+
+      const diff = Math.abs(nextA - curA);
+      const wrappedDiff = Math.min(diff, 360 - diff);
+      if (wrappedDiff < 0.25) {
+        rotateCommitTimer = null;
+        return;
+      }
+
+      await editing.applyRotateFromAngle(String(fid), nextA, map, layers.featureLayerManager, emit);
+
+      events.upsertSelectionBBox?.(String(fid), map, layers.featureLayerManager);
+      events.upsertSelectionAnchors?.(String(fid), map, layers.featureLayerManager);
+
+      rotateCommitTimer = null;
     }, 150);
   },
 );

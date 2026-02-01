@@ -3,13 +3,9 @@ import L from "leaflet";
 import { smoothFreeLinePoints } from "../utils/mapUtils.js";
 import { MAP_CONFIG } from "./useMapConfig.js";
 
-// Composable for map editing functionality (creating shapes, managing selection, etc.)
 export function useMapEditing(props, emit) {
   const isDeleteMode = ref(false);
 
-  // IMPORTANT:
-  // On garde ces refs pour compatibilité avec ton code existant,
-  // mais le redimensionnement par drag est désactivé (resize via inputs seulement).
   const isResizeMode = ref(false);
   const resizingShape = ref(null);
 
@@ -24,7 +20,6 @@ export function useMapEditing(props, emit) {
     const h = Number(heightMeters);
     if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
 
-    // règles par forme
     if (shapeType === "square") {
       const s = Math.min(w, h);
       return polygonFromCenterWidthHeight(center, s, s, "rectangle");
@@ -34,13 +29,11 @@ export function useMapEditing(props, emit) {
     const halfH = h / 2;
     const { dLat, dLng } = metersToLatLngOffsets(center.lat, halfW, halfH);
 
-    // rectangle axis-aligned
     const north = center.lat + dLat;
     const south = center.lat - dLat;
-    const east  = center.lng + dLng;
-    const west  = center.lng - dLng;
+    const east = center.lng + dLng;
+    const west = center.lng - dLng;
 
-    // GeoJSON ring: [lng, lat]
     return {
       type: "Polygon",
       coordinates: [[
@@ -91,7 +84,6 @@ export function useMapEditing(props, emit) {
   }
 
   function inferShapeType(feature) {
-    // priorité: properties.shapeType, sinon feature.type
     const st = feature?.properties?.shapeType;
     if (st) return st;
     const t = feature?.type;
@@ -100,12 +92,88 @@ export function useMapEditing(props, emit) {
     if (t === "circle") return "circle";
     if (t === "triangle") return "triangle";
     if (t === "oval") return "oval";
+    if (t === "polygon") return "polygon";
     return null;
   }
 
   function getCenterFromLayer(layer) {
     if (layer?.getBounds) return layer.getBounds().getCenter();
     if (layer?.getLatLng) return layer.getLatLng();
+    return null;
+  }
+
+  function normalizeAngleDeg(a) {
+    const n = Number(a);
+    if (!Number.isFinite(n)) return 0;
+    let x = n % 360;
+    if (x < 0) x += 360;
+    return x;
+  }
+
+  function getAngleDegFromFeature(feature) {
+    const p = feature?.properties || {};
+    return normalizeAngleDeg(p.rotationDeg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0);
+  }
+
+  function setAngleDegOnFeature(feature, angleDeg) {
+    const next = normalizeAngleDeg(angleDeg);
+    return {
+      ...(feature || {}),
+      properties: {
+        ...((feature && feature.properties) || {}),
+        rotationDeg: next,
+      },
+    };
+  }
+
+  function rotatePoint(pt, centerPt, rad) {
+    const dx = pt.x - centerPt.x;
+    const dy = pt.y - centerPt.y;
+    const c = Math.cos(rad);
+    const s = Math.sin(rad);
+    return L.point(centerPt.x + dx * c - dy * s, centerPt.y + dx * s + dy * c);
+  }
+
+  function rotatePointsTree(pts, centerPt, rad) {
+    if (Array.isArray(pts)) return pts.map((x) => rotatePointsTree(x, centerPt, rad));
+    return rotatePoint(pts, centerPt, rad);
+  }
+
+  function latlngsToPoints(map, latlngs) {
+    if (Array.isArray(latlngs)) return latlngs.map((x) => latlngsToPoints(map, x));
+    return map.latLngToLayerPoint(latlngs);
+  }
+
+  function pointsToLatlngs(map, pts) {
+    if (Array.isArray(pts)) return pts.map((x) => pointsToLatlngs(map, x));
+    return map.layerPointToLatLng(pts);
+  }
+
+  function geometryFromLayer(layer) {
+    if (layer.getLatLng && !layer.getLatLngs) {
+      const ll = layer.getLatLng();
+      return { type: "Point", coordinates: [ll.lng, ll.lat] };
+    }
+
+    if (layer.getLatLngs) {
+      const latlngs = layer.getLatLngs();
+
+      const isPolygon = layer instanceof L.Polygon || layer instanceof L.Rectangle;
+
+      if (!isPolygon) {
+        const coords = latlngs.map((ll) => [ll.lng, ll.lat]);
+        return { type: "LineString", coordinates: coords };
+      }
+
+      const ring = latlngs[0] ?? latlngs;
+      const coords = ring.map((ll) => [ll.lng, ll.lat]);
+
+      if (coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
+        coords.push(coords[0]);
+      }
+      return { type: "Polygon", coordinates: [coords] };
+    }
+
     return null;
   }
 
@@ -132,27 +200,22 @@ export function useMapEditing(props, emit) {
     if (shapeType === "square") {
       const w = Number(widthMeters);
       const h = Number(heightMeters);
-
       const side = (Number.isFinite(w) && w > 0) ? w : ((Number.isFinite(h) && h > 0) ? h : null);
       if (!side) return;
-
       widthMeters = side;
       heightMeters = side;
     }
 
-    // Normalisation des dims (utiles à plusieurs endroits)
     const w = Number(widthMeters);
     const h = Number(heightMeters);
 
     const hasW = Number.isFinite(w) && w > 0;
     const hasH = Number.isFinite(h) && h > 0;
 
-    // Pour les formes qui acceptent 1 dimension (cercle) ou 2 (others)
     const d = hasW ? w : (hasH ? h : null);
     if (shapeType === "circle" && (d == null || d <= 0)) return;
     if (shapeType !== "circle" && !hasW && !hasH) return;
 
-    // --- 1) Construire la nouvelle géométrie GeoJSON (pour temp + backend) ---
     let newGeom = null;
 
     if (shapeType === "circle") {
@@ -177,7 +240,6 @@ export function useMapEditing(props, emit) {
       points.push(points[0]);
       newGeom = { type: "Polygon", coordinates: [points] };
     } else {
-      // rectangle / square
       newGeom = polygonFromCenterWidthHeight(
         { lat: center.lat, lng: center.lng },
         hasW ? w : null,
@@ -188,7 +250,6 @@ export function useMapEditing(props, emit) {
 
     if (!newGeom) return;
 
-    // --- 2) Update immédiat Leaflet ---
     if (shapeType === "circle" && typeof layer.setRadius === "function") {
       if (typeof layer.setLatLng === "function") layer.setLatLng(center);
       layer.setRadius(d / 2);
@@ -196,14 +257,12 @@ export function useMapEditing(props, emit) {
       const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
       layer.setLatLngs([ringLatLngs]);
     } else if (typeof layer.setBounds === "function") {
-      // fallback optionnel
       const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
       layer.setBounds(L.latLngBounds(ringLatLngs));
     } else {
       return;
     }
 
-    // --- 3) Temp feature : update layer.feature seulement ---
     const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
     if (isTemp) {
       layer.feature = {
@@ -214,12 +273,13 @@ export function useMapEditing(props, emit) {
           resizable: true,
           shapeType,
           center: { lat: center.lat, lng: center.lng },
+          // keep rotationDeg if present
+          rotationDeg: feature?.properties?.rotationDeg ?? 0,
         },
       };
       return;
     }
 
-    // --- 4) Backend commit ---
     try {
       const updateData = {
         geometry: newGeom,
@@ -231,6 +291,7 @@ export function useMapEditing(props, emit) {
           resizable: true,
           shapeType,
           center: { lat: center.lat, lng: center.lng },
+          rotationDeg: feature?.properties?.rotationDeg ?? 0,
         },
       };
 
@@ -255,8 +316,142 @@ export function useMapEditing(props, emit) {
     }
   }
 
-  // ===== SHAPE CREATION FUNCTIONS =====
+  // ==========================
+  // NEW: ROTATION (angle absolu)
+  // ==========================
+  async function applyRotateFromAngle(featureId, angleDeg, map, featureLayerManager) {
+    const fid = String(featureId);
 
+    const layer = featureLayerManager.layers.get(fid);
+    if (!layer || !map) return;
+
+    // cercle: rien à faire côté géométrie, mais on persiste l'angle
+    const isCircle = typeof layer.getRadius === "function" && typeof layer.setRadius === "function";
+
+    const feature =
+      props.features.find((f) => String(f.id) === fid) ||
+      layer.feature ||
+      null;
+    if (!feature) return;
+
+    const nextAngle = normalizeAngleDeg(angleDeg);
+    const curAngle = getAngleDegFromFeature(feature);
+
+    const bounds = layer.getBounds ? layer.getBounds() : null;
+    const centerLL = bounds?.isValid?.() ? bounds.getCenter() : getCenterFromLayer(layer);
+    if (!centerLL) return;
+
+    // Update feature properties immédiatement pour que bbox/anchors suivent
+    const featureWithAngle = setAngleDegOnFeature(feature, nextAngle);
+    layer.feature = featureWithAngle;
+
+    if (isCircle) {
+      const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
+      if (isTemp) return;
+
+      try {
+        const geom = geometryFromLayer(layer);
+        const updateData = {
+          geometry: geom,
+          color: feature.color ?? null,
+          opacity: feature.opacity ?? null,
+          stroke_width: feature.stroke_width ?? null,
+          properties: {
+            ...(feature.properties || {}),
+            rotationDeg: nextAngle,
+          },
+        };
+
+        const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const updatedFeature = await response.json();
+        const idx = props.features.findIndex((f) => String(f.id) === fid);
+        if (idx !== -1) {
+          const updatedFeatures = [...props.features];
+          updatedFeatures[idx] = updatedFeature;
+          emit("features-loaded", updatedFeatures);
+        }
+      } catch (err) {
+        console.error("Error rotating feature:", err);
+      }
+      return;
+    }
+
+    if (!layer.getLatLngs || !layer.setLatLngs) return;
+
+    const latlngs = layer.getLatLngs();
+    if (!latlngs) return;
+
+    const centerPt = map.latLngToLayerPoint(centerLL);
+
+    const pts = latlngsToPoints(map, latlngs);
+
+    // On repart du "référentiel non-roté" pour éviter la dérive:
+    // pts0 = rotate(points, -curAngle), puis rotate(pts0, +nextAngle)
+    const curRad = (curAngle * Math.PI) / 180;
+    const nextRad = (nextAngle * Math.PI) / 180;
+
+    const pts0 = Math.abs(curRad) > 1e-9 ? rotatePointsTree(pts, centerPt, -curRad) : pts;
+    const ptsN = Math.abs(nextRad) > 1e-9 ? rotatePointsTree(pts0, centerPt, nextRad) : pts0;
+
+    const newLatLngs = pointsToLatlngs(map, ptsN);
+    layer.setLatLngs(newLatLngs);
+
+    const newGeom = geometryFromLayer(layer);
+    if (!newGeom) return;
+
+    const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
+    if (isTemp) {
+      layer.feature = {
+        ...(layer.feature || featureWithAngle),
+        geometry: newGeom,
+        properties: {
+          ...((featureWithAngle && featureWithAngle.properties) || {}),
+          rotationDeg: nextAngle,
+        },
+      };
+      return;
+    }
+
+    try {
+      const updateData = {
+        geometry: newGeom,
+        color: feature.color ?? null,
+        opacity: feature.opacity ?? null,
+        stroke_width: feature.stroke_width ?? null,
+        properties: {
+          ...(feature.properties || {}),
+          rotationDeg: nextAngle,
+        },
+      };
+
+      const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      const updatedFeature = await response.json();
+      const idx = props.features.findIndex((f) => String(f.id) === fid);
+      if (idx !== -1) {
+        const updatedFeatures = [...props.features];
+        updatedFeatures[idx] = updatedFeature;
+        emit("features-loaded", updatedFeatures);
+      }
+    } catch (err) {
+      console.error("Error rotating feature:", err);
+    }
+  }
+
+  // ===== SHAPE CREATION FUNCTIONS =====
   function createSquare(center, sizePoint, map, layersComposable) {
     const centerPixel = map.latLngToContainerPoint(center);
     const sizePixel = map.latLngToContainerPoint(sizePoint);
@@ -316,6 +511,10 @@ export function useMapEditing(props, emit) {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
+      properties: {
+        ...(feature.properties || {}),
+        rotationDeg: 0,
+      },
     };
 
     rectangle.feature = tempFeature;
@@ -422,6 +621,10 @@ export function useMapEditing(props, emit) {
       ...feature,
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
+      properties: {
+        ...(feature.properties || {}),
+        rotationDeg: 0,
+      },
     };
 
     oval.feature = tempFeature;
@@ -454,6 +657,7 @@ export function useMapEditing(props, emit) {
       color: "#000000",
       opacity: 0.8,
       z_index: 1,
+      properties: { rotationDeg: 0 },
     };
 
     const tempFeature = {
@@ -489,6 +693,7 @@ export function useMapEditing(props, emit) {
       stroke_width: 2,
       opacity: 1.0,
       z_index: 1,
+      properties: { rotationDeg: 0 },
     };
 
     const tempFeature = {
@@ -521,6 +726,7 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
+      properties: { rotationDeg: 0 },
     };
 
     const tempFeature = {
@@ -559,6 +765,7 @@ export function useMapEditing(props, emit) {
       stroke_width: 2,
       opacity: 1.0,
       z_index: 1,
+      properties: { rotationDeg: 0 },
     };
 
     const tempId = `temp_freeline_${Date.now()}_${Math.random()}`;
@@ -571,7 +778,7 @@ export function useMapEditing(props, emit) {
   }
 
   // ===== TEMPORARY SHAPE UPDATE FUNCTIONS =====
-
+  // (inchangé)
   function updateTempSquareFromCenter(center, sizePoint, map, layersComposable, tempShape) {
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
@@ -712,7 +919,6 @@ export function useMapEditing(props, emit) {
   }
 
   // ===== FEATURE CONVERSION FUNCTIONS =====
-
   function squareToFeatureFromCenter(center, sizePoint, map) {
     const distance = map.distance(center, sizePoint);
     const halfSide = distance / Math.sqrt(2);
@@ -745,6 +951,7 @@ export function useMapEditing(props, emit) {
         center: { lat: center.lat, lng: center.lng },
         size: distance,
         resizable: true,
+        rotationDeg: 0,
       },
     };
   }
@@ -775,6 +982,7 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
+      properties: { rotationDeg: 0 },
     };
   }
 
@@ -808,6 +1016,7 @@ export function useMapEditing(props, emit) {
         center: { lat: center.lat, lng: center.lng },
         size: radius,
         resizable: true,
+        rotationDeg: 0,
       },
     };
   }
@@ -841,6 +1050,7 @@ export function useMapEditing(props, emit) {
         center: { lat: center.lat, lng: center.lng },
         size: distance,
         resizable: true,
+        rotationDeg: 0,
       },
     };
   }
@@ -874,11 +1084,11 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
+      properties: { rotationDeg: 0 },
     };
   }
 
-  // ===== SELECTION AND VISUAL MANAGEMENT =====
-
+  // ===== SELECTION AND VISUAL MANAGEMENT (inchangé) =====
   function updateFeatureSelectionVisual(map, layerManager, selectedFeatures) {
     if (!map || !layerManager) return;
 
@@ -934,8 +1144,7 @@ export function useMapEditing(props, emit) {
     });
   }
 
-  // ===== CRUD OPERATIONS =====
-
+  // ===== CRUD OPERATIONS (inchangé) =====
   async function updateFeaturePosition(feature, deltaLat, deltaLng) {
     try {
       const updatedGeometry = updateGeometryCoordinates(feature.geometry, deltaLat, deltaLng);
@@ -1046,9 +1255,6 @@ export function useMapEditing(props, emit) {
     else emit("mode-change", "DELETE_FEATURE");
   }
 
-  // ===== RESIZE (DISABLED / LEGACY STUBS) =====
-  // Ces fonctions existent juste pour ne pas casser le code qui les appelle,
-  // mais ne font rien. Le resize doit être fait via les input box.
   function startResizeShape() {
     isResizeMode.value = false;
     resizingShape.value = null;
@@ -1072,12 +1278,10 @@ export function useMapEditing(props, emit) {
   }
 
   return {
-    // State
     isDeleteMode,
     isResizeMode,
     resizingShape,
 
-    // Shape creation functions
     createSquare,
     createRectangle,
     createCircle,
@@ -1088,7 +1292,6 @@ export function useMapEditing(props, emit) {
     createPolygon,
     finishFreeLine,
 
-    // Temporary shape updates
     updateTempSquareFromCenter,
     updateTempRectangleFromCorners,
     updateTempCircleFromCenter,
@@ -1096,35 +1299,32 @@ export function useMapEditing(props, emit) {
     updateTempOvalHeight,
     updateTempOvalWidth,
 
-    // Feature conversion functions
     squareToFeatureFromCenter,
     rectangleToFeatureFromCorners,
     circleToFeatureFromCenter,
     triangleToFeatureFromCenter,
     ovalToFeatureFromCenter,
 
-    // Selection and visual management
     updateFeatureSelectionVisual,
 
-    // CRUD operations
     updateFeaturePosition,
     deleteSelectedFeatures,
     deleteFeature,
     updateGeometryCoordinates,
 
-    // Mode management
     toggleDeleteMode,
 
-    // Resize functions (disabled but kept for compatibility)
     startResizeShape,
     updateResizeShape,
     finishResizeShape,
     cancelResizeShape,
 
-    // Utility functions
     smoothFreeLinePoints,
 
     applyResizeFromDims,
+
+    // NEW
+    applyRotateFromAngle,
   };
 }
 

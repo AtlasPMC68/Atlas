@@ -22,20 +22,16 @@
     </div>
 
     <div class="flex flex-1">
-      <!-- Panneau de contrôle des features -->
       <div class="w-80 bg-base-200 border-r border-base-300 p-4">
-        <!-- Contrôles de visibilité (toujours visible) -->
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
         />
 
-        <!-- Contrôles d'édition (visible seulement en mode édition) -->
         <div v-if="isEditMode" class="mt-6 pt-4 border-t border-base-300">
           <h3 class="text-lg font-semibold mb-3">Édition</h3>
 
-          <!-- Modes d'édition -->
           <div class="space-y-2">
             <p class="text-xs text-gray-500 mb-2">Cliquez sur un mode actif pour le désélectionner</p>
             <button
@@ -55,7 +51,6 @@
             </button>
           </div>
 
-          <!-- Contrôles pour le polygone -->
           <div v-if="activeEditMode === 'CREATE_POLYGON'" class="mt-3 pt-3 border-t border-gray-200">
             <p class="text-xs text-gray-600 mb-2">
               Clic droit pour terminer un polygone<br />
@@ -70,7 +65,6 @@
             </button>
           </div>
 
-          <!-- Sélection de formes -->
           <div v-if="activeEditMode === 'CREATE_SHAPES'" class="mt-3 pt-3 border-t border-gray-200">
             <p class="text-sm font-medium mb-3">Choisir une forme :</p>
             <div class="grid grid-cols-2 gap-2">
@@ -102,11 +96,10 @@
             </div>
           </div>
 
-          <!-- Mode redimensionner (inputs dans le panneau latéral) -->
           <div v-if="activeEditMode === 'RESIZE_SHAPE'" class="mt-3 pt-3 border-t border-gray-200">
             <p class="text-xs text-gray-600 mb-2">
               <i class="fas fa-info-circle mr-1"></i>
-              Cliquez sur une forme pour afficher ses dimensions. Modifiez les valeurs pour redimensionner précisément.
+              Cliquez sur une forme pour afficher ses dimensions et son angle. Modifiez les valeurs pour redimensionner/rotater précisément.
             </p>
 
             <div v-if="resizeFeatureId" class="mt-3 grid grid-cols-2 gap-2">
@@ -130,8 +123,18 @@
                 class="w-full px-2 py-1 border rounded text-sm"
               />
 
+              <div class="col-span-2 text-sm font-medium mt-2">Rotation</div>
+
+              <label class="text-xs text-gray-600">Angle (°)</label>
+              <input
+                v-model="rotateAngleInput"
+                type="number"
+                step="1"
+                class="w-full px-2 py-1 border rounded text-sm col-span-1"
+              />
+
               <p class="col-span-2 text-xs text-gray-500 mt-1">
-                Astuce : CTRL pour sélectionner plusieurs objets, mais le redimensionnement manuel s'applique au dernier objet cliqué.
+                CTRL pour sélectionner plusieurs objets. Le redimensionnement et la rotation s'appliquent au dernier objet cliqué.
               </p>
             </div>
 
@@ -140,7 +143,6 @@
         </div>
       </div>
 
-      <!-- Map -->
       <div class="flex-1">
         <MapGeoJSON
           :map-id="mapId"
@@ -152,6 +154,7 @@
           :resize-feature-id="resizeFeatureId"
           :resize-width-meters="resizeWidthMeters"
           :resize-height-meters="resizeHeightMeters"
+          :rotate-angle-deg="rotateAngleDeg"
           @features-loaded="handleFeaturesLoaded"
           @resize-selection="handleResizeSelection"
           @resize-applied="handleResizeApplied"
@@ -159,7 +162,6 @@
       </div>
     </div>
 
-    <!-- Save modal -->
     <SaveAsModal v-if="showSaveAsModal" @save="handleSaveAs" @cancel="showSaveAsModal = false" />
   </div>
 </template>
@@ -192,27 +194,36 @@ const resizeFeatureId = ref(null);
 const resizeWidthInput = ref("");
 const resizeHeightInput = ref("");
 
+// NEW: rotation input
+const rotateAngleInput = ref("");
+
 const kmToMeters = (kmStr) => {
   const n = parseFloat(String(kmStr ?? "").replace(",", "."));
   return Number.isFinite(n) && n > 0 ? n * 1000 : null;
 };
 
 const resizeWidthMeters = computed(() => kmToMeters(resizeWidthInput.value));
-
 const resizeHeightMeters = computed(() => kmToMeters(resizeHeightInput.value));
 
+const parseAngleDeg = (degStr) => {
+  const n = parseFloat(String(degStr ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+};
+
+const rotateAngleDeg = computed(() => parseAngleDeg(rotateAngleInput.value));
+
 function handleResizeApplied(featureId) {
-  // après un resize, on demande au composant carte de recalculer bbox + anchors
-  // (on va appeler une méthode via event côté MapGeoJSON, voir étape 2)
+  // pas utilisé ici; la carte met déjà à jour bbox/anchors
 }
 
 function resetManualResizeUI() {
   resizeFeatureId.value = null;
   resizeWidthInput.value = "";
   resizeHeightInput.value = "";
+  rotateAngleInput.value = "";
 }
 
-// payload attendu depuis MapGeoJSON: { featureId, widthMeters, heightMeters }
+// payload attendu depuis MapGeoJSON: { featureId, widthMeters, heightMeters, angleDeg }
 function handleResizeSelection(payload) {
   if (!payload || payload.featureId == null) {
     resetManualResizeUI();
@@ -226,14 +237,22 @@ function handleResizeSelection(payload) {
     const m = typeof meters === "number" ? meters : parseFloat(String(meters).replace(",", "."));
     if (!Number.isFinite(m) || m <= 0) return "";
     const km = m / 1000;
-    return String(Math.round(km * 100) / 100); // 2 décimales
+    return String(Math.round(km * 100) / 100);
+  };
+
+  const fmtDeg = (deg) => {
+    if (deg == null) return "";
+    const a = typeof deg === "number" ? deg : parseFloat(String(deg).replace(",", "."));
+    if (!Number.isFinite(a)) return "";
+    // affichage simple
+    return String(Math.round(a * 10) / 10);
   };
 
   resizeWidthInput.value = fmtKm(payload.widthMeters);
   resizeHeightInput.value = fmtKm(payload.heightMeters);
+  rotateAngleInput.value = fmtDeg(payload.angleDeg);
 }
 
-// Si on quitte le mode édition ou le mode redimensionner, on nettoie l'UI
 watch(
   () => [isEditMode.value, activeEditMode.value],
   ([edit, mode]) => {
@@ -352,9 +371,7 @@ onMounted(() => {
   loadInitialFeatures();
 });
 
-function saveCarte() {
-  // appel API ou logique de sauvegarde ici
-}
+function saveCarte() {}
 
 function saveCarteAs() {
   showSaveAsModal.value = true;
