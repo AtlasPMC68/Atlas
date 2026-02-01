@@ -120,7 +120,7 @@ export function useMapEditing(props, emit) {
     return {
       ...(feature || {}),
       properties: {
-        ...((feature && feature.properties) || {}),
+        ...(feature?.properties || {}),
         rotationDeg: next,
       },
     };
