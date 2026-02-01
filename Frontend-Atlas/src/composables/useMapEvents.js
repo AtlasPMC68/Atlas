@@ -78,7 +78,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!map) return null;
     if (!map._selectionAnchorGroup) {
       map._selectionAnchorGroup = L.layerGroup().addTo(map);
-      map._selectionAnchors = new Map(); // featureId -> { group: LayerGroup, markers: L.CircleMarker[] }
+      map._selectionAnchors = new Map();
     }
     return map._selectionAnchorGroup;
   }
@@ -101,164 +101,35 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function createAnchorMarker(latlng, kind, map) {
-    return L.circleMarker(latlng, {
-      radius: kind === "corner" ? 6 : 5,
+    const base = {
       weight: 2,
-      color: "#111",
-      fillColor: "#fff",
-      fillOpacity: 1.0,
-
       pane: ensureSelectionAnchorsPane(map),
       interactive: true,
       bubblingMouseEvents: false,
-    });
-  }
+    };
 
-  function upsertSelectionAnchors(featureId, map, featureLayerManager) {
-    if (!map) return;
-    ensureSelectionAnchorGroup(map);
-
-    const id = String(featureId);
-    const layer = featureLayerManager.layers.get(id);
-
-    if (!layer || typeof layer.getBounds !== "function") return;
-
-    const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
-    if (isLine && typeof layer.getLatLngs === "function") {
-      const latlngs = layer.getLatLngs();
-      if (!Array.isArray(latlngs) || latlngs.length < 2) return;
-
-      const a = latlngs[0];
-      const b = latlngs[latlngs.length - 1];
-
-      const existing = map._selectionAnchors.get(id);
-      if (existing && existing.markers?.length === 2) {
-        existing.markers[0].setLatLng(a);
-        existing.markers[1].setLatLng(b);
-        existing.group.bringToFront?.();
-        return;
-      }
-
-      // sinon on recrée
-      if (existing) {
-        existing.group.remove();
-        map._selectionAnchors.delete(id);
-      }
-
-      const group = L.layerGroup();
-
-      const mA = createAnchorMarker(a, "corner", map);
-      const mB = createAnchorMarker(b, "corner", map);
-
-      mA._isSelectionAnchor = true;
-      mB._isSelectionAnchor = true;
-
-      mA._atlasFeatureId = id;
-      mB._atlasFeatureId = id;
-
-      mA._anchorHandle = "lineStart";
-      mB._anchorHandle = "lineEnd";
-
-      mA.on("mousedown", (ev) => {
-        ev.originalEvent?.preventDefault();
-        ev.originalEvent?.stopPropagation();
-        startLineEndpointDrag(id, 0, ev, map);
+    if (kind === "rotate") {
+      return L.circleMarker(latlng, {
+        ...base,
+        radius: 6,
+        color: "#1a3a8a",
+        fillColor: "#dbe7ff",
+        fillOpacity: 1.0,
       });
-
-      mB.on("mousedown", (ev) => {
-        ev.originalEvent?.preventDefault();
-        ev.originalEvent?.stopPropagation();
-        startLineEndpointDrag(id, latlngs.length - 1, ev, map);
-      });
-
-      group.addLayer(mA);
-      group.addLayer(mB);
-
-      group.addTo(map._selectionAnchorGroup);
-      group.bringToFront?.();
-      map._selectionAnchors.set(id, { group, markers: [mA, mB] });
-      return;
     }
 
-    const bounds = layer.getBounds();
-    if (!bounds || !bounds.isValid?.()) return;
-
-    const pts = getBoundsAnchorLatLngs(bounds);
-
-    const existing = map._selectionAnchors.get(id);
-    if (existing) {
-      const arr = existing.markers;
-      if (arr.length >= 8) {
-        arr[0].setLatLng(pts.corners.nw);
-        arr[1].setLatLng(pts.corners.ne);
-        arr[2].setLatLng(pts.corners.se);
-        arr[3].setLatLng(pts.corners.sw);
-
-        arr[4].setLatLng(pts.mids.n);
-        arr[5].setLatLng(pts.mids.e);
-        arr[6].setLatLng(pts.mids.s);
-        arr[7].setLatLng(pts.mids.w);
-      }
-      existing.group.bringToFront?.();
-      return;
-    }
-
-    const group = L.layerGroup();
-
-    const markerSpecs = [
-      { ll: pts.corners.nw, kind: "corner", key: "nw" },
-      { ll: pts.corners.ne, kind: "corner", key: "ne" },
-      { ll: pts.corners.se, kind: "corner", key: "se" },
-      { ll: pts.corners.sw, kind: "corner", key: "sw" },
-      { ll: pts.mids.n, kind: "mid", key: "n" },
-      { ll: pts.mids.e, kind: "mid", key: "e" },
-      { ll: pts.mids.s, kind: "mid", key: "s" },
-      { ll: pts.mids.w, kind: "mid", key: "w" },
-    ];
-
-    const markers = markerSpecs.map((spec) => {
-      const m = createAnchorMarker(spec.ll, spec.kind, map);
-
-      m._isSelectionAnchor = true;
-      m._atlasFeatureId = id;
-      m._anchorHandle = spec.key;
-
-      m.on("mousedown", (ev) => {
-        ev.originalEvent?.preventDefault();
-        ev.originalEvent?.stopPropagation();
-        startAnchorDrag(id, spec.key, ev, map);
-      });
-
-      group.addLayer(m);
-      return m;
+    return L.circleMarker(latlng, {
+      ...base,
+      radius: kind === "corner" ? 6 : 5,
+      color: "#111",
+      fillColor: "#fff",
+      fillOpacity: 1.0,
     });
-
-    group.addTo(map._selectionAnchorGroup);
-    group.bringToFront?.();
-    map._selectionAnchors.set(id, { group, markers });
-  }
-
-
-  function removeSelectionAnchors(featureId, map) {
-    if (!map || !map._selectionAnchors) return;
-    const id = String(featureId);
-    const entry = map._selectionAnchors.get(id);
-    if (!entry) return;
-    entry.group.remove();
-    map._selectionAnchors.delete(id);
-  }
-
-  function clearSelectionAnchors(map) {
-    if (!map || !map._selectionAnchors) return;
-    for (const entry of map._selectionAnchors.values()) entry.group.remove();
-    map._selectionAnchors.clear();
   }
 
   function getLayerAllLatLngs(layer) {
     if (layer.getLatLngs) return layer.getLatLngs();
-
     if (layer.getLatLng) return layer.getLatLng();
-
     return null;
   }
 
@@ -319,6 +190,251 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
   }
 
+  function getFeatureById(fid) {
+    const id = String(fid);
+    return props.features.find((f) => String(f.id) === id) || null;
+  }
+
+  function isResizableFeature(feature) {
+    return (
+      !!feature?.properties?.resizable &&
+      !!feature?.properties?.shapeType &&
+      !!feature?.properties?.center
+    );
+  }
+
+  // ---------------------------------------
+  // ROTATION: helpers (layerPoint space)
+  // ---------------------------------------
+  function computeRotationHandleLatLng(layer, map) {
+    if (!layer || !map || typeof layer.getBounds !== "function") return null;
+
+    const bounds = layer.getBounds();
+    if (!bounds || !bounds.isValid?.()) return null;
+
+    const pts = getBoundsAnchorLatLngs(bounds);
+    const nMid = pts.mids.n;
+
+    const nPt = map.latLngToLayerPoint(nMid);
+    const offsetPx = 30;
+    const rotPt = L.point(nPt.x, nPt.y - offsetPx);
+
+    return map.layerPointToLatLng(rotPt);
+  }
+
+  function startRotateDrag(fid, ev, map) {
+    const id = String(fid);
+    const layer = layersComposable.featureLayerManager.layers.get(id);
+    if (!layer || !map) return;
+
+    // Seulement polygones/rectangles (getLatLngs)
+    if (!layer.getLatLngs || typeof layer.setLatLngs !== "function") return;
+
+    const latlngs = layer.getLatLngs();
+    if (!latlngs) return;
+
+    map.dragging.disable();
+
+    const pts = mapLatLngsToPoints(map, latlngs);
+    const flat = flattenPoints(pts, []);
+    const b = boundsFromPoints(flat);
+    const centerPt = L.point((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2);
+
+    const startMousePt = map.latLngToLayerPoint(ev.latlng);
+    const startAngle = Math.atan2(startMousePt.y - centerPt.y, startMousePt.x - centerPt.x);
+
+    anchorDrag = {
+      kind: "rotate",
+      fid: id,
+      startAngle,
+      centerPt,
+      startPts: pts,
+      startLatLngs: latlngs,
+    };
+  }
+
+  function rotatePointsAroundCenter(pts, centerPt, deltaAngle) {
+    const cosA = Math.cos(deltaAngle);
+    const sinA = Math.sin(deltaAngle);
+
+    function rot(p) {
+      if (Array.isArray(p)) return p.map(rot);
+      const dx = p.x - centerPt.x;
+      const dy = p.y - centerPt.y;
+      const x = centerPt.x + dx * cosA - dy * sinA;
+      const y = centerPt.y + dx * sinA + dy * cosA;
+      return L.point(x, y);
+    }
+
+    return rot(pts);
+  }
+
+  // ---------------------------------------
+  // Selection anchors (now includes rotate)
+  // ---------------------------------------
+  function upsertSelectionAnchors(featureId, map, featureLayerManager) {
+    if (!map) return;
+    ensureSelectionAnchorGroup(map);
+
+    const id = String(featureId);
+    const layer = featureLayerManager.layers.get(id);
+
+    if (!layer || typeof layer.getBounds !== "function") return;
+
+    const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
+    if (isLine && typeof layer.getLatLngs === "function") {
+      const latlngs = layer.getLatLngs();
+      if (!Array.isArray(latlngs) || latlngs.length < 2) return;
+
+      const a = latlngs[0];
+      const b = latlngs[latlngs.length - 1];
+
+      const existing = map._selectionAnchors.get(id);
+      if (existing && existing.markers?.length === 2) {
+        existing.markers[0].setLatLng(a);
+        existing.markers[1].setLatLng(b);
+        existing.group.bringToFront?.();
+        return;
+      }
+
+      if (existing) {
+        existing.group.remove();
+        map._selectionAnchors.delete(id);
+      }
+
+      const group = L.layerGroup();
+
+      const mA = createAnchorMarker(a, "corner", map);
+      const mB = createAnchorMarker(b, "corner", map);
+
+      mA._isSelectionAnchor = true;
+      mB._isSelectionAnchor = true;
+
+      mA._atlasFeatureId = id;
+      mB._atlasFeatureId = id;
+
+      mA._anchorHandle = "lineStart";
+      mB._anchorHandle = "lineEnd";
+
+      mA.on("mousedown", (ev) => {
+        ev.originalEvent?.preventDefault();
+        ev.originalEvent?.stopPropagation();
+        startLineEndpointDrag(id, 0, ev, map);
+      });
+
+      mB.on("mousedown", (ev) => {
+        ev.originalEvent?.preventDefault();
+        ev.originalEvent?.stopPropagation();
+        startLineEndpointDrag(id, latlngs.length - 1, ev, map);
+      });
+
+      group.addLayer(mA);
+      group.addLayer(mB);
+
+      group.addTo(map._selectionAnchorGroup);
+      group.bringToFront?.();
+      map._selectionAnchors.set(id, { group, markers: [mA, mB] });
+      return;
+    }
+
+    const bounds = layer.getBounds();
+    if (!bounds || !bounds.isValid?.()) return;
+
+    const pts = getBoundsAnchorLatLngs(bounds);
+
+    // Rotation handle: au-dessus du mid-nord de la bbox
+    const rotLatLng = computeRotationHandleLatLng(layer, map);
+
+    const existing = map._selectionAnchors.get(id);
+    if (existing) {
+      const arr = existing.markers;
+      if (arr.length >= 9) {
+        arr[0].setLatLng(pts.corners.nw);
+        arr[1].setLatLng(pts.corners.ne);
+        arr[2].setLatLng(pts.corners.se);
+        arr[3].setLatLng(pts.corners.sw);
+
+        arr[4].setLatLng(pts.mids.n);
+        arr[5].setLatLng(pts.mids.e);
+        arr[6].setLatLng(pts.mids.s);
+        arr[7].setLatLng(pts.mids.w);
+
+        if (rotLatLng) arr[8].setLatLng(rotLatLng);
+      }
+      existing.group.bringToFront?.();
+      return;
+    }
+
+    const group = L.layerGroup();
+
+    const markerSpecs = [
+      { ll: pts.corners.nw, kind: "corner", key: "nw" },
+      { ll: pts.corners.ne, kind: "corner", key: "ne" },
+      { ll: pts.corners.se, kind: "corner", key: "se" },
+      { ll: pts.corners.sw, kind: "corner", key: "sw" },
+      { ll: pts.mids.n, kind: "mid", key: "n" },
+      { ll: pts.mids.e, kind: "mid", key: "e" },
+      { ll: pts.mids.s, kind: "mid", key: "s" },
+      { ll: pts.mids.w, kind: "mid", key: "w" },
+    ];
+
+    const markers = markerSpecs.map((spec) => {
+      const m = createAnchorMarker(spec.ll, spec.kind, map);
+
+      m._isSelectionAnchor = true;
+      m._atlasFeatureId = id;
+      m._anchorHandle = spec.key;
+
+      m.on("mousedown", (ev) => {
+        ev.originalEvent?.preventDefault();
+        ev.originalEvent?.stopPropagation();
+        startAnchorDrag(id, spec.key, ev, map);
+      });
+
+      group.addLayer(m);
+      return m;
+    });
+
+    // Ajout du handle de rotation
+    if (rotLatLng) {
+      const mRot = createAnchorMarker(rotLatLng, "rotate", map);
+      mRot._isSelectionAnchor = true;
+      mRot._atlasFeatureId = id;
+      mRot._anchorHandle = "rot";
+
+      mRot.on("mousedown", (ev) => {
+        ev.originalEvent?.preventDefault();
+        ev.originalEvent?.stopPropagation();
+        startRotateDrag(id, ev, map);
+      });
+
+      group.addLayer(mRot);
+      markers.push(mRot);
+    }
+
+    group.addTo(map._selectionAnchorGroup);
+    group.bringToFront?.();
+    map._selectionAnchors.set(id, { group, markers });
+  }
+
+  function removeSelectionAnchors(featureId, map) {
+    if (!map || !map._selectionAnchors) return;
+    const id = String(featureId);
+    const entry = map._selectionAnchors.get(id);
+    if (!entry) return;
+    entry.group.remove();
+    map._selectionAnchors.delete(id);
+  }
+
+  function clearSelectionAnchors(map) {
+    if (!map || !map._selectionAnchors) return;
+    for (const entry of map._selectionAnchors.values()) entry.group.remove();
+    map._selectionAnchors.clear();
+  }
+
+  // ---------------------------
+  // Anchor drag: start / update
+  // ---------------------------
   function startAnchorDrag(fid, handle, ev, map) {
     const layer = layersComposable.featureLayerManager.layers.get(String(fid));
     if (!layer) return;
@@ -354,7 +470,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const movingPtStart = handleToAnchorPoint(b, handle);
     const fixedH = oppositeHandle(handle);
-    const fixedPt = fixedH ? handleToAnchorPoint(b, fixedH) : L.point((b.minX+b.maxX)/2, (b.minY+b.maxY)/2);
+    const fixedPt = fixedH
+      ? handleToAnchorPoint(b, fixedH)
+      : L.point((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2);
 
     anchorDrag = {
       fid: String(fid),
@@ -398,6 +516,25 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const layer = layersComposable.featureLayerManager.layers.get(String(fid));
     if (!layer) return;
 
+    // ROTATION
+    if (anchorDrag.kind === "rotate") {
+      const centerPt = anchorDrag.centerPt;
+      const curMousePt = map.latLngToLayerPoint(ev.latlng);
+      const curAngle = Math.atan2(curMousePt.y - centerPt.y, curMousePt.x - centerPt.x);
+
+      const delta = curAngle - anchorDrag.startAngle;
+
+      const rotatedPts = rotatePointsAroundCenter(anchorDrag.startPts, centerPt, delta);
+      const newLatLngs = mapPointsToLatLngs(map, rotatedPts);
+
+      if (typeof layer.setLatLngs === "function") layer.setLatLngs(newLatLngs);
+
+      upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+      upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+      return;
+    }
+
+    // line endpoint
     if (anchorDrag.kind === "lineEndpoint") {
       if (!layer.getLatLngs || !layer.setLatLngs) return;
 
@@ -416,6 +553,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
+    // circle resize
     if (anchorDrag.isCircle) {
       const c = anchorDrag.centerLatLng;
       const p = ev.latlng;
@@ -438,6 +576,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
+    // scale (existing)
     const curMousePt = map.latLngToLayerPoint(ev.latlng);
 
     const fixed = anchorDrag.fixedPt;
@@ -506,7 +645,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const ring = latlngs[0] ?? latlngs;
       const coords = ring.map((ll) => [ll.lng, ll.lat]);
 
-      if (coords.length && (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1])) {
+      if (coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
         coords.push(coords[0]);
       }
       return { type: "Polygon", coordinates: [coords] };
@@ -530,6 +669,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
 
     const feature = getFeatureById(fid) || layer.feature || null;
+
+    // conserve ton cas spécial resize-shape pour resizable shapes (si tu veux)
     if (feature && isResizableFeature(feature) && props.activeEditMode === "RESIZE_SHAPE") {
       let w = null, h = null;
 
@@ -552,6 +693,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
+    // Rotation (et tous les autres drags) : commit geometry standard
     const geom = geometryFromLayer(layer);
     if (geom) {
       try {
@@ -651,19 +793,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return null;
   }
 
-  function getFeatureById(fid) {
-    const id = String(fid);
-    return props.features.find((f) => String(f.id) === id) || null;
-  }
-
-  function isResizableFeature(feature) {
-    return (
-      !!feature?.properties?.resizable &&
-      !!feature?.properties?.shapeType &&
-      !!feature?.properties?.center
-    );
-  }
-
   function cloneLatLngs(latlngs) {
     if (Array.isArray(latlngs)) return latlngs.map(cloneLatLngs);
     return L.latLng(latlngs.lat, latlngs.lng);
@@ -679,28 +808,17 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     originalPositions.value.clear();
 
     selectedFeatures.value.forEach((featureId) => {
-      const layer = layersComposable.featureLayerManager.layers.get(
-        String(featureId),
-      );
+      const layer = layersComposable.featureLayerManager.layers.get(String(featureId));
       if (!layer) return;
 
-      // Circle / Marker-like (getLatLng but not getLatLngs)
-      if (
-        layer.getLatLng &&
-        typeof layer.setLatLng === "function" &&
-        !layer.getLatLngs
-      ) {
+      if (layer.getLatLng && typeof layer.setLatLng === "function" && !layer.getLatLngs) {
         const ll = layer.getLatLng();
         originalPositions.value.set(featureId, L.latLng(ll.lat, ll.lng));
         return;
       }
 
-      // Polyline / Polygon / Rectangle
       if (layer.getLatLngs && typeof layer.setLatLngs === "function") {
-        originalPositions.value.set(
-          featureId,
-          cloneLatLngs(layer.getLatLngs()),
-        );
+        originalPositions.value.set(featureId, cloneLatLngs(layer.getLatLngs()));
       }
     });
   }
@@ -712,27 +830,16 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     if (typeof layer.getBounds === "function") {
       const b = layer.getBounds();
-      if (!b || typeof b.getWest !== "function")
-        return { widthMeters: null, heightMeters: null };
+      if (!b || typeof b.getWest !== "function") return { widthMeters: null, heightMeters: null };
 
       const c = b.getCenter();
 
-      const widthMeters = map.distance(
-        [c.lat, b.getWest()],
-        [c.lat, b.getEast()],
-      );
-      const heightMeters = map.distance(
-        [b.getSouth(), c.lng],
-        [b.getNorth(), c.lng],
-      );
+      const widthMeters = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
+      const heightMeters = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
 
       return {
-        widthMeters:
-          Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null,
-        heightMeters:
-          Number.isFinite(heightMeters) && heightMeters > 0
-            ? heightMeters
-            : null,
+        widthMeters: Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null,
+        heightMeters: Number.isFinite(heightMeters) && heightMeters > 0 ? heightMeters : null,
       };
     }
 
@@ -742,12 +849,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function applySelectionClick(fid, isCtrl, map) {
     const id = String(fid);
 
-    // Multi-selection: toggle
     if (isCtrl) {
       if (selectedFeatures.value.has(id)) selectedFeatures.value.delete(id);
       else selectedFeatures.value.add(id);
     } else {
-      // Simple click: select single (or deselect if already single-selected)
       if (selectedFeatures.value.size === 1 && selectedFeatures.value.has(id)) {
         selectedFeatures.value.clear();
       } else {
@@ -758,7 +863,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     syncSelectionOverlays(map);
 
-    // In RESIZE_SHAPE, also update the right panel with dims for the last clicked object
     if (props.activeEditMode === "RESIZE_SHAPE") {
       if (selectedFeatures.value.has(id)) {
         const dims = getDimsMetersFromLayerId(id, map);
@@ -828,9 +932,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (isDrawingFree.value && tempFreeLine) {
       freeLinePoints.value.push(e.latlng);
 
-      const smoothedPoints = editingComposable.smoothFreeLinePoints(
-        freeLinePoints.value,
-      );
+      const smoothedPoints = editingComposable.smoothFreeLinePoints(freeLinePoints.value);
       tempFreeLine.setLatLngs(smoothedPoints);
     }
   }
@@ -852,12 +954,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         tempLine = null;
       }
 
-      editingComposable.createLine(
-        lineStartPoint.value,
-        e.latlng,
-        map,
-        layersComposable,
-      );
+      editingComposable.createLine(lineStartPoint.value, e.latlng, map, layersComposable);
       lineStartPoint.value = null;
       return;
     }
@@ -866,12 +963,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       isDrawingFree.value = false;
       map.dragging.enable();
 
-      editingComposable.finishFreeLine(
-        freeLinePoints.value,
-        tempFreeLine,
-        map,
-        layersComposable,
-      );
+      editingComposable.finishFreeLine(freeLinePoints.value, tempFreeLine, map, layersComposable);
 
       freeLinePoints.value = [];
       tempFreeLine = null;
@@ -884,8 +976,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function handleShapeMouseDown(e, map) {
     if (e.target && e.target._isFeatureClick) return;
 
-    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape)
-      return;
+    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape) return;
 
     isDrawingShape = true;
     map.dragging.disable();
@@ -910,12 +1001,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             [shapeStartPoint.lat, shapeStartPoint.lng],
             [shapeStartPoint.lat, shapeStartPoint.lng],
           ],
-          {
-            color: "#000000",
-            weight: 2,
-            fillColor: "#cccccc",
-            fillOpacity: 0.5,
-          },
+          { color: "#000000", weight: 2, fillColor: "#cccccc", fillOpacity: 0.5 }
         );
         layersComposable.drawnItems.value.addLayer(tempShape);
         break;
@@ -943,82 +1029,40 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function handleShapeMouseMove(e, map) {
     lastMousePos = e.latlng;
 
-    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape)
-      return;
+    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape) return;
 
     const shapeType = props.selectedShape;
 
     switch (shapeType) {
       case "square":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempSquareFromCenter(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape,
-          );
+          tempShape = editingComposable.updateTempSquareFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "rectangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempRectangleFromCorners(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape,
-          );
+          tempShape = editingComposable.updateTempRectangleFromCorners(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "circle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempCircleFromCenter(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape,
-          );
+          tempShape = editingComposable.updateTempCircleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "triangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempTriangleFromCenter(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape,
-          );
+          tempShape = editingComposable.updateTempTriangleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
 
       case "oval":
         if (shapeState === "adjusting_height" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempOvalHeight(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape,
-          );
-        } else if (
-          shapeState === "adjusting_width" &&
-          shapeStartPoint &&
-          shapeEndPoint
-        ) {
-          tempShape = editingComposable.updateTempOvalWidth(
-            shapeStartPoint,
-            shapeEndPoint,
-            e.latlng,
-            map,
-            layersComposable,
-            tempShape,
-          );
+          tempShape = editingComposable.updateTempOvalHeight(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
+        } else if (shapeState === "adjusting_width" && shapeStartPoint && shapeEndPoint) {
+          tempShape = editingComposable.updateTempOvalWidth(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable, tempShape);
         }
         break;
     }
@@ -1045,12 +1089,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createSquare(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-          );
+          editingComposable.createSquare(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1073,12 +1112,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createRectangle(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-          );
+          editingComposable.createRectangle(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1101,12 +1135,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createCircle(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-          );
+          editingComposable.createCircle(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1129,12 +1158,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createTriangle(
-            shapeStartPoint,
-            e.latlng,
-            map,
-            layersComposable,
-          );
+          editingComposable.createTriangle(shapeStartPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1154,13 +1178,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createOval(
-            shapeStartPoint,
-            shapeEndPoint,
-            e.latlng,
-            map,
-            layersComposable,
-          );
+          editingComposable.createOval(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable);
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1207,16 +1225,13 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const lines = [];
 
     for (let i = 0; i < currentPolygonPoints.value.length - 1; i += 1) {
-      lines.push(
-        currentPolygonPoints.value[i],
-        currentPolygonPoints.value[i + 1],
-      );
+      lines.push(currentPolygonPoints.value[i], currentPolygonPoints.value[i + 1]);
     }
 
     if (currentPolygonPoints.value.length >= 3) {
       lines.push(
         currentPolygonPoints.value[currentPolygonPoints.value.length - 1],
-        currentPolygonPoints.value[0],
+        currentPolygonPoints.value[0]
       );
     }
 
@@ -1233,10 +1248,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function finishPolygon(map) {
     if (currentPolygonPoints.value.length < 3) return;
 
-    const points = [
-      ...currentPolygonPoints.value,
-      currentPolygonPoints.value[0],
-    ];
+    const points = [...currentPolygonPoints.value, currentPolygonPoints.value[0]];
 
     if (tempPolygon) {
       layersComposable.drawnItems.value.removeLayer(tempPolygon);
@@ -1266,7 +1278,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   // =======================
-  // Movement handlers (fixed)
+  // Movement handlers
   // =======================
   function handleMoveMouseDown(e, map) {
     if (!props.editMode) return;
@@ -1332,17 +1344,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         const dLng = e.latlng.lng - moveDownLatLng.lng;
 
         selectedFeatures.value.forEach((featureId) => {
-          const layer = layersComposable.featureLayerManager.layers.get(
-            String(featureId),
-          );
+          const layer = layersComposable.featureLayerManager.layers.get(String(featureId));
           const orig = originalPositions.value.get(featureId);
           if (!layer || !orig) return;
 
-          if (
-            layer.getLatLng &&
-            typeof layer.setLatLng === "function" &&
-            !layer.getLatLngs
-          ) {
+          if (layer.getLatLng && typeof layer.setLatLng === "function" && !layer.getLatLngs) {
             layer.setLatLng(L.latLng(orig.lat + dLat, orig.lng + dLng));
             return;
           }
@@ -1351,6 +1357,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layer.setLatLngs(translateLatLngs(orig, dLat, dLng));
           }
         });
+
         selectedFeatures.value.forEach((fid) => {
           upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
           upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
@@ -1385,11 +1392,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         const dLng = e.latlng.lng - moveDownLatLng.lng;
 
         selectedFeatures.value.forEach((featureId) => {
-          const feature = props.features.find(
-            (f) => String(f.id) === String(featureId),
-          );
-          if (feature)
-            editingComposable.updateFeaturePosition(feature, dLat, dLng);
+          const feature = props.features.find((f) => String(f.id) === String(featureId));
+          if (feature) editingComposable.updateFeaturePosition(feature, dLat, dLng);
         });
 
         justFinishedDrag.value = true;
@@ -1397,8 +1401,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           justFinishedDrag.value = false;
         }, 100);
       } else {
-        // NEW: In RESIZE_SHAPE, clicking a feature may not fire Leaflet "click".
-        // So we handle selection here and suppress the next feature-click handler.
         if (props.activeEditMode === "RESIZE_SHAPE") {
           suppressNextFeatureClick.value = true;
           setTimeout(() => {
@@ -1448,7 +1450,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         selectedFeatures.value,
         layersComposable.featureLayerManager,
         map,
-        emit,
+        emit
       );
 
       selectedFeatures.value.clear();
@@ -1528,7 +1530,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   // =======================
-  // Resize handlers (existing)
+  // Resize handlers (existing, not used)
   // =======================
   function handleResizeMouseDown(e, map) {
     if (!props.editMode || props.activeEditMode !== "RESIZE_SHAPE") return;
@@ -1555,24 +1557,20 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       clickedFeatureId,
       clickedFeature,
       layersComposable.featureLayerManager,
-      map,
+      map
     );
 
     if (success) map.dragging.disable();
   }
 
   function handleResizeMouseMove(e, map) {
-    if (
-      !editingComposable.isResizeMode.value ||
-      !editingComposable.resizingShape.value
-    )
-      return;
+    if (!editingComposable.isResizeMode.value || !editingComposable.resizingShape.value) return;
 
     editingComposable.updateResizeShape(
       L.latLng(editingComposable.resizingShape.value.feature.properties.center),
       e.latlng,
       map,
-      layersComposable,
+      layersComposable
     );
 
     const rs = editingComposable.resizingShape.value;
@@ -1585,11 +1583,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function handleResizeMouseUp(e, map) {
-    if (
-      !editingComposable.isResizeMode.value ||
-      !editingComposable.resizingShape.value
-    )
-      return;
+    if (!editingComposable.isResizeMode.value || !editingComposable.resizingShape.value) return;
 
     e.originalEvent?.preventDefault();
     e.originalEvent?.stopPropagation();
