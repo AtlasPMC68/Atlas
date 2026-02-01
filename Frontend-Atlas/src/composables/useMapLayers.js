@@ -8,7 +8,6 @@ export function useMapLayers(props, emit) {
   let zonesLayer = null;
   let arrowsLayer = null;
   const drawnItems = ref(null);
-  let currentRegionsLayer = null;
   let baseTileLayer = null;
   let labelLayer = null;
 
@@ -355,10 +354,6 @@ export function useMapLayers(props, emit) {
   }
 
   function clearAllLayers(map) {
-    if (currentRegionsLayer) {
-      map.removeLayer(currentRegionsLayer);
-      currentRegionsLayer = null;
-    }
     featureLayerManager.clearAllFeatures(map);
   }
 
@@ -370,7 +365,6 @@ export function useMapLayers(props, emit) {
 
     // Layer collections (for external access)
     drawnItems,
-    currentRegionsLayer,
     baseTileLayer,
     labelLayer,
 
