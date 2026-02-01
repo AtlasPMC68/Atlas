@@ -321,14 +321,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return map.layerPointToLatLng(rotPt);
   }
 
-  function isResizableFeature(feature) {
-    return (
-      !!feature?.properties?.resizable &&
-      !!feature?.properties?.shapeType &&
-      !!feature?.properties?.center
-    );
-  }
-
   // -------------------------
   // Selection overlays
   // -------------------------
