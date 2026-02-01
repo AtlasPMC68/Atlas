@@ -289,6 +289,7 @@ async function loadInitialFeatures() {
     });
     featureVisibility.value = newVisibility;
   } catch (e) {
+    console.error("Failed to load initial map features:", e);
   }
 }
 
