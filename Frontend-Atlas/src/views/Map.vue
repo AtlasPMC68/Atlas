@@ -2,7 +2,7 @@
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
       <div class="flex justify-end">
-        <SaveDropdown @save="saveCarte" @save-as="saveCarteAs" />
+        <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
       </div>
       <div class="flex-1">
         <h1 class="text-xl font-bold">Carte démo</h1>
@@ -361,9 +361,9 @@ onMounted(() => {
   loadInitialFeatures();
 });
 
-function saveCarte() {}
+function saveMap() {}
 
-function saveCarteAs() {
+function saveMapAs() {
   showSaveAsModal.value = true;
 }
 
