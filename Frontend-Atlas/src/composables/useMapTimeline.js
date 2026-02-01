@@ -51,7 +51,7 @@ export function useMapTimeline() {
     const mapId = "11111111-1111-1111-1111-111111111111";
 
     try {
-      const res = await fetch(`http://localhost:8000/maps/features/${mapId}`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${mapId}`);
       if (!res.ok) throw new Error("Failed to fetch features");
 
       const allFeatures = await res.json();
