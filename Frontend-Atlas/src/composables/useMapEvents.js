@@ -36,7 +36,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
   let anchorDrag = null;
 
-  let resizeHandles = new Map();
   let isResizing = false;
   let resizeStartPoint = null;
   let resizeHandle = null;
