@@ -194,7 +194,6 @@ const resizeFeatureId = ref(null);
 const resizeWidthInput = ref("");
 const resizeHeightInput = ref("");
 
-// NEW: rotation input
 const rotateAngleInput = ref("");
 
 const kmToMeters = (kmStr) => {
@@ -213,7 +212,6 @@ const parseAngleDeg = (degStr) => {
 const rotateAngleDeg = computed(() => parseAngleDeg(rotateAngleInput.value));
 
 function handleResizeApplied(featureId) {
-  // pas utilisé ici; la carte met déjà à jour bbox/anchors
 }
 
 function resetManualResizeUI() {
@@ -223,7 +221,6 @@ function resetManualResizeUI() {
   rotateAngleInput.value = "";
 }
 
-// payload attendu depuis MapGeoJSON: { featureId, widthMeters, heightMeters, angleDeg }
 function handleResizeSelection(payload) {
   if (!payload || payload.featureId == null) {
     resetManualResizeUI();
@@ -244,7 +241,6 @@ function handleResizeSelection(payload) {
     if (deg == null) return "";
     const a = typeof deg === "number" ? deg : parseFloat(String(deg).replace(",", "."));
     if (!Number.isFinite(a)) return "";
-    // affichage simple
     return String(Math.round(a * 10) / 10);
   };
 
@@ -260,7 +256,6 @@ watch(
   }
 );
 
-// Modes d'édition
 const editModes = [
   { id: "CREATE_POINT", label: "Ajouter un point", icon: "fas fa-map-marker-alt" },
   { id: "CREATE_LINE", label: "Ligne droite", icon: "fas fa-minus" },
@@ -275,7 +270,6 @@ const title = ref("");
 const description = ref("");
 const access_level = ref("");
 
-// Gestion des formes
 const selectedShape = ref(null);
 const shapeTypes = [
   { id: "square", label: "Carré", icon: "fas fa-square" },
@@ -299,7 +293,6 @@ async function loadInitialFeatures() {
     });
     featureVisibility.value = newVisibility;
   } catch (e) {
-    // ignore
   }
 }
 

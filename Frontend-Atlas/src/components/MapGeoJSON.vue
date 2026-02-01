@@ -105,7 +105,6 @@ function getFeatureAngleDeg(fid, layer) {
   return normalizeAngleDeg(raw);
 }
 
-// dims dans le référentiel "roté" (si angle != 0)
 function getLayerDimsMeters(fid) {
   const layer = getLayerById(fid);
   if (!layer || !map) return { w: null, h: null };

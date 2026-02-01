@@ -273,7 +273,6 @@ export function useMapEditing(props, emit) {
           resizable: true,
           shapeType,
           center: { lat: center.lat, lng: center.lng },
-          // keep rotationDeg if present
           rotationDeg: feature?.properties?.rotationDeg ?? 0,
         },
       };
@@ -325,7 +324,6 @@ export function useMapEditing(props, emit) {
     const layer = featureLayerManager.layers.get(fid);
     if (!layer || !map) return;
 
-    // cercle: rien à faire côté géométrie, mais on persiste l'angle
     const isCircle = typeof layer.getRadius === "function" && typeof layer.setRadius === "function";
 
     const feature =
@@ -341,7 +339,6 @@ export function useMapEditing(props, emit) {
     const centerLL = bounds?.isValid?.() ? bounds.getCenter() : getCenterFromLayer(layer);
     if (!centerLL) return;
 
-    // Update feature properties immédiatement pour que bbox/anchors suivent
     const featureWithAngle = setAngleDegOnFeature(feature, nextAngle);
     layer.feature = featureWithAngle;
 
@@ -392,8 +389,6 @@ export function useMapEditing(props, emit) {
 
     const pts = latlngsToPoints(map, latlngs);
 
-    // On repart du "référentiel non-roté" pour éviter la dérive:
-    // pts0 = rotate(points, -curAngle), puis rotate(pts0, +nextAngle)
     const curRad = (curAngle * Math.PI) / 180;
     const nextRad = (nextAngle * Math.PI) / 180;
 
@@ -778,7 +773,6 @@ export function useMapEditing(props, emit) {
   }
 
   // ===== TEMPORARY SHAPE UPDATE FUNCTIONS =====
-  // (inchangé)
   function updateTempSquareFromCenter(center, sizePoint, map, layersComposable, tempShape) {
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
@@ -1088,7 +1082,7 @@ export function useMapEditing(props, emit) {
     };
   }
 
-  // ===== SELECTION AND VISUAL MANAGEMENT (inchangé) =====
+  // ===== SELECTION AND VISUAL MANAGEMENT =====
   function updateFeatureSelectionVisual(map, layerManager, selectedFeatures) {
     if (!map || !layerManager) return;
 
@@ -1144,7 +1138,7 @@ export function useMapEditing(props, emit) {
     });
   }
 
-  // ===== CRUD OPERATIONS (inchangé) =====
+  // ===== CRUD OPERATIONS =====
   async function updateFeaturePosition(feature, deltaLat, deltaLng) {
     try {
       const updatedGeometry = updateGeometryCoordinates(feature.geometry, deltaLat, deltaLng);

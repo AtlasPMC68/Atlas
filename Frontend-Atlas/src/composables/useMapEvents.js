@@ -34,13 +34,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   let downFeatureId = null;
   let cancelDeselect = false;
 
-  // Unified anchor drag state:
-  // - resize anchors (existing code 1 logic)
-  // - line endpoints
-  // - rotate handle (new)
   let anchorDrag = null;
 
-  // legacy unused vars kept
   let resizeHandles = new Map();
   let isResizing = false;
   let resizeStartPoint = null;
@@ -308,7 +303,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     };
   }
 
-  // Rotation handle above bbox (in SCREEN space), but aligned with rotated bbox "north mid"
   function computeRotationHandleLatLng(layer, map, angleDeg) {
     if (!layer || !map || !layer.getLatLngs || typeof layer.getBounds !== "function") return null;
 
@@ -317,13 +311,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const { angleRad, centerPt, b0 } = fd;
 
-    // "north mid" in unrotated frame
     const n0 = handleToAnchorPoint(b0, "n");
 
-    // convert back to rotated/original frame
     const n = Math.abs(angleRad) > 1e-9 ? rotatePoint(n0, centerPt, angleRad) : n0;
 
-    // offset upward in screen space (pixels)
     const offsetPx = 30;
     const rotPt = L.point(n.x, n.y - offsetPx);
 
@@ -526,7 +517,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const existing = map._selectionAnchors.get(id);
     if (existing) {
       const arr = existing.markers;
-      // expected: 8 resize anchors + 1 rot anchor
       if (arr.length >= 9) {
         arr[0].setLatLng(cornersMids.corners.nw);
         arr[1].setLatLng(cornersMids.corners.ne);
@@ -713,7 +703,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const layer = layersComposable.featureLayerManager.layers.get(id);
     if (!layer || !map) return;
 
-    // rotation only for polygons/rectangles (latlngs)
     if (!layer.getLatLngs || typeof layer.setLatLngs !== "function") return;
 
     const angleStartDeg = getAngleDegFor(id, layer);
@@ -724,11 +713,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const { centerPt } = fd;
 
-    // use mouse angle in screen space around center
     const startMousePt = map.latLngToLayerPoint(ev.latlng);
     const startMouseAngle = Math.atan2(startMousePt.y - centerPt.y, startMousePt.x - centerPt.x);
 
-    // store original screen points (current geometry)
     const latlngs = layer.getLatLngs();
     const ptsScreen = mapLatLngsToPoints(map, latlngs);
 
@@ -778,7 +765,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
       upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
 
-      // keep input in sync when in resize mode
       if (props.activeEditMode === "RESIZE_SHAPE") {
         const dims = getDimsMetersFromLayerId(fid, map);
         emit("resize-selection", { featureId: String(fid), ...dims, angleDeg: newAngleDeg });
@@ -955,7 +941,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const feature = getFeatureById(fid) || layer.feature || null;
 
-    // commit geometry
     const geom = geometryFromLayer(layer);
     if (geom) {
       try {
@@ -1063,7 +1048,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return getAngleDegFor(id, layer);
   }
 
-  // Called by UI input (angle)
   function setRotationDegForSelection(angleDeg, map) {
     if (!map) return;
     const a = normalizeAngleDeg(angleDeg);
@@ -1075,7 +1059,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const oldAngle = getAngleDegFor(fid, layer);
       const deltaDeg = shortestDeltaDeg(oldAngle, a);
       if (Math.abs(deltaDeg) < 1e-9) {
-        // still refresh overlays + input sync
         upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
         upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
         return;
@@ -1809,7 +1792,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return false;
   }
 
-  // Resize handlers (legacy; kept)
   function handleResizeMouseDown(e, map) {}
   function handleResizeMouseMove(e, map) {}
   function handleResizeMouseUp(e, map) {}

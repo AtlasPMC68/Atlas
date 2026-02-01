@@ -1,6 +1,5 @@
 import L from "leaflet";
 
-// Composable for map initialization and cleanup
 export function useMapInit(props, emit, layersComposable, eventsComposable, editingComposable, timelineComposable) {
   function initializeEditControls(map) {
     if (!props.editMode) return;
@@ -79,7 +78,6 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
   function handleFeatureClick(featureId, isCtrlPressed, map) {
     const fid = String(featureId);
 
-    // NEW: avoid double toggle if mouseup already handled selection
     if (eventsComposable.suppressNextFeatureClick?.value) {
       eventsComposable.suppressNextFeatureClick.value = false;
       return;
