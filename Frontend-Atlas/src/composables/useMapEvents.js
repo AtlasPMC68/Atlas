@@ -452,6 +452,21 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (anchorDrag.handle === "n" || anchorDrag.handle === "s") sx = 1;
     if (anchorDrag.handle === "e" || anchorDrag.handle === "w") sy = 1;
 
+    const feature = getFeatureById(fid) || layer.feature || null;
+    const shapeType = feature?.properties?.shapeType || feature?.properties?.shape || null;
+
+    if (shapeType === "square") {
+      if (["nw","ne","se","sw"].includes(anchorDrag.handle)) {
+        const s = Math.max(sx, sy);
+        sx = s;
+        sy = s;
+      } else {
+        const s = (anchorDrag.handle === "n" || anchorDrag.handle === "s") ? sy : sx;
+        sx = s;
+        sy = s;
+      }
+    }
+
     const MIN_SCALE = 0.05;
     sx = Math.max(MIN_SCALE, sx);
     sy = Math.max(MIN_SCALE, sy);
@@ -572,6 +587,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const id = String(featureId);
     const layer = featureLayerManager.layers.get(id);
     if (!layer || typeof layer.getBounds !== "function") return;
+
+    const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
+    if (isLine) return;
 
     const bounds = layer.getBounds();
     if (!bounds || !bounds.isValid?.()) return;

@@ -129,6 +129,17 @@ export function useMapEditing(props, emit) {
     const shapeType = inferShapeType(feature);
     if (!shapeType) return;
 
+    if (shapeType === "square") {
+      const w = Number(widthMeters);
+      const h = Number(heightMeters);
+
+      const side = (Number.isFinite(w) && w > 0) ? w : ((Number.isFinite(h) && h > 0) ? h : null);
+      if (!side) return;
+
+      widthMeters = side;
+      heightMeters = side;
+    }
+
     // Normalisation des dims (utiles à plusieurs endroits)
     const w = Number(widthMeters);
     const h = Number(heightMeters);
