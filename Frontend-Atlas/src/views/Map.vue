@@ -389,7 +389,10 @@ async function handleSaveAs(data) {
 
     if (!res.ok) throw new Error(`Error while getting the user : ${res.status}`);
     userData = await res.json();
-  } catch {
+  } catch (err) {
+    console.error("Failed to fetch user data:", err);
+    error.value =
+      err instanceof Error ? err.message : "Unknown error while fetching user data.";
     return;
   }
 
