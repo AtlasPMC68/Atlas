@@ -1776,10 +1776,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return false;
   }
 
-  function handleResizeMouseDown(e, map) {}
-  function handleResizeMouseMove(e, map) {}
-  function handleResizeMouseUp(e, map) {}
-
   return {
     selectedFeatures,
     isDraggingFeatures,
@@ -1795,9 +1791,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     handleShapeMouseDown,
     handleShapeMouseMove,
     handleShapeMouseUp,
-    handleResizeMouseDown,
-    handleResizeMouseMove,
-    handleResizeMouseUp,
     handleMapClick,
     handlePolygonClick,
     handleRightClick,
