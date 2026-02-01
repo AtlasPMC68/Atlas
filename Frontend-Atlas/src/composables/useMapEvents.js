@@ -3,7 +3,6 @@ import L from "leaflet";
 import { getPixelDistance } from "../utils/mapUtils.js";
 import { MAP_CONFIG } from "./useMapConfig.js";
 
-// Composable for managing map events (mouse, keyboard, etc.)
 export function useMapEvents(props, emit, layersComposable, editingComposable) {
   // =======================
   // Drawing state variables
@@ -16,40 +15,35 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   const freeLinePoints = ref([]);
   let tempFreeLine = null;
 
-  // Shape drawing state
-  let shapeState = null; // 'drawing' | 'adjusting_height' | 'adjusting_width' | null
-  let shapeStartPoint = null; // Starting point (corner of square or center for circle/triangle)
-  let shapeEndPoint = null; // End point (opposite corner or point for size adjustment)
+  let shapeState = null;
+  let shapeStartPoint = null;
+  let shapeEndPoint = null;
   let tempShape = null;
-  let lastMousePos = null; // Last known mouse position
-  let isDrawingShape = false; // Global indicator to prevent dragging
+  let lastMousePos = null;
+  let isDrawingShape = false;
 
-  // Polygon drawing
   const currentPolygonPoints = ref([]);
   let tempPolygon = null;
 
   // ==============================
   // Selection and movement state
   // ==============================
-  const selectedFeatures = ref(new Set()); // Set of selected feature IDs
-  const isDraggingFeatures = ref(false); // If currently dragging shapes
-  const originalPositions = ref(new Map()); // Original positions before dragging
-  const justFinishedDrag = ref(false); // Flag to avoid deselection after drag
+  const selectedFeatures = ref(new Set());
+  const isDraggingFeatures = ref(false);
+  const originalPositions = ref(new Map());
+  const justFinishedDrag = ref(false);
 
-  // NEW: prevent double-processing when we handle selection via move handlers
   const suppressNextFeatureClick = ref(false);
 
-  // Movement internals (for "drag object / click empty = deselect / drag empty = pan")
-  let moveDownClient = null; // L.point(clientX, clientY)
-  let moveDownLatLng = null; // e.latlng at mousedown
-  let downFeatureId = null; // feature under cursor at mousedown (or null)
-  let cancelDeselect = false; // set true when user actually drags on empty map
+  let moveDownClient = null;
+  let moveDownLatLng = null;
+  let downFeatureId = null;
+  let cancelDeselect = false;
+  let anchorDrag = null;
 
   // =======================
   // Resize state (existing)
   // =======================
-  // Resize handles (kept for compatibility with your resize mode composable)
-  // Note: This file doesn't implement handles directly; editingComposable does.
   let resizeHandles = new Map();
   let isResizing = false;
   let resizeStartPoint = null;
@@ -65,17 +59,17 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!map) return null;
     if (!map._selectionBBoxGroup) {
       map._selectionBBoxGroup = L.layerGroup().addTo(map);
-      map._selectionBBoxes = new Map(); // featureId -> L.Rectangle
+      map._selectionBBoxes = new Map();
     }
     return map._selectionBBoxGroup;
   }
 
   function ensureSelectionAnchorsPane(map) {
-    if (!map) return null;
+    if (!map) return "overlayPane";
     if (!map.getPane("selectionAnchorsPane")) {
       const pane = map.createPane("selectionAnchorsPane");
-      pane.style.zIndex = "800"; // au-dessus de overlayPane (par défaut ~400)
-      pane.style.pointerEvents = "none"; // laisse les clics passer à travers (important)
+      pane.style.zIndex = "800";
+      pane.style.pointerEvents = "auto";
     }
     return "selectionAnchorsPane";
   }
@@ -107,8 +101,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function createAnchorMarker(latlng, kind, map) {
-    const paneName = ensureSelectionAnchorsPane(map);
-
     return L.circleMarker(latlng, {
       radius: kind === "corner" ? 6 : 5,
       weight: 2,
@@ -117,7 +109,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       fillOpacity: 1.0,
 
       pane: ensureSelectionAnchorsPane(map),
-      interactive: false,
+      interactive: true,
       bubblingMouseEvents: false,
     });
   }
@@ -128,6 +120,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const id = String(featureId);
     const layer = featureLayerManager.layers.get(id);
+
     if (!layer || typeof layer.getBounds !== "function") return;
 
     const bounds = layer.getBounds();
@@ -137,7 +130,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const existing = map._selectionAnchors.get(id);
     if (existing) {
-      // ordre: NW, NE, SE, SW, N, E, S, W, (CENTER optional)
       const arr = existing.markers;
       if (arr.length >= 8) {
         arr[0].setLatLng(pts.corners.nw);
@@ -156,27 +148,39 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const group = L.layerGroup();
 
-    const markers = [
-      createAnchorMarker(pts.corners.nw, "corner", map),
-      createAnchorMarker(pts.corners.ne, "corner", map),
-      createAnchorMarker(pts.corners.se, "corner", map),
-      createAnchorMarker(pts.corners.sw, "corner", map),
-
-      createAnchorMarker(pts.mids.n, "mid", map),
-      createAnchorMarker(pts.mids.e, "mid", map),
-      createAnchorMarker(pts.mids.s, "mid", map),
-      createAnchorMarker(pts.mids.w, "mid", map),
+    const markerSpecs = [
+      { ll: pts.corners.nw, kind: "corner", key: "nw" },
+      { ll: pts.corners.ne, kind: "corner", key: "ne" },
+      { ll: pts.corners.se, kind: "corner", key: "se" },
+      { ll: pts.corners.sw, kind: "corner", key: "sw" },
+      { ll: pts.mids.n, kind: "mid", key: "n" },
+      { ll: pts.mids.e, kind: "mid", key: "e" },
+      { ll: pts.mids.s, kind: "mid", key: "s" },
+      { ll: pts.mids.w, kind: "mid", key: "w" },
     ];
 
-    markers.forEach((m) => {
+    const markers = markerSpecs.map((spec) => {
+      const m = createAnchorMarker(spec.ll, spec.kind, map);
+
+      m._isSelectionAnchor = true;
+      m._atlasFeatureId = id;
+      m._anchorHandle = spec.key;
+
+      m.on("mousedown", (ev) => {
+        ev.originalEvent?.preventDefault();
+        ev.originalEvent?.stopPropagation();
+        startAnchorDrag(id, spec.key, ev, map);
+      });
+
       group.addLayer(m);
-      m.bringToFront?.();
+      return m;
     });
+
     group.addTo(map._selectionAnchorGroup);
     group.bringToFront?.();
-
     map._selectionAnchors.set(id, { group, markers });
   }
+
 
   function removeSelectionAnchors(featureId, map) {
     if (!map || !map._selectionAnchors) return;
@@ -191,6 +195,280 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!map || !map._selectionAnchors) return;
     for (const entry of map._selectionAnchors.values()) entry.group.remove();
     map._selectionAnchors.clear();
+  }
+
+  function getLayerAllLatLngs(layer) {
+    if (layer.getLatLngs) return layer.getLatLngs();
+
+    if (layer.getLatLng) return layer.getLatLng();
+
+    return null;
+  }
+
+  function mapLatLngsToPoints(map, latlngs) {
+    if (Array.isArray(latlngs)) return latlngs.map((x) => mapLatLngsToPoints(map, x));
+    return map.latLngToLayerPoint(latlngs);
+  }
+
+  function mapPointsToLatLngs(map, pts) {
+    if (Array.isArray(pts)) return pts.map((x) => mapPointsToLatLngs(map, x));
+    return map.layerPointToLatLng(pts);
+  }
+
+  function flattenPoints(pts, out = []) {
+    if (Array.isArray(pts)) pts.forEach((x) => flattenPoints(x, out));
+    else out.push(pts);
+    return out;
+  }
+
+  function boundsFromPoints(pointsFlat) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pointsFlat) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { minX, minY, maxX, maxY };
+  }
+
+  function handleToAnchorPoint(b, handle) {
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    switch (handle) {
+      case "nw": return L.point(b.minX, b.minY);
+      case "ne": return L.point(b.maxX, b.minY);
+      case "se": return L.point(b.maxX, b.maxY);
+      case "sw": return L.point(b.minX, b.maxY);
+      case "n":  return L.point(cx, b.minY);
+      case "e":  return L.point(b.maxX, cy);
+      case "s":  return L.point(cx, b.maxY);
+      case "w":  return L.point(b.minX, cy);
+      default:   return L.point(cx, cy);
+    }
+  }
+
+  function oppositeHandle(handle) {
+    switch (handle) {
+      case "nw": return "se";
+      case "ne": return "sw";
+      case "se": return "nw";
+      case "sw": return "ne";
+      case "n":  return "s";
+      case "s":  return "n";
+      case "e":  return "w";
+      case "w":  return "e";
+      default:   return null;
+    }
+  }
+
+  function startAnchorDrag(fid, handle, ev, map) {
+    const layer = layersComposable.featureLayerManager.layers.get(String(fid));
+    if (!layer) return;
+
+    const isCircle = typeof layer.getRadius === "function" && typeof layer.setRadius === "function";
+    const centerLatLng = isCircle
+      ? layer.getLatLng()
+      : (layer.getBounds ? layer.getBounds().getCenter() : null);
+
+    if (isCircle && !centerLatLng) return;
+
+    const latlngs = !isCircle ? getLayerAllLatLngs(layer) : null;
+    if (!isCircle && !latlngs) return;
+
+    map.dragging.disable();
+
+    const startMousePt = map.latLngToLayerPoint(ev.latlng);
+
+    if (isCircle) {
+      anchorDrag = {
+        fid: String(fid),
+        handle,
+        isCircle: true,
+        centerLatLng,
+        startMousePt,
+      };
+      return;
+    }
+
+    const latlngs = getLayerAllLatLngs(layer);
+    if (!latlngs) return;
+
+    const pts = mapLatLngsToPoints(map, latlngs);
+    const flat = flattenPoints(pts, []);
+    const b = boundsFromPoints(flat);
+
+    const movingPtStart = handleToAnchorPoint(b, handle);
+    const fixedH = oppositeHandle(handle);
+    const fixedPt = fixedH ? handleToAnchorPoint(b, fixedH) : L.point((b.minX+b.maxX)/2, (b.minY+b.maxY)/2);
+
+    anchorDrag = {
+      fid: String(fid),
+      handle,
+      isCircle: false,
+      startMousePt,
+      fixedPt,
+      startBounds: b,
+      startLatLngs: latlngs,
+      startPts: pts,
+      movingPtStart,
+    };
+  }
+
+  function updateAnchorDrag(ev, map) {
+    if (!anchorDrag) return;
+
+    const fid = anchorDrag.fid;
+    const layer = layersComposable.featureLayerManager.layers.get(String(fid));
+    if (!layer) return;
+
+    if (anchorDrag.isCircle) {
+      const c = anchorDrag.centerLatLng;
+      const p = ev.latlng;
+
+      const dx = map.distance([c.lat, c.lng], [c.lat, p.lng]);
+      const dy = map.distance([c.lat, c.lng], [p.lat, c.lng]);
+
+      let r;
+      if (anchorDrag.handle === "e" || anchorDrag.handle === "w") r = dx;
+      else if (anchorDrag.handle === "n" || anchorDrag.handle === "s") r = dy;
+      else r = Math.max(dx, dy);
+
+      r = Math.max(1, r);
+
+      layer.setLatLng(c);
+      layer.setRadius(r);
+
+      upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+      upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+      return;
+    }
+
+    const curMousePt = map.latLngToLayerPoint(ev.latlng);
+
+    const fixed = anchorDrag.fixedPt;
+    const startMove = anchorDrag.movingPtStart;
+
+    const denomX = (startMove.x - fixed.x);
+    const denomY = (startMove.y - fixed.y);
+
+    let sx = denomX !== 0 ? (curMousePt.x - fixed.x) / denomX : 1;
+    let sy = denomY !== 0 ? (curMousePt.y - fixed.y) / denomY : 1;
+
+    if (anchorDrag.handle === "n" || anchorDrag.handle === "s") sx = 1;
+    if (anchorDrag.handle === "e" || anchorDrag.handle === "w") sy = 1;
+
+    const MIN_SCALE = 0.05;
+    sx = Math.max(MIN_SCALE, sx);
+    sy = Math.max(MIN_SCALE, sy);
+
+    function scalePoints(pts) {
+      if (Array.isArray(pts)) return pts.map(scalePoints);
+      const x = fixed.x + (pts.x - fixed.x) * sx;
+      const y = fixed.y + (pts.y - fixed.y) * sy;
+      return L.point(x, y);
+    }
+
+    const newPts = scalePoints(anchorDrag.startPts);
+    const newLatLngs = mapPointsToLatLngs(map, newPts);
+
+    if (layer.setLatLngs) layer.setLatLngs(newLatLngs);
+
+    upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+    upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+  }
+
+  function geometryFromLayer(layer) {
+    if (layer.getLatLng && !layer.getLatLngs) {
+      const ll = layer.getLatLng();
+      return { type: "Point", coordinates: [ll.lng, ll.lat] };
+    }
+
+    if (layer.getLatLngs) {
+      const latlngs = layer.getLatLngs();
+
+      const isPolygon = layer instanceof L.Polygon || layer instanceof L.Rectangle;
+
+      if (!isPolygon) {
+        const coords = latlngs.map((ll) => [ll.lng, ll.lat]);
+        return { type: "LineString", coordinates: coords };
+      }
+
+      const ring = latlngs[0] ?? latlngs;
+      const coords = ring.map((ll) => [ll.lng, ll.lat]);
+
+      if (coords.length && (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1])) {
+        coords.push(coords[0]);
+      }
+      return { type: "Polygon", coordinates: [coords] };
+    }
+
+    return null;
+  }
+
+  async function finishAnchorDrag(map) {
+    if (!anchorDrag) return;
+
+    const fid = anchorDrag.fid;
+    const layer = layersComposable.featureLayerManager.layers.get(String(fid));
+
+    map.dragging.enable();
+    
+    if (!layer) {
+      anchorDrag = null;
+      map.dragging.enable();
+      return;
+    }
+
+    const feature = getFeatureById(fid) || layer.feature || null;
+    if (feature && isResizableFeature(feature) && props.activeEditMode === "RESIZE_SHAPE") {
+      let w = null, h = null;
+
+      if (typeof layer.getRadius === "function") {
+        const d = 2 * layer.getRadius();
+        w = d; h = d;
+      } else if (layer.getBounds && map) {
+        const b = layer.getBounds();
+        const c = b.getCenter();
+        w = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
+        h = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
+      }
+
+      await editingComposable.applyResizeFromDims(fid, w, h, map, layersComposable.featureLayerManager, emit);
+
+      upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+      upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+
+      anchorDrag = null;
+      return;
+    }
+
+    const geom = geometryFromLayer(layer);
+    if (geom) {
+      try {
+        const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ geometry: geom }),
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          const idx = props.features.findIndex((f) => String(f.id) === fid);
+          if (idx !== -1) {
+            const next = [...props.features];
+            next[idx] = updated;
+            emit("features-loaded", next);
+          }
+        }
+      } catch (e) {
+        console.error("Error updating geometry:", e);
+      }
+    }
+
+    upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+    upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+
+    anchorDrag = null;
   }
 
   function upsertSelectionBBox(featureId, map, featureLayerManager) {
@@ -213,11 +491,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
 
     const rect = L.rectangle(bounds, {
-      color: "#111", // bbox visible (tu peux changer)
+      color: "#111",
       weight: 2,
       dashArray: "6 6",
       fill: false,
-      interactive: false, // IMPORTANT: ne pas bloquer les clics sur la forme
+      interactive: false,
       pane: "overlayPane",
     });
 
@@ -909,6 +1187,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function handleMoveMouseMove(e, map) {
+    if (anchorDrag) {
+      updateAnchorDrag(e, map);
+      return;
+    }
     if (!props.editMode) return;
     if (props.activeEditMode && props.activeEditMode !== "RESIZE_SHAPE") return;
     if (!moveDownClient || !moveDownLatLng) return;
@@ -972,6 +1254,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function handleMoveMouseUp(e, map) {
+    if (anchorDrag) {
+      finishAnchorDrag(map);
+      return;
+    }
     if (!props.editMode) return;
     if (props.activeEditMode && props.activeEditMode !== "RESIZE_SHAPE") return;
     if (!moveDownClient || !moveDownLatLng) return;

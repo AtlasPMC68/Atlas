@@ -212,6 +212,9 @@ export function useMapEditing(props, emit) {
     try {
       const updateData = {
         geometry: newGeom,
+        color: feature.color ?? null,
+        opacity: feature.opacity ?? null,
+        stroke_width: feature.stroke_width ?? null,
         properties: {
           ...(feature.properties || {}),
           resizable: true,
