@@ -14,4 +14,4 @@ COPY . .
 EXPOSE 5173
 
 # Hot reload pour l’extérieur du conteneur + fixer réseau
-CMD ["npm", "run", "dev", "--", "--host", "--port", "3000"]
+CMD ["npm", "run", "dev", "--", "--host", "--port", "5173"]
