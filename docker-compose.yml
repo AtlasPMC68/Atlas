@@ -23,7 +23,7 @@ services:
       context: ./Frontend-Atlas
     container_name: atlas-frontend
     ports:
-      - "3000:3000"
+      - "3000:5173"
     restart: unless-stopped
     env_file:
       - ./Frontend-Atlas/.env
