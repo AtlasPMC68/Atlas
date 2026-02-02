@@ -333,7 +333,7 @@ def extract_colors(
         if geometry:
             # build_normalized_feature expects a list of polygons, so wrap the geometry in a list
             normalized_feature = build_normalized_feature(
-                unique_color_name, rgb_u8, geometry, image_output_dir
+                unique_color_name, rgb_u8, geometry
             )
             if normalized_feature:
                 normalized_features.append({
