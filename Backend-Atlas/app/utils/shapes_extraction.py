@@ -1,9 +1,15 @@
 import json
+import logging
 import os
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from shapely import affinity
+from shapely.geometry import Polygon
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
@@ -16,6 +22,7 @@ def extract_shapes(
     max_area: int = 100000,
     threshold_value: int = 127,
     min_confidence: float = 0.6,
+    debug: bool = False,
 ):
     image = cv2.imread(image_path)
     if image is None:
@@ -27,13 +34,15 @@ def extract_shapes(
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
-    image_output_dir = os.path.join(output_dir, base_name)
-    os.makedirs(image_output_dir, exist_ok=True)
+    if debug:
+        image_output_dir = os.path.join(output_dir, base_name)
+        os.makedirs(image_output_dir, exist_ok=True)
 
     binary_mask = preprocess_image(gray, threshold_value)
 
-    debug_mask_path = os.path.join(image_output_dir, "DEBUG_mask.png")
-    cv2.imwrite(debug_mask_path, binary_mask)
+    if debug:
+        debug_mask_path = os.path.join(image_output_dir, "DEBUG_mask.png")
+        cv2.imwrite(debug_mask_path, binary_mask)
 
     contours = detect_contours(binary_mask)
 
@@ -47,41 +56,17 @@ def extract_shapes(
         if shape_data:
             shapes_with_contours.append((shape_data, contour))
 
-    shapes = [shape for shape, contour in shapes_with_contours]
+    final_shapes_with_contours = shapes_with_contours
 
-    print(f"[SHAPE EXTRACT] Classifying {len(shapes)} shapes...")
-    filtered_shapes, classification_stats = classify_and_filter_shapes(
-        shapes, min_confidence, image_area
-    )
-    print(f"[SHAPE EXTRACT] Classification stats: {classification_stats}")
-
-    final_shapes_with_contours = []
-    for filtered_shape in filtered_shapes:
-        for shape, contour in shapes_with_contours:
-            if shape["id"] == filtered_shape["id"]:
-                final_shapes_with_contours.append((filtered_shape, contour))
-                break
-
-    print(
-        f"[SHAPE EXTRACT] Saving debug images and metadata for {len(final_shapes_with_contours)} filtered shapes..."
-    )
-
-    # Prepare detailed metadata for each shape
     shapes_metadata = []
     for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
-        saved_path = save_shape_image(image, contour, image_output_dir, idx)
-        shape["image_path"] = saved_path
+        if debug:
+            save_shape_image(image, contour, image_output_dir, idx)
 
-        # Calculate relative size for metadata
         relative_size = shape["area"] / image_area if image_area else 0
 
-        # Add the classification properties used
-        classification_details = {
+        metadata = {
             "shape_id": idx,
-            "type": shape["type"],
-            "confidence": shape["confidence"],
-            "image_path": saved_path,
-            # Morphological properties used for classification
             "morphology": {
                 "area": shape["area"],
                 "relative_size": relative_size,
@@ -91,62 +76,160 @@ def extract_shapes(
                 "num_vertices": shape.get("num_vertices", 0),
                 "perimeter": shape.get("perimeter", 0),
             },
-            # Bounding box
             "bounding_box": shape.get("bounding_box", {}),
-            # Center of mass
             "center": shape.get("center", {}),
-            # Geometry for GeoJSON
             "geometry": shape.get("geometry", {}),
-            # Calculated properties
             "properties": shape.get("properties", {}),
         }
 
-        shapes_metadata.append(classification_details)
-        print(
-            f"[SHAPE EXTRACT] Saved shape {idx}: {shape['type']} (area={shape['area']:.1f}, conf={shape['confidence']:.2f})"
-        )
+        shapes_metadata.append(metadata)
 
-    # Save metadata to a JSON file
-    metadata_path = os.path.join(image_output_dir, "shapes_metadata.json")
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "image_info": {
-                    "source_path": image_path,
-                    "dimensions": f"{width}x{height}",
-                    "total_area": image_area,
-                    "extraction_date": "2024-01-14",  # ou datetime.now().isoformat()
+    if debug:
+        metadata_path = os.path.join(image_output_dir, "shapes_metadata.json")
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "image_info": {
+                        "source_path": image_path,
+                        "dimensions": f"{width}x{height}",
+                        "total_area": image_area,
+                        "extraction_date": datetime.now().isoformat(),
+                    },
+                    "extraction_params": {
+                        "min_area": min_area,
+                        "max_area": max_area,
+                        "threshold_value": threshold_value,
+                    },
+                    "total_shapes_extracted": len(shapes_metadata),
+                    "shapes": shapes_metadata,
                 },
-                "extraction_params": {
-                    "min_area": min_area,
-                    "max_area": max_area,
-                    "min_confidence": min_confidence,
-                    "threshold_value": threshold_value,
-                },
-                "classification_stats": classification_stats,
-                "total_shapes_extracted": len(shapes_metadata),
-                "shapes": shapes_metadata,
-            },
-            f,
-            indent=2,
-            ensure_ascii=False,
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
+
+        export_shapes_to_normalized_geojson(
+            final_shapes_with_contours, image_output_dir
         )
-
-    print(f"[SHAPE EXTRACT] Metadata saved to: {metadata_path}")
-
-    print(
-        f"[EXTRACT] {len(filtered_shapes)} relevant shapes extracted from {image_path}"
-    )
 
     final_shapes = [shape for shape, contour in final_shapes_with_contours]
+
+    normalized_features = create_normalized_geojson_features(final_shapes_with_contours)
+
+    if debug:
+        try:
+            reconstruct_shapes_debug(
+                image, final_shapes_with_contours, image_output_dir
+            )
+        except cv2.error as e:
+            logger.error(
+                f"OpenCV error while reconstructing debug images for {image_path}: {e}"
+            )
+        except OSError as e:
+            logger.error(
+                f"I/O error while reconstructing debug images for {image_path}: {e}"
+            )
+
     return {
-        "total_shapes": len(filtered_shapes),
+        "total_shapes": len(final_shapes_with_contours),
         "shapes": final_shapes,
-        "output_directory": image_output_dir,
-        "classification_stats": classification_stats,
-        "debug_mask_path": debug_mask_path,
-        "metadata_path": metadata_path,
+        "normalized_features": normalized_features,
     }
+
+
+def create_normalized_geojson_features(
+    final_shapes_with_contours: List[Tuple[Dict, np.ndarray]],
+) -> List[Dict]:
+    """Create normalized GeoJSON features in memory without writing to file."""
+    geojson_features = []
+
+    for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
+        bbox = shape["bounding_box"]
+        x_min, y_min = bbox["x"], bbox["y"]
+        w, h = bbox["width"], bbox["height"]
+        if w == 0 or h == 0:
+            continue
+
+        normalized_coords = []
+        for pt in contour:
+            x_norm = (pt[0][0] - x_min) / w
+            y_norm = (pt[0][1] - y_min) / h
+            normalized_coords.append([x_norm, y_norm])
+
+        if len(normalized_coords) >= 3:
+            if normalized_coords[0] != normalized_coords[-1]:
+                normalized_coords.append(normalized_coords[0])
+
+        polygon = Polygon(normalized_coords)
+
+        minx, miny, maxx, maxy = polygon.bounds
+        width_norm = maxx - minx
+        height_norm = maxy - miny
+        max_dim = max(width_norm, height_norm)
+
+        if max_dim > 0:
+            scale = 1.0 / max_dim
+        else:
+            scale = 1.0
+
+        translated = affinity.translate(polygon, xoff=-minx, yoff=-miny)
+        scaled = affinity.scale(
+            translated,
+            xfact=scale,
+            yfact=scale,
+            origin=(0.0, 0.0),
+        )
+
+        width_scaled = width_norm * scale
+        height_scaled = height_norm * scale
+        offset_x = (1.0 - width_scaled) / 2.0
+        offset_y = (1.0 - height_scaled) / 2.0
+
+        normalized_geom = affinity.translate(
+            scaled,
+            xoff=offset_x,
+            yoff=offset_y,
+        )
+
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "shape_id": idx,
+                "area": shape["area"],
+                "perimeter": shape["perimeter"],
+                "aspect_ratio": shape["aspect_ratio"],
+                "solidity": shape["solidity"],
+                "extent": shape["extent"],
+                "num_vertices": shape["num_vertices"],
+                "mapElementType": "shape",
+                "name": f"Shape {idx}",
+                "is_normalized": True,
+                "start_date": "1700-01-01",
+                "end_date": "2026-01-01",
+            },
+            "geometry": normalized_geom.__geo_interface__,
+        }
+
+        geojson_features.append(feature)
+
+    feature_collection = {
+        "type": "FeatureCollection",
+        "features": geojson_features,
+    }
+
+    return [feature_collection]
+
+
+def export_shapes_to_normalized_geojson(
+    final_shapes_with_contours: List[Tuple[Dict, np.ndarray]],
+    image_output_dir: str,
+) -> str:
+    """Export shapes to normalized GeoJSON file on disk."""
+    features = create_normalized_geojson_features(final_shapes_with_contours)
+    geojson_path = os.path.join(image_output_dir, "shapes_normalized.geojson")
+    with open(geojson_path, "w", encoding="utf-8") as f:
+        json.dump(features[0], f, indent=2, ensure_ascii=False)
+    return geojson_path
 
 
 def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray:
@@ -158,9 +241,6 @@ def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray
         binary = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
         )
-
-    # kernel = np.ones((2, 2), np.uint8)
-    # binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
     return binary
 
@@ -295,104 +375,34 @@ def save_shape_image(
     return shape_path
 
 
-def classify_and_filter_shapes(
-    shapes: List[Dict], min_confidence: float = 0.6, image_area: int = None
-) -> Tuple[List[Dict], Dict]:
-    filtered_shapes = []
-    stats = {
-        "total_input": len(shapes),
-        "rejected_too_small": 0,
-        "rejected_noise": 0,
-        "rejected_artifacts": 0,
-        "classified_as": {
-            "point": 0,
-            "symbol": 0,
-            "arrow": 0,
-            "legend": 0,
-            "unknown": 0,
-        },
-    }
+def reconstruct_shapes_debug(
+    image: np.ndarray,
+    final_shapes_with_contours: List[Tuple[Dict, np.ndarray]],
+    output_dir: str,
+) -> Tuple[str, str]:
+    h, w = image.shape[:2]
 
-    for shape in shapes:
-        area = shape["area"]
-        aspect_ratio = shape["aspect_ratio"]
-        solidity = shape["solidity"]
-        extent = shape["extent"]
+    mask = np.zeros((h, w), dtype=np.uint8)
 
-        # Main filter: Highly elongated shapes are artifacts (stray lines)
-        if aspect_ratio > 15 or aspect_ratio < 0.06:
-            stats["rejected_artifacts"] += 1
-            continue
+    color_img = np.full((h, w, 3), 255, dtype=np.uint8)
 
-        # Low solidity shapes are likely noise (holes)
-        if solidity < 0.2:
-            stats["rejected_noise"] += 1
-            continue
+    for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
+        cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
 
-        # Classify shape based on morphology
-        classification, confidence = classify_shape_type(shape, image_area)
+        rng = np.random.RandomState(idx)
+        color = tuple(int(c) for c in rng.randint(50, 230, size=3))
+        cv2.drawContours(color_img, [contour], -1, color, thickness=cv2.FILLED)
 
-        # Lower confidence threshold for small, compact symbols
-        required_confidence = min_confidence
-        if area < 50 and extent > 0.7:
-            required_confidence = 0.5  # More tolerant for compact city symbols
+    mask_path = os.path.join(output_dir, "reconstructed_mask.png")
+    cv2.imwrite(mask_path, mask)
 
-        # FOR DEBUGGING: Remove this line to accept unknown shapes
-        # if classification == "unknown":
-        #     required_confidence = 0.0
+    overlay = image.copy()
+    colored_only = cv2.bitwise_and(color_img, color_img, mask=mask)
+    inv_mask = cv2.bitwise_not(mask)
+    background = cv2.bitwise_and(overlay, overlay, mask=inv_mask)
+    composed = cv2.addWeighted(background, 0.3, colored_only, 0.7, 0)
 
-        if confidence < required_confidence:
-            stats["rejected_noise"] += 1
-            continue
+    overlay_path = os.path.join(output_dir, "reconstructed_overlay.png")
+    cv2.imwrite(overlay_path, composed)
 
-        # Add classification info to shape
-        shape["type"] = classification
-        shape["confidence"] = confidence
-        filtered_shapes.append(shape)
-        stats["classified_as"][classification] += 1
-
-    return filtered_shapes, stats
-
-
-def classify_shape_type(shape: Dict, image_area: int = None) -> Tuple[str, float]:
-    area = shape["area"]
-    aspect_ratio = shape["aspect_ratio"]
-    solidity = shape["solidity"]
-    extent = shape["extent"]
-    num_vertices = shape["num_vertices"]
-
-    # Proportion of area relative to the whole image
-    relative_size = area / image_area if image_area else 0
-
-    # LEGEND: Rectangles/squares that cover a significant portion
-    # Criteria: reasonable aspect ratio, large relative size, regular shape
-    if (
-        relative_size > 0.01  # At least 5% of image
-        and 0.3 < aspect_ratio < 3.0  # Rectangle/square (not too elongated)
-        and solidity > 0.7
-        and extent > 0.6
-        and num_vertices <= 8
-    ):
-        if relative_size > 0.15:
-            return "legend", 0.9
-        else:
-            return "legend", 0.8
-
-    # POINT: Small, compact symbols
-    if area < 100 and extent > 0.75 and solidity > 0.8:
-        return "point", 0.9
-
-    # SYMBOL: Medium icons
-    if 100 <= area < 1000:
-        if extent > 0.6 and solidity > 0.7:
-            return "symbol", 0.8
-
-    # ARROW: Moderately elongated shapes
-    if 3 < aspect_ratio < 12 and solidity > 0.8 and extent > 0.5:
-        return "arrow", 0.7
-
-    # SECONDARY POINT: Small/medium compact symbols
-    if area < 200 and extent > 0.5:
-        return "point", 0.6
-
-    return "unknown", 0.4
+    return mask_path, overlay_path

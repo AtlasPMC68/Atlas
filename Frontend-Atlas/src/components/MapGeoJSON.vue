@@ -70,8 +70,8 @@ const featureLayerManager = {
     }
     this.layers.set(featureId, layer);
 
-    // Ajouter seulement si visible
-    if (props.featureVisibility.get(featureId)) {
+    const isVisible = props.featureVisibility.get(featureId) ?? true;
+    if (isVisible) {
       map.addLayer(layer);
     }
   },
@@ -303,6 +303,65 @@ function renderArrows(features) {
   });
 }
 
+function renderShapes(features) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
+      return;
+    }
+
+    const props = feature.properties || {};
+    let targetGeometry = feature.geometry;
+
+    // If the geometry is normalized ([0,1] space), project it onto the world
+    if (props.is_normalized) {
+      const fc = {
+        type: "FeatureCollection",
+        features: [feature],
+      };
+
+      const anchorLat = -80 + Math.random() * 160; // between -80 and 80
+      const anchorLng = -170 + Math.random() * 340; // between -170 and 170
+
+      // Use a medium size for shapes (smaller than zones)
+      const sizeMeters = 1_000_000;
+
+      const worldFc = transformNormalizedToWorld(
+        fc,
+        anchorLat,
+        anchorLng,
+        sizeMeters,
+      );
+
+      if (
+        worldFc &&
+        Array.isArray(worldFc.features) &&
+        worldFc.features[0]?.geometry
+      ) {
+        targetGeometry = worldFc.features[0].geometry;
+      }
+    }
+
+    const layer = L.geoJSON(targetGeometry, {
+      style: {
+        fillColor: "#3498db",
+        fillOpacity: 1,
+        color: "#3498db",
+        weight: 3,
+        opacity: 0.8,
+      },
+    });
+
+    const name = props.name || feature.name || "Detected shape";
+    if (name) {
+      layer.bindPopup(name);
+    }
+
+    featureLayerManager.addFeatureLayer(feature.id, layer);
+  });
+}
+
 function renderAllFeatures() {
   const currentFeatures = filteredFeatures.value;
   const currentIds = new Set(currentFeatures.map((f) => f.id));
@@ -328,6 +387,7 @@ function renderAllFeatures() {
   renderCities(featuresByType.point);
   renderZones(featuresByType.polygon);
   renderArrows(featuresByType.arrow);
+  renderShapes(featuresByType.shape);
 
   previousFeatureIds.value = currentIds;
 
