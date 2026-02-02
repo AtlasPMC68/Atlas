@@ -7,11 +7,15 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+
 def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False) -> tuple[list, np.ndarray]:
     """
     Wrapper method handling the text extraction logic. This is mainly to reduce
-    the memory overhead as this method is very much resource intensive, and it is
-    possible that multiple of these run in parallel.
+    the memory overhead as this method is very much resource intensive, and to
+    abstract most of the logic.
+
+    It is possible, but not recommended to use the methods under the TextExtraction
+    class.
 
     :param image: Numpy image array of bytes.
     :param image_name: Name of the image file.
@@ -21,10 +25,10 @@ def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False)
         array of the image, devoid of text.
     """
     logger.debug("Initiating text extraction")
-    extractor = TextExtraction(img=image,lang=languages, gpu_acc=gpu_acc)
+    extractor = TextExtraction(img=image, lang=languages, gpu_acc=gpu_acc)
     extractor.check_language_code_validity()
 
-    text_info =  extractor.read_text_from_image()
+    text_info = extractor.read_text_from_image()
     #TODO : image cleaning, just send a copy for now
     #clean_image = extractor.remove_text_from_image(image, text_info)
     clean_image = copy.deepcopy(image)
@@ -33,7 +37,6 @@ def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False)
     return text_info, clean_image
 
 class TextExtraction:
-
     # Static class variables
     LANGUAGE_CODES_HASHMAP = {
         "Abaza": "abq", "Adyghe": "ady", "Afrikaans": "af", "Angika": "ang", "Arabic": "ar", "Assamese": "as",
@@ -71,12 +74,12 @@ class TextExtraction:
 
     # Class members
     def __init__(self, img, lang: list[str] = ['en', 'fr'], gpu_acc: bool = False):
-        self.image      : np.ndarray    = img
-        self.lang       : list[str]     = list(lang)
-        self.gpu_acc    : bool          = gpu_acc
+        self.image: np.ndarray = img
+        self.lang: list[str] = list(lang)
+        self.gpu_acc: bool = gpu_acc
 
     # Class methods
-    def read_text_from_image(self, scale_xy: tuple[float, float] = (2.0,2.0)):
+    def read_text_from_image(self, scale_xy: tuple[float, float] = (2.0, 2.0)):
 
         reader = easyocr.Reader(
             lang_list=list(self.lang),
@@ -89,11 +92,11 @@ class TextExtraction:
         upscaling = cv2.resize(shading, None, fx=scale_xy[0], fy=scale_xy[1], interpolation=cv2.INTER_LANCZOS4)
 
         extracted_text = reader.readtext(upscaling,
-                                  text_threshold=0.7,  # Slightly higher threshold
-                                  low_text=0.4,  # low res text detection
-                                  link_threshold=0.4,  # character linking tolerance
-                                  width_ths=0.7,  # character  spacing tolerance
-                                  height_ths=0.7)
+                                         text_threshold=0.7,  # Slightly higher threshold
+                                         low_text=0.4,  # low res text detection
+                                         link_threshold=0.4,  # character linking tolerance
+                                         width_ths=0.7,  # character  spacing tolerance
+                                         height_ths=0.7)
 
         scaled_extracted_text = []
         for (coords, text, prob) in extracted_text:
@@ -110,7 +113,6 @@ class TextExtraction:
 
         return scaled_extracted_text
 
-
     def remove_text_from_image(self, text_info: list):
 
         image_no_text: np.ndarray = copy.deepcopy(self.image)
@@ -122,7 +124,6 @@ class TextExtraction:
 
         # Results and drawing bounding boxes
         for bbox, text, conf in scaled_extracted_text:
-
             # Convert to numpy array for cv2.polylines
             boxes = np.array(image_with_boxes, dtype=np.int32)
 
