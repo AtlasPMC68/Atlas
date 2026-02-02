@@ -3,14 +3,12 @@
     <h3 class="text-lg font-semibold">Aperçu de la carte</h3>
 
     <div class="bg-base-200 rounded-lg p-6 flex flex-col items-center">
-      <!-- Aperçu de l'image -->
       <img
         :src="imageUrl"
         :alt="imageFile?.name || 'Carte importée'"
         class="max-h-96 w-auto object-contain rounded shadow"
       />
 
-      <!-- Nom et taille du fichier -->
       <div class="text-sm text-base-content/60 mt-4 text-center">
         {{ imageFile.name }} – {{ formatFileSize(imageFile.size) }}
       </div>
@@ -32,7 +30,6 @@ const props = defineProps({
   },
 });
 
-// Format taille du fichier (ex: "234.56 KB")
 const formatFileSize = (bytes) => {
   if (!bytes) return "0 B";
   const k = 1024;

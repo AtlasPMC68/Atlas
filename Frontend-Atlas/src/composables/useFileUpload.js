@@ -9,7 +9,6 @@ export function useFileUpload() {
   const handleFileSelected = (file) => {
     selectedFile.value = file;
 
-    // Créer l'URL de prévisualisation
     if (previewUrl.value) {
       URL.revokeObjectURL(previewUrl.value);
     }

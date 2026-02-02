@@ -18,15 +18,18 @@ export function useImportProcess() {
     processingStep.value = "upload";
     processingProgress.value = 0;
 
-    // Upload fichier → POST /maps/upload
+    // Upload file → POST /maps/upload
     const formData = new FormData();
     formData.append("file", file);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/maps/upload`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
       if (!response.ok) {
         const error = await response.json();
@@ -39,11 +42,11 @@ export function useImportProcess() {
       if (!taskId.value) {
         throw new Error("taskId is null");
       }
-      // Démarre le polling
+      // start polling
       pollStatus(taskId.value);
 
-      return { 
-        success: true
+      return {
+        success: true,
       };
     } catch (err: any) {
       isProcessing.value = false;
@@ -63,7 +66,9 @@ export function useImportProcess() {
   const pollStatus = (taskId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/status/${taskId}`);
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/maps/status/${taskId}`,
+        );
         const data = await res.json();
         console.log("[Polling]", data);
         processingProgress.value = data.progress_percentage || 0;
@@ -108,6 +113,6 @@ export function useImportProcess() {
     resultData,
     startImport,
     cancelImport,
-    mapId: mapId
+    mapId,
   };
 }

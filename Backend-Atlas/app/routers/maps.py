@@ -28,7 +28,6 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 
-# Tailles et types de fichiers autorisés
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
@@ -36,17 +35,14 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)):
     """Upload une carte et lance l'extraction de données"""
     
-    # Validation du type de fichier
+    # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400, 
             detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
         )
-    
-    # Lire le contenu du fichier
     file_content = await file.read()
     
-    # Validation de la taille
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -65,7 +61,7 @@ async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSes
             description=None,
             is_private=True,
         )
-        # Lancer la tâche Celery (pass map_id as string for JSON serialization)
+        # Launch the Celery task (pass map_id as string for JSON serialization)
         task = process_map_extraction.delay(file.filename, file_content, str(map_id))
         #TODO: either delete the created map if task fails or create cleanup mechanism
         
@@ -146,7 +142,7 @@ async def get_features(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    # Récupérer les features avec leur géométrie et propriétés
+    # Retrieve features with their geometry and properties
     result = await session.execute(
         select(Feature.id, Feature.properties, Feature.created_at, ST_AsGeoJSON(Feature.geometry).label('geometry_json'))
         .where(Feature.map_id == map_uuid)
@@ -157,7 +153,6 @@ async def get_features(
     for row in features_rows:
         geometry_json = json.loads(row.geometry_json)
         
-        # Construire la feature GeoJSON
         geojson_feature = {
             "type": "Feature",
             "id": str(row.id),

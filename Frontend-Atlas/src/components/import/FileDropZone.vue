@@ -45,7 +45,6 @@
       </div>
     </div>
 
-    <!-- Messages d'erreur -->
     <div v-if="error" class="alert alert-error mt-4">
       <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
         <path
@@ -71,13 +70,11 @@ const props = defineProps({
 
 const emit = defineEmits(["file-selected"]);
 
-// État local
 const dropZone = ref(null);
 const fileInput = ref(null);
 const isDragOver = ref(false);
 const error = ref("");
 
-// Classes dynamiques
 const dropZoneClasses = computed(() => ({
   "border-primary bg-primary/10": isDragOver.value,
   "border-base-300 bg-base-50 hover:border-primary/50 hover:bg-primary/5":
@@ -86,13 +83,11 @@ const dropZoneClasses = computed(() => ({
   "cursor-pointer": !props.isLoading,
 }));
 
-// Gestionnaires d'événements
 const onDragOver = (e) => {
   isDragOver.value = true;
 };
 
 const onDragLeave = (e) => {
-  // Vérifier si on sort vraiment de la zone
   if (!dropZone.value.contains(e.relatedTarget)) {
     isDragOver.value = false;
   }
@@ -123,7 +118,6 @@ const onFileSelect = (e) => {
 const handleFile = (file) => {
   error.value = "";
 
-  // Validation du fichier
   if (!file.type.startsWith("image/")) {
     error.value = "Veuillez sélectionner une image valide";
     return;

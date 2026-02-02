@@ -41,7 +41,6 @@ const emit = defineEmits(["update:year"]);
 const internalYear = ref(props.year || props.min);
 const inputValue = ref(String(internalYear.value));
 
-// Met à jour input si le parent change
 watch(
   () => props.year,
   (val) => {
