@@ -22,11 +22,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch } from "vue";
 
 const props = defineProps({
-  year: Number,
+  year: { type: Number, default: new Date().getFullYear() },
   min: {
     type: Number,
     default: 1400,

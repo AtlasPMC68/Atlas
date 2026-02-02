@@ -96,10 +96,10 @@ const {
   mapId,
 } = useImportProcess();
 
-// État local
+// Local state
 const currentStep = ref(1);
 
-// Gestionnaires d'événements
+// Event handlers
 const handleFileSelected = (file) => {
   onFileSelected(file);
   currentStep.value = 2;
@@ -117,14 +117,11 @@ async function startImportProcess() {
 }
 
 // Redirect when extraction is finished
-watch(
-  [isProcessing, resultData, mapId],
-  ([processing, result, id]) => {
-    if (!processing && result && id) {
-      router.push(`/maps/${id}`);
-    }
+watch([isProcessing, resultData, mapId], ([processing, result, id]) => {
+  if (!processing && result && id) {
+    router.push(`/maps/${id}`);
   }
-);
+});
 
 const resetImport = () => {
   currentStep.value = 1;

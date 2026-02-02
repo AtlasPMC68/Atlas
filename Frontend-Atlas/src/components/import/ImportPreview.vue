@@ -16,9 +16,7 @@
   </div>
 </template>
 
-<script setup>
-import { defineProps } from "vue";
-
+<script setup lang="ts">
 const props = defineProps({
   imageFile: {
     type: File,
@@ -30,7 +28,7 @@ const props = defineProps({
   },
 });
 
-const formatFileSize = (bytes) => {
+const formatFileSize = (bytes: number) => {
   if (!bytes) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];

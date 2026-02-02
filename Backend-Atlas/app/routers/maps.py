@@ -189,25 +189,12 @@ async def get_maps(
 
     return maps
 
-# TODO refactor this endpoint
+# TODO real save on that endpoint
 @router.post("/save")
-async def create_map(
+async def save_map(
     request: MapCreateRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    user_id = UUID(user["sid"])
-
-    new_map = Map(
-        user_id=user_id,
-        base_layer_id=UUID("00000000-0000-0000-0000-000000000100"),
-        title=request.title,
-        description=request.description,
-        is_private=request.is_private,
-        start_date=date(1400, 1, 1),
-        end_date=date.today(),
-    )
-    db.add(new_map)
-    db.commit()
-    db.refresh(new_map)
-    return {"id": new_map.id}
+    id = UUID(request.id)
+    return {"id": id}

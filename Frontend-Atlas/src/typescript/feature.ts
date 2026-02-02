@@ -10,10 +10,8 @@ export interface Feature {
 }
 
 export interface FeatureProperties {
-  properties?: {
-    name?: string;
-    color?: string;
-    visible?: boolean;
-    [key: string]: any;
-  };
+  name?: string;
+  color?: string;
+  visible?: boolean;
+  [key: string]: any;
 }
