@@ -3,14 +3,17 @@ import { ref, onMounted } from "vue";
 import { PencilSquareIcon } from "@heroicons/vue/24/solid";
 import { useRouter } from "vue-router";
 import keycloak from "../keycloak";
+import { User } from "../typescript/user";
+import { snakeToCamel } from "../utils/utils";
 
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
 
-const user = ref({
+const user = ref<User>({
+  id: "",
+  username: "",
   email: "",
   createdAt: "",
-  username: "",
 });
 
 onMounted(async () => {
@@ -24,10 +27,10 @@ onMounted(async () => {
       },
     });
     if (!res.ok) throw new Error("Error fetching user data");
-    const data = await res.json();
-    user.value.email = data.email;
-    user.value.createdAt = data.created_at;
-    user.value.username = data.username;
+    const userData: User = await snakeToCamel(await res.json());
+    user.value.email = userData.email;
+    user.value.createdAt = userData.createdAt;
+    user.value.username = userData.username;
   } catch (err) {
     console.error(err);
   }

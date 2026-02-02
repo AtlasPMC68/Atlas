@@ -1,13 +1,11 @@
--- Exemple d'utilisateur (owner)
 INSERT INTO users (
   id, username, email
 ) VALUES (
   '00000000-0000-0000-0000-000000000001',
   'AtlasAdmin',
-  'admin@atlas.ca',
+  'admin@atlas.ca'
 );
 
--- Exemple de base_layer
 INSERT INTO base_layers (
   id, name, tile_url
 ) VALUES (
@@ -16,114 +14,52 @@ INSERT INTO base_layers (
   'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
 );
 
--- Insertion d'une carte
 INSERT INTO maps (
-  id, owner_id, base_layer_id, title, description, access_level,
-  start_date, end_date, precision
+  id, user_id, base_layer_id, title, description, is_private,
+  start_date, end_date
 ) VALUES (
   '11111111-1111-1111-1111-111111111111',
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000100',
   'Carte historique du Québec',
-  'Carte illustrant l’évolution du territoire québécois.',
-  'public',
+  'Carte illustrant l''évolution du territoire québécois.',
+  false,
   '1600-01-01',
-  '1900-01-01',
-  'approximate'
+  '1900-01-01'
 );
 
-
--- Ville de Québec (point)
-INSERT INTO features (id, map_id, is_feature_collection, data)
+INSERT INTO features (id, map_id, geometry)
 VALUES (
   '22222222-2222-2222-2222-222222222222',
   '11111111-1111-1111-1111-111111111111',
-  FALSE,
-  '{
-    "type": "FeatureCollection",
-    "features": [
-      {
-        "type": "Feature",
-        "properties": {
-          "name": "Ville de Québec",
-          "mapElementType": "point", 
-          "color_name": "blue",
-          "color_rgb": [0, 0, 255],
-          "start_date": "1608-01-01",
-          "end_date": "2025-01-01"
-        },
-        "geometry": {
-          "type": "Point",
-          "coordinates": [-71.2080, 46.8139]
-        }
-      }
-    ]
-  }'
+  ST_GeomFromText('POINT(-71.2080 46.8139)', 4326)
 );
  
--- Zone de Montréal (polygon)
-INSERT INTO features (id, map_id, is_feature_collection, data)
+INSERT INTO features (id, map_id, geometry)
 VALUES (
   '33333333-3333-3333-3333-333333333333',
   '11111111-1111-1111-1111-111111111111',
-  FALSE,
-  '{
-    "type": "FeatureCollection",
-    "features": [
-      {
-        "type": "Feature",
-        "properties": {
-          "name": "Zone de Montréal",
-          "mapElementType": "zone",
-          "color_name": "green",
-          "color_rgb": [0, 255, 0],
-          "start_date": "1700-01-01",
-          "end_date": "2025-01-01"
-        },
-        "geometry": {
-          "type": "Polygon",
-          "coordinates": [
-            [
-              [-73.6, 45.5],
-              [-73.6, 45.6],
-              [-73.5, 45.6],
-              [-73.5, 45.5],
-              [-73.6, 45.5]
-            ]
-          ]
-        }
-      }
-    ]
-  }'
+  ST_GeomFromText('POLYGON((-73.6 45.5, -73.6 45.6, -73.5 45.6, -73.5 45.5, -73.6 45.5))', 4326)
 );
 
--- Flèche Montréal → Québec (arrow)
-INSERT INTO features (id, map_id, is_feature_collection, data)
+INSERT INTO features (id, map_id, geometry)
 VALUES (
   '44444444-4444-4444-4444-444444444444',
   '11111111-1111-1111-1111-111111111111',
-  FALSE,
+  ST_GeomFromText('LINESTRING(-73.5673 45.5017, -71.2080 46.8139)', 4326)
+);
+
+INSERT INTO features (map_id, geometry, properties) VALUES (
+  '11111111-1111-1111-1111-111111111111',
+  ST_GeomFromText('POINT(-71.2080 46.8139)', 4326),
   '{
-    "type": "FeatureCollection",
-    "features": [
-      {
-        "type": "Feature",
-        "properties": {
-          "name": "Flèche Montréal → Québec",
-          "mapElementType": "arrow",
-          "color_name": "red",
-          "color_rgb": [255, 0, 0],
-          "start_date": "1800-01-01",
-          "end_date": "2025-01-01"
-        },
-        "geometry": {
-          "type": "LineString",
-          "coordinates": [
-            [-73.5673, 45.5017],
-            [-71.2080, 46.8139]
-          ]
-        }
-      }
-    ]
-  }'
+    "name": "Ville de Québec",
+    "color": "#ff5733",
+    "stroke_width": 3,
+    "opacity": 0.8,
+    "start_date": "1608-01-01",
+    "end_date": "1760-01-01",
+    "population": 70000,
+    "visible": true
+  }'::json
 );

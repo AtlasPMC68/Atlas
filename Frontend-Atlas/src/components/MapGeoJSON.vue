@@ -58,7 +58,6 @@ onMounted(() => {
 
   // uncomment when link to db is done
   // loadTestNormalizedShape();
-
 });
 
 // Gestionnaire de layers par feature
@@ -97,9 +96,11 @@ const featureLayerManager = {
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature) =>
-      new Date(feature.start_date).getFullYear() <= selectedYear.value &&
-      (!feature.end_date ||
-        new Date(feature.end_date).getFullYear() >= selectedYear.value),
+      new Date(feature.properties.start_date).getFullYear() <=
+        selectedYear.value &&
+      (!feature.properties.end_date ||
+        new Date(feature.properties.end_date).getFullYear() >=
+          selectedYear.value),
   );
 });
 
@@ -169,24 +170,22 @@ function renderCities(features) {
     const props = feature.properties || {};
     const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
     const colorFromRgb =
-      rgb && rgb.length === 3
-        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
-        : null;
-    const color = feature.color || colorFromRgb || "#000";
+      rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
+    const color = props.color || colorFromRgb || "#000";
 
     const point = L.circleMarker(coord, {
       radius: 6,
       fillColor: color,
       color,
       weight: 1,
-      opacity: feature.opacity ?? 1,
-      fillOpacity: feature.opacity ?? 1,
+      opacity: props.opacity ?? 1,
+      fillOpacity: props.opacity ?? 1,
     });
 
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: props.name || feature.name || "",
+        html: props.name || "",
         iconSize: [100, 20],
         iconAnchor: [-8, 15],
       }),
@@ -209,9 +208,7 @@ function renderZones(features) {
     const props = feature.properties || {};
     const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
     const colorFromRgb =
-      rgb && rgb.length === 3
-        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
-        : null;
+      rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
     const fillColor = feature.color || colorFromRgb || "#ccc";
     let targetGeometry = feature.geometry;
 
@@ -254,7 +251,7 @@ function renderZones(features) {
       },
     });
 
-    const name = props.name || feature.name;
+    const name = props.name || "";
     if (name) {
       layer.bindPopup(name);
     }
@@ -279,15 +276,13 @@ function renderArrows(features) {
     const props = feature.properties || {};
     const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
     const colorFromRgb =
-      rgb && rgb.length === 3
-        ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
-        : null;
-    const color = feature.color || colorFromRgb || "#000";
+      rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
+    const color = props.color || colorFromRgb || "#000";
 
     const line = L.polyline(latLngs, {
       color,
-      weight: feature.stroke_width ?? 2,
-      opacity: feature.opacity ?? 1,
+      weight: props.stroke_width ?? 2,
+      opacity: props.opacity ?? 1,
     });
 
     line.addTo(map);
@@ -299,7 +294,7 @@ function renderArrows(features) {
       fill: true,
     });
 
-    const name = props.name || feature.name;
+    const name = props.name || "";
     if (name) {
       line.bindPopup(name);
     }
@@ -325,15 +320,9 @@ function renderAllFeatures() {
 
   const newFeatures = currentFeatures.filter((f) => !previousIds.has(f.id));
   const featuresByType = {
-    point: newFeatures.filter(
-      (f) => f.properties?.mapElementType === "point",
-    ),
-    polygon: newFeatures.filter(
-      (f) => f.properties?.mapElementType === "zone",
-    ),
-    arrow: newFeatures.filter(
-      (f) => f.properties?.mapElementType === "arrow",
-    ),
+    point: newFeatures.filter((f) => f.geometry?.type === "Point"),
+    polygon: newFeatures.filter((f) => f.geometry?.type === "Polygon"),
+    arrow: newFeatures.filter((f) => f.geometry?.type === "LineString"),
   };
 
   renderCities(featuresByType.point);
@@ -435,7 +424,7 @@ watch(selectedYear, (newYear) => {
 
 watch(
   () => props.features,
-  () => {
+  (newFeatures) => {
     renderAllFeatures();
   },
   { deep: true },

@@ -1,4 +1,6 @@
+import json
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from sqlalchemy import text
 from ..tasks import process_map_extraction
 from ..celery_app import celery_app
 from fastapi import Depends, APIRouter
@@ -16,6 +18,8 @@ from app.schemas.mapCreateRequest import MapCreateRequest
 from uuid import UUID
 from ..utils.auth import get_current_user
 from app.services.maps import create_map_in_db
+from geoalchemy2.functions import ST_AsGeoJSON
+
 
 router = APIRouter()
 
@@ -56,10 +60,10 @@ async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSes
         map_id = await create_map_in_db(
             db=session,
             #TODO: replace with real owner
-            owner_id=UUID("00000000-0000-0000-0000-000000000001"),
+            user_id=UUID("00000000-0000-0000-0000-000000000001"),
             title=file.filename,
             description=None,
-            access_level="private",
+            is_private=True,
         )
         # Lancer la tâche Celery (pass map_id as string for JSON serialization)
         task = process_map_extraction.delay(file.filename, file_content, str(map_id))
@@ -142,24 +146,32 @@ async def get_features(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    result = await session.execute(select(Feature).where(Feature.map_id == map_uuid))
-    features_rows = result.scalars().all()
+    # Récupérer les features avec leur géométrie et propriétés
+    result = await session.execute(
+        select(Feature.id, Feature.properties, Feature.created_at, ST_AsGeoJSON(Feature.geometry).label('geometry_json'))
+        .where(Feature.map_id == map_uuid)
+    )
+    features_rows = result.all()
 
-    all_features = []
-    for f in features_rows:
-        for feature in f.data.get("features", []):
-            feature["id"] = str(f.id)
+    geojson_features = []
+    for row in features_rows:
+        geometry_json = json.loads(row.geometry_json)
+        
+        # Construire la feature GeoJSON
+        geojson_feature = {
+            "type": "Feature",
+            "id": str(row.id),
+            "geometry": geometry_json,
+            "properties": {
+                **(row.properties or {}),
+                "start_date": row.properties.get("start_date") if row.properties else None,
+                "end_date": row.properties.get("end_date") if row.properties else None,
+            }
+        }
+        
+        geojson_features.append(geojson_feature)
 
-            props = feature.get("properties", {})
-            start_date = props.get("start_date")  
-            end_date = props.get("end_date")      
-
-            feature["start_date"] = start_date
-            feature["end_date"] = end_date
-
-            all_features.append(feature)
-
-    return all_features
+    return geojson_features
 
 @router.get("/map", response_model=list[MapOut])
 async def get_maps(
@@ -170,37 +182,35 @@ async def get_maps(
 
     if user_id:
         try:
-            owner_uuid = UUID(user_id)
-            query = select(Map).where(Map.owner_id == owner_uuid)
+            user_uuid = UUID(user_id)
+            query = select(Map).where(Map.user_id == user_uuid)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid user_id format")
     else:
-        query = select(Map).where(Map.access_level == "public")
+        query = select(Map).where(Map.is_private == False)
 
     result = await session.execute(query)
     maps = result.scalars().all()
 
     return maps
 
+# TODO refactor this endpoint
 @router.post("/save")
 async def create_map(
     request: MapCreateRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    owner_id = UUID(user["sid"])
+    user_id = UUID(user["sid"])
 
     new_map = Map(
-        owner_id,
+        user_id=user_id,
         base_layer_id=UUID("00000000-0000-0000-0000-000000000100"),
         title=request.title,
         description=request.description,
-        access_level=request.access_level,
+        is_private=request.is_private,
         start_date=date(1400, 1, 1),
         end_date=date.today(),
-        style_id="light",
-        parent_map_id=None,
-        precision=None
     )
     db.add(new_map)
     db.commit()
