@@ -19,6 +19,8 @@ from ..utils.auth import get_current_user
 from app.services.maps import create_map_in_db
 import json
 from app.utils.sift_key_points_finder import find_key_points
+from app.utils.sift_key_points_finder import find_coastline_keypoints
+
 
 router = APIRouter()
 
@@ -31,62 +33,19 @@ router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
-
-@router.post("/sift")
-async def extract_sift_keypoints(
-    file: UploadFile = File(...),
-):
-    """Return SIFT keypoints (pixel coords) for an uploaded image.
-
-    Request: multipart/form-data with `file`.
-    Response: { image: {width,height}, count, keypoints: [{x,y,...}, ...] }
-    """
-
-    if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
-
-    file_content = await file.read()
-
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB",
-        )
-
-    if len(file_content) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-
-    # try:
-    #     return extract_sift_keypoints_from_image_bytes(
-    #         file_content,
-    #         max_features=max_features,
-    #     )
-    # except ValueError as e:
-    #     raise HTTPException(status_code=400, detail=str(e))
-    # except RuntimeError as e:
-    #     raise HTTPException(status_code=501, detail=str(e))
-    # except Exception:
-    #     logger.exception("Unexpected error extracting SIFT keypoints")
-    #     raise HTTPException(status_code=500, detail="Failed to extract SIFT keypoints")
-
 @router.post("/upload")
 async def upload_and_process_map(
-    image_polyline: str | None = Form(None),
-    world_polyline: str  | None = Form(None),
-    image_point: str | None = Form(None),
-    world_point: str  | None = Form(None),
+    image_points: str | None = Form(None),
+    world_points: str | None = Form(None),
+    use_tps: bool = Form(False),
     file: UploadFile = File(...), 
     session: AsyncSession = Depends(get_async_session),
 ):
     
-    logger.debug(f"Logger debug camarche tu")
-    logger.info(f"image polyline for the pixels{image_polyline}")
-    logger.info(f"world polyline for the coordinates{world_polyline}")
-    logger.info(f"image point for the pixels{image_point}")
-    logger.info(f"world point for the coordinates{world_point}")
+    logger.debug(f"Starting map upload with SIFT points")
+    logger.info(f"Image points (pixels): {image_points}")
+    logger.info(f"World points (coordinates): {world_points}")
+    logger.info(f"Use TPS transformation: {use_tps}")
     
     """Upload une carte et lance l'extraction de données"""
     
@@ -97,31 +56,22 @@ async def upload_and_process_map(
             detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
         )
     
-    pixel_control_polyline = None
-    geo_control_polyline = None
-    pixel_control_points = None
-    geo_control_points = None
+    pixel_points_list = None
+    geo_points_list = None
     
-    # Parse polyline (list of points)
-    if image_polyline and world_polyline:
-        img_points = json.loads(image_polyline)      # list of {"x":..,"y":..}
-        world_points = json.loads(world_polyline)    # list of {"lat":..,"lng":..}
+    # Parse matched point pairs for SIFT georeferencing
+    if image_points and world_points:
+        img_pts = json.loads(image_points)      # list of {"x":..,"y":..}
+        world_pts = json.loads(world_points)    # list of {"lat":..,"lng":..}
 
-        pixel_control_polyline = [
-            (float(p["x"]), float(p["y"])) for p in img_points
+        pixel_points_list = [
+            (float(p["x"]), float(p["y"])) for p in img_pts
         ]
-        geo_control_polyline = [
-            (float(p["lng"]), float(p["lat"])) for p in world_points
+        geo_points_list = [
+            (float(p["lng"]), float(p["lat"])) for p in world_pts
         ]
-
-    # Parse single point (not in a list)
-    if image_point and world_point:
-        img_point = json.loads(image_point)          # single {"x":..,"y":..}
-        world_pt = json.loads(world_point)           # single {"lat":..,"lng":..}
-
-        # Wrap in list for consistency with function signature
-        pixel_control_points = [(float(img_point["x"]), float(img_point["y"]))]
-        geo_control_points = [(float(world_pt["lng"]), float(world_pt["lat"]))]
+        
+        logger.info(f"Parsed {len(pixel_points_list)} matched point pairs")
     
     # Lire le contenu du fichier
     file_content = await file.read()
@@ -147,27 +97,26 @@ async def upload_and_process_map(
             description=None,
             access_level="private",
         )
-#         # Lancer la tâche Celery (pass map_id as string for JSON serialization)
-#         task = process_map_extraction.delay(
-#             file.filename, 
-#             file_content, 
-#             str(map_id),
-#             pixel_control_polyline,
-#             geo_control_polyline,
-#             pixel_control_points,
-#             geo_control_points
-#         )
-#         #TODO: either delete the created map if task fails or create cleanup mechanism
+        # Lancer la tâche Celery (pass map_id as string for JSON serialization)
+        task = process_map_extraction.delay(
+            file.filename, 
+            file_content, 
+            str(map_id),
+            pixel_points_list,
+            geo_points_list,
+            use_tps
+        )
+        #TODO: either delete the created map if task fails or create cleanup mechanism
         
 #         logger.info(f"Map processing task started: {task.id} for file {file.filename}")
         
-#         return {
-#             "task_id": task.id,
-#             "filename": file.filename,
-#             "status": "processing_started",
-#             "message": f"Map upload successful. Processing started for {file.filename}",
-#             "map_id": str(map_id)
-#         }
+        return {
+            "task_id": task.id,
+            "filename": file.filename,
+            "status": "processing_started",
+            "message": f"Map upload successful. Processing started for {file.filename}",
+            "map_id": str(map_id)
+        }
         
     except Exception as e:
         logger.error(f"Error starting map processing: {str(e)}")
@@ -311,9 +260,7 @@ async def get_coastline_keypoints(
     height: int = Form(768)
 ):
     """Find SIFT keypoints on coastlines within geographic bounds."""
-    try:
-        from app.utils.sift_key_points_finder import find_coastline_keypoints
-        
+    try:        
         bounds = {"west": west, "south": south, "east": east, "north": north}
         result = find_coastline_keypoints(bounds, width, height)
         
