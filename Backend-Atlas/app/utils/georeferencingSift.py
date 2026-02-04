@@ -341,28 +341,22 @@ def georeference_features_with_sift_points(
     pixel_feature_collections: List[Dict[str, Any]],
     pixel_points: List[XY],
     geo_points_lonlat: List[LonLat],
-    use_tps: bool = False,
-    use_homography: bool = True,
     use_ransac: bool = True,
 ) -> List[Dict[str, Any]]:
     """Georeference pixel-space features using SIFT-matched point pairs.
     
     This function transforms feature collections from pixel coordinates to
-    geographic coordinates (EPSG:4326) using homography, affine, or TPS transformation.
+    geographic coordinates (EPSG:4326) using TPS or affine transformation.
     
-    Recommended configurations:
-    - 4-6 SIFT points: use_homography=True, use_ransac=True (default)
-    - 3 SIFT points: use_homography=False (affine only)
-    - 7+ SIFT points with high distortion: use_tps=True
+    Automatic method selection:
+    - 5+ SIFT points: Thin-Plate Spline (TPS) - handles non-linear distortion, best for maps
+    - 3-4 SIFT points: Affine transformation - simpler, linear transformation
     
     Args:
         pixel_feature_collections: List of GeoJSON FeatureCollections in pixel space
         pixel_points: List of (x, y) pixel coordinates from SIFT matching
         geo_points_lonlat: List of (lon, lat) geographic coordinates from SIFT matching
-        use_tps: If True, use Thin-Plate Spline (handles non-linear distortion, 7+ points)
-        use_homography: If True, use homography (8 DOF, handles perspective, 4+ points).
-                       If False, use affine (6 DOF, simpler, 3+ points)
-        use_ransac: If True, automatically filter outliers with RANSAC
+        use_ransac: If True, automatically filter outliers with RANSAC (affine only)
     
     Returns:
         List of georeferenced FeatureCollections in EPSG:4326
@@ -382,44 +376,37 @@ def georeference_features_with_sift_points(
         if geo_points_lonlat and isinstance(geo_points_lonlat[0], dict):
             raise TypeError(f"geo_points_lonlat contains dicts, expected (lon, lat) tuples: {geo_points_lonlat[0]}")
 
-        # Choose transformation method
-        transform_method = "TPS" if use_tps else ("homography" if use_homography else "affine")
-        logger.info(
-            f"Georeferencing {len(pixel_feature_collections)} feature collections "
-            f"using {len(pixel_points)} point pairs with {transform_method} transform"
-        )
+        # Auto-select transformation method based on point count
+        # TPS is preferred for maps as it handles non-linear distortions better
+        num_points = len(pixel_points)
         
-        # Build transformation
-        if use_tps:
-            if len(pixel_points) < 7:
-                logger.warning(
-                    f"Only {len(pixel_points)} points provided. "
-                    f"TPS works better with 7+ points. Consider using homography/affine instead."
-                )
+        if num_points >= 5:
+            # Use TPS for 5+ points - better for historical maps with distortion
+            transform_method = "TPS"
+            logger.info(
+                f"Using TPS transformation for {num_points} point pairs "
+                f"(handles non-linear map distortions)"
+            )
             tps = build_tps_from_point_pairs(pixel_points, geo_points_lonlat)
             transform_func = tps
             transform_result = None
         else:
-            # Use homography (better for perspective) or affine
-            if use_homography and len(pixel_points) >= 4:
-                transform_result = build_homography_from_point_pairs(
-                    pixel_points, 
-                    geo_points_lonlat,
-                    use_ransac=use_ransac
-                )
-            else:
-                if use_homography and len(pixel_points) < 4:
-                    logger.warning(f"Only {len(pixel_points)} points - falling back to affine")
-                transform_result = build_affine_from_point_pairs(
-                    pixel_points,
-                    geo_points_lonlat,
-                    use_ransac=use_ransac
-                )
+            # Use affine for 3-4 points
+            transform_method = "affine"
+            logger.info(
+                f"Using affine transformation for {num_points} point pairs "
+                f"(need 5+ points for TPS)"
+            )
+            transform_result = build_affine_from_point_pairs(
+                pixel_points,
+                geo_points_lonlat,
+                use_ransac=use_ransac
+            )
             
             transformation_matrix = transform_result.matrix
             
             def matrix_transform(x, y):
-                """Apply transformation matrix: pixel coords -> WebMercator"""
+                """Apply affine transformation: pixel coords -> WebMercator"""
                 x_arr = np.asarray(x, dtype=float).ravel()
                 y_arr = np.asarray(y, dtype=float).ravel()
                 
@@ -427,13 +414,8 @@ def georeference_features_with_sift_points(
                 pts = np.vstack([x_arr, y_arr, np.ones_like(x_arr)])
                 transformed = transformation_matrix @ pts
                 
-                # For homography, divide by w coordinate
-                if transform_result.transform_type == "homography":
-                    X = transformed[0, :] / transformed[2, :]
-                    Y = transformed[1, :] / transformed[2, :]
-                else:
-                    X = transformed[0, :]
-                    Y = transformed[1, :]
+                X = transformed[0, :]
+                Y = transformed[1, :]
                 
                 return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape)
             
