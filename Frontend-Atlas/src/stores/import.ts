@@ -1,18 +1,25 @@
 import { defineStore } from "pinia";
 
+export interface ImportData {
+  id?: string;
+  name?: string;
+  timestamp?: string;
+  [key: string]: unknown;
+}
+
 export const useImportStore = defineStore("import", {
   state: () => ({
-    currentImport: null,
-    importHistory: [],
+    currentImport: null as ImportData | null,
+    importHistory: [] as ImportData[],
     isImporting: false,
   }),
 
   actions: {
-    setCurrentImport(importData) {
+    setCurrentImport(importData: ImportData) {
       this.currentImport = importData;
     },
 
-    addToHistory(importData) {
+    addToHistory(importData: ImportData) {
       this.importHistory.push({
         ...importData,
         timestamp: new Date().toISOString(),

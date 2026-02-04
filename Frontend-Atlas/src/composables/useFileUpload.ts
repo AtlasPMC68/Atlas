@@ -1,12 +1,12 @@
-import { ref } from "vue";
+import { ref, Ref } from "vue";
 
 export function useFileUpload() {
-  const selectedFile = ref(null);
+  const selectedFile: Ref<File | null> = ref(null);
   const previewUrl = ref("");
   const isUploading = ref(false);
   const error = ref("");
 
-  const handleFileSelected = (file) => {
+  const handleFileSelected = (file: File) => {
     selectedFile.value = file;
 
     if (previewUrl.value) {

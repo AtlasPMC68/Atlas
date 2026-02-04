@@ -58,7 +58,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from "vue";
 
 const props = defineProps({
@@ -70,8 +70,8 @@ const props = defineProps({
 
 const emit = defineEmits(["file-selected"]);
 
-const dropZone = ref(null);
-const fileInput = ref(null);
+const dropZone = ref<HTMLElement | null>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const isDragOver = ref(false);
 const error = ref("");
 
@@ -83,19 +83,19 @@ const dropZoneClasses = computed(() => ({
   "cursor-pointer": !props.isLoading,
 }));
 
-const onDragOver = (e) => {
+const onDragOver = () => {
   isDragOver.value = true;
 };
 
-const onDragLeave = (e) => {
-  if (!dropZone.value.contains(e.relatedTarget)) {
+const onDragLeave = (e: DragEvent) => {
+  if (!dropZone.value?.contains(e.relatedTarget as Node)) {
     isDragOver.value = false;
   }
 };
 
-const onDrop = (e) => {
+const onDrop = (e: DragEvent) => {
   isDragOver.value = false;
-  const files = Array.from(e.dataTransfer.files);
+  const files = Array.from(e.dataTransfer?.files || []);
 
   if (files.length > 0) {
     handleFile(files[0]);
@@ -104,18 +104,19 @@ const onDrop = (e) => {
 
 const openFileDialog = () => {
   if (!props.isLoading) {
-    fileInput.value.click();
+    fileInput.value?.click();
   }
 };
 
-const onFileSelect = (e) => {
-  const file = e.target.files[0];
+const onFileSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  const file = target.files ? target.files[0] : null;
   if (file) {
     handleFile(file);
   }
 };
 
-const handleFile = (file) => {
+const handleFile = (file: File) => {
   error.value = "";
 
   if (!file.type.startsWith("image/")) {

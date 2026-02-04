@@ -38,7 +38,7 @@
           />
 
           <!-- Étape 2: Prévisualisation + Contrôles -->
-          <div v-else-if="currentStep === 2" class="space-y-6">
+          <div v-else-if="currentStep === 2 && selectedFile" class="space-y-6">
             <ImportPreview :image-file="selectedFile" :image-url="previewUrl" />
             <ImportControls
               @start-import="startImportProcess"
@@ -61,8 +61,8 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, watch } from "vue";
+<script setup lang="ts">
+import { ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
@@ -100,7 +100,7 @@ const {
 const currentStep = ref(1);
 
 // Event handlers
-const handleFileSelected = (file) => {
+const handleFileSelected = (file: File) => {
   onFileSelected(file);
   currentStep.value = 2;
 };

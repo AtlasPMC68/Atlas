@@ -1,16 +1,16 @@
 // composables/useImportProcess.ts
-import { ref } from "vue";
+import { ref, Ref } from "vue";
 
 const isProcessing = ref(false);
 const processingStep = ref("upload");
 const processingProgress = ref(0);
 const showProcessingModal = ref(false);
-const taskId = ref(null);
-const resultData = ref(null);
-const mapId = ref(null);
+const taskId: Ref<string | null> = ref(null);
+const resultData: Ref<any> = ref(null);
+const mapId: Ref<string | null> = ref(null);
 
 export function useImportProcess() {
-  const startImport = async (file: File) => {
+  const startImport = async (file: File | null) => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
     isProcessing.value = true;
@@ -18,7 +18,6 @@ export function useImportProcess() {
     processingStep.value = "upload";
     processingProgress.value = 0;
 
-    // Upload file → POST /maps/upload
     const formData = new FormData();
     formData.append("file", file);
 
@@ -33,21 +32,20 @@ export function useImportProcess() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || "Erreur lors de l’envoi du fichier");
+        throw new Error(error.detail || "Erreur lors de l'envoi du fichier");
       }
 
       const data = await response.json();
       taskId.value = data.task_id;
       mapId.value = data.map_id;
+
       if (!taskId.value) {
         throw new Error("taskId is null");
       }
-      // start polling
+
       pollStatus(taskId.value);
 
-      return {
-        success: true,
-      };
+      return { success: true };
     } catch (err: any) {
       isProcessing.value = false;
       showProcessingModal.value = false;
@@ -70,7 +68,7 @@ export function useImportProcess() {
           `${import.meta.env.VITE_API_URL}/maps/status/${taskId}`,
         );
         const data = await res.json();
-        console.log("[Polling]", data);
+
         processingProgress.value = data.progress_percentage || 0;
         processingStep.value = mapStatusToStep(data.status || "");
 
