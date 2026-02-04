@@ -1,11 +1,12 @@
 import math
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 import logging
 
 import numpy as np
 from scipy.interpolate import Rbf
 from shapely.geometry import shape, mapping
 from shapely.ops import transform
+import cv2
 
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,22 @@ LonLat = Tuple[float, float]
 XY = Tuple[float, float]
 
 R_EARTH = 6378137.0
+
+
+class TransformationResult:
+    """Container for transformation matrix and quality metrics."""
+    def __init__(
+        self, 
+        matrix: np.ndarray, 
+        transform_type: str,
+        inliers_mask: Optional[np.ndarray] = None,
+        reprojection_error: Optional[float] = None
+    ):
+        self.matrix = matrix
+        self.transform_type = transform_type
+        self.inliers_mask = inliers_mask
+        self.reprojection_error = reprojection_error
+        self.num_inliers = np.sum(inliers_mask) if inliers_mask is not None else None
 
 
 def _lonlat_to_webmercator(lon: float, lat: float) -> XY:
@@ -62,28 +79,121 @@ class ThinPlateSpline2D:
         return X, Y
 
 
-def build_affine_from_point_pairs(
+def build_homography_from_point_pairs(
     pixel_points: List[XY],
     geo_points_lonlat: List[LonLat],
-) -> np.ndarray:
-    """Build affine transformation matrix from matched point pairs.
+    use_ransac: bool = True,
+    ransac_threshold: float = 5.0,
+) -> TransformationResult:
+    """Build homography transformation from matched point pairs with RANSAC.
     
-    Uses least-squares fitting to compute the 2D affine transformation that
-    best maps pixel coordinates to geographic coordinates (via WebMercator).
+    Homography (8 DOF) handles perspective distortion better than affine (6 DOF).
+    RANSAC automatically filters outliers from SIFT matching.
     
     Args:
-        pixel_points: List of (x, y) pixel coordinates
+        pixel_points: List of (x, y) pixel coordinates from SIFT
         geo_points_lonlat: List of (lon, lat) geographic coordinates
+        use_ransac: Whether to use RANSAC for outlier rejection
+        ransac_threshold: Maximum allowed reprojection error (meters) for RANSAC inliers
         
     Returns:
-        3x3 affine transformation matrix
+        TransformationResult with 3x3 homography matrix and quality metrics
         
     Raises:
         ValueError: If inputs are invalid or insufficient points provided
     """
     try:
-        if len(pixel_points) < 3 or len(geo_points_lonlat) < 3:
-            raise ValueError("At least 3 point pairs are required for affine transformation")
+        min_points = 4  # Homography requires minimum 4 points
+        if len(pixel_points) < min_points or len(geo_points_lonlat) < min_points:
+            raise ValueError(f"At least {min_points} point pairs are required for homography")
+        
+        if len(pixel_points) != len(geo_points_lonlat):
+            raise ValueError(
+                f"Mismatch in point counts: {len(pixel_points)} pixel points "
+                f"vs {len(geo_points_lonlat)} geo points"
+            )
+        
+        logger.info(f"Building homography transform from {len(pixel_points)} point pairs")
+        
+        # Convert geographic coordinates to WebMercator
+        geo_xy_points = [_lonlat_to_webmercator(lon, lat) for lon, lat in geo_points_lonlat]
+        
+        src_pts = np.array(pixel_points, dtype=np.float32).reshape(-1, 1, 2)
+        dst_pts = np.array(geo_xy_points, dtype=np.float32).reshape(-1, 1, 2)
+        
+        # Compute homography with or without RANSAC
+        if use_ransac and len(pixel_points) >= 4:
+            H, mask = cv2.findHomography(
+                src_pts, 
+                dst_pts, 
+                cv2.RANSAC, 
+                ransac_threshold
+            )
+            inliers_mask = mask.ravel().astype(bool) if mask is not None else None
+            num_inliers = np.sum(inliers_mask) if inliers_mask is not None else 0
+            
+            logger.info(
+                f"RANSAC homography: {num_inliers}/{len(pixel_points)} inliers "
+                f"({100*num_inliers/len(pixel_points):.1f}%)"
+            )
+            
+            if num_inliers < min_points:
+                logger.warning(f"Only {num_inliers} inliers found, falling back to all points")
+                H, _ = cv2.findHomography(src_pts, dst_pts, 0)
+                inliers_mask = None
+        else:
+            H, _ = cv2.findHomography(src_pts, dst_pts, 0)
+            inliers_mask = None
+        
+        if H is None:
+            raise ValueError("Failed to compute homography")
+        
+        # Calculate reprojection error
+        reprojection_error = _calculate_reprojection_error(src_pts, dst_pts, H, inliers_mask)
+        logger.info(f"Reprojection error: {reprojection_error:.2f} meters")
+        
+        result = TransformationResult(
+            matrix=H,
+            transform_type="homography",
+            inliers_mask=inliers_mask,
+            reprojection_error=reprojection_error
+        )
+        
+        logger.info("Homography matrix computed successfully")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error building homography transform: {str(e)}", exc_info=True)
+        raise
+
+
+def build_affine_from_point_pairs(
+    pixel_points: List[XY],
+    geo_points_lonlat: List[LonLat],
+    use_ransac: bool = True,
+    ransac_threshold: float = 5.0,
+) -> TransformationResult:
+    """Build affine transformation from matched point pairs with optional RANSAC.
+    
+    Affine (6 DOF) handles rotation, scale, translation, and shear.
+    Simpler than homography but doesn't handle perspective distortion.
+    
+    Args:
+        pixel_points: List of (x, y) pixel coordinates from SIFT
+        geo_points_lonlat: List of (lon, lat) geographic coordinates
+        use_ransac: Whether to use RANSAC for outlier rejection
+        ransac_threshold: Maximum allowed reprojection error (meters) for RANSAC inliers
+        
+    Returns:
+        TransformationResult with 3x3 affine matrix and quality metrics
+        
+    Raises:
+        ValueError: If inputs are invalid or insufficient points provided
+    """
+    try:
+        min_points = 3  # Affine requires minimum 3 points
+        if len(pixel_points) < min_points or len(geo_points_lonlat) < min_points:
+            raise ValueError(f"At least {min_points} point pairs are required for affine transformation")
         
         if len(pixel_points) != len(geo_points_lonlat):
             raise ValueError(
@@ -96,63 +206,88 @@ def build_affine_from_point_pairs(
         # Convert geographic coordinates to WebMercator
         geo_xy_points = [_lonlat_to_webmercator(lon, lat) for lon, lat in geo_points_lonlat]
         
-        src = np.array(pixel_points, dtype=float)
-        dst = np.array(geo_xy_points, dtype=float)
+        src_pts = np.array(pixel_points, dtype=np.float32)
+        dst_pts = np.array(geo_xy_points, dtype=np.float32)
         
-        logger.info(f"Source points shape: {src.shape}, Destination points shape: {dst.shape}")
-        
-        # Solve for affine transformation using least squares
-        # [X]   [a  b  tx] [x]
-        # [Y] = [c  d  ty] [y]
-        # [1]   [0  0   1] [1]
-        
-        n = src.shape[0]
-        
-        # Build matrices for least squares: dst = A @ params
-        # For X: X = a*x + b*y + tx
-        # For Y: Y = c*x + d*y + ty
-        
-        A = np.zeros((2*n, 6))
-        b_vec = np.zeros(2*n)
-        
-        for i in range(n):
-            x, y = src[i]
-            X, Y = dst[i]
+        # Compute affine with or without RANSAC
+        if use_ransac and len(pixel_points) >= 3:
+            M, inliers_mask = cv2.estimateAffinePartial2D(
+                src_pts,
+                dst_pts,
+                method=cv2.RANSAC,
+                ransacReprojThreshold=ransac_threshold
+            )
             
-            # Row for X equation
-            A[2*i] = [x, y, 1, 0, 0, 0]
-            b_vec[2*i] = X
-            
-            # Row for Y equation  
-            A[2*i + 1] = [0, 0, 0, x, y, 1]
-            b_vec[2*i + 1] = Y
+            if M is None:
+                logger.warning("RANSAC affine failed, using all points")
+                M = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.LMEDS)[0]
+                inliers_mask = None
+            else:
+                inliers_mask = inliers_mask.ravel().astype(bool) if inliers_mask is not None else None
+                num_inliers = np.sum(inliers_mask) if inliers_mask is not None else len(pixel_points)
+                logger.info(
+                    f"RANSAC affine: {num_inliers}/{len(pixel_points)} inliers "
+                    f"({100*num_inliers/len(pixel_points):.1f}%)"
+                )
+        else:
+            M = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.LMEDS)[0]
+            inliers_mask = None
         
-        # Solve least squares
-        params, residuals, rank, s = np.linalg.lstsq(A, b_vec, rcond=None)
+        if M is None:
+            raise ValueError("Failed to compute affine transformation")
         
-        logger.info(f"Least squares - rank: {rank}, residuals: {residuals}")
+        # Convert 2x3 affine to 3x3 matrix
+        M_3x3 = np.vstack([M, [0, 0, 1]])
         
-        if residuals.size > 0:
-            rmse = np.sqrt(residuals[0] / (2 * n))
-            logger.info(f"RMSE of fit: {rmse:.2f} meters")
+        # Calculate reprojection error
+        src_homogeneous = np.column_stack([src_pts, np.ones(len(src_pts))])
+        reprojected = (M_3x3 @ src_homogeneous.T).T[:, :2]
         
-        if len(params) != 6:
-            raise ValueError(f"Expected 6 parameters, got {len(params)}")
+        if inliers_mask is not None:
+            errors = np.linalg.norm(reprojected[inliers_mask] - dst_pts[inliers_mask], axis=1)
+        else:
+            errors = np.linalg.norm(reprojected - dst_pts, axis=1)
         
-        a, b_coef, tx, c, d, ty = params
+        reprojection_error = np.mean(errors)
+        logger.info(f"Reprojection error: {reprojection_error:.2f} meters")
         
-        M = np.array([
-            [a, b_coef, tx],
-            [c, d, ty],
-            [0, 0, 1]
-        ], dtype=float)
+        result = TransformationResult(
+            matrix=M_3x3,
+            transform_type="affine",
+            inliers_mask=inliers_mask,
+            reprojection_error=reprojection_error
+        )
         
         logger.info("Affine matrix computed successfully")
-        return M
+        return result
         
     except Exception as e:
         logger.error(f"Error building affine transform: {str(e)}", exc_info=True)
         raise
+
+
+def _calculate_reprojection_error(
+    src_pts: np.ndarray,
+    dst_pts: np.ndarray,
+    H: np.ndarray,
+    inliers_mask: Optional[np.ndarray] = None
+) -> float:
+    """Calculate mean reprojection error for homography."""
+    src_pts_reshaped = src_pts.reshape(-1, 2)
+    dst_pts_reshaped = dst_pts.reshape(-1, 2)
+    
+    # Project source points using homography
+    src_homogeneous = np.column_stack([src_pts_reshaped, np.ones(len(src_pts_reshaped))])
+    reprojected_homogeneous = (H @ src_homogeneous.T).T
+    reprojected = reprojected_homogeneous[:, :2] / reprojected_homogeneous[:, 2:3]
+    
+    # Calculate errors
+    errors = np.linalg.norm(reprojected - dst_pts_reshaped, axis=1)
+    
+    if inliers_mask is not None:
+        errors = errors[inliers_mask]
+    
+    return float(np.mean(errors))
 
 
 def build_tps_from_point_pairs(
@@ -207,18 +342,27 @@ def georeference_features_with_sift_points(
     pixel_points: List[XY],
     geo_points_lonlat: List[LonLat],
     use_tps: bool = False,
+    use_homography: bool = True,
+    use_ransac: bool = True,
 ) -> List[Dict[str, Any]]:
     """Georeference pixel-space features using SIFT-matched point pairs.
     
     This function transforms feature collections from pixel coordinates to
-    geographic coordinates (EPSG:4326) using either affine or TPS transformation.
+    geographic coordinates (EPSG:4326) using homography, affine, or TPS transformation.
+    
+    Recommended configurations:
+    - 4-6 SIFT points: use_homography=True, use_ransac=True (default)
+    - 3 SIFT points: use_homography=False (affine only)
+    - 7+ SIFT points with high distortion: use_tps=True
     
     Args:
         pixel_feature_collections: List of GeoJSON FeatureCollections in pixel space
         pixel_points: List of (x, y) pixel coordinates from SIFT matching
         geo_points_lonlat: List of (lon, lat) geographic coordinates from SIFT matching
-        use_tps: If True, use Thin-Plate Spline (recommended for 7+ points).
-                 If False, use affine transformation (faster, works with 3+ points)
+        use_tps: If True, use Thin-Plate Spline (handles non-linear distortion, 7+ points)
+        use_homography: If True, use homography (8 DOF, handles perspective, 4+ points).
+                       If False, use affine (6 DOF, simpler, 3+ points)
+        use_ransac: If True, automatically filter outliers with RANSAC
     
     Returns:
         List of georeferenced FeatureCollections in EPSG:4326
@@ -238,9 +382,11 @@ def georeference_features_with_sift_points(
         if geo_points_lonlat and isinstance(geo_points_lonlat[0], dict):
             raise TypeError(f"geo_points_lonlat contains dicts, expected (lon, lat) tuples: {geo_points_lonlat[0]}")
 
+        # Choose transformation method
+        transform_method = "TPS" if use_tps else ("homography" if use_homography else "affine")
         logger.info(
             f"Georeferencing {len(pixel_feature_collections)} feature collections "
-            f"using {len(pixel_points)} point pairs with {'TPS' if use_tps else 'affine'} transform"
+            f"using {len(pixel_points)} point pairs with {transform_method} transform"
         )
         
         # Build transformation
@@ -248,28 +394,50 @@ def georeference_features_with_sift_points(
             if len(pixel_points) < 7:
                 logger.warning(
                     f"Only {len(pixel_points)} points provided. "
-                    f"TPS works better with 7+ points. Consider using affine instead."
+                    f"TPS works better with 7+ points. Consider using homography/affine instead."
                 )
             tps = build_tps_from_point_pairs(pixel_points, geo_points_lonlat)
             transform_func = tps
+            transform_result = None
         else:
-            affine_matrix = build_affine_from_point_pairs(pixel_points, geo_points_lonlat)
+            # Use homography (better for perspective) or affine
+            if use_homography and len(pixel_points) >= 4:
+                transform_result = build_homography_from_point_pairs(
+                    pixel_points, 
+                    geo_points_lonlat,
+                    use_ransac=use_ransac
+                )
+            else:
+                if use_homography and len(pixel_points) < 4:
+                    logger.warning(f"Only {len(pixel_points)} points - falling back to affine")
+                transform_result = build_affine_from_point_pairs(
+                    pixel_points,
+                    geo_points_lonlat,
+                    use_ransac=use_ransac
+                )
             
-            def affine_transform(x, y):
-                """Apply affine transform: pixel coords -> WebMercator"""
+            transformation_matrix = transform_result.matrix
+            
+            def matrix_transform(x, y):
+                """Apply transformation matrix: pixel coords -> WebMercator"""
                 x_arr = np.asarray(x, dtype=float).ravel()
                 y_arr = np.asarray(y, dtype=float).ravel()
                 
                 # Homogeneous coords
                 pts = np.vstack([x_arr, y_arr, np.ones_like(x_arr)])
-                transformed = affine_matrix @ pts
+                transformed = transformation_matrix @ pts
                 
-                X = transformed[0, :]
-                Y = transformed[1, :]
+                # For homography, divide by w coordinate
+                if transform_result.transform_type == "homography":
+                    X = transformed[0, :] / transformed[2, :]
+                    Y = transformed[1, :] / transformed[2, :]
+                else:
+                    X = transformed[0, :]
+                    Y = transformed[1, :]
                 
                 return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape)
             
-            transform_func = affine_transform
+            transform_func = matrix_transform
 
         def _to_3857(x, y, z=None):
             """Apply transformation to get WebMercator coordinates"""
@@ -321,7 +489,14 @@ def georeference_features_with_sift_points(
                 props["is_pixel_space"] = False
                 props["is_georeferenced"] = True
                 props["crs"] = "EPSG:4326"
-                props["transform_method"] = "TPS" if use_tps else "affine"
+                props["transform_method"] = transform_method
+                
+                # Add quality metrics if available
+                if transform_result is not None:
+                    if transform_result.reprojection_error is not None:
+                        props["reprojection_error_m"] = round(transform_result.reprojection_error, 2)
+                    if transform_result.num_inliers is not None:
+                        props["ransac_inliers"] = transform_result.num_inliers
 
                 new_features.append(
                     {
