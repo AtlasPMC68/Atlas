@@ -27,6 +27,7 @@
             :world-bounds="worldBounds"
             :keypoints="keypoints"
             :active-index="activeIndex"
+            @select-keypoint="onSelectWorldKeypoint"
           />
         </div>
 
@@ -110,6 +111,14 @@ function resetMatching() {
   currentImagePoint.value = null;
 }
 
+function onSelectWorldKeypoint(index) {
+  if (index < 0 || index >= totalPoints.value) return;
+  // Change the currently selected world keypoint; the next image click
+  // will create or update the match for this point.
+  activeIndex.value = index;
+  currentImagePoint.value = null;
+}
+
 function onConfirm() {
   if (!canConfirm.value || matches.value.length === 0) return;
 
@@ -126,6 +135,12 @@ watch(
     if (!val) return;
     const kp = currentWorldKeypoint.value;
     if (!kp) return;
+
+    // Remove any previous match for this world keypoint so the user
+    // can reassign it by clicking a different location on the image.
+    matches.value = matches.value.filter(
+      (m) => !(m.world[0] === kp.geo.lat && m.world[1] === kp.geo.lng),
+    );
 
     matches.value.push({
       world: [kp.geo.lat, kp.geo.lng],

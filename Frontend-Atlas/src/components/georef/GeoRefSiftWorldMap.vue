@@ -23,6 +23,8 @@ const props = defineProps({
   },
 });
 
+const emit = defineEmits(["select-keypoint"]);
+
 const mapContainer = ref(null);
 let map = null;
 let landLayer = null;
@@ -66,6 +68,12 @@ function renderKeypoints() {
 
     const isActive = index === props.activeIndex;
     const marker = L.circleMarker([lat, lng], styleForIndex(index, isActive));
+
+    // Allow user to choose the current point by clicking a marker
+    marker.on("click", () => {
+      emit("select-keypoint", index);
+    });
+
     marker.addTo(map);
     markers.push(marker);
   });
