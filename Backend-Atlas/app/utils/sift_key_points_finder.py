@@ -4,7 +4,7 @@ import os
 import json
 import math
 
-NUMBER_OF_KEYPOINTS = 5
+NUMBER_OF_KEYPOINTS = 10
 BORDER_MARGIN = 20  # pixels from edge
 MIN_DISTANCE_BETWEEN_KEYPOINTS = 10  
 
