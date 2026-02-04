@@ -65,12 +65,14 @@
       @confirmed="handleWorldAreaConfirmed"
     />
 
-    <!-- Modal de géoréférencement -->
-    <GeoRefModal
-      v-if="showGeorefModal && previewUrl"
-      :is-open="showGeorefModal"
+    <!-- Modal de géoréférencement basé sur les points SIFT -->
+    <GeoRefSiftModal
+      v-if="showSiftGeorefModal && previewUrl && worldAreaBounds && coastlineKeypoints"
+      :is-open="showSiftGeorefModal"
       :image-url="previewUrl"
-      @close="showGeorefModal = false"
+      :world-bounds="worldAreaBounds"
+      :keypoints="coastlineKeypoints"
+      @close="showSiftGeorefModal = false"
       @confirmed="handleGeorefConfirmed"
     />
 
@@ -91,13 +93,14 @@ import { useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
+import { useSiftPoints } from "../../composables/useSiftPoints";
 
 // Components
 import FileDropZone from "../../components/import/FileDropZone.vue";
 import ImportPreview from "../../components/import/ImportPreview.vue";
 import ImportControls from "../../components/import/ImportControls.vue";
 import ProcessingModal from "../../components/import/ProcessingModal.vue";
-import GeoRefModal from "../../components/georef/GeoRefModal.vue";
+import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
 
 const router = useRouter();
@@ -122,12 +125,15 @@ const {
   mapId,
 } = useImportProcess();
 
+const { fetchCoastlineKeypoints } = useSiftPoints();
+
 // État local
 const currentStep = ref(1);
 const showWorldAreaPickerModal = ref(false);
-const showGeorefModal = ref(false);
+const showSiftGeorefModal = ref(false);
 const worldAreaBounds = ref(null); // { west, south, east, north } or null
 const worldAreaZoom = ref(null);
+const coastlineKeypoints = ref(null); // SIFT coastline keypoints from backend
 const worldPolyline = ref([]); // [ [lat,lng], ... ]
 const imagePolyline = ref([]); // [ [x,y], ... ]
 const worldPoint = ref(null); // [lat, lng] or null
@@ -157,25 +163,37 @@ async function handleWorldAreaConfirmed(payload) {
   worldAreaZoom.value = payload.zoom;
   showWorldAreaPickerModal.value = false;
 
-  // Next step: georeferencing (existing modal)
-  currentStep.value = 4;
-  showGeorefModal.value = true;
+  // Call backend to get coastline keypoints for this ROI and
+  // store the result for the next georef step.
+  const res = await fetchCoastlineKeypoints(payload.bounds);
+  if (res.success) {
+    // Prefer backend bounds if it returns a more precise ROI
+    worldAreaBounds.value = res.data.bounds || payload.bounds;
+    coastlineKeypoints.value = res.data.keypoints;
+
+    // Next step: SIFT-based georeferencing
+    currentStep.value = 4;
+    showSiftGeorefModal.value = true;
+  } else {
+    console.error("Failed to fetch coastline keypoints:", res.error);
+    // In case of error, go back to previous step
+    currentStep.value = 2;
+  }
 }
 
 async function handleGeorefConfirmed(payload) {
-  imagePolyline.value = payload.imagePolyline;
-  worldPolyline.value = payload.worldPolyline;
-  imagePoint.value = payload.imagePoint;
-  worldPoint.value = payload.worldPoint;
-  showGeorefModal.value = false;
+  // payload: { worldPoints: [ [lat,lng], ... ], imagePoints: [ [x,y], ... ] }
+  showSiftGeorefModal.value = false;
 
-  // Pass polylines and points to startImport
+  // Map to backend-expected shapes
+  const worldPoints = payload.worldPoints.map(([lat, lng]) => ({ lat, lng }));
+  const imagePoints = payload.imagePoints.map(([x, y]) => ({ x, y }));
+
+  // Pass matched point arrays to startImport (new SIFT georef flow)
   const result = await startImport(
-    selectedFile.value, 
-    imagePolyline.value, 
-    worldPolyline.value,
-    imagePoint.value,
-    worldPoint.value
+    selectedFile.value,
+    imagePoints,
+    worldPoints,
   );
   if (result.success) {
     currentStep.value = 5;
@@ -197,7 +215,7 @@ watch(
 const resetImport = () => {
   currentStep.value = 1;
   showWorldAreaPickerModal.value = false;
-  showGeorefModal.value = false;
+  showSiftGeorefModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
   importStore.resetImport();

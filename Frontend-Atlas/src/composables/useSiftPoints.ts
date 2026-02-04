@@ -17,11 +17,44 @@ export type SiftResponse = {
   keypoints: SiftKeypoint[];
 };
 
+export type Bounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
+
+// What the backend returns from POST /maps/coastline-keypoints
+export type CoastlineKeypointPixel = {
+  x: number;
+  y: number;
+};
+
+export type CoastlineKeypointGeo = {
+  lat: number;
+  lng: number;
+};
+
+export type CoastlineKeypoint = {
+  id: number;
+  pixel: CoastlineKeypointPixel;
+  geo: CoastlineKeypointGeo;
+  response: number;
+};
+
+export type CoastlineKeypointsResponse = {
+  status: "success";
+  keypoints: CoastlineKeypoint[];
+  total: number;
+  bounds: Bounds;
+};
+
 const isLoading = ref(false);
 const error = ref<string | null>(null);
 const siftData = ref<SiftResponse | null>(null);
 
 export function useSiftPoints() {
+  // Legacy: POST /maps/sift (image upload) — keep if you still need it.
   const fetchSiftPoints = async (file: File) => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -56,6 +89,54 @@ export function useSiftPoints() {
     }
   };
 
+  // New: POST /maps/coastline-keypoints (bounds from WorldAreaPickerModal)
+  const fetchCoastlineKeypoints = async (
+    bounds: Bounds,
+    options?: { width?: number; height?: number },
+  ) => {
+    if (!bounds) return { success: false, error: "Aucune zone sélectionnée" };
+
+    const width = options?.width ?? 1024;
+    const height = options?.height ?? 768;
+
+    isLoading.value = true;
+    error.value = null;
+    siftData.value = null;
+
+    const formData = new FormData();
+    formData.append("west", String(bounds.west));
+    formData.append("south", String(bounds.south));
+    formData.append("east", String(bounds.east));
+    formData.append("north", String(bounds.north));
+    formData.append("width", String(width));
+    formData.append("height", String(height));
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/maps/coastline-keypoints`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(
+          errBody.detail || "Erreur lors de l’extraction SIFT (coastlines)",
+        );
+      }
+
+      const data = (await response.json()) as CoastlineKeypointsResponse;
+      return { success: true, data };
+    } catch (e: any) {
+      error.value = e.message || "Erreur inconnue";
+      return { success: false, error: error.value };
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
   const resetSift = () => {
     isLoading.value = false;
     error.value = null;
@@ -67,6 +148,7 @@ export function useSiftPoints() {
     siftError: error,
     siftData,
     fetchSiftPoints,
+    fetchCoastlineKeypoints,
     resetSift,
   };
 }

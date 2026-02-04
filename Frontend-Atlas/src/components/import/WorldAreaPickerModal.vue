@@ -163,14 +163,18 @@ async function initMap() {
 
     const bounds = landLayer.getBounds();
     if (bounds.isValid()) {
-      const padded = bounds.pad(0.05);
+      // Add some margin so the initial view isn't overly zoomed-in.
+      const padded = bounds.pad(0.2);
       map.setMaxBounds(padded);
-      const minZoom = map.getBoundsZoom(padded, false);
-      map.setMinZoom(minZoom);
 
       // If no initial bounds are provided, fit to world
       if (!props.initialBounds) {
-        map.fitBounds(padded, { padding: [10, 10] });
+        // Cap maxZoom so we don't zoom in too much on load.
+        map.fitBounds(padded, { padding: [10, 10], maxZoom: 2 });
+
+        // Allow a little more zoom-out than the fitted view.
+        // (Lower zoom number = more zoomed out in Leaflet.)
+        map.setMinZoom(Math.max(map.getZoom() - 1, 0));
       }
     }
   } catch (e) {
