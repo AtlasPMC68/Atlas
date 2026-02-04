@@ -491,12 +491,12 @@ def georeference_features_with_sift_points(
                 props["crs"] = "EPSG:4326"
                 props["transform_method"] = transform_method
                 
-                # Add quality metrics if available
+                # Add quality metrics if available (convert numpy types to Python types for JSON)
                 if transform_result is not None:
                     if transform_result.reprojection_error is not None:
-                        props["reprojection_error_m"] = round(transform_result.reprojection_error, 2)
+                        props["reprojection_error_m"] = float(round(transform_result.reprojection_error, 2))
                     if transform_result.num_inliers is not None:
-                        props["ransac_inliers"] = transform_result.num_inliers
+                        props["ransac_inliers"] = int(transform_result.num_inliers)
 
                 new_features.append(
                     {
