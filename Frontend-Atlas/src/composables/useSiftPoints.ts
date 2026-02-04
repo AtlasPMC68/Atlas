@@ -25,9 +25,26 @@ export type Bounds = {
 };
 
 // What the backend returns from POST /maps/coastline-keypoints
+export type CoastlineKeypointPixel = {
+  x: number;
+  y: number;
+};
+
+export type CoastlineKeypointGeo = {
+  lat: number;
+  lng: number;
+};
+
+export type CoastlineKeypoint = {
+  id: number;
+  pixel: CoastlineKeypointPixel;
+  geo: CoastlineKeypointGeo;
+  response: number;
+};
+
 export type CoastlineKeypointsResponse = {
   status: "success";
-  keypoints: Array<unknown>; // depends on backend implementation
+  keypoints: CoastlineKeypoint[];
   total: number;
   bounds: Bounds;
 };

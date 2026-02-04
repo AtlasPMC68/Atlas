@@ -11,11 +11,9 @@ const mapId = ref(null);
 
 export function useImportProcess() {
   const startImport = async (
-    file: File, 
-    imagePolyline?: any[], 
-    worldPolyline?: any[],
-    imagePoint?: any,
-    worldPoint?: any
+    file: File,
+    imagePoints?: { x: number; y: number }[],
+    worldPoints?: { lat: number; lng: number }[],
   ) => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -24,21 +22,15 @@ export function useImportProcess() {
     processingStep.value = "upload";
     processingProgress.value = 0;
 
-    // Upload fichier + polylines + points → POST /maps/upload
+    // Upload fichier + points SIFT  POST /maps/upload
     const formData = new FormData();
     
-    // Add polylines if provided
-    if (imagePolyline && worldPolyline) {
-      formData.append("image_polyline", JSON.stringify(imagePolyline.map(([x, y]) => ({ x, y }))));
-      formData.append("world_polyline", JSON.stringify(worldPolyline.map(([lat, lng]) => ({ lat, lng }))));
+    // Add matched point pairs as expected by backend
+    if (imagePoints && imagePoints.length) {
+      formData.append("image_points", JSON.stringify(imagePoints));
     }
-    
-    // Add points if provided
-    if (imagePoint) {
-      formData.append("pixel_point", JSON.stringify({ x: imagePoint[0], y: imagePoint[1] }));
-    }
-    if (worldPoint) {
-      formData.append("world_point", JSON.stringify({ lat: worldPoint[0], lng: worldPoint[1] }));
+    if (worldPoints && worldPoints.length) {
+      formData.append("world_points", JSON.stringify(worldPoints));
     }
     
     formData.append("file", file);
