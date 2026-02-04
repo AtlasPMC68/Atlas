@@ -20,6 +20,7 @@ from app.utils.text_extraction import extract_text
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.cities_validation import detect_cities_from_text, find_first_city
 from app.utils.georeferencing import georeference_pixel_features
+from app.utils.georeferencingSift import georeference_features_with_sift_points
 import numpy as np
 
 from .celery_app import celery_app
@@ -127,23 +128,23 @@ def process_map_extraction(
     filename: str,
     file_content: bytes,
     map_id: str,
-    pixel_control_polyline: list | None = None,
-    geo_control_polyline: list | None = None,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
+    use_tps: bool = False,
 ):
-    """"""
+    """Process map extraction with SIFT-based georeferencing."""
     logger.info(f"Starting map processing for {filename}")
 
     # Ensure we are working with a UUID instance inside the task
     map_uuid = UUID(map_id)
 
-    logger.info(
-        f"[DEBUG] Georef input types: pixel_polyline[0]={type(pixel_control_polyline[0])}, geo_polyline[0]={type(geo_control_polyline[0])}"
-    )
-    logger.info(
-        f"[DEBUG] First pixel point: {pixel_control_polyline[0]}, first geo point: {geo_control_polyline[0]}"
-    )
+    if pixel_points and geo_points_lonlat:
+        logger.info(
+            f"[DEBUG] SIFT georeferencing with {len(pixel_points)} point pairs, use_tps={use_tps}"
+        )
+        logger.info(
+            f"[DEBUG] First pixel point: {pixel_points[0]}, first geo point: {geo_points_lonlat[0]}"
+        )
 
     try:
         # Step 1: temp save
@@ -257,21 +258,17 @@ def process_map_extraction(
             f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
         )
 
-        # Optional: georeference pixel-space features if control polylines are provided
-        if pixel_control_polyline and geo_control_polyline:
-            logger.info(
-                f"[DEBUG] Georef input types: pixel_polyline[0]={type(pixel_control_polyline[0])}, geo_polyline[0]={type(geo_control_polyline[0])}"
-            )
-            logger.info(
-                f"[DEBUG] First pixel point: {pixel_control_polyline[0]}, first geo point: {geo_control_polyline[0]}"
-            )
+        # Optional: georeference pixel-space features if SIFT point pairs are provided
+        if pixel_points and geo_points_lonlat:
             try:
-                georef_features = georeference_pixel_features(
+                logger.info(
+                    f"[DEBUG] Starting SIFT-based georeferencing with {len(pixel_points)} points, use_tps={use_tps}"
+                )
+                georef_features = georeference_features_with_sift_points(
                     pixel_features,
-                    pixel_control_polyline,
-                    geo_control_polyline,
                     pixel_points,
-                    geo_points_lonlat
+                    geo_points_lonlat,
+                    use_tps=use_tps
                 )
                 if georef_features:
                     asyncio.run(persist_features(map_uuid, georef_features))
@@ -279,7 +276,7 @@ def process_map_extraction(
                         f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
                     )
             except Exception as e:
-                logger.error(f"Georeferencing step failed for map {map_uuid}: {e}")
+                logger.error(f"SIFT georeferencing step failed for map {map_uuid}: {e}", exc_info=True)
 
         # Step 5: Shapes Extraction
         self.update_state(
