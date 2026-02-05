@@ -91,7 +91,6 @@ export function useMapLayers(props, emit) {
         markDom(oe);
 
         if (props.activeEditMode) {
-          oe?.preventDefault();
           oe?.stopPropagation();
           oe?.stopImmediatePropagation?.();
         }
@@ -102,7 +101,6 @@ export function useMapLayers(props, emit) {
         markDom(oe);
 
         if (props.activeEditMode) {
-          oe?.preventDefault();
           oe?.stopPropagation();
           oe?.stopImmediatePropagation?.();
         }
@@ -203,34 +201,51 @@ export function useMapLayers(props, emit) {
       const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
       const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
       const fillColor = feature.color || colorFromRgb || "#ccc";
+
       let targetGeometry = feature.geometry;
 
       if (fprops.is_normalized) {
         const fc = { type: "FeatureCollection", features: [feature] };
-
         const anchorLat = -80 + Math.random() * 160;
         const anchorLng = -170 + Math.random() * 340;
         const sizeMeters = 2_000_000;
 
         const worldFc = transformNormalizedToWorld(fc, anchorLat, anchorLng, sizeMeters);
-        if (worldFc && Array.isArray(worldFc.features) && worldFc.features[0]?.geometry) {
+        if (worldFc?.features?.[0]?.geometry) {
           targetGeometry = worldFc.features[0].geometry;
         }
       }
 
-      const layer = L.geoJSON(targetGeometry, {
-        style: {
-          fillColor,
-          fillOpacity: 0.5,
-          color: "#333",
-          weight: 1,
-        },
+      let latLngs = null;
+
+      if (targetGeometry.type === "Polygon") {
+        const outer = targetGeometry.coordinates?.[0];
+        if (Array.isArray(outer) && outer.length >= 4) {
+          latLngs = outer.map(([lng, lat]) => [lat, lng]);
+        }
+      } else if (targetGeometry.type === "MultiPolygon") {
+        const outer = targetGeometry.coordinates?.[0]?.[0];
+        if (Array.isArray(outer) && outer.length >= 4) {
+          latLngs = outer.map(([lng, lat]) => [lat, lng]);
+        }
+      } else {
+        return;
+      }
+
+      if (!latLngs) return;
+
+      const poly = L.polygon(latLngs, {
+        color: "#333",
+        weight: 1,
+        fillColor,
+        fillOpacity: 0.5,
+        interactive: true,
       });
 
       const name = fprops.name || feature.name;
-      if (name) layer.bindPopup(name);
+      if (name) poly.bindPopup(name);
 
-      featureLayerManager.addFeatureLayer(feature.id, layer, feature);
+      featureLayerManager.addFeatureLayer(feature.id, poly, feature);
     });
   }
 
