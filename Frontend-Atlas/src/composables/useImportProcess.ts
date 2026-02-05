@@ -22,7 +22,7 @@ export function useImportProcess() {
     processingStep.value = "upload";
     processingProgress.value = 0;
 
-    // Upload fichier + points SIFT  POST /maps/upload
+    // Upload fichier + points SIFT POST /maps/upload
     const formData = new FormData();
     
     // Add matched point pairs as expected by backend
