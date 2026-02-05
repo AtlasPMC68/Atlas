@@ -1,6 +1,7 @@
 import cv2
 import json
 import pytest
+import warnings
 import unicodedata
 import numpy as np
 from pathlib import Path
@@ -8,6 +9,12 @@ from copy import deepcopy
 from tests.utils.expected_results import MAP_EXPECTED_TEXTS
 from app.utils.text_extraction import extract_text
 from weighted_levenshtein import lev
+
+def custom_formatwarning(message, category, filename, lineno, line=None):
+    """Returns the warning with a custom format"""
+    return f"{category.__name__}: {message}\n"
+
+warnings.formatwarning = custom_formatwarning
 
 def get_image_paths():
     """
@@ -53,18 +60,17 @@ def normalize_array_to_ascii_format(text: list[str]) -> dict[str, str]:
                      .decode('ascii'))
     return res
 
-def check_for_match(actual: list[str], expected: list[str]) -> dict[str, tuple[str, int]]:
+def check_for_match(actual: list[str], expected: list[str], levenshtein_params: dict[str, np.ndarray]) -> dict[str, tuple[str, int]]:
     """
     For every `expected` word given in an array, return a tuple composed of the
     OCR word that matches the most, and the weighted levenshtein distance between
     both strings.
 
-    :param actual: list of strings
-    :param expected: list of expected strings
+    :param actual: list of strings read by the OCR in this test instance
+    :param expected: list of expected strings. Hardcoded.
+    :param levenshtein_params: dictionary with weighted distance cost for each operation on ASCII characters
     :return: dict of (word, levenshtein distance), using exepected as keys
     """
-
-
     actual_ascii_dict = normalize_array_to_ascii_format(actual)
     expected_ascii_dict = normalize_array_to_ascii_format(expected)
     res: dict[str, tuple[str, float]] = {}
@@ -93,6 +99,7 @@ def check_for_match(actual: list[str], expected: list[str]) -> dict[str, tuple[s
 
         # After checking all possible match, save the closest match
         res[expected_word] = min_dist
+    return res
 
 
 # Load once in RAM during each test in THIS file. Simply adding
@@ -127,13 +134,10 @@ def test_text_extraction(image_path, expected_text, levenshtein_params):
     # Critical failure in case we cannot find EVERY bounding box of text!
     #assert len(remaining_ocr_words) == len(remaining_expected_words)
 
-    res: dict[str, tuple[str, float]] = check_for_match(remaining_ocr_words, remaining_expected_words)
+    res: dict[str, tuple[str, float]] = check_for_match(remaining_ocr_words, remaining_expected_words, levenshtein_params)
 
     # For anything other than
     for expected_word, (ocr_word, distance) in res.items():
         if distance >= 0.0:
-
-            pytest.warn(
-                UserWarning(f"Partial match for expected: '{expected_word}', and found '{ocr_word}' (d = {distance}).")
-            )
+            warnings.warn(UserWarning( f"Partial match for expected: '{expected_word}', and found '{ocr_word}' (d = {distance})."))
 
