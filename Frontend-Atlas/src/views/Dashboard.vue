@@ -60,7 +60,6 @@ async function fetchMapsAndRender() {
     }
 
     const mapsData: MapData[] = snakeToCamel(await res.json()) as MapData[];
-    console.log(mapsData);
 
     maps.value = mapsData.map((map: MapData) => ({
       id: map.id,
