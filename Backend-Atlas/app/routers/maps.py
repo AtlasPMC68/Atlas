@@ -19,7 +19,7 @@ from geoalchemy2.functions import ST_AsGeoJSON
 from ..celery_app import celery_app
 from ..db import get_db
 from ..tasks import process_map_extraction
-from ..utils.auth import get_current_user
+from ..utils.auth import get_current_user, get_current_user_id
 
 router = APIRouter()
 
@@ -32,7 +32,11 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
 
 @router.post("/upload")
-async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSession = Depends(get_async_session)):
+async def upload_and_process_map(
+    file: UploadFile = File(...), 
+    session: AsyncSession = Depends(get_async_session),
+    user_id: str = Depends(get_current_user_id)
+):
     """Upload une carte et lance l'extraction de données"""
     
     # Validate file extension
@@ -53,10 +57,10 @@ async def upload_and_process_map(file: UploadFile = File(...), session: AsyncSes
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
+        print(user_id)
         map_id = await create_map_in_db(
             db=session,
-            # TODO: replace with real owner
-            owner_id=UUID("00000000-0000-0000-0000-000000000001"),
+            user_id = UUID(user_id),
             title=file.filename,
             description=None,
             is_private=True,
@@ -177,8 +181,9 @@ async def get_maps(
 ):
     if user_id:
         try:
-            user_uuid = UUID(user_id)
-            query = select(Map).where(Map.user_id == user_uuid)
+            print( f"Fetching maps for user_id: {user_id}" )
+            user_id = UUID(user_id)
+            query = select(Map).where(Map.user_id == user_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid user_id format")
     else:
@@ -186,6 +191,7 @@ async def get_maps(
 
     result = await session.execute(query)
     maps = result.scalars().all()
+    print(f"Found {len(maps)} maps for user_id: {user_id}")
 
     return maps
 

@@ -1,5 +1,6 @@
 // composables/useImportProcess.ts
 import { ref, Ref } from "vue";
+import keycloak from "../keycloak";
 
 const isProcessing = ref(false);
 const processingStep = ref("upload");
@@ -26,6 +27,9 @@ export function useImportProcess() {
         `${import.meta.env.VITE_API_URL}/maps/upload`,
         {
           method: "POST",
+          headers: {
+            Authorization: `Bearer ${keycloak.token}`,
+          },
           body: formData,
         },
       );
