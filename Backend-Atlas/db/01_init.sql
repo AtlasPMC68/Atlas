@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS "maps" (
 CREATE TABLE IF NOT EXISTS "features" (
   "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "map_id" UUID REFERENCES "maps"("id") ON DELETE CASCADE,
-  "geometry" GEOMETRY(GEOMETRY, 4326) NOT NULL,
-  "properties" JSON,
+  "is_feature_collection" BOOLEAN DEFAULT FALSE,
+  "data" JSONB NOT NULL,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())
 );

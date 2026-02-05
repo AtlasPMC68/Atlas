@@ -116,7 +116,7 @@ async function fetchMapsAndRender() {
         v-for="map in maps"
         :key="map.id"
         class="bg-white border border-gray-200 rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer"
-        @click="$router.push('/carte/${map.id}')"
+        @click="$router.push(`/maps/${map.id}`)"
       >
         <img
           :src="map.image"

@@ -147,31 +147,23 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    # Retrieve features with their geometry and properties
-    result = await session.execute(
-        select(Feature.id, Feature.properties, Feature.created_at, ST_AsGeoJSON(Feature.geometry).label('geometry_json'))
-        .where(Feature.map_id == map_uuid)
-    )
-    features_rows = result.all()
+    result = await session.execute(select(Feature).where(Feature.map_id == map_uuid))
+    features_rows = result.scalars().all()
 
-    geojson_features = []
-    for row in features_rows:
-        geometry_json = json.loads(row.geometry_json)
-        
-        geojson_feature = {
-            "type": "Feature",
-            "id": str(row.id),
-            "geometry": geometry_json,
-            "properties": {
-                **(row.properties or {}),
-                "start_date": row.properties.get("start_date") if row.properties else None,
-                "end_date": row.properties.get("end_date") if row.properties else None,
-            }
-        }
-        
-        geojson_features.append(geojson_feature)
+    all_features = []
+    for f in features_rows:
+        feature_data = f.data.get("features", [])
+        if feature_data:
+            feature = feature_data[0]
+            feature["id"] = str(f.id)
 
-    return geojson_features
+            props = feature.get("properties", {})
+            feature["start_date"] = props.get("start_date")
+            feature["end_date"] = props.get("end_date")
+
+            all_features.append(feature)
+
+    return all_features
 
 
 @router.get("/map", response_model=list[MapOut])

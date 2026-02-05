@@ -70,13 +70,14 @@ const emit = defineEmits(["toggle-feature"]);
 
 const featureGroups = computed(() => {
   const groups = [
-    { type: "Point", label: "Villes", features: [] as Feature[] },
-    { type: "Polygon", label: "Zones", features: [] as Feature[] },
-    { type: "LineString", label: "Flèches", features: [] as Feature[] },
+    { type: "point", label: "Villes", features: [] as Feature[] },
+    { type: "zone", label: "Zones", features: [] as Feature[] },
+    { type: "arrow", label: "Flèches", features: [] as Feature[] },
+    { type: "shape", label: "Formes", features: [] as Feature[] },
   ];
 
-  props.features.forEach((feature) => {
-    const elementType = feature?.geometry?.type || "";
+  props.features.forEach((feature: Feature) => {
+    const elementType = feature?.properties?.mapElementType;
     const group = groups.find((g) => g.type === elementType);
     if (group) {
       group.features.push(feature);
