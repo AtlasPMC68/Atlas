@@ -99,7 +99,7 @@ async function fetchMapsAndRender() {
         </button>
       </div>
 
-      <!-- New  button -->
+      <!-- New map button -->
       <RouterLink
         to="/demo/upload"
         class="btn-primary flex items-center gap-2 self-start md:self-auto"

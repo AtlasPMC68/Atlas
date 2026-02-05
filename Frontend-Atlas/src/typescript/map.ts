@@ -1,7 +1,6 @@
 export interface MapData {
   id: string;
   userId: string;
-  baseLayerId: string;
   title: string;
   description?: string;
   isPrivate: boolean;

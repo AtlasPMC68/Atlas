@@ -27,7 +27,7 @@ onMounted(async () => {
       },
     });
     if (!res.ok) throw new Error("Error fetching user data");
-    const userData: User = await snakeToCamel(await res.json());
+    const userData: User = snakeToCamel(await res.json());
     user.value.email = userData.email;
     user.value.createdAt = userData.createdAt;
     user.value.username = userData.username;

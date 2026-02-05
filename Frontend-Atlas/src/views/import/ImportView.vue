@@ -11,7 +11,7 @@
         </p>
       </div>
 
-      <!-- Étapes du processus -->
+      <!-- Process steps -->
       <div class="steps w-full mb-8">
         <div class="step" :class="{ 'step-primary': currentStep >= 1 }">
           Sélection
@@ -27,17 +27,17 @@
         </div>
       </div>
 
-      <!-- Contenu principal selon l'étape -->
+      <!-- Main content according to the step -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
-          <!-- Étape 1: Drag & Drop -->
+          <!-- Step 1: Drag & Drop -->
           <FileDropZone
             v-if="currentStep === 1"
             @file-selected="handleFileSelected"
             :is-loading="isUploading"
           />
 
-          <!-- Étape 2: Prévisualisation + Contrôles -->
+          <!-- Step 2: Preview + Controls -->
           <div v-else-if="currentStep === 2 && selectedFile" class="space-y-6">
             <ImportPreview :image-file="selectedFile" :image-url="previewUrl" />
             <ImportControls
@@ -50,7 +50,7 @@
       </div>
     </div>
 
-    <!-- Modal de traitement -->
+    <!-- Processing Modal -->
     <ProcessingModal
       v-if="showProcessingModal"
       :is-open="showProcessingModal"

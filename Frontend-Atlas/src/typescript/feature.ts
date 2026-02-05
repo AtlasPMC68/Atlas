@@ -11,11 +11,11 @@ export type MapElementType = "point" | "zone" | "arrow" | "shape";
 
 export interface FeatureProperties {
   name: string;
-  color_name: string;
-  color_rgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
+  colorName: string;
+  colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   mapElementType: MapElementType;
-  start_date: string; // Format: "YYYY-MM-DD"
-  end_date: string; // Format: "YYYY-MM-DD"
+  startDate: string; // Format: "YYYY-MM-DD"
+  endDate: string; // Format: "YYYY-MM-DD"
 }
 
 // Geometry types

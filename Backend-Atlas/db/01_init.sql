@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS "users" (
 );
 
 CREATE TABLE IF NOT EXISTS "maps" (
-  "id" UUID PRIMARY KEY,
+  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "user_id" UUID REFERENCES "users"("id") ON DELETE CASCADE,
   "title" TEXT NOT NULL,
   "description" TEXT,

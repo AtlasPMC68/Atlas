@@ -3,7 +3,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -37,8 +37,7 @@ async def upload_and_process_map(
     session: AsyncSession = Depends(get_async_session),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Upload une carte et lance l'extraction de données"""
-    
+    """Upload a map and start data extraction"""    
     # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
@@ -179,11 +178,10 @@ async def get_maps(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid user_id format")
     else:
-        query = select(Map).where(Map.is_private == False)
+        query = select(Map).where(not_(Map.is_private))
 
     result = await session.execute(query)
     maps = result.scalars().all()
-    print(f"Found {len(maps)} maps for user_id: {user_id}")
 
     return maps
 
@@ -194,5 +192,4 @@ async def save_map(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    id = UUID(request.id)
-    return {"id": id}
+    return 1

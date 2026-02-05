@@ -2,7 +2,6 @@ from typing import Any
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.features import Feature
-from typing import Any
 
 async def insert_feature_in_db(
     db: AsyncSession,

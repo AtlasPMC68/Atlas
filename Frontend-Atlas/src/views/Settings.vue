@@ -25,7 +25,7 @@ onMounted(async () => {
     });
     if (!res.ok) throw new Error("Erreur chargement du profil");
     const data = await res.json();
-    const userData: User = await snakeToCamel(data);
+    const userData: User = snakeToCamel(data);
     user.value.username = userData.username;
     user.value.email = userData.email;
   } catch (err) {
