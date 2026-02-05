@@ -1,4 +1,3 @@
-import json
 import logging
 from uuid import UUID
 
@@ -13,7 +12,6 @@ from app.models.map import Map
 from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db
-from geoalchemy2.functions import ST_AsGeoJSON
 
 
 from ..celery_app import celery_app
