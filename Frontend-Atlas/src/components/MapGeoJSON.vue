@@ -99,8 +99,7 @@ function getFeatureAngleDeg(fid, layer) {
   const id = String(fid);
   const feature = props.features.find((f) => String(f.id) === id) || layer?.feature || null;
   const p = feature?.properties || {};
-  const raw =
-    p.rotationDeg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0;
+  const raw = p.rotationDeg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0;
   return normalizeAngleDeg(raw);
 }
 
@@ -186,6 +185,36 @@ function getLayerDimsMeters(fid) {
   return { w: null, h: null };
 }
 
+function handleFeatureClickLocal(featureId, isCtrlPressed) {
+  if (!props.editMode || !map) return;
+
+  if (props.activeEditMode === "RESIZE_SHAPE") {
+    events.applySelectionClick(String(featureId), isCtrlPressed, map);
+    return;
+  }
+
+  init.handleFeatureClick(String(featureId), isCtrlPressed, map);
+}
+
+function toggleDeleteMode() {
+  if (props.activeEditMode === "DELETE_FEATURE") emit("mode-change", null);
+  else emit("mode-change", "DELETE_FEATURE");
+}
+
+function renderAllAndRebind() {
+  if (!map) return;
+
+  layers.renderAllFeatures(filteredFeatures.value, map);
+
+  if (props.editMode) {
+    init.makeFeaturesClickable(map);
+
+    if (props.activeEditMode === "RESIZE_SHAPE" && events.selectedFeatures?.value?.size) {
+      events.syncSelectionOverlays(map);
+    }
+  }
+}
+
 onMounted(() => {
   map = L.map("map").setView([52.9399, -73.5491], 5);
 
@@ -202,16 +231,18 @@ onMounted(() => {
 
   if (props.editMode) {
     init.initializeEditControls(map);
-
     layers.featureLayerManager.setClickHandler((featureId, isCtrlPressed) => {
       handleFeatureClickLocal(featureId, isCtrlPressed);
     });
   }
+
+  renderAllAndRebind();
 });
 
 onBeforeUnmount(() => {
   clearResizeCommitTimer();
   clearRotateCommitTimer();
+
   if (map) {
     init.cleanupEditMode(map);
     layers.clearAllLayers(map);
@@ -220,30 +251,12 @@ onBeforeUnmount(() => {
   }
 });
 
-function handleFeatureClickLocal(featureId, isCtrlPressed) {
-  if (!props.editMode || !map) return;
-
-  if (events.suppressNextFeatureClick?.value) {
-    events.suppressNextFeatureClick.value = false;
-    return;
-  }
-
-  if (props.activeEditMode === "RESIZE_SHAPE") {
-    events.applySelectionClick(String(featureId), isCtrlPressed, map);
-    return;
-  }
-
-  init.handleFeatureClick(String(featureId), isCtrlPressed, map);
-}
-
-function toggleDeleteMode() {
-  if (props.activeEditMode === "DELETE_FEATURE") emit("mode-change", null);
-  else emit("mode-change", "DELETE_FEATURE");
-}
-
+// Edit mode toggle
 watch(
   () => props.editMode,
   (newEditMode) => {
+    if (!map) return;
+
     if (newEditMode) {
       if (!layers.drawnItems.value) layers.initializeBaseLayers(map);
 
@@ -252,15 +265,22 @@ watch(
         handleFeatureClickLocal(featureId, isCtrlPressed);
       });
 
-      layers.renderAllFeatures(filteredFeatures.value, map);
+      renderAllAndRebind();
     } else {
       init.cleanupEditMode(map);
+
+      try {
+        layers.featureLayerManager.setClickHandler(null);
+      } catch (e) {
+        layers.featureLayerManager.setClickHandler(() => {});
+      }
     }
 
     init.updateMapCursor(map);
   },
 );
 
+// Delete mode mapping
 watch(
   () => props.activeEditMode,
   (newMode) => {
@@ -269,6 +289,7 @@ watch(
   { immediate: true },
 );
 
+// Active mode transitions
 watch(
   () => props.activeEditMode,
   (newMode, oldMode) => {
@@ -282,35 +303,46 @@ watch(
 
     if (oldMode === "RESIZE_SHAPE" && newMode !== "RESIZE_SHAPE") {
       events.selectedFeatures.value.clear();
-      editing.updateFeatureSelectionVisual(map, layers.featureLayerManager, events.selectedFeatures.value);
+      events.clearSelectionBBoxes?.(map);
+      events.clearSelectionAnchors?.(map);
+
       emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null, angleDeg: null });
 
       if (editing.isResizeMode?.value && editing.resizingShape?.value) {
         editing.cancelResizeShape(map, layers);
       }
+
       clearResizeCommitTimer();
       clearRotateCommitTimer();
     }
   },
 );
 
+// Timeline year changes
 watch(
   () => timeline.selectedYear.value,
   (newYear) => {
     if (!map) return;
     timeline.loadRegionsForYear(newYear, map);
-    layers.renderAllFeatures(filteredFeatures.value, map);
+    renderAllAndRebind();
   },
 );
 
+// Features rerender (guard while dragging in RESIZE_SHAPE)
 watch(
   () => props.features,
   () => {
     if (!map) return;
-    layers.renderAllFeatures(filteredFeatures.value, map);
+
+    if (props.editMode && props.activeEditMode === "RESIZE_SHAPE" && events.isDraggingFeatures?.value) {
+      return;
+    }
+
+    renderAllAndRebind();
   },
 );
 
+// Visibility toggle
 watch(
   () => props.featureVisibility,
   (newVisibility) => {
@@ -321,9 +353,7 @@ watch(
   { deep: true },
 );
 
-// ==============================
 // APPLY RESIZE FROM INPUTS
-// ==============================
 watch(
   () => [props.activeEditMode, props.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
   ([mode, fid, w, h]) => {
@@ -337,8 +367,8 @@ watch(
       const cur = getLayerDimsMeters(fid);
       const tol = 25;
 
-      const wOk = (cur.w == null || w == null) ? true : Math.abs(cur.w - w) > tol;
-      const hOk = (cur.h == null || h == null) ? true : Math.abs(cur.h - h) > tol;
+      const wOk = cur.w == null || w == null ? true : Math.abs(cur.w - w) > tol;
+      const hOk = cur.h == null || h == null ? true : Math.abs(cur.h - h) > tol;
 
       if (!wOk && !hOk) {
         resizeCommitTimer = null;
@@ -355,9 +385,7 @@ watch(
   },
 );
 
-// ==============================
 // APPLY ROTATION FROM INPUT
-// ==============================
 watch(
   () => [props.activeEditMode, props.resizeFeatureId, props.rotateAngleDeg],
   ([mode, fid, angleDeg]) => {

@@ -36,41 +36,59 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
   let anchorDrag = null;
 
-
-  // -------------------------
-  // Overlay groups/panes
-  // -------------------------
-  function ensureSelectionBBoxGroup(map) {
-    if (!map) return null;
-    if (!map._selectionBBoxGroup) {
-      map._selectionBBoxGroup = L.layerGroup().addTo(map);
-      map._selectionBBoxes = new Map();
+  // =======================
+  // DOM → featureId resolver
+  // =======================
+  function getFeatureIdFromDomTarget(domTarget) {
+    let el = domTarget;
+    for (let i = 0; i < 6 && el; i += 1, el = el.parentElement) {
+      if (el._atlasFeatureId) return String(el._atlasFeatureId);
     }
-    return map._selectionBBoxGroup;
+    return null;
   }
 
-  function ensureSelectionAnchorsPane(map) {
-    if (!map) return "overlayPane";
-    if (!map.getPane("selectionAnchorsPane")) {
-      const pane = map.createPane("selectionAnchorsPane");
-      pane.style.zIndex = "800";
-      pane.style.pointerEvents = "auto";
+  // =======================
+  // Layer resolving (critical)
+  // =======================
+  function resolveEditLayer(raw) {
+    if (!raw) return null;
+
+    if (typeof raw.getLatLngs === "function" && typeof raw.setLatLngs === "function") return raw;
+
+    if (typeof raw.getLatLng === "function" && typeof raw.setLatLng === "function" && !raw.getLatLngs) return raw;
+
+    if (typeof raw.getLayers === "function") {
+      const kids = raw.getLayers();
+      if (Array.isArray(kids) && kids.length) {
+        const polys = kids.find((k) => k instanceof L.Polygon || k instanceof L.Rectangle);
+        if (polys && typeof polys.getLatLngs === "function" && typeof polys.setLatLngs === "function") return polys;
+
+        const lines = kids.find(
+          (k) => k instanceof L.Polyline && typeof k.getLatLngs === "function" && typeof k.setLatLngs === "function"
+        );
+        if (lines) return lines;
+
+        const pt = kids.find((k) => typeof k.getLatLng === "function" && typeof k.setLatLng === "function" && !k.getLatLngs);
+        if (pt) return pt;
+
+        for (const k of kids) {
+          const r = resolveEditLayer(k);
+          if (r) return r;
+        }
+      }
     }
-    return "selectionAnchorsPane";
+
+    return raw;
   }
 
-  function ensureSelectionAnchorGroup(map) {
-    if (!map) return null;
-    if (!map._selectionAnchorGroup) {
-      map._selectionAnchorGroup = L.layerGroup().addTo(map);
-      map._selectionAnchors = new Map();
-    }
-    return map._selectionAnchorGroup;
+  function getLayerForOps(featureLayerManager, fid) {
+    const raw = featureLayerManager.layers.get(String(fid));
+    return resolveEditLayer(raw);
   }
 
-  // -------------------------
+  // =======================
   // Rotation / geometry helpers
-  // -------------------------
+  // =======================
   function normalizeAngleDeg(a) {
     const n = Number(a);
     if (!Number.isFinite(n)) return 0;
@@ -190,6 +208,34 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
   }
 
+  function ensureSelectionBBoxGroup(map) {
+    if (!map) return null;
+    if (!map._selectionBBoxGroup) {
+      map._selectionBBoxGroup = L.layerGroup().addTo(map);
+      map._selectionBBoxes = new Map();
+    }
+    return map._selectionBBoxGroup;
+  }
+
+  function ensureSelectionAnchorsPane(map) {
+    if (!map) return "overlayPane";
+    if (!map.getPane("selectionAnchorsPane")) {
+      const pane = map.createPane("selectionAnchorsPane");
+      pane.style.zIndex = "800";
+      pane.style.pointerEvents = "auto";
+    }
+    return "selectionAnchorsPane";
+  }
+
+  function ensureSelectionAnchorGroup(map) {
+    if (!map) return null;
+    if (!map._selectionAnchorGroup) {
+      map._selectionAnchorGroup = L.layerGroup().addTo(map);
+      map._selectionAnchors = new Map();
+    }
+    return map._selectionAnchorGroup;
+  }
+
   function createAnchorMarker(latlng, kind, map) {
     const base = {
       weight: 2,
@@ -279,7 +325,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!fd) return null;
 
     const { angleRad, centerPt, b0 } = fd;
-    const keys = ["nw","ne","se","sw","n","e","s","w"];
+    const keys = ["nw", "ne", "se", "sw", "n", "e", "s", "w"];
 
     const back = (p0) => (Math.abs(angleRad) > 1e-9 ? rotatePoint(p0, centerPt, angleRad) : p0);
 
@@ -305,7 +351,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const { angleRad, centerPt, b0 } = fd;
 
     const n0 = handleToAnchorPoint(b0, "n");
-
     const n = Math.abs(angleRad) > 1e-9 ? rotatePoint(n0, centerPt, angleRad) : n0;
 
     const offsetPx = 30;
@@ -314,15 +359,15 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return map.layerPointToLatLng(rotPt);
   }
 
-  // -------------------------
+  // =======================
   // Selection overlays
-  // -------------------------
+  // =======================
   function upsertSelectionBBox(featureId, map, featureLayerManager) {
     if (!map) return;
     ensureSelectionBBoxGroup(map);
 
     const id = String(featureId);
-    const layer = featureLayerManager.layers.get(id);
+    const layer = getLayerForOps(featureLayerManager, id);
     if (!layer || typeof layer.getBounds !== "function") return;
 
     const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
@@ -412,8 +457,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     ensureSelectionAnchorGroup(map);
 
     const id = String(featureId);
-    const layer = featureLayerManager.layers.get(id);
-
+    const layer = getLayerForOps(featureLayerManager, id);
     if (!layer || typeof layer.getBounds !== "function") return;
 
     const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
@@ -595,17 +639,15 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     });
   }
 
-  // -------------------------
+  // =======================
   // Anchor drag: resize/line/rotate
-  // -------------------------
+  // =======================
   function startAnchorDrag(fid, handle, ev, map) {
-    const layer = layersComposable.featureLayerManager.layers.get(String(fid));
+    const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
     if (!layer) return;
 
     const isCircle = typeof layer.getRadius === "function" && typeof layer.setRadius === "function";
-    const centerLatLng = isCircle
-      ? layer.getLatLng()
-      : (layer.getBounds ? layer.getBounds().getCenter() : null);
+    const centerLatLng = isCircle ? layer.getLatLng() : (layer.getBounds ? layer.getBounds().getCenter() : null);
 
     if (isCircle && !centerLatLng) return;
 
@@ -615,14 +657,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     map.dragging.disable();
 
     if (isCircle) {
-      const startMousePt = map.latLngToLayerPoint(ev.latlng);
       anchorDrag = {
         kind: "resize",
         fid: String(fid),
         handle,
         isCircle: true,
         centerLatLng,
-        startMousePt,
       };
       return;
     }
@@ -643,9 +683,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const movingPtStart0 = handleToAnchorPoint(b0, handle);
     const fixedH = oppositeHandle(handle);
-    const fixedPt0 = fixedH
-      ? handleToAnchorPoint(b0, fixedH)
-      : L.point((b0.minX + b0.maxX) / 2, (b0.minY + b0.maxY) / 2);
+    const fixedPt0 = fixedH ? handleToAnchorPoint(b0, fixedH) : L.point((b0.minX + b0.maxX) / 2, (b0.minY + b0.maxY) / 2);
 
     anchorDrag = {
       kind: "resize",
@@ -662,8 +700,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function startLineEndpointDrag(fid, index, ev, map) {
-    const id = String(fid);
-    const layer = layersComposable.featureLayerManager.layers.get(id);
+    const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
     if (!layer || !map) return;
 
     const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
@@ -678,19 +715,18 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     anchorDrag = {
       kind: "lineEndpoint",
-      fid: id,
+      fid: String(fid),
       index: idx,
     };
   }
 
   function startRotateDrag(fid, ev, map) {
-    const id = String(fid);
-    const layer = layersComposable.featureLayerManager.layers.get(id);
+    const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
     if (!layer || !map) return;
 
     if (!layer.getLatLngs || typeof layer.setLatLngs !== "function") return;
 
-    const angleStartDeg = getAngleDegFor(id, layer);
+    const angleStartDeg = getAngleDegFor(fid, layer);
 
     const fd = getRotatedFrameData(layer, map, angleStartDeg);
     if (!fd) return;
@@ -707,7 +743,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     anchorDrag = {
       kind: "rotate",
-      fid: id,
+      fid: String(fid),
       centerPt,
       startMouseAngle,
       startAngleDeg: angleStartDeg,
@@ -719,12 +755,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!anchorDrag) return;
 
     const fid = anchorDrag.fid;
-    const layer = layersComposable.featureLayerManager.layers.get(String(fid));
+    const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
     if (!layer) return;
 
-    // -----------------
-    // ROTATION (handle)
-    // -----------------
     if (anchorDrag.kind === "rotate") {
       const { centerPt, startMouseAngle, startAngleDeg, startPtsScreen } = anchorDrag;
 
@@ -756,9 +789,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
-    // -----------------
-    // line endpoint
-    // -----------------
     if (anchorDrag.kind === "lineEndpoint") {
       if (!layer.getLatLngs || !layer.setLatLngs) return;
 
@@ -776,10 +806,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
-    // -----------------
-    // resize circle
-    // -----------------
     if (anchorDrag.kind === "resize" && anchorDrag.isCircle) {
+      const layerCircle = layer;
+
       const c = anchorDrag.centerLatLng;
       const p = ev.latlng;
 
@@ -793,14 +822,14 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       r = Math.max(1, r);
 
-      layer.setLatLng(c);
-      layer.setRadius(r);
+      layerCircle.setLatLng(c);
+      layerCircle.setRadius(r);
 
-      setCenterFor(fid, layer, c);
+      setCenterFor(fid, layerCircle, c);
 
       if (props.activeEditMode === "RESIZE_SHAPE") {
         const dims = getDimsMetersFromLayerId(fid, map);
-        const angleDeg = getAngleDegFor(fid, layer);
+        const angleDeg = getAngleDegFor(fid, layerCircle);
         emit("resize-selection", { featureId: String(fid), ...dims, angleDeg });
       }
 
@@ -809,9 +838,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return;
     }
 
-    // -----------------
-    // resize polygon/rect in rotated frame (code 1)
-    // -----------------
     if (anchorDrag.kind === "resize" && !anchorDrag.isCircle) {
       const curMousePt = map.latLngToLayerPoint(ev.latlng);
 
@@ -823,8 +849,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const fixed0 = anchorDrag.fixedPt0;
       const startMove0 = anchorDrag.movingPtStart0;
 
-      const denomX = (startMove0.x - fixed0.x);
-      const denomY = (startMove0.y - fixed0.y);
+      const denomX = startMove0.x - fixed0.x;
+      const denomY = startMove0.y - fixed0.y;
 
       let sx = denomX !== 0 ? (cur0.x - fixed0.x) / denomX : 1;
       let sy = denomY !== 0 ? (cur0.y - fixed0.y) / denomY : 1;
@@ -862,7 +888,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const newPts = Math.abs(angleRad) > 1e-9 ? rotatePointsTree(newPts0, centerPt, angleRad) : newPts0;
       const newLatLngs = mapPointsToLatLngs(map, newPts);
 
-      if (layer.setLatLngs) layer.setLatLngs(newLatLngs);
+      layer.setLatLngs(newLatLngs);
 
       const newCenter = layer.getBounds?.()?.getCenter?.();
       if (newCenter) setCenterFor(fid, layer, newCenter);
@@ -879,6 +905,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function geometryFromLayer(layer) {
+    layer = resolveEditLayer(layer);
+
     if (layer.getLatLng && !layer.getLatLngs) {
       const ll = layer.getLatLng();
       return { type: "Point", coordinates: [ll.lng, ll.lat] };
@@ -896,11 +924,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const ring = latlngs[0] ?? latlngs;
       const coords = ring.map((ll) => [ll.lng, ll.lat]);
 
-      if (
-        coords.length &&
-        (coords[0][0] !== coords[coords.length - 1][0] ||
-          coords[0][1] !== coords[coords.length - 1][1])
-      ) {
+      if (coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
         coords.push(coords[0]);
       }
       return { type: "Polygon", coordinates: [coords] };
@@ -913,13 +937,13 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!anchorDrag) return;
 
     const fid = anchorDrag.fid;
-    const layer = layersComposable.featureLayerManager.layers.get(String(fid));
+    const raw = layersComposable.featureLayerManager.layers.get(String(fid));
+    const layer = resolveEditLayer(raw);
 
     map.dragging.enable();
 
     if (!layer) {
       anchorDrag = null;
-      map.dragging.enable();
       return;
     }
 
@@ -953,12 +977,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     anchorDrag = null;
   }
 
-  // -------------------------
+  // =======================
   // Dims/angle exposure to UI
-  // -------------------------
+  // =======================
   function getDimsMetersFromLayerId(fid, map) {
-    const id = String(fid);
-    const layer = layersComposable.featureLayerManager.layers.get(id);
+    const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
     if (!layer || !map) return { widthMeters: null, heightMeters: null };
 
     if (typeof layer.getRadius === "function") {
@@ -967,7 +990,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
 
     if (typeof layer.getLatLngs === "function" && typeof layer.getBounds === "function") {
-      const angleDeg = getAngleDegFor(id, layer);
+      const angleDeg = getAngleDegFor(fid, layer);
       const angleRad = (angleDeg * Math.PI) / 180;
 
       const bounds = layer.getBounds();
@@ -1026,10 +1049,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function getAngleDegFromLayerId(fid) {
-    const id = String(fid);
-    const layer = layersComposable.featureLayerManager.layers.get(id);
+    const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
     if (!layer) return 0;
-    return getAngleDegFor(id, layer);
+    return getAngleDegFor(fid, layer);
   }
 
   function setRotationDegForSelection(angleDeg, map) {
@@ -1037,7 +1059,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const a = normalizeAngleDeg(angleDeg);
 
     selectedFeatures.value.forEach((fid) => {
-      const layer = layersComposable.featureLayerManager.layers.get(String(fid));
+      const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
       if (!layer || !layer.getLatLngs || typeof layer.setLatLngs !== "function") return;
 
       const oldAngle = getAngleDegFor(fid, layer);
@@ -1101,17 +1123,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
   }
 
-  // -------------------------
-  // Selection by DOM target
-  // -------------------------
-  function getFeatureIdFromDomTarget(domTarget) {
-    let el = domTarget;
-    for (let i = 0; i < 6 && el; i += 1, el = el.parentElement) {
-      if (el._atlasFeatureId) return String(el._atlasFeatureId);
-    }
-    return null;
-  }
-
   function cloneLatLngs(latlngs) {
     if (Array.isArray(latlngs)) return latlngs.map(cloneLatLngs);
     return L.latLng(latlngs.lat, latlngs.lng);
@@ -1126,17 +1137,17 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     originalPositions.value.clear();
 
     selectedFeatures.value.forEach((featureId) => {
-      const layer = layersComposable.featureLayerManager.layers.get(String(featureId));
+      const layer = getLayerForOps(layersComposable.featureLayerManager, featureId);
       if (!layer) return;
 
       if (layer.getLatLng && typeof layer.setLatLng === "function" && !layer.getLatLngs) {
         const ll = layer.getLatLng();
-        originalPositions.value.set(featureId, L.latLng(ll.lat, ll.lng));
+        originalPositions.value.set(String(featureId), L.latLng(ll.lat, ll.lng));
         return;
       }
 
       if (layer.getLatLngs && typeof layer.setLatLngs === "function") {
-        originalPositions.value.set(featureId, cloneLatLngs(layer.getLatLngs()));
+        originalPositions.value.set(String(featureId), cloneLatLngs(layer.getLatLngs()));
       }
     });
   }
@@ -1197,6 +1208,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       freeLinePoints.value.push(e.latlng);
       const smoothedPoints = editingComposable.smoothFreeLinePoints(freeLinePoints.value);
       tempFreeLine.setLatLngs(smoothedPoints);
+    }
+
+    if (anchorDrag) {
+      updateAnchorDrag(e, map);
     }
   }
 
@@ -1464,7 +1479,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       case "CREATE_POLYGON":
         handlePolygonClick(e.latlng, map);
         break;
-      case "CREATE_SHAPES":
+      default:
         break;
     }
   }
@@ -1490,20 +1505,15 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     }
 
     if (currentPolygonPoints.value.length >= 3) {
-      lines.push(
-        currentPolygonPoints.value[currentPolygonPoints.value.length - 1],
-        currentPolygonPoints.value[0]
-      );
+      lines.push(currentPolygonPoints.value[currentPolygonPoints.value.length - 1], currentPolygonPoints.value[0]);
     }
 
-    if (lines.length > 0) {
-      tempPolygon = L.polyline(lines, {
-        color: "#000000",
-        weight: 2,
-        opacity: 1.0,
-      });
-      layersComposable.drawnItems.value.addLayer(tempPolygon);
-    }
+    tempPolygon = L.polyline(lines, {
+      color: "#000000",
+      weight: 2,
+      opacity: 1.0,
+    });
+    layersComposable.drawnItems.value.addLayer(tempPolygon);
   }
 
   function finishPolygon(map) {
@@ -1532,7 +1542,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   // =======================
-  // Movement handlers
+  // Movement handlers (select + drag objects)
   // =======================
   function handleMoveMouseDown(e, map) {
     if (!props.editMode) return;
@@ -1552,7 +1562,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       isDraggingFeatures.value = false;
 
-      if (selectedFeatures.value.has(downFeatureId)) snapshotSelectedOriginalPositions();
+      if (selectedFeatures.value.has(String(downFeatureId))) snapshotSelectedOriginalPositions();
       else originalPositions.value.clear();
 
       return;
@@ -1581,9 +1591,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
         const isCtrl = !!(oe?.ctrlKey || oe?.metaKey);
 
-        if (!selectedFeatures.value.has(downFeatureId)) {
+        if (!selectedFeatures.value.has(String(downFeatureId))) {
           if (!isCtrl) selectedFeatures.value.clear();
-          selectedFeatures.value.add(downFeatureId);
+          selectedFeatures.value.add(String(downFeatureId));
           syncSelectionOverlays(map);
         }
 
@@ -1595,8 +1605,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         const dLng = e.latlng.lng - moveDownLatLng.lng;
 
         selectedFeatures.value.forEach((featureId) => {
-          const layer = layersComposable.featureLayerManager.layers.get(String(featureId));
-          const orig = originalPositions.value.get(featureId);
+          const layer = getLayerForOps(layersComposable.featureLayerManager, featureId);
+          const orig = originalPositions.value.get(String(featureId));
           if (!layer || !orig) return;
 
           if (layer.getLatLng && typeof layer.setLatLng === "function" && !layer.getLatLngs) {
@@ -1691,12 +1701,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         removeSelectionAnchors(fid, map);
       });
 
-      editingComposable.deleteSelectedFeatures(
-        selectedFeatures.value,
-        layersComposable.featureLayerManager,
-        map,
-        emit
-      );
+      editingComposable.deleteSelectedFeatures(selectedFeatures.value, layersComposable.featureLayerManager, map, emit);
 
       selectedFeatures.value.clear();
       if (props.activeEditMode === "RESIZE_SHAPE") {
@@ -1812,7 +1817,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     upsertSelectionBBox,
     upsertSelectionAnchors,
 
-    // NEW: call this from your angle input
     setRotationDegForSelection,
   };
 }

@@ -1,11 +1,34 @@
 import L from "leaflet";
 
 export function useMapInit(props, emit, layersComposable, eventsComposable, editingComposable, timelineComposable) {
+  const boundHandlers = {
+    mousedown: null,
+    mousemove: null,
+    mouseup: null,
+    keydown: null,
+    click: null,
+    dblclick: null,
+    contextmenu: null,
+    dragstart: null,
+  };
+
+  // État d’origine des interactions map pour pouvoir les restaurer
+  const uiState = {
+    saved: false,
+    doubleClickZoom: null,
+    boxZoom: null,
+    keyboard: null,
+    touchZoom: null,
+    tap: null,
+  };
+
   function initializeEditControls(map) {
-    if (!props.editMode) return;
+    if (!props.editMode || !map) return;
+
+    setLeafletUiSuppression(map, true);
 
     updateMapCursor(map);
-    makeFeaturesClickable();
+    makeFeaturesClickable(map);
     attachEditEventHandlers(map);
   }
 
@@ -21,55 +44,155 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
   }
 
   function attachEditEventHandlers(map) {
+    detachEditEventHandlers(map);
+
+    const container = map.getContainer();
+    if (container && !container.hasAttribute("tabindex")) {
+      container.setAttribute("tabindex", "0");
+    }
+
+    const bind = (name, fn) => {
+      boundHandlers[name] = fn;
+      map.on(name, fn);
+    };
+
     if (props.activeEditMode === "CREATE_LINE" || props.activeEditMode === "CREATE_FREE_LINE") {
-      map.on("mousedown", (e) => eventsComposable.handleMouseDown(e, map));
-      map.on("mousemove", (e) => eventsComposable.handleMouseMove(e, map));
-      map.on("mouseup", (e) => eventsComposable.handleMouseUp(e, map));
+      bind("mousedown", (e) => eventsComposable.handleMouseDown(e, map));
+      bind("mousemove", (e) => eventsComposable.handleMouseMove(e, map));
+      bind("mouseup", (e) => eventsComposable.handleMouseUp(e, map));
     } else if (props.activeEditMode === "CREATE_SHAPES") {
-      map.on("mousedown", (e) => eventsComposable.handleShapeMouseDown(e, map));
-      map.on("mousemove", (e) => eventsComposable.handleShapeMouseMove(e, map));
-      map.on("mouseup", (e) => eventsComposable.handleShapeMouseUp(e, map));
-      map.on("dragstart", (e) => eventsComposable.preventDragDuringShapeDrawing(e));
+      bind("mousedown", (e) => eventsComposable.handleShapeMouseDown(e, map));
+      bind("mousemove", (e) => eventsComposable.handleShapeMouseMove(e, map));
+      bind("mouseup", (e) => eventsComposable.handleShapeMouseUp(e, map));
+      bind("dragstart", (e) => eventsComposable.preventDragDuringShapeDrawing(e));
     } else if (props.activeEditMode === "RESIZE_SHAPE") {
-      map.on("mousedown", (e) => eventsComposable.handleMoveMouseDown(e, map));
-      map.on("mousemove", (e) => eventsComposable.handleMoveMouseMove(e, map));
-      map.on("mouseup", (e) => eventsComposable.handleMoveMouseUp(e, map));
+      bind("mousedown", (e) => eventsComposable.handleMoveMouseDown(e, map));
+      bind("mousemove", (e) => eventsComposable.handleMoveMouseMove(e, map));
+      bind("mouseup", (e) => eventsComposable.handleMoveMouseUp(e, map));
     } else if (props.activeEditMode === "CREATE_POLYGON") {
-      map.on("contextmenu", (e) => eventsComposable.handleRightClick(e, map));
-      map.on("click", (e) => eventsComposable.handleMapClick(e, map));
-      map.on("dblclick", (e) => eventsComposable.handleMapDoubleClick(e, map));
+      bind("contextmenu", (e) => eventsComposable.handleRightClick(e, map));
+      bind("click", (e) => eventsComposable.handleMapClick(e, map));
+      bind("dblclick", (e) => eventsComposable.handleMapDoubleClick(e, map));
     } else if (props.activeEditMode === "CREATE_POINT") {
-      map.on("click", (e) => eventsComposable.handleMapClick(e, map));
+      bind("click", (e) => eventsComposable.handleMapClick(e, map));
     } else if (props.editMode && !props.activeEditMode) {
-      map.on("mousedown", (e) => eventsComposable.handleMoveMouseDown(e, map));
-      map.on("mousemove", (e) => eventsComposable.handleMoveMouseMove(e, map));
-      map.on("mouseup", (e) => eventsComposable.handleMoveMouseUp(e, map));
+      bind("mousedown", (e) => eventsComposable.handleMoveMouseDown(e, map));
+      bind("mousemove", (e) => eventsComposable.handleMoveMouseMove(e, map));
+      bind("mouseup", (e) => eventsComposable.handleMoveMouseUp(e, map));
     }
 
     if (props.editMode) {
-      map.on("keydown", (e) => eventsComposable.handleKeyDown(e, map));
+      bind("keydown", (e) => eventsComposable.handleKeyDown(e, map));
+
+      const focusOnMouseDown = () => container && container.focus();
+      container?.addEventListener("mousedown", focusOnMouseDown, { once: true });
     }
   }
 
   function detachEditEventHandlers(map) {
-    map.off("mousedown");
-    map.off("mousemove");
-    map.off("mouseup");
-    map.off("keydown");
-    map.off("click");
-    map.off("dblclick");
-    map.off("contextmenu");
-    map.off("dragstart");
+    if (!map) return;
+
+    const offIf = (name) => {
+      if (boundHandlers[name]) {
+        map.off(name, boundHandlers[name]);
+        boundHandlers[name] = null;
+      }
+    };
+
+    offIf("mousedown");
+    offIf("mousemove");
+    offIf("mouseup");
+    offIf("keydown");
+    offIf("click");
+    offIf("dblclick");
+    offIf("contextmenu");
+    offIf("dragstart");
   }
 
-  function makeFeaturesClickable() {
+  // Ne casse pas les clicks Leaflet sur les layers.
+  // Désactive seulement des interactions "gênantes" + strip popups/tooltips.
+  // IMPORTANT: on garde scrollWheelZoom actif (molette) en mode édition.
+  function setLeafletUiSuppression(map, enabled) {
+    if (!map) return;
+
+    if (!uiState.saved) {
+      uiState.saved = true;
+      uiState.doubleClickZoom = map.doubleClickZoom?.enabled?.() ?? null;
+      uiState.boxZoom = map.boxZoom?.enabled?.() ?? null;
+      uiState.keyboard = map.keyboard?.enabled?.() ?? null;
+      uiState.touchZoom = map.touchZoom?.enabled?.() ?? null;
+      uiState.tap = map.tap ? true : null;
+    }
+
+    const toggle = (handler, shouldEnable) => {
+      if (!handler) return;
+      if (shouldEnable) handler.enable?.();
+      else handler.disable?.();
+    };
+
+    if (enabled) {
+      toggle(map.doubleClickZoom, false);
+      toggle(map.boxZoom, false);
+      toggle(map.keyboard, false);
+
+      // On garde la molette active
+      map.scrollWheelZoom?.enable?.();
+
+      toggle(map.touchZoom, false);
+      if (map.tap) map.tap.disable?.();
+
+      stripLayerUi(layersComposable.featureLayerManager);
+      if (layersComposable.drawnItems.value) stripGroupUi(layersComposable.drawnItems.value);
+    } else {
+      if (uiState.doubleClickZoom != null) toggle(map.doubleClickZoom, uiState.doubleClickZoom);
+      if (uiState.boxZoom != null) toggle(map.boxZoom, uiState.boxZoom);
+      if (uiState.keyboard != null) toggle(map.keyboard, uiState.keyboard);
+      if (uiState.touchZoom != null) toggle(map.touchZoom, uiState.touchZoom);
+      if (map.tap && uiState.tap != null) map.tap.enable?.();
+
+      // On laisse scrollWheelZoom tel qu’il était (on l’a forcé enable en édition),
+      // si tu veux restaurer strictement l’état initial, ajoute-le à uiState.
+    }
+  }
+
+  function stripLayerUi(featureLayerManager) {
+    if (!featureLayerManager?.layers) return;
+    featureLayerManager.layers.forEach((layer) => {
+      stripOneLayerUi(layer);
+      if (layer && typeof layer.eachLayer === "function") {
+        layer.eachLayer((kid) => stripOneLayerUi(kid));
+      }
+    });
+  }
+
+  function stripGroupUi(group) {
+    if (!group || typeof group.eachLayer !== "function") return;
+    group.eachLayer((layer) => stripOneLayerUi(layer));
+  }
+
+  function stripOneLayerUi(layer) {
+    if (!layer) return;
+
+    if (typeof layer.unbindTooltip === "function") layer.unbindTooltip();
+    if (typeof layer.closeTooltip === "function") layer.closeTooltip();
+
+    if (typeof layer.unbindPopup === "function") layer.unbindPopup();
+    if (typeof layer.closePopup === "function") layer.closePopup();
+  }
+
+  // À appeler après renderAllFeatures() aussi (sinon les nouveaux layers réintroduisent des popups)
+  function makeFeaturesClickable(map) {
+    if (!map) return;
+
     layersComposable.featureLayerManager.layers.forEach((layer, featureId) => {
+      stripOneLayerUi(layer);
       layersComposable.featureLayerManager.makeLayerClickable(featureId, layer);
     });
 
     if (layersComposable.drawnItems.value) {
       layersComposable.drawnItems.value.eachLayer((layer) => {
         const tempId = "temp_" + Math.random();
+        stripOneLayerUi(layer);
         layersComposable.featureLayerManager.makeLayerClickable(tempId, layer);
       });
     }
@@ -78,18 +201,13 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
   function handleFeatureClick(featureId, isCtrlPressed, map) {
     const fid = String(featureId);
 
-    if (eventsComposable.suppressNextFeatureClick?.value) {
-      eventsComposable.suppressNextFeatureClick.value = false;
-      return;
-    }
-
-    if (editingComposable.isDeleteMode.value) {
-      editingComposable.deleteFeature(fid, layersComposable.featureLayerManager, map, emit);
-      return;
-    }
-
-    if (eventsComposable.justFinishedDrag.value) {
+    if (eventsComposable.justFinishedDrag?.value) {
       eventsComposable.justFinishedDrag.value = false;
+      return;
+    }
+
+    if (editingComposable.isDeleteMode?.value) {
+      editingComposable.deleteFeature(fid, layersComposable.featureLayerManager, map, emit);
       return;
     }
 
@@ -97,6 +215,8 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
   }
 
   function cleanupEditMode(map) {
+    setLeafletUiSuppression(map, false);
+
     if (layersComposable.drawnItems.value) {
       layersComposable.drawnItems.value.eachLayer((layer) => {
         if (layer instanceof L.CircleMarker) {
@@ -130,5 +250,6 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
     makeFeaturesClickable,
     handleFeatureClick,
     cleanupEditMode,
+    setLeafletUiSuppression,
   };
 }
