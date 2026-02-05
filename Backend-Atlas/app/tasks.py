@@ -130,7 +130,6 @@ def process_map_extraction(
     map_id: str,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
-    use_tps: bool = False,
 ):
     """Process map extraction with SIFT-based georeferencing."""
     logger.info(f"Starting map processing for {filename}")
@@ -140,7 +139,7 @@ def process_map_extraction(
 
     if pixel_points and geo_points_lonlat:
         logger.info(
-            f"[DEBUG] SIFT georeferencing with {len(pixel_points)} point pairs, use_tps={use_tps}"
+            f"[DEBUG] SIFT georeferencing with {len(pixel_points)} point pairs"
         )
         logger.info(
             f"[DEBUG] First pixel point: {pixel_points[0]}, first geo point: {geo_points_lonlat[0]}"
@@ -262,13 +261,12 @@ def process_map_extraction(
         if pixel_points and geo_points_lonlat:
             try:
                 logger.info(
-                    f"[DEBUG] Starting SIFT-based georeferencing with {len(pixel_points)} points, use_tps={use_tps}"
+                    f"[DEBUG] Starting SIFT-based georeferencing with {len(pixel_points)} points"
                 )
                 georef_features = georeference_features_with_sift_points(
                     pixel_features,
                     pixel_points,
-                    geo_points_lonlat,
-                    use_tps=use_tps
+                    geo_points_lonlat
                 )
                 if georef_features:
                     asyncio.run(persist_features(map_uuid, georef_features))

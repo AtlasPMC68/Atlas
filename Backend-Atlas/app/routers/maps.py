@@ -37,7 +37,6 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
-    use_tps: bool = Form(False),
     file: UploadFile = File(...), 
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -45,7 +44,6 @@ async def upload_and_process_map(
     logger.debug(f"Starting map upload with SIFT points")
     logger.info(f"Image points (pixels): {image_points}")
     logger.info(f"World points (coordinates): {world_points}")
-    logger.info(f"Use TPS transformation: {use_tps}")
     
     """Upload une carte et lance l'extraction de données"""
     
@@ -103,8 +101,7 @@ async def upload_and_process_map(
             file_content, 
             str(map_id),
             pixel_points_list,
-            geo_points_list,
-            use_tps
+            geo_points_list
         )
         #TODO: either delete the created map if task fails or create cleanup mechanism
         
