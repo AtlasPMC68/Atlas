@@ -5,16 +5,20 @@ import warnings
 import unicodedata
 import numpy as np
 from pathlib import Path
+import requests
 from copy import deepcopy
 from tests.utils.expected_results import MAP_EXPECTED_TEXTS
 from app.utils.text_extraction import extract_text
 from weighted_levenshtein import lev
 
+
 def custom_formatwarning(message, category, filename, lineno, line=None):
     """Returns the warning with a custom format"""
     return f"{category.__name__}: {message}\n"
 
+# Apply the warning format change
 warnings.formatwarning = custom_formatwarning
+
 
 def get_image_paths():
     """
@@ -121,7 +125,7 @@ def levenshtein_params():
     get_test_data(),
     ids=lambda val: val.name if isinstance(val, Path) else None
 )
-def test_text_extraction(image_path, expected_text, levenshtein_params):
+def test_text_extraction(image_path, expected_text, levenshtein_params, request):
 
     assert image_path.exists()
     img = cv2.imread(str(image_path))
@@ -135,9 +139,16 @@ def test_text_extraction(image_path, expected_text, levenshtein_params):
     #assert len(remaining_ocr_words) == len(remaining_expected_words)
 
     res: dict[str, tuple[str, float]] = check_for_match(remaining_ocr_words, remaining_expected_words, levenshtein_params)
+    match_count = sum(1 for _, dist in res.values() if dist < 1.0)
+    total_count = len(expected_text)
+    request.node.user_metadata = {
+        "match_count": match_count,
+        "total_count": total_count
+    }
+
 
     # For anything other than
     for expected_word, (ocr_word, distance) in res.items():
-        if distance >= 0.0:
+        if distance/len(expected_word) > 0.1:
             warnings.warn(UserWarning( f"Partial match for expected: '{expected_word}', and found '{ocr_word}' (d = {distance})."))
 
