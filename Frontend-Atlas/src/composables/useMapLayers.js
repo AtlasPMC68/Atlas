@@ -1,23 +1,25 @@
-import { ref, computed } from 'vue';
-import L from 'leaflet';
-import { toArray, getRadiusForZoom, transformNormalizedToWorld } from '../utils/mapUtils.js';
-import { MAP_CONFIG } from './useMapConfig.js';
+import { ref } from "vue";
+import L from "leaflet";
+import { toArray, getRadiusForZoom, transformNormalizedToWorld } from "../utils/mapUtils.js";
+import { MAP_CONFIG } from "./useMapConfig.js";
+import { getMapElementType } from "../utils/featureTypes.js";
 
 export function useMapLayers(props, emit) {
-  let citiesLayer = null;
-  let zonesLayer = null;
-  let arrowsLayer = null;
   const drawnItems = ref(null);
   let baseTileLayer = null;
   let labelLayer = null;
 
   const allCircles = ref(new Set());
-
   const previousFeatureIds = ref(new Set());
 
   const featureLayerManager = {
     layers: new Map(),
     clickHandler: null,
+    map: null,
+
+    setMap(map) {
+      this.map = map;
+    },
 
     setClickHandler(handler) {
       this.clickHandler = handler;
@@ -25,16 +27,17 @@ export function useMapLayers(props, emit) {
 
     addFeatureLayer(featureId, layer, feature) {
       const fid = String(featureId);
-      
+
       if (this.layers.has(fid)) {
         const oldLayer = this.layers.get(fid);
         if (oldLayer instanceof L.CircleMarker) {
           allCircles.value.delete(oldLayer);
         }
-        if (oldLayer._map) {
-          oldLayer._map.removeLayer(oldLayer);
+        if (this.map && this.map.hasLayer(oldLayer)) {
+          this.map.removeLayer(oldLayer);
         }
       }
+
       this.layers.set(fid, layer);
 
       if (layer.setStyle && feature) {
@@ -54,7 +57,15 @@ export function useMapLayers(props, emit) {
         this.makeLayerClickable(fid, layer);
       }
 
-      if (props.featureVisibility.get(fid)) {
+      // visibility: default true if undefined
+      const visible = props.featureVisibility?.get(fid);
+      const shouldShow = visible === undefined ? true : Boolean(visible);
+
+      if (shouldShow && this.map && !this.map.hasLayer(layer)) {
+        this.map.addLayer(layer);
+      }
+      if (!shouldShow && this.map && this.map.hasLayer(layer)) {
+        this.map.removeLayer(layer);
       }
     },
 
@@ -62,7 +73,6 @@ export function useMapLayers(props, emit) {
       const fid = String(featureId);
 
       layer.options.interactive = true;
-
       layer.options.bubblingMouseEvents = true;
 
       if (layer.__atlas_onDown) layer.off("mousedown", layer.__atlas_onDown);
@@ -115,7 +125,12 @@ export function useMapLayers(props, emit) {
     toggleFeature(featureId, visible) {
       const fid = String(featureId);
       const layer = this.layers.get(fid);
-      if (layer) {
+      if (!layer || !this.map) return;
+
+      if (visible) {
+        if (!this.map.hasLayer(layer)) this.map.addLayer(layer);
+      } else {
+        if (this.map.hasLayer(layer)) this.map.removeLayer(layer);
       }
     },
 
@@ -124,7 +139,7 @@ export function useMapLayers(props, emit) {
         if (layer instanceof L.CircleMarker) {
           allCircles.value.delete(layer);
         }
-        if (layer._map) {
+        if (map && map.hasLayer(layer)) {
           map.removeLayer(layer);
         }
       });
@@ -143,33 +158,31 @@ export function useMapLayers(props, emit) {
 
   function renderCities(features, map) {
     const safeFeatures = toArray(features);
-    const currentZoom = map.getZoom();
-    const radius = getRadiusForZoom(currentZoom);
+    const radius = getRadiusForZoom(map.getZoom());
 
     safeFeatures.forEach((feature) => {
-      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
-        return;
-      }
+      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) return;
 
       const [lng, lat] = feature.geometry.coordinates;
       const coord = [lat, lng];
 
-      const props = feature.properties || {};
-      const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+      const fprops = feature.properties || {};
+      const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
       const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
       const color = feature.color || colorFromRgb || "#000";
 
       const circle = L.circleMarker(coord, {
-        radius: radius,
-        fillColor: feature.color || "#000000",
-        color: feature.color || "#333333",
+        radius,
+        fillColor: color,
+        color,
         weight: 1,
         opacity: feature.opacity ?? 0.8,
         fillOpacity: feature.opacity ?? 0.8,
       });
 
-      if (feature.name) {
-        circle.bindTooltip(feature.name, {
+      const labelText = fprops.name || feature.name || "";
+      if (labelText) {
+        circle.bindTooltip(labelText, {
           permanent: false,
           direction: "top",
           offset: [0, -5],
@@ -177,9 +190,6 @@ export function useMapLayers(props, emit) {
       }
 
       featureLayerManager.addFeatureLayer(feature.id, circle, feature);
-      if (props.featureVisibility.get(String(feature.id))) {
-        map.addLayer(circle);
-      }
     });
   }
 
@@ -187,29 +197,22 @@ export function useMapLayers(props, emit) {
     const safeFeatures = toArray(features);
 
     safeFeatures.forEach((feature) => {
-      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
-        return;
-      }
+      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) return;
 
-      const props = feature.properties || {};
-      const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+      const fprops = feature.properties || {};
+      const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
       const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
       const fillColor = feature.color || colorFromRgb || "#ccc";
       let targetGeometry = feature.geometry;
 
-      if (props.is_normalized) {
-        const fc = {
-          type: "FeatureCollection",
-          features: [feature],
-        };
+      if (fprops.is_normalized) {
+        const fc = { type: "FeatureCollection", features: [feature] };
 
         const anchorLat = -80 + Math.random() * 160;
         const anchorLng = -170 + Math.random() * 340;
-
         const sizeMeters = 2_000_000;
 
         const worldFc = transformNormalizedToWorld(fc, anchorLat, anchorLng, sizeMeters);
-
         if (worldFc && Array.isArray(worldFc.features) && worldFc.features[0]?.geometry) {
           targetGeometry = worldFc.features[0].geometry;
         }
@@ -224,57 +227,56 @@ export function useMapLayers(props, emit) {
         },
       });
 
-      const name = props.name || feature.name;
-      if (name) {
-        layer.bindPopup(name);
-      }
+      const name = fprops.name || feature.name;
+      if (name) layer.bindPopup(name);
 
       featureLayerManager.addFeatureLayer(feature.id, layer, feature);
-      if (props.featureVisibility.get(String(feature.id))) {
-        map.addLayer(layer);
-      }
     });
   }
 
-  function renderArrows(features, map) {
-    const safeFeatures = toArray(features);
+    function renderArrows(features, map) {
+      const safeFeatures = toArray(features);
 
-    safeFeatures.forEach((feature) => {
-      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) {
-        return;
-      }
-      const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      safeFeatures.forEach((feature) => {
+        if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) return;
 
-      const props = feature.properties || {};
-      const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
-      const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
-      const color = feature.color || colorFromRgb || "#000";
+        const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 
-      const line = L.polyline(latLngs, {
-        color,
-        weight: feature.stroke_width ?? 2,
-        opacity: feature.opacity ?? 1,
+        const fprops = feature.properties || {};
+        const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
+        const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
+        const color = feature.color || colorFromRgb || "#000";
+
+        const line = L.polyline(latLngs, {
+          color,
+          weight: feature.stroke_width ?? 2,
+          opacity: feature.opacity ?? 1,
+        });
+
+        const name = fprops.name || feature.name;
+        if (name) line.bindPopup(name);
+
+        const elementType = getMapElementType(feature);
+        const visible = props.featureVisibility?.get(String(feature.id));
+        const shouldShow = visible === undefined ? true : Boolean(visible);
+
+        if (shouldShow && elementType === "arrow" && typeof line.arrowheads === "function") {
+          line.arrowheads({
+            size: "10px",
+            frequency: "endonly",
+            fill: true,
+          });
+        }
+
+        featureLayerManager.addFeatureLayer(feature.id, line, feature);
       });
-
-      const name = props.name || feature.name;
-      if (name) {
-        line.bindPopup(name);
-      }
-
-      featureLayerManager.addFeatureLayer(feature.id, line, feature);
-      if (props.featureVisibility.get(String(feature.id))) {
-        map.addLayer(line);
-      }
-    });
-  }
+    }
 
   function renderShapes(features, map) {
     const safeFeatures = toArray(features);
 
     safeFeatures.forEach((feature) => {
-      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates) || !feature.geometry.coordinates[0]) {
-        return;
-      }
+      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates) || !feature.geometry.coordinates[0]) return;
 
       const latLngs = feature.geometry.coordinates[0].map((coord) => [coord[1], coord[0]]);
 
@@ -286,14 +288,9 @@ export function useMapLayers(props, emit) {
         interactive: true,
       });
 
-      if (feature.name) {
-        shape.bindPopup(feature.name);
-      }
+      if (feature.name) shape.bindPopup(feature.name);
 
       featureLayerManager.addFeatureLayer(feature.id, shape, feature);
-      if (props.featureVisibility.get(String(feature.id))) {
-        map.addLayer(shape);
-      }
     });
   }
 
@@ -304,48 +301,39 @@ export function useMapLayers(props, emit) {
     previousIds.forEach((oldId) => {
       if (!currentIds.has(oldId)) {
         const layer = featureLayerManager.layers.get(oldId);
-        if (layer) {
+        if (layer && map.hasLayer(layer)) {
           map.removeLayer(layer);
-          featureLayerManager.layers.delete(oldId);
         }
+        featureLayerManager.layers.delete(oldId);
       }
     });
 
     const newFeatures = filteredFeatures.filter((f) => !previousIds.has(String(f.id)));
+
     const featuresByType = {
-      point: newFeatures.filter((f) => f.type === "point"),
-      polygon: newFeatures.filter((f) => f.type === "zone"),
-      arrow: newFeatures.filter((f) => f.type === "arrow" || f.type === "polyline"),
-      square: newFeatures.filter((f) => f.type === "square"),
-      rectangle: newFeatures.filter((f) => f.type === "rectangle"),
-      circle: newFeatures.filter((f) => f.type === "circle"),
-      triangle: newFeatures.filter((f) => f.type === "triangle"),
-      oval: newFeatures.filter((f) => f.type === "oval"),
+      point: newFeatures.filter((f) => getMapElementType(f) === "point"),
+      zone: newFeatures.filter((f) => getMapElementType(f) === "zone"),
+      polyline: newFeatures.filter((f) => getMapElementType(f) === "polyline"),
+      arrow: newFeatures.filter((f) => getMapElementType(f) === "arrow"),
+      shape: newFeatures.filter((f) => getMapElementType(f) === "shape"),
     };
 
     renderCities(featuresByType.point, map);
-    renderZones(featuresByType.polygon, map);
-    renderArrows(featuresByType.arrow, map);
-    renderShapes(featuresByType.square, map);
-    renderShapes(featuresByType.rectangle, map);
-    renderShapes(featuresByType.circle, map);
-    renderShapes(featuresByType.triangle, map);
-    renderShapes(featuresByType.oval, map);
+    renderShapes(featuresByType.shape, map);
+    renderZones(featuresByType.zone, map);
+    renderArrows([...featuresByType.polyline, ...featuresByType.arrow], map);
 
     previousFeatureIds.value = currentIds;
-
-    emit("features-loaded", filteredFeatures);
   }
 
   function initializeBaseLayers(map) {
-    baseTileLayer = L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-      {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-        subdomains: "abcd",
-        maxZoom: 19,
-      }
-    ).addTo(map);
+    featureLayerManager.setMap(map);
+
+    baseTileLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 19,
+    }).addTo(map);
 
     drawnItems.value = new L.FeatureGroup();
     map.addLayer(drawnItems.value);
@@ -358,17 +346,14 @@ export function useMapLayers(props, emit) {
   }
 
   return {
-    // State
     allCircles,
     featureLayerManager,
     previousFeatureIds,
 
-    // Layer collections (for external access)
     drawnItems,
     baseTileLayer,
     labelLayer,
 
-    // Functions
     renderCities,
     renderZones,
     renderArrows,

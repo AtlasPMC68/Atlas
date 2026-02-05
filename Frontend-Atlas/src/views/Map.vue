@@ -171,28 +171,24 @@ import MapGeoJSON from "../components/MapGeoJSON.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
-import { useRouter, useRoute } from "vue-router";
+import { useRoute } from "vue-router";
 import keycloak from "../keycloak";
+import { normalizeFeatures } from "../utils/featureTypes.js";
 
 const route = useRoute();
-const router = useRouter();
 
 const mapId = ref(route.params.mapId);
 const features = ref([]);
 const featureVisibility = ref(new Map());
-const error = ref("");
 
 const showSaveAsModal = ref(false);
 const isEditMode = ref(false);
 const activeEditMode = ref(null);
 
-// =====================
 // Redimensionnement manuel (inputs)
-// =====================
 const resizeFeatureId = ref(null);
 const resizeWidthInput = ref("");
 const resizeHeightInput = ref("");
-
 const rotateAngleInput = ref("");
 
 const kmToMeters = (kmStr) => {
@@ -262,10 +258,6 @@ const editModes = [
   { id: "DELETE_FEATURE", label: "Supprimer", icon: "fas fa-trash" },
 ];
 
-const title = ref("");
-const description = ref("");
-const access_level = ref("");
-
 const selectedShape = ref(null);
 const shapeTypes = [
   { id: "square", label: "Carré", icon: "fas fa-square" },
@@ -275,31 +267,50 @@ const shapeTypes = [
   { id: "triangle", label: "Triangle", icon: "fas fa-play" },
 ];
 
+function reconcileVisibility(list) {
+  const next = new Map(featureVisibility.value);
+  for (const f of list) {
+    const id = f?.id;
+    if (id != null && next.get(id) === undefined) {
+      next.set(id, true);
+    }
+  }
+  // Remove visibility entries that no longer exist (optional)
+  const ids = new Set(list.map((f) => f.id));
+  for (const k of next.keys()) {
+    if (!ids.has(k)) next.delete(k);
+  }
+  featureVisibility.value = next;
+}
+
 async function loadInitialFeatures() {
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`);
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = await res.json();
-    features.value = allFeatures;
+    const normalized = normalizeFeatures(allFeatures);
 
-    const newVisibility = new Map();
-    allFeatures.forEach((feature) => {
-      newVisibility.set(feature.id, true);
-    });
-    featureVisibility.value = newVisibility;
+    features.value = normalized;
+    reconcileVisibility(normalized);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
   }
 }
 
 function toggleFeatureVisibility(featureId, visible) {
-  featureVisibility.value.set(featureId, visible);
-  featureVisibility.value = new Map(featureVisibility.value);
+  const next = new Map(featureVisibility.value);
+  next.set(featureId, visible);
+  featureVisibility.value = next;
 }
 
-function handleFeaturesLoaded() {
-  loadInitialFeatures();
+// IMPORTANT: do NOT refetch here; just accept updates if provided.
+function handleFeaturesLoaded(updated) {
+  if (!Array.isArray(updated)) return;
+
+  const normalized = normalizeFeatures(updated);
+  features.value = normalized;
+  reconcileVisibility(normalized);
 }
 
 function toggleEditMode() {
@@ -362,10 +373,14 @@ onMounted(() => {
 });
 
 function saveMap() {}
-
 function saveMapAs() {
   showSaveAsModal.value = true;
 }
+
+// conserve ta logique existante (pas modifiée ici)
+const title = ref("");
+const description = ref("");
+const access_level = ref("");
 
 async function handleSaveAs(data) {
   title.value = data.title;
@@ -391,8 +406,6 @@ async function handleSaveAs(data) {
     userData = await res.json();
   } catch (err) {
     console.error("Failed to fetch user data:", err);
-    error.value =
-      err instanceof Error ? err.message : "Unknown error while fetching user data.";
     return;
   }
 
@@ -420,7 +433,7 @@ async function handleSaveAs(data) {
 
     await response.json();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "Unknown error.";
+    console.error(err);
   }
 
   showSaveAsModal.value = false;

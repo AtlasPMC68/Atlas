@@ -652,7 +652,7 @@ export function useMapEditing(props, emit) {
       color: "#000000",
       opacity: 0.8,
       z_index: 1,
-      properties: { rotationDeg: 0 },
+      properties: { rotationDeg: 0, mapElementType: "point" },
     };
 
     const tempFeature = {
@@ -660,6 +660,8 @@ export function useMapEditing(props, emit) {
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
+
+    circle.feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, circle);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, circle);
@@ -688,7 +690,7 @@ export function useMapEditing(props, emit) {
       stroke_width: 2,
       opacity: 1.0,
       z_index: 1,
-      properties: { rotationDeg: 0 },
+      properties: { rotationDeg: 0, mapElementType: "polyline" },
     };
 
     const tempFeature = {
@@ -696,6 +698,8 @@ export function useMapEditing(props, emit) {
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
+
+    line.feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, line);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, line);
@@ -721,7 +725,7 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
-      properties: { rotationDeg: 0 },
+      properties: { rotationDeg: 0, mapElementType: "zone", shapeType: "polygon" },
     };
 
     const tempFeature = {
@@ -729,6 +733,8 @@ export function useMapEditing(props, emit) {
       id: `temp_${Date.now()}_${Math.random()}`,
       _isTemporary: true,
     };
+
+    polygon.feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, polygon);
     layersComposable.featureLayerManager.makeLayerClickable(tempFeature.id, polygon);
@@ -760,11 +766,13 @@ export function useMapEditing(props, emit) {
       stroke_width: 2,
       opacity: 1.0,
       z_index: 1,
-      properties: { rotationDeg: 0 },
+      properties: { rotationDeg: 0, mapElementType: "polyline" },
     };
 
     const tempId = `temp_freeline_${Date.now()}_${Math.random()}`;
     const tempFeature = { ...feature, id: tempId, _isTemporary: true };
+
+    freeLine.feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempId, freeLine);
     if (props.editMode) {
@@ -946,6 +954,8 @@ export function useMapEditing(props, emit) {
         size: distance,
         resizable: true,
         rotationDeg: 0,
+        mapElementType: "shape",
+        shapeKind: "square",
       },
     };
   }
@@ -976,7 +986,12 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
-      properties: { rotationDeg: 0 },
+      properties: {
+        rotationDeg: 0,
+        mapElementType: "shape",
+        shapeKind: "rectangle",
+        shapeType: "rectangle",
+      },
     };
   }
 
@@ -1011,6 +1026,8 @@ export function useMapEditing(props, emit) {
         size: radius,
         resizable: true,
         rotationDeg: 0,
+        mapElementType: "shape",
+        shapeKind: "circle",
       },
     };
   }
@@ -1045,6 +1062,8 @@ export function useMapEditing(props, emit) {
         size: distance,
         resizable: true,
         rotationDeg: 0,
+        mapElementType: "shape",
+        shapeKind: "triangle",
       },
     };
   }
@@ -1078,7 +1097,12 @@ export function useMapEditing(props, emit) {
       color: "#cccccc",
       opacity: 0.5,
       z_index: 1,
-      properties: { rotationDeg: 0 },
+      properties: {
+        rotationDeg: 0,
+        mapElementType: "shape",
+        shapeKind: "oval",
+        shapeType: "oval",
+      },
     };
   }
 

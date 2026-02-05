@@ -309,7 +309,6 @@ watch(
     if (!map) return;
     layers.renderAllFeatures(filteredFeatures.value, map);
   },
-  { deep: true },
 );
 
 watch(

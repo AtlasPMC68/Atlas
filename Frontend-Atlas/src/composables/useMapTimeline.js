@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import L from 'leaflet';
 import { getClosestAvailableYear, debounce } from '../utils/mapUtils.js';
+import { normalizeFeatures, getMapElementType } from '../utils/featureTypes.js';
 
 export function useMapTimeline() {
   const selectedYear = ref(1740);
@@ -56,15 +57,13 @@ export function useMapTimeline() {
 
       const allFeatures = await res.json();
 
-      emit("features-loaded", allFeatures);
+      const normalized = normalizeFeatures(allFeatures);
+      emit("features-loaded", normalized);
 
-      const features = allFeatures.filter(
-        (f) => new Date(f.start_date).getFullYear() <= year
-      );
-
-      const cities = features.filter((f) => f.type === "point");
-      const zones = features.filter((f) => f.type === "zone");
-      const arrows = features.filter((f) => f.type === "arrow");
+      const features = normalized.filter((f) => new Date(f.start_date).getFullYear() <= year);
+      const cities = features.filter((f) => getMapElementType(f) === "point");
+      const zones = features.filter((f) => getMapElementType(f) === "zone");
+      const arrows = features.filter((f) => getMapElementType(f) === "arrow");
 
       return { cities, zones, arrows };
     } catch (err) {
