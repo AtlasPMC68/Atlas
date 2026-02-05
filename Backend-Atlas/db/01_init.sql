@@ -8,16 +8,9 @@ CREATE TABLE IF NOT EXISTS "users" (
   "created_at" TIMESTAMP DEFAULT (now())
 );
 
-CREATE TABLE IF NOT EXISTS "base_layers" (
-  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  "name" TEXT NOT NULL,
-  "tile_url" TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS "maps" (
   "id" UUID PRIMARY KEY,
   "user_id" UUID REFERENCES "users"("id") ON DELETE CASCADE,
-  "base_layer_id" UUID REFERENCES "base_layers"("id"),
   "title" TEXT NOT NULL,
   "description" TEXT,
   "is_private" BOOLEAN DEFAULT TRUE,

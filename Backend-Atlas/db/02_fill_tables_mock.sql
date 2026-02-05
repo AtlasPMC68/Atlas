@@ -6,21 +6,12 @@ INSERT INTO users (
   'admin@atlas.ca'
 );
 
-INSERT INTO base_layers (
-  id, name, tile_url
-) VALUES (
-  '00000000-0000-0000-0000-000000000100',
-  'Carto Light',
-  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-);
-
 INSERT INTO maps (
-  id, user_id, base_layer_id, title, description, is_private,
+  id, user_id, title, description, is_private,
   start_date, end_date
 ) VALUES (
   '11111111-1111-1111-1111-111111111111',
   '00000000-0000-0000-0000-000000000001',
-  '00000000-0000-0000-0000-000000000100',
   'Carte historique du Québec',
   'Carte illustrant l''évolution du territoire québécois.',
   false,

@@ -6,7 +6,6 @@ from uuid import UUID
 class MapOut(BaseModel):
     id: UUID
     user_id: UUID
-    base_layer_id: Optional[UUID]
     title: str
     description: Optional[str]
     is_private: bool
