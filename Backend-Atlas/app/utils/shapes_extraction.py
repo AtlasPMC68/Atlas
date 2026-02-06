@@ -150,10 +150,11 @@ def create_normalized_geojson_features(
         if w == 0 or h == 0:
             continue
 
+        simple_points = shape["geometry"]["pixel_coords"]["contour_points"]
         normalized_coords = []
-        for pt in contour:
-            x_norm = (pt[0][0] - x_min) / w
-            y_norm = (pt[0][1] - y_min) / h
+        for pt in simple_points:
+            x_norm = (pt[0] - x_min) / w
+            y_norm = (pt[1] - y_min) / h
             normalized_coords.append([x_norm, y_norm])
 
         if len(normalized_coords) >= 3:
@@ -320,6 +321,7 @@ def extract_contour_properties(
     approx = cv2.approxPolyDP(contour, epsilon, True)
     num_vertices = len(approx)
 
+    simple_points = [[int(pt[0][0]), int(pt[0][1])] for pt in contour]
     return {
         "id": shape_id,
         "area": float(area),
@@ -333,7 +335,7 @@ def extract_contour_properties(
         "geometry": {
             "type": "Polygon",
             "pixel_coords": {
-                "contour_points": contour.tolist(),
+                "contour_points": simple_points,
                 "bounding_box": {
                     "x": int(x),
                     "y": int(y),
