@@ -121,10 +121,3 @@ class TestColorExtraction:
                 pytest.fail(error_msg)
             
             print(f" All {len(expected_colors)} expected colors verified successfully")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def cleanup_extracted_colors():
-    """Clean up temporary directories after tests."""
-    yield
-    pass
