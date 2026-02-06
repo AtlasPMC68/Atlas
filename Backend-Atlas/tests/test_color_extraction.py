@@ -38,33 +38,33 @@ class TestColorExtraction:
         etalons_dir = "tests/assets/color_extraction"
         assert os.path.exists(etalons_dir), f"Reference directory missing: {etalons_dir}"
         
-        # Create temporary directory for results
-        with tempfile.TemporaryDirectory() as temp_output_dir:
-            # Run extraction
-            result = extract_colors(
-                image_path=source_image,
-                output_dir=temp_output_dir
-            )
-            
-            # Basic verifications
-            assert "colors_detected" in result
-            assert "masks" in result
-            assert "ratios" in result
-            assert "output_dir" in result
-            
-            # Verify colors were extracted
-            colors_detected = result["colors_detected"]
-            assert len(colors_detected) > 0, "No colors detected"
-            
-            print(f"Colors detected: {colors_detected}")
-            print(f"Number of colors: {len(colors_detected)}")
-            
-            issues = []
-            
-            # Check 1: Expected colors present
-            expected_color_names = set(expected_colors.keys())
-            detected_color_names = set(colors_detected)
-            missing_colors = expected_color_names - detected_color_names
+        # Create temporary directory for results (kept after test for inspection)
+        temp_output_dir = tempfile.mkdtemp()
+        # Run extraction
+        result = extract_colors(
+            image_path=source_image,
+            output_dir=temp_output_dir
+        )
+        
+        # Basic verifications
+        assert "colors_detected" in result
+        assert "masks" in result
+        assert "ratios" in result
+        assert "output_dir" in result
+        
+        # Verify colors were extracted
+        colors_detected = result["colors_detected"]
+        assert len(colors_detected) > 0, "No colors detected"
+        
+        print(f"Colors detected: {colors_detected}")
+        print(f"Number of colors: {len(colors_detected)}")
+        
+        issues = []
+        
+        # Check 1: Expected colors present
+        expected_color_names = set(expected_colors.keys())
+        detected_color_names = set(colors_detected)
+        missing_colors = expected_color_names - detected_color_names
             
             for color in missing_colors:
                 issues.append(f"  MISSING: {color} - Not detected in extracted colors")
