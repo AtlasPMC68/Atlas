@@ -66,58 +66,58 @@ class TestColorExtraction:
         detected_color_names = set(colors_detected)
         missing_colors = expected_color_names - detected_color_names
             
-            for color in missing_colors:
-                issues.append(f"  MISSING: {color} - Not detected in extracted colors")
+        for color in missing_colors:
+            issues.append(f"  MISSING: {color} - Not detected in extracted colors")
+        
+        # Check 2: File comparison for present colors
+        for color_name, expected_filename in expected_colors.items():
+            if color_name not in colors_detected:
+                continue  # Already reported as missing
+                
+            # Verify mask file exists
+            assert color_name in result["masks"], f"Mask missing for {color_name}"
             
-            # Check 2: File comparison for present colors
-            for color_name, expected_filename in expected_colors.items():
-                if color_name not in colors_detected:
-                    continue  # Already reported as missing
-                    
-                # Verify mask file exists
-                assert color_name in result["masks"], f"Mask missing for {color_name}"
-                
-                # Paths
-                generated_file = result["masks"][color_name]
-                etalon_file = os.path.join(etalons_dir, expected_filename)
-                
-                if not os.path.exists(generated_file):
-                    issues.append(f"  FILE_MISSING: {color_name} - Generated file not found: {generated_file}")
-                    continue
-                    
-                if not os.path.exists(etalon_file):
-                    issues.append(f"  REF_MISSING: {color_name} - Reference file not found: {etalon_file}")
-                    continue
-                
-                # File comparison
-                files_identical = filecmp.cmp(generated_file, etalon_file, shallow=False)
-                
-                if not files_identical:
-                    gen_size = os.path.getsize(generated_file)
-                    etalon_size = os.path.getsize(etalon_file)
-                    issues.append(f"    DIFFERENT: {color_name} - Files differ (gen: {gen_size}B, ref: {etalon_size}B)")
-                    issues.append(f"    Generated: {generated_file}")
-                    issues.append(f"    Reference: {etalon_file}")
-                else:
-                    print(f" {color_name}: OK")
+            # Paths
+            generated_file = result["masks"][color_name]
+            etalon_file = os.path.join(etalons_dir, expected_filename)
             
-            # Report all issues at once
-            if issues:
-                error_msg = f"\n{'='*60}\nCOLOR EXTRACTION TEST FAILED\n{'='*60}\n"
-                error_msg += f"Source image: {source_image}\n"
-                error_msg += f"Colors detected: {len(colors_detected)}\n"
-                error_msg += f"Issues found: {len(issues)}\n\n"
+            if not os.path.exists(generated_file):
+                issues.append(f"  FILE_MISSING: {color_name} - Generated file not found: {generated_file}")
+                continue
                 
-                error_msg += "DETAILED ISSUES:\n"
-                for issue in issues:
-                    error_msg += f"{issue}\n"
-                
-                error_msg += f"\n{'='*60}\n"
-                error_msg += "ACTION REQUIRED:\n"
-                error_msg += "1. Check generated images in temp directory\n"
-                error_msg += "2. If results are correct: update reference images\n"
-                error_msg += "3. If it's a regression: revert changes\n"
-                
-                pytest.fail(error_msg)
+            if not os.path.exists(etalon_file):
+                issues.append(f"  REF_MISSING: {color_name} - Reference file not found: {etalon_file}")
+                continue
             
-            print(f" All {len(expected_colors)} expected colors verified successfully")
+            # File comparison
+            files_identical = filecmp.cmp(generated_file, etalon_file, shallow=False)
+            
+            if not files_identical:
+                gen_size = os.path.getsize(generated_file)
+                etalon_size = os.path.getsize(etalon_file)
+                issues.append(f"    DIFFERENT: {color_name} - Files differ (gen: {gen_size}B, ref: {etalon_size}B)")
+                issues.append(f"    Generated: {generated_file}")
+                issues.append(f"    Reference: {etalon_file}")
+            else:
+                print(f" {color_name}: OK")
+        
+        # Report all issues at once
+        if issues:
+            error_msg = f"\n{'='*60}\nCOLOR EXTRACTION TEST FAILED\n{'='*60}\n"
+            error_msg += f"Source image: {source_image}\n"
+            error_msg += f"Colors detected: {len(colors_detected)}\n"
+            error_msg += f"Issues found: {len(issues)}\n\n"
+            
+            error_msg += "DETAILED ISSUES:\n"
+            for issue in issues:
+                error_msg += f"{issue}\n"
+            
+            error_msg += f"\n{'='*60}\n"
+            error_msg += "ACTION REQUIRED:\n"
+            error_msg += "1. Check generated images in temp directory\n"
+            error_msg += "2. If results are correct: update reference images\n"
+            error_msg += "3. If it's a regression: revert changes\n"
+            
+            pytest.fail(error_msg)
+        
+        print(f" All {len(expected_colors)} expected colors verified successfully")
