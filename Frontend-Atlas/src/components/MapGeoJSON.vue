@@ -225,8 +225,6 @@ onMounted(() => {
   layers.initializeBaseLayers(map);
   timeline.loadRegionsForYear(timeline.selectedYear.value, map, true);
 
-  map.on("zoomend", () => layers.updateCircleSizes(map));
-
   if (props.editMode) {
     init.initializeEditControls(map);
     layers.featureLayerManager.setClickHandler((featureId, isCtrlPressed) => {
