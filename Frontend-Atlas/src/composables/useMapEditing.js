@@ -267,6 +267,15 @@ export function useMapEditing(props, emit) {
     return null;
   }
 
+  function applyLocalFeatureUpdate(fid, nextFeature) {
+    const idx = props.features.findIndex((f) => String(f.id) === String(fid));
+    if (idx !== -1) {
+      const updatedFeatures = [...props.features];
+      updatedFeatures[idx] = nextFeature;
+      emit("features-loaded", updatedFeatures);
+    }
+  }
+
   async function applyResizeFromDims(
     featureId,
     widthMeters,
@@ -389,6 +398,7 @@ export function useMapEditing(props, emit) {
         },
       };
       layer.feature = nextLayerFeature;
+      applyLocalFeatureUpdate(fid, nextLayerFeature);
 
       const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
       if (isTemp) return;
@@ -522,6 +532,7 @@ export function useMapEditing(props, emit) {
       },
     };
     layer.feature = nextLayerFeature;
+    applyLocalFeatureUpdate(fid, nextLayerFeature);
 
     const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
     if (isTemp) return;
