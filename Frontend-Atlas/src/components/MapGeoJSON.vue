@@ -367,7 +367,7 @@ watch(
         return;
       }
 
-      await editing.applyResizeFromDims(String(fid), w, h, map, layers.featureLayerManager, emit);
+      await editing.applyResizeFromDims(String(fid), w, h, map, layers.featureLayerManager);
 
       events.upsertSelectionBBox?.(String(fid), map, layers.featureLayerManager);
       events.upsertSelectionAnchors?.(String(fid), map, layers.featureLayerManager);
@@ -405,7 +405,7 @@ watch(
         return;
       }
 
-      await editing.applyRotateFromAngle(String(fid), nextA, map, layers.featureLayerManager, emit);
+      await editing.applyRotateFromAngle(String(fid), nextA, map, layers.featureLayerManager);
 
       events.upsertSelectionBBox?.(String(fid), map, layers.featureLayerManager);
       events.upsertSelectionAnchors?.(String(fid), map, layers.featureLayerManager);

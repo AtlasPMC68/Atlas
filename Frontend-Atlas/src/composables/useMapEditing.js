@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import L from "leaflet";
-import { smoothFreeLinePoints } from "../utils/mapUtils.js";
+import { smoothFreeLinePoints, getRadiusForZoom } from "../utils/mapUtils.js";
 
 export function useMapEditing(props, emit) {
   const isDeleteMode = ref(false);
@@ -717,7 +717,6 @@ export function useMapEditing(props, emit) {
       }
       geom0 = { type: "Polygon", coordinates: [coords] };
     }
-    if (!geom0) return;
 
     layer.feature = {
       ...(layer.feature || feature),

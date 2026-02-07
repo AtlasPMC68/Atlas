@@ -55,7 +55,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const p = map.latLngToLayerPoint(latlng);
     const pxTol = 14;
 
-    const entries = Array.from(layersComposable.featureLayerManager.layers.entries());
+    const entries = Array.from(
+      layersComposable.featureLayerManager.layers.entries(),
+    );
 
     for (let i = entries.length - 1; i >= 0; i -= 1) {
       const [fid, raw] = entries[i];
@@ -64,7 +66,22 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       if (layer._isSelectionAnchor) continue;
 
-      if (typeof layer.getLatLng === "function" && typeof layer.getLatLngs !== "function") {
+      if (
+        typeof layer.getLatLng === "function" &&
+        typeof layer.getRadius === "function"
+      ) {
+        const c = layer.getLatLng();
+        if (!c) continue;
+        const cp = map.latLngToLayerPoint(c);
+        const rPx = layer._radius ?? 0;
+        if (cp.distanceTo(p) <= rPx + pxTol) return String(fid);
+        continue;
+      }
+
+      if (
+        typeof layer.getLatLng === "function" &&
+        typeof layer.getLatLngs !== "function"
+      ) {
         const ll = layer.getLatLng();
         if (!ll) continue;
         const lp = map.latLngToLayerPoint(ll);
@@ -72,20 +89,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         continue;
       }
 
-      if (typeof layer.getLatLng === "function" && typeof layer.getRadius === "function") {
-        const c = layer.getLatLng();
-        if (!c) continue;
-        const cp = map.latLngToLayerPoint(c);
-        const rPx = layer._radius ?? 0;
-        if (cp.distanceTo(p) <= (rPx + pxTol)) return String(fid);
-        continue;
-      }
-
       if (typeof layer._containsPoint === "function") {
         try {
           if (layer._containsPoint(p)) return String(fid);
-        } catch (_) {
-        }
+        } catch (_) {}
       }
 
       if (typeof layer.getBounds === "function") {
@@ -103,22 +110,46 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function resolveEditLayer(raw) {
     if (!raw) return null;
 
-    if (typeof raw.getLatLngs === "function" && typeof raw.setLatLngs === "function") return raw;
+    if (
+      typeof raw.getLatLngs === "function" &&
+      typeof raw.setLatLngs === "function"
+    )
+      return raw;
 
-    if (typeof raw.getLatLng === "function" && typeof raw.setLatLng === "function" && !raw.getLatLngs) return raw;
+    if (
+      typeof raw.getLatLng === "function" &&
+      typeof raw.setLatLng === "function" &&
+      !raw.getLatLngs
+    )
+      return raw;
 
     if (typeof raw.getLayers === "function") {
       const kids = raw.getLayers();
       if (Array.isArray(kids) && kids.length) {
-        const polys = kids.find((k) => k instanceof L.Polygon || k instanceof L.Rectangle);
-        if (polys && typeof polys.getLatLngs === "function" && typeof polys.setLatLngs === "function") return polys;
+        const polys = kids.find(
+          (k) => k instanceof L.Polygon || k instanceof L.Rectangle,
+        );
+        if (
+          polys &&
+          typeof polys.getLatLngs === "function" &&
+          typeof polys.setLatLngs === "function"
+        )
+          return polys;
 
         const lines = kids.find(
-          (k) => k instanceof L.Polyline && typeof k.getLatLngs === "function" && typeof k.setLatLngs === "function"
+          (k) =>
+            k instanceof L.Polyline &&
+            typeof k.getLatLngs === "function" &&
+            typeof k.setLatLngs === "function",
         );
         if (lines) return lines;
 
-        const pt = kids.find((k) => typeof k.getLatLng === "function" && typeof k.setLatLng === "function" && !k.getLatLngs);
+        const pt = kids.find(
+          (k) =>
+            typeof k.getLatLng === "function" &&
+            typeof k.setLatLng === "function" &&
+            !k.getLatLngs,
+        );
         if (pt) return pt;
 
         for (const k of kids) {
@@ -181,9 +212,15 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (Array.isArray(c) && c.length >= 2) {
       feature.properties.center = [centerLatLng.lng, centerLatLng.lat];
     } else if (c && typeof c === "object" && "lat" in c && "lng" in c) {
-      feature.properties.center = { lat: centerLatLng.lat, lng: centerLatLng.lng };
+      feature.properties.center = {
+        lat: centerLatLng.lat,
+        lng: centerLatLng.lng,
+      };
     } else {
-      feature.properties.center = { lat: centerLatLng.lat, lng: centerLatLng.lng };
+      feature.properties.center = {
+        lat: centerLatLng.lat,
+        lng: centerLatLng.lng,
+      };
     }
 
     if (layer?.feature?.properties) {
@@ -200,7 +237,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function rotatePointsTree(pts, centerPt, rad) {
-    if (Array.isArray(pts)) return pts.map((x) => rotatePointsTree(x, centerPt, rad));
+    if (Array.isArray(pts))
+      return pts.map((x) => rotatePointsTree(x, centerPt, rad));
     return rotatePoint(pts, centerPt, rad);
   }
 
@@ -211,7 +249,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function boundsFromPoints(pointsFlat) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const p of pointsFlat) {
       if (p.x < minX) minX = p.x;
       if (p.y < minY) minY = p.y;
@@ -225,29 +266,47 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const cx = (b.minX + b.maxX) / 2;
     const cy = (b.minY + b.maxY) / 2;
     switch (handle) {
-      case "nw": return L.point(b.minX, b.minY);
-      case "ne": return L.point(b.maxX, b.minY);
-      case "se": return L.point(b.maxX, b.maxY);
-      case "sw": return L.point(b.minX, b.maxY);
-      case "n":  return L.point(cx, b.minY);
-      case "e":  return L.point(b.maxX, cy);
-      case "s":  return L.point(cx, b.maxY);
-      case "w":  return L.point(b.minX, cy);
-      default:   return L.point(cx, cy);
+      case "nw":
+        return L.point(b.minX, b.minY);
+      case "ne":
+        return L.point(b.maxX, b.minY);
+      case "se":
+        return L.point(b.maxX, b.maxY);
+      case "sw":
+        return L.point(b.minX, b.maxY);
+      case "n":
+        return L.point(cx, b.minY);
+      case "e":
+        return L.point(b.maxX, cy);
+      case "s":
+        return L.point(cx, b.maxY);
+      case "w":
+        return L.point(b.minX, cy);
+      default:
+        return L.point(cx, cy);
     }
   }
 
   function oppositeHandle(handle) {
     switch (handle) {
-      case "nw": return "se";
-      case "ne": return "sw";
-      case "se": return "nw";
-      case "sw": return "ne";
-      case "n":  return "s";
-      case "s":  return "n";
-      case "e":  return "w";
-      case "w":  return "e";
-      default:   return null;
+      case "nw":
+        return "se";
+      case "ne":
+        return "sw";
+      case "se":
+        return "nw";
+      case "sw":
+        return "ne";
+      case "n":
+        return "s";
+      case "s":
+        return "n";
+      case "e":
+        return "w";
+      case "w":
+        return "e";
+      default:
+        return null;
     }
   }
 
@@ -327,7 +386,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function mapLatLngsToPoints(map, latlngs) {
-    if (Array.isArray(latlngs)) return latlngs.map((x) => mapLatLngsToPoints(map, x));
+    if (Array.isArray(latlngs))
+      return latlngs.map((x) => mapLatLngsToPoints(map, x));
     return map.latLngToLayerPoint(latlngs);
   }
 
@@ -354,7 +414,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!latlngs) return null;
 
     const pts = mapLatLngsToPoints(map, latlngs);
-    const pts0 = Math.abs(angleRad) > 1e-9 ? rotatePointsTree(pts, centerPt, -angleRad) : pts;
+    const pts0 =
+      Math.abs(angleRad) > 1e-9
+        ? rotatePointsTree(pts, centerPt, -angleRad)
+        : pts;
 
     const flat0 = flattenPoints(pts0, []);
     const b0 = boundsFromPoints(flat0);
@@ -373,7 +436,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const se0 = handleToAnchorPoint(b0, "se");
     const sw0 = handleToAnchorPoint(b0, "sw");
 
-    const back = (p0) => (Math.abs(angleRad) > 1e-9 ? rotatePoint(p0, centerPt, angleRad) : p0);
+    const back = (p0) =>
+      Math.abs(angleRad) > 1e-9 ? rotatePoint(p0, centerPt, angleRad) : p0;
 
     const nw = map.layerPointToLatLng(back(nw0));
     const ne = map.layerPointToLatLng(back(ne0));
@@ -390,7 +454,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const { angleRad, centerPt, b0 } = fd;
     const keys = ["nw", "ne", "se", "sw", "n", "e", "s", "w"];
 
-    const back = (p0) => (Math.abs(angleRad) > 1e-9 ? rotatePoint(p0, centerPt, angleRad) : p0);
+    const back = (p0) =>
+      Math.abs(angleRad) > 1e-9 ? rotatePoint(p0, centerPt, angleRad) : p0;
 
     const pts = {};
     for (const k of keys) {
@@ -406,15 +471,14 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function computeRotationHandleLatLng(layer, map, angleDeg) {
-    if (!layer || !map) return null;
-
     const fd = getRotatedFrameData(layer, map, angleDeg);
     if (!fd) return null;
 
     const { angleRad, centerPt, b0 } = fd;
 
     const n0 = handleToAnchorPoint(b0, "n");
-    const n = Math.abs(angleRad) > 1e-9 ? rotatePoint(n0, centerPt, angleRad) : n0;
+    const n =
+      Math.abs(angleRad) > 1e-9 ? rotatePoint(n0, centerPt, angleRad) : n0;
 
     const offsetPx = 30;
     const rotPt = L.point(n.x, n.y - offsetPx);
@@ -440,7 +504,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!bounds || !bounds.isValid?.()) return;
 
     const angleDeg = getAngleDegFor(id, layer);
-    const useRot = Math.abs(angleDeg) > 1e-6 && typeof layer.getLatLngs === "function";
+    const useRot =
+      Math.abs(angleDeg) > 1e-6 && typeof layer.getLatLngs === "function";
 
     const existing = map._selectionBBoxes.get(id);
 
@@ -537,7 +602,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         existing.markers[0].setLatLng(a);
         existing.markers[1].setLatLng(b);
         existing.group.bringToFront?.();
-        for (const m of existing.markers || []) setAnchorUsable(m, anchorsUsable);
+        for (const m of existing.markers || [])
+          setAnchorUsable(m, anchorsUsable);
         return;
       }
 
@@ -585,7 +651,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!bounds || !bounds.isValid?.()) return;
 
     const angleDeg = getAngleDegFor(id, layer);
-    const useRot = Math.abs(angleDeg) > 1e-6 && typeof layer.getLatLngs === "function";
+    const useRot =
+      Math.abs(angleDeg) > 1e-6 && typeof layer.getLatLngs === "function";
 
     const cornersMids = useRot
       ? rotatedAnchorsLatLngs(layer, map, angleDeg)
@@ -725,7 +792,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     () => props.activeEditMode,
     () => {
       updateAnchorsUsabilityForCurrentMode(lastMapRef.value);
-    }
+    },
   );
 
   // =======================
@@ -736,8 +803,14 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const layer = getLayerForOps(layersComposable.featureLayerManager, fid);
     if (!layer) return;
 
-    const isCircle = typeof layer.getRadius === "function" && typeof layer.setRadius === "function";
-    const centerLatLng = isCircle ? layer.getLatLng() : (layer.getBounds ? layer.getBounds().getCenter() : null);
+    const isCircle =
+      typeof layer.getRadius === "function" &&
+      typeof layer.setRadius === "function";
+    const centerLatLng = isCircle
+      ? layer.getLatLng()
+      : layer.getBounds
+        ? layer.getBounds().getCenter()
+        : null;
 
     if (isCircle && !centerLatLng) return;
 
@@ -767,13 +840,18 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const centerLL = bounds.getCenter();
     const centerPt = map.latLngToLayerPoint(centerLL);
 
-    const pts0 = Math.abs(angleRad) > 1e-9 ? rotatePointsTree(ptsScreen, centerPt, -angleRad) : ptsScreen;
+    const pts0 =
+      Math.abs(angleRad) > 1e-9
+        ? rotatePointsTree(ptsScreen, centerPt, -angleRad)
+        : ptsScreen;
     const flat0 = flattenPoints(pts0, []);
     const b0 = boundsFromPoints(flat0);
 
     const movingPtStart0 = handleToAnchorPoint(b0, handle);
     const fixedH = oppositeHandle(handle);
-    const fixedPt0 = fixedH ? handleToAnchorPoint(b0, fixedH) : L.point((b0.minX + b0.maxX) / 2, (b0.minY + b0.maxY) / 2);
+    const fixedPt0 = fixedH
+      ? handleToAnchorPoint(b0, fixedH)
+      : L.point((b0.minX + b0.maxX) / 2, (b0.minY + b0.maxY) / 2);
 
     anchorDrag = {
       kind: "resize",
@@ -782,7 +860,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       isCircle: false,
       angleRad,
       centerPt,
-      startMousePt0: Math.abs(angleRad) > 1e-9 ? rotatePoint(startMousePt, centerPt, -angleRad) : startMousePt,
+      startMousePt0:
+        Math.abs(angleRad) > 1e-9
+          ? rotatePoint(startMousePt, centerPt, -angleRad)
+          : startMousePt,
       fixedPt0,
       movingPtStart0,
       startPts0: pts0,
@@ -795,7 +876,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!layer || !map) return;
 
     const isLine = layer instanceof L.Polyline && !(layer instanceof L.Polygon);
-    if (!isLine || typeof layer.getLatLngs !== "function" || typeof layer.setLatLngs !== "function") return;
+    if (
+      !isLine ||
+      typeof layer.getLatLngs !== "function" ||
+      typeof layer.setLatLngs !== "function"
+    )
+      return;
 
     const latlngs = layer.getLatLngs();
     if (!Array.isArray(latlngs) || latlngs.length < 2) return;
@@ -826,13 +912,19 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const { centerPt } = fd;
 
     const startMousePt = map.latLngToLayerPoint(ev.latlng);
-    const startMouseAngle = Math.atan2(startMousePt.y - centerPt.y, startMousePt.x - centerPt.x);
+    const startMouseAngle = Math.atan2(
+      startMousePt.y - centerPt.y,
+      startMousePt.x - centerPt.x,
+    );
 
     const latlngs = layer.getLatLngs();
     const ptsScreen = mapLatLngsToPoints(map, latlngs);
 
     const startRad = (normalizeAngleDeg(angleStartDeg) * Math.PI) / 180;
-    const startPts0 = Math.abs(startRad) > 1e-9 ? rotatePointsTree(ptsScreen, centerPt, -startRad) : ptsScreen;
+    const startPts0 =
+      Math.abs(startRad) > 1e-9
+        ? rotatePointsTree(ptsScreen, centerPt, -startRad)
+        : ptsScreen;
 
     map.dragging.disable();
 
@@ -854,10 +946,14 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (!layer) return;
 
     if (anchorDrag.kind === "rotate") {
-      const { centerPt, startMouseAngle, startAngleDeg, startPts0 } = anchorDrag;
+      const { centerPt, startMouseAngle, startAngleDeg, startPts0 } =
+        anchorDrag;
 
       const curMousePt = map.latLngToLayerPoint(ev.latlng);
-      const curMouseAngle = Math.atan2(curMousePt.y - centerPt.y, curMousePt.x - centerPt.x);
+      const curMouseAngle = Math.atan2(
+        curMousePt.y - centerPt.y,
+        curMousePt.x - centerPt.x,
+      );
 
       const deltaRad = curMouseAngle - startMouseAngle;
       const deltaDeg = (deltaRad * 180) / Math.PI;
@@ -866,7 +962,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       setAngleDegFor(fid, layer, newAngleDeg);
 
       const newRad = (newAngleDeg * Math.PI) / 180;
-      const rotatedPts = Math.abs(newRad) > 1e-9 ? rotatePointsTree(startPts0, centerPt, newRad) : startPts0;
+      const rotatedPts =
+        Math.abs(newRad) > 1e-9
+          ? rotatePointsTree(startPts0, centerPt, newRad)
+          : startPts0;
 
       const newLatLngs = mapPointsToLatLngs(map, rotatedPts);
       layer.setLatLngs(newLatLngs);
@@ -876,7 +975,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       if (props.activeEditMode === "RESIZE_SHAPE") {
         const dims = getDimsMetersFromLayerId(fid, map);
-        emit("resize-selection", { featureId: String(fid), ...dims, angleDeg: newAngleDeg });
+        emit("resize-selection", {
+          featureId: String(fid),
+          ...dims,
+          angleDeg: newAngleDeg,
+        });
       }
       return;
     }
@@ -936,7 +1039,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const angleRad = anchorDrag.angleRad || 0;
       const centerPt = anchorDrag.centerPt;
 
-      const cur0 = Math.abs(angleRad) > 1e-9 ? rotatePoint(curMousePt, centerPt, -angleRad) : curMousePt;
+      const cur0 =
+        Math.abs(angleRad) > 1e-9
+          ? rotatePoint(curMousePt, centerPt, -angleRad)
+          : curMousePt;
 
       const fixed0 = anchorDrag.fixedPt0;
       const startMove0 = anchorDrag.movingPtStart0;
@@ -951,7 +1057,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       if (anchorDrag.handle === "e" || anchorDrag.handle === "w") sy = 1;
 
       const feature = getFeatureById(fid) || layer.feature || null;
-      const shapeType = feature?.properties?.shapeType || feature?.properties?.shape || null;
+      const shapeType =
+        feature?.properties?.shapeType || feature?.properties?.shape || null;
 
       if (shapeType === "square") {
         if (["nw", "ne", "se", "sw"].includes(anchorDrag.handle)) {
@@ -959,7 +1066,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           sx = s;
           sy = s;
         } else {
-          const s = (anchorDrag.handle === "n" || anchorDrag.handle === "s") ? sy : sx;
+          const s =
+            anchorDrag.handle === "n" || anchorDrag.handle === "s" ? sy : sx;
           sx = s;
           sy = s;
         }
@@ -977,7 +1085,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
 
       const newPts0 = scalePoints0(anchorDrag.startPts0);
-      const newPts = Math.abs(angleRad) > 1e-9 ? rotatePointsTree(newPts0, centerPt, angleRad) : newPts0;
+      const newPts =
+        Math.abs(angleRad) > 1e-9
+          ? rotatePointsTree(newPts0, centerPt, angleRad)
+          : newPts0;
       const newLatLngs = mapPointsToLatLngs(map, newPts);
 
       layer.setLatLngs(newLatLngs);
@@ -1006,7 +1117,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     if (layer.getLatLngs) {
       const latlngs = layer.getLatLngs();
-      const isPolygon = layer instanceof L.Polygon || layer instanceof L.Rectangle;
+      const isPolygon =
+        layer instanceof L.Polygon || layer instanceof L.Rectangle;
 
       if (!isPolygon) {
         const coords = latlngs.map((ll) => [ll.lng, ll.lat]);
@@ -1016,7 +1128,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const ring = latlngs[0] ?? latlngs;
       const coords = ring.map((ll) => [ll.lng, ll.lat]);
 
-      if (coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
+      if (
+        coords.length &&
+        (coords[0][0] !== coords[coords.length - 1][0] ||
+          coords[0][1] !== coords[coords.length - 1][1])
+      ) {
         coords.push(coords[0]);
       }
       return { type: "Polygon", coordinates: [coords] };
@@ -1049,27 +1165,38 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     if (layer.getLatLng && !layer.getLatLngs) {
       const ll = layer.getLatLng();
       geom0 = ll ? { type: "Point", coordinates: [ll.lng, ll.lat] } : null;
-    }
-    else if (typeof layer.getRadius === "function" && typeof layer.setRadius === "function") {
+    } else if (
+      typeof layer.getRadius === "function" &&
+      typeof layer.setRadius === "function"
+    ) {
       geom0 = feature?.geometry || geometryFromLayer(layer);
-    }
-    else if (layer.getLatLngs && typeof layer.setLatLngs === "function") {
+    } else if (layer.getLatLngs && typeof layer.setLatLngs === "function") {
       const latlngsR = layer.getLatLngs();
       const bounds = layer.getBounds?.();
-      const centerLL = (feature?.properties?.center && feature.properties.center.lat != null)
-        ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
-        : (bounds?.isValid?.() ? bounds.getCenter() : null);
+      const centerLL =
+        feature?.properties?.center && feature.properties.center.lat != null
+          ? L.latLng(
+              feature.properties.center.lat,
+              feature.properties.center.lng,
+            )
+          : bounds?.isValid?.()
+            ? bounds.getCenter()
+            : null;
 
       if (centerLL) {
         const centerPt = map.latLngToLayerPoint(centerLL);
 
         const ptsR = mapLatLngsToPoints(map, latlngsR);
-        const pts0 = Math.abs(angleRad) > 1e-9 ? rotatePointsTree(ptsR, centerPt, -angleRad) : ptsR;
+        const pts0 =
+          Math.abs(angleRad) > 1e-9
+            ? rotatePointsTree(ptsR, centerPt, -angleRad)
+            : ptsR;
 
         const ll0 = mapPointsToLatLngs(map, pts0);
 
         const tmpLayer = layer;
-        const isPolygon = tmpLayer instanceof L.Polygon || tmpLayer instanceof L.Rectangle;
+        const isPolygon =
+          tmpLayer instanceof L.Polygon || tmpLayer instanceof L.Rectangle;
 
         if (!isPolygon) {
           const coords = ll0.map((ll) => [ll.lng, ll.lat]);
@@ -1077,7 +1204,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         } else {
           const ring = ll0[0] ?? ll0;
           const coords = ring.map((ll) => [ll.lng, ll.lat]);
-          if (coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
+          if (
+            coords.length &&
+            (coords[0][0] !== coords[coords.length - 1][0] ||
+              coords[0][1] !== coords[coords.length - 1][1])
+          ) {
             coords.push(coords[0]);
           }
           geom0 = { type: "Polygon", coordinates: [coords] };
@@ -1087,17 +1218,26 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
     }
 
-    const isTemp = String(fid).startsWith("temp_") || feature?._isTemporary === true;
+    const isTemp =
+      String(fid).startsWith("temp_") || feature?._isTemporary === true;
 
     const prevFeature = feature ? JSON.parse(JSON.stringify(feature)) : null;
 
     if (geom0 && feature) {
-      const nextProps = { ...(feature.properties || {}), rotationDeg: angleDeg };
+      const nextProps = {
+        ...(feature.properties || {}),
+        rotationDeg: angleDeg,
+      };
 
       const pivotLL =
-        (feature?.properties?.center && feature.properties.center.lat != null)
-          ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
-          : (layer.getBounds?.()?.isValid?.() ? layer.getBounds().getCenter() : null);
+        feature?.properties?.center && feature.properties.center.lat != null
+          ? L.latLng(
+              feature.properties.center.lat,
+              feature.properties.center.lng,
+            )
+          : layer.getBounds?.()?.isValid?.()
+            ? layer.getBounds().getCenter()
+            : null;
 
       if (pivotLL) {
         nextProps.center = { lat: pivotLL.lat, lng: pivotLL.lng };
@@ -1119,7 +1259,13 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
 
       if (pivotLL) {
-        editingComposable.applyAngleToLayerFromCanonical(layer, map, geom0, angleDeg, pivotLL);
+        editingComposable.applyAngleToLayerFromCanonical(
+          layer,
+          map,
+          geom0,
+          angleDeg,
+          pivotLL,
+        );
       }
 
       upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
@@ -1128,19 +1274,24 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     if (geom0 && !isTemp) {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${fid}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            geometry: geom0,
-            properties: layer.feature?.properties,
-          }),
-        });
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/maps/features/${fid}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              geometry: geom0,
+              properties: layer.feature?.properties,
+            }),
+          },
+        );
 
         if (response.ok) {
           const updated = await response.json();
 
-          const idx = props.features.findIndex((f) => String(f.id) === String(fid));
+          const idx = props.features.findIndex(
+            (f) => String(f.id) === String(fid),
+          );
           if (idx !== -1) {
             const next = [...props.features];
             next[idx] = updated;
@@ -1150,7 +1301,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
           layer.feature = updated;
         } else {
           if (prevFeature) {
-            const idx = props.features.findIndex((f) => String(f.id) === String(fid));
+            const idx = props.features.findIndex(
+              (f) => String(f.id) === String(fid),
+            );
             if (idx !== -1) {
               const next = [...props.features];
               next[idx] = prevFeature;
@@ -1163,7 +1316,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         console.error("Error updating geometry:", e);
 
         if (prevFeature) {
-          const idx = props.features.findIndex((f) => String(f.id) === String(fid));
+          const idx = props.features.findIndex(
+            (f) => String(f.id) === String(fid),
+          );
           if (idx !== -1) {
             const next = [...props.features];
             next[idx] = prevFeature;
@@ -1192,19 +1347,26 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       return { widthMeters: d, heightMeters: d };
     }
 
-    if (typeof layer.getLatLngs === "function" && typeof layer.getBounds === "function") {
+    if (
+      typeof layer.getLatLngs === "function" &&
+      typeof layer.getBounds === "function"
+    ) {
       const angleDeg = getAngleDegFor(fid, layer);
       const angleRad = (angleDeg * Math.PI) / 180;
 
       const bounds = layer.getBounds();
-      if (!bounds?.isValid?.()) return { widthMeters: null, heightMeters: null };
+      if (!bounds?.isValid?.())
+        return { widthMeters: null, heightMeters: null };
 
       const centerLL = bounds.getCenter();
       const centerPt = map.latLngToLayerPoint(centerLL);
 
       const latlngs = layer.getLatLngs();
       const pts = mapLatLngsToPoints(map, latlngs);
-      const pts0 = Math.abs(angleRad) > 1e-9 ? rotatePointsTree(pts, centerPt, -angleRad) : pts;
+      const pts0 =
+        Math.abs(angleRad) > 1e-9
+          ? rotatePointsTree(pts, centerPt, -angleRad)
+          : pts;
 
       const flat0 = flattenPoints(pts0, []);
       const b0 = boundsFromPoints(flat0);
@@ -1217,7 +1379,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const north0 = L.point(cx, b0.minY);
       const south0 = L.point(cx, b0.maxY);
 
-      const back = (p0) => (Math.abs(angleRad) > 1e-9 ? rotatePoint(p0, centerPt, angleRad) : p0);
+      const back = (p0) =>
+        Math.abs(angleRad) > 1e-9 ? rotatePoint(p0, centerPt, angleRad) : p0;
 
       const westLL = map.layerPointToLatLng(back(west0));
       const eastLL = map.layerPointToLatLng(back(east0));
@@ -1228,23 +1391,38 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       const heightMeters = map.distance(northLL, southLL);
 
       return {
-        widthMeters: Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null,
-        heightMeters: Number.isFinite(heightMeters) && heightMeters > 0 ? heightMeters : null,
+        widthMeters:
+          Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null,
+        heightMeters:
+          Number.isFinite(heightMeters) && heightMeters > 0
+            ? heightMeters
+            : null,
       };
     }
 
     if (typeof layer.getBounds === "function") {
       const b = layer.getBounds();
-      if (!b || typeof b.getWest !== "function") return { widthMeters: null, heightMeters: null };
+      if (!b || typeof b.getWest !== "function")
+        return { widthMeters: null, heightMeters: null };
 
       const c = b.getCenter();
 
-      const widthMeters = map.distance([c.lat, b.getWest()], [c.lat, b.getEast()]);
-      const heightMeters = map.distance([b.getSouth(), c.lng], [b.getNorth(), c.lng]);
+      const widthMeters = map.distance(
+        [c.lat, b.getWest()],
+        [c.lat, b.getEast()],
+      );
+      const heightMeters = map.distance(
+        [b.getSouth(), c.lng],
+        [b.getNorth(), c.lng],
+      );
 
       return {
-        widthMeters: Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null,
-        heightMeters: Number.isFinite(heightMeters) && heightMeters > 0 ? heightMeters : null,
+        widthMeters:
+          Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters : null,
+        heightMeters:
+          Number.isFinite(heightMeters) && heightMeters > 0
+            ? heightMeters
+            : null,
       };
     }
 
@@ -1276,7 +1454,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         fid,
         a,
         map,
-        layersComposable.featureLayerManager
+        layersComposable.featureLayerManager,
       );
 
       upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
@@ -1298,7 +1476,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
     }
   }
-
 
   function applySelectionClick(fid, isCtrl, map) {
     const id = String(fid);
@@ -1323,7 +1500,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         const angleDeg = getAngleDegFromLayerId(id);
         emit("resize-selection", { featureId: id, ...dims, angleDeg });
       } else {
-        emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null, angleDeg: null });
+        emit("resize-selection", {
+          featureId: null,
+          widthMeters: null,
+          heightMeters: null,
+          angleDeg: null,
+        });
       }
     }
   }
@@ -1334,7 +1516,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function translateLatLngs(latlngs, dLat, dLng) {
-    if (Array.isArray(latlngs)) return latlngs.map((x) => translateLatLngs(x, dLat, dLng));
+    if (Array.isArray(latlngs))
+      return latlngs.map((x) => translateLatLngs(x, dLat, dLng));
     return L.latLng(latlngs.lat + dLat, latlngs.lng + dLng);
   }
 
@@ -1342,17 +1525,30 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     originalPositions.value.clear();
 
     selectedFeatures.value.forEach((featureId) => {
-      const layer = getLayerForOps(layersComposable.featureLayerManager, featureId);
+      const layer = getLayerForOps(
+        layersComposable.featureLayerManager,
+        featureId,
+      );
       if (!layer) return;
 
-      if (layer.getLatLng && typeof layer.setLatLng === "function" && !layer.getLatLngs) {
+      if (
+        layer.getLatLng &&
+        typeof layer.setLatLng === "function" &&
+        !layer.getLatLngs
+      ) {
         const ll = layer.getLatLng();
-        originalPositions.value.set(String(featureId), L.latLng(ll.lat, ll.lng));
+        originalPositions.value.set(
+          String(featureId),
+          L.latLng(ll.lat, ll.lng),
+        );
         return;
       }
 
       if (layer.getLatLngs && typeof layer.setLatLngs === "function") {
-        originalPositions.value.set(String(featureId), cloneLatLngs(layer.getLatLngs()));
+        originalPositions.value.set(
+          String(featureId),
+          cloneLatLngs(layer.getLatLngs()),
+        );
       }
     });
   }
@@ -1413,7 +1609,9 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     if (isDrawingFree.value && tempFreeLine) {
       freeLinePoints.value.push(e.latlng);
-      const smoothedPoints = editingComposable.smoothFreeLinePoints(freeLinePoints.value);
+      const smoothedPoints = editingComposable.smoothFreeLinePoints(
+        freeLinePoints.value,
+      );
       tempFreeLine.setLatLngs(smoothedPoints);
     }
 
@@ -1440,7 +1638,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         tempLine = null;
       }
 
-      editingComposable.createLine(lineStartPoint.value, e.latlng, map, layersComposable);
+      editingComposable.createLine(
+        lineStartPoint.value,
+        e.latlng,
+        map,
+        layersComposable,
+      );
       lineStartPoint.value = null;
       return;
     }
@@ -1449,7 +1652,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       isDrawingFree.value = false;
       map.dragging.enable();
 
-      editingComposable.finishFreeLine(freeLinePoints.value, tempFreeLine, map, layersComposable);
+      editingComposable.finishFreeLine(
+        freeLinePoints.value,
+        tempFreeLine,
+        map,
+        layersComposable,
+      );
 
       freeLinePoints.value = [];
       tempFreeLine = null;
@@ -1462,7 +1670,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function handleShapeMouseDown(e, map) {
     lastMapRef.value = map;
     if (e.target && e.target._isFeatureClick) return;
-    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape) return;
+    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape)
+      return;
 
     isDrawingShape = true;
     map.dragging.disable();
@@ -1487,7 +1696,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             [shapeStartPoint.lat, shapeStartPoint.lng],
             [shapeStartPoint.lat, shapeStartPoint.lng],
           ],
-          { color: "#000000", weight: 2, fillColor: "#cccccc", fillOpacity: 0.5 }
+          {
+            color: "#000000",
+            weight: 2,
+            fillColor: "#cccccc",
+            fillOpacity: 0.5,
+          },
         );
         layersComposable.drawnItems.value.addLayer(tempShape);
         break;
@@ -1516,40 +1730,82 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     lastMapRef.value = map;
     lastMousePos = e.latlng;
 
-    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape) return;
+    if (props.activeEditMode !== "CREATE_SHAPES" || !props.selectedShape)
+      return;
 
     const shapeType = props.selectedShape;
 
     switch (shapeType) {
       case "square":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempSquareFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
+          tempShape = editingComposable.updateTempSquareFromCenter(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+            tempShape,
+          );
         }
         break;
 
       case "rectangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempRectangleFromCorners(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
+          tempShape = editingComposable.updateTempRectangleFromCorners(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+            tempShape,
+          );
         }
         break;
 
       case "circle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempCircleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
+          tempShape = editingComposable.updateTempCircleFromCenter(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+            tempShape,
+          );
         }
         break;
 
       case "triangle":
         if (shapeState === "drawing" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempTriangleFromCenter(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
+          tempShape = editingComposable.updateTempTriangleFromCenter(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+            tempShape,
+          );
         }
         break;
 
       case "oval":
         if (shapeState === "adjusting_height" && shapeStartPoint) {
-          tempShape = editingComposable.updateTempOvalHeight(shapeStartPoint, e.latlng, map, layersComposable, tempShape);
-        } else if (shapeState === "adjusting_width" && shapeStartPoint && shapeEndPoint) {
-          tempShape = editingComposable.updateTempOvalWidth(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable, tempShape);
+          tempShape = editingComposable.updateTempOvalHeight(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+            tempShape,
+          );
+        } else if (
+          shapeState === "adjusting_width" &&
+          shapeStartPoint &&
+          shapeEndPoint
+        ) {
+          tempShape = editingComposable.updateTempOvalWidth(
+            shapeStartPoint,
+            shapeEndPoint,
+            e.latlng,
+            map,
+            layersComposable,
+            tempShape,
+          );
         }
         break;
     }
@@ -1577,7 +1833,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createSquare(shapeStartPoint, e.latlng, map, layersComposable);
+          editingComposable.createSquare(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+          );
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1600,7 +1861,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createRectangle(shapeStartPoint, e.latlng, map, layersComposable);
+          editingComposable.createRectangle(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+          );
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1623,7 +1889,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createCircle(shapeStartPoint, e.latlng, map, layersComposable);
+          editingComposable.createCircle(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+          );
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1646,7 +1917,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createTriangle(shapeStartPoint, e.latlng, map, layersComposable);
+          editingComposable.createTriangle(
+            shapeStartPoint,
+            e.latlng,
+            map,
+            layersComposable,
+          );
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1666,7 +1942,13 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
             layersComposable.drawnItems.value.removeLayer(tempShape);
             tempShape = null;
           }
-          editingComposable.createOval(shapeStartPoint, shapeEndPoint, e.latlng, map, layersComposable);
+          editingComposable.createOval(
+            shapeStartPoint,
+            shapeEndPoint,
+            e.latlng,
+            map,
+            layersComposable,
+          );
 
           shapeState = null;
           shapeStartPoint = null;
@@ -1714,11 +1996,17 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
     const lines = [];
     for (let i = 0; i < currentPolygonPoints.value.length - 1; i += 1) {
-      lines.push(currentPolygonPoints.value[i], currentPolygonPoints.value[i + 1]);
+      lines.push(
+        currentPolygonPoints.value[i],
+        currentPolygonPoints.value[i + 1],
+      );
     }
 
     if (currentPolygonPoints.value.length >= 3) {
-      lines.push(currentPolygonPoints.value[currentPolygonPoints.value.length - 1], currentPolygonPoints.value[0]);
+      lines.push(
+        currentPolygonPoints.value[currentPolygonPoints.value.length - 1],
+        currentPolygonPoints.value[0],
+      );
     }
 
     tempPolygon = L.polyline(lines, {
@@ -1732,7 +2020,10 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   function finishPolygon(map) {
     if (currentPolygonPoints.value.length < 3) return;
 
-    const points = [...currentPolygonPoints.value, currentPolygonPoints.value[0]];
+    const points = [
+      ...currentPolygonPoints.value,
+      currentPolygonPoints.value[0],
+    ];
 
     if (tempPolygon) {
       layersComposable.drawnItems.value.removeLayer(tempPolygon);
@@ -1782,7 +2073,8 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
       isDraggingFeatures.value = false;
 
-      if (selectedFeatures.value.has(String(downFeatureId))) snapshotSelectedOriginalPositions();
+      if (selectedFeatures.value.has(String(downFeatureId)))
+        snapshotSelectedOriginalPositions();
       else originalPositions.value.clear();
 
       return;
@@ -1826,11 +2118,18 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         const dLng = e.latlng.lng - moveDownLatLng.lng;
 
         selectedFeatures.value.forEach((featureId) => {
-          const layer = getLayerForOps(layersComposable.featureLayerManager, featureId);
+          const layer = getLayerForOps(
+            layersComposable.featureLayerManager,
+            featureId,
+          );
           const orig = originalPositions.value.get(String(featureId));
           if (!layer || !orig) return;
 
-          if (layer.getLatLng && typeof layer.setLatLng === "function" && !layer.getLatLngs) {
+          if (
+            layer.getLatLng &&
+            typeof layer.setLatLng === "function" &&
+            !layer.getLatLngs
+          ) {
             layer.setLatLng(L.latLng(orig.lat + dLat, orig.lng + dLng));
             return;
           }
@@ -1842,7 +2141,11 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
         selectedFeatures.value.forEach((fid) => {
           upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
-          upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+          upsertSelectionAnchors(
+            fid,
+            map,
+            layersComposable.featureLayerManager,
+          );
         });
       }
 
@@ -1865,8 +2168,14 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     const oe = e.originalEvent;
     const isCtrl = !!(oe?.ctrlKey || oe?.metaKey);
 
-    if (!downFeatureId && props.activeEditMode === "RESIZE_SHAPE" && !isDraggingFeatures.value) {
-      downFeatureId = getFeatureIdFromDomTarget(oe?.target) || pickFeatureIdAtLatLng(e.latlng, map);
+    if (
+      !downFeatureId &&
+      props.activeEditMode === "RESIZE_SHAPE" &&
+      !isDraggingFeatures.value
+    ) {
+      downFeatureId =
+        getFeatureIdFromDomTarget(oe?.target) ||
+        pickFeatureIdAtLatLng(e.latlng, map);
     }
 
     if (downFeatureId) {
@@ -1877,16 +2186,23 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         const dLng = e.latlng.lng - moveDownLatLng.lng;
 
         selectedFeatures.value.forEach((featureId) => {
-          const feature = props.features.find((f) => String(f.id) === String(featureId));
-          if (feature) editingComposable.updateFeaturePosition(feature, dLat, dLng);
+          const feature = props.features.find(
+            (f) => String(f.id) === String(featureId),
+          );
+          if (feature)
+            editingComposable.updateFeaturePosition(feature, dLat, dLng);
         });
 
         justFinishedDrag.value = true;
-        setTimeout(() => { justFinishedDrag.value = false; }, 100);
+        setTimeout(() => {
+          justFinishedDrag.value = false;
+        }, 100);
       } else {
         if (props.activeEditMode === "RESIZE_SHAPE") {
           suppressNextFeatureClick.value = true;
-          setTimeout(() => { suppressNextFeatureClick.value = false; }, 0);
+          setTimeout(() => {
+            suppressNextFeatureClick.value = false;
+          }, 0);
           applySelectionClick(downFeatureId, isCtrl, map);
         }
       }
@@ -1928,7 +2244,12 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
         removeSelectionAnchors(fid, map);
       });
 
-      editingComposable.deleteSelectedFeatures(selectedFeatures.value, layersComposable.featureLayerManager, map, emit);
+      editingComposable.deleteSelectedFeatures(
+        selectedFeatures.value,
+        layersComposable.featureLayerManager,
+        map,
+        emit,
+      );
 
       selectedFeatures.value.clear();
       if (props.activeEditMode === "RESIZE_SHAPE") {
