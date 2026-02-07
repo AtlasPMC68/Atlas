@@ -386,7 +386,7 @@
   
   // API calls
   async function createFeature(featureData) {
-    const response = await fetch('${import.meta.env.VITE_API_URL}/maps/features', {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

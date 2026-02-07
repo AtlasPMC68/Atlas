@@ -1,8 +1,6 @@
 import L from 'leaflet';
 import { MAP_CONFIG } from '../composables/useMapConfig.js';
 
-// Utility functions for geographic calculations and transformations
-
 /**
  * Smooth free line points by removing points that are too close together
  * @param {Array} points - Array of LatLng points
@@ -11,19 +9,16 @@ import { MAP_CONFIG } from '../composables/useMapConfig.js';
 export function smoothFreeLinePoints(points) {
   if (points.length < 2) return points;
 
-  const smoothed = [points[0]]; // Keep the first point
+  const smoothed = [points[0]];
 
   for (let i = 1; i < points.length; i++) {
     const lastPoint = smoothed[smoothed.length - 1];
     const currentPoint = points[i];
 
-    // Calculate simple geographic distance (degrees)
     const latDiff = currentPoint.lat - lastPoint.lat;
     const lngDiff = currentPoint.lng - lastPoint.lng;
     const distance = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff);
 
-    // Add the point only if it's far enough from the previous one
-    // Using a very small threshold (0.0001 degrees ≈ 11 meters at equator)
     if (distance >= 0.00001) {
       smoothed.push(currentPoint);
     }
@@ -34,8 +29,8 @@ export function smoothFreeLinePoints(points) {
 
 /**
  * Calculate radius for zoom level
- * @param {number} currentZoom - Current map zoom level
- * @returns {number} Radius in pixels
+ * @param {number} currentZoom
+ * @returns {number}
  */
 export function getRadiusForZoom(currentZoom) {
   const zoomDiff = currentZoom - MAP_CONFIG.BASE_ZOOM;
@@ -51,20 +46,16 @@ export function getRadiusForZoom(currentZoom) {
  * @returns {Object} Transformed GeoJSON
  */
 export function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
-  // Use the same projected CRS as the basemap (Web Mercator)
   const crs = L.CRS.EPSG3857;
-  const center = crs.project(L.latLng(anchorLat, anchorLng)); // { x, y } in meters
+  const center = crs.project(L.latLng(anchorLat, anchorLng));
   const halfSize = sizeMeters / 2;
 
-  // Transform a single coordinate [x, y] in [0,1]×[0,1] into [lng, lat]
   const transformCoord = ([x, y]) => {
-    // Center the shape around (0,0) in its local space
     const nx = x - 0.5;
     const ny = y - 0.5;
 
-    // Work in projected meters with a uniform scale so aspect ratio is preserved
     const mx = center.x + nx * 2 * halfSize;
-    const my = center.y - ny * 2 * halfSize; // minus because y grows downward
+    const my = center.y - ny * 2 * halfSize;
 
     const latlng = crs.unproject(L.point(mx, my));
     return [latlng.lng, latlng.lat]; // GeoJSON order = [lng, lat]
@@ -72,7 +63,6 @@ export function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMe
 
   const transformCoords = (coords) => {
     if (typeof coords[0] === "number") {
-      // [x, y]
       return transformCoord(coords);
     }
     return coords.map(transformCoords);
@@ -125,7 +115,7 @@ export function getClosestAvailableYear(year) {
   for (let i = sorted.length - 1; i >= 0; i--) {
     if (year >= sorted[i]) return sorted[i];
   }
-  return sorted[0]; // default to the earliest year
+  return sorted[0];
 }
 
 /**

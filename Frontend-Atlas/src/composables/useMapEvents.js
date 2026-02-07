@@ -147,13 +147,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
     return x;
   }
 
-  function shortestDeltaDeg(fromDeg, toDeg) {
-    let d = normalizeAngleDeg(toDeg) - normalizeAngleDeg(fromDeg);
-    if (d > 180) d -= 360;
-    if (d < -180) d += 360;
-    return d;
-  }
-
   function getFeatureById(fid) {
     const id = String(fid);
     return props.features.find((f) => String(f.id) === id) || null;
@@ -413,7 +406,7 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function computeRotationHandleLatLng(layer, map, angleDeg) {
-    if (!layer || !map || !layer.getLatLngs) return null;
+    if (!layer || !map) return null;
 
     const fd = getRotatedFrameData(layer, map, angleDeg);
     if (!fd) return null;

@@ -127,17 +127,6 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function setAngleDegOnFeature(feature, angleDeg) {
-    const next = normalizeAngleDeg(angleDeg);
-    return {
-      ...(feature || {}),
-      properties: {
-        ...(feature?.properties || {}),
-        rotationDeg: next,
-      },
-    };
-  }
-
   function rotatePoint(pt, centerPt, rad) {
     const dx = pt.x - centerPt.x;
     const dy = pt.y - centerPt.y;
