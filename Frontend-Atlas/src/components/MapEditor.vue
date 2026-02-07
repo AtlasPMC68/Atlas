@@ -261,39 +261,45 @@
   }
   
   // Écouter les événements de dessin
-  map.value.on(L.Draw.Event.CREATED, (event) => {
-    const layer = event.layer
-    drawnItems.value.addLayer(layer)
-    
-    // Créer la feature
-    const feature = createFeatureFromLayer(layer, event.layerType)
-    if (feature) {
-      unsavedFeatures.value.push(feature)
-      hasUnsavedChanges.value = true
-      
-      // Marquer le layer comme non sauvegardé
-      layer.isUnsaved = true
-      layer.featureData = feature
+  onMounted(() => {
+    if (!map.value) {
+      return
     }
-  })
-  
-  map.value.on(L.Draw.Event.DELETED, (event) => {
-    event.layers.eachLayer(layer => {
-      if (layer.isUnsaved) {
-        // Retirer des features non sauvegardées
-        const index = unsavedFeatures.value.findIndex(f => f === layer.featureData)
-        if (index > -1) {
-          unsavedFeatures.value.splice(index, 1)
-        }
-      } else {
-        // Marquer pour suppression
-        unsavedFeatures.value.push({
-          id: layer.featureId,
-          action: 'delete'
-        })
+
+    map.value.on(L.Draw.Event.CREATED, (event) => {
+      const layer = event.layer
+      drawnItems.value.addLayer(layer)
+      
+      // Créer la feature
+      const feature = createFeatureFromLayer(layer, event.layerType)
+      if (feature) {
+        unsavedFeatures.value.push(feature)
+        hasUnsavedChanges.value = true
+        
+        // Marquer le layer comme non sauvegardé
+        layer.isUnsaved = true
+        layer.featureData = feature
       }
     })
-    hasUnsavedChanges.value = true
+    
+    map.value.on(L.Draw.Event.DELETED, (event) => {
+      event.layers.eachLayer(layer => {
+        if (layer.isUnsaved) {
+          // Retirer des features non sauvegardées
+          const index = unsavedFeatures.value.findIndex(f => f === layer.featureData)
+          if (index > -1) {
+            unsavedFeatures.value.splice(index, 1)
+          }
+        } else {
+          // Marquer pour suppression
+          unsavedFeatures.value.push({
+            id: layer.featureId,
+            action: 'delete'
+          })
+        }
+      })
+      hasUnsavedChanges.value = true
+    })
   })
   
   // Créer une feature depuis un layer Leaflet
