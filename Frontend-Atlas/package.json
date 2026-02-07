@@ -15,7 +15,6 @@
     "keycloak-js": "^26.2.2",
     "leaflet": "^1.9.4",
     "leaflet-arrowheads": "^1.4.0",
-    "leaflet-draw": "^1.0.4",
     "leaflet-geometryutil": "^0.10.3",
     "pinia": "^3.0.3",
     "vue": "^3.4.38",
