@@ -59,7 +59,9 @@ export function useMapLayers(props, emit, editingComposable) {
         this.makeLayerClickable(fid, layer);
       }
 
-      const visible = props.featureVisibility?.get(fid);
+      const visible =
+        props.featureVisibility?.get(fid) ??
+        props.featureVisibility?.get(featureId);
       const shouldShow = visible === undefined ? true : Boolean(visible);
 
       if (shouldShow && this.map && !this.map.hasLayer(layer)) {
