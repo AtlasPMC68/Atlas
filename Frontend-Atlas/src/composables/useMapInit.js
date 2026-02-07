@@ -1,6 +1,12 @@
 import L from "leaflet";
 
-export function useMapInit(props, emit, layersComposable, eventsComposable, editingComposable, timelineComposable) {
+export function useMapInit(
+  props,
+  emit,
+  layersComposable,
+  eventsComposable,
+  editingComposable,
+) {
   const boundHandlers = {
     mousedown: null,
     mousemove: null,
@@ -36,7 +42,11 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
     if (!map) return;
     const mapContainer = map.getContainer();
 
-    if (props.editMode && props.activeEditMode && props.activeEditMode !== "RESIZE_SHAPE") {
+    if (
+      props.editMode &&
+      props.activeEditMode &&
+      props.activeEditMode !== "RESIZE_SHAPE"
+    ) {
       mapContainer.style.cursor = "crosshair";
     } else {
       mapContainer.style.cursor = "";
@@ -56,7 +66,10 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
       map.on(name, fn);
     };
 
-    if (props.activeEditMode === "CREATE_LINE" || props.activeEditMode === "CREATE_FREE_LINE") {
+    if (
+      props.activeEditMode === "CREATE_LINE" ||
+      props.activeEditMode === "CREATE_FREE_LINE"
+    ) {
       bind("mousedown", (e) => eventsComposable.handleMouseDown(e, map));
       bind("mousemove", (e) => eventsComposable.handleMouseMove(e, map));
       bind("mouseup", (e) => eventsComposable.handleMouseUp(e, map));
@@ -64,7 +77,9 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
       bind("mousedown", (e) => eventsComposable.handleShapeMouseDown(e, map));
       bind("mousemove", (e) => eventsComposable.handleShapeMouseMove(e, map));
       bind("mouseup", (e) => eventsComposable.handleShapeMouseUp(e, map));
-      bind("dragstart", (e) => eventsComposable.preventDragDuringShapeDrawing(e));
+      bind("dragstart", (e) =>
+        eventsComposable.preventDragDuringShapeDrawing(e),
+      );
     } else if (props.activeEditMode === "RESIZE_SHAPE") {
       bind("mousedown", (e) => eventsComposable.handleMoveMouseDown(e, map));
       bind("mousemove", (e) => eventsComposable.handleMoveMouseMove(e, map));
@@ -85,7 +100,9 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
       bind("keydown", (e) => eventsComposable.handleKeyDown(e, map));
 
       const focusOnMouseDown = () => container && container.focus();
-      container?.addEventListener("mousedown", focusOnMouseDown, { once: true });
+      container?.addEventListener("mousedown", focusOnMouseDown, {
+        once: true,
+      });
     }
   }
 
@@ -142,9 +159,11 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
       if (map.tap) map.tap.disable?.();
 
       stripLayerUi(layersComposable.featureLayerManager);
-      if (layersComposable.drawnItems.value) stripGroupUi(layersComposable.drawnItems.value);
+      if (layersComposable.drawnItems.value)
+        stripGroupUi(layersComposable.drawnItems.value);
     } else {
-      if (uiState.doubleClickZoom != null) toggle(map.doubleClickZoom, uiState.doubleClickZoom);
+      if (uiState.doubleClickZoom != null)
+        toggle(map.doubleClickZoom, uiState.doubleClickZoom);
       if (uiState.boxZoom != null) toggle(map.boxZoom, uiState.boxZoom);
       if (uiState.keyboard != null) toggle(map.keyboard, uiState.keyboard);
       if (uiState.touchZoom != null) toggle(map.touchZoom, uiState.touchZoom);
@@ -207,7 +226,12 @@ export function useMapInit(props, emit, layersComposable, eventsComposable, edit
     }
 
     if (editingComposable.isDeleteMode?.value) {
-      editingComposable.deleteFeature(fid, layersComposable.featureLayerManager, map, emit);
+      editingComposable.deleteFeature(
+        fid,
+        layersComposable.featureLayerManager,
+        map,
+        emit,
+      );
       return;
     }
 

@@ -53,10 +53,9 @@ const editing = useMapEditing(props, emit);
 const layers = useMapLayers(props, emit, editing);
 const events = useMapEvents(props, emit, layers, editing);
 const timeline = useMapTimeline();
-const init = useMapInit(props, emit, layers, events, editing, timeline);
+const init = useMapInit(props, emit, layers, events, editing);
 
 let map = null;
-let baseTileLayer = null;
 
 let resizeCommitTimer = null;
 let rotateCommitTimer = null;
@@ -223,12 +222,6 @@ function renderAllAndRebind() {
 onMounted(() => {
   map = L.map("map").setView([52.9399, -73.5491], 5);
 
-  baseTileLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: "abcd",
-    maxZoom: 19,
-  }).addTo(map);
-
   layers.initializeBaseLayers(map);
   timeline.loadRegionsForYear(timeline.selectedYear.value, map, true);
 
@@ -312,10 +305,6 @@ watch(
       events.clearSelectionAnchors?.(map);
 
       emit("resize-selection", { featureId: null, widthMeters: null, heightMeters: null, angleDeg: null });
-
-      if (editing.isResizeMode?.value && editing.resizingShape?.value) {
-        editing.cancelResizeShape(map, layers);
-      }
 
       clearResizeCommitTimer();
       clearRotateCommitTimer();

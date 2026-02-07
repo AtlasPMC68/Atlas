@@ -1,13 +1,9 @@
 import { ref } from "vue";
 import L from "leaflet";
 import { smoothFreeLinePoints } from "../utils/mapUtils.js";
-import { MAP_CONFIG } from "./useMapConfig.js";
 
 export function useMapEditing(props, emit) {
   const isDeleteMode = ref(false);
-
-  const isResizeMode = ref(false);
-  const resizingShape = ref(null);
 
   function metersToLatLngOffsets(centerLat, halfWidthMeters, halfHeightMeters) {
     const dLat = halfHeightMeters / 111320;
@@ -1735,32 +1731,8 @@ export function useMapEditing(props, emit) {
     else emit("mode-change", "DELETE_FEATURE");
   }
 
-  function startResizeShape() {
-    isResizeMode.value = false;
-    resizingShape.value = null;
-    return false;
-  }
-
-  function updateResizeShape() {
-    return null;
-  }
-
-  async function finishResizeShape() {
-    isResizeMode.value = false;
-    resizingShape.value = null;
-    return;
-  }
-
-  function cancelResizeShape() {
-    isResizeMode.value = false;
-    resizingShape.value = null;
-    return;
-  }
-
   return {
     isDeleteMode,
-    isResizeMode,
-    resizingShape,
 
     createSquare,
     createRectangle,
@@ -1794,11 +1766,6 @@ export function useMapEditing(props, emit) {
 
     toggleDeleteMode,
 
-    startResizeShape,
-    updateResizeShape,
-    finishResizeShape,
-    cancelResizeShape,
-
     smoothFreeLinePoints,
 
     applyResizeFromDims,
@@ -1806,12 +1773,4 @@ export function useMapEditing(props, emit) {
     applyRotateFromAngle,
     applyAngleToLayerFromCanonical,
   };
-}
-
-function getRadiusForZoom(currentZoom) {
-  const BASE_ZOOM = 5;
-  const BASE_RADIUS = 3;
-  const ZOOM_FACTOR = 1.5;
-  const zoomDiff = currentZoom - BASE_ZOOM;
-  return Math.max(BASE_RADIUS, BASE_RADIUS * Math.pow(ZOOM_FACTOR, zoomDiff));
 }

@@ -140,21 +140,3 @@ export function getPixelDistance(map, point1, point2) {
   const p2 = map.latLngToContainerPoint(point2);
   return p1.distanceTo(p2);
 }
-
-/**
- * Convert degrees to radians
- * @param {number} degrees - Angle in degrees
- * @returns {number} Angle in radians
- */
-export function degreesToRadians(degrees) {
-  return degrees * (Math.PI / 180);
-}
-
-/**
- * Convert radians to degrees
- * @param {number} radians - Angle in radians
- * @returns {number} Angle in degrees
- */
-export function radiansToDegrees(radians) {
-  return radians * (180 / Math.PI);
-}

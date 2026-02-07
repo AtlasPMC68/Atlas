@@ -1,13 +1,15 @@
 import { ref } from "vue";
 import L from "leaflet";
-import { toArray, getRadiusForZoom, transformNormalizedToWorld } from "../utils/mapUtils.js";
+import {
+  toArray,
+  getRadiusForZoom,
+  transformNormalizedToWorld,
+} from "../utils/mapUtils.js";
 import { MAP_CONFIG } from "./useMapConfig.js";
 import { getMapElementType } from "../utils/featureTypes.js";
 
 export function useMapLayers(props, emit, editingComposable) {
   const drawnItems = ref(null);
-  let baseTileLayer = null;
-  let labelLayer = null;
 
   const allCircles = ref(new Set());
   const previousFeatureIds = ref(new Set());
@@ -76,7 +78,8 @@ export function useMapLayers(props, emit, editingComposable) {
 
       if (layer.__atlas_onDown) layer.off("mousedown", layer.__atlas_onDown);
       if (layer.__atlas_onClick) layer.off("click", layer.__atlas_onClick);
-      if (layer.__atlas_onPointerDown) layer.off("pointerdown", layer.__atlas_onPointerDown);
+      if (layer.__atlas_onPointerDown)
+        layer.off("pointerdown", layer.__atlas_onPointerDown);
 
       const markDom = (oe) => {
         const t = oe?.target;
@@ -109,7 +112,8 @@ export function useMapLayers(props, emit, editingComposable) {
         e.originalEvent?.stopPropagation();
 
         if (this.clickHandler) {
-          const isCtrlPressed = e.originalEvent?.ctrlKey || e.originalEvent?.metaKey;
+          const isCtrlPressed =
+            e.originalEvent?.ctrlKey || e.originalEvent?.metaKey;
           this.clickHandler(fid, isCtrlPressed);
         }
       };
@@ -158,14 +162,16 @@ export function useMapLayers(props, emit, editingComposable) {
     const radius = getRadiusForZoom(map.getZoom());
 
     safeFeatures.forEach((feature) => {
-      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) return;
+      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates))
+        return;
 
       const [lng, lat] = feature.geometry.coordinates;
       const coord = [lat, lng];
 
       const fprops = feature.properties || {};
       const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
-      const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
+      const colorFromRgb =
+        rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
       const color = feature.color || colorFromRgb || "#000";
 
       const circle = L.circleMarker(coord, {
@@ -194,11 +200,13 @@ export function useMapLayers(props, emit, editingComposable) {
     const safeFeatures = toArray(features);
 
     safeFeatures.forEach((feature) => {
-      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) return;
+      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates))
+        return;
 
       const fprops = feature.properties || {};
       const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
-      const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
+      const colorFromRgb =
+        rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
       const fillColor = feature.color || colorFromRgb || "#ccc";
 
       let targetGeometry = feature.geometry;
@@ -209,7 +217,12 @@ export function useMapLayers(props, emit, editingComposable) {
         const anchorLng = -170 + Math.random() * 340;
         const sizeMeters = 2_000_000;
 
-        const worldFc = transformNormalizedToWorld(fc, anchorLat, anchorLng, sizeMeters);
+        const worldFc = transformNormalizedToWorld(
+          fc,
+          anchorLat,
+          anchorLng,
+          sizeMeters,
+        );
         if (worldFc?.features?.[0]?.geometry) {
           targetGeometry = worldFc.features[0].geometry;
         }
@@ -244,11 +257,20 @@ export function useMapLayers(props, emit, editingComposable) {
       const angleDeg = feature.properties?.rotationDeg ?? 0;
       if (Math.abs(angleDeg) > 1e-6) {
         const pivot = feature.properties?.center
-          ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
+          ? L.latLng(
+              feature.properties.center.lat,
+              feature.properties.center.lng,
+            )
           : poly.getBounds().getCenter();
 
         if (targetGeometry?.type === "Polygon") {
-          editingComposable.applyAngleToLayerFromCanonical(poly, map, targetGeometry, angleDeg, pivot);
+          editingComposable.applyAngleToLayerFromCanonical(
+            poly,
+            map,
+            targetGeometry,
+            angleDeg,
+            pivot,
+          );
         }
       }
 
@@ -259,51 +281,68 @@ export function useMapLayers(props, emit, editingComposable) {
     });
   }
 
-    function renderArrows(features, map) {
-      const safeFeatures = toArray(features);
+  function renderArrows(features, map) {
+    const safeFeatures = toArray(features);
 
-      safeFeatures.forEach((feature) => {
-        if (!feature.geometry || !Array.isArray(feature.geometry.coordinates)) return;
+    safeFeatures.forEach((feature) => {
+      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates))
+        return;
 
-        const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      const latLngs = feature.geometry.coordinates.map(([lng, lat]) => [
+        lat,
+        lng,
+      ]);
 
-        const fprops = feature.properties || {};
-        const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
-        const colorFromRgb = rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
-        const color = feature.color || colorFromRgb || "#000";
+      const fprops = feature.properties || {};
+      const rgb = Array.isArray(fprops.color_rgb) ? fprops.color_rgb : null;
+      const colorFromRgb =
+        rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
+      const color = feature.color || colorFromRgb || "#000";
 
-        const line = L.polyline(latLngs, {
-          color,
-          weight: feature.stroke_width ?? 2,
-          opacity: feature.opacity ?? 1,
-        });
-
-        const name = fprops.name || feature.name;
-        if (name) line.bindPopup(name);
-
-        const elementType = getMapElementType(feature);
-        const visible = props.featureVisibility?.get(String(feature.id));
-        const shouldShow = visible === undefined ? true : Boolean(visible);
-
-        if (shouldShow && elementType === "arrow" && typeof line.arrowheads === "function") {
-          line.arrowheads({
-            size: "10px",
-            frequency: "endonly",
-            fill: true,
-          });
-        }
-
-        featureLayerManager.addFeatureLayer(feature.id, line, feature);
+      const line = L.polyline(latLngs, {
+        color,
+        weight: feature.stroke_width ?? 2,
+        opacity: feature.opacity ?? 1,
       });
-    }
+
+      const name = fprops.name || feature.name;
+      if (name) line.bindPopup(name);
+
+      const elementType = getMapElementType(feature);
+      const visible = props.featureVisibility?.get(String(feature.id));
+      const shouldShow = visible === undefined ? true : Boolean(visible);
+
+      if (
+        shouldShow &&
+        elementType === "arrow" &&
+        typeof line.arrowheads === "function"
+      ) {
+        line.arrowheads({
+          size: "10px",
+          frequency: "endonly",
+          fill: true,
+        });
+      }
+
+      featureLayerManager.addFeatureLayer(feature.id, line, feature);
+    });
+  }
 
   function renderShapes(features, map) {
     const safeFeatures = toArray(features);
 
     safeFeatures.forEach((feature) => {
-      if (!feature.geometry || !Array.isArray(feature.geometry.coordinates) || !feature.geometry.coordinates[0]) return;
+      if (
+        !feature.geometry ||
+        !Array.isArray(feature.geometry.coordinates) ||
+        !feature.geometry.coordinates[0]
+      )
+        return;
 
-      const latLngs = feature.geometry.coordinates[0].map((coord) => [coord[1], coord[0]]);
+      const latLngs = feature.geometry.coordinates[0].map((coord) => [
+        coord[1],
+        coord[0],
+      ]);
 
       const shape = L.polygon(latLngs, {
         color: feature.color || "#000000",
@@ -317,10 +356,19 @@ export function useMapLayers(props, emit, editingComposable) {
 
       if (Math.abs(angleDeg) > 1e-6) {
         const pivot = feature.properties?.center
-          ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
+          ? L.latLng(
+              feature.properties.center.lat,
+              feature.properties.center.lng,
+            )
           : shape.getBounds().getCenter();
 
-        editingComposable.applyAngleToLayerFromCanonical(shape, map, feature.geometry, angleDeg, pivot);
+        editingComposable.applyAngleToLayerFromCanonical(
+          shape,
+          map,
+          feature.geometry,
+          angleDeg,
+          pivot,
+        );
       }
 
       if (feature.name) shape.bindPopup(feature.name);
@@ -343,7 +391,9 @@ export function useMapLayers(props, emit, editingComposable) {
       }
     });
 
-    const newFeatures = filteredFeatures.filter((f) => !previousIds.has(String(f.id)));
+    const newFeatures = filteredFeatures.filter(
+      (f) => !previousIds.has(String(f.id)),
+    );
 
     const featuresByType = {
       point: newFeatures.filter((f) => getMapElementType(f) === "point"),
@@ -364,11 +414,14 @@ export function useMapLayers(props, emit, editingComposable) {
   function initializeBaseLayers(map) {
     featureLayerManager.setMap(map);
 
-    baseTileLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-    }).addTo(map);
+    L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+      {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+        subdomains: "abcd",
+        maxZoom: 19,
+      },
+    ).addTo(map);
 
     drawnItems.value = new L.FeatureGroup();
     map.addLayer(drawnItems.value);
@@ -386,8 +439,6 @@ export function useMapLayers(props, emit, editingComposable) {
     previousFeatureIds,
 
     drawnItems,
-    baseTileLayer,
-    labelLayer,
 
     renderCities,
     renderZones,

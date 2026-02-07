@@ -1,7 +1,5 @@
-import { ref } from 'vue';
-import L from 'leaflet';
-import { getClosestAvailableYear, debounce } from '../utils/mapUtils.js';
-import { normalizeFeatures, getMapElementType } from '../utils/featureTypes.js';
+import { ref } from "vue";
+import { getClosestAvailableYear } from "../utils/mapUtils.js";
 
 export function useMapTimeline() {
   const selectedYear = ref(1740);
@@ -48,56 +46,11 @@ export function useMapTimeline() {
     }
   }
 
-  async function fetchFeaturesAndRender(year, map, emit) {
-    const mapId = "11111111-1111-1111-1111-111111111111";
-
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${mapId}`);
-      if (!res.ok) throw new Error("Failed to fetch features");
-
-      const allFeatures = await res.json();
-
-      const normalized = normalizeFeatures(allFeatures);
-      emit("features-loaded", normalized);
-
-      const features = normalized.filter((f) => new Date(f.start_date).getFullYear() <= year);
-      const cities = features.filter((f) => getMapElementType(f) === "point");
-      const zones = features.filter((f) => getMapElementType(f) === "zone");
-      const arrows = features.filter((f) => getMapElementType(f) === "arrow");
-
-      return { cities, zones, arrows };
-    } catch (err) {
-      console.warn("Error fetching features:", err);
-      return { cities: [], zones: [], arrows: [] };
-    }
-  }
-
-  let isLoading = false;
-  const debouncedUpdate = debounce(async (year, map, emit, renderFunctions) => {
-    if (isLoading) return;
-    isLoading = true;
-
-    try {
-      await loadRegionsForYear(year, map);
-      const { cities, zones, arrows } = await fetchFeaturesAndRender(year, map, emit);
-
-      renderFunctions.renderCities(cities, map);
-      renderFunctions.renderZones(zones, map);
-      renderFunctions.renderArrows(arrows, map);
-    } catch (e) {
-      console.warn("Error loading layers:", e);
-    } finally {
-      isLoading = false;
-    }
-  }, 100);
-
   return {
     // State
     selectedYear,
 
     // Functions
     loadRegionsForYear,
-    fetchFeaturesAndRender,
-    debouncedUpdate,
   };
 }
