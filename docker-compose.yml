@@ -15,15 +15,15 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     depends_on:
       - keycloak
+      
   frontend:
     build:
       context: ./Frontend-Atlas
     container_name: atlas-frontend
     ports:
-      - "3000:5173"
+      - "3000:5173" # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
     env_file:
       - ./Frontend-Atlas/.env
