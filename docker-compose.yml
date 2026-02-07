@@ -17,7 +17,6 @@ services:
       - ./Backend-Atlas/.env.dev:/app/.env.dev
     depends_on:
       - keycloak
-      
   frontend:
     build:
       context: ./Frontend-Atlas
