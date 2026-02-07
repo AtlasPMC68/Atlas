@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { L } from "leaflet";
+import L from "leaflet";
 import { getClosestAvailableYear } from "../utils/mapUtils.js";
 
 export function useMapTimeline() {
