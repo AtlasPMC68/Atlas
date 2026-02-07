@@ -80,7 +80,8 @@ class TextExtraction:
 
         reader = easyocr.Reader(
             lang_list=list(self.lang),
-            gpu=self.gpu_acc
+            gpu=self.gpu_acc,
+            verbose=False
         )
 
         shading = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)

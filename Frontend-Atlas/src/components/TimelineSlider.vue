@@ -22,11 +22,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch } from "vue";
 
 const props = defineProps({
-  year: Number,
+  year: { type: Number, default: new Date().getFullYear() },
   min: {
     type: Number,
     default: 1400,
@@ -41,7 +41,6 @@ const emit = defineEmits(["update:year"]);
 const internalYear = ref(props.year || props.min);
 const inputValue = ref(String(internalYear.value));
 
-// Met à jour input si le parent change
 watch(
   () => props.year,
   (val) => {

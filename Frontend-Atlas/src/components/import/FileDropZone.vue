@@ -45,7 +45,6 @@
       </div>
     </div>
 
-    <!-- Messages d'erreur -->
     <div v-if="error" class="alert alert-error mt-4">
       <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
         <path
@@ -59,7 +58,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from "vue";
 
 const props = defineProps({
@@ -71,13 +70,11 @@ const props = defineProps({
 
 const emit = defineEmits(["file-selected"]);
 
-// État local
-const dropZone = ref(null);
-const fileInput = ref(null);
+const dropZone = ref<HTMLElement | null>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const isDragOver = ref(false);
 const error = ref("");
 
-// Classes dynamiques
 const dropZoneClasses = computed(() => ({
   "border-primary bg-primary/10": isDragOver.value,
   "border-base-300 bg-base-50 hover:border-primary/50 hover:bg-primary/5":
@@ -86,21 +83,19 @@ const dropZoneClasses = computed(() => ({
   "cursor-pointer": !props.isLoading,
 }));
 
-// Gestionnaires d'événements
-const onDragOver = (e) => {
+const onDragOver = () => {
   isDragOver.value = true;
 };
 
-const onDragLeave = (e) => {
-  // Vérifier si on sort vraiment de la zone
-  if (!dropZone.value.contains(e.relatedTarget)) {
+const onDragLeave = (e: DragEvent) => {
+  if (!dropZone.value?.contains(e.relatedTarget as Node)) {
     isDragOver.value = false;
   }
 };
 
-const onDrop = (e) => {
+const onDrop = (e: DragEvent) => {
   isDragOver.value = false;
-  const files = Array.from(e.dataTransfer.files);
+  const files = Array.from(e.dataTransfer?.files || []);
 
   if (files.length > 0) {
     handleFile(files[0]);
@@ -109,21 +104,21 @@ const onDrop = (e) => {
 
 const openFileDialog = () => {
   if (!props.isLoading) {
-    fileInput.value.click();
+    fileInput.value?.click();
   }
 };
 
-const onFileSelect = (e) => {
-  const file = e.target.files[0];
+const onFileSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  const file = target.files ? target.files[0] : null;
   if (file) {
     handleFile(file);
   }
 };
 
-const handleFile = (file) => {
+const handleFile = (file: File) => {
   error.value = "";
 
-  // Validation du fichier
   if (!file.type.startsWith("image/")) {
     error.value = "Veuillez sélectionner une image valide";
     return;

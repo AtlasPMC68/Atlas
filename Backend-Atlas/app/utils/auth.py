@@ -10,11 +10,11 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(status_code=401, detail="Invalid token or expired")
     
     return {
-        "sid": token_info.get("sid"),
+        "sub": token_info.get("sub"),
         "email": token_info.get("email"),
         "preferred_username": token_info.get("preferred_username"),
         "token_info": token_info
     }
 
 def get_current_user_id(user: dict = Depends(get_current_user)) -> str:
-    return user["sid"]
+    return user["sub"]

@@ -5,15 +5,10 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/vue/24/outline";
+import { MapData, MapDisplay } from "../typescript/map";
+import { snakeToCamel } from "../utils/utils";
 
-interface Projet {
-  id: string;
-  titre: string;
-  auteur: string;
-  image: string;
-}
-
-const projets = ref<Projet[]>([]);
+const maps = ref<MapDisplay[]>([]);
 
 onMounted(() => {
   fetchMapsAndRender();
@@ -27,13 +22,13 @@ async function fetchMapsAndRender() {
       throw new Error(`HTTP error : ${res.status}`);
     }
 
-    const data = await res.json();
+    const data = snakeToCamel(await res.json()) as MapData[];
 
-    projets.value = data.map((item: any) => {
+    maps.value = data.map((map: MapData) => {
       return {
-        id: item.id,
-        titre: item.title,
-        auteur: item.owner_id,
+        id: map.id,
+        title: map.title,
+        userId: map.userId,
         image: "/images/default.jpg",
       };
     });
@@ -57,7 +52,7 @@ async function fetchMapsAndRender() {
           />
           <input
             type="text"
-            placeholder="Rechercher un projet..."
+            placeholder="Rechercher une carte..."
             class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
@@ -69,34 +64,34 @@ async function fetchMapsAndRender() {
         </button>
       </div>
 
-      <!-- "Nouveau projet" button -->
+      <!-- new Map button -->
       <RouterLink
         to="/demo/upload"
         class="btn-primary flex items-center gap-2 self-start md:self-auto"
       >
         <PlusIcon class="h-5 w-5" />
-        Nouveau projet
+        Nouvelle Carte
       </RouterLink>
     </div>
 
-    <!-- Projects grid -->
+    <!-- Maps grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
-        v-for="projet in projets"
-        :key="projet.id"
+        v-for="map in maps"
+        :key="map.id"
         class="bg-white border border-gray-200 rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer"
-        @click="$router.push('/carte/${projet.id}')"
+        @click="$router.push(`/maps/${map.id}`)"
       >
         <img
-          :src="projet.image"
+          :src="map.image || '/images/default.jpg'"
           alt=""
           class="w-full h-40 object-cover rounded-t-lg"
         />
         <div class="p-4">
           <h3 class="text-lg font-semibold text-gray-900">
-            {{ projet.titre }}
+            {{ map.title }}
           </h3>
-          <p class="text-sm text-gray-500">par {{ projet.auteur }}</p>
+          <p class="text-sm text-gray-500">par {{ map.userId }}</p>
         </div>
       </div>
     </div>

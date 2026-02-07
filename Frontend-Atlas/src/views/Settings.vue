@@ -2,11 +2,18 @@
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import keycloak from "../keycloak";
+import { User } from "../typescript/user";
+import { snakeToCamel } from "../utils/utils";
 
-const username = ref("");
-const email = ref("");
 const errorMessage = ref("");
 const router = useRouter();
+
+const user = ref<User>({
+  id: "",
+  username: "",
+  email: "",
+  createdAt: "",
+});
 
 onMounted(async () => {
   if (!keycloak.token) return;
@@ -18,8 +25,9 @@ onMounted(async () => {
     });
     if (!res.ok) throw new Error("Erreur chargement du profil");
     const data = await res.json();
-    username.value = data.username;
-    email.value = data.email;
+    const userData: User = snakeToCamel(data);
+    user.value.username = userData.username;
+    user.value.email = userData.email;
   } catch (err) {
     console.error(err);
   }
@@ -29,14 +37,17 @@ const saveSettings = async () => {
   errorMessage.value = "";
 
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/user/update-user`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/user/update-user`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify({ username: user.value.username }),
       },
-      body: JSON.stringify({ username: username.value }),
-    });
+    );
 
     const data = await res.json();
 
@@ -64,7 +75,7 @@ const saveSettings = async () => {
         >
         <input
           type="text"
-          v-model="username"
+          v-model="user.username"
           class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
       </div>
@@ -76,7 +87,7 @@ const saveSettings = async () => {
         >
         <input
           type="email"
-          :value="email"
+          :value="user.email"
           disabled
           class="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-100 text-gray-500"
         />

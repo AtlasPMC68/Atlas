@@ -11,7 +11,7 @@
         </p>
       </div>
 
-      <!-- Étapes du processus -->
+      <!-- Process steps -->
       <div class="steps w-full mb-8">
         <div class="step" :class="{ 'step-primary': currentStep >= 1 }">
           Sélection
@@ -27,18 +27,18 @@
         </div>
       </div>
 
-      <!-- Contenu principal selon l'étape -->
+      <!-- Main content according to the step -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
-          <!-- Étape 1: Drag & Drop -->
+          <!-- Step 1: Drag & Drop -->
           <FileDropZone
             v-if="currentStep === 1"
             @file-selected="handleFileSelected"
             :is-loading="isUploading"
           />
 
-          <!-- Étape 2: Prévisualisation + Contrôles -->
-          <div v-else-if="currentStep === 2" class="space-y-6">
+          <!-- Step 2: Preview + Controls -->
+          <div v-else-if="currentStep === 2 && selectedFile" class="space-y-6">
             <ImportPreview :image-file="selectedFile" :image-url="previewUrl" />
             <ImportControls
               @start-import="startImportProcess"
@@ -50,7 +50,7 @@
       </div>
     </div>
 
-    <!-- Modal de traitement -->
+    <!-- Processing Modal -->
     <ProcessingModal
       v-if="showProcessingModal"
       :is-open="showProcessingModal"
@@ -61,8 +61,8 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, watch } from "vue";
+<script setup lang="ts">
+import { ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
@@ -96,11 +96,11 @@ const {
   mapId,
 } = useImportProcess();
 
-// État local
+// Local state
 const currentStep = ref(1);
 
-// Gestionnaires d'événements
-const handleFileSelected = (file) => {
+// Event handlers
+const handleFileSelected = (file: File) => {
   onFileSelected(file);
   currentStep.value = 2;
 };
@@ -117,14 +117,11 @@ async function startImportProcess() {
 }
 
 // Redirect when extraction is finished
-watch(
-  [isProcessing, resultData, mapId],
-  ([processing, result, id]) => {
-    if (!processing && result && id) {
-      router.push(`/maps/${id}`);
-    }
+watch([isProcessing, resultData, mapId], ([processing, result, id]) => {
+  if (!processing && result && id) {
+    router.push(`/maps/${id}`);
   }
-);
+});
 
 const resetImport = () => {
   currentStep.value = 1;

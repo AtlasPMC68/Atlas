@@ -44,7 +44,7 @@ def get_user_from_token(token: str):
     if not payload:
         return None
     return {
-        "sid": payload.get("sid"),
+        "sub": payload.get("sub"),
         "username": payload.get("preferred_username"),
         "email": payload.get("email")
     }
