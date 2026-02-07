@@ -4,7 +4,7 @@ import { toArray, getRadiusForZoom, transformNormalizedToWorld } from "../utils/
 import { MAP_CONFIG } from "./useMapConfig.js";
 import { getMapElementType } from "../utils/featureTypes.js";
 
-export function useMapLayers(props, emit) {
+export function useMapLayers(props, emit, editingComposable) {
   const drawnItems = ref(null);
   let baseTileLayer = null;
   let labelLayer = null;
@@ -57,7 +57,6 @@ export function useMapLayers(props, emit) {
         this.makeLayerClickable(fid, layer);
       }
 
-      // visibility: default true if undefined
       const visible = props.featureVisibility?.get(fid);
       const shouldShow = visible === undefined ? true : Boolean(visible);
 
@@ -90,7 +89,7 @@ export function useMapLayers(props, emit) {
         const oe = e.originalEvent;
         markDom(oe);
 
-        if (props.activeEditMode) {
+        if (props.editMode && props.activeEditMode) {
           oe?.stopPropagation();
           oe?.stopImmediatePropagation?.();
         }
@@ -100,7 +99,7 @@ export function useMapLayers(props, emit) {
         const oe = e.originalEvent;
         markDom(oe);
 
-        if (props.activeEditMode) {
+        if (props.editMode && props.activeEditMode) {
           oe?.stopPropagation();
           oe?.stopImmediatePropagation?.();
         }
@@ -242,6 +241,17 @@ export function useMapLayers(props, emit) {
         interactive: true,
       });
 
+      const angleDeg = feature.properties?.rotationDeg ?? 0;
+      if (Math.abs(angleDeg) > 1e-6) {
+        const pivot = feature.properties?.center
+          ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
+          : poly.getBounds().getCenter();
+
+        if (targetGeometry?.type === "Polygon") {
+          editingComposable.applyAngleToLayerFromCanonical(poly, map, targetGeometry, angleDeg, pivot);
+        }
+      }
+
       const name = fprops.name || feature.name;
       if (name) poly.bindPopup(name);
 
@@ -302,6 +312,16 @@ export function useMapLayers(props, emit) {
         fillOpacity: feature.opacity ?? 0.5,
         interactive: true,
       });
+
+      const angleDeg = feature.properties?.rotationDeg ?? 0;
+
+      if (Math.abs(angleDeg) > 1e-6) {
+        const pivot = feature.properties?.center
+          ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
+          : shape.getBounds().getCenter();
+
+        editingComposable.applyAngleToLayerFromCanonical(shape, map, feature.geometry, angleDeg, pivot);
+      }
 
       if (feature.name) shape.bindPopup(feature.name);
 

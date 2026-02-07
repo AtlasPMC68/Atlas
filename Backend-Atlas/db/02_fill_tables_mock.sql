@@ -78,7 +78,8 @@ VALUES (
           "color_name": "green",
           "color_rgb": [0, 255, 0],
           "start_date": "1700-01-01",
-          "end_date": "2025-01-01"
+          "end_date": "2025-01-01",
+          "rotationDeg": 0
         },
         "geometry": {
           "type": "Polygon",

@@ -185,7 +185,6 @@ const showSaveAsModal = ref(false);
 const isEditMode = ref(false);
 const activeEditMode = ref(null);
 
-// Redimensionnement manuel (inputs)
 const resizeFeatureId = ref(null);
 const resizeWidthInput = ref("");
 const resizeHeightInput = ref("");
@@ -275,7 +274,6 @@ function reconcileVisibility(list) {
       next.set(id, true);
     }
   }
-  // Remove visibility entries that no longer exist (optional)
   const ids = new Set(list.map((f) => f.id));
   for (const k of next.keys()) {
     if (!ids.has(k)) next.delete(k);
@@ -304,7 +302,6 @@ function toggleFeatureVisibility(featureId, visible) {
   featureVisibility.value = next;
 }
 
-// IMPORTANT: do NOT refetch here; just accept updates if provided.
 function handleFeaturesLoaded(updated) {
   if (!Array.isArray(updated)) return;
 
@@ -377,7 +374,6 @@ function saveMapAs() {
   showSaveAsModal.value = true;
 }
 
-// conserve ta logique existante (pas modifiée ici)
 const title = ref("");
 const description = ref("");
 const access_level = ref("");

@@ -49,8 +49,8 @@ const props = defineProps({
 
 const emit = defineEmits(["features-loaded", "mode-change", "resize-selection"]);
 
-const layers = useMapLayers(props, emit);
 const editing = useMapEditing(props, emit);
+const layers = useMapLayers(props, emit, editing);
 const events = useMapEvents(props, emit, layers, editing);
 const timeline = useMapTimeline();
 const init = useMapInit(props, emit, layers, events, editing, timeline);
@@ -88,17 +88,20 @@ function getLayerById(fid) {
 }
 
 function normalizeAngleDeg(a) {
-  const n = Number(a);
-  if (!Number.isFinite(n)) return 0;
-  let x = n % 360;
-  if (x < 0) x += 360;
+  let x = Number(a) || 0;
+  x = ((x % 360) + 360) % 360;
   return x;
 }
 
-function getFeatureAngleDeg(fid, layer) {
-  const id = String(fid);
-  const feature = props.features.find((f) => String(f.id) === id) || layer?.feature || null;
+function getFeatureAngleDeg(featureId, layer) {
+  const fid = String(featureId);
+
+  const featureFromProps =
+    props.features?.find((f) => String(f.id) === fid) || null;
+
+  const feature = layer?.feature || featureFromProps || null;
   const p = feature?.properties || {};
+
   const raw = p.rotationDeg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0;
   return normalizeAngleDeg(raw);
 }
@@ -189,6 +192,8 @@ function handleFeatureClickLocal(featureId, isCtrlPressed) {
   if (!props.editMode || !map) return;
 
   if (props.activeEditMode === "RESIZE_SHAPE") {
+    if (events.suppressNextFeatureClick?.value) return;
+
     events.applySelectionClick(String(featureId), isCtrlPressed, map);
     return;
   }
@@ -355,7 +360,7 @@ watch(
 
 // APPLY RESIZE FROM INPUTS
 watch(
-  () => [props.activeEditMode, props.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
+  () => [props.activeEditMode, editing.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
   ([mode, fid, w, h]) => {
     if (!map) return;
     if (!props.editMode) return;

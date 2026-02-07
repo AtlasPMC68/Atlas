@@ -149,6 +149,63 @@ export function useMapEditing(props, emit) {
     return map.layerPointToLatLng(pts);
   }
 
+  function geometryToLatLngs(geom) {
+    if (!geom) return null;
+
+    if (geom.type === "Point") {
+      const [lng, lat] = geom.coordinates;
+      return L.latLng(lat, lng);
+    }
+
+    if (geom.type === "LineString") {
+      return geom.coordinates.map(([lng, lat]) => L.latLng(lat, lng));
+    }
+
+    if (geom.type === "Polygon") {
+      const ring = geom.coordinates?.[0] || [];
+      const ringLatLngs = ring.map(([lng, lat]) => L.latLng(lat, lng));
+      return [ringLatLngs];
+    }
+
+    return null;
+  }
+
+  function applyAngleToLayerFromCanonical(layer, map, canonicalGeom, angleDeg, pivotLatLng) {
+    if (!layer || !map) return;
+
+    const a = normalizeAngleDeg(angleDeg);
+    const rad = (a * Math.PI) / 180;
+
+    if (typeof layer.getRadius === "function" && typeof layer.setRadius === "function") {
+      if (pivotLatLng && typeof layer.setLatLng === "function") layer.setLatLng(pivotLatLng);
+      return;
+    }
+
+    if (typeof layer.setLatLngs !== "function") return;
+
+    const latlngs0 = geometryToLatLngs(canonicalGeom);
+    if (!latlngs0) return;
+
+    if (Math.abs(rad) < 1e-9) {
+      layer.setLatLngs(latlngs0);
+      return;
+    }
+
+    const pivot = pivotLatLng || getCenterFromLayer(layer);
+    if (!pivot) {
+      layer.setLatLngs(latlngs0);
+      return;
+    }
+
+    const centerPt = map.latLngToLayerPoint(pivot);
+
+    const pts0 = latlngsToPoints(map, latlngs0);
+    const ptsR = rotatePointsTree(pts0, centerPt, rad);
+    const llR = pointsToLatlngs(map, ptsR);
+
+    layer.setLatLngs(llR);
+  }
+
   function geometryFromLayer(layer) {
     if (layer.getLatLng && !layer.getLatLngs) {
       const ll = layer.getLatLng();
@@ -181,7 +238,7 @@ export function useMapEditing(props, emit) {
     const fid = String(featureId);
 
     const layer = featureLayerManager.layers.get(fid);
-    if (!layer) return;
+    if (!layer || !map) return;
 
     const feature =
       props.features.find((f) => String(f.id) === fid) ||
@@ -216,12 +273,12 @@ export function useMapEditing(props, emit) {
     if (shapeType === "circle" && (d == null || d <= 0)) return;
     if (shapeType !== "circle" && !hasW && !hasH) return;
 
-    let newGeom = null;
+    let newGeom0 = null;
 
     if (shapeType === "circle") {
-      newGeom = circleFromCenterDiameter({ lat: center.lat, lng: center.lng }, d);
+      newGeom0 = circleFromCenterDiameter({ lat: center.lat, lng: center.lng }, d);
     } else if (shapeType === "oval") {
-      newGeom = ovalFromCenterWidthHeight({ lat: center.lat, lng: center.lng }, hasW ? w : null, hasH ? h : null);
+      newGeom0 = ovalFromCenterWidthHeight({ lat: center.lat, lng: center.lng }, hasW ? w : null, hasH ? h : null);
     } else if (shapeType === "triangle") {
       const candidates = [];
       if (hasW) candidates.push(w / Math.sqrt(3));
@@ -238,9 +295,9 @@ export function useMapEditing(props, emit) {
         points.push([lng, lat]);
       }
       points.push(points[0]);
-      newGeom = { type: "Polygon", coordinates: [points] };
+      newGeom0 = { type: "Polygon", coordinates: [points] };
     } else {
-      newGeom = polygonFromCenterWidthHeight(
+      newGeom0 = polygonFromCenterWidthHeight(
         { lat: center.lat, lng: center.lng },
         hasW ? w : null,
         hasH ? h : null,
@@ -248,40 +305,36 @@ export function useMapEditing(props, emit) {
       );
     }
 
-    if (!newGeom) return;
+    if (!newGeom0) return;
+
+    const angleDeg = getAngleDegFromFeature(feature);
 
     if (shapeType === "circle" && typeof layer.setRadius === "function") {
       if (typeof layer.setLatLng === "function") layer.setLatLng(center);
       layer.setRadius(d / 2);
-    } else if (typeof layer.setLatLngs === "function") {
-      const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
-      layer.setLatLngs([ringLatLngs]);
-    } else if (typeof layer.setBounds === "function") {
-      const ringLatLngs = newGeom.coordinates[0].map(([lng, lat]) => L.latLng(lat, lng));
-      layer.setBounds(L.latLngBounds(ringLatLngs));
     } else {
-      return;
+      applyAngleToLayerFromCanonical(layer, map, newGeom0, angleDeg, center);
     }
 
+    const nextLayerFeature = {
+      ...(layer.feature || feature),
+      geometry: newGeom0,
+      properties: {
+        ...(feature.properties || {}),
+        resizable: true,
+        shapeType,
+        center: { lat: center.lat, lng: center.lng },
+        rotationDeg: angleDeg,
+      },
+    };
+    layer.feature = nextLayerFeature;
+
     const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
-    if (isTemp) {
-      layer.feature = {
-        ...(layer.feature || feature),
-        geometry: newGeom,
-        properties: {
-          ...(feature.properties || {}),
-          resizable: true,
-          shapeType,
-          center: { lat: center.lat, lng: center.lng },
-          rotationDeg: feature?.properties?.rotationDeg ?? 0,
-        },
-      };
-      return;
-    }
+    if (isTemp) return;
 
     try {
       const updateData = {
-        geometry: newGeom,
+        geometry: newGeom0,
         color: feature.color ?? null,
         opacity: feature.opacity ?? null,
         stroke_width: feature.stroke_width ?? null,
@@ -290,11 +343,11 @@ export function useMapEditing(props, emit) {
           resizable: true,
           shapeType,
           center: { lat: center.lat, lng: center.lng },
-          rotationDeg: feature?.properties?.rotationDeg ?? 0,
+          rotationDeg: angleDeg,
         },
       };
 
-      const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${fid}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updateData),
@@ -314,6 +367,7 @@ export function useMapEditing(props, emit) {
       console.error("Error resizing feature:", err);
     }
   }
+
 
   // ==========================
   // NEW: ROTATION (angle absolu)
@@ -335,14 +389,19 @@ export function useMapEditing(props, emit) {
     const nextAngle = normalizeAngleDeg(angleDeg);
     const curAngle = getAngleDegFromFeature(feature);
 
-    const bounds = layer.getBounds ? layer.getBounds() : null;
-    const centerLL = bounds?.isValid?.() ? bounds.getCenter() : getCenterFromLayer(layer);
-    if (!centerLL) return;
+    const diff = Math.abs(nextAngle - curAngle);
+    const wrapped = Math.min(diff, 360 - diff);
 
-    const featureWithAngle = setAngleDegOnFeature(feature, nextAngle);
-    layer.feature = featureWithAngle;
+    if (!feature.properties) feature.properties = {};
+    feature.properties.rotationDeg = nextAngle;
 
-    if (isCircle) {
+    if (!layer.feature) layer.feature = feature;
+    else {
+      layer.feature.properties = layer.feature.properties || {};
+      layer.feature.properties.rotationDeg = nextAngle;
+    }
+
+    if (wrapped < 1e-9) {
       const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
       if (isTemp) return;
 
@@ -353,13 +412,10 @@ export function useMapEditing(props, emit) {
           color: feature.color ?? null,
           opacity: feature.opacity ?? null,
           stroke_width: feature.stroke_width ?? null,
-          properties: {
-            ...(feature.properties || {}),
-            rotationDeg: nextAngle,
-          },
+          properties: { ...(feature.properties || {}), rotationDeg: nextAngle },
         };
 
-        const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${fid}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updateData),
@@ -380,53 +436,93 @@ export function useMapEditing(props, emit) {
       return;
     }
 
-    if (!layer.getLatLngs || !layer.setLatLngs) return;
+    if (isCircle) {
+      const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
+      if (isTemp) return;
+
+      try {
+        const geom = geometryFromLayer(layer);
+        const updateData = {
+          geometry: geom,
+          color: feature.color ?? null,
+          opacity: feature.opacity ?? null,
+          stroke_width: feature.stroke_width ?? null,
+          properties: { ...(feature.properties || {}), rotationDeg: nextAngle },
+        };
+
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${fid}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const updatedFeature = await response.json();
+        const idx = props.features.findIndex((f) => String(f.id) === fid);
+        if (idx !== -1) {
+          const updatedFeatures = [...props.features];
+          updatedFeatures[idx] = updatedFeature;
+          emit("features-loaded", updatedFeatures);
+        }
+      } catch (err) {
+        console.error("Error rotating feature:", err);
+      }
+      return;
+    }
+
+    if (!layer.getLatLngs || typeof layer.setLatLngs !== "function") return;
+
+    const bounds = layer.getBounds ? layer.getBounds() : null;
+    const centerLL = bounds?.isValid?.() ? bounds.getCenter() : getCenterFromLayer(layer);
+    if (!centerLL) return;
 
     const latlngs = layer.getLatLngs();
     if (!latlngs) return;
 
     const centerPt = map.latLngToLayerPoint(centerLL);
-
     const pts = latlngsToPoints(map, latlngs);
 
     const curRad = (curAngle * Math.PI) / 180;
-    const nextRad = (nextAngle * Math.PI) / 180;
-
     const pts0 = Math.abs(curRad) > 1e-9 ? rotatePointsTree(pts, centerPt, -curRad) : pts;
-    const ptsN = Math.abs(nextRad) > 1e-9 ? rotatePointsTree(pts0, centerPt, nextRad) : pts0;
+    const ll0 = pointsToLatlngs(map, pts0);
 
-    const newLatLngs = pointsToLatlngs(map, ptsN);
-    layer.setLatLngs(newLatLngs);
+    const isPolygon = layer instanceof L.Polygon || layer instanceof L.Rectangle;
 
-    const newGeom = geometryFromLayer(layer);
-    if (!newGeom) return;
+    let geom0 = null;
+    if (!isPolygon) {
+      geom0 = { type: "LineString", coordinates: ll0.map((ll) => [ll.lng, ll.lat]) };
+    } else {
+      const ring = ll0[0] ?? ll0;
+      const coords = ring.map((ll) => [ll.lng, ll.lat]);
+      if (coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
+        coords.push(coords[0]);
+      }
+      geom0 = { type: "Polygon", coordinates: [coords] };
+    }
+    if (!geom0) return;
+
+    layer.feature = {
+      ...(layer.feature || feature),
+      geometry: geom0,
+      properties: { ...((layer.feature || feature).properties || {}), rotationDeg: nextAngle },
+    };
+
+    applyAngleToLayerFromCanonical(layer, map, geom0, nextAngle, centerLL);
 
     const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
-    if (isTemp) {
-      layer.feature = {
-        ...(layer.feature || featureWithAngle),
-        geometry: newGeom,
-        properties: {
-          ...((featureWithAngle && featureWithAngle.properties) || {}),
-          rotationDeg: nextAngle,
-        },
-      };
-      return;
-    }
+    if (isTemp) return;
 
     try {
       const updateData = {
-        geometry: newGeom,
+        geometry: geom0,
         color: feature.color ?? null,
         opacity: feature.opacity ?? null,
         stroke_width: feature.stroke_width ?? null,
-        properties: {
-          ...(feature.properties || {}),
-          rotationDeg: nextAngle,
-        },
+        properties: { ...(feature.properties || {}), rotationDeg: nextAngle },
       };
 
-      const response = await fetch(`http://localhost:8000/maps/features/${fid}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${fid}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updateData),
@@ -445,6 +541,7 @@ export function useMapEditing(props, emit) {
       console.error("Error rotating feature:", err);
     }
   }
+
 
   // ===== SHAPE CREATION FUNCTIONS =====
   function createSquare(center, sizePoint, map, layersComposable) {
@@ -1168,7 +1265,7 @@ export function useMapEditing(props, emit) {
       const updatedGeometry = updateGeometryCoordinates(feature.geometry, deltaLat, deltaLng);
       const updateData = { geometry: updatedGeometry };
 
-      const response = await fetch(`http://localhost:8000/maps/features/${feature.id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${feature.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updateData),
@@ -1231,7 +1328,7 @@ export function useMapEditing(props, emit) {
 
     if (!fid.startsWith("temp_")) {
       try {
-        const response = await fetch(`http://localhost:8000/maps/features/${featureId}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${featureId}`, {
           method: "DELETE",
         });
         if (!response.ok) console.error(`Failed to delete feature ${featureId}`);
@@ -1341,8 +1438,8 @@ export function useMapEditing(props, emit) {
 
     applyResizeFromDims,
 
-    // NEW
     applyRotateFromAngle,
+    applyAngleToLayerFromCanonical,
   };
 }
 
