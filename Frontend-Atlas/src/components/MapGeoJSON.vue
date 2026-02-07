@@ -360,7 +360,7 @@ watch(
 
 // APPLY RESIZE FROM INPUTS
 watch(
-  () => [props.activeEditMode, editing.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
+  () => [props.activeEditMode, props.resizeFeatureId, props.resizeWidthMeters, props.resizeHeightMeters],
   ([mode, fid, w, h]) => {
     if (!map) return;
     if (!props.editMode) return;

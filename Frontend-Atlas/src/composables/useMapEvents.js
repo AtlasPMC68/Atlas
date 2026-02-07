@@ -38,25 +38,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
 
   let anchorDrag = null;
 
-
-  function normalizeAngleDeg(a) {
-    let x = Number(a) || 0;
-    x = ((x % 360) + 360) % 360;
-    return x;
-  }
-
-  function getAngleDegFor(featureId, layer) {
-    const fid = String(featureId);
-
-    const featureFromProps = props.features?.find((f) => String(f.id) === fid) || null;
-
-    const feature = layer?.feature || featureFromProps || null;
-    const p = feature?.properties || {};
-
-    const raw = p.rotationDeg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0;
-    return normalizeAngleDeg(raw);
-  }
-
   // =======================
   // DOM → featureId resolver
   // =======================
@@ -248,7 +229,6 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
   }
 
   function handleToAnchorPoint(b, handle) {
-    lastMapRef.value = map;
     const cx = (b.minX + b.maxX) / 2;
     const cy = (b.minY + b.maxY) / 2;
     switch (handle) {
@@ -1114,44 +1094,91 @@ export function useMapEvents(props, emit, layersComposable, editingComposable) {
       }
     }
 
-    if (geom0) {
+    const isTemp = String(fid).startsWith("temp_") || feature?._isTemporary === true;
+
+    const prevFeature = feature ? JSON.parse(JSON.stringify(feature)) : null;
+
+    if (geom0 && feature) {
+      const nextProps = { ...(feature.properties || {}), rotationDeg: angleDeg };
+
+      const pivotLL =
+        (feature?.properties?.center && feature.properties.center.lat != null)
+          ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
+          : (layer.getBounds?.()?.isValid?.() ? layer.getBounds().getCenter() : null);
+
+      if (pivotLL) {
+        nextProps.center = { lat: pivotLL.lat, lng: pivotLL.lng };
+      }
+
+      const optimistic = {
+        ...feature,
+        geometry: geom0,
+        properties: nextProps,
+      };
+
+      layer.feature = optimistic;
+
+      const idx = props.features.findIndex((f) => String(f.id) === String(fid));
+      if (idx !== -1) {
+        const next = [...props.features];
+        next[idx] = optimistic;
+        emit("features-loaded", next);
+      }
+
+      if (pivotLL) {
+        editingComposable.applyAngleToLayerFromCanonical(layer, map, geom0, angleDeg, pivotLL);
+      }
+
+      upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
+      upsertSelectionAnchors(fid, map, layersComposable.featureLayerManager);
+    }
+
+    if (geom0 && !isTemp) {
       try {
         const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${fid}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             geometry: geom0,
-            properties: feature?.properties,
+            properties: layer.feature?.properties,
           }),
         });
 
         if (response.ok) {
           const updated = await response.json();
-          const idx = props.features.findIndex((f) => String(f.id) === fid);
+
+          const idx = props.features.findIndex((f) => String(f.id) === String(fid));
           if (idx !== -1) {
             const next = [...props.features];
             next[idx] = updated;
             emit("features-loaded", next);
           }
+
+          layer.feature = updated;
+        } else {
+          if (prevFeature) {
+            const idx = props.features.findIndex((f) => String(f.id) === String(fid));
+            if (idx !== -1) {
+              const next = [...props.features];
+              next[idx] = prevFeature;
+              emit("features-loaded", next);
+            }
+            layer.feature = prevFeature;
+          }
         }
       } catch (e) {
         console.error("Error updating geometry:", e);
+
+        if (prevFeature) {
+          const idx = props.features.findIndex((f) => String(f.id) === String(fid));
+          if (idx !== -1) {
+            const next = [...props.features];
+            next[idx] = prevFeature;
+            emit("features-loaded", next);
+          }
+          layer.feature = prevFeature;
+        }
       }
-    }
-
-    if (feature) {
-      feature.geometry = geom0;
-      feature.properties = feature.properties || {};
-      feature.properties.rotationDeg = angleDeg;
-      layer.feature = feature;
-    }
-
-    const pivot = (feature?.properties?.center && feature.properties.center.lat != null)
-      ? L.latLng(feature.properties.center.lat, feature.properties.center.lng)
-      : (layer.getBounds?.()?.isValid?.() ? layer.getBounds().getCenter() : null);
-
-    if (pivot) {
-      editingComposable.applyAngleToLayerFromCanonical(layer, map, geom0, angleDeg, pivot);
     }
 
     upsertSelectionBBox(fid, map, layersComposable.featureLayerManager);
