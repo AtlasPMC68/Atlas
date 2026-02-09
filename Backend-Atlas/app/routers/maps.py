@@ -36,6 +36,10 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
+    enable_georeferencing: bool = Form(True),
+    enable_color_extraction: bool = Form(True),
+    enable_shapes_extraction: bool = Form(False),
+    enable_text_extraction: bool = Form(False),
     file: UploadFile = File(...), 
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -56,8 +60,8 @@ async def upload_and_process_map(
     pixel_points_list = None
     geo_points_list = None
     
-    # Parse matched point pairs for SIFT georeferencing
-    if image_points and world_points:
+    # Parse matched point pairs for SIFT georeferencing (only if enabled)
+    if enable_georeferencing and image_points and world_points:
         img_pts = json.loads(image_points)      # list of {"x":..,"y":..}
         world_pts = json.loads(world_points)    # list of {"lat":..,"lng":..}
 
@@ -98,7 +102,10 @@ async def upload_and_process_map(
             file_content, 
             str(map_id),
             pixel_points_list,
-            geo_points_list
+            geo_points_list,
+            enable_color_extraction,
+            enable_shapes_extraction,
+            enable_text_extraction,
         )
         #TODO: either delete the created map if task fails or create cleanup mechanism
         

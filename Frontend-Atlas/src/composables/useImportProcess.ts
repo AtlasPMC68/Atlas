@@ -14,6 +14,12 @@ export function useImportProcess() {
     file: File,
     imagePoints?: { x: number; y: number }[],
     worldPoints?: { lat: number; lng: number }[],
+    options?: {
+      enableGeoreferencing?: boolean;
+      enableColorExtraction?: boolean;
+      enableShapesExtraction?: boolean;
+      enableTextExtraction?: boolean;
+    }
   ) => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -22,7 +28,7 @@ export function useImportProcess() {
     processingStep.value = "upload";
     processingProgress.value = 0;
 
-    // Upload fichier + points SIFT  POST /maps/upload
+    // Upload fichier + points SIFT POST /maps/upload
     const formData = new FormData();
     
     // Add matched point pairs as expected by backend
@@ -32,8 +38,14 @@ export function useImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
-    
-    formData.append("file", file);
+        // Add extraction options
+    if (options) {
+      formData.append("enable_georeferencing", String(options.enableGeoreferencing ?? true));
+      formData.append("enable_color_extraction", String(options.enableColorExtraction ?? true));
+      formData.append("enable_shapes_extraction", String(options.enableShapesExtraction ?? false));
+      formData.append("enable_text_extraction", String(options.enableTextExtraction ?? false));
+    }
+        formData.append("file", file);
 
     console.log("form data", formData)
 
