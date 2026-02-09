@@ -18,7 +18,6 @@ from uuid import UUID
 from ..utils.auth import get_current_user
 from app.services.maps import create_map_in_db
 import json
-from app.utils.sift_key_points_finder import find_key_points
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 
@@ -84,8 +83,6 @@ async def upload_and_process_map(
     if len(file_content) == 0:
         raise HTTPException(status_code=400, detail="Empty file")
     
-    find_key_points(file_content)
-
     try:
         map_id = await create_map_in_db(
             db=session,

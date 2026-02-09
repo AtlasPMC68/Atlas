@@ -49,11 +49,9 @@ def extract_shapes(
 
     shapes = [shape for shape, contour in shapes_with_contours]
 
-    print(f"[SHAPE EXTRACT] Classifying {len(shapes)} shapes...")
     filtered_shapes, classification_stats = classify_and_filter_shapes(
         shapes, min_confidence, image_area
     )
-    print(f"[SHAPE EXTRACT] Classification stats: {classification_stats}")
 
     final_shapes_with_contours = []
     for filtered_shape in filtered_shapes:
@@ -61,10 +59,6 @@ def extract_shapes(
             if shape["id"] == filtered_shape["id"]:
                 final_shapes_with_contours.append((filtered_shape, contour))
                 break
-
-    print(
-        f"[SHAPE EXTRACT] Saving debug images and metadata for {len(final_shapes_with_contours)} filtered shapes..."
-    )
 
     # Prepare detailed metadata for each shape
     shapes_metadata = []
@@ -131,12 +125,6 @@ def extract_shapes(
             indent=2,
             ensure_ascii=False,
         )
-
-    print(f"[SHAPE EXTRACT] Metadata saved to: {metadata_path}")
-
-    print(
-        f"[EXTRACT] {len(filtered_shapes)} relevant shapes extracted from {image_path}"
-    )
 
     final_shapes = [shape for shape, contour in final_shapes_with_contours]
     return {
