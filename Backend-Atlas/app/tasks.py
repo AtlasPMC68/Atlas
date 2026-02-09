@@ -21,6 +21,7 @@ from app.utils.shapes_extraction import extract_shapes
 from app.utils.cities_validation import detect_cities_from_text, find_first_city
 from app.utils.georeferencing import georeference_pixel_features
 from app.utils.georeferencingSift import georeference_features_with_sift_points
+from app.utils.coastline_snapping import refine_coastline_features
 import numpy as np
 
 from .celery_app import celery_app
@@ -268,11 +269,30 @@ def process_map_extraction(
                     pixel_points,
                     geo_points_lonlat
                 )
-                if georef_features:
-                    asyncio.run(persist_features(map_uuid, georef_features))
-                    logger.info(
-                        f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
-                    )
+                
+                # Apply coastline snapping using SIFT control points to identify coastlines
+                if georef_features and geo_points_lonlat:
+                    logger.info("[DEBUG] Applying coastline snapping (SIFT point-based)")
+                    current_dir = os.path.dirname(os.path.abspath(__file__))
+                    coastline_path = os.path.join(current_dir, "geojson", "ne_coastline.geojson")
+                    
+                    try:
+                        refined_features = refine_coastline_features(
+                            georef_features,
+                            reference_geojson_path=coastline_path,
+                            sift_control_points=geo_points_lonlat,  # SIFT points mark coastline regions
+                            max_snap_distance_km=100.0,  # Snap coastline points up to 15km to reference
+                            sift_proximity_km=200.0  # Points within 30km of SIFT marker might be coastal
+                        )
+                        logger.info("[DEBUG] Coastline refinement completed")
+                        georef_features = refined_features
+                    except Exception as e:
+                        logger.warning(f"[DEBUG] Coastline refinement failed, using original: {e}")
+                    
+                asyncio.run(persist_features(map_uuid, georef_features))
+                logger.info(
+                    f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
+                )
             except Exception as e:
                 logger.error(f"SIFT georeferencing step failed for map {map_uuid}: {e}", exc_info=True)
 
@@ -287,7 +307,6 @@ def process_map_extraction(
         )
         time.sleep(2)
         shapes_result = extract_shapes(tmp_file_path)
-        logger.info(f"[DEBUG] Résultat shapes_extraction : {shapes_result}")
 
         # Step 6: Cleanning
         self.update_state(

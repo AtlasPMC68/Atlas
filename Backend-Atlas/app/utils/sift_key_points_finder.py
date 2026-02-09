@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 import os
 import json
-import math
 
 NUMBER_OF_KEYPOINTS = 10
 BORDER_MARGIN = 20  # pixels from edge
@@ -74,56 +73,6 @@ def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection:
     
     return spaced_keypoints
 
-def find_key_points(file_content: bytes):
-    """Detect SIFT key points and descriptors in the given image."""
-    print("Finding SIFT key points...")
-    # Transforming bytes to numpy array 
-    nparr = np.frombuffer(file_content, np.uint8)
-    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Use shared SIFT detection function
-    key_points = detect_sift_keypoints_on_image(gray, apply_edge_detection=True)
-    
-    print(f"Selected top {len(key_points)} keypoints")
-    
-    # Print keypoint locations for debugging
-    for i, kp in enumerate(key_points):
-        print(f"  Keypoint {i+1}: ({kp.pt[0]:.1f}, {kp.pt[1]:.1f}), size: {kp.size:.1f}, response: {kp.response:.3f}")
-
-    # Convert to color image to draw colored circles
-    img_with_keypoints = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-    
-    # Draw large, visible circles for each keypoint
-    for i, kp in enumerate(key_points):
-        x, y = int(kp.pt[0]), int(kp.pt[1])
-        cv2.circle(img_with_keypoints, (x, y), 15, (0, 255, 0), 2)
-        cv2.circle(img_with_keypoints, (x, y), 3, (0, 0, 255), -1)
-        cv2.putText(img_with_keypoints, str(i+1), (x+20, y-10), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(current_dir, "extracted_texts")
-    os.makedirs(output_dir, exist_ok=True)
-
-    output_path = os.path.join(output_dir, "sift_keypoints.png")
-    
-    success = cv2.imwrite(output_path, img_with_keypoints)
-    
-    if success:
-        print(f"✓ Successfully saved keypoints image to: {output_path}")
-        if os.path.exists(output_path):
-            file_size = os.path.getsize(output_path)
-            print(f"✓ File exists and is {file_size} bytes")
-        else:
-            print(f"✗ File does not exist after write: {output_path}")
-    else:
-        print(f"✗ cv2.imwrite() failed for: {output_path}")
-    
-    return output_path
-
 def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):
     """Find SIFT keypoints on coastlines from GeoJSON within geographic bounds."""
     
@@ -181,7 +130,8 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
         })
         print(f"  KP {i+1}: pixel({px:.1f},{py:.1f}) → ({lat:.4f},{lon:.4f})")
     
-    # Draw keypoints on the coastline image
+    # Draw keypoints on the coastline image, saving for debug but could remove
+    # ======================================================================= #
     img_vis = cv2.cvtColor(coastline_image, cv2.COLOR_GRAY2BGR)
     for i, kp in enumerate(spaced):
         x, y = int(kp.pt[0]), int(kp.pt[1])
@@ -192,6 +142,7 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
     keypoints_path = os.path.join(output_dir, "coastline_keypoints.png")
     cv2.imwrite(keypoints_path, img_vis)
     print(f"✓ Saved coastline with keypoints to: {keypoints_path}")
+    # ======================================================================== #
     
     return {"keypoints": keypoints, "total": len(keypoints)}
 
