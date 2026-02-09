@@ -43,6 +43,64 @@
           <!-- Étape 2: Prévisualisation + Contrôles -->
           <div v-else-if="currentStep === 2" class="space-y-6">
             <ImportPreview :image-file="selectedFile" :image-url="previewUrl" />
+            
+            <!-- Extraction Options -->
+            <div class="bg-base-200 rounded-lg p-4 space-y-3">
+              <h3 class="font-semibold text-sm mb-3">Options d'extraction</h3>
+              
+              <!-- Georeferencing Option -->
+              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
+                <input 
+                  type="checkbox" 
+                  v-model="enableGeoreferencing" 
+                  class="checkbox checkbox-sm checkbox-primary"
+                />
+                <div class="flex-1">
+                  <div class="font-medium text-sm">Géoréférencement SIFT</div>
+                  <div class="text-xs text-base-content/60">Placer la carte dans l'espace géographique avec des points de contrôle</div>
+                </div>
+              </label>
+              
+              <!-- Color Extraction -->
+              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
+                <input 
+                  type="checkbox" 
+                  v-model="enableColorExtraction" 
+                  class="checkbox checkbox-sm checkbox-primary"
+                />
+                <div class="flex-1">
+                  <div class="font-medium text-sm">Extraction des zones colorées</div>
+                  <div class="text-xs text-base-content/60">Détecter et extraire les régions par couleur (pays, territoires, etc.)</div>
+                </div>
+              </label>
+              
+              <!-- Shapes Extraction -->
+              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
+                <input 
+                  type="checkbox" 
+                  v-model="enableShapesExtraction" 
+                  class="checkbox checkbox-sm checkbox-primary"
+                />
+                <div class="flex-1">
+                  <div class="font-medium text-sm">Extraction des formes</div>
+                  <div class="text-xs text-base-content/60">Détecter les formes géométriques (cercles, rectangles, etc.)</div>
+                </div>
+              </label>
+              
+              <!-- Text Extraction -->
+              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
+                <input 
+                  type="checkbox" 
+                  v-model="enableTextExtraction" 
+                  class="checkbox checkbox-sm checkbox-primary"
+                />
+                <div class="flex-1">
+                  <div class="font-medium text-sm">Extraction de texte (OCR)</div>
+                  <div class="text-xs text-base-content/60">Détecter et extraire le texte de la carte (noms de lieux, légendes)</div>
+                </div>
+              </label>
+            </div>
+            
             <ImportControls
               @start-import="startImportProcess"
               @cancel="resetImport"
@@ -139,6 +197,12 @@ const imagePolyline = ref([]); // [ [x,y], ... ]
 const worldPoint = ref(null); // [lat, lng] or null
 const imagePoint = ref(null); // [x, y] or null
 
+// Extraction options (all enabled by default)
+const enableGeoreferencing = ref(true);
+const enableColorExtraction = ref(true);
+const enableShapesExtraction = ref(false);
+const enableTextExtraction = ref(false);
+
 // Gestionnaires d'événements
 const handleFileSelected = (file) => {
   onFileSelected(file);
@@ -147,6 +211,29 @@ const handleFileSelected = (file) => {
 
 async function startImportProcess() {
   if (!selectedFile.value) return;
+  
+  // If georeferencing is disabled, skip world area selection and go straight to upload
+  if (!enableGeoreferencing.value) {
+    const result = await startImport(
+      selectedFile.value,
+      undefined,
+      undefined,
+      {
+        enableGeoreferencing: false,
+        enableColorExtraction: enableColorExtraction.value,
+        enableShapesExtraction: enableShapesExtraction.value,
+        enableTextExtraction: enableTextExtraction.value,
+      }
+    );
+    if (result.success) {
+      currentStep.value = 5;
+    } else {
+      console.error("Erreur importation:", result.error);
+    }
+    return;
+  }
+  
+  // With georeferencing enabled, show world area picker
   currentStep.value = 3;
   showWorldAreaPickerModal.value = true;
 }
@@ -189,11 +276,17 @@ async function handleGeorefConfirmed(payload) {
   const worldPoints = payload.worldPoints.map(([lat, lng]) => ({ lat, lng }));
   const imagePoints = payload.imagePoints.map(([x, y]) => ({ x, y }));
 
-  // Pass matched point arrays to startImport (new SIFT georef flow)
+  // Pass matched point arrays to startImport with extraction options
   const result = await startImport(
     selectedFile.value,
     imagePoints,
     worldPoints,
+    {
+      enableGeoreferencing: true,
+      enableColorExtraction: enableColorExtraction.value,
+      enableShapesExtraction: enableShapesExtraction.value,
+      enableTextExtraction: enableTextExtraction.value,
+    }
   );
   if (result.success) {
     currentStep.value = 5;

@@ -131,6 +131,9 @@ def process_map_extraction(
     map_id: str,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
+    enable_color_extraction: bool = True,
+    enable_shapes_extraction: bool = False,
+    enable_text_extraction: bool = False,
 ):
     """Process map extraction with SIFT-based georeferencing."""
     logger.info(f"Starting map processing for {filename}")
@@ -237,78 +240,106 @@ def process_map_extraction(
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
-        # Step 4: Color Extraction
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 4,
-                "total": nb_task,
-                "status": "Extracting colors from image",
-            },
-        )
-        time.sleep(2)
+        # Step 3: Text Extraction (conditionally enabled)
+        if enable_text_extraction:
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": 3,
+                    "total": nb_task,
+                    "status": "Extracting text with EasyOCR",
+                },
+            )
+            time.sleep(2)
+            logger.info("[DEBUG] Text extraction enabled - starting OCR")
+            # TODO: Implement text extraction
+            # GPU acceleration make the text extraction MUCH faster
+            # extracted_text, clean_image = extract_text(image=image, languages=['en', 'fr'], gpu_acc=False)
+        else:
+            logger.info("[DEBUG] Text extraction disabled - skipping")
 
-        color_result = extract_colors(tmp_file_path)
-        normalized_features = color_result["normalized_features"]
-        pixel_features = color_result["pixel_features"]
+        # Step 4: Color Extraction (conditionally enabled)
+        if enable_color_extraction:
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": 4,
+                    "total": nb_task,
+                    "status": "Extracting colors from image",
+                },
+            )
+            time.sleep(2)
+            logger.info("[DEBUG] Color extraction enabled - starting")
 
-        # Persist normalized (0-1 box) features as before
-        asyncio.run(persist_features(map_uuid, normalized_features))
-        logger.info(
-            f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
-        )
+            color_result = extract_colors(tmp_file_path)
+            normalized_features = color_result["normalized_features"]
+            pixel_features = color_result["pixel_features"]
 
-        # Optional: georeference pixel-space features if SIFT point pairs are provided
-        if pixel_points and geo_points_lonlat:
-            try:
-                logger.info(
-                    f"[DEBUG] Starting SIFT-based georeferencing with {len(pixel_points)} points"
-                )
-                georef_features = georeference_features_with_sift_points(
-                    pixel_features,
-                    pixel_points,
-                    geo_points_lonlat
-                )
-                
-                # Apply coastline snapping using SIFT control points to identify coastlines
-                if georef_features and geo_points_lonlat:
-                    logger.info("[DEBUG] Applying coastline snapping (SIFT point-based)")
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-                    coastline_path = os.path.join(current_dir, "geojson", "ne_coastline.geojson")
+            # Persist normalized (0-1 box) features as before
+            asyncio.run(persist_features(map_uuid, normalized_features))
+            logger.info(
+                f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
+            )
+
+            # Optional: georeference pixel-space features if SIFT point pairs are provided
+            if pixel_points and geo_points_lonlat:
+                try:
+                    logger.info(
+                        f"[DEBUG] Starting SIFT-based georeferencing with {len(pixel_points)} points"
+                    )
+                    georef_features = georeference_features_with_sift_points(
+                        pixel_features,
+                        pixel_points,
+                        geo_points_lonlat
+                    )
                     
-                    try:
-                        refined_features = refine_coastline_features(
-                            georef_features,
-                            reference_geojson_path=coastline_path,
-                            sift_control_points=geo_points_lonlat,  # SIFT points mark coastline regions
-                            max_snap_distance_km=100.0,  # Snap coastline points up to 15km to reference
-                            sift_proximity_km=200.0  # Points within 30km of SIFT marker might be coastal
-                        )
-                        logger.info("[DEBUG] Coastline refinement completed")
-                        georef_features = refined_features
-                    except Exception as e:
-                        logger.warning(f"[DEBUG] Coastline refinement failed, using original: {e}")
-                    
-                asyncio.run(persist_features(map_uuid, georef_features))
-                logger.info(
-                    f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
-                )
-            except Exception as e:
-                logger.error(f"SIFT georeferencing step failed for map {map_uuid}: {e}", exc_info=True)
+                    # Apply coastline snapping using SIFT control points to identify coastlines
+                    # if georef_features and geo_points_lonlat:
+                    #     logger.info("[DEBUG] Applying coastline snapping (SIFT point-based)")
+                    #     current_dir = os.path.dirname(os.path.abspath(__file__))
+                    #     coastline_path = os.path.join(current_dir, "geojson", "ne_coastline.geojson")
+                        
+                    #     try:
+                    #         refined_features = refine_coastline_features(
+                    #             georef_features,
+                    #             reference_geojson_path=coastline_path,
+                    #             sift_control_points=geo_points_lonlat,  # SIFT points mark coastline regions
+                    #             max_snap_distance_km=100.0,  # Snap coastline points up to 15km to reference
+                    #             sift_proximity_km=200.0  # Points within 30km of SIFT marker might be coastal
+                    #         )
+                    #         logger.info("[DEBUG] Coastline refinement completed")
+                    #         georef_features = refined_features
+                    #     except Exception as e:
+                    #         logger.warning(f"[DEBUG] Coastline refinement failed, using original: {e}")
+                        
+                    asyncio.run(persist_features(map_uuid, georef_features))
+                    logger.info(
+                        f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
+                    )
+                except Exception as e:
+                    logger.error(f"SIFT georeferencing step failed for map {map_uuid}: {e}", exc_info=True)
+        else:
+            logger.info("[DEBUG] Color extraction disabled - skipping")
+            color_result = {"colors_detected": 0}
 
-        # Step 5: Shapes Extraction
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 5,
-                "total": nb_task,
-                "status": "Extracting shapes from image",
-            },
-        )
-        time.sleep(2)
-        shapes_result = extract_shapes(tmp_file_path)
+        # Step 5: Shapes Extraction (conditionally enabled)
+        if enable_shapes_extraction:
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": 5,
+                    "total": nb_task,
+                    "status": "Extracting shapes from image",
+                },
+            )
+            time.sleep(2)
+            logger.info("[DEBUG] Shapes extraction enabled - starting")
+            shapes_result = extract_shapes(tmp_file_path)
+        else:
+            logger.info("[DEBUG] Shapes extraction disabled - skipping")
+            shapes_result = {}
 
-        # Step 6: Cleanning
+        # Step 6: Cleaning
         self.update_state(
             state="PROGRESS",
             meta={
@@ -353,9 +384,15 @@ def process_map_extraction(
             "filename": filename,
             # "extracted_text": lines,
             "output_path": output_path,
-            "shapes_result": shapes_result,
-            "color_result": color_result,
+            "shapes_result": shapes_result if enable_shapes_extraction else {},
+            "color_result": color_result if enable_color_extraction else {"colors_detected": 0},
             "status": "completed",
+            "extractions_performed": {
+                "georeferencing": bool(pixel_points and geo_points_lonlat),
+                "color_extraction": enable_color_extraction,
+                "shapes_extraction": enable_shapes_extraction,
+                "text_extraction": enable_text_extraction,
+            }
         }
 
         # logger.info(
