@@ -150,7 +150,7 @@ def test_text_extraction(image_path, expected_text, levenshtein_params, request)
 
         # No error per
         if distance > 0.1:
-            warnings.warn(UserWarning(f"Partial match for expected: '{expected_word}', and OCR read '{ocr_word}' (d = {distance})."))
+            warnings.warn(UserWarning(f"Partial match for expected: '{expected_word}', and OCR read '{ocr_word}' (d = {distance:.3f})."))
 
         else:
             match_count += 1
@@ -158,7 +158,7 @@ def test_text_extraction(image_path, expected_text, levenshtein_params, request)
     request.node.user_metadata = {
         "match_count": match_count,
         "total_count": total_count,
-        "total_distance": total_distance
+        "average_distance": total_distance/total_count
     }
 
     number_of_failures = total_count - match_count

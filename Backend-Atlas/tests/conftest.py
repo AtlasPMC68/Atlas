@@ -13,9 +13,10 @@ def pytest_report_teststatus(report, config):
     if report.when == "call" and hasattr(report, "user_metadata"):
         m_count = report.user_metadata.get("match_count", 0)
         t_count = report.user_metadata.get("total_count", 0)
+        d_average = report.user_metadata.get("average_distance", 0)
         if report.passed:
-            return "passed", ".", f"PASSED {m_count}/{t_count}"
+            return "passed", ".", f"PASSED {m_count}/{t_count} (d_average={d_average:.3f})"
         elif report.failed:
-            return "failed", ".", f"FAILED {m_count}/{t_count}"
+            return "failed", ".", f"FAILED {m_count}/{t_count} (d_average={d_average:.3f})"
 
     return None
