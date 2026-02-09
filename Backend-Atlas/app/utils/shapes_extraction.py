@@ -33,7 +33,7 @@ def extract_shapes(
     image_flat = preprocessing.flat_field_correction(image, sigma=100.0, normalize=True)
 
     image_denoised = preprocessing.denoise_bilateral(
-        image_flat, sigma_color=0.1, sigma_spatial=2.0
+        image_flat, sigma_color=0.03, sigma_spatial=5.0
     )
 
     height, width = image_denoised.shape[:2]
