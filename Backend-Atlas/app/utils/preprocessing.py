@@ -211,7 +211,7 @@ def denoise_bilateral(
     """
     Removes noise while preserving edge sharpness.
     :param img: RGB image float [0.0, 1.0]
-    :param sigma_color: Higher values smooth similar colors (e.g., paper grain).
+    :param sigma_color: Higher values smooth similar colors
     :param sigma_spatial: Higher values smooth over larger distances.
     """
     # channel_axis=-1 because image is RGB (3 channels at the end)
