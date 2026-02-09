@@ -15,4 +15,7 @@ def pytest_report_teststatus(report, config):
         t_count = report.user_metadata.get("total_count", 0)
         if report.passed:
             return "passed", ".", f"PASSED {m_count}/{t_count}"
+        elif report.failed:
+            return "failed", ".", f"FAILED {m_count}/{t_count}"
+
     return None

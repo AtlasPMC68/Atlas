@@ -70,7 +70,6 @@ class TextExtraction:
         "rs_cyrillic", "rs_latin", "sck", "sk", "sl", "sq", "sv", "sw", "ta", "tab",
         "te", "th", "tjk", "tl", "tr", "ug", "uk", "ur", "uz", "vi"
     ]
-    image: np.ndarray
 
     # Class members
     def __init__(self, img, lang: list[str] = ['en', 'fr'], gpu_acc: bool = False):

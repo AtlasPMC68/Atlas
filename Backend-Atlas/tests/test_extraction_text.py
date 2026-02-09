@@ -139,16 +139,29 @@ def test_text_extraction(image_path, expected_text, levenshtein_params, request)
     #assert len(remaining_ocr_words) == len(remaining_expected_words)
 
     res: dict[str, tuple[str, float]] = check_for_match(remaining_ocr_words, remaining_expected_words, levenshtein_params)
-    match_count = sum(1 for _, dist in res.values() if dist < 1.0)
+    match_count = 0
     total_count = len(expected_text)
-    request.node.user_metadata = {
-        "match_count": match_count,
-        "total_count": total_count
-    }
-
+    total_distance: float = 0.0
 
     # For anything other than
     for expected_word, (ocr_word, distance) in res.items():
-        if distance/len(expected_word) > 0.1:
-            warnings.warn(UserWarning( f"Partial match for expected: '{expected_word}', and found '{ocr_word}' (d = {distance})."))
+
+        total_distance += distance
+
+        # No error per
+        if distance > 0.1:
+            warnings.warn(UserWarning(f"Partial match for expected: '{expected_word}', and OCR read '{ocr_word}' (d = {distance})."))
+
+        else:
+            match_count += 1
+
+    request.node.user_metadata = {
+        "match_count": match_count,
+        "total_count": total_count,
+        "total_distance": total_distance
+    }
+
+    number_of_failures = total_count - match_count
+    if number_of_failures > 3:
+        pytest.fail(f"Test failed with {number_of_failures} mismatched strings")
 
