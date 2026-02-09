@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 import requests
 from copy import deepcopy
-from tests.utils.expected_results import MAP_EXPECTED_TEXTS
+from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS
 from app.utils.text_extraction import extract_text
 from weighted_levenshtein import lev
 
