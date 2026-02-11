@@ -36,7 +36,6 @@
         transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
         transformOrigin: 'top left',
       }"
-      ref="transformWrapper"
     >
       <img
         v-if="imageUrl"
@@ -46,19 +45,12 @@
         @load="updateSize"
       />
       <svg
-        v-if="(points.length > 0 || props.point) && imageEl"
+        v-if="props.point && imageEl"
         class="absolute pointer-events-none"
         :style="svgStyle"
         :viewBox="`0 0 ${imageNaturalWidth} ${imageNaturalHeight}`"
         preserveAspectRatio="none"
       >
-        <polyline
-          v-if="points.length > 0"
-          :points="svgPoints"
-          fill="none"
-          stroke="#dc2626"
-          stroke-width="2"
-        />
         <circle
           v-if="props.point"
           :cx="props.point[0]"
@@ -78,17 +70,9 @@
 import { ref, computed, onMounted, watch } from "vue";
 
 const props = defineProps({
-  modelValue: {
-    type: Array,
-    default: () => [], // [ [x,y], ... ] in image pixel space
-  },
   point: {
     type: Array,
     default: null, // [x, y] or null
-  },
-  drawingMode: {
-    type: String,
-    default: "polyline", // 'polyline' or 'point'
   },
   imageUrl: {
     type: String,
@@ -96,13 +80,10 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["update:modelValue", "update:point"]);
+const emit = defineEmits(["update:point"]);
 
 const container = ref(null);
 const imageEl = ref(null);
-const width = ref(800);
-const height = ref(600);
-let isDrawing = false;
 
 const imageNaturalWidth = ref(0);
 const imageNaturalHeight = ref(0);
@@ -112,7 +93,7 @@ const offset = ref({ x: 0, y: 0 });
 const isPanning = ref(false);
 const lastMouse = ref({ x: 0, y: 0 });
 
-// 'click' = place points / draw, 'move' = pan by dragging
+// 'click' = place point, 'move' = pan by dragging
 const interactionMode = ref('click');
 
 const svgStyle = computed(() => {
@@ -127,12 +108,6 @@ const svgStyle = computed(() => {
   };
 });
 
-const points = computed(() => props.modelValue || []);
-
-const svgPoints = computed(() =>
-  points.value.map(([x, y]) => `${x},${y}`).join(" "),
-);
-
 onMounted(() => {
   updateSize();
 });
@@ -140,8 +115,6 @@ onMounted(() => {
 watch(
   () => props.imageUrl,
   () => {
-    // reset when image changes
-    emit("update:modelValue", []);
     updateSize();
   },
 );
@@ -175,14 +148,8 @@ function onMouseDown(event) {
     return;
   }
 
-  if (props.drawingMode === "point") {
-    // Point mode: single click to place a point
-    setPointFromEvent(event);
-  } else {
-    // Polyline mode: hold and drag to draw
-    isDrawing = true;
-    addPointFromEvent(event);
-  }
+  // Click mode: single click to place a point
+  setPointFromEvent(event);
 }
 
 function onMouseMove(event) {
@@ -196,15 +163,9 @@ function onMouseMove(event) {
     lastMouse.value = { x: event.clientX, y: event.clientY };
     return;
   }
-
-  if (!isDrawing) return;
-  if (props.drawingMode === "polyline") {
-    addPointFromEvent(event);
-  }
 }
 
 function onMouseUp() {
-  isDrawing = false;
   isPanning.value = false;
 }
 
@@ -243,47 +204,7 @@ function setPointFromEvent(event) {
   // Back to original pixel space
   const xPx = ix / baseScale;
   const yPx = iy / baseScale;
-  console.log("Placing point at image pixel coords:", xPx, yPx);
   emit("update:point", [xPx, yPx]);
-}
-
-function addPointFromEvent(event) {
-  if (!container.value || !imageEl.value) return;
-
-  const natW = imageEl.value.naturalWidth;
-  const natH = imageEl.value.naturalHeight;
-  if (!natW || !natH) return;
-
-  const containerRect = container.value.getBoundingClientRect();
-  const cw = containerRect.width;
-  const ch = containerRect.height;
-
-  // Mouse position in viewport -> container local
-  const cx = event.clientX - containerRect.left;
-  const cy = event.clientY - containerRect.top;
-
-  // Undo current pan/zoom applied to the wrapper
-  const localX = (cx - offset.value.x) / scale.value;
-  const localY = (cy - offset.value.y) / scale.value;
-
-  const baseScale = Math.min(cw / natW, ch / natH);
-  const displayW = natW * baseScale;
-  const displayH = natH * baseScale;
-  const offsetX = (cw - displayW) / 2;
-  const offsetY = (ch - displayH) / 2;
-
-  const ix = localX - offsetX;
-  const iy = localY - offsetY;
-
-  // Ignore clicks outside the actual image content
-  if (ix < 0 || iy < 0 || ix > displayW || iy > displayH) return;
-
-  // Back to original pixel space
-  const xPx = ix / baseScale;
-  const yPx = iy / baseScale;
-
-  const next = [...points.value, [xPx, yPx]];
-  emit("update:modelValue", next);
 }
 
 </script>
