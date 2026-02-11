@@ -27,6 +27,7 @@
             :world-bounds="worldBounds"
             :keypoints="keypoints"
             :active-index="activeIndex"
+            :matched-points="matchedWorldPoints"
             @select-keypoint="onSelectWorldKeypoint"
           />
         </div>
@@ -39,6 +40,7 @@
             class="h-80 md:h-[28rem]"
             :image-url="imageUrl"
             drawing-mode="point"
+            :matched-points="matchedImagePoints"
             v-model:point="currentImagePoint"
           />
         </div>
@@ -90,7 +92,21 @@ const emit = defineEmits(["close", "confirmed"]);
 
 const activeIndex = ref(0);
 const currentImagePoint = ref(null); // [x, y] of last click on image
-const matches = ref([]); // { world: [lat,lng], image: [x,y] }[]
+// Matches between world keypoints and image points:
+// { index, world: [lat,lng], image: [x,y], color }
+const matches = ref([]);
+
+// Simple color palette for matched pairs
+const PAIR_COLORS = [
+  "#ef4444",
+  "#22c55e",
+  "#3b82f6",
+  "#f97316",
+  "#a855f7",
+  "#14b8a6",
+  "#e11d48",
+  "#0ea5e9",
+];
 
 const totalPoints = computed(() => props.keypoints?.length || 0);
 const matchedCount = computed(() => matches.value.length);
@@ -104,6 +120,19 @@ const currentWorldKeypoint = computed(() => {
   if (activeIndex.value < 0 || activeIndex.value >= props.keypoints.length) return null;
   return props.keypoints[activeIndex.value];
 });
+
+const matchedWorldPoints = computed(() =>
+  matches.value.map((m) => ({ index: m.index, color: m.color })),
+);
+
+const matchedImagePoints = computed(() =>
+  matches.value.map((m) => ({
+    index: m.index,
+    x: m.image[0],
+    y: m.image[1],
+    color: m.color,
+  })),
+);
 
 function resetMatching() {
   matches.value = [];
@@ -136,15 +165,25 @@ watch(
     const kp = currentWorldKeypoint.value;
     if (!kp) return;
 
+    const kpIndex = activeIndex.value;
+
+    // Preserve existing color if rematching this keypoint
+    const existing = matches.value.find((m) => m.index === kpIndex);
+    const existingColor = existing?.color;
+
     // Remove any previous match for this world keypoint so the user
     // can reassign it by clicking a different location on the image.
-    matches.value = matches.value.filter(
-      (m) => !(m.world[0] === kp.geo.lat && m.world[1] === kp.geo.lng),
-    );
+    matches.value = matches.value.filter((m) => m.index !== kpIndex);
+
+    const color =
+      existingColor ||
+      PAIR_COLORS[matches.value.length % PAIR_COLORS.length];
 
     matches.value.push({
+      index: kpIndex,
       world: [kp.geo.lat, kp.geo.lng],
       image: val,
+      color,
     });
 
     // Advance to next keypoint if available

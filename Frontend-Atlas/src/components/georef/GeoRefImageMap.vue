@@ -45,21 +45,20 @@
         @load="updateSize"
       />
       <svg
-        v-if="props.point && imageEl"
+        v-if="imageEl && matchedPoints.length"
         class="absolute pointer-events-none"
         :style="svgStyle"
         :viewBox="`0 0 ${imageNaturalWidth} ${imageNaturalHeight}`"
         preserveAspectRatio="none"
       >
-        <circle
-          v-if="props.point"
-          :cx="props.point[0]"
-          :cy="props.point[1]"
-          r="6"
-          fill="#dc2626"
-          stroke="#dc2626"
-          stroke-width="2"
-          opacity="0.8"
+        <!-- Matched world/image pairs as triangles with stable colors -->
+        <polygon
+          v-for="m in matchedPoints"
+          :key="`matched-${m.index}`"
+          :points="trianglePoints(m)"
+          :fill="m.color"
+          :stroke="m.color"
+          opacity="0.95"
         />
       </svg>
     </div>
@@ -77,6 +76,12 @@ const props = defineProps({
   imageUrl: {
     type: String,
     required: true,
+  },
+  // Matched control points passed from parent (for SIFT modal)
+  // [{ index, x, y, color }]
+  matchedPoints: {
+    type: Array,
+    default: () => [],
   },
 });
 
@@ -97,14 +102,36 @@ const lastMouse = ref({ x: 0, y: 0 });
 const interactionMode = ref('click');
 
 const svgStyle = computed(() => {
-  if (!container.value || !imageEl.value) return {};
+  if (
+    !container.value ||
+    !imageEl.value ||
+    !imageNaturalWidth.value ||
+    !imageNaturalHeight.value
+  ) {
+    return {};
+  }
+
   const c = container.value.getBoundingClientRect();
-  const i = imageEl.value.getBoundingClientRect();
+  const cw = c.width;
+  const ch = c.height;
+
+  const natW = imageNaturalWidth.value;
+  const natH = imageNaturalHeight.value;
+
+  // Use the same fitting logic as in setPointFromEvent so that
+  // the SVG overlay matches exactly the displayed image area
+  // (object-contain with possible gray bars around).
+  const baseScale = Math.min(cw / natW, ch / natH);
+  const displayW = natW * baseScale;
+  const displayH = natH * baseScale;
+  const offsetX = (cw - displayW) / 2;
+  const offsetY = (ch - displayH) / 2;
+
   return {
-    left: `${i.left - c.left}px`,
-    top: `${i.top - c.top}px`,
-    width: `${i.width}px`,
-    height: `${i.height}px`,
+    left: `${offsetX}px`,
+    top: `${offsetY}px`,
+    width: `${displayW}px`,
+    height: `${displayH}px`,
   };
 });
 
@@ -206,6 +233,24 @@ function clampOffset() {
   };
 }
 
+function trianglePoints(m) {
+  // Build an upright triangle centered on the image point.
+  // Size is kept roughly constant on screen by dividing by scale.
+  const s = scale.value || 1;
+  const size = 36 / s;
+  const x = m.x;
+  const y = m.y;
+
+  const x1 = x;
+  const y1 = y - size; // top
+  const x2 = x - size * 0.8;
+  const y2 = y + size * 0.6;
+  const x3 = x + size * 0.8;
+  const y3 = y + size * 0.6;
+
+  return `${x1},${y1} ${x2},${y2} ${x3},${y3}`;
+}
+
 function setPointFromEvent(event) {
   if (!container.value || !imageEl.value) return;
 
@@ -241,6 +286,7 @@ function setPointFromEvent(event) {
   // Back to original pixel space
   const xPx = ix / baseScale;
   const yPx = iy / baseScale;
+
   emit("update:point", [xPx, yPx]);
 }
 

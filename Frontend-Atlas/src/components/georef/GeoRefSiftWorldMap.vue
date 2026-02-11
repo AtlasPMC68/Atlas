@@ -21,6 +21,12 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  // Matched control points coming from the modal
+  // [{ index, color }]
+  matchedPoints: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(["select-keypoint"]);
@@ -67,7 +73,29 @@ function renderKeypoints() {
     if (typeof lat !== "number" || typeof lng !== "number") return;
 
     const isActive = index === props.activeIndex;
-    const marker = L.circleMarker([lat, lng], styleForIndex(index, isActive));
+
+    const match = props.matchedPoints.find((m) => m.index === index);
+    let marker;
+
+    if (match) {
+      // Render matched points as triangles with a stable color using a divIcon
+      const size = isActive ? 18 : 14;
+      const half = size / 2;
+      const color = match.color || "#dc2626";
+      const html = `<div style="width:0;height:0;border-left:${half}px solid transparent;border-right:${half}px solid transparent;border-bottom:${size}px solid ${color};"></div>`;
+
+      marker = L.marker([lat, lng], {
+        icon: L.divIcon({
+          className: "",
+          html,
+          iconSize: [size, size],
+          iconAnchor: [half, size],
+        }),
+      });
+    } else {
+      // Unmatched points are plain circle markers
+      marker = L.circleMarker([lat, lng], styleForIndex(index, isActive));
+    }
 
     // Allow user to choose the current point by clicking a marker
     marker.on("click", () => {
@@ -80,11 +108,9 @@ function renderKeypoints() {
 }
 
 function updateActiveMarker() {
-  if (!map || !markers.length) return;
-  markers.forEach((marker, index) => {
-    const isActive = index === props.activeIndex;
-    marker.setStyle(styleForIndex(index, isActive));
-  });
+  // Re-render everything so both matched triangles and circles
+  // reflect the current active index.
+  renderKeypoints();
 }
 
 async function initMap() {
@@ -160,6 +186,14 @@ watch(
   () => {
     updateActiveMarker();
   },
+);
+
+watch(
+  () => props.matchedPoints,
+  () => {
+    renderKeypoints();
+  },
+  { deep: true },
 );
 
 watch(
