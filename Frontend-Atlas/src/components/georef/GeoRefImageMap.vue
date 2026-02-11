@@ -135,7 +135,10 @@ function updateSize() {
 function onWheel(e) {
   const factor = 0.001;
   const next = scale.value * (1 - e.deltaY * factor);
-  scale.value = Math.min(5, Math.max(0.2, next));
+  scale.value = Math.min(5, Math.max(1, next));
+
+  // After zooming, make sure the content stays within bounds
+  clampOffset();
 }
 
 function onMouseDown(event) {
@@ -159,7 +162,17 @@ function onMouseMove(event) {
   if (isPanning.value) {
     const dx = event.clientX - lastMouse.value.x;
     const dy = event.clientY - lastMouse.value.y;
+
+    // Apply drag
     offset.value = { x: offset.value.x + dx, y: offset.value.y + dy };
+
+    // Clamp so the scaled content (the wrapper that matches
+    // the container size) always covers the container.
+    // At scale = 1 this prevents any panning (you already see
+    // the whole image with gray bars). For scale > 1 you can
+    // pan, but never beyond the container edges.
+    clampOffset();
+
     lastMouse.value = { x: event.clientX, y: event.clientY };
     return;
   }
@@ -167,6 +180,30 @@ function onMouseMove(event) {
 
 function onMouseUp() {
   isPanning.value = false;
+}
+
+function clampOffset() {
+  if (!container.value) return;
+
+  const rect = container.value.getBoundingClientRect();
+  const cw = rect.width;
+  const ch = rect.height;
+
+  const s = scale.value;
+
+  // The transformed wrapper has size (cw * s, ch * s) and we
+  // want it to always fully cover the container (0..cw, 0..ch).
+  // This gives classic bounds for panning a zoomed element that
+  // is originally the same size as the viewport.
+  const minX = cw - cw * s;
+  const maxX = 0;
+  const minY = ch - ch * s;
+  const maxY = 0;
+
+  offset.value = {
+    x: Math.min(maxX, Math.max(minX, offset.value.x)),
+    y: Math.min(maxY, Math.max(minY, offset.value.y)),
+  };
 }
 
 function setPointFromEvent(event) {

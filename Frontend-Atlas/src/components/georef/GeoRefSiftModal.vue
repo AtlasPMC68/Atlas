@@ -17,13 +17,13 @@
         <span v-if="activeIndex < totalPoints"> — Point courant #{{ activeIndex + 1 }}</span>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-[320px]">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-[360px]">
         <div class="border rounded-md overflow-hidden">
           <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
             Carte du monde (points SIFT)
           </h3>
           <GeoRefSiftWorldMap
-            class="h-80"
+            class="h-80 md:h-[28rem]"
             :world-bounds="worldBounds"
             :keypoints="keypoints"
             :active-index="activeIndex"
@@ -36,7 +36,7 @@
             Image importée (cliquez pour placer le point)
           </h3>
           <GeoRefImageMap
-            class="h-80"
+            class="h-80 md:h-[28rem]"
             :image-url="imageUrl"
             drawing-mode="point"
             v-model:point="currentImagePoint"
