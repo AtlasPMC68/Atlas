@@ -34,7 +34,7 @@
       class="absolute inset-0"
       :style="{
         transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-        transformOrigin: 'center center',
+        transformOrigin: 'top left',
       }"
       ref="transformWrapper"
     >
@@ -174,7 +174,7 @@ function onMouseDown(event) {
     lastMouse.value = { x: event.clientX, y: event.clientY };
     return;
   }
-  
+
   if (props.drawingMode === "point") {
     // Point mode: single click to place a point
     setPointFromEvent(event);
@@ -211,59 +211,79 @@ function onMouseUp() {
 function setPointFromEvent(event) {
   if (!container.value || !imageEl.value) return;
 
-  const containerRect = container.value.getBoundingClientRect();
-  const imgRect = imageEl.value.getBoundingClientRect();
+  const natW = imageEl.value.naturalWidth;
+  const natH = imageEl.value.naturalHeight;
+  if (!natW || !natH) return;
 
+  const containerRect = container.value.getBoundingClientRect();
+  const cw = containerRect.width;
+  const ch = containerRect.height;
+
+  // Mouse position in viewport -> container local
   const cx = event.clientX - containerRect.left;
   const cy = event.clientY - containerRect.top;
 
-  const imgLeft = imgRect.left - containerRect.left;
-  const imgTop = imgRect.top - containerRect.top;
+  // Undo current pan/zoom applied to the wrapper
+  const localX = (cx - offset.value.x) / scale.value;
+  const localY = (cy - offset.value.y) / scale.value;
 
-  const ix = cx - imgLeft;
-  const iy = cy - imgTop;
+  // How the image is fitted inside the container with object-contain
+  const baseScale = Math.min(cw / natW, ch / natH);
+  const displayW = natW * baseScale;
+  const displayH = natH * baseScale;
+  const offsetX = (cw - displayW) / 2;
+  const offsetY = (ch - displayH) / 2;
 
-  if (ix < 0 || iy < 0 || ix > imgRect.width || iy > imgRect.height) return;
+  // Coords inside the displayed image content
+  const ix = localX - offsetX;
+  const iy = localY - offsetY;
 
-  const scaleX = imageEl.value.naturalWidth / imgRect.width;
-  const scaleY = imageEl.value.naturalHeight / imgRect.height;
+  if (ix < 0 || iy < 0 || ix > displayW || iy > displayH) return;
 
-  const xPx = ix * scaleX;
-  const yPx = iy * scaleY;
-
+  // Back to original pixel space
+  const xPx = ix / baseScale;
+  const yPx = iy / baseScale;
+  console.log("Placing point at image pixel coords:", xPx, yPx);
   emit("update:point", [xPx, yPx]);
 }
 
 function addPointFromEvent(event) {
   if (!container.value || !imageEl.value) return;
 
+  const natW = imageEl.value.naturalWidth;
+  const natH = imageEl.value.naturalHeight;
+  if (!natW || !natH) return;
+
   const containerRect = container.value.getBoundingClientRect();
-  const imgRect = imageEl.value.getBoundingClientRect();
+  const cw = containerRect.width;
+  const ch = containerRect.height;
 
   // Mouse position in viewport -> container local
   const cx = event.clientX - containerRect.left;
   const cy = event.clientY - containerRect.top;
 
-  // Image top-left inside container (because object-contain + centering)
-  const imgLeft = imgRect.left - containerRect.left;
-  const imgTop = imgRect.top - containerRect.top;
+  // Undo current pan/zoom applied to the wrapper
+  const localX = (cx - offset.value.x) / scale.value;
+  const localY = (cy - offset.value.y) / scale.value;
 
-  // Mouse position relative to displayed image
-  const ix = cx - imgLeft;
-  const iy = cy - imgTop;
+  const baseScale = Math.min(cw / natW, ch / natH);
+  const displayW = natW * baseScale;
+  const displayH = natH * baseScale;
+  const offsetX = (cw - displayW) / 2;
+  const offsetY = (ch - displayH) / 2;
 
-  // Ignore clicks outside the actual image area
-  if (ix < 0 || iy < 0 || ix > imgRect.width || iy > imgRect.height) return;
+  const ix = localX - offsetX;
+  const iy = localY - offsetY;
 
-  // Scale displayed coords -> natural pixel coords
-  const scaleX = imageEl.value.naturalWidth / imgRect.width;
-  const scaleY = imageEl.value.naturalHeight / imgRect.height;
+  // Ignore clicks outside the actual image content
+  if (ix < 0 || iy < 0 || ix > displayW || iy > displayH) return;
 
-  const xPx = ix * scaleX;
-  const yPx = iy * scaleY;
-
+  // Back to original pixel space
+  const xPx = ix / baseScale;
+  const yPx = iy / baseScale;
 
   const next = [...points.value, [xPx, yPx]];
   emit("update:modelValue", next);
 }
+
 </script>
