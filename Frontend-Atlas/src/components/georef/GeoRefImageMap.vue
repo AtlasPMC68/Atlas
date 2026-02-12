@@ -46,7 +46,7 @@
       />
       <svg
         v-if="imageEl && matchedPoints.length"
-        class="absolute pointer-events-none"
+        class="absolute"
         :style="svgStyle"
         :viewBox="`0 0 ${imageNaturalWidth} ${imageNaturalHeight}`"
         preserveAspectRatio="none"
@@ -58,6 +58,8 @@
           :points="trianglePoints(m)"
           :fill="m.color"
           :stroke="m.color"
+          style="cursor: pointer;"
+          @mousedown.stop.prevent="onTriangleClick(m.index)"
           opacity="0.95"
         />
       </svg>
@@ -85,7 +87,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["update:point"]);
+const emit = defineEmits(["update:point", "select-match"]);
 
 const container = ref(null);
 const imageEl = ref(null);
@@ -233,6 +235,11 @@ function clampOffset() {
   };
 }
 
+function onTriangleClick(index) {
+  // Notify parent that an existing matched point was selected
+  emit("select-match", index);
+}
+
 function trianglePoints(m) {
   // Build an upright triangle centered on the image point.
   // Size is kept roughly constant on screen by dividing by scale.
@@ -289,5 +296,12 @@ function setPointFromEvent(event) {
 
   emit("update:point", [xPx, yPx]);
 }
+
+defineExpose({
+  // Allow parent to force the component back into click mode
+  focusClickMode() {
+    interactionMode.value = 'click';
+  },
+});
 
 </script>

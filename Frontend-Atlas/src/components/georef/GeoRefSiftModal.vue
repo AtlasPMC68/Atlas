@@ -12,6 +12,12 @@
         Nous utiliserons ces paires de points pour géoréférencer la carte.
       </p>
 
+      <p class="text-xs text-base-content/60 mb-1">
+        Pour reprendre un point déjà apparié, recliquez simplement sur son triangle
+        (sur la carte du monde ou sur l'image), puis cliquez à nouveau sur l'image
+        à l'endroit souhaité.
+      </p>
+
       <div class="text-xs text-base-content/70 mb-2" v-if="totalPoints > 0">
         Points appariés : {{ matchedCount }} / {{ totalPoints }}
         <span v-if="activeIndex < totalPoints"> — Point courant #{{ activeIndex + 1 }}</span>
@@ -37,11 +43,13 @@
             Image importée (cliquez pour placer le point)
           </h3>
           <GeoRefImageMap
+            ref="imageMapRef"
             class="h-80 md:h-[28rem]"
             :image-url="imageUrl"
             drawing-mode="point"
             :matched-points="matchedImagePoints"
             v-model:point="currentImagePoint"
+            @select-match="onSelectImageMatch"
           />
         </div>
       </div>
@@ -90,6 +98,7 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "confirmed"]);
 
+const imageMapRef = ref(null);
 const activeIndex = ref(0);
 const currentImagePoint = ref(null); // [x, y] of last click on image
 // Matches between world keypoints and image points:
@@ -142,10 +151,35 @@ function resetMatching() {
 
 function onSelectWorldKeypoint(index) {
   if (index < 0 || index >= totalPoints.value) return;
-  // Change the currently selected world keypoint; the next image click
-  // will create or update the match for this point.
+  // Change the currently selected world keypoint.
+  // If it was already matched, entering here means "retake" that pair:
+  // drop the existing match and put the image map back in click mode.
   activeIndex.value = index;
   currentImagePoint.value = null;
+
+  const hadMatch = matches.value.some((m) => m.index === index);
+  if (hadMatch) {
+    matches.value = matches.value.filter((m) => m.index !== index);
+    if (imageMapRef.value?.focusClickMode) {
+      imageMapRef.value.focusClickMode();
+    }
+  }
+}
+
+function onSelectImageMatch(index) {
+  // Focus the pair corresponding to the clicked triangle on the image.
+  if (index < 0 || index >= totalPoints.value) return;
+  activeIndex.value = index;
+  currentImagePoint.value = null;
+
+  // Clicking a matched triangle on the image also means "retake".
+  const hadMatch = matches.value.some((m) => m.index === index);
+  if (hadMatch) {
+    matches.value = matches.value.filter((m) => m.index !== index);
+  }
+  if (imageMapRef.value?.focusClickMode) {
+    imageMapRef.value.focusClickMode();
+  }
 }
 
 function onConfirm() {
@@ -167,17 +201,14 @@ watch(
 
     const kpIndex = activeIndex.value;
 
-    // Preserve existing color if rematching this keypoint
-    const existing = matches.value.find((m) => m.index === kpIndex);
-    const existingColor = existing?.color;
-
     // Remove any previous match for this world keypoint so the user
     // can reassign it by clicking a different location on the image.
     matches.value = matches.value.filter((m) => m.index !== kpIndex);
 
-    const color =
-      existingColor ||
-      PAIR_COLORS[matches.value.length % PAIR_COLORS.length];
+    // Give each keypoint index a stable color, independent of how many
+    // matches currently exist. This avoids color "shifting" when
+    // intermediate points are removed and re-matched.
+    const color = PAIR_COLORS[kpIndex % PAIR_COLORS.length];
 
     matches.value.push({
       index: kpIndex,
@@ -186,9 +217,32 @@ watch(
       color,
     });
 
-    // Advance to next keypoint if available
-    if (activeIndex.value < totalPoints.value - 1) {
-      activeIndex.value += 1;
+    // After matching, move focus to the next UNMATCHED keypoint.
+    // This avoids jumping back to an already-matched point when
+    // redoing earlier pairs.
+    const total = totalPoints.value;
+    if (total > 0) {
+      const matchedIndices = new Set(matches.value.map((m) => m.index));
+
+      let nextIndex = kpIndex;
+      // Search forward from current index
+      for (let i = kpIndex + 1; i < total; i += 1) {
+        if (!matchedIndices.has(i)) {
+          nextIndex = i;
+          break;
+        }
+      }
+      // If everything after is matched, wrap from start
+      if (nextIndex === kpIndex) {
+        for (let i = 0; i < total; i += 1) {
+          if (!matchedIndices.has(i)) {
+            nextIndex = i;
+            break;
+          }
+        }
+      }
+
+      activeIndex.value = nextIndex;
       currentImagePoint.value = null;
     }
   },
