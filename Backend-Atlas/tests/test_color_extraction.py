@@ -26,8 +26,7 @@ def get_color_extraction_configs() -> Dict[str, Dict]:
     """
     return {
         "nouvelle_france_1750": {
-           # "source_image": "tests/assets/Nouvelle-France1750.png",
-            "source_image": "tests/assets/Degrade_Afrique.png",   
+            "source_image": "tests/assets/Nouvelle-France1750.png",  
             "etalons_dir": "tests/assets/color_extraction",
             "ratio_tol": 0.02,
             "expected_colors": {
