@@ -242,9 +242,32 @@ function onTriangleClick(index) {
 
 function trianglePoints(m) {
   // Build an upright triangle centered on the image point.
-  // Size is kept roughly constant on screen by dividing by scale.
+  // Keep its apparent size roughly constant on screen by
+  // compensating for both the base image fit (baseScale)
+  // and the interactive zoom (scale).
   const s = scale.value || 1;
-  const size = 36 / s;
+
+  const natW = imageNaturalWidth.value;
+  const natH = imageNaturalHeight.value;
+  const containerEl = container.value;
+
+  let size;
+  if (!containerEl || !natW || !natH) {
+    // Fallback: behave like before if we can't compute baseScale
+    size = 36 / s;
+  } else {
+    const rect = containerEl.getBoundingClientRect();
+    const cw = rect.width;
+    const ch = rect.height;
+
+    const baseScale = Math.min(cw / natW, ch / natH) || 1;
+
+    // Desired triangle height in on-screen pixels
+    const desiredScreenSize = 6; // px
+
+    // size (in image pixels) * baseScale * s ~= desiredScreenSize
+    size = desiredScreenSize / (baseScale * s);
+  }
   const x = m.x;
   const y = m.y;
 
