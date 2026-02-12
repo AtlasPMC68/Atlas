@@ -36,7 +36,6 @@
         transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
         transformOrigin: 'top left',
       }"
-      ref="transformWrapper"
     >
       <img
         v-if="imageUrl"
@@ -46,28 +45,22 @@
         @load="updateSize"
       />
       <svg
-        v-if="(points.length > 0 || props.point) && imageEl"
-        class="absolute pointer-events-none"
+        v-if="imageEl && matchedPoints.length"
+        class="absolute"
         :style="svgStyle"
         :viewBox="`0 0 ${imageNaturalWidth} ${imageNaturalHeight}`"
         preserveAspectRatio="none"
       >
-        <polyline
-          v-if="points.length > 0"
-          :points="svgPoints"
-          fill="none"
-          stroke="#dc2626"
-          stroke-width="2"
-        />
-        <circle
-          v-if="props.point"
-          :cx="props.point[0]"
-          :cy="props.point[1]"
-          r="6"
-          fill="#dc2626"
-          stroke="#dc2626"
-          stroke-width="2"
-          opacity="0.8"
+        <!-- Matched world/image pairs as triangles with stable colors -->
+        <polygon
+          v-for="m in matchedPoints"
+          :key="`matched-${m.index}`"
+          :points="trianglePoints(m)"
+          :fill="m.color"
+          :stroke="m.color"
+          style="cursor: pointer;"
+          @mousedown.stop.prevent="onTriangleClick(m.index)"
+          opacity="0.95"
         />
       </svg>
     </div>
@@ -78,31 +71,26 @@
 import { ref, computed, onMounted, watch } from "vue";
 
 const props = defineProps({
-  modelValue: {
-    type: Array,
-    default: () => [], // [ [x,y], ... ] in image pixel space
-  },
   point: {
     type: Array,
     default: null, // [x, y] or null
-  },
-  drawingMode: {
-    type: String,
-    default: "polyline", // 'polyline' or 'point'
   },
   imageUrl: {
     type: String,
     required: true,
   },
+  // Matched control points passed from parent (for SIFT modal)
+  // [{ index, x, y, color }]
+  matchedPoints: {
+    type: Array,
+    default: () => [],
+  },
 });
 
-const emit = defineEmits(["update:modelValue", "update:point"]);
+const emit = defineEmits(["update:point", "select-match"]);
 
 const container = ref(null);
 const imageEl = ref(null);
-const width = ref(800);
-const height = ref(600);
-let isDrawing = false;
 
 const imageNaturalWidth = ref(0);
 const imageNaturalHeight = ref(0);
@@ -112,26 +100,42 @@ const offset = ref({ x: 0, y: 0 });
 const isPanning = ref(false);
 const lastMouse = ref({ x: 0, y: 0 });
 
-// 'click' = place points / draw, 'move' = pan by dragging
+// 'click' = place point, 'move' = pan by dragging
 const interactionMode = ref('click');
 
 const svgStyle = computed(() => {
-  if (!container.value || !imageEl.value) return {};
+  if (
+    !container.value ||
+    !imageEl.value ||
+    !imageNaturalWidth.value ||
+    !imageNaturalHeight.value
+  ) {
+    return {};
+  }
+
   const c = container.value.getBoundingClientRect();
-  const i = imageEl.value.getBoundingClientRect();
+  const cw = c.width;
+  const ch = c.height;
+
+  const natW = imageNaturalWidth.value;
+  const natH = imageNaturalHeight.value;
+
+  // Use the same fitting logic as in setPointFromEvent so that
+  // the SVG overlay matches exactly the displayed image area
+  // (object-contain with possible gray bars around).
+  const baseScale = Math.min(cw / natW, ch / natH);
+  const displayW = natW * baseScale;
+  const displayH = natH * baseScale;
+  const offsetX = (cw - displayW) / 2;
+  const offsetY = (ch - displayH) / 2;
+
   return {
-    left: `${i.left - c.left}px`,
-    top: `${i.top - c.top}px`,
-    width: `${i.width}px`,
-    height: `${i.height}px`,
+    left: `${offsetX}px`,
+    top: `${offsetY}px`,
+    width: `${displayW}px`,
+    height: `${displayH}px`,
   };
 });
-
-const points = computed(() => props.modelValue || []);
-
-const svgPoints = computed(() =>
-  points.value.map(([x, y]) => `${x},${y}`).join(" "),
-);
 
 onMounted(() => {
   updateSize();
@@ -140,8 +144,6 @@ onMounted(() => {
 watch(
   () => props.imageUrl,
   () => {
-    // reset when image changes
-    emit("update:modelValue", []);
     updateSize();
   },
 );
@@ -162,7 +164,10 @@ function updateSize() {
 function onWheel(e) {
   const factor = 0.001;
   const next = scale.value * (1 - e.deltaY * factor);
-  scale.value = Math.min(5, Math.max(0.2, next));
+  scale.value = Math.min(5, Math.max(1, next));
+
+  // After zooming, make sure the content stays within bounds
+  clampOffset();
 }
 
 function onMouseDown(event) {
@@ -175,14 +180,8 @@ function onMouseDown(event) {
     return;
   }
 
-  if (props.drawingMode === "point") {
-    // Point mode: single click to place a point
-    setPointFromEvent(event);
-  } else {
-    // Polyline mode: hold and drag to draw
-    isDrawing = true;
-    addPointFromEvent(event);
-  }
+  // Click mode: single click to place a point
+  setPointFromEvent(event);
 }
 
 function onMouseMove(event) {
@@ -192,20 +191,71 @@ function onMouseMove(event) {
   if (isPanning.value) {
     const dx = event.clientX - lastMouse.value.x;
     const dy = event.clientY - lastMouse.value.y;
+
+    // Apply drag
     offset.value = { x: offset.value.x + dx, y: offset.value.y + dy };
+
+    // Clamp so the scaled content (the wrapper that matches
+    // the container size) always covers the container.
+    // At scale = 1 this prevents any panning (you already see
+    // the whole image with gray bars). For scale > 1 you can
+    // pan, but never beyond the container edges.
+    clampOffset();
+
     lastMouse.value = { x: event.clientX, y: event.clientY };
     return;
-  }
-
-  if (!isDrawing) return;
-  if (props.drawingMode === "polyline") {
-    addPointFromEvent(event);
   }
 }
 
 function onMouseUp() {
-  isDrawing = false;
   isPanning.value = false;
+}
+
+function clampOffset() {
+  if (!container.value) return;
+
+  const rect = container.value.getBoundingClientRect();
+  const cw = rect.width;
+  const ch = rect.height;
+
+  const s = scale.value;
+
+  // The transformed wrapper has size (cw * s, ch * s) and we
+  // want it to always fully cover the container (0..cw, 0..ch).
+  // This gives classic bounds for panning a zoomed element that
+  // is originally the same size as the viewport.
+  const minX = cw - cw * s;
+  const maxX = 0;
+  const minY = ch - ch * s;
+  const maxY = 0;
+
+  offset.value = {
+    x: Math.min(maxX, Math.max(minX, offset.value.x)),
+    y: Math.min(maxY, Math.max(minY, offset.value.y)),
+  };
+}
+
+function onTriangleClick(index) {
+  // Notify parent that an existing matched point was selected
+  emit("select-match", index);
+}
+
+function trianglePoints(m) {
+  // Build an upright triangle centered on the image point.
+  // Size is kept roughly constant on screen by dividing by scale.
+  const s = scale.value || 1;
+  const size = 36 / s;
+  const x = m.x;
+  const y = m.y;
+
+  const x1 = x;
+  const y1 = y - size; // top
+  const x2 = x - size * 0.8;
+  const y2 = y + size * 0.6;
+  const x3 = x + size * 0.8;
+  const y3 = y + size * 0.6;
+
+  return `${x1},${y1} ${x2},${y2} ${x3},${y3}`;
 }
 
 function setPointFromEvent(event) {
@@ -243,47 +293,15 @@ function setPointFromEvent(event) {
   // Back to original pixel space
   const xPx = ix / baseScale;
   const yPx = iy / baseScale;
-  console.log("Placing point at image pixel coords:", xPx, yPx);
+
   emit("update:point", [xPx, yPx]);
 }
 
-function addPointFromEvent(event) {
-  if (!container.value || !imageEl.value) return;
-
-  const natW = imageEl.value.naturalWidth;
-  const natH = imageEl.value.naturalHeight;
-  if (!natW || !natH) return;
-
-  const containerRect = container.value.getBoundingClientRect();
-  const cw = containerRect.width;
-  const ch = containerRect.height;
-
-  // Mouse position in viewport -> container local
-  const cx = event.clientX - containerRect.left;
-  const cy = event.clientY - containerRect.top;
-
-  // Undo current pan/zoom applied to the wrapper
-  const localX = (cx - offset.value.x) / scale.value;
-  const localY = (cy - offset.value.y) / scale.value;
-
-  const baseScale = Math.min(cw / natW, ch / natH);
-  const displayW = natW * baseScale;
-  const displayH = natH * baseScale;
-  const offsetX = (cw - displayW) / 2;
-  const offsetY = (ch - displayH) / 2;
-
-  const ix = localX - offsetX;
-  const iy = localY - offsetY;
-
-  // Ignore clicks outside the actual image content
-  if (ix < 0 || iy < 0 || ix > displayW || iy > displayH) return;
-
-  // Back to original pixel space
-  const xPx = ix / baseScale;
-  const yPx = iy / baseScale;
-
-  const next = [...points.value, [xPx, yPx]];
-  emit("update:modelValue", next);
-}
+defineExpose({
+  // Allow parent to force the component back into click mode
+  focusClickMode() {
+    interactionMode.value = 'click';
+  },
+});
 
 </script>

@@ -12,21 +12,28 @@
         Nous utiliserons ces paires de points pour géoréférencer la carte.
       </p>
 
+      <p class="text-xs text-base-content/60 mb-1">
+        Pour reprendre un point déjà apparié, recliquez simplement sur son triangle
+        (sur la carte du monde ou sur l'image), puis cliquez à nouveau sur l'image
+        à l'endroit souhaité.
+      </p>
+
       <div class="text-xs text-base-content/70 mb-2" v-if="totalPoints > 0">
         Points appariés : {{ matchedCount }} / {{ totalPoints }}
         <span v-if="activeIndex < totalPoints"> — Point courant #{{ activeIndex + 1 }}</span>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-[320px]">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-[360px]">
         <div class="border rounded-md overflow-hidden">
           <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
             Carte du monde (points SIFT)
           </h3>
           <GeoRefSiftWorldMap
-            class="h-80"
+            class="h-80 md:h-[28rem]"
             :world-bounds="worldBounds"
             :keypoints="keypoints"
             :active-index="activeIndex"
+            :matched-points="matchedWorldPoints"
             @select-keypoint="onSelectWorldKeypoint"
           />
         </div>
@@ -36,10 +43,13 @@
             Image importée (cliquez pour placer le point)
           </h3>
           <GeoRefImageMap
-            class="h-80"
+            ref="imageMapRef"
+            class="h-80 md:h-[28rem]"
             :image-url="imageUrl"
             drawing-mode="point"
+            :matched-points="matchedImagePoints"
             v-model:point="currentImagePoint"
+            @select-match="onSelectImageMatch"
           />
         </div>
       </div>
@@ -88,9 +98,24 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "confirmed"]);
 
+const imageMapRef = ref(null);
 const activeIndex = ref(0);
 const currentImagePoint = ref(null); // [x, y] of last click on image
-const matches = ref([]); // { world: [lat,lng], image: [x,y] }[]
+// Matches between world keypoints and image points:
+// { index, world: [lat,lng], image: [x,y], color }
+const matches = ref([]);
+
+// Simple color palette for matched pairs
+const PAIR_COLORS = [
+  "#ef4444",
+  "#22c55e",
+  "#3b82f6",
+  "#f97316",
+  "#a855f7",
+  "#14b8a6",
+  "#e11d48",
+  "#0ea5e9",
+];
 
 const totalPoints = computed(() => props.keypoints?.length || 0);
 const matchedCount = computed(() => matches.value.length);
@@ -105,6 +130,19 @@ const currentWorldKeypoint = computed(() => {
   return props.keypoints[activeIndex.value];
 });
 
+const matchedWorldPoints = computed(() =>
+  matches.value.map((m) => ({ index: m.index, color: m.color })),
+);
+
+const matchedImagePoints = computed(() =>
+  matches.value.map((m) => ({
+    index: m.index,
+    x: m.image[0],
+    y: m.image[1],
+    color: m.color,
+  })),
+);
+
 function resetMatching() {
   matches.value = [];
   activeIndex.value = 0;
@@ -113,10 +151,35 @@ function resetMatching() {
 
 function onSelectWorldKeypoint(index) {
   if (index < 0 || index >= totalPoints.value) return;
-  // Change the currently selected world keypoint; the next image click
-  // will create or update the match for this point.
+  // Change the currently selected world keypoint.
+  // If it was already matched, entering here means "retake" that pair:
+  // drop the existing match and put the image map back in click mode.
   activeIndex.value = index;
   currentImagePoint.value = null;
+
+  const hadMatch = matches.value.some((m) => m.index === index);
+  if (hadMatch) {
+    matches.value = matches.value.filter((m) => m.index !== index);
+    if (imageMapRef.value?.focusClickMode) {
+      imageMapRef.value.focusClickMode();
+    }
+  }
+}
+
+function onSelectImageMatch(index) {
+  // Focus the pair corresponding to the clicked triangle on the image.
+  if (index < 0 || index >= totalPoints.value) return;
+  activeIndex.value = index;
+  currentImagePoint.value = null;
+
+  // Clicking a matched triangle on the image also means "retake".
+  const hadMatch = matches.value.some((m) => m.index === index);
+  if (hadMatch) {
+    matches.value = matches.value.filter((m) => m.index !== index);
+  }
+  if (imageMapRef.value?.focusClickMode) {
+    imageMapRef.value.focusClickMode();
+  }
 }
 
 function onConfirm() {
@@ -136,20 +199,50 @@ watch(
     const kp = currentWorldKeypoint.value;
     if (!kp) return;
 
+    const kpIndex = activeIndex.value;
+
     // Remove any previous match for this world keypoint so the user
     // can reassign it by clicking a different location on the image.
-    matches.value = matches.value.filter(
-      (m) => !(m.world[0] === kp.geo.lat && m.world[1] === kp.geo.lng),
-    );
+    matches.value = matches.value.filter((m) => m.index !== kpIndex);
+
+    // Give each keypoint index a stable color, independent of how many
+    // matches currently exist. This avoids color "shifting" when
+    // intermediate points are removed and re-matched.
+    const color = PAIR_COLORS[kpIndex % PAIR_COLORS.length];
 
     matches.value.push({
+      index: kpIndex,
       world: [kp.geo.lat, kp.geo.lng],
       image: val,
+      color,
     });
 
-    // Advance to next keypoint if available
-    if (activeIndex.value < totalPoints.value - 1) {
-      activeIndex.value += 1;
+    // After matching, move focus to the next UNMATCHED keypoint.
+    // This avoids jumping back to an already-matched point when
+    // redoing earlier pairs.
+    const total = totalPoints.value;
+    if (total > 0) {
+      const matchedIndices = new Set(matches.value.map((m) => m.index));
+
+      let nextIndex = kpIndex;
+      // Search forward from current index
+      for (let i = kpIndex + 1; i < total; i += 1) {
+        if (!matchedIndices.has(i)) {
+          nextIndex = i;
+          break;
+        }
+      }
+      // If everything after is matched, wrap from start
+      if (nextIndex === kpIndex) {
+        for (let i = 0; i < total; i += 1) {
+          if (!matchedIndices.has(i)) {
+            nextIndex = i;
+            break;
+          }
+        }
+      }
+
+      activeIndex.value = nextIndex;
       currentImagePoint.value = null;
     }
   },
