@@ -414,26 +414,6 @@ def process_map_extraction(
         raise e
 
 
-def validate_file_extension(file_path: str) -> None:
-    supported_file_ext = (
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".bmp",
-        ".tif",
-        ".tiff",
-        ".webp",
-        ".ppm",
-        ".pgm",
-        ".pbm",
-    )
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext not in supported_file_ext:
-        raise ValueError(
-            f"Extension {ext} non autorisée pour le système du consortium."
-        )
-
-
 # TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
