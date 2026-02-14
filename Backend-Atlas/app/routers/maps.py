@@ -54,7 +54,6 @@ async def upload_and_process_map(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        print(user_id)
         map_id = await create_map_in_db(
             db=session,
             user_id = UUID(user_id),
@@ -170,7 +169,6 @@ async def get_maps(
 ):
     if user_id:
         try:
-            print( f"Fetching maps for user_id: {user_id}" )
             user_id = UUID(user_id)
             query = select(Map).where(Map.user_id == user_id)
         except ValueError:
