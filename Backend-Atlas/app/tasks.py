@@ -19,9 +19,7 @@ from app.utils.color_extraction import extract_colors
 from app.utils.text_extraction import extract_text
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.cities_validation import detect_cities_from_text, find_first_city
-from app.utils.georeferencing import georeference_pixel_features
 from app.utils.georeferencingSift import georeference_features_with_sift_points
-from app.utils.coastline_snapping import refine_coastline_features
 import numpy as np
 
 from .celery_app import celery_app
@@ -50,6 +48,7 @@ def test_task(self, name: str = "World"):
     result = f"Hello {name}! Task completed successfully."
     logger.info(f"Test task completed: {result}")
     return result
+
 
 def bottom_edge_polyline_px(image_bytes: bytes, samples: int = 20):
     # Decode image from bytes
@@ -88,7 +87,7 @@ def bottom_edge_polyline_px(image_bytes: bytes, samples: int = 20):
     # Ensure consistent ordering around the shape
     # Sort by angle around centroid
     cx, cy = pts.mean(axis=0)
-    angles = np.arctan2(pts[:,1] - cy, pts[:,0] - cx)
+    angles = np.arctan2(pts[:, 1] - cy, pts[:, 0] - cx)
     pts = pts[np.argsort(angles)]
 
     # 4) Find the bottom-most edge (edge with max average y)
@@ -116,11 +115,11 @@ def bottom_edge_polyline_px(image_bytes: bytes, samples: int = 20):
         "vertices_px": pts.tolist(),
     }
 
+
 # Example usage:
 # result = bottom_edge_polyline_px("hex.png", samples=10)
 # print(result["edge_endpoints"])
 # print(result["polyline_px"])
-
 
 
 @celery_app.task(bind=True)
@@ -142,9 +141,7 @@ def process_map_extraction(
     map_uuid = UUID(map_id)
 
     if pixel_points and geo_points_lonlat:
-        logger.info(
-            f"[DEBUG] SIFT georeferencing with {len(pixel_points)} point pairs"
-        )
+        logger.info(f"[DEBUG] SIFT georeferencing with {len(pixel_points)} point pairs")
         logger.info(
             f"[DEBUG] First pixel point: {pixel_points[0]}, first geo point: {geo_points_lonlat[0]}"
         )
@@ -176,7 +173,7 @@ def process_map_extraction(
         time.sleep(2)
 
         image = cv2.imread(tmp_file_path)
-        image.flags.writeable = False # Makes image immutable
+        image.flags.writeable = False  # Makes image immutable
         validate_file_extension(tmp_file_path)
 
         # # Step 3: Extraction OCR
@@ -288,17 +285,15 @@ def process_map_extraction(
                         f"[DEBUG] Starting SIFT-based georeferencing with {len(pixel_points)} points"
                     )
                     georef_features = georeference_features_with_sift_points(
-                        pixel_features,
-                        pixel_points,
-                        geo_points_lonlat
+                        pixel_features, pixel_points, geo_points_lonlat
                     )
-                    
+
                     # Apply coastline snapping using SIFT control points to identify coastlines
                     # if georef_features and geo_points_lonlat:
                     #     logger.info("[DEBUG] Applying coastline snapping (SIFT point-based)")
                     #     current_dir = os.path.dirname(os.path.abspath(__file__))
                     #     coastline_path = os.path.join(current_dir, "geojson", "ne_coastline.geojson")
-                        
+
                     #     try:
                     #         refined_features = refine_coastline_features(
                     #             georef_features,
@@ -311,13 +306,16 @@ def process_map_extraction(
                     #         georef_features = refined_features
                     #     except Exception as e:
                     #         logger.warning(f"[DEBUG] Coastline refinement failed, using original: {e}")
-                        
+
                     asyncio.run(persist_features(map_uuid, georef_features))
                     logger.info(
                         f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
                     )
                 except Exception as e:
-                    logger.error(f"SIFT georeferencing step failed for map {map_uuid}: {e}", exc_info=True)
+                    logger.error(
+                        f"SIFT georeferencing step failed for map {map_uuid}: {e}",
+                        exc_info=True,
+                    )
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
@@ -364,8 +362,8 @@ def process_map_extraction(
         output_filename = f"{timestamp}_{base_name}.txt"
         output_path = os.path.join(output_dir, output_filename)
 
-        #lines = [block[1] for block in extracted_text]
-        #full_text = "\n".join(lines)
+        # lines = [block[1] for block in extracted_text]
+        # full_text = "\n".join(lines)
         # try:
         #     with open(output_path, 'w', encoding='utf-8') as f:
         #         f.write(f"=== OCR EXTRACTION  ===\n")
@@ -385,14 +383,16 @@ def process_map_extraction(
             # "extracted_text": lines,
             "output_path": output_path,
             "shapes_result": shapes_result if enable_shapes_extraction else {},
-            "color_result": color_result if enable_color_extraction else {"colors_detected": 0},
+            "color_result": color_result
+            if enable_color_extraction
+            else {"colors_detected": 0},
             "status": "completed",
             "extractions_performed": {
                 "georeferencing": bool(pixel_points and geo_points_lonlat),
                 "color_extraction": enable_color_extraction,
                 "shapes_extraction": enable_shapes_extraction,
                 "text_extraction": enable_text_extraction,
-            }
+            },
         }
 
         # logger.info(
@@ -411,12 +411,27 @@ def process_map_extraction(
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
 
+
 def validate_file_extension(file_path: str) -> None:
-    supported_file_ext = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp', '.ppm', '.pgm', '.pbm')
+    supported_file_ext = (
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp",
+        ".tif",
+        ".tiff",
+        ".webp",
+        ".ppm",
+        ".pgm",
+        ".pbm",
+    )
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in supported_file_ext:
-        raise ValueError(f"Extension {ext} non autorisée pour le système du consortium.")
-        
+        raise ValueError(
+            f"Extension {ext} non autorisée pour le système du consortium."
+        )
+
+
 # TODO : Remove type Any
 async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
