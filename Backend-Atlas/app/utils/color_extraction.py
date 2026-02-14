@@ -236,6 +236,7 @@ def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
         },
         "geometry": merged_geometry.__geo_interface__,
     }
+    return pixel_feature
 
 
 def build_normalized_feature(
