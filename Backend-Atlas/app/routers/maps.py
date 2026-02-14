@@ -1,34 +1,34 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
-from ..tasks import process_map_extraction
-from ..celery_app import celery_app
-from fastapi import Depends, APIRouter
+import logging
+from datetime import date
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, HTTPException, Form, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy.orm import Session
+
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
 from app.schemas.map import MapOut
 from app.schemas.georeference import GeoreferencePayload
-from uuid import UUID
-from datetime import date
-from sqlalchemy.orm import Session
-from ..db import get_db
 from app.schemas.mapCreateRequest import MapCreateRequest
-from uuid import UUID
-from ..utils.auth import get_current_user
 from app.services.maps import create_map_in_db
 import json
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 
+from ..celery_app import celery_app
+from ..db import get_db
+from ..tasks import process_map_extraction
+from ..utils.auth import get_current_user
+
 router = APIRouter()
 
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 
-# Tailles et types de fichiers autorisés
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
@@ -70,7 +70,6 @@ async def upload_and_process_map(
     # Lire le contenu du fichier
     file_content = await file.read()
 
-    # Validation de la taille
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -119,7 +118,7 @@ async def upload_and_process_map(
 
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
-    """Récupère l'état d'une tâche de traitement de carte"""
+    """Get the status of a map processing task"""
     task = celery_app.AsyncResult(task_id)
 
     if task.state == "PENDING":
@@ -159,7 +158,7 @@ async def get_processing_status(task_id: str):
 
 @router.get("/results/{task_id}")
 async def get_extraction_results(task_id: str):
-    """Récupère uniquement les résultats d'extraction (si terminé)"""
+    """Get extraction results only if completed"""
     task = celery_app.AsyncResult(task_id)
 
     if task.state == "SUCCESS":
@@ -185,7 +184,9 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
 
     all_features = []
     for f in features_rows:
-        for feature in f.data.get("features", []):
+        feature_data = f.data.get("features", [])
+        if feature_data:
+            feature = feature_data[0]
             feature["id"] = str(f.id)
 
             props = feature.get("properties", {})
@@ -205,8 +206,6 @@ async def get_maps(
     user_id: str | None = None,
     session: AsyncSession = Depends(get_async_session),
 ):
-    from sqlalchemy import select
-
     if user_id:
         try:
             owner_uuid = UUID(user_id)
