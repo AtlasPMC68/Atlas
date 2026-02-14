@@ -369,7 +369,9 @@ def extract_colors(
             normalized_feature = build_normalized_feature(
                 unique_color_name, rgb_u8, geometry
             )
-            normalized_features.append(normalized_feature)
+            normalized_features.append(
+                {"type": "FeatureCollection", "features": [normalized_feature]}
+            )
 
         color_index += 1
 

@@ -186,70 +186,72 @@ def process_map_extraction(
             },
         )
         time.sleep(2)
+        if enable_text_extraction:
+            # GPU acceleration make the text extraction MUCH faster i
+            extracted_text, clean_image = extract_text(
+                image=image, languages=["en", "fr"], gpu_acc=False
+            )
 
-        # GPU acceleration make the text extraction MUCH faster i
-        extracted_text, clean_image = extract_text(
-            image=image, languages=["en", "fr"], gpu_acc=False
-        )
+            # TODO : Amener ca dans la fonction de detection de texte ===========================================================
+            # Tokenize OCR text to single words and run city detection per token
+            try:
+                # Extract just the text strings from the list of tuples [(coords, text, prob), ...]
+                text_strings = [block[1] for block in extracted_text]
+                full_text = " ".join(text_strings)
+                tokens = re.findall(r"\b[\w\-']+\b", full_text)
+                for tok in tokens:
+                    try:
+                        candidate = find_first_city(tok)
+                    except Exception as e:
+                        logger.debug(f"find_first_city error for token '{tok}': {e}")
+                        # treat as not found but persist the token
+                        candidate = {
+                            "found": False,
+                            "query": tok,
+                            "name": tok,
+                            "lat": 0.0,
+                            "lon": 0.0,
+                        }
 
-        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
-        # Tokenize OCR text to single words and run city detection per token
-        try:
-            # Extract just the text strings from the list of tuples [(coords, text, prob), ...]
-            text_strings = [block[1] for block in extracted_text]
-            full_text = " ".join(text_strings)
-            tokens = re.findall(r"\b[\w\-']+\b", full_text)
-            for tok in tokens:
-                try:
-                    candidate = find_first_city(tok)
-                except Exception as e:
-                    logger.debug(f"find_first_city error for token '{tok}': {e}")
-                    # treat as not found but persist the token
-                    candidate = {
-                        "found": False,
-                        "query": tok,
-                        "name": tok,
-                        "lat": 0.0,
-                        "lon": 0.0,
+                    # Build feature using returned candidate; if not found, coordinates will be 0,0
+                    logger.info(f"City detection result for token '{tok}': {candidate}")
+                    city_feature = {
+                        "type": "Feature",
+                        "properties": {
+                            "name": candidate.get("name") or tok,
+                            "show": bool(candidate.get("found")),
+                            "mapElementType": "point",
+                            "color_name": "black",
+                            "color_rgb": [0, 0, 0],
+                            "start_date": "0-01-01",
+                            "end_date": "5000-01-01",
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [
+                                candidate.get("lon") or 0.0,
+                                candidate.get("lat") or 0.0,
+                            ],
+                        },
                     }
 
-                # Build feature using returned candidate; if not found, coordinates will be 0,0
-                logger.info(f"City detection result for token '{tok}': {candidate}")
-                city_feature = {
-                    "type": "Feature",
-                    "properties": {
-                        "name": candidate.get("name") or tok,
-                        "show": bool(candidate.get("found")),
-                        "mapElementType": "point",
-                        "color_name": "black",
-                        "color_rgb": [0, 0, 0],
-                        "start_date": "0-01-01",
-                        "end_date": "5000-01-01",
-                    },
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [
-                            candidate.get("lon") or 0.0,
-                            candidate.get("lat") or 0.0,
-                        ],
-                    },
-                }
+                    city_feature_collection = {
+                        "type": "FeatureCollection",
+                        "features": [city_feature],
+                    }
 
-                city_feature_collection = {
-                    "type": "FeatureCollection",
-                    "features": [city_feature],
-                }
+                    try:
+                        asyncio.run(
+                            persist_city_feature(map_uuid, city_feature_collection)
+                        )
+                        logger.info(
+                            f"Persisted city token feature: {candidate.get('name')}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to persist city token '{tok}': {e}")
 
-                try:
-                    asyncio.run(persist_city_feature(map_uuid, city_feature_collection))
-                    logger.info(
-                        f"Persisted city token feature: {candidate.get('name')}"
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to persist city token '{tok}': {e}")
-
-        except Exception as e:
-            logger.error(f"City detection failed: {e}")
+            except Exception as e:
+                logger.error(f"City detection failed: {e}")
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
@@ -266,7 +268,7 @@ def process_map_extraction(
 
         color_result = extract_colors(tmp_file_path)
         normalized_features = color_result.get("normalized_features", [])
-        pixel_features = color_result["pixel_features"]
+        pixel_features = color_result.get("pixel_features", [])
 
         if normalized_features:
             asyncio.run(persist_features(map_uuid, normalized_features))
@@ -351,41 +353,44 @@ def process_map_extraction(
         time.sleep(2)
         os.unlink(tmp_file_path)
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        output_dir = os.path.join(current_dir, "extracted_texts")
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-            logger.info(f"[DEBUG] Directory created or already exists: {output_dir}")
-        except Exception as e:
-            logger.error(f"[ERROR] Failed to create directory {output_dir}: {e}")
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name = os.path.splitext(filename)[0]
-        output_filename = f"{timestamp}_{base_name}.txt"
-        output_path = os.path.join(output_dir, output_filename)
-
-        lines = [block[1] for block in extracted_text]
-        full_text = "\n".join(lines)
-        try:
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write("=== OCR EXTRACTION  ===\n")
-                f.write(f"Source File: {filename}\n")
-                f.write(
-                    f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        if enable_text_extraction:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            output_dir = os.path.join(current_dir, "extracted_texts")
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+                logger.info(
+                    f"[DEBUG] Directory created or already exists: {output_dir}"
                 )
-                f.write("\n=== TEXTE EXTRAIT ===\n\n")
-                f.write(full_text)
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to create directory {output_dir}: {e}")
 
-            logger.info(f"Text saved to: {output_path}")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_name = os.path.splitext(filename)[0]
+            output_filename = f"{timestamp}_{base_name}.txt"
+            output_path = os.path.join(output_dir, output_filename)
 
-        except Exception as e:
-            logger.error(f"Failed to save text file: {str(e)}")
-            output_path = f"ERROR: Could not save to {output_path}"
+            lines = [block[1] for block in extracted_text]
+            full_text = "\n".join(lines)
+            try:
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write("=== OCR EXTRACTION  ===\n")
+                    f.write(f"Source File: {filename}\n")
+                    f.write(
+                        f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    )
+                    f.write("\n=== TEXTE EXTRAIT ===\n\n")
+                    f.write(full_text)
+
+                logger.info(f"Text saved to: {output_path}")
+
+            except Exception as e:
+                logger.error(f"Failed to save text file: {str(e)}")
+                output_path = f"ERROR: Could not save to {output_path}"
 
         result = {
             "filename": filename,
             # "extracted_text": lines,
-            "output_path": output_path,
+            "output_path": output_path if enable_text_extraction else "",
             "shapes_result": shapes_result if enable_shapes_extraction else {},
             "color_result": color_result
             if enable_color_extraction
