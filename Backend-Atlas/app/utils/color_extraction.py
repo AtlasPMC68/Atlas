@@ -16,6 +16,8 @@ from shapely.ops import unary_union
 from shapely.geometry.base import BaseGeometry
 from shapely import affinity
 
+from .preprocessing import preprocess_for_color
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
@@ -466,8 +468,35 @@ def extract_colors(
       - selected_bins (metadata)
       - normalized_features (GeoJSON FeatureCollections)
     """
-    rgb, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
+    # 0) Load raw image (keeps alpha mask)
+    rgb_u8, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
+    rgb = img_as_float(rgb_u8)
+
+    # Preprocess full image for color extraction (keeps/updates mask)
+    rgb, opaque_mask = preprocess_for_color(
+        rgb=rgb,
+        opaque_mask=opaque_mask,
+        # You can tune these per "map profile"
+        enable_linearize=True,
+        enable_flat_field=True,
+        flat_field_sigma=120.0,
+        enable_white_balance=True,
+        white_balance_method="percentile",  # "gray_world" or "percentile"
+        wb_percentile=99.5,
+        enable_percentile_norm=True,
+        norm_p_low=1.0,
+        norm_p_high=99.0,
+        enable_background_mask=True,
+        bg_method="none",  # "paper" or "none"
+        paper_threshold_deltaE=10.0,
+        enable_denoise=True,
+        denoise_method="bilateral",  # "bilateral" or "nl_means"
+        bilateral_sigma_color=0.04,
+        bilateral_sigma_spatial=2.0,
+    )
+
     lab = compute_lab(rgb)
+
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
