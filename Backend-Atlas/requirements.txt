@@ -31,3 +31,5 @@ imageio==2.37.2
 geonamescache
 python-keycloak==4.0.0
 PyJWT[crypto]==2.8.0
+weighted-levenshtein==0.2.2
+pywavelets>=1.9.0

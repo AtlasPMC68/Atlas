@@ -1,4 +1,3 @@
-import cv2
 import numpy as np
 import skimage
 
@@ -68,7 +67,7 @@ def scale_image(img: np.ndarray, width: int = 0, height: int = 0) -> np.ndarray:
     return np.clip(rescaled, 0.0, 1.0, out=rescaled)
 
 
-def clahe_color_amplification(img: np.ndarray, amplification: float = 0.02) -> np.ndarray:
+def clahe_color_amplification(img: np.ndarray, amplification: float = 0.03) -> np.ndarray:
     """
     Applies CLAHE to a float64 RGB image.
     :param img: RGB float64 image [0.0, 1.0]
@@ -116,7 +115,7 @@ def gamma_correction(img: np.ndarray, gamma:float=0.7, amplitude:float=0.5):
     img = skimage.color.lab2rgb(img_lab)
     return np.clip(img, 0.0, 1.0)
 
-def lcn_sharpening_skimage(img: np.ndarray, window_size: int = 15):
+def lcn_sharpening_skimage(img: np.ndarray, window_size: int = 15) -> np.ndarray:
     """
     Local Contrast Normalization (LCN) using scikit-image. Acts more or less
     like a high-pass filter
@@ -153,5 +152,24 @@ def lcn_sharpening_skimage(img: np.ndarray, window_size: int = 15):
     result_rgb = skimage.color.lab2rgb(lab)
 
     return np.clip(result_rgb, 0.0, 1.0)
+
+
+def denoise_image(img: np.ndarray) -> np.ndarray:
+    # Estimate noise standard deviation from the image
+    sigma_est = np.mean(skimage.restoration.estimate_sigma(img, channel_axis=-1))
+    # Apply Non-Local Means denoising
+    return skimage.restoration.denoise_nl_means(img, h=0.8 * sigma_est,
+                                                sigma=sigma_est,
+                                                fast_mode=True,
+                                                channel_axis=-1
+                                                )
+
+
+def prepare_for_ocr(img: np.ndarray) -> np.ndarray:
+    if img.dtype != np.uint8:
+        img = skimage.util.img_as_ubyte(img)
+
+    # Flips to BGR since this is needed for easyocr
+    return img[:, :, ::-1]
 
 # TODO: DENOISING, COLOR NORMALIZATION, TEST EXISTING FUNCTIONS
