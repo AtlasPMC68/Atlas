@@ -80,10 +80,10 @@ def check_for_match(actual: list[str], expected: list[str], levenshtein_params: 
     res: dict[str, tuple[str, float]] = {}
 
     # Try to find the closest match for every read wor
-    for expected_word, expected_word_ascii in expected_ascii_dict.items():
+    for ocr_word, ocr_word_ascii in actual_ascii_dict.items():
 
         min_dist: tuple[str, float] = ("a", 1000.0)
-        for ocr_word, ocr_word_ascii in actual_ascii_dict.items():
+        for expected_word, expected_word_ascii in expected_ascii_dict.items():
 
             # Perfect match
             if ocr_word == expected_word:
@@ -128,8 +128,7 @@ def levenshtein_params():
 def test_text_extraction(image_path, expected_text, levenshtein_params, request):
 
     assert image_path.exists()
-    img = cv2.imread(str(image_path))
-    found_texts, _ = extract_text(image=img, languages=['en', 'fr'], gpu_acc=False)
+    found_texts, _ = extract_text(image_path=image_path, languages=['en', 'fr'], gpu_acc=False)
 
     # Prepare text lists
     remaining_ocr_words: list[str] = [res[1] for res in found_texts]

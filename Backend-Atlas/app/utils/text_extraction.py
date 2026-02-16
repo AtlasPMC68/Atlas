@@ -1,14 +1,18 @@
 import os
+from copy import deepcopy
+
 import easyocr
 import cv2
 import copy
 import logging
 import numpy as np
 
+import app.utils.preprocessing as preprocess
+
 logger = logging.getLogger(__name__)
 
 
-def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False) -> tuple[list, np.ndarray]:
+def extract_text(image_path: str, languages: list[str], gpu_acc: bool = False) -> tuple[list, np.ndarray]:
     """
     Wrapper method handling the text extraction logic. This is mainly to reduce
     the memory overhead as this method is very much resource intensive, and to
@@ -17,21 +21,20 @@ def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False)
     It is possible, but not recommended to use the methods under the TextExtraction
     class.
 
-    :param image: Numpy image array of bytes.
-    :param image_name: Name of the image file.
+    :param image_path: Image path
     :param languages: List of language codes to use for text extraction.
     :param gpu_acc: Whether a GPU is available to accelerate image analysis.
     :return: values, clean_image: Returns a tuple of the text information and the pixel
         array of the image, devoid of text.
     """
     logger.debug("Initiating text extraction")
-    extractor = TextExtraction(img=image, lang=languages, gpu_acc=gpu_acc)
+    extractor = TextExtraction(img_path=image_path, lang=languages, gpu_acc=gpu_acc)
     extractor.check_language_code_validity()
 
     text_info = extractor.read_text_from_image()
     #TODO : image cleaning, just send a copy for now
     #clean_image = extractor.remove_text_from_image(image, text_info)
-    clean_image = copy.deepcopy(image)
+    clean_image = copy.deepcopy(extractor.image)
 
     logger.debug("Completed text extraction")
     return text_info, clean_image
@@ -72,38 +75,42 @@ class TextExtraction:
     ]
 
     # Class members
-    def __init__(self, img, lang: list[str] = ['en', 'fr'], gpu_acc: bool = False):
-        self.image: np.ndarray = img
+    def __init__(self, img_path, lang: list[str] = ['en', 'fr'], gpu_acc: bool = False):
+        self.image: np.ndarray = preprocess.read_image(img_path)
         self.lang: list[str] = list(lang)
         self.gpu_acc: bool = gpu_acc
 
     # Class methods
     def read_text_from_image(self, scale_xy: tuple[float, float] = (2.0, 2.0)):
 
+        img_dim = (self.image.shape[0], self.image.shape[1])
         reader = easyocr.Reader(
             lang_list=list(self.lang),
             gpu=self.gpu_acc
         )
 
-        shading = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+        img: np.ndarray = deepcopy(self.image)
+        img = preprocess.denoise_image(img)
+        img = preprocess.scale_image(img, 2 * img_dim[1], 2 * img_dim[0])
+        # img = preprocess.clahe_color_amplification(img, 0.03)
 
-        # NOTE: resizing MUST implies scaling the resulting text or the proportion won't match the original image
-        upscaling = cv2.resize(shading, None, fx=scale_xy[0], fy=scale_xy[1], interpolation=cv2.INTER_LANCZOS4)
-
-        extracted_text = reader.readtext(upscaling,
+        img = preprocess.prepare_for_ocr(img)
+        extracted_text = reader.readtext(img,
                                          text_threshold=0.7,  # Slightly higher threshold
                                          low_text=0.4,  # low res text detection
-                                         link_threshold=0.4,  # character linking tolerance
-                                         width_ths=0.7,  # character  spacing tolerance
+                                         link_threshold=0.6,  # character linking tolerance
+                                         width_ths=0.7,  # character spacing tolerance
                                          height_ths=0.7)
 
         scaled_extracted_text = []
+        ratio_x = img.shape[1] / self.image.shape[1]
+        ratio_y = img.shape[0] / self.image.shape[0]
         for (coords, text, prob) in extracted_text:
             #  coords : [top_left, top_right, bottom_right, bottom_left]
             rescaled_coords = []
             for [x, y] in coords:
-                rescaled_x = int(x / scale_xy[0])
-                rescaled_y = int(y / scale_xy[1])
+                rescaled_x = int(x / ratio_x)
+                rescaled_y = int(y / ratio_y)
                 rescaled_coords.append([rescaled_x, rescaled_y])
 
             scaled_extracted_text.append((rescaled_coords, text, prob))
@@ -155,3 +162,10 @@ class TextExtraction:
         for code in self.lang:
             if code not in self.LANGUAGE_CODES:
                 raise ValueError(f"Invalid language code: {code}")
+
+    def read_text_with_ocr(self):
+        """
+        Function to extract text with the chosen OCR. Declared here to make
+        read_text_from_image as modular as possible
+        """
+
