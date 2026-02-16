@@ -6,7 +6,7 @@ import numpy as np
 import imageio.v3 as iio
 
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
-from skimage.morphology import binary_opening, disk
+from skimage.morphology import binary_opening
 from skimage.util import img_as_float
 from skimage.measure import find_contours
 from matplotlib import colors as mcolors
@@ -71,10 +71,10 @@ def compute_lab(rgb: np.ndarray) -> np.ndarray:
 def dominant_bins_lab(
     lab: np.ndarray,
     opaque_mask: np.ndarray,
-    top_n: int = 200,
-    bin_L: float = 3.0,
-    bin_a: float = 6.0,
-    bin_b: float = 6.0,
+    top_n: int,
+    bin_L: float,
+    bin_a: float,
+    bin_b: float,
 ) -> List[Dict]:
     """
     Find frequent LAB bins using 3D quantization (binning).
@@ -291,46 +291,42 @@ def select_colors_by_ratio_and_distance(
     bins: List[Dict],
     dominant_ratio: float = 0.05,
     accent_min_ratio: float = 0.001,
-    accent_min_deltaE_from_dominants: float = 18.0,
+    accent_min_deltaE_from_selected: float = 18.0, 
     min_colors_fallback: Optional[int] = None,
     merge_similar: bool = True,
     merge_deltaE_threshold: float = 5.0,
 ) -> List[Dict]:
-    """
-    Selection strategy:
-    1) Keep all dominants (ratio >= dominant_ratio).
-    2) Keep accents if:
-       - ratio >= accent_min_ratio
-       - and min ΔE to any dominant >= accent_min_deltaE_from_dominants
-    3) Optional fallback to ensure at least N colors.
-    4) Optional merge of similar colors.
-    """
     if not bins:
         return []
+
+    # Make selection stable
+    bins = sorted(bins, key=lambda e: -e["ratio"])
 
     dominants = [b for b in bins if b["ratio"] >= dominant_ratio]
     if not dominants:
         dominants = [bins[0]]
 
-    dominant_centers = [
-        np.array(d["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-        for d in dominants
-    ]
-
     selected = list(dominants)
 
+    selected_lab_centers = [
+        np.array(d["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+        for d in selected
+    ]
+
     candidates = [b for b in bins if b["ratio"] < dominant_ratio and b["ratio"] >= accent_min_ratio]
+    candidates.sort(key=lambda e: -e["ratio"])
 
     for c in candidates:
         c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
         min_dE = min(
-            float(deltaE_ciede2000(c_lab, d_lab)[0, 0])
-            for d_lab in dominant_centers
+            float(deltaE_ciede2000(c_lab, s_lab)[0, 0])
+            for s_lab in selected_lab_centers
         )
-        if min_dE >= accent_min_deltaE_from_dominants:
+        if min_dE >= accent_min_deltaE_from_selected:
             c2 = dict(c)
-            c2["min_dE_to_dominants"] = float(min_dE)
+            c2["min_dE_to_selected"] = float(min_dE)
             selected.append(c2)
+            selected_lab_centers.append(c_lab)
 
     if min_colors_fallback is not None and len(selected) < min_colors_fallback:
         selected_ids = {s["bin_id"] for s in selected}
@@ -342,15 +338,16 @@ def select_colors_by_ratio_and_distance(
 
             b_lab = np.array(b["lab_center"], dtype=np.float64).reshape(1, 1, 3)
             min_dE = min(
-                float(deltaE_ciede2000(b_lab, d_lab)[0, 0])
-                for d_lab in dominant_centers
+                float(deltaE_ciede2000(b_lab, s_lab)[0, 0])
+                for s_lab in selected_lab_centers
             )
-            relaxed = accent_min_deltaE_from_dominants * 0.5
+            relaxed = accent_min_deltaE_from_selected * 0.5
             if min_dE >= relaxed:
                 b2 = dict(b)
-                b2["min_dE_to_dominants"] = float(min_dE)
+                b2["min_dE_to_selected"] = float(min_dE)
                 selected.append(b2)
                 selected_ids.add(b["bin_id"])
+                selected_lab_centers.append(b_lab)
 
     selected.sort(key=lambda e: -e["ratio"])
 
@@ -425,15 +422,15 @@ def extract_colors(
 
     dominant_ratio: float = 0.001, # Minimum pixel ratio for a color to be considered dominant.
 
-    accent_min_ratio: float = 0.0001, # Minimum ratio for a non-dominant (accent) color to be considered.
+    accent_min_ratio: float = 0.00005, # Minimum ratio for a non-dominant (accent) color to be considered.
 
-    accent_min_deltaE_from_dominants: float = 18.0, # Minimum ΔE distance from ALL dominant colors for an accent to be accepted.
+    accent_min_deltaE_from_selected: float = 20.0, # Minimum ΔE distance from ALL dominant colors for an accent to be accepted.
 
     min_colors_fallback: Optional[int] = None, # If set, ensures at least this many colors are selected.
 
     merge_similar: bool = True, # If True, merges selected colors that are perceptually too close (ΔE-based).
 
-    merge_deltaE_threshold: float = 10.0,
+    merge_deltaE_threshold: float = 12.0,
     # ΔE threshold below which two selected colors are merged.
     # Larger value → more aggressive merging.
     # Smaller value → keep more distinct but similar-looking layers.
@@ -443,15 +440,11 @@ def extract_colors(
     # Mask construction (pixel assignment)
     # -----------------------------
 
-    mask_deltaE: float = 18.0,
+    mask_deltaE: float = 10.0,
     # Maximum ΔE distance for a pixel to be assigned to a color layer.
     # Larger value → thicker, more inclusive masks.
     # Smaller value → tighter masks, may leave holes/unassigned pixels.
 
-    opening_radius: int = 0,
-    # Morphological opening radius (noise removal).
-    # 0 disables morphology completely (preserves small shapes).
-    # >0 removes small isolated pixels but can destroy fine details (stars, dots).
 ) -> Dict:
     """
     Extract exclusive color layers using:
@@ -490,7 +483,7 @@ def extract_colors(
         bins=bins,
         dominant_ratio=dominant_ratio,
         accent_min_ratio=accent_min_ratio,
-        accent_min_deltaE_from_dominants=accent_min_deltaE_from_dominants,
+        accent_min_deltaE_from_selected=accent_min_deltaE_from_selected,
         min_colors_fallback=min_colors_fallback,
         merge_similar=merge_similar,
         merge_deltaE_threshold=merge_deltaE_threshold,
@@ -517,9 +510,7 @@ def extract_colors(
     color_index = 1
     for k, entry in enumerate(selected):
         mask = (best_idx == k) & valid
-
-        if opening_radius > 0:
-            mask = binary_opening(mask, disk(opening_radius))
+        #mask = binary_opening(mask, footprint=np.ones((2, 2), dtype=bool))       
 
         if not np.any(mask):
             continue
@@ -563,10 +554,9 @@ def extract_colors(
             "bin_b": bin_b,
             "dominant_ratio": dominant_ratio,
             "accent_min_ratio": accent_min_ratio,
-            "accent_min_deltaE_from_dominants": accent_min_deltaE_from_dominants,
+            "accent_min_deltaE_from_selected": accent_min_deltaE_from_selected,
             "merge_similar": merge_similar,
             "merge_deltaE_threshold": merge_deltaE_threshold,
             "mask_deltaE": mask_deltaE,
-            "opening_radius": opening_radius,
         },
     }
