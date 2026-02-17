@@ -1,13 +1,59 @@
 import L from "leaflet";
 
+type MapInitProps = {
+  editMode?: boolean;
+  activeEditMode?: string | null;
+};
+
+type EmitFn = (event: string, ...args: unknown[]) => void;
+
+type FeatureLayerManager = {
+  layers: Map<string, any>;
+  makeLayerClickable: (id: string, layer: any) => void;
+};
+
+type LayersComposable = {
+  featureLayerManager: FeatureLayerManager;
+  drawnItems: { value: L.FeatureGroup | null };
+  allCircles: { value: Set<L.CircleMarker> };
+};
+
+type EventsComposable = Record<string, any> & {
+  selectedFeatures: { value: Set<string> };
+  isDraggingFeatures: { value: boolean };
+  justFinishedDrag: { value: boolean };
+  clearSelectionBBoxes: (map: L.Map) => void;
+  clearSelectionAnchors: (map: L.Map) => void;
+};
+
+type EditingComposable = Record<string, any> & {
+  isDeleteMode?: { value: boolean };
+  deleteFeature: (
+    featureId: string,
+    featureLayerManager: FeatureLayerManager,
+    map: L.Map,
+    emit: EmitFn,
+  ) => void;
+};
+
+type HandlerName =
+  | "mousedown"
+  | "mousemove"
+  | "mouseup"
+  | "keydown"
+  | "click"
+  | "dblclick"
+  | "contextmenu"
+  | "dragstart";
+
 export function useMapInit(
-  props,
-  emit,
-  layersComposable,
-  eventsComposable,
-  editingComposable,
+  props: MapInitProps,
+  emit: EmitFn,
+  layersComposable: LayersComposable,
+  eventsComposable: EventsComposable,
+  editingComposable: EditingComposable,
 ) {
-  const boundHandlers = {
+  const boundHandlers: Record<HandlerName, L.LeafletEventHandlerFn | null> = {
     mousedown: null,
     mousemove: null,
     mouseup: null,
@@ -19,7 +65,14 @@ export function useMapInit(
   };
 
   // État d’origine des interactions map pour pouvoir les restaurer
-  const uiState = {
+  const uiState: {
+    saved: boolean;
+    doubleClickZoom: boolean | null;
+    boxZoom: boolean | null;
+    keyboard: boolean | null;
+    touchZoom: boolean | null;
+    tap: boolean | null;
+  } = {
     saved: false,
     doubleClickZoom: null,
     boxZoom: null,
@@ -28,7 +81,7 @@ export function useMapInit(
     tap: null,
   };
 
-  function initializeEditControls(map) {
+  function initializeEditControls(map: L.Map | null) {
     if (!props.editMode || !map) return;
 
     setLeafletUiSuppression(map, true);
@@ -38,7 +91,7 @@ export function useMapInit(
     attachEditEventHandlers(map);
   }
 
-  function updateMapCursor(map) {
+  function updateMapCursor(map: L.Map | null) {
     if (!map) return;
     const mapContainer = map.getContainer();
 
@@ -53,7 +106,7 @@ export function useMapInit(
     }
   }
 
-  function attachEditEventHandlers(map) {
+  function attachEditEventHandlers(map: L.Map) {
     detachEditEventHandlers(map);
 
     const container = map.getContainer();
@@ -61,7 +114,7 @@ export function useMapInit(
       container.setAttribute("tabindex", "0");
     }
 
-    const bind = (name, fn) => {
+    const bind = (name: HandlerName, fn: L.LeafletEventHandlerFn) => {
       boundHandlers[name] = fn;
       map.on(name, fn);
     };
@@ -106,10 +159,10 @@ export function useMapInit(
     }
   }
 
-  function detachEditEventHandlers(map) {
+  function detachEditEventHandlers(map: L.Map | null) {
     if (!map) return;
 
-    const offIf = (name) => {
+    const offIf = (name: HandlerName) => {
       if (boundHandlers[name]) {
         map.off(name, boundHandlers[name]);
         boundHandlers[name] = null;
@@ -129,7 +182,7 @@ export function useMapInit(
   // Ne casse pas les clicks Leaflet sur les layers.
   // Désactive seulement des interactions "gênantes" + strip popups/tooltips.
   // IMPORTANT: on garde scrollWheelZoom actif (molette) en mode édition.
-  function setLeafletUiSuppression(map, enabled) {
+  function setLeafletUiSuppression(map: L.Map | null, enabled: boolean) {
     if (!map) return;
 
     if (!uiState.saved) {
@@ -138,10 +191,10 @@ export function useMapInit(
       uiState.boxZoom = map.boxZoom?.enabled?.() ?? null;
       uiState.keyboard = map.keyboard?.enabled?.() ?? null;
       uiState.touchZoom = map.touchZoom?.enabled?.() ?? null;
-      uiState.tap = map.tap ? true : null;
+      uiState.tap = (map as any).tap ? true : null;
     }
 
-    const toggle = (handler, shouldEnable) => {
+    const toggle = (handler: any, shouldEnable: boolean) => {
       if (!handler) return;
       if (shouldEnable) handler.enable?.();
       else handler.disable?.();
@@ -156,7 +209,7 @@ export function useMapInit(
       map.scrollWheelZoom?.enable?.();
 
       toggle(map.touchZoom, false);
-      if (map.tap) map.tap.disable?.();
+      if ((map as any).tap) (map as any).tap.disable?.();
 
       stripLayerUi(layersComposable.featureLayerManager);
       if (layersComposable.drawnItems.value)
@@ -167,29 +220,29 @@ export function useMapInit(
       if (uiState.boxZoom != null) toggle(map.boxZoom, uiState.boxZoom);
       if (uiState.keyboard != null) toggle(map.keyboard, uiState.keyboard);
       if (uiState.touchZoom != null) toggle(map.touchZoom, uiState.touchZoom);
-      if (map.tap && uiState.tap != null) map.tap.enable?.();
+      if ((map as any).tap && uiState.tap != null) (map as any).tap.enable?.();
 
       // On laisse scrollWheelZoom tel qu’il était (on l’a forcé enable en édition),
       // si tu veux restaurer strictement l’état initial, ajoute-le à uiState.
     }
   }
 
-  function stripLayerUi(featureLayerManager) {
+  function stripLayerUi(featureLayerManager: FeatureLayerManager | null) {
     if (!featureLayerManager?.layers) return;
     featureLayerManager.layers.forEach((layer) => {
       stripOneLayerUi(layer);
       if (layer && typeof layer.eachLayer === "function") {
-        layer.eachLayer((kid) => stripOneLayerUi(kid));
+        layer.eachLayer((kid: any) => stripOneLayerUi(kid));
       }
     });
   }
 
-  function stripGroupUi(group) {
+  function stripGroupUi(group: L.LayerGroup | null) {
     if (!group || typeof group.eachLayer !== "function") return;
     group.eachLayer((layer) => stripOneLayerUi(layer));
   }
 
-  function stripOneLayerUi(layer) {
+  function stripOneLayerUi(layer: any) {
     if (!layer) return;
 
     if (typeof layer.unbindTooltip === "function") layer.unbindTooltip();
@@ -200,7 +253,7 @@ export function useMapInit(
   }
 
   // À appeler après renderAllFeatures() aussi (sinon les nouveaux layers réintroduisent des popups)
-  function makeFeaturesClickable(map) {
+  function makeFeaturesClickable(map: L.Map | null) {
     if (!map) return;
 
     layersComposable.featureLayerManager.layers.forEach((layer, featureId) => {
@@ -209,7 +262,7 @@ export function useMapInit(
     });
 
     if (layersComposable.drawnItems.value) {
-      layersComposable.drawnItems.value.eachLayer((layer) => {
+      layersComposable.drawnItems.value.eachLayer((layer: any) => {
         const tempId = "temp_" + Math.random();
         stripOneLayerUi(layer);
         layersComposable.featureLayerManager.makeLayerClickable(tempId, layer);
@@ -217,7 +270,11 @@ export function useMapInit(
     }
   }
 
-  function handleFeatureClick(featureId, isCtrlPressed, map) {
+  function handleFeatureClick(
+    featureId: string | number,
+    isCtrlPressed: boolean,
+    map: L.Map,
+  ) {
     const fid = String(featureId);
 
     if (eventsComposable.justFinishedDrag?.value) {
@@ -238,7 +295,7 @@ export function useMapInit(
     eventsComposable.applySelectionClick(fid, isCtrlPressed, map);
   }
 
-  function cleanupEditMode(map) {
+  function cleanupEditMode(map: L.Map) {
     setLeafletUiSuppression(map, false);
 
     if (layersComposable.drawnItems.value) {

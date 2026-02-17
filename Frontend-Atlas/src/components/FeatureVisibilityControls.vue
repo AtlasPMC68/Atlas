@@ -1,5 +1,5 @@
 <template>
-  <div class="feature-controls">
+  <div>
     <h2 class="text-lg font-semibold mb-4 text-base-content">
       Contrôles des couches
     </h2>
@@ -25,11 +25,13 @@
                 <input
                   type="checkbox"
                   :checked="featureVisibility.get(feature.id) !== false"
-                  @change="$emit('toggle-feature', feature.id, $event.target.checked)"
+                  @change="
+                    $emit('toggle-feature', feature.id, $event.target.checked)
+                  "
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <span class="label-text text-sm">
-                  {{ feature.properties?.name || feature.name || "Unnamed Feature" }}
+                  {{ feature.name || "Sans nom" }}
                 </span>
               </label>
             </div>
@@ -69,25 +71,28 @@ const featureGroups = computed(() => {
     { type: "shape", label: "Formes", features: [] },
   ];
 
-  for (const feature of props.features) {
-    const rawType =
-      feature?.properties?.mapElementType ||
-      feature?.type ||
-      "";
+  props.features.forEach((feature) => {
+    const rawType = feature?.properties?.mapElementType || feature?.type || "";
 
-    const isShapeKind = ["square", "rectangle", "circle", "triangle", "oval"].includes(rawType);
+    const isShapeKind = [
+      "square",
+      "rectangle",
+      "circle",
+      "triangle",
+      "oval",
+    ].includes(rawType);
     const elementType = isShapeKind ? "shape" : rawType;
 
     const group = groups.find((g) => g.type === elementType);
     if (group) group.features.push(feature);
-  }
+  });
 
   return groups.filter((g) => g.features.length > 0);
 });
 
 function toggleAll(visible) {
-  for (const feature of props.features) {
+  props.features.forEach((feature) => {
     emit("toggle-feature", feature.id, visible);
-  }
+  });
 }
 </script>

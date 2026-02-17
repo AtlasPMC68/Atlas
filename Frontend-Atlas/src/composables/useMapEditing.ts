@@ -1,11 +1,66 @@
 import { ref } from "vue";
 import L from "leaflet";
-import { smoothFreeLinePoints, getRadiusForZoom } from "../utils/mapUtils.js";
+import { smoothFreeLinePoints, getRadiusForZoom } from "../utils/mapUtils";
 
-export function useMapEditing(props, emit) {
+type Geometry = any;
+type Feature = { [key: string]: any };
+type FeatureLayer = any;
+
+type FeatureLayerManager = {
+  layers: Map<string, any>;
+  makeLayerClickable: (id: string, layer: any) => void;
+};
+
+type LayersComposable = {
+  drawnItems: { value: L.FeatureGroup };
+  allCircles: { value: Set<L.CircleMarker> };
+  featureLayerManager: FeatureLayerManager;
+};
+
+type MapEditingProps = {
+  mapId?: string | number;
+  features: Feature[];
+  editMode?: boolean;
+  activeEditMode?: string | null;
+};
+
+type EmitFn = (event: string, ...args: unknown[]) => void;
+
+type PointTree = any;
+type LatLngTree = any;
+
+function flattenPointTree(pts: PointTree, flat: L.Point[]): void {
+  if (Array.isArray(pts)) {
+    pts.forEach((x) => flattenPointTree(x as PointTree, flat));
+    return;
+  }
+  flat.push(pts);
+}
+
+function scalePointsTree(
+  ptsIn: PointTree,
+  centerPt: L.Point,
+  sx: number,
+  sy: number,
+): PointTree {
+  if (Array.isArray(ptsIn)) {
+    return (ptsIn as PointTree[]).map((x) =>
+      scalePointsTree(x, centerPt, sx, sy),
+    );
+  }
+  const x = centerPt.x + ((ptsIn as L.Point).x - centerPt.x) * sx;
+  const y = centerPt.y + ((ptsIn as L.Point).y - centerPt.y) * sy;
+  return L.point(x, y);
+}
+
+export function useMapEditing(props: MapEditingProps, emit: EmitFn) {
   const isDeleteMode = ref(false);
 
-  function metersToLatLngOffsets(centerLat, halfWidthMeters, halfHeightMeters) {
+  function metersToLatLngOffsets(
+    centerLat: number,
+    halfWidthMeters: number,
+    halfHeightMeters: number,
+  ) {
     const dLat = halfHeightMeters / 111320;
     const dLng =
       halfWidthMeters / (111320 * Math.cos((centerLat * Math.PI) / 180));
@@ -13,11 +68,11 @@ export function useMapEditing(props, emit) {
   }
 
   function polygonFromCenterWidthHeight(
-    center,
-    widthMeters,
-    heightMeters,
-    shapeType,
-  ) {
+    center: L.LatLng,
+    widthMeters: number | null,
+    heightMeters: number | null,
+    shapeType: string | null,
+  ): Geometry | null {
     const w = Number(widthMeters);
     const h = Number(heightMeters);
     if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0)
@@ -51,7 +106,10 @@ export function useMapEditing(props, emit) {
     };
   }
 
-  function circleFromCenterDiameter(center, diameterMeters) {
+  function circleFromCenterDiameter(
+    center: L.LatLng,
+    diameterMeters: number | null,
+  ): Geometry | null {
     const d = Number(diameterMeters);
     if (!Number.isFinite(d) || d <= 0) return null;
     const r = d / 2;
@@ -70,7 +128,11 @@ export function useMapEditing(props, emit) {
     return { type: "Polygon", coordinates: [pts] };
   }
 
-  function ovalFromCenterWidthHeight(center, widthMeters, heightMeters) {
+  function ovalFromCenterWidthHeight(
+    center: L.LatLng,
+    widthMeters: number | null,
+    heightMeters: number | null,
+  ): Geometry | null {
     const w = Number(widthMeters);
     const h = Number(heightMeters);
     if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0)
@@ -93,7 +155,7 @@ export function useMapEditing(props, emit) {
     return { type: "Polygon", coordinates: [pts] };
   }
 
-  function inferShapeType(feature) {
+  function inferShapeType(feature: Feature | null | undefined): string | null {
     const st = feature?.properties?.shapeType;
     if (st) return st;
     const t = feature?.type;
@@ -106,13 +168,13 @@ export function useMapEditing(props, emit) {
     return null;
   }
 
-  function getCenterFromLayer(layer) {
+  function getCenterFromLayer(layer: FeatureLayer | null) {
     if (layer?.getBounds) return layer.getBounds().getCenter();
     if (layer?.getLatLng) return layer.getLatLng();
     return null;
   }
 
-  function normalizeAngleDeg(a) {
+  function normalizeAngleDeg(a: number | string | null | undefined): number {
     const n = Number(a);
     if (!Number.isFinite(n)) return 0;
     let x = n % 360;
@@ -120,14 +182,14 @@ export function useMapEditing(props, emit) {
     return x;
   }
 
-  function getAngleDegFromFeature(feature) {
+  function getAngleDegFromFeature(feature: Feature | null | undefined): number {
     const p = feature?.properties || {};
     return normalizeAngleDeg(
-      p.rotationDeg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0,
+      p.rotation_deg ?? p.angleDeg ?? p.angle ?? p.rotation ?? 0,
     );
   }
 
-  function rotatePoint(pt, centerPt, rad) {
+  function rotatePoint(pt: L.Point, centerPt: L.Point, rad: number) {
     const dx = pt.x - centerPt.x;
     const dy = pt.y - centerPt.y;
     const c = Math.cos(rad);
@@ -135,38 +197,51 @@ export function useMapEditing(props, emit) {
     return L.point(centerPt.x + dx * c - dy * s, centerPt.y + dx * s + dy * c);
   }
 
-  function rotatePointsTree(pts, centerPt, rad) {
+  function rotatePointsTree(
+    pts: PointTree,
+    centerPt: L.Point,
+    rad: number,
+  ): PointTree {
     if (Array.isArray(pts))
-      return pts.map((x) => rotatePointsTree(x, centerPt, rad));
-    return rotatePoint(pts, centerPt, rad);
+      return (pts as PointTree[]).map((x) =>
+        rotatePointsTree(x, centerPt, rad),
+      );
+    return rotatePoint(pts as L.Point, centerPt, rad);
   }
 
-  function latlngsToPoints(map, latlngs) {
+  function latlngsToPoints(map: L.Map, latlngs: LatLngTree): PointTree {
     if (Array.isArray(latlngs))
-      return latlngs.map((x) => latlngsToPoints(map, x));
-    return map.latLngToLayerPoint(latlngs);
+      return (latlngs as LatLngTree[]).map((x) => latlngsToPoints(map, x));
+    return map.latLngToLayerPoint(latlngs as L.LatLng);
   }
 
-  function pointsToLatlngs(map, pts) {
-    if (Array.isArray(pts)) return pts.map((x) => pointsToLatlngs(map, x));
-    return map.layerPointToLatLng(pts);
+  function pointsToLatlngs(map: L.Map, pts: PointTree): LatLngTree {
+    if (Array.isArray(pts))
+      return (pts as PointTree[]).map((x) => pointsToLatlngs(map, x));
+    return map.layerPointToLatLng(pts as L.Point);
   }
 
-  function geometryToLatLngs(geom) {
+  function geometryToLatLngs(geom: Geometry | null): LatLngTree | null {
     if (!geom) return null;
 
+    const coords = geom.coordinates as any;
+
     if (geom.type === "Point") {
-      const [lng, lat] = geom.coordinates;
+      const [lng, lat] = coords as number[];
       return L.latLng(lat, lng);
     }
 
     if (geom.type === "LineString") {
-      return geom.coordinates.map(([lng, lat]) => L.latLng(lat, lng));
+      return (coords as any[]).map((coord: any) =>
+        L.latLng(coord[1], coord[0]),
+      );
     }
 
     if (geom.type === "Polygon") {
-      const ring = geom.coordinates?.[0] || [];
-      const ringLatLngs = ring.map(([lng, lat]) => L.latLng(lat, lng));
+      const ring = (coords?.[0] ?? []) as any[];
+      const ringLatLngs = ring.map((coord: any) =>
+        L.latLng(coord[1], coord[0]),
+      );
       return [ringLatLngs];
     }
 
@@ -174,11 +249,11 @@ export function useMapEditing(props, emit) {
   }
 
   function applyAngleToLayerFromCanonical(
-    layer,
-    map,
-    canonicalGeom,
-    angleDeg,
-    pivotLatLng,
+    layer: FeatureLayer | null,
+    map: L.Map | null,
+    canonicalGeom: Geometry | null,
+    angleDeg: number,
+    pivotLatLng: L.LatLng | null,
   ) {
     if (!layer || !map) return;
 
@@ -219,25 +294,25 @@ export function useMapEditing(props, emit) {
     layer.setLatLngs(llR);
   }
 
-  function geometryFromLayer(layer) {
+  function geometryFromLayer(layer: FeatureLayer) {
     if (layer.getLatLng && !layer.getLatLngs) {
       const ll = layer.getLatLng();
       return { type: "Point", coordinates: [ll.lng, ll.lat] };
     }
 
     if (layer.getLatLngs) {
-      const latlngs = layer.getLatLngs();
+      const latlngs = layer.getLatLngs() as any[];
 
       const isPolygon =
         layer instanceof L.Polygon || layer instanceof L.Rectangle;
 
       if (!isPolygon) {
-        const coords = latlngs.map((ll) => [ll.lng, ll.lat]);
+        const coords = (latlngs as any[]).map((ll: any) => [ll.lng, ll.lat]);
         return { type: "LineString", coordinates: coords };
       }
 
-      const ring = latlngs[0] ?? latlngs;
-      const coords = ring.map((ll) => [ll.lng, ll.lat]);
+      const ring = (latlngs as any[])[0] ?? latlngs;
+      const coords = (ring as any[]).map((ll: any) => [ll.lng, ll.lat]);
 
       if (
         coords.length &&
@@ -252,7 +327,7 @@ export function useMapEditing(props, emit) {
     return null;
   }
 
-  function applyLocalFeatureUpdate(fid, nextFeature) {
+  function applyLocalFeatureUpdate(fid: string, nextFeature: Feature) {
     const idx = props.features.findIndex((f) => String(f.id) === String(fid));
     if (idx !== -1) {
       const updatedFeatures = [...props.features];
@@ -262,11 +337,11 @@ export function useMapEditing(props, emit) {
   }
 
   async function applyResizeFromDims(
-    featureId,
-    widthMeters,
-    heightMeters,
-    map,
-    featureLayerManager,
+    featureId: string | number,
+    widthMeters: number | null,
+    heightMeters: number | null,
+    map: L.Map,
+    featureLayerManager: FeatureLayerManager,
   ) {
     const fid = String(featureId);
 
@@ -298,7 +373,7 @@ export function useMapEditing(props, emit) {
       const angleDeg = getAngleDegFromFeature(feature);
       const angleRad = (angleDeg * Math.PI) / 180;
 
-      const latlngs = layer.getLatLngs();
+      const latlngs = layer.getLatLngs ? layer.getLatLngs() : null;
       if (!latlngs) return;
 
       const centerPt = map.latLngToLayerPoint(center);
@@ -308,10 +383,8 @@ export function useMapEditing(props, emit) {
           ? rotatePointsTree(pts, centerPt, -angleRad)
           : pts;
 
-      const flat = [];
-      const flatten = (x) =>
-        Array.isArray(x) ? x.forEach(flatten) : flat.push(x);
-      flatten(pts0);
+      const flat: L.Point[] = [];
+      flattenPointTree(pts0 as PointTree, flat);
 
       let minX = Infinity,
         minY = Infinity,
@@ -352,21 +425,14 @@ export function useMapEditing(props, emit) {
       const sx = hasW ? w / curW : 1;
       const sy = hasH ? h / curH : 1;
 
-      function scalePoints0(ptsIn) {
-        if (Array.isArray(ptsIn)) return ptsIn.map(scalePoints0);
-        const x = centerPt.x + (ptsIn.x - centerPt.x) * sx;
-        const y = centerPt.y + (ptsIn.y - centerPt.y) * sy;
-        return L.point(x, y);
-      }
-
-      const scaled0 = scalePoints0(pts0);
+      const scaled0 = scalePointsTree(pts0 as PointTree, centerPt, sx, sy);
       const scaled =
         Math.abs(angleRad) > 1e-9
           ? rotatePointsTree(scaled0, centerPt, angleRad)
           : scaled0;
       const newLatLngs = pointsToLatlngs(map, scaled);
 
-      layer.setLatLngs(newLatLngs);
+      layer.setLatLngs?.(newLatLngs);
 
       const newGeom0 = geometryFromLayer(layer);
       if (!newGeom0) return;
@@ -379,7 +445,7 @@ export function useMapEditing(props, emit) {
           resizable: true,
           shapeType: feature?.properties?.shapeType || "polygon",
           center: { lat: center.lat, lng: center.lng },
-          rotationDeg: angleDeg,
+          rotation_deg: angleDeg,
         },
       };
       layer.feature = nextLayerFeature;
@@ -388,43 +454,6 @@ export function useMapEditing(props, emit) {
       const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
       if (isTemp) return;
 
-      try {
-        const updateData = {
-          geometry: newGeom0,
-          color: feature.color ?? null,
-          opacity: feature.opacity ?? null,
-          stroke_width: feature.stroke_width ?? null,
-          properties: {
-            ...(feature.properties || {}),
-            resizable: true,
-            shapeType: feature?.properties?.shapeType || "polygon",
-            center: { lat: center.lat, lng: center.lng },
-            rotationDeg: angleDeg,
-          },
-        };
-
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/maps/features/${fid}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updateData),
-          },
-        );
-
-        if (!response.ok)
-          throw new Error(`HTTP error! status: ${response.status}`);
-
-        const updatedFeature = await response.json();
-        const idx = props.features.findIndex((f) => String(f.id) === fid);
-        if (idx !== -1) {
-          const updatedFeatures = [...props.features];
-          updatedFeatures[idx] = updatedFeature;
-          emit("features-loaded", updatedFeatures);
-        }
-      } catch (err) {
-        console.error("Error resizing feature:", err);
-      }
       return;
     }
 
@@ -455,13 +484,10 @@ export function useMapEditing(props, emit) {
     let newGeom0 = null;
 
     if (shapeType === "circle") {
-      newGeom0 = circleFromCenterDiameter(
-        { lat: center.lat, lng: center.lng },
-        d,
-      );
+      newGeom0 = circleFromCenterDiameter(center, d);
     } else if (shapeType === "oval") {
       newGeom0 = ovalFromCenterWidthHeight(
-        { lat: center.lat, lng: center.lng },
+        center,
         hasW ? w : null,
         hasH ? h : null,
       );
@@ -487,7 +513,7 @@ export function useMapEditing(props, emit) {
       newGeom0 = { type: "Polygon", coordinates: [points] };
     } else {
       newGeom0 = polygonFromCenterWidthHeight(
-        { lat: center.lat, lng: center.lng },
+        center,
         hasW ? w : null,
         hasH ? h : null,
         shapeType,
@@ -499,6 +525,7 @@ export function useMapEditing(props, emit) {
     const angleDeg = getAngleDegFromFeature(feature);
 
     if (shapeType === "circle" && typeof layer.setRadius === "function") {
+      if (d == null) return;
       if (typeof layer.setLatLng === "function") layer.setLatLng(center);
       layer.setRadius(d / 2);
     } else {
@@ -513,63 +540,21 @@ export function useMapEditing(props, emit) {
         resizable: true,
         shapeType,
         center: { lat: center.lat, lng: center.lng },
-        rotationDeg: angleDeg,
+        rotation_deg: angleDeg,
       },
     };
     layer.feature = nextLayerFeature;
     applyLocalFeatureUpdate(fid, nextLayerFeature);
-
-    const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
-    if (isTemp) return;
-
-    try {
-      const updateData = {
-        geometry: newGeom0,
-        color: feature.color ?? null,
-        opacity: feature.opacity ?? null,
-        stroke_width: feature.stroke_width ?? null,
-        properties: {
-          ...(feature.properties || {}),
-          resizable: true,
-          shapeType,
-          center: { lat: center.lat, lng: center.lng },
-          rotationDeg: angleDeg,
-        },
-      };
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/features/${fid}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updateData),
-        },
-      );
-
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
-
-      const updatedFeature = await response.json();
-
-      const idx = props.features.findIndex((f) => String(f.id) === fid);
-      if (idx !== -1) {
-        const updatedFeatures = [...props.features];
-        updatedFeatures[idx] = updatedFeature;
-        emit("features-loaded", updatedFeatures);
-      }
-    } catch (err) {
-      console.error("Error resizing feature:", err);
-    }
   }
 
   // ==========================
   // NEW: ROTATION (angle absolu)
   // ==========================
   async function applyRotateFromAngle(
-    featureId,
-    angleDeg,
-    map,
-    featureLayerManager,
+    featureId: string | number,
+    angleDeg: number,
+    map: L.Map,
+    featureLayerManager: FeatureLayerManager,
   ) {
     const fid = String(featureId);
 
@@ -591,91 +576,15 @@ export function useMapEditing(props, emit) {
     const wrapped = Math.min(diff, 360 - diff);
 
     if (!feature.properties) feature.properties = {};
-    feature.properties.rotationDeg = nextAngle;
+    feature.properties.rotation_deg = nextAngle;
 
     if (!layer.feature) layer.feature = feature;
     else {
       layer.feature.properties = layer.feature.properties || {};
-      layer.feature.properties.rotationDeg = nextAngle;
+      layer.feature.properties.rotation_deg = nextAngle;
     }
 
-    if (wrapped < 1e-9) {
-      const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
-      if (isTemp) return;
-
-      try {
-        const geom = geometryFromLayer(layer);
-        const updateData = {
-          geometry: geom,
-          color: feature.color ?? null,
-          opacity: feature.opacity ?? null,
-          stroke_width: feature.stroke_width ?? null,
-          properties: { ...(feature.properties || {}), rotationDeg: nextAngle },
-        };
-
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/maps/features/${fid}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updateData),
-          },
-        );
-
-        if (!response.ok)
-          throw new Error(`HTTP error! status: ${response.status}`);
-
-        const updatedFeature = await response.json();
-        const idx = props.features.findIndex((f) => String(f.id) === fid);
-        if (idx !== -1) {
-          const updatedFeatures = [...props.features];
-          updatedFeatures[idx] = updatedFeature;
-          emit("features-loaded", updatedFeatures);
-        }
-      } catch (err) {
-        console.error("Error rotating feature:", err);
-      }
-      return;
-    }
-
-    if (isCircle) {
-      const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
-      if (isTemp) return;
-
-      try {
-        const geom = geometryFromLayer(layer);
-        const updateData = {
-          geometry: geom,
-          color: feature.color ?? null,
-          opacity: feature.opacity ?? null,
-          stroke_width: feature.stroke_width ?? null,
-          properties: { ...(feature.properties || {}), rotationDeg: nextAngle },
-        };
-
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/maps/features/${fid}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updateData),
-          },
-        );
-
-        if (!response.ok)
-          throw new Error(`HTTP error! status: ${response.status}`);
-
-        const updatedFeature = await response.json();
-        const idx = props.features.findIndex((f) => String(f.id) === fid);
-        if (idx !== -1) {
-          const updatedFeatures = [...props.features];
-          updatedFeatures[idx] = updatedFeature;
-          emit("features-loaded", updatedFeatures);
-        }
-      } catch (err) {
-        console.error("Error rotating feature:", err);
-      }
-      return;
-    }
+    if (wrapped < 1e-9 || isCircle) return;
 
     if (!layer.getLatLngs || typeof layer.setLatLngs !== "function") return;
 
@@ -685,7 +594,7 @@ export function useMapEditing(props, emit) {
       : getCenterFromLayer(layer);
     if (!centerLL) return;
 
-    const latlngs = layer.getLatLngs();
+    const latlngs = layer.getLatLngs ? layer.getLatLngs() : null;
     if (!latlngs) return;
 
     const centerPt = map.latLngToLayerPoint(centerLL);
@@ -703,11 +612,11 @@ export function useMapEditing(props, emit) {
     if (!isPolygon) {
       geom0 = {
         type: "LineString",
-        coordinates: ll0.map((ll) => [ll.lng, ll.lat]),
+        coordinates: (ll0 as any[]).map((ll: any) => [ll.lng, ll.lat]),
       };
     } else {
-      const ring = ll0[0] ?? ll0;
-      const coords = ring.map((ll) => [ll.lng, ll.lat]);
+      const ring = (ll0 as any[])[0] ?? ll0;
+      const coords = (ring as any[]).map((ll: any) => [ll.lng, ll.lat]);
       if (
         coords.length &&
         (coords[0][0] !== coords[coords.length - 1][0] ||
@@ -718,55 +627,28 @@ export function useMapEditing(props, emit) {
       geom0 = { type: "Polygon", coordinates: [coords] };
     }
 
-    layer.feature = {
+    const updatedFeature = {
       ...(layer.feature || feature),
       geometry: geom0,
       properties: {
         ...((layer.feature || feature).properties || {}),
-        rotationDeg: nextAngle,
+        rotation_deg: nextAngle,
       },
     };
 
+    layer.feature = updatedFeature;
+    applyLocalFeatureUpdate(fid, updatedFeature);
+
     applyAngleToLayerFromCanonical(layer, map, geom0, nextAngle, centerLL);
-
-    const isTemp = fid.startsWith("temp_") || feature._isTemporary === true;
-    if (isTemp) return;
-
-    try {
-      const updateData = {
-        geometry: geom0,
-        color: feature.color ?? null,
-        opacity: feature.opacity ?? null,
-        stroke_width: feature.stroke_width ?? null,
-        properties: { ...(feature.properties || {}), rotationDeg: nextAngle },
-      };
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/features/${fid}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updateData),
-        },
-      );
-
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
-
-      const updatedFeature = await response.json();
-      const idx = props.features.findIndex((f) => String(f.id) === fid);
-      if (idx !== -1) {
-        const updatedFeatures = [...props.features];
-        updatedFeatures[idx] = updatedFeature;
-        emit("features-loaded", updatedFeatures);
-      }
-    } catch (err) {
-      console.error("Error rotating feature:", err);
-    }
   }
 
   // ===== SHAPE CREATION FUNCTIONS =====
-  function createSquare(center, sizePoint, map, layersComposable) {
+  function createSquare(
+    center: L.LatLng,
+    sizePoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
     const centerPixel = map.latLngToContainerPoint(center);
     const sizePixel = map.latLngToContainerPoint(sizePoint);
 
@@ -803,7 +685,7 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
-    square.feature = tempFeature;
+    (square as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, square);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -812,7 +694,13 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function createRectangle(startCorner, endCorner, map, layersComposable) {
+  function createRectangle(
+    startCorner: L.LatLng,
+    endCorner: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
+    void map;
     const minLat = Math.min(startCorner.lat, endCorner.lat);
     const maxLat = Math.max(startCorner.lat, endCorner.lat);
     const minLng = Math.min(startCorner.lng, endCorner.lng);
@@ -836,11 +724,11 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
       properties: {
         ...(feature.properties || {}),
-        rotationDeg: 0,
+        rotation_deg: 0,
       },
     };
 
-    rectangle.feature = tempFeature;
+    (rectangle as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, rectangle);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -849,7 +737,12 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function createCircle(center, edgePoint, map, layersComposable) {
+  function createCircle(
+    center: L.LatLng,
+    edgePoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
     const radius = map.distance(center, edgePoint);
 
     const circle = L.circle(center, {
@@ -870,7 +763,7 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
-    circle.feature = tempFeature;
+    (circle as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, circle);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -879,7 +772,12 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function createTriangle(center, sizePoint, map, layersComposable) {
+  function createTriangle(
+    center: L.LatLng,
+    sizePoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
     const distance = map.distance(center, sizePoint);
 
     const points = [];
@@ -893,7 +791,7 @@ export function useMapEditing(props, emit) {
       points.push([lat, lng]);
     }
 
-    const triangle = L.polygon(points, {
+    const triangle = L.polygon(points as L.LatLngExpression[], {
       color: "#000000",
       weight: 2,
       fillColor: "#cccccc",
@@ -910,7 +808,7 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
-    triangle.feature = tempFeature;
+    (triangle as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, triangle);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -919,7 +817,14 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function createOval(center, heightPoint, widthPoint, map, layersComposable) {
+  function createOval(
+    center: L.LatLng,
+    heightPoint: L.LatLng,
+    widthPoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
+    void map;
     const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
     const widthRadius =
       Math.abs(center.lng - widthPoint.lng) *
@@ -938,7 +843,7 @@ export function useMapEditing(props, emit) {
       points.push([lat, lng]);
     }
 
-    const oval = L.polygon(points, {
+    const oval = L.polygon(points as L.LatLngExpression[], {
       color: "#000000",
       weight: 2,
       fillColor: "#cccccc",
@@ -955,11 +860,11 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
       properties: {
         ...(feature.properties || {}),
-        rotationDeg: 0,
+        rotation_deg: 0,
       },
     };
 
-    oval.feature = tempFeature;
+    (oval as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, oval);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -968,7 +873,11 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function createPointAt(latlng, map, layersComposable) {
+  function createPointAt(
+    latlng: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
     const currentZoom = map.getZoom();
     const radius = getRadiusForZoom(currentZoom);
 
@@ -980,7 +889,7 @@ export function useMapEditing(props, emit) {
       opacity: 0.8,
       fillOpacity: 0.8,
       draggable: true,
-    });
+    } as any);
 
     layersComposable.allCircles.value.add(circle);
     layersComposable.drawnItems.value.addLayer(circle);
@@ -992,7 +901,7 @@ export function useMapEditing(props, emit) {
       color: "#000000",
       opacity: 0.8,
       z_index: 1,
-      properties: { rotationDeg: 0, mapElementType: "point" },
+      properties: { rotation_deg: 0, mapElementType: "point" },
     };
 
     const tempFeature = {
@@ -1001,7 +910,7 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
-    circle.feature = tempFeature;
+    (circle as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, circle);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -1010,7 +919,13 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function createLine(startLatLng, endLatLng, map, layersComposable) {
+  function createLine(
+    startLatLng: L.LatLng,
+    endLatLng: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
+    void map;
     const line = L.polyline([startLatLng, endLatLng], {
       color: "#000000",
       weight: 2,
@@ -1033,7 +948,7 @@ export function useMapEditing(props, emit) {
       stroke_width: 2,
       opacity: 1.0,
       z_index: 1,
-      properties: { rotationDeg: 0, mapElementType: "polyline" },
+      properties: { rotation_deg: 0, mapElementType: "polyline" },
     };
 
     const tempFeature = {
@@ -1042,7 +957,7 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
-    line.feature = tempFeature;
+    (line as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, line);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -1051,7 +966,12 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function createPolygon(points, map, layersComposable) {
+  function createPolygon(
+    points: L.LatLng[],
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
+    void map;
     const polygon = L.polygon(points, {
       color: "#000000",
       weight: 2,
@@ -1072,7 +992,7 @@ export function useMapEditing(props, emit) {
       opacity: 0.5,
       z_index: 1,
       properties: {
-        rotationDeg: 0,
+        rotation_deg: 0,
         mapElementType: "zone",
         shapeType: "polygon",
       },
@@ -1084,7 +1004,7 @@ export function useMapEditing(props, emit) {
       _isTemporary: true,
     };
 
-    polygon.feature = tempFeature;
+    (polygon as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempFeature.id, polygon);
     layersComposable.featureLayerManager.makeLayerClickable(
@@ -1093,7 +1013,13 @@ export function useMapEditing(props, emit) {
     );
   }
 
-  function finishFreeLine(freeLinePoints, tempFreeLine, map, layersComposable) {
+  function finishFreeLine(
+    freeLinePoints: L.LatLng[],
+    tempFreeLine: L.Polyline | null,
+    map: L.Map,
+    layersComposable: LayersComposable,
+  ) {
+    void map;
     if (freeLinePoints.length < 2) return;
 
     const smoothedPoints = smoothFreeLinePoints(freeLinePoints);
@@ -1114,19 +1040,22 @@ export function useMapEditing(props, emit) {
       type: "polyline",
       geometry: {
         type: "LineString",
-        coordinates: smoothedPoints.map((point) => [point.lng, point.lat]),
+        coordinates: smoothedPoints.map((point: L.LatLng) => [
+          point.lng,
+          point.lat,
+        ]),
       },
       color: "#000000",
       stroke_width: 2,
       opacity: 1.0,
       z_index: 1,
-      properties: { rotationDeg: 0, mapElementType: "polyline" },
+      properties: { rotation_deg: 0, mapElementType: "polyline" },
     };
 
     const tempId = `temp_freeline_${Date.now()}_${Math.random()}`;
     const tempFeature = { ...feature, id: tempId, _isTemporary: true };
 
-    freeLine.feature = tempFeature;
+    (freeLine as FeatureLayer).feature = tempFeature;
 
     layersComposable.featureLayerManager.layers.set(tempId, freeLine);
     if (props.editMode) {
@@ -1136,11 +1065,11 @@ export function useMapEditing(props, emit) {
 
   // ===== TEMPORARY SHAPE UPDATE FUNCTIONS =====
   function updateTempSquareFromCenter(
-    center,
-    sizePoint,
-    map,
-    layersComposable,
-    tempShape,
+    center: L.LatLng,
+    sizePoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+    tempShape: L.Layer | null,
   ) {
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
@@ -1174,12 +1103,13 @@ export function useMapEditing(props, emit) {
   }
 
   function updateTempRectangleFromCorners(
-    startCorner,
-    endCorner,
-    map,
-    layersComposable,
-    tempShape,
+    startCorner: L.LatLng,
+    endCorner: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+    tempShape: L.Layer | null,
   ) {
+    void map;
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
     const minLat = Math.min(startCorner.lat, endCorner.lat);
@@ -1200,11 +1130,11 @@ export function useMapEditing(props, emit) {
   }
 
   function updateTempCircleFromCenter(
-    center,
-    edgePoint,
-    map,
-    layersComposable,
-    tempShape,
+    center: L.LatLng,
+    edgePoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+    tempShape: L.Layer | null,
   ) {
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
@@ -1223,11 +1153,11 @@ export function useMapEditing(props, emit) {
   }
 
   function updateTempTriangleFromCenter(
-    center,
-    sizePoint,
-    map,
-    layersComposable,
-    tempShape,
+    center: L.LatLng,
+    sizePoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+    tempShape: L.Layer | null,
   ) {
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
@@ -1244,7 +1174,7 @@ export function useMapEditing(props, emit) {
       points.push([lat, lng]);
     }
 
-    const newTempShape = L.polygon(points, {
+    const newTempShape = L.polygon(points as L.LatLngExpression[], {
       color: "#000000",
       weight: 2,
       fillColor: "#cccccc",
@@ -1256,12 +1186,13 @@ export function useMapEditing(props, emit) {
   }
 
   function updateTempOvalHeight(
-    center,
-    heightPoint,
-    map,
-    layersComposable,
-    tempShape,
+    center: L.LatLng,
+    heightPoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+    tempShape: L.Layer | null,
   ) {
+    void map;
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
     const radius = Math.abs(center.lat - heightPoint.lat) * 111320;
@@ -1279,13 +1210,14 @@ export function useMapEditing(props, emit) {
   }
 
   function updateTempOvalWidth(
-    center,
-    heightPoint,
-    widthPoint,
-    map,
-    layersComposable,
-    tempShape,
+    center: L.LatLng,
+    heightPoint: L.LatLng,
+    widthPoint: L.LatLng,
+    map: L.Map,
+    layersComposable: LayersComposable,
+    tempShape: L.Layer | null,
   ) {
+    void map;
     if (tempShape) layersComposable.drawnItems.value.removeLayer(tempShape);
 
     const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
@@ -1306,7 +1238,7 @@ export function useMapEditing(props, emit) {
       points.push([lat, lng]);
     }
 
-    const newTempShape = L.polygon(points, {
+    const newTempShape = L.polygon(points as L.LatLngExpression[], {
       color: "#000000",
       weight: 2,
       fillColor: "#cccccc",
@@ -1318,7 +1250,11 @@ export function useMapEditing(props, emit) {
   }
 
   // ===== FEATURE CONVERSION FUNCTIONS =====
-  function squareToFeatureFromCenter(center, sizePoint, map) {
+  function squareToFeatureFromCenter(
+    center: L.LatLng,
+    sizePoint: L.LatLng,
+    map: L.Map,
+  ): Feature {
     const distance = map.distance(center, sizePoint);
     const halfSide = distance / Math.sqrt(2);
 
@@ -1351,14 +1287,17 @@ export function useMapEditing(props, emit) {
         center: { lat: center.lat, lng: center.lng },
         size: distance,
         resizable: true,
-        rotationDeg: 0,
+        rotation_deg: 0,
         mapElementType: "shape",
         shapeKind: "square",
       },
     };
   }
 
-  function rectangleToFeatureFromCorners(startCorner, endCorner) {
+  function rectangleToFeatureFromCorners(
+    startCorner: L.LatLng,
+    endCorner: L.LatLng,
+  ): Feature {
     const minLat = Math.min(startCorner.lat, endCorner.lat);
     const maxLat = Math.max(startCorner.lat, endCorner.lat);
     const minLng = Math.min(startCorner.lng, endCorner.lng);
@@ -1385,7 +1324,7 @@ export function useMapEditing(props, emit) {
       opacity: 0.5,
       z_index: 1,
       properties: {
-        rotationDeg: 0,
+        rotation_deg: 0,
         mapElementType: "shape",
         shapeKind: "rectangle",
         shapeType: "rectangle",
@@ -1393,7 +1332,11 @@ export function useMapEditing(props, emit) {
     };
   }
 
-  function circleToFeatureFromCenter(center, edgePoint, map) {
+  function circleToFeatureFromCenter(
+    center: L.LatLng,
+    edgePoint: L.LatLng,
+    map: L.Map,
+  ): Feature {
     const radius = map.distance(center, edgePoint);
 
     const points = [];
@@ -1423,14 +1366,18 @@ export function useMapEditing(props, emit) {
         center: { lat: center.lat, lng: center.lng },
         size: radius,
         resizable: true,
-        rotationDeg: 0,
+        rotation_deg: 0,
         mapElementType: "shape",
         shapeKind: "circle",
       },
     };
   }
 
-  function triangleToFeatureFromCenter(center, sizePoint, map) {
+  function triangleToFeatureFromCenter(
+    center: L.LatLng,
+    sizePoint: L.LatLng,
+    map: L.Map,
+  ): Feature {
     const distance = map.distance(center, sizePoint);
 
     const points = [];
@@ -1459,14 +1406,18 @@ export function useMapEditing(props, emit) {
         center: { lat: center.lat, lng: center.lng },
         size: distance,
         resizable: true,
-        rotationDeg: 0,
+        rotation_deg: 0,
         mapElementType: "shape",
         shapeKind: "triangle",
       },
     };
   }
 
-  function ovalToFeatureFromCenter(center, heightPoint, widthPoint) {
+  function ovalToFeatureFromCenter(
+    center: L.LatLng,
+    heightPoint: L.LatLng,
+    widthPoint: L.LatLng,
+  ): Feature {
     const heightRadius = Math.abs(center.lat - heightPoint.lat) * 111320;
     const widthRadius =
       Math.abs(center.lng - widthPoint.lng) *
@@ -1496,7 +1447,7 @@ export function useMapEditing(props, emit) {
       opacity: 0.5,
       z_index: 1,
       properties: {
-        rotationDeg: 0,
+        rotation_deg: 0,
         mapElementType: "shape",
         shapeKind: "oval",
         shapeType: "oval",
@@ -1505,71 +1456,99 @@ export function useMapEditing(props, emit) {
   }
 
   // ===== SELECTION AND VISUAL MANAGEMENT =====
-  function updateFeatureSelectionVisual(map, layerManager, selectedFeatures) {
+  function updateFeatureSelectionVisual(
+    map: L.Map | null,
+    layerManager: FeatureLayerManager | null,
+    selectedFeatures: Set<string>,
+  ) {
     if (!map || !layerManager) return;
 
+    const defaultStyles = {
+      borderColor: "#000000",
+      fillColor: "#cccccc",
+      opacity: 0.5,
+      strokeWidth: 2,
+    };
+
+    const selectedStyle = { color: "#ff6b6b", weight: 3, fillOpacity: 0.8 };
+
+    const styleStrategies = {
+      CircleMarker: (
+        layer: any,
+        isSelected: boolean,
+        feature: Feature | undefined,
+      ) => {
+        const baseColor = feature?.color || defaultStyles.borderColor;
+        layer.setStyle({
+          color: isSelected ? selectedStyle.color : baseColor,
+          fillColor: isSelected ? selectedStyle.color : baseColor,
+          weight: isSelected ? selectedStyle.weight : 1,
+          fillOpacity: isSelected
+            ? selectedStyle.fillOpacity
+            : (feature?.opacity ?? 0.8),
+        });
+      },
+
+      Polygon: (
+        layer: any,
+        isSelected: boolean,
+        feature: Feature | undefined,
+      ) => {
+        const borderColor = feature?.color || defaultStyles.borderColor;
+        const fillColor = feature?.color || defaultStyles.fillColor;
+        layer.setStyle({
+          color: isSelected ? selectedStyle.color : borderColor,
+          weight: isSelected ? selectedStyle.weight : 2,
+          fillColor: isSelected ? selectedStyle.color : fillColor,
+          fillOpacity: isSelected
+            ? selectedStyle.fillOpacity
+            : (feature?.opacity ?? defaultStyles.opacity),
+        });
+      },
+
+      Polyline: (
+        layer: any,
+        isSelected: boolean,
+        feature: Feature | undefined,
+      ) => {
+        const color = feature?.color || defaultStyles.borderColor;
+        const weight = feature?.stroke_width ?? defaultStyles.strokeWidth;
+        layer.setStyle({
+          color: isSelected ? selectedStyle.color : color,
+          weight: isSelected ? 4 : weight,
+          opacity: feature?.opacity ?? 1,
+        });
+      },
+    };
+
     layerManager.layers.forEach((layer, featureId) => {
+      if (!layer.setStyle) return;
+
       const fid = String(featureId);
+      const isSelected = selectedFeatures.has(fid);
+      const feature = props.features.find((f) => String(f.id) === fid);
 
-      if (selectedFeatures.has(fid)) {
-        if (layer instanceof L.CircleMarker) {
-          layer.setStyle({
-            color: "#ff6b6b",
-            weight: 3,
-            fillColor: "#ff6b6b",
-            fillOpacity: 0.8,
-          });
-        } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
-          layer.setStyle({
-            color: "#ff6b6b",
-            weight: 3,
-            fillColor: layer.options.fillColor,
-            fillOpacity: layer.options.fillOpacity,
-          });
-        } else if (layer instanceof L.Polyline) {
-          layer.setStyle({ color: "#ff6b6b", weight: 4 });
-        }
-      } else {
-        if (layer.__atlas_originalStyle && layer.setStyle) {
-          layer.setStyle(layer.__atlas_originalStyle);
-        } else if (layer.setStyle) {
-          const feature = props.features.find((f) => String(f.id) === fid);
-          const defaultBorderColor = "#000000";
-          const defaultFillColor = "#cccccc";
-          const defaultOpacity = 0.5;
-          const defaultStrokeWidth = 2;
+      if (!isSelected && layer.__atlas_originalStyle) {
+        layer.setStyle(layer.__atlas_originalStyle);
+        return;
+      }
 
-          if (layer instanceof L.CircleMarker) {
-            layer.setStyle({
-              color: feature?.color || defaultBorderColor,
-              weight: 1,
-              fillColor: feature?.color || defaultBorderColor,
-              fillOpacity: feature?.opacity ?? 0.8,
-            });
-          } else if (
-            layer instanceof L.Polygon ||
-            layer instanceof L.Rectangle
-          ) {
-            layer.setStyle({
-              color: feature?.color || defaultBorderColor,
-              weight: 2,
-              fillColor: feature?.color || defaultFillColor,
-              fillOpacity: feature?.opacity ?? defaultOpacity,
-            });
-          } else if (layer instanceof L.Polyline) {
-            layer.setStyle({
-              color: feature?.color || defaultBorderColor,
-              weight: feature?.stroke_width ?? defaultStrokeWidth,
-              opacity: feature?.opacity ?? 1,
-            });
-          }
-        }
+      if (layer instanceof L.CircleMarker) {
+        styleStrategies.CircleMarker(layer, isSelected, feature);
+      } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+        styleStrategies.Polygon(layer, isSelected, feature);
+      } else if (layer instanceof L.Polyline) {
+        styleStrategies.Polyline(layer, isSelected, feature);
       }
     });
   }
 
   // ===== CRUD OPERATIONS =====
-  async function updateFeaturePosition(feature, deltaLat, deltaLng) {
+  async function updateFeaturePosition(
+    feature: Feature,
+    deltaLat: number,
+    deltaLng: number,
+  ) {
     try {
       const updatedGeometry = updateGeometryCoordinates(
         feature.geometry,
@@ -1612,79 +1591,86 @@ export function useMapEditing(props, emit) {
     }
   }
 
-  async function deleteSelectedFeatures(
-    selectedFeatures,
-    featureLayerManager,
-    map,
-    emit,
+  async function deleteFeatures(
+    featuresToDelete: string[] | Set<string>,
+    featureLayerManager: FeatureLayerManager,
+    map: L.Map,
+    emit: EmitFn,
+    options?: { clearSelection?: boolean; updateVisualsAfter?: boolean },
   ) {
-    if (selectedFeatures.size === 0) return;
+    const featureIds = Array.isArray(featuresToDelete)
+      ? featuresToDelete
+      : Array.from(featuresToDelete);
 
-    const featuresToDelete = Array.from(selectedFeatures);
+    if (featureIds.length === 0) return;
 
-    for (const featureId of featuresToDelete) {
-      const layer = featureLayerManager.layers.get(String(featureId));
+    featureIds.forEach((featureId) => {
+      const fid = String(featureId);
+      const layer = featureLayerManager.layers.get(fid);
       if (layer) {
         map.removeLayer(layer);
-        featureLayerManager.layers.delete(String(featureId));
+        featureLayerManager.layers.delete(fid);
       }
-    }
+    });
 
-    for (const featureId of featuresToDelete) {
-      try {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/maps/features/${featureId}`,
-          {
-            method: "DELETE",
-          },
-        );
-        if (!response.ok)
-          console.error(`Failed to delete feature ${featureId}`);
-      } catch (error) {
-        console.error(`Error deleting feature ${featureId}:`, error);
-      }
-    }
+    const deletePromises = featureIds
+      .filter((fid) => !fid.startsWith("temp_"))
+      .map((featureId) =>
+        fetch(`${import.meta.env.VITE_API_URL}/maps/features/${featureId}`, {
+          method: "DELETE",
+        })
+          .then((response) => {
+            if (!response.ok) {
+              console.error(`Failed to delete feature ${featureId}`);
+            }
+          })
+          .catch((error) => {
+            console.error(`Error deleting feature ${featureId}:`, error);
+          }),
+      );
+
+    await Promise.all(deletePromises);
 
     const remainingFeatures = props.features.filter(
-      (f) => !featuresToDelete.includes(f.id),
+      (f) => !featureIds.includes(String(f.id)),
     );
     emit("features-loaded", remainingFeatures);
 
-    selectedFeatures.clear();
-    updateFeatureSelectionVisual(map, featureLayerManager, selectedFeatures);
-  }
-
-  async function deleteFeature(featureId, featureLayerManager, map, emit) {
-    const fid = String(featureId);
-
-    const layer = featureLayerManager.layers.get(fid);
-    if (layer) {
-      map.removeLayer(layer);
-      featureLayerManager.layers.delete(fid);
+    if (options?.clearSelection && featuresToDelete instanceof Set) {
+      featuresToDelete.clear();
     }
 
-    if (!fid.startsWith("temp_")) {
-      try {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/maps/features/${featureId}`,
-          {
-            method: "DELETE",
-          },
-        );
-        if (!response.ok)
-          console.error(`Failed to delete feature ${featureId}`);
-      } catch (error) {
-        console.error(`Error deleting feature ${featureId}:`, error);
-      }
-
-      const remainingFeatures = props.features.filter(
-        (f) => f.id !== featureId,
-      );
-      emit("features-loaded", remainingFeatures);
+    if (options?.updateVisualsAfter) {
+      updateFeatureSelectionVisual(map, featureLayerManager, new Set());
     }
   }
 
-  function updateGeometryCoordinates(geometry, deltaLat, deltaLng) {
+  async function deleteSelectedFeatures(
+    selectedFeatures: Set<string>,
+    featureLayerManager: FeatureLayerManager,
+    map: L.Map,
+    emit: EmitFn,
+  ) {
+    await deleteFeatures(selectedFeatures, featureLayerManager, map, emit, {
+      clearSelection: true,
+      updateVisualsAfter: true,
+    });
+  }
+
+  async function deleteFeature(
+    featureId: string | number,
+    featureLayerManager: FeatureLayerManager,
+    map: L.Map,
+    emit: EmitFn,
+  ) {
+    await deleteFeatures([String(featureId)], featureLayerManager, map, emit);
+  }
+
+  function updateGeometryCoordinates(
+    geometry: Geometry | null,
+    deltaLat: number,
+    deltaLng: number,
+  ) {
     if (!geometry || !geometry.coordinates) return geometry;
 
     const updatedGeometry = { ...geometry };
@@ -1697,14 +1683,14 @@ export function useMapEditing(props, emit) {
         ];
         break;
       case "LineString":
-        updatedGeometry.coordinates = geometry.coordinates.map((coord) => [
+        updatedGeometry.coordinates = geometry.coordinates.map((coord: any) => [
           coord[0] + deltaLng,
           coord[1] + deltaLat,
         ]);
         break;
       case "Polygon":
-        updatedGeometry.coordinates = geometry.coordinates.map((ring) =>
-          ring.map((coord) => [coord[0] + deltaLng, coord[1] + deltaLat]),
+        updatedGeometry.coordinates = geometry.coordinates.map((ring: any[]) =>
+          ring.map((coord: any) => [coord[0] + deltaLng, coord[1] + deltaLat]),
         );
         break;
       default:

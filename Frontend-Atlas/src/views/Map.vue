@@ -173,7 +173,7 @@ import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import { useRoute } from "vue-router";
 import keycloak from "../keycloak";
-import { normalizeFeatures } from "../utils/featureTypes.js";
+import { normalizeFeatures } from "../utils/featureTypes.ts";
 
 const route = useRoute();
 

@@ -1,12 +1,24 @@
-import L from 'leaflet';
-import { MAP_CONFIG } from '../composables/useMapConfig.js';
+import L from "leaflet";
+import { MAP_CONFIG as MAP_CONFIG_RAW } from "../composables/useMapConfig.js";
+
+type MapConfig = {
+  BASE_ZOOM: number;
+  BASE_RADIUS: number;
+  ZOOM_FACTOR: number;
+  AVAILABLE_YEARS: number[];
+};
+
+type Coord = [number, number];
+type NestedCoords = Coord | Coord[] | Coord[][] | Coord[][][];
+
+const MAP_CONFIG = MAP_CONFIG_RAW as MapConfig;
 
 /**
  * Smooth free line points by removing points that are too close together
  * @param {Array} points - Array of LatLng points
  * @returns {Array} Smoothed array of points
  */
-export function smoothFreeLinePoints(points) {
+export function smoothFreeLinePoints(points: L.LatLng[]): L.LatLng[] {
   if (points.length < 2) return points;
 
   const smoothed = [points[0]];
@@ -32,9 +44,12 @@ export function smoothFreeLinePoints(points) {
  * @param {number} currentZoom
  * @returns {number}
  */
-export function getRadiusForZoom(currentZoom) {
+export function getRadiusForZoom(currentZoom: number): number {
   const zoomDiff = currentZoom - MAP_CONFIG.BASE_ZOOM;
-  return Math.max(MAP_CONFIG.BASE_RADIUS, MAP_CONFIG.BASE_RADIUS * Math.pow(MAP_CONFIG.ZOOM_FACTOR, zoomDiff));
+  return Math.max(
+    MAP_CONFIG.BASE_RADIUS,
+    MAP_CONFIG.BASE_RADIUS * Math.pow(MAP_CONFIG.ZOOM_FACTOR, zoomDiff),
+  );
 }
 
 /**
@@ -45,12 +60,24 @@ export function getRadiusForZoom(currentZoom) {
  * @param {number} sizeMeters - Size in meters
  * @returns {Object} Transformed GeoJSON
  */
-export function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
+export function transformNormalizedToWorld(
+  geojson: {
+    type: "FeatureCollection";
+    features: Array<{
+      geometry: { coordinates: NestedCoords };
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  },
+  anchorLat: number,
+  anchorLng: number,
+  sizeMeters: number,
+) {
   const crs = L.CRS.EPSG3857;
   const center = crs.project(L.latLng(anchorLat, anchorLng));
   const halfSize = sizeMeters / 2;
 
-  const transformCoord = ([x, y]) => {
+  const transformCoord = ([x, y]: Coord): Coord => {
     const nx = x - 0.5;
     const ny = y - 0.5;
 
@@ -61,11 +88,11 @@ export function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMe
     return [latlng.lng, latlng.lat]; // GeoJSON order = [lng, lat]
   };
 
-  const transformCoords = (coords) => {
+  const transformCoords = (coords: NestedCoords): NestedCoords => {
     if (typeof coords[0] === "number") {
-      return transformCoord(coords);
+      return transformCoord(coords as Coord);
     }
-    return coords.map(transformCoords);
+    return (coords as NestedCoords[]).map(transformCoords) as NestedCoords;
   };
 
   return {
@@ -85,7 +112,7 @@ export function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMe
  * @param {*} maybeArray - Value to convert
  * @returns {Array} Array representation
  */
-export function toArray(maybeArray) {
+export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
   if (Array.isArray(maybeArray)) return maybeArray;
   if (maybeArray == null) return []; // null or undefined
   return [maybeArray]; // wrap single object
@@ -97,10 +124,13 @@ export function toArray(maybeArray) {
  * @param {number} delay - Delay in milliseconds
  * @returns {Function} Debounced function
  */
-export function debounce(fn, delay) {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
+export function debounce<T extends unknown[]>(
+  fn: (...args: T) => void,
+  delay: number,
+): (...args: T) => void {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  return (...args: T) => {
+    if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => fn(...args), delay);
   };
 }
@@ -110,7 +140,7 @@ export function debounce(fn, delay) {
  * @param {number} year - Requested year
  * @returns {number} Closest available year
  */
-export function getClosestAvailableYear(year) {
+export function getClosestAvailableYear(year: number): number {
   const sorted = [...MAP_CONFIG.AVAILABLE_YEARS].sort((a, b) => a - b);
   for (let i = sorted.length - 1; i >= 0; i--) {
     if (year >= sorted[i]) return sorted[i];
@@ -125,7 +155,11 @@ export function getClosestAvailableYear(year) {
  * @param {L.LatLng} point2 - Second point
  * @returns {number} Distance in pixels
  */
-export function getPixelDistance(map, point1, point2) {
+export function getPixelDistance(
+  map: L.Map,
+  point1: L.LatLng,
+  point2: L.LatLng,
+): number {
   const p1 = map.latLngToContainerPoint(point1);
   const p2 = map.latLngToContainerPoint(point2);
   return p1.distanceTo(p2);
