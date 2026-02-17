@@ -1,5 +1,5 @@
 <template>
-  <div class="feature-controls">
+  <div>
     <h2 class="text-lg font-semibold mb-4 text-base-content">
       Contrôles des couches
     </h2>
@@ -24,14 +24,14 @@
               <label class="label cursor-pointer justify-start gap-3">
                 <input
                   type="checkbox"
-                  :checked="featureVisibility.get(feature.id)"
+                  :checked="featureVisibility.get(feature.id) !== false"
                   @change="
                     $emit('toggle-feature', feature.id, $event.target.checked)
                   "
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <span class="label-text text-sm">
-                  {{ feature.properties?.name || "Unnamed Feature" }}
+                  {{ feature.name || "Sans nom" }}
                 </span>
               </label>
             </div>
@@ -40,7 +40,6 @@
       </div>
     </div>
 
-    <!-- Actions globales -->
     <div class="divider"></div>
     <div class="flex gap-2">
       <button @click="toggleAll(true)" class="btn btn-xs btn-primary flex-1">
@@ -57,8 +56,8 @@
 import { computed } from "vue";
 
 const props = defineProps({
-  features: Array,
-  featureVisibility: Map,
+  features: { type: Array, default: () => [] },
+  featureVisibility: { type: Map, required: true },
 });
 
 const emit = defineEmits(["toggle-feature"]);
@@ -67,20 +66,28 @@ const featureGroups = computed(() => {
   const groups = [
     { type: "point", label: "Villes", features: [] },
     { type: "zone", label: "Zones", features: [] },
+    { type: "polyline", label: "Lignes", features: [] },
     { type: "arrow", label: "Flèches", features: [] },
     { type: "shape", label: "Formes", features: [] },
   ];
 
   props.features.forEach((feature) => {
-    const elementType =
-      feature?.properties?.mapElementType || feature.type || "";
+    const rawType = feature?.properties?.mapElementType || feature?.type || "";
+
+    const isShapeKind = [
+      "square",
+      "rectangle",
+      "circle",
+      "triangle",
+      "oval",
+    ].includes(rawType);
+    const elementType = isShapeKind ? "shape" : rawType;
+
     const group = groups.find((g) => g.type === elementType);
-    if (group) {
-      group.features.push(feature);
-    }
+    if (group) group.features.push(feature);
   });
 
-  return groups.filter((group) => group.features.length > 0);
+  return groups.filter((g) => g.features.length > 0);
 });
 
 function toggleAll(visible) {
