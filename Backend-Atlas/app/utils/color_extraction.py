@@ -1,5 +1,6 @@
 import os
 import math
+
 from typing import Dict, List, Optional, Tuple, Literal
 
 import numpy as np
@@ -23,7 +24,6 @@ from . import preprocessing
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
-
 
 def load_image_rgb_alpha_mask(image_path: str) -> Tuple[np.ndarray, Optional[np.ndarray], np.ndarray]:
     """
@@ -63,6 +63,19 @@ def load_image_rgb_alpha_mask(image_path: str) -> Tuple[np.ndarray, Optional[np.
 
     return rgb, alpha, opaque_mask
 
+def _debug_save_rgb(
+    img_rgb: np.ndarray,
+    debug_dir: str,
+    step_idx: int,
+    step_name: str,
+) -> None:
+    """Save float RGB [0,1] as PNG for debugging."""
+    os.makedirs(debug_dir, exist_ok=True)
+    img = np.clip(img_rgb, 0.0, 1.0)
+    img_u8 = (img * 255.0 + 0.5).astype(np.uint8)
+    out_path = os.path.join(debug_dir, f"{step_idx:02d}_{step_name}.png")
+    iio.imwrite(out_path, img_u8)
+
 def preprocess(
     rgb: np.ndarray,
     opaque_mask: np.ndarray,
@@ -83,72 +96,143 @@ def preprocess(
     denoise_method: Literal["bilateral", "nl_means"] = "bilateral",
     bilateral_sigma_color: float = 0.04,
     bilateral_sigma_spatial: float = 2.0,
+    enable_clahe: bool = True,
+    clahe_clip_limit: float = 0.02,
+    clahe_kernel_size: Tuple[int, int] = (8, 8),
+    debug: bool = False,
+    debug_dir: Optional[str] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Full-image preprocessing for color extraction.
 
-    Returns:
-      (rgb_processed, opaque_mask_processed)
-
-    Notes:
-      - Keep operations stable and reversible where possible.
-      - Use mask for statistics to avoid background bias.
+    If debug=True, saves intermediate RGB + masks into debug_dir at each step.
     """
     rgb = np.clip(skimage.util.img_as_float(rgb), 0.0, 1.0)
     mask = opaque_mask.astype(bool)
 
-    # 1) Optional: linearize for illumination-like ops
-    if enable_linearize:
-        rgb_lin = preprocessing.srgb_to_linear(rgb)
-    else:
-        rgb_lin = rgb
+    # Decide debug folder
+    if debug and debug_dir is None:
+        debug_dir = os.path.join(os.getcwd(), "debug_preprocess")
 
-    # 2) Flat-field (illumination correction)
+    step = 0
+    if debug:
+        _debug_save_rgb(rgb, debug_dir, step, "00_input_rgb")
+        step += 1
+
+    # 1) Linearize
+    if enable_linearize:
+        work = preprocessing.srgb_to_linear(rgb)
+        if debug:
+            _debug_save_rgb(np.clip(work, 0.0, 1.0), debug_dir, step, "01_linear_rgb")
+            step += 1
+    else:
+        work = rgb
+        if debug:
+            _debug_save_rgb(work, debug_dir, step, "01_linear_skipped")
+            step += 1
+
+    # 2) Flat-field
     if enable_flat_field:
-        rgb_lin = preprocessing.flat_field_correction(
-            rgb_lin,
+        work = preprocessing.flat_field_correction(
+            work,
             sigma=flat_field_sigma,
             normalize=False,
-            assume_linear=True,
+            assume_linear=enable_linearize,
         )
+        if debug:
+            _debug_save_rgb(work, debug_dir, step, "02_flat_field")
+            step += 1
+    elif debug:
+        _debug_save_rgb(work, debug_dir, step, "02_flat_field_skipped")
+        step += 1
 
     # 3) White balance
     if enable_white_balance:
         if white_balance_method == "gray_world":
-            rgb_lin = preprocessing.white_balance_gray_world(rgb_lin, mask=mask)
+            work = preprocessing.white_balance_gray_world(work, mask=mask)
         else:
-            rgb_lin = preprocessing.white_balance_percentile_white_patch(rgb_lin, percentile=wb_percentile, mask=mask)
+            work = preprocessing.white_balance_percentile_white_patch(
+                work, percentile=wb_percentile, mask=mask
+            )
+        if debug:
+            _debug_save_rgb(work, debug_dir, step, f"03_white_balance_{white_balance_method}")
+            step += 1
+    elif debug:
+        _debug_save_rgb(work, debug_dir, step, "03_white_balance_skipped")
+        step += 1
 
-    # 3.5) CLAHE (local contrast on L)
-    rgb_lin = preprocessing.clahe_l_channel_lab(rgb_lin, clip_limit=0.02, kernel_size=(8, 8))
-
-    # 4) Robust global normalization
-    if enable_percentile_norm:
-        rgb_lin = preprocessing.percentile_normalize(rgb_lin, p_low=norm_p_low, p_high=norm_p_high, mask=mask)
-    
-    # 5) Background removal / foreground mask refinement (for non-alpha images)
-    if enable_background_mask and bg_method == "paper":
-        mask = preprocessing.build_paper_background_mask(rgb_lin, mask, paper_threshold_deltaE=paper_threshold_deltaE)
-
-    # 6) Denoising (edge-preserving)
+    # 4) Denoise (before CLAHE)
     if enable_denoise:
         if denoise_method == "bilateral":
-            rgb_lin = skimage.restoration.denoise_bilateral(
-                rgb_lin,
+            work = skimage.restoration.denoise_bilateral(
+                work,
                 sigma_color=bilateral_sigma_color,
                 sigma_spatial=bilateral_sigma_spatial,
                 channel_axis=-1,
             )
         else:
-            rgb_lin = preprocessing.denoise_nl_means_rgb(rgb_lin)
+            work = preprocessing.denoise_nl_means_rgb(work)
 
-    # 7) Back to sRGB for downstream LAB conversion (optional but consistent)
+        if debug:
+            _debug_save_rgb(work, debug_dir, step, f"04_denoise_{denoise_method}")
+            step += 1
+    elif debug:
+        _debug_save_rgb(work, debug_dir, step, "04_denoise_skipped")
+        step += 1
+
+    # 5) Back to sRGB (for LAB/CLAHE/ΔE ops)
     if enable_linearize:
-        rgb_out = preprocessing.linear_to_srgb(rgb_lin)
+        rgb_srgb = preprocessing.linear_to_srgb(work)
     else:
-        rgb_out = rgb_lin
+        rgb_srgb = work
+    rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
 
-    rgb_out = np.clip(rgb_out, 0.0, 1.0)
+    if debug:
+        _debug_save_rgb(rgb_srgb, debug_dir, step, "05_back_to_srgb")
+        step += 1
+
+    # 6) CLAHE
+    if enable_clahe:
+        rgb_srgb = preprocessing.clahe_l_channel_lab(
+            rgb_srgb,
+            clip_limit=clahe_clip_limit,
+            kernel_size=clahe_kernel_size,
+        )
+        if debug:
+            _debug_save_rgb(rgb_srgb, debug_dir, step, "06_clahe")
+            step += 1
+    elif debug:
+        _debug_save_rgb(rgb_srgb, debug_dir, step, "06_clahe_skipped")
+        step += 1
+
+    # 7) Percentile normalization (robust global)
+    if enable_percentile_norm:
+        rgb_srgb = preprocessing.percentile_normalize(
+            rgb_srgb, p_low=norm_p_low, p_high=norm_p_high, mask=mask
+        )
+        if debug:
+            _debug_save_rgb(rgb_srgb, debug_dir, step, "07_percentile_norm")
+            step += 1
+    elif debug:
+        _debug_save_rgb(rgb_srgb, debug_dir, step, "07_percentile_norm_skipped")
+        step += 1
+
+    # 8) Background mask refinement
+    if enable_background_mask and bg_method == "paper":
+        mask = preprocessing.build_paper_background_mask(
+            rgb_srgb, mask, paper_threshold_deltaE=paper_threshold_deltaE
+        )
+        if debug:
+            _debug_save_rgb(rgb_srgb, debug_dir, step, "08_rgb_after_mask")
+            step += 1
+    elif debug:
+        _debug_save_rgb(rgb_srgb, debug_dir, step, "08_background_mask_skipped")
+        step += 1
+
+    rgb_out = np.clip(rgb_srgb, 0.0, 1.0)
+    if debug:
+        _debug_save_rgb(rgb_out, debug_dir, step, "99_output_rgb")
+
     return rgb_out, mask
 
 
@@ -394,6 +478,7 @@ def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
 def save_mask_png(mask_bool: np.ndarray, out_path: str) -> None:
     """
     Save a boolean mask as an 8-bit PNG (0 or 255).
+    Can be used for debug or final output.
     """
     mask_u8 = (mask_bool.astype(np.uint8) * 255)
     iio.imwrite(out_path, mask_u8)
@@ -543,39 +628,49 @@ def extract_colors(
       - selected_bins (metadata)
       - normalized_features (GeoJSON FeatureCollections)
     """
+
+    debug = True
+
     # 0) Load raw image (keeps alpha mask)
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    image_output_dir = os.path.join(output_dir, base_name)
+
     rgb_u8, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
     rgb = img_as_float(rgb_u8)
+
+    if debug:
+        os.makedirs(image_output_dir, exist_ok=True)
+        iio.imwrite(os.path.join(image_output_dir, "00_rgb_u8.png"), rgb_u8) 
+    
 
     # Preprocess full image for color extraction (keeps/updates mask)
     rgb, opaque_mask = preprocess(
         rgb=rgb,
         opaque_mask=opaque_mask,
-        # You can tune these per "map profile"
-        enable_linearize=True,
-        enable_flat_field=True,
+        enable_linearize=True,          # Work in linear RGB for illumination-like ops
+        enable_flat_field=False,         # Flat-field in linear RGB
         flat_field_sigma=120.0,
-        enable_white_balance=True,
-        white_balance_method="percentile",  # "gray_world" or "percentile"
+        enable_white_balance=True,      # WB in linear RGB (stats on mask)
+        white_balance_method="percentile",
         wb_percentile=99.5,
-        enable_percentile_norm=True,
-        norm_p_low=1.0,
-        norm_p_high=99.0,
-        enable_background_mask=True,
-        bg_method="none",  # "paper" or "none"
-        paper_threshold_deltaE=10.0,
-        enable_denoise=True,
-        denoise_method="bilateral",  # "bilateral" or "nl_means"
+        enable_denoise=True,            # Denoise BEFORE CLAHE
+        denoise_method="bilateral",
         bilateral_sigma_color=0.04,
         bilateral_sigma_spatial=2.0,
+        enable_clahe=False,              # CLAHE in LAB, but on sRGB input (handled by preprocess)
+        clahe_clip_limit=0.02,
+        clahe_kernel_size=(8, 8),
+        enable_percentile_norm=True,    # Do percentile normalization on sRGB (consistent with LAB next)
+        norm_p_low=1.0,
+        norm_p_high=99.0,
+        enable_background_mask=True,    # If you want to remove "paper"
+        bg_method="none",               # <-- keep your current behavior; set to "paper" to enable
+        paper_threshold_deltaE=10.0,
+        debug=debug,
+        debug_dir=image_output_dir,
     )
 
     lab = compute_lab(rgb)
-
-
-    base_name = os.path.splitext(os.path.basename(image_path))[0]
-    image_output_dir = os.path.join(output_dir, base_name)
-    os.makedirs(image_output_dir, exist_ok=True)
 
     # 1) Build many candidate bins
     bins = dominant_bins_lab(
@@ -613,13 +708,14 @@ def extract_colors(
 
     # 4) Optional cleanup: opening per mask (keeps exclusivity because each mask is derived from best_idx)
     masks: Dict[str, str] = {}
+    mask_paths: Dict[str, str] = {}
     ratios: Dict[str, float] = {}
     normalized_features: List[Dict] = []
 
     color_index = 1
     for k, entry in enumerate(selected):
         mask = (best_idx == k) & valid
-        #mask = binary_opening(mask, footprint=np.ones((2, 2), dtype=bool))       
+        #mask = binary_opening(mask, disk(opening_radius))
 
         if not np.any(mask):
             continue
@@ -636,12 +732,14 @@ def extract_colors(
             f".png"
         )
 
-        out_path = os.path.join(image_output_dir, file_name)
-        save_mask_png(mask, out_path)
-
-        masks[unique_color_name] = out_path
         ratios[unique_color_name] = float(entry["ratio"])
 
+        if debug:
+            out_path = os.path.join(image_output_dir, file_name)
+            save_mask_png(mask, out_path)
+            masks[unique_color_name] = out_path
+            mask_paths[unique_color_name] = out_path
+        
         geom = mask_to_geometry(mask)
         if geom is not None:
             feature = build_normalized_feature(unique_color_name, rgb_u8, geom)
@@ -652,6 +750,7 @@ def extract_colors(
     return {
         "colors_detected": list(masks.keys()),
         "masks": masks,
+        "mask_paths": mask_paths if debug else {},
         "ratios": ratios,
         "selected_bins": selected,
         "output_dir": image_output_dir,
