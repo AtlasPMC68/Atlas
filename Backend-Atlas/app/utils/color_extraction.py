@@ -165,7 +165,7 @@ def preprocess(
         _debug_save_rgb(work, debug_dir, step, "03_white_balance_skipped")
         step += 1
 
-    # 4) Denoise (before CLAHE)
+    # 4) Denoise 
     if enable_denoise:
         if denoise_method == "bilateral":
             work = skimage.restoration.denoise_bilateral(
@@ -184,29 +184,56 @@ def preprocess(
         _debug_save_rgb(work, debug_dir, step, "04_denoise_skipped")
         step += 1
 
-    # 5) Back to sRGB (for LAB/CLAHE/ΔE ops)
-    if enable_linearize:
-        rgb_srgb = preprocessing.linear_to_srgb(work)
-    else:
-        rgb_srgb = work
-    rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
-
-    if debug:
-        _debug_save_rgb(rgb_srgb, debug_dir, step, "05_back_to_srgb")
-        step += 1
-
-    # 6) CLAHE
+    # 5) Convert to LAB for CLAHE (work directly in LAB space)
     if enable_clahe:
-        rgb_srgb = preprocessing.clahe_l_channel_lab(
-            rgb_srgb,
-            clip_limit=clahe_clip_limit,
-            kernel_size=clahe_kernel_size,
+        # Convert linear RGB to LAB directly (no need to go through sRGB)
+        if enable_linearize:
+            # Convert linear RGB to sRGB first (LAB expects sRGB-like input)
+            work_srgb = preprocessing.linear_to_srgb(work)
+        else:
+            work_srgb = work
+        
+        work_srgb = np.clip(work_srgb, 0.0, 1.0)
+        lab = skimage.color.rgb2lab(work_srgb)
+        
+        # Apply CLAHE directly on LAB L channel
+        l = lab[:, :, 0] / 100.0
+        l_clahe = skimage.exposure.equalize_adapthist(
+            l, 
+            kernel_size=clahe_kernel_size, 
+            clip_limit=clahe_clip_limit
+        )
+        lab[:, :, 0] = l_clahe * 100.0
+        
+        # Convert back to RGB
+        rgb_srgb = skimage.color.lab2rgb(lab)
+        rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
+        
+        if debug:
+            _debug_save_rgb(rgb_srgb, debug_dir, step, "05_clahe_on_lab")
+            step += 1
+    else:
+        # No CLAHE: just convert to sRGB
+        if enable_linearize:
+            rgb_srgb = preprocessing.linear_to_srgb(work)
+        else:
+            rgb_srgb = work
+        rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
+        
+        if debug:
+            _debug_save_rgb(rgb_srgb, debug_dir, step, "05_back_to_srgb_no_clahe")
+            step += 1
+
+    # 6) Percentile normalization (robust global) - maintenant en sRGB
+    if enable_percentile_norm:
+        rgb_srgb = preprocessing.percentile_normalize(
+            rgb_srgb, p_low=norm_p_low, p_high=norm_p_high, mask=mask
         )
         if debug:
-            _debug_save_rgb(rgb_srgb, debug_dir, step, "06_clahe")
+            _debug_save_rgb(rgb_srgb, debug_dir, step, "06_percentile_norm")
             step += 1
     elif debug:
-        _debug_save_rgb(rgb_srgb, debug_dir, step, "06_clahe_skipped")
+        _debug_save_rgb(rgb_srgb, debug_dir, step, "06_percentile_norm_skipped")
         step += 1
 
     # 7) Percentile normalization (robust global)
@@ -237,7 +264,7 @@ def preprocess(
     if debug:
         _debug_save_rgb(rgb_out, debug_dir, step, "99_output_rgb")
 
-    return rgb_out, mask
+    return np.clip(work, 0.0, 1.0), mask
 
 
 def compute_lab(rgb: np.ndarray) -> np.ndarray:
@@ -645,9 +672,7 @@ def extract_colors(
     rgb = img_as_float(rgb_u8)
 
     if debug:
-        os.makedirs(image_output_dir, exist_ok=True)
-        iio.imwrite(os.path.join(image_output_dir, "00_rgb_u8.png"), rgb_u8) 
-    
+        os.makedirs(image_output_dir, exist_ok=True)    
 
     # Preprocess full image for color extraction (keeps/updates mask)
     rgb, opaque_mask = preprocess(
@@ -656,7 +681,7 @@ def extract_colors(
         enable_linearize=True,          # Work in linear RGB for illumination-like ops
         enable_flat_field=False,         # Flat-field in linear RGB
         flat_field_sigma=120.0,
-        enable_white_balance=True,      # WB in linear RGB (stats on mask)
+        enable_white_balance=False,      # WB in linear RGB (stats on mask)
         white_balance_method="percentile",
         wb_percentile=99.5,
         enable_denoise=True,            # Denoise BEFORE CLAHE
@@ -664,7 +689,7 @@ def extract_colors(
         bilateral_sigma_color=0.04,
         bilateral_sigma_spatial=2.0,
         enable_clahe=False,              # CLAHE in LAB, but on sRGB input (handled by preprocess)
-        clahe_clip_limit=0.02,
+        clahe_clip_limit=0.005,
         clahe_kernel_size=(8, 8),
         enable_percentile_norm=True,    # Do percentile normalization on sRGB (consistent with LAB next)
         norm_p_low=1.0,
