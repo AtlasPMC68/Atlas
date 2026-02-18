@@ -1,9 +1,11 @@
 import os
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Literal
 
 import numpy as np
 import imageio.v3 as iio
+import skimage.util
+import skimage.restoration
 
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
 from skimage.morphology import binary_opening
@@ -16,7 +18,7 @@ from shapely.ops import unary_union
 from shapely.geometry.base import BaseGeometry
 from shapely import affinity
 
-from .preprocessing import preprocess_for_color
+from . import preprocessing
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -63,6 +65,94 @@ def load_image_rgb_alpha_mask(
         raise ValueError("Unsupported image format (expected grayscale, RGB, or RGBA).")
 
     return rgb, alpha, opaque_mask
+
+def preprocess(
+    rgb: np.ndarray,
+    opaque_mask: np.ndarray,
+    *,
+    enable_linearize: bool = True,
+    enable_flat_field: bool = True,
+    flat_field_sigma: float = 120.0,
+    enable_white_balance: bool = True,
+    white_balance_method: Literal["gray_world", "percentile"] = "percentile",
+    wb_percentile: float = 99.5,
+    enable_percentile_norm: bool = True,
+    norm_p_low: float = 1.0,
+    norm_p_high: float = 99.0,
+    enable_background_mask: bool = True,
+    bg_method: Literal["paper", "none"] = "paper",
+    paper_threshold_deltaE: float = 10.0,
+    enable_denoise: bool = True,
+    denoise_method: Literal["bilateral", "nl_means"] = "bilateral",
+    bilateral_sigma_color: float = 0.04,
+    bilateral_sigma_spatial: float = 2.0,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Full-image preprocessing for color extraction.
+
+    Returns:
+      (rgb_processed, opaque_mask_processed)
+
+    Notes:
+      - Keep operations stable and reversible where possible.
+      - Use mask for statistics to avoid background bias.
+    """
+    rgb = np.clip(skimage.util.img_as_float(rgb), 0.0, 1.0)
+    mask = opaque_mask.astype(bool)
+
+    # 1) Optional: linearize for illumination-like ops
+    if enable_linearize:
+        rgb_lin = preprocessing.srgb_to_linear(rgb)
+    else:
+        rgb_lin = rgb
+
+    # 2) Flat-field (illumination correction)
+    if enable_flat_field:
+        rgb_lin = preprocessing.flat_field_correction(
+            rgb_lin,
+            sigma=flat_field_sigma,
+            normalize=False,
+            assume_linear=True,
+        )
+
+    # 3) White balance
+    if enable_white_balance:
+        if white_balance_method == "gray_world":
+            rgb_lin = preprocessing.white_balance_gray_world(rgb_lin, mask=mask)
+        else:
+            rgb_lin = preprocessing.white_balance_percentile_white_patch(rgb_lin, percentile=wb_percentile, mask=mask)
+
+    # 3.5) CLAHE (local contrast on L)
+    rgb_lin = preprocessing.clahe_l_channel_lab(rgb_lin, clip_limit=0.02, kernel_size=(8, 8))
+
+    # 4) Robust global normalization
+    if enable_percentile_norm:
+        rgb_lin = preprocessing.percentile_normalize(rgb_lin, p_low=norm_p_low, p_high=norm_p_high, mask=mask)
+    
+    # 5) Background removal / foreground mask refinement (for non-alpha images)
+    if enable_background_mask and bg_method == "paper":
+        mask = preprocessing.build_paper_background_mask(rgb_lin, mask, paper_threshold_deltaE=paper_threshold_deltaE)
+
+    # 6) Denoising (edge-preserving)
+    if enable_denoise:
+        if denoise_method == "bilateral":
+            rgb_lin = skimage.restoration.denoise_bilateral(
+                rgb_lin,
+                sigma_color=bilateral_sigma_color,
+                sigma_spatial=bilateral_sigma_spatial,
+                channel_axis=-1,
+            )
+        else:
+            rgb_lin = preprocessing.denoise_nl_means_rgb(rgb_lin)
+
+    # 7) Back to sRGB for downstream LAB conversion (optional but consistent)
+    if enable_linearize:
+        rgb_out = preprocessing.linear_to_srgb(rgb_lin)
+    else:
+        rgb_out = rgb_lin
+
+    rgb_out = np.clip(rgb_out, 0.0, 1.0)
+    return rgb_out, mask
 
 
 def compute_lab(rgb: np.ndarray) -> np.ndarray:
@@ -130,6 +220,149 @@ def dominant_bins_lab(
 
     return dom
 
+def select_colors_by_ratio_and_distance(
+    bins: List[Dict],
+    dominant_ratio: float = 0.05,
+    accent_min_ratio: float = 0.001,
+    accent_min_deltaE_from_selected: float = 18.0, 
+    min_colors_fallback: Optional[int] = None,
+    merge_similar: bool = True,
+    merge_deltaE_threshold: float = 5.0,
+) -> List[Dict]:
+    if not bins:
+        return []
+
+    # Make selection stable
+    bins = sorted(bins, key=lambda e: -e["ratio"])
+
+    dominants = [b for b in bins if b["ratio"] >= dominant_ratio]
+    if not dominants:
+        dominants = [bins[0]]
+
+    selected = list(dominants)
+
+    selected_lab_centers = [
+        np.array(d["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+        for d in selected
+    ]
+
+    candidates = [b for b in bins if b["ratio"] < dominant_ratio and b["ratio"] >= accent_min_ratio]
+    candidates.sort(key=lambda e: -e["ratio"])
+
+    for c in candidates:
+        c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+        min_dE = min(
+            float(deltaE_ciede2000(c_lab, s_lab)[0, 0])
+            for s_lab in selected_lab_centers
+        )
+        if min_dE >= accent_min_deltaE_from_selected:
+            c2 = dict(c)
+            c2["min_dE_to_selected"] = float(min_dE)
+            selected.append(c2)
+            selected_lab_centers.append(c_lab)
+
+    if min_colors_fallback is not None and len(selected) < min_colors_fallback:
+        selected_ids = {s["bin_id"] for s in selected}
+        for b in bins:
+            if len(selected) >= min_colors_fallback:
+                break
+            if b["bin_id"] in selected_ids:
+                continue
+
+            b_lab = np.array(b["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+            min_dE = min(
+                float(deltaE_ciede2000(b_lab, s_lab)[0, 0])
+                for s_lab in selected_lab_centers
+            )
+            relaxed = accent_min_deltaE_from_selected * 0.5
+            if min_dE >= relaxed:
+                b2 = dict(b)
+                b2["min_dE_to_selected"] = float(min_dE)
+                selected.append(b2)
+                selected_ids.add(b["bin_id"])
+                selected_lab_centers.append(b_lab)
+
+    selected.sort(key=lambda e: -e["ratio"])
+
+    if merge_similar:
+        selected = merge_similar_colors(selected, merge_deltaE_threshold)
+
+    return selected
+
+def merge_similar_colors(selected: List[Dict], merge_deltaE_threshold: float = 5.0) -> List[Dict]:
+    """
+    Merge colors that are too similar (ΔE < threshold).
+    Representative = highest ratio among merged, ratios are summed.
+    """
+    if not selected:
+        return []
+
+    merged: List[Dict] = []
+    used = set()
+
+    for i in range(len(selected)):
+        if i in used:
+            continue
+
+        rep = dict(selected[i])
+        total_ratio = float(rep["ratio"])
+        used.add(i)
+
+        rep_lab = np.array(rep["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+
+        for j in range(i + 1, len(selected)):
+            if j in used:
+                continue
+
+            c = selected[j]
+            c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+            dE = float(deltaE_ciede2000(rep_lab, c_lab)[0, 0])
+
+            if dE < merge_deltaE_threshold:
+                total_ratio += float(c["ratio"])
+                used.add(j)
+
+                # Update representative if needed
+                if float(c["ratio"]) > float(rep["ratio"]):
+                    rep = dict(c)
+                    rep_lab = c_lab
+
+        rep["ratio"] = total_ratio
+        merged.append(rep)
+
+    merged.sort(key=lambda e: -e["ratio"])
+    return merged
+
+def build_exclusive_masks_by_nearest_center(
+    lab: np.ndarray,
+    opaque_mask: np.ndarray,
+    centers_lab: np.ndarray,
+    mask_deltaE: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Assign each pixel to exactly one color (exclusive layers) by nearest ΔE.
+
+    Returns:
+        best_idx: (H, W) int index of selected center for each pixel (undefined where invalid=False)
+        valid: (H, W) bool pixels that are within mask_deltaE of at least one center and opaque
+    """
+    # centers_lab: (K, 3)
+    # We compute ΔE for each center and stack into (H, W, K).
+    dists = []
+    for k in range(centers_lab.shape[0]):
+        center = centers_lab[k].reshape(1, 1, 3)
+        dE_k = deltaE_ciede2000(lab, center)  # (H, W)
+        dists.append(dE_k)
+
+    dist_stack = np.stack(dists, axis=-1)  # (H, W, K)
+
+    best_idx = np.argmin(dist_stack, axis=-1).astype(np.int32)
+    best_dE = np.min(dist_stack, axis=-1)
+
+    valid = (best_dE <= mask_deltaE) & opaque_mask
+
+    return best_idx, valid
+
 
 def lab_center_to_rgb_u8(
     lab_center: Tuple[float, float, float],
@@ -141,7 +374,6 @@ def lab_center_to_rgb_u8(
     rgb = lab2rgb(lab_arr)  # float [0,1], shape (1,1,3)
     rgb_u8 = np.clip(np.round(rgb[0, 0] * 255.0), 0, 255).astype(np.uint8)
     return int(rgb_u8[0]), int(rgb_u8[1]), int(rgb_u8[2])
-
 
 def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
     """
@@ -163,7 +395,6 @@ def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
             closest_name = name
 
     return closest_name
-
 
 def save_mask_png(mask_bool: np.ndarray, out_path: str) -> None:
     """
@@ -248,153 +479,6 @@ def build_normalized_feature(color_name: str, rgb: Tuple[int, int, int], merged_
         "geometry": normalized_geom.__geo_interface__,
     }
 
-
-def merge_similar_colors(selected: List[Dict], merge_deltaE_threshold: float = 5.0) -> List[Dict]:
-    """
-    Merge colors that are too similar (ΔE < threshold).
-    Representative = highest ratio among merged, ratios are summed.
-    """
-    if not selected:
-        return []
-
-    merged: List[Dict] = []
-    used = set()
-
-    for i in range(len(selected)):
-        if i in used:
-            continue
-
-        rep = dict(selected[i])
-        total_ratio = float(rep["ratio"])
-        used.add(i)
-
-        rep_lab = np.array(rep["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-
-        for j in range(i + 1, len(selected)):
-            if j in used:
-                continue
-
-            c = selected[j]
-            c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-            dE = float(deltaE_ciede2000(rep_lab, c_lab)[0, 0])
-
-            if dE < merge_deltaE_threshold:
-                total_ratio += float(c["ratio"])
-                used.add(j)
-
-                # Update representative if needed
-                if float(c["ratio"]) > float(rep["ratio"]):
-                    rep = dict(c)
-                    rep_lab = c_lab
-
-        rep["ratio"] = total_ratio
-        merged.append(rep)
-
-    merged.sort(key=lambda e: -e["ratio"])
-    return merged
-
-
-def select_colors_by_ratio_and_distance(
-    bins: List[Dict],
-    dominant_ratio: float = 0.05,
-    accent_min_ratio: float = 0.001,
-    accent_min_deltaE_from_selected: float = 18.0, 
-    min_colors_fallback: Optional[int] = None,
-    merge_similar: bool = True,
-    merge_deltaE_threshold: float = 5.0,
-) -> List[Dict]:
-    if not bins:
-        return []
-
-    # Make selection stable
-    bins = sorted(bins, key=lambda e: -e["ratio"])
-
-    dominants = [b for b in bins if b["ratio"] >= dominant_ratio]
-    if not dominants:
-        dominants = [bins[0]]
-
-    selected = list(dominants)
-
-    selected_lab_centers = [
-        np.array(d["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-        for d in selected
-    ]
-
-    candidates = [b for b in bins if b["ratio"] < dominant_ratio and b["ratio"] >= accent_min_ratio]
-    candidates.sort(key=lambda e: -e["ratio"])
-
-    for c in candidates:
-        c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-        min_dE = min(
-            float(deltaE_ciede2000(c_lab, s_lab)[0, 0])
-            for s_lab in selected_lab_centers
-        )
-        if min_dE >= accent_min_deltaE_from_selected:
-            c2 = dict(c)
-            c2["min_dE_to_selected"] = float(min_dE)
-            selected.append(c2)
-            selected_lab_centers.append(c_lab)
-
-    if min_colors_fallback is not None and len(selected) < min_colors_fallback:
-        selected_ids = {s["bin_id"] for s in selected}
-        for b in bins:
-            if len(selected) >= min_colors_fallback:
-                break
-            if b["bin_id"] in selected_ids:
-                continue
-
-            b_lab = np.array(b["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-            min_dE = min(
-                float(deltaE_ciede2000(b_lab, s_lab)[0, 0])
-                for s_lab in selected_lab_centers
-            )
-            relaxed = accent_min_deltaE_from_selected * 0.5
-            if min_dE >= relaxed:
-                b2 = dict(b)
-                b2["min_dE_to_selected"] = float(min_dE)
-                selected.append(b2)
-                selected_ids.add(b["bin_id"])
-                selected_lab_centers.append(b_lab)
-
-    selected.sort(key=lambda e: -e["ratio"])
-
-    if merge_similar:
-        selected = merge_similar_colors(selected, merge_deltaE_threshold)
-
-    return selected
-
-
-def build_exclusive_masks_by_nearest_center(
-    lab: np.ndarray,
-    opaque_mask: np.ndarray,
-    centers_lab: np.ndarray,
-    mask_deltaE: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Assign each pixel to exactly one color (exclusive layers) by nearest ΔE.
-
-    Returns:
-        best_idx: (H, W) int index of selected center for each pixel (undefined where invalid=False)
-        valid: (H, W) bool pixels that are within mask_deltaE of at least one center and opaque
-    """
-    # centers_lab: (K, 3)
-    # We compute ΔE for each center and stack into (H, W, K).
-    dists = []
-    for k in range(centers_lab.shape[0]):
-        center = centers_lab[k].reshape(1, 1, 3)
-        dE_k = deltaE_ciede2000(lab, center)  # (H, W)
-        dists.append(dE_k)
-
-    dist_stack = np.stack(dists, axis=-1)  # (H, W, K)
-
-    best_idx = np.argmin(dist_stack, axis=-1).astype(np.int32)
-    best_dE = np.min(dist_stack, axis=-1)
-
-    valid = (best_dE <= mask_deltaE) & opaque_mask
-
-    return best_idx, valid
-
-
 def extract_colors(
     image_path: str, 
     output_dir: str = DEFAULT_OUTPUT_DIR,
@@ -428,13 +512,9 @@ def extract_colors(
     # -----------------------------
 
     dominant_ratio: float = 0.001, # Minimum pixel ratio for a color to be considered dominant.
-
     accent_min_ratio: float = 0.00005, # Minimum ratio for a non-dominant (accent) color to be considered.
-
     accent_min_deltaE_from_selected: float = 20.0, # Minimum ΔE distance from ALL dominant colors for an accent to be accepted.
-
     min_colors_fallback: Optional[int] = None, # If set, ensures at least this many colors are selected.
-
     merge_similar: bool = True, # If True, merges selected colors that are perceptually too close (ΔE-based).
 
     merge_deltaE_threshold: float = 12.0,
@@ -473,7 +553,7 @@ def extract_colors(
     rgb = img_as_float(rgb_u8)
 
     # Preprocess full image for color extraction (keeps/updates mask)
-    rgb, opaque_mask = preprocess_for_color(
+    rgb, opaque_mask = preprocess(
         rgb=rgb,
         opaque_mask=opaque_mask,
         # You can tune these per "map profile"
