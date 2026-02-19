@@ -1,5 +1,6 @@
 import logging
 from uuid import UUID
+import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import not_, select
@@ -10,13 +11,9 @@ from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
 from app.schemas.map import MapOut
-from app.schemas.georeference import GeoreferencePayload
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db
-import json
 from app.utils.sift_key_points_finder import find_coastline_keypoints
-
-
 
 from ..celery_app import celery_app
 from ..db import get_db
@@ -24,7 +21,6 @@ from ..tasks import process_map_extraction
 from ..utils.auth import get_current_user, get_current_user_id
 
 router = APIRouter()
-
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maps", tags=["Maps Processing"])
@@ -45,7 +41,6 @@ async def upload_and_process_map(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Upload a map and start data extraction"""    
     # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
@@ -56,7 +51,7 @@ async def upload_and_process_map(
     pixel_points_list = None
     geo_points_list = None
 
-    # Parse matched point pairs for SIFT georeferencing (only if enabled)
+    # Parse matched point pairs for SIFT georeferencing 
     if enable_georeferencing and image_points and world_points:
         img_pts = json.loads(image_points)  # list of {"x":..,"y":..}
         world_pts = json.loads(world_points)  # list of {"lat":..,"lng":..}
@@ -64,7 +59,6 @@ async def upload_and_process_map(
         pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
         geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
 
-    # Lire le contenu du fichier
     file_content = await file.read()
     
     if len(file_content) > MAX_FILE_SIZE:
@@ -84,7 +78,7 @@ async def upload_and_process_map(
             description=None,
             is_private=True,
         )
-        # Lancer la tâche Celery (pass map_id as string for JSON serialization)
+
         task = process_map_extraction.delay(
             file.filename,
             file_content,
@@ -186,12 +180,8 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
             feature["id"] = str(f.id)
 
             props = feature.get("properties", {})
-            start_date = props.get("start_date")
-            end_date = props.get("end_date")
-
-            feature["start_date"] = start_date
-            feature["end_date"] = end_date
-
+            feature["start_date"] = props.get("start_date")
+            feature["end_date"] = props.get("end_date")
             all_features.append(feature)
 
     return all_features
@@ -223,24 +213,7 @@ async def save_map(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    owner_id = UUID(user["sid"])
-
-    new_map = Map(
-        owner_id,
-        base_layer_id=UUID("00000000-0000-0000-0000-000000000100"),
-        title=request.title,
-        description=request.description,
-        access_level=request.access_level,
-        start_date=date(1400, 1, 1),
-        end_date=date.today(),
-        style_id="light",
-        parent_map_id=None,
-        precision=None,
-    )
-    db.add(new_map)
-    db.commit()
-    db.refresh(new_map)
-    return {"id": new_map.id}
+    return 1
 
 
 @router.post("/coastline-keypoints")
