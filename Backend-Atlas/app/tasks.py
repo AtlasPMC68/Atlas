@@ -4,11 +4,12 @@ import os
 import re
 import tempfile
 import time
+import numpy as np
+import cv2
+
 from datetime import datetime
 from typing import Any, List
 from uuid import UUID
-
-import cv2
 
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
@@ -18,7 +19,6 @@ from app.utils.file_utils import validate_file_extension
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
 from app.utils.georeferencingSift import georeference_features_with_sift_points
-import numpy as np
 
 from .celery_app import celery_app
 
@@ -47,79 +47,6 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
-
-def bottom_edge_polyline_px(image_bytes: bytes, samples: int = 20):
-    # Decode image from bytes
-    img_array = np.frombuffer(image_bytes, dtype=np.uint8)
-    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # BGR
-
-    if img is None:
-        raise ValueError("Could not read image")
-
-    # 1) Mask the blue hexagon (simple threshold in HSV)
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    # Blue range (adjust if needed)
-    lower = np.array([90, 50, 50])
-    upper = np.array([140, 255, 255])
-    mask = cv2.inRange(hsv, lower, upper)
-
-    # Clean up
-    mask = cv2.medianBlur(mask, 5)
-
-    # 2) Find the contour
-    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not cnts:
-        raise ValueError("No contour found")
-
-    cnt = max(cnts, key=cv2.contourArea)
-
-    # 3) Approx to polygon vertices
-    peri = cv2.arcLength(cnt, True)
-    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)  # tweak 0.02 if needed
-    pts = approx.reshape(-1, 2)  # (N,2) as [x,y]
-
-    if len(pts) < 4:
-        raise ValueError(f"Polygon approximation too small: {len(pts)} vertices")
-
-    # Ensure consistent ordering around the shape
-    # Sort by angle around centroid
-    cx, cy = pts.mean(axis=0)
-    angles = np.arctan2(pts[:, 1] - cy, pts[:, 0] - cx)
-    pts = pts[np.argsort(angles)]
-
-    # 4) Find the bottom-most edge (edge with max average y)
-    best_edge = None
-    best_score = -1
-    n = len(pts)
-    for i in range(n):
-        a = pts[i]
-        b = pts[(i + 1) % n]
-        score = (a[1] + b[1]) / 2.0  # avg y
-        if score > best_score:
-            best_score = score
-            best_edge = (a, b)
-
-    (x1, y1), (x2, y2) = best_edge
-
-    # 5) Build a polyline along that edge (sample points)
-    xs = np.linspace(x1, x2, samples)
-    ys = np.linspace(y1, y2, samples)
-    polyline = [(float(x), float(y)) for x, y in zip(xs, ys)]
-
-    return {
-        "edge_endpoints": [(int(x1), int(y1)), (int(x2), int(y2))],
-        "polyline_px": polyline,
-        "vertices_px": pts.tolist(),
-    }
-
-
-# Example usage:
-# result = bottom_edge_polyline_px("hex.png", samples=10)
-# print(result["edge_endpoints"])
-# print(result["polyline_px"])
-
-
 @celery_app.task(bind=True)
 def process_map_extraction(
     self,
@@ -132,17 +59,8 @@ def process_map_extraction(
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
 ):
-    """Process map extraction with SIFT-based georeferencing."""
-    logger.info(f"Starting map processing for {filename}")
-
     # Ensure we are working with a UUID instance inside the task
     map_uuid = UUID(map_id)
-
-    if pixel_points and geo_points_lonlat:
-        logger.info(f"[DEBUG] SIFT georeferencing with {len(pixel_points)} point pairs")
-        logger.info(
-            f"[DEBUG] First pixel point: {pixel_points[0]}, first geo point: {geo_points_lonlat[0]}"
-        )
 
     try:
         # Step 1: temp save
@@ -150,9 +68,8 @@ def process_map_extraction(
             state="PROGRESS",
             meta={"current": 1, "total": nb_task, "status": "Saving uploaded file"},
         )
-        logger.info("Before sleep")
         time.sleep(2)
-        logger.info("afternoon")
+
         with tempfile.NamedTemporaryFile(
             delete=False, suffix=os.path.splitext(filename)[1]
         ) as tmp_file:
@@ -168,7 +85,6 @@ def process_map_extraction(
                 "status": "Loading and validating image",
             },
         )
-        time.sleep(2)
 
         image = cv2.imread(tmp_file_path)
         image.flags.writeable = False  # Makes image immutable
@@ -185,7 +101,7 @@ def process_map_extraction(
                 "status": "Extracting text with EasyOCR",
             },
         )
-        time.sleep(2)
+
         if enable_text_extraction:
             # GPU acceleration make the text extraction MUCH faster i
             extracted_text, clean_image = extract_text(
@@ -214,7 +130,6 @@ def process_map_extraction(
                         }
 
                     # Build feature using returned candidate; if not found, coordinates will be 0,0
-                    logger.info(f"City detection result for token '{tok}': {candidate}")
                     city_feature = {
                         "type": "Feature",
                         "properties": {
@@ -244,9 +159,6 @@ def process_map_extraction(
                         asyncio.run(
                             persist_city_feature(map_uuid, city_feature_collection)
                         )
-                        logger.info(
-                            f"Persisted city token feature: {candidate.get('name')}"
-                        )
                     except Exception as e:
                         logger.error(f"Failed to persist city token '{tok}': {e}")
 
@@ -255,66 +167,39 @@ def process_map_extraction(
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
-        # Step 4: Color Extraction
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 4,
-                "total": nb_task,
-                "status": "Extracting colors from image",
-            },
-        )
-        time.sleep(2)
+        # Step 4: Color Extraction (conditionally enabled)
+        if enable_color_extraction:
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": 4,
+                    "total": nb_task,
+                    "status": "Extracting colors from image",
+                },
+            )
 
-        color_result = extract_colors(tmp_file_path)
-        normalized_features = color_result.get("normalized_features", [])
-        pixel_features = color_result.get("pixel_features", [])
+            color_result = extract_colors(tmp_file_path)
+            normalized_features = color_result.get("normalized_features", [])
+            pixel_features = color_result.get("pixel_features", [])
 
-        if normalized_features:
-            asyncio.run(persist_features(map_uuid, normalized_features))
+            if normalized_features:
+                asyncio.run(persist_features(map_uuid, normalized_features))
 
-        logger.info(
-            f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
-        )
-
-        # Optional: georeference pixel-space features if SIFT point pairs are provided
-        if pixel_points and geo_points_lonlat:
-            try:
-                logger.info(
-                    f"[DEBUG] Starting SIFT-based georeferencing with {len(pixel_points)} points"
-                )
-                georef_features = georeference_features_with_sift_points(
-                    pixel_features, pixel_points, geo_points_lonlat
-                )
-
-                # Apply coastline snapping using SIFT control points to identify coastlines
-                # if georef_features and geo_points_lonlat:
-                #     logger.info("[DEBUG] Applying coastline snapping (SIFT point-based)")
-                #     current_dir = os.path.dirname(os.path.abspath(__file__))
-                #     coastline_path = os.path.join(current_dir, "geojson", "ne_coastline.geojson")
-
-                #     try:
-                #         refined_features = refine_coastline_features(
-                #             georef_features,
-                #             reference_geojson_path=coastline_path,
-                #             sift_control_points=geo_points_lonlat,  # SIFT points mark coastline regions
-                #             max_snap_distance_km=100.0,  # Snap coastline points up to 15km to reference
-                #             sift_proximity_km=200.0  # Points within 30km of SIFT marker might be coastal
-                #         )
-                #         logger.info("[DEBUG] Coastline refinement completed")
-                #         georef_features = refined_features
-                #     except Exception as e:
-                #         logger.warning(f"[DEBUG] Coastline refinement failed, using original: {e}")
-
-                asyncio.run(persist_features(map_uuid, georef_features))
-                logger.info(
-                    f"[DEBUG] Persisted {len(georef_features)} georeferenced feature collections for map {map_uuid}"
-                )
-            except Exception as e:
-                logger.error(
-                    f"SIFT georeferencing step failed for map {map_uuid}: {e}",
-                    exc_info=True,
-                )
+            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
+            # Georeference pixel-space features if SIFT point pairs are provided
+            if pixel_points and geo_points_lonlat:
+                try:
+                    georef_features = georeference_features_with_sift_points(
+                        pixel_features, pixel_points, geo_points_lonlat
+                    )
+                    asyncio.run(persist_features(map_uuid, georef_features))
+                    
+                except Exception as e:
+                    logger.error(
+                        f"SIFT georeferencing step failed for map {map_uuid}: {e}",
+                        exc_info=True,
+                    )
+            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
@@ -330,7 +215,6 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            logger.info("[DEBUG] Shapes extraction enabled - starting")
             shapes_result = extract_shapes(tmp_file_path)
             shape_features = shapes_result["normalized_features"]
 
@@ -350,7 +234,6 @@ def process_map_extraction(
                 "status": "Cleaning up and finalizing",
             },
         )
-        time.sleep(2)
         os.unlink(tmp_file_path)
 
         if enable_text_extraction:

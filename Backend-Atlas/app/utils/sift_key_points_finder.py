@@ -6,14 +6,10 @@ import json
 NUMBER_OF_KEYPOINTS = 10
 BORDER_MARGIN = 20  # pixels from edge
 MIN_DISTANCE_BETWEEN_KEYPOINTS = 10  
-
-# TODO REMOVE PRINTS BUDDY
+DEBUG = False
 
 def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection: bool = True):
-    """
-    Core SIFT keypoint detection with filtering.
-    Returns list of cv2.KeyPoint objects.
-    """
+
     height, width = gray_image.shape
     
     if apply_edge_detection:
@@ -21,16 +17,13 @@ def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection:
         blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
         # Create edge mask 
         edges = cv2.Canny(blurred, 75, 175)
-        print(f"Edge mask: {np.count_nonzero(edges)} edge pixels")
     else:
         edges = None
     
     # Detect ALL keypoints on edges (no limit)
     sift = cv2.SIFT_create()
     all_keypoints, _ = sift.detectAndCompute(gray_image, mask=edges)
-    
-    print(f"Total keypoints detected: {len(all_keypoints)}")
-    
+        
     if len(all_keypoints) == 0:
         return []
     
@@ -41,9 +34,7 @@ def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection:
         if (BORDER_MARGIN < x < width - BORDER_MARGIN and 
             BORDER_MARGIN < y < height - BORDER_MARGIN):
             filtered_keypoints.append(kp)
-    
-    print(f"After border filtering: {len(filtered_keypoints)} keypoints")
-    
+        
     # Sort by response (strength) first
     filtered_keypoints = sorted(filtered_keypoints, key=lambda x: x.response, reverse=True)
     
@@ -68,22 +59,17 @@ def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection:
         # Stop when we have enough keypoints
         if len(spaced_keypoints) >= NUMBER_OF_KEYPOINTS:
             break
-    
-    print(f"After spacing filter: {len(spaced_keypoints)} keypoints (min distance: {MIN_DISTANCE_BETWEEN_KEYPOINTS}px)")
-    
+        
     return spaced_keypoints
 
-def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):
-    """Find SIFT keypoints on coastlines from GeoJSON within geographic bounds."""
-    
-    # Load ne_coastline.geojson
+
+def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):    
+
     geojson_path = os.path.join(os.path.dirname(__file__), "..", "geojson", "ne_coastline.geojson")
     
     with open(geojson_path, 'r', encoding='utf-8') as f:
         geojson_data = json.load(f)
-    
-    print(f"Loaded coastline GeoJSON from: {geojson_path}")
-    
+        
     # Create blank image
     coastline_image = np.zeros((height, width), dtype=np.uint8)
     
@@ -100,18 +86,15 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
             for line in coords:
                 draw_coastline(coastline_image, line, bounds, width, height)
     
-    print(f"Rasterized coastlines: {np.count_nonzero(coastline_image)} white pixels")
-    
-    # Save raster for debugging
-    output_dir = os.path.join(os.path.dirname(__file__), "extracted_texts")
-    os.makedirs(output_dir, exist_ok=True)
-    cv2.imwrite(os.path.join(output_dir, "coastline_raster.png"), coastline_image)
+    if DEBUG:
+        # Save raster for debugging
+        output_dir = os.path.join(os.path.dirname(__file__), "extracted_texts")
+        os.makedirs(output_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(output_dir, "coastline_raster.png"), coastline_image)
     
     # Use shared SIFT detection function
     spaced = detect_sift_keypoints_on_image(coastline_image, apply_edge_detection=True)
-    
-    print(f"Selected {len(spaced)} keypoints")
-    
+        
     if len(spaced) == 0:
         return {"keypoints": [], "total": 0}
     
@@ -128,26 +111,21 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
             "geo": {"lat": lat, "lng": lon},
             "response": float(kp.response)
         })
-        print(f"  KP {i+1}: pixel({px:.1f},{py:.1f}) → ({lat:.4f},{lon:.4f})")
     
-    # Draw keypoints on the coastline image, saving for debug but could remove
-    # ======================================================================= #
-    img_vis = cv2.cvtColor(coastline_image, cv2.COLOR_GRAY2BGR)
-    for i, kp in enumerate(spaced):
-        x, y = int(kp.pt[0]), int(kp.pt[1])
-        cv2.circle(img_vis, (x, y), 15, (0, 255, 0), 2)
-        cv2.circle(img_vis, (x, y), 3, (0, 0, 255), -1)
-        cv2.putText(img_vis, str(i+1), (x+20, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-    
-    keypoints_path = os.path.join(output_dir, "coastline_keypoints.png")
-    cv2.imwrite(keypoints_path, img_vis)
-    print(f"✓ Saved coastline with keypoints to: {keypoints_path}")
-    # ======================================================================== #
+    if DEBUG:
+        img_vis = cv2.cvtColor(coastline_image, cv2.COLOR_GRAY2BGR)
+        for i, kp in enumerate(spaced):
+            x, y = int(kp.pt[0]), int(kp.pt[1])
+            cv2.circle(img_vis, (x, y), 15, (0, 255, 0), 2)
+            cv2.circle(img_vis, (x, y), 3, (0, 0, 255), -1)
+            cv2.putText(img_vis, str(i + 1), (x + 20, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+        
+        keypoints_path = os.path.join(output_dir, "coastline_keypoints.png")
+        cv2.imwrite(keypoints_path, img_vis)
     
     return {"keypoints": keypoints, "total": len(keypoints)}
 
 def draw_coastline(img, coords, bounds, width, height):
-    """Draw a coastline on the image."""
     points = []
     for lon, lat in coords:
         if not (bounds['west'] <= lon <= bounds['east'] and bounds['south'] <= lat <= bounds['north']):

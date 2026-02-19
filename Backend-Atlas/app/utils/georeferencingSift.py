@@ -6,7 +6,6 @@ import numpy as np
 from shapely.geometry import shape, mapping
 from shapely.ops import transform
 
-
 logger = logging.getLogger(__name__)
 
 LonLat = Tuple[float, float]
@@ -16,7 +15,6 @@ R_EARTH = 6378137.0
 
 
 def _lonlat_to_webmercator(lon: float, lat: float) -> XY:
-    """Convert WGS84 lon/lat to WebMercator (EPSG:3857)."""
     x = math.radians(lon) * R_EARTH
     lat = max(min(lat, 89.9), -89.9)
     y = math.log(math.tan(math.pi / 4.0 + math.radians(lat) / 2.0)) * R_EARTH
@@ -24,7 +22,6 @@ def _lonlat_to_webmercator(lon: float, lat: float) -> XY:
 
 
 def _webmercator_to_lonlat(x: float, y: float) -> LonLat:
-    """Convert WebMercator (EPSG:3857) to WGS84 lon/lat."""
     lon = math.degrees(x / R_EARTH)
     lat = math.degrees(2.0 * math.atan(math.exp(y / R_EARTH)) - math.pi / 2.0)
     return lon, lat
@@ -143,8 +140,6 @@ def georeference_features_with_sift_points(
                 f"Mismatch in point counts: {len(pixel_points)} pixel points "
                 f"vs {len(geo_points_lonlat)} geo points"
             )
-
-        logger.info(f"Building affine transformation from {len(pixel_points)} point pairs")
         
         # Convert geographic coordinates to WebMercator
         geo_xy_points = [_lonlat_to_webmercator(lon, lat) for lon, lat in geo_points_lonlat]
@@ -154,7 +149,6 @@ def georeference_features_with_sift_points(
         
         # Build affine transformation: pixel -> WebMercator
         affine = AffineTransformation(src, dst)
-        logger.info(f"Affine transformation established (RMSE: {affine.rmse:.2f} meters)")
 
         def _to_3857(x, y, z=None):
             """Apply affine: pixel -> WebMercator"""
@@ -179,9 +173,8 @@ def georeference_features_with_sift_points(
 
         georef_collections: List[Dict[str, Any]] = []
 
-        for fc_idx, fc in enumerate(pixel_feature_collections):
+        for _, fc in enumerate(pixel_feature_collections):
             if fc.get("type") != "FeatureCollection":
-                logger.warning(f"Skipping non-FeatureCollection at index {fc_idx}")
                 continue
                 
             new_features: List[Dict[str, Any]] = []
@@ -225,7 +218,6 @@ def georeference_features_with_sift_points(
                     }
                 )
 
-        logger.info(f"Successfully georeferenced {len(georef_collections)} collections")
         return georef_collections
         
     except Exception as e:
