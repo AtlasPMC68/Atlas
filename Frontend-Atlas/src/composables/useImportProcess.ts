@@ -11,9 +11,8 @@ const resultData: Ref<any> = ref(null);
 const mapId: Ref<string | null> = ref(null);
 
 export function useImportProcess() {
-<<<<<<< HEAD
   const startImport = async (
-    file: File,
+    file: File | null,
     imagePoints?: { x: number; y: number }[],
     worldPoints?: { lat: number; lng: number }[],
     options?: {
@@ -23,9 +22,6 @@ export function useImportProcess() {
       enableTextExtraction?: boolean;
     }
   ) => {
-=======
-  const startImport = async (file: File | null) => {
->>>>>>> 2e68347bea99385f12092db6f4b95ec37818eac2
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
     isProcessing.value = true;
@@ -33,10 +29,6 @@ export function useImportProcess() {
     processingStep.value = "upload";
     processingProgress.value = 0;
 
-<<<<<<< HEAD
-    // Upload fichier + points SIFT POST /maps/upload
-=======
->>>>>>> 2e68347bea99385f12092db6f4b95ec37818eac2
     const formData = new FormData();
     
     // Add matched point pairs as expected by backend
