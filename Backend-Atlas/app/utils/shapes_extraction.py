@@ -20,7 +20,7 @@ DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
 def extract_shapes(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
-    min_area: int = 10,
+    min_area: int = 100,
     max_area: int = 100000,
     threshold_value: int = 127,
     min_confidence: float = 0.6,

@@ -9,7 +9,7 @@ def read_image(image_path) -> np.ndarray:
     :return: 3 channels RGB formatted numpy array of the image. Values are floats [0.0, 1.0]
     :raises: IOError
     """
-    # OpenCV reads in RGB format
+    # skimage.io.imread returns an image with channels in RGB order by default
     img = skimage.io.imread(image_path)
     if img is None:
         raise IOError(f"Could not read image for given path: {image_path}")
@@ -63,7 +63,7 @@ def scale_image(img: np.ndarray, width: int = 0, height: int = 0) -> np.ndarray:
     rescaled = skimage.transform.resize(
         img,
         output_shape,
-        order=4,  # Lanczos interpolation for new lines
+        order=4,
         mode="reflect",  # Mimics the surrounding color gradients
         anti_aliasing=True,  # Only used IF the wanted dimensions are smaller than the actual image
         preserve_range=True,  # Keeping as float64
@@ -199,8 +199,10 @@ def flat_field_correction(
     corrected_rgb = skimage.color.lab2rgb(img_lab)
 
     if normalize:
-        # Normalize global intensity
-        corrected_rgb = corrected_rgb / np.max(corrected_rgb)
+        max_val = np.max(corrected_rgb)
+        if np.isfinite(max_val) and max_val > 0:
+            corrected_rgb = corrected_rgb / max_val
+        corrected_rgb = np.nan_to_num(corrected_rgb, nan=0.0, posinf=1.0, neginf=0.0)
 
     return np.clip(corrected_rgb, 0.0, 1.0)
 
