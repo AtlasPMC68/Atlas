@@ -115,6 +115,8 @@ const PAIR_COLORS = [
   "#14b8a6",
   "#e11d48",
   "#0ea5e9",
+  "#facc15",
+  "#6366f1",
 ];
 
 const totalPoints = computed(() => props.keypoints?.length || 0);
