@@ -56,17 +56,20 @@
   </div>
 </template>
 
-<script setup>
-defineProps({
-  isProcessing: {
-    type: Boolean,
-    default: false,
-  },
-  startLabel: {
-    type: String,
-    default: "Commencer l'extraction",
-  },
-});
+<script setup lang="ts">
+withDefaults(
+  defineProps<{
+    isProcessing: boolean;
+    startLabel: string;
+  }>(),
+  {
+    isProcessing: false,
+    startLabel: "Commencer l'extraction",
+  }
+);
 
-defineEmits(["start-import", "cancel"]);
+defineEmits<{
+  (event: "start-import"): void;
+  (event: "cancel"): void;
+}>();
 </script>
