@@ -19,7 +19,7 @@ def extract_shapes_from_assets():
         file_path = os.path.join(ASSETS_DIR, filename)
         if os.path.isfile(file_path) and validate_file_extension(file_path):
             print(f"Extracting shapes from {filename}...")
-            extract_shapes(file_path, output_dir=OUTPUT_DIR, debug=True)
+            extract_shapes(file_path, output_dir=OUTPUT_DIR, debug=False)
 
 
 extract_shapes_from_assets()
