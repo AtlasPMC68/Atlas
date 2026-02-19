@@ -6,7 +6,7 @@
       class="flex items-center gap-3 p-3 rounded-lg transition-colors"
       :class="getStepClasses(step)"
     >
-      <!-- Icône -->
+      <!-- Icon -->
       <div
         class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
       >
@@ -29,12 +29,12 @@
         <div v-else class="w-2 h-2 rounded-full bg-base-300"></div>
       </div>
 
-      <!-- Contenu -->
+      <!-- Content -->
       <div class="flex-1">
         <div class="font-medium">{{ step.title }}</div>
         <div class="text-sm text-base-content/70">{{ step.description }}</div>
 
-        <!-- Barre de progression pour l'étape courante -->
+        <!-- Progress bar for the current step -->
         <div v-if="step.status === 'processing'" class="mt-2">
           <progress
             class="progress progress-primary progress-sm w-full"
@@ -61,7 +61,6 @@ const props = defineProps({
   },
 });
 
-// Définition des étapes
 const steps = [
   {
     id: "upload",
@@ -85,7 +84,6 @@ const steps = [
   },
 ];
 
-// Statuts des étapes
 const stepsWithStatus = computed(() => {
   const currentIndex = steps.findIndex((step) => step.id === props.currentStep);
 
@@ -100,7 +98,7 @@ const stepsWithStatus = computed(() => {
   }));
 });
 
-// Progression de l'étape courante
+// Progress of the current step
 const stepProgress = computed(() => {
   const currentIndex = steps.findIndex((step) => step.id === props.currentStep);
   const baseProgress = (currentIndex / steps.length) * 100;
@@ -110,7 +108,7 @@ const stepProgress = computed(() => {
   return Math.max(0, Math.min(100, stepProgressPercent));
 });
 
-// Classes CSS pour chaque étape
+// CSS classes for each step
 const getStepClasses = (step) => ({
   "bg-success/10": step.status === "completed",
   "bg-primary/10": step.status === "processing",

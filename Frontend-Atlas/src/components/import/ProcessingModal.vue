@@ -10,10 +10,8 @@
           </p>
         </div>
 
-        <!-- Étapes de traitement -->
         <ProcessingSteps :current-step="currentStep" :progress="progress" />
 
-        <!-- Barre de progression globale -->
         <div class="w-full">
           <div class="flex justify-between text-sm text-base-content/70 mb-2">
             <span>Progression globale</span>
@@ -26,7 +24,6 @@
           ></progress>
         </div>
 
-        <!-- Actions -->
         <div class="modal-action justify-center">
           <button class="btn btn-outline btn-sm" @click="$emit('cancel')">
             Annuler

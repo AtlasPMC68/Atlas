@@ -39,28 +39,25 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted } from "vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
-import { useRouter } from "vue-router";
 import keycloak from "../keycloak";
 import { useRoute } from "vue-router";
+import { camelToSnake } from "../utils/utils";
+import { MapData } from "../typescript/map";
+import { Feature } from "../typescript/feature";
 
 const route = useRoute();
 const mapId = ref(route.params.mapId);
 const features = ref([]);
 const featureVisibility = ref(new Map());
 const error = ref("");
-const router = useRouter();
 
 const showSaveAsModal = ref(false);
-
-const title = ref("");
-const description = ref("");
-const access_level = ref("");
 
 async function loadInitialFeatures() {
   try {
@@ -73,7 +70,7 @@ async function loadInitialFeatures() {
     features.value = allFeatures;
 
     const newVisibility = new Map();
-    allFeatures.forEach((feature) => {
+    allFeatures.forEach((feature: Feature) => {
       newVisibility.set(feature.id, true);
     });
     featureVisibility.value = newVisibility;
@@ -82,14 +79,12 @@ async function loadInitialFeatures() {
   }
 }
 
-function toggleFeatureVisibility(featureId, visible) {
+function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value.set(featureId, visible);
   featureVisibility.value = new Map(featureVisibility.value);
 }
 
-function handleFeaturesLoaded(loadedFeatures) {
-  console.log("Features chargées dans la map:", loadedFeatures);
-}
+function handleFeaturesLoaded(loadedFeatures: Feature[]) {}
 
 onMounted(() => {
   loadInitialFeatures();
@@ -104,11 +99,7 @@ function saveCarteAs() {
   showSaveAsModal.value = true;
 }
 
-async function handleSaveAs(data) {
-  title.value = data.title;
-  description.value = data.description;
-  access_level.value = data.access_level;
-
+async function handleSaveAs(map: MapData) {
   if (!keycloak.token) {
     console.error("No authentication token available from Keycloak");
     return;
@@ -144,12 +135,14 @@ async function handleSaveAs(data) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${keycloak.token}`,
       },
-      body: JSON.stringify({
-        owner_id: userId,
-        title: title.value,
-        description: description.value,
-        access_level: access_level.value,
-      }),
+      body: JSON.stringify(
+        camelToSnake({
+          userId: userId,
+          title: map.title,
+          description: map.description ? map.description : "",
+          isPrivate: map.isPrivate,
+        }),
+      ),
     });
 
     if (!response.ok) {
