@@ -1,13 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Exemple de table de test
-CREATE TABLE IF NOT EXISTS lieux (
-  id SERIAL PRIMARY KEY,
-  nom TEXT NOT NULL,
-  geom GEOMETRY(Point, 4326)
-);
-
 CREATE TABLE IF NOT EXISTS "users" (
   "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "username" TEXT UNIQUE NOT NULL,
@@ -15,51 +8,23 @@ CREATE TABLE IF NOT EXISTS "users" (
   "created_at" TIMESTAMP DEFAULT (now())
 );
 
-CREATE TABLE IF NOT EXISTS "base_layers" (
-  "id" UUID PRIMARY KEY,
-  "name" TEXT NOT NULL,
-  "tile_url" TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS "maps" (
-  "id" UUID PRIMARY KEY,
-  "owner_id" UUID,
-  "base_layer_id" UUID,
-  "style_id" TEXT DEFAULT 'light',
-  "parent_map_id" UUID,
+  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "user_id" UUID REFERENCES "users"("id") ON DELETE CASCADE,
   "title" TEXT NOT NULL,
   "description" TEXT,
-  "access_level" TEXT DEFAULT 'private',
-  "start_date" DATE,
-  "end_date" DATE,
-  "precision" TEXT,
-  "created_at" TIMESTAMP DEFAULT (now())
+  "is_private" BOOLEAN DEFAULT TRUE,
+  "start_date" DATE, -- TODO : Take decision with this
+  "end_date" DATE, -- TODO : Take decision with this
+  "created_at" TIMESTAMP DEFAULT (now()),
+  "updated_at" TIMESTAMP DEFAULT (now())
 );
 
 CREATE TABLE IF NOT EXISTS "features" (
-  id UUID PRIMARY KEY,
-  map_id UUID,
-  is_feature_collection BOOLEAN DEFAULT FALSE,
-  data JSONB NOT NULL,
-  created_at TIMESTAMP DEFAULT now()
+  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "map_id" UUID REFERENCES "maps"("id") ON DELETE CASCADE,
+  "is_feature_collection" BOOLEAN DEFAULT FALSE,
+  "data" JSONB NOT NULL,
+  "created_at" TIMESTAMP DEFAULT (now()),
+  "updated_at" TIMESTAMP DEFAULT (now())
 );
-
-CREATE TABLE IF NOT EXISTS "map_collaborators" (
-  "map_id" UUID,
-  "user_id" UUID,
-  "role" TEXT,
-  "added_at" TIMESTAMP DEFAULT (now()),
-  PRIMARY KEY ("map_id", "user_id")
-);
-
-ALTER TABLE "maps" ADD FOREIGN KEY ("owner_id") REFERENCES "users" ("id") ON DELETE CASCADE;
-
-ALTER TABLE "maps" ADD FOREIGN KEY ("base_layer_id") REFERENCES "base_layers" ("id");
-
-ALTER TABLE "maps" ADD FOREIGN KEY ("parent_map_id") REFERENCES "maps" ("id");
-
-ALTER TABLE "features" ADD FOREIGN KEY ("map_id") REFERENCES "maps" ("id") ON DELETE CASCADE;
-
-ALTER TABLE "map_collaborators" ADD FOREIGN KEY ("map_id") REFERENCES "maps" ("id") ON DELETE CASCADE;
-
-ALTER TABLE "map_collaborators" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE;

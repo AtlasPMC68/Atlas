@@ -1,9 +1,8 @@
 import logging
-from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Form, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy import not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -18,10 +17,11 @@ import json
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 
+
 from ..celery_app import celery_app
 from ..db import get_db
 from ..tasks import process_map_extraction
-from ..utils.auth import get_current_user
+from ..utils.auth import get_current_user, get_current_user_id
 
 router = APIRouter()
 
@@ -42,14 +42,11 @@ async def upload_and_process_map(
     enable_shapes_extraction: bool = Form(False),
     enable_text_extraction: bool = Form(False),
     file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-
-    logger.debug(f"Starting map upload with SIFT points")
-
-    """Upload une carte et lance l'extraction de données"""
-
-    # Validation du type de fichier
+    """Upload a map and start data extraction"""    
+    # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400,
@@ -69,7 +66,7 @@ async def upload_and_process_map(
 
     # Lire le contenu du fichier
     file_content = await file.read()
-
+    
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -82,11 +79,10 @@ async def upload_and_process_map(
     try:
         map_id = await create_map_in_db(
             db=session,
-            # TODO: replace with real owner
-            owner_id=UUID("00000000-0000-0000-0000-000000000001"),
+            user_id = UUID(user_id),
             title=file.filename,
             description=None,
-            access_level="private",
+            is_private=True,
         )
         # Lancer la tâche Celery (pass map_id as string for JSON serialization)
         task = process_map_extraction.delay(
@@ -208,21 +204,21 @@ async def get_maps(
 ):
     if user_id:
         try:
-            owner_uuid = UUID(user_id)
-            query = select(Map).where(Map.owner_id == owner_uuid)
+            user_id = UUID(user_id)
+            query = select(Map).where(Map.user_id == user_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid user_id format")
     else:
-        query = select(Map).where(Map.access_level == "public")
+        query = select(Map).where(not_(Map.is_private))
 
     result = await session.execute(query)
     maps = result.scalars().all()
 
     return maps
 
-
+# TODO real save on that endpoint
 @router.post("/save")
-async def create_map(
+async def save_map(
     request: MapCreateRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),

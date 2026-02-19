@@ -26,12 +26,16 @@
                   type="checkbox"
                   :checked="featureVisibility.get(feature.id)"
                   @change="
-                    $emit('toggle-feature', feature.id, $event.target.checked)
+                    $emit(
+                      'toggle-feature',
+                      feature.id,
+                      ($event.target as HTMLInputElement).checked,
+                    )
                   "
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <span class="label-text text-sm">
-                  {{ feature.properties?.name || "Unnamed Feature" }}
+                  {{ feature.properties?.name || "Élément sans nom" }}
                 </span>
               </label>
             </div>
@@ -53,27 +57,27 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue";
+import { Feature } from "../typescript/feature";
 
-const props = defineProps({
-  features: Array,
-  featureVisibility: Map,
-});
+const props = defineProps<{
+  features: Feature[];
+  featureVisibility: Map<string, boolean>;
+}>();
 
 const emit = defineEmits(["toggle-feature"]);
 
 const featureGroups = computed(() => {
   const groups = [
-    { type: "point", label: "Villes", features: [] },
-    { type: "zone", label: "Zones", features: [] },
-    { type: "arrow", label: "Flèches", features: [] },
-    { type: "shape", label: "Formes", features: [] },
+    { type: "point", label: "Villes", features: [] as Feature[] },
+    { type: "zone", label: "Zones", features: [] as Feature[] },
+    { type: "arrow", label: "Flèches", features: [] as Feature[] },
+    { type: "shape", label: "Formes", features: [] as Feature[] },
   ];
 
-  props.features.forEach((feature) => {
-    const elementType =
-      feature?.properties?.mapElementType || feature.type || "";
+  props.features.forEach((feature: Feature) => {
+    const elementType = feature?.properties?.mapElementType;
     const group = groups.find((g) => g.type === elementType);
     if (group) {
       group.features.push(feature);
@@ -83,7 +87,7 @@ const featureGroups = computed(() => {
   return groups.filter((group) => group.features.length > 0);
 });
 
-function toggleAll(visible) {
+function toggleAll(visible: boolean) {
   props.features.forEach((feature) => {
     emit("toggle-feature", feature.id, visible);
   });

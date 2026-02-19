@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <template>
   <div class="min-h-screen bg-base-200 p-6">
     <div class="max-w-4xl mx-auto">
@@ -314,3 +315,135 @@ const resetImport = () => {
   importStore.resetImport();
 };
 </script>
+=======
+<template>
+  <div class="min-h-screen bg-base-200 p-6">
+    <div class="max-w-4xl mx-auto">
+      <!-- Header -->
+      <div class="mb-8">
+        <h1 class="text-3xl font-bold text-base-content mb-2">
+          Importer une carte
+        </h1>
+        <p class="text-base-content/70">
+          Glissez votre image de carte ou cliquez pour la sélectionner
+        </p>
+      </div>
+
+      <!-- Process steps -->
+      <div class="steps w-full mb-8">
+        <div class="step" :class="{ 'step-primary': currentStep >= 1 }">
+          Sélection
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 2 }">
+          Prévisualisation
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 3 }">
+          Extraction
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 4 }">
+          Personnalisation
+        </div>
+      </div>
+
+      <!-- Main content according to the step -->
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <!-- Step 1: Drag & Drop -->
+          <FileDropZone
+            v-if="currentStep === 1"
+            @file-selected="handleFileSelected"
+            :is-loading="isUploading"
+          />
+
+          <!-- Step 2: Preview + Controls -->
+          <div v-else-if="currentStep === 2 && selectedFile" class="space-y-6">
+            <ImportPreview :image-file="selectedFile" :image-url="previewUrl" />
+            <ImportControls
+              @start-import="startImportProcess"
+              @cancel="resetImport"
+              :is-processing="isProcessing"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Processing Modal -->
+    <ProcessingModal
+      v-if="showProcessingModal"
+      :is-open="showProcessingModal"
+      :current-step="processingStep"
+      :progress="processingProgress"
+      @cancel="cancelImport"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { useImportStore } from "../../stores/import";
+import { useFileUpload } from "../../composables/useFileUpload";
+import { useImportProcess } from "../../composables/useImportProcess";
+
+// Components
+import FileDropZone from "../../components/import/FileDropZone.vue";
+import ImportPreview from "../../components/import/ImportPreview.vue";
+import ImportControls from "../../components/import/ImportControls.vue";
+import ProcessingModal from "../../components/import/ProcessingModal.vue";
+
+const router = useRouter();
+const importStore = useImportStore();
+
+// Composables
+const {
+  selectedFile,
+  previewUrl,
+  isUploading,
+  handleFileSelected: onFileSelected,
+} = useFileUpload();
+
+const {
+  isProcessing,
+  processingStep,
+  processingProgress,
+  showProcessingModal,
+  startImport,
+  cancelImport,
+  resultData,
+  mapId,
+} = useImportProcess();
+
+// Local state
+const currentStep = ref(1);
+
+// Event handlers
+const handleFileSelected = (file: File) => {
+  onFileSelected(file);
+  currentStep.value = 2;
+};
+
+async function startImportProcess() {
+  if (!selectedFile.value) return;
+
+  const result = await startImport(selectedFile.value);
+  if (result.success) {
+    currentStep.value = 3;
+  } else {
+    console.error("Erreur importation:", result.error);
+  }
+}
+
+// Redirect when extraction is finished
+watch([isProcessing, resultData, mapId], ([processing, result, id]) => {
+  if (!processing && result && id) {
+    router.push(`/maps/${id}`);
+  }
+});
+
+const resetImport = () => {
+  currentStep.value = 1;
+  importStore.resetImport();
+};
+</script>
+>>>>>>> 2e68347bea99385f12092db6f4b95ec37818eac2
