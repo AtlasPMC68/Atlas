@@ -14,12 +14,24 @@ export type LatLngTuple = [number, number];
 // Image-space coordinate tuple (x, y)
 export type XYTuple = [number, number];
 
+// Pixel-space representation of a coastline keypoint
+export interface CoastlineKeypointPixel {
+  x: number;
+  y: number;
+}
+
+// Geographic representation of a coastline keypoint
+export interface CoastlineKeypointGeo {
+  lat: number;
+  lng: number;
+}
+
 // Keypoint on the coastline map returned by the backend
 export interface CoastlineKeypoint {
-  geo: {
-    lat: number;
-    lng: number;
-  };
+  id: number;
+  pixel: CoastlineKeypointPixel;
+  geo: CoastlineKeypointGeo;
+  response: number;
   // Allow any additional backend-provided fields
   [key: string]: unknown;
 }
@@ -50,4 +62,12 @@ export interface MatchedImagePoint {
 export interface WorldAreaSelection {
   bounds: WorldBounds;
   zoom: number;
+}
+
+// Response from POST /maps/coastline-keypoints
+export interface CoastlineKeypointsResponse {
+  status: "success";
+  keypoints: CoastlineKeypoint[];
+  total: number;
+  bounds: WorldBounds;
 }
