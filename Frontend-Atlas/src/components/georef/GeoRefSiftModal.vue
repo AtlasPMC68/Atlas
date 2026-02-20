@@ -1,6 +1,9 @@
 <template>
-  <div v-if="isOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-    <div class="bg-base-100 rounded-lg shadow-xl max-w-6xl w-full mx-4 p-6 flex flex-col gap-4">
+  <div
+    v-if="isOpen"
+    class="fixed inset-0 z-50 flex items-start justify-center bg-black/60 overflow-y-auto"
+  >
+    <div class="bg-base-100 rounded-lg shadow-xl max-w-6xl w-full mx-4 my-6 p-6 flex flex-col gap-4">
       <div class="flex justify-between items-center mb-2">
         <h2 class="text-xl font-semibold">Géoréférencement avec points SIFT</h2>
         <button class="btn btn-ghost btn-sm" @click="emit('close')">✕</button>
