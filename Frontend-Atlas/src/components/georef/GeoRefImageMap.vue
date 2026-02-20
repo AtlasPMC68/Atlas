@@ -157,11 +157,6 @@ function updateSize(): void {
   if (imageEl.value) {
     imageNaturalWidth.value = imageEl.value.naturalWidth || 0;
     imageNaturalHeight.value = imageEl.value.naturalHeight || 0;
-    console.log(
-      "Image natural size:",
-      imageNaturalWidth.value,
-      imageNaturalHeight.value,
-    );
   }
 }
 

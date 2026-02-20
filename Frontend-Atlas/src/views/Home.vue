@@ -52,7 +52,6 @@
 import { ref } from "vue";
 import Hero from "../components/Hero.vue";
 import FeatureCard from "../components/FeatureCard.vue";
-import "leaflet/dist/leaflet.css";
 import {
   ArrowUpTrayIcon,
   MapIcon,

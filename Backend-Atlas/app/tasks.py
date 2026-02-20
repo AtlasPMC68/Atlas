@@ -4,7 +4,6 @@ import os
 import re
 import tempfile
 import time
-import numpy as np
 import cv2
 
 from datetime import datetime
@@ -46,6 +45,7 @@ def test_task(self, name: str = "World"):
     result = f"Hello {name}! Task completed successfully."
     logger.info(f"Test task completed: {result}")
     return result
+
 
 @celery_app.task(bind=True)
 def process_map_extraction(
@@ -193,7 +193,7 @@ def process_map_extraction(
                         pixel_features, pixel_points, geo_points_lonlat
                     )
                     asyncio.run(persist_features(map_uuid, georef_features))
-                    
+
                 except Exception as e:
                     logger.error(
                         f"SIFT georeferencing step failed for map {map_uuid}: {e}",
@@ -229,7 +229,7 @@ def process_map_extraction(
         self.update_state(
             state="PROGRESS",
             meta={
-                "current": 5,
+                "current": 6,
                 "total": nb_task,
                 "status": "Cleaning up and finalizing",
             },

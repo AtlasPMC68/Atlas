@@ -69,8 +69,6 @@ export function useImportProcess() {
     }
     formData.append("file", file);
 
-    console.log("form data", formData);
-
     try {
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/maps/upload`,

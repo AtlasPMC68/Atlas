@@ -49,7 +49,6 @@
             ref="imageMapRef"
             class="h-80 md:h-[28rem]"
             :image-url="imageUrl"
-            drawing-mode="point"
             :matched-points="matchedImagePoints"
             v-model:point="currentImagePoint"
             @select-match="onSelectImageMatch"
