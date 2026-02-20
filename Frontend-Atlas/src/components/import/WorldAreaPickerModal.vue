@@ -78,42 +78,46 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onBeforeUnmount, onMounted, nextTick, watch, ref } from "vue";
 import L from "leaflet";
+import type { WorldBounds, WorldAreaSelection } from "../../typescript/georef";
 
-const props = defineProps({
-  isOpen: { type: Boolean, default: false },
-  imageUrl: { type: String, required: true },
-
-  // Optional: allow parent to restore previous selection
-  initialBounds: {
-    type: Object,
-    default: null, // { west, south, east, north }
+const props = withDefaults(
+  defineProps<{
+    isOpen: boolean;
+    imageUrl: string;
+    // Optional: allow parent to restore previous selection
+    initialBounds: WorldBounds | null;
+    initialZoom: number;
+  }>(),
+  {
+    isOpen: false,
+    initialBounds: null,
+    initialZoom: 2,
   },
-  initialZoom: {
-    type: Number,
-    default: 2,
-  },
-});
+);
 
-const emit = defineEmits(["close", "confirmed"]);
+const emit = defineEmits<{
+  (e: "close"): void;
+  (e: "confirmed", payload: WorldAreaSelection): void;
+}>();
 
-const mapContainer = ref(null);
-let map = null;
-let landLayer = null;
-let selectionRect = null;
+const mapContainer = ref<HTMLDivElement | null>(null);
+let map: L.Map | null = null;
+let landLayer: L.GeoJSON | null = null;
+let selectionRect: L.Rectangle | null = null;
 
 // Match the GeoRef UX: start in move mode, user toggles into selection.
-const isSelectMode = ref(false);
+const isSelectMode = ref<boolean>(false);
 
-const selectedBounds = ref(null); // { west, south, east, north }
-const selectedZoom = ref(null);
+const selectedBounds = ref<WorldBounds | null>(null); // { west, south, east, north }
+const selectedZoom = ref<number | null>(null);
 
 let isDraggingSelection = false;
-let dragStartLatLng = null;
+let dragStartLatLng: L.LatLng | null = null;
 
-async function initMap() {
+async function initMap(): Promise<void> {
   if (!mapContainer.value || map) return;
 
   map = L.map(mapContainer.value, {
@@ -123,7 +127,7 @@ async function initMap() {
   // Load a lightweight basemap layer for context.
   // Served from Frontend-Atlas/public/geojson/
   try {
-    const res = await fetch("/geojson/ne_50m_lakes.geojson");
+    const res = await fetch("/geojson/ne_coastline.geojson");
     if (!res.ok) throw new Error(`Failed to load coastline geojson: ${res.status}`);
     const geojson = await res.json();
 
@@ -199,14 +203,15 @@ async function initMap() {
   applyInteractionMode();
 }
 
-async function ensureMapLifecycle(open) {
+async function ensureMapLifecycle(open: boolean): Promise<void> {
   if (open) {
     // Wait until the modal is rendered so Leaflet can measure the container.
     await nextTick();
     await initMap();
     if (map) {
       // Leaflet often needs this when mounted in a modal.
-      setTimeout(() => map.invalidateSize(), 0);
+      const currentMap = map;
+      setTimeout(() => currentMap.invalidateSize(), 0);
     }
   } else {
     resetSelection();
@@ -214,7 +219,7 @@ async function ensureMapLifecycle(open) {
   }
 }
 
-function destroyMap() {
+function destroyMap(): void {
   if (!map) return;
 
   map.off("mousedown", onMapMouseDown);
@@ -236,7 +241,7 @@ function destroyMap() {
   map = null;
 }
 
-function applyInteractionMode() {
+function applyInteractionMode(): void {
   if (!map) return;
   if (isSelectMode.value) {
     // Selection mode: allow zooming, but disable dragging so mouse-drag draws the rectangle.
@@ -258,14 +263,14 @@ function applyInteractionMode() {
   }
 }
 
-function toggleSelectMode() {
+function toggleSelectMode(): void {
   isSelectMode.value = !isSelectMode.value;
   isDraggingSelection = false;
   dragStartLatLng = null;
   applyInteractionMode();
 }
 
-function resetSelection() {
+function resetSelection(): void {
   selectedBounds.value = null;
   selectedZoom.value = null;
 
@@ -275,7 +280,7 @@ function resetSelection() {
   }
 }
 
-function onMapMouseDown(e) {
+function onMapMouseDown(e: L.LeafletMouseEvent): void {
   if (!map || !isSelectMode.value) return;
 
   isDraggingSelection = true;
@@ -297,7 +302,7 @@ function onMapMouseDown(e) {
   setSelectionFromBounds(bounds);
 }
 
-function onMapMouseMove(e) {
+function onMapMouseMove(e: L.LeafletMouseEvent): void {
   if (!map || !isSelectMode.value || !isDraggingSelection || !dragStartLatLng) return;
 
   const bounds = L.latLngBounds(dragStartLatLng, e.latlng);
@@ -305,7 +310,7 @@ function onMapMouseMove(e) {
   setSelectionFromBounds(bounds);
 }
 
-function onMapMouseUp() {
+function onMapMouseUp(): void {
   isDraggingSelection = false;
   dragStartLatLng = null;
 
@@ -314,7 +319,7 @@ function onMapMouseUp() {
   }
 }
 
-function setSelectionFromBounds(bounds) {
+function setSelectionFromBounds(bounds: L.LatLngBounds): void {
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
 
@@ -330,17 +335,18 @@ function setSelectionFromBounds(bounds) {
   }
 }
 
-function onConfirm() {
+function onConfirm(): void {
   if (!selectedBounds.value) return;
+  const zoom = selectedZoom.value ?? (map ? map.getZoom() : props.initialZoom);
   emit("confirmed", {
     bounds: selectedBounds.value,
-    zoom: selectedZoom.value,
+    zoom,
   });
 }
 
 watch(
   () => props.isOpen,
-  async (open) => {
+  async (open: boolean) => {
     await ensureMapLifecycle(open);
   },
   { immediate: true },

@@ -45,3 +45,9 @@ export interface MatchedImagePoint {
   y: number;
   color: string;
 }
+
+// Result of selecting a world area (used by picker modal + import view)
+export interface WorldAreaSelection {
+  bounds: WorldBounds;
+  zoom: number;
+}

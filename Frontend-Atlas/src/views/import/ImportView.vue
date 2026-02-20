@@ -161,6 +161,7 @@ import type {
   LatLngTuple,
   XYTuple,
   CoastlineKeypoint,
+  WorldAreaSelection,
 } from "../../typescript/georef";
 
 // Components
@@ -196,11 +197,6 @@ const {
 const { fetchCoastlineKeypoints } = useSiftPoints();
 
 // Types
-
-interface WorldAreaPayload {
-  bounds: WorldBounds;
-  zoom: number;
-}
 
 interface GeorefPayload {
   worldPoints: LatLngTuple[];
@@ -262,7 +258,7 @@ function handleWorldAreaClose() {
   currentStep.value = 2;
 }
 
-async function handleWorldAreaConfirmed(payload: WorldAreaPayload) {
+async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
   // payload: { bounds: {west,south,east,north}, zoom }
   worldAreaBounds.value = payload.bounds;
   worldAreaZoom.value = payload.zoom;
