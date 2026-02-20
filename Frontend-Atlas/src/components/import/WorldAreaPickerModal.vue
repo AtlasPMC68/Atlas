@@ -123,7 +123,7 @@ async function initMap() {
   // Load a lightweight basemap layer for context.
   // Served from Frontend-Atlas/public/geojson/
   try {
-    const res = await fetch("/geojson/ne_coastline.geojson");
+    const res = await fetch("/geojson/ne_50m_lakes.geojson");
     if (!res.ok) throw new Error(`Failed to load coastline geojson: ${res.status}`);
     const geojson = await res.json();
 

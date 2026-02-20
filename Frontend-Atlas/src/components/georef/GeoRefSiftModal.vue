@@ -74,36 +74,47 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import GeoRefSiftWorldMap from "./GeoRefSiftWorldMap.vue";
 import GeoRefImageMap from "./GeoRefImageMap.vue";
+import type {
+  WorldBounds,
+  LatLngTuple,
+  XYTuple,
+  CoastlineKeypoint,
+  GeorefMatch,
+  MatchedWorldPointSummary,
+  MatchedImagePoint,
+} from "../../typescript/georef";
 
-const props = defineProps({
-  isOpen: { type: Boolean, default: false },
-  imageUrl: { type: String, required: true },
-  worldBounds: {
-    type: Object,
-    default: null, // { west, south, east, north }
+const props = withDefaults(
+  defineProps<{
+    isOpen: boolean;
+    imageUrl: string;
+    worldBounds: WorldBounds | null;
+    keypoints: CoastlineKeypoint[];
+    minPairs?: number;
+  }>(),
+  {
+    isOpen: false,
+    worldBounds: null,
+    keypoints: () => [],
+    minPairs: 4,
   },
-  keypoints: {
-    type: Array,
-    default: () => [], // CoastlineKeypoint[]
-  },
-  minPairs: {
-    type: Number,
-    default: 4,
-  },
-});
+);
 
-const emit = defineEmits(["close", "confirmed"]);
+const emit = defineEmits<{
+  (e: "close"): void;
+  (e: "confirmed", payload: { worldPoints: LatLngTuple[]; imagePoints: XYTuple[] }): void;
+}>();
 
-const imageMapRef = ref(null);
-const activeIndex = ref(0);
-const currentImagePoint = ref(null); // [x, y] of last click on image
+const imageMapRef = ref<InstanceType<typeof GeoRefImageMap> | null>(null);
+const activeIndex = ref<number>(0);
+const currentImagePoint = ref<XYTuple | null>(null); // [x, y] of last click on image
 // Matches between world keypoints and image points:
 // { index, world: [lat,lng], image: [x,y], color }
-const matches = ref([]);
+const matches = ref<GeorefMatch[]>([]);
 
 // Simple color palette for matched pairs
 const PAIR_COLORS = [
@@ -119,24 +130,24 @@ const PAIR_COLORS = [
   "#6366f1",
 ];
 
-const totalPoints = computed(() => props.keypoints?.length || 0);
-const matchedCount = computed(() => matches.value.length);
+const totalPoints = computed<number>(() => props.keypoints?.length || 0);
+const matchedCount = computed<number>(() => matches.value.length);
 
-const canConfirm = computed(
+const canConfirm = computed<boolean>(
   () => matchedCount.value >= props.minPairs,
 );
 
-const currentWorldKeypoint = computed(() => {
+const currentWorldKeypoint = computed<CoastlineKeypoint | null>(() => {
   if (!props.keypoints || props.keypoints.length === 0) return null;
   if (activeIndex.value < 0 || activeIndex.value >= props.keypoints.length) return null;
   return props.keypoints[activeIndex.value];
 });
 
-const matchedWorldPoints = computed(() =>
+const matchedWorldPoints = computed<MatchedWorldPointSummary[]>(() =>
   matches.value.map((m) => ({ index: m.index, color: m.color })),
 );
 
-const matchedImagePoints = computed(() =>
+const matchedImagePoints = computed<MatchedImagePoint[]>(() =>
   matches.value.map((m) => ({
     index: m.index,
     x: m.image[0],
@@ -145,13 +156,13 @@ const matchedImagePoints = computed(() =>
   })),
 );
 
-function resetMatching() {
+function resetMatching(): void {
   matches.value = [];
   activeIndex.value = 0;
   currentImagePoint.value = null;
 }
 
-function onSelectWorldKeypoint(index) {
+function onSelectWorldKeypoint(index: number): void {
   if (index < 0 || index >= totalPoints.value) return;
   // Change the currently selected world keypoint.
   // If it was already matched, entering here means "retake" that pair:
@@ -168,7 +179,7 @@ function onSelectWorldKeypoint(index) {
   }
 }
 
-function onSelectImageMatch(index) {
+function onSelectImageMatch(index: number): void {
   // Focus the pair corresponding to the clicked triangle on the image.
   if (index < 0 || index >= totalPoints.value) return;
   activeIndex.value = index;
@@ -184,7 +195,7 @@ function onSelectImageMatch(index) {
   }
 }
 
-function onConfirm() {
+function onConfirm(): void {
   if (!canConfirm.value || matches.value.length === 0) return;
 
   const worldPoints = matches.value.map((m) => m.world);
@@ -196,7 +207,7 @@ function onConfirm() {
 // Whenever the user clicks on the image, record a match
 watch(
   () => currentImagePoint.value,
-  (val) => {
+  (val: XYTuple | null) => {
     if (!val) return;
     const kp = currentWorldKeypoint.value;
     if (!kp) return;
@@ -252,7 +263,7 @@ watch(
 
 watch(
   () => props.isOpen,
-  (open) => {
+  (open: boolean) => {
     if (!open) {
       resetMatching();
     }

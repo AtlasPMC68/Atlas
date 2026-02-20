@@ -4,45 +4,49 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import L from "leaflet";
+import type {
+  WorldBounds,
+  CoastlineKeypoint,
+  MatchedWorldPointSummary,
+} from "../../typescript/georef";
 
-const props = defineProps({
-  worldBounds: {
-    type: Object,
-    default: null, // { west, south, east, north }
+const props = withDefaults(
+  defineProps<{
+    worldBounds: WorldBounds | null;
+    keypoints: CoastlineKeypoint[];
+    activeIndex: number;
+    // Matched control points coming from the modal
+    // [{ index, color }]
+    matchedPoints: MatchedWorldPointSummary[];
+  }>(),
+  {
+    worldBounds: null,
+    keypoints: () => [],
+    activeIndex: 0,
+    matchedPoints: () => [],
   },
-  keypoints: {
-    type: Array,
-    default: () => [], // [{ id, pixel: {x,y}, geo: {lat,lng}, response }]
-  },
-  activeIndex: {
-    type: Number,
-    default: 0,
-  },
-  // Matched control points coming from the modal
-  // [{ index, color }]
-  matchedPoints: {
-    type: Array,
-    default: () => [],
-  },
-});
+);
 
-const emit = defineEmits(["select-keypoint"]);
+const emit = defineEmits<{
+  (e: "select-keypoint", index: number): void;
+}>();
 
-const mapContainer = ref(null);
-let map = null;
-let landLayer = null;
-let markers = [];
+const mapContainer = ref<HTMLDivElement | null>(null);
+let map: L.Map | null = null;
+let landLayer: L.GeoJSON | null = null;
+let markers: L.Layer[] = [];
 
-function clearMarkers() {
+function clearMarkers(): void {
   if (!map || !markers.length) return;
-  markers.forEach((m) => map.removeLayer(m));
+  const currentMap = map;
+  markers.forEach((m) => currentMap.removeLayer(m));
   markers = [];
 }
 
-function styleForIndex(index, isActive) {
+function styleForIndex(isActive: boolean): L.CircleMarkerOptions {
   if (isActive) {
     return {
       radius: 7,
@@ -63,8 +67,9 @@ function styleForIndex(index, isActive) {
   };
 }
 
-function renderKeypoints() {
+function renderKeypoints(): void {
   if (!map) return;
+  const currentMap = map;
   clearMarkers();
 
   props.keypoints.forEach((kp, index) => {
@@ -75,7 +80,7 @@ function renderKeypoints() {
     const isActive = index === props.activeIndex;
 
     const match = props.matchedPoints.find((m) => m.index === index);
-    let marker;
+    let marker: L.Marker | L.CircleMarker;
 
     if (match) {
       // Render matched points as triangles with a stable color using a divIcon
@@ -94,7 +99,7 @@ function renderKeypoints() {
       });
     } else {
       // Unmatched points are plain circle markers
-      marker = L.circleMarker([lat, lng], styleForIndex(index, isActive));
+      marker = L.circleMarker([lat, lng], styleForIndex(isActive));
     }
 
     // Allow user to choose the current point by clicking a marker
@@ -102,18 +107,18 @@ function renderKeypoints() {
       emit("select-keypoint", index);
     });
 
-    marker.addTo(map);
+    marker.addTo(currentMap);
     markers.push(marker);
   });
 }
 
-function updateActiveMarker() {
+function updateActiveMarker(): void {
   // Re-render everything so both matched triangles and circles
   // reflect the current active index.
   renderKeypoints();
 }
 
-async function initMap() {
+async function initMap(): Promise<void> {
   if (!mapContainer.value || map) return;
 
   map = L.map(mapContainer.value, {
@@ -198,7 +203,7 @@ watch(
 
 watch(
   () => props.worldBounds,
-  (bounds) => {
+  (bounds: WorldBounds | null) => {
     if (!map || !bounds) return;
     const { west, south, east, north } = bounds;
     const b = L.latLngBounds([south, west], [north, east]);

@@ -42,7 +42,11 @@
 
           <!-- Étape 2: Prévisualisation + Contrôles -->
           <div v-else-if="currentStep === 2" class="space-y-6">
-            <ImportPreview :image-file="selectedFile" :image-url="previewUrl" />
+            <ImportPreview
+              v-if="selectedFile"
+              :image-file="selectedFile"
+              :image-url="previewUrl"
+            />
             
             <!-- Extraction Options -->
             <div class="bg-base-200 rounded-lg p-4 space-y-3">
@@ -145,13 +149,19 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, watch } from "vue";
+<script setup lang="ts">
+import { ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
+import type {
+  WorldBounds,
+  LatLngTuple,
+  XYTuple,
+  CoastlineKeypoint,
+} from "../../typescript/georef";
 
 // Components
 import FileDropZone from "../../components/import/FileDropZone.vue";
@@ -185,26 +195,34 @@ const {
 
 const { fetchCoastlineKeypoints } = useSiftPoints();
 
+// Types
+
+interface WorldAreaPayload {
+  bounds: WorldBounds;
+  zoom: number;
+}
+
+interface GeorefPayload {
+  worldPoints: LatLngTuple[];
+  imagePoints: XYTuple[];
+}
+
 // État local
-const currentStep = ref(1);
-const showWorldAreaPickerModal = ref(false);
-const showSiftGeorefModal = ref(false);
-const worldAreaBounds = ref(null); // { west, south, east, north } or null
-const worldAreaZoom = ref(null);
-const coastlineKeypoints = ref(null); // SIFT coastline keypoints from backend
-const worldPolyline = ref([]); // [ [lat,lng], ... ]
-const imagePolyline = ref([]); // [ [x,y], ... ]
-const worldPoint = ref(null); // [lat, lng] or null
-const imagePoint = ref(null); // [x, y] or null
+const currentStep = ref<number>(1);
+const showWorldAreaPickerModal = ref<boolean>(false);
+const showSiftGeorefModal = ref<boolean>(false);
+const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
+const worldAreaZoom = ref<number | null>(null);
+const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
 
 // Extraction options (all enabled by default)
-const enableGeoreferencing = ref(true);
-const enableColorExtraction = ref(true);
-const enableShapesExtraction = ref(false);
-const enableTextExtraction = ref(false);
+const enableGeoreferencing = ref<boolean>(true);
+const enableColorExtraction = ref<boolean>(true);
+const enableShapesExtraction = ref<boolean>(false);
+const enableTextExtraction = ref<boolean>(false);
 
 // Gestionnaires d'événements
-const handleFileSelected = (file) => {
+const handleFileSelected = (file: File) => {
   onFileSelected(file);
   currentStep.value = 2;
 };
@@ -244,7 +262,7 @@ function handleWorldAreaClose() {
   currentStep.value = 2;
 }
 
-async function handleWorldAreaConfirmed(payload) {
+async function handleWorldAreaConfirmed(payload: WorldAreaPayload) {
   // payload: { bounds: {west,south,east,north}, zoom }
   worldAreaBounds.value = payload.bounds;
   worldAreaZoom.value = payload.zoom;
@@ -253,7 +271,7 @@ async function handleWorldAreaConfirmed(payload) {
   // Call backend to get coastline keypoints for this ROI and
   // store the result for the next georef step.
   const res = await fetchCoastlineKeypoints(payload.bounds);
-  if (res.success) {
+  if (res.success && res.data) {
     // Prefer backend bounds if it returns a more precise ROI
     worldAreaBounds.value = res.data.bounds || payload.bounds;
     coastlineKeypoints.value = res.data.keypoints;
@@ -268,7 +286,7 @@ async function handleWorldAreaConfirmed(payload) {
   }
 }
 
-async function handleGeorefConfirmed(payload) {
+async function handleGeorefConfirmed(payload: GeorefPayload) {
   // payload: { worldPoints: [ [lat,lng], ... ], imagePoints: [ [x,y], ... ] }
   showSiftGeorefModal.value = false;
 

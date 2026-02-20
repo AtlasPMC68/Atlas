@@ -67,41 +67,45 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
+import type { XYTuple, MatchedImagePoint } from "../../typescript/georef";
 
-const props = defineProps({
-  point: {
-    type: Array,
-    default: null, // [x, y] or null
+type PointTuple = XYTuple;
+type MatchedPoint = MatchedImagePoint;
+
+const props = withDefaults(
+  defineProps<{
+    point: PointTuple | null;
+    imageUrl: string;
+    // Matched control points passed from parent (for SIFT modal)
+    // [{ index, x, y, color }]
+    matchedPoints: MatchedPoint[];
+  }>(),
+  {
+    point: null,
+    matchedPoints: () => [],
   },
-  imageUrl: {
-    type: String,
-    required: true,
-  },
-  // Matched control points passed from parent (for SIFT modal)
-  // [{ index, x, y, color }]
-  matchedPoints: {
-    type: Array,
-    default: () => [],
-  },
-});
+);
 
-const emit = defineEmits(["update:point", "select-match"]);
+const emit = defineEmits<{
+  (e: "update:point", value: PointTuple): void;
+  (e: "select-match", index: number): void;
+}>();
 
-const container = ref(null);
-const imageEl = ref(null);
+const container = ref<HTMLDivElement | null>(null);
+const imageEl = ref<HTMLImageElement | null>(null);
 
-const imageNaturalWidth = ref(0);
-const imageNaturalHeight = ref(0);
+const imageNaturalWidth = ref<number>(0);
+const imageNaturalHeight = ref<number>(0);
 
-const scale = ref(1);
-const offset = ref({ x: 0, y: 0 });
-const isPanning = ref(false);
-const lastMouse = ref({ x: 0, y: 0 });
+const scale = ref<number>(1);
+const offset = ref<{ x: number; y: number }>({ x: 0, y: 0 });
+const isPanning = ref<boolean>(false);
+const lastMouse = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 
 // 'click' = place point, 'move' = pan by dragging
-const interactionMode = ref('click');
+const interactionMode = ref<'click' | 'move'>("click");
 
 const svgStyle = computed(() => {
   if (
@@ -148,7 +152,7 @@ watch(
   },
 );
 
-function updateSize() {
+function updateSize(): void {
   if (!container.value) return;
   if (imageEl.value) {
     imageNaturalWidth.value = imageEl.value.naturalWidth || 0;
@@ -161,7 +165,7 @@ function updateSize() {
   }
 }
 
-function onWheel(e) {
+function onWheel(e: WheelEvent): void {
   const factor = 0.001;
   const next = scale.value * (1 - e.deltaY * factor);
   scale.value = Math.min(5, Math.max(1, next));
@@ -170,11 +174,11 @@ function onWheel(e) {
   clampOffset();
 }
 
-function onMouseDown(event) {
+function onMouseDown(event: MouseEvent): void {
   if (!container.value) return;
 
   // In move mode, start panning instead of drawing
-  if (interactionMode.value === 'move') {
+  if (interactionMode.value === "move") {
     isPanning.value = true;
     lastMouse.value = { x: event.clientX, y: event.clientY };
     return;
@@ -184,7 +188,7 @@ function onMouseDown(event) {
   setPointFromEvent(event);
 }
 
-function onMouseMove(event) {
+function onMouseMove(event: MouseEvent): void {
   if (!container.value) return;
 
   // Handle panning independently of drawing
@@ -207,11 +211,11 @@ function onMouseMove(event) {
   }
 }
 
-function onMouseUp() {
+function onMouseUp(): void {
   isPanning.value = false;
 }
 
-function clampOffset() {
+function clampOffset(): void {
   if (!container.value) return;
 
   const rect = container.value.getBoundingClientRect();
@@ -235,12 +239,12 @@ function clampOffset() {
   };
 }
 
-function onTriangleClick(index) {
+function onTriangleClick(index: number): void {
   // Notify parent that an existing matched point was selected
   emit("select-match", index);
 }
 
-function trianglePoints(m) {
+function trianglePoints(m: MatchedPoint): string {
   // Build an upright triangle centered on the image point.
   // Keep its apparent size roughly constant on screen by
   // compensating for both the base image fit (baseScale)
@@ -281,7 +285,7 @@ function trianglePoints(m) {
   return `${x1},${y1} ${x2},${y2} ${x3},${y3}`;
 }
 
-function setPointFromEvent(event) {
+function setPointFromEvent(event: MouseEvent): void {
   if (!container.value || !imageEl.value) return;
 
   const natW = imageEl.value.naturalWidth;
@@ -323,7 +327,7 @@ function setPointFromEvent(event) {
 defineExpose({
   // Allow parent to force the component back into click mode
   focusClickMode() {
-    interactionMode.value = 'click';
+    interactionMode.value = "click";
   },
 });
 
