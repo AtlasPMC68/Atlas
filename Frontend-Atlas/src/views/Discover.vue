@@ -7,11 +7,14 @@ import {
 } from "@heroicons/vue/24/outline";
 import { MapData, MapDisplay } from "../typescript/map";
 import { snakeToCamel } from "../utils/utils";
+import { useCurrentUser } from "../composables/useCurrentUser";
 
 const maps = ref<MapDisplay[]>([]);
+const { fetchCurrentUser } = useCurrentUser();
 
-onMounted(() => {
-  fetchMapsAndRender();
+onMounted(async () => {
+  await fetchCurrentUser();
+  await fetchMapsAndRender();
 });
 
 async function fetchMapsAndRender() {

@@ -7,6 +7,7 @@ import Profile from "../views/Profile.vue";
 import Settings from "../views/Settings.vue";
 import Discover from "../views/Discover.vue";
 import keycloak from "../keycloak";
+import { useCurrentUser } from "../composables/useCurrentUser";
 
 const routes = [
   { path: "/", component: Home },
@@ -74,6 +75,9 @@ router.beforeEach(async (to) => {
       });
       return false;
     }
+
+    const { fetchCurrentUser } = useCurrentUser();
+    await fetchCurrentUser();
 
     return true;
   } catch (err) {
