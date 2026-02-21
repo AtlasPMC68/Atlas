@@ -11,7 +11,7 @@
         </p>
       </div>
 
-      <!-- Étapes du processus -->
+      <!-- Process steps -->
       <div class="steps w-full mb-8">
         <div class="step" :class="{ 'step-primary': currentStep >= 1 }">
           Sélection
@@ -30,17 +30,17 @@
         </div>
       </div>
 
-      <!-- Contenu principal selon l'étape -->
+      <!-- Main content by step -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
-          <!-- Étape 1: Drag & Drop -->
+          <!-- Step 1: Drag & Drop -->
           <FileDropZone
             v-if="currentStep === 1"
             @file-selected="handleFileSelected"
             :is-loading="isUploading"
           />
 
-          <!-- Étape 2: Prévisualisation + Contrôles -->
+          <!-- Step 2: Preview + Controls -->
           <div v-else-if="currentStep === 2" class="space-y-6">
             <ImportPreview
               v-if="selectedFile"
@@ -116,7 +116,7 @@
       </div>
     </div>
 
-    <!-- Modal de sélection de zone monde -->
+    <!-- World area selection modal -->
     <WorldAreaPickerModal
       v-if="showWorldAreaPickerModal && previewUrl"
       :is-open="showWorldAreaPickerModal"
@@ -127,7 +127,7 @@
       @confirmed="handleWorldAreaConfirmed"
     />
 
-    <!-- Modal de géoréférencement basé sur les points SIFT -->
+    <!-- SIFT-based georeferencing modal -->
     <GeoRefSiftModal
       v-if="showSiftGeorefModal && previewUrl && worldAreaBounds && coastlineKeypoints"
       :is-open="showSiftGeorefModal"
@@ -138,7 +138,7 @@
       @confirmed="handleGeorefConfirmed"
     />
 
-    <!-- Modal de traitement -->
+    <!-- Processing modal -->
     <ProcessingModal
       v-if="showProcessingModal"
       :is-open="showProcessingModal"
@@ -203,7 +203,7 @@ interface GeorefPayload {
   imagePoints: XYTuple[];
 }
 
-// État local
+// Local state
 const currentStep = ref<number>(1);
 const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
@@ -217,7 +217,7 @@ const enableColorExtraction = ref<boolean>(true);
 const enableShapesExtraction = ref<boolean>(false);
 const enableTextExtraction = ref<boolean>(false);
 
-// Gestionnaires d'événements
+// Event handlers
 const handleFileSelected = (file: File) => {
   onFileSelected(file);
   currentStep.value = 2;
