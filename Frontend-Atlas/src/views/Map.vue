@@ -132,7 +132,7 @@ async function handleSaveAs(map: MapData) {
     const result = await response.json();
     console.log("Map saved successfuly:", result);
   } catch (err) {
-    console.error("Error while saving map:", err);
+    throw new Error("Error while saving map:", err);
   }
 }
 </script>

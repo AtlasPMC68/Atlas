@@ -53,7 +53,7 @@ const saveSettings = async () => {
   <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
     <h1 class="text-2xl font-bold text-gray-900 mb-6">Paramètres</h1>
 
-    <div v-if="currentUser" class="bg-white shadow rounded-lg p-6 space-y-6">
+    <div class="bg-white shadow rounded-lg p-6 space-y-6">
       <!-- Username -->
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
