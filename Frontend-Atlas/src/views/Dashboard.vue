@@ -5,47 +5,28 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/vue/24/outline";
-import keycloak from "../keycloak";
 import { MapData, MapDisplay } from "../typescript/map";
 import { snakeToCamel } from "../utils/utils";
-import { User } from "../typescript/user";
+import { useCurrentUser } from "../composables/useCurrentUser";
+import keycloak from "../keycloak";
 
 const maps = ref<MapDisplay[]>([]);
+const { currentUser, fetchCurrentUser } = useCurrentUser();
 
-onMounted(() => {
-  fetchMapsAndRender();
+onMounted(async () => {
+  await fetchCurrentUser();
+  await fetchMapsAndRender();
 });
 
 async function fetchMapsAndRender() {
-  if (!keycloak.token) {
-    console.error("No authentication token found");
-    return;
-  }
-
-  let userData: User;
-
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Error while getting the user : ${res.status}`);
-    }
-
-    userData = await res.json();
-  } catch (err) {
-    console.error("Error while fetching /me :", err);
+  if (!currentUser.value) {
+    throw new Error("No user or token available");
     return;
   }
 
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/map?user_id=${userData.id}`,
+      `${import.meta.env.VITE_API_URL}/maps/map?user_id=${currentUser.value.id}`,
       {
         method: "GET",
         headers: {
@@ -56,7 +37,7 @@ async function fetchMapsAndRender() {
     );
 
     if (!res.ok) {
-      throw new Error(`Error while fetching the maps : ${res.status}`);
+      throw new Error(`Error while fetching the maps: ${res.status}`);
     }
 
     const mapsData: MapData[] = snakeToCamel(await res.json()) as MapData[];
@@ -65,10 +46,10 @@ async function fetchMapsAndRender() {
       id: map.id,
       title: map.title,
       userId: map.userId,
-      image: "/images/default.jpg", // TODO : Ask question to expert for that i think it's not scallable
+      image: "/images/default.jpg",
     }));
   } catch (err) {
-    console.error("Error while fetching the maps :", err);
+    console.error("Error while fetching the maps:", err);
   }
 }
 </script>

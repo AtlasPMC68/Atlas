@@ -41,23 +41,24 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
-import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
-import keycloak from "../keycloak";
-import { useRoute } from "vue-router";
-import { camelToSnake } from "../utils/utils";
-import { MapData } from "../typescript/map";
+import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
+import { MapData } from "../typescript/map";
+import { camelToSnake } from "../utils/utils";
+import { useCurrentUser } from "../composables/useCurrentUser";
+import keycloak from "../keycloak";
 
 const route = useRoute();
-const mapId = ref(route.params.mapId);
-const features = ref([]);
-const featureVisibility = ref(new Map());
-const error = ref("");
-
+const mapId = ref(route.params.mapId as string);
+const features = ref<Feature[]>([]);
+const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
+
+const { currentUser, fetchCurrentUser } = useCurrentUser();
 
 async function loadInitialFeatures() {
   try {
@@ -86,8 +87,9 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
 
 function handleFeaturesLoaded(loadedFeatures: Feature[]) {}
 
-onMounted(() => {
-  loadInitialFeatures();
+onMounted(async () => {
+  await fetchCurrentUser();
+  await loadInitialFeatures();
 });
 
 function saveCarte() {
@@ -100,33 +102,11 @@ function saveCarteAs() {
 }
 
 async function handleSaveAs(map: MapData) {
-  if (!keycloak.token) {
-    console.error("No authentication token available from Keycloak");
-    return;
+  if (!keycloak.token || !currentUser.value) {
+    throw new Error("No authentication token or user available");
   }
 
-  let userData;
-
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Error while getting the user : ${res.status}`);
-    }
-
-    userData = await res.json();
-  } catch (err) {
-    console.error("Error while fetching user :", err);
-    return;
-  }
-
-  const userId = userData.id;
+  const userId = currentUser.value.id;
 
   try {
     const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/save`, {
@@ -146,16 +126,13 @@ async function handleSaveAs(map: MapData) {
     });
 
     if (!response.ok) {
-      const result = await response.json();
-      throw new Error(result.detail || "Error while loading the maps.");
+      throw new Error("Error while saving the map");
     }
 
     const result = await response.json();
     console.log("Map saved successfuly:", result);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "Unknown error.";
+    console.error("Error while saving map:", err);
   }
-
-  showSaveAsModal.value = false;
 }
 </script>

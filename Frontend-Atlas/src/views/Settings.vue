@@ -2,34 +2,18 @@
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import keycloak from "../keycloak";
-import { User } from "../typescript/user";
-import { snakeToCamel } from "../utils/utils";
+import { useCurrentUser } from "../composables/useCurrentUser";
 
 const errorMessage = ref("");
 const router = useRouter();
+const { currentUser, fetchCurrentUser, refreshUser } = useCurrentUser();
 
-const user = ref<User>({
-  id: "",
-  username: "",
-  email: "",
-  createdAt: "",
-});
+const localUsername = ref("");
 
 onMounted(async () => {
-  if (!keycloak.token) return;
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
-      headers: {
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-    });
-    if (!res.ok) throw new Error("Erreur chargement du profil");
-    const data = await res.json();
-    const userData: User = snakeToCamel(data);
-    user.value.username = userData.username;
-    user.value.email = userData.email;
-  } catch (err) {
-    console.error(err);
+  await fetchCurrentUser();
+  if (currentUser.value) {
+    localUsername.value = currentUser.value.username;
   }
 });
 
@@ -45,7 +29,7 @@ const saveSettings = async () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${keycloak.token}`,
         },
-        body: JSON.stringify({ username: user.value.username }),
+        body: JSON.stringify({ username: localUsername.value }),
       },
     );
 
@@ -55,6 +39,8 @@ const saveSettings = async () => {
       errorMessage.value = data.detail || "Erreur lors de la mise à jour";
       return;
     }
+
+    await refreshUser();
     router.push("/profil");
   } catch (err) {
     console.error(err);
@@ -67,15 +53,15 @@ const saveSettings = async () => {
   <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
     <h1 class="text-2xl font-bold text-gray-900 mb-6">Paramètres</h1>
 
-    <div class="bg-white shadow rounded-lg p-6 space-y-6">
+    <div v-if="currentUser" class="bg-white shadow rounded-lg p-6 space-y-6">
       <!-- Username -->
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Nom d’utilisateur</label
+          >Nom d'utilisateur</label
         >
         <input
           type="text"
-          v-model="user.username"
+          v-model="localUsername"
           class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
       </div>
@@ -87,7 +73,7 @@ const saveSettings = async () => {
         >
         <input
           type="email"
-          :value="user.email"
+          :value="currentUser.email"
           disabled
           class="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-100 text-gray-500"
         />
