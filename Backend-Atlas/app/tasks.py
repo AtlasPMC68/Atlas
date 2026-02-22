@@ -182,9 +182,6 @@ def process_map_extraction(
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])
 
-            if normalized_features:
-                asyncio.run(persist_features(map_uuid, normalized_features))
-
             # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
             # Georeference pixel-space features if SIFT point pairs are provided
             if pixel_points and geo_points_lonlat:
@@ -199,7 +196,8 @@ def process_map_extraction(
                         f"SIFT georeferencing step failed for map {map_uuid}: {e}",
                         exc_info=True,
                     )
-            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
+            elif normalized_features:
+                asyncio.run(persist_features(map_uuid, normalized_features))
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
