@@ -3,16 +3,18 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-16 relative">
         <!-- Logo -->
-        <div class="flex items-center">
-          <div class="flex-shrink-0 flex items-center">
-            <div
-              class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center mr-3"
-            >
-              <MapIcon class="h-6 w-6 text-white" />
+        <RouterLink to="/" class="flex items-center">
+          <div class="flex items-center">
+            <div class="flex-shrink-0 flex items-center">
+              <div
+                class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center mr-3"
+              >
+                <MapIcon class="h-6 w-6 text-white" />
+              </div>
+              <h1 class="text-xl font-bold text-gray-900">Atlas</h1>
             </div>
-            <h1 class="text-xl font-bold text-gray-900">Atlas</h1>
           </div>
-        </div>
+        </RouterLink>
 
         <!-- Desktop Navigation -->
         <nav
@@ -63,7 +65,7 @@
               <div
                 class="flex items-center space-x-0 text-gray-700 hover:text-primary-600 cursor-pointer"
               >
-                <UserCircleIcon class="h-10 w-10" />
+                <UserCircleIcon class="h-8 w-8" />
                 <ChevronDownIcon class="h-5 w-5" />
               </div>
 

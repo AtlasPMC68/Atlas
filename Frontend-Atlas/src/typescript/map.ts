@@ -12,5 +12,7 @@ export interface MapDisplay {
   id: string;
   title: string;
   userId: string;
+  description?: string;
+  createdAt: string;
   image?: string;
 }

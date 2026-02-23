@@ -31,6 +31,8 @@ async function fetchMapsAndRender() {
       return {
         id: map.id,
         title: map.title,
+        description: map.description,
+        createdAt: map.createdAt,
         userId: map.userId,
         image: "/images/default.jpg",
       };
