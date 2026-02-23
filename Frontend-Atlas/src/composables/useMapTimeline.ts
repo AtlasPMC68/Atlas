@@ -2,6 +2,7 @@ import { ref } from "vue";
 import L from "leaflet";
 import { getClosestAvailableYear } from "../utils/mapUtils";
 
+/*
 const regionsLayerOptions = {
   style: {
     color: "#444",
@@ -19,6 +20,7 @@ const regionsLayerOptions = {
 function createRegionsLayer(map: L.Map, data: any): L.GeoJSON {
   return L.geoJSON(data, regionsLayerOptions).addTo(map);
 }
+*/
 
 class MapTimeline {
   public selectedYear = ref(1740);
@@ -43,14 +45,14 @@ class MapTimeline {
       const res = await fetch(filename);
       if (!res.ok) throw new Error("File not found: " + filename);
 
-      const data = await res.json();
+      // const data = await res.json();
 
       if (this.currentRegionsLayer) {
         map.removeLayer(this.currentRegionsLayer);
         this.currentRegionsLayer = null;
       }
 
-      this.currentRegionsLayer = createRegionsLayer(map, data);
+      // this.currentRegionsLayer = createRegionsLayer(map, data);
     } catch (err) {
       if (err instanceof Error) {
         console.warn(err.message);

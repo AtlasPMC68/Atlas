@@ -69,7 +69,7 @@ export function useMapDrawing(emit: EmitFn) {
       editMode: true,
       dragMode: true,
       rotateMode: true,
-      cutPolygon: false,
+      cutPolygon: true,
       removalMode: true,
     });
 
@@ -100,9 +100,54 @@ export function useMapDrawing(emit: EmitFn) {
       const feature = layerToFeature(layer);
 
       if (feature && (layer.feature as any)?.id) {
+        feature.id = layer.feature.id;
+        feature.properties = {
+          ...(layer.feature?.properties || {}),
+          ...(feature.properties || {}),
+        };
         // @ts-ignore
         layer.feature = feature;
         emit("feature-updated", feature);
+      }
+    });
+
+    // When a polygon is cut into one or more parts
+    map.on("pm:cut", (e) => {
+      const originalLayer = (e as any).originalLayer as any;
+      const newLayer = (e as any).layer as any;
+
+      if (originalLayer) {
+        const updatedOriginal = layerToFeature(originalLayer);
+        if (updatedOriginal && (originalLayer.feature as any)?.id) {
+          updatedOriginal.id = originalLayer.feature.id;
+          updatedOriginal.properties = {
+            ...(originalLayer.feature?.properties || {}),
+            ...(updatedOriginal.properties || {}),
+          };
+          // @ts-ignore
+          originalLayer.feature = updatedOriginal;
+          emit("feature-updated", updatedOriginal);
+        }
+      }
+
+      if (newLayer) {
+        const createdFeature = layerToFeature(newLayer);
+        if (createdFeature) {
+          const originalProps = originalLayer?.feature || {};
+          createdFeature.color = originalProps.color ?? createdFeature.color;
+          createdFeature.opacity =
+            originalProps.opacity ?? createdFeature.opacity;
+          createdFeature.stroke_width =
+            originalProps.stroke_width ?? createdFeature.stroke_width;
+          createdFeature.properties = {
+            ...(originalProps.properties || {}),
+            ...(createdFeature.properties || {}),
+          };
+          // @ts-ignore
+          newLayer.feature = createdFeature;
+          drawnItems.value?.addLayer(newLayer);
+          emit("feature-created", createdFeature);
+        }
       }
     });
 
