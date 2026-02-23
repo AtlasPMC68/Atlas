@@ -6,7 +6,7 @@ import numpy as np
 import imageio.v3 as iio
 
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
-from skimage.morphology import binary_opening, disk
+from skimage.morphology import opening, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
 from matplotlib import colors as mcolors
@@ -338,7 +338,7 @@ def extract_colors(
 
         # Clean small noise
         if opening_radius > 0:
-            mask = binary_opening(mask, disk(opening_radius))
+            mask = opening(mask, disk(opening_radius))
 
         # Name the layer based on approximate RGB -> nearest CSS name
         rgb_u8 = lab_center_to_rgb_u8(lab_center)
