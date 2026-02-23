@@ -14,7 +14,7 @@ from uuid import UUID
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.cities_validation import find_first_city
-from app.utils.color_extraction import extract_colors
+from app.utils.color_extraction import extract_colors, subtract_lakes_from_zones
 from app.utils.file_utils import validate_file_extension
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
@@ -192,8 +192,17 @@ def process_map_extraction(
                     georef_features = georeference_features_with_sift_points(
                         pixel_features, pixel_points, geo_points_lonlat
                     )
-                    asyncio.run(persist_features(map_uuid, georef_features))
-                    
+
+                    # Subtract lakes from georeferenced zones
+                    # This removes lake areas from color zones to create holes where lakes exist
+                    georef_features_with_lakes_removed = subtract_lakes_from_zones(
+                        georef_features
+                    )
+
+                    asyncio.run(
+                        persist_features(map_uuid, georef_features_with_lakes_removed)
+                    )
+
                 except Exception as e:
                     logger.error(
                         f"SIFT georeferencing step failed for map {map_uuid}: {e}",

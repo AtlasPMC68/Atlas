@@ -1,23 +1,29 @@
 import os
 import math
+import json
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import imageio.v3 as iio
 
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
-from skimage.morphology import binary_opening, disk
+from skimage.morphology import binary_opening, binary_closing, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
+from scipy.ndimage import binary_fill_holes
 from matplotlib import colors as mcolors
 
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon, shape
 from shapely.ops import unary_union
 from shapely.geometry.base import BaseGeometry
 from shapely import affinity
+import logging
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
+GEOJSON_DIR = os.path.join(BASE_DIR, "..", "geojson")
 
 
 def load_image_rgb_alpha_mask(
@@ -214,6 +220,22 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
     return merged
 
 
+def simplify_geometry(geometry: BaseGeometry, tolerance: float = 1.0) -> BaseGeometry:
+    """
+    Simplify geometry to reduce complexity and smooth edges.
+    
+    Args:
+        geometry: Input Shapely geometry
+        tolerance: Simplification tolerance (higher = simpler, 0 = disabled)
+    
+    Returns:
+        Simplified geometry
+    """
+    if tolerance > 0 and geometry is not None:
+        return geometry.simplify(tolerance, preserve_topology=True)
+    return geometry
+
+
 def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
     """From pixel-space polygons, build a normalized GeoJSON feature and write it to disk.
 
@@ -299,6 +321,9 @@ def extract_colors(
     bin_b: float = 8.0,
     deltaE_threshold: float = 10.0,
     opening_radius: int = 1,
+    fill_holes: bool = True,
+    closing_radius: int = 3,
+    simplify_tolerance: float = 2.0,
 ) -> Dict:
     """
     Extract dominant color layers using LAB binning + ΔE masks.
@@ -339,9 +364,18 @@ def extract_colors(
 
         mask = (dE <= deltaE_threshold) & opaque_mask
 
-        # Clean small noise
+        # Morphological operations to clean up the mask
+        # 1. Opening: Remove small noise/speckles
         if opening_radius > 0:
             mask = binary_opening(mask, disk(opening_radius))
+        
+        # 2. Closing: Bridge small gaps (useful for connecting fragmented regions)
+        if closing_radius > 0:
+            mask = binary_closing(mask, disk(closing_radius))
+        
+        # 3. Fill holes: Remove interior holes (text, small waters, etc.)
+        if fill_holes:
+            mask = binary_fill_holes(mask)
 
         # Name the layer based on approximate RGB -> nearest CSS name
         rgb_u8 = lab_center_to_rgb_u8(lab_center)
@@ -360,6 +394,9 @@ def extract_colors(
         # Convert mask to geometry first (like the old RGB version did with pixel_polygons)
         geometry = mask_to_geometry(mask)
         if geometry:
+            # Simplify geometry to reduce complexity and smooth edges
+            geometry = simplify_geometry(geometry, simplify_tolerance)
+            
             # build_features expects a list of polygons, so wrap the geometry in a list
             pixel_feature = build_feature(unique_color_name, rgb_u8, geometry)
             pixel_features.append(
@@ -384,3 +421,118 @@ def extract_colors(
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,
     }
+
+
+def load_lakes_geojson(lakes_file: str = "ne_50m_lakes.geojson") -> List[BaseGeometry]:
+    """
+    Load lake geometries from a GeoJSON file.
+
+    Args:
+        lakes_file: Name of the lakes GeoJSON file (default: ne_50m_lakes.geojson)
+
+    Returns:
+        List of Shapely geometry objects representing lakes
+    """
+    lakes_path = os.path.join(GEOJSON_DIR, lakes_file)
+
+    if not os.path.exists(lakes_path):
+        logger.warning(f"Lakes GeoJSON file not found: {lakes_path}")
+        return []
+
+    try:
+        with open(lakes_path, "r", encoding="utf-8") as f:
+            lakes_data = json.load(f)
+
+        lake_geometries = []
+        for feature in lakes_data.get("features", []):
+            geom = shape(feature["geometry"])
+            if geom and geom.is_valid:
+                lake_geometries.append(geom)
+
+        logger.info(f"Loaded {len(lake_geometries)} lake geometries from {lakes_file}")
+        return lake_geometries
+
+    except Exception as e:
+        logger.error(f"Error loading lakes GeoJSON: {e}")
+        return []
+
+
+def subtract_lakes_from_zones(
+    features: List[Dict], lakes_file: str = "ne_50m_lakes.geojson"
+) -> List[Dict]:
+    """
+    Remove lake areas from georeferenced color zone features.
+
+    This function loads lake geometries from a reference GeoJSON file and
+    subtracts any overlapping lake areas from zone geometries. This creates
+    holes in the zones where lakes exist, resulting in more accurate
+    cartographic representations.
+
+    Args:
+        features: List of GeoJSON feature collections (georeferenced zones)
+        lakes_file: Name of the lakes GeoJSON file (default: ne_50m_lakes.geojson)
+
+    Returns:
+        List of modified feature collections with lakes removed from zones
+    """
+    # Load lake geometries
+    lake_geometries = load_lakes_geojson(lakes_file)
+
+    if not lake_geometries:
+        logger.warning("No lake geometries loaded, returning features unchanged")
+        return features
+
+    # Union all lake geometries for efficient intersection testing
+    lakes_union = unary_union(lake_geometries)
+
+    modified_features = []
+
+    for feature_collection in features:
+        modified_collection = {"type": "FeatureCollection", "features": []}
+
+        for feature in feature_collection.get("features", []):
+            # Only process zone features (not points like cities)
+            map_element_type = feature.get("properties", {}).get("mapElementType")
+
+            if map_element_type != "zone":
+                # Keep non-zone features unchanged
+                modified_collection["features"].append(feature)
+                continue
+
+            # Convert feature geometry to Shapely
+            try:
+                zone_geom = shape(feature["geometry"])
+
+                # Check if zone intersects with any lakes
+                if zone_geom.intersects(lakes_union):
+                    # Subtract lakes from zone
+                    modified_geom = zone_geom.difference(lakes_union)
+
+                    # Check if result is valid and not empty
+                    if modified_geom.is_valid and not modified_geom.is_empty:
+                        # Update feature with modified geometry
+                        feature["geometry"] = modified_geom.__geo_interface__
+                        modified_collection["features"].append(feature)
+                        logger.debug(
+                            f"Subtracted lakes from zone: {feature.get('properties', {}).get('name', 'unnamed')}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Zone completely covered by lakes or invalid after subtraction: {feature.get('properties', {}).get('name', 'unnamed')}"
+                        )
+                else:
+                    # No intersection with lakes, keep original
+                    modified_collection["features"].append(feature)
+
+            except Exception as e:
+                logger.error(f"Error processing zone feature: {e}")
+                # Keep original feature on error
+                modified_collection["features"].append(feature)
+
+        if modified_collection["features"]:
+            modified_features.append(modified_collection)
+
+    logger.info(
+        f"Processed {len(features)} feature collections, removed lakes from zones"
+    )
+    return modified_features

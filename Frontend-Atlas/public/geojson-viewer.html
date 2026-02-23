@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GeoJSON Viewer</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { height: 100vh; width: 100vw; }
+        .info {
+            padding: 6px 8px;
+            font: 14px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+            max-width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .info h4 {
+            margin: 0 0 5px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize map with blue ocean background (no tiles)
+        const map = L.map('map', {
+            // No tile layer - we'll use CSS background for ocean
+            maxBoundsViscosity: 1.0
+        }).setView([20, 0], 2);
+        
+        // Set ocean background color via CSS
+        map.getContainer().style.backgroundColor = '#cfe8ff';
+        
+        // Info control
+        const info = L.control({position: 'topright'});
+        info.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        info.update = function (props) {
+            this._div.innerHTML = '<h4>GeoJSON Properties</h4>' + 
+                (props ? '<pre>' + JSON.stringify(props, null, 2) + '</pre>' : 'Hover over a feature');
+        };
+        info.addTo(map);
+        
+        // Load and display GeoJSON
+        fetch('/geojson/ne_50m_lakes.geojson')
+            .then(response => response.json())
+            .then(data => {
+                console.log('GeoJSON loaded:', data);
+                console.log('Feature count:', data.features ? data.features.length : 0);
+                
+                // Style function matching WorldAreaPickerModal
+                function style(feature) {
+                    const type = feature?.geometry?.type;
+                    const isLine = type === 'LineString' || type === 'MultiLineString';
+                    const isPolygon = type === 'Polygon' || type === 'MultiPolygon';
+                    
+                    // Coastlines (lines)
+                    if (isLine) {
+                        return {
+                            color: '#111827',
+                            weight: 2,
+                            opacity: 0.9
+                        };
+                    }
+                    
+                    // Land masses (polygons)
+                    if (isPolygon) {
+                        return {
+                            fillColor: '#e5e7eb',
+                            fillOpacity: 0.9,
+                            color: '#6b7280',
+                            weight: 1,
+                            opacity: 1
+                        };
+                    }
+                    
+                    // Default style
+                    return {
+                        color: '#111827',
+                        weight: 2,
+                        opacity: 0.9
+                    };
+                }
+                
+                // Add GeoJSON layer
+                const geojsonLayer = L.geoJSON(data, {
+                    style: style,
+                    onEachFeature: function (feature, layer) {
+                        // Hover effects
+                        layer.on({
+                            mouseover: function(e) {
+                                const layer = e.target;
+                                layer.setStyle({
+                                    weight: 3,
+                                    color: '#666',
+                                    fillOpacity: 0.9
+                                });
+                                info.update(feature.properties);
+                            },
+                            mouseout: function(e) {
+                                geojsonLayer.resetStyle(e.target);
+                                info.update();
+                            },
+                            click: function(e) {
+                                map.fitBounds(e.target.getBounds());
+                                console.log('Feature clicked:', feature);
+                            }
+                        });
+                        
+                        // Popup
+                        if (feature.properties) {
+                            layer.bindPopup(
+                                '<strong>Properties:</strong><br>' +
+                                Object.entries(feature.properties)
+                                    .map(([key, val]) => `${key}: ${val}`)
+                                    .join('<br>')
+                            );
+                        }
+                    }
+                }).addTo(map);
+                
+                // Fit map to GeoJSON bounds and set constraints
+                const bounds = geojsonLayer.getBounds();
+                if (bounds.isValid()) {
+                    // Add padding so features aren't at edge
+                    const padded = bounds.pad(0.2);
+                    map.setMaxBounds(padded);
+                    map.fitBounds(padded, { padding: [20, 20], maxZoom: 4 });
+                    map.setMinZoom(Math.max(map.getZoom() - 1, 0));
+                }
+                
+                console.log('GeoJSON rendered successfully');
+            })
+            .catch(error => {
+                console.error('Error loading GeoJSON:', error);
+                alert('Error loading GeoJSON file: ' + error.message);
+            });
+    </script>
+</body>
+</html>
