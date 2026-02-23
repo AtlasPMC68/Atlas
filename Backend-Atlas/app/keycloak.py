@@ -38,13 +38,3 @@ def verify_token(token: str):
     except JWTError:
         print(f"Invalid token")
         return None
-
-def get_user_from_token(token: str):
-    payload = verify_token(token)
-    if not payload:
-        return None
-    return {
-        "sub": payload.get("sub"),
-        "username": payload.get("preferred_username"),
-        "email": payload.get("email")
-    }

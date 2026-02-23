@@ -19,7 +19,7 @@ from app.utils.sift_key_points_finder import find_coastline_keypoints
 from ..celery_app import celery_app
 from ..db import get_db
 from ..tasks import process_map_extraction
-from ..utils.auth import get_current_user, get_current_user_id
+from ..utils.auth import get_user_from_token, get_current_user_id
 
 router = APIRouter()
 
@@ -227,7 +227,7 @@ async def get_maps(
 @router.post("/save")
 async def save_map(
     request: MapCreateRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_user_from_token),
     db: Session = Depends(get_db),
 ):
     return 1
