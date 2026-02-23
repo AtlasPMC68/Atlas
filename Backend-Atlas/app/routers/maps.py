@@ -1,7 +1,9 @@
 import logging
 from uuid import UUID
+import json
+from json import JSONDecodeError
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -12,7 +14,7 @@ from app.models.map import Map
 from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db
-
+from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
 from ..db import get_db
@@ -20,7 +22,6 @@ from ..tasks import process_map_extraction
 from ..utils.auth import get_current_user, get_current_user_id
 
 router = APIRouter()
-
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maps", tags=["Maps Processing"])
@@ -31,19 +32,51 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
 
 @router.post("/upload")
 async def upload_and_process_map(
-    file: UploadFile = File(...), 
+    image_points: str | None = Form(None),
+    world_points: str | None = Form(None),
+    enable_georeferencing: bool = Form(True),
+    enable_color_extraction: bool = Form(True),
+    enable_shapes_extraction: bool = Form(False),
+    enable_text_extraction: bool = Form(False),
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
-    user_id: str = Depends(get_current_user_id)
 ):
-    """Upload a map and start data extraction"""    
     # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400,
             detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
+
+    pixel_points_list = None
+    geo_points_list = None
+
+    # Parse matched point pairs for SIFT georeferencing
+    if enable_georeferencing and image_points and world_points:
+        try:
+            img_pts = json.loads(image_points)  # list of {"x":..,"y":..}
+            world_pts = json.loads(world_points)  # list of {"lat":..,"lng":..}
+
+            # Basic structural validation
+            if not isinstance(img_pts, list) or not isinstance(world_pts, list):
+                raise ValueError("image_points and world_points must be JSON arrays")
+
+            if len(img_pts) != len(world_pts):
+                raise ValueError(
+                    "image_points and world_points must have the same length"
+                )
+
+            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
+            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid georeferencing payload: {e}",
+            )
+
     file_content = await file.read()
-    
+
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -56,13 +89,22 @@ async def upload_and_process_map(
     try:
         map_id = await create_map_in_db(
             db=session,
-            user_id = UUID(user_id),
+            user_id=UUID(user_id),
             title=file.filename,
             description=None,
             is_private=True,
         )
-        # Launch the Celery task (pass map_id as string for JSON serialization)
-        task = process_map_extraction.delay(file.filename, file_content, str(map_id))
+
+        task = process_map_extraction.delay(
+            file.filename,
+            file_content,
+            str(map_id),
+            pixel_points_list,
+            geo_points_list,
+            enable_color_extraction,
+            enable_shapes_extraction,
+            enable_text_extraction,
+        )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
         logger.info(f"Map processing task started: {task.id} for file {file.filename}")
@@ -156,7 +198,6 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
             props = feature.get("properties", {})
             feature["start_date"] = props.get("start_date")
             feature["end_date"] = props.get("end_date")
-
             all_features.append(feature)
 
     return all_features
@@ -181,6 +222,7 @@ async def get_maps(
 
     return maps
 
+
 # TODO real save on that endpoint
 @router.post("/save")
 async def save_map(
@@ -189,3 +231,28 @@ async def save_map(
     db: Session = Depends(get_db),
 ):
     return 1
+
+
+@router.post("/coastline-keypoints")
+async def get_coastline_keypoints(
+    west: float = Form(...),
+    south: float = Form(...),
+    east: float = Form(...),
+    north: float = Form(...),
+    width: int = Form(1024),
+    height: int = Form(768),
+):
+    """Find SIFT keypoints on coastlines within geographic bounds."""
+    try:
+        bounds = {"west": west, "south": south, "east": east, "north": north}
+        result = find_coastline_keypoints(bounds, width, height)
+
+        return {
+            "status": "success",
+            "keypoints": result["keypoints"],
+            "total": result["total"],
+            "bounds": bounds,
+        }
+    except Exception as e:
+        logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

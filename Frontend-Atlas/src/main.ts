@@ -4,6 +4,7 @@ import App from "./App.vue";
 import { router } from "./router";
 import "./style.css";
 import keycloak from "./keycloak";
+import "leaflet/dist/leaflet.css";
 
 const app = createApp(App);
 app.use(createPinia());
