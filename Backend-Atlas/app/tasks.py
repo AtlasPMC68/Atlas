@@ -4,7 +4,6 @@ import os
 import re
 import tempfile
 import time
-import numpy as np
 import cv2
 
 from datetime import datetime
@@ -68,6 +67,7 @@ def process_map_extraction(
             state="PROGRESS",
             meta={"current": 1, "total": nb_task, "status": "Saving uploaded file"},
         )
+        logger.info("Before sleep")
         time.sleep(2)
 
         with tempfile.NamedTemporaryFile(
@@ -178,40 +178,15 @@ def process_map_extraction(
                 },
             )
 
-            color_result = extract_colors(tmp_file_path)
-            normalized_features = color_result.get("normalized_features", [])
-            pixel_features = color_result.get("pixel_features", [])
+        color_result = extract_colors(tmp_file_path)
+        normalized_features = color_result.get("normalized_features", [])
 
-            if normalized_features:
-                asyncio.run(persist_features(map_uuid, normalized_features))
+        if normalized_features:
+            asyncio.run(persist_features(map_uuid, normalized_features))
 
-            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
-            # Georeference pixel-space features if SIFT point pairs are provided
-            if pixel_points and geo_points_lonlat:
-                try:
-                    georef_features = georeference_features_with_sift_points(
-                        pixel_features, pixel_points, geo_points_lonlat
-                    )
-
-                    # Subtract lakes from georeferenced zones
-                    # This removes lake areas from color zones to create holes where lakes exist
-                    georef_features_with_lakes_removed = subtract_lakes_from_zones(
-                        georef_features
-                    )
-
-                    asyncio.run(
-                        persist_features(map_uuid, georef_features_with_lakes_removed)
-                    )
-
-                except Exception as e:
-                    logger.error(
-                        f"SIFT georeferencing step failed for map {map_uuid}: {e}",
-                        exc_info=True,
-                    )
-            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
-        else:
-            logger.info("[DEBUG] Color extraction disabled - skipping")
-            color_result = {"colors_detected": 0}
+        logger.info(
+            f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
+        )
 
         # Step 5: Shapes Extraction (conditionally enabled)
         if enable_shapes_extraction:
@@ -238,7 +213,7 @@ def process_map_extraction(
         self.update_state(
             state="PROGRESS",
             meta={
-                "current": 5,
+                "current": 6,
                 "total": nb_task,
                 "status": "Cleaning up and finalizing",
             },

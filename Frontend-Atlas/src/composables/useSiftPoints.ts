@@ -1,5 +1,6 @@
 // composables/useSiftPoints.ts
 import { ref } from "vue";
+import type { WorldBounds, CoastlineKeypointsResponse } from "../typescript/georef";
 
 export type SiftKeypoint = {
   x: number;
@@ -15,38 +16,6 @@ export type SiftResponse = {
   image?: { width: number; height: number };
   count: number;
   keypoints: SiftKeypoint[];
-};
-
-export type Bounds = {
-  west: number;
-  south: number;
-  east: number;
-  north: number;
-};
-
-// What the backend returns from POST /maps/coastline-keypoints
-export type CoastlineKeypointPixel = {
-  x: number;
-  y: number;
-};
-
-export type CoastlineKeypointGeo = {
-  lat: number;
-  lng: number;
-};
-
-export type CoastlineKeypoint = {
-  id: number;
-  pixel: CoastlineKeypointPixel;
-  geo: CoastlineKeypointGeo;
-  response: number;
-};
-
-export type CoastlineKeypointsResponse = {
-  status: "success";
-  keypoints: CoastlineKeypoint[];
-  total: number;
-  bounds: Bounds;
 };
 
 const isLoading = ref(false);
@@ -91,7 +60,7 @@ export function useSiftPoints() {
 
   // New: POST /maps/coastline-keypoints (bounds from WorldAreaPickerModal)
   const fetchCoastlineKeypoints = async (
-    bounds: Bounds,
+    bounds: WorldBounds,
     options?: { width?: number; height?: number },
   ) => {
     if (!bounds) return { success: false, error: "Aucune zone sélectionnée" };
@@ -129,9 +98,10 @@ export function useSiftPoints() {
 
       const data = (await response.json()) as CoastlineKeypointsResponse;
       return { success: true, data };
-    } catch (e: any) {
-      error.value = e.message || "Erreur inconnue";
-      return { success: false, error: error.value };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Erreur inconnue";
+      error.value = message;
+      return { success: false, error: message };
     } finally {
       isLoading.value = false;
     }

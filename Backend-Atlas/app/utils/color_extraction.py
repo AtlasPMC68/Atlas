@@ -240,9 +240,6 @@ def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
     """From pixel-space polygons, build a normalized GeoJSON feature and write it to disk.
 
     - Merges all pixel polygons into a single geometry (possibly MultiPolygon).
-    - Scales it uniformly so the largest dimension becomes 1.
-    - Recenters it into the [0, 1] x [0, 1] box.
-    - Returns the normalized GeoJSON feature dict.
     """
     pixel_feature = {
         "type": "Feature",

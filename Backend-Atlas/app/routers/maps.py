@@ -1,6 +1,10 @@
 import logging
 from uuid import UUID
 import json
+<<<<<<< HEAD
+=======
+from json import JSONDecodeError
+>>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import not_, select
@@ -51,6 +55,7 @@ async def upload_and_process_map(
     pixel_points_list = None
     geo_points_list = None
 
+<<<<<<< HEAD
     # Parse matched point pairs for SIFT georeferencing 
     if enable_georeferencing and image_points and world_points:
         img_pts = json.loads(image_points)  # list of {"x":..,"y":..}
@@ -58,9 +63,33 @@ async def upload_and_process_map(
 
         pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
         geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
+=======
+    # Parse matched point pairs for SIFT georeferencing
+    if enable_georeferencing and image_points and world_points:
+        try:
+            img_pts = json.loads(image_points)  # list of {"x":..,"y":..}
+            world_pts = json.loads(world_points)  # list of {"lat":..,"lng":..}
+
+            # Basic structural validation
+            if not isinstance(img_pts, list) or not isinstance(world_pts, list):
+                raise ValueError("image_points and world_points must be JSON arrays")
+
+            if len(img_pts) != len(world_pts):
+                raise ValueError(
+                    "image_points and world_points must have the same length"
+                )
+
+            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
+            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid georeferencing payload: {e}",
+            )
+>>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
 
     file_content = await file.read()
-    
+
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -73,7 +102,7 @@ async def upload_and_process_map(
     try:
         map_id = await create_map_in_db(
             db=session,
-            user_id = UUID(user_id),
+            user_id=UUID(user_id),
             title=file.filename,
             description=None,
             is_private=True,
@@ -205,6 +234,7 @@ async def get_maps(
     maps = result.scalars().all()
 
     return maps
+
 
 # TODO real save on that endpoint
 @router.post("/save")
