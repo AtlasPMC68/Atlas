@@ -17,13 +17,70 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
 
 
+def filter_text_overlapping_contours(
+    contours: List[np.ndarray],
+    text_regions: List[List[List[int]]],
+    overlap_threshold: float = 0.5,
+) -> Tuple[List[np.ndarray], int]:
+    """
+    Filter out contours that overlap significantly with text bounding boxes.
+
+    :param contours: List of OpenCV contours to filter.
+    :param text_regions: List of text bounding quads from EasyOCR,
+        each is [[x1,y1],[x2,y2],[x3,y3],[x4,y4]].
+    :param overlap_threshold: Fraction of the shape's bounding box that must
+        overlap a text region to be discarded (default 0.5 = 50%).
+    :return: Tuple of (filtered contours, number of contours removed).
+    """
+    if not text_regions:
+        return contours, 0
+
+    # Pre-compute axis-aligned bounding boxes for all text regions
+    text_bboxes = []
+    for coords in text_regions:
+        tx = min(pt[0] for pt in coords)
+        ty = min(pt[1] for pt in coords)
+        tx2 = max(pt[0] for pt in coords)
+        ty2 = max(pt[1] for pt in coords)
+        text_bboxes.append((tx, ty, tx2, ty2))
+
+    kept = []
+    removed = 0
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        shape_area = w * h
+        if shape_area == 0:
+            kept.append(contour)
+            continue
+
+        in_text_zone = False
+        for tx, ty, tx2, ty2 in text_bboxes:
+            ix1 = max(x, tx)
+            iy1 = max(y, ty)
+            ix2 = min(x + w, tx2)
+            iy2 = min(y + h, ty2)
+            if ix2 > ix1 and iy2 > iy1:
+                intersection = (ix2 - ix1) * (iy2 - iy1)
+                if intersection / shape_area >= overlap_threshold:
+                    in_text_zone = True
+                    break
+
+        if in_text_zone:
+            removed += 1
+        else:
+            kept.append(contour)
+
+    return kept, removed
+
+
 def extract_shapes(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
-    min_area: int = 100,
+    min_area: int = 50,
     max_area: int = 100000,
     threshold_value: int = 127,
     min_confidence: float = 0.6,
+    text_regions: Optional[List[List[List[int]]]] = None,
     debug: bool = False,
 ):
     image = preprocessing.read_image(image_path)
@@ -55,12 +112,23 @@ def extract_shapes(
     if debug:
         debug_mask_path = os.path.join(image_output_dir, "DEBUG_mask.png")
         cv2.imwrite(debug_mask_path, binary_mask)
+        prepro_path = os.path.join(image_output_dir, "debug_1_preprocessing.png")
+        cv2.imwrite(prepro_path, image_bgr)
+        gray_path = os.path.join(image_output_dir, "debug_2_grayscale.png")
+        cv2.imwrite(gray_path, gray)
 
     contours = detect_contours(binary_mask)
 
     filtered_contours, filter_stats = filter_contours(
         contours, min_area, max_area, image_area
     )
+
+    # Filter out contours that fall inside detected text regions
+    if text_regions:
+        filtered_contours, n_removed = filter_text_overlapping_contours(
+            filtered_contours, text_regions
+        )
+        logger.info(f"Removed {n_removed} shape(s) overlapping with text regions.")
 
     shapes_with_contours = []
     for idx, contour in enumerate(filtered_contours, 1):
