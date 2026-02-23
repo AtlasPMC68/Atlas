@@ -40,22 +40,10 @@ const mapId: Ref<string | null> = ref(null);
 export function useImportProcess() {
   const startImport = async (
     file: File | null,
-<<<<<<< HEAD
-    imagePoints?: { x: number; y: number }[],
-    worldPoints?: { lat: number; lng: number }[],
-    options?: {
-      enableGeoreferencing?: boolean;
-      enableColorExtraction?: boolean;
-      enableShapesExtraction?: boolean;
-      enableTextExtraction?: boolean;
-    }
-  ) => {
-=======
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
   ): Promise<StartImportResult> => {
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
     isProcessing.value = true;
@@ -64,11 +52,6 @@ export function useImportProcess() {
     processingProgress.value = 0;
 
     const formData = new FormData();
-<<<<<<< HEAD
-    
-=======
-
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
     // Add matched point pairs as expected by backend
     if (imagePoints && imagePoints.length) {
       formData.append("image_points", JSON.stringify(imagePoints));
@@ -76,24 +59,14 @@ export function useImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
-<<<<<<< HEAD
-        // Add extraction options
-=======
     // Add extraction options
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
     if (options) {
       formData.append("enable_georeferencing", String(options.enableGeoreferencing ?? true));
       formData.append("enable_color_extraction", String(options.enableColorExtraction ?? true));
       formData.append("enable_shapes_extraction", String(options.enableShapesExtraction ?? false));
       formData.append("enable_text_extraction", String(options.enableTextExtraction ?? false));
     }
-<<<<<<< HEAD
-        formData.append("file", file);
-
-    console.log("form data", formData)
-=======
     formData.append("file", file);
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
 
     try {
       const response = await fetch(

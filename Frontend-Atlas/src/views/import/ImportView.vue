@@ -11,11 +11,7 @@
         </p>
       </div>
 
-<<<<<<< HEAD
-      <!-- Étapes du processus -->
-=======
       <!-- Process steps -->
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
       <div class="steps w-full mb-8">
         <div class="step" :class="{ 'step-primary': currentStep >= 1 }">
           Sélection
@@ -34,28 +30,16 @@
         </div>
       </div>
 
-<<<<<<< HEAD
-      <!-- Contenu principal selon l'étape -->
-      <div class="card bg-base-100 shadow-xl">
-        <div class="card-body">
-          <!-- Étape 1: Drag & Drop -->
-=======
       <!-- Main content by step -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <!-- Step 1: Drag & Drop -->
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
           <FileDropZone
             v-if="currentStep === 1"
             @file-selected="handleFileSelected"
             :is-loading="isUploading"
           />
 
-<<<<<<< HEAD
-          <!-- Étape 2: Prévisualisation + Contrôles -->
-          <div v-else-if="currentStep === 2" class="space-y-6">
-            <ImportPreview :image-file="selectedFile" :image-url="previewUrl" />
-=======
           <!-- Step 2: Preview + Controls -->
           <div v-else-if="currentStep === 2" class="space-y-6">
             <ImportPreview
@@ -63,7 +47,6 @@
               :image-file="selectedFile"
               :image-url="previewUrl"
             />
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
             
             <!-- Extraction Options -->
             <div class="bg-base-200 rounded-lg p-4 space-y-3">
@@ -133,11 +116,7 @@
       </div>
     </div>
 
-<<<<<<< HEAD
-    <!-- Modal de sélection de zone monde -->
-=======
     <!-- World area selection modal -->
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
     <WorldAreaPickerModal
       v-if="showWorldAreaPickerModal && previewUrl"
       :is-open="showWorldAreaPickerModal"
@@ -148,11 +127,7 @@
       @confirmed="handleWorldAreaConfirmed"
     />
 
-<<<<<<< HEAD
-    <!-- Modal de géoréférencement basé sur les points SIFT -->
-=======
     <!-- SIFT-based georeferencing modal -->
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
     <GeoRefSiftModal
       v-if="showSiftGeorefModal && previewUrl && worldAreaBounds && coastlineKeypoints"
       :is-open="showSiftGeorefModal"
@@ -163,11 +138,7 @@
       @confirmed="handleGeorefConfirmed"
     />
 
-<<<<<<< HEAD
-    <!-- Modal de traitement -->
-=======
     <!-- Processing modal -->
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
     <ProcessingModal
       v-if="showProcessingModal"
       :is-open="showProcessingModal"
@@ -178,20 +149,13 @@
   </div>
 </template>
 
-<<<<<<< HEAD
-<script setup>
-import { ref, computed, watch } from "vue";
-=======
 <script setup lang="ts">
 import { ref, watch } from "vue";
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
 import { useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
-<<<<<<< HEAD
-=======
 import type {
   WorldBounds,
   LatLngTuple,
@@ -199,7 +163,6 @@ import type {
   CoastlineKeypoint,
   WorldAreaSelection,
 } from "../../typescript/georef";
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
 
 // Components
 import FileDropZone from "../../components/import/FileDropZone.vue";
@@ -233,28 +196,6 @@ const {
 
 const { fetchCoastlineKeypoints } = useSiftPoints();
 
-<<<<<<< HEAD
-// État local
-const currentStep = ref(1);
-const showWorldAreaPickerModal = ref(false);
-const showSiftGeorefModal = ref(false);
-const worldAreaBounds = ref(null); // { west, south, east, north } or null
-const worldAreaZoom = ref(null);
-const coastlineKeypoints = ref(null); // SIFT coastline keypoints from backend
-const worldPolyline = ref([]); // [ [lat,lng], ... ]
-const imagePolyline = ref([]); // [ [x,y], ... ]
-const worldPoint = ref(null); // [lat, lng] or null
-const imagePoint = ref(null); // [x, y] or null
-
-// Extraction options (all enabled by default)
-const enableGeoreferencing = ref(true);
-const enableColorExtraction = ref(true);
-const enableShapesExtraction = ref(false);
-const enableTextExtraction = ref(false);
-
-// Gestionnaires d'événements
-const handleFileSelected = (file) => {
-=======
 // Types
 
 interface GeorefPayload {
@@ -278,7 +219,6 @@ const enableTextExtraction = ref<boolean>(false);
 
 // Event handlers
 const handleFileSelected = (file: File) => {
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
   onFileSelected(file);
   currentStep.value = 2;
 };
@@ -318,11 +258,7 @@ function handleWorldAreaClose() {
   currentStep.value = 2;
 }
 
-<<<<<<< HEAD
-async function handleWorldAreaConfirmed(payload) {
-=======
 async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
   // payload: { bounds: {west,south,east,north}, zoom }
   worldAreaBounds.value = payload.bounds;
   worldAreaZoom.value = payload.zoom;
@@ -331,11 +267,7 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
   // Call backend to get coastline keypoints for this ROI and
   // store the result for the next georef step.
   const res = await fetchCoastlineKeypoints(payload.bounds);
-<<<<<<< HEAD
-  if (res.success) {
-=======
   if (res.success && res.data) {
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
     // Prefer backend bounds if it returns a more precise ROI
     worldAreaBounds.value = res.data.bounds || payload.bounds;
     coastlineKeypoints.value = res.data.keypoints;
@@ -350,11 +282,7 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
   }
 }
 
-<<<<<<< HEAD
-async function handleGeorefConfirmed(payload) {
-=======
 async function handleGeorefConfirmed(payload: GeorefPayload) {
->>>>>>> 0c052a9afe531e9630a00cc1384ca14f3f0e42e6
   // payload: { worldPoints: [ [lat,lng], ... ], imagePoints: [ [x,y], ... ] }
   showSiftGeorefModal.value = false;
 
