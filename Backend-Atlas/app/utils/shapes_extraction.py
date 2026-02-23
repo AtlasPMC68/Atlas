@@ -10,11 +10,46 @@ from shapely import affinity
 from shapely.geometry import Polygon
 
 from . import preprocessing
+from .color_extraction import get_nearest_css4_color_name
 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
+
+
+def get_dominant_color_in_contour(
+    image_bgr: np.ndarray,
+    contour: np.ndarray,
+) -> Tuple[int, int, int]:
+    """Find the dominant RGB color inside a contour region.
+
+    Creates a filled mask for the contour, extracts the pixels within it,
+    then finds the most frequent color using coarse RGB binning (8x8x8).
+    """
+    mask = np.zeros(image_bgr.shape[:2], dtype=np.uint8)
+    cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
+
+    pixels_bgr = image_bgr[mask == 255]  # shape (N, 3)
+
+    if len(pixels_bgr) == 0:
+        return (128, 128, 128)  # fallback gray
+
+    # Convert BGR -> RGB
+    pixels_rgb = pixels_bgr[:, ::-1]
+
+    # Coarse quantization into an 8×8×8 grid (each channel split into 8 bins of 32)
+    quantized = (pixels_rgb // 32).astype(np.int32)
+    bin_ids = quantized[:, 0] * 64 + quantized[:, 1] * 8 + quantized[:, 2]
+    unique_bins, counts = np.unique(bin_ids, return_counts=True)
+    dominant_bin = int(unique_bins[np.argmax(counts)])
+
+    r_bin = dominant_bin // 64
+    g_bin = (dominant_bin % 64) // 8
+    b_bin = dominant_bin % 8
+
+    # Return the center of the dominant bin
+    return (r_bin * 32 + 16, g_bin * 32 + 16, b_bin * 32 + 16)
 
 
 def filter_text_overlapping_contours(
@@ -195,6 +230,7 @@ def extract_shapes(
     final_shapes = [shape for shape, contour in final_shapes_with_contours]
 
     normalized_features = create_normalized_geojson_features(final_shapes_with_contours)
+    pixel_features = create_pixel_geojson_features(final_shapes_with_contours)
 
     if debug:
         try:
@@ -214,6 +250,7 @@ def extract_shapes(
         "total_shapes": len(final_shapes_with_contours),
         "shapes": final_shapes,
         "normalized_features": normalized_features,
+        "pixel_features": pixel_features,
     }
 
 
@@ -282,6 +319,9 @@ def create_normalized_geojson_features(
                 "solidity": shape["solidity"],
                 "extent": shape["extent"],
                 "num_vertices": shape["num_vertices"],
+                "color_rgb": shape.get("color_rgb"),
+                "color_name": shape.get("color_name"),
+                "color_hex": shape.get("color_hex"),
                 "mapElementType": "shape",
                 "name": f"Shape {idx}",
                 "is_normalized": True,
@@ -289,6 +329,58 @@ def create_normalized_geojson_features(
                 "end_date": "2026-01-01",
             },
             "geometry": normalized_geom.__geo_interface__,
+        }
+
+        geojson_features.append(feature)
+
+    feature_collection = {
+        "type": "FeatureCollection",
+        "features": geojson_features,
+    }
+
+    return [feature_collection]
+
+
+def create_pixel_geojson_features(
+    final_shapes_with_contours: List[Tuple[Dict, np.ndarray]],
+) -> List[Dict]:
+    """Create pixel-space GeoJSON features (non-normalized) for georeferencing."""
+    geojson_features = []
+
+    for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
+        simple_points = shape["geometry"]["pixel_coords"]["contour_points"]
+
+        pixel_coords = [[pt[0], pt[1]] for pt in simple_points]
+
+        if len(pixel_coords) < 3:
+            continue
+
+        if pixel_coords[0] != pixel_coords[-1]:
+            pixel_coords.append(pixel_coords[0])
+
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "shape_id": idx,
+                "area": shape["area"],
+                "perimeter": shape["perimeter"],
+                "aspect_ratio": shape["aspect_ratio"],
+                "solidity": shape["solidity"],
+                "extent": shape["extent"],
+                "num_vertices": shape["num_vertices"],
+                "color_rgb": shape.get("color_rgb"),
+                "color_name": shape.get("color_name"),
+                "color_hex": shape.get("color_hex"),
+                "mapElementType": "shape",
+                "name": f"Shape {idx}",
+                "is_pixel_space": True,
+                "start_date": "1700-01-01",
+                "end_date": "2026-01-01",
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [pixel_coords],
+            },
         }
 
         geojson_features.append(feature)
@@ -401,6 +493,10 @@ def extract_contour_properties(
     approx = cv2.approxPolyDP(contour, epsilon, True)
     num_vertices = len(approx)
 
+    color_rgb = get_dominant_color_in_contour(original_image, contour)
+    color_name = get_nearest_css4_color_name(color_rgb)
+    color_hex = "#{:02x}{:02x}{:02x}".format(*color_rgb)
+
     simple_points = [[int(pt[0][0]), int(pt[0][1])] for pt in contour]
     return {
         "id": shape_id,
@@ -412,6 +508,9 @@ def extract_contour_properties(
         "extent": round(extent, 3),
         "solidity": round(solidity, 3),
         "num_vertices": num_vertices,
+        "color_rgb": color_rgb,
+        "color_name": color_name,
+        "color_hex": color_hex,
         "geometry": {
             "type": "Polygon",
             "pixel_coords": {

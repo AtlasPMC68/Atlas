@@ -310,6 +310,10 @@ function renderShapes(features) {
     }
 
     const props = feature.properties || {};
+    const rgb = Array.isArray(props.color_rgb) ? props.color_rgb : null;
+    const colorFromRgb =
+      rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
+    const fillColor = feature.color || colorFromRgb || "#ccc";
     let targetGeometry = feature.geometry;
 
     // If the geometry is normalized ([0,1] space), project it onto the world
@@ -343,9 +347,10 @@ function renderShapes(features) {
 
     const layer = L.geoJSON(targetGeometry, {
       style: {
-        fillColor: "#3498db",
-        fillOpacity: 1,
-        color: "#3498db",
+        fillColor: fillColor,
+        opacity: feature.opacity ?? 1,
+        fillOpacity: feature.opacity ?? 0.5,
+        color: fillColor,
         weight: 3,
         opacity: 0.8,
       },

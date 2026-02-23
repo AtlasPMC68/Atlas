@@ -4,20 +4,20 @@ import os
 import re
 import tempfile
 import time
-import cv2
-
 from datetime import datetime
 from typing import Any, List
 from uuid import UUID
+
+import cv2
 
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
+from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
-from app.utils.georeferencingSift import georeference_features_with_sift_points
 
 from .celery_app import celery_app
 
@@ -214,10 +214,23 @@ def process_map_extraction(
             )
             time.sleep(2)
             shapes_result = extract_shapes(tmp_file_path)
-            shape_features = shapes_result["normalized_features"]
+            shape_normalized_features = shapes_result["normalized_features"]
+            shape_pixel_features = shapes_result.get("pixel_features", [])
 
-            # Persist shapes to database
-            asyncio.run(persist_features(map_uuid, shape_features))
+            # Georeference pixel-space shape features if SIFT point pairs are provided
+            if pixel_points and geo_points_lonlat:
+                try:
+                    georef_shape_features = georeference_features_with_sift_points(
+                        shape_pixel_features, pixel_points, geo_points_lonlat
+                    )
+                    asyncio.run(persist_features(map_uuid, georef_shape_features))
+                except Exception as e:
+                    logger.error(
+                        f"SIFT georeferencing step failed for shapes {map_uuid}: {e}",
+                        exc_info=True,
+                    )
+            elif shape_normalized_features:
+                asyncio.run(persist_features(map_uuid, shape_normalized_features))
 
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
