@@ -9,13 +9,19 @@
  *  - arrow
  *  - shape   (with feature.properties.shapeKind: square|rectangle|circle|triangle|oval)
  */
-export function getMapElementType(feature) {
+export function getMapElementType(feature: any) {
   return feature?.properties?.mapElementType ?? null;
 }
 
-const SHAPE_KINDS = new Set(["square", "rectangle", "circle", "triangle", "oval"]);
+const SHAPE_KINDS = new Set([
+  "square",
+  "rectangle",
+  "circle",
+  "triangle",
+  "oval",
+]);
 
-export function normalizeFeatureType(feature) {
+export function normalizeFeatureType(feature: any) {
   if (!feature || typeof feature !== "object") return feature;
 
   const f = feature;
@@ -51,12 +57,13 @@ export function normalizeFeatureType(feature) {
   const gtype = f.geometry?.type;
   if (gtype === "Point") f.properties.mapElementType = "point";
   else if (gtype === "LineString") f.properties.mapElementType = "polyline";
-  else if (gtype === "Polygon" || gtype === "MultiPolygon") f.properties.mapElementType = "zone";
+  else if (gtype === "Polygon" || gtype === "MultiPolygon")
+    f.properties.mapElementType = "zone";
 
   return f;
 }
 
-export function normalizeFeatures(features) {
+export function normalizeFeatures(features: any) {
   if (!Array.isArray(features)) return features;
   return features.map((f) => normalizeFeatureType(f));
 }

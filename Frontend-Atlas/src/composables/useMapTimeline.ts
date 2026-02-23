@@ -9,6 +9,9 @@ const regionsLayerOptions = {
     fill: false,
   },
   onEachFeature: (feature: any, layer: any) => {
+    if (layer?.pm?.setOptions) {
+      layer.pm.setOptions({ pmIgnore: true });
+    }
     layer.bindPopup(feature?.properties?.name || "Unnamed");
   },
 } as const;

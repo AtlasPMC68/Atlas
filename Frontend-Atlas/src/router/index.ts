@@ -12,8 +12,16 @@ const routes = [
   { path: "/", component: Home },
   { path: "/demo", component: Map, meta: { requiresAuth: true } },
   { path: "/demo/upload", component: ImportView, meta: { requiresAuth: true } },
-  { path: "/tableau-de-bord", component: Dashboard, meta: { requiresAuth: true } },
-  { path: "/projets-publiques", component: Discover, meta: { requiresAuth: true } },
+  {
+    path: "/tableau-de-bord",
+    component: Dashboard,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/projets-publiques",
+    component: Discover,
+    meta: { requiresAuth: true },
+  },
   { path: "/profil", component: Profile, meta: { requiresAuth: true } },
   { path: "/parametres", component: Settings, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
@@ -24,7 +32,7 @@ const routes = [
 export const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior(to, from, savedPosition) {
+  scrollBehavior(_to: any, _from: any, savedPosition) {
     if (savedPosition) return savedPosition;
     return { top: 0 };
   },
@@ -48,7 +56,7 @@ if (!keycloakReady) {
 }
 
 router.beforeEach(async (to) => {
-  if (!to.matched.some(r => r.meta.requiresAuth)) return true;
+  if (!to.matched.some((r) => r.meta.requiresAuth)) return true;
   await keycloakReady;
 
   if (!keycloak.authenticated) {
@@ -66,7 +74,7 @@ router.beforeEach(async (to) => {
       });
       return false;
     }
-    
+
     return true;
   } catch (err) {
     keycloak.login({

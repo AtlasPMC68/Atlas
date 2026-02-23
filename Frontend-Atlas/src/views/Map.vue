@@ -6,18 +6,6 @@
       </div>
       <div class="flex-1">
         <h1 class="text-xl font-bold">Carte démo</h1>
-        <button
-          @click="toggleEditMode"
-          :class="[
-            'ml-4 px-4 py-2 rounded-lg font-medium transition-colors',
-            isEditMode
-              ? 'bg-red-600 text-white hover:bg-red-700'
-              : 'bg-blue-600 text-white hover:bg-blue-700',
-          ]"
-        >
-          <i class="fas fa-edit mr-2"></i>
-          {{ isEditMode ? "Quitter l'édition" : "Mode édition" }}
-        </button>
       </div>
     </div>
 
@@ -28,119 +16,6 @@
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
         />
-
-        <div v-if="isEditMode" class="mt-6 pt-4 border-t border-base-300">
-          <h3 class="text-lg font-semibold mb-3">Édition</h3>
-
-          <div class="space-y-2">
-            <p class="text-xs text-gray-500 mb-2">Cliquez sur un mode actif pour le désélectionner</p>
-            <button
-              v-for="mode in editModes"
-              :key="mode.id"
-              @click="setEditMode(mode.id)"
-              :class="[
-                'w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors relative',
-                activeEditMode === mode.id
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-              ]"
-            >
-              <i :class="mode.icon" class="mr-2"></i>
-              {{ mode.label }}
-              <span v-if="activeEditMode === mode.id" class="absolute right-2 text-xs opacity-75">✕</span>
-            </button>
-          </div>
-
-          <div v-if="activeEditMode === 'CREATE_POLYGON'" class="mt-3 pt-3 border-t border-gray-200">
-            <p class="text-xs text-gray-600 mb-2">
-              Clic droit pour terminer un polygone<br />
-              Continuez à cliquer pour créer plusieurs polygones
-            </p>
-            <button
-              @click="cancelPolygon"
-              class="w-full px-3 py-2 bg-orange-600 text-white rounded text-sm font-medium hover:bg-orange-700 transition-colors"
-            >
-              <i class="fas fa-undo mr-1"></i>
-              Annuler polygone
-            </button>
-          </div>
-
-          <div v-if="activeEditMode === 'CREATE_SHAPES'" class="mt-3 pt-3 border-t border-gray-200">
-            <p class="text-sm font-medium mb-3">Choisir une forme :</p>
-            <div class="grid grid-cols-2 gap-2">
-              <button
-                v-for="shape in shapeTypes"
-                :key="shape.id"
-                @click="selectShape(shape.id)"
-                :class="[
-                  'px-3 py-2 rounded text-sm font-medium transition-colors text-center',
-                  selectedShape === shape.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-                ]"
-              >
-                <i :class="shape.icon" class="mr-1"></i>
-                {{ shape.label }}
-              </button>
-            </div>
-
-            <div v-if="selectedShape" class="mt-3 pt-3 border-t border-gray-200">
-              <p class="text-xs text-gray-600 mb-2">
-                {{ getShapeInstructions(selectedShape) }}
-              </p>
-              <button
-                @click="cancelShape"
-                class="w-full px-3 py-2 bg-orange-600 text-white rounded text-sm font-medium hover:bg-orange-700 transition-colors"
-              >
-                <i class="fas fa-undo mr-1"></i>
-                Annuler forme
-              </button>
-            </div>
-          </div>
-
-          <div v-if="activeEditMode === 'RESIZE_SHAPE'" class="mt-3 pt-3 border-t border-gray-200">
-            <p class="text-xs text-gray-600 mb-2">
-              <i class="fas fa-info-circle mr-1"></i>
-              Cliquez sur une forme pour afficher ses dimensions et son angle. Modifiez les valeurs pour redimensionner/rotater précisément.
-            </p>
-
-            <div v-if="resizeFeatureId" class="mt-3 grid grid-cols-2 gap-2">
-              <div class="col-span-2 text-sm font-medium">Dimensions (km)</div>
-
-              <label class="text-xs text-gray-600">Largeur</label>
-              <input
-                v-model="resizeWidthInput"
-                type="number"
-                step="0.1"
-                min="0"
-                class="w-full px-2 py-1 border rounded text-sm"
-              />
-
-              <label class="text-xs text-gray-600">Longueur</label>
-              <input
-                v-model="resizeHeightInput"
-                type="number"
-                step="0.1"
-                min="0"
-                class="w-full px-2 py-1 border rounded text-sm"
-              />
-
-              <div class="col-span-2 text-sm font-medium mt-2">Rotation</div>
-
-              <label class="text-xs text-gray-600">Angle (°)</label>
-              <input
-                v-model="rotateAngleInput"
-                type="number"
-                step="1"
-                class="w-full px-2 py-1 border rounded text-sm col-span-1"
-              />
-
-              <p class="col-span-2 text-xs text-gray-500 mt-1">
-                CTRL pour sélectionner plusieurs objets. Le redimensionnement et la rotation s'appliquent au dernier objet cliqué.
-              </p>
-            </div>
-
-            <p v-else class="text-xs text-gray-500">Aucune forme sélectionnée.</p>
-          </div>
-        </div>
       </div>
 
       <div class="flex-1">

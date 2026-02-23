@@ -218,6 +218,42 @@ class MapLayersService {
     });
   }
 
+  private isAxisAlignedRectangle(latLngs: L.LatLngTuple[], tol = 1e-6) {
+    if (!Array.isArray(latLngs) || latLngs.length < 4) return false;
+
+    const normalized = latLngs.slice();
+    const first = normalized[0];
+    const last = normalized[normalized.length - 1];
+    if (
+      first &&
+      last &&
+      Math.abs(first[0] - last[0]) <= tol &&
+      Math.abs(first[1] - last[1]) <= tol
+    ) {
+      normalized.pop();
+    }
+
+    if (normalized.length !== 4) return false;
+
+    const roundToTol = (v: number) => Math.round(v / tol);
+    const lats = new Set(normalized.map((p) => roundToTol(p[0])));
+    const lngs = new Set(normalized.map((p) => roundToTol(p[1])));
+    return lats.size === 2 && lngs.size === 2;
+  }
+
+  private rectangleFromLatLngs(
+    latLngs: L.LatLngTuple[],
+    options: L.PathOptions,
+  ) {
+    const lats = latLngs.map((p) => p[0]);
+    const lngs = latLngs.map((p) => p[1]);
+    const bounds = L.latLngBounds(
+      [Math.min(...lats), Math.min(...lngs)],
+      [Math.max(...lats), Math.max(...lngs)],
+    );
+    return L.rectangle(bounds, options);
+  }
+
   renderCities(features: Feature[], map: L.Map) {
     const safeFeatures = toArray(features) as Feature[];
     const radius = getRadiusForZoom(map.getZoom());
@@ -311,15 +347,21 @@ class MapLayersService {
 
       if (!latLngs) continue;
 
-      const poly = L.polygon(latLngs, {
+      const angleDeg = feature.properties?.rotation_deg ?? 0;
+      const styleOptions = {
         color: "#333",
         weight: 1,
         fillColor,
         fillOpacity: 0.5,
         interactive: true,
-      });
+      };
+      const canUseRectangle =
+        Math.abs(angleDeg) <= 1e-6 && this.isAxisAlignedRectangle(latLngs);
 
-      const angleDeg = feature.properties?.rotation_deg ?? 0;
+      const poly = canUseRectangle
+        ? this.rectangleFromLatLngs(latLngs, styleOptions)
+        : L.polygon(latLngs, styleOptions);
+
       if (Math.abs(angleDeg) > 1e-6) {
         const pivot = feature.properties?.center
           ? L.latLng(
@@ -410,15 +452,20 @@ class MapLayersService {
         coord[0],
       ]);
 
-      const shape = L.polygon(latLngs, {
+      const angleDeg = feature.properties?.rotation_deg ?? 0;
+      const styleOptions = {
         color: feature.color || "#000000",
         weight: 2,
         fillColor: feature.color || "#cccccc",
         fillOpacity: feature.opacity ?? 0.5,
         interactive: true,
-      });
+      };
+      const canUseRectangle =
+        Math.abs(angleDeg) <= 1e-6 && this.isAxisAlignedRectangle(latLngs);
 
-      const angleDeg = feature.properties?.rotation_deg ?? 0;
+      const shape = canUseRectangle
+        ? this.rectangleFromLatLngs(latLngs, styleOptions)
+        : L.polygon(latLngs, styleOptions);
 
       if (Math.abs(angleDeg) > 1e-6) {
         const pivot = feature.properties?.center
