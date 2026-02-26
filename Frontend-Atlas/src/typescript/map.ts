@@ -1,6 +1,7 @@
 export interface MapData {
   id: string;
   userId: string;
+  username: string;
   title: string;
   description?: string;
   isPrivate: boolean;
@@ -8,11 +9,6 @@ export interface MapData {
   updatedAt: string;
 }
 
-export interface MapDisplay {
-  id: string;
-  title: string;
-  userId: string;
-  description?: string;
-  createdAt: string;
-  image?: string;
+export interface MapDisplay extends MapData {
+  image: string;
 }

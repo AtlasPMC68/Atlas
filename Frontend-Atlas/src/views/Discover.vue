@@ -1,16 +1,49 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import {
-  PlusIcon,
-  FunnelIcon,
-  MagnifyingGlassIcon,
-} from "@heroicons/vue/24/outline";
+import { ref, computed, onMounted } from "vue";
+import { MagnifyingGlassIcon } from "@heroicons/vue/24/outline";
 import { MapData, MapDisplay } from "../typescript/map";
 import { snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 
 const maps = ref<MapDisplay[]>([]);
 const { fetchCurrentUser } = useCurrentUser();
+
+const searchQuery = ref("");
+const filterDateFrom = ref("");
+const filterDateTo = ref("");
+
+function resetFilters() {
+  filterDateFrom.value = "";
+  filterDateTo.value = "";
+}
+
+const hasActiveFilters = computed(
+  () => filterDateFrom.value !== "" || filterDateTo.value !== "",
+);
+
+const filteredMaps = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  return maps.value.filter((m) => {
+    if (
+      q &&
+      !m.title.toLowerCase().includes(q) &&
+      !(m.description ?? "").toLowerCase().includes(q) &&
+      !(m.username ?? "").toLowerCase().includes(q)
+    )
+      return false;
+
+    const createdAt = new Date(m.createdAt);
+    if (filterDateFrom.value && createdAt < new Date(filterDateFrom.value))
+      return false;
+    if (
+      filterDateTo.value &&
+      createdAt > new Date(filterDateTo.value + "T23:59:59")
+    )
+      return false;
+
+    return true;
+  });
+});
 
 onMounted(async () => {
   await fetchCurrentUser();
@@ -33,7 +66,10 @@ async function fetchMapsAndRender() {
         title: map.title,
         description: map.description,
         createdAt: map.createdAt,
+        updatedAt: map.updatedAt,
+        isPrivate: map.isPrivate,
         userId: map.userId,
+        username: map.username,
         image: "/images/default.jpg",
       };
     });
@@ -45,66 +81,90 @@ async function fetchMapsAndRender() {
 
 <template>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Search bar + buttons -->
-    <div
-      class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6"
-    >
-      <!-- Search field + filter -->
-      <div class="flex flex-1 gap-2">
-        <div class="relative flex-1">
-          <MagnifyingGlassIcon
-            class="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400"
-          />
-          <input
-            type="text"
-            placeholder="Rechercher une carte..."
-            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
+    <!-- Filters + search -->
+    <div class="flex flex-col gap-3 mb-6">
+      <!-- Filters row -->
+      <div class="flex flex-wrap gap-4 items-end">
+        <!-- Date to -->
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-gray-600">Créée avant</label>
+          <input v-model="filterDateTo" type="date" class="input input-sm" />
         </div>
+        <!-- Date from -->
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-gray-600">Créée après</label>
+          <input v-model="filterDateFrom" type="date" class="input input-sm" />
+        </div>
+
+        <!-- Reset -->
         <button
-          class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+          v-if="hasActiveFilters"
+          class="btn btn-ghost btn-sm text-gray-500"
+          @click="resetFilters"
         >
-          <FunnelIcon class="h-5 w-5 mr-2" />
-          Filtres
+          Réinitialiser
         </button>
       </div>
 
-      <!-- new Map button -->
-      <RouterLink
-        to="/demo/upload"
-        class="btn-primary flex items-center gap-2 self-start md:self-auto"
+      <!-- Search -->
+      <div
+        class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
-        <PlusIcon class="h-5 w-5" />
-        Nouvelle Carte
-      </RouterLink>
+        <label class="flex input flex-1">
+          <MagnifyingGlassIcon class="h-5 w-5 text-gray-400" />
+          <input
+            v-model="searchQuery"
+            type="search"
+            required
+            placeholder="Rechercher une carte par titre, description ou nom d'utilisateur"
+          />
+        </label>
+      </div>
     </div>
 
     <!-- Maps grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
-        v-for="map in maps"
+        v-for="map in filteredMaps"
         :key="map.id"
-        class="bg-white border border-gray-200 rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer"
+        class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer"
         @click="$router.push(`/maps/${map.id}`)"
       >
-        <img
-          :src="map.image || '/images/default.jpg'"
-          alt=""
-          class="w-full h-40 object-cover rounded-t-lg"
-        />
-        <div class="p-4">
-          <h3 class="text-lg font-semibold text-gray-900">
+        <figure>
+          <img
+            src="https://img.daisyui.com/images/stock/photo-1606107557195-0e29a4b5b4aa.webp"
+            alt="Map"
+            class="w-full h-44"
+          />
+        </figure>
+        <div class="card-body pb-0">
+          <h2 class="card-title text-sm xl:text-lg">
             {{ map.title }}
-          </h3>
-          <p class="text-sm text-gray-500">par {{ map.userId }}</p>
+          </h2>
+          <p class="pb-2">
+            {{ map.description || "Aucune description" }}
+          </p>
+          <p class="text-xs text-base-content/50">Par {{ map.username }}</p>
+        </div>
+        <div class="flex justify-between items-center">
+          <div class="flex gap-2 p-4">
+            <div class="badge badge-outline align-bottom">
+              {{ new Date(map.createdAt).toLocaleDateString() }}
+            </div>
+            <div class="badge badge-outline align-bottom">
+              {{ map.isPrivate ? "Privée" : "Publique" }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Empty state -->
+    <div
+      v-if="filteredMaps.length === 0"
+      class="text-center py-16 text-base-content/50"
+    >
+      <p class="text-lg">Aucune carte publique trouvée.</p>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.btn-primary {
-  @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition;
-}
-</style>
