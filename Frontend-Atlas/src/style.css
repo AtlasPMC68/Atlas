@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Override DaisyUI v5 primary color to match Tailwind primary-600 (#2563eb) */
+[data-theme="light"] {
+  --color-primary: #2563eb;
+  --color-primary-content: white;
+}
+
 @layer base {
   html {
     font-family: "Inter", system-ui, sans-serif;
