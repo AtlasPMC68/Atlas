@@ -2,6 +2,8 @@ import { ref } from "vue";
 import L from "leaflet";
 import "@geoman-io/leaflet-geoman-free";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
+import "leaflet-draw";
+import "leaflet-draw/dist/leaflet.draw.css";
 
 type DrawingMode =
   | "marker"
@@ -56,8 +58,7 @@ export function useMapDrawing(emit: EmitFn) {
     drawnItems.value = new L.FeatureGroup();
     map.addLayer(drawnItems.value as any);
 
-    // Initialize pm - with editMode, dragMode disabled at start
-    // to prevent conflicts with layers. Users can enable via toolbar buttons.
+    // Initialize Leaflet.pm controls (standard tools)
     map.pm.addControls({
       position: "topleft",
       drawMarker: true,
@@ -65,7 +66,8 @@ export function useMapDrawing(emit: EmitFn) {
       drawPolygon: true,
       drawCircle: true,
       drawRectangle: true,
-      drawFreehand: true,
+      drawCircleMarker: true,
+      drawText: true,
       editMode: true,
       dragMode: true,
       rotateMode: true,
@@ -73,8 +75,159 @@ export function useMapDrawing(emit: EmitFn) {
       removalMode: true,
     });
 
-    // Setup event listeners
+    // Add Leaflet.Draw control for freehand drawing
+    const drawControl = new L.Control.Draw({
+      position: "topleft",
+      draw: {
+        polyline: false,
+        polygon: false,
+        circle: false,
+        rectangle: false,
+        marker: false,
+        circlemarker: false,
+      },
+      edit: {
+        featureGroup: drawnItems.value as L.FeatureGroup,
+        edit: false,
+        remove: false,
+      },
+    });
+
+    // Manually add freehand button
+    addFreehandButton(map);
+
+    // Setup event listeners for both libraries
     setupDrawingListeners(map);
+    setupLeafletDrawListeners(map);
+  }
+
+  /**
+   * Add custom freehand drawing button
+   */
+  function addFreehandButton(map: L.Map) {
+    const FreehandControl = L.Control.extend({
+      options: {
+        position: "topleft",
+      },
+      onAdd: function () {
+        const container = L.DomUtil.create(
+          "div",
+          "leaflet-bar leaflet-control",
+        );
+        const button = L.DomUtil.create(
+          "a",
+          "leaflet-draw-freehand",
+          container,
+        );
+        button.href = "#";
+        button.title = "Draw Freehand Line";
+        button.style.display = "flex";
+        button.style.alignItems = "center";
+        button.style.justifyContent = "center";
+
+        // Add SVG icon - pencil for freehand drawing
+        button.innerHTML = `
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Z"/>
+            <path d="M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/>
+          </svg>
+        `;
+
+        L.DomEvent.on(button, "click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          L.DomEvent.preventDefault(e);
+          startFreehandDrawing(map);
+        });
+
+        return container;
+      },
+    });
+
+    map.addControl(new FreehandControl());
+  }
+
+  /**
+   * Start freehand drawing mode
+   */
+  function startFreehandDrawing(map: L.Map) {
+    let isDrawing = false;
+    let points: L.LatLng[] = [];
+    let polyline: L.Polyline | null = null;
+
+    // Disable map dragging during freehand drawing
+    map.dragging.disable();
+
+    const onMouseDown = (e: L.LeafletMouseEvent) => {
+      isDrawing = true;
+      points = [e.latlng];
+      polyline = L.polyline(points, {
+        color: "#000000",
+        weight: 2,
+        opacity: 0.8,
+      }).addTo(map);
+    };
+
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      if (!isDrawing || !polyline) return;
+      points.push(e.latlng);
+      polyline.setLatLngs(points);
+    };
+
+    const onMouseUp = () => {
+      if (!isDrawing || !polyline) return;
+      isDrawing = false;
+
+      // Keep as polyline (continuous line with start and end)
+      if (points.length > 1) {
+        // Keep the polyline as is - don't convert to polygon
+        drawnItems.value?.addLayer(polyline);
+
+        const feature = layerToFeature(polyline);
+        if (feature) {
+          (polyline as any).feature = feature;
+          emit("feature-created", feature);
+        }
+      } else {
+        // Remove if not enough points
+        map.removeLayer(polyline);
+      }
+
+      // Clean up listeners
+      map.off("mousedown", onMouseDown);
+      map.off("mousemove", onMouseMove);
+      map.off("mouseup", onMouseUp);
+      map.getContainer().style.cursor = "";
+
+      // Re-enable map dragging
+      map.dragging.enable();
+    };
+
+    // Disable pm to avoid conflicts
+    map.pm.disableDraw();
+
+    // Set cursor
+    map.getContainer().style.cursor = "crosshair";
+
+    // Attach listeners
+    map.on("mousedown", onMouseDown);
+    map.on("mousemove", onMouseMove);
+    map.on("mouseup", onMouseUp);
+  }
+
+  /**
+   * Setup listeners for Leaflet.Draw events
+   */
+  function setupLeafletDrawListeners(map: L.Map) {
+    map.on(L.Draw.Event.CREATED, (e: any) => {
+      const layer = e.layer;
+      const feature = layerToFeature(layer);
+
+      if (feature) {
+        (layer as any).feature = feature;
+        drawnItems.value?.addLayer(layer);
+        emit("feature-created", feature);
+      }
+    });
   }
 
   /**
@@ -164,10 +317,14 @@ export function useMapDrawing(emit: EmitFn) {
     // When drawing starts
     map.on("pm:drawstart", (e) => {
       activeDrawingMode.value = e.shape as DrawingMode;
+      // Disable map dragging during drawing
+      map.dragging.disable();
     });
 
     // When drawing ends
     map.on("pm:drawend", () => {
+      // Re-enable map dragging
+      map.dragging.enable();
       // Keep the mode active unless explicitly disabled
     });
   }
@@ -290,6 +447,8 @@ export function useMapDrawing(emit: EmitFn) {
 
     if (mode === null) {
       activeDrawingMode.value = null;
+      // Re-enable map dragging when exiting draw mode
+      pmMapInstance.dragging.enable();
       return;
     }
 

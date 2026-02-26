@@ -98,9 +98,8 @@ class FeatureLayerManager {
       this.allCircles.value.add(layer);
     }
 
-    if (this.props.editMode) {
-      this.makeLayerClickable(fid, layer);
-    }
+    // Always make layers clickable for multi-selection support
+    this.makeLayerClickable(fid, layer);
 
     const visible =
       this.props.featureVisibility?.get(fid) ??
