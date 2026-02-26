@@ -2,6 +2,7 @@ import numpy as np
 import skimage
 
 
+
 def read_image(image_path) -> np.ndarray:
     """
     Upscales the image using Lanczos-4 interpolation to preserve text sharpness.
@@ -12,6 +13,7 @@ def read_image(image_path) -> np.ndarray:
     # skimage.io.imread returns an image with channels in RGB order by default
     img = skimage.io.imread(image_path)
     if img is None:
+        raise IOError(f"Could not read image for given path: {image_path}")
         raise IOError(f"Could not read image for given path: {image_path}")
 
     # Reads the saved image and normalize to float64
@@ -164,47 +166,56 @@ def lcn_sharpening_skimage(img: np.ndarray, window_size: int = 15):
 
 
 def flat_field_correction(
-    img: np.ndarray, sigma: float = 100.0, normalize: bool = True
+    img: np.ndarray,
+    sigma: float = 100.0,
+    normalize: bool = True,
+    assume_linear: bool = False,
 ) -> np.ndarray:
     """
     Software flat-field correction: estimates illumination background using Gaussian blur.
 
-    :param img: RGB image float [0.0, 1.0]
-    :param sigma: Gaussian blur sigma (pixels). Higher = more details removed
-    :param normalize: Normalize intensity after correction
-    :return: Corrected RGB image float [0.0, 1.0]
+    Args:
+        img: RGB image float [0.0, 1.0]
+        sigma: Gaussian blur sigma (pixels). Higher = smoother background estimate
+        normalize: Normalize global intensity after correction
+        assume_linear: If True, treat input as linear RGB and avoid rgb2lab on linear data
+
+    Returns:
+        Corrected RGB float [0.0, 1.0]
     """
-    # Convert to LAB for luminance processing
-    img_lab = skimage.color.rgb2lab(img)
-    l_channel = img_lab[:, :, 0]  # Luminance [0, 100]
+    img = np.clip(skimage.util.img_as_float(img), 0.0, 1.0)
 
-    # Apply massive Gaussian blur to estimate illumination background
-    background = skimage.filters.gaussian(l_channel, sigma=sigma, mode="reflect")
+    if not assume_linear:
+        img_lab = skimage.color.rgb2lab(img)
+        l_channel = img_lab[:, :, 0]
 
-    # Add small epsilon to avoid division by zero (more stable than np.where)
-    epsilon = 1e-6
-    background = background + epsilon
+        background = skimage.filters.gaussian(l_channel, sigma=sigma, mode="reflect")
+        background = background + 1e-6
 
-    # Correct luminance by dividing by background
-    l_corrected = l_channel / background
+        l_corrected = l_channel / background
+        l_corrected = l_corrected * float(np.mean(background))
 
-    # Rescale back to [0, 100] range by multiplying by mean background intensity
-    mean_bg = np.mean(background)
-    l_corrected = l_corrected * mean_bg
+        img_lab[:, :, 0] = l_corrected
+        corrected = skimage.color.lab2rgb(img_lab)
 
-    # Reconstruct LAB image
-    img_lab[:, :, 0] = l_corrected
+    else:
+        y = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
+        background = skimage.filters.gaussian(y, sigma=sigma, mode="reflect")
+        background = background + 1e-6
 
-    # Convert back to RGB
-    corrected_rgb = skimage.color.lab2rgb(img_lab)
+        y_corrected = y / background
+        y_corrected = y_corrected * float(np.mean(background))
+
+        ratio = (y_corrected / (y + 1e-6)).astype(np.float64)
+        corrected = img * ratio[:, :, None]
 
     if normalize:
-        max_val = np.max(corrected_rgb)
-        if np.isfinite(max_val) and max_val > 0:
-            corrected_rgb = corrected_rgb / max_val
-        corrected_rgb = np.nan_to_num(corrected_rgb, nan=0.0, posinf=1.0, neginf=0.0)
+        m = float(np.max(corrected))
+        if m > 1e-8:
+            corrected = corrected / m
 
-    return np.clip(corrected_rgb, 0.0, 1.0)
+    return np.clip(corrected, 0.0, 1.0)
+
 
 
 def denoise_bilateral(
@@ -221,5 +232,207 @@ def denoise_bilateral(
         img, sigma_color=sigma_color, sigma_spatial=sigma_spatial, channel_axis=-1
     )
 
+def srgb_to_linear(img: np.ndarray) -> np.ndarray:
+    """
+    Convert sRGB (gamma-compressed) to linear RGB.
+
+    Assumes img is float in [0, 1].
+    """
+    img = np.clip(img, 0.0, 1.0)
+    a = 0.055
+    threshold = 0.04045
+    low = img / 12.92
+    high = ((img + a) / (1.0 + a)) ** 2.4
+    return np.where(img <= threshold, low, high)
+
+
+def linear_to_srgb(img: np.ndarray) -> np.ndarray:
+    """
+    Convert linear RGB to sRGB (gamma-compressed).
+
+    Assumes img is float in [0, 1] (will be clipped).
+    """
+    img = np.clip(img, 0.0, 1.0)
+    a = 0.055
+    threshold = 0.0031308
+    low = img * 12.92
+    high = (1.0 + a) * (img ** (1.0 / 2.4)) - a
+    return np.where(img <= threshold, low, high)
+
+
+def white_balance_gray_world(img: np.ndarray, mask: Optional[np.ndarray] = None) -> np.ndarray:
+    """
+    Gray-world white balance: scale channels so their mean matches.
+
+    img: float RGB in [0,1]
+    mask: optional boolean mask, True = valid pixels to use for stats
+    """
+    img = np.clip(img, 0.0, 1.0)
+    if mask is None:
+        pixels = img.reshape(-1, 3)
+    else:
+        pixels = img[mask]
+
+    if pixels.size == 0:
+        return img
+
+    means = np.mean(pixels, axis=0)
+    target = float(np.mean(means))
+    gains = target / (means + 1e-8)
+
+    out = img * gains.reshape(1, 1, 3)
+    return np.clip(out, 0.0, 1.0)
+
+
+def white_balance_percentile_white_patch(
+    img: np.ndarray,
+    percentile: float = 99.5,
+    mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    White-patch WB using per-channel high percentile.
+
+    This is often better for scanned/photographed maps than gray-world.
+    """
+    img = np.clip(img, 0.0, 1.0)
+    if mask is None:
+        pixels = img.reshape(-1, 3)
+    else:
+        pixels = img[mask]
+
+    if pixels.size == 0:
+        return img
+
+    p = np.percentile(pixels, percentile, axis=0)
+    gains = 1.0 / (p + 1e-8)
+
+    out = img * gains.reshape(1, 1, 3)
+    return np.clip(out, 0.0, 1.0)
+
+
+def percentile_normalize(
+    img: np.ndarray,
+    p_low: float = 1.0,
+    p_high: float = 99.0,
+    mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    Robust normalization using percentiles (stable vs max()).
+
+    Maps [p_low, p_high] to [0,1].
+    """
+    img = np.clip(img, 0.0, 1.0)
+    if mask is None:
+        pixels = img.reshape(-1, 3)
+    else:
+        pixels = img[mask]
+
+    if pixels.size == 0:
+        return img
+
+    lo = np.percentile(pixels, p_low, axis=0)
+    hi = np.percentile(pixels, p_high, axis=0)
+    denom = (hi - lo) + 1e-8
+
+    out = (img - lo.reshape(1, 1, 3)) / denom.reshape(1, 1, 3)
+    return np.clip(out, 0.0, 1.0)
+
+
+def build_paper_background_mask(
+    img_rgb: np.ndarray,
+    opaque_mask: np.ndarray,
+    paper_threshold_deltaE: float = 10.0,
+) -> np.ndarray:
+    """
+    Estimate "paper/white" background and exclude it from processing.
+
+    Strategy:
+      - Compute LAB on RGB
+      - Use a reference white LAB = [100,0,0]
+      - Mark pixels close to white as background (deltaE <= threshold)
+      - Return updated opaque_mask (foreground mask)
+    """
+    # Convert to LAB for perceptual distance
+    lab = skimage.color.rgb2lab(np.clip(img_rgb, 0.0, 1.0))
+    white = np.array([[[100.0, 0.0, 0.0]]], dtype=np.float64)
+    dE = skimage.color.deltaE_ciede2000(lab, white)
+
+    background = (dE <= paper_threshold_deltaE) & opaque_mask
+    foreground = opaque_mask & (~background)
+    return foreground
+
+
+def clahe_color_amplification(
+    img: np.ndarray, amplification: float = 0.02
+) -> np.ndarray:
+    """
+    Applies CLAHE to a float64 RGB image.
+    :param img: RGB float64 image [0.0, 1.0]
+    :param amplification: CLAHE amplification factor. 0.01 is very little, 0.05 is a lot
+
+    :return: Amplified RGB float64 image [0.0, 1.0]
+    """
+    # L channel is needed for the CLAHE contrast amplification
+    img_lab = skimage.color.rgb2lab(img)  # L=[0.0, 100.0]
+    l_channel = img_lab[:, :, 0] / 100.0  # L=[0.0, 1.0]
+
+    l_enhanced = skimage.exposure.equalize_adapthist(
+        l_channel,
+        kernel_size=(8, 8),  # Contextual region (x,y region around each pixel)
+        clip_limit=amplification,  # Effect amplification (0.01 is little, 0.05 is a lot)
+    )
+
+    # Merge the L channel in the original image
+    img_lab[:, :, 0] = l_enhanced * 100.0
+    img_lab = np.clip(img_lab, 0.0, 1.0)
+    return skimage.color.lab2rgb(img_lab)
+
+
+def denoise_nl_means_rgb(
+    img: np.ndarray,
+    h: float = 0.06,
+    fast_mode: bool = True,
+) -> np.ndarray:
+    """
+    Non-local means denoising for RGB.
+
+    h: higher => stronger denoise (risk of losing details)
+    """
+    img = np.clip(img, 0.0, 1.0)
+    sigma_est = np.mean(skimage.restoration.estimate_sigma(img, channel_axis=-1))
+    return skimage.restoration.denoise_nl_means(
+        img,
+        h=h * sigma_est,
+        fast_mode=fast_mode,
+        patch_size=5,
+        patch_distance=6,
+        channel_axis=-1,
+    )
+
+def clahe_l_channel_lab(
+    img: np.ndarray,
+    clip_limit: float = 0.02,
+    kernel_size: Tuple[int, int] = (8, 8),
+) -> np.ndarray:
+    """
+    CLAHE on LAB L channel for the color-extraction preprocessing pipeline.
+
+    Args:
+        img: RGB float image in [0,1]
+        clip_limit: CLAHE strength (skimage.equalize_adapthist clip_limit)
+        kernel_size: CLAHE tile size
+
+    Returns:
+        RGB float image in [0,1]
+    """
+    img = np.clip(img, 0.0, 1.0)
+    lab = skimage.color.rgb2lab(img)
+
+    l = lab[:, :, 0] / 100.0
+    l2 = skimage.exposure.equalize_adapthist(l, kernel_size=kernel_size, clip_limit=clip_limit)
+
+    lab[:, :, 0] = l2 * 100.0
+    out = skimage.color.lab2rgb(lab)
+    return np.clip(out, 0.0, 1.0)
 
 # TODO: DENOISING, COLOR NORMALIZATION, TEST EXISTING FUNCTIONS

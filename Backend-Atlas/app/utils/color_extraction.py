@@ -706,7 +706,12 @@ def extract_colors(
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
-    os.makedirs(image_output_dir, exist_ok=True)
+
+    rgb_u8, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
+    rgb = img_as_float(rgb_u8)
+
+    if debug:
+        os.makedirs(image_output_dir, exist_ok=True)    
 
     # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
     dom = dominant_bins_lab(
@@ -715,12 +720,16 @@ def extract_colors(
 
     masks: Dict[str, str] = {}
     mask_paths: Dict[str, str] = {}
+    mask_paths: Dict[str, str] = {}
     ratios: Dict[str, float] = {}
     normalized_features: List[Dict] = []
     normalized_features = []
     pixel_features = []
 
     color_index = 1
+    for k, entry in enumerate(selected):
+        mask = (best_idx == k) & valid
+        #mask = binary_opening(mask, disk(opening_radius))
     for k, entry in enumerate(selected):
         mask = (best_idx == k) & valid
         #mask = binary_opening(mask, disk(opening_radius))
