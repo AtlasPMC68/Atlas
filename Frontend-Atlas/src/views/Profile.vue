@@ -8,6 +8,7 @@ import { snakeToCamel } from "../utils/utils";
 
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
+const goToTestBrowser = () => router.push("/test-browser");
 
 const user = ref<User>({
   id: "",
@@ -70,6 +71,12 @@ onMounted(async () => {
           Membre depuis le
           {{ new Date(user.createdAt).toLocaleDateString("fr-CA") }}
         </p>
+
+        <div class="mt-6">
+          <button class="btn-secondary" @click="goToTestBrowser">
+            Create new test
+          </button>
+        </div>
       </div>
     </div>
   </div>

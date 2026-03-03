@@ -4,10 +4,14 @@
       <!-- Header -->
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-base-content mb-2">
-          Importer une carte
+          {{ isDevTest ? "Créer un test de carte" : "Importer une carte" }}
         </h1>
         <p class="text-base-content/70">
-          Glissez votre image de carte ou cliquez pour la sélectionner
+          {{
+            isDevTest
+              ? "Cette importation servira à créer des données de test."
+              : "Glissez votre image de carte ou cliquez pour la sélectionner"
+          }}
         </p>
       </div>
 
@@ -49,7 +53,10 @@
             />
             
             <!-- Extraction Options -->
-            <div class="bg-base-200 rounded-lg p-4 space-y-3">
+            <div
+              v-if="!isDevTest"
+              class="bg-base-200 rounded-lg p-4 space-y-3"
+            >
               <h3 class="font-semibold text-sm mb-3">Options d'extraction</h3>
               
               <!-- Georeferencing Option -->
@@ -106,18 +113,38 @@
             </div>
             
             <ImportControls
+              v-if="!isDevTest"
               @start-import="startImportProcess"
               @cancel="resetImport"
               :is-processing="isProcessing"
               start-label="Confirmer carte"
             />
+
+            <div v-else class="flex justify-end gap-2">
+              <button
+                class="btn btn-primary"
+                type="button"
+                :disabled="isProcessing"
+                @click="startImportProcess"
+              >
+                Utiliser extraction
+              </button>
+              <button
+                class="btn btn-secondary"
+                type="button"
+                :disabled="isProcessing"
+                @click="startManualCreation"
+              >
+                Commencer création
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- World area selection modal -->
-    <WorldAreaPickerModal
+     <WorldAreaPickerModal
       v-if="showWorldAreaPickerModal && previewUrl"
       :is-open="showWorldAreaPickerModal"
       :image-url="previewUrl"
@@ -150,8 +177,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { ref, watch, computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
@@ -173,7 +200,13 @@ import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
 
 const router = useRouter();
+const route = useRoute();
 const importStore = useImportStore();
+
+type ImportMode = "user" | "dev-test";
+
+const mode = (route.meta.importMode as ImportMode | undefined) ?? "user";
+const isDevTest = computed(() => mode === "dev-test");
 
 // Composables
 const {
@@ -225,6 +258,15 @@ const handleFileSelected = (file: File) => {
 
 async function startImportProcess() {
   if (!selectedFile.value) return;
+
+  if (isDevTest.value) {
+    // In test mode, force georeferencing and color extraction on,
+    // and disable other extraction options.
+    enableGeoreferencing.value = true;
+    enableColorExtraction.value = true;
+    enableShapesExtraction.value = false;
+    enableTextExtraction.value = false;
+  }
   
   // If georeferencing is disabled, skip world area selection and go straight to upload
   if (!enableGeoreferencing.value) {
@@ -250,6 +292,10 @@ async function startImportProcess() {
   // With georeferencing enabled, show world area picker
   currentStep.value = 3;
   showWorldAreaPickerModal.value = true;
+}
+
+function startManualCreation() {
+  router.push("/test-creation");
 }
 
 function handleWorldAreaClose() {
@@ -300,7 +346,8 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
       enableColorExtraction: enableColorExtraction.value,
       enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
-    }
+    },
+    isDevTest.value
   );
   if (result.success) {
     currentStep.value = 5;
@@ -314,7 +361,11 @@ watch(
   [isProcessing, resultData, mapId],
   ([processing, result, id]) => {
     if (!processing && result && id) {
-      router.push(`/maps/${id}`);
+      if (isDevTest.value) {
+        router.push({ path: "/test-browser", query: { mapId: id } });
+      } else {
+        router.push(`/maps/${id}`);
+      }
     }
   }
 );

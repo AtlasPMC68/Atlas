@@ -6,12 +6,19 @@ import Dashboard from "../views/Dashboard.vue";
 import Profile from "../views/Profile.vue";
 import Settings from "../views/Settings.vue";
 import Discover from "../views/Discover.vue";
+import TestBrowser from "../views/dev/TestBrowser.vue";
+import TestCreation from "../views/dev/TestCreation.vue";
 import keycloak from "../keycloak";
 
 const routes = [
   { path: "/", component: Home },
   { path: "/demo", component: Map, meta: { requiresAuth: true } },
   { path: "/demo/upload", component: ImportView, meta: { requiresAuth: true } },
+  {
+    path: "/demo/upload-test",
+    component: ImportView,
+    meta: { requiresAuth: true, importMode: "dev-test" },
+  },
   {
     path: "/tableau-de-bord",
     component: Dashboard,
@@ -20,6 +27,16 @@ const routes = [
   {
     path: "/projets-publiques",
     component: Discover,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-browser",
+    component: TestBrowser,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-creation",
+    component: TestCreation,
     meta: { requiresAuth: true },
   },
   { path: "/profil", component: Profile, meta: { requiresAuth: true } },

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import re
@@ -58,6 +59,7 @@ def process_map_extraction(
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
+    is_test: bool = False,
 ):
     # Ensure we are working with a UUID instance inside the task
     map_uuid = UUID(map_id)
@@ -155,12 +157,14 @@ def process_map_extraction(
                         "features": [city_feature],
                     }
 
-                    try:
-                        asyncio.run(
-                            persist_city_feature(map_uuid, city_feature_collection)
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to persist city token '{tok}': {e}")
+                    # In test mode, skip persisting city features to the database.
+                    if not is_test:
+                        try:
+                            asyncio.run(
+                                persist_city_feature(map_uuid, city_feature_collection)
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to persist city token '{tok}': {e}")
 
             except Exception as e:
                 logger.error(f"City detection failed: {e}")
@@ -168,6 +172,7 @@ def process_map_extraction(
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # Step 4: Color Extraction (conditionally enabled)
+        zones_features: list[dict[str, Any]] | None = None
         if enable_color_extraction:
             self.update_state(
                 state="PROGRESS",
@@ -189,7 +194,9 @@ def process_map_extraction(
                     georef_features = georeference_features_with_sift_points(
                         pixel_features, pixel_points, geo_points_lonlat
                     )
-                    asyncio.run(persist_features(map_uuid, georef_features))
+                    zones_features = georef_features
+                    if not is_test:
+                        asyncio.run(persist_features(map_uuid, georef_features))
 
                 except Exception as e:
                     logger.error(
@@ -197,7 +204,9 @@ def process_map_extraction(
                         exc_info=True,
                     )
             elif normalized_features:
-                asyncio.run(persist_features(map_uuid, normalized_features))
+                zones_features = normalized_features
+                if not is_test:
+                    asyncio.run(persist_features(map_uuid, normalized_features))
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
@@ -216,8 +225,9 @@ def process_map_extraction(
             shapes_result = extract_shapes(tmp_file_path)
             shape_features = shapes_result["normalized_features"]
 
-            # Persist shapes to database
-            asyncio.run(persist_features(map_uuid, shape_features))
+            # Persist shapes to database unless we are in test mode
+            if not is_test:
+                asyncio.run(persist_features(map_uuid, shape_features))
 
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
@@ -233,6 +243,48 @@ def process_map_extraction(
             },
         )
         os.unlink(tmp_file_path)
+
+        # In test mode, persist the image and zones GeoJSON to files under tests/assets
+        image_output_path = ""
+        zones_output_path = ""
+        if is_test:
+            try:
+                # Backend project root: go two levels up from this file (app/tasks.py)
+                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                assets_root = os.path.join(root_dir, "tests", "assets")
+                maps_dir = os.path.join(assets_root, "maps")
+                zones_dir = os.path.join(assets_root, "georef_zones")
+
+                os.makedirs(maps_dir, exist_ok=True)
+                os.makedirs(zones_dir, exist_ok=True)
+
+                # Save the original image under a stable name based on map_id
+                ext = os.path.splitext(filename)[1] or ".png"
+                image_output_path = os.path.join(maps_dir, f"{map_id}{ext}")
+                # image was loaded earlier with cv2.imread
+                cv2.imwrite(image_output_path, image)
+
+                # Save zones as a single FeatureCollection if available
+                if zones_features:
+                    all_features: list[dict[str, Any]] = []
+                    for fc in zones_features:
+                        all_features.extend(fc.get("features", []))
+
+                    zones_geojson = {
+                        "type": "FeatureCollection",
+                        "features": all_features,
+                    }
+                    zones_output_path = os.path.join(
+                        zones_dir, f"{map_id}_zones.geojson"
+                    )
+                    with open(zones_output_path, "w", encoding="utf-8") as f:
+                        json.dump(zones_geojson, f, indent=2, ensure_ascii=False)
+
+                logger.info(
+                    f"[TEST] Saved test image to {image_output_path} and zones to {zones_output_path}"
+                )
+            except Exception as e:
+                logger.error(f"[TEST] Failed to save test assets for {filename}: {e}")
 
         if enable_text_extraction:
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -282,6 +334,11 @@ def process_map_extraction(
                 "color_extraction": enable_color_extraction,
                 "shapes_extraction": enable_shapes_extraction,
                 "text_extraction": enable_text_extraction,
+            },
+            "is_test": is_test,
+            "test_assets": {
+                "image_path": image_output_path,
+                "zones_path": zones_output_path,
             },
         }
 

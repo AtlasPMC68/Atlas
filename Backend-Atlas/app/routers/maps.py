@@ -38,6 +38,7 @@ async def upload_and_process_map(
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
     enable_text_extraction: bool = Form(False),
+    is_test: bool = Form(False),
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
@@ -87,23 +88,33 @@ async def upload_and_process_map(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        map_id = await create_map_in_db(
-            db=session,
-            user_id=UUID(user_id),
-            title=file.filename,
-            description=None,
-            is_private=True,
-        )
+        # In test mode, do not create a map in the database.
+        # Use a synthetic UUID as identifier that will be used
+        # to name the files on disk.
+        from uuid import uuid4
+
+        if is_test:
+            map_id_str = str(uuid4())
+        else:
+            map_id = await create_map_in_db(
+                db=session,
+                user_id=UUID(user_id),
+                title=file.filename,
+                description=None,
+                is_private=True,
+            )
+            map_id_str = str(map_id)
 
         task = process_map_extraction.delay(
             file.filename,
             file_content,
-            str(map_id),
+            map_id_str,
             pixel_points_list,
             geo_points_list,
             enable_color_extraction,
             enable_shapes_extraction,
             enable_text_extraction,
+            is_test,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
@@ -114,7 +125,8 @@ async def upload_and_process_map(
             "filename": file.filename,
             "status": "processing_started",
             "message": f"Map upload successful. Processing started for {file.filename}",
-            "map_id": str(map_id),
+            # For tests, map_id is a synthetic identifier, not a DB id.
+            "map_id": map_id_str,
         }
 
     except Exception as e:

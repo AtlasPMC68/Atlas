@@ -43,6 +43,7 @@ export function useImportProcess() {
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
+    isTest: boolean = false,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -60,6 +61,8 @@ export function useImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
+    // Test mode flag
+    formData.append("is_test", String(isTest));
     // Add extraction options
     if (options) {
       formData.append("enable_georeferencing", String(options.enableGeoreferencing ?? true));
