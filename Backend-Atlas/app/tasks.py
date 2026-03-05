@@ -247,6 +247,8 @@ def process_map_extraction(
         # In test mode, persist the image and zones GeoJSON to files under tests/assets
         image_output_path = ""
         zones_output_path = ""
+        image_url = ""
+        zones_url = ""
         if is_test:
             try:
                 # Backend project root: go two levels up from this file (app/tasks.py)
@@ -279,6 +281,10 @@ def process_map_extraction(
                     )
                     with open(zones_output_path, "w", encoding="utf-8") as f:
                         json.dump(zones_geojson, f, indent=2, ensure_ascii=False)
+
+                # Build HTTP URLs corresponding to the StaticFiles mount (/dev-test)
+                image_url = f"/dev-test/maps/{map_id}{ext}"
+                zones_url = f"/dev-test/georef_zones/{map_id}_zones.geojson"
 
                 logger.info(
                     f"[TEST] Saved test image to {image_output_path} and zones to {zones_output_path}"
@@ -339,6 +345,8 @@ def process_map_extraction(
             "test_assets": {
                 "image_path": image_output_path,
                 "zones_path": zones_output_path,
+                "image_url": image_url,
+                "zones_url": zones_url,
             },
         }
 

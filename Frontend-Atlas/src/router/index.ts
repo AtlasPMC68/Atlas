@@ -30,7 +30,7 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: "/test-browser",
+    path: "/test-editor/:mapId",
     component: TestBrowser,
     meta: { requiresAuth: true },
   },

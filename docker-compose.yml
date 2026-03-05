@@ -13,6 +13,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
     depends_on:
@@ -50,6 +51,7 @@ services:
       - ./Backend-Atlas/.env.dev
     volumes:
       - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
     depends_on:

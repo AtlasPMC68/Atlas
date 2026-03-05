@@ -8,7 +8,7 @@ import { snakeToCamel } from "../utils/utils";
 
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
-const goToTestBrowser = () => router.push("/test-browser");
+const goToTestBrowser = () => router.push("/demo/upload-test");
 
 const user = ref<User>({
   id: "",

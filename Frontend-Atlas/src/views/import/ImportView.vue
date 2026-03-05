@@ -362,7 +362,8 @@ watch(
   ([processing, result, id]) => {
     if (!processing && result && id) {
       if (isDevTest.value) {
-        router.push({ path: "/test-browser", query: { mapId: id } });
+        console.log("Import finished in test mode, redirecting to test editor with mapId:", id);
+        router.push({ path: `/test-editor/${id}` });
       } else {
         router.push(`/maps/${id}`);
       }
