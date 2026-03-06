@@ -1,29 +1,29 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import MapTestGeoJSON from "../../components/MapTestGeoJSON.vue";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
+import CreateZonePanel from "../../components/dev/CreateZonePanel.vue";
 import type { Feature } from "../../typescript/feature";
 
 const route = useRoute();
 const mapId = ref<string | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref(new Map<string, boolean>());
-const showImage = ref(false);
-const mapImageUrl = ref<string | null>(null);
 
-const imageExtCandidates = [".png", ".jpg", ".jpeg"];
-const imageExtIndex = ref(0);
-
-function buildImageUrl(id: string, extIndex: number) {
-  const ext = imageExtCandidates[extIndex] ?? ".png";
-  return `${import.meta.env.VITE_API_URL}/dev-test/maps/${id}${ext}`;
-}
+const isCreateMode = ref(false);
+const pendingCreateGeometry = ref<any | null>(null);
+const resetCreateKey = ref(0);
+const newZoneName = ref("");
+const undoCreateKey = ref(0);
+const isFrontierMode = ref(false);
+const isGeoBorderMode = ref(false);
+const subGeometries = ref<any[]>([]);
 
 async function loadTestZones(currentMapId: string) {
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test/georef_zones/${currentMapId}_zones.geojson`,
+      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${currentMapId}`,
     );
     if (!res.ok) {
       console.error("Failed to fetch test zones GeoJSON", res.status);
@@ -55,20 +55,141 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = new Map(featureVisibility.value);
 }
 
-function handleFeaturesLoaded(_loaded: Feature[]) {
-  // Placeholder for future dev tooling if needed
+function handleCreateUpdated(geometry: any | null) {
+  pendingCreateGeometry.value = geometry;
 }
 
-function handleImageError() {
+async function persistZonesToBackend() {
   if (!mapId.value) return;
 
-  if (imageExtIndex.value < imageExtCandidates.length - 1) {
-    imageExtIndex.value += 1;
-    mapImageUrl.value = buildImageUrl(mapId.value, imageExtIndex.value);
-  } else {
-    console.error("Failed to load test map image for", mapId.value);
-    mapImageUrl.value = null;
+  const payload = {
+    type: "FeatureCollection",
+    features: features.value,
+  };
+
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${mapId.value}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+
+    if (!res.ok) {
+      console.error("Failed to persist test zones", res.status);
+    }
+  } catch (err) {
+    console.error("Error persisting test zones:", err);
   }
+}
+
+function startCreateMode() {
+  isCreateMode.value = true;
+  pendingCreateGeometry.value = null;
+  subGeometries.value = [];
+  newZoneName.value = "";
+  resetCreateKey.value += 1;
+  isFrontierMode.value = false;
+  isGeoBorderMode.value = false;
+}
+
+function cancelCreateMode() {
+  isCreateMode.value = false;
+  pendingCreateGeometry.value = null;
+  subGeometries.value = [];
+  newZoneName.value = "";
+  resetCreateKey.value += 1;
+}
+
+function undoLastStroke() {
+  if (!isCreateMode.value) return;
+  undoCreateKey.value += 1;
+}
+
+function toggleFrontierMode() {
+  if (!isCreateMode.value) return;
+  isFrontierMode.value = !isFrontierMode.value;
+  if (isFrontierMode.value) {
+    isGeoBorderMode.value = false;
+  }
+}
+
+function toggleGeoBorderMode() {
+  if (!isCreateMode.value) return;
+  isGeoBorderMode.value = !isGeoBorderMode.value;
+  if (isGeoBorderMode.value) {
+    isFrontierMode.value = false;
+  }
+}
+
+async function saveCreatedZone() {
+  if (!pendingCreateGeometry.value && subGeometries.value.length === 0) {
+    console.warn("No geometry to save for new zone");
+    return;
+  }
+
+  let geometry: any;
+
+  if (subGeometries.value.length === 0) {
+    geometry = pendingCreateGeometry.value;
+  } else {
+    const allPolygons = [
+      ...subGeometries.value,
+      ...(pendingCreateGeometry.value ? [pendingCreateGeometry.value] : []),
+    ];
+
+    const rings = allPolygons
+      .filter((g) => g && g.type === "Polygon" && Array.isArray(g.coordinates))
+      .map((g) => g.coordinates[0]);
+
+    if (rings.length === 1) {
+      geometry = {
+        type: "Polygon",
+        coordinates: [rings[0]],
+      };
+    } else {
+      geometry = {
+        type: "MultiPolygon",
+        coordinates: rings.map((ring) => [ring]),
+      };
+    }
+  }
+
+  const id = `dev-zone-${Date.now()}`;
+  const feature: Feature = {
+    // ts-expect-error partial shape depending on your Feature type
+    type: "Feature",
+    id,
+    geometry,
+    properties: {
+      name: newZoneName.value || id,
+      mapElementType: "zone",
+    },
+  } as any;
+
+  features.value = [...features.value, feature];
+
+  await persistZonesToBackend();
+
+  isCreateMode.value = false;
+  pendingCreateGeometry.value = null;
+  subGeometries.value = [];
+  newZoneName.value = "";
+  resetCreateKey.value += 1;
+  isFrontierMode.value = false;
+  isGeoBorderMode.value = false;
+}
+
+function addSubzone() {
+  if (!pendingCreateGeometry.value) return;
+
+  subGeometries.value = [...subGeometries.value, pendingCreateGeometry.value];
+  pendingCreateGeometry.value = null;
+  resetCreateKey.value += 1;
 }
 
 onMounted(() => {
@@ -80,18 +201,6 @@ onMounted(() => {
     console.error("No mapId route param provided for TestBrowser");
   }
 });
-
-watch(
-  showImage,
-  (val) => {
-    if (val && mapId.value) {
-      imageExtIndex.value = 0;
-      mapImageUrl.value = buildImageUrl(mapId.value, imageExtIndex.value);
-    } else if (!val) {
-      mapImageUrl.value = null;
-    }
-  },
-);
 </script>
 
 <template>
@@ -120,45 +229,44 @@ watch(
         />
       </div>
 
-      <!-- Leaflet map with zones and image overlay + external controls -->
+      <!-- Leaflet map with zones and dev tools -->
       <div class="flex-1 flex">
-        <div class="flex-1">
-          <MapTestGeoJSON
-            v-if="mapId"
-            :map-id="mapId"
-            :features="features"
-            :feature-visibility="featureVisibility"
-            @features-loaded="handleFeaturesLoaded"
-          />
-        </div>
-
-      <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-4">
-        <h2 class="text-sm font-semibold mb-2">Image de carte</h2>
-        <label class="flex items-center gap-2">
-          <input
-            type="checkbox"
-            v-model="showImage"
-            class="checkbox checkbox-xs checkbox-primary"
-          />
-          <span class="text-sm">Afficher l'image de la carte</span>
-        </label>
-
-        <div v-if="showImage" class="mt-2">
-          <div
-            v-if="mapImageUrl"
-            class="w-full h-full flex items-center justify-center"
-          >
-            <img
-              :src="mapImageUrl"
-              alt="Test map source"
-              class="max-w-full max-h-[70vh] object-contain rounded shadow"
-              @error="handleImageError"
+        <div class="flex-1 flex flex-col">
+          <div class="flex-1">
+            <MapTestGeoJSON
+              v-if="mapId"
+              :map-id="mapId"
+              :features="features"
+              :feature-visibility="featureVisibility"
+              :is-create-mode="isCreateMode"
+              :reset-create-key="resetCreateKey"
+              :is-frontier-mode="isFrontierMode"
+              :is-geo-border-mode="isGeoBorderMode"
+              :undo-create-key="undoCreateKey"
+              :sub-geometries="subGeometries"
+              @create-updated="handleCreateUpdated"
             />
           </div>
-          <div v-else class="text-xs text-base-content/60 text-center mt-4">
-            Aucune image de carte trouvée.
-          </div>
         </div>
+
+    <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
+      <!-- Create zone -->
+      <CreateZonePanel
+        :is-create-mode="isCreateMode"
+        v-model:zone-name="newZoneName"
+        :pending-create-geometry="pendingCreateGeometry"
+        :is-frontier-mode="isFrontierMode"
+        :is-geo-border-mode="isGeoBorderMode"
+        :subzone-count="subGeometries.length"
+        @start-create="startCreateMode"
+        @cancel-create="cancelCreateMode"
+        @undo-last-stroke="undoLastStroke"
+        @toggle-frontier="toggleFrontierMode"
+        @toggle-geo-border="toggleGeoBorderMode"
+        @save-zone="saveCreatedZone"
+        @add-subzone="addSubzone"
+      />
+
       </div>
       </div>
     </div>
