@@ -21,23 +21,43 @@
               :key="feature.id"
               class="form-control"
             >
-              <label class="label cursor-pointer justify-start gap-3">
-                <input
-                  type="checkbox"
-                  :checked="featureVisibility.get(feature.id)"
-                  @change="
-                    $emit(
-                      'toggle-feature',
-                      feature.id,
-                      ($event.target as HTMLInputElement).checked,
-                    )
-                  "
-                  class="checkbox checkbox-sm checkbox-primary"
-                />
-                <span class="label-text text-sm">
-                  {{ feature.properties?.name || "Élément sans nom" }}
-                </span>
-              </label>
+              <div class="flex items-center justify-between gap-2">
+                <label class="label cursor-pointer justify-start gap-3 mb-0">
+                  <input
+                    type="checkbox"
+                    :checked="featureVisibility.get(feature.id)"
+                    @change="
+                      $emit(
+                        'toggle-feature',
+                        feature.id,
+                        ($event.target as HTMLInputElement).checked,
+                      )
+                    "
+                    class="checkbox checkbox-sm checkbox-primary"
+                  />
+                  <span class="label-text text-sm">
+                    {{ feature.properties?.name || "Élément sans nom" }}
+                  </span>
+                </label>
+                <div class="flex items-center gap-1">
+                  <button
+                    v-if="allowRename && group.type === 'zone'"
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    @click.stop="$emit('rename-feature', feature.id)"
+                  >
+                    <PencilSquareIcon class="w-4 h-4" />
+                  </button>
+                  <button
+                    v-if="allowDelete && group.type === 'zone'"
+                    type="button"
+                    class="btn btn-ghost btn-xs text-error"
+                    @click.stop="$emit('delete-feature', feature.id)"
+                  >
+                    <XMarkIcon class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -59,14 +79,17 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { PencilSquareIcon, XMarkIcon } from "@heroicons/vue/24/solid";
 import { Feature } from "../typescript/feature";
 
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  allowDelete?: boolean;
+  allowRename?: boolean;
 }>();
 
-const emit = defineEmits(["toggle-feature"]);
+const emit = defineEmits(["toggle-feature", "delete-feature", "rename-feature"]);
 
 const featureGroups = computed(() => {
   const groups = [

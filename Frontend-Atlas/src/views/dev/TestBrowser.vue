@@ -1,273 +1,151 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
-import MapTestGeoJSON from "../../components/MapTestGeoJSON.vue";
-import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
-import CreateZonePanel from "../../components/dev/CreateZonePanel.vue";
-import type { Feature } from "../../typescript/feature";
+import { onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 
-const route = useRoute();
-const mapId = ref<string | null>(null);
-const features = ref<Feature[]>([]);
-const featureVisibility = ref(new Map<string, boolean>());
+interface DevTestSummary {
+  mapId: string;
+  name: string;
+  imageFilename: string;
+  hasZones: boolean;
+  createdAt?: string | null;
+}
 
-const isCreateMode = ref(false);
-const pendingCreateGeometry = ref<any | null>(null);
-const resetCreateKey = ref(0);
-const newZoneName = ref("");
-const undoCreateKey = ref(0);
-const isFrontierMode = ref(false);
-const isGeoBorderMode = ref(false);
-const subGeometries = ref<any[]>([]);
+const router = useRouter();
+const tests = ref<DevTestSummary[]>([]);
+const isLoading = ref(false);
+const loadError = ref<string | null>(null);
+const deletingId = ref<string | null>(null);
 
-async function loadTestZones(currentMapId: string) {
+async function loadTests() {
+  isLoading.value = true;
+  loadError.value = null;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${currentMapId}`,
-    );
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`);
     if (!res.ok) {
-      console.error("Failed to fetch test zones GeoJSON", res.status);
-      return;
+      throw new Error(`Erreur lors du chargement des tests (${res.status})`);
     }
-
-    const data = await res.json();
-    const rawFeatures: any[] = Array.isArray(data.features) ? data.features : [];
-
-    const withIds: Feature[] = rawFeatures.map((f, idx) => ({
-      ...f,
-      id: f.id ?? `${currentMapId}-${idx}`,
-    }));
-
-    features.value = withIds;
-
-    const vis = new Map<string, boolean>();
-    withIds.forEach((f) => {
-      if (f.id) vis.set(f.id, true);
-    });
-    featureVisibility.value = vis;
+    const data = (await res.json()) as DevTestSummary[];
+    tests.value = Array.isArray(data) ? data : [];
   } catch (err) {
-    console.error("Error loading test zones:", err);
+    console.error("Error loading dev tests", err);
+    loadError.value =
+      err instanceof Error ? err.message : "Erreur inattendue lors du chargement";
+  } finally {
+    isLoading.value = false;
   }
 }
 
-function toggleFeatureVisibility(featureId: string, visible: boolean) {
-  featureVisibility.value.set(featureId, visible);
-  featureVisibility.value = new Map(featureVisibility.value);
+function openTest(test: DevTestSummary) {
+  router.push({ path: `/test-editor/${test.mapId}` });
 }
 
-function handleCreateUpdated(geometry: any | null) {
-  pendingCreateGeometry.value = geometry;
+function goToCreateTest() {
+  router.push({ path: "/test-creation" });
 }
 
-async function persistZonesToBackend() {
-  if (!mapId.value) return;
+async function deleteTest(test: DevTestSummary) {
+  if (!confirm(`Supprimer le test "${test.name}" ?`)) return;
 
-  const payload = {
-    type: "FeatureCollection",
-    features: features.value,
-  };
-
+  deletingId.value = test.mapId;
+  loadError.value = null;
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${mapId.value}`,
+      `${import.meta.env.VITE_API_URL}/dev-test-api/tests/${test.mapId}`,
       {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+        method: "DELETE",
       },
     );
 
     if (!res.ok) {
-      console.error("Failed to persist test zones", res.status);
+      throw new Error(`Erreur lors de la suppression du test (${res.status})`);
     }
+
+    tests.value = tests.value.filter((t) => t.mapId !== test.mapId);
   } catch (err) {
-    console.error("Error persisting test zones:", err);
+    console.error("Error deleting dev test", err);
+    loadError.value =
+      err instanceof Error ? err.message : "Erreur inattendue lors de la suppression";
+  } finally {
+    deletingId.value = null;
   }
-}
-
-function startCreateMode() {
-  isCreateMode.value = true;
-  pendingCreateGeometry.value = null;
-  subGeometries.value = [];
-  newZoneName.value = "";
-  resetCreateKey.value += 1;
-  isFrontierMode.value = false;
-  isGeoBorderMode.value = false;
-}
-
-function cancelCreateMode() {
-  isCreateMode.value = false;
-  pendingCreateGeometry.value = null;
-  subGeometries.value = [];
-  newZoneName.value = "";
-  resetCreateKey.value += 1;
-}
-
-function undoLastStroke() {
-  if (!isCreateMode.value) return;
-  undoCreateKey.value += 1;
-}
-
-function toggleFrontierMode() {
-  if (!isCreateMode.value) return;
-  isFrontierMode.value = !isFrontierMode.value;
-  if (isFrontierMode.value) {
-    isGeoBorderMode.value = false;
-  }
-}
-
-function toggleGeoBorderMode() {
-  if (!isCreateMode.value) return;
-  isGeoBorderMode.value = !isGeoBorderMode.value;
-  if (isGeoBorderMode.value) {
-    isFrontierMode.value = false;
-  }
-}
-
-async function saveCreatedZone() {
-  if (!pendingCreateGeometry.value && subGeometries.value.length === 0) {
-    console.warn("No geometry to save for new zone");
-    return;
-  }
-
-  let geometry: any;
-
-  if (subGeometries.value.length === 0) {
-    geometry = pendingCreateGeometry.value;
-  } else {
-    const allPolygons = [
-      ...subGeometries.value,
-      ...(pendingCreateGeometry.value ? [pendingCreateGeometry.value] : []),
-    ];
-
-    const rings = allPolygons
-      .filter((g) => g && g.type === "Polygon" && Array.isArray(g.coordinates))
-      .map((g) => g.coordinates[0]);
-
-    if (rings.length === 1) {
-      geometry = {
-        type: "Polygon",
-        coordinates: [rings[0]],
-      };
-    } else {
-      geometry = {
-        type: "MultiPolygon",
-        coordinates: rings.map((ring) => [ring]),
-      };
-    }
-  }
-
-  const id = `dev-zone-${Date.now()}`;
-  const feature: Feature = {
-    // ts-expect-error partial shape depending on your Feature type
-    type: "Feature",
-    id,
-    geometry,
-    properties: {
-      name: newZoneName.value || id,
-      mapElementType: "zone",
-    },
-  } as any;
-
-  features.value = [...features.value, feature];
-
-  await persistZonesToBackend();
-
-  isCreateMode.value = false;
-  pendingCreateGeometry.value = null;
-  subGeometries.value = [];
-  newZoneName.value = "";
-  resetCreateKey.value += 1;
-  isFrontierMode.value = false;
-  isGeoBorderMode.value = false;
-}
-
-function addSubzone() {
-  if (!pendingCreateGeometry.value) return;
-
-  subGeometries.value = [...subGeometries.value, pendingCreateGeometry.value];
-  pendingCreateGeometry.value = null;
-  resetCreateKey.value += 1;
 }
 
 onMounted(() => {
-  const idParam = route.params.mapId;
-  if (typeof idParam === "string" && idParam.length > 0) {
-    mapId.value = idParam;
-    loadTestZones(idParam);
-  } else {
-    console.error("No mapId route param provided for TestBrowser");
-  }
+  loadTests();
 });
 </script>
 
 <template>
-  <div class="min-h-screen w-full bg-base-100 flex flex-col">
-    <div class="navbar bg-base-100 shadow-lg">
+  <div class="min-h-screen bg-base-100">
+    <div class="navbar bg-base-100 shadow-sm mb-4 px-4">
       <div class="flex-1">
-        <h1 class="text-xl font-bold">
-          Test editor
-          <span
-            v-if="mapId"
-            class="ml-2 text-sm font-normal text-base-content/60"
-          >
-            ({{ mapId }})
-          </span>
-        </h1>
+        <h1 class="text-xl font-bold">Tests de cartes</h1>
+      </div>
+      <div class="flex-none">
+        <button class="btn btn-primary btn-sm" @click="goToCreateTest">
+          Créer un test
+        </button>
       </div>
     </div>
 
-    <div class="flex flex-1">
-      <!-- Feature controls -->
-      <div class="w-80 bg-base-200 border-r border-base-300 p-4">
-        <FeatureVisibilityControls
-          :features="features"
-          :feature-visibility="featureVisibility"
-          @toggle-feature="toggleFeatureVisibility"
-        />
+    <div class="max-w-5xl mx-auto px-4 pb-10">
+      <div class="mb-4 flex items-center justify-between">
+        <p class="text-base-content/70 text-sm">
+          Liste des tests disponibles basés sur les cartes présentes dans
+          <code>tests/assets/maps</code>.
+        </p>
       </div>
 
-      <!-- Leaflet map with zones and dev tools -->
-      <div class="flex-1 flex">
-        <div class="flex-1 flex flex-col">
-          <div class="flex-1">
-            <MapTestGeoJSON
-              v-if="mapId"
-              :map-id="mapId"
-              :features="features"
-              :feature-visibility="featureVisibility"
-              :is-create-mode="isCreateMode"
-              :reset-create-key="resetCreateKey"
-              :is-frontier-mode="isFrontierMode"
-              :is-geo-border-mode="isGeoBorderMode"
-              :undo-create-key="undoCreateKey"
-              :sub-geometries="subGeometries"
-              @create-updated="handleCreateUpdated"
-            />
-          </div>
+      <div v-if="isLoading" class="flex justify-center py-10">
+        <span class="loading loading-spinner loading-lg" />
+      </div>
+
+      <div v-else-if="loadError" class="alert alert-error">
+        <span>{{ loadError }}</span>
+      </div>
+
+      <div v-else>
+        <div v-if="tests.length === 0" class="text-base-content/70 py-10">
+          Aucun test trouvé pour le moment. Créez un nouveau test pour commencer.
         </div>
 
-    <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
-      <!-- Create zone -->
-      <CreateZonePanel
-        :is-create-mode="isCreateMode"
-        v-model:zone-name="newZoneName"
-        :pending-create-geometry="pendingCreateGeometry"
-        :is-frontier-mode="isFrontierMode"
-        :is-geo-border-mode="isGeoBorderMode"
-        :subzone-count="subGeometries.length"
-        @start-create="startCreateMode"
-        @cancel-create="cancelCreateMode"
-        @undo-last-stroke="undoLastStroke"
-        @toggle-frontier="toggleFrontierMode"
-        @toggle-geo-border="toggleGeoBorderMode"
-        @save-zone="saveCreatedZone"
-        @add-subzone="addSubzone"
-      />
-
-      </div>
+        <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-for="test in tests"
+            :key="test.mapId"
+            class="card bg-base-200 shadow-sm cursor-pointer hover:bg-base-300 transition"
+            @click="openTest(test)"
+          >
+            <div class="card-body p-4 space-y-2">
+              <div class="flex items-start justify-between gap-2">
+                <h2 class="card-title text-sm line-clamp-2">
+                  {{ test.name }}
+                </h2>
+                <button
+                  class="btn btn-ghost btn-xs text-error"
+                  @click.stop="deleteTest(test)"
+                  :disabled="deletingId === test.mapId"
+                  type="button"
+                >
+                  <span
+                    v-if="deletingId === test.mapId"
+                    class="loading loading-spinner loading-xs"
+                  />
+                  <span v-else>Supprimer</span>
+                </button>
+              </div>
+              <p class="text-xs text-base-content/60 break-all">
+                {{ test.mapId }}
+              </p>
+              <p class="text-xs text-base-content/60">
+                Fichier image : {{ test.imageFilename }}
+              </p>
+              <p class="text-xs" :class="test.hasZones ? 'text-success' : 'text-warning'">
+                {{ test.hasZones ? "Zones définies" : "Aucune zone encore définie" }}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

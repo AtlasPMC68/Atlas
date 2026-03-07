@@ -8,7 +8,7 @@ import { snakeToCamel } from "../utils/utils";
 
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
-const goToTestBrowser = () => router.push("/demo/upload-test");
+const goToTestBrowser = () => router.push("/tests");
 
 const user = ref<User>({
   id: "",
@@ -74,7 +74,7 @@ onMounted(async () => {
 
         <div class="mt-6">
           <button class="btn-secondary" @click="goToTestBrowser">
-            Create new test
+            Voir tests
           </button>
         </div>
       </div>

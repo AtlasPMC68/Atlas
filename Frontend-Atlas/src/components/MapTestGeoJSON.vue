@@ -56,7 +56,7 @@ let currentStroke = [];
 let createStrokeLayer = null;
 let createPolygonLayer = null;
 let isDrawing = false;
-const SNAP_EPS_METERS = 30000; // snapping distance between stroke endpoints
+const SNAP_EPS_METERS = 3000; // snapping distance between stroke endpoints
 
 // Frontier (coastline) data and state
 let coastlineLines = [];

@@ -6,8 +6,9 @@ import Dashboard from "../views/Dashboard.vue";
 import Profile from "../views/Profile.vue";
 import Settings from "../views/Settings.vue";
 import Discover from "../views/Discover.vue";
-import TestBrowser from "../views/dev/TestBrowser.vue";
+import TestEditor from "../views/dev/TestEditor.vue";
 import TestCreation from "../views/dev/TestCreation.vue";
+import TestBrowser from "../views/dev/TestBrowser.vue";
 import keycloak from "../keycloak";
 
 const routes = [
@@ -18,6 +19,11 @@ const routes = [
     path: "/demo/upload-test",
     component: ImportView,
     meta: { requiresAuth: true, importMode: "dev-test" },
+  },
+  {
+    path: "/tests",
+    component: TestBrowser,
+    meta: { requiresAuth: true },
   },
   {
     path: "/tableau-de-bord",
@@ -31,7 +37,7 @@ const routes = [
   },
   {
     path: "/test-editor/:mapId",
-    component: TestBrowser,
+    component: TestEditor,
     meta: { requiresAuth: true },
   },
   {
