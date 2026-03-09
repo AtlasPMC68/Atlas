@@ -44,6 +44,25 @@ def get_dominant_color_in_contour(
     return (r_bin * 32 + 16, g_bin * 32 + 16, b_bin * 32 + 16)
 
 
+def _overlaps_text(
+    contour: np.ndarray,
+    text_bboxes: List[Tuple[int, int, int, int]],
+    overlap_threshold: float,
+) -> bool:
+    """Check if a contour overlaps with a text region."""
+    x, y, w, h = cv2.boundingRect(contour)
+    shape_area = w * h
+    if shape_area == 0:
+        return False
+    for tx, ty, tx2, ty2 in text_bboxes:
+        ix1, iy1 = max(x, tx), max(y, ty)
+        ix2, iy2 = min(x + w, tx2), min(y + h, ty2)
+        if ix2 > ix1 and iy2 > iy1:
+            if (ix2 - ix1) * (iy2 - iy1) / shape_area >= overlap_threshold:
+                return True
+    return False
+
+
 def filter_text_overlapping_contours(
     contours: List[np.ndarray],
     text_regions: List[List[List[int]]],
@@ -63,20 +82,9 @@ def filter_text_overlapping_contours(
         for r in text_regions
     ]
 
-    def _overlaps_text(contour: np.ndarray) -> bool:
-        x, y, w, h = cv2.boundingRect(contour)
-        shape_area = w * h
-        if shape_area == 0:
-            return False
-        for tx, ty, tx2, ty2 in text_bboxes:
-            ix1, iy1 = max(x, tx), max(y, ty)
-            ix2, iy2 = min(x + w, tx2), min(y + h, ty2)
-            if ix2 > ix1 and iy2 > iy1:
-                if (ix2 - ix1) * (iy2 - iy1) / shape_area >= overlap_threshold:
-                    return True
-        return False
-
-    kept = [c for c in contours if not _overlaps_text(c)]
+    kept = [
+        c for c in contours if not _overlaps_text(c, text_bboxes, overlap_threshold)
+    ]
     return kept, len(contours) - len(kept)
 
 
@@ -101,6 +109,19 @@ def detect_contours(binary_mask: np.ndarray) -> List[np.ndarray]:
     return list(contours) if contours else []
 
 
+def _should_keep_contour(
+    contour: np.ndarray,
+    min_area: int,
+    max_area: int,
+    image_area: int,
+) -> bool:
+    """Check if a contour should be kept based on area criteria."""
+    area = cv2.contourArea(contour)
+    return (
+        min_area <= area <= max_area and area / image_area <= 0.5 and len(contour) >= 3
+    )
+
+
 def filter_contours(
     contours: List[np.ndarray],
     min_area: int,
@@ -109,16 +130,9 @@ def filter_contours(
 ) -> List[np.ndarray]:
     """Keep contours whose area falls in [min_area, max_area] and whose
     ratio to the total image area is ≤ 50 %."""
-
-    def _keep(contour: np.ndarray) -> bool:
-        area = cv2.contourArea(contour)
-        return (
-            min_area <= area <= max_area
-            and area / image_area <= 0.5
-            and len(contour) >= 3
-        )
-
-    return [c for c in contours if _keep(c)]
+    return [
+        c for c in contours if _should_keep_contour(c, min_area, max_area, image_area)
+    ]
 
 
 def extract_contour_properties(
@@ -144,7 +158,7 @@ def extract_contour_properties(
     hull_area = cv2.contourArea(cv2.convexHull(contour))
     solidity = area / hull_area if hull_area > 0 else 0.0
 
-    approx = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
+    approx = cv2.approxPolyDP(contour, 0.005 * perimeter, True)
     color_rgb = get_dominant_color_in_contour(original_image, contour)
 
     bounding_box = {"x": int(x), "y": int(y), "width": int(w), "height": int(h)}
@@ -350,7 +364,7 @@ def _preprocess_for_contours(
 
     image_flat = preprocessing.flat_field_correction(image, sigma=100.0, normalize=True)
     image_denoised = preprocessing.denoise_bilateral(
-        image_flat, sigma_color=0.03, sigma_spatial=5.0
+        image_flat, sigma_color=0.05, sigma_spatial=10.0
     )
 
     height, width = image_denoised.shape[:2]

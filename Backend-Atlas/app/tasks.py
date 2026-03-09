@@ -108,6 +108,8 @@ def process_map_extraction(
                 image=image, languages=["en", "fr"], gpu_acc=False
             )
 
+            text_regions = [block[0] for block in extracted_text]
+
             # TODO : Amener ca dans la fonction de detection de texte ===========================================================
             # Tokenize OCR text to single words and run city detection per token
             try:
@@ -165,6 +167,9 @@ def process_map_extraction(
             except Exception as e:
                 logger.error(f"City detection failed: {e}")
 
+        else:
+            text_regions = None
+
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # Step 4: Color Extraction (conditionally enabled)
@@ -213,7 +218,7 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            shapes_result = extract_shapes(tmp_file_path)
+            shapes_result = extract_shapes(tmp_file_path, text_regions=text_regions, debug=True)
             shape_normalized_features = shapes_result["normalized_features"]
             shape_pixel_features = shapes_result.get("pixel_features", [])
 
