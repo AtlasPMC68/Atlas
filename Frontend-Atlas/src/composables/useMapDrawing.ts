@@ -2,8 +2,6 @@ import { ref } from "vue";
 import L from "leaflet";
 import "@geoman-io/leaflet-geoman-free";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
-import "leaflet-draw";
-import "leaflet-draw/dist/leaflet.draw.css";
 
 type DrawingMode =
   | "marker"
@@ -37,6 +35,8 @@ const DRAWING_MODES = {
   freehand: "freehand",
 } as const;
 
+const FREEHAND_CONTROL_NAME = "drawFreehand";
+
 /**
  * Composable for handling map drawing with Leaflet.pm
  */
@@ -44,6 +44,8 @@ export function useMapDrawing(emit: EmitFn) {
   const activeDrawingMode = ref<DrawingMode>(null);
   const drawnItems = ref<L.FeatureGroup | null>(null);
   let pmMapInstance: any = null;
+  let freehandActive = false;
+  let freehandListeners: any = {};
 
   /**
    * Initialize the drawing control
@@ -75,87 +77,76 @@ export function useMapDrawing(emit: EmitFn) {
       removalMode: true,
     });
 
-    // Add Leaflet.Draw control for freehand drawing
-    const drawControl = new L.Control.Draw({
-      position: "topleft",
-      draw: {
-        polyline: false,
-        polygon: false,
-        circle: false,
-        rectangle: false,
-        marker: false,
-        circlemarker: false,
-      },
-      edit: {
-        featureGroup: drawnItems.value as L.FeatureGroup,
-        edit: false,
-        remove: false,
-      },
-    });
-
-    // Manually add freehand button
+    // Add freehand button to the toolbar
     addFreehandButton(map);
 
-    // Setup event listeners for both libraries
+    // Setup event listeners for Leaflet.pm
     setupDrawingListeners(map);
-    setupLeafletDrawListeners(map);
   }
 
   /**
-   * Add custom freehand drawing button
+   * Add freehand button to the Leaflet.pm toolbar
    */
   function addFreehandButton(map: L.Map) {
-    const FreehandControl = L.Control.extend({
-      options: {
-        position: "topleft",
-      },
-      onAdd: function () {
-        const container = L.DomUtil.create(
-          "div",
-          "leaflet-bar leaflet-control",
-        );
-        const button = L.DomUtil.create(
-          "a",
-          "leaflet-draw-freehand",
-          container,
-        );
-        button.href = "#";
-        button.title = "Draw Freehand Line";
-        button.style.display = "flex";
-        button.style.alignItems = "center";
-        button.style.justifyContent = "center";
+    const toolbar = (map.pm as any)?.Toolbar;
+    if (
+      !toolbar?.createCustomControl ||
+      toolbar.controlExists?.(FREEHAND_CONTROL_NAME)
+    ) {
+      return;
+    }
 
-        // Add SVG icon - pencil for freehand drawing
-        button.innerHTML = `
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Z"/>
-            <path d="M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/>
-          </svg>
-        `;
-
-        L.DomEvent.on(button, "click", (e) => {
-          L.DomEvent.stopPropagation(e);
-          L.DomEvent.preventDefault(e);
-          startFreehandDrawing(map);
-        });
-
-        return container;
+    toolbar.createCustomControl({
+      name: FREEHAND_CONTROL_NAME,
+      block: "draw",
+      title: "Draw Freehand Line",
+      className: "leaflet-pm-icon-freehand",
+      toggle: true,
+      disableOtherButtons: true,
+      disableByOtherButtons: true,
+      actions: ["cancel"],
+      onClick: () => {
+        if (freehandActive) {
+          setDrawingMode(null);
+          return;
+        }
+        setDrawingMode("freehand");
       },
     });
 
-    map.addControl(new FreehandControl());
+    toolbar.changeControlOrder?.();
+  }
+
+  function syncFreehandControlState(isActive: boolean) {
+    if (!pmMapInstance?.pm?.Toolbar?.toggleButton) {
+      return;
+    }
+
+    pmMapInstance.pm.Toolbar.toggleButton(
+      FREEHAND_CONTROL_NAME,
+      isActive,
+      false,
+    );
   }
 
   /**
    * Start freehand drawing mode
    */
   function startFreehandDrawing(map: L.Map) {
+    if (freehandActive) return;
+
+    freehandActive = true;
     let isDrawing = false;
     let points: L.LatLng[] = [];
     let polyline: L.Polyline | null = null;
 
     // Disable map dragging during freehand drawing
     map.dragging.disable();
+    map.getContainer().style.userSelect = "none";
+
+    // Set pencil cursor (SVG-based)
+    const pencilCursor = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%23000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>') 12 12, auto`;
+    map.getContainer().style.cursor = pencilCursor;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
       isDrawing = true;
@@ -177,57 +168,45 @@ export function useMapDrawing(emit: EmitFn) {
       if (!isDrawing || !polyline) return;
       isDrawing = false;
 
-      // Keep as polyline (continuous line with start and end)
       if (points.length > 1) {
-        // Keep the polyline as is - don't convert to polygon
         drawnItems.value?.addLayer(polyline);
-
         const feature = layerToFeature(polyline);
         if (feature) {
           (polyline as any).feature = feature;
           emit("feature-created", feature);
         }
       } else {
-        // Remove if not enough points
         map.removeLayer(polyline);
       }
 
-      // Clean up listeners
-      map.off("mousedown", onMouseDown);
-      map.off("mousemove", onMouseMove);
-      map.off("mouseup", onMouseUp);
-      map.getContainer().style.cursor = "";
-
-      // Re-enable map dragging
-      map.dragging.enable();
+      // Reset for next stroke but keep freehand mode active
+      polyline = null;
+      points = [];
     };
 
-    // Disable pm to avoid conflicts
+    freehandListeners = { onMouseDown, onMouseMove, onMouseUp };
     map.pm.disableDraw();
 
-    // Set cursor
-    map.getContainer().style.cursor = "crosshair";
-
-    // Attach listeners
     map.on("mousedown", onMouseDown);
     map.on("mousemove", onMouseMove);
     map.on("mouseup", onMouseUp);
   }
 
   /**
-   * Setup listeners for Leaflet.Draw events
+   * Stop freehand drawing mode
    */
-  function setupLeafletDrawListeners(map: L.Map) {
-    map.on(L.Draw.Event.CREATED, (e: any) => {
-      const layer = e.layer;
-      const feature = layerToFeature(layer);
+  function stopFreehandDrawing(map: L.Map) {
+    if (!freehandActive) return;
 
-      if (feature) {
-        (layer as any).feature = feature;
-        drawnItems.value?.addLayer(layer);
-        emit("feature-created", feature);
-      }
-    });
+    freehandActive = false;
+
+    map.off("mousedown", freehandListeners.onMouseDown);
+    map.off("mousemove", freehandListeners.onMouseMove);
+    map.off("mouseup", freehandListeners.onMouseUp);
+
+    map.dragging.enable();
+    map.getContainer().style.cursor = "";
+    map.getContainer().style.userSelect = "";
   }
 
   /**
@@ -316,6 +295,9 @@ export function useMapDrawing(emit: EmitFn) {
 
     // When drawing starts
     map.on("pm:drawstart", (e) => {
+      if (freehandActive) {
+        stopFreehandDrawing(map);
+      }
       activeDrawingMode.value = e.shape as DrawingMode;
       // Disable map dragging during drawing
       map.dragging.disable();
@@ -442,6 +424,11 @@ export function useMapDrawing(emit: EmitFn) {
   function setDrawingMode(mode: DrawingMode) {
     if (!pmMapInstance) return;
 
+    // Stop freehand drawing if active
+    if (freehandActive) {
+      stopFreehandDrawing(pmMapInstance);
+    }
+
     // Disable all modes first
     pmMapInstance.pm.disableDraw();
 
@@ -449,17 +436,28 @@ export function useMapDrawing(emit: EmitFn) {
       activeDrawingMode.value = null;
       // Re-enable map dragging when exiting draw mode
       pmMapInstance.dragging.enable();
+      syncFreehandControlState(false);
       return;
     }
 
-    // Enable the selected mode
+    // Enable freehand mode
+    if (mode === "freehand") {
+      activeDrawingMode.value = mode;
+      syncFreehandControlState(true);
+      startFreehandDrawing(pmMapInstance);
+      return;
+    }
+
+    // For other modes, remove active class from freehand button
+    syncFreehandControlState(false);
+
+    // Enable the selected mode for Leaflet.pm
     const modeMap: Record<string, string> = {
       marker: "Marker",
       polyline: "Polyline",
       polygon: "Polygon",
       rectangle: "Rectangle",
       circle: "Circle",
-      freehand: "Freehand",
     };
 
     pmMapInstance.pm.enableDraw(modeMap[mode], {
@@ -571,6 +569,8 @@ export function useMapDrawing(emit: EmitFn) {
     getDrawnFeatures,
     featureToLayer,
     layerToFeature,
+    startFreehandDrawing,
+    stopFreehandDrawing,
 
     // Constants
     DRAWING_MODES,
