@@ -36,16 +36,19 @@ const DRAWING_MODES = {
 } as const;
 
 const FREEHAND_CONTROL_NAME = "drawFreehand";
+const REMOVAL_SELECTION_STYLE: L.PathOptions = {
+  color: "#ef4444",
+  weight: 2,
+  dashArray: "6 6",
+  fillColor: "#ef4444",
+  fillOpacity: 0.12,
+};
+
 const LASSO_DELETE_OPTIONS = {
   mode: "RESET",
   selectMode: "CONTAIN",
   lassoDrawOptions: {
-    color: "#ef4444",
-    weight: 2,
-    dashArray: "6 6",
-    fillColor: "#ef4444",
-    fillOpacity: 0.12,
-    dasharray: "6 6",
+    ...REMOVAL_SELECTION_STYLE,
   },
 } as const;
 
@@ -68,6 +71,30 @@ export function useMapDrawing(emit: EmitFn) {
     onMouseMove?: (e: L.LeafletMouseEvent) => void;
     onMouseUp?: () => void;
   } = {};
+
+  const attachFeatureAndEmit = (
+    layer: L.Layer,
+    feature: Feature | null,
+    eventName: "feature-created" | "feature-updated",
+  ) => {
+    if (!feature) return;
+    // @ts-ignore - External layer instances are extended with custom metadata
+    layer.feature = feature;
+    emit(eventName, feature);
+  };
+
+  const isMapLayerRemovable = (
+    layer: L.Layer & {
+      pm?: {
+        options?: { allowRemoval?: boolean };
+        remove?: () => void;
+      };
+      _pmTempLayer?: boolean;
+    },
+  ) => {
+    if (!layer.pm || layer._pmTempLayer) return false;
+    return layer.pm.options?.allowRemoval !== false;
+  };
 
   /**
    * Initialize the drawing control
@@ -128,7 +155,7 @@ export function useMapDrawing(emit: EmitFn) {
       disableByOtherButtons: true,
       actions: ["cancel"],
       onClick: () => {},
-      afterClick: (_event: unknown, context: any) => {
+      afterClick: (_event: unknown, context: { button: { toggled: () => boolean } }) => {
         if (context.button.toggled()) {
           setDrawingMode("freehand");
           return;
@@ -266,11 +293,7 @@ export function useMapDrawing(emit: EmitFn) {
         getBounds?: () => L.LatLngBounds;
       };
 
-      if (!candidate.pm || candidate._pmTempLayer) {
-        return;
-      }
-
-      if (candidate.pm.options?.allowRemoval === false) {
+      if (!isMapLayerRemovable(candidate)) {
         return;
       }
 
@@ -318,11 +341,7 @@ export function useMapDrawing(emit: EmitFn) {
       fallbackSelectionRectangle?.remove();
       const initialBounds = L.latLngBounds(e.latlng, e.latlng);
       fallbackSelectionRectangle = L.rectangle(initialBounds, {
-        color: "#ef4444",
-        weight: 2,
-        fillColor: "#ef4444",
-        fillOpacity: 0.12,
-        dashArray: "6 6",
+        ...REMOVAL_SELECTION_STYLE,
         interactive: false,
       }).addTo(map);
     };
@@ -373,15 +392,10 @@ export function useMapDrawing(emit: EmitFn) {
       return;
     }
 
-    if (fallbackRemovalListeners.onMouseDown) {
-      map.off("mousedown", fallbackRemovalListeners.onMouseDown);
-    }
-    if (fallbackRemovalListeners.onMouseMove) {
-      map.off("mousemove", fallbackRemovalListeners.onMouseMove);
-    }
-    if (fallbackRemovalListeners.onMouseUp) {
-      map.off("mouseup", fallbackRemovalListeners.onMouseUp);
-    }
+    const { onMouseDown, onMouseMove, onMouseUp } = fallbackRemovalListeners;
+    if (onMouseDown) map.off("mousedown", onMouseDown);
+    if (onMouseMove) map.off("mousemove", onMouseMove);
+    if (onMouseUp) map.off("mouseup", onMouseUp);
 
     fallbackRemovalListeners = {};
     fallbackSelectionRectangle?.remove();
@@ -393,7 +407,8 @@ export function useMapDrawing(emit: EmitFn) {
   }
 
   function deleteLassoSelectedLayers(layers: L.Layer[]) {
-    layers.forEach((layer) => {
+    const uniqueLayers = Array.from(new Set(layers));
+    uniqueLayers.forEach((layer) => {
       const removableLayer = layer as L.Layer & {
         pm?: { remove?: () => void };
       };
@@ -410,13 +425,8 @@ export function useMapDrawing(emit: EmitFn) {
     map.on("pm:create", (e) => {
       const layer = e.layer as any;
       const feature = layerToFeature(layer);
-
-      if (feature) {
-        // @ts-ignore - Layer type doesn't have feature property by default
-        layer.feature = feature; // Attach feature to layer for later reference
-        drawnItems.value?.addLayer(layer);
-        emit("feature-created", feature);
-      }
+      attachFeatureAndEmit(layer, feature, "feature-created");
+      drawnItems.value?.addLayer(layer);
     });
 
     // When a shape is edited
@@ -430,9 +440,7 @@ export function useMapDrawing(emit: EmitFn) {
           ...(layer.feature?.properties || {}),
           ...(feature.properties || {}),
         };
-        // @ts-ignore
-        layer.feature = feature;
-        emit("feature-updated", feature);
+        attachFeatureAndEmit(layer, feature, "feature-updated");
       }
     });
 
@@ -449,9 +457,7 @@ export function useMapDrawing(emit: EmitFn) {
             ...(originalLayer.feature?.properties || {}),
             ...(updatedOriginal.properties || {}),
           };
-          // @ts-ignore
-          originalLayer.feature = updatedOriginal;
-          emit("feature-updated", updatedOriginal);
+          attachFeatureAndEmit(originalLayer, updatedOriginal, "feature-updated");
         }
       }
 
@@ -468,10 +474,8 @@ export function useMapDrawing(emit: EmitFn) {
             ...(originalProps.properties || {}),
             ...(createdFeature.properties || {}),
           };
-          // @ts-ignore
-          newLayer.feature = createdFeature;
+          attachFeatureAndEmit(newLayer, createdFeature, "feature-created");
           drawnItems.value?.addLayer(newLayer);
-          emit("feature-created", createdFeature);
         }
       }
     });
