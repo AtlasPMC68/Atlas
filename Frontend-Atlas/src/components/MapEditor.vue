@@ -133,7 +133,9 @@ onUnmounted(() => {
 });
 
 function initializeMap() {
-  map.value = L.map("edit-map").setView([52.9399, -73.5491], 5);
+  map.value = L.map("edit-map", {
+    boxZoom: false,
+  }).setView([52.9399, -73.5491], 5);
   const mapInstance = map.value as L.Map;
 
   // Base map tiles
@@ -447,7 +449,8 @@ function cancelEdit() {
 }
 
 // API calls
-async function createFeature(featureData: MapFeature) { //TODO: Ajouter vérification de l'utilisateur
+async function createFeature(featureData: MapFeature) {
+  //TODO: Ajouter vérification de l'utilisateur
   const response = await fetch(
     `${import.meta.env.VITE_API_URL}/maps/features`,
     {
@@ -466,7 +469,8 @@ async function createFeature(featureData: MapFeature) { //TODO: Ajouter vérific
   return response.json();
 }
 
-async function updateFeature(featureData: MapFeature) { //TODO: Ajouter vérification de l'utilisateur
+async function updateFeature(featureData: MapFeature) {
+  //TODO: Ajouter vérification de l'utilisateur
   const response = await fetch(
     `${import.meta.env.VITE_API_URL}/maps/features/${featureData.id}`,
     {
@@ -485,7 +489,8 @@ async function updateFeature(featureData: MapFeature) { //TODO: Ajouter vérific
   return response.json();
 }
 
-async function deleteFeature(featureId: string | number | undefined) { //!IMPORTANT! TODO: Ajouter vérification de l'utilisateur
+async function deleteFeature(featureId: string | number | undefined) {
+  //!IMPORTANT! TODO: Ajouter vérification de l'utilisateur
   if (!featureId) return;
   const response = await fetch(
     `${import.meta.env.VITE_API_URL}/maps/features/${featureId}`,

@@ -36,6 +36,18 @@ const DRAWING_MODES = {
 } as const;
 
 const FREEHAND_CONTROL_NAME = "drawFreehand";
+const LASSO_DELETE_OPTIONS = {
+  mode: "RESET",
+  selectMode: "CONTAIN",
+  lassoDrawOptions: {
+    color: "#ef4444",
+    weight: 2,
+    dashArray: "6 6",
+    fillColor: "#ef4444",
+    fillOpacity: 0.12,
+    dasharray: "6 6",
+  },
+} as const;
 
 /**
  * Composable for handling map drawing with Leaflet.pm
@@ -46,6 +58,16 @@ export function useMapDrawing(emit: EmitFn) {
   let pmMapInstance: any = null;
   let freehandActive = false;
   let freehandListeners: any = {};
+  let removalLassoEnabled = false;
+  let fallbackRemovalSelectionEnabled = false;
+  let fallbackSelectionRectangle: L.Rectangle | null = null;
+  let fallbackSelectionStart: L.LatLng | null = null;
+  let fallbackSelectionDragging = false;
+  let fallbackRemovalListeners: {
+    onMouseDown?: (e: L.LeafletMouseEvent) => void;
+    onMouseMove?: (e: L.LeafletMouseEvent) => void;
+    onMouseUp?: () => void;
+  } = {};
 
   /**
    * Initialize the drawing control
@@ -105,28 +127,18 @@ export function useMapDrawing(emit: EmitFn) {
       disableOtherButtons: true,
       disableByOtherButtons: true,
       actions: ["cancel"],
-      onClick: () => {
-        if (freehandActive) {
-          setDrawingMode(null);
+      onClick: () => {},
+      afterClick: (_event: unknown, context: any) => {
+        if (context.button.toggled()) {
+          setDrawingMode("freehand");
           return;
         }
-        setDrawingMode("freehand");
+
+        setDrawingMode(null);
       },
     });
 
     toolbar.changeControlOrder?.();
-  }
-
-  function syncFreehandControlState(isActive: boolean) {
-    if (!pmMapInstance?.pm?.Toolbar?.toggleButton) {
-      return;
-    }
-
-    pmMapInstance.pm.Toolbar.toggleButton(
-      FREEHAND_CONTROL_NAME,
-      isActive,
-      false,
-    );
   }
 
   /**
@@ -145,7 +157,7 @@ export function useMapDrawing(emit: EmitFn) {
     map.getContainer().style.userSelect = "none";
 
     // Set pencil cursor (SVG-based)
-    const pencilCursor = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%23000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>') 12 12, auto`;
+    const pencilCursor = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%23000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>') 4 20, auto`;
     map.getContainer().style.cursor = pencilCursor;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
@@ -207,6 +219,187 @@ export function useMapDrawing(emit: EmitFn) {
     map.dragging.enable();
     map.getContainer().style.cursor = "";
     map.getContainer().style.userSelect = "";
+  }
+
+  function enableRemovalLasso(map: L.Map) {
+    if (removalLassoEnabled) {
+      return;
+    }
+
+    if (map.pm?.enableGlobalLassoMode) {
+      map.pm.enableGlobalLassoMode(LASSO_DELETE_OPTIONS);
+      removalLassoEnabled = true;
+      return;
+    }
+
+    enableFallbackRemovalSelection(map);
+    removalLassoEnabled = true;
+  }
+
+  function disableRemovalLasso(map: L.Map) {
+    if (!removalLassoEnabled) {
+      return;
+    }
+
+    if (map.pm?.disableGlobalLassoMode) {
+      map.pm.disableGlobalLassoMode();
+    }
+
+    disableFallbackRemovalSelection(map);
+    removalLassoEnabled = false;
+  }
+
+  function getLayersInsideBounds(
+    map: L.Map,
+    bounds: L.LatLngBounds,
+  ): L.Layer[] {
+    const selected: L.Layer[] = [];
+
+    map.eachLayer((layer) => {
+      const candidate = layer as L.Layer & {
+        pm?: {
+          options?: { allowRemoval?: boolean };
+          remove?: () => void;
+        };
+        _pmTempLayer?: boolean;
+        getLatLng?: () => L.LatLng;
+        getBounds?: () => L.LatLngBounds;
+      };
+
+      if (!candidate.pm || candidate._pmTempLayer) {
+        return;
+      }
+
+      if (candidate.pm.options?.allowRemoval === false) {
+        return;
+      }
+
+      if (
+        layer instanceof L.Marker ||
+        layer instanceof L.CircleMarker ||
+        layer instanceof L.Circle
+      ) {
+        const latLng = candidate.getLatLng?.();
+        if (latLng && bounds.contains(latLng)) {
+          selected.push(layer);
+        }
+        return;
+      }
+
+      if (
+        layer instanceof L.Polyline ||
+        layer instanceof L.Polygon ||
+        layer instanceof L.Rectangle
+      ) {
+        const layerBounds = candidate.getBounds?.();
+        if (layerBounds && bounds.contains(layerBounds)) {
+          selected.push(layer);
+        }
+      }
+    });
+
+    return selected;
+  }
+
+  function enableFallbackRemovalSelection(map: L.Map) {
+    if (fallbackRemovalSelectionEnabled) {
+      return;
+    }
+
+    const onMouseDown = (e: L.LeafletMouseEvent) => {
+      if (!e.originalEvent?.shiftKey || !map.pm?.globalRemovalModeEnabled?.()) {
+        return;
+      }
+
+      fallbackSelectionDragging = true;
+      fallbackSelectionStart = e.latlng;
+      map.dragging.disable();
+
+      fallbackSelectionRectangle?.remove();
+      const initialBounds = L.latLngBounds(e.latlng, e.latlng);
+      fallbackSelectionRectangle = L.rectangle(initialBounds, {
+        color: "#ef4444",
+        weight: 2,
+        fillColor: "#ef4444",
+        fillOpacity: 0.12,
+        dashArray: "6 6",
+        interactive: false,
+      }).addTo(map);
+    };
+
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      if (
+        !fallbackSelectionDragging ||
+        !fallbackSelectionStart ||
+        !fallbackSelectionRectangle
+      ) {
+        return;
+      }
+
+      fallbackSelectionRectangle.setBounds(
+        L.latLngBounds(fallbackSelectionStart, e.latlng),
+      );
+    };
+
+    const onMouseUp = () => {
+      if (!fallbackSelectionDragging || !fallbackSelectionRectangle) {
+        return;
+      }
+
+      const bounds = fallbackSelectionRectangle.getBounds();
+      fallbackSelectionRectangle.remove();
+      fallbackSelectionRectangle = null;
+      fallbackSelectionDragging = false;
+      fallbackSelectionStart = null;
+      map.dragging.enable();
+
+      if (!map.pm?.globalRemovalModeEnabled?.()) {
+        return;
+      }
+
+      const selectedLayers = getLayersInsideBounds(map, bounds);
+      deleteLassoSelectedLayers(selectedLayers);
+    };
+
+    fallbackRemovalListeners = { onMouseDown, onMouseMove, onMouseUp };
+    map.on("mousedown", onMouseDown);
+    map.on("mousemove", onMouseMove);
+    map.on("mouseup", onMouseUp);
+    fallbackRemovalSelectionEnabled = true;
+  }
+
+  function disableFallbackRemovalSelection(map: L.Map) {
+    if (!fallbackRemovalSelectionEnabled) {
+      return;
+    }
+
+    if (fallbackRemovalListeners.onMouseDown) {
+      map.off("mousedown", fallbackRemovalListeners.onMouseDown);
+    }
+    if (fallbackRemovalListeners.onMouseMove) {
+      map.off("mousemove", fallbackRemovalListeners.onMouseMove);
+    }
+    if (fallbackRemovalListeners.onMouseUp) {
+      map.off("mouseup", fallbackRemovalListeners.onMouseUp);
+    }
+
+    fallbackRemovalListeners = {};
+    fallbackSelectionRectangle?.remove();
+    fallbackSelectionRectangle = null;
+    fallbackSelectionDragging = false;
+    fallbackSelectionStart = null;
+    map.dragging.enable();
+    fallbackRemovalSelectionEnabled = false;
+  }
+
+  function deleteLassoSelectedLayers(layers: L.Layer[]) {
+    layers.forEach((layer) => {
+      const removableLayer = layer as L.Layer & {
+        pm?: { remove?: () => void };
+      };
+
+      removableLayer.pm?.remove?.();
+    });
   }
 
   /**
@@ -291,6 +484,27 @@ export function useMapDrawing(emit: EmitFn) {
       if (featureId) {
         emit("feature-deleted", featureId);
       }
+    });
+
+    map.on("pm:globalremovalmodetoggled", (e: { enabled: boolean }) => {
+      if (e.enabled) {
+        if (freehandActive) {
+          stopFreehandDrawing(map);
+        }
+
+        enableRemovalLasso(map);
+        return;
+      }
+
+      disableRemovalLasso(map);
+    });
+
+    map.on("pm:lasso-select", (e: { selectedLayers: L.Layer[] }) => {
+      if (!map.pm?.globalRemovalModeEnabled?.()) {
+        return;
+      }
+
+      deleteLassoSelectedLayers(e.selectedLayers || []);
     });
 
     // When drawing starts
@@ -436,20 +650,16 @@ export function useMapDrawing(emit: EmitFn) {
       activeDrawingMode.value = null;
       // Re-enable map dragging when exiting draw mode
       pmMapInstance.dragging.enable();
-      syncFreehandControlState(false);
+      disableRemovalLasso(pmMapInstance);
       return;
     }
 
     // Enable freehand mode
     if (mode === "freehand") {
       activeDrawingMode.value = mode;
-      syncFreehandControlState(true);
       startFreehandDrawing(pmMapInstance);
       return;
     }
-
-    // For other modes, remove active class from freehand button
-    syncFreehandControlState(false);
 
     // Enable the selected mode for Leaflet.pm
     const modeMap: Record<string, string> = {

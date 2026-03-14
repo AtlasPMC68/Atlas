@@ -302,7 +302,9 @@ function shiftLatLngsRecursive(latlngs, deltaLat, deltaLng) {
 }
 
 onMounted(() => {
-  map = L.map("map").setView([52.9399, -73.5491], 5);
+  map = L.map("map", {
+    boxZoom: false,
+  }).setView([52.9399, -73.5491], 5);
   layers.initializeBaseLayers(map);
   timeline.loadRegionsForYear(timeline.selectedYear.value, map, true);
   drawing.initializeDrawing(map);
