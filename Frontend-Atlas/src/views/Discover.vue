@@ -101,7 +101,7 @@ async function fetchMapsAndRender() {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="postcss">
 .btn-primary {
   @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition;
 }

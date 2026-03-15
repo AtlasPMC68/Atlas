@@ -25,13 +25,8 @@
           :feature-visibility="featureVisibility"
           :edit-mode="isEditMode"
           :active-edit-mode="activeEditMode"
-          :selected-shape="selectedShape"
           :resize-feature-id="resizeFeatureId"
-          :resize-width-meters="resizeWidthMeters"
-          :resize-height-meters="resizeHeightMeters"
-          :rotate-angle-deg="rotateAngleDeg"
           @features-loaded="handleFeaturesLoaded"
-          @resize-selection="handleResizeSelection"
         />
       </div>
     </div>
@@ -41,15 +36,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import { MapData } from "../typescript/map";
+import { MapData} from "../typescript/map";
 import { camelToSnake } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { normalizeFeatures } from "../utils/featureTypes";
 import keycloak from "../keycloak";
 
 const route = useRoute();
@@ -59,90 +56,11 @@ const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const isEditMode = ref(false);
-const activeEditMode = ref(null);
+const activeEditMode = ref<string | null>(null);
 
-const resizeFeatureId = ref(null);
-const resizeWidthInput = ref("");
-const resizeHeightInput = ref("");
-const rotateAngleInput = ref("");
+const resizeFeatureId = ref<string | null>(null);
 
-const kmToMeters = (kmStr) => {
-  const n = parseFloat(String(kmStr ?? "").replace(",", "."));
-  return Number.isFinite(n) && n > 0 ? n * 1000 : null;
-};
-
-const resizeWidthMeters = computed(() => kmToMeters(resizeWidthInput.value));
-const resizeHeightMeters = computed(() => kmToMeters(resizeHeightInput.value));
-
-const parseAngleDeg = (degStr) => {
-  const n = parseFloat(String(degStr ?? "").replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-};
-
-const rotateAngleDeg = computed(() => parseAngleDeg(rotateAngleInput.value));
-
-function resetManualResizeUI() {
-  resizeFeatureId.value = null;
-  resizeWidthInput.value = "";
-  resizeHeightInput.value = "";
-  rotateAngleInput.value = "";
-}
-
-function handleResizeSelection(payload) {
-  if (!payload || payload.featureId === null || payload.featureId === undefined) {
-    resetManualResizeUI();
-    return;
-  }
-
-  resizeFeatureId.value = String(payload.featureId);
-
-  const fmtKm = (meters) => {
-    if (meters == null) return "";
-    const m = typeof meters === "number" ? meters : parseFloat(String(meters).replace(",", "."));
-    if (!Number.isFinite(m) || m <= 0) return "";
-    const km = m / 1000;
-    return String(Math.round(km * 100) / 100);
-  };
-
-  const fmtDeg = (deg) => {
-    if (deg == null) return "";
-    const a = typeof deg === "number" ? deg : parseFloat(String(deg).replace(",", "."));
-    if (!Number.isFinite(a)) return "";
-    return String(Math.round(a * 10) / 10);
-  };
-
-  resizeWidthInput.value = fmtKm(payload.widthMeters);
-  resizeHeightInput.value = fmtKm(payload.heightMeters);
-  rotateAngleInput.value = fmtDeg(payload.angleDeg);
-}
-
-watch(
-  () => [isEditMode.value, activeEditMode.value],
-  ([edit, mode]) => {
-    if (!edit || mode !== "RESIZE_SHAPE") resetManualResizeUI();
-  }
-);
-
-const editModes = [
-  { id: "CREATE_POINT", label: "Ajouter un point", icon: "fas fa-map-marker-alt" },
-  { id: "CREATE_LINE", label: "Ligne droite", icon: "fas fa-minus" },
-  { id: "CREATE_FREE_LINE", label: "Crayon libre", icon: "fas fa-pencil-alt" },
-  { id: "CREATE_POLYGON", label: "Ajouter un polygone", icon: "fas fa-draw-polygon" },
-  { id: "CREATE_SHAPES", label: "Formes", icon: "fas fa-shapes" },
-  { id: "RESIZE_SHAPE", label: "Redimensionner", icon: "fas fa-expand-arrows-alt" },
-  { id: "DELETE_FEATURE", label: "Supprimer", icon: "fas fa-trash" },
-];
-
-const selectedShape = ref(null);
-const shapeTypes = [
-  { id: "square", label: "Carré", icon: "fas fa-square" },
-  { id: "rectangle", label: "Rectangle", icon: "fas fa-rectangle-wide" },
-  { id: "circle", label: "Cercle", icon: "fas fa-circle" },
-  { id: "oval", label: "Ovale", icon: "fas fa-ellipse" },
-  { id: "triangle", label: "Triangle", icon: "fas fa-play" },
-];
-
-function reconcileVisibility(list) {
+function reconcileVisibility(list: Feature[]) {
   const next = new Map(featureVisibility.value);
   for (const f of list) {
     const id = f?.id;
@@ -163,7 +81,7 @@ async function loadInitialFeatures() {
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = await res.json();
-    const normalized = normalizeFeatures(allFeatures);
+    const normalized = normalizeFeatures(allFeatures) as Feature[];
 
     features.value = normalized;
     reconcileVisibility(normalized);
@@ -178,85 +96,27 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-function handleFeaturesLoaded(updated) {
+function handleFeaturesLoaded(updated: unknown) {
   if (!Array.isArray(updated)) return;
 
-  const normalized = normalizeFeatures(updated);
+  const normalized = normalizeFeatures(updated) as Feature[];
   features.value = normalized;
   reconcileVisibility(normalized);
 }
 
-function toggleEditMode() {
-  isEditMode.value = !isEditMode.value;
-  if (!isEditMode.value) {
-    activeEditMode.value = null;
-    selectedShape.value = null;
-    resetManualResizeUI();
-  }
-}
-
-function setEditMode(modeId) {
-  if (activeEditMode.value === modeId) {
-    activeEditMode.value = null;
-    selectedShape.value = null;
-    resetManualResizeUI();
-  } else {
-    activeEditMode.value = modeId;
-
-    if (modeId !== "CREATE_SHAPES") selectedShape.value = null;
-    if (modeId !== "RESIZE_SHAPE") resetManualResizeUI();
-  }
-}
-
-function cancelPolygon() {
-  const currentMode = activeEditMode.value;
-  activeEditMode.value = null;
-  setTimeout(() => {
-    activeEditMode.value = currentMode;
-  }, 100);
-}
-
-function selectShape(shapeId) {
-  selectedShape.value = shapeId;
-}
-
-function cancelShape() {
-  selectedShape.value = null;
-}
-
-function getShapeInstructions(shapeId) {
-  switch (shapeId) {
-    case "square":
-      return "Clic pour placer le centre → Glisser pour ajuster la taille → Clic pour valider";
-    case "rectangle":
-      return "Maintenir clic gauche pour définir le premier coin → Glisser pour ajuster → Relâcher pour placer";
-    case "circle":
-      return "Clic pour placer le centre → Glisser pour ajuster la taille → Clic pour valider";
-    case "triangle":
-      return "Clic pour placer le centre → Glisser pour ajuster la taille → Clic pour valider";
-    case "oval":
-      return "Clic pour placer le centre → Glisser pour ajuster la hauteur → Clic pour valider → Glisser pour ajuster la largeur → Clic pour finaliser";
-    default:
-      return "Clic pour sélectionner/désélectionner • CTRL pour sélection multiple";
-  }
-}
-
-onMounted(() => {
-  loadInitialFeatures();
+onMounted(async () => {
+  await fetchCurrentUser();
+  await loadInitialFeatures();
 });
 
-function saveCarte() {
+function saveMap() {
   console.log("Quick save");
   // appel API ou logique de sauvegarde ici
 }
 
-function saveCarteAs() {
+function saveMapAs() {
   showSaveAsModal.value = true;
 }
-
-const title = ref("");
-const description = ref("");
-const access_level = ref("");
 
 async function handleSaveAs(map: MapData) {
   if (!keycloak.token || !currentUser.value) {
@@ -288,7 +148,7 @@ async function handleSaveAs(map: MapData) {
 
     await response.json();
   } catch (err) {
-    throw new Error("Error while saving map:", err);
+    console.error("Error while saving map:", err);
   }
 }
 </script>

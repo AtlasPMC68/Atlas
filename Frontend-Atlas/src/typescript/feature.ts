@@ -1,4 +1,5 @@
 export interface Feature {
+  type: string;
   id: string;
   mapId: string;
   geometry: Geometry;
