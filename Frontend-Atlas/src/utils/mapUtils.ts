@@ -1,4 +1,4 @@
-import { MAP_CONFIG as MAP_CONFIG_RAW } from "../composables/useMapConfig.js";
+import { MAP_CONFIG as MAP_CONFIG_RAW } from "../composables/useMapConfig";
 
 type MapConfig = {
   BASE_ZOOM: number;

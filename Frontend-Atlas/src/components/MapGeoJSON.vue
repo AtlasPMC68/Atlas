@@ -1,6 +1,6 @@
 <template>
   <div class="relative h-full w-full z-0">
-    <div id="map" style="height: 100vh; width: 100%"></div>
+    <div id="map" style="height: 100%; width: 100%"></div>
     <TimelineSlider v-model:year="selectedYearModel" />
   </div>
 </template>
@@ -20,8 +20,11 @@ const props = defineProps({
   featureVisibility: Map,
 });
 
-const drawing = useMapDrawing(() => {});
-const layers = useMapLayers({ featureVisibility: props.featureVisibility });
+const featureVisibilityRef = computed(() => props.featureVisibility);
+
+const emit = defineEmits(["create", "edit", "remove"]);
+const drawing = useMapDrawing(emit);
+const layers = useMapLayers({ featureVisibility: featureVisibilityRef });
 const selectedYear = ref(1740);
 const selectedYearModel = computed({
   get: () => selectedYear.value,
