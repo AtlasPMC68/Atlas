@@ -10,12 +10,8 @@ import { MAP_CONFIG } from "./useMapConfig.js";
 import { getMapElementType } from "../utils/featureTypes.js";
 
 type MapLayersProps = {
-  editMode?: boolean;
-  activeEditMode?: string | null;
   featureVisibility?: Map<string | number, boolean>;
 };
-
-type EmitFn = (event: string, ...args: unknown[]) => void;
 
 type Feature = {
   id?: string | number;
@@ -34,16 +30,6 @@ type FeatureLayer = L.Layer & {
   __atlas_onPointerDown?: L.LeafletEventHandlerFn;
   __atlas_onClick?: L.LeafletEventHandlerFn;
   arrowheads?: (options: any) => void;
-};
-
-type EditingComposable = {
-  applyAngleToLayerFromCanonical: (
-    layer: L.Layer,
-    map: L.Map,
-    geometry: any,
-    angleDeg: number,
-    pivot: L.LatLng,
-  ) => void;
 };
 
 type ClickHandler = (featureId: string, isCtrlPressed: boolean) => void;
@@ -224,10 +210,7 @@ class MapLayersService {
   public previousFeatureIds = ref(new Set<string>());
   public featureLayerManager: FeatureLayerManager;
 
-  constructor(
-    private props: MapLayersProps,
-    private editingComposable: EditingComposable,
-  ) {
+  constructor(private props: MapLayersProps) {
     this.featureLayerManager = new FeatureLayerManager(props, this.allCircles);
   }
 
@@ -320,6 +303,7 @@ class MapLayersService {
   }
 
   renderZones(features: Feature[], map: L.Map) {
+    void map;
     const safeFeatures = toArray(features) as Feature[];
 
     for (const feature of safeFeatures) {
@@ -369,7 +353,6 @@ class MapLayersService {
 
       if (!latLngs) continue;
 
-      const angleDeg = feature.properties?.rotation_deg ?? 0;
       const styleOptions = {
         color: "#333",
         weight: 1,
@@ -377,31 +360,11 @@ class MapLayersService {
         fillOpacity: 0.5,
         interactive: true,
       };
-      const canUseRectangle =
-        Math.abs(angleDeg) <= 1e-6 && this.isAxisAlignedRectangle(latLngs);
+      const canUseRectangle = this.isAxisAlignedRectangle(latLngs);
 
       const poly = canUseRectangle
         ? this.rectangleFromLatLngs(latLngs, styleOptions)
         : L.polygon(latLngs, styleOptions);
-
-      if (Math.abs(angleDeg) > 1e-6) {
-        const pivot = feature.properties?.center
-          ? L.latLng(
-              feature.properties.center.lat,
-              feature.properties.center.lng,
-            )
-          : poly.getBounds().getCenter();
-
-        if (targetGeometry?.type === "Polygon") {
-          this.editingComposable.applyAngleToLayerFromCanonical(
-            poly,
-            map,
-            targetGeometry,
-            angleDeg,
-            pivot,
-          );
-        }
-      }
 
       const name = fprops.name || feature.name;
       if (name) poly.bindPopup(name);
@@ -459,6 +422,7 @@ class MapLayersService {
   }
 
   renderShapes(features: Feature[], map: L.Map) {
+    void map;
     const safeFeatures = toArray(features) as Feature[];
 
     for (const feature of safeFeatures) {
@@ -474,7 +438,6 @@ class MapLayersService {
         coord[0],
       ]);
 
-      const angleDeg = feature.properties?.rotation_deg ?? 0;
       const styleOptions = {
         color: feature.color || "#000000",
         weight: 2,
@@ -482,29 +445,11 @@ class MapLayersService {
         fillOpacity: feature.opacity ?? 0.5,
         interactive: true,
       };
-      const canUseRectangle =
-        Math.abs(angleDeg) <= 1e-6 && this.isAxisAlignedRectangle(latLngs);
+      const canUseRectangle = this.isAxisAlignedRectangle(latLngs);
 
       const shape = canUseRectangle
         ? this.rectangleFromLatLngs(latLngs, styleOptions)
         : L.polygon(latLngs, styleOptions);
-
-      if (Math.abs(angleDeg) > 1e-6) {
-        const pivot = feature.properties?.center
-          ? L.latLng(
-              feature.properties.center.lat,
-              feature.properties.center.lng,
-            )
-          : shape.getBounds().getCenter();
-
-        this.editingComposable.applyAngleToLayerFromCanonical(
-          shape,
-          map,
-          feature.geometry,
-          angleDeg,
-          pivot,
-        );
-      }
 
       if (feature.name) shape.bindPopup(feature.name);
 
@@ -593,12 +538,7 @@ class MapLayersService {
   }
 }
 
-export function useMapLayers(
-  props: MapLayersProps,
-  _emit: EmitFn,
-  editingComposable: EditingComposable,
-) {
-  void _emit;
-  const service = new MapLayersService(props, editingComposable);
+export function useMapLayers(props: MapLayersProps) {
+  const service = new MapLayersService(props);
   return service.getApi();
 }

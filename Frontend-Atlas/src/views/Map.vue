@@ -20,10 +20,8 @@
 
       <div class="flex-1">
         <MapGeoJSON
-          :map-id="mapId"
           :features="features"
           :feature-visibility="featureVisibility"
-          @features-loaded="handleFeaturesLoaded"
         />
       </div>
     </div>
@@ -52,8 +50,6 @@ const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
-
-const resizeFeatureId = ref<string | null>(null);
 
 function reconcileVisibility(list: Feature[]) {
   const next = new Map(featureVisibility.value);
@@ -89,14 +85,6 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   const next = new Map(featureVisibility.value);
   next.set(featureId, visible);
   featureVisibility.value = next;
-}
-
-function handleFeaturesLoaded(updated: unknown) {
-  if (!Array.isArray(updated)) return;
-
-  const normalized = normalizeFeatures(updated) as Feature[];
-  features.value = normalized;
-  reconcileVisibility(normalized);
 }
 
 onMounted(async () => {
