@@ -4,7 +4,6 @@ import L from "leaflet";
 import {
   toArray,
   getRadiusForZoom,
-  transformNormalizedToWorld,
 } from "../utils/mapUtils";
 import { MAP_CONFIG } from "./useMapConfig.js";
 import { getMapElementType } from "../utils/featureTypes.js";
@@ -316,24 +315,7 @@ class MapLayersService {
         rgb && rgb.length === 3 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : null;
       const fillColor = feature.color || colorFromRgb || "#ccc";
 
-      let targetGeometry = feature.geometry;
-
-      if (fprops.is_normalized) {
-        const fc = { type: "FeatureCollection", features: [feature] } as any;
-        const anchorLat = -80 + Math.random() * 160;
-        const anchorLng = -170 + Math.random() * 340;
-        const sizeMeters = 2_000_000;
-
-        const worldFc = transformNormalizedToWorld(
-          fc,
-          anchorLat,
-          anchorLng,
-          sizeMeters,
-        ) as any;
-        if (worldFc?.features?.[0]?.geometry) {
-          targetGeometry = worldFc.features[0].geometry;
-        }
-      }
+      const targetGeometry = feature.geometry;
 
       let latLngs: L.LatLngTuple[] | null = null;
 

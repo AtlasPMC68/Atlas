@@ -6,14 +6,13 @@
 </template>
 
 <script setup>
-import { onMounted, watch, computed, onBeforeUnmount } from "vue";
+import { onMounted, watch, computed, onBeforeUnmount, ref } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 
 import { useMapLayers } from "../composables/useMapLayers.ts";
-import { useMapTimeline } from "../composables/useMapTimeline.ts";
 import { useMapDrawing } from "../composables/useMapDrawing.ts";
 
 const props = defineProps({
@@ -23,11 +22,11 @@ const props = defineProps({
 
 const drawing = useMapDrawing(() => {});
 const layers = useMapLayers({ featureVisibility: props.featureVisibility });
-const timeline = useMapTimeline();
+const selectedYear = ref(1740);
 const selectedYearModel = computed({
-  get: () => timeline.selectedYear.value,
+  get: () => selectedYear.value,
   set: (year) => {
-    timeline.selectedYear.value = year;
+    selectedYear.value = year;
   },
 });
 
@@ -37,10 +36,10 @@ const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature) =>
       new Date(feature.start_date).getFullYear() <=
-        timeline.selectedYear.value &&
+        selectedYear.value &&
       (!feature.end_date ||
         new Date(feature.end_date).getFullYear() >=
-          timeline.selectedYear.value),
+          selectedYear.value),
   );
 });
 
@@ -54,7 +53,6 @@ onMounted(() => {
     boxZoom: false,
   }).setView([52.9399, -73.5491], 5);
   layers.initializeBaseLayers(map);
-  timeline.loadRegionsForYear(timeline.selectedYear.value, map, true);
   drawing.initializeDrawing(map);
 
   renderAllAndRebind();
@@ -70,10 +68,9 @@ onBeforeUnmount(() => {
 
 // Timeline year changes
 watch(
-  () => timeline.selectedYear.value,
-  (newYear) => {
+  () => selectedYear.value,
+  () => {
     if (!map) return;
-    timeline.loadRegionsForYear(newYear, map);
     renderAllAndRebind();
   },
 );
