@@ -1,11 +1,8 @@
 import { ref } from "vue";
 import type { Ref } from "vue";
 import L from "leaflet";
-import {
-  toArray,
-  getRadiusForZoom,
-} from "../utils/mapUtils";
-import { getMapElementType } from "../utils/featureTypes.js";
+import { toArray, getRadiusForZoom } from "../utils/mapUtils";
+import { getMapElementType } from "../utils/featureTypes.ts";
 
 type MapLayersProps = {
   featureVisibility?: Map<string | number, boolean>;
@@ -162,6 +159,46 @@ class FeatureLayerManager {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Pure geometry helpers — no dependency on map or class state
+// ---------------------------------------------------------------------------
+
+function isAxisAlignedRectangle(latLngs: L.LatLngTuple[], tol = 1e-6) {
+  if (!Array.isArray(latLngs) || latLngs.length < 4) return false;
+
+  const normalized = latLngs.slice();
+  const first = normalized[0];
+  const last = normalized[normalized.length - 1];
+  if (
+    first &&
+    last &&
+    Math.abs(first[0] - last[0]) <= tol &&
+    Math.abs(first[1] - last[1]) <= tol
+  ) {
+    normalized.pop();
+  }
+
+  if (normalized.length !== 4) return false;
+
+  const roundToTol = (v: number) => Math.round(v / tol);
+  const lats = new Set(normalized.map((p) => roundToTol(p[0])));
+  const lngs = new Set(normalized.map((p) => roundToTol(p[1])));
+  return lats.size === 2 && lngs.size === 2;
+}
+
+function rectangleFromLatLngs(
+  latLngs: L.LatLngTuple[],
+  options: L.PathOptions,
+) {
+  const lats = latLngs.map((p) => p[0]);
+  const lngs = latLngs.map((p) => p[1]);
+  const bounds = L.latLngBounds(
+    [Math.min(...lats), Math.min(...lngs)],
+    [Math.max(...lats), Math.max(...lngs)],
+  );
+  return L.rectangle(bounds, options);
+}
+
 class MapLayersService {
   public drawnItems = ref<L.FeatureGroup | null>(null);
   public allCircles = ref<Set<any>>(new Set());
@@ -179,42 +216,6 @@ class MapLayersService {
     this.allCircles.value.forEach((circle) => {
       circle.setRadius(newRadius);
     });
-  }
-
-  private isAxisAlignedRectangle(latLngs: L.LatLngTuple[], tol = 1e-6) {
-    if (!Array.isArray(latLngs) || latLngs.length < 4) return false;
-
-    const normalized = latLngs.slice();
-    const first = normalized[0];
-    const last = normalized[normalized.length - 1];
-    if (
-      first &&
-      last &&
-      Math.abs(first[0] - last[0]) <= tol &&
-      Math.abs(first[1] - last[1]) <= tol
-    ) {
-      normalized.pop();
-    }
-
-    if (normalized.length !== 4) return false;
-
-    const roundToTol = (v: number) => Math.round(v / tol);
-    const lats = new Set(normalized.map((p) => roundToTol(p[0])));
-    const lngs = new Set(normalized.map((p) => roundToTol(p[1])));
-    return lats.size === 2 && lngs.size === 2;
-  }
-
-  private rectangleFromLatLngs(
-    latLngs: L.LatLngTuple[],
-    options: L.PathOptions,
-  ) {
-    const lats = latLngs.map((p) => p[0]);
-    const lngs = latLngs.map((p) => p[1]);
-    const bounds = L.latLngBounds(
-      [Math.min(...lats), Math.min(...lngs)],
-      [Math.max(...lats), Math.max(...lngs)],
-    );
-    return L.rectangle(bounds, options);
   }
 
   renderCities(features: Feature[], map: L.Map) {
@@ -301,10 +302,10 @@ class MapLayersService {
         fillOpacity: 0.5,
         interactive: true,
       };
-      const canUseRectangle = this.isAxisAlignedRectangle(latLngs);
+      const canUseRectangle = isAxisAlignedRectangle(latLngs);
 
       const poly = canUseRectangle
-        ? this.rectangleFromLatLngs(latLngs, styleOptions)
+        ? rectangleFromLatLngs(latLngs, styleOptions)
         : L.polygon(latLngs, styleOptions);
 
       const name = fprops.name || feature.name;
@@ -386,10 +387,10 @@ class MapLayersService {
         fillOpacity: feature.opacity ?? 0.5,
         interactive: true,
       };
-      const canUseRectangle = this.isAxisAlignedRectangle(latLngs);
+      const canUseRectangle = isAxisAlignedRectangle(latLngs);
 
       const shape = canUseRectangle
-        ? this.rectangleFromLatLngs(latLngs, styleOptions)
+        ? rectangleFromLatLngs(latLngs, styleOptions)
         : L.polygon(latLngs, styleOptions);
 
       if (feature.name) shape.bindPopup(feature.name);

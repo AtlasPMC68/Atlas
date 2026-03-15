@@ -56,37 +56,208 @@ const LASSO_DELETE_OPTIONS = {
   },
 } as const;
 
-/**
- * Composable for handling map drawing with Leaflet.pm
- */
-export function useMapDrawing(emit: EmitFn) {
-  const activeDrawingMode = ref<DrawingMode>(null);
-  const drawnItems = ref<L.FeatureGroup | null>(null);
-  let pmMapInstance: any = null;
-  let freehandActive = false;
-  let freehandListeners: any = {};
-  let removalLassoEnabled = false;
-  let fallbackRemovalSelectionEnabled = false;
-  let fallbackSelectionRectangle: L.Rectangle | null = null;
-  let fallbackSelectionStart: L.LatLng | null = null;
-  let fallbackSelectionDragging = false;
-  let fallbackRemovalListeners: {
+// ---------------------------------------------------------------------------
+// Pure helpers — stateless, no dependency on map instance
+// ---------------------------------------------------------------------------
+
+function isLatLng(value: unknown): value is L.LatLng {
+  const point = value as { lat?: unknown; lng?: unknown } | null;
+  return (
+    !!point && typeof point.lat === "number" && typeof point.lng === "number"
+  );
+}
+
+export function circleToPolygon(
+  center: L.LatLng,
+  radiusMeters: number,
+  steps: number = 32,
+) {
+  const coords: number[][] = [];
+  const radiusLat = radiusMeters / 111320;
+  const radiusLng =
+    radiusMeters / (111320 * Math.cos((center.lat * Math.PI) / 180));
+
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * 2 * Math.PI;
+    const lat = center.lat + radiusLat * Math.sin(angle);
+    const lng = center.lng + radiusLng * Math.cos(angle);
+    coords.push([lng, lat]);
+  }
+
+  coords.push(coords[0]);
+
+  return {
+    type: "Polygon",
+    coordinates: [coords],
+  };
+}
+
+export function layerToFeature(layer: any): Feature | null {
+  let geometry = null;
+  let type = "polygon";
+
+  if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
+    const latlng = layer.getLatLng();
+    geometry = {
+      type: "Point",
+      coordinates: [latlng.lng, latlng.lat],
+    };
+    type = "point";
+  } else if (layer instanceof L.Circle) {
+    const center = layer.getLatLng();
+    const radius = layer.getRadius();
+    geometry = circleToPolygon(center, radius);
+    type = "zone";
+  } else if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
+    const latlngs = layer.getLatLngs();
+    geometry = {
+      type: "LineString",
+      coordinates: (latlngs as L.LatLng[]).map((ll) => [ll.lng, ll.lat]),
+    };
+    type = "polyline";
+  } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+    const latlngs = layer.getLatLngs() as unknown;
+
+    let ring: L.LatLng[] | null = null;
+
+    if (Array.isArray(latlngs) && latlngs.length > 0) {
+      // Flat LatLng[] (some plugin contexts)
+      if (isLatLng(latlngs[0])) {
+        ring = latlngs as L.LatLng[];
+      }
+
+      // Standard Leaflet Polygon: LatLng[][]
+      if (!ring && Array.isArray(latlngs[0]) && latlngs[0].length > 0) {
+        const firstRing = latlngs[0] as unknown[];
+        if (isLatLng(firstRing[0])) {
+          ring = firstRing as L.LatLng[];
+        }
+      }
+
+      // MultiPolygon nesting: LatLng[][][]
+      if (
+        !ring &&
+        Array.isArray(latlngs[0]) &&
+        (latlngs[0] as unknown[]).length > 0 &&
+        Array.isArray((latlngs[0] as unknown[])[0])
+      ) {
+        const firstPolygonOuterRing = (latlngs[0] as unknown[])[0] as
+          | unknown[]
+          | undefined;
+        if (
+          firstPolygonOuterRing &&
+          firstPolygonOuterRing.length > 0 &&
+          isLatLng(firstPolygonOuterRing[0])
+        ) {
+          ring = firstPolygonOuterRing as L.LatLng[];
+        }
+      }
+    }
+
+    if (ring && ring.length > 0) {
+      const coords = ring.map((ll) => [ll.lng, ll.lat]);
+
+      if (coords.length > 0) {
+        const first = coords[0];
+        const last = coords[coords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+          coords.push(first);
+        }
+      }
+
+      geometry = {
+        type: "Polygon",
+        coordinates: [coords],
+      };
+      type = "zone";
+    }
+  }
+
+  if (!geometry) return null;
+
+  return {
+    type,
+    geometry,
+    color: "#000000",
+    opacity: 0.5,
+    stroke_width: 2,
+    properties: {
+      mapElementType: type,
+    },
+  };
+}
+
+export function featureToLayer(feature: Feature): L.Layer | null {
+  const geom = feature.geometry;
+
+  if (!geom) return null;
+
+  const style = {
+    color: feature.color || "#000000",
+    weight: feature.stroke_width || 2,
+    fillColor: feature.color || "#cccccc",
+    fillOpacity: feature.opacity || 0.5,
+  };
+
+  switch (geom.type) {
+    case "Point": {
+      const [lng, lat] = geom.coordinates;
+      return L.circleMarker([lat, lng], { ...style, radius: 6 });
+    }
+
+    case "LineString": {
+      const latlngs = geom.coordinates.map(([lng, lat]: [number, number]) => [
+        lat,
+        lng,
+      ]);
+      return L.polyline(latlngs, style);
+    }
+
+    case "Polygon": {
+      const coords = geom.coordinates[0];
+      const latlngs = coords.map(([lng, lat]: [number, number]) => [lat, lng]);
+      return L.polygon(latlngs, style);
+    }
+
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MapDrawingService — stateful orchestration of Geoman drawing lifecycle
+// ---------------------------------------------------------------------------
+
+class MapDrawingService {
+  public activeDrawingMode = ref<DrawingMode>(null);
+  public drawnItems = ref<L.FeatureGroup | null>(null);
+  private pmMapInstance: any = null;
+  private freehandActive = false;
+  private freehandListeners: any = {};
+  private removalLassoEnabled = false;
+  private fallbackRemovalSelectionEnabled = false;
+  private fallbackSelectionRectangle: L.Rectangle | null = null;
+  private fallbackSelectionStart: L.LatLng | null = null;
+  private fallbackSelectionDragging = false;
+  private fallbackRemovalListeners: {
     onMouseDown?: (e: L.LeafletMouseEvent) => void;
     onMouseMove?: (e: L.LeafletMouseEvent) => void;
     onMouseUp?: () => void;
   } = {};
 
-  const attachFeatureAndEmit = (
+  constructor(private emit: EmitFn) {}
+
+  private attachFeatureAndEmit(
     layer: FeatureBearingLayer,
     feature: Feature | null,
     eventName: "feature-created" | "feature-updated",
-  ) => {
+  ) {
     if (!feature) return;
     layer.feature = feature;
-    emit(eventName, feature);
-  };
+    this.emit(eventName, feature);
+  }
 
-  const isMapLayerRemovable = (
+  private isMapLayerRemovable(
     layer: L.Layer & {
       pm?: {
         options?: { allowRemoval?: boolean };
@@ -94,23 +265,20 @@ export function useMapDrawing(emit: EmitFn) {
       };
       _pmTempLayer?: boolean;
     },
-  ) => {
+  ) {
     if (!layer.pm || layer._pmTempLayer) return false;
     return layer.pm.options?.allowRemoval !== false;
-  };
+  }
 
-  /**
-   * Initialize the drawing control
-   */
-  function initializeDrawing(map: L.Map) {
+  initializeDrawing(map: L.Map) {
     if (!map.pm) {
       console.warn("Leaflet.pm not properly initialized");
       return;
     }
 
-    pmMapInstance = map;
-    drawnItems.value = new L.FeatureGroup();
-    map.addLayer(drawnItems.value as any);
+    this.pmMapInstance = map;
+    this.drawnItems.value = new L.FeatureGroup();
+    map.addLayer(this.drawnItems.value as any);
 
     map.pm.addControls({
       position: "topright",
@@ -128,15 +296,11 @@ export function useMapDrawing(emit: EmitFn) {
       removalMode: true,
     });
 
-    addFreehandButton(map);
-
-    setupDrawingListeners(map);
+    this.addFreehandButton(map);
+    this.setupDrawingListeners(map);
   }
 
-  /**
-   * Add freehand button to the Leaflet.pm toolbar
-   */
-  function addFreehandButton(map: L.Map) {
+  private addFreehandButton(map: L.Map) {
     const toolbar = (map.pm as any)?.Toolbar;
     if (
       !toolbar?.createCustomControl ||
@@ -155,26 +319,25 @@ export function useMapDrawing(emit: EmitFn) {
       disableByOtherButtons: true,
       actions: ["cancel"],
       onClick: () => {},
-      afterClick: (_event: unknown, context: { button: { toggled: () => boolean } }) => {
+      afterClick: (
+        _event: unknown,
+        context: { button: { toggled: () => boolean } },
+      ) => {
         if (context.button.toggled()) {
-          setDrawingMode("freehand");
+          this.setDrawingMode("freehand");
           return;
         }
-
-        setDrawingMode(null);
+        this.setDrawingMode(null);
       },
     });
 
     toolbar.changeControlOrder?.();
   }
 
-  /**
-   * Start freehand drawing mode
-   */
-  function startFreehandDrawing(map: L.Map) {
-    if (freehandActive) return;
+  startFreehandDrawing(map: L.Map) {
+    if (this.freehandActive) return;
 
-    freehandActive = true;
+    this.freehandActive = true;
     let isDrawing = false;
     let points: L.LatLng[] = [];
     let polyline: L.Polyline | null = null;
@@ -206,11 +369,11 @@ export function useMapDrawing(emit: EmitFn) {
       isDrawing = false;
 
       if (points.length > 1) {
-        drawnItems.value?.addLayer(polyline);
+        this.drawnItems.value?.addLayer(polyline);
         const feature = layerToFeature(polyline);
         if (feature) {
           (polyline as any).feature = feature;
-          emit("feature-created", feature);
+          this.emit("feature-created", feature);
         }
       } else {
         map.removeLayer(polyline);
@@ -220,7 +383,7 @@ export function useMapDrawing(emit: EmitFn) {
       points = [];
     };
 
-    freehandListeners = { onMouseDown, onMouseMove, onMouseUp };
+    this.freehandListeners = { onMouseDown, onMouseMove, onMouseUp };
     map.pm.disableDraw();
 
     map.on("mousedown", onMouseDown);
@@ -228,55 +391,45 @@ export function useMapDrawing(emit: EmitFn) {
     map.on("mouseup", onMouseUp);
   }
 
-  /**
-   * Stop freehand drawing mode
-   */
-  function stopFreehandDrawing(map: L.Map) {
-    if (!freehandActive) return;
+  stopFreehandDrawing(map: L.Map) {
+    if (!this.freehandActive) return;
 
-    freehandActive = false;
+    this.freehandActive = false;
 
-    map.off("mousedown", freehandListeners.onMouseDown);
-    map.off("mousemove", freehandListeners.onMouseMove);
-    map.off("mouseup", freehandListeners.onMouseUp);
+    map.off("mousedown", this.freehandListeners.onMouseDown);
+    map.off("mousemove", this.freehandListeners.onMouseMove);
+    map.off("mouseup", this.freehandListeners.onMouseUp);
 
     map.dragging.enable();
     map.getContainer().style.cursor = "";
     map.getContainer().style.userSelect = "";
   }
 
-  function enableRemovalLasso(map: L.Map) {
-    if (removalLassoEnabled) {
-      return;
-    }
+  private enableRemovalLasso(map: L.Map) {
+    if (this.removalLassoEnabled) return;
 
     if (map.pm?.enableGlobalLassoMode) {
       map.pm.enableGlobalLassoMode(LASSO_DELETE_OPTIONS);
-      removalLassoEnabled = true;
+      this.removalLassoEnabled = true;
       return;
     }
 
-    enableFallbackRemovalSelection(map);
-    removalLassoEnabled = true;
+    this.enableFallbackRemovalSelection(map);
+    this.removalLassoEnabled = true;
   }
 
-  function disableRemovalLasso(map: L.Map) {
-    if (!removalLassoEnabled) {
-      return;
-    }
+  private disableRemovalLasso(map: L.Map) {
+    if (!this.removalLassoEnabled) return;
 
     if (map.pm?.disableGlobalLassoMode) {
       map.pm.disableGlobalLassoMode();
     }
 
-    disableFallbackRemovalSelection(map);
-    removalLassoEnabled = false;
+    this.disableFallbackRemovalSelection(map);
+    this.removalLassoEnabled = false;
   }
 
-  function getLayersInsideBounds(
-    map: L.Map,
-    bounds: L.LatLngBounds,
-  ): L.Layer[] {
+  private getLayersInsideBounds(map: L.Map, bounds: L.LatLngBounds): L.Layer[] {
     const selected: L.Layer[] = [];
 
     map.eachLayer((layer) => {
@@ -290,7 +443,7 @@ export function useMapDrawing(emit: EmitFn) {
         getBounds?: () => L.LatLngBounds;
       };
 
-      if (!isMapLayerRemovable(candidate)) {
+      if (!this.isMapLayerRemovable(candidate)) {
         return;
       }
 
@@ -321,23 +474,21 @@ export function useMapDrawing(emit: EmitFn) {
     return selected;
   }
 
-  function enableFallbackRemovalSelection(map: L.Map) {
-    if (fallbackRemovalSelectionEnabled) {
-      return;
-    }
+  private enableFallbackRemovalSelection(map: L.Map) {
+    if (this.fallbackRemovalSelectionEnabled) return;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
       if (!e.originalEvent?.shiftKey || !map.pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
-      fallbackSelectionDragging = true;
-      fallbackSelectionStart = e.latlng;
+      this.fallbackSelectionDragging = true;
+      this.fallbackSelectionStart = e.latlng;
       map.dragging.disable();
 
-      fallbackSelectionRectangle?.remove();
+      this.fallbackSelectionRectangle?.remove();
       const initialBounds = L.latLngBounds(e.latlng, e.latlng);
-      fallbackSelectionRectangle = L.rectangle(initialBounds, {
+      this.fallbackSelectionRectangle = L.rectangle(initialBounds, {
         ...REMOVAL_SELECTION_STYLE,
         interactive: false,
       }).addTo(map);
@@ -345,85 +496,79 @@ export function useMapDrawing(emit: EmitFn) {
 
     const onMouseMove = (e: L.LeafletMouseEvent) => {
       if (
-        !fallbackSelectionDragging ||
-        !fallbackSelectionStart ||
-        !fallbackSelectionRectangle
+        !this.fallbackSelectionDragging ||
+        !this.fallbackSelectionStart ||
+        !this.fallbackSelectionRectangle
       ) {
         return;
       }
 
-      fallbackSelectionRectangle.setBounds(
-        L.latLngBounds(fallbackSelectionStart, e.latlng),
+      this.fallbackSelectionRectangle.setBounds(
+        L.latLngBounds(this.fallbackSelectionStart, e.latlng),
       );
     };
 
     const onMouseUp = () => {
-      if (!fallbackSelectionDragging || !fallbackSelectionRectangle) {
+      if (!this.fallbackSelectionDragging || !this.fallbackSelectionRectangle) {
         return;
       }
 
-      const bounds = fallbackSelectionRectangle.getBounds();
-      fallbackSelectionRectangle.remove();
-      fallbackSelectionRectangle = null;
-      fallbackSelectionDragging = false;
-      fallbackSelectionStart = null;
+      const bounds = this.fallbackSelectionRectangle.getBounds();
+      this.fallbackSelectionRectangle.remove();
+      this.fallbackSelectionRectangle = null;
+      this.fallbackSelectionDragging = false;
+      this.fallbackSelectionStart = null;
       map.dragging.enable();
 
       if (!map.pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
-      const selectedLayers = getLayersInsideBounds(map, bounds);
-      deleteLassoSelectedLayers(selectedLayers);
+      const selectedLayers = this.getLayersInsideBounds(map, bounds);
+      this.deleteLassoSelectedLayers(selectedLayers);
     };
 
-    fallbackRemovalListeners = { onMouseDown, onMouseMove, onMouseUp };
+    this.fallbackRemovalListeners = { onMouseDown, onMouseMove, onMouseUp };
     map.on("mousedown", onMouseDown);
     map.on("mousemove", onMouseMove);
     map.on("mouseup", onMouseUp);
-    fallbackRemovalSelectionEnabled = true;
+    this.fallbackRemovalSelectionEnabled = true;
   }
 
-  function disableFallbackRemovalSelection(map: L.Map) {
-    if (!fallbackRemovalSelectionEnabled) {
-      return;
-    }
+  private disableFallbackRemovalSelection(map: L.Map) {
+    if (!this.fallbackRemovalSelectionEnabled) return;
 
-    const { onMouseDown, onMouseMove, onMouseUp } = fallbackRemovalListeners;
+    const { onMouseDown, onMouseMove, onMouseUp } =
+      this.fallbackRemovalListeners;
     if (onMouseDown) map.off("mousedown", onMouseDown);
     if (onMouseMove) map.off("mousemove", onMouseMove);
     if (onMouseUp) map.off("mouseup", onMouseUp);
 
-    fallbackRemovalListeners = {};
-    fallbackSelectionRectangle?.remove();
-    fallbackSelectionRectangle = null;
-    fallbackSelectionDragging = false;
-    fallbackSelectionStart = null;
+    this.fallbackRemovalListeners = {};
+    this.fallbackSelectionRectangle?.remove();
+    this.fallbackSelectionRectangle = null;
+    this.fallbackSelectionDragging = false;
+    this.fallbackSelectionStart = null;
     map.dragging.enable();
-    fallbackRemovalSelectionEnabled = false;
+    this.fallbackRemovalSelectionEnabled = false;
   }
 
-  function deleteLassoSelectedLayers(layers: L.Layer[]) {
+  private deleteLassoSelectedLayers(layers: L.Layer[]) {
     const uniqueLayers = Array.from(new Set(layers));
     uniqueLayers.forEach((layer) => {
       const removableLayer = layer as L.Layer & {
         pm?: { remove?: () => void };
       };
-
       removableLayer.pm?.remove?.();
     });
   }
 
-  /**
-   * Setup listeners for drawing events
-   */
-  function setupDrawingListeners(map: L.Map) {
-    // When a shape is created
+  private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
       const layer = e.layer as any;
       const feature = layerToFeature(layer);
-      attachFeatureAndEmit(layer, feature, "feature-created");
-      drawnItems.value?.addLayer(layer);
+      this.attachFeatureAndEmit(layer, feature, "feature-created");
+      this.drawnItems.value?.addLayer(layer);
     });
 
     map.on("pm:edit", (e) => {
@@ -436,7 +581,7 @@ export function useMapDrawing(emit: EmitFn) {
           ...(layer.feature?.properties || {}),
           ...(feature.properties || {}),
         };
-        attachFeatureAndEmit(layer, feature, "feature-updated");
+        this.attachFeatureAndEmit(layer, feature, "feature-updated");
       }
     });
 
@@ -452,7 +597,11 @@ export function useMapDrawing(emit: EmitFn) {
             ...(originalLayer.feature?.properties || {}),
             ...(updatedOriginal.properties || {}),
           };
-          attachFeatureAndEmit(originalLayer, updatedOriginal, "feature-updated");
+          this.attachFeatureAndEmit(
+            originalLayer,
+            updatedOriginal,
+            "feature-updated",
+          );
         }
       }
 
@@ -469,8 +618,12 @@ export function useMapDrawing(emit: EmitFn) {
             ...(originalProps.properties || {}),
             ...(createdFeature.properties || {}),
           };
-          attachFeatureAndEmit(newLayer, createdFeature, "feature-created");
-          drawnItems.value?.addLayer(newLayer);
+          this.attachFeatureAndEmit(
+            newLayer,
+            createdFeature,
+            "feature-created",
+          );
+          this.drawnItems.value?.addLayer(newLayer);
         }
       }
     });
@@ -480,21 +633,21 @@ export function useMapDrawing(emit: EmitFn) {
       const featureId = layer.feature?.id;
 
       if (featureId) {
-        emit("feature-deleted", featureId);
+        this.emit("feature-deleted", featureId);
       }
     });
 
     map.on("pm:globalremovalmodetoggled", (e: { enabled: boolean }) => {
       if (e.enabled) {
-        if (freehandActive) {
-          stopFreehandDrawing(map);
+        if (this.freehandActive) {
+          this.stopFreehandDrawing(map);
         }
 
-        enableRemovalLasso(map);
+        this.enableRemovalLasso(map);
         return;
       }
 
-      disableRemovalLasso(map);
+      this.disableRemovalLasso(map);
     });
 
     map.on("pm:lasso-select", (e: { selectedLayers: L.Layer[] }) => {
@@ -502,14 +655,14 @@ export function useMapDrawing(emit: EmitFn) {
         return;
       }
 
-      deleteLassoSelectedLayers(e.selectedLayers || []);
+      this.deleteLassoSelectedLayers(e.selectedLayers || []);
     });
 
     map.on("pm:drawstart", (e) => {
-      if (freehandActive) {
-        stopFreehandDrawing(map);
+      if (this.freehandActive) {
+        this.stopFreehandDrawing(map);
       }
-      activeDrawingMode.value = e.shape as DrawingMode;
+      this.activeDrawingMode.value = e.shape as DrawingMode;
       map.dragging.disable();
     });
 
@@ -518,159 +671,25 @@ export function useMapDrawing(emit: EmitFn) {
     });
   }
 
-  /**
-   * Convert a Leaflet layer to a GeoJSON Feature
-   */
-  function layerToFeature(layer: any): Feature | null {
-    let geometry = null;
-    let type = "polygon";
+  setDrawingMode(mode: DrawingMode) {
+    if (!this.pmMapInstance) return;
 
-    if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
-      const latlng = layer.getLatLng();
-      geometry = {
-        type: "Point",
-        coordinates: [latlng.lng, latlng.lat],
-      };
-      type = "point";
-    } else if (layer instanceof L.Circle) {
-      const center = layer.getLatLng();
-      const radius = layer.getRadius();
-      geometry = circleToPolygon(center, radius);
-      type = "zone";
-    } else if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
-      const latlngs = layer.getLatLngs();
-      geometry = {
-        type: "LineString",
-        coordinates: (latlngs as L.LatLng[]).map((ll) => [ll.lng, ll.lat]),
-      };
-      type = "polyline";
-    } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
-      const latlngs = layer.getLatLngs() as unknown;
-      const isLatLng = (value: unknown): value is L.LatLng => {
-        const point = value as { lat?: unknown; lng?: unknown } | null;
-        return (
-          !!point &&
-          typeof point.lat === "number" &&
-          typeof point.lng === "number"
-        );
-      };
-
-      let ring: L.LatLng[] | null = null;
-
-      if (Array.isArray(latlngs) && latlngs.length > 0) {
-        if (isLatLng(latlngs[0])) {
-          ring = latlngs as L.LatLng[];
-        }
-
-        if (!ring && Array.isArray(latlngs[0]) && latlngs[0].length > 0) {
-          const firstRing = latlngs[0] as unknown[];
-          if (isLatLng(firstRing[0])) {
-            ring = firstRing as L.LatLng[];
-          }
-        }
-
-        if (
-          !ring &&
-          Array.isArray(latlngs[0]) &&
-          (latlngs[0] as unknown[]).length > 0 &&
-          Array.isArray((latlngs[0] as unknown[])[0])
-        ) {
-          const firstPolygonOuterRing = (latlngs[0] as unknown[])[0] as
-            | unknown[]
-            | undefined;
-          if (
-            firstPolygonOuterRing &&
-            firstPolygonOuterRing.length > 0 &&
-            isLatLng(firstPolygonOuterRing[0])
-          ) {
-            ring = firstPolygonOuterRing as L.LatLng[];
-          }
-        }
-      }
-
-      if (ring && ring.length > 0) {
-        const coords = ring.map((ll) => [ll.lng, ll.lat]);
-
-        if (coords.length > 0) {
-          const first = coords[0];
-          const last = coords[coords.length - 1];
-          if (first[0] !== last[0] || first[1] !== last[1]) {
-            coords.push(first);
-          }
-        }
-
-        geometry = {
-          type: "Polygon",
-          coordinates: [coords],
-        };
-        type = "zone";
-      }
+    if (this.freehandActive) {
+      this.stopFreehandDrawing(this.pmMapInstance);
     }
 
-    if (!geometry) return null;
-
-    return {
-      type,
-      geometry,
-      color: "#000000",
-      opacity: 0.5,
-      stroke_width: 2,
-      properties: {
-        mapElementType: type,
-      },
-    };
-  }
-
-  /**
-   * Convert a circle to polygon approximation
-   */
-  function circleToPolygon(
-    center: L.LatLng,
-    radiusMeters: number,
-    steps: number = 32,
-  ) {
-    const coords: number[][] = [];
-    const radiusLat = radiusMeters / 111320;
-    const radiusLng =
-      radiusMeters / (111320 * Math.cos((center.lat * Math.PI) / 180));
-
-    for (let i = 0; i < steps; i++) {
-      const angle = (i / steps) * 2 * Math.PI;
-      const lat = center.lat + radiusLat * Math.sin(angle);
-      const lng = center.lng + radiusLng * Math.cos(angle);
-      coords.push([lng, lat]);
-    }
-
-    coords.push(coords[0]);
-
-    return {
-      type: "Polygon",
-      coordinates: [coords],
-    };
-  }
-
-  /**
-   * Enable/disable a drawing mode
-   */
-  function setDrawingMode(mode: DrawingMode) {
-    if (!pmMapInstance) return;
-
-    if (freehandActive) {
-      stopFreehandDrawing(pmMapInstance);
-    }
-
-    pmMapInstance.pm.disableDraw();
+    this.pmMapInstance.pm.disableDraw();
 
     if (mode === null) {
-      activeDrawingMode.value = null;
-      pmMapInstance.dragging.enable();
-      disableRemovalLasso(pmMapInstance);
+      this.activeDrawingMode.value = null;
+      this.pmMapInstance.dragging.enable();
+      this.disableRemovalLasso(this.pmMapInstance);
       return;
     }
 
     if (mode === "freehand") {
-      activeDrawingMode.value = mode;
-      startFreehandDrawing(pmMapInstance);
+      this.activeDrawingMode.value = mode;
+      this.startFreehandDrawing(this.pmMapInstance);
       return;
     }
 
@@ -682,92 +701,36 @@ export function useMapDrawing(emit: EmitFn) {
       circle: "Circle",
     };
 
-    pmMapInstance.pm.enableDraw(modeMap[mode], {
+    this.pmMapInstance.pm.enableDraw(modeMap[mode], {
       snappingOrder: ["vertex", "edge", "middleLatLng"],
     });
 
-    activeDrawingMode.value = mode;
+    this.activeDrawingMode.value = mode;
   }
 
-  /**
-   * Load existing features to the map
-   */
-  function loadFeaturesForEditing(features: Feature[]) {
-    if (!drawnItems.value) return;
+  loadFeaturesForEditing(features: Feature[]) {
+    if (!this.drawnItems.value) return;
 
     features.forEach((feature) => {
       const layer = featureToLayer(feature);
       if (layer) {
         (layer as FeatureBearingLayer).feature = feature;
-        drawnItems.value?.addLayer(layer);
+        this.drawnItems.value?.addLayer(layer);
       }
     });
   }
 
-  /**
-   * Convert a GeoJSON Feature to a Leaflet layer
-   */
-  function featureToLayer(feature: Feature): L.Layer | null {
-    const geom = feature.geometry;
-
-    if (!geom) return null;
-
-    const style = {
-      color: feature.color || "#000000",
-      weight: feature.stroke_width || 2,
-      fillColor: feature.color || "#cccccc",
-      fillOpacity: feature.opacity || 0.5,
-    };
-
-    switch (geom.type) {
-      case "Point": {
-        const [lng, lat] = geom.coordinates;
-        const marker = L.circleMarker([lat, lng], {
-          ...style,
-          radius: 6,
-        });
-        return marker;
-      }
-
-      case "LineString": {
-        const latlngs = geom.coordinates.map(([lng, lat]: [number, number]) => [
-          lat,
-          lng,
-        ]);
-        return L.polyline(latlngs, style);
-      }
-
-      case "Polygon": {
-        const coords = geom.coordinates[0];
-        const latlngs = coords.map(([lng, lat]: [number, number]) => [
-          lat,
-          lng,
-        ]);
-        return L.polygon(latlngs, style);
-      }
-
-      default:
-        return null;
+  clearDrawnItems() {
+    if (this.drawnItems.value) {
+      this.drawnItems.value.clearLayers();
     }
   }
 
-  /**
-   * Clear all drawn items
-   */
-  function clearDrawnItems() {
-    if (drawnItems.value) {
-      drawnItems.value.clearLayers();
-    }
-  }
-
-  /**
-   * Get all drawn features
-   */
-  function getDrawnFeatures(): Feature[] {
+  getDrawnFeatures(): Feature[] {
     const features: Feature[] = [];
 
-    if (drawnItems.value) {
-      drawnItems.value.eachLayer((layer) => {
+    if (this.drawnItems.value) {
+      this.drawnItems.value.eachLayer((layer) => {
         const featureLayer = layer as FeatureBearingLayer;
         if (featureLayer.feature) {
           features.push(featureLayer.feature);
@@ -778,23 +741,23 @@ export function useMapDrawing(emit: EmitFn) {
     return features;
   }
 
-  return {
-    // State
-    activeDrawingMode,
-    drawnItems,
+  getApi() {
+    return {
+      activeDrawingMode: this.activeDrawingMode,
+      drawnItems: this.drawnItems,
+      initializeDrawing: this.initializeDrawing.bind(this),
+      setDrawingMode: this.setDrawingMode.bind(this),
+      loadFeaturesForEditing: this.loadFeaturesForEditing.bind(this),
+      clearDrawnItems: this.clearDrawnItems.bind(this),
+      getDrawnFeatures: this.getDrawnFeatures.bind(this),
+      startFreehandDrawing: this.startFreehandDrawing.bind(this),
+      stopFreehandDrawing: this.stopFreehandDrawing.bind(this),
+      DRAWING_MODES,
+    };
+  }
+}
 
-    // Methods
-    initializeDrawing,
-    setDrawingMode,
-    loadFeaturesForEditing,
-    clearDrawnItems,
-    getDrawnFeatures,
-    featureToLayer,
-    layerToFeature,
-    startFreehandDrawing,
-    stopFreehandDrawing,
-
-    // Constants
-    DRAWING_MODES,
-  };
+export function useMapDrawing(emit: EmitFn) {
+  const service = new MapDrawingService(emit);
+  return service.getApi();
 }
