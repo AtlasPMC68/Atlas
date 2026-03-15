@@ -23,8 +23,6 @@
           :map-id="mapId"
           :features="features"
           :feature-visibility="featureVisibility"
-          :edit-mode="isEditMode"
-          :active-edit-mode="activeEditMode"
           :resize-feature-id="resizeFeatureId"
           @features-loaded="handleFeaturesLoaded"
         />
@@ -55,8 +53,6 @@ const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
-const isEditMode = ref(false);
-const activeEditMode = ref<string | null>(null);
 
 const resizeFeatureId = ref<string | null>(null);
 

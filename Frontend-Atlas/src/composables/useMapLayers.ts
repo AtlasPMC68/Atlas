@@ -60,10 +60,31 @@ class FeatureLayerManager {
 
   setMap(map: L.Map) {
     this.map = map;
+    map.on("popupopen", () => {
+      if (this.shouldBlockLeafletEvents()) {
+        map.closePopup();
+      }
+    });
   }
 
   setClickHandler(handler: ClickHandler) {
     this.clickHandler = handler;
+  }
+
+  private shouldBlockLeafletEvents() {
+    const pm = (this.map as any)?.pm;
+    if (!pm) return false;
+
+    const isEditActive =
+      typeof pm.globalEditModeEnabled === "function"
+        ? pm.globalEditModeEnabled()
+        : false;
+    const isDragActive =
+      typeof pm.globalDragModeEnabled === "function"
+        ? pm.globalDragModeEnabled()
+        : false;
+
+    return Boolean(isEditActive || isDragActive);
   }
 
   addFeatureLayer(
@@ -138,7 +159,7 @@ class FeatureLayerManager {
       const oe = (e as any).originalEvent;
       markDom(oe);
 
-      if (this.props.editMode && this.props.activeEditMode) {
+      if (this.shouldBlockLeafletEvents()) {
         oe?.stopPropagation();
         oe?.stopImmediatePropagation?.();
       }
@@ -148,7 +169,7 @@ class FeatureLayerManager {
       const oe = (e as any).originalEvent;
       markDom(oe);
 
-      if (this.props.editMode && this.props.activeEditMode) {
+      if (this.shouldBlockLeafletEvents()) {
         oe?.stopPropagation();
         oe?.stopImmediatePropagation?.();
       }
@@ -156,6 +177,8 @@ class FeatureLayerManager {
 
     layer.__atlas_onClick = (e) => {
       (e as any).originalEvent?.stopPropagation();
+
+      if (this.shouldBlockLeafletEvents()) return;
 
       if (this.clickHandler) {
         const isCtrlPressed =
