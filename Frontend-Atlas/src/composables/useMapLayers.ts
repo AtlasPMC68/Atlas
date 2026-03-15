@@ -417,16 +417,14 @@ class MapLayersService {
       }
     });
 
-    const newFeatures = filteredFeatures.filter(
-      (f) => !previousIds.has(String(f.id)),
-    );
-
     const featuresByType = {
-      point: newFeatures.filter((f) => getMapElementType(f) === "point"),
-      zone: newFeatures.filter((f) => getMapElementType(f) === "zone"),
-      polyline: newFeatures.filter((f) => getMapElementType(f) === "polyline"),
-      arrow: newFeatures.filter((f) => getMapElementType(f) === "arrow"),
-      shape: newFeatures.filter((f) => getMapElementType(f) === "shape"),
+      point: filteredFeatures.filter((f) => getMapElementType(f) === "point"),
+      zone: filteredFeatures.filter((f) => getMapElementType(f) === "zone"),
+      polyline: filteredFeatures.filter(
+        (f) => getMapElementType(f) === "polyline",
+      ),
+      arrow: filteredFeatures.filter((f) => getMapElementType(f) === "arrow"),
+      shape: filteredFeatures.filter((f) => getMapElementType(f) === "shape"),
     };
 
     this.renderCities(featuresByType.point, map);
