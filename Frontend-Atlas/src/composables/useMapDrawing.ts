@@ -545,19 +545,51 @@ export function useMapDrawing(emit: EmitFn) {
       };
       type = "polyline";
     } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
-      const latlngs = layer.getLatLngs() as any[];
+      const latlngs = layer.getLatLngs() as unknown;
+      const isLatLng = (value: unknown): value is L.LatLng => {
+        const point = value as { lat?: unknown; lng?: unknown } | null;
+        return (
+          !!point &&
+          typeof point.lat === "number" &&
+          typeof point.lng === "number"
+        );
+      };
+
+      let ring: L.LatLng[] | null = null;
 
       if (Array.isArray(latlngs) && latlngs.length > 0) {
-        let ring = latlngs[0];
-
-        if (Array.isArray(ring) && ring.length > 0 && "lat" in ring[0]) {
-          ring = latlngs;
+        if (isLatLng(latlngs[0])) {
+          ring = latlngs as L.LatLng[];
         }
 
-        const coords = (ring as any as L.LatLng[]).map((ll) => [
-          ll.lng,
-          ll.lat,
-        ]);
+        if (!ring && Array.isArray(latlngs[0]) && latlngs[0].length > 0) {
+          const firstRing = latlngs[0] as unknown[];
+          if (isLatLng(firstRing[0])) {
+            ring = firstRing as L.LatLng[];
+          }
+        }
+
+        if (
+          !ring &&
+          Array.isArray(latlngs[0]) &&
+          (latlngs[0] as unknown[]).length > 0 &&
+          Array.isArray((latlngs[0] as unknown[])[0])
+        ) {
+          const firstPolygonOuterRing = (latlngs[0] as unknown[])[0] as
+            | unknown[]
+            | undefined;
+          if (
+            firstPolygonOuterRing &&
+            firstPolygonOuterRing.length > 0 &&
+            isLatLng(firstPolygonOuterRing[0])
+          ) {
+            ring = firstPolygonOuterRing as L.LatLng[];
+          }
+        }
+      }
+
+      if (ring && ring.length > 0) {
+        const coords = ring.map((ll) => [ll.lng, ll.lat]);
 
         if (coords.length > 0) {
           const first = coords[0];
