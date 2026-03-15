@@ -2,7 +2,7 @@
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
       <div class="flex justify-end">
-        <SaveDropdown @save="saveCarte" @save-as="saveCarteAs" />
+        <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
       </div>
       <div class="flex-1">
         <h1 class="text-xl font-bold">Carte démo</h1>
@@ -10,7 +10,6 @@
     </div>
 
     <div class="flex flex-1">
-      <!-- Panneau de contrôle des features -->
       <div class="w-80 bg-base-200 border-r border-base-300 p-4">
         <FeatureVisibilityControls
           :features="features"
@@ -19,23 +18,15 @@
         />
       </div>
 
-      <!-- Map avec timeline intégrée -->
       <div class="flex-1">
         <MapGeoJSON
-          :map-id="mapId"
           :features="features"
           :feature-visibility="featureVisibility"
-          @features-loaded="handleFeaturesLoaded"
         />
       </div>
     </div>
 
-    <!-- Save modal -->
-    <SaveAsModal
-      v-if="showSaveAsModal"
-      @save="handleSaveAs"
-      @cancel="showSaveAsModal = false"
-    />
+    <SaveAsModal v-if="showSaveAsModal" @save="handleSaveAs" @cancel="showSaveAsModal = false" />
   </div>
 </template>
 
@@ -50,6 +41,7 @@ import { Feature } from "../typescript/feature";
 import { MapData } from "../typescript/map";
 import { camelToSnake } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { normalizeFeatures } from "../utils/featureTypes";
 import keycloak from "../keycloak";
 
 const route = useRoute();
@@ -57,47 +49,55 @@ const mapId = ref(route.params.mapId as string);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
-
 const { currentUser, fetchCurrentUser } = useCurrentUser();
+
+function reconcileVisibility(list: Feature[]) {
+  const next = new Map(featureVisibility.value);
+  for (const f of list) {
+    const id = f?.id;
+    if (id != null && next.get(id) === undefined) {
+      next.set(id, true);
+    }
+  }
+  const ids = new Set(list.map((f) => f.id));
+  for (const k of next.keys()) {
+    if (!ids.has(k)) next.delete(k);
+  }
+  featureVisibility.value = next;
+}
 
 async function loadInitialFeatures() {
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`,
-    );
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`);
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = await res.json();
-    features.value = allFeatures;
+    const normalized = normalizeFeatures(allFeatures) as Feature[];
 
-    const newVisibility = new Map();
-    allFeatures.forEach((feature: Feature) => {
-      newVisibility.set(feature.id, true);
-    });
-    featureVisibility.value = newVisibility;
-  } catch (error) {
-    console.error("Erreur lors du chargement des features:", error);
+    features.value = normalized;
+    reconcileVisibility(normalized);
+  } catch (e) {
+    console.error("Failed to load initial map features:", e);
   }
 }
 
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
-  featureVisibility.value.set(featureId, visible);
-  featureVisibility.value = new Map(featureVisibility.value);
+  const next = new Map(featureVisibility.value);
+  next.set(featureId, visible);
+  featureVisibility.value = next;
 }
-
-function handleFeaturesLoaded(loadedFeatures: Feature[]) {}
 
 onMounted(async () => {
   await fetchCurrentUser();
   await loadInitialFeatures();
 });
 
-function saveCarte() {
+function saveMap() {
   console.log("Quick save");
   // appel API ou logique de sauvegarde ici
 }
 
-function saveCarteAs() {
+function saveMapAs() {
   showSaveAsModal.value = true;
 }
 
@@ -129,10 +129,9 @@ async function handleSaveAs(map: MapData) {
       throw new Error("Error while saving the map");
     }
 
-    const result = await response.json();
-    console.log("Map saved successfuly:", result);
+    await response.json();
   } catch (err) {
-    throw new Error("Error while saving map:", err);
+    console.error("Error while saving map:", err);
   }
 }
 </script>
