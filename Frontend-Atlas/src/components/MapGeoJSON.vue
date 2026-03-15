@@ -352,7 +352,6 @@ function renderShapes(features) {
         fillOpacity: feature.opacity ?? 0.5,
         color: fillColor,
         weight: 3,
-        opacity: 0.8,
       },
     });
 

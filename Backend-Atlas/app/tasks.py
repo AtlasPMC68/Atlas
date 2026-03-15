@@ -218,7 +218,7 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            shapes_result = extract_shapes(tmp_file_path, text_regions=text_regions, debug=True)
+            shapes_result = extract_shapes(tmp_file_path, text_regions=text_regions)
             shape_normalized_features = shapes_result["normalized_features"]
             shape_pixel_features = shapes_result.get("pixel_features", [])
 
