@@ -3,7 +3,6 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.features import Feature
 
-
 async def insert_feature_in_db(
     db: AsyncSession,
     map_id: UUID,

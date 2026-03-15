@@ -8,12 +8,8 @@
   "standardFlowEnabled": true,
   "implicitFlowEnabled": false,
   "directAccessGrantsEnabled": true,
-  "redirectUris": [
-    "http://localhost:3000",
-    "http://localhost:3000/*",
-    "http://localhost/*"
-  ],
-  "webOrigins": ["http://localhost:3000", "http://localhost"],
+  "redirectUris": ["http://localhost:3000", "http://localhost:3000/*"],
+  "webOrigins": ["http://localhost:3000"],
   "attributes": {
     "pkce.code.challenge.method": "S256"
   },

@@ -9,6 +9,8 @@ import numpy as np
 from shapely import affinity
 from shapely.geometry import Polygon
 
+from . import preprocessing
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,20 +20,30 @@ DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
 def extract_shapes(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
-    min_area: int = 10,
+    min_area: int = 100,
     max_area: int = 100000,
     threshold_value: int = 127,
     min_confidence: float = 0.6,
     debug: bool = False,
 ):
-    image = cv2.imread(image_path)
+    image = preprocessing.read_image(image_path)
     if image is None:
         raise ValueError(f"Unable to load image: {image_path}")
 
-    height, width = image.shape[:2]
+    image_flat = preprocessing.flat_field_correction(image, sigma=100.0, normalize=True)
+
+    image_denoised = preprocessing.denoise_bilateral(
+        image_flat, sigma_color=0.03, sigma_spatial=5.0
+    )
+
+    height, width = image_denoised.shape[:2]
     image_area = width * height
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    image_uint8 = (image_denoised * 255).astype(np.uint8)
+
+    image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
+
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     if debug:
@@ -52,7 +64,7 @@ def extract_shapes(
 
     shapes_with_contours = []
     for idx, contour in enumerate(filtered_contours, 1):
-        shape_data = extract_contour_properties(contour, image, binary_mask, idx)
+        shape_data = extract_contour_properties(contour, image_bgr, binary_mask, idx)
         if shape_data:
             shapes_with_contours.append((shape_data, contour))
 
@@ -61,7 +73,7 @@ def extract_shapes(
     shapes_metadata = []
     for idx, (shape, contour) in enumerate(final_shapes_with_contours, 1):
         if debug:
-            save_shape_image(image, contour, image_output_dir, idx)
+            save_shape_image(image_bgr, contour, image_output_dir, idx)
 
         relative_size = shape["area"] / image_area if image_area else 0
 
@@ -119,7 +131,7 @@ def extract_shapes(
     if debug:
         try:
             reconstruct_shapes_debug(
-                image, final_shapes_with_contours, image_output_dir
+                image_bgr, final_shapes_with_contours, image_output_dir
             )
         except cv2.error as e:
             logger.error(
@@ -150,10 +162,11 @@ def create_normalized_geojson_features(
         if w == 0 or h == 0:
             continue
 
+        simple_points = shape["geometry"]["pixel_coords"]["contour_points"]
         normalized_coords = []
-        for pt in contour:
-            x_norm = (pt[0][0] - x_min) / w
-            y_norm = (pt[0][1] - y_min) / h
+        for pt in simple_points:
+            x_norm = (pt[0] - x_min) / w
+            y_norm = (pt[1] - y_min) / h
             normalized_coords.append([x_norm, y_norm])
 
         if len(normalized_coords) >= 3:
@@ -320,6 +333,7 @@ def extract_contour_properties(
     approx = cv2.approxPolyDP(contour, epsilon, True)
     num_vertices = len(approx)
 
+    simple_points = [[int(pt[0][0]), int(pt[0][1])] for pt in contour]
     return {
         "id": shape_id,
         "area": float(area),
@@ -333,7 +347,7 @@ def extract_contour_properties(
         "geometry": {
             "type": "Polygon",
             "pixel_coords": {
-                "contour_points": contour.tolist(),
+                "contour_points": simple_points,
                 "bounding_box": {
                     "x": int(x),
                     "y": int(y),
@@ -400,7 +414,7 @@ def reconstruct_shapes_debug(
     colored_only = cv2.bitwise_and(color_img, color_img, mask=mask)
     inv_mask = cv2.bitwise_not(mask)
     background = cv2.bitwise_and(overlay, overlay, mask=inv_mask)
-    composed = cv2.addWeighted(background, 0.3, colored_only, 0.7, 0)
+    composed = cv2.addWeighted(background, 0.3, colored_only, 0.7, 0, dtype=cv2.CV_8U)
 
     overlay_path = os.path.join(output_dir, "reconstructed_overlay.png")
     cv2.imwrite(overlay_path, composed)

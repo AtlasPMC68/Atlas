@@ -45,7 +45,7 @@
               d="M14 5l7 7m0 0l-7 7m7-7H3"
             />
           </svg>
-          Commencer l'extraction
+          {{ startLabel }}
         </span>
         <span v-else class="flex items-center">
           <span class="loading loading-spinner loading-sm mr-2"></span>
@@ -56,13 +56,20 @@
   </div>
 </template>
 
-<script setup>
-defineProps({
-  isProcessing: {
-    type: Boolean,
-    default: false,
-  },
-});
+<script setup lang="ts">
+withDefaults(
+  defineProps<{
+    isProcessing: boolean;
+    startLabel: string;
+  }>(),
+  {
+    isProcessing: false,
+    startLabel: "Commencer l'extraction",
+  }
+);
 
-defineEmits(["start-import", "cancel"]);
+defineEmits<{
+  (event: "start-import"): void;
+  (event: "cancel"): void;
+}>();
 </script>

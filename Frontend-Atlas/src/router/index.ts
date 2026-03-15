@@ -7,6 +7,7 @@ import Profile from "../views/Profile.vue";
 import Settings from "../views/Settings.vue";
 import Discover from "../views/Discover.vue";
 import keycloak from "../keycloak";
+import { useCurrentUser } from "../composables/useCurrentUser";
 
 const routes = [
   { path: "/", component: Home },
@@ -32,7 +33,7 @@ const routes = [
 export const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior(_to: any, _from: any, savedPosition) {
+  scrollBehavior(_, __, savedPosition) {
     if (savedPosition) return savedPosition;
     return { top: 0 };
   },
@@ -57,6 +58,7 @@ if (!keycloakReady) {
 
 router.beforeEach(async (to) => {
   if (!to.matched.some((r) => r.meta.requiresAuth)) return true;
+  if (!to.matched.some((r) => r.meta.requiresAuth)) return true;
   await keycloakReady;
 
   if (!keycloak.authenticated) {
@@ -75,6 +77,9 @@ router.beforeEach(async (to) => {
       return false;
     }
 
+    const { fetchCurrentUser } = useCurrentUser();
+    await fetchCurrentUser();
+
     return true;
   } catch (err) {
     keycloak.login({
@@ -85,3 +90,4 @@ router.beforeEach(async (to) => {
 });
 
 export default router;
+
