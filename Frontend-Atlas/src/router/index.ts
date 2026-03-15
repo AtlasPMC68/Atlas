@@ -58,7 +58,6 @@ if (!keycloakReady) {
 
 router.beforeEach(async (to) => {
   if (!to.matched.some((r) => r.meta.requiresAuth)) return true;
-  if (!to.matched.some((r) => r.meta.requiresAuth)) return true;
   await keycloakReady;
 
   if (!keycloak.authenticated) {
