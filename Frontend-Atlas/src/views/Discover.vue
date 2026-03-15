@@ -128,7 +128,7 @@ async function fetchMapsAndRender() {
         v-for="map in filteredMaps"
         :key="map.id"
         class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer"
-        @click="$router.push(`/maps/${map.id}`)"
+        @click="$router.push(`/carte/${map.id}`)"
       >
         <figure>
           <img

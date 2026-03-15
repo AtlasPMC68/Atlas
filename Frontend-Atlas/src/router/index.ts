@@ -12,7 +12,11 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 const routes = [
   { path: "/", component: Home },
   { path: "/demo", component: Map, meta: { requiresAuth: true } },
-  { path: "/demo/upload", component: ImportView, meta: { requiresAuth: true } },
+  {
+    path: "/televersement/:mapId",
+    component: ImportView,
+    meta: { requiresAuth: true },
+  },
   {
     path: "/tableau-de-bord",
     component: Dashboard,
@@ -27,7 +31,7 @@ const routes = [
   { path: "/parametres", component: Settings, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
   { path: "/inscription", component: Home }, // Dummy route
-  { path: "/maps/:mapId", component: Map, meta: { requiresAuth: true } },
+  { path: "/carte/:mapId", component: Map, meta: { requiresAuth: true } },
 ];
 
 export const router = createRouter({
