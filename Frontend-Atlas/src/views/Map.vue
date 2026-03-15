@@ -23,7 +23,6 @@
           :map-id="mapId"
           :features="features"
           :feature-visibility="featureVisibility"
-          :resize-feature-id="resizeFeatureId"
           @features-loaded="handleFeaturesLoaded"
         />
       </div>
@@ -41,7 +40,7 @@ import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import { MapData} from "../typescript/map";
+import { MapData } from "../typescript/map";
 import { camelToSnake } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { normalizeFeatures } from "../utils/featureTypes";
