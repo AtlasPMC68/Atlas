@@ -5,7 +5,7 @@ import {
   toArray,
   getRadiusForZoom,
 } from "../utils/mapUtils";
-import { getMapElementType } from "../utils/featureTypes.js";
+import { getMapElementType } from "../utils/featureTypes";
 
 type MapLayersProps = {
   featureVisibility?: Map<string | number, boolean>;
