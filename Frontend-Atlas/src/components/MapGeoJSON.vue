@@ -20,11 +20,9 @@ const props = defineProps({
   featureVisibility: Map,
 });
 
-const featureVisibilityRef = computed(() => props.featureVisibility);
-
 const emit = defineEmits(["create", "edit", "remove"]);
 const drawing = useMapDrawing(emit);
-const layers = useMapLayers({ featureVisibility: featureVisibilityRef });
+const layers = useMapLayers({ featureVisibility: props.featureVisibility });
 const selectedYear = ref(1740);
 const selectedYearModel = computed({
   get: () => selectedYear.value,
