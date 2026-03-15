@@ -26,6 +26,10 @@ type Feature = {
   properties?: Record<string, any>;
 };
 
+type FeatureBearingLayer = L.Layer & {
+  feature?: Feature;
+};
+
 const DRAWING_MODES = {
   marker: "marker",
   polyline: "polyline",
@@ -73,12 +77,11 @@ export function useMapDrawing(emit: EmitFn) {
   } = {};
 
   const attachFeatureAndEmit = (
-    layer: L.Layer,
+    layer: FeatureBearingLayer,
     feature: Feature | null,
     eventName: "feature-created" | "feature-updated",
   ) => {
     if (!feature) return;
-    // @ts-ignore - External layer instances are extended with custom metadata
     layer.feature = feature;
     emit(eventName, feature);
   };
@@ -109,9 +112,8 @@ export function useMapDrawing(emit: EmitFn) {
     drawnItems.value = new L.FeatureGroup();
     map.addLayer(drawnItems.value as any);
 
-    // Initialize Leaflet.pm controls (standard tools)
     map.pm.addControls({
-      position: "topleft",
+      position: "topright",
       drawMarker: true,
       drawPolyline: true,
       drawPolygon: true,
@@ -126,10 +128,8 @@ export function useMapDrawing(emit: EmitFn) {
       removalMode: true,
     });
 
-    // Add freehand button to the toolbar
     addFreehandButton(map);
 
-    // Setup event listeners for Leaflet.pm
     setupDrawingListeners(map);
   }
 
@@ -179,11 +179,9 @@ export function useMapDrawing(emit: EmitFn) {
     let points: L.LatLng[] = [];
     let polyline: L.Polyline | null = null;
 
-    // Disable map dragging during freehand drawing
     map.dragging.disable();
     map.getContainer().style.userSelect = "none";
 
-    // Set pencil cursor (SVG-based)
     const pencilCursor = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%23000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>') 4 20, auto`;
     map.getContainer().style.cursor = pencilCursor;
 
@@ -218,7 +216,6 @@ export function useMapDrawing(emit: EmitFn) {
         map.removeLayer(polyline);
       }
 
-      // Reset for next stroke but keep freehand mode active
       polyline = null;
       points = [];
     };
@@ -429,7 +426,6 @@ export function useMapDrawing(emit: EmitFn) {
       drawnItems.value?.addLayer(layer);
     });
 
-    // When a shape is edited
     map.on("pm:edit", (e) => {
       const layer = e.layer as any;
       const feature = layerToFeature(layer);
@@ -444,7 +440,6 @@ export function useMapDrawing(emit: EmitFn) {
       }
     });
 
-    // When a polygon is cut into one or more parts
     map.on("pm:cut", (e) => {
       const originalLayer = (e as any).originalLayer as any;
       const newLayer = (e as any).layer as any;
@@ -480,7 +475,6 @@ export function useMapDrawing(emit: EmitFn) {
       }
     });
 
-    // When a shape is deleted
     map.on("pm:remove", (e) => {
       const layer = e.layer as any;
       const featureId = layer.feature?.id;
@@ -511,21 +505,16 @@ export function useMapDrawing(emit: EmitFn) {
       deleteLassoSelectedLayers(e.selectedLayers || []);
     });
 
-    // When drawing starts
     map.on("pm:drawstart", (e) => {
       if (freehandActive) {
         stopFreehandDrawing(map);
       }
       activeDrawingMode.value = e.shape as DrawingMode;
-      // Disable map dragging during drawing
       map.dragging.disable();
     });
 
-    // When drawing ends
     map.on("pm:drawend", () => {
-      // Re-enable map dragging
       map.dragging.enable();
-      // Keep the mode active unless explicitly disabled
     });
   }
 
@@ -536,9 +525,7 @@ export function useMapDrawing(emit: EmitFn) {
     let geometry = null;
     let type = "polygon";
 
-    // Determine shape type and extract coordinates
     if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
-      // Point/Marker
       const latlng = layer.getLatLng();
       geometry = {
         type: "Point",
@@ -546,13 +533,11 @@ export function useMapDrawing(emit: EmitFn) {
       };
       type = "point";
     } else if (layer instanceof L.Circle) {
-      // Circle - store as polygon approximation
       const center = layer.getLatLng();
       const radius = layer.getRadius();
       geometry = circleToPolygon(center, radius);
       type = "zone";
     } else if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
-      // Polyline/Line
       const latlngs = layer.getLatLngs();
       geometry = {
         type: "LineString",
@@ -560,13 +545,11 @@ export function useMapDrawing(emit: EmitFn) {
       };
       type = "polyline";
     } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
-      // Polygon or Rectangle
       const latlngs = layer.getLatLngs() as any[];
 
       if (Array.isArray(latlngs) && latlngs.length > 0) {
         let ring = latlngs[0];
 
-        // Handle nested arrays (multi-polygon case)
         if (Array.isArray(ring) && ring.length > 0 && "lat" in ring[0]) {
           ring = latlngs;
         }
@@ -576,7 +559,6 @@ export function useMapDrawing(emit: EmitFn) {
           ll.lat,
         ]);
 
-        // Close ring if not already closed
         if (coords.length > 0) {
           const first = coords[0];
           const last = coords[coords.length - 1];
@@ -616,7 +598,7 @@ export function useMapDrawing(emit: EmitFn) {
     steps: number = 32,
   ) {
     const coords: number[][] = [];
-    const radiusLat = radiusMeters / 111320; // 1 degree latitude ≈ 111.32 km
+    const radiusLat = radiusMeters / 111320;
     const radiusLng =
       radiusMeters / (111320 * Math.cos((center.lat * Math.PI) / 180));
 
@@ -627,7 +609,6 @@ export function useMapDrawing(emit: EmitFn) {
       coords.push([lng, lat]);
     }
 
-    // Close ring
     coords.push(coords[0]);
 
     return {
@@ -642,30 +623,25 @@ export function useMapDrawing(emit: EmitFn) {
   function setDrawingMode(mode: DrawingMode) {
     if (!pmMapInstance) return;
 
-    // Stop freehand drawing if active
     if (freehandActive) {
       stopFreehandDrawing(pmMapInstance);
     }
 
-    // Disable all modes first
     pmMapInstance.pm.disableDraw();
 
     if (mode === null) {
       activeDrawingMode.value = null;
-      // Re-enable map dragging when exiting draw mode
       pmMapInstance.dragging.enable();
       disableRemovalLasso(pmMapInstance);
       return;
     }
 
-    // Enable freehand mode
     if (mode === "freehand") {
       activeDrawingMode.value = mode;
       startFreehandDrawing(pmMapInstance);
       return;
     }
 
-    // Enable the selected mode for Leaflet.pm
     const modeMap: Record<string, string> = {
       marker: "Marker",
       polyline: "Polyline",
@@ -690,8 +666,7 @@ export function useMapDrawing(emit: EmitFn) {
     features.forEach((feature) => {
       const layer = featureToLayer(feature);
       if (layer) {
-        // @ts-ignore - Layer type doesn't have feature property by default
-        layer.feature = feature;
+        (layer as FeatureBearingLayer).feature = feature;
         drawnItems.value?.addLayer(layer);
       }
     });
@@ -760,9 +735,10 @@ export function useMapDrawing(emit: EmitFn) {
     const features: Feature[] = [];
 
     if (drawnItems.value) {
-      drawnItems.value.eachLayer((layer: any) => {
-        if (layer.feature) {
-          features.push(layer.feature);
+      drawnItems.value.eachLayer((layer) => {
+        const featureLayer = layer as FeatureBearingLayer;
+        if (featureLayer.feature) {
+          features.push(featureLayer.feature);
         }
       });
     }

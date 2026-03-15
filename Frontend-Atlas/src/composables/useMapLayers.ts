@@ -5,7 +5,6 @@ import {
   toArray,
   getRadiusForZoom,
 } from "../utils/mapUtils";
-import { MAP_CONFIG } from "./useMapConfig.js";
 import { getMapElementType } from "../utils/featureTypes.js";
 
 type MapLayersProps = {
@@ -24,18 +23,14 @@ type Feature = {
 
 type FeatureLayer = L.Layer & {
   options?: any;
-  __atlas_originalStyle?: L.PathOptions;
   __atlas_onDown?: L.LeafletEventHandlerFn;
   __atlas_onPointerDown?: L.LeafletEventHandlerFn;
   __atlas_onClick?: L.LeafletEventHandlerFn;
   arrowheads?: (options: any) => void;
 };
 
-type ClickHandler = (featureId: string, isCtrlPressed: boolean) => void;
-
 class FeatureLayerManager {
   public layers = new Map<string, FeatureLayer>();
-  private clickHandler: ClickHandler | null = null;
   private map: L.Map | null = null;
 
   constructor(
@@ -50,10 +45,6 @@ class FeatureLayerManager {
         map.closePopup();
       }
     });
-  }
-
-  setClickHandler(handler: ClickHandler) {
-    this.clickHandler = handler;
   }
 
   private shouldBlockLeafletEvents() {
@@ -75,7 +66,7 @@ class FeatureLayerManager {
   addFeatureLayer(
     featureId: string | number,
     layer: FeatureLayer,
-    feature: any,
+    _feature: any,
   ) {
     const fid = String(featureId);
 
@@ -91,21 +82,11 @@ class FeatureLayerManager {
 
     this.layers.set(fid, layer);
 
-    if ((layer as any).setStyle && feature) {
-      layer.__atlas_originalStyle = {
-        color: feature.color || MAP_CONFIG.DEFAULT_STYLES.borderColor,
-        weight: 2,
-        fillColor: feature.color || MAP_CONFIG.DEFAULT_STYLES.fillColor,
-        fillOpacity: feature.opacity ?? MAP_CONFIG.DEFAULT_STYLES.opacity,
-      };
-    }
-
     if (layer instanceof L.CircleMarker) {
       this.allCircles.value.add(layer);
     }
 
-    // Always make layers clickable for multi-selection support
-    this.makeLayerClickable(fid, layer);
+    this.makeLayerClickable(layer);
 
     const visible =
       this.props.featureVisibility?.get(fid) ??
@@ -120,9 +101,7 @@ class FeatureLayerManager {
     }
   }
 
-  makeLayerClickable(featureId: string, layer: FeatureLayer) {
-    const fid = String(featureId);
-
+  makeLayerClickable(layer: FeatureLayer) {
     if (layer.options) {
       layer.options.interactive = true;
       layer.options.bubblingMouseEvents = true;
@@ -133,28 +112,17 @@ class FeatureLayerManager {
     if (layer.__atlas_onPointerDown)
       layer.off("pointerdown", layer.__atlas_onPointerDown);
 
-    const markDom = (oe: any) => {
-      const t = oe?.target;
-      if (!t) return;
-      t._atlasFeatureId = fid;
-      if (t.parentElement) t.parentElement._atlasFeatureId = fid;
-    };
-
     layer.__atlas_onDown = (e) => {
-      const oe = (e as any).originalEvent;
-      markDom(oe);
-
       if (this.shouldBlockLeafletEvents()) {
+        const oe = (e as any).originalEvent;
         oe?.stopPropagation();
         oe?.stopImmediatePropagation?.();
       }
     };
 
     layer.__atlas_onPointerDown = (e) => {
-      const oe = (e as any).originalEvent;
-      markDom(oe);
-
       if (this.shouldBlockLeafletEvents()) {
+        const oe = (e as any).originalEvent;
         oe?.stopPropagation();
         oe?.stopImmediatePropagation?.();
       }
@@ -162,15 +130,6 @@ class FeatureLayerManager {
 
     layer.__atlas_onClick = (e) => {
       (e as any).originalEvent?.stopPropagation();
-
-      if (this.shouldBlockLeafletEvents()) return;
-
-      if (this.clickHandler) {
-        const isCtrlPressed =
-          (e as any).originalEvent?.ctrlKey ||
-          (e as any).originalEvent?.metaKey;
-        this.clickHandler(fid, isCtrlPressed);
-      }
     };
 
     layer.on("mousedown", layer.__atlas_onDown);
