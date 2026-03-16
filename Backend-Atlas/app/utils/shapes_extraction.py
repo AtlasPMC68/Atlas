@@ -238,8 +238,8 @@ def reconstruct_shapes_debug(
 # ---------------------------------------------------------------------------
 
 
-def _build_feature_properties(shape: Dict, idx: int, **extra) -> Dict:
-    """Shared base properties for every GeoJSON feature."""
+def _build_normalized_feature_properties(shape: Dict, idx: int) -> Dict:
+    """Properties for normalized GeoJSON features ([0,1]² space)."""
     return {
         "shape_id": idx,
         "area": shape["area"],
@@ -255,7 +255,28 @@ def _build_feature_properties(shape: Dict, idx: int, **extra) -> Dict:
         "name": f"Shape {idx}",
         "start_date": "1700-01-01",
         "end_date": "2026-01-01",
-        **extra,
+        "is_normalized": True,
+    }
+
+
+def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
+    """Properties for pixel-space GeoJSON features (original image coordinates)."""
+    return {
+        "shape_id": idx,
+        "area": shape["area"],
+        "perimeter": shape["perimeter"],
+        "aspect_ratio": shape["aspect_ratio"],
+        "solidity": shape["solidity"],
+        "extent": shape["extent"],
+        "num_vertices": shape["num_vertices"],
+        "color_rgb": shape.get("color_rgb"),
+        "color_name": shape.get("color_name"),
+        "color_hex": shape.get("color_hex"),
+        "mapElementType": "shape",
+        "name": f"Shape {idx}",
+        "start_date": "1700-01-01",
+        "end_date": "2026-01-01",
+        "is_normalized": False,
     }
 
 
@@ -298,7 +319,7 @@ def create_normalized_geojson_features(
         features.append(
             {
                 "type": "Feature",
-                "properties": _build_feature_properties(shape, idx, is_normalized=True),
+                "properties": _build_normalized_feature_properties(shape, idx),
                 "geometry": polygon.__geo_interface__,
             }
         )
@@ -323,9 +344,7 @@ def create_pixel_geojson_features(
         features.append(
             {
                 "type": "Feature",
-                "properties": _build_feature_properties(
-                    shape, idx, is_pixel_space=True
-                ),
+                "properties": _build_pixel_feature_properties(shape, idx),
                 "geometry": {"type": "Polygon", "coordinates": [coords]},
             }
         )
