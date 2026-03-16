@@ -40,20 +40,6 @@ export function normalizeFeatureType(feature: any) {
     return f;
   }
 
-  const legacy = typeof f.type === "string" ? f.type : null;
-
-  if (legacy) {
-    if (SHAPE_KINDS.has(legacy)) {
-      f.properties.mapElementType = "shape";
-      if (!f.properties.shapeKind) f.properties.shapeKind = legacy;
-    } else if (legacy === "polygon") {
-      f.properties.mapElementType = "zone";
-    } else {
-      f.properties.mapElementType = legacy;
-    }
-    return f;
-  }
-
   const gtype = f.geometry?.type;
   if (gtype === "Point") f.properties.mapElementType = "point";
   else if (gtype === "LineString") f.properties.mapElementType = "polyline";

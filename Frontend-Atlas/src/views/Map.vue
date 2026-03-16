@@ -44,6 +44,8 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 import { normalizeFeatures } from "../utils/featureTypes";
 import keycloak from "../keycloak";
 
+type SaveAsPayload = Pick<MapData, "title" | "description" | "isPrivate">;
+
 const route = useRoute();
 const mapId = ref(route.params.mapId as string);
 const features = ref<Feature[]>([]);
@@ -101,7 +103,7 @@ function saveMapAs() {
   showSaveAsModal.value = true;
 }
 
-async function handleSaveAs(map: MapData) {
+async function handleSaveAs(map: SaveAsPayload) {
   if (!keycloak.token || !currentUser.value) {
     throw new Error("No authentication token or user available");
   }
@@ -130,6 +132,7 @@ async function handleSaveAs(map: MapData) {
     }
 
     await response.json();
+    showSaveAsModal.value = false;
   } catch (err) {
     console.error("Error while saving map:", err);
   }

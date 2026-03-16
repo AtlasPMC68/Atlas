@@ -2,10 +2,10 @@ import { ref } from "vue";
 import type { Ref } from "vue";
 import L from "leaflet";
 import { toArray, getRadiusForZoom } from "../utils/mapUtils";
-import { getMapElementType } from "../utils/featureTypes.ts";
+import { getMapElementType } from "../utils/featureTypes";
 
 type MapLayersProps = {
-  featureVisibility?: Map<string | number, boolean>;
+  featureVisibility?: Ref<Map<string | number, boolean> | undefined>;
 };
 
 type Feature = {
@@ -56,8 +56,12 @@ class FeatureLayerManager {
       typeof pm.globalDragModeEnabled === "function"
         ? pm.globalDragModeEnabled()
         : false;
+    const isRemovalActive =
+      typeof pm.globalRemovalModeEnabled === "function"
+        ? pm.globalRemovalModeEnabled()
+        : false;
 
-    return Boolean(isEditActive || isDragActive);
+    return Boolean(isEditActive || isDragActive || isRemovalActive);
   }
 
   addFeatureLayer(
@@ -85,9 +89,8 @@ class FeatureLayerManager {
 
     this.makeLayerClickable(layer);
 
-    const visible =
-      this.props.featureVisibility?.get(fid) ??
-      this.props.featureVisibility?.get(featureId);
+    const visMap = this.props.featureVisibility?.value;
+    const visible = visMap?.get(fid) ?? visMap?.get(featureId);
     const shouldShow = visible === undefined ? true : Boolean(visible);
 
     if (shouldShow && this.map && !this.map.hasLayer(layer)) {
@@ -144,6 +147,22 @@ class FeatureLayerManager {
     } else {
       if (this.map.hasLayer(layer)) this.map.removeLayer(layer);
     }
+  }
+
+  removeFeature(featureId: string | number, map: L.Map | null = this.map) {
+    const fid = String(featureId);
+    const layer = this.layers.get(fid);
+    if (!layer) return;
+
+    if (layer instanceof L.CircleMarker) {
+      this.allCircles.value.delete(layer);
+    }
+
+    if (map && map.hasLayer(layer)) {
+      map.removeLayer(layer);
+    }
+
+    this.layers.delete(fid);
   }
 
   clearAllFeatures(map: L.Map | null) {
@@ -344,7 +363,7 @@ class MapLayersService {
       if (name) line.bindPopup(name);
 
       const elementType = getMapElementType(feature);
-      const visible = this.props.featureVisibility?.get(String(feature.id));
+      const visible = this.props.featureVisibility?.value?.get(String(feature.id));
       const shouldShow = visible === undefined ? true : Boolean(visible);
 
       if (
@@ -409,11 +428,7 @@ class MapLayersService {
 
     previousIds.forEach((oldId) => {
       if (!currentIds.has(oldId)) {
-        const layer = this.featureLayerManager.layers.get(oldId);
-        if (layer && map.hasLayer(layer)) {
-          map.removeLayer(layer);
-        }
-        this.featureLayerManager.layers.delete(oldId);
+        this.featureLayerManager.removeFeature(oldId, map);
       }
     });
 

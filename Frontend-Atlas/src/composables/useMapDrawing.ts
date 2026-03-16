@@ -563,6 +563,15 @@ class MapDrawingService {
     });
   }
 
+  private setBoxZoomForRemovalMode(map: L.Map, isRemovalModeEnabled: boolean) {
+    if (!map.boxZoom) return;
+    if (isRemovalModeEnabled) {
+      map.boxZoom.disable();
+      return;
+    }
+    map.boxZoom.enable();
+  }
+
   private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
       const layer = e.layer as any;
@@ -638,6 +647,8 @@ class MapDrawingService {
     });
 
     map.on("pm:globalremovalmodetoggled", (e: { enabled: boolean }) => {
+      this.setBoxZoomForRemovalMode(map, e.enabled);
+
       if (e.enabled) {
         if (this.freehandActive) {
           this.stopFreehandDrawing(map);
@@ -649,6 +660,11 @@ class MapDrawingService {
 
       this.disableRemovalLasso(map);
     });
+
+    this.setBoxZoomForRemovalMode(
+      map,
+      Boolean(map.pm?.globalRemovalModeEnabled?.()),
+    );
 
     map.on("pm:lasso-select", (e: { selectedLayers: L.Layer[] }) => {
       if (!map.pm?.globalRemovalModeEnabled?.()) {

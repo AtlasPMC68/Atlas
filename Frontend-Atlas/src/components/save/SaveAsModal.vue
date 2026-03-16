@@ -71,14 +71,20 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue";
+import type { MapData } from "../../typescript/map";
 
 const title = ref("");
 const description = ref("");
 const access_level = ref("private");
 
-const emit = defineEmits(["save", "cancel"]);
+type SaveAsPayload = Pick<MapData, "title" | "description" | "isPrivate">;
+
+const emit = defineEmits<{
+  (e: "save", payload: SaveAsPayload): void;
+  (e: "cancel"): void;
+}>();
 
 function handleSubmit() {
   if (!title.value.trim()) return;
@@ -86,7 +92,7 @@ function handleSubmit() {
   emit("save", {
     title: title.value.trim(),
     description: description.value.trim(),
-    access_level: access_level.value,
+    isPrivate: access_level.value === "private",
   });
 }
 </script>

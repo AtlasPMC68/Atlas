@@ -6,23 +6,23 @@
 </template>
 
 <script setup>
-import { onMounted, watch, computed, onBeforeUnmount, ref } from "vue";
+import { onMounted, watch, computed, onBeforeUnmount, ref, toRef } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 
-import { useMapLayers } from "../composables/useMapLayers.ts";
-import { useMapDrawing } from "../composables/useMapDrawing.ts";
+import { useMapLayers } from "../composables/useMapLayers";
+import { useMapDrawing } from "../composables/useMapDrawing";
 
 const props = defineProps({
   features: Array,
   featureVisibility: Map,
 });
 
-const emit = defineEmits(["create", "edit", "remove"]);
+const emit = defineEmits(["feature-created", "feature-updated", "feature-deleted"]);
 const drawing = useMapDrawing(emit);
-const layers = useMapLayers({ featureVisibility: props.featureVisibility });
+const layers = useMapLayers({ featureVisibility: toRef(props, 'featureVisibility') });
 const selectedYear = ref(1740);
 const selectedYearModel = computed({
   get: () => selectedYear.value,
@@ -51,10 +51,11 @@ function renderAllAndRebind() {
 
 onMounted(() => {
   map = L.map("map", {
-    boxZoom: false,
+    zoomControl: false,
   }).setView([52.9399, -73.5491], 5);
   layers.initializeBaseLayers(map);
   drawing.initializeDrawing(map);
+  L.control.zoom({ position: "topright" }).addTo(map);
 
   renderAllAndRebind();
 });
