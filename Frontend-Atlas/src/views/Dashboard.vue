@@ -49,7 +49,7 @@ async function fetchMapsAndRender() {
       image: "/images/default.jpg",
     }));
   } catch (err) {
-    throw new Error("Error while fetching the maps:", err);
+    console.error("Error while fetching the maps:", err);
   }
 }
 </script>

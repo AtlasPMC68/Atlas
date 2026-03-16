@@ -47,18 +47,15 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 import { normalizeFeatures } from "../utils/featureTypes";
 import keycloak from "../keycloak";
 
-<<<<<<< HEAD
 type SaveAsPayload = Pick<MapData, "title" | "description" | "isPrivate">;
-=======
+
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   const { features: normalizedFeatures, featureVisibility: normalizedFeatureVisibility } =
     normalizeFeatures(updatedFeatures);
 
-  // Update local reactive state so the UI and persistence logic see the latest map state
   features.value = normalizedFeatures;
   featureVisibility.value = normalizedFeatureVisibility;
 };
->>>>>>> 8c4ef867dc0aa220ae0a06a7721e083247f616c0
 
 const route = useRoute();
 const mapId = ref(route.params.mapId as string);
