@@ -24,7 +24,7 @@ def extract_shapes(
     max_area: int = 100000,
     threshold_value: int = 127,
     min_confidence: float = 0.6,
-    debug: bool = False,
+    debug: bool = True,
 ):
     image = preprocessing.read_image(image_path)
     if image is None:
@@ -42,6 +42,16 @@ def extract_shapes(
     image_uint8 = (image_denoised * 255).astype(np.uint8)
 
     image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
+
+    legend_bbox = detect_legend_bbox(image_bgr, debug_dir=image_output_dir if debug else None)
+
+    legend_swatches = []
+    if legend_bbox is not None:
+        legend_swatches = detect_legend_swatches(
+            image_bgr,
+            legend_bbox,
+            debug_dir=image_output_dir if debug else None,
+        )
 
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
 
@@ -146,6 +156,10 @@ def extract_shapes(
         "total_shapes": len(final_shapes_with_contours),
         "shapes": final_shapes,
         "normalized_features": normalized_features,
+        "legend": {
+            "bbox": legend_bbox,
+            "swatches": legend_swatches,
+        },  
     }
 
 
@@ -368,6 +382,195 @@ def extract_contour_properties(
             },
         },
     }
+
+def _rect_from_contour(contour: np.ndarray, min_area: float) -> Optional[Dict]:
+    area = cv2.contourArea(contour)
+    if area < min_area:
+        return None
+
+    peri = cv2.arcLength(contour, True)
+    approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+
+    if len(approx) != 4 or not cv2.isContourConvex(approx):
+        return None
+
+    x, y, w, h = cv2.boundingRect(approx)
+    if w <= 0 or h <= 0:
+        return None
+
+    extent = area / float(w * h)
+    if extent < 0.85:
+        return None
+
+    return {
+        "contour": contour,
+        "approx": approx,
+        "bbox": (x, y, w, h),
+        "area": float(area),
+        "extent": float(extent),
+        "aspect_ratio": float(w / h),
+    }
+
+
+def detect_legend_bbox(
+    image_bgr: np.ndarray,
+    *,
+    min_area_ratio: float = 0.002,
+    max_area_ratio: float = 0.25,
+    debug_dir: Optional[str] = None,
+) -> Optional[Tuple[int, int, int, int]]:
+    """
+    Detect the most likely legend rectangle bbox (x,y,w,h).
+    Uses edge-based rectangle detection + heuristic scoring.
+    """
+    h, w = image_bgr.shape[:2]
+    img_area = float(h * w)
+
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+
+    # Close gaps in rectangle borders
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=1)
+
+    if debug_dir is not None:
+        cv2.imwrite(os.path.join(debug_dir, "DEBUG_legend_edges.png"), edges)
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    min_area = img_area * min_area_ratio
+    max_area = img_area * max_area_ratio
+
+    rects = []
+    for c in contours:
+        info = _rect_from_contour(c, min_area=min_area)
+        if info is None:
+            continue
+        if info["area"] > max_area:
+            continue
+        rects.append(info)
+
+    if not rects:
+        return None
+
+    def score_candidate(bbox: Tuple[int, int, int, int]) -> float:
+        x, y, bw, bh = bbox
+        roi = image_bgr[y:y+bh, x:x+bw]
+        if roi.size == 0:
+            return -1e9
+
+        roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        roi_edges = cv2.Canny(roi_gray, 50, 150)
+        edge_density = float(np.mean(roi_edges > 0))  # [0..1]
+
+        # Count small rectangle-like blobs inside ROI (legend often has swatches/boxes)
+        th = cv2.adaptiveThreshold(
+            roi_gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 7
+        )
+        th = cv2.morphologyEx(th, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8), iterations=1)
+        cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        roi_area = float(bw * bh)
+        small_rects = 0
+        for cc in cnts:
+            a = cv2.contourArea(cc)
+            if a < roi_area * 0.001 or a > roi_area * 0.20:
+                continue
+            peri = cv2.arcLength(cc, True)
+            approx = cv2.approxPolyDP(cc, 0.03 * peri, True)
+            if len(approx) == 4:
+                small_rects += 1
+
+        # Tune weights here
+        return 2.0 * edge_density + 0.05 * small_rects
+
+    best_bbox = None
+    best_score = -1e9
+    for r in rects:
+        s = score_candidate(r["bbox"])
+        if s > best_score:
+            best_score = s
+            best_bbox = r["bbox"]
+
+    if best_bbox is None:
+        return None
+
+    if debug_dir is not None:
+        x, y, bw, bh = best_bbox
+        roi = image_bgr[y:y+bh, x:x+bw]
+        cv2.imwrite(os.path.join(debug_dir, "DEBUG_legend_roi.png"), roi)
+
+    return best_bbox
+
+
+def detect_legend_swatches(
+    image_bgr: np.ndarray,
+    legend_bbox: Tuple[int, int, int, int],
+    *,
+    debug_dir: Optional[str] = None,
+) -> List[Dict]:
+    """
+    Detect colored sub-rectangles (swatches) inside the legend ROI.
+    Returns list of {bbox, mean_bgr}.
+    """
+    x, y, w, h = legend_bbox
+    roi = image_bgr[y:y+h, x:x+w]
+
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    H, S, V = cv2.split(hsv)
+
+    # "Colored" pixels: high saturation, not too dark
+    mask = ((S > 40) & (V > 40)).astype(np.uint8) * 255
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8), iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=1)
+
+    if debug_dir is not None:
+        cv2.imwrite(os.path.join(debug_dir, "DEBUG_legend_color_mask.png"), mask)
+
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    swatches: List[Dict] = []
+    roi_area = float(w * h)
+
+    for c in cnts:
+        a = cv2.contourArea(c)
+        if a < roi_area * 0.002 or a > roi_area * 0.30:
+            continue
+
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.03 * peri, True)
+        if len(approx) != 4:
+            continue
+
+        bx, by, bw, bh = cv2.boundingRect(approx)
+        extent = a / float(bw * bh + 1e-6)
+        if extent < 0.75:
+            continue
+
+        cmask = np.zeros((h, w), dtype=np.uint8)
+        cv2.drawContours(cmask, [c], -1, 255, thickness=cv2.FILLED)
+        mean_bgr = cv2.mean(roi, mask=cmask)[:3]
+
+        swatches.append(
+            {
+                "bbox": (x + bx, y + by, bw, bh),
+                "mean_bgr": mean_bgr,
+                "area": float(a),
+            }
+        )
+
+    # Sort top-to-bottom then left-to-right (useful for pairing with text later)
+    swatches.sort(key=lambda s: (s["bbox"][1], s["bbox"][0]))
+
+    if debug_dir is not None:
+        dbg = image_bgr.copy()
+        for i, s in enumerate(swatches, 1):
+            sx, sy, sw, sh = s["bbox"]
+            cv2.rectangle(dbg, (sx, sy), (sx + sw, sy + sh), (0, 255, 0), 2)
+            cv2.putText(dbg, str(i), (sx, sy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        cv2.imwrite(os.path.join(debug_dir, "DEBUG_legend_swatches.png"), dbg)
+
+    return swatches
 
 
 def save_shape_image(

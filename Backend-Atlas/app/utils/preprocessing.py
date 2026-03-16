@@ -1,7 +1,6 @@
 import numpy as np
 import skimage
-
-
+from typing import Tuple, Optional
 
 def read_image(image_path) -> np.ndarray:
     """
@@ -13,7 +12,6 @@ def read_image(image_path) -> np.ndarray:
     # skimage.io.imread returns an image with channels in RGB order by default
     img = skimage.io.imread(image_path)
     if img is None:
-        raise IOError(f"Could not read image for given path: {image_path}")
         raise IOError(f"Could not read image for given path: {image_path}")
 
     # Reads the saved image and normalize to float64
