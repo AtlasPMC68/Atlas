@@ -29,7 +29,11 @@
       </div>
     </div>
 
-    <SaveAsModal v-if="showSaveAsModal" @save="handleSaveAs" @cancel="showSaveAsModal = false" />
+    <SaveAsModal
+      v-if="showSaveAsModal"
+      @save="handleSaveAs"
+      @cancel="showSaveAsModal = false"
+    />
   </div>
 </template>
 
@@ -50,8 +54,10 @@ import keycloak from "../keycloak";
 type SaveAsPayload = Pick<MapData, "title" | "description" | "isPrivate">;
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
-  const { features: normalizedFeatures, featureVisibility: normalizedFeatureVisibility } =
-    normalizeFeatures(updatedFeatures);
+  const {
+    features: normalizedFeatures,
+    featureVisibility: normalizedFeatureVisibility,
+  } = normalizeFeatures(updatedFeatures);
 
   features.value = normalizedFeatures;
   featureVisibility.value = normalizedFeatureVisibility;
@@ -81,7 +87,9 @@ function reconcileVisibility(list: Feature[]) {
 
 async function loadInitialFeatures() {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`);
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`,
+    );
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = await res.json();
