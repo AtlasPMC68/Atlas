@@ -21,6 +21,18 @@ const SHAPE_KINDS = new Set([
   "oval",
 ]);
 
+const LEGACY_MAP_ELEMENT_TYPES = new Set<string>([
+  // Canonical non-shape map element types
+  "point",
+  "zone",
+  "polyline",
+  "arrow",
+  // Legacy polygon value mapped to "zone"
+  "polygon",
+  // Shape kinds (these will be normalized to mapElementType = "shape")
+  ...SHAPE_KINDS,
+]);
+
 export function normalizeFeatureType(feature: any) {
   if (!feature || typeof feature !== "object") return feature;
 
@@ -36,6 +48,24 @@ export function normalizeFeatureType(feature: any) {
     if (SHAPE_KINDS.has(current)) {
       f.properties.mapElementType = "shape";
       if (!f.properties.shapeKind) f.properties.shapeKind = current;
+    }
+    return f;
+  }
+
+  const legacy =
+    typeof f.type === "string" && LEGACY_MAP_ELEMENT_TYPES.has(f.type)
+      ? f.type
+      : null;
+
+  if (legacy) {
+    if (SHAPE_KINDS.has(legacy)) {
+      f.properties.mapElementType = "shape";
+      if (!f.properties.shapeKind) f.properties.shapeKind = legacy;
+    } else if (legacy === "polygon") {
+      f.properties.mapElementType = "zone";
+    } else {
+      // Other known legacy values (point, zone, polyline, arrow)
+      f.properties.mapElementType = legacy;
     }
     return f;
   }
