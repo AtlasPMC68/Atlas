@@ -46,21 +46,15 @@ import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
 import { MapData } from "../typescript/map";
-import { camelToSnake } from "../utils/utils";
+import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
-import { normalizeFeatures } from "../utils/featureTypes";
 import keycloak from "../keycloak";
 
 type SaveAsPayload = Pick<MapData, "title" | "description" | "isPrivate">;
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
-  const {
-    features: normalizedFeatures,
-    featureVisibility: normalizedFeatureVisibility,
-  } = normalizeFeatures(updatedFeatures);
-
-  features.value = normalizedFeatures;
-  featureVisibility.value = normalizedFeatureVisibility;
+  features.value = updatedFeatures;
+  reconcileVisibility(updatedFeatures);
 };
 
 const route = useRoute();
@@ -92,11 +86,10 @@ async function loadInitialFeatures() {
     );
     if (!res.ok) throw new Error("Failed to fetch features");
 
-    const allFeatures = await res.json();
-    const normalized = normalizeFeatures(allFeatures) as Feature[];
+    const allFeatures = snakeToCamel(await res.json()) as Feature[];
 
-    features.value = normalized;
-    reconcileVisibility(normalized);
+    features.value = allFeatures;
+    reconcileVisibility(allFeatures);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
   }

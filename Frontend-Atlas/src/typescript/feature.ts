@@ -6,15 +6,22 @@ export interface Feature {
   properties: FeatureProperties;
   createdAt: string;
   updatedAt: string;
+  name: string;
+  color: string;
+  opacity: number;
+  strokeWidth: number;
 }
 
-export type MapElementType = "point" | "zone" | "arrow" | "shape";
+export type MapElementType = "point" | "zone" | "polyline" | "arrow" | "shape";
+
+export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
 export interface FeatureProperties {
   name: string;
   colorName: string;
   colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   mapElementType: MapElementType;
+  shapeKind?: ShapeKind;
   startDate: string; // Format: "YYYY-MM-DD"
   endDate: string; // Format: "YYYY-MM-DD"
 }
