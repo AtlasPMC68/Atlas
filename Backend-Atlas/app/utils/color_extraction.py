@@ -8,6 +8,7 @@ import imageio.v3 as iio
 import skimage.util
 import skimage.restoration
 
+from skimage import exposure
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
 from skimage.morphology import opening, disk
 from skimage.util import img_as_float
@@ -24,7 +25,6 @@ from . import preprocessing
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
-
 
 
 def load_image_rgb_alpha_mask(
@@ -67,6 +67,7 @@ def load_image_rgb_alpha_mask(
 
     return rgb, alpha, opaque_mask
 
+
 def _debug_save_rgb(
     img_rgb: np.ndarray,
     debug_dir: str,
@@ -79,6 +80,7 @@ def _debug_save_rgb(
     img_u8 = (img * 255.0 + 0.5).astype(np.uint8)
     out_path = os.path.join(debug_dir, f"{step_idx:02d}_{step_name}.png")
     iio.imwrite(out_path, img_u8)
+
 
 def preprocess(
     rgb: np.ndarray,
@@ -159,13 +161,15 @@ def preprocess(
                 work, percentile=wb_percentile, mask=mask
             )
         if debug:
-            _debug_save_rgb(work, debug_dir, step, f"03_white_balance_{white_balance_method}")
+            _debug_save_rgb(
+                work, debug_dir, step, f"03_white_balance_{white_balance_method}"
+            )
             step += 1
     elif debug:
         _debug_save_rgb(work, debug_dir, step, "03_white_balance_skipped")
         step += 1
 
-    # 4) Denoise 
+    # 4) Denoise
     if enable_denoise:
         if denoise_method == "bilateral":
             work = skimage.restoration.denoise_bilateral(
@@ -192,23 +196,23 @@ def preprocess(
             work_srgb = preprocessing.linear_to_srgb(work)
         else:
             work_srgb = work
-        
+
         work_srgb = np.clip(work_srgb, 0.0, 1.0)
-        lab = skimage.color.rgb2lab(work_srgb)
-        
+        lab = rgb2lab(work_srgb)
+
         # Apply CLAHE directly on LAB L channel
         l = lab[:, :, 0] / 100.0
-        l_clahe = skimage.exposure.equalize_adapthist(
-            l, 
-            kernel_size=clahe_kernel_size, 
-            clip_limit=clahe_clip_limit
+        l_clahe = exposure.equalize_adapthist(
+            l,
+            kernel_size=clahe_kernel_size,
+            clip_limit=clahe_clip_limit,
         )
         lab[:, :, 0] = l_clahe * 100.0
-        
+
         # Convert back to RGB
-        rgb_srgb = skimage.color.lab2rgb(lab)
+        rgb_srgb = lab2rgb(lab)
         rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
-        
+
         if debug:
             _debug_save_rgb(rgb_srgb, debug_dir, step, "05_clahe_on_lab")
             step += 1
@@ -219,7 +223,7 @@ def preprocess(
         else:
             rgb_srgb = work
         rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
-        
+
         if debug:
             _debug_save_rgb(rgb_srgb, debug_dir, step, "05_back_to_srgb_no_clahe")
             step += 1
@@ -264,7 +268,8 @@ def preprocess(
     if debug:
         _debug_save_rgb(rgb_out, debug_dir, step, "99_output_rgb")
 
-    return np.clip(work, 0.0, 1.0), mask
+    # Return sRGB (not linear) for downstream LAB computation
+    return rgb_out, mask
 
 
 def compute_lab(rgb: np.ndarray) -> np.ndarray:
@@ -332,11 +337,12 @@ def dominant_bins_lab(
 
     return dom
 
+
 def select_colors_by_ratio_and_distance(
     bins: List[Dict],
     dominant_ratio: float = 0.05,
     accent_min_ratio: float = 0.001,
-    accent_min_deltaE_from_selected: float = 18.0, 
+    accent_min_deltaE_from_selected: float = 18.0,
     min_colors_fallback: Optional[int] = None,
     merge_similar: bool = True,
     merge_deltaE_threshold: float = 5.0,
@@ -358,7 +364,9 @@ def select_colors_by_ratio_and_distance(
         for d in selected
     ]
 
-    candidates = [b for b in bins if b["ratio"] < dominant_ratio and b["ratio"] >= accent_min_ratio]
+    candidates = [
+        b for b in bins if b["ratio"] < dominant_ratio and b["ratio"] >= accent_min_ratio
+    ]
     candidates.sort(key=lambda e: -e["ratio"])
 
     for c in candidates:
@@ -401,7 +409,10 @@ def select_colors_by_ratio_and_distance(
 
     return selected
 
-def merge_similar_colors(selected: List[Dict], merge_deltaE_threshold: float = 5.0) -> List[Dict]:
+
+def merge_similar_colors(
+    selected: List[Dict], merge_deltaE_threshold: float = 5.0
+) -> List[Dict]:
     """
     Merge colors that are too similar (ΔE < threshold).
     Representative = highest ratio among merged, ratios are summed.
@@ -445,6 +456,7 @@ def merge_similar_colors(selected: List[Dict], merge_deltaE_threshold: float = 5
     merged.sort(key=lambda e: -e["ratio"])
     return merged
 
+
 def build_exclusive_masks_by_nearest_center(
     lab: np.ndarray,
     opaque_mask: np.ndarray,
@@ -487,6 +499,7 @@ def lab_center_to_rgb_u8(
     rgb_u8 = np.clip(np.round(rgb[0, 0] * 255.0), 0, 255).astype(np.uint8)
     return int(rgb_u8[0]), int(rgb_u8[1]), int(rgb_u8[2])
 
+
 def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
     """
     Find the closest CSS4 color name for a given RGB tuple.
@@ -507,6 +520,7 @@ def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
             closest_name = name
 
     return closest_name
+
 
 def save_mask_png(mask_bool: np.ndarray, out_path: str) -> None:
     """
@@ -552,7 +566,9 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
     return unary_union(polygons)
 
 
-def build_normalized_feature(color_name: str, rgb: Tuple[int, int, int], merged_geometry: BaseGeometry) -> Dict:
+def build_normalized_feature(
+    color_name: str, rgb: Tuple[int, int, int], merged_geometry: BaseGeometry
+) -> Dict:
     """
     Build a normalized GeoJSON feature from a pixel-space geometry.
 
@@ -592,59 +608,48 @@ def build_normalized_feature(color_name: str, rgb: Tuple[int, int, int], merged_
         "geometry": normalized_geom.__geo_interface__,
     }
 
+
 def extract_colors(
-    image_path: str, 
+    image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     # -----------------------------
     # LAB binning (color candidates discovery)
     # -----------------------------
-
     top_n_bins: int = 200,
     # Maximum number of LAB bins kept after quantization.
     # Higher value → more candidate colors discovered (useful for complex maps).
     # Lower value → faster, but may miss rare colors (e.g. small symbols, stars).
-
     bin_L: float = 4.0,
     # Quantization step on the L (lightness) axis.
     # Larger value → bins cover wider lightness range (fewer, broader colors).
     # Smaller value → more precise separation of light/dark variants.
-
     bin_a: float = 8.0,
     # Quantization step on the a (green–red) axis.
     # Larger value → merge nearby reds/greens into same bin.
     # Smaller value → finer separation of hue variations.
-
     bin_b: float = 8.0,
     # Quantization step on the b (blue–yellow) axis.
     # Larger value → merge nearby blues/yellows.
     # Smaller value → more sensitive to color differences.
-
-
     # -----------------------------
     # Color selection logic (which bins become layers)
     # -----------------------------
-
-    dominant_ratio: float = 0.001, # Minimum pixel ratio for a color to be considered dominant.
-    accent_min_ratio: float = 0.00005, # Minimum ratio for a non-dominant (accent) color to be considered.
-    accent_min_deltaE_from_selected: float = 20.0, # Minimum ΔE distance from ALL dominant colors for an accent to be accepted.
-    min_colors_fallback: Optional[int] = None, # If set, ensures at least this many colors are selected.
-    merge_similar: bool = True, # If True, merges selected colors that are perceptually too close (ΔE-based).
-
-    merge_deltaE_threshold: float = 12.0,
+    dominant_ratio: float = 0.011,  # Minimum pixel ratio for a color to be considered dominant.
+    accent_min_ratio: float = 0.1,  # Minimum ratio for a non-dominant (accent) color to be considered.
+    accent_min_deltaE_from_selected: float = 20.0,  # Minimum ΔE distance from ALL dominant colors for an accent to be accepted.
+    min_colors_fallback: Optional[int] = None,  # If set, ensures at least this many colors are selected.
+    merge_similar: bool = True,  # If True, merges selected colors that are perceptually too close (ΔE-based).
+    merge_deltaE_threshold: float = 12.0, #try with 10
     # ΔE threshold below which two selected colors are merged.
     # Larger value → more aggressive merging.
     # Smaller value → keep more distinct but similar-looking layers.
-
-
     # -----------------------------
     # Mask construction (pixel assignment)
     # -----------------------------
-
     mask_deltaE: float = 10.0,
     # Maximum ΔE distance for a pixel to be assigned to a color layer.
     # Larger value → thicker, more inclusive masks.
     # Smaller value → tighter masks, may leave holes/unassigned pixels.
-
 ) -> Dict:
     """
     Extract exclusive color layers using:
@@ -664,43 +669,45 @@ def extract_colors(
 
     debug = True
 
-    # 0) Load raw image (keeps alpha mask)
+    # 0) Prepare output directory
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
 
+    if debug:
+        os.makedirs(image_output_dir, exist_ok=True)
+
+    # 1) Load raw image and alpha mask
     rgb_u8, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
     rgb = img_as_float(rgb_u8)
 
-    if debug:
-        os.makedirs(image_output_dir, exist_ok=True)    
-
-    # Preprocess full image for color extraction (keeps/updates mask)
+    # 2) Preprocess full image for color extraction (keeps/updates mask)
     rgb, opaque_mask = preprocess(
         rgb=rgb,
         opaque_mask=opaque_mask,
-        enable_linearize=True,          # Work in linear RGB for illumination-like ops
-        enable_flat_field=False,         # Flat-field in linear RGB
+        enable_linearize=True,  # Work in linear RGB for illumination-like ops
+        enable_flat_field=False,  # Flat-field in linear RGB
         flat_field_sigma=120.0,
-        enable_white_balance=False,      # WB in linear RGB (stats on mask)
+        enable_white_balance=False,  # WB in linear RGB (stats on mask)
         white_balance_method="percentile",
         wb_percentile=99.5,
-        enable_denoise=True,            # Denoise BEFORE CLAHE
+        enable_denoise=True,  # Denoise BEFORE CLAHE
         denoise_method="bilateral",
         bilateral_sigma_color=0.04,
         bilateral_sigma_spatial=2.0,
-        enable_clahe=False,              # CLAHE in LAB, but on sRGB input (handled by preprocess)
+        enable_clahe=False,  # CLAHE in LAB, but on sRGB input (handled by preprocess)
         clahe_clip_limit=0.005,
         clahe_kernel_size=(8, 8),
-        enable_percentile_norm=True,    # Do percentile normalization on sRGB (consistent with LAB next)
+        enable_percentile_norm=True,  # Do percentile normalization on sRGB (consistent with LAB next)
         norm_p_low=1.0,
         norm_p_high=99.0,
-        enable_background_mask=True,    # If you want to remove "paper"
-        bg_method="none",               # <-- keep your current behavior; set to "paper" to enable
+        enable_background_mask=True,  # If you want to remove "paper"
+        bg_method="none",  # <-- keep your current behavior; set to "paper" to enable
         paper_threshold_deltaE=10.0,
         debug=debug,
         debug_dir=image_output_dir,
     )
 
+    # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
 
@@ -710,17 +717,55 @@ def extract_colors(
 
     # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
     dom = dominant_bins_lab(
-        lab, opaque_mask, top_n=top_n, bin_L=bin_L, bin_a=bin_a, bin_b=bin_b
+        lab,
+        opaque_mask,
+        top_n=top_n_bins,
+        bin_L=bin_L,
+        bin_a=bin_a,
+        bin_b=bin_b,
+    )
+
+    # 5) Select colors (dominants + accents)
+    selected = select_colors_by_ratio_and_distance(
+        dom,
+        dominant_ratio=dominant_ratio,
+        accent_min_ratio=accent_min_ratio,
+        accent_min_deltaE_from_selected=accent_min_deltaE_from_selected,
+        min_colors_fallback=min_colors_fallback,
+        merge_similar=merge_similar,
+        merge_deltaE_threshold=merge_deltaE_threshold,
     )
 
     masks: Dict[str, str] = {}
     mask_paths: Dict[str, str] = {}
     ratios: Dict[str, float] = {}
     normalized_features: List[Dict] = []
-    normalized_features = []
-    pixel_features = []
+    pixel_features: List[Dict] = []
 
+    # Early exit if nothing was selected
+    if not selected:
+        return {
+            "colors_detected": [],
+            "masks": masks,
+            "mask_paths": mask_paths if debug else {},
+            "ratios": ratios,
+            "selected_bins": [],
+            "output_dir": image_output_dir,
+            "normalized_features": normalized_features,
+            "pixel_features": pixel_features,
+        }
+
+    # 6) Build exclusive masks by nearest LAB center
+    centers_lab = np.array(
+        [entry["lab_center"] for entry in selected], dtype=np.float64
+    )
+    best_idx, valid = build_exclusive_masks_by_nearest_center(
+        lab, opaque_mask, centers_lab, mask_deltaE
+    )
+
+    # 7) Build per-color masks and features
     color_index = 1
+    opening_radius: int = 1
     for k, entry in enumerate(selected):
         mask = (best_idx == k) & valid
 
@@ -730,8 +775,8 @@ def extract_colors(
         if not np.any(mask):
             continue
 
-        rgb_u8 = lab_center_to_rgb_u8(entry["lab_center"])
-        color_name = get_nearest_css4_color_name(rgb_u8)
+        rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
+        color_name = get_nearest_css4_color_name(rgb_u8_center)
         unique_color_name = f"{color_name}_{color_index}"
         L, a, b = entry["lab_center"]
 
@@ -749,11 +794,13 @@ def extract_colors(
             save_mask_png(mask, out_path)
             masks[unique_color_name] = out_path
             mask_paths[unique_color_name] = out_path
-        
+
         geom = mask_to_geometry(mask)
         if geom is not None:
-            feature = build_normalized_feature(unique_color_name, rgb_u8, geom)
-            normalized_features.append({"type": "FeatureCollection", "features": [feature]})
+            feature = build_normalized_feature(unique_color_name, rgb_u8_center, geom)
+            normalized_features.append(
+                {"type": "FeatureCollection", "features": [feature]}
+            )
 
         color_index += 1
 

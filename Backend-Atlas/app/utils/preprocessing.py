@@ -1,6 +1,6 @@
 import numpy as np
 import skimage
-
+from typing import Tuple, Optional
 
 def read_image(image_path) -> np.ndarray:
     """
