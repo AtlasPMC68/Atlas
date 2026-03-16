@@ -52,16 +52,13 @@ def process_map_extraction(
     self,
     filename: str,
     file_content: bytes,
-    map_id: str,
+    map_id: UUID,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
 ):
-    # Ensure we are working with a UUID instance inside the task
-    map_uuid = UUID(map_id)
-
     try:
         # Step 1: temp save
         self.update_state(
@@ -157,7 +154,7 @@ def process_map_extraction(
 
                     try:
                         asyncio.run(
-                            persist_city_feature(map_uuid, city_feature_collection)
+                            persist_city_feature(map_id, city_feature_collection)
                         )
                     except Exception as e:
                         logger.error(f"Failed to persist city token '{tok}': {e}")
@@ -189,15 +186,15 @@ def process_map_extraction(
                     georef_features = georeference_features_with_sift_points(
                         pixel_features, pixel_points, geo_points_lonlat
                     )
-                    asyncio.run(persist_features(map_uuid, georef_features))
+                    asyncio.run(persist_features(map_id, georef_features))
 
                 except Exception as e:
                     logger.error(
-                        f"SIFT georeferencing step failed for map {map_uuid}: {e}",
+                        f"SIFT georeferencing step failed for map {map_id}: {e}",
                         exc_info=True,
                     )
             elif normalized_features:
-                asyncio.run(persist_features(map_uuid, normalized_features))
+                asyncio.run(persist_features(map_id, normalized_features))
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
@@ -217,7 +214,7 @@ def process_map_extraction(
             shape_features = shapes_result["normalized_features"]
 
             # Persist shapes to database
-            asyncio.run(persist_features(map_uuid, shape_features))
+            asyncio.run(persist_features(map_id, shape_features))
 
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
@@ -301,7 +298,7 @@ def process_map_extraction(
 
 
 # TODO : Remove type Any
-async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
+async def persist_features(map_id: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
         for feature_collection in normalized_features:
             for feature in feature_collection.get("features", []):
@@ -312,24 +309,24 @@ async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, A
                 try:
                     await insert_feature_in_db(
                         db=db,
-                        map_id=map_uuid,
+                        map_id=map_id,
                         is_feature_collection=False,
                         data=feature_data,
                     )
                 except Exception as e:
                     logger.error(
-                        f"Failed to persist individual feature for map {map_uuid}: {str(e)}"
+                        f"Failed to persist individual feature for map {map_id}: {str(e)}"
                     )
 
 
-async def persist_city_feature(map_uuid: UUID, feature: dict[str, Any]):
+async def persist_city_feature(map_id: UUID, feature: dict[str, Any]):
     async with AsyncSessionLocal() as db:
         try:
             await insert_feature_in_db(
                 db=db,
-                map_id=map_uuid,
+                map_id=map_id,
                 is_feature_collection=False,
                 data=feature,
             )
         except Exception as e:
-            logger.error(f"Failed to persist city feature for map {map_uuid}: {str(e)}")
+            logger.error(f"Failed to persist city feature for map {map_id}: {str(e)}")

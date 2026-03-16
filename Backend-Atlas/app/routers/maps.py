@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
+from app.models.user import User
 from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
-from app.services.maps import create_map_in_db, delete_map_in_db
+from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
@@ -69,6 +70,31 @@ async def delete_map(
     except Exception as e:
         logger.error(f"Error deleting map: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete map")
+    
+@router.put("/{map_id}")
+async def update_map(
+    map_id: UUID,
+    request: MapCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    try:
+        updated_map = await update_map_in_db(
+            db=db,
+            map_id=map_id,
+            user_id=UUID(user_id),
+            title=request.title,
+            description=request.description,
+            is_private=request.is_private,
+        )
+        if not updated_map:
+            raise HTTPException(status_code=404, detail="Map not found or access denied")
+        return {"map_id": str(updated_map)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating map: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update map")
 
 @router.post("/upload")
 async def upload_and_process_map(
@@ -83,6 +109,18 @@ async def upload_and_process_map(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
+    try:
+        map_id = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+    
+    result = await session.execute(
+        select(Map).where(Map.id == map_id, Map.user_id == UUID(user_id))
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
     # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
@@ -131,7 +169,7 @@ async def upload_and_process_map(
         task = process_map_extraction.delay(
             file.filename,
             file_content,
-            str(map_id),
+            map_id,
             pixel_points_list,
             geo_points_list,
             enable_color_extraction,
@@ -214,11 +252,11 @@ async def get_extraction_results(task_id: str):
 @router.get("/features/{map_id}")
 async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
     try:
-        map_uuid = UUID(map_id)
+        map_id = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    result = await session.execute(select(Feature).where(Feature.map_id == map_uuid))
+    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
     features_rows = result.scalars().all()
 
     all_features = []
@@ -244,14 +282,30 @@ async def get_maps(
     if user_id:
         try:
             user_id = UUID(user_id)
-            query = select(Map).where(Map.user_id == user_id)
+            query = (
+                select(Map, User.username)
+                .join(User, Map.user_id == User.id, isouter=True)
+                .where(Map.user_id == user_id)
+                .order_by(Map.updated_at.desc())
+            )
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid user_id format")
     else:
-        query = select(Map).where(not_(Map.is_private))
+        query = (
+            select(Map, User.username)
+            .join(User, Map.user_id == User.id, isouter=True)
+            .where(not_(Map.is_private))
+            .order_by(Map.updated_at.desc())
+        )
 
     result = await session.execute(query)
-    maps = result.scalars().all()
+    rows = result.all()
+
+    maps = []
+    for map_obj, username in rows:
+        out = MapOut.model_validate(map_obj)
+        out.username = username
+        maps.append(out)
 
     return maps
 
