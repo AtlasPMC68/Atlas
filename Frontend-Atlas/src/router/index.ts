@@ -11,7 +11,6 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 
 const routes = [
   { path: "/", component: Home },
-  { path: "/demo", component: Map, meta: { requiresAuth: true } },
   {
     path: "/televersement/:mapId",
     component: ImportView,
