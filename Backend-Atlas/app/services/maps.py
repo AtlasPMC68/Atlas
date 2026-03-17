@@ -1,7 +1,8 @@
 # app/services/maps.py
 from uuid import UUID
-from datetime import date
+from datetime import date, datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.models.map import Map
 
 async def create_map_in_db(
@@ -24,3 +25,44 @@ async def create_map_in_db(
     await db.commit()
     await db.refresh(new_map)
     return new_map.id
+
+async def delete_map_in_db(
+    db: AsyncSession,
+    map_id: UUID,
+    user_id: UUID,
+) -> bool:
+    result = await db.execute(
+        select(Map).where(Map.id == map_id, Map.user_id == user_id)
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        return False
+    await db.delete(map_obj)
+    await db.commit()
+    return True
+
+async def update_map_in_db(
+    db: AsyncSession,
+    map_id: UUID,
+    user_id: UUID,
+    title: str,
+    description: str | None,
+    is_private: bool,
+) -> Map | None:
+    result = await db.execute(
+        select(Map).where(Map.id == map_id, Map.user_id == user_id)
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        return None
+    try:
+        map_obj.title = title
+        map_obj.description = description
+        map_obj.is_private = is_private
+        map_obj.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(map_obj)
+        return map_obj
+    except Exception:
+        await db.rollback()
+        raise

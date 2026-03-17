@@ -4,9 +4,10 @@
       <div class="flex justify-end">
         <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
       </div>
-      <div class="flex-1">
-        <h1 class="text-xl font-bold">Carte démo</h1>
-      </div>
+
+      <button @click="upload(mapId)" class="btn btn-primary">
+        Ajouter une carte
+      </button>
     </div>
 
     <div class="flex flex-1">
@@ -39,7 +40,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
@@ -56,7 +57,8 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 };
 
 const route = useRoute();
-const mapId = ref(route.params.mapId as string);
+const router = useRouter();
+const mapId = ref(route.params.mapId as string).value;
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
@@ -80,7 +82,7 @@ function reconcileVisibility(list: Feature[]) {
 async function loadInitialFeatures() {
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`,
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
     );
     if (!res.ok) throw new Error("Failed to fetch features");
 
@@ -93,11 +95,17 @@ async function loadInitialFeatures() {
   }
 }
 
+function upload(mapId: string) {
+  router.push(`/televersement/${mapId}`);
+}
+
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
   const next = new Map(featureVisibility.value);
   next.set(featureId, visible);
   featureVisibility.value = next;
 }
+
+function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
 
 onMounted(async () => {
   await fetchCurrentUser();
@@ -144,7 +152,9 @@ async function handleSaveAs(map: MapSaveAsPayload) {
     await response.json();
     showSaveAsModal.value = false;
   } catch (err) {
-    console.error("Error while saving map:", err);
+    throw new Error(
+      `Error while saving map: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 </script>

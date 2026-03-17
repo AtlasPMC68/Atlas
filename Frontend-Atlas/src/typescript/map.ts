@@ -1,6 +1,7 @@
 export interface MapData {
   id: string;
   userId: string;
+  username: string;
   title: string;
   description?: string;
   isPrivate: boolean;
@@ -11,9 +12,6 @@ export interface MapData {
 export interface MapSaveAsPayload
   extends Omit<MapData, "id" | "userId" | "createdAt" | "updatedAt"> {}
 
-export interface MapDisplay {
-  id: string;
-  title: string;
-  userId: string;
-  image?: string;
+export interface MapDisplay extends MapData {
+  image: string;
 }
