@@ -23,6 +23,7 @@
         <MapGeoJSON
           :features="features"
           :feature-visibility="featureVisibility"
+          @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
