@@ -219,8 +219,6 @@ def process_map_extraction(
             shape_normalized_features = shapes_result["normalized_features"]
             shape_pixel_features = shapes_result.get("pixel_features", [])
 
-            # Persist shapes to database
-            asyncio.run(persist_features(map_id, shape_features))
 
             # Georeference pixel-space shape features if SIFT point pairs are provided
             if pixel_points and geo_points_lonlat:
@@ -228,15 +226,14 @@ def process_map_extraction(
                     georef_shape_features = georeference_features_with_sift_points(
                         shape_pixel_features, pixel_points, geo_points_lonlat
                     )
-                    asyncio.run(persist_features(map_uuid, georef_shape_features))
+                    asyncio.run(persist_features(map_id, georef_shape_features))
                 except Exception as e:
                     logger.error(
-                        f"SIFT georeferencing step failed for shapes {map_uuid}: {e}",
+                        f"SIFT georeferencing step failed for shapes {map_id}: {e}",
                         exc_info=True,
                     )
             elif shape_normalized_features:
-                asyncio.run(persist_features(map_uuid, shape_normalized_features))
-
+                asyncio.run(persist_features(map_id, shape_normalized_features))
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}
