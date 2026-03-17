@@ -21,12 +21,14 @@ const props = withDefaults(
     // Matched control points coming from the modal
     // [{ index, color }]
     matchedPoints: MatchedWorldPointSummary[];
+    usedLakes?: boolean;
   }>(),
   {
     worldBounds: null,
     keypoints: () => [],
     activeIndex: 0,
     matchedPoints: () => [],
+    usedLakes: false,
   },
 );
 
@@ -126,11 +128,30 @@ async function initMap(): Promise<void> {
   }).setView([20, 0], 2);
 
   try {
-    const res = await fetch("/geojson/ne_coastline.geojson");
-    if (!res.ok) throw new Error(`Failed to load ne_coastline.geojson: ${res.status}`);
-    const geojson = await res.json();
+    // Load coastline and optionally lakes if they were used for SIFT detection
+    const geojsonFiles = props.usedLakes
+      ? ["/geojson/ne_coastline.geojson", "/geojson/ne_50m_lakes.geojson"]
+      : ["/geojson/ne_coastline.geojson"];
 
-    landLayer = L.geoJSON(geojson, {
+    const responses = await Promise.all(
+      geojsonFiles.map(file => fetch(file))
+    );
+
+    for (const res of responses) {
+      if (!res.ok) throw new Error(`Failed to load geojson: ${res.status}`);
+    }
+
+    const geojsonData = await Promise.all(
+      responses.map(res => res.json())
+    );
+
+    // Combine all features
+    const combinedGeoJSON = {
+      type: "FeatureCollection",
+      features: geojsonData.flatMap((data: any) => data.features || []),
+    };
+
+    landLayer = L.geoJSON(combinedGeoJSON, {
       style: {
         fillColor: "#e5e7eb",
         fillOpacity: 0.9,

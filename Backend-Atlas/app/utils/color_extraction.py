@@ -11,6 +11,7 @@ from skimage.morphology import binary_opening, binary_closing, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
 from scipy.ndimage import binary_fill_holes
+from scipy.cluster.vq import kmeans2
 from matplotlib import colors as mcolors
 
 from shapely.geometry import Polygon, MultiPolygon, shape
@@ -131,6 +132,85 @@ def dominant_bins_lab(
         )
 
     return dom
+
+
+def dominant_colors_kmeans(
+    lab: np.ndarray,
+    opaque_mask: np.ndarray,
+    n_colors: int = 10,
+    min_ratio: float = 0.02,
+) -> List[Dict]:
+    """
+    Find dominant colors using K-means clustering in LAB space.
+    
+    This finds the actual color centers/modes in the image, grouping similar
+    shades together naturally. Better than binning for images with flat colors
+    per zone (like historical maps).
+    
+    Args:
+        lab: LAB image array (H, W, 3)
+        opaque_mask: Boolean mask of valid pixels
+        n_colors: Number of color clusters to find
+        min_ratio: Minimum pixel ratio to keep a color (filters out noise)
+    
+    Returns:
+        List of dicts with lab_center, ratio, and count for each dominant color
+    """
+    lab_px = lab[opaque_mask]  # (N, 3)
+    
+    # Subsample if too many pixels (k-means can be slow on large images)
+    max_samples = 50000
+    if len(lab_px) > max_samples:
+        indices = np.random.choice(len(lab_px), max_samples, replace=False)
+        lab_sample = lab_px[indices]
+    else:
+        lab_sample = lab_px
+    
+    # Run k-means clustering to find color centers
+    try:
+        centroids, labels = kmeans2(lab_sample, n_colors, minit='++', iter=20)
+        
+        # Assign all pixels to nearest centroid
+        # Compute distances to all centroids for each pixel
+        distances = np.zeros((len(lab_px), n_colors))
+        for i, centroid in enumerate(centroids):
+            centroid_broadcast = centroid.reshape(1, 3)
+            lab_px_broadcast = lab_px.reshape(-1, 3)
+            # Simple Euclidean distance in LAB space
+            distances[:, i] = np.sqrt(np.sum((lab_px_broadcast - centroid_broadcast) ** 2, axis=1))
+        
+        all_labels = np.argmin(distances, axis=1)
+        
+        # Count pixels per cluster
+        unique_labels, counts = np.unique(all_labels, return_counts=True)
+        ratios = counts / counts.sum()
+        
+        # Sort by ratio (most common first)
+        order = np.argsort(-ratios)
+        
+        dom: List[Dict] = []
+        for idx in order:
+            label = unique_labels[idx]
+            ratio = float(ratios[idx])
+            
+            # Filter out colors that are too rare (likely noise/artifacts)
+            if ratio < min_ratio:
+                continue
+            
+            centroid = centroids[label]
+            dom.append({
+                "lab_center": (float(centroid[0]), float(centroid[1]), float(centroid[2])),
+                "ratio": ratio,
+                "count": int(counts[idx]),
+            })
+        
+        logger.info(f"K-means found {len(dom)} distinct colors (filtered {n_colors - len(dom)} rare colors)")
+        return dom
+        
+    except Exception as e:
+        logger.error(f"K-means clustering failed: {e}, falling back to binning")
+        # Fallback to binning if k-means fails
+        return dominant_bins_lab(lab, opaque_mask, top_n=n_colors)
 
 
 def lab_center_to_rgb_u8(
@@ -312,21 +392,35 @@ def build_normalized_feature(
 def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
-    top_n: int = 8,
-    bin_L: float = 4.0,
-    bin_a: float = 8.0,
-    bin_b: float = 8.0,
-    deltaE_threshold: float = 10.0,
+    n_colors: int = 10,
+    use_kmeans: bool = True,
+    min_color_ratio: float = 0.02,
+    deltaE_threshold: float = 15.0,
     opening_radius: int = 1,
     fill_holes: bool = True,
     closing_radius: int = 3,
     simplify_tolerance: float = 2.0,
 ) -> Dict:
     """
-    Extract dominant color layers using LAB binning + ΔE masks.
+    Extract dominant color layers using K-means clustering or LAB binning.
 
+    Args:
+        image_path: Path to the input image
+        output_dir: Directory to save extracted color masks
+        n_colors: Number of distinct colors to find (default: 10)
+        use_kmeans: Use K-means clustering (True) or binning (False) (default: True)
+        min_color_ratio: Minimum pixel ratio to keep a color (default: 0.02 = 2%)
+        deltaE_threshold: Maximum color distance to include pixels in mask (default: 15.0)
+        opening_radius: Radius for morphological opening to remove noise
+        fill_holes: Whether to fill interior holes in color zones
+        closing_radius: Radius for morphological closing to bridge gaps
+        simplify_tolerance: Geometry simplification tolerance
 
-    Returns a dict with detected colors, mask paths, ratios, and normalized_features.
+    Note: K-means mode finds ONE representative color per zone by clustering similar
+    shades together automatically. Best for historical maps with flat colors.
+
+    Returns:
+        Dict with detected colors, mask paths, ratios, and normalized_features.
     """
     rgb, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
     lab = compute_lab(rgb)
@@ -336,10 +430,16 @@ def extract_colors(
     image_output_dir = os.path.join(output_dir, base_name)
     os.makedirs(image_output_dir, exist_ok=True)
 
-    # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
-    dom = dominant_bins_lab(
-        lab, opaque_mask, top_n=top_n, bin_L=bin_L, bin_a=bin_a, bin_b=bin_b
-    )
+    # Find dominant colors using K-means clustering or binning
+    if use_kmeans:
+        dom = dominant_colors_kmeans(
+            lab, opaque_mask, n_colors=n_colors, min_ratio=min_color_ratio
+        )
+    else:
+        # Fallback to binning approach
+        dom = dominant_bins_lab(
+            lab, opaque_mask, top_n=n_colors, bin_L=10.0, bin_a=15.0, bin_b=15.0
+        )
 
     masks: Dict[str, str] = {}
     ratios: Dict[str, float] = {}

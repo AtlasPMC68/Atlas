@@ -13,7 +13,7 @@ from uuid import UUID
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.cities_validation import find_first_city
-from app.utils.color_extraction import extract_colors, subtract_lakes_from_zones
+from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
@@ -178,15 +178,30 @@ def process_map_extraction(
                 },
             )
 
-        color_result = extract_colors(tmp_file_path)
-        normalized_features = color_result.get("normalized_features", [])
+            color_result = extract_colors(tmp_file_path)
+            normalized_features = color_result.get("normalized_features", [])
+            pixel_features = color_result.get("pixel_features", [])
 
-        if normalized_features:
-            asyncio.run(persist_features(map_uuid, normalized_features))
+            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
+            # Georeference pixel-space features if SIFT point pairs are provided
+            if pixel_points and geo_points_lonlat:
+                try:
+                    georef_features = georeference_features_with_sift_points(
+                        pixel_features, pixel_points, geo_points_lonlat
+                    )
+                    asyncio.run(persist_features(map_uuid, georef_features))
 
-        logger.info(
-            f"[DEBUG] Résultat color_extraction : {color_result['colors_detected']}"
-        )
+                except Exception as e:
+                    logger.error(
+                        f"SIFT georeferencing step failed for map {map_uuid}: {e}",
+                        exc_info=True,
+                    )
+            elif normalized_features:
+                asyncio.run(persist_features(map_uuid, normalized_features))
+        
+        else:
+            logger.info("[DEBUG] Color extraction disabled - skipping")
+            color_result = {"colors_detected": 0}
 
         # Step 5: Shapes Extraction (conditionally enabled)
         if enable_shapes_extraction:
