@@ -6,13 +6,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, computed, ref } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
-import { getMapElementType } from "../utils/featureHelpers";
+import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
+import { toArray } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 
@@ -134,26 +135,6 @@ const drawing = useMapDrawing((event, ...args) => {
   }
 });
 
-const filteredFeatures = computed(() => {
-  return props.features.filter((feature) => {
-    const featureProperties = feature.properties;
-    const startRaw = featureProperties.startDate;
-    const endRaw = featureProperties.endDate;
-
-    const startYear = startRaw ? new Date(startRaw).getFullYear() : -Infinity;
-    const endYear = endRaw ? new Date(endRaw).getFullYear() : Infinity;
-
-    return startYear <= selectedYear.value && endYear >= selectedYear.value;
-  });
-});
-
-function getRgbColor(feature: Feature): string | null {
-  const rgb = feature.properties.colorRgb;
-  return rgb && rgb.length === 3
-    ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
-    : null;
-}
-
 function attachFeatureToLayer(layer: L.Layer, feature: Feature) {
   const layerWithFeature = layer as LayerWithFeature;
   layerWithFeature.feature = feature;
@@ -174,8 +155,8 @@ function renderCities(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
-    const colorFromRgb = getRgbColor(feature);
-    const color = feature.color || colorFromRgb || "#000";
+    const colorFromRgb = getFeatureRgbColor(feature);
+    const color = colorFromRgb || "#000";
 
     const point = L.circleMarker(coord, {
       radius: 6,
@@ -340,8 +321,8 @@ function renderZones(features: Feature[]) {
     }
 
     const featureProperties = feature.properties;
-    const colorFromRgb = getRgbColor(feature);
-    const fillColor = feature.color || colorFromRgb || "#ccc";
+    const colorFromRgb = getFeatureRgbColor(feature);
+    const fillColor = colorFromRgb || "#ccc";
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -372,8 +353,8 @@ function renderArrows(features: Feature[]) {
       ([lng, lat]) => [lat, lng] as L.LatLngTuple,
     );
 
-    const colorFromRgb = getRgbColor(feature);
-    const color = feature.color || colorFromRgb || "#000";
+    const colorFromRgb = getFeatureRgbColor(feature);
+    const color = colorFromRgb || "#000";
 
     const line = L.polyline(latLngs, {
       color,
@@ -412,8 +393,8 @@ function renderShapes(features: Feature[]) {
     }
 
     const featureProperties = feature.properties;
-    const colorFromRgb = getRgbColor(feature);
-    const fillColor = feature.color || colorFromRgb || "#ccc";
+    const colorFromRgb = getFeatureRgbColor(feature);
+    const fillColor = colorFromRgb || "#ccc";
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -438,7 +419,7 @@ function renderShapes(features: Feature[]) {
 function renderAllFeatures() {
   if (!map) return;
 
-  const currentFeatures = filteredFeatures.value;
+  const currentFeatures = props.features;
   const currentIds = new Set(currentFeatures.map((f) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
@@ -469,12 +450,6 @@ function renderAllFeatures() {
 
   previousFeatureIds.value = currentIds;
   emit("features-loaded", currentFeatures);
-}
-
-function toArray<T>(maybeArray: T[] | T | null | undefined): T[] {
-  if (Array.isArray(maybeArray)) return maybeArray;
-  if (maybeArray == null) return [];
-  return [maybeArray];
 }
 
 onMounted(() => {

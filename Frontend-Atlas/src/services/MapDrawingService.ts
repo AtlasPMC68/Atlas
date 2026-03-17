@@ -3,7 +3,7 @@ import L from "leaflet";
 import {
   featureToLayer,
   layerToFeature,
-} from "../utils/mapDrawingFeatureUtils";
+} from "../utils/mapDrawingFeature";
 import type { Feature } from "../typescript/feature";
 import {
   drawingModes,
@@ -426,14 +426,13 @@ export class MapDrawingService {
         const createdFeature = layerToFeature(newLayer);
         if (createdFeature) {
           const originalProps: Partial<Feature> = originalLayer?.feature ?? {};
-          createdFeature.color = originalProps.color ?? createdFeature.color;
           createdFeature.opacity =
             originalProps.opacity ?? createdFeature.opacity;
           createdFeature.strokeWidth =
             originalProps.strokeWidth ?? createdFeature.strokeWidth;
           createdFeature.properties = {
-            ...(originalProps.properties || {}),
             ...(createdFeature.properties || {}),
+            ...(originalProps.properties || {}),
           };
           this.attachFeatureAndEmit(
             newLayer,
@@ -567,7 +566,7 @@ export class MapDrawingService {
     return features;
   }
 
-  getApi() {
+  createDrawingTools() {
     return {
       activeDrawingMode: this.activeDrawingMode,
       drawnItems: this.drawnItems,

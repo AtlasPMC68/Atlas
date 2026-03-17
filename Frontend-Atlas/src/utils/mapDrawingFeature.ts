@@ -1,4 +1,5 @@
 import L from "leaflet";
+import { getFeatureRgbColor } from "./featureHelpers";
 import type {
   Coordinate,
   Feature,
@@ -140,7 +141,6 @@ export function layerToFeature(layer: L.Layer): Feature | null {
     createdAt: isoDate,
     updatedAt: isoDate,
     name: "",
-    color: "#000000",
     opacity: 0.5,
     strokeWidth: 2,
   };
@@ -151,10 +151,14 @@ export function featureToLayer(feature: Feature): L.Layer | null {
 
   if (!geom) return null;
 
+  const colorFromRgb = getFeatureRgbColor(feature);
+  const strokeColor = colorFromRgb || "#000000";
+  const fillColor = colorFromRgb || "#cccccc";
+
   const style = {
-    color: feature.color || "#000000",
+    color: strokeColor,
     weight: feature.strokeWidth || 2,
-    fillColor: feature.color || "#cccccc",
+    fillColor,
     fillOpacity: feature.opacity || 0.5,
   };
 

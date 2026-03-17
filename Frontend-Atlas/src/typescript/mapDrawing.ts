@@ -36,7 +36,7 @@ export type PmToolbar = {
   changeControlOrder?: () => void;
 };
 
-export type PmMapApi = {
+export type PmMapDrawingTool = {
   addControls: (options: Record<string, unknown>) => void;
   disableDraw: () => void;
   enableDraw: (shape: string, options?: Record<string, unknown>) => void;
@@ -47,7 +47,7 @@ export type PmMapApi = {
 };
 
 export type MapWithPm = L.Map & {
-  pm?: PmMapApi;
+  pm?: PmMapDrawingTool;
 };
 
 export type PmLayerEvent = {

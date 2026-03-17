@@ -7,7 +7,6 @@ export interface Feature {
   createdAt: string;
   updatedAt: string;
   name: string;
-  color: string;
   opacity: number;
   strokeWidth: number;
 }

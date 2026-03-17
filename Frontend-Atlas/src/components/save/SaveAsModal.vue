@@ -43,7 +43,7 @@
               id="access_level_public"
               type="radio"
               value="public"
-              v-model="access_level"
+              v-model="isPrivate"
               class="radio mr-2"
             />
             Publique
@@ -53,7 +53,7 @@
               id="access_level_private"
               type="radio"
               value="private"
-              v-model="access_level"
+              v-model="isPrivate"
               class="radio mr-2"
             />
             Privée
@@ -77,7 +77,7 @@ import type { MapSaveAsPayload } from "../../typescript/map";
 
 const title = ref("");
 const description = ref("");
-const access_level = ref("private");
+const isPrivate = ref("private");
 
 const emit = defineEmits<{
   (e: "save", payload: MapSaveAsPayload): void;
@@ -90,7 +90,7 @@ function handleSubmit() {
   emit("save", {
     title: title.value.trim(),
     description: description.value.trim(),
-    isPrivate: access_level.value === "private",
+    isPrivate: isPrivate.value === "private",
   });
 }
 </script>

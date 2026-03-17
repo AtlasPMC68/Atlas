@@ -5,5 +5,5 @@ import type { EmitFn } from "../typescript/mapDrawing";
 
 export function useMapDrawing(emit: EmitFn) {
   const service = new MapDrawingService(emit);
-  return service.getApi();
+  return service.createDrawingTools();
 }
