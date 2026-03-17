@@ -417,7 +417,7 @@ function renderShapes(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
-        fillColor,
+        fillColor: fillColor,
         opacity: feature.opacity ?? 1,
         fillOpacity: feature.opacity ?? 0.5,
         color: fillColor,
