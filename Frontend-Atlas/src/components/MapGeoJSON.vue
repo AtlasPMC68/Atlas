@@ -13,39 +13,38 @@ import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { getMapElementType } from "../utils/featureHelpers";
-import type { Feature, Geometry, Coordinate } from "../typescript/feature";
+import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 
 type FeatureId = string;
 
-type FeatureLike = Feature & {
-  properties?: Feature["properties"] & {
-    color_rgb?: [number, number, number];
-    is_normalized?: boolean;
-    isNormalized?: boolean;
-    start_date?: string;
-    end_date?: string;
-  };
-  stroke_width?: number;
-};
+type LayerWithFeature = LayerWithFeatureType<Feature>;
 
-type LayerWithFeature = LayerWithFeatureType<FeatureLike>;
+interface GeoJsonFeatureWithGeometry {
+  geometry: Geometry;
+  [key: string]: unknown;
+}
+
+interface GeoJsonFeatureCollectionWithGeometry {
+  features: GeoJsonFeatureWithGeometry[];
+  [key: string]: unknown;
+}
 
 const props = defineProps<{
-  features: FeatureLike[];
+  features: Feature[];
   featureVisibility: Map<string, boolean>;
 }>();
 
 const emit = defineEmits<{
-  (e: "features-loaded", features: FeatureLike[]): void;
-  (e: "draw-create", features: FeatureLike[]): void;
-  (e: "draw-update", features: FeatureLike[]): void;
-  (e: "draw-delete", features: FeatureLike[]): void;
+  (e: "features-loaded", features: Feature[]): void;
+  (e: "draw-create", features: Feature[]): void;
+  (e: "draw-update", features: Feature[]): void;
+  (e: "draw-delete", features: Feature[]): void;
 }>();
 
 const selectedYear = ref(1740);
 const previousFeatureIds = ref(new Set<FeatureId>());
-const localFeaturesSnapshot = ref<FeatureLike[]>([]);
+const localFeaturesSnapshot = ref<Feature[]>([]);
 
 let map: L.Map | null = null;
 
@@ -86,17 +85,14 @@ const featureLayerManager = {
   },
 };
 
-function featureIdAsString(featureOrId: FeatureLike | string | number): string {
+function featureIdAsString(featureOrId: Feature | string | number): string {
   if (typeof featureOrId === "object" && featureOrId !== null) {
     return String(featureOrId.id);
   }
   return String(featureOrId);
 }
 
-function upsertFeature(
-  features: FeatureLike[],
-  feature: FeatureLike,
-): FeatureLike[] {
+function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   const targetId = featureIdAsString(feature);
   const next = [...features];
   const index = next.findIndex((f) => featureIdAsString(f) === targetId);
@@ -111,18 +107,18 @@ function upsertFeature(
 }
 
 const drawing = useMapDrawing((event, ...args) => {
-  const payload = args[0] as FeatureLike | string | number;
+  const payload = args[0] as Feature | string | number;
   const current = localFeaturesSnapshot.value;
 
   if (event === "feature-created") {
-    const next = upsertFeature(current, payload as FeatureLike);
+    const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
     emit("draw-create", next);
     return;
   }
 
   if (event === "feature-updated") {
-    const next = upsertFeature(current, payload as FeatureLike);
+    const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
     emit("draw-update", next);
     return;
@@ -140,11 +136,9 @@ const drawing = useMapDrawing((event, ...args) => {
 
 const filteredFeatures = computed(() => {
   return props.features.filter((feature) => {
-    const featureProperties =
-      feature.properties || ({} as FeatureLike["properties"]);
-    const startRaw =
-      featureProperties.startDate || featureProperties.start_date;
-    const endRaw = featureProperties.endDate || featureProperties.end_date;
+    const featureProperties = feature.properties;
+    const startRaw = featureProperties.startDate;
+    const endRaw = featureProperties.endDate;
 
     const startYear = startRaw ? new Date(startRaw).getFullYear() : -Infinity;
     const endYear = endRaw ? new Date(endRaw).getFullYear() : Infinity;
@@ -153,20 +147,14 @@ const filteredFeatures = computed(() => {
   });
 });
 
-function getRgbColor(feature: FeatureLike): string | null {
-  const featureProperties =
-    feature.properties || ({} as FeatureLike["properties"]);
-  const rgb = Array.isArray(featureProperties.colorRgb)
-    ? featureProperties.colorRgb
-    : Array.isArray(featureProperties.color_rgb)
-      ? featureProperties.color_rgb
-      : null;
+function getRgbColor(feature: Feature): string | null {
+  const rgb = feature.properties.colorRgb;
   return rgb && rgb.length === 3
     ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
     : null;
 }
 
-function attachFeatureToLayer(layer: L.Layer, feature: FeatureLike) {
+function attachFeatureToLayer(layer: L.Layer, feature: Feature) {
   const layerWithFeature = layer as LayerWithFeature;
   layerWithFeature.feature = feature;
 
@@ -177,7 +165,7 @@ function attachFeatureToLayer(layer: L.Layer, feature: FeatureLike) {
   }
 }
 
-function renderCities(features: FeatureLike[]) {
+function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -198,8 +186,7 @@ function renderCities(features: FeatureLike[]) {
       fillOpacity: feature.opacity ?? 1,
     });
 
-    const featureProperties =
-      feature.properties || ({} as FeatureLike["properties"]);
+    const featureProperties = feature.properties;
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
@@ -284,7 +271,63 @@ function normalizeGeometryToWorld(
   } as Geometry;
 }
 
-function renderZones(features: FeatureLike[]) {
+function transformNormalizedToWorld(
+  geojson: GeoJsonFeatureCollectionWithGeometry,
+  anchorLat: number,
+  anchorLng: number,
+  sizeMeters: number,
+): GeoJsonFeatureCollectionWithGeometry {
+  // Use the same projected CRS as the basemap (Web Mercator).
+  const crs = L.CRS.EPSG3857;
+  const center = crs.project(L.latLng(anchorLat, anchorLng));
+  const halfSize = sizeMeters / 2;
+
+  // Transform a single coordinate [x, y] in [0,1]x[0,1] into [lng, lat]
+  const transformCoord = (coord: Coordinate): Coordinate => {
+    const [x, y] = coord;
+
+    // Center the shape around (0,0) in its local space
+    const nx = x - 0.5;
+    const ny = y - 0.5;
+
+    // Work in projected meters with a uniform scale so aspect ratio is preserved
+    const mx = center.x + nx * 2 * halfSize;
+    const my = center.y - ny * 2 * halfSize;
+
+    const latlng = crs.unproject(L.point(mx, my));
+    return [latlng.lng, latlng.lat];
+  };
+
+  const transformCoords = (
+    coords: Geometry["coordinates"],
+  ): Geometry["coordinates"] => {
+    if (!Array.isArray(coords)) return coords;
+
+    if (typeof coords[0] === "number") {
+      return transformCoord(coords as Coordinate);
+    }
+
+    return (coords as Array<Geometry["coordinates"]>).map(
+      transformCoords,
+    ) as Geometry["coordinates"];
+  };
+
+  return {
+    ...geojson,
+    features: geojson.features.map((feature) => ({
+      ...feature,
+      geometry: {
+        ...feature.geometry,
+        coordinates: transformCoords(feature.geometry.coordinates),
+      } as Geometry,
+    })),
+  };
+}
+
+void normalizeGeometryToWorld;
+void transformNormalizedToWorld;
+
+function renderZones(features: Feature[]) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -296,18 +339,11 @@ function renderZones(features: FeatureLike[]) {
       return;
     }
 
-    const featureProperties =
-      feature.properties || ({} as FeatureLike["properties"]);
+    const featureProperties = feature.properties;
     const colorFromRgb = getRgbColor(feature);
     const fillColor = feature.color || colorFromRgb || "#ccc";
-    const isNormalized = Boolean(
-      featureProperties.isNormalized ?? featureProperties.is_normalized,
-    );
-    const targetGeometry = isNormalized
-      ? normalizeGeometryToWorld(feature.geometry, 2_000_000)
-      : feature.geometry;
 
-    const layer = L.geoJSON(targetGeometry, {
+    const layer = L.geoJSON(feature.geometry, {
       style: {
         fillColor,
         fillOpacity: 0.5,
@@ -326,7 +362,7 @@ function renderZones(features: FeatureLike[]) {
   });
 }
 
-function renderArrows(features: FeatureLike[]) {
+function renderArrows(features: Feature[]) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -341,7 +377,7 @@ function renderArrows(features: FeatureLike[]) {
 
     const line = L.polyline(latLngs, {
       color,
-      weight: feature.strokeWidth ?? feature.stroke_width ?? 2,
+      weight: feature.strokeWidth ?? 2,
       opacity: feature.opacity ?? 1,
     });
     attachFeatureToLayer(line, feature);
@@ -353,8 +389,7 @@ function renderArrows(features: FeatureLike[]) {
       fill: true,
     });
 
-    const featureProperties =
-      feature.properties || ({} as FeatureLike["properties"]);
+    const featureProperties = feature.properties;
     const name = featureProperties.name || feature.name;
     if (name) {
       line.bindPopup(name);
@@ -364,7 +399,7 @@ function renderArrows(features: FeatureLike[]) {
   });
 }
 
-function renderShapes(features: FeatureLike[]) {
+function renderShapes(features: Feature[]) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -376,18 +411,11 @@ function renderShapes(features: FeatureLike[]) {
       return;
     }
 
-    const featureProperties =
-      feature.properties || ({} as FeatureLike["properties"]);
+    const featureProperties = feature.properties;
     const colorFromRgb = getRgbColor(feature);
     const fillColor = feature.color || colorFromRgb || "#ccc";
-    const isNormalized = Boolean(
-      featureProperties.isNormalized ?? featureProperties.is_normalized,
-    );
-    const targetGeometry = isNormalized
-      ? normalizeGeometryToWorld(feature.geometry, 1_000_000)
-      : feature.geometry;
 
-    const layer = L.geoJSON(targetGeometry, {
+    const layer = L.geoJSON(feature.geometry, {
       style: {
         fillColor,
         opacity: feature.opacity ?? 1,

@@ -45,12 +45,10 @@ import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import { MapData } from "../typescript/map";
+import type { MapSaveAsPayload } from "../typescript/map";
 import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
-
-type SaveAsPayload = Pick<MapData, "title" | "description" | "isPrivate">;
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -115,7 +113,7 @@ function saveMapAs() {
   showSaveAsModal.value = true;
 }
 
-async function handleSaveAs(map: SaveAsPayload) {
+async function handleSaveAs(map: MapSaveAsPayload) {
   if (!keycloak.token || !currentUser.value) {
     throw new Error("No authentication token or user available");
   }

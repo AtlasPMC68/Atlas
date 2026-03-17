@@ -73,16 +73,14 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import type { MapData } from "../../typescript/map";
+import type { MapSaveAsPayload } from "../../typescript/map";
 
 const title = ref("");
 const description = ref("");
 const access_level = ref("private");
 
-type SaveAsPayload = Pick<MapData, "title" | "description" | "isPrivate">;
-
 const emit = defineEmits<{
-  (e: "save", payload: SaveAsPayload): void;
+  (e: "save", payload: MapSaveAsPayload): void;
   (e: "cancel"): void;
 }>();
 

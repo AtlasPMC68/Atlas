@@ -59,6 +59,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { Feature } from "../typescript/feature";
+import type { FeatureGroup } from "../typescript/featureVisibility";
 
 const props = defineProps<{
   features: Feature[];
@@ -68,27 +69,28 @@ const props = defineProps<{
 const emit = defineEmits(["toggle-feature"]);
 
 const featureGroups = computed(() => {
-  const groups = [
+  const groups: FeatureGroup[] = [
     { type: "point", label: "Villes", features: [] as Feature[] },
     { type: "zone", label: "Zones", features: [] as Feature[] },
     { type: "arrow", label: "Flèches", features: [] as Feature[] },
-    { type: "shape", label: "Formes", features: [] as Feature[] },
+    {
+      type: "shape",
+      label: "Formes",
+      aliases: ["square", "rectangle", "circle", "triangle"],
+      features: [] as Feature[],
+    },
   ];
 
   props.features.forEach((feature: Feature) => {
-    const rawType = feature?.properties?.mapElementType || feature?.type || "";
+    const featureType = feature?.type || "";
 
-    const isShapeKind = [
-      "square",
-      "rectangle",
-      "circle",
-      "triangle",
-      "oval",
-    ].includes(rawType);
-    const elementType = isShapeKind ? "shape" : rawType;
+    const targetGroup = groups.find(
+      (currentGroup) =>
+        currentGroup.type === featureType ||
+        currentGroup.aliases?.includes(featureType),
+    );
 
-    const group = groups.find((g) => g.type === elementType);
-    if (group) group.features.push(feature);
+    if (targetGroup) targetGroup.features.push(feature);
   });
 
   return groups.filter((g) => g.features.length > 0);
