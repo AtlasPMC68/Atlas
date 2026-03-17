@@ -14,6 +14,12 @@ export interface Feature {
 
 export type MapElementType = "point" | "zone" | "polyline" | "arrow" | "shape";
 
+export type FeatureVisibilityGroup = {
+  type: MapElementType;
+  label: string;
+  features: Feature[];
+};
+
 export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
 export interface FeatureProperties {

@@ -58,8 +58,8 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { Feature } from "../typescript/feature";
-import type { FeatureGroup } from "../typescript/featureVisibility";
+import type { Feature, FeatureVisibilityGroup } from "../typescript/feature";
+import { getMapElementType } from "../utils/featureHelpers";
 
 const props = defineProps<{
   features: Feature[];
@@ -69,25 +69,20 @@ const props = defineProps<{
 const emit = defineEmits(["toggle-feature"]);
 
 const featureGroups = computed(() => {
-  const groups: FeatureGroup[] = [
+  const groups: FeatureVisibilityGroup[] = [
     { type: "point", label: "Villes", features: [] as Feature[] },
     { type: "zone", label: "Zones", features: [] as Feature[] },
+    { type: "polyline", label: "Lignes", features: [] as Feature[] },
     { type: "arrow", label: "Flèches", features: [] as Feature[] },
-    {
-      type: "shape",
-      label: "Formes",
-      aliases: ["square", "rectangle", "circle", "triangle"],
-      features: [] as Feature[],
-    },
+    { type: "shape", label: "Formes", features: [] as Feature[] },
   ];
 
   props.features.forEach((feature: Feature) => {
-    const featureType = feature?.type || "";
+    const featureType = getMapElementType(feature);
+    if (!featureType) return;
 
     const targetGroup = groups.find(
-      (currentGroup) =>
-        currentGroup.type === featureType ||
-        currentGroup.aliases?.includes(featureType),
+      (currentGroup) => currentGroup.type === featureType,
     );
 
     if (targetGroup) targetGroup.features.push(feature);
