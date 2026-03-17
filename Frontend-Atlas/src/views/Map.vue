@@ -4,9 +4,10 @@
       <div class="flex justify-end">
         <SaveDropdown @save="saveCarte" @save-as="saveCarteAs" />
       </div>
-      <div class="flex-1">
-        <h1 class="text-xl font-bold">Carte démo</h1>
-      </div>
+
+      <button @click="upload(mapId)" class="btn btn-primary">
+        Ajouter une carte
+      </button>
     </div>
 
     <div class="flex flex-1">
@@ -41,7 +42,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
@@ -53,7 +54,8 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 
 const route = useRoute();
-const mapId = ref(route.params.mapId as string);
+const router = useRouter();
+const mapId = ref(route.params.mapId as string).value;
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
@@ -63,7 +65,7 @@ const { currentUser, fetchCurrentUser } = useCurrentUser();
 async function loadInitialFeatures() {
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`,
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
     );
     if (!res.ok) throw new Error("Failed to fetch features");
 
@@ -80,12 +82,16 @@ async function loadInitialFeatures() {
   }
 }
 
+function upload(mapId: string) {
+  router.push(`/televersement/${mapId}`);
+}
+
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value.set(featureId, visible);
   featureVisibility.value = new Map(featureVisibility.value);
 }
 
-function handleFeaturesLoaded(loadedFeatures: Feature[]) {}
+function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
 
 onMounted(async () => {
   await fetchCurrentUser();
@@ -132,7 +138,9 @@ async function handleSaveAs(map: MapData) {
     const result = await response.json();
     console.log("Map saved successfuly:", result);
   } catch (err) {
-    throw new Error("Error while saving map:", err);
+    throw new Error(
+      `Error while saving map: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 </script>
