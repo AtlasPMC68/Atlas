@@ -158,12 +158,12 @@ def extract_contour_properties(
     hull_area = cv2.contourArea(cv2.convexHull(contour))
     solidity = area / hull_area if hull_area > 0 else 0.0
 
-    approx = cv2.approxPolyDP(contour, 0.005 * perimeter, True)
+    approx = cv2.approxPolyDP(contour, 0.001 * perimeter, True)
     color_rgb = get_dominant_color_in_contour(original_image, contour)
 
     bounding_box = {"x": int(x), "y": int(y), "width": int(w), "height": int(h)}
 
-    return {
+    properties_dict = {
         "id": shape_id,
         "area": float(area),
         "perimeter": float(perimeter),
@@ -179,12 +179,55 @@ def extract_contour_properties(
         "geometry": {
             "type": "Polygon",
             "pixel_coords": {
-                "contour_points": [[int(pt[0][0]), int(pt[0][1])] for pt in contour],
+                "contour_points": [[int(pt[0][0]), int(pt[0][1])] for pt in approx],
                 "bounding_box": bounding_box,
                 "center": {"x": int(cx), "y": int(cy)},
             },
         },
     }
+
+    properties_dict["shape_type"] = classify_shape(properties_dict)
+
+    return properties_dict
+
+
+# ---------------------------------------------------------------------------
+# Classification
+# ---------------------------------------------------------------------------
+
+
+def classify_shape(properties: dict) -> str:
+    """
+    Classifie une forme géométrique en utilisant uniquement des ratios robustes
+    au bruit (Circularité et Solidité), sans se fier au nombre de sommets.
+    """
+    solidity = properties.get("solidity", 0.0)
+    area = properties.get("area", 0.0)
+    perimeter = properties.get("perimeter", 0.0)
+
+    # 1. Calcul de la Circularité (1.0 = Cercle parfait)
+    circularity = 0.0
+    if perimeter > 0:
+        circularity = (4 * np.pi * area) / (perimeter**2)
+
+    # --- ARBRE DE DÉCISION ---
+
+    # 1. Le Cercle : Forme très ronde
+    if circularity > 0.82:
+        return "Circle"
+
+    # 2. Le Rectangle (incluant les Carrés) : Forme pleine, sans creux
+    # Si la solidité est très proche de 1, la forme remplit son enveloppe convexe.
+    if solidity > 0.95:
+        return "Rectangle"
+
+    # 3. La Flèche : Forme avec des creux majeurs (concave)
+    # Les flèches ont typiquement une solidité entre 0.5 et 0.85 à cause de la pointe.
+    if 0.45 < solidity <= 0.85:
+        return "Arrow"
+
+    # Si c'est autre chose (ex: une ligne très mince ou du bruit résiduel)
+    return "Shape unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +236,11 @@ def extract_contour_properties(
 
 
 def save_shape_image(
-    image: np.ndarray, contour: np.ndarray, output_dir: str, shape_id: int
+    image: np.ndarray,
+    contour: np.ndarray,
+    output_dir: str,
+    shape_id: int,
+    shape_type: str,
 ) -> str:
     mask = np.zeros(image.shape[:2], dtype=np.uint8)
     cv2.drawContours(mask, [contour], 0, 255, -1)
@@ -201,7 +248,7 @@ def save_shape_image(
     x, y, w, h = cv2.boundingRect(contour)
     cropped = cv2.bitwise_and(image, image, mask=mask)[y : y + h, x : x + w]
 
-    shape_path = os.path.join(output_dir, f"shape_{shape_id:04d}.png")
+    shape_path = os.path.join(output_dir, f"{shape_type}_{shape_id:04d}.png")
     cv2.imwrite(shape_path, cropped)
     return shape_path
 
@@ -273,7 +320,7 @@ def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
         "color_name": shape.get("color_name"),
         "color_hex": shape.get("color_hex"),
         "mapElementType": "shape",
-        "name": f"Shape {idx}",
+        "name": shape.get("shape_type") + f" {idx}",
         "start_date": "1700-01-01",
         "end_date": "2026-01-01",
         "is_normalized": False,
@@ -372,27 +419,40 @@ def export_shapes_to_normalized_geojson(
 def _preprocess_for_contours(
     image_path: str,
     threshold_value: int,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int, int]:
-    """Load, denoise, and binarise an image.
+) -> Dict:
+    """Load, denoise, enhance contrast on L channel, and binarise an image.
 
-    Returns (image_bgr, gray, binary_mask, width, height).
+    Returns a dict with all intermediate images and dimensions.
     """
     image = preprocessing.read_image(image_path)
     if image is None:
         raise ValueError(f"Unable to load image: {image_path}")
 
-    image_flat = preprocessing.flat_field_correction(image, sigma=100.0, normalize=True)
-    image_denoised = preprocessing.denoise_bilateral(
-        image_flat, sigma_color=0.05, sigma_spatial=10.0
-    )
-
-    height, width = image_denoised.shape[:2]
-    image_uint8 = (image_denoised * 255).astype(np.uint8)
+    height, width = image.shape[:2]
+    image_uint8 = (image * 255).astype(np.uint8)
     image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+
+    image_denoised = cv2.bilateralFilter(image_bgr, d=9, sigmaColor=75, sigmaSpace=75)
+
+    lab = cv2.cvtColor(image_denoised, cv2.COLOR_BGR2LAB)
+    lightness, _, _ = cv2.split(lab)
+
+    l_norm = cv2.normalize(lightness, None, 0, 255, cv2.NORM_MINMAX)
+
+    gray = l_norm
+
     binary_mask = preprocess_image(gray, threshold_value)
 
-    return image_bgr, gray, binary_mask, width, height
+    return {
+        "image_bgr": image_bgr,
+        "gray": gray,
+        "binary_mask": binary_mask,
+        "width": width,
+        "height": height,
+        "image_denoised": image_denoised,
+        "lightness": lightness,
+        "l_norm": l_norm,
+    }
 
 
 def _build_shapes_metadata(
@@ -432,13 +492,43 @@ def _write_debug_outputs(
     max_area: int,
     threshold_value: int,
     shapes_metadata: List[Dict],
+    intermediate_images: Optional[Dict[str, np.ndarray]] = None,
 ) -> None:
-    cv2.imwrite(os.path.join(image_output_dir, "DEBUG_mask.png"), binary_mask)
-    cv2.imwrite(os.path.join(image_output_dir, "debug_1_preprocessing.png"), image_bgr)
-    cv2.imwrite(os.path.join(image_output_dir, "debug_2_grayscale.png"), gray)
+    # Save intermediate process images if provided
+    if intermediate_images:
+        cv2.imwrite(
+            os.path.join(image_output_dir, "debug_0_original_converted.png"),
+            intermediate_images.get("image_bgr", image_bgr),
+        )
+        if "image_denoised" in intermediate_images:
+            cv2.imwrite(
+                os.path.join(image_output_dir, "debug_1_denoised.png"),
+                intermediate_images["image_denoised"],
+            )
+        if "l_channel" in intermediate_images:
+            cv2.imwrite(
+                os.path.join(image_output_dir, "debug_2_l_channel.png"),
+                intermediate_images["l_channel"],
+            )
+        if "l_norm" in intermediate_images:
+            cv2.imwrite(
+                os.path.join(image_output_dir, "debug_3_l_normalized.png"),
+                intermediate_images["l_norm"],
+            )
+    else:
+        cv2.imwrite(
+            os.path.join(image_output_dir, "debug_0_original_converted.png"), image_bgr
+        )
 
-    for idx, (_, contour) in enumerate(shapes_with_contours, 1):
-        save_shape_image(image_bgr, contour, image_output_dir, idx)
+    cv2.imwrite(
+        os.path.join(image_output_dir, "debug_6_binary_after_morpho.png"), binary_mask
+    )
+    cv2.imwrite(os.path.join(image_output_dir, "debug_7_grayscale.png"), gray)
+
+    for idx, (shape, contour) in enumerate(shapes_with_contours, 1):
+        save_shape_image(
+            image_bgr, contour, image_output_dir, idx, shape.get("shape_type")
+        )
 
     metadata_path = os.path.join(image_output_dir, "shapes_metadata.json")
     with open(metadata_path, "w", encoding="utf-8") as f:
@@ -485,9 +575,12 @@ def extract_shapes(
     text_regions: Optional[List[List[List[int]]]] = None,
     debug: bool = False,
 ) -> Dict:
-    image_bgr, gray, binary_mask, width, height = _preprocess_for_contours(
-        image_path, threshold_value
-    )
+    preprocess_result = _preprocess_for_contours(image_path, threshold_value)
+    image_bgr = preprocess_result["image_bgr"]
+    gray = preprocess_result["gray"]
+    binary_mask = preprocess_result["binary_mask"]
+    width = preprocess_result["width"]
+    height = preprocess_result["height"]
     image_area = width * height
 
     contours = detect_contours(binary_mask)
@@ -522,6 +615,7 @@ def extract_shapes(
             max_area,
             threshold_value,
             shapes_metadata,
+            intermediate_images=preprocess_result,
         )
 
     return {
