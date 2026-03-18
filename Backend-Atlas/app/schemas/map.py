@@ -6,11 +6,13 @@ from uuid import UUID
 class MapOut(BaseModel):
     id: UUID
     user_id: UUID
+    username: Optional[str] = None
     title: str
     description: Optional[str]
     is_private: bool
     start_date: Optional[date]
     end_date: Optional[date]
     created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

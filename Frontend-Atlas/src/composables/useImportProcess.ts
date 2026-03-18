@@ -1,6 +1,7 @@
 // composables/useImportProcess.ts
 import { ref, Ref } from "vue";
 import keycloak from "../keycloak";
+import { snakeToCamel } from "../utils/utils";
 
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
@@ -17,8 +18,8 @@ type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
 type StartImportResult = { success: true } | { success: false; error: string };
 
 interface UploadResponse {
-  task_id: string | null;
-  map_id: string | null;
+  taskId: string | null;
+  mapId: string;
 }
 
 interface StatusResponse {
@@ -35,11 +36,12 @@ const processingProgress: Ref<number> = ref(0);
 const showProcessingModal: Ref<boolean> = ref(false);
 const taskId: Ref<string | null> = ref(null);
 const resultData: Ref<unknown | null> = ref(null);
-const mapId: Ref<string | null> = ref(null);
+const mapId: Ref<string> = ref("");
 
 export function useImportProcess() {
   const startImport = async (
     file: File | null,
+    inputMapId: string,
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
@@ -52,6 +54,7 @@ export function useImportProcess() {
     processingProgress.value = 0;
 
     const formData = new FormData();
+    formData.append("map_id", inputMapId);
 
     // Add matched point pairs as expected by backend
     if (imagePoints && imagePoints.length) {
@@ -62,10 +65,22 @@ export function useImportProcess() {
     }
     // Add extraction options
     if (options) {
-      formData.append("enable_georeferencing", String(options.enableGeoreferencing ?? true));
-      formData.append("enable_color_extraction", String(options.enableColorExtraction ?? true));
-      formData.append("enable_shapes_extraction", String(options.enableShapesExtraction ?? false));
-      formData.append("enable_text_extraction", String(options.enableTextExtraction ?? false));
+      formData.append(
+        "enable_georeferencing",
+        String(options.enableGeoreferencing ?? true),
+      );
+      formData.append(
+        "enable_color_extraction",
+        String(options.enableColorExtraction ?? true),
+      );
+      formData.append(
+        "enable_shapes_extraction",
+        String(options.enableShapesExtraction ?? false),
+      );
+      formData.append(
+        "enable_text_extraction",
+        String(options.enableTextExtraction ?? false),
+      );
     }
     formData.append("file", file);
 
@@ -86,9 +101,10 @@ export function useImportProcess() {
         throw new Error(error.detail || "Erreur lors de l'envoi du fichier");
       }
 
-      const data: UploadResponse = await response.json();
-      taskId.value = data.task_id;
-      mapId.value = data.map_id;
+      const data: UploadResponse = snakeToCamel(await response.json());
+
+      taskId.value = data.taskId;
+      mapId.value = data.mapId;
 
       if (!taskId.value) {
         throw new Error("taskId is null");

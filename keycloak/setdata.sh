@@ -22,7 +22,10 @@ echo "Updating realm settings..."
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
   -s registrationAllowed=true \
   -s loginWithEmailAllowed=true \
-  -s sslRequired=None
+  -s sslRequired=None \
+  -s accessTokenLifespan=3600 \
+  -s ssoSessionMaxLifespan=86400 \
+  -s ssoSessionIdleTimeout=3600
 
 # Function to check if client exists
 client_exists() {
