@@ -99,9 +99,8 @@ def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray
     if len(np.unique(gray)) <= 3:
         return (gray > 127).astype(np.uint8) * 255
 
-    return cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-    )
+    _, binary_mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary_mask
 
 
 def detect_contours(binary_mask: np.ndarray) -> List[np.ndarray]:
@@ -213,7 +212,7 @@ def classify_shape(properties: dict) -> str:
     # --- ARBRE DE DÉCISION ---
 
     # 1. Le Cercle : Forme très ronde
-    if circularity > 0.82:
+    if circularity > 0.80:
         return "Circle"
 
     # 2. Le Rectangle (incluant les Carrés) : Forme pleine, sans creux
@@ -439,13 +438,14 @@ def _preprocess_for_contours(
 
     l_norm = cv2.normalize(lightness, None, 0, 255, cv2.NORM_MINMAX)
 
-    gray = l_norm
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (71, 71))
+    black_hat = cv2.morphologyEx(l_norm, cv2.MORPH_BLACKHAT, kernel)
 
-    binary_mask = preprocess_image(gray, threshold_value)
+    binary_mask = preprocess_image(black_hat, threshold_value)
 
     return {
         "image_bgr": image_bgr,
-        "gray": gray,
+        "gray": black_hat,
         "binary_mask": binary_mask,
         "width": width,
         "height": height,
