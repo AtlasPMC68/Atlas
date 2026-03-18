@@ -4,7 +4,7 @@ import math
 from typing import Dict, List, Optional, Tuple, Literal
 
 import numpy as np
-import imageio.v3 as iio
+import cv2
 import skimage.util
 import skimage.restoration
 
@@ -37,58 +37,70 @@ def load_image_rgb_alpha_mask(
     alpha: (H, W) or None
     opaque_mask: (H, W) bool
     """
-    try:
-        img = iio.imread(image_path)
-    except FileNotFoundError:
-        raise ValueError(f"Image file not found: {image_path}")
-    except Exception as e:
-        raise ValueError(f"Error loading image '{image_path}'") from e
 
+    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+
+    if img is None:
+        raise ValueError(f"Image file not found: {image_path}")
+
+    # grayscale
     if img.ndim == 2:
-        # Grayscale -> replicate into RGB
         rgb = np.stack([img, img, img], axis=-1)
         alpha = None
         opaque_mask = np.ones(img.shape, dtype=bool)
 
+    # BGR
+    elif img.ndim == 3 and img.shape[2] == 3:
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        alpha = None
+        opaque_mask = np.ones(rgb.shape[:2], dtype=bool)
+
+    # BGRA
     elif img.ndim == 3 and img.shape[2] == 4:
-        # RGBA
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
         rgb = img[:, :, :3]
         alpha = img[:, :, 3]
         opaque_mask = alpha > 0
 
-    elif img.ndim == 3 and img.shape[2] == 3:
-        # RGB
-        rgb = img
-        alpha = None
-        opaque_mask = np.ones(rgb.shape[:2], dtype=bool)
-
     else:
-        raise ValueError("Unsupported image format (expected grayscale, RGB, or RGBA).")
+        raise ValueError("Unsupported image format")
 
     return rgb, alpha, opaque_mask
 
 
 def _debug_save_rgb(
     img_rgb: np.ndarray,
+    alpha: Optional[np.ndarray],
     debug_dir: str,
     step_idx: int,
     step_name: str,
 ) -> None:
-    """Save float RGB [0,1] as PNG for debugging."""
+    """Save float RGB [0,1] (optionally with alpha) as PNG for debugging."""
     os.makedirs(debug_dir, exist_ok=True)
+    # Clamp and convert RGB to uint8
     img = np.clip(img_rgb, 0.0, 1.0)
-    img_u8 = (img * 255.0 + 0.5).astype(np.uint8)
+    rgb_u8 = (img * 255.0 + 0.5).astype(np.uint8)  # (H, W, 3)
     out_path = os.path.join(debug_dir, f"{step_idx:02d}_{step_name}.png")
-    iio.imwrite(out_path, img_u8)
+    if alpha is not None:
+        alpha_u8 = (np.clip(alpha, 0, 1) * 255).astype(np.uint8) if alpha.dtype != np.uint8 else alpha
+        if alpha_u8.ndim == 3 and alpha_u8.shape[-1] == 1:
+            alpha_u8 = alpha_u8[:, :, 0]
+        rgba = np.dstack([rgb_u8, alpha_u8])
+        bgra = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)
+        cv2.imwrite(out_path, bgra)
+    else:
+        bgr_u8 = cv2.cvtColor(rgb_u8, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(out_path, bgr_u8)
 
 
 def preprocess(
     rgb: np.ndarray,
+    alpha: Optional[np.ndarray],
     opaque_mask: np.ndarray,
     *,
     enable_linearize: bool = True,
     enable_flat_field: bool = True,
-    flat_field_sigma: float = 120.0,
+    flat_field_sigma: float = 100.0,
     enable_white_balance: bool = True,
     white_balance_method: Literal["gray_world", "percentile"] = "percentile",
     wb_percentile: float = 99.5,
@@ -122,19 +134,19 @@ def preprocess(
 
     step = 0
     if debug:
-        _debug_save_rgb(rgb, debug_dir, step, "00_input_rgb")
+        _debug_save_rgb(rgb, alpha, debug_dir, step, "00_input_rgb")
         step += 1
 
     # 1) Linearize
     if enable_linearize:
         work = preprocessing.srgb_to_linear(rgb)
         if debug:
-            _debug_save_rgb(np.clip(work, 0.0, 1.0), debug_dir, step, "01_linear_rgb")
+            _debug_save_rgb(np.clip(work, 0.0, 1.0), alpha, debug_dir, step, "01_linear_rgb")
             step += 1
     else:
         work = rgb
         if debug:
-            _debug_save_rgb(work, debug_dir, step, "01_linear_skipped")
+            _debug_save_rgb(work, alpha, debug_dir, step, "01_linear_skipped")
             step += 1
 
     # 2) Flat-field
@@ -146,10 +158,10 @@ def preprocess(
             assume_linear=enable_linearize,
         )
         if debug:
-            _debug_save_rgb(work, debug_dir, step, "02_flat_field")
+            _debug_save_rgb(work, alpha, debug_dir, step, "02_flat_field")
             step += 1
     elif debug:
-        _debug_save_rgb(work, debug_dir, step, "02_flat_field_skipped")
+        _debug_save_rgb(work, alpha, debug_dir, step, "02_flat_field_skipped")
         step += 1
 
     # 3) White balance
@@ -162,11 +174,11 @@ def preprocess(
             )
         if debug:
             _debug_save_rgb(
-                work, debug_dir, step, f"03_white_balance_{white_balance_method}"
+                work, alpha, debug_dir, step, f"03_white_balance_{white_balance_method}"
             )
             step += 1
     elif debug:
-        _debug_save_rgb(work, debug_dir, step, "03_white_balance_skipped")
+        _debug_save_rgb(work, alpha, debug_dir, step, "03_white_balance_skipped")
         step += 1
 
     # 4) Denoise
@@ -182,10 +194,10 @@ def preprocess(
             work = preprocessing.denoise_nl_means_rgb(work)
 
         if debug:
-            _debug_save_rgb(work, debug_dir, step, f"04_denoise_{denoise_method}")
+            _debug_save_rgb(work, alpha, debug_dir, step, f"04_denoise_{denoise_method}")
             step += 1
     elif debug:
-        _debug_save_rgb(work, debug_dir, step, "04_denoise_skipped")
+        _debug_save_rgb(work, alpha, debug_dir, step, "04_denoise_skipped")
         step += 1
 
     # 5) Convert to LAB for CLAHE (work directly in LAB space)
@@ -214,7 +226,7 @@ def preprocess(
         rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
 
         if debug:
-            _debug_save_rgb(rgb_srgb, debug_dir, step, "05_clahe_on_lab")
+            _debug_save_rgb(rgb_srgb, alpha, debug_dir, step, "05_clahe_on_lab")
             step += 1
     else:
         # No CLAHE: just convert to sRGB
@@ -225,7 +237,7 @@ def preprocess(
         rgb_srgb = np.clip(rgb_srgb, 0.0, 1.0)
 
         if debug:
-            _debug_save_rgb(rgb_srgb, debug_dir, step, "05_back_to_srgb_no_clahe")
+            _debug_save_rgb(rgb_srgb, alpha, debug_dir, step, "05_back_to_srgb_no_clahe")
             step += 1
 
     # 6) Percentile normalization (robust global) - maintenant en sRGB
@@ -234,39 +246,27 @@ def preprocess(
             rgb_srgb, p_low=norm_p_low, p_high=norm_p_high, mask=mask
         )
         if debug:
-            _debug_save_rgb(rgb_srgb, debug_dir, step, "06_percentile_norm")
+            _debug_save_rgb(rgb_srgb, alpha, debug_dir, step, "06_percentile_norm")
             step += 1
     elif debug:
         _debug_save_rgb(rgb_srgb, debug_dir, step, "06_percentile_norm_skipped")
         step += 1
 
-    # 7) Percentile normalization (robust global)
-    if enable_percentile_norm:
-        rgb_srgb = preprocessing.percentile_normalize(
-            rgb_srgb, p_low=norm_p_low, p_high=norm_p_high, mask=mask
-        )
-        if debug:
-            _debug_save_rgb(rgb_srgb, debug_dir, step, "07_percentile_norm")
-            step += 1
-    elif debug:
-        _debug_save_rgb(rgb_srgb, debug_dir, step, "07_percentile_norm_skipped")
-        step += 1
-
-    # 8) Background mask refinement
+    # 7) Background mask refinement
     if enable_background_mask and bg_method == "paper":
         mask = preprocessing.build_paper_background_mask(
             rgb_srgb, mask, paper_threshold_deltaE=paper_threshold_deltaE
         )
         if debug:
-            _debug_save_rgb(rgb_srgb, debug_dir, step, "08_rgb_after_mask")
+            _debug_save_rgb(rgb_srgb, alpha, debug_dir, step, "08_rgb_after_mask")
             step += 1
     elif debug:
-        _debug_save_rgb(rgb_srgb, debug_dir, step, "08_background_mask_skipped")
+        _debug_save_rgb(rgb_srgb, alpha, debug_dir, step, "08_background_mask_skipped")
         step += 1
 
     rgb_out = np.clip(rgb_srgb, 0.0, 1.0)
     if debug:
-        _debug_save_rgb(rgb_out, debug_dir, step, "99_output_rgb")
+        _debug_save_rgb(rgb_out, alpha, debug_dir, step, "99_output_rgb")
 
     # Return sRGB (not linear) for downstream LAB computation
     return rgb_out, mask
@@ -527,8 +527,8 @@ def save_mask_png(mask_bool: np.ndarray, out_path: str) -> None:
     Save a boolean mask as an 8-bit PNG (0 or 255).
     Can be used for debug or final output.
     """
-    mask_u8 = mask_bool.astype(np.uint8) * 255
-    iio.imwrite(out_path, mask_u8)
+    img_u8 = mask_bool.astype(np.uint8) * 255
+    cv2.imwrite(out_path, img_u8)
 
 
 def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
@@ -634,15 +634,16 @@ def extract_colors(
     # -----------------------------
     # Color selection logic (which bins become layers)
     # -----------------------------
-    dominant_ratio: float = 0.011,  # Minimum pixel ratio for a color to be considered dominant.
-    accent_min_ratio: float = 0.1,  # Minimum ratio for a non-dominant (accent) color to be considered.
+    dominant_ratio: float = 0.01,  # Minimum pixel ratio for a color to be considered dominant.
+    accent_min_ratio: float = 0.0001,  # Minimum ratio for a non-dominant (accent) color to be considered.
     accent_min_deltaE_from_selected: float = 20.0,  # Minimum ΔE distance from ALL dominant colors for an accent to be accepted.
     min_colors_fallback: Optional[int] = None,  # If set, ensures at least this many colors are selected.
     merge_similar: bool = True,  # If True, merges selected colors that are perceptually too close (ΔE-based).
-    merge_deltaE_threshold: float = 12.0, #try with 10
+    merge_deltaE_threshold: float = 12.0,
     # ΔE threshold below which two selected colors are merged.
     # Larger value → more aggressive merging.
     # Smaller value → keep more distinct but similar-looking layers.
+
     # -----------------------------
     # Mask construction (pixel assignment)
     # -----------------------------
@@ -677,16 +678,17 @@ def extract_colors(
         os.makedirs(image_output_dir, exist_ok=True)
 
     # 1) Load raw image and alpha mask
-    rgb_u8, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
+    rgb_u8, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
     rgb = img_as_float(rgb_u8)
 
     # 2) Preprocess full image for color extraction (keeps/updates mask)
     rgb, opaque_mask = preprocess(
         rgb=rgb,
+        alpha=alpha,
         opaque_mask=opaque_mask,
         enable_linearize=True,  # Work in linear RGB for illumination-like ops
         enable_flat_field=False,  # Flat-field in linear RGB
-        flat_field_sigma=120.0,
+        flat_field_sigma=100.0,
         enable_white_balance=False,  # WB in linear RGB (stats on mask)
         white_balance_method="percentile",
         wb_percentile=99.5,
@@ -760,7 +762,7 @@ def extract_colors(
 
     # 7) Build per-color masks and features
     color_index = 1
-    opening_radius: int = 1
+    opening_radius: int = 0 # erosion + dilation
     for k, entry in enumerate(selected):
         mask = (best_idx == k) & valid
         # Optional morphological refinement:
