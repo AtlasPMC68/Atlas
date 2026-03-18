@@ -6,7 +6,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -46,6 +46,17 @@ const emit = defineEmits<{
 const selectedYear = ref(1740);
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
+
+const filteredFeatures = computed(() => {
+  return props.features.filter(
+    (feature: Feature) =>
+      new Date(feature.properties.startDate).getFullYear() <=
+        selectedYear.value &&
+      (!feature.properties.endDate ||
+        new Date(feature.properties.endDate).getFullYear() >=
+          selectedYear.value),
+  );
+});
 
 let map: L.Map | null = null;
 
@@ -419,7 +430,7 @@ function renderShapes(features: Feature[]) {
 function renderAllFeatures() {
   if (!map) return;
 
-  const currentFeatures = props.features;
+  const currentFeatures = filteredFeatures.value;
   const currentIds = new Set(currentFeatures.map((f) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
