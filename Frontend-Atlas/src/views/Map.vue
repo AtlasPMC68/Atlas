@@ -2,7 +2,7 @@
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
       <div class="flex justify-end">
-        <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
+        <SaveDropdown @save="saveFeatures" />
       </div>
 
       <button @click="upload(mapId)" class="btn btn-primary">
@@ -30,11 +30,6 @@
         />
       </div>
     </div>
-
-    <SaveAsModal
-      v-if="showSaveAsModal"
-      @save="handleSaveAs"
-      @cancel="showSaveAsModal = false"
     />
   </div>
 </template>
@@ -44,10 +39,8 @@ import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
-import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import type { MapSaveAsPayload } from "../typescript/map";
 import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
@@ -62,7 +55,6 @@ const router = useRouter();
 const mapId = ref(route.params.mapId as string).value;
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
-const showSaveAsModal = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 
 function reconcileVisibility(list: Feature[]) {
@@ -113,48 +105,29 @@ onMounted(async () => {
   await loadInitialFeatures();
 });
 
-function saveMap() {
-  console.log("Quick save");
-  // appel API ou logique de sauvegarde ici
-}
-
-function saveMapAs() {
-  showSaveAsModal.value = true;
-}
-
-async function handleSaveAs(map: MapSaveAsPayload) {
-  if (!keycloak.token || !currentUser.value) {
+async function saveFeatures() {
+  if (!currentUser.value) {
     throw new Error("No authentication token or user available");
   }
 
-  const userId = currentUser.value.id;
-
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/save`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(camelToSnake(features.value)),
       },
-      body: JSON.stringify(
-        camelToSnake({
-          userId: userId,
-          title: map.title,
-          description: map.description ? map.description : "",
-          isPrivate: map.isPrivate,
-        }),
-      ),
-    });
-
+    );
     if (!response.ok) {
-      throw new Error("Error while saving the map");
+      throw new Error(`Error saving features: ${response.status}`);
     }
-
-    await response.json();
-    showSaveAsModal.value = false;
   } catch (err) {
     throw new Error(
-      `Error while saving map: ${err instanceof Error ? err.message : String(err)}`,
+      `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

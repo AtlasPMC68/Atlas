@@ -3,8 +3,8 @@ from uuid import UUID
 import json
 from json import JSONDecodeError
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import not_, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
+from sqlalchemy import not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -272,6 +272,64 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
             all_features.append(feature)
 
     return all_features
+
+@router.put("/features/{map_id}")
+async def update_features(
+    map_id: str,
+    features: list[dict] = Body(...),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_id = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    updated_count = 0
+    created_count = 0
+
+    for feature in features:
+        feature_id = feature.get("id")
+        db_feature = None
+
+        if feature_id:
+            try:
+                feature_uuid = UUID(feature_id)
+                result = await session.execute(
+                    select(Feature).where(
+                        Feature.id == feature_uuid,
+                        Feature.map_id == map_id,
+                    )
+                )
+                db_feature = result.scalar_one_or_none()
+            except ValueError:
+                logger.warning(f"Feature id is not a valid UUID, creating a new row: {feature_id}")
+
+        if db_feature:
+            new_data = {"type": "FeatureCollection", "features": [feature]}
+            # Only update if data has changed
+            if db_feature.data != new_data:
+                db_feature.data = new_data
+                db_feature.updated_at = func.now()
+                session.add(db_feature)
+            updated_count += 1
+        else:
+            # New feature: let DB generate the row id.
+            payload_feature = dict(feature)
+            payload_feature.pop("id", None)
+            new_feature = Feature(
+                map_id=map_id,
+                is_feature_collection=False,
+                data={"type": "FeatureCollection", "features": [payload_feature]},
+            )
+            session.add(new_feature)
+            created_count += 1
+
+    await session.commit()
+    return {
+        "detail": "Features synchronized successfully",
+        "updated": updated_count,
+        "created": created_count,
+    }
 
 
 @router.get("/map", response_model=list[MapOut])
