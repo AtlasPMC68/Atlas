@@ -60,9 +60,12 @@ def process_map_extraction(
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
     is_test: bool = False,
+    test_case: str | None = None,
 ):
-    # Ensure we are working with a UUID instance inside the task
-    map_uuid = UUID(map_id)
+    # Only parse DB UUID when we will persist.
+    map_uuid: UUID | None = None
+    if not is_test:
+        map_uuid = UUID(map_id)
 
     try:
         # Step 1: temp save
@@ -255,36 +258,56 @@ def process_map_extraction(
                 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 assets_root = os.path.join(root_dir, "tests", "assets")
                 maps_dir = os.path.join(assets_root, "maps")
-                zones_dir = os.path.join(assets_root, "georef_zones")
+                test_cases_root = os.path.join(assets_root, "test_cases")
 
                 os.makedirs(maps_dir, exist_ok=True)
-                os.makedirs(zones_dir, exist_ok=True)
+
+                # Save extracted zones per test case so we don't overwrite the expected zones
+                # written by the TestEditor (tests/assets/georef_zones/<map_id>_zones.geojson).
+                safe_case = (test_case or "default").strip() or "default"
+                case_dir = os.path.join(test_cases_root, map_id)
+                os.makedirs(case_dir, exist_ok=True)
 
                 # Save the original image under a stable name based on map_id
                 ext = os.path.splitext(filename)[1] or ".png"
                 image_output_path = os.path.join(maps_dir, f"{map_id}{ext}")
+
+                # Avoid duplicates in dev-test browser if extension changes across runs.
+                try:
+                    for existing in os.listdir(maps_dir):
+                        stem, _e = os.path.splitext(existing)
+                        if stem == map_id:
+                            existing_path = os.path.join(maps_dir, existing)
+                            if os.path.abspath(existing_path) != os.path.abspath(
+                                image_output_path
+                            ):
+                                try:
+                                    os.remove(existing_path)
+                                except OSError:
+                                    pass
+                except OSError:
+                    pass
+
                 # image was loaded earlier with cv2.imread
                 cv2.imwrite(image_output_path, image)
 
                 # Save zones as a single FeatureCollection if available
+                all_features: list[dict[str, Any]] = []
                 if zones_features:
-                    all_features: list[dict[str, Any]] = []
                     for fc in zones_features:
                         all_features.extend(fc.get("features", []))
 
-                    zones_geojson = {
-                        "type": "FeatureCollection",
-                        "features": all_features,
-                    }
-                    zones_output_path = os.path.join(
-                        zones_dir, f"{map_id}_zones.geojson"
-                    )
-                    with open(zones_output_path, "w", encoding="utf-8") as f:
-                        json.dump(zones_geojson, f, indent=2, ensure_ascii=False)
+                zones_geojson = {
+                    "type": "FeatureCollection",
+                    "features": all_features,
+                }
+                zones_output_path = os.path.join(case_dir, f"{safe_case}_zones.geojson")
+                with open(zones_output_path, "w", encoding="utf-8") as f:
+                    json.dump(zones_geojson, f, indent=2, ensure_ascii=False)
 
                 # Build HTTP URLs corresponding to the StaticFiles mount (/dev-test)
                 image_url = f"/dev-test/maps/{map_id}{ext}"
-                zones_url = f"/dev-test/georef_zones/{map_id}_zones.geojson"
+                zones_url = f"/dev-test/test_cases/{map_id}/{safe_case}_zones.geojson"
 
                 logger.info(
                     f"[TEST] Saved test image to {image_output_path} and zones to {zones_output_path}"
@@ -358,7 +381,7 @@ def process_map_extraction(
         if "tmp_file_path" in locals():
             try:
                 os.unlink(tmp_file_path)
-            except:
+            except Exception:
                 pass
 
         logger.error(f"Error processing map {filename}: {str(e)}")

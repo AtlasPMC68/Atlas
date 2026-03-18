@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRoute } from "vue-router";
+import { useRouter } from "vue-router";
 import MapTestGeoJSON from "../../components/MapTestGeoJSON.vue";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import CreateZonePanel from "../../components/dev/CreateZonePanel.vue";
 import type { Feature } from "../../typescript/feature";
 
 const route = useRoute();
+const router = useRouter();
 const mapId = ref<string | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref(new Map<string, boolean>());
@@ -253,6 +255,16 @@ onMounted(() => {
     console.error("No mapId route param provided for TestBrowser");
   }
 });
+
+function goToTestImport() {
+  if (!mapId.value) return;
+  router.push({
+    path: "/demo/upload-test",
+    query: {
+      testId: mapId.value,
+    },
+  });
+}
 </script>
 
 <template>
@@ -268,6 +280,12 @@ onMounted(() => {
             ({{ mapId }})
           </span>
         </h1>
+      </div>
+
+      <div class="flex-none">
+        <button class="btn btn-secondary btn-sm" type="button" @click="goToTestImport">
+          Ajouter un test case
+        </button>
       </div>
     </div>
 

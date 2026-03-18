@@ -1,0 +1,77 @@
+{
+  "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
+  "testCaseId": "5-sift-points",
+  "evaluatedAt": "2026-03-17T21:50:59.331050Z",
+  "thresholds": {
+    "minIou": null
+  },
+  "paths": {
+    "expectedZones": "/app/tests/assets/georef_zones/52a1aedc-98d0-4bd7-8b78-d4fd184f91df_zones.geojson",
+    "extractedZones": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points_zones.geojson",
+    "config": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points_config.json",
+    "report": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points_report.json"
+  },
+  "counts": {
+    "expectedFeatures": 1,
+    "extractedFeatures": 8,
+    "expectedGeometries": 1,
+    "extractedGeometries": 8,
+    "anchorImagePoints": 5,
+    "anchorWorldPoints": 5
+  },
+  "metrics": {
+    "primaryExpectedBestIou": 0.9166473257642735,
+    "primaryExpected": {
+      "index": 0,
+      "id": "dev-zone-1772842734708",
+      "name": "DarkKhaki_1",
+      "area": 203.3187314685591
+    },
+    "primaryMatch": {
+      "iou": 0.9166473257642735,
+      "intersectionArea": 188.3303276511287,
+      "unionArea": 205.45560147039583,
+      "extracted": {
+        "index": 0,
+        "id": null,
+        "name": "Zone darkkhaki_1",
+        "area": 190.46719765296547
+      }
+    },
+    "union": {
+      "expectedArea": 203.31873146855867,
+      "extractedArea": 455.0869052815814,
+      "intersectionArea": 203.31873146855892,
+      "unionArea": 455.0869052815821,
+      "iou": 0.4467690217163176
+    }
+  },
+  "matches": [
+    {
+      "expected": {
+        "index": 0,
+        "id": "dev-zone-1772842734708",
+        "name": "DarkKhaki_1",
+        "area": 203.3187314685591
+      },
+      "bestMatch": {
+        "iou": 0.9166473257642735,
+        "intersectionArea": 188.3303276511287,
+        "unionArea": 205.45560147039583,
+        "extracted": {
+          "index": 0,
+          "id": null,
+          "name": "Zone darkkhaki_1",
+          "area": 190.46719765296547
+        }
+      }
+    }
+  ],
+  "artifacts": {
+    "latestZones": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points_zones.geojson",
+    "latestReport": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points_report.json",
+    "bestZones": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points_zones_best.geojson",
+    "bestReport": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points_best_report.json",
+    "bestUpdated": true
+  }
+}

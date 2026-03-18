@@ -16,6 +16,11 @@ type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
 
 type StartImportResult = { success: true } | { success: false; error: string };
 
+type DevTestParams = {
+  testId?: string;
+  testCase?: string;
+};
+
 interface UploadResponse {
   task_id: string | null;
   map_id: string | null;
@@ -43,7 +48,7 @@ export function useImportProcess() {
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
-    isTest: boolean = false,
+    devTest?: DevTestParams | string,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -61,8 +66,26 @@ export function useImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
-    // Test mode flag
-    formData.append("is_test", String(isTest));
+    const legacyTestCase = typeof devTest === "string" ? devTest : "";
+    const testId = typeof devTest === "object" && devTest ? (devTest.testId ?? "") : "";
+    const testCase = typeof devTest === "object" && devTest ? (devTest.testCase ?? "") : "";
+
+    const trimmedTestId = testId.trim();
+    const trimmedTestCase = (testCase || legacyTestCase).trim();
+
+    if (trimmedTestId) {
+      formData.append("test_id", trimmedTestId);
+    }
+    if (trimmedTestCase) {
+      formData.append("test_case", trimmedTestCase);
+    }
+
+    // Backward-compatible flag: any dev-test fields imply test mode.
+    if (trimmedTestId || trimmedTestCase) {
+      formData.append("is_test", "true");
+    } else {
+      formData.append("is_test", "false");
+    }
     // Add extraction options
     if (options) {
       formData.append("enable_georeferencing", String(options.enableGeoreferencing ?? true));

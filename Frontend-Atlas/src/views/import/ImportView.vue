@@ -5,6 +5,14 @@
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-base-content mb-2">
           {{ isDevTest ? "Créer un test de carte" : "Importer une carte" }}
+          <span
+            v-if="isDevTest && (devTestIdFromQuery || devTestCaseName)"
+            class="ml-2 text-sm font-normal text-base-content/60"
+          >
+            <span v-if="devTestIdFromQuery">test: {{ devTestIdFromQuery }}</span>
+            <span v-if="devTestIdFromQuery && devTestCaseName"> · </span>
+            <span v-if="devTestCaseName">case: {{ devTestCaseName }}</span>
+          </span>
         </h1>
         <p class="text-base-content/70">
           {{
@@ -244,6 +252,19 @@ const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, n
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
 
+// Dev-test: stable identifier to store assets/config under backend tests/assets
+const devTestCaseName = ref<string | null>(null);
+
+const devTestIdFromQuery = computed(() => {
+  const q = route.query?.testId;
+  return typeof q === "string" ? q.trim() : "";
+});
+
+const devTestCaseFromQuery = computed(() => {
+  const q = route.query?.testCase;
+  return typeof q === "string" ? q.trim() : "";
+});
+
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
 const enableColorExtraction = ref<boolean>(true);
@@ -258,6 +279,30 @@ const handleFileSelected = (file: File) => {
 
 async function startImportProcess() {
   if (!selectedFile.value) return;
+
+  if (!isDevTest.value) {
+    devTestCaseName.value = null;
+  }
+
+  if (isDevTest.value) {
+    // If a testCase is preselected in the URL, reuse it.
+    if (devTestCaseFromQuery.value) {
+      devTestCaseName.value = devTestCaseFromQuery.value;
+    }
+
+    // Otherwise prompt for the test case name (scenario) once.
+    if (!devTestCaseName.value) {
+      const entered = window.prompt(
+        devTestIdFromQuery.value
+          ? `Nom du test-case pour le test ${devTestIdFromQuery.value} (ex: '5 sift points')`
+          : "Nom du test-case (scénario, ex: '5 sift points')",
+        "",
+      );
+      const trimmed = (entered ?? "").trim();
+      if (!trimmed) return;
+      devTestCaseName.value = trimmed;
+    }
+  }
 
   if (isDevTest.value) {
     // In test mode, force georeferencing and color extraction on,
@@ -279,7 +324,11 @@ async function startImportProcess() {
         enableColorExtraction: enableColorExtraction.value,
         enableShapesExtraction: enableShapesExtraction.value,
         enableTextExtraction: enableTextExtraction.value,
-      }
+      },
+      {
+        testId: isDevTest.value ? (devTestIdFromQuery.value || undefined) : undefined,
+        testCase: devTestCaseName.value ?? undefined,
+      },
     );
     if (result.success) {
       currentStep.value = 5;
@@ -347,7 +396,10 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
       enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
     },
-    isDevTest.value
+    {
+      testId: isDevTest.value ? (devTestIdFromQuery.value || undefined) : undefined,
+      testCase: devTestCaseName.value ?? undefined,
+    },
   );
   if (result.success) {
     currentStep.value = 5;
