@@ -4,7 +4,7 @@
       <!-- Header -->
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-base-content mb-2">
-          {{ isDevTest ? "Créer un test de carte" : "Importer une carte" }}
+          Importer une carte
           <span
             v-if="isDevTest && (devTestIdFromQuery || devTestCaseName)"
             class="ml-2 text-sm font-normal text-base-content/60"
@@ -17,7 +17,7 @@
         <p class="text-base-content/70">
           {{
             isDevTest
-              ? "Cette importation servira à créer des données de test."
+              ? "Utiliser la carte associée au test actuel"
               : "Glissez votre image de carte ou cliquez pour la sélectionner"
           }}
         </p>
@@ -121,31 +121,11 @@
             </div>
             
             <ImportControls
-              v-if="!isDevTest"
               @start-import="startImportProcess"
               @cancel="resetImport"
               :is-processing="isProcessing"
               start-label="Confirmer carte"
             />
-
-            <div v-else class="flex justify-end gap-2">
-              <button
-                class="btn btn-primary"
-                type="button"
-                :disabled="isProcessing"
-                @click="startImportProcess"
-              >
-                Utiliser extraction
-              </button>
-              <button
-                class="btn btn-secondary"
-                type="button"
-                :disabled="isProcessing"
-                @click="startManualCreation"
-              >
-                Commencer création
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -260,11 +240,6 @@ const devTestIdFromQuery = computed(() => {
   return typeof q === "string" ? q.trim() : "";
 });
 
-const devTestCaseFromQuery = computed(() => {
-  const q = route.query?.testCase;
-  return typeof q === "string" ? q.trim() : "";
-});
-
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
 const enableColorExtraction = ref<boolean>(true);
@@ -285,12 +260,8 @@ async function startImportProcess() {
   }
 
   if (isDevTest.value) {
-    // If a testCase is preselected in the URL, reuse it.
-    if (devTestCaseFromQuery.value) {
-      devTestCaseName.value = devTestCaseFromQuery.value;
-    }
 
-    // Otherwise prompt for the test case name (scenario) once.
+    // prompt for the test case name (scenario) once.
     if (!devTestCaseName.value) {
       const entered = window.prompt(
         devTestIdFromQuery.value
@@ -325,6 +296,7 @@ async function startImportProcess() {
         enableShapesExtraction: enableShapesExtraction.value,
         enableTextExtraction: enableTextExtraction.value,
       },
+      //TODO: Should probably handle better the case where were in test mode and testId or testCase is null
       {
         testId: isDevTest.value ? (devTestIdFromQuery.value || undefined) : undefined,
         testCase: devTestCaseName.value ?? undefined,
@@ -341,10 +313,6 @@ async function startImportProcess() {
   // With georeferencing enabled, show world area picker
   currentStep.value = 3;
   showWorldAreaPickerModal.value = true;
-}
-
-function startManualCreation() {
-  router.push("/test-creation");
 }
 
 function handleWorldAreaClose() {
@@ -413,6 +381,7 @@ watch(
   [isProcessing, resultData, mapId],
   ([processing, result, id]) => {
     if (!processing && result && id) {
+      //TODO: probably should change the redirect to a view where we see the extracted things not the test-editor
       if (isDevTest.value) {
         console.log("Import finished in test mode, redirecting to test editor with mapId:", id);
         router.push({ path: `/test-editor/${id}` });

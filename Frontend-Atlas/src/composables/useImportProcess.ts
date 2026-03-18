@@ -48,7 +48,7 @@ export function useImportProcess() {
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
-    devTest?: DevTestParams | string,
+    devTest?: DevTestParams,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -66,12 +66,9 @@ export function useImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
-    const legacyTestCase = typeof devTest === "string" ? devTest : "";
-    const testId = typeof devTest === "object" && devTest ? (devTest.testId ?? "") : "";
-    const testCase = typeof devTest === "object" && devTest ? (devTest.testCase ?? "") : "";
 
-    const trimmedTestId = testId.trim();
-    const trimmedTestCase = (testCase || legacyTestCase).trim();
+    const trimmedTestId = (devTest?.testId ?? "").trim();
+    const trimmedTestCase = (devTest?.testCase ?? "").trim();
 
     if (trimmedTestId) {
       formData.append("test_id", trimmedTestId);

@@ -23,9 +23,10 @@
         traits se collent automatiquement si elles sont proches.
       </p>
 
-      <label class="flex flex-col gap-1 text-xs">
+      <label class="flex flex-col gap-1 text-xs" :for="zoneNameInputId">
         <span>Nom de la zone</span>
         <input
+          :id="zoneNameInputId"
           :value="zoneName"
           type="text"
           class="input input-xs input-bordered w-full"
@@ -74,7 +75,9 @@
         <button
           class="btn btn-xs btn-outline w-full"
           type="button"
-          :disabled="!pendingCreateGeometry"
+          :disabled="!canAddSubzone"
+          :aria-disabled="!canAddSubzone"
+          :title="addSubzoneTitle"
           @click="$emit('add-subzone')"
         >
           Ajouter une sous-zone
@@ -85,7 +88,9 @@
         <button
           class="btn btn-xs btn-success flex-1"
           type="button"
-          :disabled="!pendingCreateGeometry && subzoneCount === 0"
+          :disabled="!canSaveZone"
+          :aria-disabled="!canSaveZone"
+          :title="saveZoneTitle"
           @click="$emit('save-zone')"
         >
           Enregistrer la zone
@@ -99,7 +104,10 @@
         </button>
       </div>
 
-      <p v-if="!pendingCreateGeometry" class="text-[11px] text-warning">
+      <p v-if="pendingCreateGeometry" class="text-[11px] text-success">
+        Contour fermé — prêt à enregistrer.
+      </p>
+      <p v-else class="text-[11px] text-warning">
         Le contour doit revenir près de son point de départ pour pouvoir
         être enregistré.
       </p>
@@ -108,6 +116,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
+
 const props = defineProps<{
   isCreateMode: boolean;
   zoneName: string;
@@ -130,6 +140,28 @@ const emit = defineEmits<{
 
 function onNameInput(event: Event) {
   const target = event.target as HTMLInputElement | null;
-  emit("update:zoneName", target?.value ?? "");
+  emit("update:zoneName", (target?.value ?? "").trim());
 }
+
+const zoneNameInputId = "create-zone-name";
+const trimmedZoneName = computed(() => (props.zoneName ?? "").trim());
+const isZoneNameValid = computed(() => trimmedZoneName.value.length > 0);
+
+const canAddSubzone = computed(() => Boolean(props.pendingCreateGeometry));
+const canSaveZone = computed(
+  () =>
+    isZoneNameValid.value &&
+    (Boolean(props.pendingCreateGeometry) || props.subzoneCount > 0),
+);
+
+const addSubzoneTitle = computed(() => {
+  if (canAddSubzone.value) return "";
+  return "Dessine un contour fermé pour pouvoir ajouter une sous-zone";
+});
+
+const saveZoneTitle = computed(() => {
+  if (canSaveZone.value) return "";
+  if (!isZoneNameValid.value) return "Donne un nom à la zone";
+  return "Dessine un contour fermé ou ajoute une sous-zone";
+});
 </script>

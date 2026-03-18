@@ -1,12 +1,14 @@
 <template>
   <div class="relative h-full w-full z-0">
-    <div id="test-map" style="height: 80vh; width: 100%"></div>
+    <div ref="mapEl" style="height: 80vh; width: 100%"></div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, watch } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import L from "leaflet";
+
+const mapEl = ref(null);
 
 const props = defineProps({
   mapId: String,
@@ -49,6 +51,7 @@ const emit = defineEmits(["features-loaded", "zone-click", "create-updated"]);
 
 let map = null;
 let baseTileLayer = null;
+let isUnmounted = false;
 
 // Multi-stroke create-zone drawing state
 let strokes = [];
@@ -112,32 +115,6 @@ function renderZones(features) {
     const fillColor = feature.color || colorFromRgb || "#ccc";
     let targetGeometry = feature.geometry;
 
-    if (props.is_normalized) {
-      const fc = {
-        type: "FeatureCollection",
-        features: [feature],
-      };
-
-      const anchorLat = -80 + Math.random() * 160;
-      const anchorLng = -170 + Math.random() * 340;
-      const sizeMeters = 2_000_000;
-
-      const worldFc = transformNormalizedToWorld(
-        fc,
-        anchorLat,
-        anchorLng,
-        sizeMeters,
-      );
-
-      if (
-        worldFc &&
-        Array.isArray(worldFc.features) &&
-        worldFc.features[0]?.geometry
-      ) {
-        targetGeometry = worldFc.features[0].geometry;
-      }
-    }
-
     const layer = L.geoJSON(targetGeometry, {
       style: {
         fillColor,
@@ -196,41 +173,6 @@ function renderSubzones(geoms) {
 
     subzoneLayerGroup.addLayer(layer);
   });
-}
-
-function transformNormalizedToWorld(geojson, anchorLat, anchorLng, sizeMeters) {
-  const crs = L.CRS.EPSG3857;
-  const center = crs.project(L.latLng(anchorLat, anchorLng));
-  const halfSize = sizeMeters / 2;
-
-  const transformCoord = ([x, y]) => {
-    const nx = x - 0.5;
-    const ny = y - 0.5;
-
-    const mx = center.x + nx * 2 * halfSize;
-    const my = center.y - ny * 2 * halfSize;
-
-    const latlng = crs.unproject(L.point(mx, my));
-    return [latlng.lng, latlng.lat];
-  };
-
-  const transformCoords = (coords) => {
-    if (typeof coords[0] === "number") {
-      return transformCoord(coords);
-    }
-    return coords.map(transformCoords);
-  };
-
-  return {
-    ...geojson,
-    features: geojson.features.map((f) => ({
-      ...f,
-      geometry: {
-        ...f.geometry,
-        coordinates: transformCoords(f.geometry.coordinates),
-      },
-    })),
-  };
 }
 
 function toArray(maybeArray) {
@@ -574,7 +516,7 @@ async function loadGeoBorders() {
 }
 
 onMounted(() => {
-  map = L.map("test-map").setView([52.9399, -73.5491], 5);
+  map = L.map(mapEl.value).setView([52.9399, -73.5491], 5);
 
   baseTileLayer = L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -598,6 +540,7 @@ onMounted(() => {
   fetch("/geojson/ne_coastline.geojson")
     .then((res) => res.json())
     .then((data) => {
+      if (isUnmounted || !map) return;
       try {
         const feats = Array.isArray(data.features) ? data.features : [];
         coastlineLines = [];
@@ -622,6 +565,33 @@ onMounted(() => {
     .catch((err) => {
       console.error("Failed to load coastline geojson", err);
     });
+});
+
+onBeforeUnmount(() => {
+  isUnmounted = true;
+  if (!map) return;
+
+  try {
+    map.off("mousedown", handleMouseDown);
+    map.off("mousemove", handleMouseMove);
+    map.off("mouseup", handleMouseUp);
+    map.off("click", handleMapClick);
+  } catch {
+    // best-effort
+  }
+
+  try {
+    map.remove();
+  } catch {
+    // best-effort
+  }
+
+  map = null;
+  baseTileLayer = null;
+  createStrokeLayer = null;
+  createPolygonLayer = null;
+  geoRegionsLayer = null;
+  subzoneLayerGroup = null;
 });
 
 watch(

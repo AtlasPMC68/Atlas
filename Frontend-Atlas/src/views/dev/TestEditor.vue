@@ -1,7 +1,86 @@
+<template>
+  <div class="min-h-screen w-full bg-base-100 flex flex-col">
+    <div class="navbar bg-base-100 shadow-lg">
+      <div class="flex-1">
+        <h1 class="text-xl font-bold">
+          Test editor
+          <span
+            v-if="mapId"
+            class="ml-2 text-sm font-normal text-base-content/60"
+          >
+            ({{ mapId }})
+          </span>
+        </h1>
+      </div>
+
+      <div class="flex-none">
+        <button class="btn btn-secondary btn-sm" type="button" @click="goToTestImport">
+          Ajouter un test case
+        </button>
+      </div>
+    </div>
+
+    <div class="flex flex-1">
+      <!-- Feature controls -->
+      <div class="w-96 bg-base-200 border-r border-base-300 p-4">
+        <FeatureVisibilityControls
+          :features="features"
+          :feature-visibility="featureVisibility"
+          :allow-delete="true"
+          :allow-rename="true"
+          @toggle-feature="toggleFeatureVisibility"
+          @rename-feature="renameFeature"
+          @delete-feature="deleteFeature"
+        />
+      </div>
+
+      <!-- Leaflet map with zones and dev tools -->
+      <div class="flex-1 flex">
+        <div class="flex-1 flex flex-col">
+          <div class="flex-1">
+            <MapTestGeoJSON
+              v-if="mapId"
+              :map-id="mapId"
+              :features="features"
+              :feature-visibility="featureVisibility"
+              :is-create-mode="isCreateMode"
+              :reset-create-key="resetCreateKey"
+              :is-frontier-mode="isFrontierMode"
+              :is-geo-border-mode="isGeoBorderMode"
+              :undo-create-key="undoCreateKey"
+              :sub-geometries="subGeometries"
+              @create-updated="handleCreateUpdated"
+            />
+          </div>
+        </div>
+
+    <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
+      <!-- Create zone -->
+      <CreateZonePanel
+        :is-create-mode="isCreateMode"
+        v-model:zone-name="newZoneName"
+        :pending-create-geometry="pendingCreateGeometry"
+        :is-frontier-mode="isFrontierMode"
+        :is-geo-border-mode="isGeoBorderMode"
+        :subzone-count="subGeometries.length"
+        @start-create="startCreateMode"
+        @cancel-create="cancelCreateMode"
+        @undo-last-stroke="undoLastStroke"
+        @toggle-frontier="toggleFrontierMode"
+        @toggle-geo-border="toggleGeoBorderMode"
+        @save-zone="saveCreatedZone"
+        @add-subzone="addSubzone"
+      />
+
+      </div>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import MapTestGeoJSON from "../../components/MapTestGeoJSON.vue";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import CreateZonePanel from "../../components/dev/CreateZonePanel.vue";
@@ -28,6 +107,13 @@ async function loadTestZones(currentMapId: string) {
       `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${currentMapId}`,
     );
     if (!res.ok) {
+      // For a brand-new test map, it's normal to have no zones yet.
+      if (res.status === 404) {
+        features.value = [];
+        featureVisibility.value = new Map();
+        return;
+      }
+
       console.error("Failed to fetch test zones GeoJSON", res.status);
       return;
     }
@@ -266,83 +352,3 @@ function goToTestImport() {
   });
 }
 </script>
-
-<template>
-  <div class="min-h-screen w-full bg-base-100 flex flex-col">
-    <div class="navbar bg-base-100 shadow-lg">
-      <div class="flex-1">
-        <h1 class="text-xl font-bold">
-          Test editor
-          <span
-            v-if="mapId"
-            class="ml-2 text-sm font-normal text-base-content/60"
-          >
-            ({{ mapId }})
-          </span>
-        </h1>
-      </div>
-
-      <div class="flex-none">
-        <button class="btn btn-secondary btn-sm" type="button" @click="goToTestImport">
-          Ajouter un test case
-        </button>
-      </div>
-    </div>
-
-    <div class="flex flex-1">
-      <!-- Feature controls -->
-      <div class="w-96 bg-base-200 border-r border-base-300 p-4">
-        <FeatureVisibilityControls
-          :features="features"
-          :feature-visibility="featureVisibility"
-          :allow-delete="true"
-          :allow-rename="true"
-          @toggle-feature="toggleFeatureVisibility"
-          @rename-feature="renameFeature"
-          @delete-feature="deleteFeature"
-        />
-      </div>
-
-      <!-- Leaflet map with zones and dev tools -->
-      <div class="flex-1 flex">
-        <div class="flex-1 flex flex-col">
-          <div class="flex-1">
-            <MapTestGeoJSON
-              v-if="mapId"
-              :map-id="mapId"
-              :features="features"
-              :feature-visibility="featureVisibility"
-              :is-create-mode="isCreateMode"
-              :reset-create-key="resetCreateKey"
-              :is-frontier-mode="isFrontierMode"
-              :is-geo-border-mode="isGeoBorderMode"
-              :undo-create-key="undoCreateKey"
-              :sub-geometries="subGeometries"
-              @create-updated="handleCreateUpdated"
-            />
-          </div>
-        </div>
-
-    <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
-      <!-- Create zone -->
-      <CreateZonePanel
-        :is-create-mode="isCreateMode"
-        v-model:zone-name="newZoneName"
-        :pending-create-geometry="pendingCreateGeometry"
-        :is-frontier-mode="isFrontierMode"
-        :is-geo-border-mode="isGeoBorderMode"
-        :subzone-count="subGeometries.length"
-        @start-create="startCreateMode"
-        @cancel-create="cancelCreateMode"
-        @undo-last-stroke="undoLastStroke"
-        @toggle-frontier="toggleFrontierMode"
-        @toggle-geo-border="toggleGeoBorderMode"
-        @save-zone="saveCreatedZone"
-        @add-subzone="addSubzone"
-      />
-
-      </div>
-      </div>
-    </div>
-  </div>
-</template>
