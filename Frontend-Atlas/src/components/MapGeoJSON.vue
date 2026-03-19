@@ -464,7 +464,7 @@ function renderAllFeatures() {
 }
 
 onMounted(() => {
-  map = L.map("map").setView([52.9399, -73.5491], 5);
+  map = L.map("map", { zoomControl: false }).setView([52.9399, -73.5491], 5);
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -476,6 +476,9 @@ onMounted(() => {
   ).addTo(map);
 
   drawing.initializeDrawing(map);
+
+  L.control.zoom({ position: "topright" }).addTo(map);
+
   renderAllFeatures();
 });
 
