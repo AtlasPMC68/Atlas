@@ -28,6 +28,7 @@
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
+          @draw-delete-id="handleFeatureDelete"
         />
       </div>
     </div>
@@ -61,6 +62,41 @@ const mapGeoJsonRef = ref<{
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const { currentUser, fetchCurrentUser } = useCurrentUser();
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function deleteFeatureFromApi(featureId: string) {
+  if (!isUuid(featureId)) return; // Check if the featureId is a valid UUID (it could be a temporary ID for unsaved features)
+
+  if (!currentUser.value) {
+    throw new Error("No user signed in");
+  }
+
+  const response = await fetch(
+    `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Error deleting feature ${featureId}: ${response.status}`);
+  }
+}
+
+function handleFeatureDelete(featureId: string) {
+  features.value = features.value.filter((feature) => feature.id !== featureId);
+  reconcileVisibility(features.value);
+
+  void deleteFeatureFromApi(featureId).catch((error) => {
+    console.error("Failed to delete feature from API:", error);
+  });
+}
 
 function reconcileVisibility(list: Feature[]) {
   const next = new Map(featureVisibility.value);

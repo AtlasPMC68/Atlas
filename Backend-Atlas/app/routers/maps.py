@@ -332,6 +332,38 @@ async def update_features(
     }
 
 
+@router.delete("/features/{map_id}/{feature_id}")
+async def delete_feature(
+    map_id: str,
+    feature_id: str,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_uuid = UUID(map_id)
+        feature_uuid = UUID(feature_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id or feature_id")
+
+    result = await session.execute(
+        select(Feature).where(
+            Feature.id == feature_uuid,
+            Feature.map_id == map_uuid,
+        )
+    )
+    db_feature = result.scalar_one_or_none()
+
+    if not db_feature:
+        raise HTTPException(status_code=404, detail="Feature not found")
+
+    await session.delete(db_feature)
+    await session.commit()
+
+    return {
+        "detail": "Feature deleted successfully",
+        "feature_id": str(feature_uuid),
+    }
+
+
 @router.get("/map", response_model=list[MapOut])
 async def get_maps(
     user_id: str | None = None,

@@ -44,7 +44,8 @@ const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete", features: Feature[]): void;
+  (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
+  (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
 }>();
 
 const selectedYear = ref(1740);
@@ -164,12 +165,14 @@ const drawing = useMapDrawing((event, ...args) => {
   if (event === "feature-created") {
     const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
+    emit("draw-create", next);
     return;
   }
 
   if (event === "feature-updated") {
     const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
+    emit("draw-update", next);
     return;
   }
 
@@ -179,6 +182,8 @@ const drawing = useMapDrawing((event, ...args) => {
       (feature) => featureIdAsString(feature) !== deletedId,
     );
     localFeaturesSnapshot.value = next;
+    emit("draw-delete", next);
+    emit("draw-delete-id", deletedId);
   }
 });
 
@@ -500,7 +505,7 @@ function renderAllFeatures() {
 }
 
 onMounted(() => {
-  map = L.map("map").setView([52.9399, -73.5491], 5);
+  map = L.map("map", { zoomControl: false }).setView([52.9399, -73.5491], 5);
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -512,6 +517,9 @@ onMounted(() => {
   ).addTo(map);
 
   drawing.initializeDrawing(map);
+
+  L.control.zoom({ position: "topright" }).addTo(map);
+
   drawing.setSelectedYear(selectedYear.value);
   renderAllFeatures();
 });
