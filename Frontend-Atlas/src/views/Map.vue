@@ -21,6 +21,7 @@
 
       <div class="flex-1">
         <MapGeoJSON
+          ref="mapGeoJsonRef"
           :features="features"
           :feature-visibility="featureVisibility"
           @features-loaded="handleFeaturesLoaded"
@@ -41,7 +42,7 @@ import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import { camelToSnake, snakeToCamel } from "../utils/utils";
+import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 
@@ -53,6 +54,10 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 const route = useRoute();
 const router = useRouter();
 const mapId = ref(route.params.mapId as string).value;
+const mapGeoJsonRef = ref<{
+  syncFeaturesFromMapLayers: () => Feature[];
+  clearDraftLayers: () => void;
+} | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const { currentUser, fetchCurrentUser } = useCurrentUser();
@@ -111,6 +116,14 @@ async function saveFeatures() {
   }
 
   try {
+    const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
+    if (syncedFeatures) {
+      features.value = syncedFeatures;
+      reconcileVisibility(syncedFeatures);
+    }
+
+    const payload = camelToSnake(prepareFeaturesForSave(features.value));
+
     const response = await fetch(
       `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
       {
@@ -119,12 +132,14 @@ async function saveFeatures() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${keycloak.token}`,
         },
-        body: JSON.stringify(camelToSnake(features.value)),
+        body: JSON.stringify(payload),
       },
     );
     if (!response.ok) {
       throw new Error(`Error saving features: ${response.status}`);
     }
+
+    mapGeoJsonRef.value?.clearDraftLayers();
   } catch (err) {
     throw new Error(
       `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,

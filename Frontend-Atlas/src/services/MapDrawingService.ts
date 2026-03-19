@@ -379,6 +379,19 @@ export class MapDrawingService {
     map.boxZoom.enable();
   }
 
+  private emitUpdatedFeatureFromLayer(layer: FeatureBearingLayer) {
+    const feature = layerToFeature(layer);
+
+    if (feature && layer.feature?.id) {
+      feature.id = layer.feature.id;
+      feature.properties = {
+        ...(layer.feature?.properties || {}),
+        ...(feature.properties || {}),
+      };
+      this.attachFeatureAndEmit(layer, feature, "feature-updated");
+    }
+  }
+
   private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
       const layer = (e as PmLayerEvent).layer;
@@ -389,16 +402,12 @@ export class MapDrawingService {
 
     map.on("pm:edit", (e) => {
       const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
-      const feature = layerToFeature(layer);
+      this.emitUpdatedFeatureFromLayer(layer);
+    });
 
-      if (feature && layer.feature?.id) {
-        feature.id = layer.feature.id;
-        feature.properties = {
-          ...(layer.feature?.properties || {}),
-          ...(feature.properties || {}),
-        };
-        this.attachFeatureAndEmit(layer, feature, "feature-updated");
-      }
+    map.on("pm:update", (e) => {
+      const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
+      this.emitUpdatedFeatureFromLayer(layer);
     });
 
     map.on("pm:cut", (e) => {

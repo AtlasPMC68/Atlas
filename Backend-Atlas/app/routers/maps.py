@@ -2,6 +2,7 @@ import logging
 from uuid import UUID
 import json
 from json import JSONDecodeError
+from copy import deepcopy
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
 from sqlalchemy import not_, select, func
@@ -15,6 +16,10 @@ from app.models.user import User
 from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
+from app.utils.feature_update import (
+    as_feature_collection,
+    normalize_feature_collection,
+)
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
@@ -263,7 +268,7 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
     for f in features_rows:
         feature_data = f.data.get("features", [])
         if feature_data:
-            feature = feature_data[0]
+            feature = deepcopy(feature_data[0])
             feature["id"] = str(f.id)
 
             props = feature.get("properties", {})
@@ -305,21 +310,20 @@ async def update_features(
                 logger.warning(f"Feature id is not a valid UUID, creating a new row: {feature_id}")
 
         if db_feature:
-            new_data = {"type": "FeatureCollection", "features": [feature]}
-            # Only update if data has changed
-            if db_feature.data != new_data:
+            new_data = as_feature_collection(feature)
+            old_data = normalize_feature_collection(db_feature.data)
+            
+            if old_data != new_data:
                 db_feature.data = new_data
                 db_feature.updated_at = func.now()
                 session.add(db_feature)
             updated_count += 1
         else:
             # New feature: let DB generate the row id.
-            payload_feature = dict(feature)
-            payload_feature.pop("id", None)
             new_feature = Feature(
                 map_id=map_id,
                 is_feature_collection=False,
-                data={"type": "FeatureCollection", "features": [payload_feature]},
+                data=as_feature_collection(feature),
             )
             session.add(new_feature)
             created_count += 1

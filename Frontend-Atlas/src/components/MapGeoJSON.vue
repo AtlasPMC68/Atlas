@@ -13,6 +13,10 @@ import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
+import {
+  extractFeatureFromLayer,
+  syncFeaturesFromLayerMap,
+} from "../utils/mapDrawingFeature";
 import { toArray } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
@@ -118,6 +122,36 @@ function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   return next;
 }
 
+function syncFeaturesFromMapLayers(): Feature[] {
+  const mergedById = new Map<string, Feature>();
+
+  const renderedFeatures = syncFeaturesFromLayerMap(
+    featureLayerManager.layers,
+    localFeaturesSnapshot.value,
+  );
+
+  renderedFeatures.forEach((feature) => {
+    mergedById.set(String(feature.id), feature);
+  });
+
+  drawing.drawnItems.value?.eachLayer((layer) => {
+    const extracted = extractFeatureFromLayer(layer);
+    if (!extracted?.id) return;
+    mergedById.set(String(extracted.id), extracted);
+  });
+
+  return Array.from(mergedById.values());
+}
+
+function clearDraftLayers() {
+  drawing.clearDrawnItems();
+}
+
+defineExpose({
+  syncFeaturesFromMapLayers,
+  clearDraftLayers,
+});
+
 const drawing = useMapDrawing((event, ...args) => {
   const payload = args[0] as Feature | string | number;
   const current = localFeaturesSnapshot.value;
@@ -125,14 +159,12 @@ const drawing = useMapDrawing((event, ...args) => {
   if (event === "feature-created") {
     const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
-    emit("draw-create", next);
     return;
   }
 
   if (event === "feature-updated") {
     const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
-    emit("draw-update", next);
     return;
   }
 
@@ -142,7 +174,6 @@ const drawing = useMapDrawing((event, ...args) => {
       (feature) => featureIdAsString(feature) !== deletedId,
     );
     localFeaturesSnapshot.value = next;
-    emit("draw-delete", next);
   }
 });
 
