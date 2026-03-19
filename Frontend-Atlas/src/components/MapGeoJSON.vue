@@ -51,13 +51,17 @@ const selectedYear = ref(1740);
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
+function getYearSafeUTC(dateText: string): number {
+  return new Date(dateText).getUTCFullYear();
+}
+
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature: Feature) =>
-      new Date(feature.properties.startDate).getFullYear() <=
+      getYearSafeUTC(feature.properties.startDate) <=
         selectedYear.value &&
       (!feature.properties.endDate ||
-        new Date(feature.properties.endDate).getFullYear() >=
+        getYearSafeUTC(feature.properties.endDate) >=
           selectedYear.value),
   );
 });
@@ -128,6 +132,7 @@ function syncFeaturesFromMapLayers(): Feature[] {
   const renderedFeatures = syncFeaturesFromLayerMap(
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
+    selectedYear.value
   );
 
   renderedFeatures.forEach((feature) => {
@@ -135,7 +140,7 @@ function syncFeaturesFromMapLayers(): Feature[] {
   });
 
   drawing.drawnItems.value?.eachLayer((layer) => {
-    const extracted = extractFeatureFromLayer(layer);
+    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
     if (!extracted?.id) return;
     mergedById.set(String(extracted.id), extracted);
   });
@@ -507,6 +512,7 @@ onMounted(() => {
   ).addTo(map);
 
   drawing.initializeDrawing(map);
+  drawing.setSelectedYear(selectedYear.value);
   renderAllFeatures();
 });
 
@@ -519,6 +525,7 @@ onBeforeUnmount(() => {
 });
 
 watch(selectedYear, (newYear) => {
+  drawing.setSelectedYear(newYear);
   void newYear;
   if (!map) return;
   renderAllFeatures();

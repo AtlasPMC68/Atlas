@@ -41,6 +41,7 @@ const lassoDeleteOptions = {
 export class MapDrawingService {
   public activeDrawingMode = ref<DrawingMode>(null);
   public drawnItems = ref<L.FeatureGroup | null>(null);
+  public selectedYear = 1740;
   private pmMapInstance: MapWithPm | null = null;
   private freehandActive = false;
   private freehandListeners: MouseDrawListeners = {};
@@ -177,7 +178,7 @@ export class MapDrawingService {
 
       if (points.length > 1) {
         this.drawnItems.value?.addLayer(polyline);
-        const feature = layerToFeature(polyline);
+        const feature = layerToFeature(polyline, this.selectedYear);
         if (feature) {
           (polyline as FeatureBearingLayer).feature = feature;
           this.emit("feature-created", feature);
@@ -380,7 +381,7 @@ export class MapDrawingService {
   }
 
   private emitUpdatedFeatureFromLayer(layer: FeatureBearingLayer) {
-    const feature = layerToFeature(layer);
+    const feature = layerToFeature(layer, this.selectedYear);
 
     if (feature && layer.feature?.id) {
       feature.id = layer.feature.id;
@@ -395,7 +396,7 @@ export class MapDrawingService {
   private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
       const layer = (e as PmLayerEvent).layer;
-      const feature = layerToFeature(layer);
+      const feature = layerToFeature(layer, this.selectedYear);
       this.attachFeatureAndEmit(layer as FeatureBearingLayer, feature, "feature-created");
       this.drawnItems.value?.addLayer(layer);
     });
@@ -416,7 +417,7 @@ export class MapDrawingService {
       const newLayer = (e as PmCutEvent).layer as FeatureBearingLayer | undefined;
 
       if (originalLayer) {
-        const updatedOriginal = layerToFeature(originalLayer);
+        const updatedOriginal = layerToFeature(originalLayer, this.selectedYear);
         if (updatedOriginal && originalLayer.feature?.id) {
           updatedOriginal.id = originalLayer.feature.id;
           updatedOriginal.properties = {
@@ -432,7 +433,7 @@ export class MapDrawingService {
       }
 
       if (newLayer) {
-        const createdFeature = layerToFeature(newLayer);
+        const createdFeature = layerToFeature(newLayer, this.selectedYear);
         if (createdFeature) {
           const originalProps: Partial<Feature> = originalLayer?.feature ?? {};
           createdFeature.opacity =
@@ -560,6 +561,10 @@ export class MapDrawingService {
     }
   }
 
+  setSelectedYear(selectedYear: number) {
+    this.selectedYear = selectedYear;
+  }
+
   getDrawnFeatures(): Feature[] {
     const features: Feature[] = [];
 
@@ -583,6 +588,7 @@ export class MapDrawingService {
       setDrawingMode: this.setDrawingMode.bind(this),
       loadFeaturesForEditing: this.loadFeaturesForEditing.bind(this),
       clearDrawnItems: this.clearDrawnItems.bind(this),
+      setSelectedYear: this.setSelectedYear.bind(this),
       getDrawnFeatures: this.getDrawnFeatures.bind(this),
       startFreehandDrawing: this.startFreehandDrawing.bind(this),
       stopFreehandDrawing: this.stopFreehandDrawing.bind(this),

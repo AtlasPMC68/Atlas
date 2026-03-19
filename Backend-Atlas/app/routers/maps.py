@@ -270,10 +270,6 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
         if feature_data:
             feature = deepcopy(feature_data[0])
             feature["id"] = str(f.id)
-
-            props = feature.get("properties", {})
-            feature["start_date"] = props.get("start_date")
-            feature["end_date"] = props.get("end_date")
             all_features.append(feature)
 
     return all_features

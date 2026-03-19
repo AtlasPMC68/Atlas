@@ -40,7 +40,7 @@ export function circleToPolygon(
   };
 }
 
-export function layerToFeature(layer: L.Layer): Feature | null {
+export function layerToFeature(layer: L.Layer, selectedYear: number): Feature | null {
   let geometry: Feature["geometry"] | null = null;
   let type: MapElementType = "shape";
 
@@ -124,7 +124,6 @@ export function layerToFeature(layer: L.Layer): Feature | null {
 
   const now = new Date();
   const isoDate = now.toISOString();
-  const day = isoDate.slice(0, 10);
 
   return {
     id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -136,8 +135,8 @@ export function layerToFeature(layer: L.Layer): Feature | null {
       colorName: "black",
       colorRgb: [0, 0, 0],
       mapElementType: type,
-      startDate: day,
-      endDate: day,
+      startDate: `${selectedYear}-01-01`,
+      endDate: `${selectedYear}-01-01`,
     },
     createdAt: isoDate,
     updatedAt: isoDate,
@@ -196,10 +195,10 @@ function featureIdAsString(featureOrId: Feature | string | number): string {
   return String(featureOrId);
 }
 
-export function extractFeatureFromLayer(layer: L.Layer): Feature | null {
+export function extractFeatureFromLayer(layer: L.Layer, selectedYear: number): Feature | null {
   const layerWithFeature: LayerWithFeatureType<Feature> = layer;
   const baseFeature = layerWithFeature.feature;
-  const extracted = layerToFeature(layer);
+  const extracted = layerToFeature(layer, selectedYear);
 
   if (extracted && baseFeature?.id) {
     extracted.id = baseFeature.id;
@@ -220,7 +219,7 @@ export function extractFeatureFromLayer(layer: L.Layer): Feature | null {
     let childFeature: Feature | null = null;
     layerWithFeature.eachLayer((childLayer) => {
       if (childFeature) return;
-      childFeature = extractFeatureFromLayer(childLayer);
+      childFeature = extractFeatureFromLayer(childLayer, selectedYear);
     });
     if (childFeature) {
       return childFeature;
@@ -232,7 +231,7 @@ export function extractFeatureFromLayer(layer: L.Layer): Feature | null {
 
 export function syncFeaturesFromLayerMap(
   layers: Map<string, L.Layer>,
-  snapshot: Feature[],
+  snapshot: Feature[], selectedYear: number,
 ): Feature[] {
   const nextById = new Map<string, Feature>();
   snapshot.forEach((feature) => {
@@ -241,7 +240,7 @@ export function syncFeaturesFromLayerMap(
 
   layers.forEach((layer, featureId) => {
     const layerId = String(featureId);
-    const extracted = extractFeatureFromLayer(layer);
+    const extracted = extractFeatureFromLayer(layer, selectedYear);
     if (extracted) {
       extracted.id = layerId;
       nextById.set(layerId, extracted);
