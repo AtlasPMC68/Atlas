@@ -7,7 +7,7 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
 
-const { currentUser, isLoading, fetchCurrentUser } = useCurrentUser();
+const { currentUser, fetchCurrentUser } = useCurrentUser();
 
 onMounted(async () => {
   await fetchCurrentUser();

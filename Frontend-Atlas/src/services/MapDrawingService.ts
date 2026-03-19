@@ -177,12 +177,12 @@ export class MapDrawingService {
       isDrawing = false;
 
       if (points.length > 1) {
-        this.drawnItems.value?.addLayer(polyline);
         const feature = layerToFeature(polyline, this.selectedYear);
         if (feature) {
           (polyline as FeatureBearingLayer).feature = feature;
           this.emit("feature-created", feature);
         }
+        map.removeLayer(polyline);
       } else {
         map.removeLayer(polyline);
       }
@@ -398,7 +398,7 @@ export class MapDrawingService {
       const layer = (e as PmLayerEvent).layer;
       const feature = layerToFeature(layer, this.selectedYear);
       this.attachFeatureAndEmit(layer as FeatureBearingLayer, feature, "feature-created");
-      this.drawnItems.value?.addLayer(layer);
+      map.removeLayer(layer);
     });
 
     map.on("pm:edit", (e) => {
@@ -449,7 +449,7 @@ export class MapDrawingService {
             createdFeature,
             "feature-created",
           );
-          this.drawnItems.value?.addLayer(newLayer);
+          map.removeLayer(newLayer);
         }
       }
     });
