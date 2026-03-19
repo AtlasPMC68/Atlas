@@ -10,7 +10,9 @@ from shapely import affinity
 from shapely.geometry import Polygon
 
 from . import preprocessing
-from .color_extraction import get_nearest_css4_color_name
+from .color_extraction import (
+    get_nearest_css4_color_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +101,9 @@ def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray
     if len(np.unique(gray)) <= 3:
         return (gray > 127).astype(np.uint8) * 255
 
-    _, binary_mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return binary_mask
+    return cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 6
+    )
 
 
 def detect_contours(binary_mask: np.ndarray) -> List[np.ndarray]:
@@ -220,11 +223,6 @@ def classify_shape(properties: dict) -> str:
     if solidity > 0.95:
         return "Rectangle"
 
-    # 3. La Flèche : Forme avec des creux majeurs (concave)
-    # Les flèches ont typiquement une solidité entre 0.5 et 0.85 à cause de la pointe.
-    if 0.45 < solidity <= 0.85:
-        return "Arrow"
-
     # Si c'est autre chose (ex: une ligne très mince ou du bruit résiduel)
     return "Shape unknown"
 
@@ -241,14 +239,24 @@ def save_shape_image(
     shape_id: int,
     shape_type: str,
 ) -> str:
+    # Create mask and crop region
     mask = np.zeros(image.shape[:2], dtype=np.uint8)
     cv2.drawContours(mask, [contour], 0, 255, -1)
 
     x, y, w, h = cv2.boundingRect(contour)
-    cropped = cv2.bitwise_and(image, image, mask=mask)[y : y + h, x : x + w]
+    cropped_bgr = cv2.bitwise_and(image, image, mask=mask)[y : y + h, x : x + w]
+    alpha = mask[y : y + h, x : x + w]
+
+    if cropped_bgr.size == 0:
+        bgra = np.zeros((max(1, h), max(1, w), 4), dtype=np.uint8)
+    else:
+        bgra = cv2.cvtColor(cropped_bgr, cv2.COLOR_BGR2BGRA)
+        if alpha.shape[:2] != bgra.shape[:2]:
+            alpha = cv2.resize(alpha, (bgra.shape[1], bgra.shape[0]))
+        bgra[:, :, 3] = alpha
 
     shape_path = os.path.join(output_dir, f"{shape_type}_{shape_id:04d}.png")
-    cv2.imwrite(shape_path, cropped)
+    cv2.imwrite(shape_path, bgra)
     return shape_path
 
 
@@ -319,7 +327,7 @@ def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
         "color_name": shape.get("color_name"),
         "color_hex": shape.get("color_hex"),
         "mapElementType": "shape",
-        "name": shape.get("shape_type") + f" {idx}",
+        "name": f"{shape.get('shape_type') or 'Shape'} {idx}",
         "start_date": "1700-01-01",
         "end_date": "2026-01-01",
         "is_normalized": False,
@@ -431,21 +439,21 @@ def _preprocess_for_contours(
     image_uint8 = (image * 255).astype(np.uint8)
     image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
 
-    image_denoised = cv2.bilateralFilter(image_bgr, d=9, sigmaColor=75, sigmaSpace=75)
+    image_denoised = cv2.bilateralFilter(image_bgr, d=20, sigmaColor=75, sigmaSpace=75)
 
     lab = cv2.cvtColor(image_denoised, cv2.COLOR_BGR2LAB)
     lightness, _, _ = cv2.split(lab)
 
-    l_norm = cv2.normalize(lightness, None, 0, 255, cv2.NORM_MINMAX)
+    l_norm = cv2.normalize(lightness, np.empty_like(lightness), alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (71, 71))
-    black_hat = cv2.morphologyEx(l_norm, cv2.MORPH_BLACKHAT, kernel)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(32, 32))
+    l_enhanced = clahe.apply(l_norm)
 
-    binary_mask = preprocess_image(black_hat, threshold_value)
+    binary_mask = preprocess_image(l_enhanced, threshold_value)
 
     return {
         "image_bgr": image_bgr,
-        "gray": black_hat,
+        "clahe": l_enhanced,
         "binary_mask": binary_mask,
         "width": width,
         "height": height,
@@ -481,7 +489,6 @@ def _build_shapes_metadata(
 
 def _write_debug_outputs(
     image_bgr: np.ndarray,
-    gray: np.ndarray,
     binary_mask: np.ndarray,
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
     image_path: str,
@@ -515,19 +522,25 @@ def _write_debug_outputs(
                 os.path.join(image_output_dir, "debug_3_l_normalized.png"),
                 intermediate_images["l_norm"],
             )
+        if "clahe" in intermediate_images:
+            cv2.imwrite(
+                os.path.join(image_output_dir, "debug_4_clahe.png"),
+                intermediate_images["clahe"],
+            )
     else:
         cv2.imwrite(
             os.path.join(image_output_dir, "debug_0_original_converted.png"), image_bgr
         )
 
-    cv2.imwrite(
-        os.path.join(image_output_dir, "debug_6_binary_after_morpho.png"), binary_mask
-    )
-    cv2.imwrite(os.path.join(image_output_dir, "debug_7_grayscale.png"), gray)
+    cv2.imwrite(os.path.join(image_output_dir, "debug_6_binary.png"), binary_mask)
 
     for idx, (shape, contour) in enumerate(shapes_with_contours, 1):
         save_shape_image(
-            image_bgr, contour, image_output_dir, idx, shape.get("shape_type")
+            image_bgr,
+            contour,
+            image_output_dir,
+            idx,
+            shape.get("shape_type") or "Shape",
         )
 
     metadata_path = os.path.join(image_output_dir, "shapes_metadata.json")
@@ -577,7 +590,6 @@ def extract_shapes(
 ) -> Dict:
     preprocess_result = _preprocess_for_contours(image_path, threshold_value)
     image_bgr = preprocess_result["image_bgr"]
-    gray = preprocess_result["gray"]
     binary_mask = preprocess_result["binary_mask"]
     width = preprocess_result["width"]
     height = preprocess_result["height"]
@@ -604,7 +616,6 @@ def extract_shapes(
         shapes_metadata = _build_shapes_metadata(shapes_with_contours, image_area)
         _write_debug_outputs(
             image_bgr,
-            gray,
             binary_mask,
             shapes_with_contours,
             image_path,
