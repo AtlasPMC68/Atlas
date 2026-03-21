@@ -10,9 +10,9 @@ import {
 } from "../typescript/mapDrawing";
 import type {
   DrawingMode,
-  EmitFn,
   FeatureBearingLayer,
   MapWithPm,
+  MapDrawingEmitFn,
   MouseDrawListeners,
   PmCutEvent,
   PmDrawStartEvent,
@@ -51,7 +51,7 @@ export class MapDrawingService {
   private fallbackSelectionDragging = false;
   private fallbackRemovalListeners: MouseDrawListeners = {};
 
-  constructor(private emit: EmitFn) {}
+  constructor(private emit: MapDrawingEmitFn) {}
 
   private attachFeatureAndEmit(
     layer: FeatureBearingLayer,

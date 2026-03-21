@@ -16,8 +16,7 @@ import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
 import { toArray } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
-
-type FeatureId = string;
+import type { MapFeatureId } from "../typescript/mapDrawing";
 
 type LayerWithFeature = LayerWithFeatureType<Feature>;
 
@@ -44,7 +43,7 @@ const emit = defineEmits<{
 }>();
 
 const selectedYear = ref(1740);
-const previousFeatureIds = ref(new Set<FeatureId>());
+const previousFeatureIds = ref(new Set<MapFeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
 const filteredFeatures = computed(() => {
@@ -61,7 +60,7 @@ const filteredFeatures = computed(() => {
 let map: L.Map | null = null;
 
 const featureLayerManager = {
-  layers: new Map<FeatureId, L.Layer>(),
+  layers: new Map<MapFeatureId, L.Layer>(),
 
   addFeatureLayer(featureId: string | number, layer: L.Layer) {
     const id = String(featureId);

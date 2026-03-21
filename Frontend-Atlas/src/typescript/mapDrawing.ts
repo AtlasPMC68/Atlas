@@ -14,12 +14,14 @@ export type DrawingMode =
   | (typeof drawingModes)[keyof typeof drawingModes]
   | null;
 
-export type DrawingEmitArgs =
+export type MapFeatureId = string;
+
+export type MapDrawingEmitArgs =
   | [event: "feature-created", payload: Feature]
   | [event: "feature-updated", payload: Feature]
-  | [event: "feature-deleted", payload: string];
+  | [event: "feature-deleted", payload: MapFeatureId];
 
-export type EmitFn = (...args: DrawingEmitArgs) => void;
+export type MapDrawingEmitFn = (...args: MapDrawingEmitArgs) => void;
 
 export type PmToolbar = {
   createCustomControl?: (options: {
