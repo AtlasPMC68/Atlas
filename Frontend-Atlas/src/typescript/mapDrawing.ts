@@ -14,7 +14,12 @@ export type DrawingMode =
   | (typeof drawingModes)[keyof typeof drawingModes]
   | null;
 
-export type EmitFn = (event: string, ...args: unknown[]) => void;
+export type DrawingEmitArgs =
+  | [event: "feature-created", payload: Feature]
+  | [event: "feature-updated", payload: Feature]
+  | [event: "feature-deleted", payload: string];
+
+export type EmitFn = (...args: DrawingEmitArgs) => void;
 
 export type PmToolbar = {
   createCustomControl?: (options: {
