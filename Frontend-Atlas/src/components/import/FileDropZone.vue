@@ -18,7 +18,9 @@
       />
 
       <div v-if="!isLoading" class="space-y-4">
-        <div class="text-6xl text-base-content/30">📁</div>
+        <div class="flex justify-center text-primary-500">
+          <ArrowUpTrayIcon class="h-20 w-20"></ArrowUpTrayIcon>
+        </div>
         <div>
           <p class="text-xl font-semibold text-base-content mb-2">
             {{
@@ -59,6 +61,7 @@
 </template>
 
 <script setup lang="ts">
+import { ArrowUpTrayIcon } from "@heroicons/vue/24/solid";
 import { ref, computed } from "vue";
 
 const props = defineProps({

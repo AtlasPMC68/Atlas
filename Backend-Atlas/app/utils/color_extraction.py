@@ -6,7 +6,7 @@ import numpy as np
 import imageio.v3 as iio
 
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
-from skimage.morphology import binary_opening, binary_closing, disk
+from skimage.morphology import opening, binary_closing, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
 from scipy.ndimage import binary_fill_holes
@@ -349,7 +349,7 @@ def extract_colors(
 
         # 1. Opening: Remove small noise/speckles
         if opening_radius > 0:
-            mask = binary_opening(mask, disk(opening_radius))
+            mask = opening(mask, disk(opening_radius))
         
         # 2. Closing: Bridge small gaps (useful for connecting fragmented regions)
         if closing_radius > 0:
@@ -375,7 +375,7 @@ def extract_colors(
         # Convert mask to geometry first (like the old RGB version did with pixel_polygons)
         geometry = mask_to_geometry(mask)
         if geometry:
-            
+
             geometry = simplify_geometry(geometry, simplify_tolerance)
             
             # build_features expects a list of polygons, so wrap the geometry in a list

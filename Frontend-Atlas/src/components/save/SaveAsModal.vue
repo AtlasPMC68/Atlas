@@ -43,7 +43,7 @@
               id="access_level_public"
               type="radio"
               value="public"
-              v-model="access_level"
+              v-model="isPrivate"
               class="radio mr-2"
             />
             Publique
@@ -53,7 +53,7 @@
               id="access_level_private"
               type="radio"
               value="private"
-              v-model="access_level"
+              v-model="isPrivate"
               class="radio mr-2"
             />
             Privée
@@ -71,12 +71,12 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue";
 
 const title = ref("");
 const description = ref("");
-const access_level = ref("private");
+const isPrivate = ref(true);
 
 const emit = defineEmits(["save", "cancel"]);
 
@@ -86,7 +86,7 @@ function handleSubmit() {
   emit("save", {
     title: title.value.trim(),
     description: description.value.trim(),
-    access_level: access_level.value,
+    isPrivate: isPrivate.value,
   });
 }
 </script>

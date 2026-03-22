@@ -4,20 +4,20 @@ import os
 import re
 import tempfile
 import time
-import cv2
-
 from datetime import datetime
 from typing import Any, List
 from uuid import UUID
+
+import cv2
 
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
+from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
-from app.utils.georeferencingSift import georeference_features_with_sift_points
 
 from .celery_app import celery_app
 
@@ -54,16 +54,13 @@ def process_map_extraction(
     self,
     filename: str,
     file_content: bytes,
-    map_id: str,
+    map_id: UUID,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
 ):
-    # Ensure we are working with a UUID instance inside the task
-    map_uuid = UUID(map_id)
-
     try:
         # Step 1: temp save
         self.update_state(
@@ -109,6 +106,8 @@ def process_map_extraction(
             extracted_text, clean_image = extract_text(
                 image=image, languages=["en", "fr"], gpu_acc=False
             )
+
+            text_regions = [block[0] for block in extracted_text]
 
             # TODO : Amener ca dans la fonction de detection de texte ===========================================================
             # Tokenize OCR text to single words and run city detection per token
@@ -159,13 +158,16 @@ def process_map_extraction(
 
                     try:
                         asyncio.run(
-                            persist_city_feature(map_uuid, city_feature_collection)
+                            persist_city_feature(map_id, city_feature_collection)
                         )
                     except Exception as e:
                         logger.error(f"Failed to persist city token '{tok}': {e}")
 
             except Exception as e:
                 logger.error(f"City detection failed: {e}")
+
+        else:
+            text_regions = None
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
@@ -194,16 +196,15 @@ def process_map_extraction(
                         geo_points_lonlat,
                         snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
                     )
-                    asyncio.run(persist_features(map_uuid, georef_features))
+                    asyncio.run(persist_features(map_id, georef_features))
 
                 except Exception as e:
                     logger.error(
-                        f"SIFT georeferencing step failed for map {map_uuid}: {e}",
+                        f"SIFT georeferencing step failed for map {map_id}: {e}",
                         exc_info=True,
                     )
             elif normalized_features:
-                asyncio.run(persist_features(map_uuid, normalized_features))
-        
+                asyncio.run(persist_features(map_id, normalized_features))
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
@@ -219,12 +220,25 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            shapes_result = extract_shapes(tmp_file_path)
-            shape_features = shapes_result["normalized_features"]
+            shapes_result = extract_shapes(tmp_file_path, text_regions=text_regions)
+            shape_normalized_features = shapes_result["normalized_features"]
+            shape_pixel_features = shapes_result.get("pixel_features", [])
 
-            # Persist shapes to database
-            asyncio.run(persist_features(map_uuid, shape_features))
 
+            # Georeference pixel-space shape features if SIFT point pairs are provided
+            if pixel_points and geo_points_lonlat:
+                try:
+                    georef_shape_features = georeference_features_with_sift_points(
+                        shape_pixel_features, pixel_points, geo_points_lonlat
+                    )
+                    asyncio.run(persist_features(map_id, georef_shape_features))
+                except Exception as e:
+                    logger.error(
+                        f"SIFT georeferencing step failed for shapes {map_id}: {e}",
+                        exc_info=True,
+                    )
+            elif shape_normalized_features:
+                asyncio.run(persist_features(map_id, shape_normalized_features))
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}
@@ -307,7 +321,7 @@ def process_map_extraction(
 
 
 # TODO : Remove type Any
-async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, Any]]):
+async def persist_features(map_id: UUID, normalized_features: List[dict[str, Any]]):
     async with AsyncSessionLocal() as db:
         for feature_collection in normalized_features:
             for feature in feature_collection.get("features", []):
@@ -318,24 +332,24 @@ async def persist_features(map_uuid: UUID, normalized_features: List[dict[str, A
                 try:
                     await insert_feature_in_db(
                         db=db,
-                        map_id=map_uuid,
+                        map_id=map_id,
                         is_feature_collection=False,
                         data=feature_data,
                     )
                 except Exception as e:
                     logger.error(
-                        f"Failed to persist individual feature for map {map_uuid}: {str(e)}"
+                        f"Failed to persist individual feature for map {map_id}: {str(e)}"
                     )
 
 
-async def persist_city_feature(map_uuid: UUID, feature: dict[str, Any]):
+async def persist_city_feature(map_id: UUID, feature: dict[str, Any]):
     async with AsyncSessionLocal() as db:
         try:
             await insert_feature_in_db(
                 db=db,
-                map_id=map_uuid,
+                map_id=map_id,
                 is_feature_collection=False,
                 data=feature,
             )
         except Exception as e:
-            logger.error(f"Failed to persist city feature for map {map_uuid}: {str(e)}")
+            logger.error(f"Failed to persist city feature for map {map_id}: {str(e)}")

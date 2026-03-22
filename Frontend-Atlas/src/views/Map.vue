@@ -2,15 +2,15 @@
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
       <div class="flex justify-end">
-        <SaveDropdown @save="saveCarte" @save-as="saveCarteAs" />
+        <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
       </div>
-      <div class="flex-1">
-        <h1 class="text-xl font-bold">Carte démo</h1>
-      </div>
+
+      <button @click="upload(mapId)" class="btn btn-primary">
+        Ajouter une carte
+      </button>
     </div>
 
     <div class="flex flex-1">
-      <!-- Panneau de contrôle des features -->
       <div class="w-80 bg-base-200 border-r border-base-300 p-4">
         <FeatureVisibilityControls
           :features="features"
@@ -19,18 +19,18 @@
         />
       </div>
 
-      <!-- Map avec timeline intégrée -->
       <div class="flex-1">
         <MapGeoJSON
-          :map-id="mapId"
           :features="features"
           :feature-visibility="featureVisibility"
           @features-loaded="handleFeaturesLoaded"
+          @draw-create="handleDrawChange"
+          @draw-update="handleDrawChange"
+          @draw-delete="handleDrawChange"
         />
       </div>
     </div>
 
-    <!-- Save modal -->
     <SaveAsModal
       v-if="showSaveAsModal"
       @save="handleSaveAs"
@@ -41,92 +41,93 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
-import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
-import keycloak from "../keycloak";
-import { useRoute } from "vue-router";
-import { camelToSnake } from "../utils/utils";
-import { MapData } from "../typescript/map";
+import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
+import type { MapSaveAsPayload } from "../typescript/map";
+import { camelToSnake, snakeToCamel } from "../utils/utils";
+import { useCurrentUser } from "../composables/useCurrentUser";
+import keycloak from "../keycloak";
+
+const handleDrawChange = (updatedFeatures: Feature[]) => {
+  features.value = updatedFeatures;
+  reconcileVisibility(updatedFeatures);
+};
 
 const route = useRoute();
-const mapId = ref(route.params.mapId);
-const features = ref([]);
-const featureVisibility = ref(new Map());
-const error = ref("");
-
+const router = useRouter();
+const mapId = ref(route.params.mapId as string).value;
+const features = ref<Feature[]>([]);
+const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
+const { currentUser, fetchCurrentUser } = useCurrentUser();
+
+function reconcileVisibility(list: Feature[]) {
+  const next = new Map(featureVisibility.value);
+  for (const f of list) {
+    const id = f?.id;
+    if (id != null && next.get(id) === undefined) {
+      next.set(id, true);
+    }
+  }
+  const ids = new Set(list.map((f) => f.id));
+  for (const k of next.keys()) {
+    if (!ids.has(k)) next.delete(k);
+  }
+  featureVisibility.value = next;
+}
 
 async function loadInitialFeatures() {
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`,
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
     );
     if (!res.ok) throw new Error("Failed to fetch features");
 
-    const allFeatures = await res.json();
-    features.value = allFeatures;
+    const allFeatures = snakeToCamel(await res.json()) as Feature[];
 
-    const newVisibility = new Map();
-    allFeatures.forEach((feature: Feature) => {
-      newVisibility.set(feature.id, true);
-    });
-    featureVisibility.value = newVisibility;
-  } catch (error) {
-    console.error("Erreur lors du chargement des features:", error);
+    features.value = allFeatures;
+    reconcileVisibility(allFeatures);
+  } catch (e) {
+    console.error("Failed to load initial map features:", e);
   }
 }
 
-function toggleFeatureVisibility(featureId: string, visible: boolean) {
-  featureVisibility.value.set(featureId, visible);
-  featureVisibility.value = new Map(featureVisibility.value);
+function upload(mapId: string) {
+  router.push(`/televersement/${mapId}`);
 }
 
-function handleFeaturesLoaded(loadedFeatures: Feature[]) {}
+function toggleFeatureVisibility(featureId: string, visible: boolean) {
+  const next = new Map(featureVisibility.value);
+  next.set(featureId, visible);
+  featureVisibility.value = next;
+}
 
-onMounted(() => {
-  loadInitialFeatures();
+function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
+
+onMounted(async () => {
+  await fetchCurrentUser();
+  await loadInitialFeatures();
 });
 
-function saveCarte() {
+function saveMap() {
   console.log("Quick save");
   // appel API ou logique de sauvegarde ici
 }
 
-function saveCarteAs() {
+function saveMapAs() {
   showSaveAsModal.value = true;
 }
 
-async function handleSaveAs(map: MapData) {
-  if (!keycloak.token) {
-    console.error("No authentication token available from Keycloak");
-    return;
+async function handleSaveAs(map: MapSaveAsPayload) {
+  if (!keycloak.token || !currentUser.value) {
+    throw new Error("No authentication token or user available");
   }
 
-  let userData;
-
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Error while getting the user : ${res.status}`);
-    }
-
-    userData = await res.json();
-  } catch (err) {
-    console.error("Error while fetching user :", err);
-    return;
-  }
-
-  const userId = userData.id;
+  const userId = currentUser.value.id;
 
   try {
     const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/save`, {
@@ -146,16 +147,15 @@ async function handleSaveAs(map: MapData) {
     });
 
     if (!response.ok) {
-      const result = await response.json();
-      throw new Error(result.detail || "Error while loading the maps.");
+      throw new Error("Error while saving the map");
     }
 
-    const result = await response.json();
-    console.log("Map saved successfuly:", result);
+    await response.json();
+    showSaveAsModal.value = false;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "Unknown error.";
+    throw new Error(
+      `Error while saving map: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
-
-  showSaveAsModal.value = false;
 }
 </script>

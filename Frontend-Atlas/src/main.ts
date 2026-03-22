@@ -12,14 +12,14 @@ app.use(router);
 app.config.globalProperties.$keycloak = keycloak;
 
 keycloak
-  .init({ 
-    onLoad: "check-sso", 
+  .init({
+    onLoad: "check-sso",
     pkceMethod: "S256",
     checkLoginIframe: true,
   })
   .then(() => {
     app.mount("#app");
   })
-  .catch(() => {        
+  .catch(() => {
     app.mount("#app");
   });

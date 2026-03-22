@@ -1,15 +1,26 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from uuid import UUID
 from ..db import get_db
-from ..utils.auth import get_current_user
-from ..utils.user import get_or_create_user
+from ..utils.auth import get_user_from_token
+from ..utils.user import get_user_by_id, create_user
 from ..keycloak import get_keycloak_public_key
 
 router = APIRouter()
 
 @router.get("/me")
-def me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    db_user = get_or_create_user(db, user)
+def me(user: dict = Depends(get_user_from_token), db: Session = Depends(get_db)):
+    user_id = UUID(user["sub"])
+    db_user = get_user_by_id(db, user_id)
+    
+    if not db_user:
+        db_user = create_user(
+            db=db,
+            user_id=user_id,
+            email=user.get("email"),
+            username=user.get("preferred_username")
+        )
+    
     return {
         "id": str(db_user.id),
         "username": db_user.username,
