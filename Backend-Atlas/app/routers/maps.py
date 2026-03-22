@@ -2,9 +2,10 @@ import logging
 from uuid import UUID
 import json
 from json import JSONDecodeError
+from copy import deepcopy
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import not_, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
+from sqlalchemy import not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,10 @@ from app.models.user import User
 from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
+from app.utils.feature_update import (
+    as_feature_collection,
+    normalize_feature_collection,
+)
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
@@ -263,15 +268,100 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
     for f in features_rows:
         feature_data = f.data.get("features", [])
         if feature_data:
-            feature = feature_data[0]
+            feature = deepcopy(feature_data[0])
             feature["id"] = str(f.id)
-
-            props = feature.get("properties", {})
-            feature["start_date"] = props.get("start_date")
-            feature["end_date"] = props.get("end_date")
             all_features.append(feature)
 
     return all_features
+
+@router.put("/features/{map_id}")
+async def update_features(
+    map_id: str,
+    features: list[dict] = Body(...),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_id = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    updated_count = 0
+    created_count = 0
+
+    for feature in features:
+        feature_id = feature.get("id")
+        db_feature = None
+
+        if feature_id:
+            try:
+                feature_uuid = UUID(feature_id)
+                result = await session.execute(
+                    select(Feature).where(
+                        Feature.id == feature_uuid,
+                        Feature.map_id == map_id,
+                    )
+                )
+                db_feature = result.scalar_one_or_none()
+            except ValueError:
+                logger.warning(f"Feature id is not a valid UUID, creating a new row: {feature_id}")
+
+        if db_feature:
+            new_data = as_feature_collection(feature)
+            old_data = normalize_feature_collection(db_feature.data)
+            
+            if old_data != new_data:
+                db_feature.data = new_data
+                db_feature.updated_at = func.now()
+                session.add(db_feature)
+            updated_count += 1
+        else:
+            # New feature: let DB generate the row id.
+            new_feature = Feature(
+                map_id=map_id,
+                is_feature_collection=False,
+                data=as_feature_collection(feature),
+            )
+            session.add(new_feature)
+            created_count += 1
+
+    await session.commit()
+    return {
+        "detail": "Features synchronized successfully",
+        "updated": updated_count,
+        "created": created_count,
+    }
+
+
+@router.delete("/features/{map_id}/{feature_id}")
+async def delete_feature(
+    map_id: str,
+    feature_id: str,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_uuid = UUID(map_id)
+        feature_uuid = UUID(feature_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id or feature_id")
+
+    result = await session.execute(
+        select(Feature).where(
+            Feature.id == feature_uuid,
+            Feature.map_id == map_uuid,
+        )
+    )
+    db_feature = result.scalar_one_or_none()
+
+    if not db_feature:
+        raise HTTPException(status_code=404, detail="Feature not found")
+
+    await session.delete(db_feature)
+    await session.commit()
+
+    return {
+        "detail": "Feature deleted successfully",
+        "feature_id": str(feature_uuid),
+    }
 
 
 @router.get("/map", response_model=list[MapOut])

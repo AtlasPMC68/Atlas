@@ -7,16 +7,25 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
+<script setup lang="ts">
+import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
 import L from "leaflet";
+import "leaflet-geometryutil";
+import "leaflet-arrowheads";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
+import {
+  extractFeatureFromLayer,
+  syncFeaturesFromLayerMap,
+} from "../utils/mapDrawingFeature";
 import { toArray } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
-import type { MapFeatureId } from "../typescript/mapDrawing";
+
+type FeatureId = string;
 
 type LayerWithFeature = LayerWithFeatureType<Feature>;
 
@@ -39,20 +48,25 @@ const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete", features: Feature[]): void;
+  (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
+  (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
 }>();
 
 const selectedYear = ref(1740);
-const previousFeatureIds = ref(new Set<MapFeatureId>());
+const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
+
+function getYearSafeUTC(dateText: string): number {
+  return new Date(dateText).getUTCFullYear();
+}
 
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature: Feature) =>
-      new Date(feature.properties.startDate).getFullYear() <=
+      getYearSafeUTC(feature.properties.startDate) <=
         selectedYear.value &&
       (!feature.properties.endDate ||
-        new Date(feature.properties.endDate).getFullYear() >=
+        getYearSafeUTC(feature.properties.endDate) >=
           selectedYear.value),
   );
 });
@@ -60,7 +74,7 @@ const filteredFeatures = computed(() => {
 let map: L.Map | null = null;
 
 const featureLayerManager = {
-  layers: new Map<MapFeatureId, L.Layer>(),
+  layers: new Map<FeatureId, L.Layer>(),
 
   addFeatureLayer(featureId: string | number, layer: L.Layer) {
     const id = String(featureId);
@@ -68,7 +82,14 @@ const featureLayerManager = {
 
     if (this.layers.has(id)) {
       map.removeLayer(this.layers.get(id)!);
+  addFeatureLayer(featureId: string | number, layer: L.Layer) {
+    const id = String(featureId);
+    if (!map) return;
+
+    if (this.layers.has(id)) {
+      map.removeLayer(this.layers.get(id)!);
     }
+    this.layers.set(id, layer);
     this.layers.set(id, layer);
 
     const isVisible = props.featureVisibility.get(id) ?? true;
@@ -86,20 +107,38 @@ const featureLayerManager = {
       map.addLayer(layer);
     } else {
       map.removeLayer(layer);
+  toggleFeature(featureId: string | number, visible: boolean) {
+    const id = String(featureId);
+    const layer = this.layers.get(id);
+    if (!layer || !map) return;
+
+    if (visible) {
+      map.addLayer(layer);
+    } else {
+      map.removeLayer(layer);
     }
   },
 
   clearAllFeatures() {
     if (!map) return;
     this.layers.forEach((layer) => map!.removeLayer(layer));
+    if (!map) return;
+    this.layers.forEach((layer) => map!.removeLayer(layer));
     this.layers.clear();
   },
 };
 
+function featureIdAsString(featureOrId: Feature | string | number): string {
+  if (typeof featureOrId === "object" && featureOrId !== null) {
+    return String(featureOrId.id);
+  }
+  return String(featureOrId);
+}
+
 function upsertFeature(features: Feature[], feature: Feature): Feature[] {
-  const targetId = feature.id;
+  const targetId = featureIdAsString(feature);
   const next = [...features];
-  const index = next.findIndex((f) => f.id === targetId);
+  const index = next.findIndex((f) => featureIdAsString(f) === targetId);
 
   if (index >= 0) {
     next[index] = feature;
@@ -110,28 +149,63 @@ function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   return next;
 }
 
-const drawing = useMapDrawing((...args) => {
-  const [event, payload] = args;
+function syncFeaturesFromMapLayers(): Feature[] {
+  const mergedById = new Map<string, Feature>();
+
+  const renderedFeatures = syncFeaturesFromLayerMap(
+    featureLayerManager.layers,
+    localFeaturesSnapshot.value,
+    selectedYear.value
+  );
+
+  renderedFeatures.forEach((feature) => {
+    mergedById.set(String(feature.id), feature);
+  });
+
+  drawing.drawnItems.value?.eachLayer((layer) => {
+    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    if (!extracted?.id) return;
+    mergedById.set(String(extracted.id), extracted);
+  });
+
+  return Array.from(mergedById.values());
+}
+
+function clearDraftLayers() {
+  drawing.clearDrawnItems();
+}
+
+defineExpose({
+  syncFeaturesFromMapLayers,
+  clearDraftLayers,
+});
+
+const drawing = useMapDrawing((event, ...args) => {
+  const payload = args[0] as Feature | string | number;
   const current = localFeaturesSnapshot.value;
 
   if (event === "feature-created") {
-    const next = upsertFeature(current, payload);
+    const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
     emit("draw-create", next);
     return;
   }
 
   if (event === "feature-updated") {
-    const next = upsertFeature(current, payload);
+    const next = upsertFeature(current, payload as Feature);
     localFeaturesSnapshot.value = next;
     emit("draw-update", next);
     return;
   }
 
   if (event === "feature-deleted") {
-    const next = current.filter((feature) => feature.id !== payload);
+    const deletedId = featureIdAsString(payload);
+    const next = current.filter(
+      (feature) => featureIdAsString(feature) !== deletedId,
+    );
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
+    emit("draw-delete-id", deletedId);
   }
 });
 
@@ -468,6 +542,7 @@ onMounted(() => {
 
   L.control.zoom({ position: "topright" }).addTo(map);
 
+  drawing.setSelectedYear(selectedYear.value);
   renderAllFeatures();
 });
 
@@ -480,6 +555,7 @@ onBeforeUnmount(() => {
 });
 
 watch(selectedYear, (newYear) => {
+  drawing.setSelectedYear(newYear);
   void newYear;
   if (!map) return;
   renderAllFeatures();

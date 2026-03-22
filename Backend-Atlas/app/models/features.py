@@ -11,3 +11,4 @@ class Feature(Base):
     is_feature_collection = Column(Boolean, nullable=False, default=False)
     data = Column(JSON, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now())

@@ -6,6 +6,7 @@ import type {
   MapElementType,
   PolygonGeometry,
 } from "../typescript/feature";
+import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 
 function isLatLng(value: unknown): value is L.LatLng {
   const point = value as { lat?: unknown; lng?: unknown } | null;
@@ -39,7 +40,7 @@ export function circleToPolygon(
   };
 }
 
-export function layerToFeature(layer: L.Layer): Feature | null {
+export function layerToFeature(layer: L.Layer, selectedYear: number): Feature | null {
   let geometry: Feature["geometry"] | null = null;
   let type: MapElementType = "shape";
 
@@ -123,7 +124,6 @@ export function layerToFeature(layer: L.Layer): Feature | null {
 
   const now = new Date();
   const isoDate = now.toISOString();
-  const day = isoDate.slice(0, 10);
 
   return {
     id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -135,8 +135,8 @@ export function layerToFeature(layer: L.Layer): Feature | null {
       colorName: "black",
       colorRgb: [0, 0, 0],
       mapElementType: type,
-      startDate: day,
-      endDate: day,
+      startDate: `${selectedYear}-01-01`,
+      endDate: `${selectedYear}-01-01`,
     },
     createdAt: isoDate,
     updatedAt: isoDate,
@@ -186,4 +186,74 @@ export function featureToLayer(feature: Feature): L.Layer | null {
     default:
       return null;
   }
+}
+
+function featureIdAsString(featureOrId: Feature | string | number): string {
+  if (typeof featureOrId === "object" && featureOrId !== null) {
+    return String(featureOrId.id);
+  }
+  return String(featureOrId);
+}
+
+export function extractFeatureFromLayer(layer: L.Layer, selectedYear: number): Feature | null {
+  const layerWithFeature: LayerWithFeatureType<Feature> = layer;
+  const baseFeature = layerWithFeature.feature;
+  const extracted = layerToFeature(layer, selectedYear);
+
+  if (extracted && baseFeature?.id) {
+    extracted.id = baseFeature.id;
+    extracted.mapId = baseFeature.mapId;
+    extracted.createdAt = baseFeature.createdAt;
+    extracted.updatedAt = new Date().toISOString();
+    extracted.name = baseFeature.name;
+    extracted.opacity = baseFeature.opacity;
+    extracted.strokeWidth = baseFeature.strokeWidth;
+    extracted.properties = {
+      ...(extracted.properties || {}),
+      ...(baseFeature.properties || {}),
+    };
+    return extracted;
+  }
+
+  if (typeof layerWithFeature.eachLayer === "function") {
+    let childFeature: Feature | null = null;
+    layerWithFeature.eachLayer((childLayer) => {
+      if (childFeature) return;
+      childFeature = extractFeatureFromLayer(childLayer, selectedYear);
+    });
+    if (childFeature) {
+      return childFeature;
+    }
+  }
+
+  return baseFeature ? { ...baseFeature } : null;
+}
+
+export function syncFeaturesFromLayerMap(
+  layers: Map<string, L.Layer>,
+  snapshot: Feature[], selectedYear: number,
+): Feature[] {
+  const nextById = new Map<string, Feature>();
+  snapshot.forEach((feature) => {
+    nextById.set(featureIdAsString(feature), { ...feature });
+  });
+
+  layers.forEach((layer, featureId) => {
+    const layerId = String(featureId);
+    const extracted = extractFeatureFromLayer(layer, selectedYear);
+    if (extracted) {
+      extracted.id = layerId;
+      nextById.set(layerId, extracted);
+      return;
+    }
+
+    const fallback = snapshot.find(
+      (feature) => featureIdAsString(feature) === layerId,
+    );
+    if (fallback) {
+      nextById.set(layerId, fallback);
+    }
+  });
+
+  return Array.from(nextById.values());
 }

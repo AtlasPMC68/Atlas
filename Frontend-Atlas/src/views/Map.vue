@@ -2,7 +2,7 @@
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
       <div class="flex justify-end">
-        <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
+        <SaveDropdown @save="saveFeatures" />
       </div>
 
       <button @click="upload(mapId)" class="btn btn-primary">
@@ -21,20 +21,17 @@
 
       <div class="flex-1">
         <MapGeoJSON
+          ref="mapGeoJsonRef"
           :features="features"
           :feature-visibility="featureVisibility"
           @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
+          @draw-delete-id="handleFeatureDelete"
         />
       </div>
     </div>
-
-    <SaveAsModal
-      v-if="showSaveAsModal"
-      @save="handleSaveAs"
-      @cancel="showSaveAsModal = false"
     />
   </div>
 </template>
@@ -44,11 +41,9 @@ import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
-import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import type { MapSaveAsPayload } from "../typescript/map";
-import { camelToSnake, snakeToCamel } from "../utils/utils";
+import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 
@@ -60,10 +55,48 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 const route = useRoute();
 const router = useRouter();
 const mapId = ref(route.params.mapId as string).value;
+const mapGeoJsonRef = ref<{
+  syncFeaturesFromMapLayers: () => Feature[];
+  clearDraftLayers: () => void;
+} | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
-const showSaveAsModal = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function deleteFeatureFromApi(featureId: string) {
+  if (!isUuid(featureId)) return; // Check if the featureId is a valid UUID (it could be a temporary ID for unsaved features)
+
+  if (!currentUser.value) {
+    throw new Error("No user signed in");
+  }
+
+  const response = await fetch(
+    `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Error deleting feature ${featureId}: ${response.status}`);
+  }
+}
+
+function handleFeatureDelete(featureId: string) {
+  features.value = features.value.filter((feature) => feature.id !== featureId);
+  reconcileVisibility(features.value);
+
+  void deleteFeatureFromApi(featureId).catch((error) => {
+    console.error("Failed to delete feature from API:", error);
+  });
+}
 
 function reconcileVisibility(list: Feature[]) {
   const next = new Map(featureVisibility.value);
@@ -113,48 +146,39 @@ onMounted(async () => {
   await loadInitialFeatures();
 });
 
-function saveMap() {
-  console.log("Quick save");
-  // appel API ou logique de sauvegarde ici
-}
-
-function saveMapAs() {
-  showSaveAsModal.value = true;
-}
-
-async function handleSaveAs(map: MapSaveAsPayload) {
-  if (!keycloak.token || !currentUser.value) {
+async function saveFeatures() {
+  if (!currentUser.value) {
     throw new Error("No authentication token or user available");
   }
 
-  const userId = currentUser.value.id;
-
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/save`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-      body: JSON.stringify(
-        camelToSnake({
-          userId: userId,
-          title: map.title,
-          description: map.description ? map.description : "",
-          isPrivate: map.isPrivate,
-        }),
-      ),
-    });
-
-    if (!response.ok) {
-      throw new Error("Error while saving the map");
+    const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
+    if (syncedFeatures) {
+      features.value = syncedFeatures;
+      reconcileVisibility(syncedFeatures);
     }
 
-    await response.json();
-    showSaveAsModal.value = false;
+    const payload = camelToSnake(prepareFeaturesForSave(features.value));
+
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Error saving features: ${response.status}`);
+    }
+
+    mapGeoJsonRef.value?.clearDraftLayers();
   } catch (err) {
     throw new Error(
-      `Error while saving map: ${err instanceof Error ? err.message : String(err)}`,
+      `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }
