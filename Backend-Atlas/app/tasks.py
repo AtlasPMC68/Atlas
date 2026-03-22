@@ -24,6 +24,7 @@ from .celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 nb_task = 6
+ENABLE_COASTLINE_SNAPPING = False
 
 
 @celery_app.task(bind=True)
@@ -187,7 +188,10 @@ def process_map_extraction(
             if pixel_points and geo_points_lonlat:
                 try:
                     georef_features = georeference_features_with_sift_points(
-                        pixel_features, pixel_points, geo_points_lonlat
+                        pixel_features,
+                        pixel_points,
+                        geo_points_lonlat,
+                        snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
                     )
                     asyncio.run(persist_features(map_uuid, georef_features))
 

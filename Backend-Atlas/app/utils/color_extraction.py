@@ -11,7 +11,6 @@ from skimage.morphology import binary_opening, binary_closing, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
 from scipy.ndimage import binary_fill_holes
-from scipy.cluster.vq import kmeans2
 from matplotlib import colors as mcolors
 
 from shapely.geometry import Polygon, MultiPolygon, shape
@@ -134,84 +133,6 @@ def dominant_bins_lab(
     return dom
 
 
-def dominant_colors_kmeans(
-    lab: np.ndarray,
-    opaque_mask: np.ndarray,
-    n_colors: int = 10,
-    min_ratio: float = 0.02,
-) -> List[Dict]:
-    """
-    Find dominant colors using K-means clustering in LAB space.
-    
-    This finds the actual color centers/modes in the image, grouping similar
-    shades together naturally. Better than binning for images with flat colors
-    per zone (like historical maps).
-    
-    Args:
-        lab: LAB image array (H, W, 3)
-        opaque_mask: Boolean mask of valid pixels
-        n_colors: Number of color clusters to find
-        min_ratio: Minimum pixel ratio to keep a color (filters out noise)
-    
-    Returns:
-        List of dicts with lab_center, ratio, and count for each dominant color
-    """
-    lab_px = lab[opaque_mask]  # (N, 3)
-    
-    # Subsample if too many pixels (k-means can be slow on large images)
-    max_samples = 50000
-    if len(lab_px) > max_samples:
-        indices = np.random.choice(len(lab_px), max_samples, replace=False)
-        lab_sample = lab_px[indices]
-    else:
-        lab_sample = lab_px
-    
-    # Run k-means clustering to find color centers
-    try:
-        centroids, labels = kmeans2(lab_sample, n_colors, minit='++', iter=20)
-        
-        # Assign all pixels to nearest centroid
-        # Compute distances to all centroids for each pixel
-        distances = np.zeros((len(lab_px), n_colors))
-        for i, centroid in enumerate(centroids):
-            centroid_broadcast = centroid.reshape(1, 3)
-            lab_px_broadcast = lab_px.reshape(-1, 3)
-            # Simple Euclidean distance in LAB space
-            distances[:, i] = np.sqrt(np.sum((lab_px_broadcast - centroid_broadcast) ** 2, axis=1))
-        
-        all_labels = np.argmin(distances, axis=1)
-        
-        # Count pixels per cluster
-        unique_labels, counts = np.unique(all_labels, return_counts=True)
-        ratios = counts / counts.sum()
-        
-        # Sort by ratio (most common first)
-        order = np.argsort(-ratios)
-        
-        dom: List[Dict] = []
-        for idx in order:
-            label = unique_labels[idx]
-            ratio = float(ratios[idx])
-            
-            # Filter out colors that are too rare (likely noise/artifacts)
-            if ratio < min_ratio:
-                continue
-            
-            centroid = centroids[label]
-            dom.append({
-                "lab_center": (float(centroid[0]), float(centroid[1]), float(centroid[2])),
-                "ratio": ratio,
-                "count": int(counts[idx]),
-            })
-        
-        logger.info(f"K-means found {len(dom)} distinct colors (filtered {n_colors - len(dom)} rare colors)")
-        return dom
-        
-    except Exception as e:
-        logger.error(f"K-means clustering failed: {e}, falling back to binning")
-        # Fallback to binning if k-means fails
-        return dominant_bins_lab(lab, opaque_mask, top_n=n_colors)
-
 
 def lab_center_to_rgb_u8(
     lab_center: Tuple[float, float, float],
@@ -311,13 +232,13 @@ def simplify_geometry(geometry: BaseGeometry, tolerance: float = 1.0) -> BaseGeo
     Returns:
         Simplified geometry
     """
-    if tolerance > 0 and geometry is not None:
-        return geometry.simplify(tolerance, preserve_topology=True)
+    # if tolerance > 0 and geometry is not None:
+    #     return geometry.simplify(tolerance, preserve_topology=True)
     return geometry
 
 
 def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
-    """From pixel-space polygons, build a normalized GeoJSON feature and write it to disk.
+    """From pixel-space polygons, build a GeoJSON feature and write it to disk.
 
     - Merges all pixel polygons into a single geometry (possibly MultiPolygon).
     """
@@ -392,32 +313,32 @@ def build_normalized_feature(
 def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
-    n_colors: int = 10,
-    use_kmeans: bool = True,
-    min_color_ratio: float = 0.02,
-    deltaE_threshold: float = 15.0,
+    top_n: int = 8,
+    bin_L: float = 4.0,
+    bin_a: float = 8.0,
+    bin_b: float = 8.0,
+    deltaE_threshold: float = 10.0,
     opening_radius: int = 1,
     fill_holes: bool = True,
     closing_radius: int = 3,
     simplify_tolerance: float = 2.0,
 ) -> Dict:
     """
-    Extract dominant color layers using K-means clustering or LAB binning.
+    Extract dominant color layers using LAB binning + ΔE masks.
+    Applies morphological operations to fill zones and remove noise.
 
     Args:
         image_path: Path to the input image
         output_dir: Directory to save extracted color masks
-        n_colors: Number of distinct colors to find (default: 10)
-        use_kmeans: Use K-means clustering (True) or binning (False) (default: True)
-        min_color_ratio: Minimum pixel ratio to keep a color (default: 0.02 = 2%)
-        deltaE_threshold: Maximum color distance to include pixels in mask (default: 15.0)
-        opening_radius: Radius for morphological opening to remove noise
-        fill_holes: Whether to fill interior holes in color zones
-        closing_radius: Radius for morphological closing to bridge gaps
-        simplify_tolerance: Geometry simplification tolerance
-
-    Note: K-means mode finds ONE representative color per zone by clustering similar
-    shades together automatically. Best for historical maps with flat colors.
+        top_n: Number of dominant bins to extract (default: 8)
+        bin_L: LAB L channel bin size (default: 4.0)
+        bin_a: LAB a channel bin size (default: 8.0)
+        bin_b: LAB b channel bin size (default: 8.0)
+        deltaE_threshold: Maximum color distance to include pixels in mask (default: 10.0)
+        opening_radius: Radius for morphological opening to remove noise (default: 1)
+        fill_holes: Whether to fill interior holes in color zones (default: True)
+        closing_radius: Radius for morphological closing to bridge gaps (default: 3)
+        simplify_tolerance: Geometry simplification tolerance (default: 2.0)
 
     Returns:
         Dict with detected colors, mask paths, ratios, and normalized_features.
@@ -430,16 +351,10 @@ def extract_colors(
     image_output_dir = os.path.join(output_dir, base_name)
     os.makedirs(image_output_dir, exist_ok=True)
 
-    # Find dominant colors using K-means clustering or binning
-    if use_kmeans:
-        dom = dominant_colors_kmeans(
-            lab, opaque_mask, n_colors=n_colors, min_ratio=min_color_ratio
-        )
-    else:
-        # Fallback to binning approach
-        dom = dominant_bins_lab(
-            lab, opaque_mask, top_n=n_colors, bin_L=10.0, bin_a=15.0, bin_b=15.0
-        )
+    # Dominant LAB bins (computed on opaque pixels)
+    dom = dominant_bins_lab(
+        lab, opaque_mask, top_n=top_n, bin_L=bin_L, bin_a=bin_a, bin_b=bin_b
+    )
 
     masks: Dict[str, str] = {}
     ratios: Dict[str, float] = {}
@@ -518,118 +433,3 @@ def extract_colors(
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,
     }
-
-
-def load_lakes_geojson(lakes_file: str = "ne_50m_lakes.geojson") -> List[BaseGeometry]:
-    """
-    Load lake geometries from a GeoJSON file.
-
-    Args:
-        lakes_file: Name of the lakes GeoJSON file (default: ne_50m_lakes.geojson)
-
-    Returns:
-        List of Shapely geometry objects representing lakes
-    """
-    lakes_path = os.path.join(GEOJSON_DIR, lakes_file)
-
-    if not os.path.exists(lakes_path):
-        logger.warning(f"Lakes GeoJSON file not found: {lakes_path}")
-        return []
-
-    try:
-        with open(lakes_path, "r", encoding="utf-8") as f:
-            lakes_data = json.load(f)
-
-        lake_geometries = []
-        for feature in lakes_data.get("features", []):
-            geom = shape(feature["geometry"])
-            if geom and geom.is_valid:
-                lake_geometries.append(geom)
-
-        logger.info(f"Loaded {len(lake_geometries)} lake geometries from {lakes_file}")
-        return lake_geometries
-
-    except Exception as e:
-        logger.error(f"Error loading lakes GeoJSON: {e}")
-        return []
-
-
-def subtract_lakes_from_zones(
-    features: List[Dict], lakes_file: str = "ne_50m_lakes.geojson"
-) -> List[Dict]:
-    """
-    Remove lake areas from georeferenced color zone features.
-
-    This function loads lake geometries from a reference GeoJSON file and
-    subtracts any overlapping lake areas from zone geometries. This creates
-    holes in the zones where lakes exist, resulting in more accurate
-    cartographic representations.
-
-    Args:
-        features: List of GeoJSON feature collections (georeferenced zones)
-        lakes_file: Name of the lakes GeoJSON file (default: ne_50m_lakes.geojson)
-
-    Returns:
-        List of modified feature collections with lakes removed from zones
-    """
-    # Load lake geometries
-    lake_geometries = load_lakes_geojson(lakes_file)
-
-    if not lake_geometries:
-        logger.warning("No lake geometries loaded, returning features unchanged")
-        return features
-
-    # Union all lake geometries for efficient intersection testing
-    lakes_union = unary_union(lake_geometries)
-
-    modified_features = []
-
-    for feature_collection in features:
-        modified_collection = {"type": "FeatureCollection", "features": []}
-
-        for feature in feature_collection.get("features", []):
-            # Only process zone features (not points like cities)
-            map_element_type = feature.get("properties", {}).get("mapElementType")
-
-            if map_element_type != "zone":
-                # Keep non-zone features unchanged
-                modified_collection["features"].append(feature)
-                continue
-
-            # Convert feature geometry to Shapely
-            try:
-                zone_geom = shape(feature["geometry"])
-
-                # Check if zone intersects with any lakes
-                if zone_geom.intersects(lakes_union):
-                    # Subtract lakes from zone
-                    modified_geom = zone_geom.difference(lakes_union)
-
-                    # Check if result is valid and not empty
-                    if modified_geom.is_valid and not modified_geom.is_empty:
-                        # Update feature with modified geometry
-                        feature["geometry"] = modified_geom.__geo_interface__
-                        modified_collection["features"].append(feature)
-                        logger.debug(
-                            f"Subtracted lakes from zone: {feature.get('properties', {}).get('name', 'unnamed')}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Zone completely covered by lakes or invalid after subtraction: {feature.get('properties', {}).get('name', 'unnamed')}"
-                        )
-                else:
-                    # No intersection with lakes, keep original
-                    modified_collection["features"].append(feature)
-
-            except Exception as e:
-                logger.error(f"Error processing zone feature: {e}")
-                # Keep original feature on error
-                modified_collection["features"].append(feature)
-
-        if modified_collection["features"]:
-            modified_features.append(modified_collection)
-
-    logger.info(
-        f"Processed {len(features)} feature collections, removed lakes from zones"
-    )
-    return modified_features
