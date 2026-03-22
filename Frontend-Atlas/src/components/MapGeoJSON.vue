@@ -7,7 +7,11 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
+<script setup lang="ts">
+import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
 import L from "leaflet";
+import "leaflet-geometryutil";
+import "leaflet-arrowheads";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
@@ -78,7 +82,14 @@ const featureLayerManager = {
 
     if (this.layers.has(id)) {
       map.removeLayer(this.layers.get(id)!);
+  addFeatureLayer(featureId: string | number, layer: L.Layer) {
+    const id = String(featureId);
+    if (!map) return;
+
+    if (this.layers.has(id)) {
+      map.removeLayer(this.layers.get(id)!);
     }
+    this.layers.set(id, layer);
     this.layers.set(id, layer);
 
     const isVisible = props.featureVisibility.get(id) ?? true;
@@ -96,10 +107,21 @@ const featureLayerManager = {
       map.addLayer(layer);
     } else {
       map.removeLayer(layer);
+  toggleFeature(featureId: string | number, visible: boolean) {
+    const id = String(featureId);
+    const layer = this.layers.get(id);
+    if (!layer || !map) return;
+
+    if (visible) {
+      map.addLayer(layer);
+    } else {
+      map.removeLayer(layer);
     }
   },
 
   clearAllFeatures() {
+    if (!map) return;
+    this.layers.forEach((layer) => map!.removeLayer(layer));
     if (!map) return;
     this.layers.forEach((layer) => map!.removeLayer(layer));
     this.layers.clear();
