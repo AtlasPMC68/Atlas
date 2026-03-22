@@ -35,8 +35,6 @@ let map = null;
 let currentRegionsLayer = null;
 let baseTileLayer = null;
 let labelLayer = null;
-let coastlineOverlayLayer = null;
-let coastlineOverlayVisible = false;
 
 let citiesLayer = null;
 let zonesLayer = null;
@@ -45,8 +43,6 @@ let arrowsLayer = null;
 // Function to display the map
 onMounted(() => {
   map = L.map("map").setView([52.9399, -73.5491], 5);
-  map.createPane("coastlinePane");
-  map.getPane("coastlinePane").style.zIndex = 650;
 
   // Background map
   baseTileLayer = L.tileLayer(
@@ -59,57 +55,10 @@ onMounted(() => {
   ).addTo(map);
 
   loadRegionsForYear(selectedYear.value, true);
-  loadCoastlineOverlay();
 
   // uncomment when link to db is done
   // loadTestNormalizedShape();
 });
-
-function loadCoastlineOverlay() {
-  const coastlineFile = "/geojson/ne_coastline.geojson";
-
-  return fetch(coastlineFile)
-    .then((res) => {
-      if (!res.ok) throw new Error("File not found: " + coastlineFile);
-      return res.json();
-    })
-    .then((data) => {
-      if (coastlineOverlayLayer) {
-        map.removeLayer(coastlineOverlayLayer);
-        coastlineOverlayLayer = null;
-      }
-
-      coastlineOverlayLayer = L.geoJSON(data, {
-        pane: "coastlinePane",
-        style: {
-          color: "#ff0000",
-          weight: 2,
-          opacity: 1,
-        },
-        interactive: false,
-      });
-
-      // Apply the latest requested visibility state even if it was set before load finished.
-      setCoastlineOverlayVisible(coastlineOverlayVisible);
-    })
-    .catch((err) => {
-      console.warn("Failed to load coastline overlay:", err.message);
-    });
-}
-
-function setCoastlineOverlayVisible(visible) {
-  coastlineOverlayVisible = visible;
-  if (!map || !coastlineOverlayLayer) return;
-
-  if (visible) {
-    if (!map.hasLayer(coastlineOverlayLayer)) {
-      coastlineOverlayLayer.addTo(map);
-    }
-    coastlineOverlayLayer.bringToFront();
-  } else if (map.hasLayer(coastlineOverlayLayer)) {
-    map.removeLayer(coastlineOverlayLayer);
-  }
-}
 
 // Gestionnaire de layers par feature
 const featureLayerManager = {
@@ -413,12 +362,6 @@ function renderShapes(features) {
 
 function renderAllFeatures() {
   const currentFeatures = filteredFeatures.value;
-  const hasGeorefZones = currentFeatures.some(
-    (f) =>
-      f.properties?.mapElementType === "zone" &&
-      f.properties?.is_georeferenced === true,
-  );
-  setCoastlineOverlayVisible(hasGeorefZones);
 
   const currentIds = new Set(currentFeatures.map((f) => f.id));
   const previousIds = previousFeatureIds.value;

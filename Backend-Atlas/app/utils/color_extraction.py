@@ -1,6 +1,5 @@
 import os
 import math
-import json
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -13,13 +12,10 @@ from skimage.measure import find_contours
 from scipy.ndimage import binary_fill_holes
 from matplotlib import colors as mcolors
 
-from shapely.geometry import Polygon, MultiPolygon, shape
+from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from shapely.geometry.base import BaseGeometry
 from shapely import affinity
-import logging
-
-logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
@@ -220,25 +216,15 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
     merged = unary_union(polygons)
     return merged
 
-
-def simplify_geometry(geometry: BaseGeometry, tolerance: float = 1.0) -> BaseGeometry:
-    """
-    Simplify geometry to reduce complexity and smooth edges.
-    
-    Args:
-        geometry: Input Shapely geometry
-        tolerance: Simplification tolerance (higher = simpler, 0 = disabled)
-    
-    Returns:
-        Simplified geometry
-    """
-    # if tolerance > 0 and geometry is not None:
-    #     return geometry.simplify(tolerance, preserve_topology=True)
+# Used to not have crazy amount of vertices so it is not too nasty looking
+def simplify_geometry(geometry: BaseGeometry, tolerance: float = 0.5) -> BaseGeometry:
+    if tolerance > 0 and geometry is not None:
+        return geometry.simplify(tolerance, preserve_topology=True)
     return geometry
 
 
 def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
-    """From pixel-space polygons, build a GeoJSON feature and write it to disk.
+    """From pixel-space polygons, build GeoJSON feature and write it to disk.
 
     - Merges all pixel polygons into a single geometry (possibly MultiPolygon).
     """
@@ -319,27 +305,12 @@ def extract_colors(
     bin_b: float = 8.0,
     deltaE_threshold: float = 10.0,
     opening_radius: int = 1,
-    fill_holes: bool = True,
     closing_radius: int = 3,
-    simplify_tolerance: float = 2.0,
+    simplify_tolerance: float = 0.5,
 ) -> Dict:
     """
     Extract dominant color layers using LAB binning + ΔE masks.
-    Applies morphological operations to fill zones and remove noise.
-
-    Args:
-        image_path: Path to the input image
-        output_dir: Directory to save extracted color masks
-        top_n: Number of dominant bins to extract (default: 8)
-        bin_L: LAB L channel bin size (default: 4.0)
-        bin_a: LAB a channel bin size (default: 8.0)
-        bin_b: LAB b channel bin size (default: 8.0)
-        deltaE_threshold: Maximum color distance to include pixels in mask (default: 10.0)
-        opening_radius: Radius for morphological opening to remove noise (default: 1)
-        fill_holes: Whether to fill interior holes in color zones (default: True)
-        closing_radius: Radius for morphological closing to bridge gaps (default: 3)
-        simplify_tolerance: Geometry simplification tolerance (default: 2.0)
-
+    
     Returns:
         Dict with detected colors, mask paths, ratios, and normalized_features.
     """
@@ -376,7 +347,6 @@ def extract_colors(
 
         mask = (dE <= deltaE_threshold) & opaque_mask
 
-        # Morphological operations to clean up the mask
         # 1. Opening: Remove small noise/speckles
         if opening_radius > 0:
             mask = binary_opening(mask, disk(opening_radius))
@@ -386,8 +356,7 @@ def extract_colors(
             mask = binary_closing(mask, disk(closing_radius))
         
         # 3. Fill holes: Remove interior holes (text, small waters, etc.)
-        if fill_holes:
-            mask = binary_fill_holes(mask)
+        mask = binary_fill_holes(mask)
 
         # Name the layer based on approximate RGB -> nearest CSS name
         rgb_u8 = lab_center_to_rgb_u8(lab_center)
@@ -406,7 +375,7 @@ def extract_colors(
         # Convert mask to geometry first (like the old RGB version did with pixel_polygons)
         geometry = mask_to_geometry(mask)
         if geometry:
-            # Simplify geometry to reduce complexity and smooth edges
+            
             geometry = simplify_geometry(geometry, simplify_tolerance)
             
             # build_features expects a list of polygons, so wrap the geometry in a list

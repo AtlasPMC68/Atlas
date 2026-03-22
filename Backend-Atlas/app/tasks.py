@@ -24,7 +24,9 @@ from .celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 nb_task = 6
-ENABLE_COASTLINE_SNAPPING = False
+
+# TODO : maybe remove this debud parameter pour l'instant j'aimerais ca le garder tho
+ENABLE_COASTLINE_SNAPPING = True
 
 
 @celery_app.task(bind=True)
@@ -68,7 +70,6 @@ def process_map_extraction(
             state="PROGRESS",
             meta={"current": 1, "total": nb_task, "status": "Saving uploaded file"},
         )
-        logger.info("Before sleep")
         time.sleep(2)
 
         with tempfile.NamedTemporaryFile(

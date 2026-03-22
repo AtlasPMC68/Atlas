@@ -1,12 +1,13 @@
 import math
 import json
 import os
-from typing import List, Tuple, Dict, Any, Optional
+from typing import Dict, List, Optional, Tuple
 import logging
 
 import numpy as np
 from shapely.geometry import shape, mapping, Point, Polygon, MultiPolygon
 from shapely.ops import transform, unary_union, nearest_points
+from shapely.geometry.base import BaseGeometry
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +16,10 @@ GEOJSON_DIR = os.path.join(BASE_DIR, "..", "geojson")
 
 LonLat = Tuple[float, float]
 XY = Tuple[float, float]
+JSONDict = Dict[str, object]
 
 R_EARTH = 6378137.0
-
+DEBUG = False
 
 def _load_coastline_geometry(
     coastline_file: str = "ne_coastline.geojson",
@@ -47,10 +49,8 @@ def _load_coastline_geometry(
             return None
 
         coastline_union = unary_union(line_geometries)
-        logger.info(
-            f"Loaded {len(line_geometries)} coastline segments from {coastline_file}"
-        )
         return coastline_union
+    
     except Exception as e:
         logger.error(f"Failed to load coastline geometry: {e}", exc_info=True)
         return None
@@ -89,10 +89,10 @@ def _snap_ring_coords_to_coastline(
 
 
 def _snap_geometry_to_coastline(
-    geom,
-    coastline_geom,
+    geom: Optional[BaseGeometry],
+    coastline_geom: Optional[BaseGeometry],
     snap_tolerance: float,
-) -> Tuple[Any, int, int]:
+) -> Tuple[Optional[BaseGeometry], int, int]:
     """Snap polygon boundary vertices to coastline and preserve valid geometry."""
     total_points = 0
     snapped_points = 0
@@ -100,7 +100,7 @@ def _snap_geometry_to_coastline(
     if coastline_geom is None or geom is None or geom.is_empty:
         return geom, total_points, snapped_points
 
-    def _collect_polygons(candidate_geom) -> List[Polygon]:
+    def _collect_polygons(candidate_geom: Optional[BaseGeometry]) -> List[Polygon]:
         """Extract only Polygon parts from Polygon/MultiPolygon/collections."""
         if candidate_geom is None or candidate_geom.is_empty:
             return []
@@ -115,7 +115,7 @@ def _snap_geometry_to_coastline(
             return parts
         return []
 
-    def snap_polygon(poly: Polygon) -> Tuple[Any, int, int]:
+    def snap_polygon(poly: Polygon) -> Tuple[BaseGeometry, int, int]:
         poly_total = 0
         poly_snapped = 0
 
@@ -210,7 +210,7 @@ def _estimate_affine_meters_per_pixel(affine: "AffineTransformation") -> float:
 
 
 def _estimate_pixel_diagonal_from_features(
-    pixel_feature_collections: List[Dict[str, Any]],
+    pixel_feature_collections: List[JSONDict],
 ) -> Optional[float]:
     """Estimate pixel-space diagonal from all feature bounds."""
     minx = float("inf")
@@ -323,13 +323,13 @@ class AffineTransformation:
 
 
 def georeference_features_with_sift_points(
-    pixel_feature_collections: List[Dict[str, Any]],
+    pixel_feature_collections: List[JSONDict],
     pixel_points: List[XY],
     geo_points_lonlat: List[LonLat],
     snap_to_coastline: bool = True,
     coastline_snap_ratio_of_diagonal: float = 0.01,
     coastline_snap_tolerance_px: Optional[float] = None,
-) -> List[Dict[str, Any]]:
+) -> List[JSONDict]:
     """Georeference pixel-space features using affine transformation.
     
     Establishes a pixel -> coordinate relationship using affine transformation.
@@ -395,7 +395,6 @@ def georeference_features_with_sift_points(
         snapping_enabled = snap_to_coastline and coastline_geom_3857 is not None
 
         if snapping_enabled:
-            # Keep one simple API surface, but guard internally against extreme values.
             min_snap_px = 3.0
             max_snap_px = 40.0
             min_snap_m = 200.0
@@ -443,13 +442,13 @@ def georeference_features_with_sift_points(
                 return lons, lats
             return lons, lats, z
 
-        georef_collections: List[Dict[str, Any]] = []
+        georef_collections: List[JSONDict] = []
 
         for _, fc in enumerate(pixel_feature_collections):
             if fc.get("type") != "FeatureCollection":
                 continue
                 
-            new_features: List[Dict[str, Any]] = []
+            new_features: List[JSONDict] = []
             
             for feat_idx, feat in enumerate(fc.get("features", [])):
                 try:
@@ -508,7 +507,7 @@ def georeference_features_with_sift_points(
                     }
                 )
 
-        if snapping_enabled:
+        if snapping_enabled and DEBUG:
             pct = 0.0
             if total_boundary_points > 0:
                 pct = (100.0 * total_snapped_points) / total_boundary_points
