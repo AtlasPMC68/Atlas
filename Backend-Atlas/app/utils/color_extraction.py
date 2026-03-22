@@ -574,7 +574,6 @@ def extract_colors(
       - selected_bins (metadata)
       - normalized_features (GeoJSON FeatureCollections)
     """
-<<<<<<< HEAD
 
     # 0) Prepare output directory
     base_name = os.path.splitext(os.path.basename(image_path))[0]
@@ -605,10 +604,6 @@ def extract_colors(
     lab = compute_lab(rgb)
 
 
-=======
-
-    # 0) Prepare output directory
->>>>>>> 0566aad93a646f9cc2850efabb6fe5753cdb4bc0
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
 
@@ -689,16 +684,10 @@ def extract_colors(
     opening_radius: int = 0 # erosion + dilation
     for k, entry in enumerate(selected):
         mask = (best_idx == k) & valid
-<<<<<<< HEAD
 
         if opening_radius > 0:
             mask = opening(mask, disk(opening_radius))
 
-=======
-        # Optional morphological refinement:
-        mask = binary_opening(mask, disk(opening_radius))
-
->>>>>>> 0566aad93a646f9cc2850efabb6fe5753cdb4bc0
         if not np.any(mask):
             continue
 
