@@ -1,17 +1,173 @@
 import math
-from typing import List, Tuple, Dict, Any
+import json
+import os
+from typing import Dict, List, Optional, Tuple
 import logging
 
 import numpy as np
-from shapely.geometry import shape, mapping
-from shapely.ops import transform
+from shapely.geometry import shape, mapping, Point, Polygon, MultiPolygon
+from shapely.ops import transform, unary_union, nearest_points
+from shapely.geometry.base import BaseGeometry
 
 logger = logging.getLogger(__name__)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GEOJSON_DIR = os.path.join(BASE_DIR, "..", "geojson")
+
 LonLat = Tuple[float, float]
 XY = Tuple[float, float]
+JSONDict = Dict[str, object]
 
 R_EARTH = 6378137.0
+DEBUG = False
+
+def _load_coastline_geometry(
+    coastline_file: str = "ne_coastline.geojson",
+):
+    """Load coastline linework as a single geometry for snapping."""
+    coastline_path = os.path.join(GEOJSON_DIR, coastline_file)
+
+    if not os.path.exists(coastline_path):
+        logger.warning(f"Coastline file not found: {coastline_path}")
+        return None
+
+    try:
+        with open(coastline_path, "r", encoding="utf-8") as f:
+            coastline_data = json.load(f)
+
+        line_geometries = []
+        for feature in coastline_data.get("features", []):
+            geom_data = feature.get("geometry")
+            if not geom_data:
+                continue
+            geom = shape(geom_data)
+            if geom and geom.is_valid and not geom.is_empty:
+                line_geometries.append(geom)
+
+        if not line_geometries:
+            logger.warning("No valid coastline geometries found")
+            return None
+
+        coastline_union = unary_union(line_geometries)
+        return coastline_union
+    
+    except Exception as e:
+        logger.error(f"Failed to load coastline geometry: {e}", exc_info=True)
+        return None
+
+
+def _snap_ring_coords_to_coastline(
+    coords: List[Tuple[float, float]],
+    coastline_geom,
+    snap_tolerance: float,
+) -> Tuple[List[Tuple[float, float]], int, int]:
+    """Snap ring coordinates to coastline where points are within tolerance."""
+    if not coords:
+        return coords, 0, 0
+
+    snapped_coords: List[Tuple[float, float]] = []
+    total_points = 0
+    snapped_points = 0
+
+    for x, y in coords:
+        total_points += 1
+        p = Point(float(x), float(y))
+        distance = p.distance(coastline_geom)
+
+        if distance <= snap_tolerance:
+            _, nearest_on_coast = nearest_points(p, coastline_geom)
+            snapped_coords.append((float(nearest_on_coast.x), float(nearest_on_coast.y)))
+            snapped_points += 1
+        else:
+            snapped_coords.append((float(x), float(y)))
+
+    # Ensure ring closure remains valid
+    if snapped_coords and snapped_coords[0] != snapped_coords[-1]:
+        snapped_coords[-1] = snapped_coords[0]
+
+    return snapped_coords, total_points, snapped_points
+
+
+def _snap_geometry_to_coastline(
+    geom: Optional[BaseGeometry],
+    coastline_geom: Optional[BaseGeometry],
+    snap_tolerance: float,
+) -> Tuple[Optional[BaseGeometry], int, int]:
+    """Snap polygon boundary vertices to coastline and preserve valid geometry."""
+    total_points = 0
+    snapped_points = 0
+
+    if coastline_geom is None or geom is None or geom.is_empty:
+        return geom, total_points, snapped_points
+
+    def _collect_polygons(candidate_geom: Optional[BaseGeometry]) -> List[Polygon]:
+        """Extract only Polygon parts from Polygon/MultiPolygon/collections."""
+        if candidate_geom is None or candidate_geom.is_empty:
+            return []
+        if candidate_geom.geom_type == "Polygon":
+            return [candidate_geom]
+        if candidate_geom.geom_type == "MultiPolygon":
+            return list(candidate_geom.geoms)
+        if hasattr(candidate_geom, "geoms"):
+            parts: List[Polygon] = []
+            for g in candidate_geom.geoms:
+                parts.extend(_collect_polygons(g))
+            return parts
+        return []
+
+    def snap_polygon(poly: Polygon) -> Tuple[BaseGeometry, int, int]:
+        poly_total = 0
+        poly_snapped = 0
+
+        ext_coords = list(poly.exterior.coords)
+        snapped_ext, t_ext, s_ext = _snap_ring_coords_to_coastline(
+            ext_coords, coastline_geom, snap_tolerance
+        )
+        poly_total += t_ext
+        poly_snapped += s_ext
+
+        snapped_interiors = []
+        for interior in poly.interiors:
+            int_coords = list(interior.coords)
+            snapped_int, t_int, s_int = _snap_ring_coords_to_coastline(
+                int_coords, coastline_geom, snap_tolerance
+            )
+            poly_total += t_int
+            poly_snapped += s_int
+            snapped_interiors.append(snapped_int)
+
+        snapped_poly = Polygon(snapped_ext, snapped_interiors)
+
+        # Keep polygon stable if snapping creates invalid geometry
+        if not snapped_poly.is_valid:
+            repaired = snapped_poly.buffer(0)
+            if repaired.is_valid and not repaired.is_empty:
+                snapped_poly = repaired
+            else:
+                return poly, poly_total, 0
+
+        return snapped_poly, poly_total, poly_snapped
+
+    if geom.geom_type == "Polygon":
+        snapped_geom, total_points, snapped_points = snap_polygon(geom)
+        return snapped_geom, total_points, snapped_points
+
+    if geom.geom_type == "MultiPolygon":
+        snapped_parts = []
+        for poly in geom.geoms:
+            snapped_geom_part, t, s = snap_polygon(poly)
+            total_points += t
+            snapped_points += s
+            snapped_parts.extend(_collect_polygons(snapped_geom_part))
+
+        if not snapped_parts:
+            return geom, total_points, 0
+        if len(snapped_parts) == 1:
+            return snapped_parts[0], total_points, snapped_points
+        return MultiPolygon(snapped_parts), total_points, snapped_points
+
+    # Non-polygon geometries are left unchanged
+    return geom, total_points, snapped_points
 
 
 def _lonlat_to_webmercator(lon: float, lat: float) -> XY:
@@ -25,6 +181,73 @@ def _webmercator_to_lonlat(x: float, y: float) -> LonLat:
     lon = math.degrees(x / R_EARTH)
     lat = math.degrees(2.0 * math.atan(math.exp(y / R_EARTH)) - math.pi / 2.0)
     return lon, lat
+
+
+def _lonlat_arrays_to_webmercator(x, y, z=None):
+    """Vectorized transform callback for Shapely: lon/lat (EPSG:4326) -> EPSG:3857."""
+    x_arr = np.asarray(x, dtype=float)
+    y_arr = np.asarray(y, dtype=float)
+
+    X = np.radians(x_arr) * R_EARTH
+    lat_clamped = np.clip(y_arr, -89.9, 89.9)
+    Y = np.log(np.tan(np.pi / 4.0 + np.radians(lat_clamped) / 2.0)) * R_EARTH
+
+    if z is None:
+        return X, Y
+    return X, Y, z
+
+
+def _estimate_affine_meters_per_pixel(affine: "AffineTransformation") -> float:
+    """Estimate average meters-per-pixel from affine linear terms."""
+    a = float(affine.matrix[0, 0])
+    b = float(affine.matrix[0, 1])
+    c = float(affine.matrix[1, 0])
+    d = float(affine.matrix[1, 1])
+
+    scale_x = math.sqrt(a * a + c * c)
+    scale_y = math.sqrt(b * b + d * d)
+    return (scale_x + scale_y) / 2.0
+
+
+def _estimate_pixel_diagonal_from_features(
+    pixel_feature_collections: List[JSONDict],
+) -> Optional[float]:
+    """Estimate pixel-space diagonal from all feature bounds."""
+    minx = float("inf")
+    miny = float("inf")
+    maxx = float("-inf")
+    maxy = float("-inf")
+    found_any = False
+
+    for fc in pixel_feature_collections:
+        if fc.get("type") != "FeatureCollection":
+            continue
+        for feat in fc.get("features", []):
+            geom_data = feat.get("geometry")
+            if not geom_data:
+                continue
+            try:
+                geom = shape(geom_data)
+            except Exception:
+                continue
+            if geom is None or geom.is_empty:
+                continue
+            gx_min, gy_min, gx_max, gy_max = geom.bounds
+            minx = min(minx, gx_min)
+            miny = min(miny, gy_min)
+            maxx = max(maxx, gx_max)
+            maxy = max(maxy, gy_max)
+            found_any = True
+
+    if not found_any:
+        return None
+
+    width_px = max(0.0, maxx - minx)
+    height_px = max(0.0, maxy - miny)
+    diagonal_px = math.sqrt(width_px * width_px + height_px * height_px)
+    if diagonal_px <= 0:
+        return None
+    return diagonal_px
 
 
 class AffineTransformation:
@@ -100,10 +323,13 @@ class AffineTransformation:
 
 
 def georeference_features_with_sift_points(
-    pixel_feature_collections: List[Dict[str, Any]],
+    pixel_feature_collections: List[JSONDict],
     pixel_points: List[XY],
     geo_points_lonlat: List[LonLat],
-) -> List[Dict[str, Any]]:
+    snap_to_coastline: bool = True,
+    coastline_snap_ratio_of_diagonal: float = 0.01,
+    coastline_snap_tolerance_px: Optional[float] = None,
+) -> List[JSONDict]:
     """Georeference pixel-space features using affine transformation.
     
     Establishes a pixel -> coordinate relationship using affine transformation.
@@ -113,6 +339,9 @@ def georeference_features_with_sift_points(
         pixel_feature_collections: List of GeoJSON FeatureCollections in pixel space
         pixel_points: List of (x, y) pixel coordinates from SIFT matching
         geo_points_lonlat: List of (lon, lat) geographic coordinates
+        snap_to_coastline: Whether to snap nearby zone boundary points to coastline
+        coastline_snap_ratio_of_diagonal: Ratio of pixel diagonal used as default tolerance
+        coastline_snap_tolerance_px: Explicit pixel tolerance override (if provided)
     
     Returns:
         List of georeferenced FeatureCollections in EPSG:4326
@@ -149,6 +378,48 @@ def georeference_features_with_sift_points(
         
         # Build affine transformation: pixel -> WebMercator
         affine = AffineTransformation(src, dst)
+        coastline_geom_3857 = None
+        meters_per_pixel = None
+        diagonal_px = None
+        snap_tolerance_px = None
+        snap_tolerance_m = None
+
+        if snap_to_coastline:
+            coastline_geom_wgs84 = _load_coastline_geometry()
+            if coastline_geom_wgs84 is not None:
+                coastline_geom_3857 = transform(
+                    _lonlat_arrays_to_webmercator,
+                    coastline_geom_wgs84,
+                )
+
+        snapping_enabled = snap_to_coastline and coastline_geom_3857 is not None
+
+        if snapping_enabled:
+            min_snap_px = 3.0
+            max_snap_px = 40.0
+            min_snap_m = 200.0
+            max_snap_m = 50_000.0
+
+            meters_per_pixel = _estimate_affine_meters_per_pixel(affine)
+            diagonal_px = _estimate_pixel_diagonal_from_features(pixel_feature_collections)
+
+            if coastline_snap_tolerance_px is None:
+                if diagonal_px is not None:
+                    snap_tolerance_px = diagonal_px * coastline_snap_ratio_of_diagonal
+                else:
+                    snap_tolerance_px = 8.0
+            else:
+                snap_tolerance_px = float(coastline_snap_tolerance_px)
+
+            snap_tolerance_px = max(min_snap_px, snap_tolerance_px)
+            snap_tolerance_px = min(max_snap_px, snap_tolerance_px)
+
+            snap_tolerance_m = snap_tolerance_px * meters_per_pixel
+            snap_tolerance_m = max(min_snap_m, snap_tolerance_m)
+            snap_tolerance_m = min(max_snap_m, snap_tolerance_m)
+
+        total_boundary_points = 0
+        total_snapped_points = 0
 
         def _to_3857(x, y, z=None):
             """Apply affine: pixel -> WebMercator"""
@@ -171,13 +442,13 @@ def georeference_features_with_sift_points(
                 return lons, lats
             return lons, lats, z
 
-        georef_collections: List[Dict[str, Any]] = []
+        georef_collections: List[JSONDict] = []
 
         for _, fc in enumerate(pixel_feature_collections):
             if fc.get("type") != "FeatureCollection":
                 continue
                 
-            new_features: List[Dict[str, Any]] = []
+            new_features: List[JSONDict] = []
             
             for feat_idx, feat in enumerate(fc.get("features", [])):
                 try:
@@ -187,11 +458,29 @@ def georeference_features_with_sift_points(
                     continue
 
                 try:
-                    # Transform: pixel -> WebMercator -> WGS84
+                    # Transform: pixel -> WebMercator
                     geom_3857 = transform(_to_3857, geom)
-                    geom_wgs84 = transform(_to_lonlat, geom_3857)
                 except Exception as e:
                     logger.error(f"Failed to transform feature {feat_idx}: {e}", exc_info=True)
+                    continue
+
+                if snapping_enabled:
+                    geom_3857, total_pts, snapped_pts = _snap_geometry_to_coastline(
+                        geom_3857,
+                        coastline_geom_3857,
+                        snap_tolerance_m,
+                    )
+                    total_boundary_points += total_pts
+                    total_snapped_points += snapped_pts
+
+                try:
+                    # Convert WebMercator -> WGS84 (after optional snapping)
+                    geom_wgs84 = transform(_to_lonlat, geom_3857)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to convert transformed geometry to lon/lat at feature {feat_idx}: {e}",
+                        exc_info=True,
+                    )
                     continue
 
                 # Update properties
@@ -217,6 +506,22 @@ def georeference_features_with_sift_points(
                         "features": new_features,
                     }
                 )
+
+        if snapping_enabled and DEBUG:
+            pct = 0.0
+            if total_boundary_points > 0:
+                pct = (100.0 * total_snapped_points) / total_boundary_points
+            logger.info(
+                "Coastline snapping: tolerance=%.2f px (ratio=%.4f, diagonal=%.1f px, ~%.2f m/px, %.1f m), total boundary points=%d, snapped points=%d (%.2f%%)",
+                snap_tolerance_px,
+                coastline_snap_ratio_of_diagonal,
+                diagonal_px if diagonal_px is not None else -1.0,
+                meters_per_pixel,
+                snap_tolerance_m,
+                total_boundary_points,
+                total_snapped_points,
+                pct,
+            )
 
         return georef_collections
         

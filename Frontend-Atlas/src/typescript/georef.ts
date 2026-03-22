@@ -70,4 +70,5 @@ export interface CoastlineKeypointsResponse {
   keypoints: CoastlineKeypoint[];
   total: number;
   bounds: WorldBounds;
+  usedLakes: boolean; // Whether lakes were added to find enough keypoints
 }

@@ -63,17 +63,11 @@ def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection:
     return spaced_keypoints
 
 
-def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):    
-
-    geojson_path = os.path.join(os.path.dirname(__file__), "..", "geojson", "ne_coastline.geojson")
-    
+def draw_geojson_features(img: np.ndarray, geojson_path: str, bounds: dict, width: int, height: int):
+    """Draw GeoJSON features (coastlines, lakes, etc.) onto an image."""
     with open(geojson_path, 'r', encoding='utf-8') as f:
         geojson_data = json.load(f)
-        
-    # Create blank image
-    coastline_image = np.zeros((height, width), dtype=np.uint8)
     
-    # Draw coastlines
     features = geojson_data.get('features', [])
     for feature in features:
         geometry = feature.get('geometry', {})
@@ -81,22 +75,58 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
         geom_type = geometry.get('type')
         
         if geom_type == 'LineString':
-            draw_coastline(coastline_image, coords, bounds, width, height)
+            draw_coastline(img, coords, bounds, width, height)
         elif geom_type == 'MultiLineString':
             for line in coords:
-                draw_coastline(coastline_image, line, bounds, width, height)
+                draw_coastline(img, line, bounds, width, height)
+        elif geom_type == 'Polygon':
+            # For polygons (like lakes), draw the outer ring
+            if len(coords) > 0:
+                draw_coastline(img, coords[0], bounds, width, height)
+        elif geom_type == 'MultiPolygon':
+            # For multi-polygons, draw all outer rings
+            for polygon in coords:
+                if len(polygon) > 0:
+                    draw_coastline(img, polygon[0], bounds, width, height)
+
+
+def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):    
+    """
+    Find SIFT keypoints on coastlines within geographic bounds.
+    First tries with just coastlines. If fewer than 10 keypoints found,
+    adds lakes for more detail.
+    """
+    geojson_dir = os.path.join(os.path.dirname(__file__), "..", "geojson")
+    coastline_path = os.path.join(geojson_dir, "ne_coastline.geojson")
+    lakes_path = os.path.join(geojson_dir, "ne_50m_lakes.geojson")
+    
+    # Step 1: Try with just coastline
+    coastline_image = np.zeros((height, width), dtype=np.uint8)
+    draw_geojson_features(coastline_image, coastline_path, bounds, width, height)
     
     if DEBUG:
-        # Save raster for debugging
         output_dir = os.path.join(os.path.dirname(__file__), "extracted_texts")
         os.makedirs(output_dir, exist_ok=True)
-        cv2.imwrite(os.path.join(output_dir, "coastline_raster.png"), coastline_image)
+        cv2.imwrite(os.path.join(output_dir, "coastline_only_raster.png"), coastline_image)
     
-    # Use shared SIFT detection function
+    # Detect keypoints on coastline only
     spaced = detect_sift_keypoints_on_image(coastline_image, apply_edge_detection=True)
+    used_lakes = False
+    
+    # Step 2: If we don't have enough keypoints, add lakes
+    if len(spaced) < NUMBER_OF_KEYPOINTS:
+        # Add lakes to the existing coastline image
+        draw_geojson_features(coastline_image, lakes_path, bounds, width, height)
+        used_lakes = True
         
+        if DEBUG:
+            cv2.imwrite(os.path.join(output_dir, "coastline_with_lakes_raster.png"), coastline_image)
+        
+        # Re-run SIFT detection with lakes included
+        spaced = detect_sift_keypoints_on_image(coastline_image, apply_edge_detection=True)
+    
     if len(spaced) == 0:
-        return {"keypoints": [], "total": 0}
+        return {"keypoints": [], "total": 0, "usedLakes": used_lakes}
     
     # Convert to lat/lon
     keypoints = []
@@ -120,10 +150,11 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
             cv2.circle(img_vis, (x, y), 3, (0, 0, 255), -1)
             cv2.putText(img_vis, str(i + 1), (x + 20, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
         
-        keypoints_path = os.path.join(output_dir, "coastline_keypoints.png")
+        debug_filename = "with_lakes_keypoints.png" if used_lakes else "coastline_only_keypoints.png"
+        keypoints_path = os.path.join(output_dir, debug_filename)
         cv2.imwrite(keypoints_path, img_vis)
     
-    return {"keypoints": keypoints, "total": len(keypoints)}
+    return {"keypoints": keypoints, "total": len(keypoints), "usedLakes": used_lakes}
 
 def draw_coastline(img, coords, bounds, width, height):
     points = []
