@@ -1,5 +1,5 @@
 <template>
-  <div class="feature-controls">
+  <div>
     <h2 class="text-lg font-semibold mb-4 text-base-content">
       Contrôles des couches
     </h2>
@@ -24,7 +24,7 @@
               <label class="label cursor-pointer justify-start gap-3">
                 <input
                   type="checkbox"
-                  :checked="featureVisibility.get(feature.id)"
+                  :checked="featureVisibility.get(feature.id) !== false"
                   @change="
                     $emit(
                       'toggle-feature',
@@ -44,7 +44,6 @@
       </div>
     </div>
 
-    <!-- Actions globales -->
     <div class="divider"></div>
     <div class="flex gap-2">
       <button @click="toggleAll(true)" class="btn btn-xs btn-primary flex-1">
@@ -59,7 +58,8 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { Feature } from "../typescript/feature";
+import type { Feature, FeatureVisibilityGroup } from "../typescript/feature";
+import { getMapElementType } from "../utils/featureHelpers";
 
 const props = defineProps<{
   features: Feature[];
@@ -69,22 +69,26 @@ const props = defineProps<{
 const emit = defineEmits(["toggle-feature"]);
 
 const featureGroups = computed(() => {
-  const groups = [
+  const groups: FeatureVisibilityGroup[] = [
     { type: "point", label: "Villes", features: [] as Feature[] },
     { type: "zone", label: "Zones", features: [] as Feature[] },
+    { type: "polyline", label: "Lignes", features: [] as Feature[] },
     { type: "arrow", label: "Flèches", features: [] as Feature[] },
     { type: "shape", label: "Formes", features: [] as Feature[] },
   ];
 
   props.features.forEach((feature: Feature) => {
-    const elementType = feature?.properties?.mapElementType;
-    const group = groups.find((g) => g.type === elementType);
-    if (group) {
-      group.features.push(feature);
-    }
+    const featureType = getMapElementType(feature);
+    if (!featureType) return;
+
+    const targetGroup = groups.find(
+      (currentGroup) => currentGroup.type === featureType,
+    );
+
+    if (targetGroup) targetGroup.features.push(feature);
   });
 
-  return groups.filter((group) => group.features.length > 0);
+  return groups.filter((g) => g.features.length > 0);
 });
 
 function toggleAll(visible: boolean) {

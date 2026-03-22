@@ -73,7 +73,7 @@ const saveSettings = async () => {
         >
         <input
           type="email"
-          :value="currentUser.email"
+          :value="currentUser!.email"
           disabled
           class="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-100 text-gray-500"
         />

@@ -9,6 +9,9 @@ export interface MapData {
   updatedAt: string;
 }
 
+export interface MapSaveAsPayload
+  extends Omit<MapData, "id" | "userId" | "createdAt" | "updatedAt"> {}
+
 export interface MapDisplay extends MapData {
   image: string;
 }
