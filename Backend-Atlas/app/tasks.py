@@ -213,7 +213,7 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            shapes_result = extract_shapes(tmp_file_path)
+            shapes_result = extract_shapes(tmp_file_path, debug=False)
             shape_features = shapes_result["normalized_features"]
 
             # Persist shapes to database
