@@ -55,6 +55,7 @@ def process_map_extraction(
     map_id: UUID,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
+    legend_bounds: dict | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
@@ -215,7 +216,11 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            shapes_result = extract_shapes(tmp_file_path, text_regions=text_regions)
+            shapes_result = extract_shapes(
+                tmp_file_path,
+                text_regions=text_regions,
+                legend_bounds=legend_bounds,
+            )
             shape_normalized_features = shapes_result["normalized_features"]
             shape_pixel_features = shapes_result.get("pixel_features", [])
 
