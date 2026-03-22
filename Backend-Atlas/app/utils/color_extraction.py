@@ -574,6 +574,7 @@ def extract_colors(
       - selected_bins (metadata)
       - normalized_features (GeoJSON FeatureCollections)
     """
+<<<<<<< HEAD
 
     # 0) Prepare output directory
     base_name = os.path.splitext(os.path.basename(image_path))[0]
@@ -604,11 +605,38 @@ def extract_colors(
     lab = compute_lab(rgb)
 
 
+=======
+
+    # 0) Prepare output directory
+>>>>>>> 0566aad93a646f9cc2850efabb6fe5753cdb4bc0
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
-    os.makedirs(image_output_dir, exist_ok=True)
 
-    # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
+    if debug:
+        os.makedirs(image_output_dir, exist_ok=True)
+
+    # 1) Load raw image and alpha mask
+    rgb_u8, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
+    original_rgb = img_as_float(rgb_u8)
+
+    # 2) Preprocess full image for color extraction (keeps/updates mask)
+    rgb, opaque_mask = preprocess(
+        rgb=original_rgb,
+        alpha=alpha,
+        opaque_mask=opaque_mask,
+        enable_linearize=True,  # Work in linear RGB for illumination-like ops
+        enable_denoise=True,  # Denoise BEFORE CLAHE
+        enable_percentile_norm=True,  # Do percentile normalization on sRGB (consistent with LAB next)
+        norm_p_low=1.0,
+        norm_p_high=99.0,
+        debug=debug,
+        debug_dir=image_output_dir,
+    )
+
+    # 3) Convert preprocessed image to LAB
+    lab = compute_lab(rgb)
+
+    # 4) Dominant LAB bins (computed on opaque pixels)
     dom = dominant_bins_lab(
         lab,
         opaque_mask,
@@ -661,10 +689,16 @@ def extract_colors(
     opening_radius: int = 0 # erosion + dilation
     for k, entry in enumerate(selected):
         mask = (best_idx == k) & valid
+<<<<<<< HEAD
 
         if opening_radius > 0:
             mask = opening(mask, disk(opening_radius))
 
+=======
+        # Optional morphological refinement:
+        mask = binary_opening(mask, disk(opening_radius))
+
+>>>>>>> 0566aad93a646f9cc2850efabb6fe5753cdb4bc0
         if not np.any(mask):
             continue
 

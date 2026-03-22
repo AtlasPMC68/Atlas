@@ -164,47 +164,56 @@ def lcn_sharpening_skimage(img: np.ndarray, window_size: int = 15):
 
 
 def flat_field_correction(
-    img: np.ndarray, sigma: float = 100.0, normalize: bool = True
+    img: np.ndarray,
+    sigma: float = 100.0,
+    normalize: bool = True,
+    assume_linear: bool = False,
 ) -> np.ndarray:
     """
     Software flat-field correction: estimates illumination background using Gaussian blur.
 
-    :param img: RGB image float [0.0, 1.0]
-    :param sigma: Gaussian blur sigma (pixels). Higher = more details removed
-    :param normalize: Normalize intensity after correction
-    :return: Corrected RGB image float [0.0, 1.0]
+    Args:
+        img: RGB image float [0.0, 1.0]
+        sigma: Gaussian blur sigma (pixels). Higher = smoother background estimate
+        normalize: Normalize global intensity after correction
+        assume_linear: If True, treat input as linear RGB and avoid rgb2lab on linear data
+
+    Returns:
+        Corrected RGB float [0.0, 1.0]
     """
-    # Convert to LAB for luminance processing
-    img_lab = skimage.color.rgb2lab(img)
-    l_channel = img_lab[:, :, 0]  # Luminance [0, 100]
+    img = np.clip(skimage.util.img_as_float(img), 0.0, 1.0)
 
-    # Apply massive Gaussian blur to estimate illumination background
-    background = skimage.filters.gaussian(l_channel, sigma=sigma, mode="reflect")
+    if not assume_linear:
+        img_lab = skimage.color.rgb2lab(img)
+        l_channel = img_lab[:, :, 0]
 
-    # Add small epsilon to avoid division by zero (more stable than np.where)
-    epsilon = 1e-6
-    background = background + epsilon
+        background = skimage.filters.gaussian(l_channel, sigma=sigma, mode="reflect")
+        background = background + 1e-6
 
-    # Correct luminance by dividing by background
-    l_corrected = l_channel / background
+        l_corrected = l_channel / background
+        l_corrected = l_corrected * float(np.mean(background))
 
-    # Rescale back to [0, 100] range by multiplying by mean background intensity
-    mean_bg = np.mean(background)
-    l_corrected = l_corrected * mean_bg
+        img_lab[:, :, 0] = l_corrected
+        corrected = skimage.color.lab2rgb(img_lab)
 
-    # Reconstruct LAB image
-    img_lab[:, :, 0] = l_corrected
+    else:
+        y = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
+        background = skimage.filters.gaussian(y, sigma=sigma, mode="reflect")
+        background = background + 1e-6
 
-    # Convert back to RGB
-    corrected_rgb = skimage.color.lab2rgb(img_lab)
+        y_corrected = y / background
+        y_corrected = y_corrected * float(np.mean(background))
+
+        ratio = (y_corrected / (y + 1e-6)).astype(np.float64)
+        corrected = img * ratio[:, :, None]
 
     if normalize:
-        max_val = np.max(corrected_rgb)
-        if np.isfinite(max_val) and max_val > 0:
-            corrected_rgb = corrected_rgb / max_val
-        corrected_rgb = np.nan_to_num(corrected_rgb, nan=0.0, posinf=1.0, neginf=0.0)
+        m = float(np.max(corrected))
+        if m > 1e-8:
+            corrected = corrected / m
 
-    return np.clip(corrected_rgb, 0.0, 1.0)
+    return np.clip(corrected, 0.0, 1.0)
+
 
 
 def denoise_bilateral(
