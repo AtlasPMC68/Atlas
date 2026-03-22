@@ -199,31 +199,20 @@ def extract_contour_properties(
 
 
 def classify_shape(properties: dict) -> str:
-    """
-    Classifie une forme géométrique en utilisant uniquement des ratios robustes
-    au bruit (Circularité et Solidité), sans se fier au nombre de sommets.
-    """
     solidity = properties.get("solidity", 0.0)
     area = properties.get("area", 0.0)
     perimeter = properties.get("perimeter", 0.0)
 
-    # 1. Calcul de la Circularité (1.0 = Cercle parfait)
     circularity = 0.0
     if perimeter > 0:
         circularity = (4 * np.pi * area) / (perimeter**2)
 
-    # --- ARBRE DE DÉCISION ---
-
-    # 1. Le Cercle : Forme très ronde
     if circularity > 0.80:
         return "Circle"
 
-    # 2. Le Rectangle (incluant les Carrés) : Forme pleine, sans creux
-    # Si la solidité est très proche de 1, la forme remplit son enveloppe convexe.
     if solidity > 0.95:
         return "Rectangle"
 
-    # Si c'est autre chose (ex: une ligne très mince ou du bruit résiduel)
     return "Shape unknown"
 
 
@@ -439,7 +428,7 @@ def _preprocess_for_contours(
     image_uint8 = (image * 255).astype(np.uint8)
     image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
 
-    image_denoised = cv2.bilateralFilter(image_bgr, d=20, sigmaColor=75, sigmaSpace=75)
+    image_denoised = cv2.bilateralFilter(image_bgr, d=9, sigmaColor=75, sigmaSpace=75)
 
     lab = cv2.cvtColor(image_denoised, cv2.COLOR_BGR2LAB)
     lightness, _, _ = cv2.split(lab)
