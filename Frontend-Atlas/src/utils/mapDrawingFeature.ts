@@ -182,10 +182,7 @@ export function featureToLayer(feature: Feature): L.Layer | null {
 
       if (feature.properties.mapElementType === "label") {
         const labelText =
-          feature.properties.labelText ||
-          feature.properties.name ||
-          feature.name ||
-          "";
+          feature.properties.labelText || "";
 
         layer = L.marker([lat, lng], {
           icon: L.divIcon({

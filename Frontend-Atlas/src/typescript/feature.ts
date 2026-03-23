@@ -1,3 +1,5 @@
+export type FeatureId = string;
+
 export interface Feature {
   type: "Feature";
   id: string;

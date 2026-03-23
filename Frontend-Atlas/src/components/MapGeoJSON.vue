@@ -20,9 +20,7 @@ import {
   syncFeaturesFromLayerMap,
 } from "../utils/mapDrawingFeature";
 import { toArray } from "../utils/utils";
-import type { Coordinate, Feature, Geometry } from "../typescript/feature";
-
-type FeatureId = string;
+import type { Coordinate, Feature, Geometry, FeatureId } from "../typescript/feature";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -91,7 +89,6 @@ const featureLayerManager = {
       map.removeLayer(this.layers.get(id)!);
     }
     this.layers.set(id, layer);
-    this.layers.set(id, layer);
 
     const isVisible = props.featureVisibility.get(id) ?? true;
     if (isVisible) {
@@ -112,8 +109,6 @@ const featureLayerManager = {
   },
 
   clearAllFeatures() {
-    if (!map) return;
-    this.layers.forEach((layer) => map!.removeLayer(layer));
     if (!map) return;
     this.layers.forEach((layer) => map!.removeLayer(layer));
     this.layers.clear();

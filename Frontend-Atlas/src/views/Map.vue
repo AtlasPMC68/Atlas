@@ -96,7 +96,8 @@ async function deleteFeatureFromApi(featureId: string) {
   if (!isUuid(featureId)) return; // Check if the featureId is a valid UUID (it could be a temporary ID for unsaved features)
 
   if (!currentUser.value) {
-    throw new Error("No user signed in");
+    showAlert(alert, "error", "Utilisateur non authentifié.");
+    return;
   }
 
   const response = await fetch(
@@ -110,7 +111,8 @@ async function deleteFeatureFromApi(featureId: string) {
   );
 
   if (!response.ok) {
-    throw new Error(`Error deleting feature ${featureId}: ${response.status}`);
+    showAlert(alert, "error", "Erreur lors de la suppression de l'élément.");
+    throw new Error(`Error deleting feature: ${response.status}`);
   }
 }
 
@@ -119,6 +121,7 @@ function handleFeatureDelete(featureId: string) {
   reconcileVisibility(features.value);
 
   void deleteFeatureFromApi(featureId).catch((error) => {
+    showAlert(alert, "error", "Erreur lors de la suppression de l'élément.");
     console.error("Failed to delete feature from API:", error);
   });
 }
@@ -151,6 +154,7 @@ async function loadInitialFeatures() {
     reconcileVisibility(allFeatures);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
+    showAlert(alert, "error", "Erreur lors du chargement des éléments de la carte.");
   }
 }
 
@@ -216,6 +220,7 @@ async function saveFeatures() {
     );
 
     if (!response.ok) {
+      showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
       throw new Error(`Error saving features: ${response.status}`);
     }
 
