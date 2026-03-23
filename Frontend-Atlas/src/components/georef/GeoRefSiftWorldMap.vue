@@ -138,7 +138,7 @@ async function initMap(): Promise<void> {
     );
 
     for (const res of responses) {
-      if (!res.ok) throw new Error(`Failed to load geojson: ${res.status}`);
+      if (!res.ok) throw new Error(`Failed to load geojson : ${res.status}`);
     }
 
     const geojsonData = await Promise.all(

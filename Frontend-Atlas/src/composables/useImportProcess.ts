@@ -54,11 +54,8 @@ export function useImportProcess() {
     processingProgress.value = 0;
 
     const formData = new FormData();
-<<<<<<< HEAD
-=======
     formData.append("map_id", inputMapId);
 
->>>>>>> 9ff2f045244787e619eaafcd74c26ef2bf2cf7ca
     // Add matched point pairs as expected by backend
     if (imagePoints && imagePoints.length) {
       formData.append("image_points", JSON.stringify(imagePoints));

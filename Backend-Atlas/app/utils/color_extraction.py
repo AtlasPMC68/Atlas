@@ -19,7 +19,6 @@ from shapely import affinity
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
-GEOJSON_DIR = os.path.join(BASE_DIR, "..", "geojson")
 
 
 def load_image_rgb_alpha_mask(

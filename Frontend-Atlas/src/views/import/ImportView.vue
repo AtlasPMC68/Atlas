@@ -358,6 +358,8 @@ const resetImport = () => {
   showSiftGeorefModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
+  coastlineKeypoints.value = null;
+  usedLakes.value = false;
   importStore.resetImport();
 };
 </script>
