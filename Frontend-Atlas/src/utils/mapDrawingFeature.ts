@@ -60,9 +60,13 @@ export function layerToFeature(
     if (!labelText) {
       return null;
     }
-  }
-
-  if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
+    const latlng = layer.getLatLng();
+    geometry = {
+      type: "Point",
+      coordinates: [latlng.lng, latlng.lat],
+    };
+    type = "label";
+  } else if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
     const latlng = layer.getLatLng();
     geometry = {
       type: "Point",
