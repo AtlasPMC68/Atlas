@@ -72,6 +72,37 @@
         @add-subzone="addSubzone"
       />
 
+      <!-- Test cases list -->
+      <div class="bg-base-100 rounded-box border border-base-300 p-3">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold">Test cases</h2>
+          <span class="text-xs text-base-content/60">{{ testCases.length }}</span>
+        </div>
+
+        <div v-if="isLoadingTestCases" class="text-sm text-base-content/60 mt-2">
+          Chargement…
+        </div>
+
+        <div
+          v-else-if="testCases.length === 0"
+          class="text-sm text-base-content/60 mt-2"
+        >
+          Aucun test case pour ce test.
+        </div>
+
+        <div v-else class="mt-2 space-y-2">
+          <button
+            v-for="tc in testCases"
+            :key="tc"
+            type="button"
+            class="btn btn-sm btn-outline w-full justify-start"
+            @click="openTestCaseResult(tc)"
+          >
+            {{ tc }}
+          </button>
+        </div>
+      </div>
+
       </div>
       </div>
     </div>
@@ -100,6 +131,31 @@ const undoCreateKey = ref(0);
 const isFrontierMode = ref(false);
 const isGeoBorderMode = ref(false);
 const subGeometries = ref<any[]>([]);
+
+const testCases = ref<string[]>([]);
+const isLoadingTestCases = ref(false);
+
+async function loadTestCases(currentMapId: string) {
+  isLoadingTestCases.value = true;
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${currentMapId}`,
+    );
+    if (!res.ok) {
+      testCases.value = [];
+      return;
+    }
+
+    const data = await res.json();
+    testCases.value = Array.isArray(data)
+      ? data.filter((x) => typeof x === "string")
+      : [];
+  } catch {
+    testCases.value = [];
+  } finally {
+    isLoadingTestCases.value = false;
+  }
+}
 
 async function loadTestZones(currentMapId: string) {
   try {
@@ -337,6 +393,7 @@ onMounted(() => {
   if (typeof idParam === "string" && idParam.length > 0) {
     mapId.value = idParam;
     loadTestZones(idParam);
+    loadTestCases(idParam);
   } else {
     console.error("No mapId route param provided for TestBrowser");
   }
@@ -349,6 +406,13 @@ function goToTestImport() {
     query: {
       testId: mapId.value,
     },
+  });
+}
+
+function openTestCaseResult(testCaseId: string) {
+  if (!mapId.value) return;
+  router.push({
+    path: `/test-editor/${mapId.value}/case/${encodeURIComponent(testCaseId)}`,
   });
 }
 </script>

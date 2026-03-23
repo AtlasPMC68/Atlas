@@ -9,6 +9,7 @@ import Discover from "../views/Discover.vue";
 import TestEditor from "../views/dev/TestEditor.vue";
 import TestCreation from "../views/dev/TestCreation.vue";
 import TestBrowser from "../views/dev/TestBrowser.vue";
+import TestCaseResult from "../views/dev/TestCaseResult.vue";
 import keycloak from "../keycloak";
 
 const routes = [
@@ -38,6 +39,11 @@ const routes = [
   {
     path: "/test-editor/:mapId",
     component: TestEditor,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-editor/:mapId/case/:caseId",
+    component: TestCaseResult,
     meta: { requiresAuth: true },
   },
   {

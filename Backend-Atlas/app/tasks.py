@@ -301,13 +301,16 @@ def process_map_extraction(
                     "type": "FeatureCollection",
                     "features": all_features,
                 }
-                zones_output_path = os.path.join(case_dir, f"{safe_case}_zones.geojson")
+                # New nested layout: tests/assets/test_cases/<map_id>/<case_id>/zones.geojson
+                nested_case_dir = os.path.join(case_dir, safe_case)
+                os.makedirs(nested_case_dir, exist_ok=True)
+                zones_output_path = os.path.join(nested_case_dir, "zones.geojson")
                 with open(zones_output_path, "w", encoding="utf-8") as f:
                     json.dump(zones_geojson, f, indent=2, ensure_ascii=False)
 
                 # Build HTTP URLs corresponding to the StaticFiles mount (/dev-test)
                 image_url = f"/dev-test/maps/{map_id}{ext}"
-                zones_url = f"/dev-test/test_cases/{map_id}/{safe_case}_zones.geojson"
+                zones_url = f"/dev-test/test_cases/{map_id}/{safe_case}/zones.geojson"
 
                 logger.info(
                     f"[TEST] Saved test image to {image_output_path} and zones to {zones_output_path}"

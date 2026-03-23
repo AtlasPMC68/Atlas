@@ -64,30 +64,37 @@ def _evaluate_and_persist_case(
 ) -> dict:
     from app.utils.dev_test_evaluator import (
         build_test_case_paths,
+        compute_errors_geojson,
         evaluate_georef_test_case,
+        evaluate_georef_zones_from_paths,
+        write_geojson,
         write_report,
     )
 
-    report = evaluate_georef_test_case(
+    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+
+    report, errors_geojson = evaluate_georef_test_case(
         TEST_ASSETS_DIR,
         test_id,
         test_case_id,
         min_iou=min_iou,
     )
-    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+
+    # Persist error overlay (false positive/negative areas) as a dedicated GeoJSON file.
+    write_geojson(errors_geojson, paths.errors_geojson_path)
 
     # Keep a best-so-far snapshot (zones + report) alongside the latest.
-    best_report_path = os.path.join(
-        TEST_CASES_DIR, test_id, f"{test_case_id}_best_report.json"
-    )
-    best_zones_path = os.path.join(
-        TEST_CASES_DIR, test_id, f"{test_case_id}_zones_best.geojson"
-    )
+    best_report_path = paths.best_report_path
+    best_zones_path = paths.best_zones_path
+    best_errors_path = paths.best_errors_geojson_path
 
     latest_score = None
     try:
+        metrics = report.get("metrics") or {}
         latest_score = float(
-            (report.get("metrics") or {}).get("primaryExpectedBestIou")
+            metrics.get("scoreUsed")
+            or ((metrics.get("expectedBest") or {}).get("meanIou"))
+            or metrics.get("primaryExpectedBestIou")
         )
     except Exception:
         latest_score = None
@@ -98,7 +105,12 @@ def _evaluate_and_persist_case(
         try:
             with open(best_report_path, "r", encoding="utf-8") as f:
                 best = json.load(f)
-            return float((best.get("metrics") or {}).get("primaryExpectedBestIou"))
+            metrics = best.get("metrics") or {}
+            return float(
+                metrics.get("scoreUsed")
+                or ((metrics.get("expectedBest") or {}).get("meanIou"))
+                or metrics.get("primaryExpectedBestIou")
+            )
         except Exception:
             return None
 
@@ -108,18 +120,110 @@ def _evaluate_and_persist_case(
         try:
             if os.path.exists(paths.extracted_zones_path):
                 shutil.copyfile(paths.extracted_zones_path, best_zones_path)
+            if os.path.exists(paths.errors_geojson_path):
+                shutil.copyfile(paths.errors_geojson_path, best_errors_path)
             with open(best_report_path, "w", encoding="utf-8") as f:
                 json.dump(report, f, indent=2, ensure_ascii=False)
             best_updated = True
         except Exception:
             best_updated = False
 
+    def _best_report_needs_upgrade() -> bool:
+        if not os.path.exists(best_report_path):
+            return True
+        try:
+            with open(best_report_path, "r", encoding="utf-8") as f:
+                best = json.load(f)
+        except Exception:
+            return True
+
+        metrics = best.get("metrics") if isinstance(best, dict) else None
+        if not isinstance(metrics, dict):
+            return True
+
+        expected_best = metrics.get("expectedBest")
+        if not isinstance(expected_best, dict):
+            return True
+        for k in (
+            "meanIou",
+            "meanPrecision",
+            "meanRecall",
+            "totalFalseNegativeArea",
+            "totalFalsePositiveArea",
+        ):
+            if k not in expected_best:
+                return True
+
+        primary_match = metrics.get("primaryMatch")
+        if not isinstance(primary_match, dict):
+            return True
+        for k in ("precision", "recall", "falseNegativeArea", "falsePositiveArea"):
+            if k not in primary_match:
+                return True
+
+        matches = best.get("matches") if isinstance(best, dict) else None
+        if isinstance(matches, list) and matches:
+            bm = (
+                (matches[0] or {}).get("bestMatch")
+                if isinstance(matches[0], dict)
+                else None
+            )
+            if not isinstance(bm, dict):
+                return True
+            for k in ("precision", "recall", "falseNegativeArea", "falsePositiveArea"):
+                if k not in bm:
+                    return True
+
+        return False
+
+    # Backfill/upgrade: if best zones exist but best report is missing or in an older
+    # schema (missing precision/recall etc.), recompute the best report from best zones.
+    if os.path.exists(best_zones_path) and _best_report_needs_upgrade():
+        try:
+            best_report, best_errors_geojson = evaluate_georef_zones_from_paths(
+                test_id=test_id,
+                test_case_id=test_case_id,
+                expected_zones_path=paths.expected_zones_path,
+                extracted_zones_path=best_zones_path,
+                config_path=paths.config_path
+                if os.path.exists(paths.config_path)
+                else None,
+                report_path=best_report_path,
+                errors_geojson_path=best_errors_path,
+                min_iou=min_iou,
+            )
+            with open(best_report_path, "w", encoding="utf-8") as f:
+                json.dump(best_report, f, indent=2, ensure_ascii=False)
+            write_geojson(best_errors_geojson, best_errors_path)
+        except Exception:
+            pass
+
+    # Backfill: if best report/zones exist but best errors are missing (e.g. created
+    # before we started snapshotting errors), compute best errors from best zones.
+    if (
+        os.path.exists(best_report_path)
+        and os.path.exists(best_zones_path)
+        and not os.path.exists(best_errors_path)
+    ):
+        try:
+            best_errors_geojson = compute_errors_geojson(
+                expected_zones_path=paths.expected_zones_path,
+                extracted_zones_path=best_zones_path,
+            )
+            write_geojson(best_errors_geojson, best_errors_path)
+        except Exception:
+            pass
+
     report.setdefault("artifacts", {})
     report["artifacts"].update(
         {
             "latestZones": paths.extracted_zones_path,
+            "latestErrors": paths.errors_geojson_path,
             "latestReport": paths.report_path,
             "bestZones": best_zones_path if os.path.exists(best_zones_path) else None,
+            "bestErrors": best_errors_path
+            if os.path.exists(best_errors_path)
+            else None,
             "bestReport": best_report_path
             if os.path.exists(best_report_path)
             else None,
@@ -373,8 +477,9 @@ async def delete_dev_test(map_id: str):
 async def list_dev_test_cases(test_id: str):
     """List available test cases for a given test (map) id.
 
-    A test case exists if we have a *_config.json or *_zones.geojson under
-    tests/assets/test_cases/<test_id>/.
+    A test case exists if we have a case directory under:
+    tests/assets/test_cases/<test_id>/<test_case_id>/
+    (backward compatible with legacy flat files).
     """
 
     case_dir = os.path.join(TEST_CASES_DIR, test_id)
@@ -382,6 +487,14 @@ async def list_dev_test_cases(test_id: str):
         return []
 
     cases: set[str] = set()
+
+    # New layout: directories
+    for name in os.listdir(case_dir):
+        p = os.path.join(case_dir, name)
+        if os.path.isdir(p):
+            cases.add(name)
+
+    # Legacy layout: flat files (keep listing them until fully migrated)
     for fn in os.listdir(case_dir):
         if fn.endswith("_config.json"):
             cases.add(fn[: -len("_config.json")])
@@ -398,16 +511,19 @@ async def run_dev_test_case(test_id: str, test_case_id: str):
     This endpoint is the missing link between a persisted test case config
     (anchor points + options) and evaluation:
 
-    - Reads config: tests/assets/test_cases/<test_id>/<test_case_id>_config.json
+    - Reads config: tests/assets/test_cases/<test_id>/<test_case_id>/config.json
     - Reads image:  tests/assets/maps/<test_id>.(png|jpg|jpeg)
     - Starts celery task which overwrites the latest extracted zones:
-        tests/assets/test_cases/<test_id>/<test_case_id>_zones.geojson
+        tests/assets/test_cases/<test_id>/<test_case_id>/zones.geojson
     """
 
     if not os.path.isdir(TEST_ASSETS_DIR):
         raise HTTPException(status_code=500, detail="Test assets directory missing")
 
-    config_path = os.path.join(TEST_CASES_DIR, test_id, f"{test_case_id}_config.json")
+    from app.utils.dev_test_evaluator import build_test_case_paths
+
+    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+    config_path = paths.config_path
     if not os.path.exists(config_path):
         raise HTTPException(status_code=404, detail=f"Config not found: {config_path}")
 
@@ -503,14 +619,13 @@ async def evaluate_dev_test_case(
 
     Compares:
     - expected: tests/assets/georef_zones/<test_id>_zones.geojson
-    - extracted: tests/assets/test_cases/<test_id>/<test_case_id>_zones.geojson
+    - extracted: tests/assets/test_cases/<test_id>/<test_case_id>/zones.geojson
     Writes:
-    - report: tests/assets/test_cases/<test_id>/<test_case_id>_report.json
+    - report: tests/assets/test_cases/<test_id>/<test_case_id>/report.json
 
         Scoring:
-        - Primary: best-match IoU between the *first* expected feature geometry and the
-            extracted feature geometry that maximizes IoU.
-        - Also includes a union-vs-union IoU for debugging.
+        - Uses per-expected best-match metrics and aggregates them (mean IoU/precision/
+          recall). A union-vs-union metric is included only for debugging.
     """
 
     if not os.path.isdir(TEST_ASSETS_DIR):
@@ -562,7 +677,10 @@ async def run_evaluate_dev_test_case(
     if not os.path.isdir(TEST_ASSETS_DIR):
         raise HTTPException(status_code=500, detail="Test assets directory missing")
 
-    config_path = os.path.join(TEST_CASES_DIR, test_id, f"{test_case_id}_config.json")
+    from app.utils.dev_test_evaluator import build_test_case_paths
+
+    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+    config_path = paths.config_path
     if not os.path.exists(config_path):
         raise HTTPException(status_code=404, detail=f"Config not found: {config_path}")
 
@@ -679,7 +797,10 @@ async def run_evaluate_dev_test_case(
 async def get_dev_test_case_report(test_id: str, test_case_id: str):
     """Get the latest persisted evaluation report for a test case."""
 
-    report_path = os.path.join(TEST_CASES_DIR, test_id, f"{test_case_id}_report.json")
+    from app.utils.dev_test_evaluator import build_test_case_paths
+
+    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+    report_path = paths.report_path
     if not os.path.exists(report_path):
         raise HTTPException(status_code=404, detail="Report not found")
 

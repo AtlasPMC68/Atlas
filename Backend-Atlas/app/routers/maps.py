@@ -70,10 +70,11 @@ async def upload_and_process_map(
         root_dir = os.path.dirname(os.path.dirname(base_dir))
         assets_dir = os.path.join(root_dir, "tests", "assets")
         cases_root = os.path.join(assets_dir, "test_cases")
-        case_dir = os.path.join(cases_root, parent_test_id)
+        # New nested layout: tests/assets/test_cases/<test_id>/<test_case_id>/config.json
+        case_dir = os.path.join(cases_root, parent_test_id, test_case_id)
         os.makedirs(case_dir, exist_ok=True)
 
-        config_path = os.path.join(case_dir, f"{test_case_id}_config.json")
+        config_path = os.path.join(case_dir, "config.json")
         config_payload = {
             "testId": parent_test_id,
             "testCase": test_case_name or test_case_id,
