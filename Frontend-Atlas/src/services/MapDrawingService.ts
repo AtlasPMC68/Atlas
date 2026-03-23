@@ -1,13 +1,8 @@
 import { ref } from "vue";
 import L from "leaflet";
-import {
-  featureToLayer,
-  layerToFeature,
-} from "../utils/mapDrawingFeature";
-import type { Feature } from "../typescript/feature";
-import {
-  drawingModes,
-} from "../typescript/mapDrawing";
+import { featureToLayer, layerToFeature, isPointFeature } from "../utils/mapDrawingFeature";
+import type { Feature, PointFeature } from "../typescript/feature";
+import { drawingModes } from "../typescript/mapDrawing";
 import type {
   DrawingMode,
   EmitFn,
@@ -53,6 +48,80 @@ export class MapDrawingService {
   private fallbackRemovalListeners: MouseDrawListeners = {};
 
   constructor(private emit: EmitFn) {}
+
+  private finalizedTextLayers = new WeakSet<L.Layer>();
+
+  private isTextLayer(layer: L.Layer): boolean {
+    const marker = layer as L.Marker & {
+      options?: L.MarkerOptions & {
+        text?: string;
+        textMarker?: boolean;
+      };
+      pm?: {
+        getText?: () => string;
+      };
+    };
+
+    return Boolean(
+      marker instanceof L.Marker &&
+        (marker.options?.textMarker === true ||
+          typeof marker.pm?.getText === "function"),
+    );
+  }
+
+  private finalizeTextLayer(map: L.Map, layer: FeatureBearingLayer) {
+    if (this.finalizedTextLayers.has(layer)) {
+      return;
+    }
+
+    const textLayer = layer as L.Marker & FeatureBearingLayer & {
+      options?: L.MarkerOptions & {
+        text?: string;
+        textMarker?: boolean;
+      };
+      pm?: {
+        getText?: () => string;
+      };
+    };
+
+    const rawText =
+      textLayer.pm?.getText?.() ?? textLayer.options?.text ?? "";
+    const labelText = rawText.trim();
+
+    if (!labelText) {
+      return;
+    }
+
+    const feature = layerToFeature(textLayer, this.selectedYear);
+    if (!feature || !isPointFeature(feature)) {
+      return;
+    }
+
+    const pointFeature: PointFeature = {
+      ...feature,
+      geometry: feature.geometry,
+      name: labelText,
+      updatedAt: new Date().toISOString(),
+      properties: {
+        ...feature.properties,
+        name: labelText,
+        labelText,
+        mapElementType: "label",
+      },
+    };
+
+    (textLayer as L.Marker & { feature?: PointFeature }).feature = pointFeature;
+
+    this.finalizedTextLayers.add(layer);
+    this.emit("feature-created", pointFeature);
+
+    setTimeout(() => {
+      this.drawnItems.value?.removeLayer(layer);
+      if (map.hasLayer(layer)) {
+        map.removeLayer(layer);
+      }
+    }, 0);
+  }
 
   private attachFeatureAndEmit(
     layer: FeatureBearingLayer,
@@ -395,10 +464,26 @@ export class MapDrawingService {
 
   private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
-      const layer = (e as PmLayerEvent).layer;
+      const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
+      const shape = (e as PmLayerEvent).shape;
+
+      if (shape === "text" || this.isTextLayer(layer)) {
+        layer.once("pm:textblur", () => {
+          this.finalizeTextLayer(map, layer);
+        });
+
+        return;
+      }
+
       const feature = layerToFeature(layer, this.selectedYear);
-      this.attachFeatureAndEmit(layer as FeatureBearingLayer, feature, "feature-created");
-      this.drawnItems.value?.addLayer(layer);
+      this.attachFeatureAndEmit(layer, feature, "feature-created");
+
+      setTimeout(() => {
+        this.drawnItems.value?.removeLayer(layer);
+        if (map.hasLayer(layer)) {
+          map.removeLayer(layer);
+        }
+      }, 0);
     });
 
     map.on("pm:edit", (e) => {
@@ -412,46 +497,48 @@ export class MapDrawingService {
     });
 
     map.on("pm:cut", (e) => {
-      const originalLayer = (e as PmCutEvent)
-        .originalLayer as FeatureBearingLayer | undefined;
-      const newLayer = (e as PmCutEvent).layer as FeatureBearingLayer | undefined;
+      const { originalLayer, layer } = e as PmCutEvent;
+      const sourceLayer = originalLayer as FeatureBearingLayer | undefined;
+      const resultLayer = layer as FeatureBearingLayer | undefined;
 
-      if (originalLayer) {
-        const updatedOriginal = layerToFeature(originalLayer, this.selectedYear);
-        if (updatedOriginal && originalLayer.feature?.id) {
-          updatedOriginal.id = originalLayer.feature.id;
-          updatedOriginal.properties = {
-            ...(originalLayer.feature?.properties || {}),
-            ...(updatedOriginal.properties || {}),
-          };
-          this.attachFeatureAndEmit(
-            originalLayer,
-            updatedOriginal,
-            "feature-updated",
-          );
-        }
+      if (!sourceLayer?.feature || !resultLayer) {
+        return;
       }
 
-      if (newLayer) {
-        const createdFeature = layerToFeature(newLayer, this.selectedYear);
-        if (createdFeature) {
-          const originalProps: Partial<Feature> = originalLayer?.feature ?? {};
-          createdFeature.opacity =
-            originalProps.opacity ?? createdFeature.opacity;
-          createdFeature.strokeWidth =
-            originalProps.strokeWidth ?? createdFeature.strokeWidth;
-          createdFeature.properties = {
-            ...(createdFeature.properties || {}),
-            ...(originalProps.properties || {}),
-          };
-          this.attachFeatureAndEmit(
-            newLayer,
-            createdFeature,
-            "feature-created",
-          );
-          this.drawnItems.value?.addLayer(newLayer);
-        }
+      const updatedFeature = layerToFeature(resultLayer, this.selectedYear);
+      if (!updatedFeature) {
+        return;
       }
+
+      updatedFeature.id = sourceLayer.feature.id;
+      updatedFeature.mapId = sourceLayer.feature.mapId;
+      updatedFeature.type = sourceLayer.feature.type;
+      updatedFeature.name = sourceLayer.feature.name;
+      updatedFeature.createdAt = sourceLayer.feature.createdAt;
+      updatedFeature.updatedAt = new Date().toISOString();
+      updatedFeature.opacity =
+        sourceLayer.feature.opacity ?? updatedFeature.opacity;
+      updatedFeature.strokeWidth =
+        sourceLayer.feature.strokeWidth ?? updatedFeature.strokeWidth;
+      updatedFeature.properties = {
+        ...(sourceLayer.feature.properties || {}),
+        ...(updatedFeature.properties || {}),
+      };
+
+      resultLayer.feature = updatedFeature;
+      this.emit("feature-updated", updatedFeature);
+
+      setTimeout(() => {
+        this.drawnItems.value?.removeLayer(resultLayer);
+
+        if (map.hasLayer(resultLayer)) {
+          map.removeLayer(resultLayer);
+        }
+
+        if (sourceLayer && map.hasLayer(sourceLayer)) {
+          map.removeLayer(sourceLayer);
+        }
+      }, 0);
     });
 
     map.on("pm:remove", (e) => {
@@ -497,7 +584,8 @@ export class MapDrawingService {
       if (this.freehandActive) {
         this.stopFreehandDrawing(map);
       }
-      this.activeDrawingMode.value = (e as PmDrawStartEvent).shape as DrawingMode;
+      this.activeDrawingMode.value = (e as PmDrawStartEvent)
+        .shape as DrawingMode;
       map.dragging.disable();
     });
 

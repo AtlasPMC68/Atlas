@@ -1,5 +1,5 @@
 export interface Feature {
-  type: string;
+  type: "Feature";
   id: string;
   mapId: string;
   geometry: Geometry;
@@ -11,7 +11,13 @@ export interface Feature {
   strokeWidth: number;
 }
 
-export type MapElementType = "point" | "zone" | "polyline" | "arrow" | "shape";
+export type MapElementType =
+  | "point"
+  | "zone"
+  | "polyline"
+  | "arrow"
+  | "shape"
+  | "label";
 
 export type FeatureVisibilityGroup = {
   type: MapElementType;
@@ -23,6 +29,7 @@ export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
 export interface FeatureProperties {
   name: string;
+  labelText?: string;
   colorName: string;
   colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   mapElementType: MapElementType;
@@ -43,6 +50,10 @@ export interface LineStringGeometry {
   type: "LineString";
   coordinates: Coordinate[];
 }
+
+export type PointFeature = Feature & {
+  geometry: PointGeometry;
+};
 
 export interface PolygonGeometry {
   type: "Polygon";

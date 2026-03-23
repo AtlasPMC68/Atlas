@@ -5,14 +5,20 @@ import type {
   Feature,
   MapElementType,
   PolygonGeometry,
+  PointFeature,
 } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
+import type { TextMarkerLayer } from "../typescript/mapDrawing";
 
 function isLatLng(value: unknown): value is L.LatLng {
   const point = value as { lat?: unknown; lng?: unknown } | null;
   return (
     !!point && typeof point.lat === "number" && typeof point.lng === "number"
   );
+}
+
+export function isPointFeature(feature: Feature): feature is PointFeature {
+  return feature.geometry.type === "Point";
 }
 
 export function circleToPolygon(
@@ -40,9 +46,21 @@ export function circleToPolygon(
   };
 }
 
-export function layerToFeature(layer: L.Layer, selectedYear: number): Feature | null {
+export function layerToFeature(
+  layer: L.Layer,
+  selectedYear: number,
+): Feature | null {
   let geometry: Feature["geometry"] | null = null;
   let type: MapElementType = "shape";
+  let labelText = "";
+
+  if (isTextMarkerLayer(layer)) {
+    labelText = (layer.pm?.getText?.() ?? layer.options.text ?? "").trim();
+
+    if (!labelText) {
+      return null;
+    }
+  }
 
   if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
     const latlng = layer.getLatLng();
@@ -68,53 +86,24 @@ export function layerToFeature(layer: L.Layer, selectedYear: number): Feature | 
   } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
     const latlngs = layer.getLatLngs() as unknown;
 
-    let ring: L.LatLng[] | null = null;
-
-    if (Array.isArray(latlngs) && latlngs.length > 0) {
-      if (isLatLng(latlngs[0])) {
-        ring = latlngs as L.LatLng[];
-      }
-
-      if (!ring && Array.isArray(latlngs[0]) && latlngs[0].length > 0) {
-        const firstRing = latlngs[0] as unknown[];
-        if (isLatLng(firstRing[0])) {
-          ring = firstRing as L.LatLng[];
-        }
-      }
-
-      if (
-        !ring &&
-        Array.isArray(latlngs[0]) &&
-        (latlngs[0] as unknown[]).length > 0 &&
-        Array.isArray((latlngs[0] as unknown[])[0])
-      ) {
-        const firstPolygonOuterRing = (latlngs[0] as unknown[])[0] as
-          | unknown[]
-          | undefined;
-        if (
-          firstPolygonOuterRing &&
-          firstPolygonOuterRing.length > 0 &&
-          isLatLng(firstPolygonOuterRing[0])
-        ) {
-          ring = firstPolygonOuterRing as L.LatLng[];
-        }
-      }
-    }
-
-    if (ring && ring.length > 0) {
-      const coords = ring.map((ll) => [ll.lng, ll.lat] as [number, number]);
-
-      if (coords.length > 0) {
-        const first = coords[0];
-        const last = coords[coords.length - 1];
-        if (first[0] !== last[0] || first[1] !== last[1]) {
-          coords.push(first);
-        }
-      }
-
+    if (isLatLngArray(latlngs)) {
       geometry = {
         type: "Polygon",
-        coordinates: [coords],
+        coordinates: [closeRing(latlngs.map(toCoord))],
+      };
+      type = "zone";
+    } else if (isLatLngArrayArray(latlngs)) {
+      geometry = {
+        type: "Polygon",
+        coordinates: latlngs.map((ring) => closeRing(ring.map(toCoord))),
+      };
+      type = "zone";
+    } else if (isLatLngArrayArrayArray(latlngs)) {
+      geometry = {
+        type: "MultiPolygon",
+        coordinates: latlngs.map((polygon) =>
+          polygon.map((ring) => closeRing(ring.map(toCoord))),
+        ),
       };
       type = "zone";
     }
@@ -132,6 +121,7 @@ export function layerToFeature(layer: L.Layer, selectedYear: number): Feature | 
     geometry,
     properties: {
       name: "",
+      labelText: labelText,
       colorName: "black",
       colorRgb: [0, 0, 0],
       mapElementType: type,
@@ -165,6 +155,28 @@ export function featureToLayer(feature: Feature): L.Layer | null {
   switch (geom.type) {
     case "Point": {
       const [lng, lat] = geom.coordinates;
+
+      if (feature.properties.mapElementType === "label") {
+        const labelText =
+          feature.properties.labelText ||
+          feature.properties.name ||
+          feature.name ||
+          "";
+
+        const marker = L.marker([lat, lng], {
+          icon: L.divIcon({
+            className: "city-label-text geoman-text-label",
+            html: labelText,
+            iconSize: [120, 20],
+            iconAnchor: [0, 10],
+          }),
+          textMarker: true,
+          text: labelText,
+        } as L.MarkerOptions & { text?: string; textMarker?: boolean });
+
+        return marker;
+      }
+
       return L.circleMarker([lat, lng], { ...style, radius: 6 });
     }
 
@@ -176,9 +188,17 @@ export function featureToLayer(feature: Feature): L.Layer | null {
     }
 
     case "Polygon": {
-      const coords = geom.coordinates[0];
-      const latlngs: L.LatLngTuple[] = coords.map(
-        ([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple,
+      const latlngs: L.LatLngTuple[][] = geom.coordinates.map((ring) =>
+        ring.map(([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple),
+      );
+      return L.polygon(latlngs, style);
+    }
+
+    case "MultiPolygon": {
+      const latlngs: L.LatLngTuple[][][] = geom.coordinates.map((polygon) =>
+        polygon.map((ring) =>
+          ring.map(([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple),
+        ),
       );
       return L.polygon(latlngs, style);
     }
@@ -195,7 +215,10 @@ function featureIdAsString(featureOrId: Feature | string | number): string {
   return String(featureOrId);
 }
 
-export function extractFeatureFromLayer(layer: L.Layer, selectedYear: number): Feature | null {
+export function extractFeatureFromLayer(
+  layer: L.Layer,
+  selectedYear: number,
+): Feature | null {
   const layerWithFeature: LayerWithFeatureType<Feature> = layer;
   const baseFeature = layerWithFeature.feature;
   const extracted = layerToFeature(layer, selectedYear);
@@ -231,7 +254,8 @@ export function extractFeatureFromLayer(layer: L.Layer, selectedYear: number): F
 
 export function syncFeaturesFromLayerMap(
   layers: Map<string, L.Layer>,
-  snapshot: Feature[], selectedYear: number,
+  snapshot: Feature[],
+  selectedYear: number,
 ): Feature[] {
   const nextById = new Map<string, Feature>();
   snapshot.forEach((feature) => {
@@ -256,4 +280,55 @@ export function syncFeaturesFromLayerMap(
   });
 
   return Array.from(nextById.values());
+}
+
+function isTextMarkerLayer(layer: L.Layer): layer is TextMarkerLayer {
+  const marker = layer as TextMarkerLayer;
+
+  return Boolean(
+    marker instanceof L.Marker &&
+      (marker.options?.textMarker === true ||
+        typeof marker.pm?.getText === "function"),
+  );
+}
+
+function toCoord(latlng: L.LatLng): Coordinate {
+  return [latlng.lng, latlng.lat];
+}
+
+function closeRing(coords: Coordinate[]): Coordinate[] {
+  if (coords.length === 0) return coords;
+
+  const [fx, fy] = coords[0];
+  const [lx, ly] = coords[coords.length - 1];
+
+  if (fx === lx && fy === ly) {
+    return coords;
+  }
+
+  return [...coords, coords[0]];
+}
+
+function isLatLngArray(value: unknown): value is L.LatLng[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => isLatLng(item))
+  );
+}
+
+function isLatLngArrayArray(value: unknown): value is L.LatLng[][] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => isLatLngArray(item))
+  );
+}
+
+function isLatLngArrayArrayArray(value: unknown): value is L.LatLng[][][] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => isLatLngArrayArray(item))
+  );
 }

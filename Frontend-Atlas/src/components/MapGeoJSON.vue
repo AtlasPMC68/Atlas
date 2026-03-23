@@ -21,11 +21,8 @@ import {
 } from "../utils/mapDrawingFeature";
 import { toArray } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
-import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 
 type FeatureId = string;
-
-type LayerWithFeature = LayerWithFeatureType<Feature>;
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -54,6 +51,20 @@ const selectedYear = ref(1740);
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
+function setFeatureOnLayer(layer: L.Layer, feature: Feature) {
+  Reflect.set(layer, "feature", feature);
+}
+
+function forEachChildLayer(
+  layer: L.Layer,
+  callback: (childLayer: L.Layer) => void,
+) {
+  const eachLayer = Reflect.get(layer, "eachLayer");
+  if (typeof eachLayer !== "function") return;
+
+  eachLayer.call(layer, callback);
+}
+
 function getYearSafeUTC(dateText: string): number {
   return new Date(dateText).getUTCFullYear();
 }
@@ -61,11 +72,9 @@ function getYearSafeUTC(dateText: string): number {
 const filteredFeatures = computed(() => {
   return props.features.filter(
     (feature: Feature) =>
-      getYearSafeUTC(feature.properties.startDate) <=
-        selectedYear.value &&
+      getYearSafeUTC(feature.properties.startDate) <= selectedYear.value &&
       (!feature.properties.endDate ||
-        getYearSafeUTC(feature.properties.endDate) >=
-          selectedYear.value),
+        getYearSafeUTC(feature.properties.endDate) >= selectedYear.value),
   );
 });
 
@@ -138,7 +147,7 @@ function syncFeaturesFromMapLayers(): Feature[] {
   const renderedFeatures = syncFeaturesFromLayerMap(
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
-    selectedYear.value
+    selectedYear.value,
   );
 
   renderedFeatures.forEach((feature) => {
@@ -193,14 +202,11 @@ const drawing = useMapDrawing((event, ...args) => {
 });
 
 function attachFeatureToLayer(layer: L.Layer, feature: Feature) {
-  const layerWithFeature = layer as LayerWithFeature;
-  layerWithFeature.feature = feature;
+  setFeatureOnLayer(layer, feature);
 
-  if (typeof layerWithFeature.eachLayer === "function") {
-    layerWithFeature.eachLayer((childLayer) => {
-      (childLayer as LayerWithFeature).feature = feature;
-    });
-  }
+  forEachChildLayer(layer, (childLayer) => {
+    setFeatureOnLayer(childLayer, feature);
+  });
 }
 
 function renderCities(features: Feature[]) {
@@ -241,6 +247,37 @@ function renderCities(features: Feature[]) {
     const layerGroup = L.layerGroup([point, label]);
     attachFeatureToLayer(layerGroup, feature);
     featureLayerManager.addFeatureLayer(feature.id, layerGroup);
+  });
+}
+
+function renderLabels(features: Feature[]) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!map || feature.geometry.type !== "Point") return;
+
+    const [lng, lat] = feature.geometry.coordinates;
+    const coord: L.LatLngTuple = [lat, lng];
+
+    const labelText = feature.properties.labelText || "";
+
+    const label = L.marker(coord, {
+      icon: L.divIcon({
+        className: "city-label-text geoman-text-label",
+        html: labelText,
+        iconSize: [120, 20],
+        iconAnchor: [0, 10],
+      }),
+    });
+
+    const textMarker = label as L.Marker & {
+      options: L.MarkerOptions & { text: string; textMarker?: boolean };
+    };
+    textMarker.options.text = labelText;
+    textMarker.options.textMarker = true;
+
+    attachFeatureToLayer(label, feature);
+    featureLayerManager.addFeatureLayer(feature.id, label);
   });
 }
 
@@ -495,12 +532,14 @@ function renderAllFeatures() {
     zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
     arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
+    label: currentFeatures.filter((f) => getMapElementType(f) === "label"),
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
   };
 
   renderCities(featuresByType.point);
+  renderLabels(featuresByType.label);
   renderZones(featuresByType.zone);
   renderArrows([...featuresByType.arrow, ...featuresByType.polyline]);
   renderShapes(featuresByType.shape);
