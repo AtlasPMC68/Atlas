@@ -126,7 +126,7 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
         spaced = detect_sift_keypoints_on_image(coastline_image, apply_edge_detection=True)
     
     if len(spaced) == 0:
-        return {"keypoints": [], "total": 0, "usedLakes": used_lakes}
+        return {"keypoints": [], "total": 0, "used_lakes": used_lakes}
     
     # Convert to lat/lon
     keypoints = []
@@ -154,7 +154,7 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
         keypoints_path = os.path.join(output_dir, debug_filename)
         cv2.imwrite(keypoints_path, img_vis)
     
-    return {"keypoints": keypoints, "total": len(keypoints), "usedLakes": used_lakes}
+    return {"keypoints": keypoints, "total": len(keypoints), "used_lakes": used_lakes}
 
 def draw_coastline(img, coords, bounds, width, height):
     points = []

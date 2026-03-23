@@ -1,6 +1,7 @@
 import math
 import json
 import os
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 import logging
 
@@ -21,21 +22,21 @@ JSONDict = Dict[str, object]
 R_EARTH = 6378137.0
 DEBUG = False
 
-def _load_coastline_geometry(
-    coastline_file: str = "ne_coastline.geojson",
-):
-    """Load coastline linework as a single geometry for snapping."""
-    coastline_path = os.path.join(GEOJSON_DIR, coastline_file)
 
-    if not os.path.exists(coastline_path):
-        logger.warning(f"Coastline file not found: {coastline_path}")
-        return None
+@lru_cache(maxsize=8)
+def _load_coastline_geometry_cached(
+    coastline_path: str,
+    mtime: float,
+) -> Optional[BaseGeometry]:
+    """Load and union coastline features; cache by path + mtime."""
+    # Keep mtime in signature so cache invalidates automatically when file changes.
+    _ = mtime
 
     try:
         with open(coastline_path, "r", encoding="utf-8") as f:
             coastline_data = json.load(f)
 
-        line_geometries = []
+        line_geometries: List[BaseGeometry] = []
         for feature in coastline_data.get("features", []):
             geom_data = feature.get("geometry")
             if not geom_data:
@@ -48,12 +49,30 @@ def _load_coastline_geometry(
             logger.warning("No valid coastline geometries found")
             return None
 
-        coastline_union = unary_union(line_geometries)
-        return coastline_union
-    
+        return unary_union(line_geometries)
+
     except Exception as e:
         logger.error(f"Failed to load coastline geometry: {e}", exc_info=True)
         return None
+
+
+def _load_coastline_geometry(
+    coastline_file: str = "ne_coastline.geojson",
+)-> Optional[BaseGeometry]:
+    """Load coastline linework as a single geometry for snapping."""
+    coastline_path = os.path.join(GEOJSON_DIR, coastline_file)
+
+    if not os.path.exists(coastline_path):
+        logger.warning(f"Coastline file not found: {coastline_path}")
+        return None
+
+    try:
+        mtime = os.path.getmtime(coastline_path)
+    except OSError as e:
+        logger.warning(f"Cannot stat coastline file '{coastline_path}': {e}")
+        return None
+
+    return _load_coastline_geometry_cached(coastline_path, float(mtime))
 
 
 def _snap_ring_coords_to_coastline(

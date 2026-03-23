@@ -333,13 +333,14 @@ async def get_coastline_keypoints(
     try:
         bounds = {"west": west, "south": south, "east": east, "north": north}
         result = find_coastline_keypoints(bounds, width, height)
+        used_lakes = bool(result.get("used_lakes", False))
 
         return {
             "status": "success",
             "keypoints": result["keypoints"],
             "total": result["total"],
             "bounds": bounds,
-            "usedLakes": result.get("usedLakes", False),
+            "used_lakes": used_lakes,
         }
     except Exception as e:
         logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)

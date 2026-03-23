@@ -305,7 +305,7 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
     // Prefer backend bounds if it returns a more precise ROI
     worldAreaBounds.value = res.data.bounds || payload.bounds;
     coastlineKeypoints.value = res.data.keypoints;
-    usedLakes.value = res.data.usedLakes || false;
+    usedLakes.value = res.data.used_lakes || false;
 
     // Next step: SIFT-based georeferencing
     currentStep.value = 4;
