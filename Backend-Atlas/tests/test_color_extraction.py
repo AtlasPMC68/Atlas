@@ -31,11 +31,11 @@ def get_color_extraction_configs() -> Dict[str, Dict]:
             "etalons_dir": "tests/assets/color_extraction",
             "ratio_tol": 0.02,
             "expected_colors": {
-                "silver_1": {"ref_prefix": "color_1_silver", "ratio": 0.5010},
-                "dodgerblue_2": {"ref_prefix": "color_2_dodgerblue", "ratio": 0.2173},
-                "darksalmon_3": {"ref_prefix": "color_3_darksalmon", "ratio": 0.0829},
-                "tomato_4": {"ref_prefix": "color_4_tomato", "ratio": 0.0619},
-            }
+                "silver_1": {"ref_prefix": "color_01_silver_1", "ratio": 0.5039},
+                "dodgerblue_2": {"ref_prefix": "color_02_dodgerblue_2", "ratio": 0.2182},
+                "darksalmon_3": {"ref_prefix": "color_03_darksalmon_3", "ratio": 0.0836},
+                "tomato_4": {"ref_prefix": "color_04_tomato_4", "ratio": 0.0627},
+            },
         }
     }
 
@@ -121,7 +121,7 @@ def run_color_extraction_test(
     # Keep output directory for inspection even on failure
     temp_output_dir = tempfile.mkdtemp(prefix=f"color_extraction_test_{test_name}_")
 
-    result = extract_colors(image_path=source_image, output_dir=temp_output_dir)
+    result = extract_colors(image_path=source_image, output_dir=temp_output_dir, debug=True)
 
     # Basic verifications
     for key in ("colors_detected", "masks", "ratios", "output_dir"):

@@ -111,7 +111,6 @@ def preprocess(
     rgb = np.clip(skimage.util.img_as_float(rgb), 0.0, 1.0)
     mask = opaque_mask.astype(bool)
 
-    # Decide debug folder
     if debug and debug_dir is None:
         debug_dir = os.path.join(os.getcwd(), "debug_preprocess")
 
@@ -120,7 +119,7 @@ def preprocess(
         _debug_save_rgb(rgb, alpha, debug_dir, step, "00_input_rgb")
         step += 1
 
-    # 1) Linearize
+    # 1) Optional linearization
     if enable_linearize:
         work = preprocessing.srgb_to_linear(rgb)
         if debug:
@@ -134,31 +133,40 @@ def preprocess(
 
     # 2) Denoise
     if enable_denoise:
-            work_u8 = (np.clip(work, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
-            work_u8 = cv2.bilateralFilter(work_u8, d=9, sigmaColor=30, sigmaSpace=5)
-            work = work_u8.astype(np.float32) / 255.0
+        work_u8 = (np.clip(work, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+        work_u8 = cv2.bilateralFilter(work_u8, d=9, sigmaColor=30, sigmaSpace=5)
+        work = work_u8.astype(np.float32) / 255.0
 
     if debug:
         _debug_save_rgb(work, alpha, debug_dir, step, "02_denoise")
         step += 1
 
-    # 4) Percentile normalization (robust global) - maintenant en sRGB
+    # 3) Percentile normalization
     if enable_percentile_norm:
         work = preprocessing.percentile_normalize(
             work, p_low=norm_p_low, p_high=norm_p_high, mask=mask
         )
         if debug:
-            _debug_save_rgb(work, alpha, debug_dir, step, "04_percentile_norm")
+            _debug_save_rgb(work, alpha, debug_dir, step, "03_percentile_norm")
             step += 1
     elif debug:
-        _debug_save_rgb(work, alpha, debug_dir, step, "04_percentile_norm_skipped")
+        _debug_save_rgb(work, alpha, debug_dir, step, "03_percentile_norm_skipped")
         step += 1
 
-    rgb_out = np.clip(work, 0.0, 1.0)
-    if debug:
-        _debug_save_rgb(rgb_out, alpha, debug_dir, step, "99_output_rgb")
+    # 4) Convert back to sRGB if needed
+    if enable_linearize:
+        rgb_out = preprocessing.linear_to_srgb(work)
+        if debug:
+            _debug_save_rgb(rgb_out, alpha, debug_dir, step, "04_back_to_srgb")
+            step += 1
+    else:
+        rgb_out = work
 
-    # Return sRGB (not linear) for downstream LAB computation
+    rgb_out = np.clip(rgb_out, 0.0, 1.0)
+
+    if debug:
+        _debug_save_rgb(rgb_out, alpha, debug_dir, step, "05_output_rgb")
+
     return rgb_out, mask
 
 
@@ -168,7 +176,6 @@ def compute_lab(rgb: np.ndarray) -> np.ndarray:
     """
     rgb_f = img_as_float(rgb)  # ensures float in [0, 1]
     return rgb2lab(rgb_f)
-
 
 def dominant_bins_lab(
     lab: np.ndarray,
@@ -181,8 +188,6 @@ def dominant_bins_lab(
     """
     Find frequent LAB bins using 3D quantization (binning).
     Returns a list of dicts with bin_id, ratio, count, and lab_center.
-
-    top_n should be high if you want to later select by ratios + ΔE rather than a fixed max.
     """
     lab_px = lab[opaque_mask]  # (N, 3)
 
@@ -226,78 +231,162 @@ def dominant_bins_lab(
         )
 
     return dom
+def prepare_imposed_dominants(
+    imposed_colors: List[Tuple[int, int, int]],
+) -> List[Dict]:
+    imposed_entries: List[Dict] = []
+
+    for idx, rgb in enumerate(imposed_colors):
+        rgb_arr = np.array([[rgb]], dtype=np.uint8)              # shape (1,1,3)
+        rgb_f = rgb_arr.astype(np.float32) / 255.0
+        lab = rgb2lab(rgb_f)[0, 0]
+
+        imposed_entries.append(
+            {
+                "bin_id": None,
+                "ratio": 0.0,
+                "count": 0,
+                "lab_center": (float(lab[0]), float(lab[1]), float(lab[2])),
+                "bin_index": None,
+                "source": "imposed",
+                "kind": "dominant",
+                "rgb_center": rgb,
+                "label": f"imposed_{idx+1:02d}",
+            }
+        )
+
+    return imposed_entries
+
+def _lab_center_as_array(entry: Dict) -> np.ndarray:
+    return np.array(entry["lab_center"], dtype=np.float64).reshape(1, 1, 3)
 
 
-def select_colors_by_ratio_and_distance(
+def _min_deltaE_to_group(entry: Dict, group: List[Dict]) -> float:
+    if not group:
+        return float("inf")
+
+    entry_lab = _lab_center_as_array(entry)
+    return min(
+        float(deltaE_ciede2000(entry_lab, _lab_center_as_array(g))[0, 0])
+        for g in group
+    )
+
+def select_dominants_and_accents(
     bins: List[Dict],
+    imposed_dominants: Optional[List[Dict]] = None,
     dominant_ratio: float = 0.05,
     accent_min_ratio: float = 0.001,
-    accent_min_deltaE_from_selected: float = 18.0,
-    min_colors_fallback: Optional[int] = None,
-    merge_similar: bool = True,
-    merge_deltaE_threshold: float = 5.0,
-) -> List[Dict]:
-    if not bins:
-        return []
+    dominant_min_deltaE_from_existing: float = 10.0,
+    accent_min_deltaE_from_dominants: float = 18.0,
+    accent_min_deltaE_from_accents: float = 12.0,
+    min_accents_fallback: Optional[int] = None,
+) -> Dict[str, List[Dict]]:
+    """
+    Select colors in 2 levels:
+    - imposed_dominants are always kept as dominants
+    - auto dominants are selected from bins if large enough and far from existing dominants
+    - accents are selected from remaining bins if far enough from dominants and accents
 
-    # Make selection stable
+    Returns:
+        {
+            "dominants": [...],
+            "accents": [...],
+            "selected": [...]
+        }
+    """
+    if imposed_dominants is None:
+        imposed_dominants = []
+
+    if not bins and not imposed_dominants:
+        return {
+            "dominants": [],
+            "accents": [],
+            "selected": [],
+        }
+
     bins = sorted(bins, key=lambda e: -e["ratio"])
 
-    dominants = [b for b in bins if b["ratio"] >= dominant_ratio]
-    if not dominants:
-        dominants = [bins[0]]
+    # 1) Start with imposed colors as dominants
+    dominants: List[Dict] = [dict(d) for d in imposed_dominants]
+    dominant_ids = {d["bin_id"] for d in dominants if d.get("bin_id") is not None}
 
-    selected = list(dominants)
+    # 2) Add auto-dominants from bins
+    for b in bins:
+        if b["ratio"] < dominant_ratio:
+            continue
 
-    selected_lab_centers = [
-        np.array(d["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-        for d in selected
-    ]
+        if b["bin_id"] in dominant_ids:
+            continue
 
-    candidates = [
-        b for b in bins if b["ratio"] < dominant_ratio and b["ratio"] >= accent_min_ratio
-    ]
-    candidates.sort(key=lambda e: -e["ratio"])
+        candidate = dict(b)
+        min_dE_existing = _min_deltaE_to_group(candidate, dominants)
 
-    for c in candidates:
-        c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-        min_dE = min(
-            float(deltaE_ciede2000(c_lab, s_lab)[0, 0])
-            for s_lab in selected_lab_centers
-        )
-        if min_dE >= accent_min_deltaE_from_selected:
-            c2 = dict(c)
-            c2["min_dE_to_selected"] = float(min_dE)
-            selected.append(c2)
-            selected_lab_centers.append(c_lab)
+        if min_dE_existing >= dominant_min_deltaE_from_existing:
+            candidate["source"] = "bin"
+            candidate["kind"] = "dominant"
+            candidate["min_dE_to_existing_dominants"] = float(min_dE_existing)
+            dominants.append(candidate)
+            dominant_ids.add(candidate["bin_id"])
 
-    if min_colors_fallback is not None and len(selected) < min_colors_fallback:
-        selected_ids = {s["bin_id"] for s in selected}
+    # 3) Select accents from remaining bins
+    accents: List[Dict] = []
+    selected_ids = set(dominant_ids)
+
+    for b in bins:
+        if b["bin_id"] in selected_ids:
+            continue
+        if b["ratio"] < accent_min_ratio:
+            continue
+
+        candidate = dict(b)
+
+        min_dE_dom = _min_deltaE_to_group(candidate, dominants)
+        min_dE_acc = _min_deltaE_to_group(candidate, accents)
+
+        if (
+            min_dE_dom >= accent_min_deltaE_from_dominants
+            and min_dE_acc >= accent_min_deltaE_from_accents
+        ):
+            candidate["source"] = "bin"
+            candidate["kind"] = "accent"
+            candidate["min_dE_to_dominants"] = float(min_dE_dom)
+            candidate["min_dE_to_accents"] = float(min_dE_acc)
+            accents.append(candidate)
+            selected_ids.add(candidate["bin_id"])
+
+    # 4) Optional fallback for accents
+    if min_accents_fallback is not None and len(accents) < min_accents_fallback:
         for b in bins:
-            if len(selected) >= min_colors_fallback:
+            if len(accents) >= min_accents_fallback:
                 break
             if b["bin_id"] in selected_ids:
                 continue
 
-            b_lab = np.array(b["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-            min_dE = min(
-                float(deltaE_ciede2000(b_lab, s_lab)[0, 0])
-                for s_lab in selected_lab_centers
-            )
-            relaxed = accent_min_deltaE_from_selected * 0.5
-            if min_dE >= relaxed:
-                b2 = dict(b)
-                b2["min_dE_to_selected"] = float(min_dE)
-                selected.append(b2)
-                selected_ids.add(b["bin_id"])
-                selected_lab_centers.append(b_lab)
+            candidate = dict(b)
+            min_dE_dom = _min_deltaE_to_group(candidate, dominants)
+            min_dE_acc = _min_deltaE_to_group(candidate, accents)
 
-    selected.sort(key=lambda e: -e["ratio"])
+            relaxed_dom = accent_min_deltaE_from_dominants * 0.5
+            relaxed_acc = accent_min_deltaE_from_accents * 0.5
 
-    if merge_similar:
-        selected = merge_similar_colors(selected, merge_deltaE_threshold)
+            if min_dE_dom >= relaxed_dom and min_dE_acc >= relaxed_acc:
+                candidate["source"] = "bin"
+                candidate["kind"] = "accent"
+                candidate["min_dE_to_dominants"] = float(min_dE_dom)
+                candidate["min_dE_to_accents"] = float(min_dE_acc)
+                accents.append(candidate)
+                selected_ids.add(candidate["bin_id"])
 
-    return selected
+    dominants.sort(key=lambda e: -float(e.get("ratio", 0.0)))
+    accents.sort(key=lambda e: -float(e.get("ratio", 0.0)))
+
+    selected = dominants + accents
+
+    return {
+        "dominants": dominants,
+        "accents": accents,
+        "selected": selected,
+    }
 
 
 def merge_similar_colors(
@@ -513,7 +602,7 @@ def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
-    imposed_color: Optional[Tuple[int, int, int]] = None, # If set, the color will be used for the extraction. Ex: Colors in Legends or selected by user
+    imposed_colors: Optional[List[Tuple[int, int, int]]] = None, # If set, the color (RGB) will be used for the extraction. Ex: Colors in Legends or selected by user
     
     # -----------------------------
     # LAB binning (color candidates discovery)
@@ -542,13 +631,7 @@ def extract_colors(
 
     dominant_ratio: float = 0.01,  # Minimum pixel ratio for a color to be considered dominant.
     accent_min_ratio: float = 0.0001,  # Minimum ratio for a non-dominant (accent) color to be considered.
-    accent_min_deltaE_from_selected: float = 15.0,  # Minimum ΔE distance from ALL dominant colors for an accent to be accepted.
     min_colors_fallback: Optional[int] = None,  # If set, ensures at least this many colors are selected.
-    merge_similar: bool = True,  # If True, merges selected colors that are perceptually too close (ΔE-based).
-    merge_deltaE_threshold: float = 12.0,
-    # ΔE threshold below which two selected colors are merged.
-    # Larger value → more aggressive merging.
-    # Smaller value → keep more distinct but similar-looking layers.
 
     # -----------------------------
     # Mask construction (pixel assignment)
@@ -603,33 +686,7 @@ def extract_colors(
     # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
-
-    base_name = os.path.splitext(os.path.basename(image_path))[0]
-    image_output_dir = os.path.join(output_dir, base_name)
-
-    if debug:
-        os.makedirs(image_output_dir, exist_ok=True)
-
-    # 1) Load raw image and alpha mask
-    rgb_u8, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
-    original_rgb = img_as_float(rgb_u8)
-
-    # 2) Preprocess full image for color extraction (keeps/updates mask)
-    rgb, opaque_mask = preprocess(
-        rgb=original_rgb,
-        alpha=alpha,
-        opaque_mask=opaque_mask,
-        enable_linearize=True,  # Work in linear RGB for illumination-like ops
-        enable_denoise=True,  # Denoise BEFORE CLAHE
-        enable_percentile_norm=True,  # Do percentile normalization on sRGB (consistent with LAB next)
-        norm_p_low=1.0,
-        norm_p_high=99.0,
-        debug=debug,
-        debug_dir=image_output_dir,
-    )
-
-    # 3) Convert preprocessed image to LAB
-    lab = compute_lab(rgb)
+    imposed_dominants = prepare_imposed_dominants(imposed_colors) if imposed_colors else []
 
     # 4) Dominant LAB bins (computed on opaque pixels)
     dom = dominant_bins_lab(
@@ -642,15 +699,19 @@ def extract_colors(
     )
 
     # 5) Select colors (dominants + accents)
-    selected = select_colors_by_ratio_and_distance(
-        dom,
+    selection = select_dominants_and_accents(
+        bins=dom,
+        imposed_dominants=imposed_dominants,
         dominant_ratio=dominant_ratio,
         accent_min_ratio=accent_min_ratio,
-        accent_min_deltaE_from_selected=accent_min_deltaE_from_selected,
-        min_colors_fallback=min_colors_fallback,
-        merge_similar=merge_similar,
-        merge_deltaE_threshold=merge_deltaE_threshold,
+        dominant_min_deltaE_from_existing=10.0,
+        accent_min_deltaE_from_dominants=15.0,
+        accent_min_deltaE_from_accents=12.0,
+        min_accents_fallback=min_colors_fallback,
     )
+    dominants = selection["dominants"]
+    accents = selection["accents"]
+    selected = selection["selected"]
 
     masks: Dict[str, str] = {}
     mask_paths: Dict[str, str] = {}
@@ -659,7 +720,7 @@ def extract_colors(
     pixel_features: List[Dict] = []
 
     # Early exit if nothing was selected
-    if not selected:
+    if not dominants:
         return {
             "colors_detected": [],
             "masks": masks,
@@ -673,7 +734,7 @@ def extract_colors(
 
     # 6) Build exclusive masks by nearest LAB center
     centers_lab = np.array(
-        [entry["lab_center"] for entry in selected], dtype=np.float64
+        [entry["lab_center"] for entry in dominants], dtype=np.float64
     )
     best_idx, valid = build_exclusive_masks_by_nearest_center(
         lab, opaque_mask, centers_lab, mask_deltaE
@@ -681,11 +742,11 @@ def extract_colors(
 
     # 7) Build per-color masks and features
     color_index = 1
-    opening_radius: int = 0 # erosion + dilation
-    for k, entry in enumerate(selected):
+    opening_radius: int = 2 # erosion + dilation
+    for k, entry in enumerate(dominants):
         mask = (best_idx == k) & valid
 
-        if opening_radius > 0:
+        if opening_radius > 1:
             mask = opening(mask, disk(opening_radius))
 
         if not np.any(mask):
@@ -725,7 +786,7 @@ def extract_colors(
         "masks": masks,
         "mask_paths": mask_paths if debug else {},
         "ratios": ratios,
-        "selected_bins": selected,
+        "selected_bins": dominants,
         "output_dir": image_output_dir,
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,

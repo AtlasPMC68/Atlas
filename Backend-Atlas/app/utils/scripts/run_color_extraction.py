@@ -4,8 +4,8 @@ from app.utils.file_utils import validate_file_extension
 from app.utils.color_extraction import extract_colors
 
 # Run the script with:
-# cd "C:\Users\zacha\OneDrive\Bureau\PMC\Atlas\Backend-Atlas"
-# py "app\utils\scripts\run_color_extraction.py"
+# cd "\Atlas\Backend-Atlas"
+# py -m app.utils.scripts.run_color_extraction 
 
 ASSETS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "tests", "assets"
@@ -19,6 +19,11 @@ def extract_color_from_assets():
         if os.path.isfile(file_path) and validate_file_extension(file_path):
             print(f"Extracting color from {filename}...")
             extract_colors(file_path, debug=True)
-
-
+    #file_path = os.path.join(ASSETS_DIR, "Sols_Monde.png")
+    #extract_colors(file_path, debug=True, imposed_colors=[(255, 204, 68),(255, 255, 204),(210, 207, 202), (199, 60, 51)])
+    # file_path = os.path.join(ASSETS_DIR, "Degrade_Afrique.png")
+    # extract_colors(file_path, debug=True, imposed_colors=[(237, 137, 141),(229, 105, 109),(180, 86, 97),(238,176,81),(237,134,81),(147,194,97)])
+    #file_path = os.path.join(ASSETS_DIR, "pluie_Afrique.png")
+    #extract_colors(file_path, debug=True, imposed_colors=[(255, 204, 68),(230, 248, 200),(152, 218, 180), (101, 181, 175),(69, 133, 168),(80, 116, 162)])
+    
 extract_color_from_assets()
