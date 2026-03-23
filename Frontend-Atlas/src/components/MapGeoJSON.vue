@@ -7,8 +7,6 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
-<script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -82,12 +80,6 @@ const featureLayerManager = {
 
     if (this.layers.has(id)) {
       map.removeLayer(this.layers.get(id)!);
-  addFeatureLayer(featureId: string | number, layer: L.Layer) {
-    const id = String(featureId);
-    if (!map) return;
-
-    if (this.layers.has(id)) {
-      map.removeLayer(this.layers.get(id)!);
     }
     this.layers.set(id, layer);
     this.layers.set(id, layer);
@@ -98,15 +90,6 @@ const featureLayerManager = {
     }
   },
 
-  toggleFeature(featureId: string | number, visible: boolean) {
-    const id = String(featureId);
-    const layer = this.layers.get(id);
-    if (!layer || !map) return;
-
-    if (visible) {
-      map.addLayer(layer);
-    } else {
-      map.removeLayer(layer);
   toggleFeature(featureId: string | number, visible: boolean) {
     const id = String(featureId);
     const layer = this.layers.get(id);
