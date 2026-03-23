@@ -1,4 +1,5 @@
 from copy import deepcopy
+from app.models.features import Feature
 
 
 def normalize_feature_for_storage(feature: dict) -> dict:
@@ -38,3 +39,19 @@ def normalize_feature_collection(data: dict | None) -> dict:
 	features = data.get("features")
 	first_feature = features[0] if isinstance(features, list) and features else {}
 	return as_feature_collection(first_feature)
+
+def serialize_db_feature(row: Feature) -> dict | None:
+    feature_data = row.data.get("features", [])
+    if not feature_data:
+        return None
+
+    feature = deepcopy(feature_data[0])
+    feature["id"] = str(row.id)
+    feature["mapId"] = str(row.map_id)
+
+    if row.created_at:
+        feature["createdAt"] = row.created_at.isoformat()
+    if row.updated_at:
+        feature["updatedAt"] = row.updated_at.isoformat()
+
+    return feature

@@ -70,7 +70,7 @@ function getYearSafeUTC(dateText: string): number {
 }
 
 const filteredFeatures = computed(() => {
-  return props.features.filter(
+  return localFeaturesSnapshot.value.filter(
     (feature: Feature) =>
       getYearSafeUTC(feature.properties.startDate) <= selectedYear.value &&
       (!feature.properties.endDate ||
@@ -139,6 +139,36 @@ function upsertFeature(features: Feature[], feature: Feature): Feature[] {
 
   next.push(feature);
   return next;
+}
+
+function applyLayerUpdate(layer: L.Layer) {
+  const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+  if (!extracted) return;
+
+  const next = upsertFeature(localFeaturesSnapshot.value, extracted);
+  localFeaturesSnapshot.value = next;
+  emit("draw-update", next);
+}
+
+function bindRenderedLabelEvents(layer: L.Layer) {
+  const textLayer = layer as L.Layer & {
+    __atlasTextEventsBound?: boolean;
+  };
+
+  if (textLayer.__atlasTextEventsBound) return;
+  textLayer.__atlasTextEventsBound = true;
+
+  layer.on("pm:dragend", () => {
+    applyLayerUpdate(layer);
+  });
+
+  layer.on("pm:change", () => {
+    applyLayerUpdate(layer);
+  });
+
+  layer.on("pm:textblur", () => {
+    applyLayerUpdate(layer);
+  });
 }
 
 function syncFeaturesFromMapLayers(): Feature[] {
@@ -277,6 +307,7 @@ function renderLabels(features: Feature[]) {
     textMarker.options.textMarker = true;
 
     attachFeatureToLayer(label, feature);
+    bindRenderedLabelEvents(label);
     featureLayerManager.addFeatureLayer(feature.id, label);
   });
 }

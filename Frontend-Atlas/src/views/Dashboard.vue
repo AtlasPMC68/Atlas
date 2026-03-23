@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -11,6 +11,8 @@ import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
+import type { AlertState } from "../typescript/alert";
+import { showAlert, clearAlert } from "../utils/alert";
 
 const maps = ref<MapDisplay[]>([]);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
@@ -28,7 +30,7 @@ const editMapTitle = ref<string | undefined>(undefined);
 const editMapDescription = ref<string | undefined>(undefined);
 const editMapIsPrivate = ref(true);
 const isEditing = ref(false);
-const alert = ref<{ type: "success" | "error"; message: string } | null>(null);
+const alert = ref<AlertState>(null);
 const searchQuery = ref("");
 const filterVisibility = ref<"all" | "public" | "private">("all");
 const filterDateFrom = ref("");
@@ -73,24 +75,23 @@ const filteredMaps = computed(() => {
   });
 });
 
-function showAlert(type: "success" | "error", message: string) {
-  alert.value = { type, message };
-  setTimeout(() => (alert.value = null), 4000);
-}
-
 onMounted(async () => {
   await fetchCurrentUser();
   await fetchMapsAndRender();
 });
 
+onUnmounted(() => {
+  clearAlert(alert);
+});
+
 // TODO: Add startDate endDate
 async function createMap() {
   if (!currentUser.value) {
-    showAlert("error", "Utilisateur non authentifié.");
+    showAlert(alert, "error", "Utilisateur non authentifié.");
     return;
   }
   if (!newMapTitle.value?.trim()) {
-    showAlert("error", "Le titre de la carte est requis.");
+    showAlert(alert, "error", "Le titre de la carte est requis.");
     return;
   }
   isCreating.value = true;
@@ -118,9 +119,9 @@ async function createMap() {
     newMapIsPrivate.value = true;
     createMapDialogRef.value?.close();
     await fetchMapsAndRender();
-    showAlert("success", "Carte créée avec succès !");
+    showAlert(alert, "success", "Carte créée avec succès !");
   } catch (err) {
-    showAlert("error", "Erreur lors de la création de la carte.");
+    showAlert(alert, "error", "Erreur lors de la création de la carte.");
   } finally {
     isCreating.value = false;
   }
@@ -147,15 +148,15 @@ function openEditDialog(map: MapDisplay) {
 
 async function saveMap() {
   if (!mapToEdit.value) {
-    showAlert("error", "Aucune carte sélectionnée pour la modification.");
+    showAlert(alert, "error", "Aucune carte sélectionnée pour la modification.");
     return;
   }
   if (!editMapTitle.value?.trim()) {
-    showAlert("error", "Le titre de la carte est requis.");
+    showAlert(alert, "error", "Le titre de la carte est requis.");
     return;
   }
   if (!currentUser.value) {
-    showAlert("error", "Utilisateur non authentifié.");
+    showAlert(alert, "error", "Utilisateur non authentifié.");
     return;
   }
   isEditing.value = true;
@@ -189,9 +190,9 @@ async function saveMap() {
     editMapIsPrivate.value = true;
     editMapDialogRef.value?.close();
     await fetchMapsAndRender();
-    showAlert("success", "Carte modifiée avec succès !");
+    showAlert(alert, "success", "Carte modifiée avec succès !");
   } catch (err) {
-    showAlert("error", "Erreur lors de la modification de la carte.");
+    showAlert(alert, "error", "Erreur lors de la modification de la carte.");
   } finally {
     isEditing.value = false;
   }
@@ -214,9 +215,9 @@ async function executeDelete() {
     deleteConfirmDialogRef.value?.close();
     mapToDelete.value = null;
     await fetchMapsAndRender();
-    showAlert("success", "Carte supprimée avec succès !");
+    showAlert(alert, "success", "Carte supprimée avec succès !");
   } catch (err) {
-    showAlert("error", "Erreur lors de la suppression de la carte.");
+    showAlert(alert, "error", "Erreur lors de la suppression de la carte.");
   } finally {
     isDeleting.value = false;
   }
@@ -225,7 +226,6 @@ async function executeDelete() {
 async function fetchMapsAndRender() {
   if (!currentUser.value) {
     throw new Error("No user or token available");
-    return;
   }
 
   try {

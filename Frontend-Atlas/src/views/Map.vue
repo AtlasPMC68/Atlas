@@ -33,11 +33,30 @@
       </div>
     </div>
     />
+    <Transition
+      enter-active-class="transition duration-300 ease-out"
+      enter-from-class="opacity-0 translate-y-2"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition duration-200 ease-in"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 translate-y-2"
+    >
+      <div
+        v-if="alert"
+        role="alert"
+        :class="[
+          'alert fixed bottom-6 right-6 z-50 w-auto max-w-sm shadow-lg',
+          alert.type === 'success' ? 'alert-success' : 'alert-error',
+        ]"
+      >
+        <span>{{ alert.message }}</span>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
@@ -46,6 +65,11 @@ import { Feature } from "../typescript/feature";
 import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
+import type { AlertState } from "../typescript/alert";
+import { showAlert, clearAlert } from "../utils/alert";
+
+const alert = ref<AlertState>(null);
+
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -61,6 +85,7 @@ const mapGeoJsonRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
+const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 
 function isUuid(value: string): boolean {
@@ -141,17 +166,35 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
 
 function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
 
+const handleCtrlS = (e: KeyboardEvent) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    void saveFeatures();
+  }
+};
+
 onMounted(async () => {
   await fetchCurrentUser();
   await loadInitialFeatures();
+  window.addEventListener("keydown", handleCtrlS);
 });
 
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleCtrlS);
+  clearAlert(alert);
+});
+
+
 async function saveFeatures() {
-  if (!currentUser.value) {
-    throw new Error("No authentication token or user available");
-  }
+  if (isSaving.value) return;
+  isSaving.value = true;
 
   try {
+    if (!currentUser.value) {
+      showAlert(alert, "error", "Utilisateur non authentifié.");
+      return;
+    }
+
     const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
     if (syncedFeatures) {
       features.value = syncedFeatures;
@@ -171,15 +214,24 @@ async function saveFeatures() {
         body: JSON.stringify(payload),
       },
     );
+
     if (!response.ok) {
       throw new Error(`Error saving features: ${response.status}`);
     }
 
+    const savedFeatures = snakeToCamel(await response.json()) as Feature[];
+    features.value = savedFeatures;
+    reconcileVisibility(savedFeatures);
+
     mapGeoJsonRef.value?.clearDraftLayers();
   } catch (err) {
+    showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
     throw new Error(
       `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
     );
+  } finally {
+    isSaving.value = false;
+    showAlert(alert, "success", "Carte sauvegardée avec succès !");
   }
 }
 </script>

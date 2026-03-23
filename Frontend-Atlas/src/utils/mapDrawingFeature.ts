@@ -7,7 +7,7 @@ import type {
   PolygonGeometry,
   PointFeature,
 } from "../typescript/feature";
-import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
+import type { LayerWithFeatureRuntime } from "../typescript/mapLayers";
 import type { TextMarkerLayer } from "../typescript/mapDrawing";
 
 function isLatLng(value: unknown): value is L.LatLng {
@@ -46,6 +46,22 @@ export function circleToPolygon(
   };
 }
 
+function getStableLayerFeatureId(layer: L.Layer): string {
+  const runtimeLayer = layer as LayerWithFeatureRuntime;
+
+  if (runtimeLayer.feature?.id) {
+    return String(runtimeLayer.feature.id);
+  }
+
+  if (runtimeLayer._tmpFeatureId) {
+    return runtimeLayer._tmpFeatureId;
+  }
+
+  const newId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  runtimeLayer._tmpFeatureId = newId;
+  return newId;
+}
+
 export function layerToFeature(
   layer: L.Layer,
   selectedYear: number,
@@ -60,6 +76,7 @@ export function layerToFeature(
     if (!labelText) {
       return null;
     }
+
     const latlng = layer.getLatLng();
     geometry = {
       type: "Point",
@@ -115,28 +132,29 @@ export function layerToFeature(
 
   if (!geometry) return null;
 
-  const now = new Date();
-  const isoDate = now.toISOString();
+  const layerWithFeature = layer as LayerWithFeatureRuntime;
+  const baseFeature = layerWithFeature.feature;
+  const now = new Date().toISOString();
 
   return {
-    id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: getStableLayerFeatureId(layer),
     type: "Feature",
-    mapId: "",
+    mapId: baseFeature?.mapId ?? "",
     geometry,
     properties: {
-      name: "",
-      labelText: labelText,
-      colorName: "black",
-      colorRgb: [0, 0, 0],
+      name: baseFeature?.properties?.name ?? "",
+      labelText,
+      colorName: baseFeature?.properties?.colorName ?? "black",
+      colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
       mapElementType: type,
-      startDate: `${selectedYear}-01-01`,
-      endDate: `${selectedYear}-01-01`,
+      startDate: baseFeature?.properties?.startDate ?? `${selectedYear}-01-01`,
+      endDate: baseFeature?.properties?.endDate ?? `${selectedYear}-01-01`,
     },
-    createdAt: isoDate,
-    updatedAt: isoDate,
-    name: "",
-    opacity: 0.5,
-    strokeWidth: 2,
+    createdAt: baseFeature?.createdAt ?? now,
+    updatedAt: now,
+    name: baseFeature?.name ?? "",
+    opacity: baseFeature?.opacity ?? 0.5,
+    strokeWidth: baseFeature?.strokeWidth ?? 2,
   };
 }
 
@@ -156,6 +174,8 @@ export function featureToLayer(feature: Feature): L.Layer | null {
     fillOpacity: feature.opacity || 0.5,
   };
 
+  let layer: L.Layer | null = null;
+
   switch (geom.type) {
     case "Point": {
       const [lng, lat] = geom.coordinates;
@@ -167,7 +187,7 @@ export function featureToLayer(feature: Feature): L.Layer | null {
           feature.name ||
           "";
 
-        const marker = L.marker([lat, lng], {
+        layer = L.marker([lat, lng], {
           icon: L.divIcon({
             className: "city-label-text geoman-text-label",
             html: labelText,
@@ -177,25 +197,27 @@ export function featureToLayer(feature: Feature): L.Layer | null {
           textMarker: true,
           text: labelText,
         } as L.MarkerOptions & { text?: string; textMarker?: boolean });
-
-        return marker;
+        break;
       }
 
-      return L.circleMarker([lat, lng], { ...style, radius: 6 });
+      layer = L.circleMarker([lat, lng], { ...style, radius: 6 });
+      break;
     }
 
     case "LineString": {
       const latlngs: L.LatLngTuple[] = geom.coordinates.map(
         ([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple,
       );
-      return L.polyline(latlngs, style);
+      layer = L.polyline(latlngs, style);
+      break;
     }
 
     case "Polygon": {
       const latlngs: L.LatLngTuple[][] = geom.coordinates.map((ring) =>
         ring.map(([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple),
       );
-      return L.polygon(latlngs, style);
+      layer = L.polygon(latlngs, style);
+      break;
     }
 
     case "MultiPolygon": {
@@ -204,12 +226,19 @@ export function featureToLayer(feature: Feature): L.Layer | null {
           ring.map(([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple),
         ),
       );
-      return L.polygon(latlngs, style);
+      layer = L.polygon(latlngs, style);
+      break;
     }
 
     default:
       return null;
   }
+
+  const runtimeLayer = layer as LayerWithFeatureRuntime;
+  runtimeLayer.feature = feature;
+  runtimeLayer._tmpFeatureId = String(feature.id);
+
+  return layer;
 }
 
 function featureIdAsString(featureOrId: Feature | string | number): string {
@@ -223,22 +252,28 @@ export function extractFeatureFromLayer(
   layer: L.Layer,
   selectedYear: number,
 ): Feature | null {
-  const layerWithFeature: LayerWithFeatureType<Feature> = layer;
+  const layerWithFeature = layer as LayerWithFeatureRuntime;
   const baseFeature = layerWithFeature.feature;
   const extracted = layerToFeature(layer, selectedYear);
 
-  if (extracted && baseFeature?.id) {
-    extracted.id = baseFeature.id;
-    extracted.mapId = baseFeature.mapId;
-    extracted.createdAt = baseFeature.createdAt;
+  if (extracted) {
+    if (baseFeature?.id) {
+      extracted.id = baseFeature.id;
+      extracted.mapId = baseFeature.mapId;
+      extracted.createdAt = baseFeature.createdAt;
+      extracted.name = baseFeature.name;
+      extracted.opacity = baseFeature.opacity;
+      extracted.strokeWidth = baseFeature.strokeWidth;
+      extracted.properties = {
+        ...(baseFeature.properties || {}),
+        ...(extracted.properties || {}),
+      };
+    }
+
     extracted.updatedAt = new Date().toISOString();
-    extracted.name = baseFeature.name;
-    extracted.opacity = baseFeature.opacity;
-    extracted.strokeWidth = baseFeature.strokeWidth;
-    extracted.properties = {
-      ...(extracted.properties || {}),
-      ...(baseFeature.properties || {}),
-    };
+    layerWithFeature.feature = extracted;
+    layerWithFeature._tmpFeatureId = String(extracted.id);
+
     return extracted;
   }
 

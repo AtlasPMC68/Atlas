@@ -19,6 +19,7 @@ from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_
 from app.utils.feature_update import (
     as_feature_collection,
     normalize_feature_collection,
+    serialize_db_feature,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
@@ -255,22 +256,25 @@ async def get_extraction_results(task_id: str):
 
 
 @router.get("/features/{map_id}")
-async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
+async def get_features(
+    map_id: str,
+    session: AsyncSession = Depends(get_async_session),
+):
     try:
-        map_id = UUID(map_id)
+        map_uuid = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
+    result = await session.execute(
+        select(Feature).where(Feature.map_id == map_uuid)
+    )
     features_rows = result.scalars().all()
 
     all_features = []
-    for f in features_rows:
-        feature_data = f.data.get("features", [])
-        if feature_data:
-            feature = deepcopy(feature_data[0])
-            feature["id"] = str(f.id)
-            all_features.append(feature)
+    for row in features_rows:
+        serialized = serialize_db_feature(row)
+        if serialized is not None:
+            all_features.append(serialized)
 
     return all_features
 
@@ -281,9 +285,15 @@ async def update_features(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        map_id = UUID(map_id)
+        map_uuid = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    result = await session.execute(
+        select(Feature).where(Feature.map_id == map_uuid)
+    )
+    existing_rows = result.scalars().all()
+    existing_by_id = {str(row.id): row for row in existing_rows}
 
     updated_count = 0
     created_count = 0
@@ -294,30 +304,26 @@ async def update_features(
 
         if feature_id:
             try:
-                feature_uuid = UUID(feature_id)
-                result = await session.execute(
-                    select(Feature).where(
-                        Feature.id == feature_uuid,
-                        Feature.map_id == map_id,
-                    )
-                )
-                db_feature = result.scalar_one_or_none()
+                UUID(str(feature_id))
+                db_feature = existing_by_id.get(str(feature_id))
             except ValueError:
-                logger.warning(f"Feature id is not a valid UUID, creating a new row: {feature_id}")
+                logger.warning(
+                    f"Feature id is not a valid UUID, creating a new row: {feature_id}"
+                )
 
         if db_feature:
             new_data = as_feature_collection(feature)
             old_data = normalize_feature_collection(db_feature.data)
-            
+
             if old_data != new_data:
                 db_feature.data = new_data
                 db_feature.updated_at = func.now()
                 session.add(db_feature)
+
             updated_count += 1
         else:
-            # New feature: let DB generate the row id.
             new_feature = Feature(
-                map_id=map_id,
+                map_id=map_uuid,
                 is_feature_collection=False,
                 data=as_feature_collection(feature),
             )
@@ -325,11 +331,19 @@ async def update_features(
             created_count += 1
 
     await session.commit()
-    return {
-        "detail": "Features synchronized successfully",
-        "updated": updated_count,
-        "created": created_count,
-    }
+
+    refreshed_result = await session.execute(
+        select(Feature).where(Feature.map_id == map_uuid)
+    )
+    persisted_rows = refreshed_result.scalars().all()
+
+    persisted_features = []
+    for row in persisted_rows:
+        serialized = serialize_db_feature(row)
+        if serialized is not None:
+            persisted_features.append(serialized)
+
+    return persisted_features
 
 
 @router.delete("/features/{map_id}/{feature_id}")
