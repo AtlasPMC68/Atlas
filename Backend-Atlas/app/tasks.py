@@ -254,11 +254,10 @@ def process_map_extraction(
         zones_url = ""
         if is_test:
             try:
-                # Backend project root: go two levels up from this file (app/tasks.py)
-                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                assets_root = os.path.join(root_dir, "tests", "assets", "georef")
-                maps_dir = os.path.join(assets_root, "maps")
-                test_cases_root = os.path.join(assets_root, "test_cases")
+                from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
+
+                maps_dir = MAPS_DIR
+                test_cases_root = TEST_CASES_DIR
 
                 os.makedirs(maps_dir, exist_ok=True)
 

@@ -18,6 +18,7 @@ from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db
 from app.utils.sift_key_points_finder import find_coastline_keypoints
+from app.utils.dev_test_assets import TEST_CASES_DIR
 
 from ..celery_app import celery_app
 from ..db import get_db
@@ -65,13 +66,8 @@ async def upload_and_process_map(
         img_pts: list | None,
         world_pts: list | None,
     ) -> None:
-        # Store under Backend-Atlas/tests/assets/georef/test_cases/<testId>
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        root_dir = os.path.dirname(os.path.dirname(base_dir))
-        assets_dir = os.path.join(root_dir, "tests", "assets", "georef")
-        cases_root = os.path.join(assets_dir, "test_cases")
         # New nested layout: tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
-        case_dir = os.path.join(cases_root, parent_test_id, test_case_id)
+        case_dir = os.path.join(TEST_CASES_DIR, parent_test_id, test_case_id)
         os.makedirs(case_dir, exist_ok=True)
 
         config_path = os.path.join(case_dir, "config.json")
