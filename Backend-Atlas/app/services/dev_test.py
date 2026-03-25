@@ -188,9 +188,7 @@ def evaluate_and_persist_case(
     try:
         metrics = report.get("metrics") or {}
         latest_score = float(
-            metrics.get("scoreUsed")
-            or ((metrics.get("expectedBest") or {}).get("meanIou"))
-            or metrics.get("primaryExpectedBestIou")
+            metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou"))
         )
     except Exception:
         latest_score = None
@@ -203,15 +201,12 @@ def evaluate_and_persist_case(
                 best = json.load(f)
             metrics = best.get("metrics") or {}
             return float(
-                metrics.get("scoreUsed")
-                or ((metrics.get("expectedBest") or {}).get("meanIou"))
-                or metrics.get("primaryExpectedBestIou")
+                metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou"))
             )
         except Exception:
             return None
 
     best_score = _read_best_score()
-    best_updated = False
     if latest_score is not None and (best_score is None or latest_score > best_score):
         try:
             if os.path.exists(paths.extracted_zones_path):
@@ -220,26 +215,8 @@ def evaluate_and_persist_case(
                 shutil.copyfile(paths.errors_geojson_path, best_errors_path)
             with open(best_report_path, "w", encoding="utf-8") as f:
                 json.dump(report, f, indent=2, ensure_ascii=False)
-            best_updated = True
         except Exception:
-            best_updated = False
-
-    report.setdefault("artifacts", {})
-    report["artifacts"].update(
-        {
-            "latestZones": paths.extracted_zones_path,
-            "latestErrors": paths.errors_geojson_path,
-            "latestReport": paths.report_path,
-            "bestZones": best_zones_path if os.path.exists(best_zones_path) else None,
-            "bestErrors": best_errors_path
-            if os.path.exists(best_errors_path)
-            else None,
-            "bestReport": best_report_path
-            if os.path.exists(best_report_path)
-            else None,
-            "bestUpdated": best_updated,
-        }
-    )
+            pass
 
     write_report(report, paths.report_path)
     return report
