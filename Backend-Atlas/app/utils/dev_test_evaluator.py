@@ -405,14 +405,6 @@ def evaluate_georef_zones_from_paths(
         if isinstance(bm, dict) and "geometry" in bm:
             bm.pop("geometry", None)
 
-    primary_best_iou = 0.0
-    primary_match = None
-    if matches:
-        primary_match = matches[0]
-        bm = primary_match.get("bestMatch")
-        if isinstance(bm, dict):
-            primary_best_iou = float(bm.get("iou", 0.0))
-
     # Aggregate metrics across expected features using their best matches.
     # These are the primary "meaningful" metrics (no dependence on unused extracted zones).
     ious: list[float] = []
@@ -453,61 +445,17 @@ def evaluate_georef_zones_from_paths(
     total_fn_area = float(sum(fn_areas)) if fn_areas else 0.0
     total_fp_area = float(sum(fp_areas)) if fp_areas else 0.0
 
-    config: dict[str, Any] | None = None
-    if config_path and os.path.exists(config_path):
-        try:
-            config = _load_json(config_path)
-        except Exception:
-            config = None
-
-    image_points_count = None
-    world_points_count = None
-    if config and isinstance(config.get("georef"), dict):
-        img = config["georef"].get("imagePoints")
-        w = config["georef"].get("worldPoints")
-        if isinstance(img, list):
-            image_points_count = len(img)
-        if isinstance(w, list):
-            world_points_count = len(w)
-
     report: dict[str, Any] = {
         "testId": test_id,
         "testCaseId": test_case_id,
         "evaluatedAt": datetime.utcnow().isoformat() + "Z",
         "thresholds": {
             "minIou": min_iou,
-            "scoreKey": "metrics.expectedBest.meanIou",
-        },
-        "paths": {
-            "expectedZones": expected_zones_path,
-            "extractedZones": extracted_zones_path,
-            "config": config_path
-            if (config_path and os.path.exists(config_path))
-            else None,
-            "report": report_path,
-            "errorsGeojson": errors_geojson_path,
-        },
-        "counts": {
-            "expectedFeatures": len(expected_fc.get("features") or [])
-            if isinstance(expected_fc.get("features"), list)
-            else 0,
-            "extractedFeatures": len(extracted_fc.get("features") or [])
-            if isinstance(extracted_fc.get("features"), list)
-            else 0,
-            "expectedGeometries": len(expected_features),
-            "extractedGeometries": len(extracted_features),
-            "anchorImagePoints": image_points_count,
-            "anchorWorldPoints": world_points_count,
+            "scoreKey": "metrics.mean.meanIou",
         },
         "metrics": {
-            "primaryExpectedBestIou": primary_best_iou,
-            "primaryExpected": primary_match.get("expected")
-            if isinstance(primary_match, dict)
-            else None,
-            "primaryMatch": primary_match.get("bestMatch")
-            if isinstance(primary_match, dict)
-            else None,
-            "expectedBest": {
+            "expected": matches,
+            "mean": {
                 "meanIou": mean_iou,
                 "meanPrecision": mean_precision,
                 "meanRecall": mean_recall,
@@ -515,20 +463,8 @@ def evaluate_georef_zones_from_paths(
                 "totalFalsePositiveArea": total_fp_area,
             },
             "scoreUsed": mean_iou,
-            "scoreUsedKey": "expectedBest.meanIou",
+            "scoreUsedKey": "mean.meanIou",
         },
-        "debug": {
-            "union": {
-                "expectedArea": expected_union_area,
-                "extractedArea": extracted_union_area,
-                "intersectionArea": union_intersection_area,
-                "unionArea": union_union_area,
-                "iou": union_iou,
-                "precision": union_precision,
-                "recall": union_recall,
-            }
-        },
-        "matches": matches,
     }
 
     if min_iou is not None:

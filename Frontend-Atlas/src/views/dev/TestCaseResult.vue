@@ -207,17 +207,13 @@ const metrics = computed(() => activeReport.value?.metrics ?? null);
 
 const primaryBestMatch = computed<any>(() => {
   const m = metrics.value as any;
-  if (m?.primaryMatch) return m.primaryMatch;
-  const first = Array.isArray(activeReport.value?.matches)
-    ? (activeReport.value?.matches as any[])[0]
-    : null;
+  const first = Array.isArray(m?.expected) ? (m.expected as any[])[0] : null;
   return first?.bestMatch ?? null;
 });
 
 const expected0Label = computed<string>(() => {
-  const first = Array.isArray(activeReport.value?.matches)
-    ? (activeReport.value?.matches as any[])[0]
-    : null;
+  const m = metrics.value as any;
+  const first = Array.isArray(m?.expected) ? (m.expected as any[])[0] : null;
   const exp = first?.expected;
   const idx = exp?.index;
   const name = exp?.name;
@@ -234,18 +230,14 @@ const expected0Label = computed<string>(() => {
 });
 
 const expected0Iou = computed<any>(() => {
-  const m = metrics.value as any;
-  if (typeof m?.primaryExpectedBestIou === "number") return m.primaryExpectedBestIou;
   return primaryBestMatch.value?.iou;
 });
 
 const expectedBestSummary = computed<any>(() => {
   const m = metrics.value as any;
-  if (m?.expectedBest) return m.expectedBest;
+  if (m?.mean) return m.mean;
 
-  const ms = Array.isArray(activeReport.value?.matches)
-    ? (activeReport.value?.matches as any[])
-    : [];
+  const ms = Array.isArray(m?.expected) ? (m.expected as any[]) : [];
   if (!ms.length) {
     return {
       meanIou: 0,
@@ -401,9 +393,8 @@ async function loadExtracted() {
 
   // Only show extracted zones that were actually selected as best matches.
   const usedIdx = new Set<number>();
-  const ms = Array.isArray(activeReport.value?.matches)
-    ? activeReport.value?.matches
-    : [];
+  const m = metrics.value as any;
+  const ms = Array.isArray(m?.expected) ? (m.expected as any[]) : [];
   ms.forEach((m: any) => {
     const idx = m?.bestMatch?.extracted?.index;
     if (typeof idx === "number" && Number.isFinite(idx)) usedIdx.add(idx);

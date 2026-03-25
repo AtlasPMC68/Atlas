@@ -1,93 +1,45 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "5-sift-points",
-  "evaluatedAt": "2026-03-25T17:26:23.507855Z",
+  "evaluatedAt": "2026-03-25T19:05:50.563771Z",
   "thresholds": {
     "minIou": null,
-    "scoreKey": "metrics.expectedBest.meanIou"
-  },
-  "paths": {
-    "expectedZones": "/app/tests/assets/georef/georef_zones/52a1aedc-98d0-4bd7-8b78-d4fd184f91df_zones.geojson",
-    "extractedZones": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/zones.geojson",
-    "config": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/config.json",
-    "report": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/report.json",
-    "errorsGeojson": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/errors.geojson"
-  },
-  "counts": {
-    "expectedFeatures": 1,
-    "extractedFeatures": 8,
-    "expectedGeometries": 1,
-    "extractedGeometries": 8,
-    "anchorImagePoints": 5,
-    "anchorWorldPoints": 5
+    "scoreKey": "metrics.mean.meanIou"
   },
   "metrics": {
-    "primaryExpectedBestIou": 0.9135315815842308,
-    "primaryExpected": {
-      "index": 0,
-      "id": "dev-zone-1772842734708",
-      "name": "DarkKhaki_1",
-      "area": 203.3187314685591
-    },
-    "primaryMatch": {
-      "iou": 0.9135315815842308,
-      "intersectionArea": 187.58446783458766,
-      "unionArea": 205.33988273211298,
-      "precision": 0.9893402354151437,
-      "recall": 0.9226128182075316,
-      "falseNegativeArea": 15.73426363397228,
-      "falsePositiveArea": 2.021151263553953,
-      "extracted": {
-        "index": 0,
-        "id": null,
-        "name": "Zone darkkhaki_1",
-        "area": 189.60561909813975
-      }
-    },
-    "expectedBest": {
-      "meanIou": 0.9135315815842308,
-      "meanPrecision": 0.9893402354151437,
-      "meanRecall": 0.9226128182075316,
-      "totalFalseNegativeArea": 15.73426363397228,
-      "totalFalsePositiveArea": 2.021151263553953
-    },
-    "scoreUsed": 0.9135315815842308,
-    "scoreUsedKey": "expectedBest.meanIou"
-  },
-  "debug": {
-    "union": {
-      "expectedArea": 203.31873146855867,
-      "extractedArea": 431.5801220717847,
-      "intersectionArea": 192.070272503179,
-      "unionArea": 442.82858103716524,
-      "iou": 0.43373504043782385,
-      "precision": 0.44503966397051065,
-      "recall": 0.9446757370354776
-    }
-  },
-  "matches": [
-    {
-      "expected": {
-        "index": 0,
-        "id": "dev-zone-1772842734708",
-        "name": "DarkKhaki_1",
-        "area": 203.3187314685591
-      },
-      "bestMatch": {
-        "iou": 0.9135315815842308,
-        "intersectionArea": 187.58446783458766,
-        "unionArea": 205.33988273211298,
-        "precision": 0.9893402354151437,
-        "recall": 0.9226128182075316,
-        "falseNegativeArea": 15.73426363397228,
-        "falsePositiveArea": 2.021151263553953,
-        "extracted": {
+    "expected": [
+      {
+        "expected": {
           "index": 0,
-          "id": null,
-          "name": "Zone darkkhaki_1",
-          "area": 189.60561909813975
+          "id": "dev-zone-1772842734708",
+          "name": "DarkKhaki_1",
+          "area": 203.3187314685591
+        },
+        "bestMatch": {
+          "iou": 0.9134235876083618,
+          "intersectionArea": 187.55825291961526,
+          "unionArea": 205.33546041952275,
+          "precision": 0.9893618402013657,
+          "recall": 0.9224838831370488,
+          "falseNegativeArea": 15.760478548943885,
+          "falsePositiveArea": 2.016728950963445,
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "Zone darkkhaki_1",
+            "area": 189.57498187057766
+          }
         }
       }
-    }
-  ]
+    ],
+    "mean": {
+      "meanIou": 0.9134235876083618,
+      "meanPrecision": 0.9893618402013657,
+      "meanRecall": 0.9224838831370488,
+      "totalFalseNegativeArea": 15.760478548943885,
+      "totalFalsePositiveArea": 2.016728950963445
+    },
+    "scoreUsed": 0.9134235876083618,
+    "scoreUsedKey": "mean.meanIou"
+  }
 }

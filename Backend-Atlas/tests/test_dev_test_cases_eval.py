@@ -184,11 +184,14 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
     assert report["testCaseId"] == test_case_id
 
     metrics = report["metrics"]
-    assert 0.0 <= metrics["primaryExpectedBestIou"] <= 1.0
+    first = (metrics.get("expected") or [None])[0]
+    best = (first or {}).get("bestMatch") if isinstance(first, dict) else None
+    first_iou = float(best.get("iou", 0.0)) if isinstance(best, dict) else 0.0
+    assert 0.0 <= first_iou <= 1.0
     score_used = float(
         metrics.get("scoreUsed")
-        or (metrics.get("expectedBest") or {}).get("meanIou")
-        or metrics.get("primaryExpectedBestIou")
+        or (metrics.get("mean") or {}).get("meanIou")
+        or first_iou
     )
     assert 0.0 <= score_used <= 1.0
 
