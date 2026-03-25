@@ -17,7 +17,7 @@ def _assets_root() -> str:
     # Backend-Atlas root is one level up from tests/
     here = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(here)
-    return os.path.join(root_dir, "tests", "assets")
+    return os.path.join(root_dir, "tests", "assets", "georef")
 
 
 def _discover_cases(assets_root: str) -> list[tuple[str, str]]:
@@ -39,12 +39,6 @@ def _discover_cases(assets_root: str) -> list[tuple[str, str]]:
             if os.path.exists(os.path.join(case_path, "config.json")):
                 discovered.append((test_id, name))
 
-        # Legacy layout: *_config.json in the test_id dir
-        for fn in os.listdir(test_dir):
-            if fn.endswith("_config.json"):
-                case_id = fn[: -len("_config.json")]
-                discovered.append((test_id, case_id))
-
     # Fallback: if no configs exist, use zones
     if not discovered:
         for test_id in os.listdir(cases_root):
@@ -59,12 +53,6 @@ def _discover_cases(assets_root: str) -> list[tuple[str, str]]:
                     os.path.join(case_path, "zones.geojson")
                 ):
                     discovered.append((test_id, name))
-
-            # Legacy fallback: *_zones.geojson
-            for fn in os.listdir(test_dir):
-                if fn.endswith("_zones.geojson"):
-                    case_id = fn[: -len("_zones.geojson")]
-                    discovered.append((test_id, case_id))
 
     # Stable ordering
     discovered.sort(key=lambda x: (x[0], x[1]))

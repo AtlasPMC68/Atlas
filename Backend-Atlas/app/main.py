@@ -34,14 +34,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve test assets (images, GeoJSON, etc.) as static files under /dev-test
+# Serve georef dev-test assets (images, GeoJSON, etc.) as static files under /dev-test
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 TEST_ASSETS_DIR = os.path.join(ROOT_DIR, "tests", "assets")
-ZONES_DIR = os.path.join(TEST_ASSETS_DIR, "georef_zones")
-MAPS_DIR = os.path.join(TEST_ASSETS_DIR, "maps")
-TEST_CASES_DIR = os.path.join(TEST_ASSETS_DIR, "test_cases")
-TESTS_METADATA_PATH = os.path.join(TEST_ASSETS_DIR, "tests_metadata.json")
+
+# New dedicated root for georef dev-test assets.
+# This keeps georef-related files clearly separated from other assets under tests/assets.
+GEOREF_ASSETS_DIR = os.path.join(TEST_ASSETS_DIR, "georef")
+
+# Canonical locations
+ZONES_DIR = os.path.join(GEOREF_ASSETS_DIR, "georef_zones")
+MAPS_DIR = os.path.join(GEOREF_ASSETS_DIR, "maps")
+TEST_CASES_DIR = os.path.join(GEOREF_ASSETS_DIR, "test_cases")
+TESTS_METADATA_PATH = os.path.join(GEOREF_ASSETS_DIR, "tests_metadata.json")
 
 
 def _find_test_image_path(test_id: str) -> str | None:
@@ -71,10 +77,10 @@ def _evaluate_and_persist_case(
         write_report,
     )
 
-    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
 
     report, errors_geojson = evaluate_georef_test_case(
-        TEST_ASSETS_DIR,
+        GEOREF_ASSETS_DIR,
         test_id,
         test_case_id,
         min_iou=min_iou,
@@ -237,8 +243,8 @@ def _evaluate_and_persist_case(
     return report
 
 
-if os.path.isdir(TEST_ASSETS_DIR):
-    app.mount("/dev-test", StaticFiles(directory=TEST_ASSETS_DIR), name="dev-test")
+os.makedirs(GEOREF_ASSETS_DIR, exist_ok=True)
+app.mount("/dev-test", StaticFiles(directory=GEOREF_ASSETS_DIR), name="dev-test")
 
 
 @app.put("/dev-test-api/georef_zones/{map_id}")
@@ -277,10 +283,10 @@ async def get_dev_test_zones(map_id: str):
 
 @app.get("/dev-test-api/tests")
 async def list_dev_tests():
-    """List available dev tests based on files in tests/assets/maps.
+    """List available dev tests based on files in tests/assets/georef/maps.
 
     Each test corresponds to an image file whose stem is the map_id.
-    If metadata exists in tests_metadata.json, use it to enrich the response.
+    If metadata exists in tests/assets/georef/tests_metadata.json, use it to enrich the response.
     """
 
     if not os.path.isdir(MAPS_DIR):
@@ -369,9 +375,9 @@ async def upload_dev_test(
 ):
     """Create a dev test by saving the map image and metadata.
 
-    - Saves the uploaded image into tests/assets/maps.
+    - Saves the uploaded image into tests/assets/georef/maps.
     - Generates a mapId (UUID).
-    - Registers the test name in tests_metadata.json.
+    - Registers the test name in tests/assets/georef/tests_metadata.json.
     """
 
     os.makedirs(MAPS_DIR, exist_ok=True)
@@ -478,7 +484,7 @@ async def list_dev_test_cases(test_id: str):
     """List available test cases for a given test (map) id.
 
     A test case exists if we have a case directory under:
-    tests/assets/test_cases/<test_id>/<test_case_id>/
+    tests/assets/georef/test_cases/<test_id>/<test_case_id>/
     (backward compatible with legacy flat files).
     """
 
@@ -511,18 +517,20 @@ async def run_dev_test_case(test_id: str, test_case_id: str):
     This endpoint is the missing link between a persisted test case config
     (anchor points + options) and evaluation:
 
-    - Reads config: tests/assets/test_cases/<test_id>/<test_case_id>/config.json
-    - Reads image:  tests/assets/maps/<test_id>.(png|jpg|jpeg)
+    - Reads config: tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
+    - Reads image:  tests/assets/georef/maps/<test_id>.(png|jpg|jpeg)
     - Starts celery task which overwrites the latest extracted zones:
-        tests/assets/test_cases/<test_id>/<test_case_id>/zones.geojson
+        tests/assets/georef/test_cases/<test_id>/<test_case_id>/zones.geojson
     """
 
-    if not os.path.isdir(TEST_ASSETS_DIR):
-        raise HTTPException(status_code=500, detail="Test assets directory missing")
+    if not os.path.isdir(GEOREF_ASSETS_DIR):
+        raise HTTPException(
+            status_code=500, detail="Georef test assets directory missing"
+        )
 
     from app.utils.dev_test_evaluator import build_test_case_paths
 
-    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
     config_path = paths.config_path
     if not os.path.exists(config_path):
         raise HTTPException(status_code=404, detail=f"Config not found: {config_path}")
@@ -618,18 +626,20 @@ async def evaluate_dev_test_case(
     """Evaluate one dev test case and persist a report JSON.
 
     Compares:
-    - expected: tests/assets/georef_zones/<test_id>_zones.geojson
-    - extracted: tests/assets/test_cases/<test_id>/<test_case_id>/zones.geojson
+    - expected: tests/assets/georef/georef_zones/<test_id>_zones.geojson
+    - extracted: tests/assets/georef/test_cases/<test_id>/<test_case_id>/zones.geojson
     Writes:
-    - report: tests/assets/test_cases/<test_id>/<test_case_id>/report.json
+    - report: tests/assets/georef/test_cases/<test_id>/<test_case_id>/report.json
 
         Scoring:
         - Uses per-expected best-match metrics and aggregates them (mean IoU/precision/
           recall). A union-vs-union metric is included only for debugging.
     """
 
-    if not os.path.isdir(TEST_ASSETS_DIR):
-        raise HTTPException(status_code=500, detail="Test assets directory missing")
+    if not os.path.isdir(GEOREF_ASSETS_DIR):
+        raise HTTPException(
+            status_code=500, detail="Georef test assets directory missing"
+        )
 
     try:
         return _evaluate_and_persist_case(test_id, test_case_id, min_iou=min_iou)
@@ -674,12 +684,14 @@ async def run_evaluate_dev_test_case(
 
     from fastapi.responses import JSONResponse
 
-    if not os.path.isdir(TEST_ASSETS_DIR):
-        raise HTTPException(status_code=500, detail="Test assets directory missing")
+    if not os.path.isdir(GEOREF_ASSETS_DIR):
+        raise HTTPException(
+            status_code=500, detail="Georef test assets directory missing"
+        )
 
     from app.utils.dev_test_evaluator import build_test_case_paths
 
-    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
     config_path = paths.config_path
     if not os.path.exists(config_path):
         raise HTTPException(status_code=404, detail=f"Config not found: {config_path}")
@@ -799,7 +811,7 @@ async def get_dev_test_case_report(test_id: str, test_case_id: str):
 
     from app.utils.dev_test_evaluator import build_test_case_paths
 
-    paths = build_test_case_paths(TEST_ASSETS_DIR, test_id, test_case_id)
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
     report_path = paths.report_path
     if not os.path.exists(report_path):
         raise HTTPException(status_code=404, detail="Report not found")

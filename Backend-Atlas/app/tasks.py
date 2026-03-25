@@ -256,14 +256,14 @@ def process_map_extraction(
             try:
                 # Backend project root: go two levels up from this file (app/tasks.py)
                 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                assets_root = os.path.join(root_dir, "tests", "assets")
+                assets_root = os.path.join(root_dir, "tests", "assets", "georef")
                 maps_dir = os.path.join(assets_root, "maps")
                 test_cases_root = os.path.join(assets_root, "test_cases")
 
                 os.makedirs(maps_dir, exist_ok=True)
 
                 # Save extracted zones per test case so we don't overwrite the expected zones
-                # written by the TestEditor (tests/assets/georef_zones/<map_id>_zones.geojson).
+                # written by the TestEditor (tests/assets/georef/georef_zones/<map_id>_zones.geojson).
                 safe_case = (test_case or "default").strip() or "default"
                 case_dir = os.path.join(test_cases_root, map_id)
                 os.makedirs(case_dir, exist_ok=True)
@@ -301,7 +301,7 @@ def process_map_extraction(
                     "type": "FeatureCollection",
                     "features": all_features,
                 }
-                # New nested layout: tests/assets/test_cases/<map_id>/<case_id>/zones.geojson
+                # New nested layout: tests/assets/georef/test_cases/<map_id>/<case_id>/zones.geojson
                 nested_case_dir = os.path.join(case_dir, safe_case)
                 os.makedirs(nested_case_dir, exist_ok=True)
                 zones_output_path = os.path.join(nested_case_dir, "zones.geojson")

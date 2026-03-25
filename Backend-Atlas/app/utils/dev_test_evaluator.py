@@ -24,27 +24,6 @@ class DevTestPaths:
     best_errors_geojson_path: str
 
 
-def _migrate_legacy_file(*, legacy_path: str, new_path: str) -> None:
-    """If legacy_path exists and new_path doesn't, copy legacy -> new.
-
-    This keeps backward compatibility while moving to the nested layout.
-    """
-
-    try:
-        if os.path.exists(new_path):
-            return
-        if not os.path.exists(legacy_path):
-            return
-        os.makedirs(os.path.dirname(new_path), exist_ok=True)
-        # Copy to preserve older artifacts; dev-test assets are not huge.
-        import shutil
-
-        shutil.copyfile(legacy_path, new_path)
-    except Exception:
-        # Best-effort migration only.
-        return
-
-
 def write_geojson(feature_collection: dict[str, Any], geojson_path: str) -> None:
     os.makedirs(os.path.dirname(geojson_path), exist_ok=True)
     with open(geojson_path, "w", encoding="utf-8") as f:
@@ -290,29 +269,6 @@ def build_test_case_paths(
     best_report_path = os.path.join(case_dir, "best_report.json")
     best_zones_path = os.path.join(case_dir, "zones_best.geojson")
     best_errors_geojson_path = os.path.join(case_dir, "errors_best.geojson")
-
-    # Legacy flat layout (pre-migration)
-    legacy_dir = os.path.join(assets_root, "test_cases", test_id)
-    legacy_extracted_zones = os.path.join(legacy_dir, f"{test_case_id}_zones.geojson")
-    legacy_config = os.path.join(legacy_dir, f"{test_case_id}_config.json")
-    legacy_report = os.path.join(legacy_dir, f"{test_case_id}_report.json")
-    legacy_errors = os.path.join(legacy_dir, f"{test_case_id}_errors.geojson")
-    legacy_best_report = os.path.join(legacy_dir, f"{test_case_id}_best_report.json")
-    legacy_best_zones = os.path.join(legacy_dir, f"{test_case_id}_zones_best.geojson")
-    legacy_best_errors = os.path.join(legacy_dir, f"{test_case_id}_errors_best.geojson")
-
-    # Best-effort migration on first access.
-    _migrate_legacy_file(legacy_path=legacy_config, new_path=config_path)
-    _migrate_legacy_file(
-        legacy_path=legacy_extracted_zones, new_path=extracted_zones_path
-    )
-    _migrate_legacy_file(legacy_path=legacy_report, new_path=report_path)
-    _migrate_legacy_file(legacy_path=legacy_errors, new_path=errors_geojson_path)
-    _migrate_legacy_file(legacy_path=legacy_best_report, new_path=best_report_path)
-    _migrate_legacy_file(legacy_path=legacy_best_zones, new_path=best_zones_path)
-    _migrate_legacy_file(
-        legacy_path=legacy_best_errors, new_path=best_errors_geojson_path
-    )
 
     return DevTestPaths(
         assets_root=assets_root,

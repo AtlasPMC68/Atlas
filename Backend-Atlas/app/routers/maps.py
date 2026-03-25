@@ -65,12 +65,12 @@ async def upload_and_process_map(
         img_pts: list | None,
         world_pts: list | None,
     ) -> None:
-        # Store under Backend-Atlas/tests/assets/test_cases/<testId>
+        # Store under Backend-Atlas/tests/assets/georef/test_cases/<testId>
         base_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.dirname(os.path.dirname(base_dir))
-        assets_dir = os.path.join(root_dir, "tests", "assets")
+        assets_dir = os.path.join(root_dir, "tests", "assets", "georef")
         cases_root = os.path.join(assets_dir, "test_cases")
-        # New nested layout: tests/assets/test_cases/<test_id>/<test_case_id>/config.json
+        # New nested layout: tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
         case_dir = os.path.join(cases_root, parent_test_id, test_case_id)
         os.makedirs(case_dir, exist_ok=True)
 
