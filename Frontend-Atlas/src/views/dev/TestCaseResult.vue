@@ -147,7 +147,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
-import MapTestGeoJSON from "../../components/MapTestGeoJSON.vue";
+import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 
 type AnyFeature = any;
 

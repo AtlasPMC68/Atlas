@@ -1,17 +1,17 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "5-sift-points",
-  "evaluatedAt": "2026-03-25T16:06:33.318776Z",
+  "evaluatedAt": "2026-03-25T17:26:23.507855Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.expectedBest.meanIou"
   },
   "paths": {
-    "expectedZones": "/app/tests/assets/georef_zones/52a1aedc-98d0-4bd7-8b78-d4fd184f91df_zones.geojson",
-    "extractedZones": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/zones.geojson",
-    "config": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/config.json",
-    "report": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/report.json",
-    "errorsGeojson": "/app/tests/assets/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/errors.geojson"
+    "expectedZones": "/app/tests/assets/georef/georef_zones/52a1aedc-98d0-4bd7-8b78-d4fd184f91df_zones.geojson",
+    "extractedZones": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/zones.geojson",
+    "config": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/config.json",
+    "report": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/report.json",
+    "errorsGeojson": "/app/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/5-sift-points/errors.geojson"
   },
   "counts": {
     "expectedFeatures": 1,
@@ -22,7 +22,7 @@
     "anchorWorldPoints": 5
   },
   "metrics": {
-    "primaryExpectedBestIou": 0.9136282916556675,
+    "primaryExpectedBestIou": 0.9135315815842308,
     "primaryExpected": {
       "index": 0,
       "id": "dev-zone-1772842734708",
@@ -30,39 +30,39 @@
       "area": 203.3187314685591
     },
     "primaryMatch": {
-      "iou": 0.9136282916556675,
-      "intersectionArea": 187.61257561808068,
-      "unionArea": 205.3489119498381,
-      "precision": 0.9892947111556738,
-      "recall": 0.922751063136024,
-      "falseNegativeArea": 15.706155850479218,
-      "falsePositiveArea": 2.0301804812791335,
+      "iou": 0.9135315815842308,
+      "intersectionArea": 187.58446783458766,
+      "unionArea": 205.33988273211298,
+      "precision": 0.9893402354151437,
+      "recall": 0.9226128182075316,
+      "falseNegativeArea": 15.73426363397228,
+      "falsePositiveArea": 2.021151263553953,
       "extracted": {
         "index": 0,
         "id": null,
         "name": "Zone darkkhaki_1",
-        "area": 189.64275609935842
+        "area": 189.60561909813975
       }
     },
     "expectedBest": {
-      "meanIou": 0.9136282916556675,
-      "meanPrecision": 0.9892947111556738,
-      "meanRecall": 0.922751063136024,
-      "totalFalseNegativeArea": 15.706155850479218,
-      "totalFalsePositiveArea": 2.0301804812791335
+      "meanIou": 0.9135315815842308,
+      "meanPrecision": 0.9893402354151437,
+      "meanRecall": 0.9226128182075316,
+      "totalFalseNegativeArea": 15.73426363397228,
+      "totalFalsePositiveArea": 2.021151263553953
     },
-    "scoreUsed": 0.9136282916556675,
+    "scoreUsed": 0.9135315815842308,
     "scoreUsedKey": "expectedBest.meanIou"
   },
   "debug": {
     "union": {
       "expectedArea": 203.31873146855867,
-      "extractedArea": 455.4742686668925,
-      "intersectionArea": 203.31873146855892,
-      "unionArea": 455.47426866689256,
-      "iou": 0.44638906180944865,
-      "precision": 0.4463890618094487,
-      "recall": 1.0000000000000013
+      "extractedArea": 431.5801220717847,
+      "intersectionArea": 192.070272503179,
+      "unionArea": 442.82858103716524,
+      "iou": 0.43373504043782385,
+      "precision": 0.44503966397051065,
+      "recall": 0.9446757370354776
     }
   },
   "matches": [
@@ -74,18 +74,18 @@
         "area": 203.3187314685591
       },
       "bestMatch": {
-        "iou": 0.9136282916556675,
-        "intersectionArea": 187.61257561808068,
-        "unionArea": 205.3489119498381,
-        "precision": 0.9892947111556738,
-        "recall": 0.922751063136024,
-        "falseNegativeArea": 15.706155850479218,
-        "falsePositiveArea": 2.0301804812791335,
+        "iou": 0.9135315815842308,
+        "intersectionArea": 187.58446783458766,
+        "unionArea": 205.33988273211298,
+        "precision": 0.9893402354151437,
+        "recall": 0.9226128182075316,
+        "falseNegativeArea": 15.73426363397228,
+        "falsePositiveArea": 2.021151263553953,
         "extracted": {
           "index": 0,
           "id": null,
           "name": "Zone darkkhaki_1",
-          "area": 189.64275609935842
+          "area": 189.60561909813975
         }
       }
     }

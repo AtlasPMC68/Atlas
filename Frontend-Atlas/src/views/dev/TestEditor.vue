@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import MapTestGeoJSON from "../../components/MapTestGeoJSON.vue";
+import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import CreateZonePanel from "../../components/dev/CreateZonePanel.vue";
 import type { Feature } from "../../typescript/feature";
