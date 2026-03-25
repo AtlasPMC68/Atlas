@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from app.services.dev_test import find_test_image_path
 from app.utils.dev_test_evaluator import (
     build_test_case_paths,
     evaluate_georef_test_case,
@@ -59,17 +60,6 @@ def _discover_cases(assets_root: str) -> list[tuple[str, str]]:
     return discovered
 
 
-def _find_test_image_path(assets_root: str, test_id: str) -> str | None:
-    maps_dir = os.path.join(assets_root, "maps")
-    if not os.path.isdir(maps_dir):
-        return None
-    for fn in os.listdir(maps_dir):
-        stem, _ext = os.path.splitext(fn)
-        if stem == test_id:
-            return os.path.join(maps_dir, fn)
-    return None
-
-
 def _rerun_extraction_from_config(
     assets_root: str, test_id: str, test_case_id: str
 ) -> None:
@@ -83,7 +73,7 @@ def _rerun_extraction_from_config(
     if not os.path.exists(paths.config_path):
         pytest.skip(f"Missing config for {test_id}/{test_case_id}: {paths.config_path}")
 
-    image_path = _find_test_image_path(assets_root, test_id)
+    image_path = find_test_image_path(test_id)
     if not image_path or not os.path.exists(image_path):
         pytest.skip(
             f"Missing test image for {test_id} under {os.path.join(assets_root, 'maps')}"

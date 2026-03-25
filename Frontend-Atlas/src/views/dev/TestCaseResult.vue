@@ -440,8 +440,9 @@ async function loadLatestReport() {
 
 async function loadBestReport() {
   if (!testId.value || !testCaseId.value) return;
-  const url = `${import.meta.env.VITE_API_URL}/dev-test/test_cases/${testId.value}/${testCaseId.value}/best_report.json?v=${cacheBuster.value}`;
-  const res = await fetch(url);
+  const res = await fetch(
+    `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/best-report`,
+  );
   if (!res.ok) {
     bestReport.value = null;
     return;

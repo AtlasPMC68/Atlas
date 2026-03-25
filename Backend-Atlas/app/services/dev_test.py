@@ -1,9 +1,12 @@
 import json
 import os
 import shutil
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
+from datetime import datetime
+from asyncio import to_thread
+
+from app.celery_app import celery_app
 
 from app.utils.dev_test_assets import (
     MAPS_DIR,
@@ -53,7 +56,7 @@ def list_dev_tests() -> list[dict[str, Any]]:
         if not filename.lower().endswith((".png", ".jpg", ".jpeg")):
             continue
 
-        map_id, _ext = os.path.splitext(filename)
+        map_id = os.path.splitext(filename)[0]
         meta_entry = metadata.get(map_id, {}) if isinstance(metadata, dict) else {}
 
         zones_path = os.path.join(ZONES_DIR, f"{map_id}_zones.geojson")
@@ -71,18 +74,6 @@ def list_dev_tests() -> list[dict[str, Any]]:
 
     tests.sort(key=lambda t: (t.get("createdAt") or "", t["imageFilename"]))
     return tests
-
-
-def register_dev_test(*, map_id: str, name: str) -> dict[str, Any]:
-    metadata = _load_tests_metadata()
-
-    entry = metadata.get(map_id, {}) if isinstance(metadata, dict) else {}
-    entry["name"] = name
-    entry.setdefault("createdAt", datetime.utcnow().isoformat() + "Z")
-    metadata[map_id] = entry
-
-    _write_tests_metadata(metadata)
-    return {"status": "ok", "mapId": map_id, "name": name}
 
 
 def upload_dev_test(
@@ -173,9 +164,7 @@ def evaluate_and_persist_case(
 ) -> dict[str, Any]:
     from app.utils.dev_test_evaluator import (
         build_test_case_paths,
-        compute_errors_geojson,
         evaluate_georef_test_case,
-        evaluate_georef_zones_from_paths,
         write_geojson,
         write_report,
     )
@@ -235,88 +224,6 @@ def evaluate_and_persist_case(
         except Exception:
             best_updated = False
 
-    def _best_report_needs_upgrade() -> bool:
-        if not os.path.exists(best_report_path):
-            return True
-        try:
-            with open(best_report_path, "r", encoding="utf-8") as f:
-                best = json.load(f)
-        except Exception:
-            return True
-
-        metrics = best.get("metrics") if isinstance(best, dict) else None
-        if not isinstance(metrics, dict):
-            return True
-
-        expected_best = metrics.get("expectedBest")
-        if not isinstance(expected_best, dict):
-            return True
-        for k in (
-            "meanIou",
-            "meanPrecision",
-            "meanRecall",
-            "totalFalseNegativeArea",
-            "totalFalsePositiveArea",
-        ):
-            if k not in expected_best:
-                return True
-
-        primary_match = metrics.get("primaryMatch")
-        if not isinstance(primary_match, dict):
-            return True
-        for k in ("precision", "recall", "falseNegativeArea", "falsePositiveArea"):
-            if k not in primary_match:
-                return True
-
-        matches = best.get("matches") if isinstance(best, dict) else None
-        if isinstance(matches, list) and matches:
-            bm = (
-                (matches[0] or {}).get("bestMatch")
-                if isinstance(matches[0], dict)
-                else None
-            )
-            if not isinstance(bm, dict):
-                return True
-            for k in ("precision", "recall", "falseNegativeArea", "falsePositiveArea"):
-                if k not in bm:
-                    return True
-
-        return False
-
-    if os.path.exists(best_zones_path) and _best_report_needs_upgrade():
-        try:
-            best_report, best_errors_geojson = evaluate_georef_zones_from_paths(
-                test_id=test_id,
-                test_case_id=test_case_id,
-                expected_zones_path=paths.expected_zones_path,
-                extracted_zones_path=best_zones_path,
-                config_path=paths.config_path
-                if os.path.exists(paths.config_path)
-                else None,
-                report_path=best_report_path,
-                errors_geojson_path=best_errors_path,
-                min_iou=min_iou,
-            )
-            with open(best_report_path, "w", encoding="utf-8") as f:
-                json.dump(best_report, f, indent=2, ensure_ascii=False)
-            write_geojson(best_errors_geojson, best_errors_path)
-        except Exception:
-            pass
-
-    if (
-        os.path.exists(best_report_path)
-        and os.path.exists(best_zones_path)
-        and not os.path.exists(best_errors_path)
-    ):
-        try:
-            best_errors_geojson = compute_errors_geojson(
-                expected_zones_path=paths.expected_zones_path,
-                extracted_zones_path=best_zones_path,
-            )
-            write_geojson(best_errors_geojson, best_errors_path)
-        except Exception:
-            pass
-
     report.setdefault("artifacts", {})
     report["artifacts"].update(
         {
@@ -336,3 +243,149 @@ def evaluate_and_persist_case(
 
     write_report(report, paths.report_path)
     return report
+
+
+def _load_case_config(
+    assets_root: str, test_id: str, test_case_id: str
+) -> dict[str, Any]:
+    from app.utils.dev_test_evaluator import build_test_case_paths
+
+    paths = build_test_case_paths(assets_root, test_id, test_case_id)
+    if not os.path.exists(paths.config_path):
+        raise FileNotFoundError(f"Config not found: {paths.config_path}")
+
+    try:
+        with open(paths.config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception as e:
+        raise ValueError(f"Invalid config JSON: {e}")
+
+    if not isinstance(config, dict):
+        raise ValueError("Invalid config JSON: expected object")
+    return config
+
+
+def _parse_extraction_inputs(
+    config: dict[str, Any], image_path: str
+) -> tuple[
+    str,
+    list[tuple[float, float]] | None,
+    list[tuple[float, float]] | None,
+    bool,
+    bool,
+    bool,
+]:
+    georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
+    options = config.get("options") if isinstance(config.get("options"), dict) else {}
+
+    enable_georeferencing = bool(options.get("enableGeoreferencing", True))
+    enable_color_extraction = bool(options.get("enableColorExtraction", True))
+    enable_shapes_extraction = bool(options.get("enableShapesExtraction", False))
+    enable_text_extraction = bool(options.get("enableTextExtraction", False))
+
+    pixel_points_list = None
+    geo_points_list = None
+    if enable_georeferencing:
+        img_pts = georef.get("imagePoints")
+        world_pts = georef.get("worldPoints")
+        if (
+            isinstance(img_pts, list)
+            and isinstance(world_pts, list)
+            and len(img_pts) == len(world_pts)
+        ):
+            try:
+                pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
+                geo_points_list = [
+                    (float(p["lng"]), float(p["lat"])) for p in world_pts
+                ]
+            except Exception as e:
+                raise ValueError(f"Invalid georef points in config: {e}")
+
+    filename = config.get("filename")
+    if not isinstance(filename, str) or not filename.strip():
+        filename = os.path.basename(image_path)
+
+    return (
+        filename,
+        pixel_points_list,
+        geo_points_list,
+        enable_color_extraction,
+        enable_shapes_extraction,
+        enable_text_extraction,
+    )
+
+
+def _start_extraction_for_case(
+    *, assets_root: str, test_id: str, test_case_id: str
+) -> str:
+    config = _load_case_config(assets_root, test_id, test_case_id)
+    image_path = find_test_image_path(test_id)
+    if not image_path or not os.path.exists(image_path):
+        raise FileNotFoundError(
+            f"Test image not found for test_id={test_id} under {MAPS_DIR}"
+        )
+
+    (
+        filename,
+        pixel_points_list,
+        geo_points_list,
+        enable_color_extraction,
+        enable_shapes_extraction,
+        enable_text_extraction,
+    ) = _parse_extraction_inputs(config, image_path)
+
+    try:
+        with open(image_path, "rb") as f:
+            file_content = f.read()
+    except Exception as e:
+        raise RuntimeError(f"Failed to read test image: {e}")
+
+    from app.tasks import process_map_extraction
+
+    task = process_map_extraction.delay(
+        filename,
+        file_content,
+        test_id,
+        pixel_points_list,
+        geo_points_list,
+        enable_color_extraction,
+        enable_shapes_extraction,
+        enable_text_extraction,
+        True,
+        test_case_id,
+    )
+    return task.id
+
+
+async def run_evaluate_case_blocking(
+    *,
+    test_id: str,
+    test_case_id: str,
+    min_iou: float | None,
+    assets_root: str,
+) -> dict[str, Any]:
+    task_id = _start_extraction_for_case(
+        assets_root=assets_root,
+        test_id=test_id,
+        test_case_id=test_case_id,
+    )
+
+    async_result = celery_app.AsyncResult(task_id)
+    try:
+        await to_thread(async_result.get, timeout=None, propagate=True)
+    except Exception as e:
+        raise RuntimeError(f"Extraction task ended in state {async_result.state}: {e}")
+
+    report = evaluate_and_persist_case(
+        assets_root=assets_root,
+        test_id=test_id,
+        test_case_id=test_case_id,
+        min_iou=min_iou,
+    )
+
+    return {
+        "status": "ok",
+        "task_id": task_id,
+        "task_state": async_result.state,
+        "report": report,
+    }
