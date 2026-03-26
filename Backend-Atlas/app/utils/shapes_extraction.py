@@ -274,10 +274,7 @@ def save_shape_image(
 def reconstruct_shapes_debug(
     image: np.ndarray,
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
-<<<<<<< HEAD
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
-=======
->>>>>>> 0566aad93a646f9cc2850efabb6fe5753cdb4bc0
     output_dir: str,
 ) -> Tuple[str, str]:
     h, w = image.shape[:2]
@@ -287,10 +284,7 @@ def reconstruct_shapes_debug(
     for idx, (_, contour) in enumerate(shapes_with_contours, 1):
         cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
         color = tuple(int(c) for c in np.random.RandomState(idx).randint(50, 230, 3))
-<<<<<<< HEAD
         color = tuple(int(c) for c in np.random.RandomState(idx).randint(50, 230, 3))
-=======
->>>>>>> 0566aad93a646f9cc2850efabb6fe5753cdb4bc0
         cv2.drawContours(color_img, [contour], -1, color, thickness=cv2.FILLED)
  
     mask_path = os.path.join(output_dir, "reconstructed_mask.png")
