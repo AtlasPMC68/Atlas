@@ -180,7 +180,12 @@ def process_map_extraction(
                 },
             )
 
-            color_result = extract_colors(tmp_file_path)
+            legends_shapes = []
+            if legends_shapes:
+                colors_to_extract = legends_shapes
+            else:
+                colors_to_extract = None
+            color_result = extract_colors(tmp_file_path, imposed_colors=colors_to_extract)
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])
 
