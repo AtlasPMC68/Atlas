@@ -115,17 +115,10 @@ const featureLayerManager = {
   },
 };
 
-function featureIdAsString(featureOrId: Feature | string | number): string {
-  if (typeof featureOrId === "object" && featureOrId !== null) {
-    return String(featureOrId.id);
-  }
-  return String(featureOrId);
-}
-
 function upsertFeature(features: Feature[], feature: Feature): Feature[] {
-  const targetId = featureIdAsString(feature);
+  const targetId = feature.id;
   const next = [...features];
-  const index = next.findIndex((f) => featureIdAsString(f) === targetId);
+  const index = next.findIndex((f) => f.id === targetId);
 
   if (index >= 0) {
     next[index] = feature;
@@ -198,7 +191,7 @@ defineExpose({
 });
 
 const drawing = useMapDrawing((event, ...args) => {
-  const payload = args[0] as Feature | string | number;
+  const payload = args[0] as Feature;
   const current = localFeaturesSnapshot.value;
 
   if (event === "feature-created") {
@@ -216,9 +209,9 @@ const drawing = useMapDrawing((event, ...args) => {
   }
 
   if (event === "feature-deleted") {
-    const deletedId = featureIdAsString(payload);
+    const deletedId = payload.id;
     const next = current.filter(
-      (feature) => featureIdAsString(feature) !== deletedId,
+      (feature) => feature.id !== deletedId,
     );
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
