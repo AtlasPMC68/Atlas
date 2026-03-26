@@ -10,9 +10,7 @@ from shapely import affinity
 from shapely.geometry import Polygon
 
 from . import preprocessing
-from .color_extraction import (
-    get_nearest_css4_color_name,
-)
+from .color_extraction import get_nearest_css4_color_name
 
 LegendBounds = Dict[str, float]
 
@@ -248,15 +246,12 @@ def classify_shape(
     cx = properties.get("center", {}).get("x", -1)
     cy = properties.get("center", {}).get("y", -1)
 
-    if _is_inside_legend_bounds(cx, cy, legend_bounds):
-        return "legende shape"
-
     hough_confirms = any(
         abs(cx - hx) < 15 and abs(cy - hy) < 15
         for hx, hy, _ in (hough_circles or [])
     )
 
-    if circularity > 0.90 and hough_confirms:
+    if circularity > 0.85 and hough_confirms:
         return "Circle"
 
     if rect_score > 0.85:
@@ -282,6 +277,124 @@ def _is_inside_legend_bounds(
         return False
 
     return x <= cx <= (x + w) and y <= cy <= (y + h)
+
+
+def _contour_to_polygon(contour: np.ndarray) -> Optional[Polygon]:
+    if contour is None or len(contour) < 3:
+        return None
+
+    points = contour.reshape(-1, 2)
+    if len(points) < 3:
+        return None
+
+    polygon = Polygon(points)
+    if not polygon.is_valid:
+        polygon = polygon.buffer(0)
+
+    if polygon.is_empty:
+        return None
+
+    return polygon
+
+
+def _is_duplicate_shape(
+    candidate_contour: np.ndarray,
+    candidate_area: float,
+    kept_contour: np.ndarray,
+    kept_area: float,
+    overlap_threshold: float,
+    area_similarity_threshold: float,
+) -> bool:
+    if candidate_area <= 0 or kept_area <= 0:
+        return False
+
+    area_similarity = min(candidate_area, kept_area) / max(candidate_area, kept_area)
+    if area_similarity < area_similarity_threshold:
+        return False
+
+    candidate_poly = _contour_to_polygon(candidate_contour)
+    kept_poly = _contour_to_polygon(kept_contour)
+    if candidate_poly is None or kept_poly is None:
+        return False
+
+    intersection_area = candidate_poly.intersection(kept_poly).area
+    if intersection_area <= 0:
+        return False
+
+    overlap_ratio = intersection_area / min(candidate_area, kept_area)
+    return overlap_ratio >= overlap_threshold
+
+
+def post_filter_shapes(
+    shapes_with_contours: List[Tuple[Dict, np.ndarray]],
+    unknown_min_area: float = 80.0,
+    unknown_max_area: float = 3000.0,
+    overlap_threshold: float = 0.7,
+    area_similarity_threshold: float = 0.95,
+    legend_bounds: Optional[LegendBounds] = None,
+    legend_coverage_threshold: float = 0.9,
+) -> List[Tuple[Dict, np.ndarray]]:
+    """Final filtering pass:
+    1) Remove Shape unknown outside configured area range.
+    2) Remove shapes covering too much of selected legend zone.
+    3) Remove near-duplicate overlapping shapes across all classes.
+    """
+    filtered_unknown_noise: List[Tuple[Dict, np.ndarray]] = []
+    legend_area = 0.0
+    if legend_bounds:
+        legend_width = float(legend_bounds.get("width", 0.0))
+        legend_height = float(legend_bounds.get("height", 0.0))
+        if legend_width > 0 and legend_height > 0:
+            legend_area = legend_width * legend_height
+
+    for shape, contour in shapes_with_contours:
+        shape_type = shape.get("shape_type")
+        area = float(shape.get("area", 0.0))
+
+        if shape_type == "Shape unknown" and (
+            area < unknown_min_area or area > unknown_max_area
+        ):
+            continue
+
+        if legend_area > 0:
+            center = shape.get("center", {})
+            cx = float(center.get("x", -1.0))
+            cy = float(center.get("y", -1.0))
+            if _is_inside_legend_bounds(cx, cy, legend_bounds):
+                legend_coverage = area / legend_area
+                if legend_coverage >= legend_coverage_threshold:
+                    continue
+
+        filtered_unknown_noise.append((shape, contour))
+
+    sorted_candidates = sorted(
+        filtered_unknown_noise,
+        key=lambda item: float(item[0].get("area", 0.0)),
+        reverse=True,
+    )
+
+    deduped: List[Tuple[Dict, np.ndarray]] = []
+    for candidate_shape, candidate_contour in sorted_candidates:
+        candidate_area = float(candidate_shape.get("area", 0.0))
+
+        is_duplicate = False
+        for kept_shape, kept_contour in deduped:
+            kept_area = float(kept_shape.get("area", 0.0))
+            if _is_duplicate_shape(
+                candidate_contour,
+                candidate_area,
+                kept_contour,
+                kept_area,
+                overlap_threshold,
+                area_similarity_threshold,
+            ):
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            deduped.append((candidate_shape, candidate_contour))
+
+    return deduped
 
 
 # ---------------------------------------------------------------------------
@@ -497,14 +610,14 @@ def _preprocess_for_contours(
     image_uint8 = (image * 255).astype(np.uint8)
     image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
 
-    image_denoised = cv2.bilateralFilter(image_bgr, d=9, sigmaColor=75, sigmaSpace=75)
+    image_denoised = cv2.bilateralFilter(image_bgr, d=11, sigmaColor=75, sigmaSpace=75)
 
     lab = cv2.cvtColor(image_denoised, cv2.COLOR_BGR2LAB)
     lightness, _, _ = cv2.split(lab)
 
     l_norm = cv2.normalize(lightness, np.empty_like(lightness), alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
 
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(32, 32))
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(64, 64))
     l_enhanced = clahe.apply(l_norm)
 
     binary_mask = preprocess_image(l_enhanced, threshold_value)
@@ -636,16 +749,20 @@ def _write_debug_outputs(
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-
 def extract_shapes(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     min_area: int = 50,
-    max_area: int = 100_000,
+    max_area: int = 5000,
     threshold_value: int = 127,
     text_regions: Optional[List[List[List[int]]]] = None,
     legend_bounds: Optional[LegendBounds] = None,
+    unknown_min_area_post: float = 500.0,
+    unknown_max_area_post: float = 4000.0,
+    overlap_threshold_post: float = 0.6,
+    area_similarity_threshold_post: float = 0.6,
     debug: bool = False,
+    legend_coverage_threshold_post: float = 0.9,
 ) -> Dict:
     preprocess_result = _preprocess_for_contours(image_path, threshold_value)
     image_bgr = preprocess_result["image_bgr"]
@@ -678,6 +795,33 @@ def extract_shapes(
         )
     ]
 
+    shapes_with_contours = post_filter_shapes(
+        shapes_with_contours,
+        unknown_min_area=unknown_min_area_post,
+        unknown_max_area=unknown_max_area_post,
+        overlap_threshold=overlap_threshold_post,
+        area_similarity_threshold=area_similarity_threshold_post,
+        legend_bounds=legend_bounds,
+        legend_coverage_threshold=legend_coverage_threshold_post,
+    )
+
+    for shape, _ in shapes_with_contours:
+        center = shape.get("center", {})
+        cx = float(center.get("x", -1.0))
+        cy = float(center.get("y", -1.0))
+        shape["isLegend"] = _is_inside_legend_bounds(cx, cy, legend_bounds)
+
+    legend_shapes_with_contours = [
+        (shape, contour)
+        for shape, contour in shapes_with_contours
+        if shape.get("isLegend", False)
+    ]
+    non_legend_shapes_with_contours = [
+        (shape, contour)
+        for shape, contour in shapes_with_contours
+        if not shape.get("isLegend", False)
+    ]
+
     if debug:
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         image_output_dir = os.path.join(output_dir, base_name)
@@ -702,6 +846,11 @@ def extract_shapes(
     return {
         "total_shapes": len(shapes_with_contours),
         "shapes": [shape for shape, _ in shapes_with_contours],
-        "normalized_features": create_normalized_geojson_features(shapes_with_contours),
-        "pixel_features": create_pixel_geojson_features(shapes_with_contours),
+        "normalized_features": create_normalized_geojson_features(
+            non_legend_shapes_with_contours
+        ),
+        "pixel_features": create_pixel_geojson_features(non_legend_shapes_with_contours),
+        "legend_pixel_features": create_pixel_geojson_features(
+            legend_shapes_with_contours
+        ),
     }
