@@ -409,7 +409,6 @@ def save_shape_image(
     shape_id: int,
     shape_type: str,
 ) -> str:
-    # Create mask and crop region
     mask = np.zeros(image.shape[:2], dtype=np.uint8)
     cv2.drawContours(mask, [contour], 0, 255, -1)
 
@@ -493,7 +492,6 @@ def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
         "solidity": shape["solidity"],
         "extent": shape["extent"],
         "num_vertices": shape["num_vertices"],
-        "rect_score": shape.get("rect_score"),
         "color_rgb": shape.get("color_rgb"),
         "color_name": shape.get("color_name"),
         "color_hex": shape.get("color_hex"),
@@ -672,7 +670,6 @@ def _write_debug_outputs(
     shapes_metadata: List[Dict],
     intermediate_images: Optional[Dict[str, np.ndarray]] = None,
 ) -> None:
-    # Save intermediate process images if provided
     if intermediate_images:
         cv2.imwrite(
             os.path.join(image_output_dir, "debug_0_original_converted.png"),
