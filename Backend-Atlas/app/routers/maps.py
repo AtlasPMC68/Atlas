@@ -17,7 +17,7 @@ from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
 from app.utils.update_feature import (
-    as_feature_collection,
+    to_feature_collection,
     normalize_feature_collection,
     serialize_db_feature,
 )
@@ -310,7 +310,7 @@ async def update_features(
                 )
 
         if db_feature:
-            new_data = as_feature_collection(feature)
+            new_data = to_feature_collection(feature)
             old_data = normalize_feature_collection(db_feature.data)
 
             if old_data != new_data:
@@ -321,7 +321,7 @@ async def update_features(
             new_feature = Feature(
                 map_id=map_id,
                 is_feature_collection=False,
-                data=as_feature_collection(feature),
+                data=to_feature_collection(feature),
             )
             session.add(new_feature)
 
