@@ -680,10 +680,10 @@ def _write_debug_outputs(
                 os.path.join(image_output_dir, "debug_1_denoised.png"),
                 intermediate_images["image_denoised"],
             )
-        if "l_channel" in intermediate_images:
+        if "lightness" in intermediate_images:
             cv2.imwrite(
-                os.path.join(image_output_dir, "debug_2_l_channel.png"),
-                intermediate_images["l_channel"],
+                os.path.join(image_output_dir, "debug_2_lightness.png"),
+                intermediate_images["lightness"],
             )
         if "l_norm" in intermediate_images:
             cv2.imwrite(

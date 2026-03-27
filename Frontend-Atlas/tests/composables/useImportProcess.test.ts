@@ -12,8 +12,11 @@ describe("useImportProcess", () => {
   });
 
   it("should return error if no file is provided", async () => {
-    const result = await composable.startImport(null as any);
+    const result = await composable.startImport(null as any, "map-123");
     expect(result.success).toBe(false);
+    if (result.success) {
+      throw new Error("Expected import to fail when file is missing");
+    }
     expect(result.error).toBe("Aucun fichier sélectionné");
   });
 
@@ -38,7 +41,7 @@ describe("useImportProcess", () => {
       }),
     });
 
-    const result = await composable.startImport(fakeFile);
+    const result = await composable.startImport(fakeFile, "map-123");
 
     await vi.advanceTimersByTimeAsync(1000);
 
@@ -57,8 +60,11 @@ describe("useImportProcess", () => {
 
     const fakeFile = new File(["dummy"], "invalid.csv");
 
-    const result = await composable.startImport(fakeFile);
+    const result = await composable.startImport(fakeFile, "map-123");
     expect(result.success).toBe(false);
+    if (result.success) {
+      throw new Error("Expected import to fail on invalid upload");
+    }
     expect(result.error).toBe("Fichier invalide");
     expect(composable.isProcessing.value).toBe(false);
   });

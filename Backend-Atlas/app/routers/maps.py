@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from json import JSONDecodeError
 from uuid import UUID
 
@@ -172,6 +173,9 @@ async def upload_and_process_map(
                 "width": float(parsed["width"]),
                 "height": float(parsed["height"]),
             }
+
+            if not all(math.isfinite(value) for value in legend_bounds_dict.values()):
+                raise ValueError("legend_bounds values must be finite numbers")
 
             if legend_bounds_dict["width"] <= 0 or legend_bounds_dict["height"] <= 0:
                 raise ValueError("legend_bounds width and height must be > 0")

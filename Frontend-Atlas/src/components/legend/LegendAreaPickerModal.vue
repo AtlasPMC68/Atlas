@@ -1,15 +1,13 @@
 <template>
-  <div
-    v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-start justify-center bg-black/60 overflow-y-auto"
-  >
-    <div
-      class="bg-base-100 rounded-lg shadow-xl max-w-5xl w-full mx-4 my-6 p-6 flex flex-col gap-4"
-    >
-      <div class="flex justify-between items-center mb-2">
-        <h2 class="text-xl font-semibold">Délimiter la légende</h2>
-        <button class="btn btn-ghost btn-sm" @click="emit('close')">✕</button>
-      </div>
+  <dialog ref="modalRef" class="modal" @close="emit('close')">
+    <div class="modal-box max-w-5xl w-full flex flex-col gap-4">
+      <form method="dialog">
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
+          ✕
+        </button>
+      </form>
+
+      <h2 class="text-xl font-semibold">Délimiter la légende</h2>
 
       <p class="text-sm text-base-content/70">
         Tracez un rectangle sur l'image pour indiquer la zone de légende. Vous
@@ -58,8 +56,10 @@
         </div>
       </div>
 
-      <div class="flex justify-end gap-2 pt-2">
-        <button class="btn btn-ghost" @click="emit('close')">Annuler</button>
+      <div class="modal-action">
+        <button class="btn btn-ghost" type="button" @click="requestClose">
+          Annuler
+        </button>
         <button class="btn btn-outline" @click="onSkip">Sauter l'étape</button>
         <button
           class="btn btn-primary"
@@ -70,11 +70,15 @@
         </button>
       </div>
     </div>
-  </div>
+
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import type { LegendBounds } from "../../typescript/legend";
 
 const props = withDefaults(
@@ -95,6 +99,8 @@ const emit = defineEmits<{
   (e: "confirmed", payload: LegendBounds): void;
 }>();
 
+const modalRef = ref<HTMLDialogElement | null>(null);
+
 const container = ref<HTMLDivElement | null>(null);
 const imageEl = ref<HTMLImageElement | null>(null);
 
@@ -104,6 +110,44 @@ const imageNaturalHeight = ref<number>(0);
 const isDrawing = ref<boolean>(false);
 const dragStart = ref<{ x: number; y: number } | null>(null);
 const legendBounds = ref<LegendBounds | null>(props.initialBounds);
+
+watch(
+  () => props.initialBounds,
+  (value) => {
+    legendBounds.value = value;
+  },
+);
+
+watch(
+  () => props.isOpen,
+  (opened) => {
+    if (opened) {
+      legendBounds.value = props.initialBounds;
+      if (modalRef.value && !modalRef.value.open) {
+        modalRef.value.showModal();
+      }
+      return;
+    }
+    if (modalRef.value?.open) {
+      modalRef.value.close();
+    }
+  },
+  { immediate: true },
+);
+
+onMounted(() => {
+  if (props.isOpen && modalRef.value && !modalRef.value.open) {
+    modalRef.value.showModal();
+  }
+});
+
+function requestClose(): void {
+  if (modalRef.value?.open) {
+    modalRef.value.close();
+    return;
+  }
+  emit("close");
+}
 
 const displayRect = computed(() => {
   if (

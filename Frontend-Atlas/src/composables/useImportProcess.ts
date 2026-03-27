@@ -2,11 +2,10 @@
 import { ref, Ref } from "vue";
 import keycloak from "../keycloak";
 import { snakeToCamel } from "../utils/utils";
+import { LegendBounds } from "../typescript/legend";
 
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
-type LegendBounds = { x: number; y: number; width: number; height: number };
-
 type ExtractionOptions = {
   enableGeoreferencing?: boolean;
   enableColorExtraction?: boolean;
