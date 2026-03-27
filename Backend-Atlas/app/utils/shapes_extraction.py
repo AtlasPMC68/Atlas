@@ -235,7 +235,6 @@ def compute_rect_score(contour: np.ndarray) -> float:
 def classify_shape(
     properties: dict,
     hough_circles: Optional[List[Tuple[int, int, int]]] = None,
-    legend_bounds: Optional[LegendBounds] = None,
 ) -> str:
     area       = properties.get("area", 0.0)
     perimeter  = properties.get("perimeter", 0.0)

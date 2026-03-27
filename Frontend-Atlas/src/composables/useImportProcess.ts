@@ -2,7 +2,7 @@
 import { ref, Ref } from "vue";
 import keycloak from "../keycloak";
 import { snakeToCamel } from "../utils/utils";
-import { LegendBounds } from "../typescript/legend";
+import type { LegendBounds } from "../typescript/legend";
 
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };

@@ -69,6 +69,44 @@ describe("useImportProcess", () => {
     expect(composable.isProcessing.value).toBe(false);
   });
 
+  it("should append legend_bounds when provided and omit it when null", async () => {
+    (fetch as any).mockResolvedValue({
+      ok: false,
+      json: async () => ({ detail: "Fichier invalide" }),
+    });
+
+    const fakeFile = new File(["dummy"], "map.png", { type: "image/png" });
+    const legendBounds = { x: 10, y: 20, width: 30, height: 40 };
+
+    await composable.startImport(
+      fakeFile,
+      "map-123",
+      undefined,
+      undefined,
+      undefined,
+      legendBounds,
+    );
+
+    const firstUploadCall = (fetch as any).mock.calls[0];
+    const firstBody = firstUploadCall[1].body as FormData;
+
+    expect(firstBody.get("legend_bounds")).toBe(JSON.stringify(legendBounds));
+
+    await composable.startImport(
+      fakeFile,
+      "map-123",
+      undefined,
+      undefined,
+      undefined,
+      null,
+    );
+
+    const secondUploadCall = (fetch as any).mock.calls[1];
+    const secondBody = secondUploadCall[1].body as FormData;
+
+    expect(secondBody.has("legend_bounds")).toBe(false);
+  });
+
   it("should cancel import correctly", () => {
     composable.isProcessing.value = true;
     composable.processingStep.value = "extraction";
