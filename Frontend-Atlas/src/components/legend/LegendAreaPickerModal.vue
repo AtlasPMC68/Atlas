@@ -42,18 +42,6 @@
             :style="selectionStyle"
           />
         </div>
-
-        <div
-          class="px-3 py-2 text-xs text-base-content/70 border-t bg-base-100"
-        >
-          <div v-if="legendBounds">
-            Légende: x {{ legendBounds.x.toFixed(1) }}, y
-            {{ legendBounds.y.toFixed(1) }}, largeur
-            {{ legendBounds.width.toFixed(1) }}, hauteur
-            {{ legendBounds.height.toFixed(1) }}
-          </div>
-          <div v-else>Aucune zone de légende sélectionnée.</div>
-        </div>
       </div>
 
       <div class="modal-action">

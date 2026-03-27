@@ -196,7 +196,6 @@ def extract_contour_properties(
     properties_dict["shape_type"] = classify_shape(
         properties_dict,
         hough_circles=hough_circles,
-        legend_bounds=legend_bounds,
     )
 
     return properties_dict
