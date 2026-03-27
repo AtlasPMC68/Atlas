@@ -51,7 +51,7 @@ def serialize_db_feature(row: Feature) -> dict | None:
 
     if row.created_at:
         feature["created_at"] = row.created_at.isoformat()
-    if row.updated_at:
+    if hasattr(row, "updated_at") and row.updated_at:
         feature["updated_at"] = row.updated_at.isoformat()
 
     return feature
