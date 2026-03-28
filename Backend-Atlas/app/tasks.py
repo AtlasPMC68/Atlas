@@ -267,28 +267,28 @@ def process_map_extraction(
                 case_dir = os.path.join(test_cases_root, map_id)
                 os.makedirs(case_dir, exist_ok=True)
 
-                # Save the original image under a stable name based on map_id
-                ext = os.path.splitext(filename)[1] or ".png"
-                image_output_path = os.path.join(maps_dir, f"{map_id}{ext}")
-
-                # Avoid duplicates in dev-test browser if extension changes across runs.
+                # Prefer an existing tracked map image if present, to avoid rewriting
+                # bytes on every test run (cv2.imwrite can change encoding/metadata).
+                existing_map_path: str | None = None
                 try:
                     for existing in os.listdir(maps_dir):
                         stem, _e = os.path.splitext(existing)
                         if stem == map_id:
-                            existing_path = os.path.join(maps_dir, existing)
-                            if os.path.abspath(existing_path) != os.path.abspath(
-                                image_output_path
-                            ):
-                                try:
-                                    os.remove(existing_path)
-                                except OSError:
-                                    pass
+                            existing_map_path = os.path.join(maps_dir, existing)
+                            break
                 except OSError:
-                    pass
+                    existing_map_path = None
 
-                # image was loaded earlier with cv2.imread
-                cv2.imwrite(image_output_path, image)
+                if existing_map_path and os.path.exists(existing_map_path):
+                    image_output_path = existing_map_path
+                    ext = os.path.splitext(existing_map_path)[1] or ".png"
+                else:
+                    # Save the original image under a stable name based on map_id
+                    ext = os.path.splitext(filename)[1] or ".png"
+                    image_output_path = os.path.join(maps_dir, f"{map_id}{ext}")
+
+                    # image was loaded earlier with cv2.imread
+                    cv2.imwrite(image_output_path, image)
 
                 # Save zones as a single FeatureCollection if available
                 all_features: list[dict[str, Any]] = []

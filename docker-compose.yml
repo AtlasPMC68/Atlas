@@ -149,6 +149,7 @@ services:
     depends_on:
       - backend
       - db
+      - redis
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
