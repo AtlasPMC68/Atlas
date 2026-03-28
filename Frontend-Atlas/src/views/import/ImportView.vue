@@ -296,7 +296,6 @@ async function startImportProcess() {
         enableShapesExtraction: enableShapesExtraction.value,
         enableTextExtraction: enableTextExtraction.value,
       },
-      //TODO: Should probably handle better the case where were in test mode and testId or testCase is null
       {
         testId: isDevTest.value ? (devTestIdFromQuery.value || undefined) : undefined,
         testCase: devTestCaseName.value ?? undefined,
@@ -381,7 +380,6 @@ watch(
   [isProcessing, resultData, mapId],
   ([processing, result, id]) => {
     if (!processing && result && id) {
-      //TODO: probably should change the redirect to a view where we see the extracted things not the test-editor
       if (isDevTest.value) {
         console.log("Import finished in test mode, redirecting to test editor with mapId:", id);
         router.push({ path: `/test-editor/${id}` });

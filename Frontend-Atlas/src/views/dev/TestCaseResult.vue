@@ -19,8 +19,6 @@
         <FeatureVisibilityControls
           :features="allFeatures"
           :feature-visibility="featureVisibility"
-          :allow-delete="false"
-          :allow-rename="false"
           @toggle-feature="toggleFeatureVisibility"
         />
       </div>
@@ -96,35 +94,35 @@
               </div>
               <div class="flex items-center justify-between">
                 <span class="text-base-content/70">{{ expected0Label }} FN area</span>
-                <span class="font-mono">{{ fmtNumber(primaryBestMatch?.falseNegativeArea) }}</span>
+                <span class="font-mono">{{ fmtRatio(primaryBestMatch?.falseNegativeArea) }}</span>
               </div>
               <div class="flex items-center justify-between">
                 <span class="text-base-content/70">{{ expected0Label }} FP area</span>
-                <span class="font-mono">{{ fmtNumber(primaryBestMatch?.falsePositiveArea) }}</span>
+                <span class="font-mono">{{ fmtRatio(primaryBestMatch?.falsePositiveArea) }}</span>
               </div>
 
               <div class="divider my-1"></div>
 
               <div class="flex items-center justify-between">
-                <span class="text-base-content/70">Mean IoU (best-match)</span>
+                <span class="text-base-content/70">Mean IoU</span>
                 <span class="font-mono">{{ fmtRatio(expectedBestSummary?.meanIou) }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-base-content/70">Mean precision (best-match)</span>
+                <span class="text-base-content/70">Mean precision</span>
                 <span class="font-mono">{{ fmtRatio(expectedBestSummary?.meanPrecision) }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-base-content/70">Mean recall (best-match)</span>
+                <span class="text-base-content/70">Mean recall</span>
                 <span class="font-mono">{{ fmtRatio(expectedBestSummary?.meanRecall) }}</span>
               </div>
 
               <div class="flex items-center justify-between">
-                <span class="text-base-content/70">Total FN area (best-match)</span>
-                <span class="font-mono">{{ fmtNumber(expectedBestSummary?.totalFalseNegativeArea) }}</span>
+                <span class="text-base-content/70">Total FN area</span>
+                <span class="font-mono">{{ fmtRatio(expectedBestSummary?.totalFalseNegativeArea) }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-base-content/70">Total FP area (best-match)</span>
-                <span class="font-mono">{{ fmtNumber(expectedBestSummary?.totalFalsePositiveArea) }}</span>
+                <span class="text-base-content/70">Total FP area</span>
+                <span class="font-mono">{{ fmtRatio(expectedBestSummary?.totalFalsePositiveArea) }}</span>
               </div>
 
               <div v-if="typeof activeReport?.pass === 'boolean'" class="mt-2">
@@ -149,14 +147,11 @@ import { useRoute, useRouter } from "vue-router";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 
-type AnyFeature = any;
-
 type DevTestReport = {
   testId?: string;
   testCaseId?: string;
   pass?: boolean;
   metrics?: any;
-  matches?: any[];
 };
 
 const route = useRoute();
@@ -165,9 +160,9 @@ const router = useRouter();
 const testId = ref<string>("");
 const testCaseId = ref<string>("");
 
-const expectedFeatures = ref<AnyFeature[]>([]);
-const extractedFeatures = ref<AnyFeature[]>([]);
-const errorFeatures = ref<AnyFeature[]>([]);
+const expectedFeatures = ref<any[]>([]);
+const extractedFeatures = ref<any[]>([]);
+const errorFeatures = ref<any[]>([]);
 
 const latestReport = ref<DevTestReport | null>(null);
 const bestReport = ref<DevTestReport | null>(null);
@@ -175,10 +170,11 @@ const isLoading = ref(false);
 const loadError = ref<string | null>(null);
 
 const mode = ref<"latest" | "best">("latest");
+let suppressModeWatch = false;
 
 // Static files under /dev-test can be aggressively cached by the browser.
 // Bump this on each reload to force-fetch the latest artifacts.
-const cacheBuster = ref<number>(Date.now());
+const cacheBuster = ref(0);
 
 const featureVisibility = ref(new Map<string, boolean>());
 
@@ -203,16 +199,14 @@ const allFeatures = computed(() => {
   return [...expectedFeatures.value, ...extractedFeatures.value, ...errorFeatures.value];
 });
 
-const metrics = computed(() => activeReport.value?.metrics ?? null);
-
 const primaryBestMatch = computed<any>(() => {
-  const m = metrics.value as any;
+  const m = activeReport.value?.metrics as any;
   const first = Array.isArray(m?.expected) ? (m.expected as any[])[0] : null;
   return first?.bestMatch ?? null;
 });
 
 const expected0Label = computed<string>(() => {
-  const m = metrics.value as any;
+  const m = activeReport.value?.metrics as any;
   const first = Array.isArray(m?.expected) ? (m.expected as any[])[0] : null;
   const exp = first?.expected;
   const idx = exp?.index;
@@ -234,7 +228,7 @@ const expected0Iou = computed<any>(() => {
 });
 
 const expectedBestSummary = computed<any>(() => {
-  const m = metrics.value as any;
+  const m = activeReport.value?.metrics as any;
   if (m?.mean) return m.mean;
 
   const ms = Array.isArray(m?.expected) ? (m.expected as any[]) : [];
@@ -294,22 +288,16 @@ function fmtRatio(val: any): string {
   return n.toFixed(3);
 }
 
-function fmtNumber(val: any): string {
-  const n = typeof val === "number" ? val : Number(val);
-  if (!Number.isFinite(n)) return "—";
-  return n.toFixed(3);
-}
-
 function normalizeZoneFeatures(
   raw: any,
   source: "expected" | "extracted",
-): AnyFeature[] {
+): any[] {
   const feats = Array.isArray(raw?.features) ? raw.features : [];
   const color = source === "expected" ? "blue" : "green";
 
   // Important: keep __sourceIndex equal to the original Feature index in the GeoJSON.
   // The backend stores extracted feature indices based on the on-disk FeatureCollection.
-  const out: AnyFeature[] = [];
+  const out: any[] = [];
 
   feats.forEach((f: any, idx: number) => {
     if (!f || f.type !== "Feature" || !f.geometry) return;
@@ -332,7 +320,7 @@ function normalizeZoneFeatures(
   return out;
 }
 
-function normalizeErrorFeatures(raw: any): AnyFeature[] {
+function normalizeErrorFeatures(raw: any): any[] {
   const feats = Array.isArray(raw?.features) ? raw.features : [];
 
   return feats
@@ -393,10 +381,10 @@ async function loadExtracted() {
 
   // Only show extracted zones that were actually selected as best matches.
   const usedIdx = new Set<number>();
-  const m = metrics.value as any;
+  const m = activeReport.value?.metrics as any;
   const ms = Array.isArray(m?.expected) ? (m.expected as any[]) : [];
-  ms.forEach((m: any) => {
-    const idx = m?.bestMatch?.extracted?.index;
+  ms.forEach((entry: any) => {
+    const idx = entry?.bestMatch?.extracted?.index;
     if (typeof idx === "number" && Number.isFinite(idx)) usedIdx.add(idx);
   });
 
@@ -457,11 +445,12 @@ async function reloadAll() {
     // Load report first (extracted filtering depends on it).
     await Promise.all([loadLatestReport(), loadBestReport()]);
     if (mode.value === "best" && !bestReport.value) {
+      suppressModeWatch = true;
       mode.value = "latest";
     }
     await Promise.all([loadExpected(), loadExtracted(), loadErrors()]);
     rebuildVisibility();
-  } catch (e: any) {
+  } catch (e: any) { 
     loadError.value = e?.message ? String(e.message) : "Erreur lors du chargement";
   } finally {
     isLoading.value = false;
@@ -475,12 +464,13 @@ function readParams() {
   testCaseId.value = typeof c === "string" ? c : "";
 }
 
-watch(
-  () => mode.value,
-  async () => {
-    await reloadAll();
-  },
-);
+watch(mode, async () => {
+  if (suppressModeWatch) {
+    suppressModeWatch = false;
+    return;
+  }
+  await reloadAll();
+});
 
 watch(
   () => route.fullPath,

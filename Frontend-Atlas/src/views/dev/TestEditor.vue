@@ -26,8 +26,7 @@
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
-          :allow-delete="true"
-          :allow-rename="true"
+          :is-dev-test-creation="true"
           @toggle-feature="toggleFeatureVisibility"
           @rename-feature="renameFeature"
           @delete-feature="deleteFeature"
@@ -268,8 +267,7 @@ async function persistZonesToBackend() {
   }
 }
 
-function startCreateMode() {
-  isCreateMode.value = true;
+function clearCreateDrawing() {
   pendingCreateGeometry.value = null;
   subGeometries.value = [];
   newZoneName.value = "";
@@ -278,14 +276,16 @@ function startCreateMode() {
   isGeoBorderMode.value = false;
 }
 
+function startCreateMode() {
+  isCreateMode.value = true;
+  clearCreateDrawing();
+}
+
 function cancelCreateMode() {
   // If nothing has been drawn, cancel silently
   if (!pendingCreateGeometry.value && subGeometries.value.length === 0) {
     isCreateMode.value = false;
-    pendingCreateGeometry.value = null;
-    subGeometries.value = [];
-    newZoneName.value = "";
-    resetCreateKey.value += 1;
+    clearCreateDrawing();
     return;
   }
 
@@ -295,10 +295,7 @@ function cancelCreateMode() {
   if (!confirmed) return;
 
   isCreateMode.value = false;
-  pendingCreateGeometry.value = null;
-  subGeometries.value = [];
-  newZoneName.value = "";
-  resetCreateKey.value += 1;
+  clearCreateDrawing();
 }
 
 function undoLastStroke() {
@@ -357,7 +354,6 @@ async function saveCreatedZone() {
 
   const id = `dev-zone-${Date.now()}`;
   const feature: Feature = {
-    // ts-expect-error partial shape depending on your Feature type
     type: "Feature",
     id,
     geometry,
@@ -372,12 +368,7 @@ async function saveCreatedZone() {
   await persistZonesToBackend();
 
   isCreateMode.value = false;
-  pendingCreateGeometry.value = null;
-  subGeometries.value = [];
-  newZoneName.value = "";
-  resetCreateKey.value += 1;
-  isFrontierMode.value = false;
-  isGeoBorderMode.value = false;
+  clearCreateDrawing();
 }
 
 function addSubzone() {

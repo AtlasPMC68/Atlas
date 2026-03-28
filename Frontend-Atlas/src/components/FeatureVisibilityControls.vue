@@ -41,7 +41,7 @@
                 </label>
                 <div class="flex items-center gap-1">
                   <button
-                    v-if="allowRename && group.type === 'zone'"
+                    v-if="isDevTestCreation && group.type === 'zone'"
                     type="button"
                     class="btn btn-ghost btn-xs"
                     @click.stop="$emit('rename-feature', feature.id)"
@@ -49,7 +49,7 @@
                     <PencilSquareIcon class="w-4 h-4" />
                   </button>
                   <button
-                    v-if="allowDelete && group.type === 'zone'"
+                    v-if="isDevTestCreation && group.type === 'zone'"
                     type="button"
                     class="btn btn-ghost btn-xs text-error"
                     @click.stop="$emit('delete-feature', feature.id)"
@@ -85,8 +85,7 @@ import { Feature } from "../typescript/feature";
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
-  allowDelete?: boolean;
-  allowRename?: boolean;
+  isDevTestCreation?: boolean;
 }>();
 
 const emit = defineEmits(["toggle-feature", "delete-feature", "rename-feature"]);
