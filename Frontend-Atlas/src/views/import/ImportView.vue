@@ -59,67 +59,90 @@
               :image-file="selectedFile"
               :image-url="previewUrl"
             />
-            
+
             <!-- Extraction Options -->
             <div
               v-if="!isDevTest"
               class="bg-base-200 rounded-lg p-4 space-y-3"
             >
               <h3 class="font-semibold text-sm mb-3">Options d'extraction</h3>
-              
+
               <!-- Georeferencing Option -->
-              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
-                <input 
-                  type="checkbox" 
-                  v-model="enableGeoreferencing" 
+              <label
+                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
+              >
+                <input
+                  type="checkbox"
+                  v-model="enableGeoreferencing"
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <div class="flex-1">
                   <div class="font-medium text-sm">Géoréférencement SIFT</div>
-                  <div class="text-xs text-base-content/60">Placer la carte dans l'espace géographique avec des points de contrôle</div>
+                  <div class="text-xs text-base-content/60">
+                    Placer la carte dans l'espace géographique avec des points
+                    de contrôle
+                  </div>
                 </div>
               </label>
-              
+
               <!-- Color Extraction -->
-              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
-                <input 
-                  type="checkbox" 
-                  v-model="enableColorExtraction" 
+              <label
+                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
+              >
+                <input
+                  type="checkbox"
+                  v-model="enableColorExtraction"
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <div class="flex-1">
-                  <div class="font-medium text-sm">Extraction des zones colorées</div>
-                  <div class="text-xs text-base-content/60">Détecter et extraire les régions par couleur (pays, territoires, etc.)</div>
+                  <div class="font-medium text-sm">
+                    Extraction des zones colorées
+                  </div>
+                  <div class="text-xs text-base-content/60">
+                    Détecter et extraire les régions par couleur (pays,
+                    territoires, etc.)
+                  </div>
                 </div>
               </label>
-              
+
               <!-- Shapes Extraction -->
-              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
-                <input 
-                  type="checkbox" 
-                  v-model="enableShapesExtraction" 
+              <label
+                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
+              >
+                <input
+                  type="checkbox"
+                  v-model="enableShapesExtraction"
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <div class="flex-1">
                   <div class="font-medium text-sm">Extraction des formes</div>
-                  <div class="text-xs text-base-content/60">Détecter les formes géométriques (cercles, rectangles, etc.)</div>
+                  <div class="text-xs text-base-content/60">
+                    Détecter les formes géométriques (cercles, rectangles, etc.)
+                  </div>
                 </div>
               </label>
-              
+
               <!-- Text Extraction -->
-              <label class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded">
-                <input 
-                  type="checkbox" 
-                  v-model="enableTextExtraction" 
+              <label
+                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
+              >
+                <input
+                  type="checkbox"
+                  v-model="enableTextExtraction"
                   class="checkbox checkbox-sm checkbox-primary"
                 />
                 <div class="flex-1">
-                  <div class="font-medium text-sm">Extraction de texte (OCR)</div>
-                  <div class="text-xs text-base-content/60">Détecter et extraire le texte de la carte (noms de lieux, légendes)</div>
+                  <div class="font-medium text-sm">
+                    Extraction de texte (OCR)
+                  </div>
+                  <div class="text-xs text-base-content/60">
+                    Détecter et extraire le texte de la carte (noms de lieux,
+                    légendes)
+                  </div>
                 </div>
               </label>
             </div>
-            
+
             <ImportControls
               @start-import="startImportProcess"
               @cancel="resetImport"
@@ -144,7 +167,12 @@
 
     <!-- SIFT-based georeferencing modal -->
     <GeoRefSiftModal
-      v-if="showSiftGeorefModal && previewUrl && worldAreaBounds && coastlineKeypoints"
+      v-if="
+        showSiftGeorefModal &&
+        previewUrl &&
+        worldAreaBounds &&
+        coastlineKeypoints
+      "
       :is-open="showSiftGeorefModal"
       :image-url="previewUrl"
       :world-bounds="worldAreaBounds"
@@ -165,8 +193,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
-import { useRouter, useRoute } from "vue-router";
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
@@ -190,6 +218,8 @@ import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.v
 const router = useRouter();
 const route = useRoute();
 const importStore = useImportStore();
+
+const routeMapId = computed(() => String(route.params.mapId)).value;
 
 type ImportMode = "user" | "dev-test";
 
@@ -288,6 +318,7 @@ async function startImportProcess() {
   if (!enableGeoreferencing.value) {
     const result = await startImport(
       selectedFile.value,
+      routeMapId,
       undefined,
       undefined,
       {
@@ -308,7 +339,7 @@ async function startImportProcess() {
     }
     return;
   }
-  
+
   // With georeferencing enabled, show world area picker
   currentStep.value = 3;
   showWorldAreaPickerModal.value = true;
@@ -355,6 +386,7 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
   // Pass matched point arrays to startImport with extraction options
   const result = await startImport(
     selectedFile.value,
+    routeMapId,
     imagePoints,
     worldPoints,
     {
@@ -376,19 +408,16 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
 }
 
 // Redirect when extraction is finished
-watch(
-  [isProcessing, resultData, mapId],
-  ([processing, result, id]) => {
-    if (!processing && result && id) {
+watch([isProcessing, resultData, mapId], ([processing, result, id]) => {
+  if (!processing && result && id) {
       if (isDevTest.value) {
         console.log("Import finished in test mode, redirecting to test editor with mapId:", id);
         router.push({ path: `/test-editor/${id}` });
       } else {
-        router.push(`/maps/${id}`);
+      router.push(`/carte/${id}`);
       }
-    }
   }
-);
+});
 
 const resetImport = () => {
   currentStep.value = 1;

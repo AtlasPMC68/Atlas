@@ -27,6 +27,9 @@ import keycloak from "../../src/keycloak";
 import { router } from "../../src/router";
 
 describe("router auth guard with Keycloak", () => {
+  const targetUploadRoute =
+    "/televersement/00000000-0000-0000-0000-000000000001";
+
   beforeEach(async () => {
     vi.clearAllMocks();
 
@@ -38,15 +41,13 @@ describe("router auth guard with Keycloak", () => {
   });
 
   it("calls keycloak.login and blocks navigation if not authenticated", async () => {
-    await router.push("/demo/upload");
+    await router.push(targetUploadRoute);
     await nextTick();
 
     expect(router.currentRoute.value.fullPath).toBe("/");
-
     expect(keycloak.login).toHaveBeenCalledOnce();
-
     expect(keycloak.login).toHaveBeenCalledWith({
-      redirectUri: expect.stringContaining("/demo/upload"),
+      redirectUri: expect.stringContaining(targetUploadRoute),
     });
   });
 
@@ -54,9 +55,9 @@ describe("router auth guard with Keycloak", () => {
     keycloak.authenticated = true;
     keycloak.token = "fake-token";
 
-    await router.push("/demo/upload");
+    await router.push(targetUploadRoute);
     await nextTick();
 
-    expect(router.currentRoute.value.fullPath).toBe("/demo/upload");
+    expect(router.currentRoute.value.fullPath).toBe(targetUploadRoute);
   });
 });

@@ -18,7 +18,6 @@ services:
       - ./Backend-Atlas/.env.dev:/app/.env.dev
     depends_on:
       - keycloak
-
   frontend:
     build:
       context: ./Frontend-Atlas
@@ -145,7 +144,7 @@ services:
   test-backend:
     build:
       context: ./Backend-Atlas
-    command: pytest tests/ -v --color=yes
+    command: pytest tests/ -v --color=yes --tb=short
     depends_on:
       - backend
       - db

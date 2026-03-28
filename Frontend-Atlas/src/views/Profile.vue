@@ -1,40 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { onMounted } from "vue";
 import { PencilSquareIcon } from "@heroicons/vue/24/solid";
 import { useRouter } from "vue-router";
-import keycloak from "../keycloak";
-import { User } from "../typescript/user";
-import { snakeToCamel } from "../utils/utils";
+import { useCurrentUser } from "../composables/useCurrentUser";
 
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
 const goToTestBrowser = () => router.push("/tests");
 
-const user = ref<User>({
-  id: "",
-  username: "",
-  email: "",
-  createdAt: "",
-});
+const { currentUser, isLoading, fetchCurrentUser } = useCurrentUser();
 
 onMounted(async () => {
-  const token = keycloak.token;
-  if (!token) return;
-
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!res.ok) throw new Error("Error fetching user data");
-    const userData: User = snakeToCamel(await res.json());
-    user.value.email = userData.email;
-    user.value.createdAt = userData.createdAt;
-    user.value.username = userData.username;
-  } catch (err) {
-    console.error(err);
-  }
+  await fetchCurrentUser();
 });
 </script>
 
@@ -46,7 +23,7 @@ onMounted(async () => {
       <div
         class="w-32 h-32 rounded-full border border-gray-300 bg-gray-100 flex items-center justify-center text-gray-400 text-4xl"
       >
-        {{ user.username.charAt(0).toUpperCase() }}
+        {{ currentUser!.username.charAt(0).toUpperCase() }}
       </div>
 
       <div class="flex-1">
@@ -54,7 +31,7 @@ onMounted(async () => {
           <div>
             <div class="flex items-center gap-2">
               <h2 class="text-2xl font-bold text-gray-900">
-                {{ user.username }}
+                {{ currentUser!.username }}
               </h2>
               <button
                 @click="goToSettings"
@@ -63,13 +40,13 @@ onMounted(async () => {
                 <PencilSquareIcon class="h-6 w-6" />
               </button>
             </div>
-            <p class="text-sm text-gray-500">{{ user.email }}</p>
+            <p class="text-sm text-gray-500">{{ currentUser!.email }}</p>
           </div>
         </div>
 
         <p class="mt-4 text-sm text-gray-400">
           Membre depuis le
-          {{ new Date(user.createdAt).toLocaleDateString("fr-CA") }}
+          {{ new Date(currentUser!.createdAt).toLocaleDateString("fr-CA") }}
         </p>
 
         <div class="mt-6">
@@ -81,9 +58,3 @@ onMounted(async () => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.btn-secondary {
-  @apply border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-100 transition;
-}
-</style>

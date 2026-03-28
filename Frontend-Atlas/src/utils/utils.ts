@@ -63,3 +63,9 @@ export function camelToSnake(obj: unknown): unknown {
   }
   return obj;
 }
+
+export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
+  if (Array.isArray(maybeArray)) return maybeArray;
+  if (maybeArray == null) return [];
+  return [maybeArray];
+}
