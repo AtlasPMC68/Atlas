@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from app.services.dev_test import build_extraction_task_args_for_case
+from app.utils.dev_test import build_extraction_task_args_for_case
 from app.utils.dev_test_evaluator import (
     build_test_case_paths,
     evaluate_georef_test_case,

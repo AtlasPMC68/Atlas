@@ -64,6 +64,7 @@ def process_map_extraction(
 ):
     # Only parse DB UUID when we will persist.
     map_uuid: UUID | None = None
+
     if not is_test:
         map_uuid = UUID(map_id)
 
@@ -252,29 +253,25 @@ def process_map_extraction(
         zones_output_path = ""
         image_url = ""
         zones_url = ""
-        if is_test:
+        if is_test and (test_case or "").strip():
             try:
                 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 
-                maps_dir = MAPS_DIR
-                test_cases_root = TEST_CASES_DIR
+                safe_case = (test_case or "").strip()
 
-                os.makedirs(maps_dir, exist_ok=True)
+                os.makedirs(MAPS_DIR, exist_ok=True)
 
-                # Save extracted zones per test case so we don't overwrite the expected zones
-                # written by the TestEditor (tests/assets/georef/georef_zones/<map_id>_zones.geojson).
-                safe_case = (test_case or "default").strip() or "default"
-                case_dir = os.path.join(test_cases_root, map_id)
+                case_dir = os.path.join(TEST_CASES_DIR, map_id)
                 os.makedirs(case_dir, exist_ok=True)
 
                 # Prefer an existing tracked map image if present, to avoid rewriting
                 # bytes on every test run (cv2.imwrite can change encoding/metadata).
                 existing_map_path: str | None = None
                 try:
-                    for existing in os.listdir(maps_dir):
+                    for existing in os.listdir(MAPS_DIR):
                         stem, _e = os.path.splitext(existing)
                         if stem == map_id:
-                            existing_map_path = os.path.join(maps_dir, existing)
+                            existing_map_path = os.path.join(MAPS_DIR, existing)
                             break
                 except OSError:
                     existing_map_path = None
@@ -285,7 +282,7 @@ def process_map_extraction(
                 else:
                     # Save the original image under a stable name based on map_id
                     ext = os.path.splitext(filename)[1] or ".png"
-                    image_output_path = os.path.join(maps_dir, f"{map_id}{ext}")
+                    image_output_path = os.path.join(MAPS_DIR, f"{map_id}{ext}")
 
                     # image was loaded earlier with cv2.imread
                     cv2.imwrite(image_output_path, image)
@@ -300,7 +297,7 @@ def process_map_extraction(
                     "type": "FeatureCollection",
                     "features": all_features,
                 }
-                # New nested layout: tests/assets/georef/test_cases/<map_id>/<case_id>/zones.geojson
+                # tests/assets/georef/test_cases/<map_id>/<case_id>/zones.geojson
                 nested_case_dir = os.path.join(case_dir, safe_case)
                 os.makedirs(nested_case_dir, exist_ok=True)
                 zones_output_path = os.path.join(nested_case_dir, "zones.geojson")
@@ -372,7 +369,9 @@ def process_map_extraction(
                 "zones_path": zones_output_path,
                 "image_url": image_url,
                 "zones_url": zones_url,
-            },
+            }
+            if is_test
+            else {},
         }
 
         logger.info(f"Map processing completed for {filename}: 0 characters extracted")

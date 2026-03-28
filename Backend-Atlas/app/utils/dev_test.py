@@ -16,6 +16,35 @@ from app.utils.dev_test_assets import (
 )
 
 
+def write_test_config(
+    parent_test_id: str,
+    test_case_id: str,
+    test_case_name: str | None,
+    original_filename: str | None,
+    img_pts: list | None,
+    world_pts: list | None,
+) -> None:
+    # tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
+    case_dir = os.path.join(TEST_CASES_DIR, parent_test_id, test_case_id)
+    os.makedirs(case_dir, exist_ok=True)
+
+    config_path = os.path.join(case_dir, "config.json")
+    config_payload = {
+        "testId": parent_test_id,
+        "testCase": test_case_name or test_case_id,
+        "testCaseId": test_case_id,
+        "updatedAt": datetime.utcnow().isoformat() + "Z",
+        "filename": original_filename,
+        "georef": {
+            "imagePoints": img_pts,
+            "worldPoints": world_pts,
+        },
+    }
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config_payload, f, indent=2, ensure_ascii=False)
+
+
 def find_test_image_path(test_id: str) -> str | None:
     if not os.path.isdir(MAPS_DIR):
         return None

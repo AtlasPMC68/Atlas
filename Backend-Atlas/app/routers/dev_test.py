@@ -3,7 +3,7 @@ import os
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
 
-from app.services.dev_test import (
+from app.utils.dev_test import (
     delete_dev_test,
     list_dev_test_cases,
     list_dev_tests,
@@ -81,6 +81,7 @@ async def list_test_cases(test_id: str):
     return list_dev_test_cases(test_id)
 
 
+# Not really used for now but would be if we wanted to trigger evaluation through frontend
 @router.post("/test-cases/{test_id}/{test_case_id}/run-evaluate")
 async def run_evaluate_dev_test_case(
     test_id: str,

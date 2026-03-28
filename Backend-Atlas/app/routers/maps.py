@@ -1,7 +1,5 @@
 import logging
-import os
 import re
-from datetime import datetime
 from uuid import UUID
 import json
 from json import JSONDecodeError
@@ -18,7 +16,7 @@ from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db
 from app.utils.sift_key_points_finder import find_coastline_keypoints
-from app.utils.dev_test_assets import TEST_CASES_DIR
+from app.utils.dev_test import write_test_config
 
 from ..celery_app import celery_app
 from ..db import get_db
@@ -58,40 +56,6 @@ async def upload_and_process_map(
         slug = slug.strip("-_")
         return slug[:80]
 
-    def _write_test_config(
-        parent_test_id: str,
-        test_case_id: str,
-        test_case_name: str | None,
-        original_filename: str | None,
-        img_pts: list | None,
-        world_pts: list | None,
-    ) -> None:
-        # New nested layout: tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
-        case_dir = os.path.join(TEST_CASES_DIR, parent_test_id, test_case_id)
-        os.makedirs(case_dir, exist_ok=True)
-
-        config_path = os.path.join(case_dir, "config.json")
-        config_payload = {
-            "testId": parent_test_id,
-            "testCase": test_case_name or test_case_id,
-            "testCaseId": test_case_id,
-            "updatedAt": datetime.utcnow().isoformat() + "Z",
-            "filename": original_filename,
-            "georef": {
-                "imagePoints": img_pts,
-                "worldPoints": world_pts,
-            },
-            "options": {
-                "enableGeoreferencing": enable_georeferencing,
-                "enableColorExtraction": enable_color_extraction,
-                "enableShapesExtraction": enable_shapes_extraction,
-                "enableTextExtraction": enable_text_extraction,
-            },
-        }
-
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config_payload, f, indent=2, ensure_ascii=False)
-
     # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
@@ -105,14 +69,7 @@ async def upload_and_process_map(
     test_case_name = test_case.strip() if isinstance(test_case, str) else ""
     test_case_id = _slugify_test_case(test_case_name) if test_case_name else ""
 
-    # TODO: Handle that better, not good
-    # Backward-compat: if only test_case is provided (older clients), treat it as the parent test id.
-    if not parent_test_id and test_case_id and not incoming_test_id:
-        parent_test_id = test_case_id
-        test_case_id = "default"
-        test_case_name = "default"
-
-    is_test_mode = bool(parent_test_id) or bool(is_test)
+    is_test_mode = bool(parent_test_id) and bool(is_test) and bool(test_case_id)
 
     pixel_points_list = None
     geo_points_list = None
@@ -162,21 +119,19 @@ async def upload_and_process_map(
             map_id_str = parent_test_id or str(uuid4())
 
             # Persist the latest anchor point config for this (testId,testCase).
-            # Only write when a test_case is provided, otherwise we can't associate a scenario.
-            if test_case_id:
-                try:
-                    _write_test_config(
-                        parent_test_id=map_id_str,
-                        test_case_id=test_case_id,
-                        test_case_name=(test_case_name or None),
-                        original_filename=file.filename,
-                        img_pts=img_pts,
-                        world_pts=world_pts,
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to write test config for {map_id_str}/{test_case_id}: {e}"
-                    )
+            try:
+                write_test_config(
+                    parent_test_id=map_id_str,
+                    test_case_id=test_case_id,
+                    test_case_name=(test_case_name or None),
+                    original_filename=file.filename,
+                    img_pts=img_pts,
+                    world_pts=world_pts,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to write test config for {map_id_str}/{test_case_id}: {e}"
+                )
 
         else:
             map_id = await create_map_in_db(
