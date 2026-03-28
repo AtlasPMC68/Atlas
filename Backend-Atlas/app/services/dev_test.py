@@ -292,9 +292,15 @@ def _parse_extraction_inputs(
     )
 
 
-def _start_extraction_for_case(
+def build_extraction_task_args_for_case(
     *, assets_root: str, test_id: str, test_case_id: str
-) -> str:
+) -> list[Any]:
+    """Build Celery task args for rerunning extraction from a saved dev-test case.
+
+    This is shared between the API run-evaluate endpoint (async delay) and
+    the pytest evaluation harness (sync Task.apply).
+    """
+
     config = _load_case_config(assets_root, test_id, test_case_id)
     image_path = find_test_image_path(test_id)
     if not image_path or not os.path.exists(image_path):
@@ -317,9 +323,7 @@ def _start_extraction_for_case(
     except Exception as e:
         raise RuntimeError(f"Failed to read test image: {e}")
 
-    from app.tasks import process_map_extraction
-
-    task = process_map_extraction.delay(
+    return [
         filename,
         file_content,
         test_id,
@@ -330,7 +334,21 @@ def _start_extraction_for_case(
         enable_text_extraction,
         True,
         test_case_id,
+    ]
+
+
+def _start_extraction_for_case(
+    *, assets_root: str, test_id: str, test_case_id: str
+) -> str:
+    args = build_extraction_task_args_for_case(
+        assets_root=assets_root,
+        test_id=test_id,
+        test_case_id=test_case_id,
     )
+
+    from app.tasks import process_map_extraction
+
+    task = process_map_extraction.delay(*args)
     return task.id
 
 

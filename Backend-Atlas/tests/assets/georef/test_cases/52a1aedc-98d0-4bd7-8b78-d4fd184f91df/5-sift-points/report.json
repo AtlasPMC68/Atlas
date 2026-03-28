@@ -1,9 +1,9 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "5-sift-points",
-  "evaluatedAt": "2026-03-25T19:05:50.563771Z",
+  "evaluatedAt": "2026-03-27T23:58:59.624340Z",
   "thresholds": {
-    "minIou": null,
+    "minIou": 0.7,
     "scoreKey": "metrics.mean.meanIou"
   },
   "metrics": {
@@ -16,30 +16,31 @@
           "area": 203.3187314685591
         },
         "bestMatch": {
-          "iou": 0.9134235876083618,
-          "intersectionArea": 187.55825291961526,
-          "unionArea": 205.33546041952275,
-          "precision": 0.9893618402013657,
-          "recall": 0.9224838831370488,
-          "falseNegativeArea": 15.760478548943885,
-          "falsePositiveArea": 2.016728950963445,
+          "iou": 0.913176933728667,
+          "intersectionArea": 187.49376022078815,
+          "unionArea": 205.32029806668146,
+          "precision": 0.9894373828013535,
+          "recall": 0.9221666831507942,
+          "falseNegativeArea": 15.824971247770925,
+          "falsePositiveArea": 2.0015665981214186,
           "extracted": {
             "index": 0,
             "id": null,
             "name": "Zone darkkhaki_1",
-            "area": 189.57498187057766
+            "area": 189.4953268189087
           }
         }
       }
     ],
     "mean": {
-      "meanIou": 0.9134235876083618,
-      "meanPrecision": 0.9893618402013657,
-      "meanRecall": 0.9224838831370488,
-      "totalFalseNegativeArea": 15.760478548943885,
-      "totalFalsePositiveArea": 2.016728950963445
+      "meanIou": 0.913176933728667,
+      "meanPrecision": 0.9894373828013535,
+      "meanRecall": 0.9221666831507942,
+      "totalFalseNegativeArea": 15.824971247770925,
+      "totalFalsePositiveArea": 2.0015665981214186
     },
-    "scoreUsed": 0.9134235876083618,
+    "scoreUsed": 0.913176933728667,
     "scoreUsedKey": "mean.meanIou"
-  }
+  },
+  "pass": true
 }

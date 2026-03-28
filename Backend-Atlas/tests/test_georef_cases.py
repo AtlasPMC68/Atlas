@@ -1,9 +1,8 @@
 import os
-import json
 
 import pytest
 
-from app.services.dev_test import find_test_image_path
+from app.services.dev_test import build_extraction_task_args_for_case
 from app.utils.dev_test_evaluator import (
     build_test_case_paths,
     evaluate_georef_test_case,
@@ -12,6 +11,8 @@ from app.utils.dev_test_evaluator import (
 )
 
 from app.tasks import process_map_extraction
+
+MIN_IOU = 0.7
 
 
 def _assets_root() -> str:
@@ -32,28 +33,12 @@ def _discover_cases(assets_root: str) -> list[tuple[str, str]]:
         if not os.path.isdir(test_dir):
             continue
 
-        # New layout: directories under test_id
         for name in os.listdir(test_dir):
             case_path = os.path.join(test_dir, name)
             if not os.path.isdir(case_path):
                 continue
             if os.path.exists(os.path.join(case_path, "config.json")):
                 discovered.append((test_id, name))
-
-    # Fallback: if no configs exist, use zones
-    if not discovered:
-        for test_id in os.listdir(cases_root):
-            test_dir = os.path.join(cases_root, test_id)
-            if not os.path.isdir(test_dir):
-                continue
-
-            # New layout fallback: zones.geojson
-            for name in os.listdir(test_dir):
-                case_path = os.path.join(test_dir, name)
-                if os.path.isdir(case_path) and os.path.exists(
-                    os.path.join(case_path, "zones.geojson")
-                ):
-                    discovered.append((test_id, name))
 
     # Stable ordering
     discovered.sort(key=lambda x: (x[0], x[1]))
@@ -73,70 +58,22 @@ def _rerun_extraction_from_config(
     if not os.path.exists(paths.config_path):
         pytest.skip(f"Missing config for {test_id}/{test_case_id}: {paths.config_path}")
 
-    image_path = find_test_image_path(test_id)
-    if not image_path or not os.path.exists(image_path):
-        pytest.skip(
-            f"Missing test image for {test_id} under {os.path.join(assets_root, 'maps')}"
+    try:
+        args = build_extraction_task_args_for_case(
+            assets_root=assets_root,
+            test_id=test_id,
+            test_case_id=test_case_id,
         )
-
-    try:
-        with open(paths.config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
+    except FileNotFoundError as e:
+        pytest.skip(str(e))
+    except ValueError as e:
+        pytest.skip(str(e))
     except Exception as e:
-        pytest.skip(f"Invalid config JSON for {test_id}/{test_case_id}: {e}")
-
-    georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
-    options = config.get("options") if isinstance(config.get("options"), dict) else {}
-
-    enable_georeferencing = bool(options.get("enableGeoreferencing", True))
-    enable_color_extraction = bool(options.get("enableColorExtraction", True))
-    enable_shapes_extraction = bool(options.get("enableShapesExtraction", False))
-    enable_text_extraction = bool(options.get("enableTextExtraction", False))
-
-    pixel_points_list = None
-    geo_points_list = None
-    if enable_georeferencing:
-        img_pts = georef.get("imagePoints")
-        world_pts = georef.get("worldPoints")
-        if (
-            isinstance(img_pts, list)
-            and isinstance(world_pts, list)
-            and len(img_pts) == len(world_pts)
-        ):
-            try:
-                pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
-                geo_points_list = [
-                    (float(p["lng"]), float(p["lat"])) for p in world_pts
-                ]
-            except Exception as e:
-                pytest.skip(f"Invalid anchor points for {test_id}/{test_case_id}: {e}")
-
-    try:
-        with open(image_path, "rb") as f:
-            file_content = f.read()
-    except Exception as e:
-        pytest.skip(f"Failed to read test image for {test_id}: {e}")
-
-    filename = config.get("filename")
-    if not isinstance(filename, str) or not filename.strip():
-        filename = os.path.basename(image_path)
+        pytest.skip(str(e))
 
     # Run the Celery task synchronously (no broker) via Task.apply.
     # Args are the same as the /maps/upload path.
-    res = process_map_extraction.apply(
-        args=[
-            filename,
-            file_content,
-            test_id,
-            pixel_points_list,
-            geo_points_list,
-            enable_color_extraction,
-            enable_shapes_extraction,
-            enable_text_extraction,
-            True,
-            test_case_id,
-        ]
-    )
+    res = process_map_extraction.apply(args=args)
 
     if res.failed():
         raise AssertionError(
@@ -163,14 +100,11 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
             f"Missing extracted zones after rerun for {test_id}/{test_case_id}: {paths.extracted_zones_path}"
         )
 
-    min_iou_raw = os.getenv("DEV_TEST_MIN_IOU")
-    min_iou = float(min_iou_raw) if min_iou_raw else None
-
     report, errors_geojson = evaluate_georef_test_case(
         assets_root,
         test_id,
         test_case_id,
-        min_iou=min_iou,
+        min_iou=MIN_IOU,
     )
 
     # Persist error overlay (false positive/negative areas) for later frontend display.
@@ -195,6 +129,5 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
     )
     assert 0.0 <= score_used <= 1.0
 
-    # Optional gating: set DEV_TEST_MIN_IOU=0.7 (for example) to enforce pass/fail
-    if min_iou is not None:
-        assert score_used >= min_iou
+    if MIN_IOU is not None:
+        assert score_used >= MIN_IOU

@@ -38,33 +38,6 @@ def _load_json(path: str) -> dict[str, Any]:
     return data
 
 
-def _feature_collection_geoms(fc: dict[str, Any]) -> list[BaseGeometry]:
-    features = fc.get("features")
-    if not isinstance(features, list):
-        return []
-
-    geoms: list[BaseGeometry] = []
-    for feat in features:
-        if not isinstance(feat, dict):
-            continue
-        geom = feat.get("geometry")
-        if not isinstance(geom, dict):
-            continue
-        try:
-            g = shape(geom)
-            if g.is_empty:
-                continue
-            g = make_valid(g)
-            if g.is_empty:
-                continue
-            geoms.append(g)
-        except Exception:
-            # Ignore malformed geometries in dev-test context
-            continue
-
-    return geoms
-
-
 def _feature_collection_geoms_with_meta(fc: dict[str, Any]) -> list[dict[str, Any]]:
     features = fc.get("features")
     if not isinstance(features, list):
@@ -290,14 +263,11 @@ def evaluate_georef_zones_from_paths(
     test_case_id: str,
     expected_zones_path: str,
     extracted_zones_path: str,
-    config_path: str | None = None,
-    report_path: str | None = None,
-    errors_geojson_path: str | None = None,
     min_iou: float | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Evaluate expected vs extracted zones given explicit file paths.
 
-    This is used for generating/backfilling artifacts (e.g. best snapshots)
+    This is used for generating artifacts
     without relying on the conventional on-disk naming.
     """
 
@@ -311,26 +281,6 @@ def evaluate_georef_zones_from_paths(
 
     expected_features = _feature_collection_geoms_with_meta(expected_fc)
     extracted_features = _feature_collection_geoms_with_meta(extracted_fc)
-
-    expected_geoms = [f["geometry"] for f in expected_features]
-    extracted_geoms = [f["geometry"] for f in extracted_features]
-
-    # Debug metrics (previous behavior): union vs union IoU
-    expected_union = _union_or_empty(expected_geoms)
-    extracted_union = _union_or_empty(extracted_geoms)
-    union_iou, union_intersection_area, union_union_area = _safe_iou(
-        expected_union, extracted_union
-    )
-
-    expected_union_area = (
-        float(expected_union.area) if not expected_union.is_empty else 0.0
-    )
-    extracted_union_area = (
-        float(extracted_union.area) if not extracted_union.is_empty else 0.0
-    )
-
-    union_precision = _safe_ratio(union_intersection_area, extracted_union_area)
-    union_recall = _safe_ratio(union_intersection_area, expected_union_area)
 
     # Best-match IoU per expected feature (compare each expected to all extracted)
     matches: list[dict[str, Any]] = []
@@ -492,9 +442,6 @@ def evaluate_georef_test_case(
         test_case_id=test_case_id,
         expected_zones_path=paths.expected_zones_path,
         extracted_zones_path=paths.extracted_zones_path,
-        config_path=paths.config_path,
-        report_path=paths.report_path,
-        errors_geojson_path=paths.errors_geojson_path,
         min_iou=min_iou,
     )
 
@@ -503,56 +450,3 @@ def write_report(report: dict[str, Any], report_path: str) -> None:
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
-
-
-def compute_errors_geojson(
-    *, expected_zones_path: str, extracted_zones_path: str
-) -> dict[str, Any]:
-    """Compute FP/FN overlay FeatureCollection for a given expected/extracted pair.
-
-    This is used for artifact generation/backfill (e.g. best snapshot) without
-    having to run a full evaluation report.
-    """
-
-    expected_fc = _load_json(expected_zones_path)
-    extracted_fc = _load_json(extracted_zones_path)
-
-    expected_features = _feature_collection_geoms_with_meta(expected_fc)
-    extracted_features = _feature_collection_geoms_with_meta(extracted_fc)
-
-    matches: list[dict[str, Any]] = []
-    for exp in expected_features:
-        exp_geom: BaseGeometry = exp["geometry"]
-        best: dict[str, Any] | None = None
-
-        for ext in extracted_features:
-            ext_geom: BaseGeometry = ext["geometry"]
-            iou, _inter_area, _uni_area = _safe_iou(exp_geom, ext_geom)
-            if best is None or iou > float(best.get("iou", 0.0)):
-                best = {
-                    "iou": iou,
-                    "extracted": {
-                        "index": ext.get("index"),
-                        "id": ext.get("id"),
-                        "name": ext.get("name"),
-                    },
-                    "geometry": ext_geom,
-                }
-
-        if best is None:
-            best = {"iou": 0.0, "extracted": None, "geometry": None}
-
-        matches.append(
-            {
-                "expected": {
-                    "index": exp.get("index"),
-                    "id": exp.get("id"),
-                    "name": exp.get("name"),
-                    "geometry": exp_geom,
-                },
-                "bestMatch": best,
-            }
-        )
-
-    errors_geojson = _errors_feature_collection(matches=matches)
-    return errors_geojson
