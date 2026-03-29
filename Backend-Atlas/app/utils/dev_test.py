@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 from typing import Any
 from uuid import uuid4
@@ -43,6 +44,16 @@ def write_test_config(
 
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config_payload, f, indent=2, ensure_ascii=False)
+
+
+def slugify_test_case(value: str) -> str:
+    # Keep this conservative: only allow simple filename-safe tokens.
+    slug = value.strip().lower()
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"[^a-z0-9_-]", "", slug)
+    slug = re.sub(r"-+", "-", slug)
+    slug = slug.strip("-_")
+    return slug[:80]
 
 
 def find_test_image_path(test_id: str) -> str | None:

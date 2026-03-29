@@ -1,5 +1,4 @@
 import logging
-import re
 from uuid import UUID
 import json
 from json import JSONDecodeError
@@ -17,7 +16,7 @@ from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
 from app.utils.sift_key_points_finder import find_coastline_keypoints
-from app.utils.dev_test import write_test_config
+from app.utils.dev_test import write_test_config, slugify_test_case
 
 from ..celery_app import celery_app
 from ..db import get_db
@@ -114,7 +113,6 @@ async def upload_and_process_map(
     enable_shapes_extraction: bool = Form(False),
     enable_text_extraction: bool = Form(False),
     map_id: str = Form(None),
-    test_id: str | None = Form(None),
     test_case: str | None = Form(None),
     is_test: bool = Form(False),
     file: UploadFile = File(...),
@@ -136,29 +134,12 @@ async def upload_and_process_map(
                 status_code=404, detail="Map not found or access denied"
             )
 
-    def _slugify_test_case(value: str) -> str:
-        # Keep this conservative: only allow simple filename-safe tokens.
-        slug = value.strip().lower()
-        slug = re.sub(r"\s+", "-", slug)
-        slug = re.sub(r"[^a-z0-9_-]", "", slug)
-        slug = re.sub(r"-+", "-", slug)
-        slug = slug.strip("-_")
-        return slug[:80]
-
     # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400,
             detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
-
-    incoming_test_id = test_id.strip() if isinstance(test_id, str) else ""
-    parent_test_id = _slugify_test_case(incoming_test_id) if incoming_test_id else ""
-
-    test_case_name = test_case.strip() if isinstance(test_case, str) else ""
-    test_case_id = _slugify_test_case(test_case_name) if test_case_name else ""
-
-    is_test_mode = bool(parent_test_id) and bool(is_test) and bool(test_case_id)
 
     pixel_points_list = None
     geo_points_list = None
@@ -204,13 +185,18 @@ async def upload_and_process_map(
         # Prefer the stable parent test id so reruns overwrite the same test map assets.
         from uuid import uuid4
 
-        if is_test_mode:
-            map_id_str = parent_test_id or str(uuid4())
+        incoming_test_id = map_id.strip() if isinstance(map_id, str) else ""
+        parent_test_id = slugify_test_case(incoming_test_id) if incoming_test_id else ""
 
+        test_case_name = test_case.strip() if isinstance(test_case, str) else ""
+        test_case_id = slugify_test_case(test_case_name) if test_case_name else ""
+
+        is_test_mode = bool(parent_test_id) and bool(is_test) and bool(test_case_id)
+        if is_test_mode:
             # Persist the latest anchor point config for this (testId,testCase).
             try:
                 write_test_config(
-                    parent_test_id=map_id_str,
+                    parent_test_id=parent_test_id,
                     test_case_id=test_case_id,
                     test_case_name=(test_case_name or None),
                     original_filename=file.filename,
@@ -219,13 +205,13 @@ async def upload_and_process_map(
                 )
             except Exception as e:
                 logger.error(
-                    f"Failed to write test config for {map_id_str}/{test_case_id}: {e}"
+                    f"Failed to write test config for {parent_test_id}/{test_case_id}: {e}"
                 )
 
         task = process_map_extraction.delay(
             file.filename,
             file_content,
-            str(map_id) if not is_test_mode else map_id_str,
+            str(map_id) if not is_test_mode else parent_test_id,
             pixel_points_list,
             geo_points_list,
             enable_color_extraction,
@@ -244,7 +230,7 @@ async def upload_and_process_map(
             "status": "processing_started",
             "message": f"Map upload successful. Processing started for {file.filename}",
             # For tests, map_id is a synthetic identifier, not a DB id.
-            "map_id": map_id_str,
+            "map_id": parent_test_id if is_test_mode else str(map_id),
         }
 
     except Exception as e:

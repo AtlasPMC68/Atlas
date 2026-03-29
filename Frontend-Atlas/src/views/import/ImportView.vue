@@ -6,11 +6,11 @@
         <h1 class="text-3xl font-bold text-base-content mb-2">
           Importer une carte
           <span
-            v-if="isDevTest && (devTestIdFromQuery || devTestCaseName)"
+            v-if="isDevTest && (routeMapId || devTestCaseName)"
             class="ml-2 text-sm font-normal text-base-content/60"
           >
-            <span v-if="devTestIdFromQuery">test: {{ devTestIdFromQuery }}</span>
-            <span v-if="devTestIdFromQuery && devTestCaseName"> · </span>
+            <span v-if="routeMapId">test: {{ routeMapId }}</span>
+            <span v-if="routeMapId && devTestCaseName"> · </span>
             <span v-if="devTestCaseName">case: {{ devTestCaseName }}</span>
           </span>
         </h1>
@@ -265,11 +265,6 @@ const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastl
 // Dev-test: stable identifier to store assets/config under backend tests/assets
 const devTestCaseName = ref<string | null>(null);
 
-const devTestIdFromQuery = computed(() => {
-  const q = route.query?.testId;
-  return typeof q === "string" ? q.trim() : "";
-});
-
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
 const enableColorExtraction = ref<boolean>(true);
@@ -290,12 +285,10 @@ async function startImportProcess() {
   }
 
   if (isDevTest.value) {
-
-    // prompt for the test case name (scenario) once.
     if (!devTestCaseName.value) {
       const entered = window.prompt(
-        devTestIdFromQuery.value
-          ? `Nom du test-case pour le test ${devTestIdFromQuery.value} (ex: '5 sift points')`
+        routeMapId
+          ? `Nom du test-case pour le test ${routeMapId} (ex: '5 sift points')`
           : "Nom du test-case (scénario, ex: '5 sift points')",
         "",
       );
@@ -303,9 +296,6 @@ async function startImportProcess() {
       if (!trimmed) return;
       devTestCaseName.value = trimmed;
     }
-  }
-
-  if (isDevTest.value) {
     // In test mode, force georeferencing and color extraction on,
     // and disable other extraction options.
     enableGeoreferencing.value = true;
@@ -327,10 +317,7 @@ async function startImportProcess() {
         enableShapesExtraction: enableShapesExtraction.value,
         enableTextExtraction: enableTextExtraction.value,
       },
-      {
-        testId: isDevTest.value ? (devTestIdFromQuery.value || undefined) : undefined,
-        testCase: devTestCaseName.value ?? undefined,
-      },
+      isDevTest.value ? (devTestCaseName.value ?? undefined) : undefined,
     );
     if (result.success) {
       currentStep.value = 5;
@@ -395,10 +382,7 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
       enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
     },
-    {
-      testId: isDevTest.value ? (devTestIdFromQuery.value || undefined) : undefined,
-      testCase: devTestCaseName.value ?? undefined,
-    },
+    isDevTest.value ? (devTestCaseName.value ?? undefined) : undefined,
   );
   if (result.success) {
     currentStep.value = 5;

@@ -17,11 +17,6 @@ type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
 
 type StartImportResult = { success: true } | { success: false; error: string };
 
-type DevTestParams = {
-  testId?: string;
-  testCase?: string;
-};
-
 interface UploadResponse {
   taskId: string | null;
   mapId: string;
@@ -50,7 +45,7 @@ export function useImportProcess() {
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
-    devTest?: DevTestParams,
+    testCase?: string | null,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -70,18 +65,10 @@ export function useImportProcess() {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
 
-    const trimmedTestId = (devTest?.testId ?? "").trim();
-    const trimmedTestCase = (devTest?.testCase ?? "").trim();
+    const trimmedTestCase = (testCase ?? "").trim();
 
-    if (trimmedTestId) {
-      formData.append("test_id", trimmedTestId);
-    }
     if (trimmedTestCase) {
       formData.append("test_case", trimmedTestCase);
-    }
-
-    // Backward-compatible flag: any dev-test fields imply test mode.
-    if (trimmedTestId || trimmedTestCase) {
       formData.append("is_test", "true");
     } else {
       formData.append("is_test", "false");

@@ -1,7 +1,7 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "5-sift-points",
-  "evaluatedAt": "2026-03-28T19:22:50.149475Z",
+  "evaluatedAt": "2026-03-29T02:03:03.952767Z",
   "thresholds": {
     "minIou": 0.7,
     "scoreKey": "metrics.mean.meanIou"
