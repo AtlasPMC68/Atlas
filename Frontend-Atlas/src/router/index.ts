@@ -21,7 +21,7 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: "/demo/upload-test/:mapId",
+    path: "/upload-test/:mapId",
     component: ImportView,
     meta: { requiresAuth: true, importMode: "dev-test" },
   },

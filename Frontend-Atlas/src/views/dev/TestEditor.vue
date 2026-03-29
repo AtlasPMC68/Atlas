@@ -399,7 +399,7 @@ onMounted(() => {
 
 function goToTestImport() {
   if (!mapId.value) return;
-  router.push({ path: `/demo/upload-test/${mapId.value}` });
+  router.push({ path: `/upload-test/${mapId.value}` });
 }
 
 function openTestCaseResult(testCaseId: string) {

@@ -19,6 +19,7 @@ from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
+from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 
 from .celery_app import celery_app
 
@@ -278,8 +279,6 @@ def process_map_extraction(
         zones_url = ""
         if is_test and (test_case or "").strip():
             try:
-                from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
-
                 safe_case = (test_case or "").strip()
 
                 os.makedirs(MAPS_DIR, exist_ok=True)
