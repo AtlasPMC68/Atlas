@@ -8,10 +8,17 @@ export interface Feature {
   updatedAt: string;
   name: string;
   opacity: number;
+  image?: string;
   strokeWidth: number;
 }
 
-export type MapElementType = "point" | "zone" | "polyline" | "arrow" | "shape";
+export type MapElementType =
+  | "point"
+  | "zone"
+  | "polyline"
+  | "arrow"
+  | "shape"
+  | "image";
 
 export type FeatureVisibilityGroup = {
   type: MapElementType;
@@ -27,6 +34,8 @@ export interface FeatureProperties {
   colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   mapElementType: MapElementType;
   shapeKind?: ShapeKind;
+  mimeType?: string;
+  bounds?: [Coordinate, Coordinate];
   startDate: string; // Format: "YYYY-MM-DD"
   endDate: string; // Format: "YYYY-MM-DD"
 }

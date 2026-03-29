@@ -1,3 +1,4 @@
+import base64
 import logging
 from uuid import UUID
 import json
@@ -28,8 +29,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
-
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+THUMBNAIL_ALLOWED_CONTENT_TYPES = {"image/png"}
+DEFAULT_IMAGE_BOUNDS = [[-8.0, -8.0], [8.0, 8.0]]
 
 @router.post("/create")
 async def create_map(
@@ -261,15 +263,26 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
 
     all_features = []
     for f in features_rows:
-        feature_data = f.data.get("features", [])
-        if feature_data:
-            feature = feature_data[0]
-            feature["id"] = str(f.id)
+        if not f.data or not isinstance(f.data, dict):
+            continue
 
-            props = feature.get("properties", {})
-            feature["start_date"] = props.get("start_date")
-            feature["end_date"] = props.get("end_date")
-            all_features.append(feature)
+        feature_data = f.data.get("features", [])
+        if not feature_data:
+            continue
+
+        feature = feature_data[0]
+        feature["id"] = str(f.id)
+
+        props = feature.get("properties", {})
+        feature["start_date"] = props.get("start_date")
+        feature["end_date"] = props.get("end_date")
+
+        if f.image:
+            feature["image"] = base64.b64encode(f.image).decode("ascii")
+            feature.setdefault("properties", {})
+            feature["properties"]["mimeType"] = props.get("mimeType", "image/png")
+
+        all_features.append(feature)
 
     return all_features
 
@@ -303,8 +316,25 @@ async def get_maps(
 
     maps = []
     for map_obj, username in rows:
-        out = MapOut.model_validate(map_obj)
-        out.username = username
+        encoded_image = (
+            base64.b64encode(map_obj.image).decode("ascii")
+            if map_obj.image
+            else None
+        )
+
+        out = MapOut(
+            id=map_obj.id,
+            user_id=map_obj.user_id,
+            username=username,
+            title=map_obj.title,
+            description=map_obj.description,
+            is_private=map_obj.is_private,
+            image=encoded_image,
+            start_date=map_obj.start_date,
+            end_date=map_obj.end_date,
+            created_at=map_obj.created_at,
+            updated_at=map_obj.updated_at,
+        )
         maps.append(out)
 
     return maps
@@ -343,3 +373,151 @@ async def get_coastline_keypoints(
     except Exception as e:
         logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{map_id}/thumbnail")
+async def upload_map_thumbnail(
+    map_id: UUID,
+    image: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if image.content_type not in THUMBNAIL_ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type. Allowed: {', '.join(sorted(THUMBNAIL_ALLOWED_CONTENT_TYPES))}",
+        )
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(Map).where(Map.id == map_id, Map.user_id == user_uuid)
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
+    content = await image.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty image")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+
+    try:
+        map_obj.image = content
+        await session.commit()
+        return {"status": "ok", "map_id": str(map_id)}
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error saving map thumbnail: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save thumbnail")
+
+
+@router.post("/{map_id}/features/image")
+async def upload_image(
+    map_id: UUID,
+    image: UploadFile = File(...),
+    bounds: str | None = Form(None),  # optionnel à l'upload
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    filename = (image.filename or "").lower()
+
+    if not filename or not any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not supported. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+    try:
+        user_id = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    map_result = await session.execute(
+        select(Map).where(Map.id == map_id, Map.user_id == user_id)
+    )
+    map_obj = map_result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
+    content = await image.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty image")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+
+    parsed_bounds = DEFAULT_IMAGE_BOUNDS
+    if bounds:
+        try:
+            raw = json.loads(bounds)
+
+            if (
+                isinstance(raw, list)
+                and len(raw) == 2
+                and isinstance(raw[0], list)
+                and isinstance(raw[1], list)
+                and len(raw[0]) == 2
+                and len(raw[1]) == 2
+            ):
+                south, west = float(raw[0][0]), float(raw[0][1])
+                north, east = float(raw[1][0]), float(raw[1][1])
+                parsed_bounds = [[south, west], [north, east]]
+
+            elif isinstance(raw, list) and len(raw) == 4:
+                west, south, east, north = map(float, raw)
+                parsed_bounds = [[south, west], [north, east]]
+            else:
+                raise ValueError("Invalid bounds format")
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid bounds. Expected [[south,west],[north,east]] or [west,south,east,north]",
+            )
+
+    center_lat = (parsed_bounds[0][0] + parsed_bounds[1][0]) / 2
+    center_lng = (parsed_bounds[0][1] + parsed_bounds[1][1]) / 2
+
+    feature_data = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "mapElementType": "image",
+                    "name": image.filename or "Image",
+                    "mimeType": image.content_type,
+                    "start_date": "1700-01-01",
+                    "end_date": "2026-01-01",
+                    "bounds": parsed_bounds,
+                    "isPlaced": bool(bounds),
+                },
+                "geometry": {"type": "Point", "coordinates": [center_lng, center_lat]},
+            }
+        ],
+    }
+
+    try:
+        feature = Feature(
+            map_id=map_id,
+            is_feature_collection=False,
+            data=feature_data,
+            image=content,
+        )
+        session.add(feature)
+        await session.commit()
+        await session.refresh(feature)
+
+        return {"map_id": str(map_id), "feature_id": str(feature.id)}
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error saving feature image: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save feature image")

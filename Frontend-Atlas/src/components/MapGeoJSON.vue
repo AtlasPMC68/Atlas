@@ -40,6 +40,7 @@ const emit = defineEmits<{
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
   (e: "draw-delete", features: Feature[]): void;
+  (e: "map-ready", map: L.Map): void;
 }>();
 
 const selectedYear = ref(1740);
@@ -58,6 +59,7 @@ const filteredFeatures = computed(() => {
 });
 
 let map: L.Map | null = null;
+let vectorRenderer: L.Canvas | null = null;
 
 const featureLayerManager = {
   layers: new Map<MapFeatureId, L.Layer>(),
@@ -326,6 +328,7 @@ function renderZones(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
+        renderer: vectorRenderer ?? undefined,
         fillColor,
         fillOpacity: 0.5,
         color: "#333",
@@ -357,6 +360,7 @@ function renderArrows(features: Feature[]) {
     const color = colorFromRgb || "#000";
 
     const line = L.polyline(latLngs, {
+      renderer: vectorRenderer ?? undefined,
       color,
       weight: feature.strokeWidth ?? 2,
       opacity: feature.opacity ?? 1,
@@ -398,6 +402,7 @@ function renderShapes(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
+        renderer: vectorRenderer ?? undefined,
         fillColor: fillColor,
         opacity: feature.opacity ?? 1,
         fillOpacity: feature.opacity ?? 0.5,
@@ -413,6 +418,30 @@ function renderShapes(features: Feature[]) {
     }
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
+  });
+}
+
+function renderImages(features: Feature[]) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!map) return;
+
+    const base64 = feature.image;
+    const mimeType = feature.properties?.mimeType || "image/png";
+
+    const bounds = feature.properties?.bounds as [[0, 0], [0, 0]] | undefined;
+
+    if (!base64 || !bounds) return;
+
+    const src = `data:${mimeType};base64,${base64}`;
+    const overlay = L.imageOverlay(src, bounds, {
+      opacity: feature.opacity ?? 1,
+      interactive: true,
+    });
+
+    attachFeatureToLayer(overlay, feature);
+    featureLayerManager.addFeatureLayer(feature.id, overlay);
   });
 }
 
@@ -441,19 +470,25 @@ function renderAllFeatures() {
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
+    image: currentFeatures.filter((f) => getMapElementType(f) === "image"),
   };
 
   renderCities(featuresByType.point);
   renderZones(featuresByType.zone);
   renderArrows([...featuresByType.arrow, ...featuresByType.polyline]);
   renderShapes(featuresByType.shape);
+  renderImages(featuresByType.image);
 
   previousFeatureIds.value = currentIds;
   emit("features-loaded", currentFeatures);
 }
 
 onMounted(() => {
-  map = L.map("map", { zoomControl: false }).setView([52.9399, -73.5491], 5);
+  map = L.map("map", { zoomControl: false, preferCanvas: true }).setView(
+    [52.9399, -73.5491],
+    5,
+  );
+  vectorRenderer = L.canvas({ padding: 0.5 });
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -466,8 +501,13 @@ onMounted(() => {
 
   drawing.initializeDrawing(map);
 
-  L.control.zoom({ position: "topright" }).addTo(map);
+  L.control
+    .scale({ position: "bottomright", metric: true, imperial: false })
+    .addTo(map);
 
+  L.control.zoom({ position: "topleft" }).addTo(map);
+
+  emit("map-ready", map);
   renderAllFeatures();
 });
 

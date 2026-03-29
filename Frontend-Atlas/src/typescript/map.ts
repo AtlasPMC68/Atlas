@@ -7,11 +7,10 @@ export interface MapData {
   isPrivate: boolean;
   createdAt: string;
   updatedAt: string;
+  image?: string;
 }
 
-export interface MapSaveAsPayload
-  extends Omit<MapData, "id" | "userId" | "createdAt" | "updatedAt"> {}
-
-export interface MapDisplay extends MapData {
-  image: string;
-}
+export interface MapSaveAsPayload extends Omit<
+  MapData,
+  "id" | "userId" | "createdAt" | "updatedAt" | "image"
+> {}

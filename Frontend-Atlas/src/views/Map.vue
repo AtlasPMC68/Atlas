@@ -1,13 +1,18 @@
 <template>
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
-      <div class="flex justify-end">
+      <div class="flex justify-end gap-4">
         <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
+        <button @click="upload(mapId)" class="btn btn-primary">
+          Ajouter une carte
+        </button>
+        <button
+          @click="addFeatureImageDialog?.showModal()"
+          class="btn btn-primary"
+        >
+          Ajouter une image
+        </button>
       </div>
-
-      <button @click="upload(mapId)" class="btn btn-primary">
-        Ajouter une carte
-      </button>
     </div>
 
     <div class="flex flex-1">
@@ -27,6 +32,7 @@
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
+          @map-ready="onMapReady"
         />
       </div>
     </div>
@@ -37,6 +43,46 @@
       @cancel="showSaveAsModal = false"
     />
   </div>
+
+  <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
+
+      <fieldset class="fieldset">
+        <input
+          ref="fileInputRef"
+          type="file"
+          class="file-input file-input-ghost"
+          accept="image/*"
+          @change="onFileChange"
+        />
+        <label class="label">Taille maximale de 10MB</label>
+      </fieldset>
+      <div class="modal-action">
+        <button
+          class="btn"
+          :disabled="isAdding"
+          @click="onCloseAddFeatureImageDialog"
+        >
+          Annuler
+        </button>
+        <button
+          class="btn btn-primary"
+          :disabled="isAdding || !selectedFile"
+          @click="onAddFeatureImage"
+        >
+          <span
+            v-if="isAdding"
+            class="loading loading-spinner loading-xs"
+          ></span>
+          <span v-else class="text-white">Ajouter</span>
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isAdding">close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
@@ -51,6 +97,8 @@ import type { MapSaveAsPayload } from "../typescript/map";
 import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
+import leafletImage from "leaflet-image";
+import type { Map as LeafletMap } from "leaflet";
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -64,6 +112,97 @@ const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
+const leafletMap = ref<LeafletMap | null>(null);
+const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
+const isAdding = ref(false);
+const selectedFile = ref<File | null>(null);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+async function onAddFeatureImage() {
+  if (!selectedFile.value || !keycloak.token) {
+    onCloseAddFeatureImageDialog();
+    throw new Error("No file selected or user not authenticated");
+  }
+
+  isAdding.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("image", selectedFile.value);
+    formData.append("map_id", mapId);
+
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/${mapId}/features/image`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${keycloak.token}` },
+        body: formData,
+      },
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP error : ${res.status}`);
+    }
+
+    await loadInitialFeatures();
+    selectedFile.value = null;
+    onCloseAddFeatureImageDialog();
+  } catch (e) {
+    console.error("Upload image failed:", e);
+  } finally {
+    isAdding.value = false;
+  }
+}
+
+function onMapReady(map: LeafletMap) {
+  leafletMap.value = map;
+}
+
+function onCloseAddFeatureImageDialog() {
+  isAdding.value = false;
+  selectedFile.value = null;
+  if (fileInputRef.value) {
+    fileInputRef.value.value = "";
+  }
+  addFeatureImageDialog.value?.close();
+}
+
+function onFileChange() {
+  const input = fileInputRef.value;
+  selectedFile.value = input?.files?.[0] ?? null;
+}
+
+async function uploadMapThumbnail(): Promise<boolean> {
+  if (!leafletMap.value || !mapId || !keycloak.token) return false;
+
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+
+  return await new Promise<boolean>((resolve) => {
+    leafletImage(leafletMap.value as LeafletMap, async (err, canvas) => {
+      if (err || !canvas) return resolve(false);
+
+      const blob = await new Promise<Blob | null>((r) =>
+        canvas.toBlob(r, "image/png"),
+      );
+      if (!blob) return resolve(false);
+
+      const formData = new FormData();
+      formData.append("image", blob);
+
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/maps/${mapId}/thumbnail`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${keycloak.token}` },
+          body: formData,
+        },
+      );
+
+      resolve(res.ok);
+    });
+  });
+}
 
 function reconcileVisibility(list: Feature[]) {
   const next = new Map(featureVisibility.value);
@@ -106,7 +245,9 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
+function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
+  uploadMapThumbnail();
+}
 
 onMounted(async () => {
   await fetchCurrentUser();
