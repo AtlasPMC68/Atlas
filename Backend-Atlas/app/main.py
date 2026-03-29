@@ -19,6 +19,7 @@ app.include_router(maps.router)
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(dev_test.router)
+# TODO: gate dev_test router and /dev-test static mount behind an ENABLE_DEV_TOOLS env var before any non-local deployment
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],

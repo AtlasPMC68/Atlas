@@ -1,6 +1,5 @@
 import argparse
 import subprocess
-import sys
 
 
 def build_pytest_k(test_id: str | None, case_id: str | None) -> str | None:

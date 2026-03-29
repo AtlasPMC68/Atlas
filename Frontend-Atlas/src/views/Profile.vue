@@ -50,7 +50,7 @@ onMounted(async () => {
         </p>
 
         <div class="mt-6">
-          <button class="btn-secondary" @click="goToTestBrowser">
+          <button class="btn btn-secondary" @click="goToTestBrowser">
             Voir tests
           </button>
         </div>

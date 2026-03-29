@@ -146,6 +146,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
+import keycloak from "../../keycloak";
 
 type DevTestReport = {
   testId?: string;
@@ -354,6 +355,7 @@ async function loadExpected() {
 
   const res = await fetch(
     `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${testId.value}`,
+    { headers: { Authorization: `Bearer ${keycloak.token}` } },
   );
 
   if (!res.ok) {
@@ -409,6 +411,7 @@ async function loadLatestReport() {
   if (!testId.value || !testCaseId.value) return;
   const res = await fetch(
     `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/report`,
+    { headers: { Authorization: `Bearer ${keycloak.token}` } },
   );
   if (!res.ok) {
     latestReport.value = null;
@@ -421,6 +424,7 @@ async function loadBestReport() {
   if (!testId.value || !testCaseId.value) return;
   const res = await fetch(
     `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/best-report`,
+    { headers: { Authorization: `Bearer ${keycloak.token}` } },
   );
   if (!res.ok) {
     bestReport.value = null;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import keycloak from "../../keycloak";
 
 interface DevTestSummary {
   mapId: string;
@@ -20,7 +21,9 @@ async function loadTests() {
   isLoading.value = true;
   loadError.value = null;
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`);
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`, {
+      headers: { Authorization: `Bearer ${keycloak.token}` },
+    });
     if (!res.ok) {
       throw new Error(`Erreur lors du chargement des tests (${res.status})`);
     }
@@ -53,6 +56,7 @@ async function deleteTest(test: DevTestSummary) {
       `${import.meta.env.VITE_API_URL}/dev-test-api/tests/${test.mapId}`,
       {
         method: "DELETE",
+        headers: { Authorization: `Bearer ${keycloak.token}` },
       },
     );
 

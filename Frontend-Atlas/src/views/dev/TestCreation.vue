@@ -62,6 +62,7 @@ import { useRouter } from "vue-router";
 import FileDropZone from "../../components/import/FileDropZone.vue";
 import ImportPreview from "../../components/import/ImportPreview.vue";
 import { useFileUpload } from "../../composables/useFileUpload";
+import keycloak from "../../keycloak";
 
 const router = useRouter();
 
@@ -98,9 +99,16 @@ async function createTest() {
       `${import.meta.env.VITE_API_URL}/dev-test-api/tests/upload`,
       {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${keycloak.token}`,
+        },
         body: formData,
       },
     );
+
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`Accès refusé (${res.status}) — vérifiez que vous êtes bien connecté.`);
+    }
 
     if (!res.ok) {
       let backendMsg = "";

@@ -115,6 +115,7 @@ import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import CreateZonePanel from "../../components/dev/CreateZonePanel.vue";
 import type { Feature } from "../../typescript/feature";
+import keycloak from "../../keycloak";
 
 const route = useRoute();
 const router = useRouter();
@@ -254,10 +255,16 @@ async function persistZonesToBackend() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
         },
         body: JSON.stringify(payload),
       },
     );
+
+    if (res.status === 401 || res.status === 403) {
+      console.error("Not authorised to persist test zones", res.status);
+      return;
+    }
 
     if (!res.ok) {
       console.error("Failed to persist test zones", res.status);
@@ -386,7 +393,7 @@ onMounted(() => {
     loadTestZones(idParam);
     loadTestCases(idParam);
   } else {
-    console.error("No mapId route param provided for TestBrowser");
+    console.error("No mapId route param provided for TestEditor");
   }
 });
 

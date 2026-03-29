@@ -53,7 +53,7 @@ def process_map_extraction(
     self,
     filename: str,
     file_content: bytes,
-    map_id: UUID,
+    map_id: str,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
     enable_color_extraction: bool = True,
@@ -66,7 +66,12 @@ def process_map_extraction(
     map_uuid: UUID | None = None
 
     if not is_test:
-        map_uuid = UUID(map_id)
+        try:
+            map_uuid = UUID(map_id)
+        except (ValueError, AttributeError) as e:
+            raise ValueError(
+                f"Invalid map_id for non-test extraction: {map_id!r}"
+            ) from e
 
     try:
         # Step 1: temp save

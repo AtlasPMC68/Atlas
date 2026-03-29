@@ -119,7 +119,23 @@ async def upload_and_process_map(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    if not is_test:
+    # Compute is_test_mode early so the ownership check uses the real guard,
+    # not the raw is_test flag which can be set without a valid test_case.
+    incoming_test_id = map_id.strip() if isinstance(map_id, str) else ""
+    parent_test_id = slugify_test_case(incoming_test_id) if incoming_test_id else ""
+    test_case_name = test_case.strip() if isinstance(test_case, str) else ""
+    test_case_id = slugify_test_case(test_case_name) if test_case_name else ""
+    is_test_mode = bool(parent_test_id) and bool(is_test) and bool(test_case_id)
+
+    # Reject ambiguous requests: caller claimed test mode but didn't supply the
+    # required fields, which would otherwise silently bypass the ownership check.
+    if is_test and not is_test_mode:
+        raise HTTPException(
+            status_code=400,
+            detail="is_test=true requires a non-empty map_id and test_case",
+        )
+
+    if not is_test_mode:
         try:
             map_id = UUID(map_id)
         except ValueError:
@@ -181,17 +197,6 @@ async def upload_and_process_map(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        # In test mode, do not create a map in the database.
-        # Prefer the stable parent test id so reruns overwrite the same test map assets.
-        from uuid import uuid4
-
-        incoming_test_id = map_id.strip() if isinstance(map_id, str) else ""
-        parent_test_id = slugify_test_case(incoming_test_id) if incoming_test_id else ""
-
-        test_case_name = test_case.strip() if isinstance(test_case, str) else ""
-        test_case_id = slugify_test_case(test_case_name) if test_case_name else ""
-
-        is_test_mode = bool(parent_test_id) and bool(is_test) and bool(test_case_id)
         if is_test_mode:
             # Persist the latest anchor point config for this (testId,testCase).
             try:

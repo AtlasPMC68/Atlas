@@ -169,8 +169,6 @@ How it works:
 - If you pass `--test-id/--case-id` (or `-k`), it appends `-k "..."` to select a subset of cases.
 - It runs in an ephemeral container (`--rm`) and uses the same bind-mounted code as the rest of the dev stack.
 
-Note: the PowerShell script is meant to be run on the host (Windows), not inside the Linux containers.
-
 ---
 
 ### ⚙️ CI/CD Pipeline & Tests
