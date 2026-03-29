@@ -7,7 +7,7 @@ import {
   PencilSquareIcon,
 } from "@heroicons/vue/24/outline";
 import { MapData } from "../typescript/map";
-import { camelToSnake, snakeToCamel } from "../utils/utils";
+import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
@@ -427,10 +427,7 @@ async function fetchMapsAndRender() {
         @click="$router.push(`/carte/${map.id}`)"
       >
         <figure>
-          <img
-            :src="`data:image/png;base64,${map.image}`"
-            class="w-full h-full"
-          />
+          <img :src="toImageSrc(map.image)" class="w-full h-full" />
         </figure>
         <div class="card-body pb-0">
           <h2 class="card-title text-sm xl:text-lg">

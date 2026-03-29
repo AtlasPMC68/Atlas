@@ -13,7 +13,7 @@ import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
-import { toArray } from "../utils/utils";
+import { toArray, toImageSrc } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 import type { MapFeatureId } from "../typescript/mapDrawing";
@@ -425,16 +425,13 @@ function renderImages(features: Feature[]) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
-    if (!map) return;
-
-    const base64 = feature.image;
-    const mimeType = feature.properties?.mimeType || "image/png";
+    if (!map || !feature.image) return;
 
     const bounds = feature.properties?.bounds as [[0, 0], [0, 0]] | undefined;
 
-    if (!base64 || !bounds) return;
+    if (!bounds) return;
 
-    const src = `data:${mimeType};base64,${base64}`;
+    const src = toImageSrc(feature.image);
     const overlay = L.imageOverlay(src, bounds, {
       opacity: feature.opacity ?? 1,
       interactive: true,

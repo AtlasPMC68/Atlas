@@ -422,7 +422,7 @@ async def upload_map_thumbnail(
 async def upload_image(
     map_id: UUID,
     image: UploadFile = File(...),
-    bounds: str | None = Form(None),  # optionnel à l'upload
+    bounds: str | None = Form(None),
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
