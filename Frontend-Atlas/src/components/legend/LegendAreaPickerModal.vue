@@ -1,8 +1,11 @@
 <template>
-  <dialog ref="modalRef" class="modal" @close="emit('close')">
+  <dialog ref="modalRef" class="modal" @close="onDialogClose">
     <div class="modal-box max-w-5xl w-full flex flex-col gap-4">
       <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
+        <button
+          value="cancel"
+          class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+        >
           ✕
         </button>
       </form>
@@ -58,10 +61,6 @@
         </button>
       </div>
     </div>
-
-    <form method="dialog" class="modal-backdrop">
-      <button>close</button>
-    </form>
   </dialog>
 </template>
 
@@ -88,6 +87,8 @@ const emit = defineEmits<{
 }>();
 
 const modalRef = ref<HTMLDialogElement | null>(null);
+
+type DialogCloseReason = "cancel" | "success" | "programmatic";
 
 const container = ref<HTMLDivElement | null>(null);
 const imageEl = ref<HTMLImageElement | null>(null);
@@ -117,7 +118,7 @@ watch(
       return;
     }
     if (modalRef.value?.open) {
-      modalRef.value.close();
+      closeDialog("programmatic");
     }
   },
   { immediate: true },
@@ -131,10 +132,15 @@ onMounted(() => {
 
 function requestClose(): void {
   if (modalRef.value?.open) {
-    modalRef.value.close();
+    closeDialog("cancel");
     return;
   }
   emit("close");
+}
+
+function closeDialog(reason: DialogCloseReason): void {
+  if (!modalRef.value?.open) return;
+  modalRef.value.close(reason);
 }
 
 const displayRect = computed(() => {
@@ -253,13 +259,26 @@ function onMouseUp(): void {
   }
 }
 
+function onDialogClose() {
+  const reason = modalRef.value?.returnValue;
+  if (reason !== "success" && reason !== "programmatic") {
+    emit("close");
+  }
+
+  if (modalRef.value) {
+    modalRef.value.returnValue = "";
+  }
+}
+
 function onSkip(): void {
   legendBounds.value = null;
+  closeDialog("success");
   emit("skip");
 }
 
 function onConfirm(): void {
   if (!legendBounds.value) return;
+  closeDialog("success");
   emit("confirmed", legendBounds.value);
 }
 </script>
