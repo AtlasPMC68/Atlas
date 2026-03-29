@@ -131,11 +131,11 @@ function renderZones(features) {
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
 
-		if (feature.id) {
-			layer.on("click", () => {
-				emit("zone-click", feature.id);
-			});
-		}
+    if (feature.id) {
+      layer.on("click", () => {
+        emit("zone-click", feature.id);
+      });
+    }
   });
 }
 
