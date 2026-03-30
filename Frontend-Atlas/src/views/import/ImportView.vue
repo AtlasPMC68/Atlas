@@ -165,6 +165,7 @@
       :image-url="previewUrl"
       :world-bounds="worldAreaBounds"
       :keypoints="coastlineKeypoints"
+      :used-lakes="usedLakes"
       @close="showSiftGeorefModal = false"
       @confirmed="handleGeorefConfirmed"
     />
@@ -261,6 +262,7 @@ const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastl
 const legendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const legendReturnStep = ref<number>(2);
+const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
 
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
@@ -310,6 +312,7 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
     // Prefer backend bounds if it returns a more precise ROI
     worldAreaBounds.value = res.data.bounds || payload.bounds;
     coastlineKeypoints.value = res.data.keypoints;
+    usedLakes.value = res.data.used_lakes || false;
 
     // Next step: SIFT-based georeferencing
     currentStep.value = 4;
@@ -407,6 +410,8 @@ const resetImport = () => {
   worldAreaZoom.value = null;
   legendBounds.value = null;
   pendingGeorefPayload.value = null;
+  coastlineKeypoints.value = null;
+  usedLakes.value = false;
   importStore.resetImport();
 };
 </script>
