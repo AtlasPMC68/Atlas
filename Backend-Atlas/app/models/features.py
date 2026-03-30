@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, JSON, func, Boolean
+from sqlalchemy import Column, DateTime, JSON, LargeBinary, func, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from ..database.base import Base
 import uuid
@@ -10,4 +10,6 @@ class Feature(Base):
     map_id = Column(UUID(as_uuid=True), nullable=False)
     is_feature_collection = Column(Boolean, nullable=False, default=False)
     data = Column(JSON, nullable=False)
+    image = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
