@@ -56,8 +56,8 @@
     </div>
   </div>
   -->
-  <div class="flex h-full min-h-0 flex-col gap-0">
-    <div class="tabs tabs-boxed mb-3 bg-base-200 gap-2">
+  <div class="flex h-screen-minus-header min-h-0 flex-col">
+    <div class="tabs tabs-boxed bg-base-200 gap-2 p-2">
       <button
         v-for="group in featureGroups"
         :key="group.type"
@@ -74,44 +74,61 @@
       </button>
     </div>
 
-    <div class="flex flex-1 flex-col gap-4">
-      <div class="text-sm font-bold">
-        {{ activeGroup.label }}
-      </div>
+    <!-- Liste des éléments avec contrôle de visibilité -->
 
-      <div class="space-y-2">
-        <div
-          v-if="activeGroup.features.length > 0"
-          v-for="feature in activeGroup.features"
-          :key="feature.id"
-          class="form-control"
-        >
-          <label class="label cursor-pointer justify-start gap-3">
-            <input
-              type="checkbox"
-              :checked="featureVisibility.get(feature.id) !== false"
-              @change="
-                $emit(
-                  'toggle-feature',
-                  feature.id,
-                  ($event.target as HTMLInputElement).checked,
-                )
-              "
-              class="checkbox checkbox-sm checkbox-primary"
-            />
-            <span class="label-text text-sm">
-              {{ feature.properties?.name || "Élément sans nom" }}
-            </span>
-          </label>
+    <div class="p-4 pt-0 flex flex-1 flex-col min-h-0">
+      <div
+        class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
+      >
+        <div class="text-sm font-bold">
+          {{ activeGroup.label }}
         </div>
-        <div v-else class="flex text-sm opacity-60">
-          Aucun élément à afficher
+        <div class="flex flex-col gap-2">
+          <div
+            v-if="activeGroup.features.length > 0"
+            v-for="feature in activeGroup.features"
+            :key="feature.id"
+            class="flex w-full flex-row items-center justify-between gap-2"
+          >
+            <label
+              class="label cursor-pointer justify-start gap-2 flex-1 min-w-0"
+            >
+              <input
+                type="checkbox"
+                :checked="featureVisibility.get(feature.id) !== false"
+                @change="
+                  $emit(
+                    'toggle-feature',
+                    feature.id,
+                    ($event.target as HTMLInputElement).checked,
+                  )
+                "
+                class="checkbox checkbox-sm checkbox-primary"
+              />
+              <span class="label-text text-sm truncate">
+                {{ feature.properties?.name || "Élément sans nom" }}
+              </span>
+            </label>
+            <div class="flex h-8 w-8 items-center gap-1 mr-1">
+              <button>
+                <PencilSquareIcon
+                  class="w-5 h-5 text-gray-500 hover:text-gray-800"
+                />
+              </button>
+              <button>
+                <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
+              </button>
+            </div>
+          </div>
+          <div v-else class="flex text-sm opacity-60">
+            Aucun élément à afficher
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="pt-2">
-      <div class="divider my-2"></div>
+    <div class="px-4 py-2">
+      <div class="divider m-0"></div>
       <div class="flex gap-2 items-center">
         <button
           @click="toggleAll(true)"
@@ -137,8 +154,10 @@ import {
   EllipsisHorizontalIcon,
   MapIcon,
   MapPinIcon,
+  PencilSquareIcon,
   PhotoIcon,
   Square2StackIcon,
+  TrashIcon,
 } from "@heroicons/vue/24/outline";
 import type {
   Feature,

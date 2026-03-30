@@ -13,7 +13,6 @@ import { toArray } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 import type { MapFeatureId } from "../typescript/mapDrawing";
-import TimelineSlider from "./TimelineSlider.vue";
 
 type LayerWithFeature = LayerWithFeatureType<Feature>;
 
@@ -341,43 +340,6 @@ function renderZones(features: Feature[]) {
   });
 }
 
-function renderArrows(features: Feature[]) {
-  const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!map || feature.geometry.type !== "LineString") return;
-
-    const latLngs = feature.geometry.coordinates.map(
-      ([lng, lat]) => [lat, lng] as L.LatLngTuple,
-    );
-
-    const colorFromRgb = getFeatureRgbColor(feature);
-    const color = colorFromRgb || "#000";
-
-    const line = L.polyline(latLngs, {
-      color,
-      weight: feature.strokeWidth ?? 2,
-      opacity: feature.opacity ?? 1,
-    });
-    attachFeatureToLayer(line, feature);
-
-    line.addTo(map);
-    line.arrowheads({
-      size: "10px",
-      frequency: "endonly",
-      fill: true,
-    });
-
-    const featureProperties = feature.properties;
-    const name = featureProperties.name || feature.name;
-    if (name) {
-      line.bindPopup(name);
-    }
-
-    featureLayerManager.addFeatureLayer(feature.id, line);
-  });
-}
-
 function renderShapes(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -434,16 +396,11 @@ function renderAllFeatures() {
   const featuresByType = {
     point: currentFeatures.filter((f) => getMapElementType(f) === "point"),
     zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
-    arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
-    polyline: currentFeatures.filter(
-      (f) => getMapElementType(f) === "polyline",
-    ),
   };
 
   renderCities(featuresByType.point);
   renderZones(featuresByType.zone);
-  renderArrows([...featuresByType.arrow, ...featuresByType.polyline]);
   renderShapes(featuresByType.shape);
 
   previousFeatureIds.value = currentIds;
