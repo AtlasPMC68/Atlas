@@ -71,7 +71,7 @@ export function layerToFeature(
   const existingType = baseFeature?.properties?.mapElementType;
 
   let geometry: Feature["geometry"] | null = null;
-  let type: MapElementType = existingType ?? "shape";
+  let inferredType: MapElementType = "zone";
   let labelText = "";
 
   if (isTextMarkerLayer(layer)) {
@@ -86,20 +86,20 @@ export function layerToFeature(
       type: "Point",
       coordinates: [latlng.lng, latlng.lat],
     };
-    type = "label";
+    inferredType = "label";
   } else if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
     const latlng = layer.getLatLng();
     geometry = {
       type: "Point",
       coordinates: [latlng.lng, latlng.lat],
     };
-    type = "point";
+    inferredType = "point";
   } else if (layer instanceof L.Circle) {
     const center = layer.getLatLng();
     const radius = layer.getRadius();
     geometry = circleToPolygon(center, radius);
 
-    type = existingType === "shape" ? "shape" : "zone";
+    inferredType = "shape";
   } else if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
     const latlngs = layer.getLatLngs();
     geometry = {
@@ -108,7 +108,7 @@ export function layerToFeature(
         (ll) => [ll.lng, ll.lat] as [number, number],
       ),
     };
-    type = "polyline";
+    inferredType = "polyline";
   } else if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
     const latlngs = layer.getLatLngs() as unknown;
 
@@ -117,13 +117,11 @@ export function layerToFeature(
         type: "Polygon",
         coordinates: [closeRing(latlngs.map(toCoord))],
       };
-      type = existingType === "shape" ? "shape" : "zone";
     } else if (isLatLngArrayArray(latlngs)) {
       geometry = {
         type: "Polygon",
         coordinates: latlngs.map((ring) => closeRing(ring.map(toCoord))),
       };
-      type = existingType === "shape" ? "shape" : "zone";
     } else if (isLatLngArrayArrayArray(latlngs)) {
       geometry = {
         type: "MultiPolygon",
@@ -131,11 +129,17 @@ export function layerToFeature(
           polygon.map((ring) => closeRing(ring.map(toCoord))),
         ),
       };
-      type = existingType === "shape" ? "shape" : "zone";
+    }
+    if (layer instanceof L.Rectangle) {
+      inferredType = "shape";
+    } else if (layer instanceof L.Polygon) {
+      inferredType = "zone";
     }
   }
 
   if (!geometry) return null;
+
+  const type: MapElementType = existingType ?? inferredType;
 
   const now = new Date().toISOString();
 
