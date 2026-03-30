@@ -22,6 +22,7 @@ from ..celery_app import celery_app
 from ..db import get_db
 from ..tasks import process_map_extraction
 from ..utils.auth import get_user_from_token, get_current_user_id
+from ..utils.maps import default_bounds_from_image
 
 router = APIRouter()
 
@@ -31,7 +32,6 @@ router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
-DEFAULT_IMAGE_BOUNDS = [[-8.0, -8.0], [8.0, 8.0]]
 
 @router.post("/create")
 async def create_map(
@@ -455,7 +455,7 @@ async def upload_image(
             detail=f"Image too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
 
-    parsed_bounds = DEFAULT_IMAGE_BOUNDS
+    parsed_bounds = default_bounds_from_image(content)
     if bounds:
         try:
             raw = json.loads(bounds)
