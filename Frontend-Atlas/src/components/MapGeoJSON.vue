@@ -478,6 +478,38 @@ function renderArrows(features: Feature[]) {
   });
 }
 
+function renderPolylines(features: Feature[]) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!map || feature.geometry.type !== "LineString") return;
+
+    const latLngs = feature.geometry.coordinates.map(
+      ([lng, lat]) => [lat, lng] as L.LatLngTuple,
+    );
+
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+
+    const line = L.polyline(latLngs, {
+      color: strokeColor,
+      weight: feature.properties.strokeWidth ?? 2,
+      opacity: feature.properties.strokeOpacity ?? 1,
+    });
+
+    attachFeatureToLayer(line, feature);
+    bindRenderedFeatureEvents(line, applyLayerUpdate);
+
+    const featureProperties = feature.properties;
+    const name = featureProperties.name || feature.name;
+    if (name) {
+      line.bindPopup(name);
+    }
+
+    featureLayerManager.addFeatureLayer(feature.id, line);
+  });
+}
+
 function renderShapes(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -548,7 +580,8 @@ function renderAllFeatures() {
   renderCities(featuresByType.point);
   renderLabels(featuresByType.label);
   renderZones(featuresByType.zone);
-  renderArrows([...featuresByType.arrow, ...featuresByType.polyline]);
+  renderArrows(featuresByType.arrow);
+  renderPolylines(featuresByType.polyline);
   renderShapes(featuresByType.shape);
 
   previousFeatureIds.value = currentIds;
