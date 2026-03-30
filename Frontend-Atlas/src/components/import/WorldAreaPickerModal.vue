@@ -129,13 +129,33 @@ async function initMap(): Promise<void> {
 
   // Load a lightweight basemap layer for context.
   // Served from Frontend-Atlas/public/geojson/
+  // Load both coastline and lakes for better visual detail
   try {
-    const res = await fetch("/geojson/ne_coastline.geojson");
-    if (!res.ok) throw new Error(`Failed to load coastline geojson: ${res.status}`);
-    const geojson = await res.json();
+    const [coastlineRes, lakesRes] = await Promise.all([
+      fetch("/geojson/ne_coastline.geojson"),
+      fetch("/geojson/ne_50m_lakes.geojson"),
+    ]);
 
-    landLayer = L.geoJSON(geojson, {
+    if (!coastlineRes.ok) throw new Error(`Failed to load coastline geojson: ${coastlineRes.status}`);
+    if (!lakesRes.ok) throw new Error(`Failed to load lakes geojson: ${lakesRes.status}`);
+
+    const [coastlineGeoJSON, lakesGeoJSON] = await Promise.all([
+      coastlineRes.json(),
+      lakesRes.json(),
+    ]);
+
+    // Combine features from both GeoJSON files
+    const combinedGeoJSON = {
+      type: "FeatureCollection",
+      features: [
+        ...(coastlineGeoJSON.features || []),
+        ...(lakesGeoJSON.features || []),
+      ],
+    };
+
+    landLayer = L.geoJSON(combinedGeoJSON, {
       // Coastlines are typically LineString/MultiLineString; land is Polygon/MultiPolygon.
+      // Lakes are also Polygon/MultiPolygon.
       // Style both in a way that's visible on the blue ocean background.
       style: (feature) => {
         const type = feature?.geometry?.type;
@@ -185,7 +205,7 @@ async function initMap(): Promise<void> {
       }
     }
   } catch (e) {
-    console.error("Failed to load Natural Earth land layer", e);
+    console.error("Failed to load Natural Earth land/lakes layers", e);
   }
 
   // Restore previous selection if provided

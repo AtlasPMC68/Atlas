@@ -6,9 +6,10 @@ import numpy as np
 import imageio.v3 as iio
 
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
-from skimage.morphology import opening, disk
+from skimage.morphology import opening, binary_closing, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
+from scipy.ndimage import binary_fill_holes
 from matplotlib import colors as mcolors
 
 from shapely.geometry import Polygon
@@ -127,6 +128,7 @@ def dominant_bins_lab(
     return dom
 
 
+
 def lab_center_to_rgb_u8(
     lab_center: Tuple[float, float, float],
 ) -> Tuple[int, int, int]:
@@ -213,6 +215,12 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
     merged = unary_union(polygons)
     return merged
 
+# Used to not have crazy amount of vertices so it is not too nasty looking
+def simplify_geometry(geometry: BaseGeometry, tolerance: float = 0.5) -> BaseGeometry:
+    if tolerance > 0 and geometry is not None:
+        return geometry.simplify(tolerance, preserve_topology=True)
+    return geometry
+
 
 def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
     """From pixel-space polygons, build GeoJSON feature and write it to disk.
@@ -296,12 +304,14 @@ def extract_colors(
     bin_b: float = 8.0,
     deltaE_threshold: float = 10.0,
     opening_radius: int = 1,
+    closing_radius: int = 3,
+    simplify_tolerance: float = 0.5,
 ) -> Dict:
     """
     Extract dominant color layers using LAB binning + ΔE masks.
-
-
-    Returns a dict with detected colors, mask paths, ratios, and normalized_features.
+    
+    Returns:
+        Dict with detected colors, mask paths, ratios, and normalized_features.
     """
     rgb, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
     lab = compute_lab(rgb)
@@ -311,7 +321,7 @@ def extract_colors(
     image_output_dir = os.path.join(output_dir, base_name)
     os.makedirs(image_output_dir, exist_ok=True)
 
-    # Dominant LAB bins (computed on opaque pixels; you can also exclude text if desired)
+    # Dominant LAB bins (computed on opaque pixels)
     dom = dominant_bins_lab(
         lab, opaque_mask, top_n=top_n, bin_L=bin_L, bin_a=bin_a, bin_b=bin_b
     )
@@ -336,9 +346,16 @@ def extract_colors(
 
         mask = (dE <= deltaE_threshold) & opaque_mask
 
-        # Clean small noise
+        # 1. Opening: Remove small noise/speckles
         if opening_radius > 0:
             mask = opening(mask, disk(opening_radius))
+        
+        # 2. Closing: Bridge small gaps (useful for connecting fragmented regions)
+        if closing_radius > 0:
+            mask = binary_closing(mask, disk(closing_radius))
+        
+        # 3. Fill holes: Remove interior holes (text, small waters, etc.)
+        mask = binary_fill_holes(mask)
 
         # Name the layer based on approximate RGB -> nearest CSS name
         rgb_u8 = lab_center_to_rgb_u8(lab_center)
@@ -357,6 +374,9 @@ def extract_colors(
         # Convert mask to geometry first (like the old RGB version did with pixel_polygons)
         geometry = mask_to_geometry(mask)
         if geometry:
+
+            geometry = simplify_geometry(geometry, simplify_tolerance)
+            
             # build_features expects a list of polygons, so wrap the geometry in a list
             pixel_feature = build_feature(unique_color_name, rgb_u8, geometry)
             pixel_features.append(
