@@ -138,8 +138,6 @@ def load_land_mask_from_coastline_and_ocean_points(
     )
 
 
-ClipZoneResult = Tuple[Optional[BaseGeometry], Optional[str], float, float]
-
 # Keep only polygonal parts (Polygon/MultiPolygon) from any geometry output.
 def extract_polygonal_geometry(candidate_geom: Optional[BaseGeometry]) -> Optional[BaseGeometry]:
     if candidate_geom is None or candidate_geom.is_empty:
@@ -192,10 +190,10 @@ def clip_zone_to_land_mask(
     zone_geom_3857: BaseGeometry,
     land_mask_3857: BaseGeometry,
     land_coverage_threshold: float = 0.01,
-) -> ClipZoneResult:
+) -> Optional[BaseGeometry]:
     
     if zone_geom_3857 is None or zone_geom_3857.is_empty:
-        return None, "empty_input", 0.0, 100.0
+        return None
 
     original_area = float(zone_geom_3857.area)
 
@@ -205,7 +203,7 @@ def clip_zone_to_land_mask(
     )
     if not is_valid:
         logger.error("Input geometry is invalid and cannot be clipped; skipping.")
-        return None, "invalid_input_geometry", 0.0, 100.0
+        return None
 
     zone_geom_3857 = validated_geom
     clipped_geom = None
@@ -230,7 +228,7 @@ def clip_zone_to_land_mask(
 
     if clipped_geom is None or clipped_geom.is_empty:
         logger.warning("Clipping to land produced no geometry; result would be 100%% ocean. Skipping.")
-        return None, "entirely_in_ocean", 0.0, 100.0
+        return None
 
     # Validate and repair clipped geometry
     clipped_geom, is_valid = validate_and_repair_geometry(
@@ -238,26 +236,19 @@ def clip_zone_to_land_mask(
     )
     if not is_valid:
         logger.warning("Clipped geometry is invalid and unrepairable. Skipping.")
-        return None, "invalid_clipped_geometry", 0.0, 100.0
+        return None
 
     # Frontend only renders Polygon/MultiPolygon zones, so discard non-polygon leftovers.
     clipped_geom = extract_polygonal_geometry(clipped_geom)
     if clipped_geom is None or clipped_geom.is_empty:
         logger.warning("Clipping result has no polygonal geometry to render; skipping.")
-        return None, "non_polygon_clipped_geometry", 0.0, 100.0
+        return None
 
-    # Check ocean coverage: only keep if clipped area > threshold
+    # Check minimum land coverage threshold
     clipped_area = float(clipped_geom.area)
-    land_percentage = (clipped_area / original_area) * 100.0 if original_area > 0 else 0.0
-    ocean_percentage = 100.0 - land_percentage
+    land_ratio = (clipped_area / original_area) if original_area > 0 else 0.0
+    if land_ratio < land_coverage_threshold:
+        logger.warning("Clipped geometry is below minimum land coverage threshold. Skipping.")
+        return None
 
-    if land_percentage < (land_coverage_threshold * 100.0):
-        logger.warning(
-            "%.1f%% in ocean, %.1f%% on land. Threshold is %.0f%% land minimum. Skipping.",
-            ocean_percentage,
-            land_percentage,
-            land_coverage_threshold * 100.0,
-        )
-        return None, "excessive_ocean_coverage", land_percentage, ocean_percentage
-
-    return clipped_geom, None, land_percentage, ocean_percentage
+    return clipped_geom

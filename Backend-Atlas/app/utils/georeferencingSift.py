@@ -352,7 +352,7 @@ def georeference_features_with_sift_points(
     geo_points_lonlat: List[LonLat],
     snap_to_coastline: bool = True,
     clip_to_land_mask: bool = True,
-    land_coverage_threshold: float = 0.10,
+    land_coverage_threshold: float = 0.01,
     coastline_snap_ratio_of_diagonal: float = 0.01,
     coastline_snap_tolerance_px: Optional[float] = None,
 ) -> List[JSONDict]:
@@ -512,7 +512,7 @@ def georeference_features_with_sift_points(
                     total_snapped_points += snapped_pts
 
                 if clip_to_land_mask and land_mask_3857 is not None:
-                    clipped_geom, skip_reason, land_percentage, ocean_percentage = clip_zone_to_land_mask(
+                    clipped_geom = clip_zone_to_land_mask(
                         geom_3857,
                         land_mask_3857,
                         land_coverage_threshold=land_coverage_threshold,
@@ -521,9 +521,6 @@ def georeference_features_with_sift_points(
                         continue
 
                     geom_3857 = clipped_geom
-                    props["land_percentage"] = round(land_percentage, 2)
-                    props["ocean_percentage"] = round(ocean_percentage, 2)
-                    props["ocean_clip_applied"] = True
 
                 try:
                     # Convert WebMercator -> WGS84 (after optional snapping)
