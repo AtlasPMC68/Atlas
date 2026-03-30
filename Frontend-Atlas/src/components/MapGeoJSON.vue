@@ -1,8 +1,5 @@
 <template>
-  <div class="relative h-full w-full z-0">
-    <div id="map" style="height: 80vh; width: 100%"></div>
-    <TimelineSlider v-model:year="selectedYear" />
-  </div>
+  <div id="map" class="relative z-0 h-full w-full"></div>
 </template>
 
 <script setup lang="ts">
@@ -10,13 +7,13 @@ import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
-import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
 import { toArray } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 import type { MapFeatureId } from "../typescript/mapDrawing";
+import TimelineSlider from "./TimelineSlider.vue";
 
 type LayerWithFeature = LayerWithFeatureType<Feature>;
 
@@ -33,6 +30,7 @@ interface GeoJsonFeatureCollectionWithGeometry {
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  selectedYear: number;
 }>();
 
 const emit = defineEmits<{

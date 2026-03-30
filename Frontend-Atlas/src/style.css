@@ -9,6 +9,12 @@
 }
 
 @layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
   html {
     font-family: "Inter", system-ui, sans-serif;
     scroll-behavior: smooth;

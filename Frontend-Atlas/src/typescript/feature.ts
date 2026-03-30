@@ -11,7 +11,7 @@ export interface Feature {
   strokeWidth: number;
 }
 
-export type MapElementType = "point" | "zone" | "polyline" | "arrow" | "shape";
+export type MapElementType = "point" | "zone" | "shape" | "other" | "image";
 
 export type FeatureVisibilityGroup = {
   type: MapElementType;

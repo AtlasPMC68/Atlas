@@ -1,17 +1,7 @@
 <template>
-  <div class="min-h-screen w-full bg-base-100 flex flex-col">
-    <div class="navbar bg-base-100 shadow-lg">
-      <div class="flex justify-end">
-        <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
-      </div>
-
-      <button @click="upload(mapId)" class="btn btn-primary">
-        Ajouter une carte
-      </button>
-    </div>
-
-    <div class="flex flex-1">
-      <div class="w-80 bg-base-200 border-r border-base-300 p-4">
+  <div class="h-full w-full bg-base-100 flex flex-col">
+    <div class="flex flex-1 min-h-0">
+      <div class="w-80 bg-base-200 border-r border-base-300 p-4 min-h-0">
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
@@ -19,15 +9,21 @@
         />
       </div>
 
-      <div class="flex-1">
-        <MapGeoJSON
-          :features="features"
-          :feature-visibility="featureVisibility"
-          @features-loaded="handleFeaturesLoaded"
-          @draw-create="handleDrawChange"
-          @draw-update="handleDrawChange"
-          @draw-delete="handleDrawChange"
-        />
+      <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0">
+          <MapGeoJSON
+            class="h-full w-full"
+            :features="features"
+            :feature-visibility="featureVisibility"
+            :selected-year="selectedYear"
+            @features-loaded="handleFeaturesLoaded"
+            @draw-create="handleDrawChange"
+            @draw-update="handleDrawChange"
+            @draw-delete="handleDrawChange"
+          />
+        </div>
+
+        <TimelineSlider v-model:year="selectedYear" />
       </div>
     </div>
 
@@ -43,7 +39,7 @@
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
-import SaveDropdown from "../components/save/Dropdown.vue";
+import TimelineSlider from "../components/TimelineSlider.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
@@ -63,6 +59,7 @@ const mapId = ref(route.params.mapId as string).value;
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
+const selectedYear = ref(1740);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 
 function reconcileVisibility(list: Feature[]) {
