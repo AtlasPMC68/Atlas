@@ -1,5 +1,5 @@
 import L from "leaflet";
-import { getFeatureRgbColor, colorRgbToCss } from "./featureHelpers";
+import { colorRgbToCss } from "./featureHelpers";
 import type {
   Coordinate,
   Feature,
@@ -149,7 +149,7 @@ export function layerToFeature(
       labelText,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
-      strokeColor: baseFeature?.properties?.strokeColor ?? "#000000",
+      strokeColor: baseFeature?.properties?.strokeColor ?? baseFeature?.properties?.colorRgb,
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
@@ -168,14 +168,14 @@ export function featureToLayer(feature: Feature): L.Layer | null {
 
   if (!geom) return null;
 
-  const colorFromRgb = getFeatureRgbColor(feature);
-  const cssColor = colorRgbToCss(colorFromRgb);
+  const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+  const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
   const style = {
     weight: feature.properties.strokeWidth || 2,
-    fillColor: cssColor || "#000000",
+    fillColor: fillColor,
     fillOpacity: feature.opacity || 0.5,
-    strokeColor: feature.properties.strokeColor || "#000000",
+    strokeColor: strokeColor,
     strokeWidth: feature.properties.strokeWidth || 2,
     strokeOpacity: feature.properties.strokeOpacity ?? 0.5,
   };

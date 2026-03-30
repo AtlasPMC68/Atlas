@@ -33,7 +33,7 @@ export interface FeatureProperties {
   labelText?: string;
   colorName: string;
   colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
-  strokeColor: string;
+  strokeColor?: [number, number, number];
   strokeWidth: number;
   strokeOpacity: number;
   mapElementType: MapElementType;

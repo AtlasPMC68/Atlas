@@ -357,7 +357,6 @@ async def delete_feature(
     db_feature = None
 
     try:
-        feature_id = UUID(feature_id_str)
         result = await session.execute(
             select(Feature).where(
                 Feature.id == feature_id,

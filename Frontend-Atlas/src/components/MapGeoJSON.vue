@@ -14,7 +14,7 @@ import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
-import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
+import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
 import {
   extractFeatureFromLayer,
   syncFeaturesFromLayerMap,
@@ -238,12 +238,13 @@ function renderCities(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
-    const colorFromRgb = getFeatureRgbColor(feature);
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: colorFromRgb || "#000000",
-      color: feature.properties.strokeColor || colorFromRgb || "#000000",
+      fillColor: fillColor,
+      color: strokeColor,
       weight: feature.properties.strokeWidth ?? 1,
       opacity: feature.properties.strokeOpacity ?? 1,
       fillOpacity: feature.opacity ?? 0.5,
@@ -435,14 +436,14 @@ function renderZones(features: Feature[]) {
     }
 
     const featureProperties = feature.properties;
-    const colorFromRgb = getFeatureRgbColor(feature);
-    const fillColor = colorFromRgb || "#ccc";
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
         fillColor: fillColor,
         fillOpacity: 0.5,
-        color: featureProperties.strokeColor || "#000000",
+        color: strokeColor || fillColor,
         weight: featureProperties.strokeWidth || 1,
         opacity: featureProperties.strokeOpacity ?? 1,
       },
@@ -468,10 +469,11 @@ function renderArrows(features: Feature[]) {
       ([lng, lat]) => [lat, lng] as L.LatLngTuple,
     );
 
-    const colorFromRgb = getFeatureRgbColor(feature);
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
-      color: feature.properties.strokeColor || colorFromRgb || "#000000",
+      color: strokeColor,
       weight: feature.properties.strokeWidth ?? 2,
       opacity: feature.properties.strokeOpacity ?? 1,
     });
@@ -507,15 +509,16 @@ function renderShapes(features: Feature[]) {
     }
 
     const featureProperties = feature.properties;
-    const colorFromRgb = getFeatureRgbColor(feature);
-    const fillColor = colorFromRgb || "#ccc";
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
         fillColor: fillColor,
         opacity: feature.properties.strokeOpacity ?? 1,
         fillOpacity: feature.properties.strokeOpacity ?? 1,
-        color: feature.properties.strokeColor || "#000000",
+        color: strokeColor,
         weight: feature.properties.strokeWidth || 1,
       },
     });

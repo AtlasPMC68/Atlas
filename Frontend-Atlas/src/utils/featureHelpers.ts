@@ -1,6 +1,4 @@
 import type {
-  Feature,
-  FeatureProperties,
   MapElementType,
 } from "../typescript/feature";
 
@@ -21,14 +19,4 @@ function isValidRgbTuple(value: unknown): value is [number, number, number] {
 export function colorRgbToCss(rgb: unknown): string | null {
   if (!isValidRgbTuple(rgb)) return null;
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-}
-
-export function getFeatureRgbColor(
-  featureOrProperties: Pick<Feature, "properties"> | FeatureProperties,
-): string | null {
-  const properties = "properties" in featureOrProperties
-    ? featureOrProperties.properties
-    : featureOrProperties;
-
-  return colorRgbToCss(properties?.colorRgb);
 }
