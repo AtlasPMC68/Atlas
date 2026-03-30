@@ -1,6 +1,6 @@
 import type { Ref } from "vue";
 import type L from "leaflet";
-import { Feature } from "./feature";
+import type { Feature } from "./feature";
 
 export type MapLayersProps = {
   featureVisibility: Ref<Map<string | number, boolean>>;
@@ -40,4 +40,9 @@ export type LayerWithFeature<TFeature> = L.Layer & {
 
 export type LayerWithFeatureRuntime = LayerWithFeature<Feature> & {
   _tmpFeatureId?: string;
+};
+
+export type AtlasRuntimeLayer = LayerWithFeatureRuntime & {
+  __atlasFeatureEventsBound?: boolean;
+  __atlasApplyingSync?: boolean;
 };

@@ -10,8 +10,6 @@ import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
-import "leaflet-geometryutil";
-import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
@@ -19,8 +17,18 @@ import {
   extractFeatureFromLayer,
   syncFeaturesFromLayerMap,
 } from "../utils/mapDrawingFeature";
+import {
+  attachFeatureToLayer,
+  bindRenderedFeatureEvents,
+} from "../utils/mapLayersFeature";
 import { toArray } from "../utils/utils";
-import type { Coordinate, Feature, Geometry, FeatureId } from "../typescript/feature";
+import type {
+  Coordinate,
+  Feature,
+  Geometry,
+  FeatureId,
+} from "../typescript/feature";
+import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -48,20 +56,6 @@ const emit = defineEmits<{
 const selectedYear = ref(1740);
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
-
-function setFeatureOnLayer(layer: L.Layer, feature: Feature) {
-  Reflect.set(layer, "feature", feature);
-}
-
-function forEachChildLayer(
-  layer: L.Layer,
-  callback: (childLayer: L.Layer) => void,
-) {
-  const eachLayer = Reflect.get(layer, "eachLayer");
-  if (typeof eachLayer !== "function") return;
-
-  eachLayer.call(layer, callback);
-}
 
 function getYearSafeUTC(dateText: string): number {
   return new Date(dateText).getUTCFullYear();
@@ -130,33 +124,23 @@ function upsertFeature(features: Feature[], feature: Feature): Feature[] {
 }
 
 function applyLayerUpdate(layer: L.Layer) {
-  const extracted = extractFeatureFromLayer(layer, selectedYear.value);
-  if (!extracted) return;
+  const runtimeLayer = layer as AtlasRuntimeLayer;
 
-  const next = upsertFeature(localFeaturesSnapshot.value, extracted);
-  localFeaturesSnapshot.value = next;
-  emit("draw-update", next);
-}
+  if (runtimeLayer.__atlasApplyingSync) return;
+  runtimeLayer.__atlasApplyingSync = true;
 
-function bindRenderedLabelEvents(layer: L.Layer) {
-  const textLayer = layer as L.Layer & {
-    __atlasTextEventsBound?: boolean;
-  };
+  try {
+    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    if (!extracted) return;
 
-  if (textLayer.__atlasTextEventsBound) return;
-  textLayer.__atlasTextEventsBound = true;
+    attachFeatureToLayer(layer, extracted);
 
-  layer.on("pm:dragend", () => {
-    applyLayerUpdate(layer);
-  });
-
-  layer.on("pm:change", () => {
-    applyLayerUpdate(layer);
-  });
-
-  layer.on("pm:textblur", () => {
-    applyLayerUpdate(layer);
-  });
+    const next = upsertFeature(localFeaturesSnapshot.value, extracted);
+    localFeaturesSnapshot.value = next;
+    emit("draw-update", next);
+  } finally {
+    runtimeLayer.__atlasApplyingSync = false;
+  }
 }
 
 function syncFeaturesFromMapLayers(): Feature[] {
@@ -221,14 +205,6 @@ const drawing = useMapDrawing((event, ...args) => {
   }
 });
 
-function attachFeatureToLayer(layer: L.Layer, feature: Feature) {
-  setFeatureOnLayer(layer, feature);
-
-  forEachChildLayer(layer, (childLayer) => {
-    setFeatureOnLayer(childLayer, feature);
-  });
-}
-
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -262,6 +238,8 @@ function renderCities(features: Feature[]) {
     });
 
     attachFeatureToLayer(point, feature);
+    bindRenderedFeatureEvents(point, applyLayerUpdate);
+
     attachFeatureToLayer(label, feature);
 
     const layerGroup = L.layerGroup([point, label]);
@@ -297,7 +275,7 @@ function renderLabels(features: Feature[]) {
     textMarker.options.textMarker = true;
 
     attachFeatureToLayer(label, feature);
-    bindRenderedLabelEvents(label);
+    bindRenderedFeatureEvents(label, applyLayerUpdate);
     featureLayerManager.addFeatureLayer(feature.id, label);
   });
 }
@@ -441,14 +419,16 @@ function renderZones(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
-        fillColor: fillColor,
+        fillColor,
         fillOpacity: 0.5,
         color: strokeColor || fillColor,
         weight: featureProperties.strokeWidth || 1,
         opacity: featureProperties.strokeOpacity ?? 1,
       },
     });
+
     attachFeatureToLayer(layer, feature);
+    bindRenderedFeatureEvents(layer, applyLayerUpdate);
 
     const name = featureProperties.name || feature.name;
     if (name) {
@@ -477,7 +457,9 @@ function renderArrows(features: Feature[]) {
       weight: feature.properties.strokeWidth ?? 2,
       opacity: feature.properties.strokeOpacity ?? 1,
     });
+
     attachFeatureToLayer(line, feature);
+    bindRenderedFeatureEvents(line, applyLayerUpdate);
 
     line.addTo(map);
     line.arrowheads({
@@ -515,14 +497,16 @@ function renderShapes(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
-        fillColor: fillColor,
+        fillColor,
         opacity: feature.properties.strokeOpacity ?? 1,
         fillOpacity: feature.properties.strokeOpacity ?? 1,
         color: strokeColor,
         weight: feature.properties.strokeWidth || 1,
       },
     });
+
     attachFeatureToLayer(layer, feature);
+    bindRenderedFeatureEvents(layer, applyLayerUpdate);
 
     const name = featureProperties.name || feature.name || "Detected shape";
     if (name) {
