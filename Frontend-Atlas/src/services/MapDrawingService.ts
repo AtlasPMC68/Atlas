@@ -282,7 +282,7 @@ export class MapDrawingService {
     map.getContainer().style.userSelect = "";
   }
 
-  private enableRemovalLasso(map: L.Map) {
+  private enableRemovalLasso(map: MapWithPm) {
     if (this.removalLassoEnabled) return;
 
     if (map.pm?.enableGlobalLassoMode) {
@@ -295,7 +295,7 @@ export class MapDrawingService {
     this.removalLassoEnabled = true;
   }
 
-  private disableRemovalLasso(map: L.Map) {
+  private disableRemovalLasso(map: MapWithPm) {
     if (!this.removalLassoEnabled) return;
 
     if (map.pm?.disableGlobalLassoMode) {
@@ -351,7 +351,7 @@ export class MapDrawingService {
     return selected;
   }
 
-  private enableFallbackRemovalSelection(map: L.Map) {
+  private enableFallbackRemovalSelection(map: MapWithPm) {
     if (this.fallbackRemovalSelectionEnabled) return;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
@@ -412,7 +412,7 @@ export class MapDrawingService {
     this.fallbackRemovalSelectionEnabled = true;
   }
 
-  private disableFallbackRemovalSelection(map: L.Map) {
+  private disableFallbackRemovalSelection(map: MapWithPm) {
     if (!this.fallbackRemovalSelectionEnabled) return;
 
     const { onMouseDown, onMouseMove, onMouseUp } =
@@ -545,7 +545,7 @@ export class MapDrawingService {
     });
 
     map.on("pm:globalremovalmodetoggled", (e) => {
-      const removalEvent = e as PmRemovalToggleEvent;
+      const removalEvent = e as unknown as PmRemovalToggleEvent;
       this.setBoxZoomForRemovalMode(map, removalEvent.enabled);
 
       if (removalEvent.enabled) {
@@ -578,7 +578,7 @@ export class MapDrawingService {
       if (this.freehandActive) {
         this.stopFreehandDrawing(map);
       }
-      this.activeDrawingMode.value = (e as PmDrawStartEvent)
+      this.activeDrawingMode.value = (e as unknown as PmDrawStartEvent)
         .shape as DrawingMode;
       map.dragging.disable();
     });
@@ -595,7 +595,7 @@ export class MapDrawingService {
       this.stopFreehandDrawing(this.pmMapInstance);
     }
 
-    this.pmMapInstance.pm.disableDraw();
+    this.pmMapInstance.pm?.disableDraw();
 
     if (mode === null) {
       this.activeDrawingMode.value = null;
@@ -618,7 +618,7 @@ export class MapDrawingService {
       circle: "Circle",
     };
 
-    this.pmMapInstance.pm.enableDraw(modeMap[mode], {
+    this.pmMapInstance.pm?.enableDraw(modeMap[mode], {
       snappingOrder: ["vertex", "edge", "middleLatLng"],
     });
 

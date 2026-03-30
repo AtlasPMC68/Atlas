@@ -148,6 +148,8 @@ export function layerToFeature(
     type: "Feature",
     mapId: baseFeature?.mapId ?? "",
     geometry,
+    opacity: baseFeature?.opacity ?? 0.5,
+    strokeWidth: baseFeature?.strokeWidth ?? 2,
     properties: {
       name: baseFeature?.properties?.name ?? "",
       labelText,

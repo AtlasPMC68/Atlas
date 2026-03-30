@@ -9,7 +9,9 @@ export interface Feature {
   createdAt: string;
   updatedAt: string;
   name: string;
+  opacity: number;
   image?: string;
+  strokeWidth: number;
 }
 
 export type MapElementType =
