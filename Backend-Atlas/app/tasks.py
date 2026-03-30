@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 nb_task = 6
 
+# TODO : maybe remove this debud parameter pour l'instant j'aimerais ca le garder tho
+ENABLE_COASTLINE_SNAPPING = True
+
 
 @celery_app.task(bind=True)
 def test_task(self, name: str = "World"):
@@ -46,7 +49,6 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
-
 @celery_app.task(bind=True)
 def process_map_extraction(
     self,
@@ -55,6 +57,7 @@ def process_map_extraction(
     map_id: UUID,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
+    legend_bounds: dict | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
@@ -194,7 +197,10 @@ def process_map_extraction(
             if pixel_points and geo_points_lonlat:
                 try:
                     georef_features = georeference_features_with_sift_points(
-                        pixel_features, pixel_points, geo_points_lonlat
+                        pixel_features,
+                        pixel_points,
+                        geo_points_lonlat,
+                        snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
                     )
                     asyncio.run(persist_features(map_id, georef_features))
 
@@ -220,12 +226,29 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            shapes_result = extract_shapes(tmp_file_path, debug=False)
-            shape_features = shapes_result["normalized_features"]
+            shapes_result = extract_shapes(
+                tmp_file_path,
+                text_regions=text_regions,
+                legend_bounds=legend_bounds,
+            )
+            shape_normalized_features = shapes_result["normalized_features"]
+            shape_pixel_features = shapes_result.get("pixel_features", [])
 
-            # Persist shapes to database
-            asyncio.run(persist_features(map_uuid, shape_features))
 
+            # Georeference pixel-space shape features if SIFT point pairs are provided
+            if pixel_points and geo_points_lonlat:
+                try:
+                    georef_shape_features = georeference_features_with_sift_points(
+                        shape_pixel_features, pixel_points, geo_points_lonlat
+                    )
+                    asyncio.run(persist_features(map_id, georef_shape_features))
+                except Exception as e:
+                    logger.error(
+                        f"SIFT georeferencing step failed for shapes {map_id}: {e}",
+                        exc_info=True,
+                    )
+            elif shape_normalized_features:
+                asyncio.run(persist_features(map_id, shape_normalized_features))
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}

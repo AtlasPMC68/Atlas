@@ -37,6 +37,7 @@
             :keypoints="keypoints"
             :active-index="activeIndex"
             :matched-points="matchedWorldPoints"
+            :used-lakes="usedLakes"
             @select-keypoint="onSelectWorldKeypoint"
           />
         </div>
@@ -96,12 +97,14 @@ const props = withDefaults(
     imageUrl: string;
     worldBounds: WorldBounds | null;
     keypoints: CoastlineKeypoint[];
+    usedLakes?: boolean;
     minPairs?: number;
   }>(),
   {
     isOpen: false,
     worldBounds: null,
     keypoints: () => [],
+    usedLakes: false,
     minPairs: 4,
   },
 );

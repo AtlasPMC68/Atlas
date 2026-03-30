@@ -2,10 +2,10 @@
 import { ref, Ref } from "vue";
 import keycloak from "../keycloak";
 import { snakeToCamel } from "../utils/utils";
+import type { LegendBounds } from "../typescript/legend";
 
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
-
 type ExtractionOptions = {
   enableGeoreferencing?: boolean;
   enableColorExtraction?: boolean;
@@ -45,6 +45,7 @@ export function useImportProcess() {
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
+    legendBounds?: LegendBounds | null,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -81,6 +82,10 @@ export function useImportProcess() {
         "enable_text_extraction",
         String(options.enableTextExtraction ?? false),
       );
+    }
+
+    if (legendBounds) {
+      formData.append("legend_bounds", JSON.stringify(legendBounds));
     }
     formData.append("file", file);
 
