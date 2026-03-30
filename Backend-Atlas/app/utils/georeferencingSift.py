@@ -10,6 +10,11 @@ from shapely.geometry import shape, mapping, Point, Polygon, MultiPolygon
 from shapely.ops import transform, unary_union, nearest_points
 from shapely.geometry.base import BaseGeometry
 
+from app.utils.coastline_land_mask import (
+    clip_zone_to_land_mask,
+    load_land_mask_from_coastline_and_ocean_points,
+)
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -346,6 +351,8 @@ def georeference_features_with_sift_points(
     pixel_points: List[XY],
     geo_points_lonlat: List[LonLat],
     snap_to_coastline: bool = True,
+    clip_to_land_mask: bool = True,
+    land_coverage_threshold: float = 0.10,
     coastline_snap_ratio_of_diagonal: float = 0.01,
     coastline_snap_tolerance_px: Optional[float] = None,
 ) -> List[JSONDict]:
@@ -359,6 +366,8 @@ def georeference_features_with_sift_points(
         pixel_points: List of (x, y) pixel coordinates from SIFT matching
         geo_points_lonlat: List of (lon, lat) geographic coordinates
         snap_to_coastline: Whether to snap nearby zone boundary points to coastline
+        clip_to_land_mask: Whether to clip transformed zones to land and remove ocean portions
+        land_coverage_threshold: Minimum land coverage (0..1) required to keep a zone
         coastline_snap_ratio_of_diagonal: Ratio of pixel diagonal used as default tolerance
         coastline_snap_tolerance_px: Explicit pixel tolerance override (if provided)
     
@@ -398,6 +407,7 @@ def georeference_features_with_sift_points(
         # Build affine transformation: pixel -> WebMercator
         affine = AffineTransformation(src, dst)
         coastline_geom_3857 = None
+        land_mask_3857 = None
         meters_per_pixel = None
         diagonal_px = None
         snap_tolerance_px = None
@@ -412,6 +422,19 @@ def georeference_features_with_sift_points(
                 )
 
         snapping_enabled = snap_to_coastline and coastline_geom_3857 is not None
+
+        if clip_to_land_mask:
+            land_mask_wgs84 = load_land_mask_from_coastline_and_ocean_points()
+            if land_mask_wgs84 is not None:
+                land_mask_3857 = transform(_lonlat_arrays_to_webmercator, land_mask_wgs84)
+                logger.info(
+                    "Land/ocean masks loaded successfully from coastline_land_mask.py: land_mask area=%.0f (3857), geom_type=%s, is_valid=%s",
+                    float(land_mask_3857.area),
+                    land_mask_3857.geom_type,
+                    land_mask_3857.is_valid,
+                )
+            else:
+                logger.warning("Land/ocean mask unavailable; ocean clipping will be skipped.")
 
         if snapping_enabled:
             min_snap_px = 3.0
@@ -439,6 +462,10 @@ def georeference_features_with_sift_points(
 
         total_boundary_points = 0
         total_snapped_points = 0
+        total_zone_count = 0
+        kept_zone_count = 0
+        skipped_zone_count = 0
+        skipped_reasons: Dict[str, int] = {}
 
         def _to_3857(x, y, z=None):
             """Apply affine: pixel -> WebMercator"""
@@ -470,11 +497,15 @@ def georeference_features_with_sift_points(
             new_features: List[JSONDict] = []
             
             for feat_idx, feat in enumerate(fc.get("features", [])):
+                total_zone_count += 1
                 try:
                     geom = shape(feat.get("geometry"))
                 except Exception as e:
                     logger.warning(f"Failed to parse geometry at feature {feat_idx}: {e}")
                     continue
+
+                props = dict(feat.get("properties", {}))
+                zone_label = str(props.get("name") or props.get("color_name") or f"feature-{feat_idx}")
 
                 try:
                     # Transform: pixel -> WebMercator
@@ -492,6 +523,31 @@ def georeference_features_with_sift_points(
                     total_boundary_points += total_pts
                     total_snapped_points += snapped_pts
 
+                if clip_to_land_mask and land_mask_3857 is not None:
+                    clip_result = clip_zone_to_land_mask(
+                        geom_3857,
+                        land_mask_3857,
+                        feat_idx,
+                        zone_label=zone_label,
+                        land_coverage_threshold=land_coverage_threshold,
+                    )
+                    if clip_result.clipped_geom is None:
+                        skipped_zone_count += 1
+                        reason = clip_result.skip_reason or "unknown"
+                        skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
+                        logger.info(
+                            "Zone '%s' (feature %s) skipped: %s",
+                            zone_label,
+                            feat_idx,
+                            reason,
+                        )
+                        continue
+
+                    geom_3857 = clip_result.clipped_geom
+                    props["land_percentage"] = round(clip_result.land_percentage, 2)
+                    props["ocean_percentage"] = round(clip_result.ocean_percentage, 2)
+                    props["ocean_clip_applied"] = True
+
                 try:
                     # Convert WebMercator -> WGS84 (after optional snapping)
                     geom_wgs84 = transform(_to_lonlat, geom_3857)
@@ -503,7 +559,6 @@ def georeference_features_with_sift_points(
                     continue
 
                 # Update properties
-                props = dict(feat.get("properties", {}))
                 props["is_pixel_space"] = False
                 props["is_georeferenced"] = True
                 props["crs"] = "EPSG:4326"
@@ -517,6 +572,7 @@ def georeference_features_with_sift_points(
                         "geometry": mapping(geom_wgs84),
                     }
                 )
+                kept_zone_count += 1
 
             if new_features:
                 georef_collections.append(
@@ -541,6 +597,20 @@ def georeference_features_with_sift_points(
                 total_snapped_points,
                 pct,
             )
+
+        if clip_to_land_mask and land_mask_3857 is not None and total_zone_count > 0:
+            kept_pct = (100.0 * kept_zone_count) / total_zone_count
+            skipped_pct = (100.0 * skipped_zone_count) / total_zone_count
+            logger.info(
+                "Zone clipping with land/ocean masks: total zones=%d, successfully clipped=%d (%.1f%%), skipped=%d (%.1f%%)",
+                total_zone_count,
+                kept_zone_count,
+                kept_pct,
+                skipped_zone_count,
+                skipped_pct,
+            )
+            for reason, count in sorted(skipped_reasons.items()):
+                logger.info("  - Skipped due to %s: %d zones", reason, count)
 
         return georef_collections
         
