@@ -516,12 +516,18 @@ export class MapDrawingService {
       updatedFeature.name = sourceLayer.feature.name;
       updatedFeature.createdAt = sourceLayer.feature.createdAt;
       updatedFeature.updatedAt = new Date().toISOString();
-      updatedFeature.opacity =
-        sourceLayer.feature.opacity ?? updatedFeature.opacity;
-      updatedFeature.properties = {
-        ...(sourceLayer.feature.properties || {}),
-        ...(updatedFeature.properties || {}),
-      };
+      updatedFeature.opacity = sourceLayer.feature.opacity ?? updatedFeature.opacity;
+      updatedFeature.properties.name = sourceLayer.feature.properties.name;
+      updatedFeature.properties.labelText = sourceLayer.feature.properties.labelText;
+      updatedFeature.properties.colorName = sourceLayer.feature.properties.colorName;
+      updatedFeature.properties.colorRgb = sourceLayer.feature.properties.colorRgb;
+      updatedFeature.properties.strokeColor = sourceLayer.feature.properties.strokeColor;
+      updatedFeature.properties.strokeWidth = sourceLayer.feature.properties.strokeWidth;
+      updatedFeature.properties.strokeOpacity = sourceLayer.feature.properties.strokeOpacity;
+      updatedFeature.properties.mapElementType = sourceLayer.feature.properties.mapElementType;
+      updatedFeature.properties.shapeKind = sourceLayer.feature.properties.shapeKind;
+      updatedFeature.properties.startDate = sourceLayer.feature.properties.startDate;
+      updatedFeature.properties.endDate = sourceLayer.feature.properties.endDate;
 
       resultLayer.feature = updatedFeature;
       this.emit("feature-updated", updatedFeature);
