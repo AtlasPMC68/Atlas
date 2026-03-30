@@ -367,7 +367,7 @@ def georeference_features_with_sift_points(
         geo_points_lonlat: List of (lon, lat) geographic coordinates
         snap_to_coastline: Whether to snap nearby zone boundary points to coastline
         clip_to_land_mask: Whether to clip transformed zones to land and remove ocean portions
-        land_coverage_threshold: Minimum land coverage (0..1) required to keep a zone
+        land_coverage_threshold: Minimum land coverage (0.01) required to keep a zone
         coastline_snap_ratio_of_diagonal: Ratio of pixel diagonal used as default tolerance
         coastline_snap_tolerance_px: Explicit pixel tolerance override (if provided)
     
