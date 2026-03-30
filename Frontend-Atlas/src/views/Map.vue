@@ -121,7 +121,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 async function onAddFeatureImage() {
   if (!selectedFile.value || !keycloak.token) {
     onCloseAddFeatureImageDialog();
-    throw new Error("No file selected or user not authenticated");
+    return;
   }
 
   isAdding.value = true;

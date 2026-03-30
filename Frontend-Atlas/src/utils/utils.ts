@@ -70,7 +70,10 @@ export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
   return [maybeArray];
 }
 
-export function toImageSrc(image?: string | null): string {
-  if (!image) return "/images/default.jpg";
-  return `data:image/png;base64,${image}`;
+export function toImageSrc(
+  image?: string | null,
+  mimeType: string = "image/png",
+): string {
+  if (!image) return "images/default.jpg";
+  return `data:${mimeType};base64,${image}`;
 }

@@ -30,7 +30,7 @@ router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
-THUMBNAIL_ALLOWED_CONTENT_TYPES = {"image/png"}
+IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 DEFAULT_IMAGE_BOUNDS = [[-8.0, -8.0], [8.0, 8.0]]
 
 @router.post("/create")
@@ -382,10 +382,10 @@ async def upload_map_thumbnail(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    if image.content_type not in THUMBNAIL_ALLOWED_CONTENT_TYPES:
+    if image.content_type not in IMAGE_ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported image type. Allowed: {', '.join(sorted(THUMBNAIL_ALLOWED_CONTENT_TYPES))}",
+            detail=f"Unsupported image type. Allowed: {', '.join(sorted(IMAGE_ALLOWED_CONTENT_TYPES))}",
         )
     try:
         user_uuid = UUID(user_id)
