@@ -1,7 +1,8 @@
-import logging
-from uuid import UUID
 import json
+import logging
+import math
 from json import JSONDecodeError
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import not_, select
@@ -20,7 +21,7 @@ from app.utils.sift_key_points_finder import find_coastline_keypoints
 from ..celery_app import celery_app
 from ..db import get_db
 from ..tasks import process_map_extraction
-from ..utils.auth import get_user_from_token, get_current_user_id
+from ..utils.auth import get_current_user_id, get_user_from_token
 
 router = APIRouter()
 
@@ -100,6 +101,7 @@ async def update_map(
 async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
+    legend_bounds: str | None = Form(None),
     enable_georeferencing: bool = Form(True),
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
@@ -130,6 +132,7 @@ async def upload_and_process_map(
 
     pixel_points_list = None
     geo_points_list = None
+    legend_bounds_dict = None
 
     # Parse matched point pairs for SIFT georeferencing
     if enable_georeferencing and image_points and world_points:
@@ -154,6 +157,34 @@ async def upload_and_process_map(
                 detail=f"Invalid georeferencing payload: {e}",
             )
 
+    # Parse optional legend rectangle (pixel-space bounds)
+    if legend_bounds:
+        try:
+            parsed = json.loads(legend_bounds)
+            required_keys = {"x", "y", "width", "height"}
+            if not isinstance(parsed, dict) or not required_keys.issubset(parsed.keys()):
+                raise ValueError(
+                    "legend_bounds must be a JSON object with x, y, width, height"
+                )
+
+            legend_bounds_dict = {
+                "x": float(parsed["x"]),
+                "y": float(parsed["y"]),
+                "width": float(parsed["width"]),
+                "height": float(parsed["height"]),
+            }
+
+            if not all(math.isfinite(value) for value in legend_bounds_dict.values()):
+                raise ValueError("legend_bounds values must be finite numbers")
+
+            if legend_bounds_dict["width"] <= 0 or legend_bounds_dict["height"] <= 0:
+                raise ValueError("legend_bounds width and height must be > 0")
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid legend bounds payload: {e}",
+            )
+
     file_content = await file.read()
 
     if len(file_content) > MAX_FILE_SIZE:
@@ -167,14 +198,15 @@ async def upload_and_process_map(
 
     try:
         task = process_map_extraction.delay(
-            file.filename,
-            file_content,
-            map_id,
-            pixel_points_list,
-            geo_points_list,
-            enable_color_extraction,
-            enable_shapes_extraction,
-            enable_text_extraction,
+            filename=file.filename,
+            file_content=file_content,
+            map_id=map_id,
+            pixel_points=pixel_points_list,
+            geo_points_lonlat=geo_points_list,
+            enable_color_extraction=enable_color_extraction,
+            enable_shapes_extraction=enable_shapes_extraction,
+            enable_text_extraction=enable_text_extraction,
+            legend_bounds=legend_bounds_dict,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
