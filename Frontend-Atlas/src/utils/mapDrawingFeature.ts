@@ -66,8 +66,12 @@ export function layerToFeature(
   layer: L.Layer,
   selectedYear: number,
 ): Feature | null {
+  const layerWithFeature = layer as LayerWithFeatureRuntime;
+  const baseFeature = layerWithFeature.feature;
+  const existingType = baseFeature?.properties?.mapElementType;
+
   let geometry: Feature["geometry"] | null = null;
-  let type: MapElementType = "shape";
+  let type: MapElementType = existingType ?? "shape";
   let labelText = "";
 
   if (isTextMarkerLayer(layer)) {
@@ -94,7 +98,8 @@ export function layerToFeature(
     const center = layer.getLatLng();
     const radius = layer.getRadius();
     geometry = circleToPolygon(center, radius);
-    type = "zone";
+
+    type = existingType === "shape" ? "shape" : "zone";
   } else if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
     const latlngs = layer.getLatLngs();
     geometry = {
@@ -112,13 +117,13 @@ export function layerToFeature(
         type: "Polygon",
         coordinates: [closeRing(latlngs.map(toCoord))],
       };
-      type = "zone";
+      type = existingType === "shape" ? "shape" : "zone";
     } else if (isLatLngArrayArray(latlngs)) {
       geometry = {
         type: "Polygon",
         coordinates: latlngs.map((ring) => closeRing(ring.map(toCoord))),
       };
-      type = "zone";
+      type = existingType === "shape" ? "shape" : "zone";
     } else if (isLatLngArrayArrayArray(latlngs)) {
       geometry = {
         type: "MultiPolygon",
@@ -126,14 +131,12 @@ export function layerToFeature(
           polygon.map((ring) => closeRing(ring.map(toCoord))),
         ),
       };
-      type = "zone";
+      type = existingType === "shape" ? "shape" : "zone";
     }
   }
 
   if (!geometry) return null;
 
-  const layerWithFeature = layer as LayerWithFeatureRuntime;
-  const baseFeature = layerWithFeature.feature;
   const now = new Date().toISOString();
 
   return {
