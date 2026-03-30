@@ -191,31 +191,33 @@ defineExpose({
 });
 
 const drawing = useMapDrawing((event, ...args) => {
-  const payload = args[0] as Feature;
   const current = localFeaturesSnapshot.value;
 
   if (event === "feature-created") {
-    const next = upsertFeature(current, payload as Feature);
+    const payload = args[0] as Feature;
+    const next = upsertFeature(current, payload);
     localFeaturesSnapshot.value = next;
     emit("draw-create", next);
     return;
   }
 
   if (event === "feature-updated") {
-    const next = upsertFeature(current, payload as Feature);
+    const payload = args[0] as Feature;
+    const next = upsertFeature(current, payload);
     localFeaturesSnapshot.value = next;
     emit("draw-update", next);
     return;
   }
 
   if (event === "feature-deleted") {
-    const deletedId = payload.id;
+    const deletedId = String(args[0]);
     const next = current.filter(
-      (feature) => feature.id !== deletedId,
+      (feature) => String(feature.id) !== deletedId,
     );
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
     emit("draw-delete-id", deletedId);
+    return;
   }
 });
 
@@ -237,15 +239,14 @@ function renderCities(features: Feature[]) {
     const coord: L.LatLngTuple = [lat, lng];
 
     const colorFromRgb = getFeatureRgbColor(feature);
-    const color = colorFromRgb || "#000";
 
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: color,
-      color,
-      weight: 1,
-      opacity: feature.opacity ?? 1,
-      fillOpacity: feature.opacity ?? 1,
+      fillColor: colorFromRgb || "#000000",
+      color: feature.properties.strokeColor || colorFromRgb || "#000000",
+      weight: feature.properties.strokeWidth ?? 1,
+      opacity: feature.properties.strokeOpacity ?? 1,
+      fillOpacity: feature.opacity ?? 0.5,
     });
 
     const featureProperties = feature.properties;
@@ -439,10 +440,11 @@ function renderZones(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
-        fillColor,
+        fillColor: fillColor,
         fillOpacity: 0.5,
-        color: "#333",
-        weight: 1,
+        color: featureProperties.strokeColor || "#000000",
+        weight: featureProperties.strokeWidth || 1,
+        opacity: featureProperties.strokeOpacity ?? 1,
       },
     });
     attachFeatureToLayer(layer, feature);
@@ -467,12 +469,11 @@ function renderArrows(features: Feature[]) {
     );
 
     const colorFromRgb = getFeatureRgbColor(feature);
-    const color = colorFromRgb || "#000";
 
     const line = L.polyline(latLngs, {
-      color,
-      weight: feature.strokeWidth ?? 2,
-      opacity: feature.opacity ?? 1,
+      color: feature.properties.strokeColor || colorFromRgb || "#000000",
+      weight: feature.properties.strokeWidth ?? 2,
+      opacity: feature.properties.strokeOpacity ?? 1,
     });
     attachFeatureToLayer(line, feature);
 
@@ -512,10 +513,10 @@ function renderShapes(features: Feature[]) {
     const layer = L.geoJSON(feature.geometry, {
       style: {
         fillColor: fillColor,
-        opacity: feature.opacity ?? 1,
-        fillOpacity: feature.opacity ?? 0.5,
-        color: fillColor,
-        weight: 3,
+        opacity: feature.properties.strokeOpacity ?? 1,
+        fillOpacity: feature.properties.strokeOpacity ?? 1,
+        color: feature.properties.strokeColor || "#000000",
+        weight: feature.properties.strokeWidth || 1,
       },
     });
     attachFeatureToLayer(layer, feature);

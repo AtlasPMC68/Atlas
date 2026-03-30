@@ -518,8 +518,6 @@ export class MapDrawingService {
       updatedFeature.updatedAt = new Date().toISOString();
       updatedFeature.opacity =
         sourceLayer.feature.opacity ?? updatedFeature.opacity;
-      updatedFeature.strokeWidth =
-        sourceLayer.feature.strokeWidth ?? updatedFeature.strokeWidth;
       updatedFeature.properties = {
         ...(sourceLayer.feature.properties || {}),
         ...(updatedFeature.properties || {}),

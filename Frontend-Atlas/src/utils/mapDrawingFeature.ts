@@ -1,5 +1,5 @@
 import L from "leaflet";
-import { getFeatureRgbColor } from "./featureHelpers";
+import { getFeatureRgbColor, colorRgbToCss } from "./featureHelpers";
 import type {
   Coordinate,
   Feature,
@@ -146,6 +146,9 @@ export function layerToFeature(
       labelText,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
+      strokeColor: baseFeature?.properties?.strokeColor ?? "#000000",
+      strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
+      strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
       startDate: baseFeature?.properties?.startDate ?? `${selectedYear}-01-01`,
       endDate: baseFeature?.properties?.endDate ?? `${selectedYear}-01-01`,
@@ -154,7 +157,6 @@ export function layerToFeature(
     updatedAt: now,
     name: baseFeature?.name ?? "",
     opacity: baseFeature?.opacity ?? 0.5,
-    strokeWidth: baseFeature?.strokeWidth ?? 2,
   };
 }
 
@@ -164,14 +166,15 @@ export function featureToLayer(feature: Feature): L.Layer | null {
   if (!geom) return null;
 
   const colorFromRgb = getFeatureRgbColor(feature);
-  const strokeColor = colorFromRgb || "#000000";
-  const fillColor = colorFromRgb || "#cccccc";
+  const cssColor = colorRgbToCss(colorFromRgb);
 
   const style = {
-    color: strokeColor,
-    weight: feature.strokeWidth || 2,
-    fillColor,
+    weight: feature.properties.strokeWidth || 2,
+    fillColor: cssColor || "#000000",
     fillOpacity: feature.opacity || 0.5,
+    strokeColor: feature.properties.strokeColor || "#000000",
+    strokeWidth: feature.properties.strokeWidth || 2,
+    strokeOpacity: feature.properties.strokeOpacity ?? 0.5,
   };
 
   let layer: L.Layer | null = null;
@@ -181,8 +184,7 @@ export function featureToLayer(feature: Feature): L.Layer | null {
       const [lng, lat] = geom.coordinates;
 
       if (feature.properties.mapElementType === "label") {
-        const labelText =
-          feature.properties.labelText || "";
+        const labelText = feature.properties.labelText || "";
 
         layer = L.marker([lat, lng], {
           icon: L.divIcon({
@@ -220,7 +222,9 @@ export function featureToLayer(feature: Feature): L.Layer | null {
     case "MultiPolygon": {
       const latlngs: L.LatLngTuple[][][] = geom.coordinates.map((polygon) =>
         polygon.map((ring) =>
-          ring.map(([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple),
+          ring.map(
+            ([lng, lat]: [number, number]) => [lat, lng] as L.LatLngTuple,
+          ),
         ),
       );
       layer = L.polygon(latlngs, style);
@@ -260,7 +264,6 @@ export function extractFeatureFromLayer(
       extracted.createdAt = baseFeature.createdAt;
       extracted.name = baseFeature.name;
       extracted.opacity = baseFeature.opacity;
-      extracted.strokeWidth = baseFeature.strokeWidth;
       extracted.properties = {
         ...(baseFeature.properties || {}),
         ...(extracted.properties || {}),
@@ -323,8 +326,8 @@ function isTextMarkerLayer(layer: L.Layer): layer is TextMarkerLayer {
 
   return Boolean(
     marker instanceof L.Marker &&
-      (marker.options?.textMarker === true ||
-        typeof marker.pm?.getText === "function"),
+    (marker.options?.textMarker === true ||
+      typeof marker.pm?.getText === "function"),
   );
 }
 

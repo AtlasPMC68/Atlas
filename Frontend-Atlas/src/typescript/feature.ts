@@ -10,7 +10,6 @@ export interface Feature {
   updatedAt: string;
   name: string;
   opacity: number;
-  strokeWidth: number;
 }
 
 export type MapElementType =
@@ -34,6 +33,9 @@ export interface FeatureProperties {
   labelText?: string;
   colorName: string;
   colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
+  strokeColor: string;
+  strokeWidth: number;
+  strokeOpacity: number;
   mapElementType: MapElementType;
   shapeKind?: ShapeKind;
   startDate: string; // Format: "YYYY-MM-DD"
