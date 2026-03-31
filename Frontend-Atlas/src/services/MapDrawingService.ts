@@ -486,16 +486,6 @@ export class MapDrawingService {
       }, 0);
     });
 
-    map.on("pm:edit", (e) => {
-      const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
-      this.emitUpdatedFeatureFromLayer(layer);
-    });
-
-    map.on("pm:update", (e) => {
-      const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
-      this.emitUpdatedFeatureFromLayer(layer);
-    });
-
     map.on("pm:cut", (e) => {
       const { originalLayer, layer } = e as PmCutEvent;
       const sourceLayer = originalLayer as FeatureBearingLayer | undefined;

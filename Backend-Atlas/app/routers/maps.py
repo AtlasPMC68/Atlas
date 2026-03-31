@@ -292,25 +292,37 @@ async def get_extraction_results(task_id: str):
 
 
 @router.get("/features/{map_id}")
-async def get_features(
-    map_id: str,
-    session: AsyncSession = Depends(get_async_session),
-):
+async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
     try:
         map_id = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    result = await session.execute(
-        select(Feature).where(Feature.map_id == map_id)
-    )
+    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
     features_rows = result.scalars().all()
 
     all_features = []
-    for row in features_rows:
-        serialized = serialize_db_feature(row)
-        if serialized is not None:
-            all_features.append(serialized)
+    for f in features_rows:
+        if not f.data or not isinstance(f.data, dict):
+            continue
+
+        feature_data = f.data.get("features", [])
+        if not feature_data:
+            continue
+
+        feature = feature_data[0]
+        feature["id"] = str(f.id)
+
+        props = feature.get("properties", {})
+        feature["start_date"] = props.get("start_date")
+        feature["end_date"] = props.get("end_date")
+
+        if f.image:
+            feature["image"] = base64.b64encode(f.image).decode("ascii")
+            feature.setdefault("properties", {})
+            feature["properties"]["mimeType"] = props.get("mimeType", "image/png")
+
+        all_features.append(feature)
 
     return all_features
 

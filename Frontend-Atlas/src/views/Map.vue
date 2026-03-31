@@ -2,7 +2,7 @@
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
       <div class="flex justify-end gap-4">
-        <SaveDropdown @save="saveFeatures" />
+        <SaveDropdown @save="onSaveMap" />
         <button @click="upload(mapId)" class="btn btn-primary">
           Ajouter une carte
         </button>
@@ -33,7 +33,7 @@
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
-          @draw-delete-id="handleFeatureDelete"
+          @draw-delete-id="onDeleteFeature"
           @map-ready="onMapReady"
         />
       </div>
@@ -108,7 +108,11 @@ import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../utils/utils";
+import {
+  camelToSnake,
+  prepareFeaturesForSave,
+  snakeToCamel,
+} from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
@@ -117,7 +121,6 @@ import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
 
 const alert = ref<AlertState>(null);
-
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -228,41 +231,57 @@ async function uploadMapThumbnail(): Promise<boolean> {
 }
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
-async function deleteFeatureFromApi(featureId: string) {
-  if (!isUuid(featureId)) return; // Check if the featureId is a valid UUID (it could be a temporary ID for unsaved features)
-
-  if (!currentUser.value) {
-    showAlert(alert, "error", "Utilisateur non authentifié.");
+async function onDeleteFeature(
+  featureId: string,
+  callbacks?: {
+    onSuccess?: () => void;
+    onError?: (message?: string) => void;
+  },
+) {
+  if (!isUuid(featureId)) {
+    features.value = features.value.filter((feature) => feature.id !== featureId);
+    reconcileVisibility(features.value);
+    callbacks?.onSuccess?.();
     return;
   }
 
-  const response = await fetch(
-    `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
-    {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    showAlert(alert, "error", "Erreur lors de la suppression de l'élément.");
-    throw new Error(`Error deleting feature: ${response.status}`);
+  if (!currentUser.value) {
+    const message = "Utilisateur non authentifié.";
+    showAlert(alert, "error", message);
+    callbacks?.onError?.(message);
+    return;
   }
-}
 
-function handleFeatureDelete(featureId: string) {
-  features.value = features.value.filter((feature) => feature.id !== featureId);
-  reconcileVisibility(features.value);
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+      },
+    );
 
-  void deleteFeatureFromApi(featureId).catch((error) => {
-    showAlert(alert, "error", "Erreur lors de la suppression de l'élément.");
+    if (!response.ok) {
+      throw new Error(`Error deleting feature: ${response.status}`);
+    }
+
+    features.value = features.value.filter((feature) => feature.id !== featureId);
+    reconcileVisibility(features.value);
+
+    callbacks?.onSuccess?.();
+  } catch (error) {
+    const message = "Erreur lors de la suppression de l'élément.";
+    showAlert(alert, "error", message);
     console.error("Failed to delete feature from API:", error);
-  });
+    callbacks?.onError?.(message);
+  }
 }
 
 function reconcileVisibility(list: Feature[]) {
@@ -293,7 +312,11 @@ async function loadInitialFeatures() {
     reconcileVisibility(allFeatures);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
-    showAlert(alert, "error", "Erreur lors du chargement des éléments de la carte.");
+    showAlert(
+      alert,
+      "error",
+      "Erreur lors du chargement des éléments de la carte.",
+    );
   }
 }
 
@@ -314,7 +337,7 @@ function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
 const handleCtrlS = (e: KeyboardEvent) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
     e.preventDefault();
-    void saveFeatures();
+    void onSaveMap();
   }
 };
 
@@ -329,8 +352,7 @@ onUnmounted(() => {
   clearAlert(alert);
 });
 
-
-async function saveFeatures() {
+async function onSaveMap() {
   if (isSaving.value) return;
   isSaving.value = true;
 
