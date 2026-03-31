@@ -91,3 +91,11 @@ export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
   if (maybeArray == null) return [];
   return [maybeArray];
 }
+
+export function toImageSrc(
+  image?: string | null,
+  mimeType: string = "image/png",
+): string {
+  if (!image) return "images/default.jpg";
+  return `data:${mimeType};base64,${image}`;
+}

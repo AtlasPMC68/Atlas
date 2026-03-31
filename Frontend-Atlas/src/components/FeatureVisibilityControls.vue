@@ -76,6 +76,7 @@ const featureGroups = computed(() => {
     { type: "arrow", label: "Flèches", features: [] as Feature[] },
     { type: "shape", label: "Formes", features: [] as Feature[] },
     { type: "label", label: "Étiquettes", features: [] as Feature[] },
+    { type: "image", label: "Images", features: [] as Feature[] },
   ];
 
   props.features.forEach((feature: Feature) => {

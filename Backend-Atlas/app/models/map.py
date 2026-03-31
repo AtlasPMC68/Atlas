@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Boolean, Column, Text, TIMESTAMP, func, Date
+from sqlalchemy import Boolean, Column, LargeBinary, Text, TIMESTAMP, func, Date
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -12,6 +12,7 @@ class Map(Base):
     user_id = Column(UUID(as_uuid=True))
     title = Column(Text, nullable=False)
     description = Column(Text)
+    image = Column(LargeBinary, nullable=True)
     is_private = Column(Boolean, default=True)
     start_date = Column(Date)
     end_date = Column(Date)

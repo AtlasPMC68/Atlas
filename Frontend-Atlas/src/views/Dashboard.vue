@@ -6,26 +6,26 @@ import {
   QuestionMarkCircleIcon,
   PencilSquareIcon,
 } from "@heroicons/vue/24/outline";
-import { MapData, MapDisplay } from "../typescript/map";
-import { camelToSnake, snakeToCamel } from "../utils/utils";
+import { MapData } from "../typescript/map";
+import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
 import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
 
-const maps = ref<MapDisplay[]>([]);
+const maps = ref<MapData[]>([]);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const newMapTitle = ref<string | undefined>(undefined);
 const newMapDescription = ref<string | undefined>(undefined);
 const newMapIsPrivate = ref(true);
 const isCreating = ref(false);
 const createMapDialogRef = ref<HTMLDialogElement | null>(null);
-const mapToDelete = ref<MapDisplay | null>(null);
+const mapToDelete = ref<MapData | null>(null);
 const isDeleting = ref(false);
 const deleteConfirmDialogRef = ref<HTMLDialogElement | null>(null);
 const editMapDialogRef = ref<HTMLDialogElement | null>(null);
-const mapToEdit = ref<MapDisplay | null>(null);
+const mapToEdit = ref<MapData | null>(null);
 const editMapTitle = ref<string | undefined>(undefined);
 const editMapDescription = ref<string | undefined>(undefined);
 const editMapIsPrivate = ref(true);
@@ -133,12 +133,12 @@ function resetCreateMapForm() {
   newMapIsPrivate.value = true;
 }
 
-function confirmDelete(map: MapDisplay) {
+function confirmDelete(map: MapData) {
   mapToDelete.value = map;
   deleteConfirmDialogRef.value?.showModal();
 }
 
-function openEditDialog(map: MapDisplay) {
+function openEditDialog(map: MapData) {
   mapToEdit.value = map;
   editMapTitle.value = map.title;
   editMapDescription.value = map.description ?? undefined;
@@ -255,7 +255,7 @@ async function fetchMapsAndRender() {
       createdAt: map.createdAt,
       updatedAt: map.updatedAt,
       userId: map.userId,
-      image: "/images/default.jpg",
+      image: map.image,
     }));
   } catch (err) {
     throw new Error("Error while fetching the maps:" + err);
@@ -427,12 +427,7 @@ async function fetchMapsAndRender() {
         @click="$router.push(`/carte/${map.id}`)"
       >
         <figure>
-          <!-- TODO replace image -->
-          <img
-            src="https://img.daisyui.com/images/stock/photo-1606107557195-0e29a4b5b4aa.webp"
-            alt="Map"
-            class="w-full h-44"
-          />
+          <img :src="toImageSrc(map.image)" class="w-full h-full" />
         </figure>
         <div class="card-body pb-0">
           <h2 class="card-title text-sm xl:text-lg">

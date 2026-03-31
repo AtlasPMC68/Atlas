@@ -21,7 +21,7 @@ import {
   attachFeatureToLayer,
   bindRenderedFeatureEvents,
 } from "../utils/mapLayersFeature";
-import { toArray } from "../utils/utils";
+import { toArray, toImageSrc } from "../utils/utils";
 import type {
   Coordinate,
   Feature,
@@ -51,6 +51,7 @@ const emit = defineEmits<{
   (e: "draw-update", features: Feature[]): void;
   (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
   (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
+  (e: "map-ready", map: L.Map): void;
 }>();
 
 const selectedYear = ref(1740);
@@ -71,6 +72,7 @@ const filteredFeatures = computed(() => {
 });
 
 let map: L.Map | null = null;
+let vectorRenderer: L.Canvas | null = null;
 
 const featureLayerManager = {
   layers: new Map<FeatureId, L.Layer>(),
@@ -419,6 +421,7 @@ function renderZones(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
+        renderer: vectorRenderer ?? undefined,
         fillColor,
         fillOpacity: 0.5,
         color: strokeColor || fillColor,
@@ -453,6 +456,7 @@ function renderArrows(features: Feature[]) {
     const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
+      renderer: vectorRenderer ?? undefined,
       color: strokeColor,
       weight: feature.properties.strokeWidth ?? 2,
       opacity: feature.properties.strokeOpacity ?? 1,
@@ -529,7 +533,8 @@ function renderShapes(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
-        fillColor,
+        renderer: vectorRenderer ?? undefined,
+        fillColor: fillColor,
         opacity: feature.properties.strokeOpacity ?? 1,
         fillOpacity: feature.properties.strokeOpacity ?? 1,
         color: strokeColor,
@@ -546,6 +551,27 @@ function renderShapes(features: Feature[]) {
     }
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
+  });
+}
+
+function renderImages(features: Feature[]) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!map || !feature.image) return;
+
+    const bounds = feature.properties?.bounds as [[0, 0], [0, 0]] | undefined;
+
+    if (!bounds) return;
+
+    const src = toImageSrc(feature.image);
+    const overlay = L.imageOverlay(src, bounds, {
+      opacity: feature.opacity ?? 1,
+      interactive: true,
+    });
+
+    attachFeatureToLayer(overlay, feature);
+    featureLayerManager.addFeatureLayer(feature.id, overlay);
   });
 }
 
@@ -575,6 +601,7 @@ function renderAllFeatures() {
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
+    image: currentFeatures.filter((f) => getMapElementType(f) === "image"),
   };
 
   renderCities(featuresByType.point);
@@ -583,13 +610,18 @@ function renderAllFeatures() {
   renderArrows(featuresByType.arrow);
   renderPolylines(featuresByType.polyline);
   renderShapes(featuresByType.shape);
+  renderImages(featuresByType.image);
 
   previousFeatureIds.value = currentIds;
   emit("features-loaded", currentFeatures);
 }
 
 onMounted(() => {
-  map = L.map("map", { zoomControl: false }).setView([52.9399, -73.5491], 5);
+  map = L.map("map", { zoomControl: false, preferCanvas: true }).setView(
+    [52.9399, -73.5491],
+    5,
+  );
+  vectorRenderer = L.canvas({ padding: 0.5 });
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -602,9 +634,14 @@ onMounted(() => {
 
   drawing.initializeDrawing(map);
 
-  L.control.zoom({ position: "topright" }).addTo(map);
+  L.control
+    .scale({ position: "bottomright", metric: true, imperial: false })
+    .addTo(map);
+
+  L.control.zoom({ position: "topleft" }).addTo(map);
 
   drawing.setSelectedYear(selectedYear.value);
+  emit("map-ready", map);
   renderAllFeatures();
 });
 

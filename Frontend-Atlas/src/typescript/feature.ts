@@ -10,6 +10,7 @@ export interface Feature {
   updatedAt: string;
   name: string;
   opacity: number;
+  image?: string;
 }
 
 export type MapElementType =
@@ -18,7 +19,8 @@ export type MapElementType =
   | "polyline"
   | "arrow"
   | "shape"
-  | "label";
+  | "label"
+  | "image";
 
 export type FeatureVisibilityGroup = {
   type: MapElementType;
@@ -38,6 +40,8 @@ export interface FeatureProperties {
   strokeOpacity: number;
   mapElementType: MapElementType;
   shapeKind?: ShapeKind;
+  mimeType?: string;
+  bounds?: [Coordinate, Coordinate];
   startDate: string; // Format: "YYYY-MM-DD"
   endDate: string; // Format: "YYYY-MM-DD"
 }
