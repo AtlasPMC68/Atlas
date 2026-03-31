@@ -506,7 +506,7 @@ export class MapDrawingService {
       updatedFeature.name = sourceLayer.feature.name;
       updatedFeature.createdAt = sourceLayer.feature.createdAt;
       updatedFeature.updatedAt = new Date().toISOString();
-      updatedFeature.opacity = sourceLayer.feature.opacity ?? updatedFeature.opacity;
+      updatedFeature.properties.opacity = sourceLayer.feature.properties.opacity ?? updatedFeature.properties.opacity;
       updatedFeature.properties.name = sourceLayer.feature.properties.name;
       updatedFeature.properties.labelText = sourceLayer.feature.properties.labelText;
       updatedFeature.properties.colorName = sourceLayer.feature.properties.colorName;

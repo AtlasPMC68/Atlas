@@ -9,7 +9,6 @@ export interface Feature {
   createdAt: string;
   updatedAt: string;
   name: string;
-  opacity: number;
   image?: string;
 }
 
@@ -35,6 +34,7 @@ export interface FeatureProperties {
   labelText?: string;
   colorName: string;
   colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
+  opacity: number;
   strokeColor?: [number, number, number];
   strokeWidth: number;
   strokeOpacity: number;

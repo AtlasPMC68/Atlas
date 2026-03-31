@@ -153,6 +153,7 @@ export function layerToFeature(
       labelText,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
+      opacity: baseFeature?.properties?.opacity ?? 0.5,
       strokeColor: baseFeature?.properties?.strokeColor ?? baseFeature?.properties?.colorRgb,
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
@@ -163,7 +164,6 @@ export function layerToFeature(
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,
     name: baseFeature?.name ?? "",
-    opacity: baseFeature?.opacity ?? 0.5,
   };
 }
 
@@ -178,7 +178,7 @@ export function featureToLayer(feature: Feature): L.Layer | null {
   const style = {
     weight: feature.properties.strokeWidth || 2,
     fillColor: fillColor,
-    fillOpacity: feature.opacity || 0.5,
+    fillOpacity: feature.properties.opacity || 0.5,
     strokeColor: strokeColor,
     strokeWidth: feature.properties.strokeWidth || 2,
     strokeOpacity: feature.properties.strokeOpacity ?? 0.5,
@@ -270,7 +270,7 @@ export function extractFeatureFromLayer(
       extracted.mapId = baseFeature.mapId;
       extracted.createdAt = baseFeature.createdAt;
       extracted.name = baseFeature.name;
-      extracted.opacity = baseFeature.opacity;
+      extracted.properties.opacity = baseFeature.properties.opacity;
       extracted.properties = {
         ...(baseFeature.properties || {}),
         ...(extracted.properties || {}),
