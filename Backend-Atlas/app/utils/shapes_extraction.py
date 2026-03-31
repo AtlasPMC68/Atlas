@@ -23,7 +23,7 @@ SIMPLE_BINARY_UNIQUE_LEVELS = 3
 MAX_SHAPE_IMAGE_AREA_RATIO = 0.5
 CONTOUR_APPROX_EPSILON_RATIO = 0.001
 CIRCLE_MIN_RADIUS_PX = 2
-CIRCLE_DELTA_ANGLE_DEG = 2
+CIRCLE_DELTA_ANGLE_DEG = 5
 
 # ---------------------------------------------------------------------------
 # Low-level helpers
