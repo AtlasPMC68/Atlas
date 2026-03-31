@@ -9,7 +9,7 @@ import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
-import { toArray } from "../utils/utils";
+import { toArray, toImageSrc } from "../utils/utils";
 import type { Coordinate, Feature, Geometry } from "../typescript/feature";
 import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
 import type { MapFeatureId } from "../typescript/mapDrawing";
@@ -37,6 +37,7 @@ const emit = defineEmits<{
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
   (e: "draw-delete", features: Feature[]): void;
+  (e: "map-ready", map: L.Map): void;
 }>();
 
 const selectedYear = ref(1740);
@@ -55,6 +56,7 @@ const filteredFeatures = computed(() => {
 });
 
 let map: L.Map | null = null;
+let vectorRenderer: L.Canvas | null = null;
 
 const featureLayerManager = {
   layers: new Map<MapFeatureId, L.Layer>(),
@@ -323,6 +325,7 @@ function renderZones(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
+        renderer: vectorRenderer ?? undefined,
         fillColor,
         fillOpacity: 0.5,
         color: "#333",
@@ -358,6 +361,7 @@ function renderShapes(features: Feature[]) {
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
+        renderer: vectorRenderer ?? undefined,
         fillColor: fillColor,
         opacity: feature.opacity ?? 1,
         fillOpacity: feature.opacity ?? 0.5,
@@ -373,6 +377,27 @@ function renderShapes(features: Feature[]) {
     }
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
+  });
+}
+
+function renderImages(features: Feature[]) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!map || !feature.image) return;
+
+    const bounds = feature.properties?.bounds as [[0, 0], [0, 0]] | undefined;
+
+    if (!bounds) return;
+
+    const src = toImageSrc(feature.image);
+    const overlay = L.imageOverlay(src, bounds, {
+      opacity: feature.opacity ?? 1,
+      interactive: true,
+    });
+
+    attachFeatureToLayer(overlay, feature);
+    featureLayerManager.addFeatureLayer(feature.id, overlay);
   });
 }
 
@@ -397,18 +422,24 @@ function renderAllFeatures() {
     point: currentFeatures.filter((f) => getMapElementType(f) === "point"),
     zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
     shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
+    image: currentFeatures.filter((f) => getMapElementType(f) === "image"),
   };
 
   renderCities(featuresByType.point);
   renderZones(featuresByType.zone);
   renderShapes(featuresByType.shape);
+  renderImages(featuresByType.image);
 
   previousFeatureIds.value = currentIds;
   emit("features-loaded", currentFeatures);
 }
 
 onMounted(() => {
-  map = L.map("map", { zoomControl: false }).setView([52.9399, -73.5491], 5);
+  map = L.map("map", { zoomControl: false, preferCanvas: true }).setView(
+    [52.9399, -73.5491],
+    5,
+  );
+  vectorRenderer = L.canvas({ padding: 0.5 });
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -421,8 +452,13 @@ onMounted(() => {
 
   drawing.initializeDrawing(map);
 
-  L.control.zoom({ position: "topright" }).addTo(map);
+  L.control
+    .scale({ position: "bottomright", metric: true, imperial: false })
+    .addTo(map);
 
+  L.control.zoom({ position: "topleft" }).addTo(map);
+
+  emit("map-ready", map);
   renderAllFeatures();
 });
 
