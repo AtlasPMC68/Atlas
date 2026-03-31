@@ -238,6 +238,7 @@ function isUuid(value: string): boolean {
 
 async function onDeleteFeature(
   featureId: string,
+  // TODO
   callbacks?: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
