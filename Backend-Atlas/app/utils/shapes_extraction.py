@@ -21,7 +21,7 @@ DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
 
 SIMPLE_BINARY_UNIQUE_LEVELS = 3
 MAX_SHAPE_IMAGE_AREA_RATIO = 0.5
-CONTOUR_APPROX_EPSILON_RATIO = 0.001
+CONTOUR_APPROX_EPSILON_RATIO = 0.0005
 CIRCLE_MIN_RADIUS_PX = 2
 CIRCLE_DELTA_ANGLE_DEG = 5
 
@@ -209,8 +209,16 @@ def extract_contour_properties(
         properties_dict["shape_type"],
         approx=approx,
     )
-    
+
     properties_dict["geometry"]["pixel_coords"]["contour_points"] = ideal_points
+
+    if "num_vertices" in properties_dict:
+        try:
+            properties_dict["num_vertices"] = int(len(ideal_points))
+        except TypeError:
+            logger.warning(
+                "Idealized contour points are not iterable; num_vertices not updated."
+            )
 
     return properties_dict
 
@@ -437,6 +445,52 @@ def idealize_shape_points(
                 True,
             )
         return [[float(pt[0][0]), float(pt[0][1])] for pt in approx]
+
+
+def _sync_shape_metrics_with_contour(
+    shape: Dict,
+    contour_int: np.ndarray,
+) -> None:
+    """Keep shape metrics consistent with the final idealized contour."""
+    area = float(cv2.contourArea(contour_int))
+    perimeter = float(cv2.arcLength(contour_int, True))
+    shape["area"] = area
+    shape["perimeter"] = perimeter
+
+    x, y, w, h = cv2.boundingRect(contour_int)
+    bbox = {"x": int(x), "y": int(y), "width": int(w), "height": int(h)}
+
+    moments = cv2.moments(contour_int)
+    if moments["m00"] != 0:
+        cx = int(moments["m10"] / moments["m00"])
+        cy = int(moments["m01"] / moments["m00"])
+    else:
+        cx, cy = x + w // 2, y + h // 2
+    center = {"x": int(cx), "y": int(cy)}
+
+    if "bounding_box" in shape:
+        shape["bounding_box"] = bbox
+    if "center" in shape:
+        shape["center"] = center
+
+    pixel_coords = shape.get("geometry", {}).get("pixel_coords", {})
+    if isinstance(pixel_coords, dict):
+        if "bounding_box" in pixel_coords:
+            pixel_coords["bounding_box"] = bbox
+        if "center" in pixel_coords:
+            pixel_coords["center"] = center
+
+    bbox_area = float(w * h)
+    if "aspect_ratio" in shape:
+        shape["aspect_ratio"] = round(float(w) / h if h > 0 else 0.0, 2)
+    if "extent" in shape:
+        shape["extent"] = round(area / bbox_area if bbox_area > 0 else 0.0, 3)
+    if "rect_score" in shape:
+        shape["rect_score"] = round(compute_rect_score(contour_int), 3)
+
+    if "solidity" in shape:
+        hull_area = float(cv2.contourArea(cv2.convexHull(contour_int)))
+        shape["solidity"] = round(area / hull_area if hull_area > 0 else 0.0, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -832,11 +886,9 @@ def extract_shapes(
             ideal_pts = shape["geometry"]["pixel_coords"]["contour_points"]
 
             ideal_contour_float = np.array(ideal_pts, dtype=np.float32).reshape((-1, 1, 2))
-
-            shape["area"] = float(cv2.contourArea(ideal_contour_float))
-            shape["perimeter"] = float(cv2.arcLength(ideal_contour_float, True))
-
             ideal_contour = np.rint(ideal_contour_float).astype(np.int32)
+
+            _sync_shape_metrics_with_contour(shape, ideal_contour)
             
             shapes_with_contours.append((shape, ideal_contour))
 
