@@ -199,6 +199,7 @@ import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
+import keycloak from "../../keycloak";
 import type {
   WorldBounds,
   LatLngTuple,
@@ -263,6 +264,7 @@ const legendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const legendReturnStep = ref<number>(2);
 const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
+const isRedirecting = ref<boolean>(false);
 
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
@@ -394,11 +396,46 @@ async function handleLegendConfirmed(bounds: LegendBounds) {
   await submitImportWithGeoref(bounds);
 }
 
-// Redirect when extraction is finished
-watch([isProcessing, resultData, mapId], ([processing, result, id]) => {
-  if (!processing && result && id) {
-    router.push(`/carte/${id}`);
+async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
+  if (!keycloak.token) return null;
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/map-project/${id}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+      },
+    );
+
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as {
+      project_id?: string;
+      projectId?: string;
+    };
+
+    return data.project_id ?? data.projectId ?? null;
+  } catch {
+    return null;
   }
+}
+
+// Redirect when extraction is finished
+watch([isProcessing, resultData, mapId], async ([processing, result, id]) => {
+  if (isRedirecting.value || processing || !result || !id) return;
+
+  isRedirecting.value = true;
+  const projectId = await resolveProjectIdFromMapId(String(id));
+
+  if (projectId) {
+    await router.push(`/projet/${projectId}`);
+    return;
+  }
+
+  await router.push(`/tableau-de-bord`);
 });
 
 const resetImport = () => {

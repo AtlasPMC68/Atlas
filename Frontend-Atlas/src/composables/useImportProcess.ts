@@ -48,6 +48,12 @@ export function useImportProcess() {
     legendBounds?: LegendBounds | null,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
+    if (!inputMapId || inputMapId === "undefined" || inputMapId === "null") {
+      return {
+        success: false,
+        error: "Aucune carte cible (map_id) n'a ete fournie pour l'extraction",
+      };
+    }
 
     isProcessing.value = true;
     showProcessingModal.value = true;

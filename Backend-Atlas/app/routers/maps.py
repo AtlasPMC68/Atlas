@@ -1,8 +1,6 @@
 import base64
 import logging
-from uuid import UUID
 import json
-import logging
 import math
 from json import JSONDecodeError
 from uuid import UUID
@@ -15,10 +13,13 @@ from sqlalchemy.orm import Session
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
+from app.models.project import Project
 from app.models.user import User
-from app.schemas.map import MapOut
-from app.schemas.mapCreateRequest import MapCreateRequest
-from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
+from app.schemas.project import ProjectOut
+from app.schemas.projectCreateRequest import ProjectCreateRequest
+from app.schemas.mapImportRequest import MapImportRequest
+from app.services.maps import create_map_in_db
+from app.services.projects import create_project_in_db, delete_project_in_db, update_project_in_db
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
@@ -36,65 +37,89 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
+
+@router.post("/import")
+async def create_map_for_project(
+    request: MapImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    try:
+        created_map_id = await create_map_in_db(
+            db=db,
+            project_id=request.project_id,
+            user_id=UUID(user_id),
+            title=request.title,
+            year=request.year,
+        )
+        if not created_map_id:
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
+        return {"map_id": str(created_map_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating map for project: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create map")
+
 @router.post("/create")
-async def create_map(
-    request: MapCreateRequest,
+async def create_project(
+    request: ProjectCreateRequest,
     user_id: dict = Depends(get_current_user_id),
     db: Session = Depends(get_async_session),
 ):
     try:
-        map_id = await create_map_in_db(
+        project_id = await create_project_in_db(
             db=db,
             user_id=UUID(user_id),
             title=request.title,
             description=request.description,
             is_private=request.is_private,
         )
-        return {"map_id": str(map_id)}
+        return {"project_id": str(project_id)}
     except Exception as e:
-        logger.error(f"Error creating map: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create map")
+        logger.error(f"Error creating project: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create project")
 
-@router.delete("/{map_id}")
-async def delete_map(
-    map_id: UUID,
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: UUID,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_async_session),
 ):
     try:
-        deleted = await delete_map_in_db(
+        deleted = await delete_project_in_db(
             db=db,
-            map_id=map_id,
+            project_id=project_id,
             user_id=UUID(user_id),
         )
         if not deleted:
-            raise HTTPException(status_code=404, detail="Map not found or access denied")
-        return {"detail": "Map deleted successfully"}
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
+        return {"detail": "Project deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting map: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to delete map")
-    
-@router.put("/{map_id}")
-async def update_map(
-    map_id: UUID,
-    request: MapCreateRequest,
+        logger.error(f"Error deleting project: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete project")
+
+@router.put("/{project_id}")
+async def update_project(
+    project_id: UUID,
+    request: ProjectCreateRequest,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_async_session),
 ):
     try:
-        updated_map = await update_map_in_db(
+        updated_project = await update_project_in_db(
             db=db,
-            map_id=map_id,
+            project_id=project_id,
             user_id=UUID(user_id),
             title=request.title,
             description=request.description,
             is_private=request.is_private,
         )
-        if not updated_map:
-            raise HTTPException(status_code=404, detail="Map not found or access denied")
-        return {"map_id": str(updated_map)}
+        if not updated_project:
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
+        return {"project_id": str(updated_project.id)}
     except HTTPException:
         raise
     except Exception as e:
@@ -110,7 +135,7 @@ async def upload_and_process_map(
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
     enable_text_extraction: bool = Form(False),
-    map_id: str = Form(None),
+    map_id: str = Form(...),
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
@@ -121,7 +146,9 @@ async def upload_and_process_map(
         raise HTTPException(status_code=400, detail="Invalid map_id")
     
     result = await session.execute(
-        select(Map).where(Map.id == map_id, Map.user_id == UUID(user_id))
+        select(Map)
+        .join(Project, Map.project_id == Project.id)
+        .where(Map.id == map_id, Project.user_id == UUID(user_id))
     )
     map_obj = result.scalar_one_or_none()
     if not map_obj:
@@ -285,16 +312,7 @@ async def get_extraction_results(task_id: str):
         )
 
 
-@router.get("/features/{map_id}")
-async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
-    try:
-        map_id = UUID(map_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid map_id")
-
-    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
-    features_rows = result.scalars().all()
-
+def _serialize_features(features_rows: list[Feature]) -> list[dict]:
     all_features = []
     for f in features_rows:
         if not f.data or not isinstance(f.data, dict):
@@ -321,8 +339,73 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
     return all_features
 
 
-@router.get("/map", response_model=list[MapOut])
-async def get_maps(
+@router.get("/features/{map_id}")
+async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
+    try:
+        map_id = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
+    features_rows = result.scalars().all()
+
+    return _serialize_features(features_rows)
+
+
+@router.get("/projects/{project_id}/features")
+async def get_project_features(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        project_uuid = UUID(project_id)
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+
+    project_result = await session.execute(
+        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+    )
+    allowed_project = project_result.scalar_one_or_none()
+    if not allowed_project:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+    features_result = await session.execute(
+        select(Feature)
+        .join(Map, Feature.map_id == Map.id)
+        .where(Map.project_id == project_uuid)
+    )
+    features_rows = features_result.scalars().all()
+
+    return _serialize_features(features_rows)
+
+
+@router.get("/map-project/{map_id}")
+async def get_project_id_for_map(
+    map_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(Map.project_id)
+        .join(Project, Map.project_id == Project.id)
+        .where(Map.id == map_id, Project.user_id == user_uuid)
+    )
+    project_id = result.scalar_one_or_none()
+    if not project_id:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
+    return {"map_id": str(map_id), "project_id": str(project_id)}
+
+
+@router.get("/projects", response_model=list[ProjectOut])
+async def get_projects(
     user_id: str | None = None,
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -330,54 +413,52 @@ async def get_maps(
         try:
             user_id = UUID(user_id)
             query = (
-                select(Map, User.username)
-                .join(User, Map.user_id == User.id, isouter=True)
-                .where(Map.user_id == user_id)
-                .order_by(Map.updated_at.desc())
+                select(Project, User.username)
+                .join(User, Project.user_id == User.id, isouter=True)
+                .where(Project.user_id == user_id)
+                .order_by(Project.updated_at.desc())
             )
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid user_id format")
     else:
         query = (
-            select(Map, User.username)
-            .join(User, Map.user_id == User.id, isouter=True)
-            .where(not_(Map.is_private))
-            .order_by(Map.updated_at.desc())
+            select(Project, User.username)
+            .join(User, Project.user_id == User.id, isouter=True)
+            .where(not_(Project.is_private))
+            .order_by(Project.updated_at.desc())
         )
 
     result = await session.execute(query)
     rows = result.all()
 
-    maps = []
-    for map_obj, username in rows:
+    projects = []
+    for project_obj, username in rows:
         encoded_image = (
-            base64.b64encode(map_obj.image).decode("ascii")
-            if map_obj.image
+            base64.b64encode(project_obj.image).decode("ascii")
+            if project_obj.image
             else None
         )
 
-        out = MapOut(
-            id=map_obj.id,
-            user_id=map_obj.user_id,
+        out = ProjectOut(
+            id=project_obj.id,
+            user_id=project_obj.user_id,
             username=username,
-            title=map_obj.title,
-            description=map_obj.description,
-            is_private=map_obj.is_private,
+            title=project_obj.title,
+            description=project_obj.description,
+            is_private=project_obj.is_private,
             image=encoded_image,
-            start_date=map_obj.start_date,
-            end_date=map_obj.end_date,
-            created_at=map_obj.created_at,
-            updated_at=map_obj.updated_at,
+            created_at=project_obj.created_at,
+            updated_at=project_obj.updated_at,
         )
-        maps.append(out)
+        projects.append(out)
 
-    return maps
+    return projects
 
 
 # TODO real save on that endpoint
 @router.post("/save")
 async def save_map(
-    request: MapCreateRequest,
+    request: ProjectCreateRequest,
     user: dict = Depends(get_user_from_token),
     db: Session = Depends(get_db),
 ):
@@ -411,9 +492,9 @@ async def get_coastline_keypoints(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{map_id}/thumbnail")
+@router.post("/{project_id}/thumbnail")
 async def upload_map_thumbnail(
-    map_id: UUID,
+    project_id: UUID,
     image: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
@@ -429,11 +510,11 @@ async def upload_map_thumbnail(
         raise HTTPException(status_code=401, detail="Invalid user")
 
     result = await session.execute(
-        select(Map).where(Map.id == map_id, Map.user_id == user_uuid)
+        select(Project).where(Project.id == project_id, Project.user_id == user_uuid)
     )
-    map_obj = result.scalar_one_or_none()
-    if not map_obj:
-        raise HTTPException(status_code=404, detail="Map not found or access denied")
+    project_obj = result.scalar_one_or_none()
+    if not project_obj:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
 
     content = await image.read()
     if not content:
@@ -445,12 +526,12 @@ async def upload_map_thumbnail(
         )
 
     try:
-        map_obj.image = content
+        project_obj.image = content
         await session.commit()
-        return {"status": "ok", "map_id": str(map_id)}
+        return {"status": "ok", "project_id": str(project_id)}
     except Exception as e:
         await session.rollback()
-        logger.error(f"Error saving map thumbnail: {str(e)}", exc_info=True)
+        logger.error(f"Error saving project thumbnail: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to save thumbnail")
 
 
@@ -476,7 +557,9 @@ async def upload_image(
         raise HTTPException(status_code=401, detail="Invalid user")
 
     map_result = await session.execute(
-        select(Map).where(Map.id == map_id, Map.user_id == user_id)
+        select(Map)
+        .join(Project, Map.project_id == Project.id)
+        .where(Map.id == map_id, Project.user_id == user_id)
     )
     map_obj = map_result.scalar_one_or_none()
     if not map_obj:
@@ -544,7 +627,6 @@ async def upload_image(
     try:
         feature = Feature(
             map_id=map_id,
-            is_feature_collection=False,
             data=feature_data,
             image=content,
         )

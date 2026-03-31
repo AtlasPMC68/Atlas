@@ -3,12 +3,13 @@
     <div class="navbar bg-base-100 shadow-lg">
       <div class="flex justify-end gap-4">
         <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
-        <button @click="upload(mapId)" class="btn btn-primary">
+        <button @click="openAddMapDialog" class="btn btn-primary">
           Ajouter une carte
         </button>
         <button
           @click="addFeatureImageDialog?.showModal()"
           class="btn btn-primary"
+          :disabled="!hasActiveMap"
         >
           Ajouter une image
         </button>
@@ -83,10 +84,67 @@
       <button :disabled="isAdding">close</button>
     </form>
   </dialog>
+
+  <dialog ref="addMapDialogRef" class="modal">
+    <div class="modal-box p-0">
+      <form @submit.prevent="createMapForProject">
+        <div class="card-body">
+          <h3 class="text-lg font-bold">Ajouter une carte au projet</h3>
+
+          <fieldset class="fieldset" :disabled="isCreatingMap">
+            <label class="label">Nom de la carte</label>
+            <input
+              v-model="newMapTitle"
+              type="text"
+              class="input"
+              placeholder="Ex: Carte politique de 1850"
+              required
+            />
+
+            <label class="label">Annee</label>
+            <input
+              v-model.number="newMapYear"
+              type="number"
+              min="1"
+              max="9999"
+              class="input"
+              placeholder="Ex: 1850"
+              required
+            />
+          </fieldset>
+
+          <div class="flex justify-end gap-2 mt-6">
+            <button
+              type="button"
+              class="btn btn-ghost"
+              :disabled="isCreatingMap"
+              @click="addMapDialogRef?.close()"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="!newMapTitle.trim() || !newMapYear || isCreatingMap"
+            >
+              <span
+                v-if="isCreatingMap"
+                class="loading loading-spinner loading-xs"
+              ></span>
+              <span v-else>Creer et importer</span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isCreatingMap">close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
@@ -107,19 +165,27 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 
 const route = useRoute();
 const router = useRouter();
-const mapId = ref(route.params.mapId as string).value;
+const mapRouteId = ref((route.params.mapId as string | undefined) ?? null).value;
+const projectRouteId = ref((route.params.projectId as string | undefined) ?? null).value;
+const activeMapId = ref<string | null>(null);
+const projectId = ref<string | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const showSaveAsModal = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
 const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
+const addMapDialogRef = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
+const isCreatingMap = ref(false);
+const newMapTitle = ref("");
+const newMapYear = ref<number | null>(null);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const hasActiveMap = computed(() => Boolean(activeMapId.value));
 
 async function onAddFeatureImage() {
-  if (!selectedFile.value || !keycloak.token) {
+  if (!selectedFile.value || !keycloak.token || !activeMapId.value) {
     onCloseAddFeatureImageDialog();
     return;
   }
@@ -128,10 +194,10 @@ async function onAddFeatureImage() {
   try {
     const formData = new FormData();
     formData.append("image", selectedFile.value);
-    formData.append("map_id", mapId);
+    formData.append("map_id", activeMapId.value);
 
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${mapId}/features/image`,
+      `${import.meta.env.VITE_API_URL}/maps/${activeMapId.value}/features/image`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${keycloak.token}` },
@@ -172,7 +238,12 @@ function onFileChange() {
 }
 
 async function uploadMapThumbnail(): Promise<boolean> {
-  if (!leafletMap.value || !mapId || !keycloak.token) return false;
+  if (!leafletMap.value || !activeMapId.value || !keycloak.token) return false;
+
+  if (!projectId.value) {
+    const resolved = await resolveRouteContext();
+    if (!resolved) return false;
+  }
 
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -191,7 +262,7 @@ async function uploadMapThumbnail(): Promise<boolean> {
       formData.append("image", blob);
 
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/${mapId}/thumbnail`,
+        `${import.meta.env.VITE_API_URL}/maps/${projectId.value}/thumbnail`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${keycloak.token}` },
@@ -204,8 +275,91 @@ async function uploadMapThumbnail(): Promise<boolean> {
   });
 }
 
+async function loadProjectIdForMap(): Promise<boolean> {
+  if (!keycloak.token) return false;
+
+  if (projectRouteId) {
+    projectId.value = projectRouteId;
+    activeMapId.value = null;
+    return true;
+  }
+
+  if (!mapRouteId) return false;
+
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/map-project/${mapRouteId}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${keycloak.token}` },
+      },
+    );
+
+    if (!res.ok) return false;
+
+    const payload = snakeToCamel(await res.json()) as { projectId: string };
+    projectId.value = payload.projectId;
+    activeMapId.value = mapRouteId;
+    return Boolean(projectId.value);
+  } catch {
+    return false;
+  }
+}
+
+async function resolveRouteContext(): Promise<boolean> {
+  return loadProjectIdForMap();
+}
+
+function openAddMapDialog() {
+  newMapTitle.value = "";
+  newMapYear.value = null;
+  addMapDialogRef.value?.showModal();
+}
+
+async function createMapForProject() {
+  if (!keycloak.token) return;
+  const targetProjectId = projectId.value || projectRouteId;
+
+  if (!targetProjectId || !newMapTitle.value.trim()) {
+    return;
+  }
+  if (!newMapYear.value || newMapYear.value < 1 || newMapYear.value > 9999) {
+    return;
+  }
+
+  isCreatingMap.value = true;
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/import`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+      body: JSON.stringify(
+        camelToSnake({
+          projectId: targetProjectId,
+          title: newMapTitle.value.trim(),
+          year: newMapYear.value,
+        }),
+      ),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Error creating map for project: ${res.status}`);
+    }
+
+    const payload = snakeToCamel(await res.json()) as { mapId: string };
+    addMapDialogRef.value?.close();
+    router.push(`/televersement/${payload.mapId}`);
+  } catch (e) {
+    console.error("Failed to create map for project:", e);
+  } finally {
+    isCreatingMap.value = false;
+  }
+}
+
 function reconcileVisibility(list: Feature[]) {
-  const next = new Map(featureVisibility.value);
+  const next = new Map<string, boolean>(featureVisibility.value);
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
@@ -220,10 +374,27 @@ function reconcileVisibility(list: Feature[]) {
 }
 
 async function loadInitialFeatures() {
+  if (!keycloak.token) {
+    return;
+  }
+
+  if (!activeMapId.value && !projectId.value) {
+    features.value = [];
+    featureVisibility.value = new Map();
+    return;
+  }
+
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
-    );
+    const endpoint = activeMapId.value
+      ? `${import.meta.env.VITE_API_URL}/maps/features/${activeMapId.value}`
+      : `${import.meta.env.VITE_API_URL}/maps/projects/${projectId.value}/features`;
+
+    const res = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+    });
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
@@ -235,22 +406,20 @@ async function loadInitialFeatures() {
   }
 }
 
-function upload(mapId: string) {
-  router.push(`/televersement/${mapId}`);
-}
-
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
-  const next = new Map(featureVisibility.value);
+  const next = new Map<string, boolean>(featureVisibility.value);
   next.set(featureId, visible);
   featureVisibility.value = next;
 }
 
 function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
+  if (!activeMapId.value) return;
   uploadMapThumbnail();
 }
 
 onMounted(async () => {
   await fetchCurrentUser();
+  await resolveRouteContext();
   await loadInitialFeatures();
 });
 

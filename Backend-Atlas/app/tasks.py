@@ -338,7 +338,6 @@ async def persist_features(map_id: UUID, normalized_features: List[dict[str, Any
                     await insert_feature_in_db(
                         db=db,
                         map_id=map_id,
-                        is_feature_collection=False,
                         data=feature_data,
                     )
                 except Exception as e:
@@ -353,7 +352,6 @@ async def persist_city_feature(map_id: UUID, feature: dict[str, Any]):
             await insert_feature_in_db(
                 db=db,
                 map_id=map_id,
-                is_feature_collection=False,
                 data=feature,
             )
         except Exception as e:

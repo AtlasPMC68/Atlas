@@ -8,14 +8,21 @@ CREATE TABLE IF NOT EXISTS "users" (
   "created_at" TIMESTAMP DEFAULT (now())
 );
 
-CREATE TABLE IF NOT EXISTS "maps" (
+CREATE TABLE IF NOT EXISTS "projects" (
   "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "user_id" UUID REFERENCES "users"("id") ON DELETE CASCADE,
   "title" TEXT NOT NULL,
   "description" TEXT,
   "is_private" BOOLEAN DEFAULT TRUE,
-  "start_date" DATE, -- TODO : Take decision with this
-  "end_date" DATE, -- TODO : Take decision with this
+  "created_at" TIMESTAMP DEFAULT (now()),
+  "updated_at" TIMESTAMP DEFAULT (now())
+);
+
+CREATE TABLE IF NOT EXISTS "maps" (
+  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "project_id" UUID REFERENCES "projects"("id") ON DELETE CASCADE,
+  "title" TEXT NOT NULL,
+  "date" DATE, -- if date is null will show regardless of what is selected on timeline
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())
 );
@@ -23,7 +30,6 @@ CREATE TABLE IF NOT EXISTS "maps" (
 CREATE TABLE IF NOT EXISTS "features" (
   "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "map_id" UUID REFERENCES "maps"("id") ON DELETE CASCADE,
-  "is_feature_collection" BOOLEAN DEFAULT FALSE,
   "data" JSONB NOT NULL,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())

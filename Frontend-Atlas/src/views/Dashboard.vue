@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -13,6 +14,7 @@ import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
 
 const maps = ref<MapData[]>([]);
+const router = useRouter();
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const newMapTitle = ref<string | undefined>(undefined);
 const newMapDescription = ref<string | undefined>(undefined);
@@ -118,9 +120,9 @@ async function createMap() {
     newMapIsPrivate.value = true;
     createMapDialogRef.value?.close();
     await fetchMapsAndRender();
-    showAlert("success", "Carte créée avec succès !");
+    showAlert("success", "Projet créé avec succès !");
   } catch (err) {
-    showAlert("error", "Erreur lors de la création de la carte.");
+    showAlert("error", "Erreur lors de la création du projet.");
   } finally {
     isCreating.value = false;
   }
@@ -147,11 +149,11 @@ function openEditDialog(map: MapData) {
 
 async function saveMap() {
   if (!mapToEdit.value) {
-    showAlert("error", "Aucune carte sélectionnée pour la modification.");
+    showAlert("error", "Aucun projet sélectionné pour la modification.");
     return;
   }
   if (!editMapTitle.value?.trim()) {
-    showAlert("error", "Le titre de la carte est requis.");
+    showAlert("error", "Le titre du projet est requis.");
     return;
   }
   if (!currentUser.value) {
@@ -189,9 +191,9 @@ async function saveMap() {
     editMapIsPrivate.value = true;
     editMapDialogRef.value?.close();
     await fetchMapsAndRender();
-    showAlert("success", "Carte modifiée avec succès !");
+    showAlert("success", "Projet modifié avec succès !");
   } catch (err) {
-    showAlert("error", "Erreur lors de la modification de la carte.");
+    showAlert("error", "Erreur lors de la modification du projet.");
   } finally {
     isEditing.value = false;
   }
@@ -214,9 +216,9 @@ async function executeDelete() {
     deleteConfirmDialogRef.value?.close();
     mapToDelete.value = null;
     await fetchMapsAndRender();
-    showAlert("success", "Carte supprimée avec succès !");
+    showAlert("success", "Projet supprimé avec succès !");
   } catch (err) {
-    showAlert("error", "Erreur lors de la suppression de la carte.");
+    showAlert("error", "Erreur lors de la suppression du projet.");
   } finally {
     isDeleting.value = false;
   }
@@ -230,7 +232,7 @@ async function fetchMapsAndRender() {
 
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/map?user_id=${currentUser.value.id}`,
+      `${import.meta.env.VITE_API_URL}/maps/projects?user_id=${currentUser.value.id}`,
       {
         method: "GET",
         headers: {
@@ -241,7 +243,7 @@ async function fetchMapsAndRender() {
     );
 
     if (!res.ok) {
-      throw new Error(`Error while fetching the maps: ${res.status}`);
+      throw new Error(`Error while fetching the projects: ${res.status}`);
     }
 
     const mapsData: MapData[] = snakeToCamel(await res.json()) as MapData[];
@@ -258,7 +260,7 @@ async function fetchMapsAndRender() {
       image: map.image,
     }));
   } catch (err) {
-    throw new Error("Error while fetching the maps:" + err);
+    throw new Error("Error while fetching the projects:" + err);
   }
 }
 </script>
@@ -320,7 +322,7 @@ async function fetchMapsAndRender() {
         </button>
       </div>
 
-      <!-- Search + new map button -->
+      <!-- Search + new project button -->
       <div
         class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
       >
@@ -330,7 +332,7 @@ async function fetchMapsAndRender() {
             v-model="searchQuery"
             type="search"
             required
-            placeholder="Rechercher une carte par titre ou description"
+            placeholder="Rechercher un projet par titre ou description"
           />
         </label>
         <button
@@ -338,7 +340,7 @@ async function fetchMapsAndRender() {
           onclick="createMap.showModal()"
         >
           <PlusIcon class="h-5 w-5" />
-          Nouvelle Carte
+          Nouveau Projet
         </button>
       </div>
     </div>
@@ -351,7 +353,7 @@ async function fetchMapsAndRender() {
       <div class="modal-box p-0">
         <form @submit.prevent="createMap">
           <div class="card-body">
-            <h3 class="text-lg font-bold">Créer une nouvelle carte</h3>
+            <h3 class="text-lg font-bold">Créer un nouveau projet</h3>
 
             <fieldset class="fieldset" :disabled="isCreating">
               <label class="label">Titre</label>
@@ -359,7 +361,7 @@ async function fetchMapsAndRender() {
                 v-model="newMapTitle"
                 type="text"
                 class="input"
-                placeholder="Titre de la carte"
+                placeholder="Titre du projet"
                 required
               />
               <label class="label">Description</label>
@@ -367,14 +369,14 @@ async function fetchMapsAndRender() {
                 v-model="newMapDescription"
                 type="text"
                 class="input"
-                placeholder="Description de la carte"
+                placeholder="Description du projet"
               />
               <div class="gap-1">
                 <div class="flex items-center gap-1">
-                  <span class="fieldset-legend">Accès à la carte</span>
+                  <span class="fieldset-legend">Accès au projet</span>
                   <div
                     class="tooltip tooltip-right items-center"
-                    data-tip="Les cartes publiques sont visibles par tous les utilisateurs, tandis que les cartes privées ne sont accessibles que par vous."
+                    data-tip="Les projets publics sont visibles par tous les utilisateurs, tandis que les projets privés ne sont accessibles que par vous."
                   >
                     <QuestionMarkCircleIcon
                       class="h-4 w-4 text-gray-400"
@@ -424,7 +426,7 @@ async function fetchMapsAndRender() {
         v-for="map in filteredMaps"
         :key="map.id"
         class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer"
-        @click="$router.push(`/carte/${map.id}`)"
+        @click="router.push(`/projet/${map.id}`)"
       >
         <figure>
           <img :src="toImageSrc(map.image)" class="w-full h-full" />
@@ -467,7 +469,7 @@ async function fetchMapsAndRender() {
     <!-- Delete confirmation dialog -->
     <dialog ref="deleteConfirmDialogRef" class="modal">
       <div class="modal-box">
-        <h3 class="text-lg font-bold">Supprimer la carte</h3>
+        <h3 class="text-lg font-bold">Supprimer le projet</h3>
         <p class="py-4">
           Êtes-vous sûr de vouloir supprimer
           <span class="font-semibold">{{ mapToDelete?.title }}</span> ? Cette
@@ -504,7 +506,7 @@ async function fetchMapsAndRender() {
       <div class="modal-box p-0">
         <form @submit.prevent="saveMap">
           <div class="card-body">
-            <h3 class="text-lg font-bold">Modifier la carte</h3>
+            <h3 class="text-lg font-bold">Modifier le projet</h3>
 
             <fieldset class="fieldset" :disabled="isEditing">
               <label class="label">Titre</label>
@@ -512,7 +514,7 @@ async function fetchMapsAndRender() {
                 v-model="editMapTitle"
                 type="text"
                 class="input"
-                placeholder="Titre de la carte"
+                placeholder="Titre du projet"
                 required
               />
               <label class="label">Description</label>
@@ -520,14 +522,14 @@ async function fetchMapsAndRender() {
                 v-model="editMapDescription"
                 type="text"
                 class="input"
-                placeholder="Description de la carte"
+                placeholder="Description du projet"
               />
               <div class="gap-1">
                 <div class="flex items-center gap-1">
-                  <span class="fieldset-legend">Accès à la carte</span>
+                  <span class="fieldset-legend">Accès au projet</span>
                   <div
                     class="tooltip tooltip-right"
-                    data-tip="Les cartes publiques sont visibles par tous les utilisateurs, tandis que les cartes privées ne sont accessibles que par vous."
+                    data-tip="Les projets publics sont visibles par tous les utilisateurs, tandis que les projets privés ne sont accessibles que par vous."
                   >
                     <QuestionMarkCircleIcon class="h-4 w-4 text-gray-400" />
                   </div>
