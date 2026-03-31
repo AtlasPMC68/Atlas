@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
 
+SIMPLE_BINARY_UNIQUE_LEVELS = 3
+MAX_SHAPE_IMAGE_AREA_RATIO = 0.5
+CONTOUR_APPROX_EPSILON_RATIO = 0.001
+CIRCLE_MIN_RADIUS_PX = 2
+CIRCLE_DELTA_ANGLE_DEG = 2
+
 # ---------------------------------------------------------------------------
 # Low-level helpers
 # ---------------------------------------------------------------------------
@@ -98,8 +104,8 @@ def filter_text_overlapping_contours(
 def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray:
     """Binarise a grayscale image.  Uses a simple threshold for near-binary
     inputs and adaptive Gaussian thresholding otherwise."""
-    if len(np.unique(gray)) <= 3:
-        return (gray > 127).astype(np.uint8) * 255
+    if len(np.unique(gray)) <= SIMPLE_BINARY_UNIQUE_LEVELS:
+        return (gray > threshold_value).astype(np.uint8) * 255
 
     return cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 6
@@ -120,7 +126,9 @@ def _should_keep_contour(
     """Check if a contour should be kept based on area criteria."""
     area = cv2.contourArea(contour)
     return (
-        min_area <= area <= max_area and area / image_area <= 0.5 and len(contour) >= 3
+        min_area <= area <= max_area
+        and area / image_area <= MAX_SHAPE_IMAGE_AREA_RATIO
+        and len(contour) >= 3
     )
 
 
@@ -140,10 +148,8 @@ def filter_contours(
 def extract_contour_properties(
     contour: np.ndarray,
     original_image: np.ndarray,
-    binary_mask: np.ndarray,
     shape_id: int,
     hough_circles: Optional[List[Tuple[int, int, int]]] = None,
-    legend_bounds: Optional[LegendBounds] = None,
 ) -> Optional[Dict]:
     area = cv2.contourArea(contour)
     perimeter = cv2.arcLength(contour, True)
@@ -162,7 +168,7 @@ def extract_contour_properties(
     hull_area = cv2.contourArea(cv2.convexHull(contour))
     solidity = area / hull_area if hull_area > 0 else 0.0
 
-    approx = cv2.approxPolyDP(contour, 0.001 * perimeter, True)
+    approx = cv2.approxPolyDP(contour, CONTOUR_APPROX_EPSILON_RATIO * perimeter, True)
     color_rgb = get_dominant_color_in_contour(original_image, contour)
 
     bounding_box = {"x": int(x), "y": int(y), "width": int(w), "height": int(h)}
@@ -197,6 +203,14 @@ def extract_contour_properties(
         properties_dict,
         hough_circles=hough_circles,
     )
+
+    ideal_points = idealize_shape_points(
+        contour,
+        properties_dict["shape_type"],
+        approx=approx,
+    )
+    
+    properties_dict["geometry"]["pixel_coords"]["contour_points"] = ideal_points
 
     return properties_dict
 
@@ -393,6 +407,36 @@ def post_filter_shapes(
             deduped.append((candidate_shape, candidate_contour))
 
     return deduped
+
+def idealize_shape_points(
+    contour: np.ndarray,
+    shape_type: str,
+    approx: Optional[np.ndarray] = None,
+) -> List[List[float]]:
+    
+    if shape_type == "Rectangle":
+        rect = cv2.minAreaRect(contour)
+        box = cv2.boxPoints(rect)
+        return [[round(float(pt[0]), 3), round(float(pt[1]), 3)] for pt in box]
+        
+    elif shape_type == "Circle":
+        (x, y), radius = cv2.minEnclosingCircle(contour)
+        cx = int(round(x))
+        cy = int(round(y))
+        r = max(CIRCLE_MIN_RADIUS_PX, int(round(radius)))
+
+        poly = cv2.ellipse2Poly((cx, cy), (r, r), 0, 0, 360, CIRCLE_DELTA_ANGLE_DEG)
+        return [[float(px), float(py)] for px, py in poly]
+        
+    else:
+        if approx is None:
+            perimeter = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(
+                contour,
+                CONTOUR_APPROX_EPSILON_RATIO * perimeter,
+                True,
+            )
+        return [[float(pt[0][0]), float(pt[0][1])] for pt in approx]
 
 
 # ---------------------------------------------------------------------------
@@ -775,20 +819,26 @@ def extract_shapes(
         filtered, n_removed = filter_text_overlapping_contours(filtered, text_regions)
         logger.info("Removed %d shape(s) overlapping with text regions.", n_removed)
 
-    shapes_with_contours = [
-        (shape, contour)
-        for idx, contour in enumerate(filtered, 1)
-        if (
-            shape := extract_contour_properties(
-                contour,
-                image_bgr,
-                binary_mask,
-                idx,
-                hough_circles=hough_circles,
-                legend_bounds=legend_bounds,
-            )
+    shapes_with_contours = []
+    for idx, contour in enumerate(filtered, 1):
+        shape = extract_contour_properties(
+            contour,
+            image_bgr,
+            idx,
+            hough_circles=hough_circles,
         )
-    ]
+        
+        if shape:
+            ideal_pts = shape["geometry"]["pixel_coords"]["contour_points"]
+
+            ideal_contour_float = np.array(ideal_pts, dtype=np.float32).reshape((-1, 1, 2))
+
+            shape["area"] = float(cv2.contourArea(ideal_contour_float))
+            shape["perimeter"] = float(cv2.arcLength(ideal_contour_float, True))
+
+            ideal_contour = np.rint(ideal_contour_float).astype(np.int32)
+            
+            shapes_with_contours.append((shape, ideal_contour))
 
     shapes_with_contours = post_filter_shapes(
         shapes_with_contours,
