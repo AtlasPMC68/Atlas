@@ -17,6 +17,7 @@ import type {
 } from "../typescript/mapDrawing";
 
 const freehandControlName = "drawFreehand";
+const addCityControlName = "addCity";
 const removalSelectionStyle: L.PathOptions = {
   color: "#ef4444",
   weight: 2,
@@ -160,12 +161,12 @@ export class MapDrawingService {
     mapWithPm.pm.addControls({
       position: "topright",
       continueDrawing: false,
-      drawMarker: true,
+      drawMarker: false,
       drawPolyline: true,
       drawPolygon: true,
       drawCircle: true,
       drawRectangle: true,
-      drawCircleMarker: true,
+      drawCircleMarker: false,
       drawText: true,
       editMode: true,
       dragMode: true,
@@ -174,8 +175,10 @@ export class MapDrawingService {
       removalMode: true,
     });
 
-    mapWithPm.pm.setLang?.('fr');
+    // 'fr' locale is missing drawTextButton — merge it in by passing 'fr' as both lang and fallback
+    mapWithPm.pm.setLang?.('fr', { buttonTitles: { drawTextButton: 'Insérer du texte' } } as unknown as Record<string, unknown>, 'fr');
     this.addFreehandButton(map);
+    this.addCityButton(map);
     this.setupDrawingListeners(map);
   }
 
@@ -191,7 +194,7 @@ export class MapDrawingService {
     toolbar.createCustomControl({
       name: freehandControlName,
       block: "draw",
-      title: "Draw Freehand Line",
+      title: "Dessiner ligne à main levée",
       className: "leaflet-pm-icon-freehand",
       toggle: true,
       disableOtherButtons: true,
@@ -208,6 +211,31 @@ export class MapDrawingService {
         }
         this.setDrawingMode(null);
       },
+    });
+
+    toolbar.changeControlOrder?.();
+  }
+
+  private addCityButton(map: L.Map) {
+    const toolbar = (map as MapWithPm).pm?.Toolbar;
+    if (
+      !toolbar?.createCustomControl ||
+      toolbar.controlExists?.(addCityControlName)
+    ) {
+      return;
+    }
+
+    toolbar.createCustomControl({
+      name: addCityControlName,
+      block: "draw",
+      title: "Ajouter une ville",
+      className: "leaflet-pm-icon-add-city",
+      toggle: true,
+      disableOtherButtons: true,
+      disableByOtherButtons: true,
+      actions: ["cancel"],
+      onClick: () => {},
+      afterClick: () => {},
     });
 
     toolbar.changeControlOrder?.();
@@ -665,12 +693,12 @@ export class MapDrawingService {
     const isFeatureMode = mode === "feature";
 
     pm.addControls({
-      drawMarker: !isFeatureMode,
+      drawMarker: false,
       drawPolyline: !isFeatureMode,
       drawPolygon: !isFeatureMode,
       drawCircle: !isFeatureMode,
       drawRectangle: !isFeatureMode,
-      drawCircleMarker: !isFeatureMode,
+      drawCircleMarker: false,
       drawText: !isFeatureMode,
       editMode: isFeatureMode,
       dragMode: false,
@@ -678,6 +706,7 @@ export class MapDrawingService {
       cutPolygon: !isFeatureMode,
       removalMode: !isFeatureMode,
       [freehandControlName]: !isFeatureMode,
+      [addCityControlName]: !isFeatureMode,
     });
 
     if (isFeatureMode) {

@@ -98,3 +98,25 @@
   outline-offset: 0px;
   cursor: move !important;
 }
+
+.leaflet-pm-icon-add-city {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235B5B5B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z'/%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3C/svg%3E");
+}
+
+.city-name-input-container {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: all;
+}
+
+.city-name-input {
+  background: white;
+  border: 1.5px solid #333;
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-weight: bold;
+  outline: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+  min-width: 120px;
+}

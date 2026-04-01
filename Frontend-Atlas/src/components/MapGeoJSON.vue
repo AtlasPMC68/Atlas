@@ -2,11 +2,26 @@
   <div class="relative h-full w-full z-0">
     <div id="map" style="height: 80vh; width: 100%"></div>
     <TimelineSlider v-model:year="selectedYear" />
+    <div
+      v-if="pendingCity"
+      class="city-name-input-container"
+      :style="{ left: pendingCity.screenPos.x + 'px', top: pendingCity.screenPos.y + 'px' }"
+    >
+      <input
+        ref="cityInput"
+        v-model="cityInputName"
+        class="city-name-input"
+        placeholder="Nom de la ville"
+        @keydown.enter.prevent="confirmCity"
+        @keydown.escape.prevent="cancelAddCity"
+        @blur="confirmCity"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, computed, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -76,7 +91,8 @@ let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
 let suppressNextPropsRender = false;
 let blockNextMapClick = false;
-let selectedLayerOriginalColor: string | undefined = undefined;
+let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
+let selectedCityRing: L.Marker | null = null;
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 interface ImageInteractionState {
@@ -86,6 +102,17 @@ interface ImageInteractionState {
   aspectRatio: number; // pixel width / pixel height at attach time
 }
 let imageInteraction: ImageInteractionState | null = null;
+
+// --- add city mode ---
+interface PendingCity {
+  latlng: L.LatLng;
+  screenPos: { x: number; y: number };
+  marker: L.CircleMarker;
+}
+let addCityMode = false;
+const pendingCity = ref<PendingCity | null>(null);
+const cityInputName = ref('');
+const cityInput = ref<HTMLInputElement | null>(null);
 
 const selectedFeatureId = ref<string | null>(null);
 
@@ -107,6 +134,7 @@ const featureLayerManager = {
       // separate events from the same mouse event. Without this flag, the map
       // click handler would immediately deselect what we just selected.
       blockNextMapClick = true;
+      if (addCityMode) cancelAddCity();
       selectedFeatureId.value = id;
     });
 
@@ -288,6 +316,23 @@ function renderCities(features: Feature[]) {
 
     attachFeatureToLayer(point, feature);
     bindRenderedFeatureEvents(point, applyLayerUpdate);
+
+    // Forward clicks from the inner point to the layerGroup so that the
+    // standard featureLayerManager selection handler fires (same path as all
+    // other feature types), keeping blockNextMapClick behaviour consistent.
+    point.on("click", (e: L.LeafletEvent) => {
+      layerGroup.fire("click", e);
+    });
+
+    point.on("pm:drag", () => {
+      label.setLatLng(point.getLatLng());
+      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+    });
+
+    point.on("pm:dragend", () => {
+      label.setLatLng(point.getLatLng());
+      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+    });
 
     attachFeatureToLayer(label, feature);
 
@@ -634,6 +679,7 @@ function forEachLeafLayer(layer: L.Layer, fn: (l: L.Layer) => void) {
 
 function enablePerFeatureDrag(layer: L.Layer) {
   forEachLeafLayer(layer, (leaf) => {
+    if ((leaf as any).options?.interactive === false) return;
     (leaf as PmDraggableLayer).pm?.enableLayerDrag?.();
   });
 }
@@ -642,6 +688,60 @@ function disablePerFeatureDrag(layer: L.Layer) {
   forEachLeafLayer(layer, (leaf) => {
     (leaf as PmDraggableLayer).pm?.disableLayerDrag?.();
   });
+}
+
+// --- add city mode ---
+
+function cancelAddCity() {
+  if (pendingCity.value) {
+    pendingCity.value.marker.remove();
+    pendingCity.value = null;
+  }
+  cityInputName.value = '';
+  addCityMode = false;
+  if (map) map.getContainer().style.cursor = '';
+  (map as MapWithPm)?.pm?.Toolbar?.toggleButton?.('addCity', false);
+}
+
+function confirmCity() {
+  if (!pendingCity.value || !map) return;
+  const name = cityInputName.value.trim();
+  const { latlng, marker } = pendingCity.value;
+  marker.remove();
+  pendingCity.value = null;
+  cityInputName.value = '';
+  addCityMode = false;
+  map.getContainer().style.cursor = '';
+  (map as MapWithPm)?.pm?.Toolbar?.toggleButton?.('addCity', false);
+  const now = new Date().toISOString();
+  const id = `tmp_${Math.random().toString(36).slice(2, 9)}`;
+  const feature: Feature = {
+    id,
+    type: 'Feature',
+    mapId: '',
+    geometry: { type: 'Point', coordinates: [latlng.lng, latlng.lat] as [number, number] },
+    properties: {
+      name,
+      labelText: '',
+      colorName: 'black',
+      colorRgb: [0, 0, 0] as [number, number, number],
+      strokeColor: [0, 0, 0] as [number, number, number],
+      strokeWidth: 1,
+      strokeOpacity: 1,
+      mapElementType: 'point',
+      startDate: `${selectedYear.value}-01-01`,
+      endDate: `${selectedYear.value}-12-31`,
+    },
+    createdAt: now,
+    updatedAt: now,
+    name,
+    opacity: 1,
+    strokeWidth: 1,
+  };
+  const next = upsertFeature(localFeaturesSnapshot.value, feature);
+  localFeaturesSnapshot.value = next;
+  renderAllFeatures();
+  emit('draw-create', next);
 }
 
 // --- image overlay: move & resize ---
@@ -841,6 +941,17 @@ onMounted(() => {
     const { btnName } = e as unknown as { btnName: string };
     const pm = (map as MapWithPm).pm;
 
+    if (btnName === "addCity") {
+      if (addCityMode) {
+        cancelAddCity();
+      } else {
+        addCityMode = true;
+        selectedFeatureId.value = null;
+        map!.getContainer().style.cursor = 'crosshair';
+      }
+      return;
+    }
+
     // Only intercept the turn-ON click for edit and rotate modes.
     if (btnName === "editMode" && pm?.globalEditModeEnabled?.()) return;
     if (btnName === "rotateMode" && pm?.globalRotateModeEnabled?.()) return;
@@ -871,9 +982,33 @@ onMounted(() => {
   map.on("pm:globaleditmodetoggled", restorePmIgnore);
   map.on("pm:globalrotatemodetoggled", restorePmIgnore);
 
-  map.on("click", () => {
+  map.on("click", (e) => {
     if (blockNextMapClick) {
       blockNextMapClick = false;
+      return;
+    }
+    if (addCityMode) {
+      const latlng = (e as L.LeafletMouseEvent).latlng;
+      if (pendingCity.value) {
+        pendingCity.value.marker.remove();
+      }
+      const marker: L.CircleMarker = L.circleMarker(latlng, {
+        radius: 6,
+        fillColor: '#000000',
+        color: '#000000',
+        weight: 1,
+        opacity: 1,
+        fillOpacity: 1,
+        interactive: false,
+      }).addTo(map!);
+      const containerPos = map!.latLngToContainerPoint(latlng);
+      pendingCity.value = {
+        latlng,
+        screenPos: { x: containerPos.x + 12, y: containerPos.y - 40 },
+        marker,
+      };
+      cityInputName.value = '';
+      nextTick(() => cityInput.value?.focus());
       return;
     }
     selectedFeatureId.value = null;
@@ -892,6 +1027,11 @@ onMounted(() => {
   escapeKeyHandler = (e: KeyboardEvent) => {
     if (e.key !== "Escape" || !map) return;
     const pm = (map as MapWithPm).pm;
+    // Cancel city placement mode
+    if (addCityMode) {
+      cancelAddCity();
+      return;
+    }
     // Cancel active freehand drawing — also untoggle the custom toolbar button
     if (drawing.activeDrawingMode.value === "freehand") {
       drawing.stopFreehandDrawing(map);
@@ -950,6 +1090,12 @@ watch(
 localFeaturesSnapshot.value = [...props.features];
 
 watch(selectedFeatureId, (id, oldId) => {
+  // Always remove the city selection ring on any selection change
+  if (selectedCityRing) {
+    selectedCityRing.remove();
+    selectedCityRing = null;
+  }
+
   // Restore the original stroke color on the previously selected layer
   if (oldId != null) {
     const oldLayer = featureLayerManager.layers.get(String(oldId));
@@ -957,22 +1103,46 @@ watch(selectedFeatureId, (id, oldId) => {
       oldLayer.getElement()?.classList.remove("image-overlay-selected");
     } else if (oldLayer !== undefined) {
       disablePerFeatureDrag(oldLayer);
-      if (selectedLayerOriginalColor !== undefined) {
-        applyStyleToLayer(oldLayer, { color: selectedLayerOriginalColor });
+      if (selectedLayerOriginalStyle !== undefined) {
+        applyStyleToLayer(oldLayer, selectedLayerOriginalStyle);
       }
     }
-    selectedLayerOriginalColor = undefined;
+    selectedLayerOriginalStyle = undefined;
   }
 
   if (id != null) {
     const layer = featureLayerManager.layers.get(String(id));
+    const selectedFeature = localFeaturesSnapshot.value.find((f) => String(f.id) === id);
+    const elementType = selectedFeature ? getMapElementType(selectedFeature) : null;
     if (layer instanceof L.ImageOverlay) {
       drawing.setToolbarMode("global");
       layer.getElement()?.classList.add("image-overlay-selected");
+    } else if (layer && elementType === "point") {
+      // Cities: keep global toolbar, just enable drag and show a selection ring
+      drawing.setToolbarMode("global");
+      enablePerFeatureDrag(layer);
+      // Find the circleMarker inside the layerGroup to get its latlng
+      let cityLatLng: L.LatLng | null = null;
+      forEachLeafLayer(layer, (leaf) => {
+        if (!cityLatLng && leaf instanceof L.CircleMarker) {
+          cityLatLng = (leaf as L.CircleMarker).getLatLng();
+        }
+      });
+      if (cityLatLng && map) {
+        selectedCityRing = L.marker(cityLatLng, {
+          icon: L.divIcon({
+            className: "city-selection-ring",
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
+          }),
+          interactive: false,
+          zIndexOffset: 1000,
+        }).addTo(map);
+      }
     } else if (layer) {
       drawing.setToolbarMode("feature");
       enablePerFeatureDrag(layer);
-      selectedLayerOriginalColor = getLayerStrokeColor(layer);
+      selectedLayerOriginalStyle = { color: getLayerStrokeColor(layer) };
       applyStyleToLayer(layer, { color: "#000000" });
     } else {
       drawing.setToolbarMode("global");
@@ -1019,6 +1189,16 @@ watch(
   padding: 2px 4px;
   border-radius: 3px;
   border: transparent;
+}
+
+.city-selection-ring {
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 50%;
+  border: 2.5px solid #3b82f6;
+  background: transparent;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .arrow-head {
