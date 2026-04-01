@@ -129,6 +129,8 @@ const featureLayerManager = {
     this.layers.set(id, layer);
 
     layer.on("click", (e: L.LeafletEvent) => {
+      // Don't steal clicks from active drawing tools
+      if (drawing.activeDrawingMode.value !== null) return;
       (e as L.LeafletMouseEvent).originalEvent?.stopPropagation();
       // In canvas mode, Leaflet fires the layer click AND the map click as two
       // separate events from the same mouse event. Without this flag, the map
@@ -1071,6 +1073,15 @@ watch(selectedYear, (newYear) => {
   void newYear;
   if (!map) return;
   renderAllFeatures();
+});
+
+// While any draw mode is active, disable pointer-events on the canvas so that
+// hovering/clicking existing features doesn't override the draw cursor or steal clicks.
+watch(drawing.activeDrawingMode, (mode) => {
+  if (!map) return;
+  map.getContainer().querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas) => {
+    canvas.style.pointerEvents = mode !== null ? 'none' : '';
+  });
 });
 
 watch(
