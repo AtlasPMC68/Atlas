@@ -1,0 +1,2 @@
+ALTER TABLE features
+  ADD COLUMN IF NOT EXISTS image BYTEA;

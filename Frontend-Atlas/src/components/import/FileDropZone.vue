@@ -37,7 +37,7 @@
           </p>
         </div>
         <div class="text-sm text-base-content/60">
-          Formats supportés: JPG, PNG, GIF (max 10MB)
+          Formats supportés: JPG, PNG et JPEG (max 10MB)
         </div>
       </div>
 
