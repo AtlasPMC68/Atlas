@@ -12,12 +12,12 @@
         >
           Ajouter une image
         </button>
-        <button class="btn" :disabled="!canUndo" @click="onUndo">
-          Undo
+        <button class="btn" :disabled="!canUndo" @click="onUndo" aria-label="Undo" title="Annuler">
+          <ArrowUturnLeftIcon class="h-5 w-5" />
         </button>
 
-        <button class="btn" :disabled="!canRedo" @click="onRedo">
-          Redo
+        <button class="btn" :disabled="!canRedo" @click="onRedo" aria-label="Redo" title="Rétablir">
+          <ArrowUturnRightIcon class="h-5 w-5" />
         </button>
       </div>
     </div>
@@ -126,6 +126,10 @@ import type { Map as LeafletMap } from "leaflet";
 import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
+import {
+  ArrowUturnLeftIcon,
+  ArrowUturnRightIcon,
+} from "@heroicons/vue/24/outline";
 
 const alert = ref<AlertState>(null);
 
@@ -281,6 +285,7 @@ function isUuid(value: string): boolean {
 
 async function onDeleteFeature(
   featureId: string,
+  // TODO : remove optional
   callbacks?: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
@@ -451,8 +456,7 @@ async function onSaveMap() {
       throw new Error(`Error saving features: ${response.status}`);
     }
 
-    const savedFeatures = snakeToCamel(await response.json()) as Feature[];
-    applyFeatureSnapshot(featureHistoryService.reset(savedFeatures), false);
+    await loadInitialFeatures();
 
     mapGeoJsonRef.value?.clearDraftLayers();
   } catch (err) {
