@@ -872,7 +872,14 @@ function attachImageInteraction(featureId: string) {
 }
 
 onMounted(() => {
-  map = L.map("map", { zoomControl: false, preferCanvas: true, doubleClickZoom: false }).setView(
+  map = L.map("map", {
+    zoomControl: false,
+    preferCanvas: true,
+    doubleClickZoom: false,
+    zoomSnap: 0.25,
+    maxBounds: [[-90, -180], [90, 180]],
+    maxBoundsViscosity: 1.0,
+  }).setView(
     [52.9399, -73.5491],
     5,
   );
@@ -889,6 +896,7 @@ onMounted(() => {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       subdomains: "abcd",
       maxZoom: 19,
+      noWrap: true,
     },
   ).addTo(map);
 
@@ -896,6 +904,15 @@ onMounted(() => {
   // so they natively receive pointer events without the canvas intercepting them.
   const imagePane = map.createPane('imagePane');
   imagePane.style.zIndex = '410';
+
+  // Set minZoom dynamically so the whole world just fits the container (no fixed integer cap).
+  // Recompute on resize so it stays correct when the window changes size.
+  const updateMinZoom = () => {
+    const wz = map!.getBoundsZoom(L.latLngBounds([[-90, -180], [90, 180]]), false);
+    map!.setMinZoom(wz);
+  };
+  map.whenReady(updateMinZoom);
+  map.on('resize', updateMinZoom);
 
   drawing.initializeDrawing(map);
   drawing.setToolbarMode("global");
