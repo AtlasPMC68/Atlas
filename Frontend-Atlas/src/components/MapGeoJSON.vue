@@ -453,11 +453,6 @@ function renderZones(features: Feature[]) {
     attachFeatureToLayer(layer, feature);
     bindRenderedFeatureEvents(layer, applyLayerUpdate);
 
-    const name = featureProperties.name || feature.name;
-    if (name) {
-      layer.bindPopup(name);
-    }
-
     featureLayerManager.addFeatureLayer(feature.id, layer);
   });
 }
@@ -492,12 +487,6 @@ function renderArrows(features: Feature[]) {
       fill: true,
     });
 
-    const featureProperties = feature.properties;
-    const name = featureProperties.name || feature.name;
-    if (name) {
-      line.bindPopup(name);
-    }
-
     featureLayerManager.addFeatureLayer(feature.id, line);
   });
 }
@@ -524,12 +513,6 @@ function renderPolylines(features: Feature[]) {
     attachFeatureToLayer(line, feature);
     bindRenderedFeatureEvents(line, applyLayerUpdate);
 
-    const featureProperties = feature.properties;
-    const name = featureProperties.name || feature.name;
-    if (name) {
-      line.bindPopup(name);
-    }
-
     featureLayerManager.addFeatureLayer(feature.id, line);
   });
 }
@@ -546,7 +529,6 @@ function renderShapes(features: Feature[]) {
       return;
     }
 
-    const featureProperties = feature.properties;
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
     const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
@@ -564,11 +546,6 @@ function renderShapes(features: Feature[]) {
 
     attachFeatureToLayer(layer, feature);
     bindRenderedFeatureEvents(layer, applyLayerUpdate);
-
-    const name = featureProperties.name || feature.name || "Detected shape";
-    if (name) {
-      layer.bindPopup(name);
-    }
 
     featureLayerManager.addFeatureLayer(feature.id, layer);
   });
