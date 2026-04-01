@@ -174,6 +174,7 @@ export class MapDrawingService {
       removalMode: true,
     });
 
+    mapWithPm.pm.setLang?.('fr');
     this.addFreehandButton(map);
     this.setupDrawingListeners(map);
   }
