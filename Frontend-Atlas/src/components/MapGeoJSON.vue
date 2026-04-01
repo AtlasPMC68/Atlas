@@ -1,7 +1,13 @@
 <template>
   <div class="relative h-full w-full z-0">
     <div id="map" style="height: 80vh; width: 100%"></div>
-    <TimelineSlider v-model:year="selectedYear" />
+    <TimelineSlider
+      v-model:year="selectedYear"
+      :min="timelineMinYear"
+      :max="timelineMaxYear"
+      :marker-years="timelineMarkerYears"
+      :map-periods="sliderMapPeriods"
+    />
   </div>
 </template>
 
@@ -33,6 +39,13 @@ interface GeoJsonFeatureCollectionWithGeometry {
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  mapPeriods: Array<{
+    id: string;
+    title: string;
+    startDate: string | null;
+    endDate: string | null;
+    color: string;
+  }>;
 }>();
 
 const emit = defineEmits<{
@@ -47,15 +60,89 @@ const selectedYear = ref(1740);
 const previousFeatureIds = ref(new Set<MapFeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
+function toYear(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getFullYear();
+}
+
+const periodYears = computed(() => {
+  const years: number[] = [];
+  props.mapPeriods.forEach((period) => {
+    const s = toYear(period.startDate);
+    const e = toYear(period.endDate);
+    if (s != null) years.push(s);
+    if (e != null) years.push(e);
+  });
+  return years;
+});
+
+const timelineMinYear = computed(() => {
+  const years = [...periodYears.value];
+  if (!years.length) return 1400;
+  return Math.min(...years);
+});
+
+const timelineMaxYear = computed(() => {
+  const years = [...periodYears.value];
+  if (!years.length) return new Date().getFullYear();
+  return Math.max(...years);
+});
+
+const mapPeriodsByMapId = computed(() => {
+  const periods = new Map<string, { startYear: number | null; endYear: number | null }>();
+  props.mapPeriods.forEach((period) => {
+    periods.set(period.id, {
+      startYear: toYear(period.startDate),
+      endYear: toYear(period.endDate),
+    });
+  });
+  return periods;
+});
+
+const sliderMapPeriods = computed(() => {
+  return props.mapPeriods
+    .map((period) => ({
+      id: period.id,
+      title: period.title,
+      color: period.color,
+      startYear: toYear(period.startDate),
+      endYear: toYear(period.endDate),
+    }))
+    .filter((period) => period.startYear != null && period.endYear != null)
+    .map((period) => ({
+      id: period.id,
+      title: period.title,
+      color: period.color,
+      startYear: period.startYear as number,
+      endYear: period.endYear as number,
+    }));
+});
+
+const timelineMarkerYears = computed(() => {
+  const markers = new Set<number>();
+  markers.add(timelineMinYear.value);
+  markers.add(timelineMaxYear.value);
+
+  sliderMapPeriods.value.forEach((period) => {
+    markers.add(period.startYear);
+    markers.add(period.endYear);
+  });
+
+  return [...markers].sort((a, b) => a - b);
+});
+
 const filteredFeatures = computed(() => {
-  return props.features.filter(
-    (feature: Feature) =>
-      new Date(feature.properties.startDate).getFullYear() <=
-        selectedYear.value &&
-      (!feature.properties.endDate ||
-        new Date(feature.properties.endDate).getFullYear() >=
-          selectedYear.value),
-  );
+  return props.features.filter((feature: Feature) => {
+    const period = mapPeriodsByMapId.value.get(feature.mapId);
+    if (!period) return true;
+    if (period.startYear == null || period.endYear == null) return true;
+    return (
+      period.startYear <= selectedYear.value &&
+      period.endYear >= selectedYear.value
+    );
+  });
 });
 
 let map: L.Map | null = null;
@@ -521,6 +608,26 @@ watch(selectedYear, (newYear) => {
   if (!map) return;
   renderAllFeatures();
 });
+
+watch([timelineMinYear, timelineMaxYear], () => {
+  if (selectedYear.value < timelineMinYear.value) {
+    selectedYear.value = timelineMinYear.value;
+  }
+  if (selectedYear.value > timelineMaxYear.value) {
+    selectedYear.value = timelineMaxYear.value;
+  }
+});
+
+watch(
+  timelineMarkerYears,
+  (markers) => {
+    if (!markers.length) return;
+    if (!markers.includes(selectedYear.value)) {
+      selectedYear.value = markers[0];
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.features,

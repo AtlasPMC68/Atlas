@@ -11,7 +11,8 @@ class Map(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(UUID(as_uuid=True))
     title = Column(Text, nullable=False)
-    date = Column(Date)
+    start_date = Column(Date)
+    end_date = Column(Date)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     

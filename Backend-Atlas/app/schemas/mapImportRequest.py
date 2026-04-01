@@ -1,8 +1,11 @@
-from pydantic import BaseModel, Field
+from datetime import date
+
+from pydantic import BaseModel
 from uuid import UUID
 
 
 class MapImportRequest(BaseModel):
     project_id: UUID
     title: str
-    year: int = Field(ge=1, le=9999)
+    start_date: date
+    end_date: date

@@ -29,6 +29,7 @@
         <MapGeoJSON
           :features="features"
           :feature-visibility="featureVisibility"
+          :map-periods="mapPeriods"
           @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
@@ -100,19 +101,56 @@
               placeholder="Ex: Carte politique de 1850"
               required
             />
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="label">Date debut</label>
+                <input
+                  v-if="!usePreciseDates"
+                  v-model.number="startYear"
+                  type="number"
+                  min="1"
+                  max="9999"
+                  class="input"
+                  placeholder="Ex: 1850"
+                  required
+                />
+                <input
+                  v-else
+                  v-model="startDate"
+                  type="date"
+                  class="input"
+                  required
+                />
+              </div>
 
-            <label class="label">Annee</label>
-            <input
-              v-model.number="newMapYear"
-              type="number"
-              min="1"
-              max="9999"
-              class="input"
-              placeholder="Ex: 1850"
-              required
-            />
+              <div>
+                <label class="label">Date fin</label>
+                <input
+                  v-if="!usePreciseDates"
+                  v-model.number="endYear"
+                  type="number"
+                  min="1"
+                  max="9999"
+                  class="input"
+                  placeholder="Ex: 1900"
+                />
+                <input
+                  v-else
+                  v-model="endDate"
+                  type="date"
+                  class="input"
+                />
+              </div>
+            </div>
           </fieldset>
-
+          <label class="label cursor-pointer gap-2 mb-2">
+              <input
+                v-model="usePreciseDates"
+                type="checkbox"
+                class="checkbox checkbox-sm"
+              />
+              <span>Utiliser la date exacte</span>
+            </label>
           <div class="flex justify-end gap-2 mt-6">
             <button
               type="button"
@@ -125,7 +163,7 @@
             <button
               type="submit"
               class="btn btn-primary"
-              :disabled="!newMapTitle.trim() || !newMapYear || isCreatingMap"
+              :disabled="!newMapTitle.trim() || !hasValidImportDates() || isCreatingMap"
             >
               <span
                 v-if="isCreatingMap"
@@ -179,10 +217,69 @@ const addMapDialogRef = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
 const newMapTitle = ref("");
-const newMapYear = ref<number | null>(null);
+const startYear = ref<number | null>(null);
+const endYear = ref<number | null>(null);
+const startDate = ref<string>("");
+const endDate = ref<string>("");
+const usePreciseDates = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const hasActiveMap = computed(() => Boolean(activeMapId.value));
+const mapPeriods = ref<
+  Array<{
+    id: string;
+    title: string;
+    startDate: string | null;
+    endDate: string | null;
+    color: string;
+  }>
+>([]);
+
+const PERIOD_COLORS = [
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#14b8a6",
+  "#e11d48",
+  "#84cc16",
+];
+
+function getStartDateForImport(): string | null {
+  if (usePreciseDates.value) {
+    if (!startDate.value) return null;
+    const parsed = new Date(startDate.value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return startDate.value;
+  }
+
+  if (!startYear.value || startYear.value < 1 || startYear.value > 9999) {
+    return null;
+  }
+  return `${String(startYear.value).padStart(4, "0")}-01-01`;
+}
+
+function getEndDateForImport(): string | null {
+  if (usePreciseDates.value) {
+    if (!endDate.value) return null;
+    const parsed = new Date(endDate.value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return endDate.value;
+  }
+
+  if (!endYear.value || endYear.value < 1 || endYear.value > 9999) {
+    return null;
+  }
+  return `${String(endYear.value).padStart(4, "0")}-12-31`;
+}
+
+function hasValidImportDates(): boolean {
+  const start = getStartDateForImport();
+  const end = getEndDateForImport();
+  if (!start || !end) return false;
+  return start <= end;
+}
 
 async function onAddFeatureImage() {
   if (!selectedFile.value || !keycloak.token || !activeMapId.value) {
@@ -238,12 +335,13 @@ function onFileChange() {
 }
 
 async function uploadMapThumbnail(): Promise<boolean> {
-  if (!leafletMap.value || !activeMapId.value || !keycloak.token) return false;
+  if (!leafletMap.value || !keycloak.token) return false;
 
   if (!projectId.value) {
     const resolved = await resolveRouteContext();
     if (!resolved) return false;
   }
+  if (!projectId.value) return false;
 
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -270,6 +368,9 @@ async function uploadMapThumbnail(): Promise<boolean> {
         },
       );
 
+      if (!res.ok) {
+        console.error("Project thumbnail upload failed:", res.status);
+      }
       resolve(res.ok);
     });
   });
@@ -306,13 +407,55 @@ async function loadProjectIdForMap(): Promise<boolean> {
   }
 }
 
+async function loadProjectMapsForTimeline() {
+  if (!keycloak.token || !projectId.value) {
+    mapPeriods.value = [];
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/projects/${projectId.value}/maps`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${keycloak.token}` },
+      },
+    );
+    if (!res.ok) throw new Error("Failed to fetch project maps for timeline");
+
+    const rows = snakeToCamel(
+      (await res.json()) as Array<{
+        id: string;
+        title: string;
+        startDate?: string | null;
+        endDate?: string | null;
+      }>,
+    );
+
+    mapPeriods.value = rows.map((row, idx) => ({
+      id: row.id,
+      title: row.title,
+      startDate: row.startDate ?? null,
+      endDate: row.endDate ?? null,
+      color: PERIOD_COLORS[idx % PERIOD_COLORS.length],
+    }));
+  } catch (e) {
+    console.error("Failed to load map periods for timeline:", e);
+    mapPeriods.value = [];
+  }
+}
+
 async function resolveRouteContext(): Promise<boolean> {
   return loadProjectIdForMap();
 }
 
 function openAddMapDialog() {
   newMapTitle.value = "";
-  newMapYear.value = null;
+  startYear.value = null;
+  endYear.value = null;
+  startDate.value = "";
+  endDate.value = "";
+  usePreciseDates.value = false;
   addMapDialogRef.value?.showModal();
 }
 
@@ -323,9 +466,10 @@ async function createMapForProject() {
   if (!targetProjectId || !newMapTitle.value.trim()) {
     return;
   }
-  if (!newMapYear.value || newMapYear.value < 1 || newMapYear.value > 9999) {
-    return;
-  }
+  const startDateForImport = getStartDateForImport();
+  const endDateForImport = getEndDateForImport();
+  if (!startDateForImport || !endDateForImport) return;
+  if (startDateForImport > endDateForImport) return;
 
   isCreatingMap.value = true;
   try {
@@ -339,7 +483,8 @@ async function createMapForProject() {
         camelToSnake({
           projectId: targetProjectId,
           title: newMapTitle.value.trim(),
-          year: newMapYear.value,
+          startDate: startDateForImport,
+          endDate: endDateForImport,
         }),
       ),
     });
@@ -413,13 +558,13 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
 }
 
 function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
-  if (!activeMapId.value) return;
   uploadMapThumbnail();
 }
 
 onMounted(async () => {
   await fetchCurrentUser();
   await resolveRouteContext();
+  await loadProjectMapsForTimeline();
   await loadInitialFeatures();
 });
 

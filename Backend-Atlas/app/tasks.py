@@ -140,8 +140,6 @@ def process_map_extraction(
                             "mapElementType": "point",
                             "color_name": "black",
                             "color_rgb": [0, 0, 0],
-                            "start_date": "0-01-01",
-                            "end_date": "5000-01-01",
                         },
                         "geometry": {
                             "type": "Point",

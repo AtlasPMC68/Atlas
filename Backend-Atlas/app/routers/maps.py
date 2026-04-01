@@ -45,12 +45,19 @@ async def create_map_for_project(
     db: AsyncSession = Depends(get_async_session),
 ):
     try:
+        if request.start_date > request.end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="start_date must be before or equal to end_date",
+            )
+
         created_map_id = await create_map_in_db(
             db=db,
             project_id=request.project_id,
             user_id=UUID(user_id),
             title=request.title,
-            year=request.year,
+            start_date=request.start_date,
+            end_date=request.end_date,
         )
         if not created_map_id:
             raise HTTPException(status_code=404, detail="Project not found or access denied")
@@ -324,10 +331,9 @@ def _serialize_features(features_rows: list[Feature]) -> list[dict]:
 
         feature = feature_data[0]
         feature["id"] = str(f.id)
+        feature["map_id"] = str(f.map_id)
 
         props = feature.get("properties", {})
-        feature["start_date"] = props.get("start_date")
-        feature["end_date"] = props.get("end_date")
 
         if f.image:
             feature["image"] = base64.b64encode(f.image).decode("ascii")
@@ -379,6 +385,43 @@ async def get_project_features(
     features_rows = features_result.scalars().all()
 
     return _serialize_features(features_rows)
+
+
+@router.get("/projects/{project_id}/maps")
+async def get_project_maps(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        project_uuid = UUID(project_id)
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+
+    project_result = await session.execute(
+        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+    )
+    allowed_project = project_result.scalar_one_or_none()
+    if not allowed_project:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+    maps_result = await session.execute(
+        select(Map)
+        .where(Map.project_id == project_uuid)
+        .order_by(Map.start_date.asc(), Map.created_at.asc())
+    )
+    maps = maps_result.scalars().all()
+
+    return [
+        {
+            "id": str(map_obj.id),
+            "title": map_obj.title,
+            "start_date": map_obj.start_date.isoformat() if map_obj.start_date else None,
+            "end_date": map_obj.end_date.isoformat() if map_obj.end_date else None,
+        }
+        for map_obj in maps
+    ]
 
 
 @router.get("/map-project/{map_id}")
@@ -614,8 +657,6 @@ async def upload_image(
                     "mapElementType": "image",
                     "name": image.filename or "Image",
                     "mimeType": image.content_type,
-                    "start_date": "1700-01-01",
-                    "end_date": "2026-01-01",
                     "bounds": parsed_bounds,
                     "isPlaced": bool(bounds),
                 },

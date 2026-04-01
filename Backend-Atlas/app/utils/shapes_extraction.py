@@ -474,8 +474,6 @@ def _build_normalized_feature_properties(shape: Dict, idx: int) -> Dict:
         "color_hex": shape.get("color_hex"),
         "mapElementType": "shape",
         "name": f"{shape.get('shape_type') or 'Shape'} {idx}",
-        "start_date": "1700-01-01",
-        "end_date": "2026-01-01",
         "is_normalized": True,
     }
 
@@ -495,8 +493,6 @@ def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
         "color_hex": shape.get("color_hex"),
         "mapElementType": "shape",
         "name": f"{shape.get('shape_type') or 'Shape'} {idx}",
-        "start_date": "1700-01-01",
-        "end_date": "2026-01-01",
         "is_normalized": False,
     }
 

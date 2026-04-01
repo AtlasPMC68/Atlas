@@ -36,8 +36,6 @@ export interface FeatureProperties {
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
-  startDate: string; // Format: "YYYY-MM-DD"
-  endDate: string; // Format: "YYYY-MM-DD"
 }
 
 // Geometry types

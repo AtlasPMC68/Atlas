@@ -236,8 +236,6 @@ def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
             "mapElementType": "zone",
             "name": f"Zone {color_name}",
             "is_pixel_space": True,
-            "start_date": "1700-01-01",
-            "end_date": "2026-01-01",
         },
         "geometry": merged_geometry.__geo_interface__,
     }
@@ -285,8 +283,6 @@ def build_normalized_feature(
             "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
             "mapElementType": "zone",
             "name": f"Zone {color_name}",
-            "start_date": "1700-01-01",
-            "end_date": "2026-01-01",
             "is_normalized": True,
         },
         "geometry": normalized_geom.__geo_interface__,

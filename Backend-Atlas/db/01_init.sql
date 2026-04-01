@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS "maps" (
   "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "project_id" UUID REFERENCES "projects"("id") ON DELETE CASCADE,
   "title" TEXT NOT NULL,
-  "date" DATE, -- if date is null will show regardless of what is selected on timeline
+  "start_date" DATE,
+  "end_date" DATE,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())
 );
