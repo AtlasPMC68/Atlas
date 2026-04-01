@@ -79,6 +79,14 @@ let blockNextMapClick = false;
 let selectedLayerOriginalColor: string | undefined = undefined;
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
+interface ImageInteractionState {
+  overlay: L.ImageOverlay;
+  featureId: string;
+  resizeMarker: L.Marker;
+  aspectRatio: number; // pixel width / pixel height at attach time
+}
+let imageInteraction: ImageInteractionState | null = null;
+
 const selectedFeatureId = ref<string | null>(null);
 
 const featureLayerManager = {
@@ -533,10 +541,12 @@ function renderImages(features: Feature[]) {
     const overlay = L.imageOverlay(src, bounds, {
       opacity: feature.properties.opacity ?? 1,
       interactive: true,
+      pane: 'imagePane',
     });
 
     attachFeatureToLayer(overlay, feature);
     featureLayerManager.addFeatureLayer(feature.id, overlay);
+    overlay.getElement()?.setAttribute('draggable', 'false');
   });
 }
 
@@ -577,6 +587,16 @@ function renderAllFeatures() {
   renderShapes(featuresByType.shape);
   renderImages(featuresByType.image);
 
+  // Re-attach image interaction if the selected feature was re-rendered
+  if (selectedFeatureId.value) {
+    const selectedFeature = currentFeatures.find(
+      (f) => String(f.id) === selectedFeatureId.value,
+    );
+    if (selectedFeature && getMapElementType(selectedFeature) === "image") {
+      attachImageInteraction(selectedFeatureId.value);
+    }
+  }
+
   previousFeatureIds.value = currentIds;
   emit("features-loaded", currentFeatures);
 }
@@ -600,6 +620,178 @@ function getLayerStrokeColor(layer: L.Layer): string | undefined {
   return undefined;
 }
 
+// --- per-feature drag ---
+
+type PmDraggableLayer = L.Layer & { pm?: { enableLayerDrag?: () => void; disableLayerDrag?: () => void } };
+
+function forEachLeafLayer(layer: L.Layer, fn: (l: L.Layer) => void) {
+  if (layer instanceof L.LayerGroup) {
+    (layer as L.LayerGroup).eachLayer((child) => forEachLeafLayer(child, fn));
+  } else {
+    fn(layer);
+  }
+}
+
+function enablePerFeatureDrag(layer: L.Layer) {
+  forEachLeafLayer(layer, (leaf) => {
+    (leaf as PmDraggableLayer).pm?.enableLayerDrag?.();
+  });
+}
+
+function disablePerFeatureDrag(layer: L.Layer) {
+  forEachLeafLayer(layer, (leaf) => {
+    (leaf as PmDraggableLayer).pm?.disableLayerDrag?.();
+  });
+}
+
+// --- image overlay: move & resize ---
+
+function updateImageFeatureBounds(featureId: string, bounds: L.LatLngBounds) {
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+  const boundsArray: [[number, number], [number, number]] = [
+    [sw.lat, sw.lng],
+    [ne.lat, ne.lng],
+  ];
+  const idx = localFeaturesSnapshot.value.findIndex(
+    (f) => String(f.id) === featureId,
+  );
+  if (idx === -1) return;
+  const next = [...localFeaturesSnapshot.value];
+  next[idx] = {
+    ...next[idx],
+    properties: { ...next[idx].properties, bounds: boundsArray },
+  };
+  localFeaturesSnapshot.value = next;
+
+  // Also update the feature stored on the layer itself so that
+  // extractFeatureFromLayer returns the updated bounds during save.
+  const layer = featureLayerManager.layers.get(featureId);
+  if (layer) {
+    const layerWithFeature = layer as L.Layer & { feature?: (typeof next)[0] };
+    if (layerWithFeature.feature) {
+      layerWithFeature.feature = next[idx];
+    }
+  }
+
+  suppressNextPropsRender = true;
+  emit("draw-update", next);
+}
+
+function detachImageInteraction() {
+  if (!imageInteraction) return;
+  imageInteraction.resizeMarker.remove();
+  (imageInteraction as ImageInteractionState & { cleanupDrag?: () => void }).cleanupDrag?.();
+  imageInteraction = null;
+}
+
+function attachImageInteraction(featureId: string) {
+  detachImageInteraction();
+  if (!map) return;
+  const layer = featureLayerManager.layers.get(featureId);
+  if (!(layer instanceof L.ImageOverlay)) return;
+
+  const bounds = layer.getBounds();
+
+  // Pixel aspect ratio (width/height) at current zoom — preserved during resize
+  const nwPx = map.latLngToContainerPoint(bounds.getNorthWest());
+  const sePx = map.latLngToContainerPoint(bounds.getSouthEast());
+  const aspectRatio = Math.abs(sePx.x - nwPx.x) / Math.abs(sePx.y - nwPx.y);
+
+  // SE corner drag handle
+  const resizeMarker = L.marker(bounds.getSouthEast(), {
+    icon: L.divIcon({
+      className: "image-resize-handle",
+      iconSize: [10, 10],
+      iconAnchor: [5, 5],
+    }),
+    draggable: true,
+    zIndexOffset: 1000,
+  });
+  (resizeMarker.options as PmIgnoreOptions).pmIgnore = true;
+  resizeMarker.addTo(map);
+
+  resizeMarker.on("drag", () => {
+    if (!imageInteraction || !map) return;
+    const nw = imageInteraction.overlay.getBounds().getNorthWest();
+    const nwPx = map.latLngToContainerPoint(nw);
+    const rawSePx = map.latLngToContainerPoint(resizeMarker.getLatLng());
+    // Constrain to aspect ratio: fix width, derive height
+    const w = Math.max(rawSePx.x - nwPx.x, 10);
+    const h = w / imageInteraction.aspectRatio;
+    const constrainedSe = map.containerPointToLatLng(
+      L.point(nwPx.x + w, nwPx.y + h),
+    );
+    imageInteraction.overlay.setBounds(L.latLngBounds(nw, constrainedSe));
+    resizeMarker.setLatLng(constrainedSe);
+  });
+
+  resizeMarker.on("dragend", () => {
+    if (!imageInteraction) return;
+    updateImageFeatureBounds(
+      imageInteraction.featureId,
+      imageInteraction.overlay.getBounds(),
+    );
+  });
+
+  imageInteraction = { overlay: layer, featureId, resizeMarker, aspectRatio };
+
+  // The image is in its own pane above the canvas so it receives native pointer
+  // events — we can use overlay.on("mousedown") directly here.
+  let isDragging = false;
+  let startLatLng: L.LatLng | null = null;
+  let startBounds: L.LatLngBounds | null = null;
+
+  const onOverlayMouseDown = (e: L.LeafletMouseEvent) => {
+    if (!imageInteraction) return;
+    L.DomEvent.stopPropagation(e);
+    isDragging = true;
+    startLatLng = e.latlng;
+    startBounds = imageInteraction.overlay.getBounds();
+    map!.dragging.disable();
+  };
+
+  const onMapMouseMove = (e: L.LeafletMouseEvent) => {
+    if (!isDragging || !startLatLng || !startBounds || !map || !imageInteraction) return;
+    const startPx = map.latLngToContainerPoint(startLatLng);
+    const nowPx = map.latLngToContainerPoint(e.latlng);
+    const dx = nowPx.x - startPx.x;
+    const dy = nowPx.y - startPx.y;
+    const swPx = map.latLngToContainerPoint(startBounds.getSouthWest());
+    const nePx = map.latLngToContainerPoint(startBounds.getNorthEast());
+    const newBounds = L.latLngBounds(
+      map.containerPointToLatLng(L.point(swPx.x + dx, swPx.y + dy)),
+      map.containerPointToLatLng(L.point(nePx.x + dx, nePx.y + dy)),
+    );
+    imageInteraction.overlay.setBounds(newBounds);
+    imageInteraction.resizeMarker.setLatLng(newBounds.getSouthEast());
+  };
+
+  const onMapMouseUp = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    map!.dragging.enable();
+    if (imageInteraction) {
+      updateImageFeatureBounds(imageInteraction.featureId, imageInteraction.overlay.getBounds());
+    }
+    startLatLng = null;
+    startBounds = null;
+  };
+
+  layer.on("mousedown", onOverlayMouseDown);
+  map.on("mousemove", onMapMouseMove);
+  map.on("mouseup", onMapMouseUp);
+
+  const cleanupDrag = () => {
+    layer.off("mousedown", onOverlayMouseDown);
+    map?.off("mousemove", onMapMouseMove);
+    map?.off("mouseup", onMapMouseUp);
+    map?.dragging.enable();
+  };
+
+  (imageInteraction as ImageInteractionState & { cleanupDrag?: () => void }).cleanupDrag = cleanupDrag;
+}
+
 onMounted(() => {
   map = L.map("map", { zoomControl: false, preferCanvas: true, doubleClickZoom: false }).setView(
     [52.9399, -73.5491],
@@ -620,6 +812,11 @@ onMounted(() => {
       maxZoom: 19,
     },
   ).addTo(map);
+
+  // Put image overlays in a pane above the canvas (overlayPane z-index 400)
+  // so they natively receive pointer events without the canvas intercepting them.
+  const imagePane = map.createPane('imagePane');
+  imagePane.style.zIndex = '410';
 
   drawing.initializeDrawing(map);
   drawing.setToolbarMode("global");
@@ -709,10 +906,9 @@ onMounted(() => {
     }
     // Cancel active global removal mode
     if (pm?.globalRemovalModeEnabled?.()) { pm.disableGlobalRemovalMode?.(); return; }
-    // Cancel active global edit/rotate/drag mode
+    // Cancel active global edit/rotate mode
     if (pm?.globalEditModeEnabled?.()) { pm.disableGlobalEditMode?.(); return; }
     if (pm?.globalRotateModeEnabled?.()) { pm.disableGlobalRotateMode?.(); return; }
-    if (pm?.globalDragModeEnabled?.()) { pm.disableGlobalDragMode?.(); return; }
   };
   document.addEventListener("keydown", escapeKeyHandler);
 });
@@ -722,6 +918,7 @@ onBeforeUnmount(() => {
     document.removeEventListener("keydown", escapeKeyHandler);
     escapeKeyHandler = null;
   }
+  detachImageInteraction();
   if (map) {
     featureLayerManager.clearAllFeatures();
     map.remove();
@@ -756,27 +953,49 @@ watch(selectedFeatureId, (id, oldId) => {
   // Restore the original stroke color on the previously selected layer
   if (oldId != null) {
     const oldLayer = featureLayerManager.layers.get(String(oldId));
-    if (oldLayer !== undefined && selectedLayerOriginalColor !== undefined) {
-      applyStyleToLayer(oldLayer, { color: selectedLayerOriginalColor });
+    if (oldLayer instanceof L.ImageOverlay) {
+      oldLayer.getElement()?.classList.remove("image-overlay-selected");
+    } else if (oldLayer !== undefined) {
+      disablePerFeatureDrag(oldLayer);
+      if (selectedLayerOriginalColor !== undefined) {
+        applyStyleToLayer(oldLayer, { color: selectedLayerOriginalColor });
+      }
     }
     selectedLayerOriginalColor = undefined;
   }
 
-  drawing.setToolbarMode(id ? "feature" : "global");
-
   if (id != null) {
     const layer = featureLayerManager.layers.get(String(id));
-    if (layer) {
+    if (layer instanceof L.ImageOverlay) {
+      drawing.setToolbarMode("global");
+      layer.getElement()?.classList.add("image-overlay-selected");
+    } else if (layer) {
+      drawing.setToolbarMode("feature");
+      enablePerFeatureDrag(layer);
       selectedLayerOriginalColor = getLayerStrokeColor(layer);
       applyStyleToLayer(layer, { color: "#000000" });
+    } else {
+      drawing.setToolbarMode("global");
     }
+  } else {
+    drawing.setToolbarMode("global");
   }
 
   if (!id && map) {
     const pm = (map as MapWithPm).pm;
     if (pm?.globalEditModeEnabled?.()) pm.disableGlobalEditMode?.();
     if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
-    if (pm?.globalDragModeEnabled?.()) pm.disableGlobalDragMode?.();
+  }
+
+  // Attach/detach image overlay move+resize interaction
+  detachImageInteraction();
+  if (id != null) {
+    const selectedFeature = localFeaturesSnapshot.value.find(
+      (f) => String(f.id) === id,
+    );
+    if (selectedFeature && getMapElementType(selectedFeature) === "image") {
+      attachImageInteraction(id);
+    }
   }
 });
 

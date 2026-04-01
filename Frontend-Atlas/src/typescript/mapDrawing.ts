@@ -58,6 +58,7 @@ export type PmMapDrawingTool = {
   globalEditModeEnabled?: () => boolean;
   globalRotateModeEnabled?: () => boolean;
   globalDragModeEnabled?: () => boolean;
+  enableGlobalDragMode?: () => void;
   disableGlobalEditMode?: () => void;
   disableGlobalRotateMode?: () => void;
   disableGlobalDragMode?: () => void;

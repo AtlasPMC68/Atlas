@@ -673,7 +673,7 @@ export class MapDrawingService {
       drawCircleMarker: !isFeatureMode,
       drawText: !isFeatureMode,
       editMode: isFeatureMode,
-      dragMode: !isFeatureMode,
+      dragMode: false,
       rotateMode: isFeatureMode,
       cutPolygon: !isFeatureMode,
       removalMode: !isFeatureMode,
