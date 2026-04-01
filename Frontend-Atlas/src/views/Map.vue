@@ -12,6 +12,13 @@
         >
           Ajouter une image
         </button>
+        <button class="btn" :disabled="!canUndo" @click="onUndo">
+          Undo
+        </button>
+
+        <button class="btn" :disabled="!canRedo" @click="onRedo">
+          Redo
+        </button>
       </div>
     </div>
 
@@ -38,7 +45,6 @@
         />
       </div>
     </div>
-    />
     <Transition
       enter-active-class="transition duration-300 ease-out"
       enter-from-class="opacity-0 translate-y-2"
@@ -119,13 +125,9 @@ import leafletImage from "leaflet-image";
 import type { Map as LeafletMap } from "leaflet";
 import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
+import { FeatureHistoryService } from "../services/FeatureHistoryService";
 
 const alert = ref<AlertState>(null);
-
-const handleDrawChange = (updatedFeatures: Feature[]) => {
-  features.value = updatedFeatures;
-  reconcileVisibility(updatedFeatures);
-};
 
 const route = useRoute();
 const router = useRouter();
@@ -143,6 +145,47 @@ const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+const featureHistoryService = new FeatureHistoryService(5);
+const canUndo = featureHistoryService.canUndo;
+const canRedo = featureHistoryService.canRedo;
+const trackingEnabled = featureHistoryService.trackingEnabled;
+
+const handleDrawChange = (updatedFeatures: Feature[]) => {
+  if (!trackingEnabled.value) {
+    return;
+  }
+
+  commitFeatureSnapshot(updatedFeatures);
+};
+
+function applyFeatureSnapshot(next: Feature[], track = true) {
+  const apply = () => {
+    features.value = next;
+    reconcileVisibility(next);
+  };
+
+  if (track) {
+    apply();
+    return;
+  }
+
+  featureHistoryService.withoutTracking(apply);
+}
+
+function commitFeatureSnapshot(next: Feature[]) {
+  applyFeatureSnapshot(featureHistoryService.commit(features.value, next));
+}
+
+function onUndo() {
+  if (!canUndo.value) return;
+  applyFeatureSnapshot(featureHistoryService.undo(features.value), false);
+}
+
+function onRedo() {
+  if (!canRedo.value) return;
+  applyFeatureSnapshot(featureHistoryService.redo(features.value), false);
+}
 
 async function onAddFeatureImage() {
   if (!selectedFile.value || !keycloak.token) {
@@ -238,15 +281,12 @@ function isUuid(value: string): boolean {
 
 async function onDeleteFeature(
   featureId: string,
-  // TODO : remove optional
   callbacks?: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
   },
 ) {
   if (!isUuid(featureId)) {
-    features.value = features.value.filter((feature) => feature.id !== featureId);
-    reconcileVisibility(features.value);
     callbacks?.onSuccess?.();
     return;
   }
@@ -272,9 +312,6 @@ async function onDeleteFeature(
     if (!response.ok) {
       throw new Error(`Error deleting feature: ${response.status}`);
     }
-
-    features.value = features.value.filter((feature) => feature.id !== featureId);
-    reconcileVisibility(features.value);
 
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -309,8 +346,7 @@ async function loadInitialFeatures() {
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
 
-    features.value = allFeatures;
-    reconcileVisibility(allFeatures);
+    applyFeatureSnapshot(featureHistoryService.reset(allFeatures), false);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
     showAlert(
@@ -331,25 +367,53 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
-  uploadMapThumbnail();
+function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    target.isContentEditable
+  );
 }
 
-const handleCtrlS = (e: KeyboardEvent) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+  if (isEditableTarget(e.target)) {
+    return;
+  }
+
+  const isMod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  if (isMod && key === "s") {
     e.preventDefault();
     void onSaveMap();
+    return;
+  }
+
+  if (isMod && !e.shiftKey && key === "z") {
+    e.preventDefault();
+    onUndo();
+    return;
+  }
+
+  if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
+    e.preventDefault();
+    onRedo();
   }
 };
 
 onMounted(async () => {
   await fetchCurrentUser();
   await loadInitialFeatures();
-  window.addEventListener("keydown", handleCtrlS);
+  window.addEventListener("keydown", handleKeyboardShortcuts);
 });
 
 onUnmounted(() => {
-  window.removeEventListener("keydown", handleCtrlS);
+  window.removeEventListener("keydown", handleKeyboardShortcuts);
   clearAlert(alert);
 });
 
@@ -365,8 +429,7 @@ async function onSaveMap() {
 
     const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
     if (syncedFeatures) {
-      features.value = syncedFeatures;
-      reconcileVisibility(syncedFeatures);
+      applyFeatureSnapshot(syncedFeatures, false);
     }
 
     const payload = camelToSnake(prepareFeaturesForSave(features.value));
@@ -389,8 +452,7 @@ async function onSaveMap() {
     }
 
     const savedFeatures = snakeToCamel(await response.json()) as Feature[];
-    features.value = savedFeatures;
-    reconcileVisibility(savedFeatures);
+    applyFeatureSnapshot(featureHistoryService.reset(savedFeatures), false);
 
     mapGeoJsonRef.value?.clearDraftLayers();
   } catch (err) {
@@ -400,6 +462,7 @@ async function onSaveMap() {
     );
   } finally {
     isSaving.value = false;
+    await uploadMapThumbnail();
     showAlert(alert, "success", "Carte sauvegardée avec succès !");
   }
 }

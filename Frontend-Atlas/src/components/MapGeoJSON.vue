@@ -575,6 +575,24 @@ function renderImages(features: Feature[]) {
   });
 }
 
+function renderAllFeaturesSafely() {
+  if (!map) return;
+
+  const wasGlobalRotateEnabled = map.pm.globalRotateModeEnabled();
+
+  if (wasGlobalRotateEnabled) {
+    map.pm.disableGlobalRotateMode();
+  }
+
+  try {
+    renderAllFeatures();
+  } finally {
+    if (wasGlobalRotateEnabled) {
+      map.pm.enableGlobalRotateMode();
+    }
+  }
+}
+
 function renderAllFeatures() {
   if (!map) return;
 
@@ -642,7 +660,7 @@ onMounted(() => {
 
   drawing.setSelectedYear(selectedYear.value);
   emit("map-ready", map);
-  renderAllFeatures();
+  renderAllFeaturesSafely();
 });
 
 onBeforeUnmount(() => {
@@ -657,7 +675,7 @@ watch(selectedYear, (newYear) => {
   drawing.setSelectedYear(newYear);
   void newYear;
   if (!map) return;
-  renderAllFeatures();
+  renderAllFeaturesSafely();
 });
 
 watch(
@@ -665,7 +683,7 @@ watch(
   (newFeatures) => {
     localFeaturesSnapshot.value = [...newFeatures];
     if (!map) return;
-    renderAllFeatures();
+    renderAllFeaturesSafely();
   },
   { deep: true },
 );
