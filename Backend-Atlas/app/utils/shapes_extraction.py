@@ -174,10 +174,6 @@ def extract_contour_properties(
         "area": float(area),
         "perimeter": float(perimeter),
         "bounding_box": bounding_box,
-<<<<<<< HEAD
-        "bounding_box": bounding_box,
-=======
->>>>>>> 0566aad93a646f9cc2850efabb6fe5753cdb4bc0
         "center": {"x": int(cx), "y": int(cy)},
         "aspect_ratio": round(aspect_ratio, 2),
         "extent": round(extent, 3),
@@ -187,7 +183,6 @@ def extract_contour_properties(
         "color_rgb": color_rgb,
         "color_name": get_nearest_css4_color_name(color_rgb),
         "color_hex": "#{:02x}{:02x}{:02x}".format(*color_rgb),
-<<<<<<< HEAD
         "num_vertices": len(approx),
         "rect_score": round(rect_score, 3),
         "color_rgb": color_rgb,
@@ -267,7 +262,6 @@ def classify_shape(
 
     return "Shape unknown"
 
-
 def _is_inside_legend_bounds(
     cx: float,
     cy: float,
@@ -286,7 +280,6 @@ def _is_inside_legend_bounds(
 
     return x <= cx <= (x + w) and y <= cy <= (y + h)
 
-
 def _contour_to_polygon(contour: np.ndarray) -> Optional[Polygon]:
     if contour is None or len(contour) < 3:
         return None
@@ -303,7 +296,6 @@ def _contour_to_polygon(contour: np.ndarray) -> Optional[Polygon]:
         return None
 
     return polygon
-
 
 def _is_duplicate_shape(
     candidate_contour: np.ndarray,
@@ -331,7 +323,6 @@ def _is_duplicate_shape(
 
     overlap_ratio = intersection_area / min(candidate_area, kept_area)
     return overlap_ratio >= overlap_threshold
-
 
 def post_filter_shapes(
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
@@ -404,11 +395,9 @@ def post_filter_shapes(
 
     return deduped
 
-
 # ---------------------------------------------------------------------------
 # Debug I/O helpers
 # ---------------------------------------------------------------------------
- 
  
 def save_shape_image(
     image: np.ndarray,
@@ -437,10 +426,8 @@ def save_shape_image(
     cv2.imwrite(shape_path, bgra)
     return shape_path
  
- 
 def reconstruct_shapes_debug(
     image: np.ndarray,
-    shapes_with_contours: List[Tuple[Dict, np.ndarray]],
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
     output_dir: str,
 ) -> Tuple[str, str]:
@@ -465,13 +452,11 @@ def reconstruct_shapes_debug(
     overlay_path = os.path.join(output_dir, "reconstructed_overlay.png")
     cv2.imwrite(overlay_path, composed)
     return mask_path, overlay_path
- 
- 
+  
 # ---------------------------------------------------------------------------
 # GeoJSON helpers
 # ---------------------------------------------------------------------------
- 
- 
+  
 def _build_normalized_feature_properties(shape: Dict, idx: int) -> Dict:
     """Properties for normalized GeoJSON features ([0,1]² space)."""
     return {
@@ -492,7 +477,6 @@ def _build_normalized_feature_properties(shape: Dict, idx: int) -> Dict:
         "is_normalized": True,
     }
  
- 
 def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
     """Properties for pixel-space GeoJSON features (original image coordinates)."""
     return {
@@ -512,7 +496,6 @@ def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
         "end_date": "2026-01-01",
         "is_normalized": False,
     }
- 
  
 def _normalize_contour_polygon(shape: Dict) -> Optional[Polygon]:
     """Return a [0, 1]² normalised and centred Shapely Polygon, or None."""
@@ -538,8 +521,7 @@ def _normalize_contour_polygon(shape: Dict) -> Optional[Polygon]:
     scaled = affinity.scale(translated, xfact=scale, yfact=scale, origin=(0.0, 0.0))
  
     sx, sy = (maxx - minx) * scale, (maxy - miny) * scale
-    return affinity.translate(scaled, xoff=(1.0 - sx) / 2.0, yoff=(1.0 - sy) / 2.0)
- 
+    return affinity.translate(scaled, xoff=(1.0 - sx) / 2.0, yoff=(1.0 - sy) / 2.0) 
  
 def create_normalized_geojson_features(
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
@@ -559,7 +541,6 @@ def create_normalized_geojson_features(
         )
  
     return [{"type": "FeatureCollection", "features": features}]
- 
  
 def create_pixel_geojson_features(
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
@@ -585,7 +566,6 @@ def create_pixel_geojson_features(
  
     return [{"type": "FeatureCollection", "features": features}]
  
- 
 def export_shapes_to_normalized_geojson(
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
     image_output_dir: str,
@@ -597,11 +577,9 @@ def export_shapes_to_normalized_geojson(
         json.dump(feature_collection, f, indent=2, ensure_ascii=False)
     return geojson_path
  
- 
 # ---------------------------------------------------------------------------
 # Pipeline helpers
 # ---------------------------------------------------------------------------
- 
  
 def _preprocess_for_contours(
     image_path: str,
@@ -642,7 +620,6 @@ def _preprocess_for_contours(
         "l_norm": l_norm,
     }
 
-
 def _build_shapes_metadata(
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
     image_area: int,
@@ -665,7 +642,6 @@ def _build_shapes_metadata(
         }
         for idx, (shape, _) in enumerate(shapes_with_contours, 1)
     ]
- 
  
 def _write_debug_outputs(
     image_bgr: np.ndarray,
@@ -751,7 +727,6 @@ def _write_debug_outputs(
         reconstruct_shapes_debug(image_bgr, shapes_with_contours, image_output_dir)
     except (cv2.error, OSError) as e:
         logger.error("Error writing debug reconstruction for %s: %s", image_path, e)
- 
  
 # ---------------------------------------------------------------------------
 # Main pipeline

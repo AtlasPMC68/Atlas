@@ -6,11 +6,9 @@ from typing import Dict, List, Optional, Tuple, Literal
 import numpy as np
 import cv2
 import skimage.util
-import skimage.restoration
 
-from skimage import exposure
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
-from skimage.morphology import opening, binary_closing, disk
+from skimage.morphology import opening, closing, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
 from scipy.ndimage import binary_fill_holes
@@ -135,7 +133,7 @@ def preprocess(
     # 2) Denoise
     if enable_denoise:
         work_u8 = (np.clip(work, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
-        work_u8 = cv2.bilateralFilter(work_u8, d=9, sigmaColor=30, sigmaSpace=5)
+        work_u8 = cv2.bilateralFilter(work_u8, d=11, sigmaColor=75, sigmaSpace=75) #try fast mean denoizing color
         work = work_u8.astype(np.float32) / 255.0
 
     if debug:
@@ -232,6 +230,240 @@ def dominant_bins_lab(
         )
 
     return dom
+def prepare_imposed_dominants(
+    imposed_colors: List[Tuple[int, int, int]],
+) -> List[Dict]:
+    imposed_entries: List[Dict] = []
+
+    for idx, rgb in enumerate(imposed_colors):
+        rgb_arr = np.array([[rgb]], dtype=np.uint8)              # shape (1,1,3)
+        rgb_f = rgb_arr.astype(np.float32) / 255.0
+        lab = rgb2lab(rgb_f)[0, 0]
+
+        imposed_entries.append(
+            {
+                "bin_id": None,
+                "ratio": 0.0,
+                "count": 0,
+                "lab_center": (float(lab[0]), float(lab[1]), float(lab[2])),
+                "bin_index": None,
+                "source": "imposed",
+                "kind": "dominant",
+                "rgb_center": rgb,
+                "label": f"imposed_{idx+1:02d}",
+            }
+        )
+
+    return imposed_entries
+
+def _lab_center_as_array(entry: Dict) -> np.ndarray:
+    return np.array(entry["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+
+
+def _min_deltaE_to_group(entry: Dict, group: List[Dict]) -> float:
+    if not group:
+        return float("inf")
+
+    entry_lab = _lab_center_as_array(entry)
+    return min(
+        float(deltaE_ciede2000(entry_lab, _lab_center_as_array(g))[0, 0])
+        for g in group
+    )
+
+def select_dominants_and_accents(
+    bins: List[Dict],
+    imposed_dominants: Optional[List[Dict]] = None,
+    dominant_ratio: float = 0.05,
+    accent_min_ratio: float = 0.001,
+    dominant_min_deltaE_from_existing: float = 10.0, # 0.5 * std gloabal
+    accent_min_deltaE_from_dominants: float = 18.0, # 0.2 * sur variance couleur
+    accent_min_deltaE_from_accents: float = 12.0,
+    min_accents_fallback: Optional[int] = None,
+) -> Dict[str, List[Dict]]:
+    """
+    Select colors in 2 levels:
+    - imposed_dominants are always kept as dominants
+    - auto dominants are selected from bins if large enough and far from existing dominants
+    - accents are selected from remaining bins if far enough from dominants and accents
+
+    Returns:
+        {
+            "dominants": [...],
+            "accents": [...],
+            "selected": [...]
+        }
+    """
+    if imposed_dominants is None:
+        imposed_dominants = []
+
+    if not bins and not imposed_dominants:
+        return {
+            "dominants": [],
+            "accents": [],
+            "selected": [],
+        }
+
+    bins = sorted(bins, key=lambda e: -e["ratio"])
+
+    # 1) Start with imposed colors as dominants
+    dominants: List[Dict] = [dict(d) for d in imposed_dominants]
+    dominant_ids = {d["bin_id"] for d in dominants if d.get("bin_id") is not None}
+
+    # 2) Add auto-dominants from bins
+    for b in bins:
+        if b["ratio"] < dominant_ratio:
+            continue
+
+        if b["bin_id"] in dominant_ids:
+            continue
+
+        candidate = dict(b)
+        min_dE_existing = _min_deltaE_to_group(candidate, dominants)
+
+        if min_dE_existing >= dominant_min_deltaE_from_existing:
+            candidate["source"] = "bin"
+            candidate["kind"] = "dominant"
+            candidate["min_dE_to_existing_dominants"] = float(min_dE_existing)
+            dominants.append(candidate)
+            dominant_ids.add(candidate["bin_id"])
+
+    # 3) Select accents from remaining bins
+    accents: List[Dict] = []
+    selected_ids = set(dominant_ids)
+
+    for b in bins:
+        if b["bin_id"] in selected_ids:
+            continue
+        if b["ratio"] < accent_min_ratio:
+            continue
+
+        candidate = dict(b)
+
+        min_dE_dom = _min_deltaE_to_group(candidate, dominants)
+        min_dE_acc = _min_deltaE_to_group(candidate, accents)
+
+        if (
+            min_dE_dom >= accent_min_deltaE_from_dominants
+            and min_dE_acc >= accent_min_deltaE_from_accents
+        ):
+            candidate["source"] = "bin"
+            candidate["kind"] = "accent"
+            candidate["min_dE_to_dominants"] = float(min_dE_dom)
+            candidate["min_dE_to_accents"] = float(min_dE_acc)
+            accents.append(candidate)
+            selected_ids.add(candidate["bin_id"])
+
+    # 4) Optional fallback for accents
+    if min_accents_fallback is not None and len(accents) < min_accents_fallback:
+        for b in bins:
+            if len(accents) >= min_accents_fallback:
+                break
+            if b["bin_id"] in selected_ids:
+                continue
+
+            candidate = dict(b)
+            min_dE_dom = _min_deltaE_to_group(candidate, dominants)
+            min_dE_acc = _min_deltaE_to_group(candidate, accents)
+
+            relaxed_dom = accent_min_deltaE_from_dominants * 0.5
+            relaxed_acc = accent_min_deltaE_from_accents * 0.5
+
+            if min_dE_dom >= relaxed_dom and min_dE_acc >= relaxed_acc:
+                candidate["source"] = "bin"
+                candidate["kind"] = "accent"
+                candidate["min_dE_to_dominants"] = float(min_dE_dom)
+                candidate["min_dE_to_accents"] = float(min_dE_acc)
+                accents.append(candidate)
+                selected_ids.add(candidate["bin_id"])
+
+    dominants.sort(key=lambda e: -float(e.get("ratio", 0.0)))
+    accents.sort(key=lambda e: -float(e.get("ratio", 0.0)))
+
+    selected = dominants + accents
+
+    return {
+        "dominants": dominants,
+        "accents": accents,
+        "selected": selected,
+    }
+
+
+def merge_similar_colors(
+    selected: List[Dict], merge_deltaE_threshold: float = 5.0
+) -> List[Dict]:
+    """
+    Merge colors that are too similar (ΔE < threshold).
+    Representative = highest ratio among merged, ratios are summed.
+    """
+    if not selected:
+        return []
+
+    merged: List[Dict] = []
+    used = set()
+
+    for i in range(len(selected)):
+        if i in used:
+            continue
+
+        rep = dict(selected[i])
+        total_ratio = float(rep["ratio"])
+        used.add(i)
+
+        rep_lab = np.array(rep["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+
+        for j in range(i + 1, len(selected)):
+            if j in used:
+                continue
+
+            c = selected[j]
+            c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
+            dE = float(deltaE_ciede2000(rep_lab, c_lab)[0, 0])
+
+            if dE < merge_deltaE_threshold:
+                total_ratio += float(c["ratio"])
+                used.add(j)
+
+                # Update representative if needed
+                if float(c["ratio"]) > float(rep["ratio"]):
+                    rep = dict(c)
+                    rep_lab = c_lab
+
+        rep["ratio"] = total_ratio
+        merged.append(rep)
+
+    merged.sort(key=lambda e: -e["ratio"])
+    return merged
+
+
+def build_exclusive_masks_by_nearest_center(
+    lab: np.ndarray,
+    opaque_mask: np.ndarray,
+    centers_lab: np.ndarray,
+    mask_deltaE: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Assign each pixel to exactly one color (exclusive layers) by nearest ΔE.
+
+    Returns:
+        best_idx: (H, W) int index of selected center for each pixel (undefined where invalid=False)    
+        valid: (H, W) bool pixels that are within mask_deltaE of at least one center and opaque
+    """
+    # centers_lab: (K, 3)
+    # We compute ΔE for each center and stack into (H, W, K).
+    dists = []
+    for k in range(centers_lab.shape[0]):
+        center = centers_lab[k].reshape(1, 1, 3)
+        dE_k = deltaE_ciede2000(lab, center)  # (H, W)
+        dists.append(dE_k)
+
+    dist_stack = np.stack(dists, axis=-1)  # (H, W, K)
+
+    best_idx = np.argmin(dist_stack, axis=-1).astype(np.int32)
+    best_dE = np.min(dist_stack, axis=-1)
+
+    valid = (best_dE <= mask_deltaE) & opaque_mask
+
+    return best_idx, valid
 
 
 def lab_center_to_rgb_u8(
@@ -319,16 +551,7 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
     if not polygons:
         return None
 
-    # Merge all polygons into a single geometry
-    merged = unary_union(polygons)
-    return merged
-
-# Used to not have crazy amount of vertices so it is not too nasty looking
-def simplify_geometry(geometry: BaseGeometry, tolerance: float = 0.5) -> BaseGeometry:
-    if tolerance > 0 and geometry is not None:
-        return geometry.simplify(tolerance, preserve_topology=True)
-    return geometry
-
+    return unary_union(polygons)
 
 def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
     """From pixel-space polygons, build GeoJSON feature and write it to disk.
@@ -351,6 +574,11 @@ def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
     }
     return pixel_feature
 
+# Used to not have crazy amount of vertices so it is not too nasty looking
+def simplify_geometry(geometry: BaseGeometry, tolerance: float = 0.5) -> BaseGeometry:
+    if tolerance > 0 and geometry is not None:
+        return geometry.simplify(tolerance, preserve_topology=True)
+    return geometry
 
 def build_normalized_feature(
     color_name: str, rgb: Tuple[int, int, int], merged_geometry: BaseGeometry
@@ -418,21 +646,50 @@ def extract_colors(
     # Larger value → merge nearby reds/greens into same bin.
     # Smaller value → finer separation of hue variations.
     bin_b: float = 8.0,
-    deltaE_threshold: float = 10.0,
+    # Quantization step on the b (blue–yellow) axis.
+    # Larger value → merge nearby blues/yellows.
+    # Smaller value → more sensitive to color differences.
+
+    # -----------------------------
+    # Color selection logic (which bins become layers)
+    # -----------------------------
+
+    dominant_ratio: float = 1,  # 0.01 Minimum pixel ratio for a color to be considered dominant.       
+    accent_min_ratio: float = 1,  # 0.0001 Minimum ratio for a non-dominant (accent) color to be considered.
+    min_colors_fallback: Optional[int] = None,  # If set, ensures at least this many colors are selected.
     opening_radius: int = 1,
     closing_radius: int = 3,
     simplify_tolerance: float = 0.5,
+
+    # -----------------------------
+    # Mask construction (pixel assignment)
+    # -----------------------------
+
+    mask_deltaE: float = 12.0,
+    # Maximum ΔE distance for a pixel to be assigned to a color layer.
+    # Larger value → thicker, more inclusive masks.
+    # Smaller value → tighter masks, may leave holes/unassigned pixels.
 ) -> Dict:
     """
-    Extract dominant color layers using LAB binning + ΔE masks.
-    
-    Returns:
-        Dict with detected colors, mask paths, ratios, and normalized_features.
-    """
-    rgb, _, opaque_mask = load_image_rgb_alpha_mask(image_path)
-    lab = compute_lab(rgb)
+    Extract exclusive color layers using:
+    - LAB binning (frequency estimate)
+    - Dominants: ratio >= dominant_ratio
+    - Accents: low ratio but far (ΔE) from dominants
+    - Merge similar selected colors (ΔE < merge_deltaE_threshold)
+    - Exclusive assignment: each pixel belongs to exactly one selected color (nearest ΔE)
 
-    # Output folder
+    Returns:
+      - colors_detected (keys of masks)
+      - masks (name -> png path)
+      - ratios (name -> ratio)
+      - selected_bins (metadata)
+      - normalized_features (GeoJSON FeatureCollections)
+    """
+
+    if imposed_colors is None:
+        dominant_ratio = 0.01
+
+    # 0) Prepare output directory
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
 
@@ -478,14 +735,14 @@ def extract_colors(
         imposed_dominants=imposed_dominants,
         dominant_ratio=dominant_ratio,
         accent_min_ratio=accent_min_ratio,
-        dominant_min_deltaE_from_existing=10.0,
+        dominant_min_deltaE_from_existing=12.0,
         accent_min_deltaE_from_dominants=15.0,
         accent_min_deltaE_from_accents=12.0,
         min_accents_fallback=min_colors_fallback,
     )
     dominants = selection["dominants"]
-    accents = selection["accents"]
-    selected = selection["selected"]
+    accents = selection["accents"] # Can be used in future for shapes 
+    selected = selection["selected"] # Contains both dominants and accents
 
     masks: Dict[str, str] = {}
     mask_paths: Dict[str, str] = {}
@@ -516,28 +773,25 @@ def extract_colors(
 
     # 7) Build per-color masks and features
     color_index = 1
-    for entry in dom:
-        lab_center = entry["lab_center"]
-
-        # Build ΔE mask against the LAB center.
-        # deltaE_ciede2000 expects (...,3) arrays; we broadcast center to image shape.
-        # NOTE: This computes a full (H, W) distance map for each dominant color bin,
-        # so the overall complexity is roughly O(H * W * top_n). For very large images
-        # or many bins, consider downsampling earlier in the pipeline if full resolution
-        # is not required for color extraction.
-        center = np.array(lab_center, dtype=np.float64).reshape(1, 1, 3)
-        dE = deltaE_ciede2000(lab, center)  # shape (H, W)
-
-        mask = (dE <= deltaE_threshold) & opaque_mask
+    for k, entry in enumerate(dominants):
+        mask = (best_idx == k) & valid
 
         # 1. Opening: Remove small noise/speckles
         if opening_radius > 0:
             mask = opening(mask, disk(opening_radius))
 
-        # Name the layer based on approximate RGB -> nearest CSS name
-        rgb_u8 = lab_center_to_rgb_u8(lab_center)
-        color_name = get_nearest_css4_color_name(rgb_u8)
-        # Ensure uniqueness of dictionary keys even if multiple bins share the same CSS4 color name
+        # 2. Closing: Bridge small gaps (useful for connecting fragmented regions)
+        if closing_radius > 0:
+            mask = closing(mask, disk(closing_radius))
+        
+        # 3. Fill holes: Remove interior holes (text, small waters, etc.)
+        mask = binary_fill_holes(mask)
+
+        if not np.any(mask):
+            continue
+
+        rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
+        color_name = get_nearest_css4_color_name(rgb_u8_center)
         unique_color_name = f"{color_name}_{color_index}"
         L, a, b = entry["lab_center"]
 
@@ -550,28 +804,32 @@ def extract_colors(
 
         ratios[unique_color_name] = float(entry["ratio"])
 
-        # Build normalized feature from mask
-        # Convert mask to geometry first (like the old RGB version did with pixel_polygons)
-        geometry = mask_to_geometry(mask)
-        if geometry:
+        if debug:
+            out_path = os.path.join(image_output_dir, file_name)
+            save_mask_png(mask, original_rgb, out_path)
+            masks[unique_color_name] = out_path
+            mask_paths[unique_color_name] = out_path
 
+        geometry = mask_to_geometry(mask)
+        if geometry :
+            
             geometry = simplify_geometry(geometry, simplify_tolerance)
             
             # build_features expects a list of polygons, so wrap the geometry in a list
-            pixel_feature = build_feature(unique_color_name, rgb_u8, geometry)
+            pixel_feature = build_feature(unique_color_name, rgb_u8_center, geometry)
             pixel_features.append(
                 {"type": "FeatureCollection", "features": [pixel_feature]}
             )
 
             normalized_feature = build_normalized_feature(
-                unique_color_name, rgb_u8, geometry
+                unique_color_name, rgb_u8_center, geometry
             )
             normalized_features.append(
-                {"type": "FeatureCollection", "features": [feature]}
+                {"type": "FeatureCollection", "features": [normalized_feature]}
             )
 
         color_index += 1
-    
+
     return {
         "colors_detected": list(masks.keys()),
         "masks": masks,
