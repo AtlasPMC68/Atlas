@@ -29,6 +29,7 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
+import type { MapWithPm, PmIgnoreOptions } from "../typescript/mapDrawing";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -73,6 +74,12 @@ const filteredFeatures = computed(() => {
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
+let suppressNextPropsRender = false;
+let blockNextMapClick = false;
+let selectedLayerOriginalColor: string | undefined = undefined;
+let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+const selectedFeatureId = ref<string | null>(null);
 
 const featureLayerManager = {
   layers: new Map<FeatureId, L.Layer>(),
@@ -86,6 +93,15 @@ const featureLayerManager = {
     }
     this.layers.set(id, layer);
 
+    layer.on("click", (e: L.LeafletEvent) => {
+      (e as L.LeafletMouseEvent).originalEvent?.stopPropagation();
+      // In canvas mode, Leaflet fires the layer click AND the map click as two
+      // separate events from the same mouse event. Without this flag, the map
+      // click handler would immediately deselect what we just selected.
+      blockNextMapClick = true;
+      selectedFeatureId.value = id;
+    });
+
     const isVisible = props.featureVisibility.get(id) ?? true;
     if (isVisible) {
       map.addLayer(layer);
@@ -98,7 +114,28 @@ const featureLayerManager = {
     if (!layer || !map) return;
 
     if (visible) {
+      // If any global edit mode is active, geoman's layeradd listener would
+      // immediately enable that mode on this layer. Which is not good
+      // for feature specific edit modes like edit layers and rotate
+      // so we temporarily set pmIgnore to true on this layer (and all its children)
+      // before adding it to the map, then restore pmIgnore to its original value.
+      const pm = (map as MapWithPm).pm;
+      const anyModeActive =
+        pm?.globalEditModeEnabled?.() ||
+        pm?.globalRotateModeEnabled?.();
+
+      const setIgnoreDeep = (l: L.Layer, value: boolean | undefined) => {
+        const opts = l.options as PmIgnoreOptions;
+        if (value === undefined) delete opts.pmIgnore;
+        else opts.pmIgnore = value;
+        if (l instanceof L.LayerGroup) {
+          (l as L.LayerGroup).eachLayer((child) => setIgnoreDeep(child, value));
+        }
+      };
+
+      if (anyModeActive) setIgnoreDeep(layer, true);
       map.addLayer(layer);
+      if (anyModeActive) setIgnoreDeep(layer, undefined);
     } else {
       map.removeLayer(layer);
     }
@@ -139,6 +176,7 @@ function applyLayerUpdate(layer: L.Layer) {
 
     const next = upsertFeature(localFeaturesSnapshot.value, extracted);
     localFeaturesSnapshot.value = next;
+    suppressNextPropsRender = true;
     emit("draw-update", next);
   } finally {
     runtimeLayer.__atlasApplyingSync = false;
@@ -191,6 +229,7 @@ const drawing = useMapDrawing((event, ...args) => {
     const payload = args[0] as Feature;
     const next = upsertFeature(current, payload);
     localFeaturesSnapshot.value = next;
+    suppressNextPropsRender = true;
     emit("draw-update", next);
     return;
   }
@@ -328,80 +367,6 @@ function transformCoordinates(
     transformCoordinates(nested, anchorLat, anchorLng, sizeMeters),
   ) as Geometry["coordinates"];
 }
-
-function normalizeGeometryToWorld(
-  geometry: Geometry,
-  sizeMeters: number,
-): Geometry {
-  const anchorLat = -80 + Math.random() * 160;
-  const anchorLng = -170 + Math.random() * 340;
-
-  return {
-    ...geometry,
-    coordinates: transformCoordinates(
-      geometry.coordinates,
-      anchorLat,
-      anchorLng,
-      sizeMeters,
-    ),
-  } as Geometry;
-}
-
-function transformNormalizedToWorld(
-  geojson: GeoJsonFeatureCollectionWithGeometry,
-  anchorLat: number,
-  anchorLng: number,
-  sizeMeters: number,
-): GeoJsonFeatureCollectionWithGeometry {
-  // Use the same projected CRS as the basemap (Web Mercator).
-  const crs = L.CRS.EPSG3857;
-  const center = crs.project(L.latLng(anchorLat, anchorLng));
-  const halfSize = sizeMeters / 2;
-
-  // Transform a single coordinate [x, y] in [0,1]x[0,1] into [lng, lat]
-  const transformCoord = (coord: Coordinate): Coordinate => {
-    const [x, y] = coord;
-
-    // Center the shape around (0,0) in its local space
-    const nx = x - 0.5;
-    const ny = y - 0.5;
-
-    // Work in projected meters with a uniform scale so aspect ratio is preserved
-    const mx = center.x + nx * 2 * halfSize;
-    const my = center.y - ny * 2 * halfSize;
-
-    const latlng = crs.unproject(L.point(mx, my));
-    return [latlng.lng, latlng.lat];
-  };
-
-  const transformCoords = (
-    coords: Geometry["coordinates"],
-  ): Geometry["coordinates"] => {
-    if (!Array.isArray(coords)) return coords;
-
-    if (typeof coords[0] === "number") {
-      return transformCoord(coords as Coordinate);
-    }
-
-    return (coords as Array<Geometry["coordinates"]>).map(
-      transformCoords,
-    ) as Geometry["coordinates"];
-  };
-
-  return {
-    ...geojson,
-    features: geojson.features.map((feature) => ({
-      ...feature,
-      geometry: {
-        ...feature.geometry,
-        coordinates: transformCoords(feature.geometry.coordinates),
-      } as Geometry,
-    })),
-  };
-}
-
-void normalizeGeometryToWorld;
-void transformNormalizedToWorld;
 
 function renderZones(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -616,12 +581,36 @@ function renderAllFeatures() {
   emit("features-loaded", currentFeatures);
 }
 
+function applyStyleToLayer(layer: L.Layer, style: L.PathOptions) {
+  if (layer instanceof L.LayerGroup) {
+    layer.eachLayer((child) => applyStyleToLayer(child, style));
+  } else if (layer instanceof L.Path) {
+    layer.setStyle(style);
+  }
+}
+
+function getLayerStrokeColor(layer: L.Layer): string | undefined {
+  if (layer instanceof L.LayerGroup) {
+    let color: string | undefined;
+    layer.eachLayer((child) => { color ??= getLayerStrokeColor(child); });
+    return color;
+  } else if (layer instanceof L.Path) {
+    return layer.options.color;
+  }
+  return undefined;
+}
+
 onMounted(() => {
-  map = L.map("map", { zoomControl: false, preferCanvas: true }).setView(
+  map = L.map("map", { zoomControl: false, preferCanvas: true, doubleClickZoom: false }).setView(
     [52.9399, -73.5491],
     5,
   );
   vectorRenderer = L.canvas({ padding: 0.5 });
+  // Make all path layers (including geoman's temp drawing layers) use the
+  // same canvas renderer. Without this, geoman creates a second <canvas>
+  // element that sits on top of vectorRenderer's canvas in the DOM, causing
+  // it to capture all mouse events and breaking hover/click on our features.
+  (map.options as Record<string, unknown>).renderer = vectorRenderer;
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -633,6 +622,65 @@ onMounted(() => {
   ).addTo(map);
 
   drawing.initializeDrawing(map);
+  drawing.setToolbarMode("global");
+  
+  // pmIgnore values saved before edit/rotate mode is enabled, restored after.
+  // This makes geoman only process the selected feature (O(1)) instead of every layer.
+  const savedPmIgnore = new Map<L.Layer, boolean | undefined>();
+
+  const restorePmIgnore = () => {
+    savedPmIgnore.forEach((original, layer) => {
+      const opts = layer.options as PmIgnoreOptions;
+      if (original === undefined) {
+        delete opts.pmIgnore;
+      } else {
+        opts.pmIgnore = original;
+      }
+    });
+    savedPmIgnore.clear();
+  };
+
+  map.on("pm:buttonclick", (e) => {
+    const { btnName } = e as unknown as { btnName: string };
+    const pm = (map as MapWithPm).pm;
+
+    // Only intercept the turn-ON click for edit and rotate modes.
+    if (btnName === "editMode" && pm?.globalEditModeEnabled?.()) return;
+    if (btnName === "rotateMode" && pm?.globalRotateModeEnabled?.()) return;
+    if (btnName !== "editMode" && btnName !== "rotateMode") return;
+    if (!selectedFeatureId.value) return;
+
+    const selectedLayer = featureLayerManager.layers.get(selectedFeatureId.value);
+    const selectedLayers = new Set<L.Layer>();
+    const addLayersDeep = (l: L.Layer) => {
+      selectedLayers.add(l);
+      if (l instanceof L.LayerGroup) {
+        (l as L.LayerGroup).eachLayer(addLayersDeep);
+      }
+    };
+    if (selectedLayer) addLayersDeep(selectedLayer);
+
+    // Set pmIgnore on every non-selected layer so geoman's findLayers()
+    // skips them when enabling the mode.
+    savedPmIgnore.clear();
+    map!.eachLayer((l) => {
+      if (selectedLayers.has(l)) return;
+      const opts = l.options as PmIgnoreOptions;
+      savedPmIgnore.set(l, opts.pmIgnore);
+      opts.pmIgnore = true;
+    });
+  });
+
+  map.on("pm:globaleditmodetoggled", restorePmIgnore);
+  map.on("pm:globalrotatemodetoggled", restorePmIgnore);
+
+  map.on("click", () => {
+    if (blockNextMapClick) {
+      blockNextMapClick = false;
+      return;
+    }
+    selectedFeatureId.value = null;
+  });
 
   L.control
     .scale({ position: "bottomright", metric: true, imperial: false })
@@ -643,9 +691,37 @@ onMounted(() => {
   drawing.setSelectedYear(selectedYear.value);
   emit("map-ready", map);
   renderAllFeatures();
+
+  escapeKeyHandler = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || !map) return;
+    const pm = (map as MapWithPm).pm;
+    // Cancel active freehand drawing — also untoggle the custom toolbar button
+    if (drawing.activeDrawingMode.value === "freehand") {
+      drawing.stopFreehandDrawing(map);
+      drawing.activeDrawingMode.value = null;
+      pm?.Toolbar?.toggleButton?.("drawFreehand", false);
+      return;
+    }
+    // Cancel active regular draw mode
+    if (drawing.activeDrawingMode.value !== null) {
+      pm?.disableDraw();
+      return;
+    }
+    // Cancel active global removal mode
+    if (pm?.globalRemovalModeEnabled?.()) { pm.disableGlobalRemovalMode?.(); return; }
+    // Cancel active global edit/rotate/drag mode
+    if (pm?.globalEditModeEnabled?.()) { pm.disableGlobalEditMode?.(); return; }
+    if (pm?.globalRotateModeEnabled?.()) { pm.disableGlobalRotateMode?.(); return; }
+    if (pm?.globalDragModeEnabled?.()) { pm.disableGlobalDragMode?.(); return; }
+  };
+  document.addEventListener("keydown", escapeKeyHandler);
 });
 
 onBeforeUnmount(() => {
+  if (escapeKeyHandler) {
+    document.removeEventListener("keydown", escapeKeyHandler);
+    escapeKeyHandler = null;
+  }
   if (map) {
     featureLayerManager.clearAllFeatures();
     map.remove();
@@ -664,6 +740,10 @@ watch(
   () => props.features,
   (newFeatures) => {
     localFeaturesSnapshot.value = [...newFeatures];
+    if (suppressNextPropsRender) {
+      suppressNextPropsRender = false;
+      return;
+    }
     if (!map) return;
     renderAllFeatures();
   },
@@ -671,6 +751,34 @@ watch(
 );
 
 localFeaturesSnapshot.value = [...props.features];
+
+watch(selectedFeatureId, (id, oldId) => {
+  // Restore the original stroke color on the previously selected layer
+  if (oldId != null) {
+    const oldLayer = featureLayerManager.layers.get(String(oldId));
+    if (oldLayer !== undefined && selectedLayerOriginalColor !== undefined) {
+      applyStyleToLayer(oldLayer, { color: selectedLayerOriginalColor });
+    }
+    selectedLayerOriginalColor = undefined;
+  }
+
+  drawing.setToolbarMode(id ? "feature" : "global");
+
+  if (id != null) {
+    const layer = featureLayerManager.layers.get(String(id));
+    if (layer) {
+      selectedLayerOriginalColor = getLayerStrokeColor(layer);
+      applyStyleToLayer(layer, { color: "#000000" });
+    }
+  }
+
+  if (!id && map) {
+    const pm = (map as MapWithPm).pm;
+    if (pm?.globalEditModeEnabled?.()) pm.disableGlobalEditMode?.();
+    if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
+    if (pm?.globalDragModeEnabled?.()) pm.disableGlobalDragMode?.();
+  }
+});
 
 watch(
   () => props.featureVisibility,

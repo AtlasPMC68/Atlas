@@ -159,6 +159,7 @@ export class MapDrawingService {
 
     mapWithPm.pm.addControls({
       position: "topright",
+      continueDrawing: false,
       drawMarker: true,
       drawPolyline: true,
       drawPolygon: true,
@@ -252,12 +253,20 @@ export class MapDrawingService {
           (polyline as FeatureBearingLayer).feature = feature;
           this.emit("feature-created", feature);
         }
+        const drawnLine = polyline;
+        setTimeout(() => {
+          this.drawnItems.value?.removeLayer(drawnLine);
+          if (map.hasLayer(drawnLine)) {
+            map.removeLayer(drawnLine);
+          }
+        }, 0);
       } else {
         map.removeLayer(polyline);
       }
 
       polyline = null;
       points = [];
+      this.stopFreehandDrawing(map);
     };
 
     this.freehandListeners = { onMouseDown, onMouseMove, onMouseUp };
@@ -585,6 +594,7 @@ export class MapDrawingService {
 
     map.on("pm:drawend", () => {
       map.dragging.enable();
+      this.activeDrawingMode.value = null;
     });
   }
 
@@ -647,6 +657,36 @@ export class MapDrawingService {
     this.selectedYear = selectedYear;
   }
 
+  setToolbarMode(mode: "global" | "feature") {
+    if (!this.pmMapInstance?.pm) return;
+
+    const pm = this.pmMapInstance.pm;
+    const isFeatureMode = mode === "feature";
+
+    pm.addControls({
+      drawMarker: !isFeatureMode,
+      drawPolyline: !isFeatureMode,
+      drawPolygon: !isFeatureMode,
+      drawCircle: !isFeatureMode,
+      drawRectangle: !isFeatureMode,
+      drawCircleMarker: !isFeatureMode,
+      drawText: !isFeatureMode,
+      editMode: isFeatureMode,
+      dragMode: !isFeatureMode,
+      rotateMode: isFeatureMode,
+      cutPolygon: !isFeatureMode,
+      removalMode: !isFeatureMode,
+      [freehandControlName]: !isFeatureMode,
+    });
+
+    if (isFeatureMode) {
+      if (this.freehandActive) {
+        this.stopFreehandDrawing(this.pmMapInstance);
+      }
+      pm.disableDraw();
+    }
+  } 
+
   getDrawnFeatures(): Feature[] {
     const features: Feature[] = [];
 
@@ -671,6 +711,7 @@ export class MapDrawingService {
       loadFeaturesForEditing: this.loadFeaturesForEditing.bind(this),
       clearDrawnItems: this.clearDrawnItems.bind(this),
       setSelectedYear: this.setSelectedYear.bind(this),
+      setToolbarMode: this.setToolbarMode.bind(this),
       getDrawnFeatures: this.getDrawnFeatures.bind(this),
       startFreehandDrawing: this.startFreehandDrawing.bind(this),
       stopFreehandDrawing: this.stopFreehandDrawing.bind(this),

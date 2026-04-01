@@ -16,6 +16,10 @@ export type DrawingMode =
 
 export type EmitFn = (event: string, ...args: unknown[]) => void;
 
+// Geoman adds pmIgnore to layer options to exclude layers from global modes.
+// It is not part of Leaflet's official LayerOptions type.
+export type PmIgnoreOptions = L.LayerOptions & { pmIgnore?: boolean };
+
 export type TextMarkerLayer = L.Marker & {
   options: L.MarkerOptions & {
     text?: string;
@@ -44,13 +48,21 @@ export type PmToolbar = {
   }) => void;
   controlExists?: (name: string) => boolean;
   changeControlOrder?: () => void;
+  toggleButton?: (name: string, active: boolean) => void;
 };
 
 export type PmMapDrawingTool = {
   addControls: (options: Record<string, unknown>) => void;
   disableDraw: () => void;
   enableDraw: (shape: string, options?: Record<string, unknown>) => void;
+  globalEditModeEnabled?: () => boolean;
+  globalRotateModeEnabled?: () => boolean;
+  globalDragModeEnabled?: () => boolean;
+  disableGlobalEditMode?: () => void;
+  disableGlobalRotateMode?: () => void;
+  disableGlobalDragMode?: () => void;
   globalRemovalModeEnabled?: () => boolean;
+  disableGlobalRemovalMode?: () => void;
   enableGlobalLassoMode?: (options: Record<string, unknown>) => void;
   disableGlobalLassoMode?: () => void;
   Toolbar?: PmToolbar;
