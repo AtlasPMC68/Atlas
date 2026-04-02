@@ -20,6 +20,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely import affinity
 
 from . import preprocessing
+from app.utils.color_in_legends_extraction import extract_colors_from_legend_shapes
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
@@ -271,13 +272,13 @@ def _min_deltaE_to_group(entry: Dict, group: List[Dict]) -> float:
     )
 
 def select_dominants_and_accents(
+    dominant_ratio,
+    accent_min_ratio,
+    dominant_min_deltaE_from_existing,
+    accent_min_deltaE_from_dominants, 
+    accent_min_deltaE_from_accents,
     bins: List[Dict],
     imposed_dominants: Optional[List[Dict]] = None,
-    dominant_ratio: float = 0.05,
-    accent_min_ratio: float = 0.001,
-    dominant_min_deltaE_from_existing: float = 10.0, # 0.5 * std gloabal
-    accent_min_deltaE_from_dominants: float = 18.0, # 0.2 * sur variance couleur
-    accent_min_deltaE_from_accents: float = 12.0,
     min_accents_fallback: Optional[int] = None,
 ) -> Dict[str, List[Dict]]:
     """
@@ -379,12 +380,9 @@ def select_dominants_and_accents(
     dominants.sort(key=lambda e: -float(e.get("ratio", 0.0)))
     accents.sort(key=lambda e: -float(e.get("ratio", 0.0)))
 
-    selected = dominants + accents
-
     return {
         "dominants": dominants,
         "accents": accents,
-        "selected": selected,
     }
 
 
@@ -627,10 +625,9 @@ def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
-    imposed_colors: Optional[List[Tuple[int, int, int]]] = None, # If set, the color (RGB) will be used for the extraction. Ex: Colors in Legends or selected by user
-    
+    legend_shapes: Optional[List[Dict]] = None,
     # -----------------------------
-    # LAB binning (color candidates discovery)
+    # LAB binning
     # -----------------------------
 
     top_n_bins: int = 200,
@@ -651,24 +648,30 @@ def extract_colors(
     # Smaller value → more sensitive to color differences.
 
     # -----------------------------
-    # Color selection logic (which bins become layers)
+    # Color selection logic if no imposed colors are provided
     # -----------------------------
 
-    dominant_ratio: float = 1,  # 0.01 Minimum pixel ratio for a color to be considered dominant.       
-    accent_min_ratio: float = 1,  # 0.0001 Minimum ratio for a non-dominant (accent) color to be considered.
+    dominant_ratio: float = 0.01,  #  Minimum pixel ratio for a color to be considered dominant.       
+    accent_min_ratio: float = 0.0001,  #  Minimum ratio for a non-dominant (accent) color to be considered.
     min_colors_fallback: Optional[int] = None,  # If set, ensures at least this many colors are selected.
-    opening_radius: int = 1,
-    closing_radius: int = 3,
-    simplify_tolerance: float = 0.5,
 
     # -----------------------------
     # Mask construction (pixel assignment)
     # -----------------------------
 
-    mask_deltaE: float = 12.0,
+    mask_deltaE: float = 5.0,
     # Maximum ΔE distance for a pixel to be assigned to a color layer.
     # Larger value → thicker, more inclusive masks.
     # Smaller value → tighter masks, may leave holes/unassigned pixels.
+
+    # -----------------------------
+    # Post-processing 
+    # -----------------------------
+
+    opening_radius: int = 1,
+    closing_radius: int = 3,
+    simplify_tolerance: float = 0.5,
+
 ) -> Dict:
     """
     Extract exclusive color layers using:
@@ -685,9 +688,6 @@ def extract_colors(
       - selected_bins (metadata)
       - normalized_features (GeoJSON FeatureCollections)
     """
-
-    if imposed_colors is None:
-        dominant_ratio = 0.01
 
     # 0) Prepare output directory
     base_name = os.path.splitext(os.path.basename(image_path))[0]
@@ -717,32 +717,41 @@ def extract_colors(
     # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
+    if legend_shapes: 
+        imposed_colors = extract_colors_from_legend_shapes(rgb, legend_shapes) 
+    else: 
+        imposed_colors = None
+
     imposed_dominants = prepare_imposed_dominants(imposed_colors) if imposed_colors else []
 
-    # 4) Dominant LAB bins (computed on opaque pixels)
-    dom = dominant_bins_lab(
-        lab,
-        opaque_mask,
-        top_n=top_n_bins,
-        bin_L=bin_L,
-        bin_a=bin_a,
-        bin_b=bin_b,
-    )
+    if imposed_dominants:
+        # If colors are imposed, extract only those colors.
+        dom = []
+        dominants = imposed_dominants
+    else:
+        # 4) Dominant LAB bins (computed on opaque pixels)
+        dom = dominant_bins_lab(
+            lab,
+            opaque_mask,
+            top_n=top_n_bins,
+            bin_L=bin_L,
+            bin_a=bin_a,
+            bin_b=bin_b,
+        )
 
-    # 5) Select colors (dominants + accents)
-    selection = select_dominants_and_accents(
-        bins=dom,
-        imposed_dominants=imposed_dominants,
-        dominant_ratio=dominant_ratio,
-        accent_min_ratio=accent_min_ratio,
-        dominant_min_deltaE_from_existing=12.0,
-        accent_min_deltaE_from_dominants=15.0,
-        accent_min_deltaE_from_accents=12.0,
-        min_accents_fallback=min_colors_fallback,
-    )
-    dominants = selection["dominants"]
-    accents = selection["accents"] # Can be used in future for shapes 
-    selected = selection["selected"] # Contains both dominants and accents
+        # 5) Select colors (dominants + accents)
+        selection = select_dominants_and_accents(
+            bins=dom,
+            imposed_dominants=[],
+            dominant_ratio=dominant_ratio,
+            accent_min_ratio=accent_min_ratio,
+            dominant_min_deltaE_from_existing=12.0, # 0.5 * std gloabal
+            accent_min_deltaE_from_dominants=15.0, # 0.2 * sur variance couleur
+            accent_min_deltaE_from_accents=12.0,
+            min_accents_fallback=min_colors_fallback,
+        )
+        dominants = selection["dominants"]
+        accents = selection["accents"] # accents are selected from remaining bins if far enough from dominants and accents, Can be used for shape extraction.
 
     masks: Dict[str, str] = {}
     mask_paths: Dict[str, str] = {}
@@ -802,7 +811,9 @@ def extract_colors(
             f".png"
         )
 
-        ratios[unique_color_name] = float(entry["ratio"])
+        opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
+        ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
+        ratios[unique_color_name] = ratio_value
 
         if debug:
             out_path = os.path.join(image_output_dir, file_name)

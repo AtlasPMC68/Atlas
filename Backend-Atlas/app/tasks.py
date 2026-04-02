@@ -18,7 +18,6 @@ from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
-from app.utils.color_in_legends_extraction import extract_colors_from_legend_shapes
 
 from .celery_app import celery_app
 
@@ -224,12 +223,11 @@ def process_map_extraction(
 
             legends_shapes = [s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)]
             
-            if legends_shapes:
-                colors_to_extract = extract_colors_from_legend_shapes(tmp_file_path, legends_shapes)
-            else:
-                colors_to_extract = None
-
-            color_result = extract_colors(tmp_file_path, debug=True, imposed_colors=colors_to_extract)
+            color_result = extract_colors(
+                tmp_file_path, 
+                debug=False, 
+                legend_shapes=legends_shapes if legends_shapes else None,
+            )
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])
 

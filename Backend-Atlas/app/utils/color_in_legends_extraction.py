@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 def extract_colors_from_legend_shapes(
-    image_path: str,
+    image_rgb: np.ndarray,
     legends_shapes: List[Dict],
     *,
     erode_px: int = 2,
@@ -16,9 +16,13 @@ def extract_colors_from_legend_shapes(
     - erode_px: removes borders to avoid edges, antialiasing, or text
     - sample_max_pixels: subsamples pixels if the region is very large
     """
-    img_bgr = cv2.imread(image_path, cv2.IMREAD_COLOR)
+
+    if image_rgb.dtype != np.uint8:
+        image_rgb = (np.clip(image_rgb, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+
+    img_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
     if img_bgr is None:
-        raise ValueError(f"Image not found: {image_path}")
+        raise ValueError("Image not found")
 
     colors: List[Tuple[int, int, int]] = []
 
