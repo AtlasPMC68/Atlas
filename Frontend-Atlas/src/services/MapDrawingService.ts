@@ -1,18 +1,13 @@
 import { ref } from "vue";
 import L from "leaflet";
-import {
-  featureToLayer,
-  layerToFeature,
-} from "../utils/mapDrawingFeature";
-import type { Feature } from "../typescript/feature";
-import {
-  drawingModes,
-} from "../typescript/mapDrawing";
+import { featureToLayer, layerToFeature, isPointFeature } from "../utils/mapDrawingFeature";
+import type { Feature, PointFeature } from "../typescript/feature";
+import { drawingModes } from "../typescript/mapDrawing";
 import type {
   DrawingMode,
+  EmitFn,
   FeatureBearingLayer,
   MapWithPm,
-  MapDrawingEmitFn,
   MouseDrawListeners,
   PmCutEvent,
   PmDrawStartEvent,
@@ -41,6 +36,7 @@ const lassoDeleteOptions = {
 export class MapDrawingService {
   public activeDrawingMode = ref<DrawingMode>(null);
   public drawnItems = ref<L.FeatureGroup | null>(null);
+  public selectedYear = 1740;
   private pmMapInstance: MapWithPm | null = null;
   private freehandActive = false;
   private freehandListeners: MouseDrawListeners = {};
@@ -51,7 +47,81 @@ export class MapDrawingService {
   private fallbackSelectionDragging = false;
   private fallbackRemovalListeners: MouseDrawListeners = {};
 
-  constructor(private emit: MapDrawingEmitFn) {}
+  constructor(private emit: EmitFn) {}
+
+  private finalizedTextLayers = new WeakSet<L.Layer>();
+
+  private isTextLayer(layer: L.Layer): boolean {
+    const marker = layer as L.Marker & {
+      options?: L.MarkerOptions & {
+        text?: string;
+        textMarker?: boolean;
+      };
+      pm?: {
+        getText?: () => string;
+      };
+    };
+
+    return Boolean(
+      marker instanceof L.Marker &&
+        (marker.options?.textMarker === true ||
+          typeof marker.pm?.getText === "function"),
+    );
+  }
+
+  private finalizeTextLayer(map: L.Map, layer: FeatureBearingLayer) {
+    if (this.finalizedTextLayers.has(layer)) {
+      return;
+    }
+
+    const textLayer = layer as L.Marker & FeatureBearingLayer & {
+      options?: L.MarkerOptions & {
+        text?: string;
+        textMarker?: boolean;
+      };
+      pm?: {
+        getText?: () => string;
+      };
+    };
+
+    const rawText =
+      textLayer.pm?.getText?.() ?? textLayer.options?.text ?? "";
+    const labelText = rawText.trim();
+
+    if (!labelText) {
+      return;
+    }
+
+    const feature = layerToFeature(textLayer, this.selectedYear);
+    if (!feature || !isPointFeature(feature)) {
+      return;
+    }
+
+    const pointFeature: PointFeature = {
+      ...feature,
+      geometry: feature.geometry,
+      name: labelText,
+      updatedAt: new Date().toISOString(),
+      properties: {
+        ...feature.properties,
+        name: labelText,
+        labelText,
+        mapElementType: "label",
+      },
+    };
+
+    (textLayer as L.Marker & { feature?: PointFeature }).feature = pointFeature;
+
+    this.finalizedTextLayers.add(layer);
+    this.emit("feature-created", pointFeature);
+
+    setTimeout(() => {
+      this.drawnItems.value?.removeLayer(layer);
+      if (map.hasLayer(layer)) {
+        map.removeLayer(layer);
+      }
+    }, 0);
+  }
 
   private attachFeatureAndEmit(
     layer: FeatureBearingLayer,
@@ -177,7 +247,7 @@ export class MapDrawingService {
 
       if (points.length > 1) {
         this.drawnItems.value?.addLayer(polyline);
-        const feature = layerToFeature(polyline);
+        const feature = layerToFeature(polyline, this.selectedYear);
         if (feature) {
           (polyline as FeatureBearingLayer).feature = feature;
           this.emit("feature-created", feature);
@@ -379,69 +449,90 @@ export class MapDrawingService {
     map.boxZoom.enable();
   }
 
+  private emitUpdatedFeatureFromLayer(layer: FeatureBearingLayer) {
+    const feature = layerToFeature(layer, this.selectedYear);
+
+    if (feature && layer.feature?.id) {
+      feature.id = layer.feature.id;
+      feature.properties = {
+        ...(layer.feature?.properties || {}),
+        ...(feature.properties || {}),
+      };
+      this.attachFeatureAndEmit(layer, feature, "feature-updated");
+    }
+  }
+
   private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
-      const layer = (e as PmLayerEvent).layer;
-      const feature = layerToFeature(layer);
-      this.attachFeatureAndEmit(layer as FeatureBearingLayer, feature, "feature-created");
-      this.drawnItems.value?.addLayer(layer);
-    });
-
-    map.on("pm:edit", (e) => {
       const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
-      const feature = layerToFeature(layer);
+      const shape = (e as PmLayerEvent).shape;
 
-      if (feature && layer.feature?.id) {
-        feature.id = layer.feature.id;
-        feature.properties = {
-          ...(layer.feature?.properties || {}),
-          ...(feature.properties || {}),
-        };
-        this.attachFeatureAndEmit(layer, feature, "feature-updated");
+      if (shape === "text" || this.isTextLayer(layer)) {
+        layer.once("pm:textblur", () => {
+          this.finalizeTextLayer(map, layer);
+        });
+
+        return;
       }
+
+      const feature = layerToFeature(layer, this.selectedYear);
+      this.attachFeatureAndEmit(layer, feature, "feature-created");
+
+      setTimeout(() => {
+        this.drawnItems.value?.removeLayer(layer);
+        if (map.hasLayer(layer)) {
+          map.removeLayer(layer);
+        }
+      }, 0);
     });
 
     map.on("pm:cut", (e) => {
-      const originalLayer = (e as PmCutEvent)
-        .originalLayer as FeatureBearingLayer | undefined;
-      const newLayer = (e as PmCutEvent).layer as FeatureBearingLayer | undefined;
+      const { originalLayer, layer } = e as PmCutEvent;
+      const sourceLayer = originalLayer as FeatureBearingLayer | undefined;
+      const resultLayer = layer as FeatureBearingLayer | undefined;
 
-      if (originalLayer) {
-        const updatedOriginal = layerToFeature(originalLayer);
-        if (updatedOriginal && originalLayer.feature?.id) {
-          updatedOriginal.id = originalLayer.feature.id;
-          updatedOriginal.properties = {
-            ...(originalLayer.feature?.properties || {}),
-            ...(updatedOriginal.properties || {}),
-          };
-          this.attachFeatureAndEmit(
-            originalLayer,
-            updatedOriginal,
-            "feature-updated",
-          );
-        }
+      if (!sourceLayer?.feature || !resultLayer) {
+        return;
       }
 
-      if (newLayer) {
-        const createdFeature = layerToFeature(newLayer);
-        if (createdFeature) {
-          const originalProps: Partial<Feature> = originalLayer?.feature ?? {};
-          createdFeature.opacity =
-            originalProps.opacity ?? createdFeature.opacity;
-          createdFeature.strokeWidth =
-            originalProps.strokeWidth ?? createdFeature.strokeWidth;
-          createdFeature.properties = {
-            ...(createdFeature.properties || {}),
-            ...(originalProps.properties || {}),
-          };
-          this.attachFeatureAndEmit(
-            newLayer,
-            createdFeature,
-            "feature-created",
-          );
-          this.drawnItems.value?.addLayer(newLayer);
-        }
+      const updatedFeature = layerToFeature(resultLayer, this.selectedYear);
+      if (!updatedFeature) {
+        return;
       }
+
+      updatedFeature.id = sourceLayer.feature.id;
+      updatedFeature.mapId = sourceLayer.feature.mapId;
+      updatedFeature.type = sourceLayer.feature.type;
+      updatedFeature.name = sourceLayer.feature.name;
+      updatedFeature.createdAt = sourceLayer.feature.createdAt;
+      updatedFeature.updatedAt = new Date().toISOString();
+      updatedFeature.properties.opacity = sourceLayer.feature.properties.opacity ?? updatedFeature.properties.opacity;
+      updatedFeature.properties.name = sourceLayer.feature.properties.name;
+      updatedFeature.properties.labelText = sourceLayer.feature.properties.labelText;
+      updatedFeature.properties.colorName = sourceLayer.feature.properties.colorName;
+      updatedFeature.properties.colorRgb = sourceLayer.feature.properties.colorRgb;
+      updatedFeature.properties.strokeColor = sourceLayer.feature.properties.strokeColor;
+      updatedFeature.properties.strokeWidth = sourceLayer.feature.properties.strokeWidth;
+      updatedFeature.properties.strokeOpacity = sourceLayer.feature.properties.strokeOpacity;
+      updatedFeature.properties.mapElementType = sourceLayer.feature.properties.mapElementType;
+      updatedFeature.properties.shapeKind = sourceLayer.feature.properties.shapeKind;
+      updatedFeature.properties.startDate = sourceLayer.feature.properties.startDate;
+      updatedFeature.properties.endDate = sourceLayer.feature.properties.endDate;
+
+      resultLayer.feature = updatedFeature;
+      this.emit("feature-updated", updatedFeature);
+
+      setTimeout(() => {
+        this.drawnItems.value?.removeLayer(resultLayer);
+
+        if (map.hasLayer(resultLayer)) {
+          map.removeLayer(resultLayer);
+        }
+
+        if (sourceLayer && map.hasLayer(sourceLayer)) {
+          map.removeLayer(sourceLayer);
+        }
+      }, 0);
     });
 
     map.on("pm:remove", (e) => {
@@ -487,7 +578,8 @@ export class MapDrawingService {
       if (this.freehandActive) {
         this.stopFreehandDrawing(map);
       }
-      this.activeDrawingMode.value = (e as PmDrawStartEvent).shape as DrawingMode;
+      this.activeDrawingMode.value = (e as PmDrawStartEvent)
+        .shape as DrawingMode;
       map.dragging.disable();
     });
 
@@ -551,6 +643,10 @@ export class MapDrawingService {
     }
   }
 
+  setSelectedYear(selectedYear: number) {
+    this.selectedYear = selectedYear;
+  }
+
   getDrawnFeatures(): Feature[] {
     const features: Feature[] = [];
 
@@ -574,6 +670,7 @@ export class MapDrawingService {
       setDrawingMode: this.setDrawingMode.bind(this),
       loadFeaturesForEditing: this.loadFeaturesForEditing.bind(this),
       clearDrawnItems: this.clearDrawnItems.bind(this),
+      setSelectedYear: this.setSelectedYear.bind(this),
       getDrawnFeatures: this.getDrawnFeatures.bind(this),
       startFreehandDrawing: this.startFreehandDrawing.bind(this),
       stopFreehandDrawing: this.stopFreehandDrawing.bind(this),

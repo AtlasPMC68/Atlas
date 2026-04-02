@@ -6,10 +6,11 @@ import json
 import logging
 import math
 from json import JSONDecodeError
+from copy import deepcopy
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import not_, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
+from sqlalchemy import not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,11 @@ from app.models.user import User
 from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
+from app.utils.update_feature import (
+    to_feature_collection,
+    normalize_feature_collection,
+    serialize_db_feature,
+)
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
@@ -320,6 +326,120 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
         all_features.append(feature)
 
     return all_features
+
+@router.put("/features/{map_id}")
+async def update_features(
+    map_id: str,
+    features: list[dict] = Body(...),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_id = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    result = await session.execute(
+        select(Feature).where(Feature.map_id == map_id)
+    )
+    existing_rows = result.scalars().all()
+    existing_by_id = {str(row.id): row for row in existing_rows}
+
+    for feature in features:
+        feature_id = feature.get("id")
+        db_feature = None
+
+        if feature_id:
+            feature_id_str = str(feature_id)
+            try:
+                UUID(feature_id_str)
+                db_feature = existing_by_id.get(feature_id_str)
+            except ValueError:
+                logger.warning(
+                    f"Feature id is not a valid UUID, creating a new row: {feature_id}"
+                )
+
+        if db_feature:
+            new_data = to_feature_collection(feature)
+            old_data = normalize_feature_collection(db_feature.data)
+
+            if old_data != new_data:
+                db_feature.data = new_data
+                db_feature.updated_at = func.now()
+                session.add(db_feature)
+        else:
+            new_feature = Feature(
+                map_id=map_id,
+                is_feature_collection=False,
+                data=to_feature_collection(feature),
+            )
+            session.add(new_feature)
+
+    await session.commit()
+
+    refreshed_result = await session.execute(
+        select(Feature).where(Feature.map_id == map_id)
+    )
+    persisted_rows = refreshed_result.scalars().all()
+
+    persisted_features = []
+    for row in persisted_rows:
+        serialized = serialize_db_feature(row)
+        if serialized is not None:
+            persisted_features.append(serialized)
+
+    return persisted_features
+
+
+@router.delete("/features/{map_id}/{feature_id}")
+async def delete_feature(
+    map_id: str,
+    feature_id: str,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_id = UUID(map_id)
+        feature_id = UUID(feature_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id or feature_id")
+    
+    feature_id_str = str(feature_id)
+    db_feature = None
+
+    try:
+        result = await session.execute(
+            select(Feature).where(
+                Feature.id == feature_id,
+                Feature.map_id == map_id,
+            )
+        )
+        db_feature = result.scalar_one_or_none()
+    except ValueError:
+        pass
+
+    if not db_feature:
+        result = await session.execute(
+            select(Feature).where(Feature.map_id == map_id)
+        )
+        candidate_rows = result.scalars().all()
+
+        for row in candidate_rows:
+            features = row.data.get("features", [])
+            for stored_feature in features:
+                if str(stored_feature.get("id")) == feature_id_str:
+                    db_feature = row
+                    break
+            if db_feature:
+                break
+
+    if not db_feature:
+        raise HTTPException(status_code=404, detail="Feature not found")
+
+    await session.delete(db_feature)
+    await session.commit()
+
+    return {
+        "feature_id": str(feature_id),
+    }
 
 
 @router.get("/map", response_model=list[MapOut])

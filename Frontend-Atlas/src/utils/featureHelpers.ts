@@ -4,10 +4,34 @@ import type {
   MapElementType,
 } from "../typescript/feature";
 
-export function getMapElementType(feature: {
-  properties?: { mapElementType?: MapElementType };
-}): MapElementType | null {
-  return feature.properties?.mapElementType ?? null;
+export function getMapElementType(
+  featureOrProperties: Pick<Feature, "properties" | "geometry"> | FeatureProperties,
+): MapElementType | null {
+  const hasProperties = "properties" in featureOrProperties;
+  const properties = hasProperties
+    ? featureOrProperties.properties
+    : featureOrProperties;
+
+  const geometry = hasProperties ? featureOrProperties.geometry : undefined;
+  const rawType = properties?.mapElementType;
+
+  if (rawType) {
+    return rawType;
+  }
+
+  if (geometry?.type === "LineString") {
+    return "polyline";
+  }
+
+  if (geometry?.type === "Point") {
+    return properties?.labelText ? "label" : "point";
+  }
+
+  if (geometry?.type === "Polygon" || geometry?.type === "MultiPolygon") {
+    return properties?.shapeKind ? "shape" : "zone";
+  }
+
+  return null;
 }
 
 function isValidRgbTuple(value: unknown): value is [number, number, number] {
@@ -21,14 +45,4 @@ function isValidRgbTuple(value: unknown): value is [number, number, number] {
 export function colorRgbToCss(rgb: unknown): string | null {
   if (!isValidRgbTuple(rgb)) return null;
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-}
-
-export function getFeatureRgbColor(
-  featureOrProperties: Pick<Feature, "properties"> | FeatureProperties,
-): string | null {
-  const properties = "properties" in featureOrProperties
-    ? featureOrProperties.properties
-    : featureOrProperties;
-
-  return colorRgbToCss(properties?.colorRgb);
 }

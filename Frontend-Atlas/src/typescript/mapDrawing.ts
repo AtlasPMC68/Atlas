@@ -14,14 +14,17 @@ export type DrawingMode =
   | (typeof drawingModes)[keyof typeof drawingModes]
   | null;
 
-export type MapFeatureId = string;
+export type EmitFn = (event: string, ...args: unknown[]) => void;
 
-export type MapDrawingEmitArgs =
-  | [event: "feature-created", payload: Feature]
-  | [event: "feature-updated", payload: Feature]
-  | [event: "feature-deleted", payload: MapFeatureId];
-
-export type MapDrawingEmitFn = (...args: MapDrawingEmitArgs) => void;
+export type TextMarkerLayer = L.Marker & {
+  options: L.MarkerOptions & {
+    text?: string;
+    textMarker?: boolean;
+  };
+  pm?: {
+    getText?: () => string;
+  };
+};
 
 export type PmToolbar = {
   createCustomControl?: (options: {
@@ -58,6 +61,7 @@ export type MapWithPm = L.Map & {
 };
 
 export type PmLayerEvent = {
+  shape?: string;
   layer: L.Layer;
 };
 
@@ -86,4 +90,24 @@ export type MouseDrawListeners = {
 
 export type FeatureBearingLayer = L.Layer & {
   feature?: Feature;
+};
+
+export type TextCapableMarker = L.Marker & {
+  options: L.MarkerOptions & {
+    text?: string;
+    textMarker?: boolean;
+    className?: string;
+  };
+  pm?: {
+    getText?: () => string;
+  };
+  getText?: () => string;
+  _text?: string;
+};
+
+export type MarkerIconLike = {
+  options?: {
+    className?: string;
+    html?: string | HTMLElement;
+  };
 };

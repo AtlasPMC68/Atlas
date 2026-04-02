@@ -62,6 +62,9 @@ VALUES (
           "mapElementType": "zone",
           "color_name": "green",
           "color_rgb": [0, 255, 0],
+          "stroke_color": [0, 128, 0],
+          "stroke_width": 2,
+          "stroke_opacity": 1.0,
           "start_date": "1700-01-01",
           "end_date": "2025-01-01"
         },

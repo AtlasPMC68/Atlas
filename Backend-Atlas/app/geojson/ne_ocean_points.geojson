@@ -1,0 +1,60 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Pacific Ocean Point 1",
+        "water": true
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-140.0, 0.0]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Pacific Ocean Point 2",
+        "water": true
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-160.0, -20.0]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Atlantic Ocean Point",
+        "water": true
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-30.0, 10.0]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Indian Ocean Point",
+        "water": true
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [80.0, -25.0]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Southern Ocean Point",
+        "water": true
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [20.0, -55.0]
+      }
+    }
+  ]
+}
