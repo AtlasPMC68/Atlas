@@ -121,6 +121,10 @@ const isAdding = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
+const zoneFeatures = computed(() =>
+  features.value.filter((f) => f.properties?.mapElementType === "zone"),
+);
+
 async function onAddFeatureImage() {
   if (!selectedFile.value || !keycloak.token) {
     onCloseAddFeatureImageDialog();
