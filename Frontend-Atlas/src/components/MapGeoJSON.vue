@@ -194,9 +194,7 @@ const drawing = useMapDrawing((event, ...args) => {
 
   if (event === "feature-deleted") {
     const deletedId = String(args[0]);
-    const next = current.filter(
-      (feature) => String(feature.id) !== deletedId,
-    );
+    const next = current.filter((feature) => String(feature.id) !== deletedId);
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
     emit("draw-delete-id", deletedId);
@@ -214,7 +212,8 @@ function renderCities(features: Feature[]) {
     const coord: L.LatLngTuple = [lat, lng];
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
       radius: 6,
@@ -414,7 +413,8 @@ function renderZones(features: Feature[]) {
 
     const featureProperties = feature.properties;
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -450,7 +450,8 @@ function renderArrows(features: Feature[]) {
     );
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
       renderer: vectorRenderer ?? undefined,
@@ -490,7 +491,8 @@ function renderPolylines(features: Feature[]) {
     );
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
       color: strokeColor,
@@ -525,8 +527,8 @@ function renderShapes(features: Feature[]) {
 
     const featureProperties = feature.properties;
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -597,6 +599,7 @@ function renderAllFeatures() {
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
+    arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     image: currentFeatures.filter((f) => getMapElementType(f) === "image"),
   };
 

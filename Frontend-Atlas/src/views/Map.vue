@@ -29,26 +29,6 @@
         <TimelineSlider v-model:year="selectedYear" />
       </div>
     </div>
-    />
-    <Transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="opacity-0 translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 translate-y-2"
-    >
-      <div
-        v-if="alert"
-        role="alert"
-        :class="[
-          'alert fixed bottom-6 right-6 z-50 w-auto max-w-sm shadow-lg',
-          alert.type === 'success' ? 'alert-success' : 'alert-error',
-        ]"
-      >
-        <span>{{ alert.message }}</span>
-      </div>
-    </Transition>
   </div>
 
   <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
@@ -90,6 +70,7 @@
       <button :disabled="isAdding">close</button>
     </form>
   </dialog>
+  <Alert />
 </template>
 
 <script setup lang="ts">
@@ -109,6 +90,8 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
 import { map, type Map as LeafletMap } from "leaflet";
+import Alert from "../components/Alert.vue";
+import { clearAlert, showAlert } from "../composables/useAlert";
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -133,11 +116,6 @@ const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
-
-async function onDeleteFeature(
-  featureId: string,
-  callback: { onSuccess: () => void; onError: (message?: string) => void },
-) {}
 
 async function onAddFeatureImage() {
   if (!selectedFile.value || !keycloak.token) {
@@ -250,7 +228,7 @@ async function onDeleteFeature(
 
   if (!currentUser.value) {
     const message = "Utilisateur non authentifié.";
-    showAlert(alert, "error", message);
+    showAlert("error", message);
     callbacks?.onError?.(message);
     return;
   }
@@ -278,7 +256,7 @@ async function onDeleteFeature(
     callbacks?.onSuccess?.();
   } catch (error) {
     const message = "Erreur lors de la suppression de l'élément.";
-    showAlert(alert, "error", message);
+    showAlert("error", message);
     console.error("Failed to delete feature from API:", error);
     callbacks?.onError?.(message);
   }
@@ -312,11 +290,7 @@ async function loadInitialFeatures() {
     reconcileVisibility(allFeatures);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
-    showAlert(
-      alert,
-      "error",
-      "Erreur lors du chargement des éléments de la carte.",
-    );
+    showAlert("error", "Erreur lors du chargement des éléments de la carte.");
   }
 }
 
@@ -349,7 +323,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleCtrlS);
-  clearAlert(alert);
+  clearAlert();
 });
 
 async function onSaveMap() {
@@ -358,7 +332,7 @@ async function onSaveMap() {
 
   try {
     if (!currentUser.value) {
-      showAlert(alert, "error", "Utilisateur non authentifié.");
+      showAlert("error", "Utilisateur non authentifié.");
       return;
     }
 
@@ -383,7 +357,7 @@ async function onSaveMap() {
     );
 
     if (!response.ok) {
-      showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
+      showAlert("error", "Erreur lors de la sauvegarde des éléments.");
       throw new Error(`Error saving features: ${response.status}`);
     }
 
@@ -393,13 +367,13 @@ async function onSaveMap() {
 
     mapGeoJsonRef.value?.clearDraftLayers();
   } catch (err) {
-    showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
+    showAlert("error", "Erreur lors de la sauvegarde des éléments.");
     throw new Error(
       `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
     );
   } finally {
     isSaving.value = false;
-    showAlert(alert, "success", "Carte sauvegardée avec succès !");
+    showAlert("success", "Carte sauvegardée avec succès !");
   }
 }
 </script>

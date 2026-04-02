@@ -213,6 +213,7 @@ import {
 import type {
   Feature,
   FeatureVisibilityGroup,
+  FeatureVisibilityGroupType,
   MapElementType,
 } from "../typescript/feature";
 import { getMapElementType } from "../utils/featureHelpers";
@@ -241,7 +242,7 @@ const emit = defineEmits([
   "add-map",
 ]);
 
-const groupIcons: Record<MapElementType, Component> = {
+const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
   point: MapPinIcon,
   zone: MapIcon,
   shape: Square2StackIcon,
@@ -262,9 +263,16 @@ const featureGroups = computed(() => {
     const featureType = getMapElementType(feature);
     if (!featureType) return;
 
-    const targetGroup = groups.find(
-      (currentGroup) => currentGroup.type === featureType,
-    );
+    const targetGroup = groups.find((currentGroup) => {
+      if (
+        featureType === "label" ||
+        featureType === "polyline" ||
+        featureType === "arrow"
+      ) {
+        return currentGroup.type === "other";
+      }
+      return currentGroup.type === featureType;
+    });
 
     if (targetGroup) targetGroup.features.push(feature);
   });
@@ -272,7 +280,7 @@ const featureGroups = computed(() => {
   return groups;
 });
 
-const activeGroupType = ref<MapElementType | null>(null);
+const activeGroupType = ref<FeatureVisibilityGroupType | null>(null);
 
 const activeGroup = computed(() => {
   if (!activeGroupType.value) return featureGroups.value[0] ?? null;
@@ -303,7 +311,7 @@ watch(
   { immediate: true },
 );
 
-function getGroupIcon(type: MapElementType): Component {
+function getGroupIcon(type: FeatureVisibilityGroupType): Component {
   return groupIcons[type];
 }
 

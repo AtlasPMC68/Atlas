@@ -11,7 +11,7 @@ import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
-import { showAlert } from "../composables/useAlert";
+import { clearAlert, showAlert } from "../composables/useAlert";
 import Alert from "../components/Alert.vue";
 
 const maps = ref<MapData[]>([]);
@@ -80,17 +80,17 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  clearAlert(alert);
+  clearAlert();
 });
 
 // TODO: Add startDate endDate
 async function createMap() {
   if (!currentUser.value) {
-    showAlert(alert, "error", "Utilisateur non authentifié.");
+    showAlert("error", "Utilisateur non authentifié.");
     return;
   }
   if (!newMapTitle.value?.trim()) {
-    showAlert(alert, "error", "Le titre de la carte est requis.");
+    showAlert("error", "Le titre de la carte est requis.");
     return;
   }
   isCreating.value = true;
@@ -118,9 +118,9 @@ async function createMap() {
     newMapIsPrivate.value = true;
     createMapDialogRef.value?.close();
     await fetchMapsAndRender();
-    showAlert(alert, "success", "Carte créée avec succès !");
+    showAlert("success", "Carte créée avec succès !");
   } catch (err) {
-    showAlert(alert, "error", "Erreur lors de la création de la carte.");
+    showAlert("error", "Erreur lors de la création de la carte.");
   } finally {
     isCreating.value = false;
   }
@@ -147,19 +147,15 @@ function openEditDialog(map: MapData) {
 
 async function saveMap() {
   if (!mapToEdit.value) {
-    showAlert(
-      alert,
-      "error",
-      "Aucune carte sélectionnée pour la modification.",
-    );
+    showAlert("error", "Aucune carte sélectionnée pour la modification.");
     return;
   }
   if (!editMapTitle.value?.trim()) {
-    showAlert(alert, "error", "Le titre de la carte est requis.");
+    showAlert("error", "Le titre de la carte est requis.");
     return;
   }
   if (!currentUser.value) {
-    showAlert(alert, "error", "Utilisateur non authentifié.");
+    showAlert("error", "Utilisateur non authentifié.");
     return;
   }
   isEditing.value = true;
@@ -193,9 +189,9 @@ async function saveMap() {
     editMapIsPrivate.value = true;
     editMapDialogRef.value?.close();
     await fetchMapsAndRender();
-    showAlert(alert, "success", "Carte modifiée avec succès !");
+    showAlert("success", "Carte modifiée avec succès !");
   } catch (err) {
-    showAlert(alert, "error", "Erreur lors de la modification de la carte.");
+    showAlert("error", "Erreur lors de la modification de la carte.");
   } finally {
     isEditing.value = false;
   }
@@ -218,9 +214,9 @@ async function executeDelete() {
     deleteConfirmDialogRef.value?.close();
     mapToDelete.value = null;
     await fetchMapsAndRender();
-    showAlert(alert, "success", "Carte supprimée avec succès !");
+    showAlert("success", "Carte supprimée avec succès !");
   } catch (err) {
-    showAlert(alert, "error", "Erreur lors de la suppression de la carte.");
+    showAlert("error", "Erreur lors de la suppression de la carte.");
   } finally {
     isDeleting.value = false;
   }

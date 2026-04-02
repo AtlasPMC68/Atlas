@@ -21,8 +21,12 @@ export type MapElementType =
   | "label"
   | "image";
 
+export type FeatureVisibilityGroupType =
+  | Exclude<MapElementType, "label" | "polyline" | "arrow">
+  | "other";
+
 export type FeatureVisibilityGroup = {
-  type: MapElementType;
+  type: FeatureVisibilityGroupType;
   label: string;
   features: Feature[];
 };
