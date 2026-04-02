@@ -53,12 +53,7 @@
               </span>
             </label>
             <div class="flex h-8 w-8 items-center gap-1 mr-1">
-              <button
-                @click="
-                  featureToEdit = feature;
-                  showEditFeatureDialog(feature);
-                "
-              >
+              <button @click="showEditFeatureDialog(feature)">
                 <PencilSquareIcon
                   class="w-5 h-5 text-gray-500 hover:text-gray-800"
                 />
@@ -195,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type { Component } from "vue";
 import {
   EllipsisHorizontalIcon,
@@ -307,7 +302,7 @@ function showDeleteFeatureDialog(feature: Feature) {
   deleteFeatureConfirmDialogRef.value?.showModal();
 }
 
-function showEditFeatureDialog(feature: Feature) {
+async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
   featureToEditColor.value = rgbToHex(
     feature.properties.colorRgb[0],
@@ -315,6 +310,7 @@ function showEditFeatureDialog(feature: Feature) {
     feature.properties.colorRgb[2],
   );
 
+  await nextTick();
   editFeatureDialogRef.value?.showModal();
 }
 
