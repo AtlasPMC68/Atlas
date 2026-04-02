@@ -22,7 +22,8 @@
             @features-loaded="handleFeaturesLoaded"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
-            @draw-delete="handleDrawChange"
+            @draw-delete-id="onDeleteFeature"
+            @map-ready="onMapReady"
           />
         </div>
 
@@ -74,11 +75,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
-import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
 import {
@@ -89,7 +89,7 @@ import {
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import { map, type Map as LeafletMap } from "leaflet";
+import { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 
@@ -107,7 +107,6 @@ const mapGeoJsonRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
-const showSaveAsModal = ref(false);
 const selectedYear = ref(1740);
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();

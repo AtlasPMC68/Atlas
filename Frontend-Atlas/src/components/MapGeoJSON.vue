@@ -46,8 +46,7 @@ const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
-  (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
+  (e: "draw-delete-id", featureId: string): void;
   (e: "map-ready", map: L.Map): void;
 }>();
 
@@ -196,7 +195,6 @@ const drawing = useMapDrawing((event, ...args) => {
     const deletedId = String(args[0]);
     const next = current.filter((feature) => String(feature.id) !== deletedId);
     localFeaturesSnapshot.value = next;
-    emit("draw-delete", next);
     emit("draw-delete-id", deletedId);
     return;
   }
