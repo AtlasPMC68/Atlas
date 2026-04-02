@@ -66,16 +66,15 @@ def load_image_rgb_alpha_mask(
     return rgb, alpha, opaque_mask
 
 
-def _debug_save_rgb(
+def debug_save_rgb(
     img_rgb: np.ndarray,
     alpha: Optional[np.ndarray],
     debug_dir: str,
-    step_idx: int,
     step_name: str,
 ) -> None:
     """Save float RGB [0,1] (optionally with alpha) as PNG for debugging."""
     os.makedirs(debug_dir, exist_ok=True)
-    out_path = os.path.join(debug_dir, f"{step_idx:02d}_{step_name}.png")
+    out_path = os.path.join(debug_dir, f"{step_name}.png")
 
     img = np.clip(img_rgb, 0.0, 1.0)
     rgb_u8 = (img * 255.0 + 0.5).astype(np.uint8)  # (H, W, 3)
@@ -115,22 +114,18 @@ def preprocess(
     if debug and debug_dir is None:
         debug_dir = os.path.join(os.getcwd(), "debug_preprocess")
 
-    step = 0
     if debug:
-        _debug_save_rgb(rgb, alpha, debug_dir, step, "00_input_rgb")
-        step += 1
+        debug_save_rgb(rgb, alpha, debug_dir,"00_input_rgb")
 
     # 1) Optional linearization
     if enable_linearize:
         work = preprocessing.srgb_to_linear(rgb)
         if debug:
-            _debug_save_rgb(np.clip(work, 0.0, 1.0), alpha, debug_dir, step, "01_linear_rgb")
-            step += 1
+            debug_save_rgb(np.clip(work, 0.0, 1.0), alpha, debug_dir, "01_linear_rgb")
     else:
         work = rgb
         if debug:
-            _debug_save_rgb(work, alpha, debug_dir, step, "01_linear_skipped")
-            step += 1
+            debug_save_rgb(work, alpha, debug_dir, "01_linear_skipped")
 
     # 2) Denoise
     if enable_denoise:
@@ -141,8 +136,7 @@ def preprocess(
     #TODO: Try fast mean denoizing color and try dynamic parameters
 
     if debug:
-        _debug_save_rgb(work, alpha, debug_dir, step, "02_denoise")
-        step += 1
+        debug_save_rgb(work, alpha, debug_dir, "02_denoise")
 
     # 3) Percentile normalization
     if enable_percentile_norm:
@@ -150,25 +144,24 @@ def preprocess(
             work, p_low=norm_p_low, p_high=norm_p_high, mask=mask
         )
         if debug:
-            _debug_save_rgb(work, alpha, debug_dir, step, "03_percentile_norm")
-            step += 1
+            debug_save_rgb(work, alpha, debug_dir, "03_percentile_norm")
+
     elif debug:
-        _debug_save_rgb(work, alpha, debug_dir, step, "03_percentile_norm_skipped")
-        step += 1
+        debug_save_rgb(work, alpha, debug_dir, "03_percentile_norm_skipped")
+
 
     # 4) Convert back to sRGB
     if enable_linearize:
         rgb_out = preprocessing.linear_to_srgb(work)
         if debug:
-            _debug_save_rgb(rgb_out, alpha, debug_dir, step, "04_back_to_srgb")
-            step += 1
+            debug_save_rgb(rgb_out, alpha, debug_dir, "04_back_to_srgb")
     else:
         rgb_out = work
 
     rgb_out = np.clip(rgb_out, 0.0, 1.0)
 
     if debug:
-        _debug_save_rgb(rgb_out, alpha, debug_dir, step, "05_output_rgb")
+        debug_save_rgb(rgb_out, alpha, debug_dir, "05_output_rgb")
 
     return rgb_out, mask
 
@@ -514,7 +507,7 @@ def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
             "color_rgb": rgb,
             "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
             "mapElementType": "zone",
-            "name": f"Zone {color_name}",
+            "name": f"{color_name}",
             "is_pixel_space": True,
             "start_date": "1700-01-01",
             "end_date": "2026-01-01",
@@ -752,26 +745,30 @@ def extract_colors(
             continue
 
         rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
-        color_name = get_nearest_css4_color_name(rgb_u8_center)
-        unique_color_name = f"{color_name}-{color_index}"
+        css_color_name = get_nearest_css4_color_name(rgb_u8_center)
+        color_id = f"color_{color_index:02d}"
+        short_color_name = f"{css_color_name}_{color_index}"
+        unique_color_name = f"{color_id}_{short_color_name}"
         L, a, b = entry["lab_center"]
 
+        opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
+        ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
+
         file_name = (
-            f"color_{color_index:02d}_{unique_color_name}"
-            f"_ratio_{entry['ratio']:.4f}"
+            f"{unique_color_name}"
+            f"_ratio_{ratio_value:.4f}"
             f"_lab_{L:.1f}_{a:.1f}_{b:.1f}"
             f".png"
         )
 
-        opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
-        ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
-        ratios[unique_color_name] = ratio_value
+        ratios[short_color_name] = ratio_value
+        colors_detected.append(short_color_name)
 
         if debug:
             out_path = os.path.join(image_output_dir, file_name)
             save_mask_png(mask, original_rgb, out_path)
-            masks[unique_color_name] = out_path
-            mask_paths[unique_color_name] = out_path
+            masks[short_color_name] = out_path
+            mask_paths[short_color_name] = out_path
 
         geometry = mask_to_geometry(mask)
         if geometry :
