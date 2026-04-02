@@ -8,21 +8,21 @@
       @wheel.stop
     >
       <h2 class="card-title">Légende</h2>
-      <p v-if="zoneFeatures.length === 0">Aucune zone</p>
+      <p v-if="props.zoneFeatures.length === 0">Aucune zone</p>
       <ul v-else class="space-y-2">
         <li
-          v-for="feature in zoneFeatures"
+          v-for="feature in props.zoneFeatures"
           :key="feature.id ?? feature.properties?.name"
           class="flex items-center gap-2"
         >
           <span
             class="inline-block h-4 w-4 rounded-sm border border-base-300 shrink-0"
             :style="{
-              backgroundColor: toCssColor(feature.properties?.colorRgb),
+              backgroundColor: getLegendFeatureColor(feature),
             }"
           />
           <span class="text-sm leading-tight">
-            {{ feature.properties?.name || "Sans nom" }}
+            {{ feature.properties?.name || "Élément sans nom" }}
           </span>
         </li>
       </ul>
@@ -30,32 +30,20 @@
   </div>
 </template>
 
-<script>
-export default {
-  name: "Legend",
-  props: {
-    zoneFeatures: {
-      type: Array,
-      default: () => [],
-    },
+<script setup lang="ts">
+import type { Feature } from "../../typescript/feature";
+import { getFeatureRgbColor } from "../../utils/featureHelpers";
+
+const props = withDefaults(
+  defineProps<{
+    zoneFeatures: Feature[];
+  }>(),
+  {
+    zoneFeatures: () => [],
   },
-  methods: {
-    toCssColor(colorRgb) {
-      if (!colorRgb) return "transparent";
+);
 
-      if (Array.isArray(colorRgb)) {
-        const [r = 0, g = 0, b = 0] = colorRgb;
-        return `rgb(${r}, ${g}, ${b})`;
-      }
-
-      const value = String(colorRgb).trim();
-
-      if (value.startsWith("rgb(") || value.startsWith("#")) {
-        return value;
-      }
-
-      return `rgb(${value})`;
-    },
-  },
-};
+function getLegendFeatureColor(feature: Feature): string {
+  return getFeatureRgbColor(feature) ?? "transparent";
+}
 </script>
