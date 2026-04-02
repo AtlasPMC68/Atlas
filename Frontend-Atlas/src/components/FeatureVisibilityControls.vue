@@ -214,7 +214,6 @@ import type {
   Feature,
   FeatureVisibilityGroup,
   FeatureVisibilityGroupType,
-  MapElementType,
 } from "../typescript/feature";
 import { getMapElementType } from "../utils/featureHelpers";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
