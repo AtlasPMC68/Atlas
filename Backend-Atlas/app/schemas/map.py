@@ -8,11 +8,11 @@ class MapOut(BaseModel):
     user_id: UUID
     username: Optional[str] = None
     title: str
-    description: Optional[str]
+    description: Optional[str] = None
     is_private: bool
-    image: Optional[str]
-    start_date: Optional[date]
-    end_date: Optional[date]
+    image: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
     created_at: datetime
     updated_at: datetime
 

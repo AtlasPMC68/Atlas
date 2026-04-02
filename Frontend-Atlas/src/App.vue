@@ -2,7 +2,7 @@
   <div class="min-h-screen flex flex-col">
     <Header v-if="!noHeaderRoutes.includes(route.path)" />
     <main class="flex-1">
-      <router-view />
+      <router-view :key="route.fullPath" />
     </main>
     <Footer v-if="!noFooterRoutes.includes(route.path)" />
   </div>

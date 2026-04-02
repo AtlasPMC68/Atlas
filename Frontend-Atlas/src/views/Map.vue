@@ -105,24 +105,96 @@
       <button :disabled="isAdding">close</button>
     </form>
   </dialog>
+  <dialog
+    ref="createCopyDialog"
+    class="modal"
+    @close="resetCreateCopyForm"
+  >
+    <div class="modal-box p-0">
+      <form @submit.prevent="createCopyAndSave">
+        <div class="card-body">
+          <h3 class="text-lg font-bold">Créer une copie de la carte</h3>
+
+          <fieldset class="fieldset" :disabled="isSaving">
+            <label class="label">Titre</label>
+            <input
+              v-model="copyTitle"
+              type="text"
+              class="input"
+              placeholder="Titre de la carte"
+              required
+            />
+
+            <label class="label">Description</label>
+            <input
+              v-model="copyDescription"
+              type="text"
+              class="input"
+              placeholder="Description de la carte"
+            />
+
+            <div class="gap-1">
+              <label class="label cursor-pointer gap-2">
+                <input
+                  type="checkbox"
+                  :checked="!copyIsPrivate"
+                  @change="
+                    copyIsPrivate = !($event.target as HTMLInputElement).checked
+                  "
+                  class="toggle toggle-primary"
+                />
+                Public
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="flex justify-end gap-2 mt-8">
+            <button
+              type="button"
+              class="btn btn-ghost"
+              :disabled="isSaving"
+              @click="closeCreateCopyDialog"
+            >
+              Annuler
+            </button>
+
+            <button
+              type="submit"
+              class="btn btn-primary flex items-center"
+              :disabled="!copyTitle?.trim() || isSaving"
+            >
+              <span
+                v-if="isSaving"
+                class="loading loading-spinner loading-xs"
+              ></span>
+              <span v-else>Créer la copie</span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isSaving">close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
 import {
-  camelToSnake,
   prepareFeaturesForSave,
   snakeToCamel,
 } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import type { Map as LeafletMap } from "leaflet";
+import L, { type Map as LeafletMap } from "leaflet";
 import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
@@ -130,12 +202,18 @@ import {
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
 } from "@heroicons/vue/24/outline";
+import type { MapMeta } from "../typescript/mapMeta";
+import { MapCopyAndSaveService } from "../services/MapCopyAndSaveService";
 
 const alert = ref<AlertState>(null);
 
 const route = useRoute();
 const router = useRouter();
-const mapId = ref(route.params.mapId as string).value;
+const mapId = computed(() => String(route.params.mapId ?? ""));
+const mapMeta = ref<MapMeta | null>(null);
+const isOwner = computed(() => {
+  return !!currentUser.value && !!mapMeta.value && currentUser.value.id === mapMeta.value.userId;
+});
 const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
@@ -149,6 +227,11 @@ const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+const createCopyDialog = ref<HTMLDialogElement | null>(null);
+const copyTitle = ref<string | undefined>(undefined);
+const copyDescription = ref<string | undefined>(undefined);
+const copyIsPrivate = ref(true);
 
 const featureHistoryService = new FeatureHistoryService(5);
 const canUndo = featureHistoryService.canUndo;
@@ -201,10 +284,10 @@ async function onAddFeatureImage() {
   try {
     const formData = new FormData();
     formData.append("image", selectedFile.value);
-    formData.append("map_id", mapId);
+    formData.append("map_id", mapId.value);
 
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${mapId}/features/image`,
+      `${import.meta.env.VITE_API_URL}/maps/${mapId.value}/features/image`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${keycloak.token}` },
@@ -244,35 +327,51 @@ function onFileChange() {
   selectedFile.value = input?.files?.[0] ?? null;
 }
 
-async function uploadMapThumbnail(): Promise<boolean> {
-  if (!leafletMap.value || !mapId || !keycloak.token) return false;
+async function uploadMapThumbnail(targetMapId?: string): Promise<boolean> {
+  const effectiveMapId = targetMapId ?? mapId.value;
+
+  if (!leafletMap.value || !effectiveMapId || !keycloak.token) return false;
 
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
 
+  const removedLayers: L.Layer[] = [];
+
+  leafletMap.value.eachLayer((layer) => {
+    if (layer instanceof L.Marker && layer.options.icon instanceof L.DivIcon) {
+      removedLayers.push(layer);
+    }
+  });
+
+  removedLayers.forEach((layer) => leafletMap.value?.removeLayer(layer));
+
   return await new Promise<boolean>((resolve) => {
     leafletImage(leafletMap.value as LeafletMap, async (err, canvas) => {
-      if (err || !canvas) return resolve(false);
+      try {
+        if (err || !canvas) return resolve(false);
 
-      const blob = await new Promise<Blob | null>((r) =>
-        canvas.toBlob(r, "image/png"),
-      );
-      if (!blob) return resolve(false);
+        const blob = await new Promise<Blob | null>((r) =>
+          canvas.toBlob(r, "image/png"),
+        );
+        if (!blob) return resolve(false);
 
-      const formData = new FormData();
-      formData.append("image", blob);
+        const formData = new FormData();
+        formData.append("image", blob);
 
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/${mapId}/thumbnail`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${keycloak.token}` },
-          body: formData,
-        },
-      );
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/maps/${effectiveMapId}/thumbnail`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${keycloak.token}` },
+            body: formData,
+          },
+        );
 
-      resolve(res.ok);
+        resolve(res.ok);
+      } finally {
+        removedLayers.forEach((layer) => leafletMap.value?.addLayer(layer));
+      }
     });
   });
 }
@@ -305,7 +404,7 @@ async function onDeleteFeature(
 
   try {
     const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}/${featureId}`,
       {
         method: "DELETE",
         headers: {
@@ -345,7 +444,7 @@ function reconcileVisibility(list: Feature[]) {
 async function loadInitialFeatures() {
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId.value}`,
     );
     if (!res.ok) throw new Error("Failed to fetch features");
 
@@ -364,6 +463,90 @@ async function loadInitialFeatures() {
 
 function upload(mapId: string) {
   router.push(`/televersement/${mapId}`);
+}
+
+async function loadMapMeta(): Promise<void> {
+  try {
+    mapMeta.value = await MapCopyAndSaveService.getMapMeta(mapId.value);
+  } catch (error) {
+    console.error("Failed to fetch map metadata:", error);
+    showAlert(
+      alert,
+      "error",
+      "Erreur lors du chargement des informations de la carte.",
+    );
+  }
+}
+
+function openCreateCopyDialog() {
+  if (!mapMeta.value) {
+    showAlert(
+      alert,
+      "error",
+      "Impossible de charger les informations de la carte à copier.",
+    );
+    return;
+  }
+
+  copyTitle.value = mapMeta.value.title;
+  copyDescription.value = mapMeta.value.description ?? undefined;
+  copyIsPrivate.value = true;
+  createCopyDialog.value?.showModal();
+}
+
+function closeCreateCopyDialog() {
+  createCopyDialog.value?.close();
+}
+
+function resetCreateCopyForm() {
+  copyTitle.value = undefined;
+  copyDescription.value = undefined;
+  copyIsPrivate.value = true;
+}
+
+async function createCopyAndSave() {
+  if (!currentUser.value) {
+    showAlert(alert, "error", "Utilisateur non authentifié.");
+    return;
+  }
+
+  if (!copyTitle.value?.trim()) {
+    showAlert(alert, "error", "Le titre de la carte est requis.");
+    return;
+  }
+
+  isSaving.value = true;
+
+  try {
+    const syncedFeatures =
+      mapGeoJsonRef.value?.syncFeaturesFromMapLayers() ?? features.value;
+
+    const preparedFeatures = prepareFeaturesForSave(syncedFeatures);
+
+    const createResult = await MapCopyAndSaveService.createMap({
+      userId: currentUser.value.id,
+      title: copyTitle.value.trim(),
+      description: copyDescription.value?.trim() || "",
+      isPrivate: copyIsPrivate.value,
+    });
+
+    const newMapId = createResult.mapId;
+
+    await MapCopyAndSaveService.saveFeatures(newMapId, preparedFeatures);
+    await uploadMapThumbnail(newMapId);
+
+    mapGeoJsonRef.value?.clearDraftLayers();
+    closeCreateCopyDialog();
+    resetCreateCopyForm();
+
+    await router.replace(`/carte/${newMapId}`);
+    showAlert(alert, "success", "Une copie de la carte a été créée.");
+  } catch (err) {
+    console.error("Error while creating copy and saving:", err);
+    showAlert(alert, "error", "Erreur lors de la création de la copie.");
+  } finally {
+    isSaving.value = false;
+  }
 }
 
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
@@ -413,9 +596,22 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
 
 onMounted(async () => {
   await fetchCurrentUser();
+  await loadMapMeta();
   await loadInitialFeatures();
   window.addEventListener("keydown", handleKeyboardShortcuts);
 });
+
+watch(
+  () => route.params.mapId,
+  async (newMapId, oldMapId) => {
+    if (!newMapId || newMapId === oldMapId) return;
+
+    mapMeta.value = null;
+    featureVisibility.value = new Map();
+    await loadMapMeta();
+    await loadInitialFeatures();
+  },
+);
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyboardShortcuts);
@@ -432,42 +628,39 @@ async function onSaveMap() {
       return;
     }
 
+    if (!mapMeta.value) {
+      showAlert(
+        alert,
+        "error",
+        "Impossible de déterminer le propriétaire de la carte.",
+      );
+      return;
+    }
+
+    if (!isOwner.value) {
+      openCreateCopyDialog();
+      return;
+    }
+
     const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
     if (syncedFeatures) {
       applyFeatureSnapshot(syncedFeatures, false);
     }
 
-    const payload = camelToSnake(prepareFeaturesForSave(features.value));
+    const preparedFeatures = prepareFeaturesForSave(features.value);
 
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    if (!response.ok) {
-      showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
-      throw new Error(`Error saving features: ${response.status}`);
-    }
+    await MapCopyAndSaveService.saveFeatures(mapId.value, preparedFeatures);
 
     await loadInitialFeatures();
-
     mapGeoJsonRef.value?.clearDraftLayers();
+    await uploadMapThumbnail(mapId.value);
+
+    showAlert(alert, "success", "Carte sauvegardée avec succès !");
   } catch (err) {
+    console.error("Error while saving features:", err);
     showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
-    throw new Error(
-      `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
-    );
   } finally {
     isSaving.value = false;
-    await uploadMapThumbnail();
-    showAlert(alert, "success", "Carte sauvegardée avec succès !");
   }
 }
 </script>

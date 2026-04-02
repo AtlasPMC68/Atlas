@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -13,9 +14,11 @@ import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
 import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
+import { MapCopyAndSaveService } from "../services/MapCopyAndSaveService";
 
 const maps = ref<MapData[]>([]);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
+const router = useRouter();
 const newMapTitle = ref<string | undefined>(undefined);
 const newMapDescription = ref<string | undefined>(undefined);
 const newMapIsPrivate = ref(true);
@@ -85,42 +88,35 @@ onUnmounted(() => {
 });
 
 // TODO: Add startDate endDate
-async function createMap() {
+async function handleCreateMap() {
   if (!currentUser.value) {
     showAlert(alert, "error", "Utilisateur non authentifié.");
     return;
   }
+
   if (!newMapTitle.value?.trim()) {
     showAlert(alert, "error", "Le titre de la carte est requis.");
     return;
   }
+
   isCreating.value = true;
+
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/create`, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-      method: "POST",
-      body: JSON.stringify(
-        camelToSnake({
-          userId: currentUser.value.id,
-          title: newMapTitle.value,
-          description: newMapDescription.value,
-          isPrivate: newMapIsPrivate.value,
-        }),
-      ),
+    const result = await MapCopyAndSaveService.createMap({
+      userId: currentUser.value.id,
+      title: newMapTitle.value.trim(),
+      description: newMapDescription.value?.trim() || "",
+      isPrivate: newMapIsPrivate.value,
     });
-    if (!res.ok) {
-      throw new Error(`Error creating map: ${res.status}`);
-    }
-    newMapTitle.value = undefined;
-    newMapDescription.value = undefined;
-    newMapIsPrivate.value = true;
+
+    const newMapId = result.mapId;
+
+    resetCreateMapForm();
     createMapDialogRef.value?.close();
-    await fetchMapsAndRender();
     showAlert(alert, "success", "Carte créée avec succès !");
+    await router.replace(`/carte/${newMapId}`);
   } catch (err) {
+    console.error("Error creating map:", err);
     showAlert(alert, "error", "Erreur lors de la création de la carte.");
   } finally {
     isCreating.value = false;
@@ -335,7 +331,7 @@ async function fetchMapsAndRender() {
         </label>
         <button
           class="btn-primary flex items-center"
-          onclick="createMap.showModal()"
+          @click="createMapDialogRef?.showModal()"
         >
           <PlusIcon class="h-5 w-5" />
           Nouvelle Carte
@@ -349,7 +345,7 @@ async function fetchMapsAndRender() {
       @close="resetCreateMapForm"
     >
       <div class="modal-box p-0">
-        <form @submit.prevent="createMap">
+        <form @submit.prevent="handleCreateMap">
           <div class="card-body">
             <h3 class="text-lg font-bold">Créer une nouvelle carte</h3>
 

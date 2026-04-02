@@ -665,3 +665,30 @@ async def upload_image(
         await session.rollback()
         logger.error(f"Error saving feature image: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to save feature image")
+    
+@router.get("/{map_id}")
+async def get_map_details(
+    map_id: str,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_id = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    result = await session.execute(
+        select(Map).where(Map.id == map_id)
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found")
+
+    return MapOut(
+        id=map_obj.id,
+        user_id=map_obj.user_id,
+        title=map_obj.title,
+        description=map_obj.description,
+        is_private=map_obj.is_private,
+        created_at=map_obj.created_at,
+        updated_at=map_obj.updated_at,
+    )

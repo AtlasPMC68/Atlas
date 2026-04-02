@@ -46,6 +46,8 @@ export interface FeatureProperties {
   endDate: string; // Format: "YYYY-MM-DD"
 }
 
+export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;
+
 // Geometry types
 export type Coordinate = [number, number];
 
