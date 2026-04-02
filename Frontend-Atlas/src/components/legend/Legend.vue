@@ -18,7 +18,7 @@
           <span
             class="inline-block h-4 w-4 rounded-sm border border-base-300 shrink-0"
             :style="{
-              backgroundColor: getLegendFeatureColor(feature),
+              backgroundColor: rgbToHex(feature.properties?.colorRgb),
             }"
           />
           <span class="text-sm leading-tight">
@@ -32,7 +32,7 @@
 
 <script setup lang="ts">
 import type { Feature } from "../../typescript/feature";
-import { getFeatureRgbColor } from "../../utils/featureHelpers";
+import { rgbToHex } from "../../utils/utils";
 
 const props = withDefaults(
   defineProps<{
@@ -42,8 +42,4 @@ const props = withDefaults(
     zoneFeatures: () => [],
   },
 );
-
-function getLegendFeatureColor(feature: Feature): string {
-  return getFeatureRgbColor(feature) ?? "transparent";
-}
 </script>

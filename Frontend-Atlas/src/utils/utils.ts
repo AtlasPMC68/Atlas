@@ -114,7 +114,8 @@ export function hexToRgb(hex: string) {
   };
 }
 
-export function rgbToHex(r: number, g: number, b: number) {
+export function rgbToHex(rgb: [number, number, number]) {
+  const [r, g, b] = rgb;
   const toHex = (n: number) => clamp(n).toString(16).padStart(2, "0");
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
