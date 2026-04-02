@@ -261,9 +261,6 @@ async function fetchMapsAndRender() {
 
 <template>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Alerts -->
-    <Alert />
-
     <!-- Filters + search + button -->
     <div class="flex flex-col gap-3 mb-6">
       <!-- Filters row -->
@@ -554,6 +551,9 @@ async function fetchMapsAndRender() {
       </form>
     </dialog>
   </div>
+
+  <!-- Alerts -->
+  <Alert />
 </template>
 
 <style scoped>
