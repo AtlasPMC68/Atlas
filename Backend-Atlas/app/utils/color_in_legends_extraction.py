@@ -92,5 +92,4 @@ def extract_colors_from_legend_shapes(
         b, g, r = [int(round(v)) for v in med]
         colors.append((r, g, b)) 
     
-    print(f"Colors extracted: {colors}")
     return colors

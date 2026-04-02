@@ -5,13 +5,13 @@ from typing import Dict, List, Optional, Tuple, Literal
 
 import numpy as np
 import cv2
-import skimage.util
 
 from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
 from skimage.morphology import opening, closing, disk
 from skimage.util import img_as_float
 from skimage.measure import find_contours
 from scipy.ndimage import binary_fill_holes
+
 from matplotlib import colors as mcolors
 
 from shapely.geometry import Polygon
@@ -75,10 +75,11 @@ def _debug_save_rgb(
 ) -> None:
     """Save float RGB [0,1] (optionally with alpha) as PNG for debugging."""
     os.makedirs(debug_dir, exist_ok=True)
-    # Clamp and convert RGB to uint8
+    out_path = os.path.join(debug_dir, f"{step_idx:02d}_{step_name}.png")
+
     img = np.clip(img_rgb, 0.0, 1.0)
     rgb_u8 = (img * 255.0 + 0.5).astype(np.uint8)  # (H, W, 3)
-    out_path = os.path.join(debug_dir, f"{step_idx:02d}_{step_name}.png")
+    
     if alpha is not None:
         alpha_u8 = (np.clip(alpha, 0, 1) * 255).astype(np.uint8) if alpha.dtype != np.uint8 else alpha
         if alpha_u8.ndim == 3 and alpha_u8.shape[-1] == 1:
@@ -108,7 +109,7 @@ def preprocess(
 
     If debug=True, saves intermediate RGB + masks into debug_dir at each step.
     """
-    rgb = np.clip(skimage.util.img_as_float(rgb), 0.0, 1.0)
+    rgb = np.clip(img_as_float(rgb), 0.0, 1.0)
     mask = opaque_mask.astype(bool)
 
     if debug and debug_dir is None:
@@ -134,8 +135,10 @@ def preprocess(
     # 2) Denoise
     if enable_denoise:
         work_u8 = (np.clip(work, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
-        work_u8 = cv2.bilateralFilter(work_u8, d=11, sigmaColor=75, sigmaSpace=75) #try fast mean denoizing color
+        work_u8 = cv2.bilateralFilter(work_u8, d=11, sigmaColor=75, sigmaSpace=75) 
         work = work_u8.astype(np.float32) / 255.0
+
+    #TODO: Try fast mean denoizing color and try dynamic parameters
 
     if debug:
         _debug_save_rgb(work, alpha, debug_dir, step, "02_denoise")
@@ -153,7 +156,7 @@ def preprocess(
         _debug_save_rgb(work, alpha, debug_dir, step, "03_percentile_norm_skipped")
         step += 1
 
-    # 4) Convert back to sRGB if needed
+    # 4) Convert back to sRGB
     if enable_linearize:
         rgb_out = preprocessing.linear_to_srgb(work)
         if debug:
@@ -169,12 +172,11 @@ def preprocess(
 
     return rgb_out, mask
 
-
 def compute_lab(rgb: np.ndarray) -> np.ndarray:
     """
     Convert RGB image to LAB (float).
     """
-    rgb_f = img_as_float(rgb)  # ensures float in [0, 1]
+    rgb_f = img_as_float(rgb) 
     return rgb2lab(rgb_f)
 
 def dominant_bins_lab(
@@ -231,6 +233,7 @@ def dominant_bins_lab(
         )
 
     return dom
+
 def prepare_imposed_dominants(
     imposed_colors: List[Tuple[int, int, int]],
 ) -> List[Dict]:
@@ -259,7 +262,6 @@ def prepare_imposed_dominants(
 
 def _lab_center_as_array(entry: Dict) -> np.ndarray:
     return np.array(entry["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-
 
 def _min_deltaE_to_group(entry: Dict, group: List[Dict]) -> float:
     if not group:
@@ -385,54 +387,6 @@ def select_dominants_and_accents(
         "accents": accents,
     }
 
-
-def merge_similar_colors(
-    selected: List[Dict], merge_deltaE_threshold: float = 5.0
-) -> List[Dict]:
-    """
-    Merge colors that are too similar (ΔE < threshold).
-    Representative = highest ratio among merged, ratios are summed.
-    """
-    if not selected:
-        return []
-
-    merged: List[Dict] = []
-    used = set()
-
-    for i in range(len(selected)):
-        if i in used:
-            continue
-
-        rep = dict(selected[i])
-        total_ratio = float(rep["ratio"])
-        used.add(i)
-
-        rep_lab = np.array(rep["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-
-        for j in range(i + 1, len(selected)):
-            if j in used:
-                continue
-
-            c = selected[j]
-            c_lab = np.array(c["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-            dE = float(deltaE_ciede2000(rep_lab, c_lab)[0, 0])
-
-            if dE < merge_deltaE_threshold:
-                total_ratio += float(c["ratio"])
-                used.add(j)
-
-                # Update representative if needed
-                if float(c["ratio"]) > float(rep["ratio"]):
-                    rep = dict(c)
-                    rep_lab = c_lab
-
-        rep["ratio"] = total_ratio
-        merged.append(rep)
-
-    merged.sort(key=lambda e: -e["ratio"])
-    return merged
-
-
 def build_exclusive_masks_by_nearest_center(
     lab: np.ndarray,
     opaque_mask: np.ndarray,
@@ -463,7 +417,6 @@ def build_exclusive_masks_by_nearest_center(
 
     return best_idx, valid
 
-
 def lab_center_to_rgb_u8(
     lab_center: Tuple[float, float, float],
 ) -> Tuple[int, int, int]:
@@ -474,7 +427,6 @@ def lab_center_to_rgb_u8(
     rgb = lab2rgb(lab_arr)  # float [0,1], shape (1,1,3)
     rgb_u8 = np.clip(np.round(rgb[0, 0] * 255.0), 0, 255).astype(np.uint8)
     return int(rgb_u8[0]), int(rgb_u8[1]), int(rgb_u8[2])
-
 
 def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
     """
@@ -497,7 +449,6 @@ def get_nearest_css4_color_name(rgb_tuple: Tuple[int, int, int]) -> str:
 
     return closest_name
 
-
 def save_mask_png(
     mask_bool: np.ndarray,
     rgb: np.ndarray,
@@ -515,7 +466,6 @@ def save_mask_png(
     bgra = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)
 
     cv2.imwrite(out_path, bgra)
-
 
 def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
     """
@@ -620,12 +570,12 @@ def build_normalized_feature(
         "geometry": normalized_geom.__geo_interface__,
     }
 
-
 def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
     legend_shapes: Optional[List[Dict]] = None,
+
     # -----------------------------
     # LAB binning
     # -----------------------------
@@ -634,21 +584,24 @@ def extract_colors(
     # Maximum number of LAB bins kept after quantization.
     # Higher value → more candidate colors discovered (useful for complex maps).
     # Lower value → faster, but may miss rare colors (e.g. small symbols, stars).
+
     bin_L: float = 4.0,
     # Quantization step on the L (lightness) axis.
     # Larger value → bins cover wider lightness range (fewer, broader colors).
     # Smaller value → more precise separation of light/dark variants.
+
     bin_a: float = 8.0,
     # Quantization step on the a (green–red) axis.
     # Larger value → merge nearby reds/greens into same bin.
     # Smaller value → finer separation of hue variations.
+
     bin_b: float = 8.0,
     # Quantization step on the b (blue–yellow) axis.
     # Larger value → merge nearby blues/yellows.
     # Smaller value → more sensitive to color differences.
 
     # -----------------------------
-    # Color selection logic if no imposed colors are provided
+    # Color selection logic (if no imposed colors are provided) 
     # -----------------------------
 
     dominant_ratio: float = 0.01,  #  Minimum pixel ratio for a color to be considered dominant.       
@@ -668,8 +621,8 @@ def extract_colors(
     # Post-processing 
     # -----------------------------
 
-    opening_radius: int = 1,
-    closing_radius: int = 3,
+    opening_radius: int = 1, # Erosion then dilation to remove small noise/speckles
+    closing_radius: int = 3, # Dilation then erosion to fill small gaps
     simplify_tolerance: float = 0.5,
 
 ) -> Dict:
@@ -682,9 +635,6 @@ def extract_colors(
     - Exclusive assignment: each pixel belongs to exactly one selected color (nearest ΔE)
 
     Returns:
-      - colors_detected (keys of masks)
-      - masks (name -> png path)
-      - ratios (name -> ratio)
       - selected_bins (metadata)
       - normalized_features (GeoJSON FeatureCollections)
     """
@@ -705,9 +655,9 @@ def extract_colors(
         rgb=original_rgb,
         alpha=alpha,
         opaque_mask=opaque_mask,
-        enable_linearize=True,  # Work in linear RGB for illumination-like ops
-        enable_denoise=True,  # Denoise BEFORE CLAHE
-        enable_percentile_norm=True,  # Do percentile normalization on sRGB (consistent with LAB next)
+        enable_linearize=True,  
+        enable_denoise=True,  
+        enable_percentile_norm=True,  
         norm_p_low=1.0,
         norm_p_high=99.0,
         debug=debug,
@@ -726,7 +676,6 @@ def extract_colors(
 
     if imposed_dominants:
         # If colors are imposed, extract only those colors.
-        dom = []
         dominants = imposed_dominants
     else:
         # 4) Dominant LAB bins (computed on opaque pixels)
@@ -746,12 +695,14 @@ def extract_colors(
             dominant_ratio=dominant_ratio,
             accent_min_ratio=accent_min_ratio,
             dominant_min_deltaE_from_existing=12.0, # 0.5 * std gloabal
-            accent_min_deltaE_from_dominants=15.0, # 0.2 * sur variance couleur
+            accent_min_deltaE_from_dominants=15.0, # 0.2 * on color variance
             accent_min_deltaE_from_accents=12.0,
             min_accents_fallback=min_colors_fallback,
         )
+        # TODO: Try using dynamic variables 
         dominants = selection["dominants"]
-        accents = selection["accents"] # accents are selected from remaining bins if far enough from dominants and accents, Can be used for shape extraction.
+        accents = selection["accents"] # accents are selected from remaining bins if far enough from dominants. Can be used for shape extraction.
+        #TODO: Remove accents or use it for small detail extraction
 
     masks: Dict[str, str] = {}
     mask_paths: Dict[str, str] = {}
@@ -827,13 +778,22 @@ def extract_colors(
             geometry = simplify_geometry(geometry, simplify_tolerance)
             
             # build_features expects a list of polygons, so wrap the geometry in a list
-            pixel_feature = build_feature(unique_color_name, rgb_u8_center, geometry)
+            display_name = f"{color_id} ({css_color_name})"
+            pixel_feature = build_feature(
+                unique_color_name,
+                rgb_u8_center,
+                geometry,
+                display_name=display_name,
+            )
             pixel_features.append(
                 {"type": "FeatureCollection", "features": [pixel_feature]}
             )
 
             normalized_feature = build_normalized_feature(
-                unique_color_name, rgb_u8_center, geometry
+                unique_color_name,
+                rgb_u8_center,
+                geometry,
+                display_name=display_name,
             )
             normalized_features.append(
                 {"type": "FeatureCollection", "features": [normalized_feature]}
@@ -842,12 +802,6 @@ def extract_colors(
         color_index += 1
 
     return {
-        "colors_detected": list(masks.keys()),
-        "masks": masks,
-        "mask_paths": mask_paths if debug else {},
-        "ratios": ratios,
-        "selected_bins": dominants,
-        "output_dir": image_output_dir,
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,
     }

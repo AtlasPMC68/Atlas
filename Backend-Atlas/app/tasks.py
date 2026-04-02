@@ -225,7 +225,7 @@ def process_map_extraction(
             
             color_result = extract_colors(
                 tmp_file_path, 
-                debug=False, 
+                debug=True, 
                 legend_shapes=legends_shapes if legends_shapes else None,
             )
             normalized_features = color_result.get("normalized_features", [])
