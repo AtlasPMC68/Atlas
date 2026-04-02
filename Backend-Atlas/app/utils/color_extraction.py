@@ -388,6 +388,7 @@ def select_dominants_and_accents(
     }
 
 def build_exclusive_masks_by_nearest_center(
+    # TODO: ignore pixels that are in the legend box
     lab: np.ndarray,
     opaque_mask: np.ndarray,
     centers_lab: np.ndarray,
@@ -562,7 +563,7 @@ def build_normalized_feature(
             "color_rgb": rgb,
             "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
             "mapElementType": "zone",
-            "name": f"Zone {color_name}",
+            "name": f"{color_name}",
             "start_date": "1700-01-01",
             "end_date": "2026-01-01",
             "is_normalized": True,
@@ -752,7 +753,7 @@ def extract_colors(
 
         rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
         color_name = get_nearest_css4_color_name(rgb_u8_center)
-        unique_color_name = f"{color_name}_{color_index}"
+        unique_color_name = f"{color_name}-{color_index}"
         L, a, b = entry["lab_center"]
 
         file_name = (
@@ -778,12 +779,10 @@ def extract_colors(
             geometry = simplify_geometry(geometry, simplify_tolerance)
             
             # build_features expects a list of polygons, so wrap the geometry in a list
-            display_name = f"{color_id} ({css_color_name})"
             pixel_feature = build_feature(
                 unique_color_name,
                 rgb_u8_center,
                 geometry,
-                display_name=display_name,
             )
             pixel_features.append(
                 {"type": "FeatureCollection", "features": [pixel_feature]}
@@ -793,7 +792,6 @@ def extract_colors(
                 unique_color_name,
                 rgb_u8_center,
                 geometry,
-                display_name=display_name,
             )
             normalized_features.append(
                 {"type": "FeatureCollection", "features": [normalized_feature]}

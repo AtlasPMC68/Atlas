@@ -16,18 +16,29 @@ OUTPUT_DIR = os.path.join(
 
 MANUAL_LEGEND_BOUNDS_BY_FILE = {
     "Sols_Monde.png": {
-        "x": 235,
+        "x": 245,
         "y": 340,
-        "width": 250,
+        "width": 50,
         "height": 120,
     },
-    "Sahel_Afrique.png": {
-        "x": 0,
-        "y": 90,
-        "width": 88,
-        "height": 162,
+    "Pluie_Afrique.png": {
+        "x": 30,
+        "y": 165,
+        "width": 28,
+        "height": 58,
     },
-    # "Sahel_Afrique.png": {"x": ..., "y": ..., "width": ..., "height": ...},
+    "Degrade_Afrique.png": {
+        "x": 0,
+        "y": 112,
+        "width": 16,
+        "height": 78,
+    },
+    "Quebec_Traite1783.png": {
+        "x": 370,
+        "y": 257,
+        "width": 18,
+        "height": 163,
+    },
 }
 
 
@@ -78,25 +89,10 @@ def extract_shapes_from_assets():
             print("No legend shapes found inside the manual legend box.")
             continue
 
-        for index, shape in enumerate(legend_shapes, start=1):
-            print(
-                f"Legend shape #{index} | "
-                f"type={shape.get('shape_type')} | "
-                f"bbox={shape.get('bounding_box')} | "
-                f"original_color={shape.get('color_rgb')}"
-            )
-
-        colors_to_extract = extract_colors_from_legend_shapes(
-            file_path,
-            legend_shapes,
-        )
-
-        print(f"Extracted imposed colors: {colors_to_extract}")
-
         color_result = extract_colors(
             file_path,
             debug=True,
-            imposed_colors=colors_to_extract if colors_to_extract else None,
+            legend_shapes=legend_shapes,
         )
 
         print(
