@@ -528,13 +528,12 @@ async def upload_image(
             {
                 "type": "Feature",
                 "properties": {
-                    "mapElementType": "image",
+                    "map_element_type": "image",
                     "name": image.filename or "Image",
-                    "mimeType": image.content_type,
+                    "mime_type": image.content_type,
                     "start_date": "1700-01-01",
                     "end_date": "2026-01-01",
                     "bounds": parsed_bounds,
-                    "isPlaced": bool(bounds),
                 },
                 "geometry": {"type": "Point", "coordinates": [center_lng, center_lat]},
             }

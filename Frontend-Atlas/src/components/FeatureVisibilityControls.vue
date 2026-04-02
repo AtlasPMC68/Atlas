@@ -314,6 +314,13 @@ function showDeleteFeatureDialog(feature: Feature) {
 
 async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
+  if (feature.properties.colorRgb) {
+    featureToEditColor.value = rgbToHex(
+      feature.properties.colorRgb[0],
+      feature.properties.colorRgb[1],
+      feature.properties.colorRgb[2],
+    );
+  }
   featureToEditColor.value = rgbToHex(
     feature.properties.colorRgb[0],
     feature.properties.colorRgb[1],
