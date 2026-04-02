@@ -3,7 +3,7 @@ export interface Feature {
   id: string;
   mapId: string;
   geometry: Geometry;
-  properties: FeatureProperties ;
+  properties: FeatureProperties;
   createdAt: string;
   updatedAt: string;
   name: string;
@@ -24,8 +24,8 @@ export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
 export interface FeatureProperties {
   name: string;
-  colorName: string;
-  colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
+  colorName?: string;
+  colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   mapElementType: MapElementType;
   shapeKind?: ShapeKind;
   mimeType?: string;
@@ -33,8 +33,6 @@ export interface FeatureProperties {
   startDate: string; // Format: "YYYY-MM-DD"
   endDate: string; // Format: "YYYY-MM-DD"
 }
-
-export interface ImageFeatureProperties extends FeatureProperties Omit<"colorName" | "colorRgb"> {}
 
 // Geometry types
 export type Coordinate = [number, number];

@@ -321,12 +321,6 @@ async function showEditFeatureDialog(feature: Feature) {
       feature.properties.colorRgb[2],
     );
   }
-  featureToEditColor.value = rgbToHex(
-    feature.properties.colorRgb[0],
-    feature.properties.colorRgb[1],
-    feature.properties.colorRgb[2],
-  );
-
   await nextTick();
   editFeatureDialogRef.value?.showModal();
 }
