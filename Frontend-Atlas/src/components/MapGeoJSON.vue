@@ -817,6 +817,7 @@ function confirmCity() {
       colorName: 'black',
       colorRgb: [0, 0, 0] as [number, number, number],
       strokeColor: [0, 0, 0] as [number, number, number],
+      opacity: 1,
       strokeWidth: 1,
       strokeOpacity: 1,
       mapElementType: 'point',
