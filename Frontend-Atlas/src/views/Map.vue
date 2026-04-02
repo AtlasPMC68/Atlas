@@ -9,6 +9,7 @@
           @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
+          @add-map="upload(mapId)"
         />
       </div>
 
@@ -91,7 +92,7 @@ import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import type { Map as LeafletMap } from "leaflet";
+import { map, type Map as LeafletMap } from "leaflet";
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -232,6 +233,10 @@ async function loadInitialFeatures() {
   } catch (e) {
     console.error("Failed to load initial map features:", e);
   }
+}
+
+function upload(mapId: string) {
+  router.push(`/televersement/${mapId}`);
 }
 
 function toggleFeatureVisibility(featureId: string, visible: boolean) {

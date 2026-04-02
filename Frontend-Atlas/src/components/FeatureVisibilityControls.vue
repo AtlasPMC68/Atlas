@@ -74,6 +74,15 @@
       <div class="divider m-0"></div>
       <div class="flex gap-2 items-center">
         <button
+          class="btn btn-primary btn-sm flex-1 font-bold"
+          @click="$emit('add-map')"
+        >
+          <PlusIcon class="w-5 h-5" />
+          Ajouter une carte
+        </button>
+      </div>
+      <div class="flex gap-2 items-center">
+        <button
           class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
           @click="$emit('open-add-image-feature-dialog')"
         >
@@ -229,6 +238,7 @@ const emit = defineEmits([
   "open-add-image-feature-dialog",
   "save-map",
   "delete-feature",
+  "add-map",
 ]);
 
 const groupIcons: Record<MapElementType, Component> = {
