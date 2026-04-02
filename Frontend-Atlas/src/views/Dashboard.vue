@@ -11,6 +11,8 @@ import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
+import { showAlert } from "../composables/useAlert";
+import Alert from "../components/Alert.vue";
 
 const maps = ref<MapData[]>([]);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
@@ -28,7 +30,6 @@ const editMapTitle = ref<string | undefined>(undefined);
 const editMapDescription = ref<string | undefined>(undefined);
 const editMapIsPrivate = ref(true);
 const isEditing = ref(false);
-const alert = ref<{ type: "success" | "error"; message: string } | null>(null);
 const searchQuery = ref("");
 const filterVisibility = ref<"all" | "public" | "private">("all");
 const filterDateFrom = ref("");
@@ -72,11 +73,6 @@ const filteredMaps = computed(() => {
     return true;
   });
 });
-
-function showAlert(type: "success" | "error", message: string) {
-  alert.value = { type, message };
-  setTimeout(() => (alert.value = null), 4000);
-}
 
 onMounted(async () => {
   await fetchCurrentUser();
@@ -266,25 +262,7 @@ async function fetchMapsAndRender() {
 <template>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <!-- Alerts -->
-    <Transition
-      enter-active-class="transition ease-out duration-300"
-      enter-from-class="opacity-0 translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition ease-in duration-200"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 translate-y-2"
-    >
-      <div
-        v-if="alert"
-        role="alert"
-        :class="[
-          'alert fixed bottom-6 right-6 z-50 w-auto max-w-sm shadow-lg',
-          alert.type === 'success' ? 'alert-success' : 'alert-error',
-        ]"
-      >
-        <span>{{ alert.message }}</span>
-      </div>
-    </Transition>
+    <Alert />
 
     <!-- Filters + search + button -->
     <div class="flex flex-col gap-3 mb-6">

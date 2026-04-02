@@ -6,6 +6,9 @@
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
+          @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
+          @save-map="onSaveMap"
+          @delete-feature="onDeleteFeature"
         />
       </div>
 
@@ -108,6 +111,11 @@ const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+async function onDeleteFeature(
+  featureId: string,
+  callback: { onSuccess: () => void; onError: (message?: string) => void },
+) {}
 
 async function onAddFeatureImage() {
   if (!selectedFile.value || !keycloak.token) {
@@ -226,10 +234,6 @@ async function loadInitialFeatures() {
   }
 }
 
-function upload(mapId: string) {
-  router.push(`/televersement/${mapId}`);
-}
-
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
   const next = new Map(featureVisibility.value);
   next.set(featureId, visible);
@@ -245,7 +249,7 @@ onMounted(async () => {
   await loadInitialFeatures();
 });
 
-function saveMap() {
+function onSaveMap() {
   console.log("Quick save");
   // appel API ou logique de sauvegarde ici
 }

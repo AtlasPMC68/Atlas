@@ -77,3 +77,22 @@ export function toImageSrc(
   if (!image) return "images/default.jpg";
   return `data:${mimeType};base64,${image}`;
 }
+
+export function clamp(v: number) {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+export function hexToRgb(hex: string) {
+  const clean = hex.replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16),
+  };
+}
+
+export function rgbToHex(r: number, g: number, b: number) {
+  const toHex = (n: number) => clamp(n).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
