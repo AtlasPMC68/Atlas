@@ -13,7 +13,7 @@
       </div>
 
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="flex-1 min-h-0">
+        <div class="flex-1 min-h-0 relative h-full w-full">
           <MapGeoJSON
             class="h-full w-full"
             :features="features"
@@ -24,6 +24,9 @@
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
           />
+          <div class="absolute bottom-4 left-4 z-[1001] pointer-events-auto">
+            <Legend :zone-features="zoneFeatures" />
+          </div>
         </div>
 
         <TimelineSlider v-model:year="selectedYear" />
@@ -79,12 +82,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
+import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import type { MapSaveAsPayload } from "../typescript/map";
 import { camelToSnake, snakeToCamel } from "../utils/utils";
@@ -111,6 +115,10 @@ const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+const zoneFeatures = computed(() =>
+  features.value.filter((f) => f.properties?.mapElementType === "zone"),
+);
 
 async function onDeleteFeature(
   featureId: string,
