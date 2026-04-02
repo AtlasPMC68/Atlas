@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, computed, toRef } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -51,7 +51,7 @@ const emit = defineEmits<{
   (e: "map-ready", map: L.Map): void;
 }>();
 
-const selectedYear = ref(1740);
+const selectedYear = toRef(props, "selectedYear");
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
