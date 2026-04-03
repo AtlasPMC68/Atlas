@@ -665,30 +665,71 @@ async def upload_image(
         await session.rollback()
         logger.error(f"Error saving feature image: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to save feature image")
-    
-@router.get("/{map_id}")
-async def get_map_details(
+
+
+@router.get("/is-owner/{map_id}")
+async def is_map_owner(
     map_id: str,
+    user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
+    
     try:
         map_id = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
-
-    result = await session.execute(
-        select(Map).where(Map.id == map_id)
-    )
-    map_obj = result.scalar_one_or_none()
-    if not map_obj:
+    
+    result = await session.execute(select(Map.user_id).where(Map.id == map_id))
+    owner_id = result.scalar_one_or_none()
+    if owner_id is None:
         raise HTTPException(status_code=404, detail="Map not found")
+
+    return {"is_owner": user_id == str(owner_id)}
+
+@router.get("/{map_id}", response_model=MapOut)
+async def get_map_by_id(
+    map_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_uuid = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id format")
+
+    query = (
+        select(Map, User.username)
+        .join(User, Map.user_id == User.id, isouter=True)
+        .where(Map.id == map_uuid)
+    )
+
+    result = await session.execute(query)
+    row = result.first()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Map not found")
+
+    map_obj, username = row
+
+    if map_obj.is_private and str(map_obj.user_id) != str(user_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    encoded_image = (
+        base64.b64encode(map_obj.image).decode("ascii")
+        if map_obj.image
+        else None
+    )
 
     return MapOut(
         id=map_obj.id,
         user_id=map_obj.user_id,
+        username=username,
         title=map_obj.title,
         description=map_obj.description,
         is_private=map_obj.is_private,
+        image=encoded_image,
+        start_date=map_obj.start_date,
+        end_date=map_obj.end_date,
         created_at=map_obj.created_at,
         updated_at=map_obj.updated_at,
     )

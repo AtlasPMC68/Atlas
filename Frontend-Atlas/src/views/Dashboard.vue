@@ -1,29 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import { useRouter } from "vue-router";
 import {
   PlusIcon,
   MagnifyingGlassIcon,
   QuestionMarkCircleIcon,
   PencilSquareIcon,
 } from "@heroicons/vue/24/outline";
-import { MapData } from "../typescript/map";
+import { MapData, CreatedMapRef, CreateMapDialogExposed } from "../typescript/map";
 import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
-import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
+import { TrashIcon } from "@heroicons/vue/24/solid";
 import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
-import { MapCopyAndSaveService } from "../services/MapCopyAndSaveService";
+import CreateMapDialog from "../components/CreateMapDialog.vue";
+import { useRouter } from "vue-router";
 
 const maps = ref<MapData[]>([]);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
-const router = useRouter();
-const newMapTitle = ref<string | undefined>(undefined);
-const newMapDescription = ref<string | undefined>(undefined);
-const newMapIsPrivate = ref(true);
-const isCreating = ref(false);
-const createMapDialogRef = ref<HTMLDialogElement | null>(null);
+const createMapDialogRef = ref<CreateMapDialogExposed | null>(null);
 const mapToDelete = ref<MapData | null>(null);
 const isDeleting = ref(false);
 const deleteConfirmDialogRef = ref<HTMLDialogElement | null>(null);
@@ -38,6 +33,28 @@ const searchQuery = ref("");
 const filterVisibility = ref<"all" | "public" | "private">("all");
 const filterDateFrom = ref("");
 const filterDateTo = ref("");
+const router = useRouter();
+
+
+function openCreateMapDialog() {
+  createMapDialogRef.value?.open();
+}
+
+async function onMapCreated(map: CreatedMapRef | null) {
+  if (!map?.id) {
+    showAlert(alert, "error", "Impossible de récupérer l'identifiant de la carte.");
+    return;
+  }
+
+  await router.push({
+    path: `/carte/${map.id}`,
+    query: { generateThumbnail: "1" },
+  });
+}
+
+function onCreateMapError(message: string) {
+  showAlert(alert, "error", message);
+}
 
 function resetFilters() {
   filterVisibility.value = "all";
@@ -86,48 +103,6 @@ onMounted(async () => {
 onUnmounted(() => {
   clearAlert(alert);
 });
-
-// TODO: Add startDate endDate
-async function handleCreateMap() {
-  if (!currentUser.value) {
-    showAlert(alert, "error", "Utilisateur non authentifié.");
-    return;
-  }
-
-  if (!newMapTitle.value?.trim()) {
-    showAlert(alert, "error", "Le titre de la carte est requis.");
-    return;
-  }
-
-  isCreating.value = true;
-
-  try {
-    const result = await MapCopyAndSaveService.createMap({
-      userId: currentUser.value.id,
-      title: newMapTitle.value.trim(),
-      description: newMapDescription.value?.trim() || "",
-      isPrivate: newMapIsPrivate.value,
-    });
-
-    const newMapId = result.mapId;
-
-    resetCreateMapForm();
-    createMapDialogRef.value?.close();
-    showAlert(alert, "success", "Carte créée avec succès !");
-    await router.replace(`/carte/${newMapId}`);
-  } catch (err) {
-    console.error("Error creating map:", err);
-    showAlert(alert, "error", "Erreur lors de la création de la carte.");
-  } finally {
-    isCreating.value = false;
-  }
-}
-
-function resetCreateMapForm() {
-  newMapTitle.value = undefined;
-  newMapDescription.value = undefined;
-  newMapIsPrivate.value = true;
-}
 
 function confirmDelete(map: MapData) {
   mapToDelete.value = map;
@@ -331,88 +306,18 @@ async function fetchMapsAndRender() {
         </label>
         <button
           class="btn-primary flex items-center"
-          @click="createMapDialogRef?.showModal()"
+          @click="openCreateMapDialog"
         >
           <PlusIcon class="h-5 w-5" />
           Nouvelle Carte
         </button>
       </div>
     </div>
-    <dialog
-      id="createMap"
+    <CreateMapDialog
       ref="createMapDialogRef"
-      class="modal"
-      @close="resetCreateMapForm"
-    >
-      <div class="modal-box p-0">
-        <form @submit.prevent="handleCreateMap">
-          <div class="card-body">
-            <h3 class="text-lg font-bold">Créer une nouvelle carte</h3>
-
-            <fieldset class="fieldset" :disabled="isCreating">
-              <label class="label">Titre</label>
-              <input
-                v-model="newMapTitle"
-                type="text"
-                class="input"
-                placeholder="Titre de la carte"
-                required
-              />
-              <label class="label">Description</label>
-              <input
-                v-model="newMapDescription"
-                type="text"
-                class="input"
-                placeholder="Description de la carte"
-              />
-              <div class="gap-1">
-                <div class="flex items-center gap-1">
-                  <span class="fieldset-legend">Accès à la carte</span>
-                  <div
-                    class="tooltip tooltip-right items-center"
-                    data-tip="Les cartes publiques sont visibles par tous les utilisateurs, tandis que les cartes privées ne sont accessibles que par vous."
-                  >
-                    <QuestionMarkCircleIcon
-                      class="h-4 w-4 text-gray-400"
-                    ></QuestionMarkCircleIcon>
-                  </div>
-                </div>
-                <label class="label cursor-pointer gap-2">
-                  <input
-                    type="checkbox"
-                    :checked="!newMapIsPrivate"
-                    @change="
-                      newMapIsPrivate = !($event.target as HTMLInputElement)
-                        .checked
-                    "
-                    class="toggle toggle-primary"
-                  />
-                  Public
-                </label>
-              </div>
-            </fieldset>
-
-            <div class="flex justify-end mt-8">
-              <button
-                type="submit"
-                class="btn btn-primary flex items-center"
-                :disabled="!newMapTitle"
-              >
-                <span>Créer</span>
-                <span
-                  v-if="isCreating"
-                  class="loading loading-spinner loading-xs"
-                ></span>
-                <PaperAirplaneIcon v-else class="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button :disabled="isCreating">close</button>
-      </form>
-    </dialog>
+      @created="onMapCreated"
+      @error="onCreateMapError"
+    />
 
     <!-- Maps grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

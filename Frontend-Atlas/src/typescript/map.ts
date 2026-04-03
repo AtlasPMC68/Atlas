@@ -14,3 +14,16 @@ export interface MapSaveAsPayload extends Omit<
   MapData,
   "id" | "userId" | "createdAt" | "updatedAt" | "image"
 > {}
+
+export type CreatedMapRef = Pick<MapData, "id">;
+
+export type CreateMapDialogPrefill = {
+  title?: string;
+  description?: string;
+  isPrivate?: boolean;
+};
+
+export type CreateMapDialogExposed = {
+  open: (prefill?: CreateMapDialogPrefill) => void;
+  close: () => void;
+};
