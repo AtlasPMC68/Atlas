@@ -1,5 +1,6 @@
 <template>
   <div id="map" class="relative z-0 h-full w-full"></div>
+  <Alert></Alert>
 </template>
 
 <script setup lang="ts">
@@ -25,6 +26,8 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
+import { showAlert } from "../composables/useAlert";
+import Alert from "./Alert.vue";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -46,7 +49,7 @@ const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete-id", featureId: string): void;
+  (e: "draw-delete-id", featureId: string, callbacks: {}): void;
   (e: "map-ready", map: L.Map): void;
 }>();
 
@@ -195,7 +198,16 @@ const drawing = useMapDrawing((event, ...args) => {
     const deletedId = String(args[0]);
     const next = current.filter((feature) => String(feature.id) !== deletedId);
     localFeaturesSnapshot.value = next;
-    emit("draw-delete-id", deletedId);
+
+    emit("draw-delete-id", deletedId, {
+      onSuccess: () => {
+        showAlert("success", "Élément supprimé avec succès.");
+      },
+      onError: (message: string) => {
+        showAlert("error", message);
+      },
+    });
+
     return;
   }
 });

@@ -10,6 +10,7 @@
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @add-map="upload(mapId)"
+          @update-feature="onSaveMap"
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
@@ -211,7 +212,7 @@ function isUuid(value: string): boolean {
 async function onDeleteFeature(
   featureId: string,
   // TODO : remove optional
-  callbacks?: {
+  callbacks: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
   },
@@ -255,8 +256,7 @@ async function onDeleteFeature(
     callbacks?.onSuccess?.();
   } catch (error) {
     const message = "Erreur lors de la suppression de l'élément.";
-    showAlert("error", message);
-    console.error("Failed to delete feature from API:", error);
+    console.error("Failed to delete feature:", error);
     callbacks?.onError?.(message);
   }
 }

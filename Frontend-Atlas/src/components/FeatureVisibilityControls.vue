@@ -152,22 +152,91 @@
 
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
     <div class="modal-box flex flex-col gap-4">
-      <h3 class="text-lg font-bold">Modification</h3>
+      <h3 class="text-lg font-bold truncate">
+        Modification de {{ featureToEdit.properties.name }}
+      </h3>
       <fieldset class="flex flex-col gap-2">
-        <label class="label">Nom de l'élément</label>
-        <input
-          v-model="featureToEdit.properties.name"
-          type="text"
-          class="input"
-          placeholder="Nom de l'élément"
-          required
-        />
-        <label class="label">Couleur</label>
-        <input
-          v-model="featureToEditColor"
-          type="color"
-          class="h-14 w-14 cursor-pointer bg-base-100 p-1"
-        />
+        <div class="flex flex-col gap-2">
+          <label class="label">Nom de l'élément</label>
+          <input
+            v-model="featureToEditName"
+            type="text"
+            class="input"
+            placeholder="Nom de l'élément"
+            required
+          />
+        </div>
+        <div
+          class="flex flex-col gap-2"
+          v-if="featureToEdit.properties.labelText"
+        >
+          <label class="label">Texte</label>
+          <input v-model="featureToEditLabelText" type="text" class="input" />
+        </div>
+        <div
+          class="flex gap-2"
+          v-if="
+            featureToEdit.properties.opacity ||
+            featureToEdit.properties.strokeOpacity
+          "
+        >
+          <div
+            class="flex flex-col gap-2 w-full"
+            v-if="featureToEdit.properties.opacity"
+          >
+            <label class="label">Opacité</label>
+            <input v-model="featureToEditOpacity" type="number" class="input" />
+          </div>
+          <div
+            class="flex flex-col gap-2 w-full"
+            v-if="featureToEdit.properties.strokeOpacity"
+          >
+            <label class="label">Opacité du contour</label>
+            <input
+              v-model="featureToEditStrokeOpacity"
+              type="number"
+              class="input"
+            />
+          </div>
+        </div>
+        <div
+          class="flex flex-col gap-2 w-full"
+          v-if="featureToEdit.properties.strokeWidth"
+        >
+          <label class="label">Épaisseur du contour</label>
+          <input
+            v-model="featureToEditStrokeWidth"
+            type="number"
+            class="input"
+          />
+        </div>
+        <div
+          class="flex flex-col gap-2"
+          v-if="featureToEditColor || featureToEditStrokeColor"
+        >
+          <div
+            class="flex items-center gap-2"
+            v-if="featureToEdit.properties.colorRgb"
+          >
+            <label class="label">Couleur :</label>
+            <input
+              v-model="featureToEditColor"
+              type="color"
+              class="h-9 w-8 cursor-pointer bg-base-100"
+            />
+          </div>
+          <div
+            class="flex items-center gap-2"
+            v-if="featureToEdit.properties.strokeColor"
+          >
+            <label class="label">Couleur du contour :</label>
+            <input
+              v-model="featureToEditStrokeColor"
+              type="color"
+              class="h-9 w-8 cursor-pointer bg-base-100"
+            />
+          </div>
+        </div>
       </fieldset>
       <div class="modal-action">
         <button
@@ -225,12 +294,23 @@ const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
 }>();
-const deleteFeatureConfirmDialogRef = ref<HTMLDialogElement | null>(null);
-const featureToDelete = ref<Feature | null>(null);
+const deleteFeatureConfirmDialogRef = ref<HTMLDialogElement | undefined>(
+  undefined,
+);
+const featureToDelete = ref<Feature | undefined>(undefined);
 const isDeleting = ref(false);
-const editFeatureDialogRef = ref<HTMLDialogElement | null>(null);
-const featureToEdit = ref<Feature | null>(null);
-const featureToEditColor = ref<string>("#000000");
+const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+const featureToEdit = ref<Feature | undefined>(undefined);
+const featureToEditName = ref<string>("");
+const featureToEditLabelText = ref<string | undefined>(undefined);
+const featureToEditColor = ref<string | undefined>(undefined);
+const featureToEditStrokeColor = ref<string | undefined>(undefined);
+const featureToEditOpacity = ref<number | undefined>(undefined);
+const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
+const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+
+const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
+
 const isEditing = ref(false);
 
 const emit = defineEmits([
@@ -239,6 +319,7 @@ const emit = defineEmits([
   "save-map",
   "delete-feature",
   "add-map",
+  "update-feature",
 ]);
 
 const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
@@ -279,15 +360,13 @@ const featureGroups = computed(() => {
   return groups;
 });
 
-const activeGroupType = ref<FeatureVisibilityGroupType | null>(null);
-
 const activeGroup = computed(() => {
-  if (!activeGroupType.value) return featureGroups.value[0] ?? null;
+  if (!activeGroupType.value) return featureGroups.value[0] ?? undefined;
 
   return (
     featureGroups.value.find((group) => group.type === activeGroupType.value) ??
     featureGroups.value[0] ??
-    null
+    undefined
   );
 });
 
@@ -295,7 +374,7 @@ watch(
   featureGroups,
   (groups) => {
     if (groups.length === 0) {
-      activeGroupType.value = null;
+      activeGroupType.value = undefined;
       return;
     }
 
@@ -321,13 +400,14 @@ function showDeleteFeatureDialog(feature: Feature) {
 
 async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
-  if (feature.properties.colorRgb) {
-    featureToEditColor.value = rgbToHex(
-      feature.properties.colorRgb[0],
-      feature.properties.colorRgb[1],
-      feature.properties.colorRgb[2],
-    );
-  }
+  featureToEditName.value = feature.properties.name;
+  featureToEditLabelText.value = feature.properties.labelText;
+  featureToEditColor.value = rgbToHex(feature.properties.colorRgb);
+  featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
+  featureToEditOpacity.value = feature.properties.opacity;
+  featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
+  featureToEditStrokeWidth.value = feature.properties.strokeWidth;
+
   await nextTick();
   editFeatureDialogRef.value?.showModal();
 }
@@ -340,26 +420,39 @@ function onDeleteFeature() {
     onSuccess: () => {
       showAlert("success", "Élément supprimé avec succès.");
     },
-    onError: (message?: string) => {
-      showAlert("error", message || "Erreur lors de la suppression.");
+    onError: (message: string) => {
+      showAlert("error", message);
     },
   });
   isDeleting.value = false;
   deleteFeatureConfirmDialogRef.value?.close();
 }
 
-function onEditFeature() {
+async function onEditFeature() {
   if (!featureToEdit.value) return;
-
-  const colorRgb = hexToRgb(featureToEditColor.value);
-  if (!colorRgb) return;
-
-  featureToEdit.value.properties.colorRgb = [
-    colorRgb.r,
-    colorRgb.g,
-    colorRgb.b,
-  ];
   isEditing.value = true;
+  featureToEdit.value.properties.name = featureToEditName.value;
+  featureToEdit.value.properties.labelText = featureToEditLabelText.value;
+  featureToEdit.value.properties.colorRgb = hexToRgb(featureToEditColor.value);
+  featureToEdit.value.properties.strokeColor = hexToRgb(
+    featureToEditStrokeColor.value,
+  );
+  featureToEdit.value.properties.opacity = featureToEditOpacity.value;
+  featureToEdit.value.properties.strokeOpacity =
+    featureToEditStrokeOpacity.value;
+  featureToEdit.value.properties.strokeWidth = featureToEditStrokeWidth.value;
+
+  emit("update-feature", {
+    onSuccess: () => {
+      showAlert("success", "Élément mis à jour !");
+    },
+    onError: (message: string) => {
+      showAlert("error", message);
+    },
+  });
+
+  isEditing.value = false;
+  editFeatureDialogRef.value?.close();
 }
 
 function toggleAll(visible: boolean) {
