@@ -10,6 +10,7 @@
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @add-map="upload(mapId)"
+          @update-feature="onSaveMap"
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
@@ -22,7 +23,8 @@
             @features-loaded="handleFeaturesLoaded"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
-            @draw-delete="handleDrawChange"
+            @draw-delete-id="onDeleteFeature"
+            @map-ready="onMapReady"
           />
           <div class="absolute bottom-4 left-4 z-[1001] pointer-events-auto">
             <Legend :zone-features="zoneFeatures" />
@@ -81,7 +83,6 @@ import { ref, onMounted, onUnmounted, watch, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
-import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
@@ -93,7 +94,7 @@ import {
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import { map, type Map as LeafletMap } from "leaflet";
+import { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 
@@ -111,7 +112,6 @@ const mapGeoJsonRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
-const showSaveAsModal = ref(false);
 const selectedYear = ref(1740);
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
@@ -220,7 +220,7 @@ function isUuid(value: string): boolean {
 async function onDeleteFeature(
   featureId: string,
   // TODO : remove optional
-  callbacks?: {
+  callbacks: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
   },
@@ -264,8 +264,7 @@ async function onDeleteFeature(
     callbacks?.onSuccess?.();
   } catch (error) {
     const message = "Erreur lors de la suppression de l'élément.";
-    showAlert("error", message);
-    console.error("Failed to delete feature from API:", error);
+    console.error("Failed to delete feature:", error);
     callbacks?.onError?.(message);
   }
 }

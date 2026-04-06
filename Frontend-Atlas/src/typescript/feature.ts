@@ -36,12 +36,12 @@ export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 export interface FeatureProperties {
   name: string;
   labelText?: string;
-  colorName: string;
-  colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
-  opacity: number;
+  colorName?: string;
+  colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   strokeColor?: [number, number, number];
-  strokeWidth: number;
-  strokeOpacity: number;
+  opacity?: number;
+  strokeOpacity?: number;
+  strokeWidth?: number;
   mapElementType: MapElementType;
   shapeKind?: ShapeKind;
   mimeType?: string;
