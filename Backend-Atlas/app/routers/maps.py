@@ -267,8 +267,8 @@ async def upload_and_process_map(
             enable_shapes_extraction=enable_shapes_extraction,
             enable_text_extraction=enable_text_extraction,
             legend_bounds=legend_bounds_dict,
-            is_test_mode=is_test_mode,
-            test_case_id=test_case_id or None,
+            is_test=is_test_mode,
+            test_case=test_case_id or None,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
