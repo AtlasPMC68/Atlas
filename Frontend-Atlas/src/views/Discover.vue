@@ -124,10 +124,11 @@ async function fetchProjectsAndRender() {
 
     <!-- Projects grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div
+      <RouterLink
         v-for="map in filteredProjects"
         :key="map.id"
-        class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow"
+        :to="`/projet/${map.id}`"
+        class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <figure>
           <img :src="toImageSrc(map.image)" class="w-full h-full" />
@@ -151,7 +152,7 @@ async function fetchProjectsAndRender() {
             </div>
           </div>
         </div>
-      </div>
+      </RouterLink>
     </div>
 
     <!-- Empty state -->

@@ -198,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from "vue";
+import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
@@ -225,8 +225,10 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 
 const route = useRoute();
 const router = useRouter();
-const mapRouteId = ref((route.params.mapId as string | undefined) ?? null).value;
-const projectRouteId = ref((route.params.projectId as string | undefined) ?? null).value;
+const mapRouteId = computed(() => (route.params.mapId as string | undefined) ?? null);
+const projectRouteId = computed(
+  () => (route.params.projectId as string | undefined) ?? null,
+);
 const activeMapId = ref<string | null>(null);
 const projectId = ref<string | null>(null);
 const mapGeoJsonRef = ref<{
@@ -406,17 +408,17 @@ async function uploadMapThumbnail(): Promise<boolean> {
 async function loadProjectIdForMap(): Promise<boolean> {
   if (!keycloak.token) return false;
 
-  if (projectRouteId) {
-    projectId.value = projectRouteId;
+  if (projectRouteId.value) {
+    projectId.value = projectRouteId.value;
     activeMapId.value = null;
     return true;
   }
 
-  if (!mapRouteId) return false;
+  if (!mapRouteId.value) return false;
 
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/map-project/${mapRouteId}`,
+      `${import.meta.env.VITE_API_URL}/maps/map-project/${mapRouteId.value}`,
       {
         method: "GET",
         headers: { Authorization: `Bearer ${keycloak.token}` },
@@ -427,7 +429,7 @@ async function loadProjectIdForMap(): Promise<boolean> {
 
     const payload = snakeToCamel(await res.json()) as { projectId: string };
     projectId.value = payload.projectId;
-    activeMapId.value = mapRouteId;
+    activeMapId.value = mapRouteId.value;
     return Boolean(projectId.value);
   } catch {
     return false;
@@ -551,7 +553,7 @@ function openAddMapDialog() {
 
 async function createMapForProject() {
   if (!keycloak.token) return;
-  const targetProjectId = projectId.value || projectRouteId;
+  const targetProjectId = projectId.value || projectRouteId.value;
 
   if (!targetProjectId || !newMapTitle.value.trim()) {
     return;
@@ -670,6 +672,12 @@ onMounted(async () => {
   await loadProjectMapsForTimeline();
   await loadInitialFeatures();
   window.addEventListener("keydown", handleCtrlS);
+});
+
+watch([mapRouteId, projectRouteId], async () => {
+  await resolveRouteContext();
+  await loadProjectMapsForTimeline();
+  await loadInitialFeatures();
 });
 
 onUnmounted(() => {
