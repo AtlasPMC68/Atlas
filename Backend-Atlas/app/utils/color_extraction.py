@@ -1,7 +1,7 @@
 import os
 import math
 
-from typing import Dict, List, Optional, Tuple, Literal
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import cv2
@@ -625,7 +625,6 @@ def extract_colors(
     - LAB binning (frequency estimate)
     - Dominants: ratio >= dominant_ratio
     - Accents: low ratio but far (ΔE) from dominants
-    - Merge similar selected colors (ΔE < merge_deltaE_threshold)
     - Exclusive assignment: each pixel belongs to exactly one selected color (nearest ΔE)
 
     Returns:

@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 import cv2
 import numpy as np
 
@@ -18,8 +18,6 @@ def extract_colors_from_legend_shapes(
         image_rgb = (np.clip(image_rgb, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
 
     img_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-    if img_bgr is None:
-        raise ValueError("Image not found")
 
     colors: List[Tuple[int, int, int]] = []
 
@@ -63,6 +61,8 @@ def extract_colors_from_legend_shapes(
 
         # Most frequent color (mode)
         unique_colors, counts = np.unique(pixels.reshape(-1, 3), axis=0, return_counts=True)
+        if counts.size == 0:
+            continue
         most_frequent_idx = np.argmax(counts)
         most_frequent_bgr = unique_colors[most_frequent_idx]
         b, g, r = most_frequent_bgr

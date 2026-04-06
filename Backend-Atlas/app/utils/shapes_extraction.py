@@ -183,10 +183,6 @@ def extract_contour_properties(
         "color_name": get_nearest_css4_color_name(color_rgb),
         "color_hex": "#{:02x}{:02x}{:02x}".format(*color_rgb),
         "num_vertices": len(approx),
-        "rect_score": round(rect_score, 3),
-        "color_rgb": color_rgb,
-        "color_name": get_nearest_css4_color_name(color_rgb),
-        "color_hex": "#{:02x}{:02x}{:02x}".format(*color_rgb),
         "geometry": {
             "type": "Polygon",
             "pixel_coords": {
