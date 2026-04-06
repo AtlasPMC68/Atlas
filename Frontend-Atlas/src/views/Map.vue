@@ -30,6 +30,7 @@
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
+              :selected-year="selectedYear"
             />
           </div>
         </div>
