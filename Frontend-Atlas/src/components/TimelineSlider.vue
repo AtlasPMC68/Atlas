@@ -39,7 +39,7 @@
 
           <div class="ticks-row">
             <span
-              v-for="tick in yearTickValues"
+              v-for="tick in markerYears"
               :key="`tick-${tick}`"
               class="tick-mark"
               :style="getYearMarkerStyle(tick)"
@@ -48,7 +48,7 @@
           </div>
           <div class="labels-row">
             <span
-              v-for="tick in yearTickValues"
+              v-for="tick in markerYears"
               :key="`label-${tick}`"
               class="tick-label"
               :style="getYearMarkerStyle(tick)"
@@ -74,7 +74,6 @@
               v-for="tick in dayTickValues"
               :key="`day-tick-${tick.date}`"
               class="tick-mark"
-              :class="{ 'tick-mark-exact': tick.isExactDate }"
               :style="getDayMarkerStyle(tick.days)"
               >|</span
             >
@@ -84,7 +83,6 @@
               v-for="tick in dayTickValues"
               :key="`day-label-${tick.date}`"
               class="tick-label"
-              :class="{ 'tick-label-exact': tick.isExactDate }"
               :style="getDayLabelStyle(tick.days, tick.lane)"
               >{{ tick.label }}</span
             >
@@ -98,27 +96,36 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 
+type SliderPeriod = {
+  id: string;
+  title: string;
+  color: string;
+  startYear: number;
+  endYear: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  exactDate?: boolean;
+};
+
+type DayTick = {
+  date: string;
+  label: string;
+  days: number;
+  lane: number;
+  isExactDate: boolean;
+};
+
 const props = defineProps<{
   year: number;
   min: number;
   max: number;
   markerYears?: number[];
   currentExactDate?: string | null;
-  mapPeriods?: Array<{
-    id: string;
-    title: string;
-    color: string;
-    startYear: number;
-    endYear: number;
-    startDate?: string | null;
-    endDate?: string | null;
-    exactDate?: boolean;
-  }>;
+  mapPeriods?: SliderPeriod[];
 }>();
 
 const emit = defineEmits(["update:year", "exact-date-change"]);
 const internalYear = ref(props.year || props.min);
-const inputValue = ref(String(internalYear.value));
 const hoveredPeriodId = ref<string | null>(null);
 const dayZoomOffset = ref(0);
 const yearTraversalDirection = ref<"forward" | "backward">("forward");
@@ -132,11 +139,7 @@ const markerYears = computed(() => {
   return [...new Set(merged)].sort((a, b) => a - b);
 });
 
-const yearTickValues = computed(() => {
-  return markerYears.value;
-});
-
-const mapPeriods = computed(() => props.mapPeriods ?? []);
+const mapPeriods = computed<SliderPeriod[]>(() => props.mapPeriods ?? []);
 const PERIOD_ROW_HEIGHT_REM = 0.35;
 const PERIOD_ROW_GAP_REM = 0.2;
 const PERIOD_PADDING_REM = 0.35;
@@ -174,7 +177,10 @@ const displayedPeriods = computed(() => {
 
   // In zoom mode, show only periods that overlap the current zoomed year
   const year = internalYear.value;
-  return positionedPeriods.value.filter((p: any) => p.startYear <= year && p.endYear >= year);
+  return positionedPeriods.value.filter(
+    (period: SliderPeriod) =>
+      period.startYear <= year && period.endYear >= year,
+  );
 });
 
 const rowCount = computed(() => {
@@ -209,36 +215,36 @@ function toIsoDateUtc(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+const exactDatesForYear = computed(() => {
+  const year = internalYear.value;
+  const exactDateSet = new Set<string>();
+
+  mapPeriods.value.forEach((period: SliderPeriod) => {
+    if (!period.exactDate) return;
+
+    if (period.startYear === year) {
+      const d = parseIsoDateUtc(period.startDate);
+      if (d) exactDateSet.add(toIsoDateUtc(d));
+    }
+
+    if (period.endYear === year) {
+      const d = parseIsoDateUtc(period.endDate);
+      if (d) exactDateSet.add(toIsoDateUtc(d));
+    }
+  });
+
+  return [...exactDateSet]
+    .map((iso) => parseIsoDateUtc(iso))
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => a.getTime() - b.getTime());
+});
+
 // Generate exact start/end date ticks for the day zoom view.
 const dayTickValues = computed(() => {
   const window = dayZoomWindow.value;
   if (!window) return [];
 
-  const ticks: Array<{ date: string; label: string; days: number; lane: number; isExactDate: boolean; isEdge?: boolean }> = [];
-  const year = internalYear.value;
-  const exactDates = new Set<string>();
-
-  // Collect only exact start/end dates from periods in the active year.
-  mapPeriods.value.forEach((period: any) => {
-    if (!period.exactDate) return;
-    if (period.startYear === year) {
-      const d = parseIsoDateUtc(period.startDate);
-      if (d) {
-        exactDates.add(toIsoDateUtc(d));
-      }
-    }
-    if (period.endYear === year) {
-      const d = parseIsoDateUtc(period.endDate);
-      if (d) {
-        exactDates.add(toIsoDateUtc(d));
-      }
-    }
-  });
-
-  const sorted = [...exactDates]
-    .map((iso) => ({ iso, date: parseIsoDateUtc(iso) }))
-    .filter((v): v is { iso: string; date: Date } => !!v.date)
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const ticks: DayTick[] = [];
 
   // Add the two edge stops so the thumb can escape back to year mode.
   ticks.push({
@@ -247,13 +253,13 @@ const dayTickValues = computed(() => {
     days: 0,
     lane: 0,
     isExactDate: false,
-    isEdge: true,
   });
 
   let prevPercent = -100;
   let prevLane = 0;
 
-  sorted.forEach(({ iso, date }) => {
+  exactDatesForYear.value.forEach((date: Date) => {
+    const iso = toIsoDateUtc(date);
     const days = Math.round((date.getTime() - window.minDate.getTime()) / 86_400_000);
     if (days < 0 || days > window.spanDays) return;
 
@@ -280,7 +286,6 @@ const dayTickValues = computed(() => {
       days: window.spanDays,
       lane: 0,
       isExactDate: false,
-      isEdge: true,
     });
   }
 
@@ -293,33 +298,10 @@ function getMonthName(monthIndex: number): string {
 }
 
 const dayZoomWindow = computed(() => {
-  const year = internalYear.value;
-  const exactDates: Date[] = [];
+  if (exactDatesForYear.value.length < 2) return null;
 
-  mapPeriods.value.forEach((period: {
-    startYear: number;
-    endYear: number;
-    startDate?: string | null;
-    endDate?: string | null;
-    exactDate?: boolean;
-  }) => {
-    if (!period.exactDate) return;
-
-    if (period.startYear === year) {
-      const d = parseIsoDateUtc(period.startDate);
-      if (d) exactDates.push(d);
-    }
-    if (period.endYear === year) {
-      const d = parseIsoDateUtc(period.endDate);
-      if (d) exactDates.push(d);
-    }
-  });
-
-  if (exactDates.length < 2) return null;
-
-  exactDates.sort((a, b) => a.getTime() - b.getTime());
-  const minDate = exactDates[0];
-  const maxDate = exactDates[exactDates.length - 1];
+  const minDate = exactDatesForYear.value[0];
+  const maxDate = exactDatesForYear.value[exactDatesForYear.value.length - 1];
 
   // Expand range to full months: start of previous month to end of next month
   const expandedMin = new Date(Date.UTC(minDate.getUTCFullYear(), minDate.getUTCMonth() - 1, 1));
@@ -423,15 +405,7 @@ function snapToMarker(value: number): number {
   return best;
 }
 
-// Year-level positioning
-function positionForYear(year: number): number {
-  if (props.max <= props.min) return 0;
-  const ratio = (year - props.min) / (props.max - props.min);
-  return Math.min(100, Math.max(0, ratio * 100));
-}
-
-function getYearMarkerStyle(year: number) {
-  const left = positionForYear(year);
+function markerStyleFromPercent(left: number) {
   let transform = "translateX(-50%)";
   if (left <= 0) transform = "translateX(0)";
   if (left >= 100) transform = "translateX(-100%)";
@@ -440,6 +414,17 @@ function getYearMarkerStyle(year: number) {
     left: `${left}%`,
     transform,
   };
+}
+
+// Year-level positioning
+function positionForYear(year: number): number {
+  if (props.max <= props.min) return 0;
+  const ratio = (year - props.min) / (props.max - props.min);
+  return Math.min(100, Math.max(0, ratio * 100));
+}
+
+function getYearMarkerStyle(year: number) {
+  return markerStyleFromPercent(positionForYear(year));
 }
 
 // Day-level positioning
@@ -451,15 +436,7 @@ function positionForDay(days: number): number {
 }
 
 function getDayMarkerStyle(days: number) {
-  const left = positionForDay(days);
-  let transform = "translateX(-50%)";
-  if (left <= 0) transform = "translateX(0)";
-  if (left >= 100) transform = "translateX(-100%)";
-
-  return {
-    left: `${left}%`,
-    transform,
-  };
+  return markerStyleFromPercent(positionForDay(days));
 }
 
 function getDayLabelStyle(days: number, lane: number) {
@@ -533,16 +510,14 @@ watch(
       }
       internalYear.value = snapToMarker(val);
       lastYearSelection.value = internalYear.value;
-      inputValue.value = String(internalYear.value);
     }
   },
 );
 
 watch(
-  () => [props.min, props.max, props.markerYears],
+  markerYears,
   () => {
     internalYear.value = snapToMarker(internalYear.value);
-    inputValue.value = String(internalYear.value);
   },
 );
 
@@ -550,7 +525,6 @@ function onSliderInput() {
   yearTraversalDirection.value = internalYear.value >= lastYearSelection.value ? "forward" : "backward";
   lastYearSelection.value = internalYear.value;
   internalYear.value = snapToMarker(internalYear.value);
-  inputValue.value = String(internalYear.value);
   emit("update:year", internalYear.value);
 }
 
@@ -669,15 +643,5 @@ watch(dayZoomWindow, (window: { minDate: Date; maxDate: Date; spanDays: number }
 .timeline-year-range,
 .timeline-day-range {
   display: block;
-}
-
-.tick-mark-exact {
-  color: #6b7280;
-  font-weight: bold;
-}
-
-.tick-label-exact {
-  color: #6b7280;
-  font-weight: 600;
 }
 </style>

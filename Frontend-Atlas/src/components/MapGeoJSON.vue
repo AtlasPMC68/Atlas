@@ -653,20 +653,7 @@ onBeforeUnmount(() => {
   }
 });
 
-watch(selectedYear, (newYear) => {
-  void newYear;
-  if (!map) return;
-  renderAllFeatures();
-});
-
-watch(useTimelineFilter, (enabled) => {
-  void enabled;
-  if (!map) return;
-  renderAllFeatures();
-});
-
-watch(selectedExactDate, (nextDate) => {
-  void nextDate;
+watch([selectedYear, useTimelineFilter, selectedExactDate], () => {
   if (!map) return;
   renderAllFeatures();
 });

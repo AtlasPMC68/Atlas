@@ -387,7 +387,7 @@ async def get_project_features(
 
     return _serialize_features(features_rows)
 
-
+# Used to have lightweight data on maps for the timeline
 @router.get("/projects/{project_id}/maps")
 async def get_project_maps(
     project_id: str,
