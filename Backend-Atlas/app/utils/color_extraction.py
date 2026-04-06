@@ -629,8 +629,9 @@ def extract_colors(
     - Exclusive assignment: each pixel belongs to exactly one selected color (nearest ΔE)
 
     Returns:
-      - selected_bins (metadata)
+      - pixel_features (GeoJSON FeatureCollections with pixel-space geometries)
       - normalized_features (GeoJSON FeatureCollections)
+      - masks (paths to debug PNGs of each mask, if debug=True) *For futurs tests*
     """
 
     # 0) Prepare output directory
@@ -742,14 +743,16 @@ def extract_colors(
         unique_color_name = f"{color_name}-{color_index}"
         L, a, b = entry["lab_center"]
 
-        file_name = (
-            f"{unique_color_name}"
-            f"_ratio_{ratio_value:.4f}"
-            f"_lab_{L:.1f}_{a:.1f}_{b:.1f}"
-            f".png"
-        )
-
         if debug:
+            opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
+            ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
+
+            file_name = (
+                f"{unique_color_name}"
+                f"_ratio_{ratio_value:.4f}"
+                f"_lab_{L:.1f}_{a:.1f}_{b:.1f}"
+                f".png"
+            )
             out_path = os.path.join(image_output_dir, file_name)
             save_mask_png(mask, original_rgb, out_path)
             masks[unique_color_name] = out_path

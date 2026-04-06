@@ -8,7 +8,7 @@ def extract_colors_from_legend_shapes(
 ) -> List[Tuple[int, int, int]]:
     """
     Returns one RGB color (uint8) per legend shape by sampling pixels
-    inside the shape region and computing the median RGB value.
+    inside the shape region and computing the dominant RGB value.
 
     - erode_px: removes borders to avoid edges, antialiasing, or text
     - sample_max_pixels: subsamples pixels if the region is very large
