@@ -33,13 +33,23 @@ import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
-import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
+import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
+import {
+  extractFeatureFromLayer,
+  syncFeaturesFromLayerMap,
+} from "../utils/mapDrawingFeature";
+import {
+  attachFeatureToLayer,
+  bindRenderedFeatureEvents,
+} from "../utils/mapLayersFeature";
 import { toArray, toImageSrc } from "../utils/utils";
-import type { Coordinate, Feature, Geometry } from "../typescript/feature";
-import type { LayerWithFeature as LayerWithFeatureType } from "../typescript/mapLayers";
-import type { MapFeatureId } from "../typescript/mapDrawing";
-
-type LayerWithFeature = LayerWithFeatureType<Feature>;
+import type {
+  Coordinate,
+  Feature,
+  Geometry,
+  FeatureId,
+} from "../typescript/feature";
+import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -68,7 +78,8 @@ const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete", features: Feature[]): void;
+  (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
+  (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
   (e: "map-ready", map: L.Map): void;
 }>();
 
@@ -199,7 +210,7 @@ let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
 
 const featureLayerManager = {
-  layers: new Map<MapFeatureId, L.Layer>(),
+  layers: new Map<FeatureId, L.Layer>(),
 
   addFeatureLayer(featureId: string | number, layer: L.Layer) {
     const id = String(featureId);
@@ -249,11 +260,62 @@ function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   return next;
 }
 
-const drawing = useMapDrawing((...args) => {
-  const [event, payload] = args;
+function applyLayerUpdate(layer: L.Layer) {
+  const runtimeLayer = layer as AtlasRuntimeLayer;
+
+  if (runtimeLayer.__atlasApplyingSync) return;
+  runtimeLayer.__atlasApplyingSync = true;
+
+  try {
+    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    if (!extracted) return;
+
+    attachFeatureToLayer(layer, extracted);
+
+    const next = upsertFeature(localFeaturesSnapshot.value, extracted);
+    localFeaturesSnapshot.value = next;
+    emit("draw-update", next);
+  } finally {
+    runtimeLayer.__atlasApplyingSync = false;
+  }
+}
+
+function syncFeaturesFromMapLayers(): Feature[] {
+  const mergedById = new Map<string, Feature>();
+
+  const renderedFeatures = syncFeaturesFromLayerMap(
+    featureLayerManager.layers,
+    localFeaturesSnapshot.value,
+    selectedYear.value,
+  );
+
+  renderedFeatures.forEach((feature) => {
+    mergedById.set(String(feature.id), feature);
+  });
+
+  drawing.drawnItems.value?.eachLayer((layer) => {
+    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    if (!extracted?.id) return;
+    mergedById.set(String(extracted.id), extracted);
+  });
+
+  return Array.from(mergedById.values());
+}
+
+function clearDraftLayers() {
+  drawing.clearDrawnItems();
+}
+
+defineExpose({
+  syncFeaturesFromMapLayers,
+  clearDraftLayers,
+});
+
+const drawing = useMapDrawing((event, ...args) => {
   const current = localFeaturesSnapshot.value;
 
   if (event === "feature-created") {
+    const payload = args[0] as Feature;
     const next = upsertFeature(current, payload);
     localFeaturesSnapshot.value = next;
     emit("draw-create", next);
@@ -261,6 +323,7 @@ const drawing = useMapDrawing((...args) => {
   }
 
   if (event === "feature-updated") {
+    const payload = args[0] as Feature;
     const next = upsertFeature(current, payload);
     localFeaturesSnapshot.value = next;
     emit("draw-update", next);
@@ -268,22 +331,16 @@ const drawing = useMapDrawing((...args) => {
   }
 
   if (event === "feature-deleted") {
-    const next = current.filter((feature) => feature.id !== payload);
+    const deletedId = String(args[0]);
+    const next = current.filter(
+      (feature) => String(feature.id) !== deletedId,
+    );
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
+    emit("draw-delete-id", deletedId);
+    return;
   }
 });
-
-function attachFeatureToLayer(layer: L.Layer, feature: Feature) {
-  const layerWithFeature = layer as LayerWithFeature;
-  layerWithFeature.feature = feature;
-
-  if (typeof layerWithFeature.eachLayer === "function") {
-    layerWithFeature.eachLayer((childLayer) => {
-      (childLayer as LayerWithFeature).feature = feature;
-    });
-  }
-}
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -294,16 +351,16 @@ function renderCities(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
-    const colorFromRgb = getFeatureRgbColor(feature);
-    const color = colorFromRgb || "#000";
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
       radius: 6,
-      fillColor: color,
-      color,
-      weight: 1,
-      opacity: feature.opacity ?? 1,
-      fillOpacity: feature.opacity ?? 1,
+      fillColor: fillColor,
+      color: strokeColor,
+      weight: feature.properties.strokeWidth ?? 1,
+      opacity: feature.properties.strokeOpacity ?? 1,
+      fillOpacity: feature.properties.opacity ?? 0.5,
     });
 
     const featureProperties = feature.properties;
@@ -318,11 +375,45 @@ function renderCities(features: Feature[]) {
     });
 
     attachFeatureToLayer(point, feature);
+    bindRenderedFeatureEvents(point, applyLayerUpdate);
+
     attachFeatureToLayer(label, feature);
 
     const layerGroup = L.layerGroup([point, label]);
     attachFeatureToLayer(layerGroup, feature);
     featureLayerManager.addFeatureLayer(feature.id, layerGroup);
+  });
+}
+
+function renderLabels(features: Feature[]) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!map || feature.geometry.type !== "Point") return;
+
+    const [lng, lat] = feature.geometry.coordinates;
+    const coord: L.LatLngTuple = [lat, lng];
+
+    const labelText = feature.properties.labelText || "";
+
+    const label = L.marker(coord, {
+      icon: L.divIcon({
+        className: "city-label-text geoman-text-label",
+        html: labelText,
+        iconSize: [120, 20],
+        iconAnchor: [0, 10],
+      }),
+    });
+
+    const textMarker = label as L.Marker & {
+      options: L.MarkerOptions & { text: string; textMarker?: boolean };
+    };
+    textMarker.options.text = labelText;
+    textMarker.options.textMarker = true;
+
+    attachFeatureToLayer(label, feature);
+    bindRenderedFeatureEvents(label, applyLayerUpdate);
+    featureLayerManager.addFeatureLayer(feature.id, label);
   });
 }
 
@@ -460,19 +551,22 @@ function renderZones(features: Feature[]) {
     }
 
     const featureProperties = feature.properties;
-    const colorFromRgb = getFeatureRgbColor(feature);
-    const fillColor = colorFromRgb || "#ccc";
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
         fillOpacity: 0.5,
-        color: "#333",
-        weight: 1,
+        color: strokeColor || fillColor,
+        weight: featureProperties.strokeWidth || 1,
+        opacity: featureProperties.strokeOpacity ?? 1,
       },
     });
+
     attachFeatureToLayer(layer, feature);
+    bindRenderedFeatureEvents(layer, applyLayerUpdate);
 
     const name = featureProperties.name || feature.name;
     if (name) {
@@ -493,16 +587,18 @@ function renderArrows(features: Feature[]) {
       ([lng, lat]) => [lat, lng] as L.LatLngTuple,
     );
 
-    const colorFromRgb = getFeatureRgbColor(feature);
-    const color = colorFromRgb || "#000";
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
       renderer: vectorRenderer ?? undefined,
-      color,
-      weight: feature.strokeWidth ?? 2,
-      opacity: feature.opacity ?? 1,
+      color: strokeColor,
+      weight: feature.properties.strokeWidth ?? 2,
+      opacity: feature.properties.strokeOpacity ?? 1,
     });
+
     attachFeatureToLayer(line, feature);
+    bindRenderedFeatureEvents(line, applyLayerUpdate);
 
     line.addTo(map);
     line.arrowheads({
@@ -510,6 +606,38 @@ function renderArrows(features: Feature[]) {
       frequency: "endonly",
       fill: true,
     });
+
+    const featureProperties = feature.properties;
+    const name = featureProperties.name || feature.name;
+    if (name) {
+      line.bindPopup(name);
+    }
+
+    featureLayerManager.addFeatureLayer(feature.id, line);
+  });
+}
+
+function renderPolylines(features: Feature[]) {
+  const safeFeatures = toArray(features);
+
+  safeFeatures.forEach((feature) => {
+    if (!map || feature.geometry.type !== "LineString") return;
+
+    const latLngs = feature.geometry.coordinates.map(
+      ([lng, lat]) => [lat, lng] as L.LatLngTuple,
+    );
+
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+
+    const line = L.polyline(latLngs, {
+      color: strokeColor,
+      weight: feature.properties.strokeWidth ?? 2,
+      opacity: feature.properties.strokeOpacity ?? 1,
+    });
+
+    attachFeatureToLayer(line, feature);
+    bindRenderedFeatureEvents(line, applyLayerUpdate);
 
     const featureProperties = feature.properties;
     const name = featureProperties.name || feature.name;
@@ -534,20 +662,23 @@ function renderShapes(features: Feature[]) {
     }
 
     const featureProperties = feature.properties;
-    const colorFromRgb = getFeatureRgbColor(feature);
-    const fillColor = colorFromRgb || "#ccc";
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor: fillColor,
-        opacity: feature.opacity ?? 1,
-        fillOpacity: feature.opacity ?? 0.5,
-        color: fillColor,
-        weight: 3,
+        opacity: feature.properties.strokeOpacity ?? 1,
+        fillOpacity: feature.properties.strokeOpacity ?? 1,
+        color: strokeColor,
+        weight: feature.properties.strokeWidth || 1,
       },
     });
+
     attachFeatureToLayer(layer, feature);
+    bindRenderedFeatureEvents(layer, applyLayerUpdate);
 
     const name = featureProperties.name || feature.name || "Detected shape";
     if (name) {
@@ -570,7 +701,7 @@ function renderImages(features: Feature[]) {
 
     const src = toImageSrc(feature.image);
     const overlay = L.imageOverlay(src, bounds, {
-      opacity: feature.opacity ?? 1,
+      opacity: feature.properties.opacity ?? 1,
       interactive: true,
     });
 
@@ -601,6 +732,7 @@ function renderAllFeatures() {
     zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
     arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
+    label: currentFeatures.filter((f) => getMapElementType(f) === "label"),
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
@@ -608,8 +740,10 @@ function renderAllFeatures() {
   };
 
   renderCities(featuresByType.point);
+  renderLabels(featuresByType.label);
   renderZones(featuresByType.zone);
-  renderArrows([...featuresByType.arrow, ...featuresByType.polyline]);
+  renderArrows(featuresByType.arrow);
+  renderPolylines(featuresByType.polyline);
   renderShapes(featuresByType.shape);
   renderImages(featuresByType.image);
 
@@ -641,6 +775,7 @@ onMounted(() => {
 
   L.control.zoom({ position: "topleft" }).addTo(map);
 
+  drawing.setSelectedYear(selectedYear.value);
   emit("map-ready", map);
   renderAllFeatures();
 });

@@ -10,6 +10,11 @@ from shapely.geometry import shape, mapping, Point, Polygon, MultiPolygon
 from shapely.ops import transform, unary_union, nearest_points
 from shapely.geometry.base import BaseGeometry
 
+from app.utils.coastline_land_mask import (
+    clip_zone_to_land_mask,
+    load_land_mask_from_coastline_and_ocean_points,
+)
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -346,6 +351,8 @@ def georeference_features_with_sift_points(
     pixel_points: List[XY],
     geo_points_lonlat: List[LonLat],
     snap_to_coastline: bool = True,
+    clip_to_land_mask: bool = True,
+    land_coverage_threshold: float = 0.01,
     coastline_snap_ratio_of_diagonal: float = 0.01,
     coastline_snap_tolerance_px: Optional[float] = None,
 ) -> List[JSONDict]:
@@ -359,6 +366,8 @@ def georeference_features_with_sift_points(
         pixel_points: List of (x, y) pixel coordinates from SIFT matching
         geo_points_lonlat: List of (lon, lat) geographic coordinates
         snap_to_coastline: Whether to snap nearby zone boundary points to coastline
+        clip_to_land_mask: Whether to clip transformed zones to land and remove ocean portions
+        land_coverage_threshold: Minimum land coverage (0.01) required to keep a zone
         coastline_snap_ratio_of_diagonal: Ratio of pixel diagonal used as default tolerance
         coastline_snap_tolerance_px: Explicit pixel tolerance override (if provided)
     
@@ -398,6 +407,7 @@ def georeference_features_with_sift_points(
         # Build affine transformation: pixel -> WebMercator
         affine = AffineTransformation(src, dst)
         coastline_geom_3857 = None
+        land_mask_3857 = None
         meters_per_pixel = None
         diagonal_px = None
         snap_tolerance_px = None
@@ -412,6 +422,13 @@ def georeference_features_with_sift_points(
                 )
 
         snapping_enabled = snap_to_coastline and coastline_geom_3857 is not None
+
+        if clip_to_land_mask:
+            land_mask_wgs84 = load_land_mask_from_coastline_and_ocean_points()
+            if land_mask_wgs84 is not None:
+                land_mask_3857 = transform(_lonlat_arrays_to_webmercator, land_mask_wgs84)
+            else:
+                logger.warning("Land/ocean mask unavailable; ocean clipping will be skipped.")
 
         if snapping_enabled:
             min_snap_px = 3.0
@@ -476,6 +493,8 @@ def georeference_features_with_sift_points(
                     logger.warning(f"Failed to parse geometry at feature {feat_idx}: {e}")
                     continue
 
+                props = dict(feat.get("properties", {}))
+
                 try:
                     # Transform: pixel -> WebMercator
                     geom_3857 = transform(_to_3857, geom)
@@ -492,6 +511,17 @@ def georeference_features_with_sift_points(
                     total_boundary_points += total_pts
                     total_snapped_points += snapped_pts
 
+                if clip_to_land_mask and land_mask_3857 is not None:
+                    clipped_geom = clip_zone_to_land_mask(
+                        geom_3857,
+                        land_mask_3857,
+                        land_coverage_threshold=land_coverage_threshold,
+                    )
+                    if clipped_geom is None:
+                        continue
+
+                    geom_3857 = clipped_geom
+
                 try:
                     # Convert WebMercator -> WGS84 (after optional snapping)
                     geom_wgs84 = transform(_to_lonlat, geom_3857)
@@ -503,7 +533,6 @@ def georeference_features_with_sift_points(
                     continue
 
                 # Update properties
-                props = dict(feat.get("properties", {}))
                 props["is_pixel_space"] = False
                 props["is_georeferenced"] = True
                 props["crs"] = "EPSG:4326"
@@ -525,22 +554,6 @@ def georeference_features_with_sift_points(
                         "features": new_features,
                     }
                 )
-
-        if snapping_enabled and DEBUG:
-            pct = 0.0
-            if total_boundary_points > 0:
-                pct = (100.0 * total_snapped_points) / total_boundary_points
-            logger.info(
-                "Coastline snapping: tolerance=%.2f px (ratio=%.4f, diagonal=%.1f px, ~%.2f m/px, %.1f m), total boundary points=%d, snapped points=%d (%.2f%%)",
-                snap_tolerance_px,
-                coastline_snap_ratio_of_diagonal,
-                diagonal_px if diagonal_px is not None else -1.0,
-                meters_per_pixel,
-                snap_tolerance_m,
-                total_boundary_points,
-                total_snapped_points,
-                pct,
-            )
 
         return georef_collections
         

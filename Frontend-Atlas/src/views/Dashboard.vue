@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -12,6 +12,8 @@ import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
+import type { AlertState } from "../typescript/alert";
+import { showAlert, clearAlert } from "../utils/alert";
 
 const maps = ref<MapData[]>([]);
 const router = useRouter();
@@ -30,7 +32,7 @@ const editMapTitle = ref<string | undefined>(undefined);
 const editMapDescription = ref<string | undefined>(undefined);
 const editMapIsPrivate = ref(true);
 const isEditing = ref(false);
-const alert = ref<{ type: "success" | "error"; message: string } | null>(null);
+const alert = ref<AlertState>(null);
 const searchQuery = ref("");
 const filterVisibility = ref<"all" | "public" | "private">("all");
 const filterDateFrom = ref("");
@@ -75,24 +77,23 @@ const filteredMaps = computed(() => {
   });
 });
 
-function showAlert(type: "success" | "error", message: string) {
-  alert.value = { type, message };
-  setTimeout(() => (alert.value = null), 4000);
-}
-
 onMounted(async () => {
   await fetchCurrentUser();
   await fetchMapsAndRender();
 });
 
+onUnmounted(() => {
+  clearAlert(alert);
+});
+
 // TODO: Add startDate endDate
 async function createMap() {
   if (!currentUser.value) {
-    showAlert("error", "Utilisateur non authentifié.");
+    showAlert(alert, "error", "Utilisateur non authentifié.");
     return;
   }
   if (!newMapTitle.value?.trim()) {
-    showAlert("error", "Le titre de la carte est requis.");
+    showAlert(alert, "error", "Le titre de la carte est requis.");
     return;
   }
   isCreating.value = true;
@@ -157,7 +158,7 @@ async function saveMap() {
     return;
   }
   if (!currentUser.value) {
-    showAlert("error", "Utilisateur non authentifié.");
+    showAlert(alert, "error", "Utilisateur non authentifié.");
     return;
   }
   isEditing.value = true;
@@ -227,7 +228,6 @@ async function executeDelete() {
 async function fetchMapsAndRender() {
   if (!currentUser.value) {
     throw new Error("No user or token available");
-    return;
   }
 
   try {

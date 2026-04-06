@@ -46,7 +46,7 @@
 --   }'
 -- );
  
--- -- Zone de Montréal (polygon)
+-- Zone de Montréal (polygon)
 -- INSERT INTO features (id, map_id, is_feature_collection, data)
 -- VALUES (
 --   '33333333-3333-3333-3333-333333333333',
@@ -62,6 +62,9 @@
 --           "mapElementType": "zone",
 --           "color_name": "green",
 --           "color_rgb": [0, 255, 0],
+--           "stroke_color": [0, 128, 0],
+--           "stroke_width": 2,
+--           "stroke_opacity": 1.0,
 --           "start_date": "1700-01-01",
 --           "end_date": "2025-01-01"
 --         },

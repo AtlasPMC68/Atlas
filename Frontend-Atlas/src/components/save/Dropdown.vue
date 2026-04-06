@@ -20,13 +20,6 @@
           <ArrowDownTrayIcon class="w-5 h-5" />
           Enregistrer
         </button>
-        <button
-          @click="onSaveAs"
-          class="flex items-center w-full gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-        >
-          <ArchiveBoxArrowDownIcon class="w-5 h-5" />
-          Enregistrer Sous...
-        </button>
       </div>
     </div>
   </div>
@@ -47,15 +40,10 @@ function toggleMenu() {
 }
 
 // Emited event toward the parent
-const emit = defineEmits(["save", "save-as"]);
+const emit = defineEmits(["save"]);
 
 function onSave() {
   emit("save");
-  isOpen.value = false;
-}
-
-function onSaveAs() {
-  emit("save-as");
   isOpen.value = false;
 }
 </script>
