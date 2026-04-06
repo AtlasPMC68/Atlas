@@ -58,6 +58,9 @@ def extract_colors_from_legend_shapes(
 
         pixels = img_bgr[ys, xs]
 
+        if pixels.size == 0:
+            continue
+
         # Most frequent color (mode)
         unique_colors, counts = np.unique(pixels.reshape(-1, 3), axis=0, return_counts=True)
         most_frequent_idx = np.argmax(counts)

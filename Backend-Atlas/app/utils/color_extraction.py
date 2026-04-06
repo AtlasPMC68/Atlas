@@ -699,8 +699,6 @@ def extract_colors(
         #TODO: Remove accents or use it for small detail extraction
 
     masks: Dict[str, str] = {}
-    mask_paths: Dict[str, str] = {}
-    ratios: Dict[str, float] = {}
     normalized_features: List[Dict] = []
     pixel_features: List[Dict] = []
 
@@ -744,9 +742,6 @@ def extract_colors(
         unique_color_name = f"{color_name}-{color_index}"
         L, a, b = entry["lab_center"]
 
-        opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
-        ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
-
         file_name = (
             f"{unique_color_name}"
             f"_ratio_{ratio_value:.4f}"
@@ -754,15 +749,10 @@ def extract_colors(
             f".png"
         )
 
-        opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
-        ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
-        ratios[unique_color_name] = ratio_value
-
         if debug:
             out_path = os.path.join(image_output_dir, file_name)
             save_mask_png(mask, original_rgb, out_path)
             masks[unique_color_name] = out_path
-            mask_paths[unique_color_name] = out_path
 
         geometry = mask_to_geometry(mask)
         if geometry :

@@ -178,7 +178,6 @@ def extract_contour_properties(
         "aspect_ratio": round(aspect_ratio, 2),
         "extent": round(extent, 3),
         "solidity": round(solidity, 3),
-        "num_vertices": len(approx),
         "rect_score": round(rect_score, 3),
         "color_rgb": color_rgb,
         "color_name": get_nearest_css4_color_name(color_rgb),
@@ -437,7 +436,6 @@ def reconstruct_shapes_debug(
  
     for idx, (_, contour) in enumerate(shapes_with_contours, 1):
         cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
-        color = tuple(int(c) for c in np.random.RandomState(idx).randint(50, 230, 3))
         color = tuple(int(c) for c in np.random.RandomState(idx).randint(50, 230, 3))
         cv2.drawContours(color_img, [contour], -1, color, thickness=cv2.FILLED)
  

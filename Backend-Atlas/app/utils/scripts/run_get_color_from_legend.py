@@ -3,7 +3,6 @@ import shutil
 
 from app.utils.file_utils import validate_file_extension
 from app.utils.shapes_extraction import extract_shapes
-from app.utils.color_in_legends_extraction import extract_colors_from_legend_shapes
 from app.utils.color_extraction import extract_colors
 
 ASSETS_DIR = os.path.join(
