@@ -133,6 +133,7 @@ const mapId = ref(route.params.mapId as string).value;
 const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
+  resetSelection: () => void;
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
@@ -318,6 +319,7 @@ onUnmounted(() => {
 async function onSaveMap() {
   if (isSaving.value) return;
   isSaving.value = true;
+  mapGeoJsonRef.value?.resetSelection();
 
   try {
     if (!currentUser.value) {

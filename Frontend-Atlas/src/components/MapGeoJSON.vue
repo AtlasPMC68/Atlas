@@ -235,9 +235,14 @@ function clearDraftLayers() {
   drawing.clearDrawnItems();
 }
 
+function resetSelection() {
+  selectedFeatureId.value = null;
+}
+
 defineExpose({
   syncFeaturesFromMapLayers,
   clearDraftLayers,
+  resetSelection,
 });
 
 // Tracks feature IDs that got `feature-updated` during the current cut cycle.
@@ -799,9 +804,14 @@ onMounted(() => {
     }
     // Cancel active global removal mode
     if (pm?.globalRemovalModeEnabled?.()) { pm.disableGlobalRemovalMode?.(); return; }
-    // Cancel active global edit/rotate mode
+    // Cancel active global edit/rotate mode (fires even when scoped to a selected feature)
     if (pm?.globalEditModeEnabled?.()) { pm.disableGlobalEditMode?.(); return; }
     if (pm?.globalRotateModeEnabled?.()) { pm.disableGlobalRotateMode?.(); return; }
+    // Deselect the currently selected feature if no mode is active
+    if (selectedFeatureId.value !== null) {
+      selectedFeatureId.value = null;
+      return;
+    }
   };
   document.addEventListener("keydown", escapeKeyHandler);
 });
