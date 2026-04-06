@@ -758,6 +758,22 @@ onMounted(() => {
   });
 
   map.on("pm:globaleditmodetoggled", restorePmIgnore);
+  map.on("pm:globaleditmodetoggled", (e) => {
+    // While vertex-edit mode is active the zone must not be draggable —
+    // the vertex handles wouldnt move with the shape leaving them behind.
+    if (!selectedFeatureId.value) return;
+    const selectedLayer = featureLayerManager.layers.get(selectedFeatureId.value);
+    if (!selectedLayer || selectedLayer instanceof L.ImageOverlay) return;
+    const isEnabled = (e as { enabled?: boolean }).enabled;
+    if (isEnabled) {
+      disablePerFeatureDrag(selectedLayer);
+      pixelSpaceDragCleanup?.();
+      pixelSpaceDragCleanup = null;
+    } else {
+      enablePerFeatureDrag(selectedLayer);
+      if (map) pixelSpaceDragCleanup = enablePixelSpaceDrag(map, selectedLayer);
+    }
+  });
   map.on("pm:globalrotatemodetoggled", restorePmIgnore);
 
   map.on("click", (e) => {
