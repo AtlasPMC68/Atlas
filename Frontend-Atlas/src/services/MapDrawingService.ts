@@ -285,8 +285,9 @@ export class MapDrawingService {
   private enableRemovalLasso(map: L.Map) {
     if (this.removalLassoEnabled) return;
 
-    if (map.pm?.enableGlobalLassoMode) {
-      map.pm.enableGlobalLassoMode(lassoDeleteOptions);
+    const mapWithPm = map as MapWithPm;
+    if (mapWithPm.pm?.enableGlobalLassoMode) {
+      mapWithPm.pm.enableGlobalLassoMode(lassoDeleteOptions);
       this.removalLassoEnabled = true;
       return;
     }
@@ -298,8 +299,9 @@ export class MapDrawingService {
   private disableRemovalLasso(map: L.Map) {
     if (!this.removalLassoEnabled) return;
 
-    if (map.pm?.disableGlobalLassoMode) {
-      map.pm.disableGlobalLassoMode();
+    const mapWithPm = map as MapWithPm;
+    if (mapWithPm.pm?.disableGlobalLassoMode) {
+      mapWithPm.pm.disableGlobalLassoMode();
     }
 
     this.disableFallbackRemovalSelection(map);
@@ -355,7 +357,7 @@ export class MapDrawingService {
     if (this.fallbackRemovalSelectionEnabled) return;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
-      if (!e.originalEvent?.shiftKey || !map.pm?.globalRemovalModeEnabled?.()) {
+      if (!e.originalEvent?.shiftKey || !(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
@@ -397,7 +399,7 @@ export class MapDrawingService {
       this.fallbackSelectionStart = null;
       map.dragging.enable();
 
-      if (!map.pm?.globalRemovalModeEnabled?.()) {
+      if (!(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
@@ -447,19 +449,6 @@ export class MapDrawingService {
       return;
     }
     map.boxZoom.enable();
-  }
-
-  private emitUpdatedFeatureFromLayer(layer: FeatureBearingLayer) {
-    const feature = layerToFeature(layer, this.selectedYear);
-
-    if (feature && layer.feature?.id) {
-      feature.id = layer.feature.id;
-      feature.properties = {
-        ...(layer.feature?.properties || {}),
-        ...(feature.properties || {}),
-      };
-      this.attachFeatureAndEmit(layer, feature, "feature-updated");
-    }
   }
 
   private setupDrawingListeners(map: L.Map) {
@@ -545,7 +534,7 @@ export class MapDrawingService {
     });
 
     map.on("pm:globalremovalmodetoggled", (e) => {
-      const removalEvent = e as PmRemovalToggleEvent;
+      const removalEvent = e as unknown as PmRemovalToggleEvent;
       this.setBoxZoomForRemovalMode(map, removalEvent.enabled);
 
       if (removalEvent.enabled) {
@@ -578,7 +567,7 @@ export class MapDrawingService {
       if (this.freehandActive) {
         this.stopFreehandDrawing(map);
       }
-      this.activeDrawingMode.value = (e as PmDrawStartEvent)
+      this.activeDrawingMode.value = (e as unknown as PmDrawStartEvent)
         .shape as DrawingMode;
       map.dragging.disable();
     });
@@ -595,7 +584,7 @@ export class MapDrawingService {
       this.stopFreehandDrawing(this.pmMapInstance);
     }
 
-    this.pmMapInstance.pm.disableDraw();
+    this.pmMapInstance.pm?.disableDraw();
 
     if (mode === null) {
       this.activeDrawingMode.value = null;
@@ -618,7 +607,7 @@ export class MapDrawingService {
       circle: "Circle",
     };
 
-    this.pmMapInstance.pm.enableDraw(modeMap[mode], {
+    this.pmMapInstance.pm?.enableDraw(modeMap[mode], {
       snappingOrder: ["vertex", "edge", "middleLatLng"],
     });
 
