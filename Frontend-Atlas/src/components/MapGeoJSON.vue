@@ -240,8 +240,20 @@ defineExpose({
   clearDraftLayers,
 });
 
+// Tracks feature IDs that got `feature-updated` during the current cut cycle.
+// Used in `cut-complete` to distinguish intersected (updated) zones from
+// enclosed (silently removed) zones — geoman does NOT fire pm:remove for the
+// latter, so we must detect them by checking which layers disappeared from the
+// map but were NOT updated.
+let cuttingUpdatedIds: Set<string> | null = null;
+
 const drawing = useMapDrawing((event, ...args) => {
   const current = localFeaturesSnapshot.value;
+
+  if (event === "cut-started") {
+    cuttingUpdatedIds = new Set<string>();
+    return;
+  }
 
   if (event === "feature-created") {
     const payload = args[0] as Feature;
@@ -253,6 +265,8 @@ const drawing = useMapDrawing((event, ...args) => {
 
   if (event === "feature-updated") {
     const payload = args[0] as Feature;
+    // Track IDs updated during a cut so cut-complete can identify enclosed zones.
+    cuttingUpdatedIds?.add(String(payload.id));
     const next = upsertFeature(current, payload);
     localFeaturesSnapshot.value = next;
     suppressNextPropsRender = true;
@@ -268,6 +282,53 @@ const drawing = useMapDrawing((event, ...args) => {
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
     emit("draw-delete-id", deletedId);
+    return;
+  }
+
+  if (event === "cut-complete") {
+    // Detect zones that geoman silently removed (fully enclosed by the cut
+    // polygon). Geoman calls map.removeLayer() on them directly — pm:remove
+    // never fires. They are identified as layers that are no longer on the map
+    // but were NOT processed by pm:cut (feature-updated).
+    //
+    // Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
+    // PM on the inner L.Polygon sublayers and removes those, NOT the outer
+    // container. map.hasLayer(container) therefore still returns true even
+    // after geoman removed the enclosed zone. We must check the children.
+    if (map && cuttingUpdatedIds !== null) {
+      const isRemovedFromMap = (layer: L.Layer): boolean => {
+        if (!map!.hasLayer(layer)) return true;
+        const asGroup = layer as unknown as Partial<L.LayerGroup>;
+        if (typeof asGroup.getLayers === "function") {
+          const children = asGroup.getLayers();
+          // All children gone (removed from group entirely, or none left on map)
+          if (children.length === 0) return true;
+          return children.every((c) => !map!.hasLayer(c));
+        }
+        return false;
+      };
+
+      const removedIds: string[] = [];
+      featureLayerManager.layers.forEach((layer, id) => {
+        if (isRemovedFromMap(layer) && !cuttingUpdatedIds!.has(id)) {
+          removedIds.push(id);
+        }
+      });
+      if (removedIds.length > 0) {
+        let next = localFeaturesSnapshot.value;
+        for (const deletedId of removedIds) {
+          next = next.filter((f) => String(f.id) !== deletedId);
+          featureLayerManager.layers.delete(deletedId);
+          emit("draw-delete-id", deletedId);
+        }
+        localFeaturesSnapshot.value = next;
+        emit("draw-delete", next);
+      }
+    }
+    cuttingUpdatedIds = null;
+    // Re-render so intersected zones get their updated geometry and the
+    // enclosed zones (now removed from localFeaturesSnapshot) stay gone.
+    renderAllFeatures();
     return;
   }
 });

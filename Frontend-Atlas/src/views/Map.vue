@@ -137,6 +137,7 @@ const mapGeoJsonRef = ref<{
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const isSaving = ref(false);
+const pendingDeletions = ref<string[]>([]);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
 const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
@@ -236,53 +237,14 @@ function isUuid(value: string): boolean {
   );
 }
 
-async function onDeleteFeature(
-  featureId: string,
-  // TODO : remove optional
-  callbacks?: {
-    onSuccess?: () => void;
-    onError?: (message?: string) => void;
-  },
-) {
-  if (!isUuid(featureId)) {
-    features.value = features.value.filter((feature) => feature.id !== featureId);
-    reconcileVisibility(features.value);
-    callbacks?.onSuccess?.();
-    return;
-  }
+function onDeleteFeature(featureId: string) {
+  // Non-UUID features are draft-only (never persisted); draw-delete already
+  // removed them from features.value via handleDrawChange, nothing else to do.
+  if (!isUuid(featureId)) return;
 
-  if (!currentUser.value) {
-    const message = "Utilisateur non authentifié.";
-    showAlert(alert, "error", message);
-    callbacks?.onError?.(message);
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Error deleting feature: ${response.status}`);
-    }
-
-    features.value = features.value.filter((feature) => feature.id !== featureId);
-    reconcileVisibility(features.value);
-
-    callbacks?.onSuccess?.();
-  } catch (error) {
-    const message = "Erreur lors de la suppression de l'élément.";
-    showAlert(alert, "error", message);
-    console.error("Failed to delete feature from API:", error);
-    callbacks?.onError?.(message);
-  }
+  // Queue the deletion — it will be flushed to the DB on the next save so the
+  // user can undo accidental deletions before committing.
+  pendingDeletions.value.push(featureId);
 }
 
 function reconcileVisibility(list: Feature[]) {
@@ -391,6 +353,21 @@ async function onSaveMap() {
     const savedFeatures = snakeToCamel(await response.json()) as Feature[];
     features.value = savedFeatures;
     reconcileVisibility(savedFeatures);
+
+    // Flush queued deletions now that the save succeeded.
+    for (const id of pendingDeletions.value) {
+      const delResponse = await fetch(
+        `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${id}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${keycloak.token}` },
+        },
+      );
+      if (!delResponse.ok) {
+        console.error(`Failed to delete feature ${id}: ${delResponse.status}`);
+      }
+    }
+    pendingDeletions.value = [];
 
     mapGeoJsonRef.value?.clearDraftLayers();
   } catch (err) {

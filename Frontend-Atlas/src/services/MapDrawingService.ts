@@ -47,6 +47,10 @@ export class MapDrawingService {
   private fallbackSelectionStart: L.LatLng | null = null;
   private fallbackSelectionDragging = false;
   private fallbackRemovalListeners: MouseDrawListeners = {};
+  // True from pm:drawstart (shape=Cut) until the deferred setTimeout in
+  // pm:drawend fires. Used only to know whether to emit cut-complete after the
+  // synchronous cut cycle (pm:cut / pm:remove) has fully processed.
+  private isCuttingActive = false;
 
   constructor(private emit: EmitFn) {}
 
@@ -487,23 +491,14 @@ export class MapDrawingService {
     map.boxZoom.enable();
   }
 
-  private emitUpdatedFeatureFromLayer(layer: FeatureBearingLayer) {
-    const feature = layerToFeature(layer, this.selectedYear);
-
-    if (feature && layer.feature?.id) {
-      feature.id = layer.feature.id;
-      feature.properties = {
-        ...(layer.feature?.properties || {}),
-        ...(feature.properties || {}),
-      };
-      this.attachFeatureAndEmit(layer, feature, "feature-updated");
-    }
-  }
-
   private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
       const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
       const shape = (e as PmLayerEvent).shape;
+
+      // Geoman fires pm:create for the cut polygon itself. Treat it as internal
+      // — the actual result is handled via pm:cut events on the affected layers.
+      if (shape === "Cut") return;
 
       if (shape === "text" || this.isTextLayer(layer)) {
         layer.once("pm:textblur", () => {
@@ -616,14 +611,32 @@ export class MapDrawingService {
       if (this.freehandActive) {
         this.stopFreehandDrawing(map);
       }
-      this.activeDrawingMode.value = (e as unknown as PmDrawStartEvent)
-        .shape as DrawingMode;
+      const shape = (e as unknown as PmDrawStartEvent).shape;
+      if (shape === "Cut") {
+        this.isCuttingActive = true;
+        this.emit("cut-started");
+      }
+      this.activeDrawingMode.value = shape as DrawingMode;
       map.dragging.disable();
     });
 
     map.on("pm:drawend", () => {
       map.dragging.enable();
       this.activeDrawingMode.value = null;
+      // Defer the reset so that synchronous cut processing (pm:cut / pm:remove)
+      // which fires inside pm:create after pm:drawend has a chance to complete
+      // before we clear the flag.
+      if (this.isCuttingActive) {
+        setTimeout(() => {
+          this.isCuttingActive = false;
+          // Signal MapGeoJSON to finalise the cut: detect any zones that geoman
+          // silently removed from the map (fully enclosed by the cut polygon)
+          // and delete them, then re-render intersected zones with their new
+          // geometry. Deferred so the Vue watcher echo cycle (suppressNextPropsRender)
+          // has already flushed before we call renderAllFeatures.
+          this.emit("cut-complete");
+        }, 0);
+      }
     });
   }
 
