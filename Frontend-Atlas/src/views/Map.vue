@@ -146,6 +146,22 @@ const isAdding = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
+function getImageNaturalSize(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: 1, height: 1 }); // fallback: square, backend will recompute
+    };
+    img.src = url;
+  });
+}
+
 async function onAddFeatureImage() {
   if (!selectedFile.value || !keycloak.token) {
     onCloseAddFeatureImageDialog();
@@ -157,6 +173,24 @@ async function onAddFeatureImage() {
     const formData = new FormData();
     formData.append("image", selectedFile.value);
     formData.append("map_id", mapId);
+
+    // Spawn the image at the center of the user's current map view instead of [0,0].
+    // Use the same 16° height constant as the backend, preserving the image aspect ratio.
+    if (leafletMap.value) {
+      const LAT_SPAN = 16.0;
+      const { width, height } = await getImageNaturalSize(selectedFile.value);
+      // Divide by cos(lat) to correct for Mercator: longitude degrees get physically
+      // shorter away from the equator, so we need more of them to cover the same
+      // screen width. Without this, images appear horizontally squished at high latitudes.
+      const center = leafletMap.value.getCenter();
+      const latRad = center.lat * (Math.PI / 180);
+      const lngSpan = (LAT_SPAN * (width / height)) / Math.cos(latRad);
+      const bounds = [
+        [center.lat - LAT_SPAN / 2, center.lng - lngSpan / 2],
+        [center.lat + LAT_SPAN / 2, center.lng + lngSpan / 2],
+      ];
+      formData.append("bounds", JSON.stringify(bounds));
+    }
 
     const res = await fetch(
       `${import.meta.env.VITE_API_URL}/maps/${mapId}/features/image`,
