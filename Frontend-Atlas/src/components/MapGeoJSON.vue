@@ -21,12 +21,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed, nextTick } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
+import { useAddCityMode } from "../composables/useAddCityMode";
+import { useImageOverlay } from "../composables/useImageOverlay";
 import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
 import {
   extractFeatureFromLayer,
@@ -35,26 +37,22 @@ import {
 import {
   attachFeatureToLayer,
   bindRenderedFeatureEvents,
+  applyStyleToLayer,
+  getLayerStrokeColor,
 } from "../utils/mapLayersFeature";
+import {
+  forEachLeafLayer,
+  enablePerFeatureDrag,
+  disablePerFeatureDrag,
+  enablePixelSpaceDrag,
+} from "../utils/mapDragUtils";
 import { toArray, toImageSrc } from "../utils/utils";
 import type {
-  Coordinate,
   Feature,
-  Geometry,
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
 import type { MapWithPm, PmIgnoreOptions } from "../typescript/mapDrawing";
-
-interface GeoJsonFeatureWithGeometry {
-  geometry: Geometry;
-  [key: string]: unknown;
-}
-
-interface GeoJsonFeatureCollectionWithGeometry {
-  features: GeoJsonFeatureWithGeometry[];
-  [key: string]: unknown;
-}
 
 const props = defineProps<{
   features: Feature[];
@@ -89,31 +87,16 @@ const filteredFeatures = computed(() => {
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
+// When the map itself is the source of a change (drag, edit, image move), we
+// emit "draw-update" which propagates back down via props.features. This flag
+// tells the props watcher to skip the re-render for that one echo update so we
+// don't destroy and re-create the layer the user is actively interacting with.
 let suppressNextPropsRender = false;
 let blockNextMapClick = false;
 let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
 let selectedCityRing: L.Marker | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-
-interface ImageInteractionState {
-  overlay: L.ImageOverlay;
-  featureId: string;
-  resizeMarker: L.Marker;
-  aspectRatio: number; // pixel width / pixel height at attach time
-}
-let imageInteraction: ImageInteractionState | null = null;
-
-// --- add city mode ---
-interface PendingCity {
-  latlng: L.LatLng;
-  screenPos: { x: number; y: number };
-  marker: L.CircleMarker;
-}
-let addCityMode = false;
-const pendingCity = ref<PendingCity | null>(null);
-const cityInputName = ref('');
-const cityInput = ref<HTMLInputElement | null>(null);
 
 const selectedFeatureId = ref<string | null>(null);
 
@@ -129,15 +112,14 @@ const featureLayerManager = {
     }
     this.layers.set(id, layer);
 
-    layer.on("click", (e: L.LeafletEvent) => {
+    layer.on("click", () => {
       // Don't steal clicks from active drawing tools
       if (drawing.activeDrawingMode.value !== null) return;
-      (e as L.LeafletMouseEvent).originalEvent?.stopPropagation();
       // In canvas mode, Leaflet fires the layer click AND the map click as two
       // separate events from the same mouse event. Without this flag, the map
       // click handler would immediately deselect what we just selected.
       blockNextMapClick = true;
-      if (addCityMode) cancelAddCity();
+      if (addCityMode.value) cityMode.cancel();
       selectedFeatureId.value = id;
     });
 
@@ -163,18 +145,23 @@ const featureLayerManager = {
         pm?.globalEditModeEnabled?.() ||
         pm?.globalRotateModeEnabled?.();
 
-      const setIgnoreDeep = (l: L.Layer, value: boolean | undefined) => {
-        const opts = l.options as PmIgnoreOptions;
-        if (value === undefined) delete opts.pmIgnore;
-        else opts.pmIgnore = value;
+      const setIgnoreDeep = (l: L.Layer) => {
+        (l.options as PmIgnoreOptions).pmIgnore = true;
         if (l instanceof L.LayerGroup) {
-          (l as L.LayerGroup).eachLayer((child) => setIgnoreDeep(child, value));
+          (l as L.LayerGroup).eachLayer(setIgnoreDeep);
         }
       };
 
-      if (anyModeActive) setIgnoreDeep(layer, true);
+      const clearIgnoreDeep = (l: L.Layer) => {
+        delete (l.options as PmIgnoreOptions).pmIgnore;
+        if (l instanceof L.LayerGroup) {
+          (l as L.LayerGroup).eachLayer(clearIgnoreDeep);
+        }
+      };
+
+      if (anyModeActive) setIgnoreDeep(layer);
       map.addLayer(layer);
-      if (anyModeActive) setIgnoreDeep(layer, undefined);
+      if (anyModeActive) clearIgnoreDeep(layer);
     } else {
       map.removeLayer(layer);
     }
@@ -285,6 +272,27 @@ const drawing = useMapDrawing((event, ...args) => {
   }
 });
 
+const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
+const cityMode = useAddCityMode({
+  getMap: () => map,
+  selectedYear,
+  localFeaturesSnapshot,
+  cityInput,
+  onCreated: (next) => emit('draw-create', next),
+  onAfterCreate: () => renderAllFeatures(),
+});
+const { addCityMode, pendingCity, cityInputName } = cityMode;
+const cancelAddCity = cityMode.cancel;
+const confirmCity = cityMode.confirm;
+
+const imageOverlay = useImageOverlay({
+  getMap: () => map,
+  getLayerById: (id) => featureLayerManager.layers.get(id),
+  localFeaturesSnapshot,
+  onBeforeEmit: () => { suppressNextPropsRender = true; },
+  onUpdate: (next) => emit('draw-update', next),
+});
+
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -377,53 +385,6 @@ function renderLabels(features: Feature[]) {
   });
 }
 
-function transformCoord(
-  coord: Coordinate,
-  anchorLat: number,
-  anchorLng: number,
-  sizeMeters: number,
-): Coordinate {
-  const [x, y] = coord;
-  const crs = L.CRS.EPSG3857;
-  const center = crs.project(L.latLng(anchorLat, anchorLng));
-  const halfSize = sizeMeters / 2;
-
-  const nx = x - 0.5;
-  const ny = y - 0.5;
-
-  const mx = center.x + nx * 2 * halfSize;
-  const my = center.y - ny * 2 * halfSize;
-
-  const latLng = crs.unproject(L.point(mx, my));
-  return [latLng.lng, latLng.lat];
-}
-
-function transformCoordinates(
-  coordinates: Geometry["coordinates"],
-  anchorLat: number,
-  anchorLng: number,
-  sizeMeters: number,
-): Geometry["coordinates"] {
-  if (!Array.isArray(coordinates)) return coordinates;
-
-  if (
-    coordinates.length > 0 &&
-    typeof coordinates[0] === "number" &&
-    typeof coordinates[1] === "number"
-  ) {
-    return transformCoord(
-      coordinates as Coordinate,
-      anchorLat,
-      anchorLng,
-      sizeMeters,
-    );
-  }
-
-  return (coordinates as Array<Geometry["coordinates"]>).map((nested) =>
-    transformCoordinates(nested, anchorLat, anchorLng, sizeMeters),
-  ) as Geometry["coordinates"];
-}
-
 function renderZones(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -481,7 +442,6 @@ function renderArrows(features: Feature[]) {
     attachFeatureToLayer(line, feature);
     bindRenderedFeatureEvents(line, applyLayerUpdate);
 
-    line.addTo(map);
     line.arrowheads({
       size: "10px",
       frequency: "endonly",
@@ -558,7 +518,7 @@ function renderImages(features: Feature[]) {
   safeFeatures.forEach((feature) => {
     if (!map || !feature.image) return;
 
-    const bounds = feature.properties?.bounds as [[0, 0], [0, 0]] | undefined;
+    const bounds = feature.properties?.bounds as [[number, number], [number, number]] | undefined;
 
     if (!bounds) return;
 
@@ -618,7 +578,7 @@ function renderAllFeatures() {
       (f) => String(f.id) === selectedFeatureId.value,
     );
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
-      attachImageInteraction(selectedFeatureId.value);
+      imageOverlay.attach(selectedFeatureId.value);
     }
   }
 
@@ -626,363 +586,7 @@ function renderAllFeatures() {
   emit("features-loaded", currentFeatures);
 }
 
-function applyStyleToLayer(layer: L.Layer, style: L.PathOptions) {
-  if (layer instanceof L.LayerGroup) {
-    layer.eachLayer((child) => applyStyleToLayer(child, style));
-  } else if (layer instanceof L.Path) {
-    layer.setStyle(style);
-  }
-}
-
-function getLayerStrokeColor(layer: L.Layer): string | undefined {
-  if (layer instanceof L.LayerGroup) {
-    let color: string | undefined;
-    layer.eachLayer((child) => { color ??= getLayerStrokeColor(child); });
-    return color;
-  } else if (layer instanceof L.Path) {
-    return layer.options.color;
-  }
-  return undefined;
-}
-
 // --- per-feature drag ---
-
-type PmDraggableLayer = L.Layer & { pm?: { enableLayerDrag?: () => void; disableLayerDrag?: () => void } };
-
-function forEachLeafLayer(layer: L.Layer, fn: (l: L.Layer) => void) {
-  if (layer instanceof L.LayerGroup) {
-    (layer as L.LayerGroup).eachLayer((child) => forEachLeafLayer(child, fn));
-  } else {
-    fn(layer);
-  }
-}
-
-function enablePerFeatureDrag(layer: L.Layer) {
-  forEachLeafLayer(layer, (leaf) => {
-    if ((leaf as any).options?.interactive === false) return;
-    (leaf as PmDraggableLayer).pm?.enableLayerDrag?.();
-  });
-}
-
-function disablePerFeatureDrag(layer: L.Layer) {
-  forEachLeafLayer(layer, (leaf) => {
-    (leaf as PmDraggableLayer).pm?.disableLayerDrag?.();
-  });
-}
-
-/**
- * Override geoman's lat/lng-delta drag with a pixel-space translation so that
- * shapes keep their on-screen appearance regardless of latitude.
- *
- * How it works:
- *  1. mousedown  → capture precise start mouse pixel position.
- *  2. pm:dragstart → snapshot every vertex in pixel coords.
- *  3. pm:drag    → geoman has already moved vertices using a lat/lng delta;
- *                  we immediately override with our own pixel-space result.
- *  4. pm:dragend → clean up.
- *
- * Returns a cleanup function to remove all listeners.
- */
-function enablePixelSpaceDrag(featureLayer: L.Layer): () => void {
-  if (!map) return () => {};
-
-  // Track current mouse pixel position while the map mousemove listener is active.
-  let currentMousePx: L.Point = L.point(0, 0);
-  let dragState: {
-    startMousePx: L.Point;
-    leafStates: Map<L.Layer, unknown>;
-  } | null = null;
-
-  const onMapMouseMove = (e: L.LeafletMouseEvent) => {
-    currentMousePx = map!.latLngToContainerPoint(e.latlng);
-  };
-
-  // Recursively convert a LatLng / LatLng[] / LatLng[][] hierarchy to pixels.
-  const toPx = (coords: unknown): unknown => {
-    if (coords instanceof L.LatLng) return map!.latLngToContainerPoint(coords);
-    if (Array.isArray(coords)) return coords.map(toPx);
-    return coords;
-  };
-
-  // Recursively translate pixel coords by (dx, dy) and convert back to LatLng.
-  const applyDelta = (pxCoords: unknown, dx: number, dy: number): unknown => {
-    if (pxCoords instanceof L.Point) {
-      return map!.containerPointToLatLng(L.point(pxCoords.x + dx, pxCoords.y + dy));
-    }
-    if (Array.isArray(pxCoords)) return pxCoords.map((c) => applyDelta(c, dx, dy));
-    return pxCoords;
-  };
-
-  const applyCorrection = () => {
-    if (!dragState || !map) return;
-    const dx = currentMousePx.x - dragState.startMousePx.x;
-    const dy = currentMousePx.y - dragState.startMousePx.y;
-    dragState.leafStates.forEach((pxCoords, leaf) => {
-      const newCoords = applyDelta(pxCoords, dx, dy);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const asAny = leaf as any;
-      if (typeof asAny.setLatLngs === 'function') {
-        asAny.setLatLngs(newCoords);
-      } else if (typeof asAny.setLatLng === 'function') {
-        asAny.setLatLng(newCoords);
-      }
-    });
-  };
-
-  const handlers: Array<{ layer: L.Layer; type: string; fn: (e: unknown) => void }> = [];
-
-  forEachLeafLayer(featureLayer, (leaf) => {
-    if ((leaf as { options?: { interactive?: boolean } }).options?.interactive === false) return;
-
-    // Capture the precise mouse pixel position at mousedown (before pm:dragstart fires).
-    const onMouseDown = (e: L.LeafletMouseEvent) => {
-      currentMousePx = map!.latLngToContainerPoint(e.latlng);
-    };
-
-    const onDragStart = () => {
-      const leafStates = new Map<L.Layer, unknown>();
-      forEachLeafLayer(featureLayer, (sibling) => {
-        if ((sibling as { options?: { interactive?: boolean } }).options?.interactive === false) return;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const s = sibling as any;
-        if (typeof s.getLatLngs === 'function') {
-          leafStates.set(sibling, toPx(s.getLatLngs()));
-        } else if (typeof s.getLatLng === 'function') {
-          leafStates.set(sibling, toPx(s.getLatLng()));
-        }
-      });
-      dragState = { startMousePx: currentMousePx.clone(), leafStates };
-      map!.on('mousemove', onMapMouseMove);
-    };
-
-    const onDrag = () => applyCorrection();
-
-    const onDragEnd = () => {
-      map!.off('mousemove', onMapMouseMove);
-      dragState = null;
-    };
-
-    leaf.on('mousedown', onMouseDown as (e: L.LeafletEvent) => void);
-    leaf.on('pm:dragstart', onDragStart);
-    leaf.on('pm:drag', onDrag);
-    leaf.on('pm:dragend', onDragEnd);
-    handlers.push(
-      { layer: leaf, type: 'mousedown', fn: onMouseDown as (e: unknown) => void },
-      { layer: leaf, type: 'pm:dragstart', fn: onDragStart },
-      { layer: leaf, type: 'pm:drag', fn: onDrag },
-      { layer: leaf, type: 'pm:dragend', fn: onDragEnd },
-    );
-  });
-
-  return () => {
-    map?.off('mousemove', onMapMouseMove);
-    handlers.forEach(({ layer, type, fn }) => layer.off(type, fn as (e: L.LeafletEvent) => void));
-    dragState = null;
-  };
-}
-
-// --- add city mode ---
-
-function cancelAddCity() {
-  if (pendingCity.value) {
-    pendingCity.value.marker.remove();
-    pendingCity.value = null;
-  }
-  cityInputName.value = '';
-  addCityMode = false;
-  if (map) map.getContainer().style.cursor = '';
-  (map as MapWithPm)?.pm?.Toolbar?.toggleButton?.('addCity', false);
-}
-
-function confirmCity() {
-  if (!pendingCity.value || !map) return;
-  const name = cityInputName.value.trim();
-  const { latlng, marker } = pendingCity.value;
-  marker.remove();
-  pendingCity.value = null;
-  cityInputName.value = '';
-  addCityMode = false;
-  map.getContainer().style.cursor = '';
-  (map as MapWithPm)?.pm?.Toolbar?.toggleButton?.('addCity', false);
-  const now = new Date().toISOString();
-  const id = `tmp_${Math.random().toString(36).slice(2, 9)}`;
-  const feature: Feature = {
-    id,
-    type: 'Feature',
-    mapId: '',
-    geometry: { type: 'Point', coordinates: [latlng.lng, latlng.lat] as [number, number] },
-    properties: {
-      name,
-      labelText: '',
-      colorName: 'black',
-      colorRgb: [0, 0, 0] as [number, number, number],
-      strokeColor: [0, 0, 0] as [number, number, number],
-      opacity: 1,
-      strokeWidth: 1,
-      strokeOpacity: 1,
-      mapElementType: 'point',
-      startDate: `${selectedYear.value}-01-01`,
-      endDate: `${selectedYear.value}-12-31`,
-    },
-    createdAt: now,
-    updatedAt: now,
-    name,
-    opacity: 1,
-    strokeWidth: 1,
-  };
-  const next = upsertFeature(localFeaturesSnapshot.value, feature);
-  localFeaturesSnapshot.value = next;
-  renderAllFeatures();
-  emit('draw-create', next);
-}
-
-// --- image overlay: move & resize ---
-
-function updateImageFeatureBounds(featureId: string, bounds: L.LatLngBounds) {
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
-  const boundsArray: [[number, number], [number, number]] = [
-    [sw.lat, sw.lng],
-    [ne.lat, ne.lng],
-  ];
-  const idx = localFeaturesSnapshot.value.findIndex(
-    (f) => String(f.id) === featureId,
-  );
-  if (idx === -1) return;
-  const next = [...localFeaturesSnapshot.value];
-  next[idx] = {
-    ...next[idx],
-    properties: { ...next[idx].properties, bounds: boundsArray },
-  };
-  localFeaturesSnapshot.value = next;
-
-  // Also update the feature stored on the layer itself so that
-  // extractFeatureFromLayer returns the updated bounds during save.
-  const layer = featureLayerManager.layers.get(featureId);
-  if (layer) {
-    const layerWithFeature = layer as L.Layer & { feature?: (typeof next)[0] };
-    if (layerWithFeature.feature) {
-      layerWithFeature.feature = next[idx];
-    }
-  }
-
-  suppressNextPropsRender = true;
-  emit("draw-update", next);
-}
-
-function detachImageInteraction() {
-  if (!imageInteraction) return;
-  imageInteraction.resizeMarker.remove();
-  (imageInteraction as ImageInteractionState & { cleanupDrag?: () => void }).cleanupDrag?.();
-  imageInteraction = null;
-}
-
-function attachImageInteraction(featureId: string) {
-  detachImageInteraction();
-  if (!map) return;
-  const layer = featureLayerManager.layers.get(featureId);
-  if (!(layer instanceof L.ImageOverlay)) return;
-
-  const bounds = layer.getBounds();
-
-  // Pixel aspect ratio (width/height) at current zoom — preserved during resize
-  const nwPx = map.latLngToContainerPoint(bounds.getNorthWest());
-  const sePx = map.latLngToContainerPoint(bounds.getSouthEast());
-  const aspectRatio = Math.abs(sePx.x - nwPx.x) / Math.abs(sePx.y - nwPx.y);
-
-  // SE corner drag handle
-  const resizeMarker = L.marker(bounds.getSouthEast(), {
-    icon: L.divIcon({
-      className: "image-resize-handle",
-      iconSize: [10, 10],
-      iconAnchor: [5, 5],
-    }),
-    draggable: true,
-    zIndexOffset: 1000,
-  });
-  (resizeMarker.options as PmIgnoreOptions).pmIgnore = true;
-  resizeMarker.addTo(map);
-
-  resizeMarker.on("drag", () => {
-    if (!imageInteraction || !map) return;
-    const nw = imageInteraction.overlay.getBounds().getNorthWest();
-    const nwPx = map.latLngToContainerPoint(nw);
-    const rawSePx = map.latLngToContainerPoint(resizeMarker.getLatLng());
-    // Constrain to aspect ratio: fix width, derive height
-    const w = Math.max(rawSePx.x - nwPx.x, 10);
-    const h = w / imageInteraction.aspectRatio;
-    const constrainedSe = map.containerPointToLatLng(
-      L.point(nwPx.x + w, nwPx.y + h),
-    );
-    imageInteraction.overlay.setBounds(L.latLngBounds(nw, constrainedSe));
-    resizeMarker.setLatLng(constrainedSe);
-  });
-
-  resizeMarker.on("dragend", () => {
-    if (!imageInteraction) return;
-    updateImageFeatureBounds(
-      imageInteraction.featureId,
-      imageInteraction.overlay.getBounds(),
-    );
-  });
-
-  imageInteraction = { overlay: layer, featureId, resizeMarker, aspectRatio };
-
-  // The image is in its own pane above the canvas so it receives native pointer
-  // events — we can use overlay.on("mousedown") directly here.
-  let isDragging = false;
-  let startLatLng: L.LatLng | null = null;
-  let startBounds: L.LatLngBounds | null = null;
-
-  const onOverlayMouseDown = (e: L.LeafletMouseEvent) => {
-    if (!imageInteraction) return;
-    L.DomEvent.stopPropagation(e);
-    isDragging = true;
-    startLatLng = e.latlng;
-    startBounds = imageInteraction.overlay.getBounds();
-    map!.dragging.disable();
-  };
-
-  const onMapMouseMove = (e: L.LeafletMouseEvent) => {
-    if (!isDragging || !startLatLng || !startBounds || !map || !imageInteraction) return;
-    const startPx = map.latLngToContainerPoint(startLatLng);
-    const nowPx = map.latLngToContainerPoint(e.latlng);
-    const dx = nowPx.x - startPx.x;
-    const dy = nowPx.y - startPx.y;
-    const swPx = map.latLngToContainerPoint(startBounds.getSouthWest());
-    const nePx = map.latLngToContainerPoint(startBounds.getNorthEast());
-    const newBounds = L.latLngBounds(
-      map.containerPointToLatLng(L.point(swPx.x + dx, swPx.y + dy)),
-      map.containerPointToLatLng(L.point(nePx.x + dx, nePx.y + dy)),
-    );
-    imageInteraction.overlay.setBounds(newBounds);
-    imageInteraction.resizeMarker.setLatLng(newBounds.getSouthEast());
-  };
-
-  const onMapMouseUp = () => {
-    if (!isDragging) return;
-    isDragging = false;
-    map!.dragging.enable();
-    if (imageInteraction) {
-      updateImageFeatureBounds(imageInteraction.featureId, imageInteraction.overlay.getBounds());
-    }
-    startLatLng = null;
-    startBounds = null;
-  };
-
-  layer.on("mousedown", onOverlayMouseDown);
-  map.on("mousemove", onMapMouseMove);
-  map.on("mouseup", onMapMouseUp);
-
-  const cleanupDrag = () => {
-    layer.off("mousedown", onOverlayMouseDown);
-    map?.off("mousemove", onMapMouseMove);
-    map?.off("mouseup", onMapMouseUp);
-    map?.dragging.enable();
-  };
-
-  (imageInteraction as ImageInteractionState & { cleanupDrag?: () => void }).cleanupDrag = cleanupDrag;
-}
 
 onMounted(() => {
   map = L.map("map", {
@@ -1051,12 +655,11 @@ onMounted(() => {
     const pm = (map as MapWithPm).pm;
 
     if (btnName === "addCity") {
-      if (addCityMode) {
-        cancelAddCity();
+      if (addCityMode.value) {
+        cityMode.cancel();
       } else {
-        addCityMode = true;
+        cityMode.start();
         selectedFeatureId.value = null;
-        map!.getContainer().style.cursor = 'crosshair';
       }
       return;
     }
@@ -1096,28 +699,8 @@ onMounted(() => {
       blockNextMapClick = false;
       return;
     }
-    if (addCityMode) {
-      const latlng = (e as L.LeafletMouseEvent).latlng;
-      if (pendingCity.value) {
-        pendingCity.value.marker.remove();
-      }
-      const marker: L.CircleMarker = L.circleMarker(latlng, {
-        radius: 6,
-        fillColor: '#000000',
-        color: '#000000',
-        weight: 1,
-        opacity: 1,
-        fillOpacity: 1,
-        interactive: false,
-      }).addTo(map!);
-      const containerPos = map!.latLngToContainerPoint(latlng);
-      pendingCity.value = {
-        latlng,
-        screenPos: { x: containerPos.x + 12, y: containerPos.y - 40 },
-        marker,
-      };
-      cityInputName.value = '';
-      nextTick(() => cityInput.value?.focus());
+    if (addCityMode.value) {
+      cityMode.handleMapClick((e as L.LeafletMouseEvent).latlng);
       return;
     }
     selectedFeatureId.value = null;
@@ -1137,8 +720,8 @@ onMounted(() => {
     if (e.key !== "Escape" || !map) return;
     const pm = (map as MapWithPm).pm;
     // Cancel city placement mode
-    if (addCityMode) {
-      cancelAddCity();
+    if (addCityMode.value) {
+      cityMode.cancel();
       return;
     }
     // Cancel active freehand drawing — also untoggle the custom toolbar button
@@ -1167,7 +750,9 @@ onBeforeUnmount(() => {
     document.removeEventListener("keydown", escapeKeyHandler);
     escapeKeyHandler = null;
   }
-  detachImageInteraction();
+  selectedCityRing?.remove();
+  pixelSpaceDragCleanup?.();
+  imageOverlay.detach();
   if (map) {
     featureLayerManager.clearAllFeatures();
     map.remove();
@@ -1177,7 +762,6 @@ onBeforeUnmount(() => {
 
 watch(selectedYear, (newYear) => {
   drawing.setSelectedYear(newYear);
-  void newYear;
   if (!map) return;
   renderAllFeatures();
 });
@@ -1195,6 +779,8 @@ watch(
   () => props.features,
   (newFeatures) => {
     localFeaturesSnapshot.value = [...newFeatures];
+    // The map emitted draw-update, which echoed back here via props. Skip the
+    // re-render so we don't destroy the layer the user is actively interacting with.
     if (suppressNextPropsRender) {
       suppressNextPropsRender = false;
       return;
@@ -1262,31 +848,27 @@ watch(selectedFeatureId, (id, oldId) => {
     } else if (layer) {
       drawing.setToolbarMode("feature");
       enablePerFeatureDrag(layer);
-      pixelSpaceDragCleanup = enablePixelSpaceDrag(layer);
+      pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
       selectedLayerOriginalStyle = { color: getLayerStrokeColor(layer) };
       applyStyleToLayer(layer, { color: "#000000" });
     } else {
       drawing.setToolbarMode("global");
     }
-  } else {
-    drawing.setToolbarMode("global");
-  }
 
-  if (!id && map) {
-    const pm = (map as MapWithPm).pm;
+    // Attach/detach image overlay move+resize interaction
+    imageOverlay.detach();
+    if (selectedFeature && getMapElementType(selectedFeature) === "image") {
+      imageOverlay.attach(id);
+    }
+  } else {
+    // Disable any active per-feature edit/rotate mode so geoman stops
+    // intercepting canvas clicks and restorePmIgnore() fires via the
+    // pm:globaleditmodetoggled / pm:globalrotatemodetoggled events.
+    const pm = (map as MapWithPm)?.pm;
     if (pm?.globalEditModeEnabled?.()) pm.disableGlobalEditMode?.();
     if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
-  }
-
-  // Attach/detach image overlay move+resize interaction
-  detachImageInteraction();
-  if (id != null) {
-    const selectedFeature = localFeaturesSnapshot.value.find(
-      (f) => String(f.id) === id,
-    );
-    if (selectedFeature && getMapElementType(selectedFeature) === "image") {
-      attachImageInteraction(id);
-    }
+    drawing.setToolbarMode("global");
+    imageOverlay.detach();
   }
 });
 
