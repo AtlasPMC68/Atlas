@@ -2,7 +2,7 @@ import { ref } from "vue";
 import L from "leaflet";
 import { getRadiusForZoom } from "../utils/map.ts";
 import { toArray } from "../utils/utils";
-import { getFeatureRgbColor, getMapElementType } from "../utils/featureHelpers";
+import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
 import type { Feature } from "../typescript/feature";
 import { FeatureLayerManager } from "./FeatureLayerManagerService.ts";
 import { isAxisAlignedRectangle, rectangleFromLatLngs } from "../utils/mapLayersFeature.ts";
@@ -46,16 +46,16 @@ export class MapLayersService {
       const coord = [lat, lng] as L.LatLngTuple;
 
       const featureProperties = feature.properties || {};
-      const colorFromRgb = getFeatureRgbColor(feature);
-      const color = colorFromRgb || "#000";
+      const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const circle = L.circleMarker(coord, {
         radius,
-        fillColor: color,
-        color,
-        weight: 1,
-        opacity: feature.opacity ?? 0.8,
-        fillOpacity: feature.opacity ?? 0.8,
+        fillColor: fillColor,
+        color: strokeColor,
+        weight: feature.properties.strokeWidth ?? 2,
+        opacity: feature.properties.opacity ?? 0.8,
+        fillOpacity: feature.properties.opacity ?? 0.8,
       });
 
       const labelText = featureProperties.name || feature.name || "";
@@ -80,8 +80,8 @@ export class MapLayersService {
         continue;
 
       const featureProperties = feature.properties || {};
-      const colorFromRgb = getFeatureRgbColor(feature);
-      const fillColor = colorFromRgb || "#ccc";
+      const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const targetGeometry = feature.geometry;
 
@@ -108,9 +108,10 @@ export class MapLayersService {
       if (!latLngs) continue;
 
       const styleOptions = {
-        color: "#333",
-        weight: 1,
-        fillColor,
+        color: strokeColor,
+        weight: feature.properties.strokeWidth ?? 2,
+        strokeOpacity: feature.properties.strokeOpacity ?? 1,
+        fillColor: fillColor,
         fillOpacity: 0.5,
         interactive: true,
       };
@@ -140,13 +141,13 @@ export class MapLayersService {
       );
 
       const featureProperties = feature.properties || {};
-      const colorFromRgb = getFeatureRgbColor(feature);
-      const color = colorFromRgb || "#000";
+      const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const line = L.polyline(latLngs, {
-        color,
-        weight: feature.strokeWidth ?? 2,
-        opacity: feature.opacity ?? 1,
+        color: strokeColor,
+        weight: feature.properties.strokeWidth ?? 2,
+        opacity: feature.properties.strokeOpacity ?? 1,
       }) as FeatureLayer;
 
       const name = featureProperties.name || feature.name;
@@ -182,8 +183,8 @@ export class MapLayersService {
       if (feature.geometry.type !== "Polygon") continue;
 
       const featureProperties = feature.properties || {};
-      const colorFromRgb = getFeatureRgbColor(feature);
-      const shapeColor = colorFromRgb || "#000000";
+      const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const outerRing = feature.geometry.coordinates[0];
       if (
@@ -197,10 +198,11 @@ export class MapLayersService {
       );
 
       const styleOptions = {
-        color: shapeColor,
-        weight: 2,
-        fillColor: shapeColor,
-        fillOpacity: feature.opacity ?? 0.5,
+        color: strokeColor,
+        weight: feature.properties.strokeWidth ?? 2,
+        strokeOpacity: feature.properties.strokeOpacity ?? 1,
+        fillColor: fillColor,
+        fillOpacity: feature.properties.opacity ?? 0.5,
         interactive: true,
       };
       const canUseRectangle = isAxisAlignedRectangle(latLngs);

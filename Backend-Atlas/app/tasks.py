@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 nb_task = 6
 
+# TODO : maybe remove this debud parameter pour l'instant j'aimerais ca le garder tho
+ENABLE_COASTLINE_SNAPPING = True
+
 
 @celery_app.task(bind=True)
 def test_task(self, name: str = "World"):
@@ -48,7 +51,6 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
-
 @celery_app.task(bind=True)
 def process_map_extraction(
     self,
@@ -57,6 +59,7 @@ def process_map_extraction(
     map_id: str,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
+    legend_bounds: dict | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
@@ -207,7 +210,10 @@ def process_map_extraction(
             if pixel_points and geo_points_lonlat:
                 try:
                     georef_features = georeference_features_with_sift_points(
-                        pixel_features, pixel_points, geo_points_lonlat
+                        pixel_features,
+                        pixel_points,
+                        geo_points_lonlat,
+                        snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
                     )
                     zones_features = georef_features
                     if not is_test:
@@ -237,7 +243,11 @@ def process_map_extraction(
                 },
             )
             time.sleep(2)
-            shapes_result = extract_shapes(tmp_file_path, text_regions=text_regions)
+            shapes_result = extract_shapes(
+                tmp_file_path,
+                text_regions=text_regions,
+                legend_bounds=legend_bounds,
+            )
             shape_normalized_features = shapes_result["normalized_features"]
             shape_pixel_features = shapes_result.get("pixel_features", [])
 

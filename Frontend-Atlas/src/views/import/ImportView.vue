@@ -38,6 +38,9 @@
           Géoréférencement
         </div>
         <div class="step" :class="{ 'step-primary': currentStep >= 5 }">
+          Légende
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 6 }">
           Extraction
         </div>
       </div>
@@ -177,6 +180,7 @@
       :image-url="previewUrl"
       :world-bounds="worldAreaBounds"
       :keypoints="coastlineKeypoints"
+      :used-lakes="usedLakes"
       @close="showSiftGeorefModal = false"
       @confirmed="handleGeorefConfirmed"
     />
@@ -188,6 +192,17 @@
       :current-step="processingStep"
       :progress="processingProgress"
       @cancel="cancelImport"
+    />
+
+    <!-- Legend area selection modal -->
+    <LegendAreaPickerModal
+      v-if="showLegendPickerModal && previewUrl"
+      :is-open="showLegendPickerModal"
+      :image-url="previewUrl"
+      :initial-bounds="legendBounds"
+      @close="handleLegendClose"
+      @skip="handleLegendSkip"
+      @confirmed="handleLegendConfirmed"
     />
   </div>
 </template>
@@ -206,6 +221,7 @@ import type {
   CoastlineKeypoint,
   WorldAreaSelection,
 } from "../../typescript/georef";
+import type { LegendBounds } from "../../typescript/legend";
 
 // Components
 import FileDropZone from "../../components/import/FileDropZone.vue";
@@ -214,6 +230,7 @@ import ImportControls from "../../components/import/ImportControls.vue";
 import ProcessingModal from "../../components/import/ProcessingModal.vue";
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
+import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -258,9 +275,14 @@ interface GeorefPayload {
 const currentStep = ref<number>(1);
 const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
+const showLegendPickerModal = ref<boolean>(false);
 const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
+const legendBounds = ref<LegendBounds | null>(null);
+const pendingGeorefPayload = ref<GeorefPayload | null>(null);
+const legendReturnStep = ref<number>(2);
+const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
 
 // Dev-test: stable identifier to store assets/config under backend tests/assets
 const devTestCaseName = ref<string | null>(null);
@@ -306,6 +328,10 @@ async function startImportProcess() {
   
   // If georeferencing is disabled, skip world area selection and go straight to upload
   if (!enableGeoreferencing.value) {
+    pendingGeorefPayload.value = null;
+    legendReturnStep.value = 2;
+    currentStep.value = 5;
+    showLegendPickerModal.value = true;
     const result = await startImport(
       selectedFile.value,
       routeMapId,
@@ -351,6 +377,7 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
     // Prefer backend bounds if it returns a more precise ROI
     worldAreaBounds.value = res.data.bounds || payload.bounds;
     coastlineKeypoints.value = res.data.keypoints;
+    usedLakes.value = res.data.used_lakes || false;
 
     // Next step: SIFT-based georeferencing
     currentStep.value = 4;
@@ -366,9 +393,24 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
   // payload: { worldPoints: [ [lat,lng], ... ], imagePoints: [ [x,y], ... ] }
   showSiftGeorefModal.value = false;
 
+  pendingGeorefPayload.value = payload;
+  legendReturnStep.value = 4;
+  currentStep.value = 5;
+  showLegendPickerModal.value = true;
+}
+
+async function submitImportWithGeoref(legend: LegendBounds | null) {
+  if (!selectedFile.value) return;
+
+  const payload = pendingGeorefPayload.value;
+
   // Map to backend-expected shapes
-  const worldPoints = payload.worldPoints.map(([lat, lng]) => ({ lat, lng }));
-  const imagePoints = payload.imagePoints.map(([x, y]) => ({ x, y }));
+  const worldPoints = payload
+    ? payload.worldPoints.map(([lat, lng]) => ({ lat, lng }))
+    : undefined;
+  const imagePoints = payload
+    ? payload.imagePoints.map(([x, y]) => ({ x, y }))
+    : undefined;
 
   // Pass matched point arrays to startImport with extraction options
   const result = await startImport(
@@ -377,18 +419,45 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
     imagePoints,
     worldPoints,
     {
-      enableGeoreferencing: true,
+      enableGeoreferencing: Boolean(payload),
       enableColorExtraction: enableColorExtraction.value,
       enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
     },
     isDevTest.value ? (devTestCaseName.value ?? undefined) : undefined,
+    legend,
   );
   if (result.success) {
-    currentStep.value = 5;
+    currentStep.value = 6;
   } else {
     console.error("Erreur importation:", result.error);
+    currentStep.value = 2;
   }
+
+  pendingGeorefPayload.value = null;
+}
+
+function handleLegendClose() {
+  showLegendPickerModal.value = false;
+  if (legendReturnStep.value === 4) {
+    showSiftGeorefModal.value = true;
+    currentStep.value = 4;
+    return;
+  }
+
+  currentStep.value = 2;
+}
+
+async function handleLegendSkip() {
+  showLegendPickerModal.value = false;
+  legendBounds.value = null;
+  await submitImportWithGeoref(null);
+}
+
+async function handleLegendConfirmed(bounds: LegendBounds) {
+  showLegendPickerModal.value = false;
+  legendBounds.value = bounds;
+  await submitImportWithGeoref(bounds);
 }
 
 // Redirect when extraction is finished
@@ -407,8 +476,13 @@ const resetImport = () => {
   currentStep.value = 1;
   showWorldAreaPickerModal.value = false;
   showSiftGeorefModal.value = false;
+  showLegendPickerModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
+  legendBounds.value = null;
+  pendingGeorefPayload.value = null;
+  coastlineKeypoints.value = null;
+  usedLakes.value = false;
   importStore.resetImport();
 };
 </script>

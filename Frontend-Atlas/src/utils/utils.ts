@@ -64,8 +64,38 @@ export function camelToSnake(obj: unknown): unknown {
   return obj;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function prepareFeaturesForSave(features: unknown[]): unknown[] {
+  return features.map((rawFeature) => {
+    if (!isRecord(rawFeature)) {
+      return rawFeature;
+    }
+
+    const { mapId, createdAt, updatedAt, startDate, endDate, ...next } =
+      rawFeature;
+    void mapId;
+    void createdAt;
+    void updatedAt;
+    void startDate;
+    void endDate;
+
+    return next;
+  });
+}
+
 export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
   if (Array.isArray(maybeArray)) return maybeArray;
   if (maybeArray == null) return [];
   return [maybeArray];
+}
+
+export function toImageSrc(
+  image?: string | null,
+  mimeType: string = "image/png",
+): string {
+  if (!image) return "images/default.jpg";
+  return `data:${mimeType};base64,${image}`;
 }
