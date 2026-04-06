@@ -250,6 +250,17 @@ function renderCities(features: Feature[]) {
   });
 }
 
+function applyLabelStyle(marker: L.Marker, feature: Feature) {
+  const el = marker.getElement() as HTMLElement | null;
+  if (!el) return;
+
+  const color = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+  const sizePx = feature.properties.sizePx ?? 12;
+
+  el.style.setProperty("--label-color", color);
+  el.style.setProperty("--label-size", `${sizePx}px`);
+}
+
 function renderLabels(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -259,21 +270,21 @@ function renderLabels(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
-    const labelText = feature.properties.labelText || "";
-
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text geoman-text-label",
-        html: labelText,
+        html: feature.properties.labelText || "",
         iconSize: [120, 20],
         iconAnchor: [0, 10],
       }),
     });
 
+    label.on("add", () => applyLabelStyle(label, feature));
+
     const textMarker = label as L.Marker & {
       options: L.MarkerOptions & { text: string; textMarker?: boolean };
     };
-    textMarker.options.text = labelText;
+    textMarker.options.text = feature.properties.labelText || "";
     textMarker.options.textMarker = true;
 
     attachFeatureToLayer(label, feature);
@@ -703,9 +714,9 @@ watch(
 
 <style>
 .city-label-text {
-  font-size: 12px;
+  font-size: var(--label-size, 12px);
   font-weight: bold;
-  color: black;
+  color: var(--label-color, #000);
   background: transparent;
   padding: 2px 4px;
   border-radius: 3px;

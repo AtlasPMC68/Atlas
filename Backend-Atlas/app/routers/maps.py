@@ -693,14 +693,14 @@ async def get_map_by_id(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        map_uuid = UUID(map_id)
+        map_id = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id format")
 
     query = (
         select(Map, User.username)
         .join(User, Map.user_id == User.id, isouter=True)
-        .where(Map.id == map_uuid)
+        .where(Map.id == map_id)
     )
 
     result = await session.execute(query)

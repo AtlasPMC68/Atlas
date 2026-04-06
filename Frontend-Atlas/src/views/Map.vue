@@ -39,6 +39,7 @@
           @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
+          @draw-delete="handleDrawChange"
           @draw-delete-id="onDeleteFeature"
           @map-ready="onMapReady"
         />
@@ -440,9 +441,7 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-async function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
-  await uploadMapThumbnail();
-}
+async function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

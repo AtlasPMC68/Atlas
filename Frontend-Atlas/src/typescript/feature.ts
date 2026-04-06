@@ -32,6 +32,7 @@ export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 export interface FeatureProperties {
   name: string;
   labelText?: string;
+  sizePx?: number;
   colorName: string;
   colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   opacity: number;
