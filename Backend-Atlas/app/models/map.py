@@ -13,6 +13,7 @@ class Map(Base):
     title = Column(Text, nullable=False)
     start_date = Column(Date)
     end_date = Column(Date)
+    exact_date = Column(Boolean, nullable=False, default=False)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     

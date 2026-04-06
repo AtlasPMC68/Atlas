@@ -1,44 +1,95 @@
 <template>
   <div class="timeline-container">
     <div class="slider-wrap">
-      <div class="period-tracks" :style="periodTracksStyle">
-          <div
-            v-for="period in positionedPeriods"
-            :key="period.id"
-            class="period-track"
-            :title="`${period.title} (${period.startYear} - ${period.endYear})`"
-            :style="getPeriodStyle(period.startYear, period.endYear, period.color, period.row)"
-          ></div>
-        </div>
       <div class="slider-axis">
-        <input
-          type="range"
-          :min="min"
-          :max="max"
-          step="1"
-          v-model.number="internalYear"
-          @input="onSliderInput"
-          class="range range-primary range-sm w-full"
-        />
+        <!-- Period tracks - update based on view mode -->
+        <div class="period-tracks" :style="periodTracksStyle">
+          <div
+            v-for="period in displayedPeriods"
+            :key="period.id"
+            class="period-track tooltip tooltip-top"
+            :class="{ 'tooltip-open': hoveredPeriodId === period.id }"
+            :style="isZoomMode ? getDayZoomPeriodStyle(period) : getPeriodStyle(period.startYear, period.endYear, period.color, period.row)"
+            :data-tip="`${period.title} (${isZoomMode ? period.startDate : period.startYear} - ${isZoomMode ? period.endDate : period.endYear})`"
+            @mouseenter="hoveredPeriodId = period.id"
+            @mouseleave="hoveredPeriodId = null"
+          >
+            <div
+              class="tooltip-content pointer-events-auto rounded-box bg-base-100 px-3 py-2 text-xs text-base-content shadow-lg whitespace-nowrap"
+              @mouseenter="hoveredPeriodId = period.id"
+              @mouseleave="hoveredPeriodId = null"
+            >
+              <div class="font-semibold">{{ period.title }}</div>
+              <div>{{ isZoomMode ? `${period.startDate} - ${period.endDate}` : `${period.startYear} - ${period.endYear}` }}</div>
+            </div>
+          </div>
+        </div>
 
-        <div class="ticks-row">
-          <span
-            v-for="tick in tickValues"
-            :key="`tick-${tick}`"
-            class="tick-mark"
-            :style="getMarkerStyle(tick)"
-            >|</span
-          >
-        </div>
-        <div class="labels-row">
-          <span
-            v-for="tick in tickValues"
-            :key="`label-${tick}`"
-            class="tick-label"
-            :style="getMarkerStyle(tick)"
-            >{{ tick }}</span
-          >
-        </div>
+        <!-- Year-level slider (hidden during zoom) -->
+        <template v-if="!isZoomMode">
+          <input
+            type="range"
+            :min="min"
+            :max="max"
+            step="1"
+            v-model.number="internalYear"
+            @input="onSliderInput"
+            class="timeline-year-range range range-primary range-sm w-full"
+          />
+
+          <div class="ticks-row">
+            <span
+              v-for="tick in yearTickValues"
+              :key="`tick-${tick}`"
+              class="tick-mark"
+              :style="getYearMarkerStyle(tick)"
+              >|</span
+            >
+          </div>
+          <div class="labels-row">
+            <span
+              v-for="tick in yearTickValues"
+              :key="`label-${tick}`"
+              class="tick-label"
+              :style="getYearMarkerStyle(tick)"
+              >{{ tick }}</span
+            >
+          </div>
+        </template>
+
+        <!-- Day/month-level slider (shown during zoom) -->
+        <template v-else>
+          <input
+            type="range"
+            :min="0"
+            :max="dayZoomSpanDays"
+            step="1"
+            v-model.number="dayZoomOffset"
+            @input="onDayZoomInput"
+            class="timeline-day-range range range-primary range-sm w-full"
+          />
+
+          <div class="ticks-row">
+            <span
+              v-for="tick in dayTickValues"
+              :key="`day-tick-${tick.date}`"
+              class="tick-mark"
+              :class="{ 'tick-mark-exact': tick.isExactDate }"
+              :style="getDayMarkerStyle(tick.days)"
+              >|</span
+            >
+          </div>
+          <div class="labels-row day-labels-row">
+            <span
+              v-for="tick in dayTickValues"
+              :key="`day-label-${tick.date}`"
+              class="tick-label"
+              :class="{ 'tick-label-exact': tick.isExactDate }"
+              :style="getDayLabelStyle(tick.days, tick.lane)"
+              >{{ tick.label }}</span
+            >
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -52,18 +103,26 @@ const props = defineProps<{
   min: number;
   max: number;
   markerYears?: number[];
+  currentExactDate?: string | null;
   mapPeriods?: Array<{
     id: string;
     title: string;
     color: string;
     startYear: number;
     endYear: number;
+    startDate?: string | null;
+    endDate?: string | null;
+    exactDate?: boolean;
   }>;
 }>();
 
-const emit = defineEmits(["update:year"]);
+const emit = defineEmits(["update:year", "exact-date-change"]);
 const internalYear = ref(props.year || props.min);
 const inputValue = ref(String(internalYear.value));
+const hoveredPeriodId = ref<string | null>(null);
+const dayZoomOffset = ref(0);
+const yearTraversalDirection = ref<"forward" | "backward">("forward");
+const lastYearSelection = ref(props.year || props.min);
 
 const markerYears = computed(() => {
   const values = (props.markerYears ?? []).filter(
@@ -73,7 +132,7 @@ const markerYears = computed(() => {
   return [...new Set(merged)].sort((a, b) => a - b);
 });
 
-const tickValues = computed(() => {
+const yearTickValues = computed(() => {
   return markerYears.value;
 });
 
@@ -81,6 +140,9 @@ const mapPeriods = computed(() => props.mapPeriods ?? []);
 const PERIOD_ROW_HEIGHT_REM = 0.35;
 const PERIOD_ROW_GAP_REM = 0.2;
 const PERIOD_PADDING_REM = 0.35;
+
+// Determine if we're in zoom mode (when day zoom window exists)
+const isZoomMode = computed(() => dayZoomWindow.value != null);
 
 const positionedPeriods = computed(() => {
   const sorted = [...mapPeriods.value].sort(
@@ -104,9 +166,20 @@ const positionedPeriods = computed(() => {
   });
 });
 
+// Filter periods based on view mode
+const displayedPeriods = computed(() => {
+  if (!isZoomMode.value) {
+    return positionedPeriods.value;
+  }
+
+  // In zoom mode, show only periods that overlap the current zoomed year
+  const year = internalYear.value;
+  return positionedPeriods.value.filter((p: any) => p.startYear <= year && p.endYear >= year);
+});
+
 const rowCount = computed(() => {
-  if (!positionedPeriods.value.length) return 1;
-  return Math.max(...positionedPeriods.value.map((period) => period.row + 1));
+  if (!displayedPeriods.value.length) return 1;
+  return Math.max(...displayedPeriods.value.map((period: { row: number }) => period.row + 1));
 });
 
 const periodTracksStyle = computed(() => {
@@ -118,6 +191,213 @@ const periodTracksStyle = computed(() => {
 
   return { height: `${height}rem` };
 });
+
+function parseIsoDateUtc(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function toIsoDateUtc(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Generate exact start/end date ticks for the day zoom view.
+const dayTickValues = computed(() => {
+  const window = dayZoomWindow.value;
+  if (!window) return [];
+
+  const ticks: Array<{ date: string; label: string; days: number; lane: number; isExactDate: boolean; isEdge?: boolean }> = [];
+  const year = internalYear.value;
+  const exactDates = new Set<string>();
+
+  // Collect only exact start/end dates from periods in the active year.
+  mapPeriods.value.forEach((period: any) => {
+    if (!period.exactDate) return;
+    if (period.startYear === year) {
+      const d = parseIsoDateUtc(period.startDate);
+      if (d) {
+        exactDates.add(toIsoDateUtc(d));
+      }
+    }
+    if (period.endYear === year) {
+      const d = parseIsoDateUtc(period.endDate);
+      if (d) {
+        exactDates.add(toIsoDateUtc(d));
+      }
+    }
+  });
+
+  const sorted = [...exactDates]
+    .map((iso) => ({ iso, date: parseIsoDateUtc(iso) }))
+    .filter((v): v is { iso: string; date: Date } => !!v.date)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Add the two edge stops so the thumb can escape back to year mode.
+  ticks.push({
+    date: toIsoDateUtc(window.minDate),
+    label: String(props.min),
+    days: 0,
+    lane: 0,
+    isExactDate: false,
+    isEdge: true,
+  });
+
+  let prevPercent = -100;
+  let prevLane = 0;
+
+  sorted.forEach(({ iso, date }) => {
+    const days = Math.round((date.getTime() - window.minDate.getTime()) / 86_400_000);
+    if (days < 0 || days > window.spanDays) return;
+
+    const percent = positionForDay(days);
+    const tooClose = percent - prevPercent < 10;
+    const lane = tooClose ? (prevLane === 0 ? 1 : 0) : 0;
+
+    ticks.push({
+      date: iso,
+      label: `${date.getUTCDate()} ${getMonthName(date.getUTCMonth())} ${date.getUTCFullYear()}`,
+      days,
+      lane,
+      isExactDate: true,
+    });
+
+    prevPercent = percent;
+    prevLane = lane;
+  });
+
+  if (window.spanDays > 0) {
+    ticks.push({
+      date: toIsoDateUtc(window.maxDate),
+      label: String(props.max),
+      days: window.spanDays,
+      lane: 0,
+      isExactDate: false,
+      isEdge: true,
+    });
+  }
+
+  return ticks;
+});
+
+function getMonthName(monthIndex: number): string {
+  const names = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"];
+  return names[monthIndex] || "";
+}
+
+const dayZoomWindow = computed(() => {
+  const year = internalYear.value;
+  const exactDates: Date[] = [];
+
+  mapPeriods.value.forEach((period: {
+    startYear: number;
+    endYear: number;
+    startDate?: string | null;
+    endDate?: string | null;
+    exactDate?: boolean;
+  }) => {
+    if (!period.exactDate) return;
+
+    if (period.startYear === year) {
+      const d = parseIsoDateUtc(period.startDate);
+      if (d) exactDates.push(d);
+    }
+    if (period.endYear === year) {
+      const d = parseIsoDateUtc(period.endDate);
+      if (d) exactDates.push(d);
+    }
+  });
+
+  if (exactDates.length < 2) return null;
+
+  exactDates.sort((a, b) => a.getTime() - b.getTime());
+  const minDate = exactDates[0];
+  const maxDate = exactDates[exactDates.length - 1];
+
+  // Expand range to full months: start of previous month to end of next month
+  const expandedMin = new Date(Date.UTC(minDate.getUTCFullYear(), minDate.getUTCMonth() - 1, 1));
+  const expandedMax = new Date(Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth() + 2, 0)); // Last day of next month
+
+  const spanDays = Math.round((expandedMax.getTime() - expandedMin.getTime()) / 86_400_000);
+  if (spanDays <= 0) return null;
+
+  return { minDate: expandedMin, maxDate: expandedMax, spanDays };
+});
+
+const dayZoomSpanDays = computed(() => dayZoomWindow.value?.spanDays ?? 0);
+
+const dayStepOffsets = computed(() => dayTickValues.value.map((tick: { days: number }) => tick.days));
+
+const dayStepInitialOffset = computed(() => {
+  const exactTicks = dayTickValues.value.filter(
+    (tick: { days: number; isExactDate: boolean }) => tick.isExactDate,
+  );
+
+  if (!exactTicks.length) return 0;
+
+  const currentExactDate = parseIsoDateUtc(props.currentExactDate);
+  if (currentExactDate) {
+    const currentExactIso = toIsoDateUtc(currentExactDate);
+    const matched = exactTicks.find(
+      (tick: { date: string; days: number; lane: number; isExactDate: boolean }) =>
+        tick.date === currentExactIso,
+    );
+    if (matched) return matched.days;
+  }
+
+  if (yearTraversalDirection.value === "backward") {
+    return exactTicks[exactTicks.length - 1].days;
+  }
+
+  return exactTicks[0].days;
+});
+
+const dayZoomCurrentDate = computed(() => {
+  const window = dayZoomWindow.value;
+  if (!window) return null;
+  const offset = Math.min(Math.max(dayZoomOffset.value, 0), window.spanDays);
+  return new Date(window.minDate.getTime() + offset * 86_400_000);
+});
+
+function snapDayZoomOffset(value: number): number {
+  if (!dayStepOffsets.value.length) return value;
+
+  let bestOffset = dayStepOffsets.value[0];
+  let bestDiff = Math.abs(value - bestOffset);
+
+  for (let i = 1; i < dayStepOffsets.value.length; i++) {
+    const candidate = dayStepOffsets.value[i];
+    const diff = Math.abs(value - candidate);
+    if (diff < bestDiff) {
+      bestOffset = candidate;
+      bestDiff = diff;
+    }
+  }
+
+  return bestOffset;
+}
+
+function isBoundaryOffset(value: number): boolean {
+  const window = dayZoomWindow.value;
+  if (!window) return false;
+  return value <= 0 || value >= window.spanDays;
+}
+
+function exitToYearModeAtBoundary(value: number) {
+  const window = dayZoomWindow.value;
+  if (!window) return;
+
+  const boundaryYear = value <= 0 ? props.min : props.max;
+  emit("update:year", boundaryYear);
+  emit("exact-date-change", null);
+}
 
 function clampToRange(value: number): number {
   return Math.min(Math.max(value, props.min), props.max);
@@ -143,13 +423,14 @@ function snapToMarker(value: number): number {
   return best;
 }
 
+// Year-level positioning
 function positionForYear(year: number): number {
   if (props.max <= props.min) return 0;
   const ratio = (year - props.min) / (props.max - props.min);
   return Math.min(100, Math.max(0, ratio * 100));
 }
 
-function getMarkerStyle(year: number) {
+function getYearMarkerStyle(year: number) {
   const left = positionForYear(year);
   let transform = "translateX(-50%)";
   if (left <= 0) transform = "translateX(0)";
@@ -158,6 +439,34 @@ function getMarkerStyle(year: number) {
   return {
     left: `${left}%`,
     transform,
+  };
+}
+
+// Day-level positioning
+function positionForDay(days: number): number {
+  const span = dayZoomSpanDays.value;
+  if (span <= 0) return 0;
+  const ratio = days / span;
+  return Math.min(100, Math.max(0, ratio * 100));
+}
+
+function getDayMarkerStyle(days: number) {
+  const left = positionForDay(days);
+  let transform = "translateX(-50%)";
+  if (left <= 0) transform = "translateX(0)";
+  if (left >= 100) transform = "translateX(-100%)";
+
+  return {
+    left: `${left}%`,
+    transform,
+  };
+}
+
+function getDayLabelStyle(days: number, lane: number) {
+  const base = getDayMarkerStyle(days);
+  return {
+    ...base,
+    top: lane === 1 ? "0.9rem" : "0",
   };
 }
 
@@ -183,11 +492,47 @@ function getPeriodStyle(
   };
 }
 
+// Day-level period styling (when in zoom mode)
+function getDayZoomPeriodStyle(period: { startDate?: string | null; endDate?: string | null; color: string; row: number }) {
+  const window = dayZoomWindow.value;
+  if (!window) return getPeriodStyle(0, 0, period.color, period.row);
+
+  const startDate = parseIsoDateUtc(period.startDate);
+  const endDate = parseIsoDateUtc(period.endDate);
+
+  if (!startDate || !endDate) {
+    return getPeriodStyle(0, 0, period.color, period.row);
+  }
+
+  // Calculate offset in days from window min
+  const startDays = Math.max(0, Math.round((startDate.getTime() - window.minDate.getTime()) / 86_400_000));
+  const endDays = Math.max(0, Math.round((endDate.getTime() - window.minDate.getTime()) / 86_400_000));
+
+  const left = positionForDay(startDays);
+  const right = positionForDay(endDays);
+  const width = Math.max(0.8, right - left);
+  const bottom =
+    PERIOD_PADDING_REM +
+    period.row * (PERIOD_ROW_HEIGHT_REM + PERIOD_ROW_GAP_REM);
+
+  return {
+    left: `${left}%`,
+    width: `${width}%`,
+    backgroundColor: period.color,
+    bottom: `${bottom}rem`,
+    height: `${PERIOD_ROW_HEIGHT_REM}rem`,
+  };
+}
+
 watch(
   () => props.year,
-  (val: number) => {
+  (val: number, oldVal: number | undefined) => {
     if (val !== internalYear.value) {
+      if (typeof oldVal === "number") {
+        yearTraversalDirection.value = val >= oldVal ? "forward" : "backward";
+      }
       internalYear.value = snapToMarker(val);
+      lastYearSelection.value = internalYear.value;
       inputValue.value = String(internalYear.value);
     }
   },
@@ -202,22 +547,44 @@ watch(
 );
 
 function onSliderInput() {
+  yearTraversalDirection.value = internalYear.value >= lastYearSelection.value ? "forward" : "backward";
+  lastYearSelection.value = internalYear.value;
   internalYear.value = snapToMarker(internalYear.value);
   inputValue.value = String(internalYear.value);
   emit("update:year", internalYear.value);
 }
 
-function onInputChange() {
-  const raw = parseInt(inputValue.value);
-  const snapped = snapToMarker(raw || props.min);
-  internalYear.value = snapped;
-  inputValue.value = String(snapped);
-  emit("update:year", snapped);
+function onDayZoomInput() {
+  dayZoomOffset.value = snapDayZoomOffset(dayZoomOffset.value);
+  if (isBoundaryOffset(dayZoomOffset.value)) {
+    exitToYearModeAtBoundary(dayZoomOffset.value);
+    return;
+  }
+
+  const d = dayZoomCurrentDate.value;
+  emit("exact-date-change", d ? toIsoDateUtc(d) : null);
 }
+
+watch(dayZoomWindow, (window: { minDate: Date; maxDate: Date; spanDays: number } | null) => {
+  if (!window) {
+    dayZoomOffset.value = 0;
+    emit("exact-date-change", null);
+    return;
+  }
+
+  // Start at the first real exact date, not the boundary escape stop.
+  dayZoomOffset.value = dayStepInitialOffset.value;
+  const current = dayZoomCurrentDate.value;
+  emit("exact-date-change", current ? toIsoDateUtc(current) : null);
+});
+
 </script>
 
 <style scoped>
 .timeline-container {
+  position: relative;
+  z-index: 1000;
+  isolation: isolate;
   display: flex;
   align-items: flex-start;
   gap: 1rem;
@@ -230,12 +597,15 @@ function onInputChange() {
 }
 
 .slider-wrap {
+  position: relative;
+  z-index: 1000;
   flex: 1;
 }
 
 .slider-axis {
   --axis-inset: 0.55rem;
   padding: 0 var(--axis-inset);
+  color: var(--color-primary);
 }
 
 .ticks-row,
@@ -254,6 +624,10 @@ function onInputChange() {
   height: 1rem;
 }
 
+.day-labels-row {
+  height: 2rem;
+}
+
 .tick-mark,
 .tick-label {
   position: absolute;
@@ -263,14 +637,47 @@ function onInputChange() {
 
 .period-tracks {
   position: relative;
-  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
   border-radius: 0.25rem;
   background: #ffffff;
+  overflow: visible;
+  z-index: 1000;
 }
 
 .period-track {
   position: absolute;
   border-radius: 999px;
   opacity: 0.95;
+  z-index: 1000;
+  --tooltip-color: #ffffff;
+  --tooltip-text-color: #111827;
+}
+
+.period-track :deep(.tooltip-content) {
+  z-index: 2000;
+  background: #ffffff;
+  color: #111827;
+}
+
+:deep(.period-track.tooltip::before),
+:deep(.period-track.tooltip::after) {
+  background-color: #ffffff !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+}
+
+.timeline-year-range,
+.timeline-day-range {
+  display: block;
+}
+
+.tick-mark-exact {
+  color: #6b7280;
+  font-weight: bold;
+}
+
+.tick-label-exact {
+  color: #6b7280;
+  font-weight: 600;
 }
 </style>

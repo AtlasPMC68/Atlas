@@ -1,14 +1,29 @@
 <template>
   <div class="relative h-full w-full z-0">
     <div id="map" style="height: 80vh; width: 100%"></div>
-    <TimelineSlider
-      v-model:year="selectedYear"
-      :min="timelineMinYear"
-      :max="timelineMaxYear"
-      :marker-years="timelineMarkerYears"
-      :map-periods="sliderMapPeriods"
-    />
-  </div>
+      <div class="map-timeline-toolbar flex flex-col gap-2 px-4 py-2 bg-base-100 border-t border-base-300">
+        <div class="map-timeline-slider w-full min-w-0">
+          <TimelineSlider
+            v-model:year="selectedYear"
+            @exact-date-change="onExactDateChange"
+            :min="timelineMinYear"
+            :max="timelineMaxYear"
+            :marker-years="timelineMarkerYears"
+            :map-periods="sliderMapPeriods"
+            :current-exact-date="selectedExactDate"
+          />
+        </div>
+        <div class="map-timeline-filter flex flex-row gap-1 items-center text-sm font-medium whitespace-nowrap">
+          <span>Filtrer par date</span>
+          <input
+            v-model="useTimelineFilter"
+            type="checkbox"
+            aria-label="Filtrer par date"
+            class="timeline-filter-toggle toggle toggle-sm"
+          />
+        </div>
+      </div>
+    </div>
 </template>
 
 <script setup lang="ts">
@@ -44,6 +59,7 @@ const props = defineProps<{
     title: string;
     startDate: string | null;
     endDate: string | null;
+    exactDate: boolean;
     color: string;
   }>;
 }>();
@@ -56,15 +72,19 @@ const emit = defineEmits<{
   (e: "map-ready", map: L.Map): void;
 }>();
 
-const selectedYear = ref(1740);
+const selectedYear = ref(-1);
+const selectedExactDate = ref<string | null>(null);
+const useTimelineFilter = ref(false);
 const previousFeatureIds = ref(new Set<MapFeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
 function toYear(value: string | null | undefined): number | null {
   if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.getFullYear();
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  return Number.isFinite(year) ? year : null;
 }
 
 const periodYears = computed(() => {
@@ -91,11 +111,21 @@ const timelineMaxYear = computed(() => {
 });
 
 const mapPeriodsByMapId = computed(() => {
-  const periods = new Map<string, { startYear: number | null; endYear: number | null }>();
+  const periods = new Map<
+    string,
+    {
+      startYear: number | null;
+      endYear: number | null;
+      startDate: string | null;
+      endDate: string | null;
+    }
+  >();
   props.mapPeriods.forEach((period) => {
     periods.set(period.id, {
       startYear: toYear(period.startDate),
       endYear: toYear(period.endDate),
+      startDate: period.startDate,
+      endDate: period.endDate,
     });
   });
   return periods;
@@ -109,6 +139,9 @@ const sliderMapPeriods = computed(() => {
       color: period.color,
       startYear: toYear(period.startDate),
       endYear: toYear(period.endDate),
+      startDate: period.startDate,
+      endDate: period.endDate,
+      exactDate: period.exactDate,
     }))
     .filter((period) => period.startYear != null && period.endYear != null)
     .map((period) => ({
@@ -117,6 +150,9 @@ const sliderMapPeriods = computed(() => {
       color: period.color,
       startYear: period.startYear as number,
       endYear: period.endYear as number,
+      startDate: period.startDate,
+      endDate: period.endDate,
+      exactDate: period.exactDate,
     }));
 });
 
@@ -135,8 +171,18 @@ const timelineMarkerYears = computed(() => {
 
 const filteredFeatures = computed(() => {
   return props.features.filter((feature: Feature) => {
+    if (!useTimelineFilter.value) return true;
+
     const period = mapPeriodsByMapId.value.get(feature.mapId);
     if (!period) return true;
+
+    if (selectedExactDate.value && period.startDate && period.endDate) {
+      return (
+        period.startDate <= selectedExactDate.value &&
+        period.endDate >= selectedExactDate.value
+      );
+    }
+
     if (period.startYear == null || period.endYear == null) return true;
     return (
       period.startYear <= selectedYear.value &&
@@ -144,6 +190,10 @@ const filteredFeatures = computed(() => {
     );
   });
 });
+
+function onExactDateChange(nextDate: string | null) {
+  selectedExactDate.value = nextDate;
+}
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
@@ -609,6 +659,18 @@ watch(selectedYear, (newYear) => {
   renderAllFeatures();
 });
 
+watch(useTimelineFilter, (enabled) => {
+  void enabled;
+  if (!map) return;
+  renderAllFeatures();
+});
+
+watch(selectedExactDate, (nextDate) => {
+  void nextDate;
+  if (!map) return;
+  renderAllFeatures();
+});
+
 watch([timelineMinYear, timelineMaxYear], () => {
   if (selectedYear.value < timelineMinYear.value) {
     selectedYear.value = timelineMinYear.value;
@@ -667,5 +729,23 @@ watch(
   font-size: 20px;
   color: black;
   transform: rotate(0deg);
+}
+
+.timeline-filter-toggle {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-300) !important;
+}
+
+.timeline-filter-toggle::before {
+  background-color: var(--color-primary-content) !important;
+}
+
+.timeline-filter-toggle:checked {
+  background-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+}
+
+.timeline-filter-toggle:checked::before {
+  background-color: var(--color-primary-content) !important;
 }
 </style>

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS "maps" (
   "title" TEXT NOT NULL,
   "start_date" DATE,
   "end_date" DATE,
+  "exact_date" BOOLEAN NOT NULL DEFAULT FALSE,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())
 );

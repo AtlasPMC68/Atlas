@@ -231,6 +231,7 @@ const mapPeriods = ref<
     title: string;
     startDate: string | null;
     endDate: string | null;
+    exactDate: boolean;
     color: string;
   }>
 >([]);
@@ -429,6 +430,7 @@ async function loadProjectMapsForTimeline() {
         title: string;
         startDate?: string | null;
         endDate?: string | null;
+        exactDate?: boolean;
       }>,
     );
 
@@ -437,6 +439,7 @@ async function loadProjectMapsForTimeline() {
       title: row.title,
       startDate: row.startDate ?? null,
       endDate: row.endDate ?? null,
+      exactDate: Boolean(row.exactDate),
       color: PERIOD_COLORS[idx % PERIOD_COLORS.length],
     }));
   } catch (e) {
@@ -485,6 +488,7 @@ async function createMapForProject() {
           title: newMapTitle.value.trim(),
           startDate: startDateForImport,
           endDate: endDateForImport,
+          exactDate: usePreciseDates.value,
         }),
       ),
     });

@@ -58,6 +58,7 @@ async def create_map_for_project(
             title=request.title,
             start_date=request.start_date,
             end_date=request.end_date,
+            exact_date=request.exact_date,
         )
         if not created_map_id:
             raise HTTPException(status_code=404, detail="Project not found or access denied")
@@ -419,6 +420,7 @@ async def get_project_maps(
             "title": map_obj.title,
             "start_date": map_obj.start_date.isoformat() if map_obj.start_date else None,
             "end_date": map_obj.end_date.isoformat() if map_obj.end_date else None,
+            "exact_date": bool(map_obj.exact_date),
         }
         for map_obj in maps
     ]
