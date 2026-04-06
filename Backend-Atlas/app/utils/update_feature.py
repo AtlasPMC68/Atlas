@@ -1,7 +1,6 @@
 import base64
 from copy import deepcopy
 from app.models.features import Feature
-import base64
 
 
 def normalize_feature_for_storage(feature: dict) -> dict:

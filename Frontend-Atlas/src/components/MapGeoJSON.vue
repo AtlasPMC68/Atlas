@@ -849,7 +849,8 @@ watch(selectedFeatureId, (id, oldId) => {
       drawing.setToolbarMode("feature");
       enablePerFeatureDrag(layer);
       pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
-      selectedLayerOriginalStyle = { color: getLayerStrokeColor(layer) };
+      const originalColor = getLayerStrokeColor(layer);
+      selectedLayerOriginalStyle = originalColor !== undefined ? { color: originalColor } : undefined;
       applyStyleToLayer(layer, { color: "#000000" });
     } else {
       drawing.setToolbarMode("global");
