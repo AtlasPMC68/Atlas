@@ -707,14 +707,9 @@ def extract_colors(
     # Early exit if nothing was selected
     if not dominants:
         return {
-            "colors_detected": [],
-            "masks": masks,
-            "mask_paths": mask_paths if debug else {},
-            "ratios": ratios,
-            "selected_bins": [],
-            "output_dir": image_output_dir,
             "normalized_features": normalized_features,
             "pixel_features": pixel_features,
+            "masks": masks,
         }
 
     # 6) Build exclusive masks by nearest LAB center
@@ -745,10 +740,8 @@ def extract_colors(
             continue
 
         rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
-        css_color_name = get_nearest_css4_color_name(rgb_u8_center)
-        color_id = f"color_{color_index:02d}"
-        short_color_name = f"{css_color_name}_{color_index}"
-        unique_color_name = f"{color_id}_{short_color_name}"
+        color_name = get_nearest_css4_color_name(rgb_u8_center)
+        unique_color_name = f"{color_name}-{color_index}"
         L, a, b = entry["lab_center"]
 
         opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
@@ -761,14 +754,15 @@ def extract_colors(
             f".png"
         )
 
-        ratios[short_color_name] = ratio_value
-        colors_detected.append(short_color_name)
+        opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
+        ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
+        ratios[unique_color_name] = ratio_value
 
         if debug:
             out_path = os.path.join(image_output_dir, file_name)
             save_mask_png(mask, original_rgb, out_path)
-            masks[short_color_name] = out_path
-            mask_paths[short_color_name] = out_path
+            masks[unique_color_name] = out_path
+            mask_paths[unique_color_name] = out_path
 
         geometry = mask_to_geometry(mask)
         if geometry :
@@ -799,4 +793,5 @@ def extract_colors(
     return {
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,
+        "masks": masks,
     }

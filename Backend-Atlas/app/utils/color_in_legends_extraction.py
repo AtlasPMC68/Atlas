@@ -5,9 +5,6 @@ import numpy as np
 def extract_colors_from_legend_shapes(
     image_rgb: np.ndarray,
     legends_shapes: List[Dict],
-    *,
-    erode_px: int = 2,
-    sample_max_pixels: int = 50_000,
 ) -> List[Tuple[int, int, int]]:
     """
     Returns one RGB color (uint8) per legend shape by sampling pixels
@@ -57,39 +54,15 @@ def extract_colors_from_legend_shapes(
         mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
         cv2.fillPoly(mask, [pts], 255)
 
-        # 3) Erode mask to remove borders (avoid edges/text)
-        if erode_px > 0:
-            k = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE,
-                (2 * erode_px + 1, 2 * erode_px + 1)
-            )
-            mask = cv2.erode(mask, k, iterations=1)
-
         ys, xs = np.where(mask == 255)
-        if len(xs) == 0:
-            continue
 
-        # 4) Subsample if too many pixels
-        if len(xs) > sample_max_pixels:
-            idx = np.random.choice(len(xs), size=sample_max_pixels, replace=False)
-            xs, ys = xs[idx], ys[idx]
+        pixels = img_bgr[ys, xs]
 
-        pixels = img_bgr[ys, xs]  # (M,3) in BGR
-
-        # 5) Filter near-black AND near-white pixels
-        min_rgb = np.min(pixels, axis=1)
-        max_rgb = np.max(pixels, axis=1)
-
-        is_black = max_rgb < 15
-        is_white = min_rgb > 240
-
-        keep = ~(is_black | is_white)
-
-        pixels = pixels[keep] if np.any(keep) else pixels
-
-        # Median color → robust to noise
-        med = np.median(pixels.astype(np.float32), axis=0)
-        b, g, r = [int(round(v)) for v in med]
-        colors.append((r, g, b)) 
+        # Most frequent color (mode)
+        unique_colors, counts = np.unique(pixels.reshape(-1, 3), axis=0, return_counts=True)
+        most_frequent_idx = np.argmax(counts)
+        most_frequent_bgr = unique_colors[most_frequent_idx]
+        b, g, r = most_frequent_bgr
+        colors.append((r, g, b))
     
     return colors
