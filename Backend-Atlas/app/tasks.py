@@ -170,50 +170,12 @@ def process_map_extraction(
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
-        # Step 4: Color Extraction (conditionally enabled)
-        if enable_color_extraction:
-            self.update_state(
-                state="PROGRESS",
-                meta={
-                    "current": 4,
-                    "total": nb_task,
-                    "status": "Extracting colors from image",
-                },
-            )
-
-            color_result = extract_colors(tmp_file_path)
-            normalized_features = color_result.get("normalized_features", [])
-            pixel_features = color_result.get("pixel_features", [])
-
-            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
-            # Georeference pixel-space features if SIFT point pairs are provided
-            if pixel_points and geo_points_lonlat:
-                try:
-                    georef_features = georeference_features_with_sift_points(
-                        pixel_features,
-                        pixel_points,
-                        geo_points_lonlat,
-                        snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
-                    )
-                    asyncio.run(persist_features(map_id, georef_features))
-
-                except Exception as e:
-                    logger.error(
-                        f"SIFT georeferencing step failed for map {map_id}: {e}",
-                        exc_info=True,
-                    )
-            elif normalized_features:
-                asyncio.run(persist_features(map_id, normalized_features))
-        else:
-            logger.info("[DEBUG] Color extraction disabled - skipping")
-            color_result = {"colors_detected": 0}
-
-        # Step 5: Shapes Extraction (conditionally enabled)
+        # Step 4: Shapes Extraction (conditionally enabled)
         if enable_shapes_extraction:
             self.update_state(
                 state="PROGRESS",
                 meta={
-                    "current": 5,
+                    "current": 4,
                     "total": nb_task,
                     "status": "Extracting shapes from image",
                 },
@@ -245,6 +207,50 @@ def process_map_extraction(
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}
+
+        # Step 5: Color Extraction (conditionally enabled)
+        if enable_color_extraction:
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": 5,
+                    "total": nb_task,
+                    "status": "Extracting colors from image",
+                },
+            )
+
+            legends_shapes = [s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)]
+            
+            color_result = extract_colors(
+                tmp_file_path, 
+                debug=False, 
+                legend_shapes=legends_shapes if legends_shapes else None,
+            )
+            normalized_features = color_result.get("normalized_features", [])
+            pixel_features = color_result.get("pixel_features", [])
+
+            # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
+            # Georeference pixel-space features if SIFT point pairs are provided
+            if pixel_points and geo_points_lonlat:
+                try:
+                    georef_features = georeference_features_with_sift_points(
+                        pixel_features,
+                        pixel_points,
+                        geo_points_lonlat,
+                        snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
+                    )
+                    asyncio.run(persist_features(map_id, georef_features))
+
+                except Exception as e:
+                    logger.error(
+                        f"SIFT georeferencing step failed for map {map_id}: {e}",
+                        exc_info=True,
+                    )
+            elif normalized_features:
+                asyncio.run(persist_features(map_id, normalized_features))
+        else:
+            logger.info("[DEBUG] Color extraction disabled - skipping")
+            color_result = {"colors_detected": 0}
 
         # Step 6: Cleaning
         self.update_state(
