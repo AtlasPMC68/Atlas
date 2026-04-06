@@ -14,7 +14,7 @@
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="flex-1 min-h-0 relative h-full w-full">
+        <div class="flex-1 relative min-h-0 h-full w-full">
           <MapGeoJSON
             class="h-full w-full"
             :features="features"
@@ -26,8 +26,11 @@
             @draw-delete-id="onDeleteFeature"
             @map-ready="onMapReady"
           />
-          <div class="absolute bottom-4 left-4 z-[1001] pointer-events-auto">
-            <Legend :zone-features="zoneFeatures" />
+          <div class="absolute bottom-4 left-4 z-[1001]">
+            <Legend
+              :zone-features="zoneFeatures"
+              :feature-visibility="featureVisibility"
+            />
           </div>
         </div>
 
@@ -79,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
