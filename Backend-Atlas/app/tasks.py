@@ -17,6 +17,7 @@ from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
+from app.utils.sift_key_points_finder import find_coastline_sift_matches_debug
 from app.utils.text_extraction import extract_text
 
 from .celery_app import celery_app
@@ -58,6 +59,7 @@ def process_map_extraction(
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
     legend_bounds: dict | None = None,
+    sift_bounds: dict | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
@@ -248,6 +250,30 @@ def process_map_extraction(
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}
 
+        sift_debug_images = {}
+        if sift_bounds:
+            try:
+                sift_debug = find_coastline_sift_matches_debug(
+                    image_bytes=file_content,
+                    bounds=sift_bounds,
+                    width=int(image.shape[1]),
+                    height=int(image.shape[0]),
+                    max_matches=None,
+                )
+                sift_debug_images = sift_debug.get("saved_images", {})
+                logger.info(
+                    "SIFT debug images saved for map %s: %s",
+                    map_id,
+                    sift_debug_images,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to generate SIFT debug images for map %s: %s",
+                    map_id,
+                    e,
+                    exc_info=True,
+                )
+
         # Step 6: Cleaning
         self.update_state(
             state="PROGRESS",
@@ -298,6 +324,7 @@ def process_map_extraction(
             # "extracted_text": lines,
             "output_path": output_path if enable_text_extraction else "",
             "shapes_result": shapes_result if enable_shapes_extraction else {},
+            "sift_debug_images": sift_debug_images,
             "color_result": color_result
             if enable_color_extraction
             else {"colors_detected": 0},

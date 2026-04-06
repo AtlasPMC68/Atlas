@@ -307,7 +307,9 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
 
   // Call backend to get coastline keypoints for this ROI and
   // store the result for the next georef step.
-  const res = await fetchCoastlineKeypoints(payload.bounds);
+  const res = await fetchCoastlineKeypoints(payload.bounds, {
+    imageFile: selectedFile.value,
+  });
   if (res.success && res.data) {
     // Prefer backend bounds if it returns a more precise ROI
     worldAreaBounds.value = res.data.bounds || payload.bounds;
@@ -360,6 +362,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       enableTextExtraction: enableTextExtraction.value,
     },
     legend,
+    worldAreaBounds.value,
   );
   if (result.success) {
     currentStep.value = 6;

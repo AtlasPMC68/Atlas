@@ -25,7 +25,10 @@ from app.utils.update_feature import (
     normalize_feature_collection,
     serialize_db_feature,
 )
-from app.utils.sift_key_points_finder import find_coastline_keypoints
+from app.utils.sift_key_points_finder import (
+    find_coastline_keypoints,
+    find_coastline_sift_matches_debug,
+)
 
 from ..celery_app import celery_app
 from ..db import get_db
@@ -112,6 +115,7 @@ async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
     legend_bounds: str | None = Form(None),
+    sift_bounds: str | None = Form(None),
     enable_georeferencing: bool = Form(True),
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
@@ -143,6 +147,7 @@ async def upload_and_process_map(
     pixel_points_list = None
     geo_points_list = None
     legend_bounds_dict = None
+    sift_bounds_dict = None
 
     # Parse matched point pairs for SIFT georeferencing
     if enable_georeferencing and image_points and world_points:
@@ -195,6 +200,38 @@ async def upload_and_process_map(
                 detail=f"Invalid legend bounds payload: {e}",
             )
 
+    # Parse optional geographic bounds used to generate SIFT debug images
+    if sift_bounds:
+        try:
+            parsed = json.loads(sift_bounds)
+            required_keys = {"west", "south", "east", "north"}
+            if not isinstance(parsed, dict) or not required_keys.issubset(parsed.keys()):
+                raise ValueError(
+                    "sift_bounds must be a JSON object with west, south, east, north"
+                )
+
+            sift_bounds_dict = {
+                "west": float(parsed["west"]),
+                "south": float(parsed["south"]),
+                "east": float(parsed["east"]),
+                "north": float(parsed["north"]),
+            }
+
+            if not all(math.isfinite(v) for v in sift_bounds_dict.values()):
+                raise ValueError("sift_bounds values must be finite numbers")
+            if (
+                sift_bounds_dict["west"] >= sift_bounds_dict["east"]
+                or sift_bounds_dict["south"] >= sift_bounds_dict["north"]
+            ):
+                raise ValueError(
+                    "sift_bounds must satisfy west < east and south < north"
+                )
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid sift bounds payload: {e}",
+            )
+
     file_content = await file.read()
 
     if len(file_content) > MAX_FILE_SIZE:
@@ -217,6 +254,7 @@ async def upload_and_process_map(
             enable_shapes_extraction=enable_shapes_extraction,
             enable_text_extraction=enable_text_extraction,
             legend_bounds=legend_bounds_dict,
+            sift_bounds=sift_bounds_dict,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
@@ -506,6 +544,7 @@ async def save_map(
 
 @router.post("/coastline-keypoints")
 async def get_coastline_keypoints(
+    image: UploadFile | None = File(None),
     west: float = Form(...),
     south: float = Form(...),
     east: float = Form(...),
@@ -519,12 +558,42 @@ async def get_coastline_keypoints(
         result = find_coastline_keypoints(bounds, width, height)
         used_lakes = bool(result.get("used_lakes", False))
 
+        sift_debug_images = {}
+        if image is not None:
+            if image.content_type not in IMAGE_ALLOWED_CONTENT_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Unsupported image type. "
+                        f"Allowed: {', '.join(sorted(IMAGE_ALLOWED_CONTENT_TYPES))}"
+                    ),
+                )
+
+            image_bytes = await image.read()
+            if not image_bytes:
+                raise HTTPException(status_code=400, detail="Empty image")
+            if len(image_bytes) > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+                )
+
+            debug_result = find_coastline_sift_matches_debug(
+                image_bytes=image_bytes,
+                bounds=bounds,
+                width=width,
+                height=height,
+                max_matches=None,
+            )
+            sift_debug_images = debug_result.get("saved_images", {})
+
         return {
             "status": "success",
             "keypoints": result["keypoints"],
             "total": result["total"],
             "bounds": bounds,
             "used_lakes": used_lakes,
+            "sift_debug_images": sift_debug_images,
         }
     except Exception as e:
         logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)

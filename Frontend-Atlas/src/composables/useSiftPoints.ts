@@ -61,7 +61,7 @@ export function useSiftPoints() {
   // New: POST /maps/coastline-keypoints (bounds from WorldAreaPickerModal)
   const fetchCoastlineKeypoints = async (
     bounds: WorldBounds,
-    options?: { width?: number; height?: number },
+    options?: { width?: number; height?: number; imageFile?: File | null },
   ) => {
     if (!bounds) return { success: false, error: "Aucune zone sélectionnée" };
 
@@ -79,6 +79,9 @@ export function useSiftPoints() {
     formData.append("north", String(bounds.north));
     formData.append("width", String(width));
     formData.append("height", String(height));
+    if (options?.imageFile) {
+      formData.append("image", options.imageFile);
+    }
 
     try {
       const response = await fetch(

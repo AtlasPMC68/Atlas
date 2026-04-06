@@ -6,6 +6,12 @@ import type { LegendBounds } from "../typescript/legend";
 
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
+type WorldBounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
 type ExtractionOptions = {
   enableGeoreferencing?: boolean;
   enableColorExtraction?: boolean;
@@ -46,6 +52,7 @@ export function useImportProcess() {
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
     legendBounds?: LegendBounds | null,
+    worldBounds?: WorldBounds | null,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -86,6 +93,9 @@ export function useImportProcess() {
 
     if (legendBounds) {
       formData.append("legend_bounds", JSON.stringify(legendBounds));
+    }
+    if (worldBounds) {
+      formData.append("sift_bounds", JSON.stringify(worldBounds));
     }
     formData.append("file", file);
 
