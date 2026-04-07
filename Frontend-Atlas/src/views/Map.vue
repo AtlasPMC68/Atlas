@@ -1,63 +1,37 @@
 <template>
-  <div class="min-h-screen w-full bg-base-100 flex flex-col">
-    <div class="navbar bg-base-100 shadow-lg">
-      <div class="flex justify-end gap-4">
-        <SaveDropdown @save="onSaveMap" />
-        <button @click="upload(mapId)" class="btn btn-primary">
-          Ajouter une carte
-        </button>
-        <button
-          @click="addFeatureImageDialog?.showModal()"
-          class="btn btn-primary"
-        >
-          Ajouter une image
-        </button>
-      </div>
-    </div>
-
-    <div class="flex flex-1">
-      <div class="w-80 bg-base-200 border-r border-base-300 p-4">
+  <div class="h-full w-full bg-base-100 flex flex-col">
+    <div class="flex flex-1 min-h-0">
+      <div class="w-80 bg-base-200 border-r border-base-300 min-h-0">
+        <!-- TODO UPDATE FEATURE SHOULD BE IMPLEMENTED BUT RIGHT NOW WE DO A GENERAL SAVE -->
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
+          @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
+          @save-map="onSaveMap"
+          @delete-feature="onDeleteFeature"
+          @add-map="upload(mapId)"
+          @update-feature="onSaveMap"
         />
       </div>
+      <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0">
+          <MapGeoJSON
+            class="h-full w-full"
+            :features="features"
+            :feature-visibility="featureVisibility"
+            :selected-year="selectedYear"
+            @features-loaded="handleFeaturesLoaded"
+            @draw-create="handleDrawChange"
+            @draw-update="handleDrawChange"
+            @draw-delete-id="onDeleteFeature"
+            @map-ready="onMapReady"
+          />
+        </div>
 
-      <div class="flex-1">
-        <MapGeoJSON
-          ref="mapGeoJsonRef"
-          :features="features"
-          :feature-visibility="featureVisibility"
-          @features-loaded="handleFeaturesLoaded"
-          @draw-create="handleDrawChange"
-          @draw-update="handleDrawChange"
-          @draw-delete="handleDrawChange"
-          @draw-delete-id="onDeleteFeature"
-          @map-ready="onMapReady"
-        />
+        <TimelineSlider v-model:year="selectedYear" />
       </div>
     </div>
-    />
-    <Transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="opacity-0 translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 translate-y-2"
-    >
-      <div
-        v-if="alert"
-        role="alert"
-        :class="[
-          'alert fixed bottom-6 right-6 z-50 w-auto max-w-sm shadow-lg',
-          alert.type === 'success' ? 'alert-success' : 'alert-error',
-        ]"
-      >
-        <span>{{ alert.message }}</span>
-      </div>
-    </Transition>
   </div>
 
   <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
@@ -99,13 +73,14 @@
       <button :disabled="isAdding">close</button>
     </form>
   </dialog>
+  <Alert />
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
-import SaveDropdown from "../components/save/Dropdown.vue";
+import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
 import {
@@ -116,11 +91,9 @@ import {
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import type { Map as LeafletMap } from "leaflet";
-import type { AlertState } from "../typescript/alert";
-import { showAlert, clearAlert } from "../utils/alert";
-
-const alert = ref<AlertState>(null);
+import { type Map as LeafletMap } from "leaflet";
+import Alert from "../components/Alert.vue";
+import { clearAlert, showAlert } from "../composables/useAlert";
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -136,6 +109,7 @@ const mapGeoJsonRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
+const selectedYear = ref(1740);
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
@@ -238,14 +212,15 @@ function isUuid(value: string): boolean {
 
 async function onDeleteFeature(
   featureId: string,
-  // TODO : remove optional
-  callbacks?: {
-    onSuccess?: () => void;
-    onError?: (message?: string) => void;
+  callbacks: {
+    onSuccess: () => void;
+    onError: (message: string) => void;
   },
 ) {
   if (!isUuid(featureId)) {
-    features.value = features.value.filter((feature) => feature.id !== featureId);
+    features.value = features.value.filter(
+      (feature) => feature.id !== featureId,
+    );
     reconcileVisibility(features.value);
     callbacks?.onSuccess?.();
     return;
@@ -253,7 +228,7 @@ async function onDeleteFeature(
 
   if (!currentUser.value) {
     const message = "Utilisateur non authentifié.";
-    showAlert(alert, "error", message);
+    showAlert("error", message);
     callbacks?.onError?.(message);
     return;
   }
@@ -273,15 +248,15 @@ async function onDeleteFeature(
       throw new Error(`Error deleting feature: ${response.status}`);
     }
 
-    features.value = features.value.filter((feature) => feature.id !== featureId);
+    features.value = features.value.filter(
+      (feature) => feature.id !== featureId,
+    );
     reconcileVisibility(features.value);
 
     callbacks?.onSuccess?.();
   } catch (error) {
-    const message = "Erreur lors de la suppression de l'élément.";
-    showAlert(alert, "error", message);
-    console.error("Failed to delete feature from API:", error);
-    callbacks?.onError?.(message);
+    console.error("Failed to delete feature:", error);
+    callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
   }
 }
 
@@ -313,11 +288,7 @@ async function loadInitialFeatures() {
     reconcileVisibility(allFeatures);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
-    showAlert(
-      alert,
-      "error",
-      "Erreur lors du chargement des éléments de la carte.",
-    );
+    showAlert("error", "Erreur lors du chargement des éléments de la carte.");
   }
 }
 
@@ -350,7 +321,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleCtrlS);
-  clearAlert(alert);
+  clearAlert();
 });
 
 async function onSaveMap() {
@@ -359,7 +330,7 @@ async function onSaveMap() {
 
   try {
     if (!currentUser.value) {
-      showAlert(alert, "error", "Utilisateur non authentifié.");
+      showAlert("error", "Utilisateur non authentifié.");
       return;
     }
 
@@ -384,7 +355,7 @@ async function onSaveMap() {
     );
 
     if (!response.ok) {
-      showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
+      showAlert("error", "Erreur lors de la sauvegarde des éléments.");
       throw new Error(`Error saving features: ${response.status}`);
     }
 
@@ -393,14 +364,14 @@ async function onSaveMap() {
     reconcileVisibility(savedFeatures);
 
     mapGeoJsonRef.value?.clearDraftLayers();
+    showAlert("success", "Carte sauvegardée avec succès !");
   } catch (err) {
-    showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
+    showAlert("error", "Erreur lors de la sauvegarde des éléments.");
     throw new Error(
       `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
     );
   } finally {
     isSaving.value = false;
-    showAlert(alert, "success", "Carte sauvegardée avec succès !");
   }
 }
 </script>
