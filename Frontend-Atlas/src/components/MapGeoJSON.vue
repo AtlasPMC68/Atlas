@@ -1,30 +1,30 @@
 <template>
-  <div class="relative h-full w-full z-0">
-    <div id="map" style="height: 80vh; width: 100%"></div>
-      <div class="map-timeline-toolbar flex flex-col gap-2 px-4 py-2 bg-base-100 border-t border-base-300">
-        <div class="map-timeline-slider w-full min-w-0">
-          <TimelineSlider
-            v-model:year="selectedYear"
-            @exact-date-change="onExactDateChange"
-            :min="timelineMinYear"
-            :max="timelineMaxYear"
-            :marker-years="timelineMarkerYears"
-            :map-periods="sliderMapPeriods"
-            :current-exact-date="selectedExactDate"
-          />
-        </div>
-        <div class="map-timeline-filter flex flex-row gap-1 items-center text-sm font-medium whitespace-nowrap">
-          <span>Filtrer par date</span>
-          <input
-            v-model="useTimelineFilter"
-            type="checkbox"
-            aria-label="Filtrer par date"
-            role="switch"
-            class="timeline-filter-toggle"
-          />
-        </div>
+  <div class="relative h-full w-full z-0 flex flex-col min-h-0">
+    <div id="map" class="flex-1 min-h-0 w-full"></div>
+    <div class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300">
+      <div class="map-timeline-slider w-full min-w-0">
+        <TimelineSlider
+          v-model:year="selectedYear"
+          @exact-date-change="onExactDateChange"
+          :min="timelineMinYear"
+          :max="timelineMaxYear"
+          :marker-years="timelineMarkerYears"
+          :map-periods="sliderMapPeriods"
+          :current-exact-date="selectedExactDate"
+        />
+      </div>
+      <div class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap">
+        <span>Filtrer par date</span>
+        <input
+          v-model="useTimelineFilter"
+          type="checkbox"
+          aria-label="Filtrer par date"
+          role="switch"
+          class="timeline-filter-toggle"
+        />
       </div>
     </div>
+  </div>
 </template>
 
 <script setup lang="ts">

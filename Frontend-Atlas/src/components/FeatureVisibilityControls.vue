@@ -1,6 +1,6 @@
 <template>
-  <div class="flex h-screen-minus-header min-h-0 flex-col">
-    <div class="tabs tabs-boxed bg-base-200 gap-2 p-2">
+  <div class="flex h-full min-h-0 flex-col">
+    <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5">
       <button
         v-for="group in featureGroups"
         :key="group.type"
@@ -19,7 +19,7 @@
 
     <!-- Liste des éléments avec contrôle de visibilité -->
 
-    <div class="p-4 py-0 flex flex-1 flex-col min-h-0">
+    <div class="px-3 py-0 flex flex-1 flex-col min-h-0">
       <div
         class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
       >
@@ -70,7 +70,7 @@
       </div>
     </div>
 
-    <div class="px-4 py-2 flex flex-col gap-2">
+    <div class="px-3 py-1.5 flex flex-col gap-1.5">
       <div class="divider m-0"></div>
       <div class="flex gap-2 items-center">
         <button

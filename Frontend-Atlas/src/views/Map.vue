@@ -1,7 +1,7 @@
 <template>
-  <div class="min-h-screen w-full bg-base-100 flex flex-col">
-    <div class="flex flex-1 min-h-0">
-      <div class="w-80 bg-base-200 border-r border-base-300 p-4 min-h-0">
+  <div class="h-screen-minus-header w-full bg-base-100 flex flex-col overflow-hidden">
+    <div class="flex flex-1 min-h-0 overflow-hidden">
+      <div class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col">
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
