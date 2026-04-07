@@ -269,7 +269,6 @@ const drawing = useMapDrawing((event, ...args) => {
     const next = current.filter((feature) => String(feature.id) !== deletedId);
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
-    emit("draw-delete-id", deletedId);
     return;
   }
 });
