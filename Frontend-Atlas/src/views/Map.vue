@@ -246,53 +246,13 @@ function isUuid(value: string): boolean {
   );
 }
 
-async function onDeleteFeature(
-  featureId: string,
-  callbacks: {
-    onSuccess: () => void;
-    onError: (message: string) => void;
-  },
-) {
-  if (!isUuid(featureId)) {
-    features.value = features.value.filter(
-      (feature) => feature.id !== featureId,
-    );
-    reconcileVisibility(features.value);
-    callbacks?.onSuccess?.();
-    return;
-  }
-
-  if (!currentUser.value) {
-    const message = "Utilisateur non authentifié.";
-    showAlert("error", message);
-    callbacks?.onError?.(message);
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Error deleting feature: ${response.status}`);
-    }
-
-    features.value = features.value.filter(
-      (feature) => feature.id !== featureId,
-    );
-    reconcileVisibility(features.value);
-
-    callbacks?.onSuccess?.();
-  } catch (error) {
-    console.error("Failed to delete feature:", error);
-    callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
+function onDeleteFeature(featureId: string) {
+  features.value = features.value.filter((f) => f.id !== featureId);
+  reconcileVisibility(features.value);
+  // Queue UUID features for deletion on the next save. Non-UUID features are
+  // draft-only and have no DB record to delete.
+  if (isUuid(featureId)) {
+    pendingDeletions.value.push(featureId);
   }
 }
 
@@ -396,7 +356,13 @@ async function onSaveMap() {
       throw new Error(`Error saving features: ${response.status}`);
     }
 
-    const savedFeatures = snakeToCamel(await response.json()) as Feature[];
+    // The PUT response is all features currently in the DB for this map.
+    // pendingDeletions haven't been deleted from the DB yet, so they will be
+    // present in savedFeatures. Filter them out before updating state so they
+    // don't flash back into the UI between the PUT and the DELETE calls below.
+    const pendingDeleteSet = new Set(pendingDeletions.value);
+    const savedFeatures = (snakeToCamel(await response.json()) as Feature[])
+      .filter((f) => !pendingDeleteSet.has(String(f.id)));
     features.value = savedFeatures;
     reconcileVisibility(savedFeatures);
 

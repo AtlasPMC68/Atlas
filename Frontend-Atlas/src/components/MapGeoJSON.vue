@@ -51,7 +51,6 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
-import { showAlert } from "../composables/useAlert";
 import type { MapWithPm, PmIgnoreOptions } from "../typescript/mapDrawing";
 
 const props = defineProps<{
@@ -64,11 +63,7 @@ const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (
-    e: "draw-delete-id",
-    featureId: string,
-    callbacks: { onSuccess: () => void; onError: (message: string) => void },
-  ): void;
+  (e: "draw-delete-id", featureId: string): void;
   (e: "map-ready", map: L.Map): void;
 }>();
 
@@ -277,14 +272,7 @@ const drawing = useMapDrawing((event, ...args) => {
     );
     localFeaturesSnapshot.value = next;
 
-    emit("draw-delete-id", deletedId, {
-      onSuccess: () => {
-        showAlert("success", "Élément supprimé avec succès.");
-      },
-      onError: (message: string) => {
-        showAlert("error", message);
-      },
-    });
+    emit("draw-delete-id", deletedId);
 
     return;
   }
@@ -326,7 +314,6 @@ const drawing = useMapDrawing((event, ...args) => {
           emit("draw-delete-id", deletedId);
         }
         localFeaturesSnapshot.value = next;
-        emit("draw-delete", next);
       }
     }
     cuttingUpdatedIds = null;
@@ -335,27 +322,6 @@ const drawing = useMapDrawing((event, ...args) => {
     renderAllFeatures();
     return;
   }
-});
-
-const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
-const cityMode = useAddCityMode({
-  getMap: () => map,
-  selectedYear,
-  localFeaturesSnapshot,
-  cityInput,
-  onCreated: (next) => emit('draw-create', next),
-  onAfterCreate: () => renderAllFeatures(),
-});
-const { addCityMode, pendingCity, cityInputName } = cityMode;
-const cancelAddCity = cityMode.cancel;
-const confirmCity = cityMode.confirm;
-
-const imageOverlay = useImageOverlay({
-  getMap: () => map,
-  getLayerById: (id) => featureLayerManager.layers.get(id),
-  localFeaturesSnapshot,
-  onBeforeEmit: () => { suppressNextPropsRender = true; },
-  onUpdate: (next) => emit('draw-update', next),
 });
 
 const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
