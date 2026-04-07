@@ -19,7 +19,8 @@
             v-model="useTimelineFilter"
             type="checkbox"
             aria-label="Filtrer par date"
-            class="timeline-filter-toggle toggle toggle-sm"
+            role="switch"
+            class="timeline-filter-toggle"
           />
         </div>
       </div>
@@ -854,20 +855,42 @@ watch(
 }
 
 .timeline-filter-toggle {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-300) !important;
+  appearance: none;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-base-300);
+  background-color: var(--color-base-300);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .timeline-filter-toggle::before {
-  background-color: var(--color-primary-content) !important;
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 9999px;
+  background-color: var(--color-primary-content);
+  transform: translate(0, -50%);
+  transition: transform 150ms ease, background-color 150ms ease;
 }
 
 .timeline-filter-toggle:checked {
-  background-color: var(--color-primary) !important;
-  border-color: var(--color-primary) !important;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .timeline-filter-toggle:checked::before {
-  background-color: var(--color-primary-content) !important;
+  background-color: var(--color-primary-content);
+  transform: translate(1rem, -50%);
+}
+
+.timeline-filter-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 </style>
