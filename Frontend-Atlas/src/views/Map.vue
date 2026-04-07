@@ -1,21 +1,5 @@
 <template>
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
-    <div class="navbar bg-base-100 shadow-lg">
-      <div class="flex justify-end gap-4">
-        <SaveDropdown @save="saveMap" />
-        <button @click="openAddMapDialog" class="btn btn-primary">
-          Ajouter une carte
-        </button>
-        <button
-          @click="addFeatureImageDialog?.showModal()"
-          class="btn btn-primary"
-          :disabled="!hasActiveMap"
-        >
-          Ajouter une image
-        </button>
-      </div>
-    </div>
-
     <div class="flex flex-1 min-h-0">
       <div class="w-80 bg-base-200 border-r border-base-300 p-4 min-h-0">
         <FeatureVisibilityControls
@@ -25,7 +9,7 @@
           @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
-          @add-map="upload(mapId)"
+          @add-map="openAddMapDialog"
           @update-feature="onSaveMap"
         />
       </div>
@@ -236,7 +220,6 @@ const endDate = ref<string>("");
 const usePreciseDates = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
-const hasActiveMap = computed(() => Boolean(activeMapId.value));
 const mapPeriods = ref<
   Array<{
     id: string;
@@ -666,10 +649,6 @@ onUnmounted(() => {
   window.removeEventListener("keydown", handleCtrlS);
   clearAlert();
 });
-
-function saveMap() {
-  void onSaveMap();
-}
 
 async function onSaveMap() {
   if (isSaving.value) return;
