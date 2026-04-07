@@ -324,11 +324,12 @@ export class MapDrawingService {
     map.getContainer().style.userSelect = "";
   }
 
-  private enableRemovalLasso(map: MapWithPm) {
+  private enableRemovalLasso(map: L.Map) {
+    const mapWithPm = map as MapWithPm;
     if (this.removalLassoEnabled) return;
 
-    if (map.pm?.enableGlobalLassoMode) {
-      map.pm.enableGlobalLassoMode(lassoDeleteOptions);
+    if (mapWithPm.pm?.enableGlobalLassoMode) {
+      mapWithPm.pm.enableGlobalLassoMode(lassoDeleteOptions);
       this.removalLassoEnabled = true;
       return;
     }
@@ -337,11 +338,12 @@ export class MapDrawingService {
     this.removalLassoEnabled = true;
   }
 
-  private disableRemovalLasso(map: MapWithPm) {
+  private disableRemovalLasso(map: L.Map) {
+    const mapWithPm = map as MapWithPm;
     if (!this.removalLassoEnabled) return;
 
-    if (map.pm?.disableGlobalLassoMode) {
-      map.pm.disableGlobalLassoMode();
+    if (mapWithPm.pm?.disableGlobalLassoMode) {
+      mapWithPm.pm.disableGlobalLassoMode();
     }
 
     this.disableFallbackRemovalSelection(map);
@@ -393,11 +395,12 @@ export class MapDrawingService {
     return selected;
   }
 
-  private enableFallbackRemovalSelection(map: MapWithPm) {
+  private enableFallbackRemovalSelection(map: L.Map) {
+    const mapWithPm = map as MapWithPm;
     if (this.fallbackRemovalSelectionEnabled) return;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
-      if (!e.originalEvent?.shiftKey || !map.pm?.globalRemovalModeEnabled?.()) {
+      if (!e.originalEvent?.shiftKey || !mapWithPm.pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
@@ -439,7 +442,7 @@ export class MapDrawingService {
       this.fallbackSelectionStart = null;
       map.dragging.enable();
 
-      if (!map.pm?.globalRemovalModeEnabled?.()) {
+      if (!mapWithPm.pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
@@ -454,7 +457,7 @@ export class MapDrawingService {
     this.fallbackRemovalSelectionEnabled = true;
   }
 
-  private disableFallbackRemovalSelection(map: MapWithPm) {
+  private disableFallbackRemovalSelection(map: L.Map) {
     if (!this.fallbackRemovalSelectionEnabled) return;
 
     const { onMouseDown, onMouseMove, onMouseUp } =

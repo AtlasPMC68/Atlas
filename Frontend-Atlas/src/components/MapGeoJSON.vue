@@ -29,7 +29,7 @@ import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { useAddCityMode } from "../composables/useAddCityMode";
 import { useImageOverlay } from "../composables/useImageOverlay";
-import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
+import { colorRgbToCss, getMapElementType, upsertFeature } from "../utils/featureHelpers";
 import {
   extractFeatureFromLayer,
   syncFeaturesFromLayerMap,
@@ -174,19 +174,6 @@ const featureLayerManager = {
   },
 };
 
-function upsertFeature(features: Feature[], feature: Feature): Feature[] {
-  const targetId = feature.id;
-  const next = [...features];
-  const index = next.findIndex((f) => f.id === targetId);
-
-  if (index >= 0) {
-    next[index] = feature;
-    return next;
-  }
-
-  next.push(feature);
-  return next;
-}
 
 function applyLayerUpdate(layer: L.Layer) {
   const runtimeLayer = layer as AtlasRuntimeLayer;
