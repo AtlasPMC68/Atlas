@@ -12,6 +12,7 @@ import type { CreatedMapRef, CreateMapDialogPrefill } from "../typescript/map";
 const emit = defineEmits<{
   (e: "created", map: CreatedMapRef | null): void;
   (e: "error", message: string): void;
+  (e: "closed"): void;
 }>();
 
 const dialogRef = ref<HTMLDialogElement | null>(null);
@@ -19,6 +20,7 @@ const newMapTitle = ref<string | undefined>(undefined);
 const newMapDescription = ref<string | undefined>(undefined);
 const newMapIsPrivate = ref(true);
 const isCreating = ref(false);
+const closeTriggeredByCreate = ref(false);
 
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 
@@ -30,7 +32,7 @@ function open(prefill?: CreateMapDialogPrefill) {
 }
 
 function close() {
-    dialogRef.value?.close();
+  dialogRef.value?.close();
 }
 
 function resetForm() {
@@ -118,10 +120,12 @@ async function createMap() {
     const createdMap = extractCreatedMap(payload);
 
     if (!createdMap?.id) {
-      throw new Error("Aucun id valide retourné lors de la création de la carte.");
+      throw new Error(
+        "Aucun id valide retourné lors de la création de la carte.",
+      );
     }
 
-    resetForm();
+    closeTriggeredByCreate.value = true;
     close();
     emit("created", createdMap);
   } catch {
@@ -131,6 +135,17 @@ async function createMap() {
   }
 }
 
+function onDialogClose() {
+  resetForm();
+
+  if (closeTriggeredByCreate.value) {
+    closeTriggeredByCreate.value = false;
+    return;
+  }
+
+  emit("closed");
+}
+
 defineExpose({
   open,
   close,
@@ -138,7 +153,7 @@ defineExpose({
 </script>
 
 <template>
-  <dialog ref="dialogRef" class="modal" @close="resetForm">
+  <dialog ref="dialogRef" class="modal" @close="onDialogClose">
     <div class="modal-box p-0">
       <form @submit.prevent="createMap">
         <div class="card-body">
@@ -178,7 +193,8 @@ defineExpose({
                   type="checkbox"
                   :checked="!newMapIsPrivate"
                   @change="
-                    newMapIsPrivate = !($event.target as HTMLInputElement).checked
+                    newMapIsPrivate = !($event.target as HTMLInputElement)
+                      .checked
                   "
                   class="toggle toggle-primary"
                 />

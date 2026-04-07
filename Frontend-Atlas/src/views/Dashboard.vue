@@ -48,7 +48,6 @@ async function onMapCreated(map: CreatedMapRef | null) {
 
   await router.push({
     path: `/carte/${map.id}`,
-    query: { generateThumbnail: "1" },
   });
 }
 

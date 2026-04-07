@@ -6,7 +6,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed, nextTick } from "vue";
+import {
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  ref,
+  computed,
+  nextTick,
+} from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -49,7 +56,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
   (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
@@ -261,9 +267,7 @@ const drawing = useMapDrawing((event, ...args) => {
 
   if (event === "feature-deleted") {
     const deletedId = String(args[0]);
-    const next = current.filter(
-      (feature) => String(feature.id) !== deletedId,
-    );
+    const next = current.filter((feature) => String(feature.id) !== deletedId);
     localFeaturesSnapshot.value = next;
     emit("draw-delete", next);
     emit("draw-delete-id", deletedId);
@@ -281,7 +285,8 @@ function renderCities(features: Feature[]) {
     const coord: L.LatLngTuple = [lat, lng];
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
       radius: 6,
@@ -492,7 +497,8 @@ function renderZones(features: Feature[]) {
 
     const featureProperties = feature.properties;
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -528,7 +534,8 @@ function renderArrows(features: Feature[]) {
     );
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
       renderer: vectorRenderer ?? undefined,
@@ -568,7 +575,8 @@ function renderPolylines(features: Feature[]) {
     );
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
       color: strokeColor,
@@ -603,8 +611,8 @@ function renderShapes(features: Feature[]) {
 
     const featureProperties = feature.properties;
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -653,17 +661,18 @@ function renderImages(features: Feature[]) {
 function renderAllFeaturesSafely() {
   if (!map) return;
 
-  const wasGlobalRotateEnabled = map.pm.globalRotateModeEnabled();
+  const pm = (map as MapWithPm).pm;
+  const wasGlobalRotateEnabled = pm?.globalRotateModeEnabled?.() ?? false;
 
   if (wasGlobalRotateEnabled) {
-    map.pm.disableGlobalRotateMode();
+    pm?.disableGlobalRotateMode?.();
   }
 
   try {
     renderAllFeatures();
   } finally {
     if (wasGlobalRotateEnabled) {
-      map.pm.enableGlobalRotateMode();
+      pm?.enableGlobalRotateMode?.();
     }
   }
 }
@@ -706,7 +715,6 @@ function renderAllFeatures() {
   renderImages(featuresByType.image);
 
   previousFeatureIds.value = currentIds;
-  emit("features-loaded", currentFeatures);
 }
 
 onMounted(() => {

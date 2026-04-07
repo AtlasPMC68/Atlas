@@ -31,7 +31,6 @@
           :feature-visibility="featureVisibility"
           :can-undo="canUndo"
           :can-redo="canRedo"
-          @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
@@ -106,6 +105,7 @@
     ref="createMapDialogRef"
     @created="onMapCreated"
     @error="onCreateMapError"
+    @closed="onCreateMapDialogClosed"
   />
 </template>
 
@@ -434,8 +434,6 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-async function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
-
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
 
@@ -463,10 +461,6 @@ async function isMapOwner(targetMapId: string): Promise<boolean> {
       },
     );
 
-    if (res.status === 404) {
-      return true;
-    }
-
     if (!res.ok) {
       console.error(`Error checking map owner: ${res.status}`);
       return false;
@@ -482,6 +476,11 @@ async function isMapOwner(targetMapId: string): Promise<boolean> {
 
 function onCreateMapError(message: string) {
   showAlert(alert, "error", message);
+}
+
+function onCreateMapDialogClosed() {
+  pendingCopiedFeatures.value = null;
+  shouldSaveAfterCopy.value = false;
 }
 
 async function onMapCreated(map: CreatedMapRef | null) {
@@ -503,11 +502,7 @@ async function onMapCreated(map: CreatedMapRef | null) {
     pendingCopiedFeatures.value = null;
     shouldSaveAfterCopy.value = false;
 
-    showAlert(
-      alert,
-      "error",
-      "Aucune donnée à copier vers la nouvelle carte.",
-    );
+    showAlert(alert, "error", "Aucune donnée à copier vers la nouvelle carte.");
     return;
   }
 

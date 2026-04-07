@@ -5,6 +5,7 @@ import type {
   FeatureSnapshot,
 } from "../typescript/featureHistory";
 
+// TODO: exclure ou normaliser les champs lourds comme image pour éviter les problèmes de performance et de taille de snapshot
 function toPlainFeatureSnapshot(features: Feature[]): FeatureSnapshot {
   return JSON.parse(JSON.stringify(toRaw(features))) as FeatureSnapshot;
 }
