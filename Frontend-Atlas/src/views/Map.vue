@@ -16,8 +16,8 @@
       </div>
     </div>
 
-    <div class="flex flex-1">
-      <div class="w-80 bg-base-200 border-r border-base-300 p-4">
+    <div class="flex flex-1 min-h-0">
+      <div class="w-80 bg-base-200 border-r border-base-300 p-4 min-h-0">
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
@@ -29,24 +29,11 @@
           @update-feature="onSaveMap"
         />
       </div>
-      <div class="flex-1 min-h-0 flex flex-col">
-        <div class="flex-1 min-h-0">
-          <MapGeoJSON
-            class="h-full w-full"
-            :features="features"
-            :feature-visibility="featureVisibility"
-            :selected-year="selectedYear"
-            @features-loaded="handleFeaturesLoaded"
-            @draw-create="handleDrawChange"
-            @draw-update="handleDrawChange"
-            @draw-delete-id="onDeleteFeature"
-            @map-ready="onMapReady"
-          />
-        </div>
 
-      <div class="flex-1">
+      <div class="flex-1 min-h-0">
         <MapGeoJSON
           ref="mapGeoJsonRef"
+          class="h-full w-full"
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
@@ -60,25 +47,7 @@
       </div>
     </div>
 
-    <Transition
-      enter-active-class="transition duration-300 ease-out"
-      enter-from-class="opacity-0 translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-200 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 translate-y-2"
-    >
-      <div
-        v-if="alert"
-        role="alert"
-        :class="[
-          'alert fixed bottom-6 right-6 z-50 w-auto max-w-sm shadow-lg',
-          alert.type === 'success' ? 'alert-success' : 'alert-error',
-        ]"
-      >
-        <span>{{ alert.message }}</span>
-      </div>
-    </Transition>
+    <Alert />
   </div>
 
   <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
@@ -179,13 +148,13 @@
             </div>
           </fieldset>
           <label class="label cursor-pointer gap-2 mb-2">
-              <input
-                v-model="usePreciseDates"
-                type="checkbox"
-                class="checkbox checkbox-sm"
-              />
-              <span>Utiliser la date exacte</span>
-            </label>
+            <input
+              v-model="usePreciseDates"
+              type="checkbox"
+              class="checkbox checkbox-sm"
+            />
+            <span>Utiliser la date exacte</span>
+          </label>
           <div class="flex justify-end gap-2 mt-6">
             <button
               type="button"
@@ -215,12 +184,10 @@
     </form>
   </dialog>
 </template>
-
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
-import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
 import {
@@ -254,7 +221,6 @@ const mapGeoJsonRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
-const selectedYear = ref(1740);
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
@@ -525,7 +491,7 @@ async function onDeleteFeature(
 
   if (!activeMapId.value) {
     const message = "Aucune carte active pour supprimer cet élément.";
-    showAlert(alert, "error", message);
+    showAlert("error", message);
     callbacks?.onError?.(message);
     return;
   }
@@ -722,7 +688,7 @@ async function onSaveMap() {
     }
 
     if (!activeMapId.value) {
-      showAlert(alert, "error", "Aucune carte active à sauvegarder.");
+      showAlert("error", "Aucune carte active à sauvegarder.");
       return;
     }
 
