@@ -325,9 +325,9 @@ export class MapDrawingService {
   }
 
   private enableRemovalLasso(map: L.Map) {
-    const mapWithPm = map as MapWithPm;
     if (this.removalLassoEnabled) return;
 
+    const mapWithPm = map as MapWithPm;
     if (mapWithPm.pm?.enableGlobalLassoMode) {
       mapWithPm.pm.enableGlobalLassoMode(lassoDeleteOptions);
       this.removalLassoEnabled = true;
@@ -339,9 +339,9 @@ export class MapDrawingService {
   }
 
   private disableRemovalLasso(map: L.Map) {
-    const mapWithPm = map as MapWithPm;
     if (!this.removalLassoEnabled) return;
 
+    const mapWithPm = map as MapWithPm;
     if (mapWithPm.pm?.disableGlobalLassoMode) {
       mapWithPm.pm.disableGlobalLassoMode();
     }
@@ -396,11 +396,10 @@ export class MapDrawingService {
   }
 
   private enableFallbackRemovalSelection(map: L.Map) {
-    const mapWithPm = map as MapWithPm;
     if (this.fallbackRemovalSelectionEnabled) return;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
-      if (!e.originalEvent?.shiftKey || !mapWithPm.pm?.globalRemovalModeEnabled?.()) {
+      if (!e.originalEvent?.shiftKey || !(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
@@ -442,7 +441,7 @@ export class MapDrawingService {
       this.fallbackSelectionStart = null;
       map.dragging.enable();
 
-      if (!mapWithPm.pm?.globalRemovalModeEnabled?.()) {
+      if (!(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 

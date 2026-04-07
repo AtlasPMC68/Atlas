@@ -21,11 +21,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, computed, toRef } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
-import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { useAddCityMode } from "../composables/useAddCityMode";
 import { useImageOverlay } from "../composables/useImageOverlay";
@@ -52,23 +51,28 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
+import { showAlert } from "../composables/useAlert";
 import type { MapWithPm, PmIgnoreOptions } from "../typescript/mapDrawing";
 
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  selectedYear: number;
 }>();
 
 const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
-  (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
+  (
+    e: "draw-delete-id",
+    featureId: string,
+    callbacks: { onSuccess: () => void; onError: (message: string) => void },
+  ): void;
   (e: "map-ready", map: L.Map): void;
 }>();
 
-const selectedYear = ref(1740);
+const selectedYear = toRef(props, "selectedYear");
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
@@ -272,8 +276,16 @@ const drawing = useMapDrawing((event, ...args) => {
       (feature) => String(feature.id) !== deletedId,
     );
     localFeaturesSnapshot.value = next;
-    emit("draw-delete", next);
-    emit("draw-delete-id", deletedId);
+
+    emit("draw-delete-id", deletedId, {
+      onSuccess: () => {
+        showAlert("success", "Élément supprimé avec succès.");
+      },
+      onError: (message: string) => {
+        showAlert("error", message);
+      },
+    });
+
     return;
   }
 
@@ -346,6 +358,27 @@ const imageOverlay = useImageOverlay({
   onUpdate: (next) => emit('draw-update', next),
 });
 
+const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
+const cityMode = useAddCityMode({
+  getMap: () => map,
+  selectedYear,
+  localFeaturesSnapshot,
+  cityInput,
+  onCreated: (next) => emit('draw-create', next),
+  onAfterCreate: () => renderAllFeatures(),
+});
+const { addCityMode, pendingCity, cityInputName } = cityMode;
+const cancelAddCity = cityMode.cancel;
+const confirmCity = cityMode.confirm;
+
+const imageOverlay = useImageOverlay({
+  getMap: () => map,
+  getLayerById: (id) => featureLayerManager.layers.get(id),
+  localFeaturesSnapshot,
+  onBeforeEmit: () => { suppressNextPropsRender = true; },
+  onUpdate: (next) => emit('draw-update', next),
+});
+
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -356,7 +389,8 @@ function renderCities(features: Feature[]) {
     const coord: L.LatLngTuple = [lat, lng];
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
       radius: 6,
@@ -452,7 +486,8 @@ function renderZones(features: Feature[]) {
 
     const featureProperties = feature.properties;
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -483,7 +518,8 @@ function renderArrows(features: Feature[]) {
     );
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
       renderer: vectorRenderer ?? undefined,
@@ -516,7 +552,8 @@ function renderPolylines(features: Feature[]) {
     );
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
       color: strokeColor,
@@ -544,8 +581,8 @@ function renderShapes(features: Feature[]) {
     }
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
+    const strokeColor =
+      colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
@@ -608,12 +645,12 @@ function renderAllFeatures() {
   const featuresByType = {
     point: currentFeatures.filter((f) => getMapElementType(f) === "point"),
     zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
-    arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
     label: currentFeatures.filter((f) => getMapElementType(f) === "label"),
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
+    arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     image: currentFeatures.filter((f) => getMapElementType(f) === "image"),
   };
 

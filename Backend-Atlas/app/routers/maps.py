@@ -1,8 +1,8 @@
 import base64
 import logging
+from pathlib import Path
 from uuid import UUID
 import json
-import logging
 import math
 from json import JSONDecodeError
 from copy import deepcopy
@@ -641,6 +641,7 @@ async def upload_image(
 
     center_lat = (parsed_bounds[0][0] + parsed_bounds[1][0]) / 2
     center_lng = (parsed_bounds[0][1] + parsed_bounds[1][1]) / 2
+    image_display_name = Path(image.filename).stem if image.filename else "Image"
 
     feature_data = {
         "type": "FeatureCollection",
@@ -648,13 +649,12 @@ async def upload_image(
             {
                 "type": "Feature",
                 "properties": {
-                    "mapElementType": "image",
-                    "name": image.filename or "Image",
-                    "mimeType": image.content_type,
+                    "map_element_type": "image",
+                    "name": image_display_name,
+                    "mime_type": image.content_type,
                     "start_date": "1700-01-01",
                     "end_date": "2026-01-01",
                     "bounds": parsed_bounds,
-                    "isPlaced": bool(bounds),
                 },
                 "geometry": {"type": "Point", "coordinates": [center_lng, center_lat]},
             }
