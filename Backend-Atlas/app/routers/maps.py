@@ -8,6 +8,8 @@ from json import JSONDecodeError
 from copy import deepcopy
 from uuid import UUID
 
+import cv2
+import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
 from sqlalchemy import not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +34,8 @@ from ..db import get_db
 from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
 from ..utils.auth import get_current_user_id, get_user_from_token
+from ..utils.color_in_legends_extraction import sample_color_at
+from ..utils.color_extraction import get_nearest_css4_color_name
 
 router = APIRouter()
 
@@ -41,6 +45,7 @@ router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
+
 
 @router.post("/create")
 async def create_map(
@@ -61,6 +66,7 @@ async def create_map(
         logger.error(f"Error creating map: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create map")
 
+
 @router.delete("/{map_id}")
 async def delete_map(
     map_id: UUID,
@@ -74,14 +80,17 @@ async def delete_map(
             user_id=UUID(user_id),
         )
         if not deleted:
-            raise HTTPException(status_code=404, detail="Map not found or access denied")
+            raise HTTPException(
+                status_code=404, detail="Map not found or access denied"
+            )
         return {"detail": "Map deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting map: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete map")
-    
+
+
 @router.put("/{map_id}")
 async def update_map(
     map_id: UUID,
@@ -99,7 +108,9 @@ async def update_map(
             is_private=request.is_private,
         )
         if not updated_map:
-            raise HTTPException(status_code=404, detail="Map not found or access denied")
+            raise HTTPException(
+                status_code=404, detail="Map not found or access denied"
+            )
         return {"map_id": str(updated_map)}
     except HTTPException:
         raise
@@ -107,11 +118,13 @@ async def update_map(
         logger.error(f"Error updating map: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update map")
 
+
 @router.post("/upload")
 async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
     legend_bounds: str | None = Form(None),
+    imposed_colors: str | None = Form(None),
     enable_georeferencing: bool = Form(True),
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
@@ -125,7 +138,7 @@ async def upload_and_process_map(
         map_id = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
-    
+
     result = await session.execute(
         select(Map).where(Map.id == map_id, Map.user_id == UUID(user_id))
     )
@@ -172,7 +185,9 @@ async def upload_and_process_map(
         try:
             parsed = json.loads(legend_bounds)
             required_keys = {"x", "y", "width", "height"}
-            if not isinstance(parsed, dict) or not required_keys.issubset(parsed.keys()):
+            if not isinstance(parsed, dict) or not required_keys.issubset(
+                parsed.keys()
+            ):
                 raise ValueError(
                     "legend_bounds must be a JSON object with x, y, width, height"
                 )
@@ -197,6 +212,35 @@ async def upload_and_process_map(
 
     file_content = await file.read()
 
+    # Parse optional user-picked colors as [{"rgb": [r,g,b], "name": "..."}, ...]
+    imposed_colors_rgb = None
+    imposed_colors_names = None
+    if imposed_colors:
+        try:
+            parsed_colors = json.loads(imposed_colors)
+            if not isinstance(parsed_colors, list):
+                raise ValueError("imposed_colors must be a JSON array")
+            imposed_colors_rgb = []
+            imposed_colors_names = []
+            for entry in parsed_colors:
+                if not isinstance(entry, dict) or "rgb" not in entry:
+                    raise ValueError(
+                        'Each color must be {"rgb": [r, g, b], "name": "..."}'
+                    )
+                rgb = entry["rgb"]
+                if not isinstance(rgb, list) or len(rgb) != 3:
+                    raise ValueError("rgb must be [r, g, b]")
+                r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
+                if not all(0 <= v <= 255 for v in (r, g, b)):
+                    raise ValueError("Color values must be in [0, 255]")
+                imposed_colors_rgb.append((r, g, b))
+                imposed_colors_names.append(str(entry.get("name", "")).strip() or None)
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid imposed_colors payload: {e}",
+            )
+
     if len(file_content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -217,6 +261,8 @@ async def upload_and_process_map(
             enable_shapes_extraction=enable_shapes_extraction,
             enable_text_extraction=enable_text_extraction,
             legend_bounds=legend_bounds_dict,
+            imposed_colors_rgb=imposed_colors_rgb,
+            imposed_colors_names=imposed_colors_names,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
@@ -326,6 +372,7 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
 
     return all_features
 
+
 @router.put("/features/{map_id}")
 async def update_features(
     map_id: str,
@@ -337,9 +384,7 @@ async def update_features(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id")
 
-    result = await session.execute(
-        select(Feature).where(Feature.map_id == map_id)
-    )
+    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
     existing_rows = result.scalars().all()
     existing_by_id = {str(row.id): row for row in existing_rows}
 
@@ -400,7 +445,7 @@ async def delete_feature(
         feature_id = UUID(feature_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid map_id or feature_id")
-    
+
     feature_id_str = str(feature_id)
     db_feature = None
 
@@ -416,9 +461,7 @@ async def delete_feature(
         pass
 
     if not db_feature:
-        result = await session.execute(
-            select(Feature).where(Feature.map_id == map_id)
-        )
+        result = await session.execute(select(Feature).where(Feature.map_id == map_id))
         candidate_rows = result.scalars().all()
 
         for row in candidate_rows:
@@ -471,9 +514,7 @@ async def get_maps(
     maps = []
     for map_obj, username in rows:
         encoded_image = (
-            base64.b64encode(map_obj.image).decode("ascii")
-            if map_obj.image
-            else None
+            base64.b64encode(map_obj.image).decode("ascii") if map_obj.image else None
         )
 
         out = MapOut(
@@ -492,6 +533,50 @@ async def get_maps(
         maps.append(out)
 
     return maps
+
+
+@router.post("/sample-color")
+async def sample_color(
+    x: float = Form(
+        ..., ge=0.0, le=1.0, description="Normalised X position [0,1] from left"
+    ),
+    y: float = Form(
+        ..., ge=0.0, le=1.0, description="Normalised Y position [0,1] from top"
+    ),
+    radius: int = Form(20, ge=1, le=200, description="Sampling radius in pixels"),
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Stateless endpoint — no map or DB needed.
+
+    The frontend sends the image file it already has from the file picker,
+    along with normalised click coordinates [0,1].  The backend samples the
+    dominant colour in a neighbourhood around the click and returns the result
+    so the frontend can show a colour swatch.
+
+    The returned LAB values are consistent with what extract_colors() will
+    compute on the same file during /upload.
+
+    Returns: { rgb: [r,g,b], lab: [L,a,b], hex: "#rrggbb" }
+    """
+    raw = await file.read()
+    nparr = np.frombuffer(raw, dtype=np.uint8)
+    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        raise HTTPException(status_code=422, detail="Could not decode image file")
+
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+    color = sample_color_at(img_rgb, x, y, radius_px=radius)
+    if color is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Click coordinates are outside the image bounds",
+        )
+
+    name = get_nearest_css4_color_name(tuple(color["rgb"]))
+    return {**color, "name": name}
 
 
 # TODO real save on that endpoint

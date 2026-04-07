@@ -49,6 +49,7 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
+
 @celery_app.task(bind=True)
 def process_map_extraction(
     self,
@@ -61,6 +62,8 @@ def process_map_extraction(
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
+    imposed_colors_rgb: list | None = None,
+    imposed_colors_names: list | None = None,
 ):
     try:
         # Step 1: temp save
@@ -191,7 +194,6 @@ def process_map_extraction(
             shape_normalized_features = shapes_result["normalized_features"]
             shape_pixel_features = shapes_result.get("pixel_features", [])
 
-
             # Georeference pixel-space shape features if SIFT point pairs are provided
             if pixel_points and geo_points_lonlat:
                 try:
@@ -221,12 +223,18 @@ def process_map_extraction(
                 },
             )
 
-            legends_shapes = [s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)]
-            
+            legends_shapes = [
+                s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)
+            ]
+
             color_result = extract_colors(
-                tmp_file_path, 
-                debug=False, 
+                tmp_file_path,
+                debug=False,
                 legend_shapes=legends_shapes if legends_shapes else None,
+                imposed_colors_rgb=[tuple(c) for c in imposed_colors_rgb]
+                if imposed_colors_rgb
+                else None,
+                imposed_colors_names=imposed_colors_names,
             )
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])

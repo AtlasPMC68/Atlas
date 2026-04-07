@@ -11,6 +11,7 @@ type ExtractionOptions = {
   enableColorExtraction?: boolean;
   enableShapesExtraction?: boolean;
   enableTextExtraction?: boolean;
+  imposedColors?: { rgb: [number, number, number]; name: string }[];
 };
 
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
@@ -82,6 +83,9 @@ export function useImportProcess() {
         "enable_text_extraction",
         String(options.enableTextExtraction ?? false),
       );
+      if (options.imposedColors && options.imposedColors.length > 0) {
+        formData.append("imposed_colors", JSON.stringify(options.imposedColors.map((c) => ({ rgb: c.rgb, name: c.name }))));
+      }
     }
 
     if (legendBounds) {
