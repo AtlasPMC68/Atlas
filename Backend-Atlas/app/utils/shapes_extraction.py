@@ -23,7 +23,9 @@ SIMPLE_BINARY_UNIQUE_LEVELS = 3
 MAX_SHAPE_IMAGE_AREA_RATIO = 0.5
 CONTOUR_APPROX_EPSILON_RATIO = 0.001
 CIRCLE_MIN_RADIUS_PX = 2
-CIRCLE_DELTA_ANGLE_DEG = 5
+CIRCLE_MIN_STEPS = 32
+CIRCLE_MAX_STEPS = 360
+CIRCLE_TARGET_SEGMENT_LENGTH_PX = 3.0
 
 # ---------------------------------------------------------------------------
 # Low-level helpers
@@ -425,12 +427,20 @@ def idealize_shape_points(
         
     elif shape_type == "Circle":
         (x, y), radius = cv2.minEnclosingCircle(contour)
-        cx = int(round(x))
-        cy = int(round(y))
-        r = max(CIRCLE_MIN_RADIUS_PX, int(round(radius)))
+        r = max(float(CIRCLE_MIN_RADIUS_PX), float(radius))
 
-        poly = cv2.ellipse2Poly((cx, cy), (r, r), 0, 0, 360, CIRCLE_DELTA_ANGLE_DEG)
-        return [[float(px), float(py)] for px, py in poly]
+        perimeter = 2.0 * np.pi * r
+        steps = int(np.ceil(perimeter / CIRCLE_TARGET_SEGMENT_LENGTH_PX))
+        steps = int(np.clip(steps, CIRCLE_MIN_STEPS, CIRCLE_MAX_STEPS))
+
+        points: List[List[float]] = []
+        for i in range(steps):
+            angle = (i / steps) * 2.0 * np.pi
+            px = x + r * np.cos(angle)
+            py = y + r * np.sin(angle)
+            points.append([round(float(px), 3), round(float(py), 3)])
+
+        return points
         
     else:
         if approx is None:
