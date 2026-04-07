@@ -6,7 +6,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, computed, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -29,6 +29,7 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
+import type { MapWithPm } from "../typescript/mapDrawing";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -43,6 +44,8 @@ interface GeoJsonFeatureCollectionWithGeometry {
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  canUndo: boolean;
+  canRedo: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -52,6 +55,8 @@ const emit = defineEmits<{
   (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
   (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
   (e: "map-ready", map: L.Map): void;
+  (e: "undo"): void;
+  (e: "redo"): void;
 }>();
 
 const selectedYear = ref(1740);
@@ -73,6 +78,65 @@ const filteredFeatures = computed(() => {
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
+
+const undoControlName = "atlasUndo";
+const redoControlName = "atlasRedo";
+const undoControlClass = "leaflet-pm-icon-atlas-undo";
+const redoControlClass = "leaflet-pm-icon-atlas-redo";
+
+function setToolbarButtonEnabled(className: string, enabled: boolean) {
+  document.querySelectorAll<HTMLElement>(`.${className}`).forEach((el) => {
+    el.classList.toggle("leaflet-pm-control-disabled", !enabled);
+    el.setAttribute("aria-disabled", String(!enabled));
+    el.tabIndex = enabled ? 0 : -1;
+  });
+}
+
+function updateHistoryToolbarState() {
+  setToolbarButtonEnabled(undoControlClass, props.canUndo);
+  setToolbarButtonEnabled(redoControlClass, props.canRedo);
+}
+
+function addUndoRedoControls(mapInstance: L.Map) {
+  const toolbar = (mapInstance as MapWithPm).pm?.Toolbar;
+
+  if (!toolbar?.createCustomControl) {
+    return;
+  }
+
+  if (!toolbar.controlExists?.(undoControlName)) {
+    toolbar.createCustomControl({
+      name: undoControlName,
+      block: "custom",
+      title: "Annuler",
+      className: undoControlClass,
+      toggle: false,
+      onClick: () => {
+        if (!props.canUndo) return;
+        emit("undo");
+      },
+    });
+  }
+
+  if (!toolbar.controlExists?.(redoControlName)) {
+    toolbar.createCustomControl({
+      name: redoControlName,
+      block: "custom",
+      title: "Rétablir",
+      className: redoControlClass,
+      toggle: false,
+      onClick: () => {
+        if (!props.canRedo) return;
+        emit("redo");
+      },
+    });
+  }
+
+  toolbar.setBlockPosition?.("custom", "topleft");
+  toolbar.changeControlOrder?.([undoControlName, redoControlName]);
+
+  updateHistoryToolbarState();
+}
 
 const featureLayerManager = {
   layers: new Map<FeatureId, L.Layer>(),
@@ -663,11 +727,12 @@ onMounted(() => {
 
   drawing.initializeDrawing(map);
 
+  L.control.zoom({ position: "topleft" }).addTo(map);
+  addUndoRedoControls(map);
+
   L.control
     .scale({ position: "bottomright", metric: true, imperial: false })
     .addTo(map);
-
-  L.control.zoom({ position: "topleft" }).addTo(map);
 
   drawing.setSelectedYear(selectedYear.value);
   emit("map-ready", map);
@@ -710,6 +775,15 @@ watch(
   },
   { deep: true },
 );
+
+watch(
+  () => [props.canUndo, props.canRedo],
+  async () => {
+    await nextTick();
+    updateHistoryToolbarState();
+  },
+  { immediate: true },
+);
 </script>
 
 <style>
@@ -727,5 +801,68 @@ watch(
   font-size: 20px;
   color: black;
   transform: rotate(0deg);
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-atlas-undo,
+.leaflet-pm-toolbar .leaflet-pm-icon-atlas-redo {
+  position: relative;
+  background-image: none !important;
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-atlas-undo::before,
+.leaflet-pm-toolbar .leaflet-pm-icon-atlas-redo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 18px;
+  height: 18px;
+  background-color: #2c3e50;
+
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-image: none;
+
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  mask-image: none;
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-atlas-undo::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='M9%2015%203%209m0%200%206-6M3%209h12a6%206%200%200%201%200%2012h-3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='M9%2015%203%209m0%200%206-6M3%209h12a6%206%200%200%201%200%2012h-3'/%3E%3C/svg%3E");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-atlas-redo::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='m15%2015%206-6m0%200-6-6m6%206H9a6%206%200%200%200%200%2012h3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='m15%2015%206-6m0%200-6-6m6%206H9a6%206%200%200%200%200%2012h3'/%3E%3C/svg%3E");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-control-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+#map .leaflet-top.leaflet-left {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-control {
+  clear: none;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-control-zoom {
+  margin-right: 8px;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar {
+  display: flex;
+  flex-direction: row;
+  width: auto;
 }
 </style>

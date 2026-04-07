@@ -12,13 +12,6 @@
         >
           Ajouter une image
         </button>
-        <button class="btn" :disabled="!canUndo" @click="onUndo" aria-label="Undo" title="Annuler">
-          <ArrowUturnLeftIcon class="h-5 w-5" />
-        </button>
-
-        <button class="btn" :disabled="!canRedo" @click="onRedo" aria-label="Redo" title="Rétablir">
-          <ArrowUturnRightIcon class="h-5 w-5" />
-        </button>
       </div>
     </div>
 
@@ -36,12 +29,16 @@
           ref="mapGeoJsonRef"
           :features="features"
           :feature-visibility="featureVisibility"
+          :can-undo="canUndo"
+          :can-redo="canRedo"
           @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
           @draw-delete-id="onDeleteFeature"
           @map-ready="onMapReady"
+          @undo="onUndo"
+          @redo="onRedo"
         />
       </div>
     </div>
@@ -131,10 +128,6 @@ import L, { type Map as LeafletMap } from "leaflet";
 import type { AlertState } from "../typescript/alert";
 import { showAlert, clearAlert } from "../utils/alert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import {
-  ArrowUturnLeftIcon,
-  ArrowUturnRightIcon,
-} from "@heroicons/vue/24/outline";
 import type { CreatedMapRef, CreateMapDialogExposed } from "../typescript/map";
 import CreateMapDialog from "../components/CreateMapDialog.vue";
 
