@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { MagnifyingGlassIcon } from "@heroicons/vue/24/outline";
-import { MapData, MapDisplay } from "../typescript/map";
-import { snakeToCamel } from "../utils/utils";
+import { MapData } from "../typescript/map";
+import { snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 
-const maps = ref<MapDisplay[]>([]);
+const maps = ref<MapData[]>([]);
 const { fetchCurrentUser } = useCurrentUser();
 
 const searchQuery = ref("");
@@ -70,7 +70,7 @@ async function fetchMapsAndRender() {
         isPrivate: map.isPrivate,
         userId: map.userId,
         username: map.username,
-        image: "/images/default.jpg",
+        image: map.image,
       };
     });
   } catch (err) {
@@ -131,11 +131,7 @@ async function fetchMapsAndRender() {
         @click="$router.push(`/carte/${map.id}`)"
       >
         <figure>
-          <img
-            src="https://img.daisyui.com/images/stock/photo-1606107557195-0e29a4b5b4aa.webp"
-            alt="Map"
-            class="w-full h-44"
-          />
+          <img :src="toImageSrc(map.image)" class="w-full h-full" />
         </figure>
         <div class="card-body pb-0">
           <h2 class="card-title text-sm xl:text-lg">

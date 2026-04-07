@@ -1,11 +1,15 @@
+import base64
+import logging
+from uuid import UUID
 import json
 import logging
 import math
 from json import JSONDecodeError
+from copy import deepcopy
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import not_, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
+from sqlalchemy import not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -16,11 +20,17 @@ from app.models.user import User
 from app.schemas.map import MapOut
 from app.schemas.mapCreateRequest import MapCreateRequest
 from app.services.maps import create_map_in_db, delete_map_in_db, update_map_in_db
+from app.utils.update_feature import (
+    to_feature_collection,
+    normalize_feature_collection,
+    serialize_db_feature,
+)
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
 from ..db import get_db
 from ..tasks import process_map_extraction
+from ..utils.maps import default_bounds_from_image
 from ..utils.auth import get_current_user_id, get_user_from_token
 
 router = APIRouter()
@@ -29,8 +39,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maps", tags=["Maps Processing"])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".gif"}
-
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
 @router.post("/create")
 async def create_map(
@@ -293,17 +303,142 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
 
     all_features = []
     for f in features_rows:
-        feature_data = f.data.get("features", [])
-        if feature_data:
-            feature = feature_data[0]
-            feature["id"] = str(f.id)
+        if not f.data or not isinstance(f.data, dict):
+            continue
 
-            props = feature.get("properties", {})
-            feature["start_date"] = props.get("start_date")
-            feature["end_date"] = props.get("end_date")
-            all_features.append(feature)
+        feature_data = f.data.get("features", [])
+        if not feature_data:
+            continue
+
+        feature = feature_data[0]
+        feature["id"] = str(f.id)
+
+        props = feature.get("properties", {})
+        feature["start_date"] = props.get("start_date")
+        feature["end_date"] = props.get("end_date")
+
+        if f.image:
+            feature["image"] = base64.b64encode(f.image).decode("ascii")
+            feature.setdefault("properties", {})
+            feature["properties"]["mimeType"] = props.get("mimeType", "image/png")
+
+        all_features.append(feature)
 
     return all_features
+
+@router.put("/features/{map_id}")
+async def update_features(
+    map_id: str,
+    features: list[dict] = Body(...),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_id = UUID(map_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id")
+
+    result = await session.execute(
+        select(Feature).where(Feature.map_id == map_id)
+    )
+    existing_rows = result.scalars().all()
+    existing_by_id = {str(row.id): row for row in existing_rows}
+
+    for feature in features:
+        feature_id = feature.get("id")
+        db_feature = None
+
+        if feature_id:
+            feature_id_str = str(feature_id)
+            try:
+                UUID(feature_id_str)
+                db_feature = existing_by_id.get(feature_id_str)
+            except ValueError:
+                logger.warning(
+                    f"Feature id is not a valid UUID, creating a new row: {feature_id}"
+                )
+
+        if db_feature:
+            new_data = to_feature_collection(feature)
+            old_data = normalize_feature_collection(db_feature.data)
+
+            if old_data != new_data:
+                db_feature.data = new_data
+                db_feature.updated_at = func.now()
+                session.add(db_feature)
+        else:
+            new_feature = Feature(
+                map_id=map_id,
+                is_feature_collection=False,
+                data=to_feature_collection(feature),
+            )
+            session.add(new_feature)
+
+    await session.commit()
+
+    refreshed_result = await session.execute(
+        select(Feature).where(Feature.map_id == map_id)
+    )
+    persisted_rows = refreshed_result.scalars().all()
+
+    persisted_features = []
+    for row in persisted_rows:
+        serialized = serialize_db_feature(row)
+        if serialized is not None:
+            persisted_features.append(serialized)
+
+    return persisted_features
+
+
+@router.delete("/features/{map_id}/{feature_id}")
+async def delete_feature(
+    map_id: str,
+    feature_id: str,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        map_id = UUID(map_id)
+        feature_id = UUID(feature_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid map_id or feature_id")
+    
+    feature_id_str = str(feature_id)
+    db_feature = None
+
+    try:
+        result = await session.execute(
+            select(Feature).where(
+                Feature.id == feature_id,
+                Feature.map_id == map_id,
+            )
+        )
+        db_feature = result.scalar_one_or_none()
+    except ValueError:
+        pass
+
+    if not db_feature:
+        result = await session.execute(
+            select(Feature).where(Feature.map_id == map_id)
+        )
+        candidate_rows = result.scalars().all()
+
+        for row in candidate_rows:
+            features = row.data.get("features", [])
+            for stored_feature in features:
+                if str(stored_feature.get("id")) == feature_id_str:
+                    db_feature = row
+                    break
+            if db_feature:
+                break
+
+    if not db_feature:
+        raise HTTPException(status_code=404, detail="Feature not found")
+
+    await session.delete(db_feature)
+    await session.commit()
+
+    return {
+        "feature_id": str(feature_id),
+    }
 
 
 @router.get("/map", response_model=list[MapOut])
@@ -335,8 +470,25 @@ async def get_maps(
 
     maps = []
     for map_obj, username in rows:
-        out = MapOut.model_validate(map_obj)
-        out.username = username
+        encoded_image = (
+            base64.b64encode(map_obj.image).decode("ascii")
+            if map_obj.image
+            else None
+        )
+
+        out = MapOut(
+            id=map_obj.id,
+            user_id=map_obj.user_id,
+            username=username,
+            title=map_obj.title,
+            description=map_obj.description,
+            is_private=map_obj.is_private,
+            image=encoded_image,
+            start_date=map_obj.start_date,
+            end_date=map_obj.end_date,
+            created_at=map_obj.created_at,
+            updated_at=map_obj.updated_at,
+        )
         maps.append(out)
 
     return maps
@@ -377,3 +529,151 @@ async def get_coastline_keypoints(
     except Exception as e:
         logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{map_id}/thumbnail")
+async def upload_map_thumbnail(
+    map_id: UUID,
+    image: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if image.content_type not in IMAGE_ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type. Allowed: {', '.join(sorted(IMAGE_ALLOWED_CONTENT_TYPES))}",
+        )
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(Map).where(Map.id == map_id, Map.user_id == user_uuid)
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
+    content = await image.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty image")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+
+    try:
+        map_obj.image = content
+        await session.commit()
+        return {"status": "ok", "map_id": str(map_id)}
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error saving map thumbnail: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save thumbnail")
+
+
+@router.post("/{map_id}/features/image")
+async def upload_image(
+    map_id: UUID,
+    image: UploadFile = File(...),
+    bounds: str | None = Form(None),
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    filename = (image.filename or "").lower()
+
+    if not filename or not any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not supported. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+    try:
+        user_id = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    map_result = await session.execute(
+        select(Map).where(Map.id == map_id, Map.user_id == user_id)
+    )
+    map_obj = map_result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
+    content = await image.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty image")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+
+    parsed_bounds = default_bounds_from_image(content)
+    if bounds:
+        try:
+            raw = json.loads(bounds)
+
+            if (
+                isinstance(raw, list)
+                and len(raw) == 2
+                and isinstance(raw[0], list)
+                and isinstance(raw[1], list)
+                and len(raw[0]) == 2
+                and len(raw[1]) == 2
+            ):
+                south, west = float(raw[0][0]), float(raw[0][1])
+                north, east = float(raw[1][0]), float(raw[1][1])
+                parsed_bounds = [[south, west], [north, east]]
+
+            elif isinstance(raw, list) and len(raw) == 4:
+                west, south, east, north = map(float, raw)
+                parsed_bounds = [[south, west], [north, east]]
+            else:
+                raise ValueError("Invalid bounds format")
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid bounds. Expected [[south,west],[north,east]] or [west,south,east,north]",
+            )
+
+    center_lat = (parsed_bounds[0][0] + parsed_bounds[1][0]) / 2
+    center_lng = (parsed_bounds[0][1] + parsed_bounds[1][1]) / 2
+
+    feature_data = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "mapElementType": "image",
+                    "name": image.filename or "Image",
+                    "mimeType": image.content_type,
+                    "start_date": "1700-01-01",
+                    "end_date": "2026-01-01",
+                    "bounds": parsed_bounds,
+                    "isPlaced": bool(bounds),
+                },
+                "geometry": {"type": "Point", "coordinates": [center_lng, center_lat]},
+            }
+        ],
+    }
+
+    try:
+        feature = Feature(
+            map_id=map_id,
+            is_feature_collection=False,
+            data=feature_data,
+            image=content,
+        )
+        session.add(feature)
+        await session.commit()
+        await session.refresh(feature)
+
+        return {"map_id": str(map_id), "feature_id": str(feature.id)}
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error saving feature image: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save feature image")

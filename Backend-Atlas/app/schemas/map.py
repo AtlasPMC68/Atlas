@@ -10,6 +10,7 @@ class MapOut(BaseModel):
     title: str
     description: Optional[str]
     is_private: bool
+    image: Optional[str]
     start_date: Optional[date]
     end_date: Optional[date]
     created_at: datetime

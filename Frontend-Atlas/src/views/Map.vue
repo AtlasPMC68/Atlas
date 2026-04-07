@@ -1,13 +1,18 @@
 <template>
   <div class="min-h-screen w-full bg-base-100 flex flex-col">
     <div class="navbar bg-base-100 shadow-lg">
-      <div class="flex justify-end">
-        <SaveDropdown @save="saveMap" @save-as="saveMapAs" />
+      <div class="flex justify-end gap-4">
+        <SaveDropdown @save="onSaveMap" />
+        <button @click="upload(mapId)" class="btn btn-primary">
+          Ajouter une carte
+        </button>
+        <button
+          @click="addFeatureImageDialog?.showModal()"
+          class="btn btn-primary"
+        >
+          Ajouter une image
+        </button>
       </div>
-
-      <button @click="upload(mapId)" class="btn btn-primary">
-        Ajouter une carte
-      </button>
     </div>
 
     <div class="flex flex-1">
@@ -21,36 +26,101 @@
 
       <div class="flex-1">
         <MapGeoJSON
+          ref="mapGeoJsonRef"
           :features="features"
           :feature-visibility="featureVisibility"
           @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
+          @draw-delete-id="onDeleteFeature"
+          @map-ready="onMapReady"
         />
       </div>
     </div>
-
-    <SaveAsModal
-      v-if="showSaveAsModal"
-      @save="handleSaveAs"
-      @cancel="showSaveAsModal = false"
     />
+    <Transition
+      enter-active-class="transition duration-300 ease-out"
+      enter-from-class="opacity-0 translate-y-2"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition duration-200 ease-in"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 translate-y-2"
+    >
+      <div
+        v-if="alert"
+        role="alert"
+        :class="[
+          'alert fixed bottom-6 right-6 z-50 w-auto max-w-sm shadow-lg',
+          alert.type === 'success' ? 'alert-success' : 'alert-error',
+        ]"
+      >
+        <span>{{ alert.message }}</span>
+      </div>
+    </Transition>
   </div>
+
+  <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
+
+      <fieldset class="fieldset">
+        <input
+          ref="fileInputRef"
+          type="file"
+          class="file-input file-input-ghost"
+          accept="image/*"
+          @change="onFileChange"
+        />
+        <label class="label">Taille maximale de 10MB</label>
+      </fieldset>
+      <div class="modal-action">
+        <button
+          class="btn"
+          :disabled="isAdding"
+          @click="onCloseAddFeatureImageDialog"
+        >
+          Annuler
+        </button>
+        <button
+          class="btn btn-primary"
+          :disabled="isAdding || !selectedFile"
+          @click="onAddFeatureImage"
+        >
+          <span
+            v-if="isAdding"
+            class="loading loading-spinner loading-xs"
+          ></span>
+          <span v-else class="text-white">Ajouter</span>
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isAdding">close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import SaveDropdown from "../components/save/Dropdown.vue";
-import SaveAsModal from "../components/save/SaveAsModal.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import type { MapSaveAsPayload } from "../typescript/map";
-import { camelToSnake, snakeToCamel } from "../utils/utils";
+import {
+  camelToSnake,
+  prepareFeaturesForSave,
+  snakeToCamel,
+} from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
+import leafletImage from "leaflet-image";
+import type { Map as LeafletMap } from "leaflet";
+import type { AlertState } from "../typescript/alert";
+import { showAlert, clearAlert } from "../utils/alert";
+
+const alert = ref<AlertState>(null);
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -60,10 +130,160 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 const route = useRoute();
 const router = useRouter();
 const mapId = ref(route.params.mapId as string).value;
+const mapGeoJsonRef = ref<{
+  syncFeaturesFromMapLayers: () => Feature[];
+  clearDraftLayers: () => void;
+} | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
-const showSaveAsModal = ref(false);
+const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
+const leafletMap = ref<LeafletMap | null>(null);
+const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
+const isAdding = ref(false);
+const selectedFile = ref<File | null>(null);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+async function onAddFeatureImage() {
+  if (!selectedFile.value || !keycloak.token) {
+    onCloseAddFeatureImageDialog();
+    return;
+  }
+
+  isAdding.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("image", selectedFile.value);
+    formData.append("map_id", mapId);
+
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/${mapId}/features/image`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${keycloak.token}` },
+        body: formData,
+      },
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP error : ${res.status}`);
+    }
+
+    await loadInitialFeatures();
+    selectedFile.value = null;
+    onCloseAddFeatureImageDialog();
+  } catch (e) {
+    console.error("Upload image failed:", e);
+  } finally {
+    isAdding.value = false;
+  }
+}
+
+function onMapReady(map: LeafletMap) {
+  leafletMap.value = map;
+}
+
+function onCloseAddFeatureImageDialog() {
+  isAdding.value = false;
+  selectedFile.value = null;
+  if (fileInputRef.value) {
+    fileInputRef.value.value = "";
+  }
+  addFeatureImageDialog.value?.close();
+}
+
+function onFileChange() {
+  const input = fileInputRef.value;
+  selectedFile.value = input?.files?.[0] ?? null;
+}
+
+async function uploadMapThumbnail(): Promise<boolean> {
+  if (!leafletMap.value || !mapId || !keycloak.token) return false;
+
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+
+  return await new Promise<boolean>((resolve) => {
+    leafletImage(leafletMap.value as LeafletMap, async (err, canvas) => {
+      if (err || !canvas) return resolve(false);
+
+      const blob = await new Promise<Blob | null>((r) =>
+        canvas.toBlob(r, "image/png"),
+      );
+      if (!blob) return resolve(false);
+
+      const formData = new FormData();
+      formData.append("image", blob);
+
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/maps/${mapId}/thumbnail`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${keycloak.token}` },
+          body: formData,
+        },
+      );
+
+      resolve(res.ok);
+    });
+  });
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+async function onDeleteFeature(
+  featureId: string,
+  // TODO : remove optional
+  callbacks?: {
+    onSuccess?: () => void;
+    onError?: (message?: string) => void;
+  },
+) {
+  if (!isUuid(featureId)) {
+    features.value = features.value.filter((feature) => feature.id !== featureId);
+    reconcileVisibility(features.value);
+    callbacks?.onSuccess?.();
+    return;
+  }
+
+  if (!currentUser.value) {
+    const message = "Utilisateur non authentifié.";
+    showAlert(alert, "error", message);
+    callbacks?.onError?.(message);
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Error deleting feature: ${response.status}`);
+    }
+
+    features.value = features.value.filter((feature) => feature.id !== featureId);
+    reconcileVisibility(features.value);
+
+    callbacks?.onSuccess?.();
+  } catch (error) {
+    const message = "Erreur lors de la suppression de l'élément.";
+    showAlert(alert, "error", message);
+    console.error("Failed to delete feature from API:", error);
+    callbacks?.onError?.(message);
+  }
+}
 
 function reconcileVisibility(list: Feature[]) {
   const next = new Map(featureVisibility.value);
@@ -93,6 +313,11 @@ async function loadInitialFeatures() {
     reconcileVisibility(allFeatures);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
+    showAlert(
+      alert,
+      "error",
+      "Erreur lors du chargement des éléments de la carte.",
+    );
   }
 }
 
@@ -106,56 +331,76 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-function handleFeaturesLoaded(_loadedFeatures: Feature[]) {}
+function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
+  uploadMapThumbnail();
+}
+
+const handleCtrlS = (e: KeyboardEvent) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    void onSaveMap();
+  }
+};
 
 onMounted(async () => {
   await fetchCurrentUser();
   await loadInitialFeatures();
+  window.addEventListener("keydown", handleCtrlS);
 });
 
-function saveMap() {
-  console.log("Quick save");
-  // appel API ou logique de sauvegarde ici
-}
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleCtrlS);
+  clearAlert(alert);
+});
 
-function saveMapAs() {
-  showSaveAsModal.value = true;
-}
-
-async function handleSaveAs(map: MapSaveAsPayload) {
-  if (!keycloak.token || !currentUser.value) {
-    throw new Error("No authentication token or user available");
-  }
-
-  const userId = currentUser.value.id;
+async function onSaveMap() {
+  if (isSaving.value) return;
+  isSaving.value = true;
 
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/save`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-      body: JSON.stringify(
-        camelToSnake({
-          userId: userId,
-          title: map.title,
-          description: map.description ? map.description : "",
-          isPrivate: map.isPrivate,
-        }),
-      ),
-    });
-
-    if (!response.ok) {
-      throw new Error("Error while saving the map");
+    if (!currentUser.value) {
+      showAlert(alert, "error", "Utilisateur non authentifié.");
+      return;
     }
 
-    await response.json();
-    showSaveAsModal.value = false;
-  } catch (err) {
-    throw new Error(
-      `Error while saving map: ${err instanceof Error ? err.message : String(err)}`,
+    const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
+    if (syncedFeatures) {
+      features.value = syncedFeatures;
+      reconcileVisibility(syncedFeatures);
+    }
+
+    const payload = camelToSnake(prepareFeaturesForSave(features.value));
+
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(payload),
+      },
     );
+
+    if (!response.ok) {
+      showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
+      throw new Error(`Error saving features: ${response.status}`);
+    }
+
+    const savedFeatures = snakeToCamel(await response.json()) as Feature[];
+    features.value = savedFeatures;
+    reconcileVisibility(savedFeatures);
+
+    mapGeoJsonRef.value?.clearDraftLayers();
+  } catch (err) {
+    showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
+    throw new Error(
+      `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    isSaving.value = false;
+    showAlert(alert, "success", "Carte sauvegardée avec succès !");
   }
 }
 </script>
