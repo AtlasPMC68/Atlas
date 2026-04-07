@@ -1,6 +1,5 @@
 <template>
   <div id="map" class="relative z-0 h-full w-full"></div>
-  <Alert></Alert>
 </template>
 
 <script setup lang="ts">
@@ -27,7 +26,6 @@ import type {
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
 import { showAlert } from "../composables/useAlert";
-import Alert from "./Alert.vue";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -49,7 +47,11 @@ const emit = defineEmits<{
   (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete-id", featureId: string, callbacks: {}): void;
+  (
+    e: "draw-delete-id",
+    featureId: string,
+    callbacks: { onSuccess: () => void; onError: (message: string) => void },
+  ): void;
   (e: "map-ready", map: L.Map): void;
 }>();
 

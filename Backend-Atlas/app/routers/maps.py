@@ -3,7 +3,6 @@ import logging
 from pathlib import Path
 from uuid import UUID
 import json
-import logging
 import math
 from json import JSONDecodeError
 from copy import deepcopy

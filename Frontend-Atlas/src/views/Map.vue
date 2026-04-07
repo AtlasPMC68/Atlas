@@ -2,6 +2,7 @@
   <div class="h-full w-full bg-base-100 flex flex-col">
     <div class="flex flex-1 min-h-0">
       <div class="w-80 bg-base-200 border-r border-base-300 min-h-0">
+        <!-- TODO UPDATE FEATURE SHOULD BE IMPLEMENTED BUT RIGHT NOW WE DO A GENERAL SAVE -->
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
@@ -211,10 +212,9 @@ function isUuid(value: string): boolean {
 
 async function onDeleteFeature(
   featureId: string,
-  // TODO : remove optional
   callbacks: {
-    onSuccess?: () => void;
-    onError?: (message?: string) => void;
+    onSuccess: () => void;
+    onError: (message: string) => void;
   },
 ) {
   if (!isUuid(featureId)) {
@@ -255,9 +255,8 @@ async function onDeleteFeature(
 
     callbacks?.onSuccess?.();
   } catch (error) {
-    const message = "Erreur lors de la suppression de l'élément.";
     console.error("Failed to delete feature:", error);
-    callbacks?.onError?.(message);
+    callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
   }
 }
 
@@ -365,6 +364,7 @@ async function onSaveMap() {
     reconcileVisibility(savedFeatures);
 
     mapGeoJsonRef.value?.clearDraftLayers();
+    showAlert("success", "Carte sauvegardée avec succès !");
   } catch (err) {
     showAlert("error", "Erreur lors de la sauvegarde des éléments.");
     throw new Error(
@@ -372,7 +372,6 @@ async function onSaveMap() {
     );
   } finally {
     isSaving.value = false;
-    showAlert("success", "Carte sauvegardée avec succès !");
   }
 }
 </script>

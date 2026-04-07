@@ -16,7 +16,13 @@
       ]"
     >
       <span>{{ alert.message }}</span>
-      <button class="btn btn-ghost btn-xs" @click="clearAlert">✕</button>
+      <button
+        class="btn btn-ghost btn-xs"
+        aria-label="Close alert"
+        @click="clearAlert"
+      >
+        ✕
+      </button>
     </div>
   </Transition>
 </template>
