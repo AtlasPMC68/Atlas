@@ -12,8 +12,8 @@ import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
-import type { AlertState } from "../typescript/alert";
-import { showAlert, clearAlert } from "../utils/alert";
+import { clearAlert, showAlert } from "../composables/useAlert";
+import Alert from "../components/Alert.vue";
 
 const maps = ref<MapData[]>([]);
 const router = useRouter();
@@ -32,7 +32,6 @@ const editMapTitle = ref<string | undefined>(undefined);
 const editMapDescription = ref<string | undefined>(undefined);
 const editMapIsPrivate = ref(true);
 const isEditing = ref(false);
-const alert = ref<AlertState>(null);
 const searchQuery = ref("");
 const filterVisibility = ref<"all" | "public" | "private">("all");
 const filterDateFrom = ref("");
@@ -83,17 +82,17 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  clearAlert(alert);
+  clearAlert();
 });
 
 // TODO: Add startDate endDate
 async function createMap() {
   if (!currentUser.value) {
-    showAlert(alert, "error", "Utilisateur non authentifié.");
+    showAlert("error", "Utilisateur non authentifié.");
     return;
   }
   if (!newMapTitle.value?.trim()) {
-    showAlert(alert, "error", "Le titre de la carte est requis.");
+    showAlert("error", "Le titre de la carte est requis.");
     return;
   }
   isCreating.value = true;
@@ -158,7 +157,7 @@ async function saveMap() {
     return;
   }
   if (!currentUser.value) {
-    showAlert(alert, "error", "Utilisateur non authentifié.");
+    showAlert("error", "Utilisateur non authentifié.");
     return;
   }
   isEditing.value = true;
@@ -267,27 +266,6 @@ async function fetchMapsAndRender() {
 
 <template>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Alerts -->
-    <Transition
-      enter-active-class="transition ease-out duration-300"
-      enter-from-class="opacity-0 translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition ease-in duration-200"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 translate-y-2"
-    >
-      <div
-        v-if="alert"
-        role="alert"
-        :class="[
-          'alert fixed bottom-6 right-6 z-50 w-auto max-w-sm shadow-lg',
-          alert.type === 'success' ? 'alert-success' : 'alert-error',
-        ]"
-      >
-        <span>{{ alert.message }}</span>
-      </div>
-    </Transition>
-
     <!-- Filters + search + button -->
     <div class="flex flex-col gap-3 mb-6">
       <!-- Filters row -->
@@ -578,6 +556,9 @@ async function fetchMapsAndRender() {
       </form>
     </dialog>
   </div>
+
+  <!-- Alerts -->
+  <Alert />
 </template>
 
 <style scoped>

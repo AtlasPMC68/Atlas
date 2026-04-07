@@ -22,8 +22,27 @@
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
+          @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
+          @save-map="onSaveMap"
+          @delete-feature="onDeleteFeature"
+          @add-map="upload(mapId)"
+          @update-feature="onSaveMap"
         />
       </div>
+      <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0">
+          <MapGeoJSON
+            class="h-full w-full"
+            :features="features"
+            :feature-visibility="featureVisibility"
+            :selected-year="selectedYear"
+            @features-loaded="handleFeaturesLoaded"
+            @draw-create="handleDrawChange"
+            @draw-update="handleDrawChange"
+            @draw-delete-id="onDeleteFeature"
+            @map-ready="onMapReady"
+          />
+        </div>
 
       <div class="flex-1">
         <MapGeoJSON
@@ -201,7 +220,7 @@
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
-import SaveDropdown from "../components/save/Dropdown.vue";
+import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
 import {
@@ -212,11 +231,9 @@ import {
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import type { Map as LeafletMap } from "leaflet";
-import type { AlertState } from "../typescript/alert";
-import { showAlert, clearAlert } from "../utils/alert";
-
-const alert = ref<AlertState>(null);
+import { type Map as LeafletMap } from "leaflet";
+import Alert from "../components/Alert.vue";
+import { clearAlert, showAlert } from "../composables/useAlert";
 
 const handleDrawChange = (updatedFeatures: Feature[]) => {
   features.value = updatedFeatures;
@@ -237,6 +254,7 @@ const mapGeoJsonRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
+const selectedYear = ref(1740);
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
@@ -490,7 +508,9 @@ async function onDeleteFeature(
   },
 ) {
   if (!isUuid(featureId)) {
-    features.value = features.value.filter((feature) => feature.id !== featureId);
+    features.value = features.value.filter(
+      (feature) => feature.id !== featureId,
+    );
     reconcileVisibility(features.value);
     callbacks?.onSuccess?.();
     return;
@@ -498,7 +518,7 @@ async function onDeleteFeature(
 
   if (!currentUser.value) {
     const message = "Utilisateur non authentifié.";
-    showAlert(alert, "error", message);
+    showAlert("error", message);
     callbacks?.onError?.(message);
     return;
   }
@@ -525,15 +545,15 @@ async function onDeleteFeature(
       throw new Error(`Error deleting feature: ${response.status}`);
     }
 
-    features.value = features.value.filter((feature) => feature.id !== featureId);
+    features.value = features.value.filter(
+      (feature) => feature.id !== featureId,
+    );
     reconcileVisibility(features.value);
 
     callbacks?.onSuccess?.();
   } catch (error) {
-    const message = "Erreur lors de la suppression de l'élément.";
-    showAlert(alert, "error", message);
-    console.error("Failed to delete feature from API:", error);
-    callbacks?.onError?.(message);
+    console.error("Failed to delete feature:", error);
+    callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
   }
 }
 
@@ -641,11 +661,7 @@ async function loadInitialFeatures() {
     reconcileVisibility(allFeatures);
   } catch (e) {
     console.error("Failed to load initial map features:", e);
-    showAlert(
-      alert,
-      "error",
-      "Erreur lors du chargement des éléments de la carte.",
-    );
+    showAlert("error", "Erreur lors du chargement des éléments de la carte.");
   }
 }
 
@@ -682,7 +698,7 @@ watch([mapRouteId, projectRouteId], async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleCtrlS);
-  clearAlert(alert);
+  clearAlert();
 });
 
 function saveMap() {
@@ -695,7 +711,7 @@ async function onSaveMap() {
 
   try {
     if (!currentUser.value) {
-      showAlert(alert, "error", "Utilisateur non authentifié.");
+      showAlert("error", "Utilisateur non authentifié.");
       return;
     }
 
@@ -725,7 +741,7 @@ async function onSaveMap() {
     );
 
     if (!response.ok) {
-      showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
+      showAlert("error", "Erreur lors de la sauvegarde des éléments.");
       throw new Error(`Error saving features: ${response.status}`);
     }
 
@@ -734,10 +750,12 @@ async function onSaveMap() {
     reconcileVisibility(savedFeatures);
 
     mapGeoJsonRef.value?.clearDraftLayers();
-    showAlert(alert, "success", "Carte sauvegardée avec succès !");
+    showAlert("success", "Projet sauvegardée avec succès !");
   } catch (err) {
-    showAlert(alert, "error", "Erreur lors de la sauvegarde des éléments.");
-    console.error("Error while saving features:", err);
+    showAlert("error", "Erreur lors de la sauvegarde des éléments.");
+    throw new Error(
+      `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
+    );
   } finally {
     isSaving.value = false;
   }
