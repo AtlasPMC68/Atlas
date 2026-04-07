@@ -34,7 +34,6 @@
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
           @draw-delete="handleDrawChange"
-          @draw-delete-id="onDeleteFeature"
           @map-ready="onMapReady"
           @undo="onUndo"
           @redo="onRedo"
@@ -161,13 +160,20 @@ const canUndo = featureHistoryService.canUndo;
 const canRedo = featureHistoryService.canRedo;
 const trackingEnabled = featureHistoryService.trackingEnabled;
 
-const handleDrawChange = (updatedFeatures: Feature[]) => {
-  if (!trackingEnabled.value) {
-    return;
+function handleDrawChange(updatedFeatures: Feature[]) {
+  const removedIds = features.value
+    .map((feature) => feature.id)
+    .filter((id): id is string => typeof id === "string")
+    .filter((id) => !updatedFeatures.some((feature) => feature.id === id));
+
+  for (const featureId of removedIds) {
+    void onDeleteFeature(featureId);
   }
 
-  commitFeatureSnapshot(updatedFeatures);
-};
+  if (trackingEnabled.value) {
+    commitFeatureSnapshot(updatedFeatures);
+  }
+}
 
 function applyFeatureSnapshot(next: Feature[], track = true) {
   const apply = () => {

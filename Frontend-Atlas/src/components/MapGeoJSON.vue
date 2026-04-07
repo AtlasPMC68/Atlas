@@ -59,7 +59,6 @@ const emit = defineEmits<{
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
   (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
-  (e: "draw-delete-id", featureId: string): void; // Delete the db feature (saved feature with id)
   (e: "map-ready", map: L.Map): void;
   (e: "undo"): void;
   (e: "redo"): void;
