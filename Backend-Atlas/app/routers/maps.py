@@ -22,6 +22,11 @@ from app.schemas.projectCreateRequest import ProjectCreateRequest
 from app.schemas.mapImportRequest import MapImportRequest
 from app.services.maps import create_map_in_db
 from app.services.projects import create_project_in_db, delete_project_in_db, update_project_in_db
+from app.utils.update_feature import (
+    to_feature_collection,
+    normalize_feature_collection,
+    serialize_db_feature,
+)
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
@@ -40,8 +45,9 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
 
-@router.post("/import")
+@router.post("/projects/{project_id}/maps")
 async def create_map_for_project(
+    project_id: UUID,
     request: MapImportRequest,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_async_session),
@@ -55,7 +61,7 @@ async def create_map_for_project(
 
         created_map_id = await create_map_in_db(
             db=db,
-            project_id=request.project_id,
+            project_id=project_id,
             user_id=UUID(user_id),
             title=request.title,
             start_date=request.start_date,

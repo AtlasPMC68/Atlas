@@ -534,7 +534,9 @@ async function createMapForProject() {
 
   isCreatingMap.value = true;
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/import`, {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/maps/projects/${targetProjectId}/maps`,
+      {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -542,14 +544,14 @@ async function createMapForProject() {
       },
       body: JSON.stringify(
         camelToSnake({
-          projectId: targetProjectId,
           title: newMapTitle.value.trim(),
           startDate: startDateForImport,
           endDate: endDateForImport,
           exactDate: usePreciseDates.value,
         }),
       ),
-    });
+      },
+    );
 
     if (!res.ok) {
       throw new Error(`Error creating map for project: ${res.status}`);
