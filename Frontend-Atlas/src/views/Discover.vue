@@ -52,7 +52,7 @@ onMounted(async () => {
 
 async function fetchProjectsAndRender() {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/projects`);
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/projects`);
 
     if (!res.ok) {
       throw new Error(`HTTP error : ${res.status}`);

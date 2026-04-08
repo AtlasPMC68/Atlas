@@ -64,7 +64,7 @@ export interface WorldAreaSelection {
   zoom: number;
 }
 
-// Response from POST /maps/coastline-keypoints
+// Response from POST /projects/coastline-keypoints
 export interface CoastlineKeypointsResponse {
   status: "success";
   keypoints: CoastlineKeypoint[];

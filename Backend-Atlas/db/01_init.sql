@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS "maps" (
 
 CREATE TABLE IF NOT EXISTS "features" (
   "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "project_id" UUID REFERENCES "projects"("id") ON DELETE CASCADE NOT NULL,
   "map_id" UUID REFERENCES "maps"("id") ON DELETE CASCADE,
   "data" JSONB NOT NULL,
   "created_at" TIMESTAMP DEFAULT (now()),

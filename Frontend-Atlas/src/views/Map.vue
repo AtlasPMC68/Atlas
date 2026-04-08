@@ -193,11 +193,9 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 
 const route = useRoute();
 const router = useRouter();
-const mapRouteId = computed(() => (route.params.mapId as string | undefined) ?? null);
 const projectRouteId = computed(
   () => (route.params.projectId as string | undefined) ?? null,
 );
-const activeMapId = ref<string | null>(null);
 const projectId = ref<string | null>(null);
 const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
@@ -278,19 +276,26 @@ function hasValidImportDates(): boolean {
 }
 
 async function onAddFeatureImage() {
-  if (!selectedFile.value || !keycloak.token || !activeMapId.value) {
+  if (!selectedFile.value || !keycloak.token) {
     onCloseAddFeatureImageDialog();
     return;
+  }
+
+  if (!projectId.value) {
+    const resolved = await resolveRouteContext();
+    if (!resolved || !projectId.value) {
+      onCloseAddFeatureImageDialog();
+      return;
+    }
   }
 
   isAdding.value = true;
   try {
     const formData = new FormData();
     formData.append("image", selectedFile.value);
-    formData.append("map_id", activeMapId.value);
 
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${activeMapId.value}/features/image`,
+      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features/image`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${keycloak.token}` },
@@ -356,7 +361,7 @@ async function uploadMapThumbnail(): Promise<boolean> {
       formData.append("image", blob);
 
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/${projectId.value}/thumbnail`,
+        `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/thumbnail`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${keycloak.token}` },
@@ -373,34 +378,9 @@ async function uploadMapThumbnail(): Promise<boolean> {
 }
 
 async function loadProjectIdForMap(): Promise<boolean> {
-  if (!keycloak.token) return false;
-
-  if (projectRouteId.value) {
-    projectId.value = projectRouteId.value;
-    activeMapId.value = null;
-    return true;
-  }
-
-  if (!mapRouteId.value) return false;
-
-  try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/map-project/${mapRouteId.value}`,
-      {
-        method: "GET",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-      },
-    );
-
-    if (!res.ok) return false;
-
-    const payload = snakeToCamel(await res.json()) as { projectId: string };
-    projectId.value = payload.projectId;
-    activeMapId.value = mapRouteId.value;
-    return Boolean(projectId.value);
-  } catch {
-    return false;
-  }
+  if (!projectRouteId.value) return false;
+  projectId.value = projectRouteId.value;
+  return true;
 }
 
 async function loadProjectMapsForTimeline() {
@@ -411,7 +391,7 @@ async function loadProjectMapsForTimeline() {
 
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/projects/${projectId.value}/maps`,
+      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/maps`,
       {
         method: "GET",
         headers: { Authorization: `Bearer ${keycloak.token}` },
@@ -472,16 +452,19 @@ async function onDeleteFeature(
     return;
   }
 
-  if (!activeMapId.value) {
-    const message = "Aucune carte active pour supprimer cet élément.";
-    showAlert("error", message);
-    callbacks?.onError?.(message);
-    return;
+  if (!projectId.value) {
+    const resolved = await resolveRouteContext();
+    if (!resolved || !projectId.value) {
+      const message = "Projet introuvable pour supprimer cet élément.";
+      showAlert("error", message);
+      callbacks?.onError?.(message);
+      return;
+    }
   }
 
   try {
     const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${activeMapId.value}/${featureId}`,
+      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features/${featureId}`,
       {
         method: "DELETE",
         headers: {
@@ -535,7 +518,7 @@ async function createMapForProject() {
   isCreatingMap.value = true;
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/projects/${targetProjectId}/maps`,
+      `${import.meta.env.VITE_API_URL}/projects/${targetProjectId}/maps`,
       {
       method: "POST",
       headers: {
@@ -587,16 +570,14 @@ async function loadInitialFeatures() {
     return;
   }
 
-  if (!activeMapId.value && !projectId.value) {
+  if (!projectId.value) {
     features.value = [];
     featureVisibility.value = new Map();
     return;
   }
 
   try {
-    const endpoint = activeMapId.value
-      ? `${import.meta.env.VITE_API_URL}/maps/features/${activeMapId.value}`
-      : `${import.meta.env.VITE_API_URL}/maps/projects/${projectId.value}/features`;
+    const endpoint = `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features`;
 
     const res = await fetch(endpoint, {
       method: "GET",
@@ -641,7 +622,7 @@ onMounted(async () => {
   window.addEventListener("keydown", handleCtrlS);
 });
 
-watch([mapRouteId, projectRouteId], async () => {
+watch([projectRouteId], async () => {
   await resolveRouteContext();
   await loadProjectMapsForTimeline();
   await loadInitialFeatures();
@@ -668,15 +649,18 @@ async function onSaveMap() {
       reconcileVisibility(syncedFeatures);
     }
 
-    if (!activeMapId.value) {
-      showAlert("error", "Aucune carte active à sauvegarder.");
-      return;
+    if (!projectId.value) {
+      const resolved = await resolveRouteContext();
+      if (!resolved || !projectId.value) {
+        showAlert("error", "Projet introuvable pour la sauvegarde.");
+        return;
+      }
     }
 
     const payload = camelToSnake(prepareFeaturesForSave(features.value));
 
     const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${activeMapId.value}`,
+      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features`,
       {
         method: "PUT",
         headers: {

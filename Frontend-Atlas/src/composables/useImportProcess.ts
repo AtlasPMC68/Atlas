@@ -97,7 +97,7 @@ export function useImportProcess() {
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/upload`,
+        `${import.meta.env.VITE_API_URL}/projects/upload`,
         {
           method: "POST",
           headers: {
@@ -144,7 +144,7 @@ export function useImportProcess() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/maps/status/${taskId}`,
+          `${import.meta.env.VITE_API_URL}/projects/status/${taskId}`,
         );
         const data: StatusResponse = await res.json();
 

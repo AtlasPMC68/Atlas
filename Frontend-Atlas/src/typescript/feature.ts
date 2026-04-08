@@ -3,7 +3,8 @@ export type FeatureId = string;
 export interface Feature {
   type: "Feature";
   id: string;
-  mapId: string;
+  projectId?: string;
+  mapId?: string | null;
   geometry: Geometry;
   properties: FeatureProperties;
   createdAt: string;

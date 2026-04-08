@@ -401,7 +401,7 @@ async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
 
   try {
     const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/map-project/${id}`,
+      `${import.meta.env.VITE_API_URL}/projects/map-project/${id}`,
       {
         method: "GET",
         headers: {

@@ -97,7 +97,7 @@ async function createMap() {
   }
   isCreating.value = true;
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/create`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/projects/create`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${keycloak.token}`,
@@ -163,7 +163,7 @@ async function saveMap() {
   isEditing.value = true;
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${mapToEdit.value.id}`,
+      `${import.meta.env.VITE_API_URL}/projects/${mapToEdit.value.id}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -204,7 +204,7 @@ async function executeDelete() {
   isDeleting.value = true;
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${mapToDelete.value.id}`,
+      `${import.meta.env.VITE_API_URL}/projects/${mapToDelete.value.id}`,
       {
         headers: { Authorization: `Bearer ${keycloak.token}` },
         method: "DELETE",
@@ -231,7 +231,7 @@ async function fetchMapsAndRender() {
 
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/projects?user_id=${currentUser.value.id}`,
+      `${import.meta.env.VITE_API_URL}/projects?user_id=${currentUser.value.id}`,
       {
         method: "GET",
         headers: {

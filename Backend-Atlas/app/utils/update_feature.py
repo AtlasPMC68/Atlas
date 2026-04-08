@@ -42,34 +42,35 @@ def normalize_feature_collection(data: dict | None) -> dict:
 	return to_feature_collection(first_feature)
 
 def serialize_db_feature(row: Feature) -> dict | None:
-    if not row.data or not isinstance(row.data, dict):
-        return None
+	if not row.data or not isinstance(row.data, dict):
+		return None
 
-    feature_data = row.data.get("features", [])
-    if not isinstance(feature_data, list) or not feature_data:
-        return None
+	feature_data = row.data.get("features", [])
+	if not isinstance(feature_data, list) or not feature_data:
+		return None
 
-    raw_feature = feature_data[0]
-    if not isinstance(raw_feature, dict):
-        return None
+	raw_feature = feature_data[0]
+	if not isinstance(raw_feature, dict):
+		return None
 
-    feature = deepcopy(raw_feature)
+	feature = deepcopy(raw_feature)
 
-    feature["id"] = str(row.id)
-    feature["map_id"] = str(row.map_id)
+	feature["id"] = str(row.id)
+	feature["project_id"] = str(row.project_id)
+	feature["map_id"] = str(row.map_id) if row.map_id else None
 
-    if row.created_at:
-        feature["created_at"] = row.created_at.isoformat()
-    if hasattr(row, "updated_at") and row.updated_at:
-        feature["updated_at"] = row.updated_at.isoformat()
+	if row.created_at:
+		feature["created_at"] = row.created_at.isoformat()
+	if hasattr(row, "updated_at") and row.updated_at:
+		feature["updated_at"] = row.updated_at.isoformat()
 
-    props = feature.setdefault("properties", {})
-    feature["start_date"] = props.get("start_date")
-    feature["end_date"] = props.get("end_date")
+	props = feature.setdefault("properties", {})
+	feature["start_date"] = props.get("start_date")
+	feature["end_date"] = props.get("end_date")
 
-    if getattr(row, "image", None):
-        image_bytes = bytes(row.image)
-        feature["image"] = base64.b64encode(image_bytes).decode("ascii")
-        props["mimeType"] = props.get("mimeType", "image/png")
+	if getattr(row, "image", None):
+		image_bytes = bytes(row.image)
+		feature["image"] = base64.b64encode(image_bytes).decode("ascii")
+		props["mimeType"] = props.get("mimeType", "image/png")
 
-    return feature
+	return feature

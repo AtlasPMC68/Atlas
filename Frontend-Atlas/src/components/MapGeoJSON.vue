@@ -189,6 +189,9 @@ const filteredFeatures = computed(() => {
   return props.features.filter((feature: Feature) => {
     if (!useTimelineFilter.value) return true;
 
+    // Project-level features without a map are always visible in timeline mode.
+    if (!feature.mapId) return true;
+
     const period = mapPeriodsByMapId.value.get(feature.mapId);
     if (!period) return true;
 

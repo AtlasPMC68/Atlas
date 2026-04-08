@@ -74,9 +74,8 @@ export function prepareFeaturesForSave(features: unknown[]): unknown[] {
       return rawFeature;
     }
 
-    const { mapId, createdAt, updatedAt, startDate, endDate, ...next } =
+    const { createdAt, updatedAt, startDate, endDate, ...next } =
       rawFeature;
-    void mapId;
     void createdAt;
     void updatedAt;
     void startDate;
