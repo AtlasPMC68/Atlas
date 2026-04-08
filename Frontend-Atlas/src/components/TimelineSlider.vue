@@ -96,15 +96,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
-import type { SliderPeriod } from "../typescript/map";
-
-type DayTick = {
-  date: string;
-  label: string;
-  days: number;
-  lane: number;
-  isExactDate: boolean;
-};
+import type { DayTick, SliderPeriod } from "../typescript/map";
 
 const props = defineProps<{
   year: number;

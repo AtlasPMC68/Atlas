@@ -12,6 +12,14 @@ export type SliderPeriod = MapPeriod & {
   endYear: number;
 };
 
+export type DayTick = {
+  date: string;
+  label: string;
+  days: number;
+  lane: number;
+  isExactDate: boolean;
+};
+
 export interface MapData {
   id: string;
   userId: string;
