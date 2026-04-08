@@ -95,17 +95,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-
-type SliderPeriod = {
-  id: string;
-  title: string;
-  color: string;
-  startYear: number;
-  endYear: number;
-  startDate?: string | null;
-  endDate?: string | null;
-  exactDate?: boolean;
-};
+import type { SliderPeriod } from "../typescript/map";
 
 type DayTick = {
   date: string;
@@ -139,7 +129,6 @@ const markerYears = computed(() => {
   return [...new Set(merged)].sort((a, b) => a - b);
 });
 
-const mapPeriods = computed<SliderPeriod[]>(() => props.mapPeriods ?? []);
 const PERIOD_ROW_HEIGHT_REM = 0.35;
 const PERIOD_ROW_GAP_REM = 0.2;
 const PERIOD_PADDING_REM = 0.35;
@@ -148,7 +137,7 @@ const PERIOD_PADDING_REM = 0.35;
 const isZoomMode = computed(() => dayZoomWindow.value != null);
 
 const positionedPeriods = computed(() => {
-  const sorted = [...mapPeriods.value].sort(
+  const sorted = [...(props.mapPeriods ?? [])].sort(
     (a, b) => a.startYear - b.startYear || a.endYear - b.endYear,
   );
 
@@ -219,7 +208,7 @@ const exactDatesForYear = computed(() => {
   const year = internalYear.value;
   const exactDateSet = new Set<string>();
 
-  mapPeriods.value.forEach((period: SliderPeriod) => {
+  (props.mapPeriods ?? []).forEach((period: SliderPeriod) => {
     if (!period.exactDate) return;
 
     if (period.startYear === year) {

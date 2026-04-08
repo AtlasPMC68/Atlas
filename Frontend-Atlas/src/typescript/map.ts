@@ -1,3 +1,17 @@
+export interface MapPeriod {
+  id: string;
+  title: string;
+  startDate: string | null;
+  endDate: string | null;
+  exactDate: boolean;
+  color: string;
+}
+
+export type SliderPeriod = MapPeriod & {
+  startYear: number;
+  endYear: number;
+};
+
 export interface MapData {
   id: string;
   userId: string;

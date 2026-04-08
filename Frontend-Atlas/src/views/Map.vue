@@ -174,6 +174,7 @@ import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
+import { MapPeriod } from "../typescript/map";
 import {
   camelToSnake,
   prepareFeaturesForSave,
@@ -218,16 +219,7 @@ const endDate = ref<string>("");
 const usePreciseDates = ref(false);
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
-const mapPeriods = ref<
-  Array<{
-    id: string;
-    title: string;
-    startDate: string | null;
-    endDate: string | null;
-    exactDate: boolean;
-    color: string;
-  }>
->([]);
+const mapPeriods = ref<MapPeriod[]>([]);
 
 const PERIOD_COLORS = [
   "#0ea5e9",

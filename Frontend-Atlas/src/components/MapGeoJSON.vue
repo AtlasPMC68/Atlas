@@ -9,7 +9,7 @@
           :min="timelineMinYear"
           :max="timelineMaxYear"
           :marker-years="timelineMarkerYears"
-          :map-periods="sliderMapPeriods"
+          :map-periods="enrichedPeriods"
           :current-exact-date="selectedExactDate"
         />
       </div>
@@ -50,6 +50,7 @@ import type {
   Geometry,
   FeatureId,
 } from "../typescript/feature";
+import type { MapPeriod, SliderPeriod } from "../typescript/map";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
 import { showAlert } from "../composables/useAlert";
 
@@ -66,14 +67,7 @@ interface GeoJsonFeatureCollectionWithGeometry {
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
-  mapPeriods: Array<{
-    id: string;
-    title: string;
-    startDate: string | null;
-    endDate: string | null;
-    exactDate: boolean;
-    color: string;
-  }>;
+  mapPeriods: MapPeriod[];
 }>();
 
 const emit = defineEmits<{
@@ -103,85 +97,27 @@ function toYear(value: string | null | undefined): number | null {
   return Number.isFinite(year) ? year : null;
 }
 
-const periodYears = computed(() => {
-  const years: number[] = [];
-  props.mapPeriods.forEach((period) => {
-    const s = toYear(period.startDate);
-    const e = toYear(period.endDate);
-    if (s != null) years.push(s);
-    if (e != null) years.push(e);
-  });
-  return years;
-});
+// Enrich MapPeriod with parsed startYear/endYear, filtering out periods with invalid dates.
+const enrichedPeriods = computed((): SliderPeriod[] =>
+  props.mapPeriods
+    .map((p) => ({ ...p, startYear: toYear(p.startDate), endYear: toYear(p.endDate) }))
+    .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
+);
 
-const timelineMinYear = computed(() => {
-  const years = [...periodYears.value];
-  if (!years.length) return 1400;
-  return Math.min(...years);
-});
+// Keyed by map id for O(1) feature filtering.
+const periodByMapId = computed(() => new Map(enrichedPeriods.value.map((p) => [p.id, p])));
 
-const timelineMaxYear = computed(() => {
-  const years = [...periodYears.value];
-  if (!years.length) return new Date().getFullYear();
-  return Math.max(...years);
-});
+const timelineMinYear = computed(() =>
+  enrichedPeriods.value.length ? Math.min(...enrichedPeriods.value.map((p) => p.startYear)) : 1400,
+);
 
-const mapPeriodsByMapId = computed(() => {
-  const periods = new Map<
-    string,
-    {
-      startYear: number | null;
-      endYear: number | null;
-      startDate: string | null;
-      endDate: string | null;
-    }
-  >();
-  props.mapPeriods.forEach((period) => {
-    periods.set(period.id, {
-      startYear: toYear(period.startDate),
-      endYear: toYear(period.endDate),
-      startDate: period.startDate,
-      endDate: period.endDate,
-    });
-  });
-  return periods;
-});
-
-const sliderMapPeriods = computed(() => {
-  return props.mapPeriods
-    .map((period) => ({
-      id: period.id,
-      title: period.title,
-      color: period.color,
-      startYear: toYear(period.startDate),
-      endYear: toYear(period.endDate),
-      startDate: period.startDate,
-      endDate: period.endDate,
-      exactDate: period.exactDate,
-    }))
-    .filter((period) => period.startYear != null && period.endYear != null)
-    .map((period) => ({
-      id: period.id,
-      title: period.title,
-      color: period.color,
-      startYear: period.startYear as number,
-      endYear: period.endYear as number,
-      startDate: period.startDate,
-      endDate: period.endDate,
-      exactDate: period.exactDate,
-    }));
-});
+const timelineMaxYear = computed(() =>
+  enrichedPeriods.value.length ? Math.max(...enrichedPeriods.value.map((p) => p.endYear)) : new Date().getFullYear(),
+);
 
 const timelineMarkerYears = computed(() => {
-  const markers = new Set<number>();
-  markers.add(timelineMinYear.value);
-  markers.add(timelineMaxYear.value);
-
-  sliderMapPeriods.value.forEach((period) => {
-    markers.add(period.startYear);
-    markers.add(period.endYear);
-  });
-
+  const markers = new Set<number>([timelineMinYear.value, timelineMaxYear.value]);
+  enrichedPeriods.value.forEach((p) => { markers.add(p.startYear); markers.add(p.endYear); });
   return [...markers].sort((a, b) => a - b);
 });
 
@@ -192,7 +128,7 @@ const filteredFeatures = computed(() => {
     // Project-level features without a map are always visible in timeline mode.
     if (!feature.mapId) return true;
 
-    const period = mapPeriodsByMapId.value.get(feature.mapId);
+    const period = periodByMapId.value.get(feature.mapId);
     if (!period) return true;
 
     if (selectedExactDate.value && period.startDate && period.endDate) {
