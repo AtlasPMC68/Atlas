@@ -1,7 +1,7 @@
 // composables/useImportProcess.ts
 import { ref, Ref } from "vue";
-import keycloak from "../keycloak";
 import { snakeToCamel } from "../utils/utils";
+import { apiFetch } from "../utils/api";
 import type { LegendBounds } from "../typescript/legend";
 
 type ImagePoint = { x: number; y: number };
@@ -108,16 +108,10 @@ export function useImportProcess() {
     formData.append("file", file);
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/projects/upload`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${keycloak.token}`,
-          },
-          body: formData,
-        },
-      );
+      const response = await apiFetch(`/projects/upload`, {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         const error: Partial<{ detail: string }> = await response.json();
@@ -155,9 +149,7 @@ export function useImportProcess() {
   const pollStatus = (taskId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/projects/status/${taskId}`,
-        );
+        const res = await apiFetch(`/projects/status/${taskId}`);
         const data: StatusResponse = await res.json();
 
         processingProgress.value = data.progress_percentage || 0;

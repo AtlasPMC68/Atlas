@@ -14,11 +14,12 @@
         />
       </div>
 
-      <div class="flex-1 min-h-0">
+      <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
         <MapGeoJSON
           ref="mapGeoJsonRef"
-          class="h-full w-full"
-          :features="features"
+          class="flex-1 min-h-0 w-full"
+          :features="filteredFeatures"
+          :selected-year="selectedYear"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
           :project-id="projectId || projectRouteId || ''"
@@ -29,6 +30,29 @@
           @draw-delete-id="onDeleteFeature"
           @map-ready="onMapReady"
         />
+        <div class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300">
+          <div class="map-timeline-slider w-full min-w-0">
+            <TimelineSlider
+              v-model:year="selectedYear"
+              @exact-date-change="onExactDateChange"
+              :min="timelineMinYear"
+              :max="timelineMaxYear"
+              :marker-years="timelineMarkerYears"
+              :map-periods="enrichedPeriods"
+              :current-exact-date="selectedExactDate"
+            />
+          </div>
+          <div class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap">
+            <span>Filtrer par date</span>
+            <input
+              v-model="useTimelineFilter"
+              type="checkbox"
+              aria-label="Filtrer par date"
+              role="switch"
+              class="timeline-filter-toggle"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -173,14 +197,19 @@
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
+import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import { Feature } from "../typescript/feature";
-import { MapPeriod } from "../typescript/map";
+import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
+import type { SliderPeriod } from "../typescript/map";
 import {
   camelToSnake,
+  isUuid,
   prepareFeaturesForSave,
   snakeToCamel,
 } from "../utils/utils";
+import { yearToIsoStart, yearToIsoEnd, toYear } from "../utils/dateUtils";
+import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
@@ -222,16 +251,60 @@ const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const mapPeriods = ref<MapPeriod[]>([]);
 
-const PERIOD_COLORS = [
-  "#0ea5e9",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#14b8a6",
-  "#e11d48",
-  "#84cc16",
-];
+const selectedYear = ref(-1);
+const selectedExactDate = ref<string | null>(null);
+const useTimelineFilter = ref(false);
+
+const enrichedPeriods = computed((): SliderPeriod[] =>
+  mapPeriods.value
+    .map((p) => ({ ...p, startYear: toYear(p.startDate), endYear: toYear(p.endDate) }))
+    .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
+);
+
+const periodByMapId = computed(() => new Map(enrichedPeriods.value.map((p) => [p.id, p])));
+
+const timelineMinYear = computed(() =>
+  enrichedPeriods.value.length ? Math.min(...enrichedPeriods.value.map((p) => p.startYear)) : 1400,
+);
+
+const timelineMaxYear = computed(() =>
+  enrichedPeriods.value.length ? Math.max(...enrichedPeriods.value.map((p) => p.endYear)) : new Date().getFullYear(),
+);
+
+const timelineMarkerYears = computed(() => {
+  const markers = new Set<number>([timelineMinYear.value, timelineMaxYear.value]);
+  enrichedPeriods.value.forEach((p) => { markers.add(p.startYear); markers.add(p.endYear); });
+  return [...markers].sort((a, b) => a - b);
+});
+
+const filteredFeatures = computed(() => {
+  return features.value.filter((feature: Feature) => {
+    if (!useTimelineFilter.value) return true;
+
+    // Project-level features without a map are always visible in timeline mode.
+    if (!feature.mapId) return true;
+
+    const period = periodByMapId.value.get(feature.mapId);
+    if (!period) return true;
+
+    if (selectedExactDate.value && period.startDate && period.endDate) {
+      return (
+        period.startDate <= selectedExactDate.value &&
+        period.endDate >= selectedExactDate.value
+      );
+    }
+
+    if (period.startYear == null || period.endYear == null) return true;
+    return (
+      period.startYear <= selectedYear.value &&
+      period.endYear >= selectedYear.value
+    );
+  });
+});
+
+function onExactDateChange(nextDate: string | null) {
+  selectedExactDate.value = nextDate;
+}
 
 function getStartDateForImport(): string | null {
   if (usePreciseDates.value) {
@@ -244,7 +317,7 @@ function getStartDateForImport(): string | null {
   if (!startYear.value || startYear.value < 1 || startYear.value > 9999) {
     return null;
   }
-  return `${String(startYear.value).padStart(4, "0")}-01-01`;
+  return yearToIsoStart(startYear.value);
 }
 
 function getEndDateForImport(): string | null {
@@ -258,7 +331,7 @@ function getEndDateForImport(): string | null {
   if (!endYear.value || endYear.value < 1 || endYear.value > 9999) {
     return null;
   }
-  return `${String(endYear.value).padStart(4, "0")}-12-31`;
+  return yearToIsoEnd(endYear.value);
 }
 
 function hasValidImportDates(): boolean {
@@ -287,14 +360,10 @@ async function onAddFeatureImage() {
     const formData = new FormData();
     formData.append("image", selectedFile.value);
 
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features/image`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-        body: formData,
-      },
-    );
+    const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
+      method: "POST",
+      body: formData,
+    });
 
     if (!res.ok) {
       throw new Error(`HTTP error : ${res.status}`);
@@ -353,14 +422,10 @@ async function uploadMapThumbnail(): Promise<boolean> {
       const formData = new FormData();
       formData.append("image", blob);
 
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/thumbnail`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${keycloak.token}` },
-          body: formData,
-        },
-      );
+      const res = await apiFetch(`/projects/${projectId.value}/thumbnail`, {
+        method: "POST",
+        body: formData,
+      });
 
       if (!res.ok) {
         console.error("Project thumbnail upload failed:", res.status);
@@ -383,13 +448,7 @@ async function loadProjectMapsForTimeline() {
   }
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/maps`,
-      {
-        method: "GET",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-      },
-    );
+    const res = await apiFetch(`/projects/${projectId.value}/maps`);
     if (!res.ok) throw new Error("Failed to fetch project maps for timeline");
 
     const rows = snakeToCamel(
@@ -414,12 +473,6 @@ async function loadProjectMapsForTimeline() {
     console.error("Failed to load map periods for timeline:", e);
     mapPeriods.value = [];
   }
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
 }
 
 async function onDeleteFeature(
@@ -456,14 +509,9 @@ async function onDeleteFeature(
   }
 
   try {
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features/${featureId}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-      },
+    const response = await apiFetch(
+      `/projects/${projectId.value}/features/${featureId}`,
+      { method: "DELETE" },
     );
 
     if (!response.ok) {
@@ -510,14 +558,9 @@ async function createMapForProject() {
 
   isCreatingMap.value = true;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/${targetProjectId}/maps`,
-      {
+    const res = await apiFetch(`/projects/${targetProjectId}/maps`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
         camelToSnake({
           title: newMapTitle.value.trim(),
@@ -526,8 +569,7 @@ async function createMapForProject() {
           exactDate: usePreciseDates.value,
         }),
       ),
-      },
-    );
+    });
 
     if (!res.ok) {
       throw new Error(`Error creating map for project: ${res.status}`);
@@ -572,14 +614,7 @@ async function loadInitialFeatures() {
   }
 
   try {
-    const endpoint = `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features`;
-
-    const res = await fetch(endpoint, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-    });
+    const res = await apiFetch(`/projects/${projectId.value}/features`);
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
@@ -623,6 +658,26 @@ watch([projectRouteId], async () => {
   await loadInitialFeatures();
 });
 
+watch([timelineMinYear, timelineMaxYear], () => {
+  if (selectedYear.value < timelineMinYear.value) {
+    selectedYear.value = timelineMinYear.value;
+  }
+  if (selectedYear.value > timelineMaxYear.value) {
+    selectedYear.value = timelineMaxYear.value;
+  }
+});
+
+watch(
+  timelineMarkerYears,
+  (markers) => {
+    if (!markers.length) return;
+    if (!markers.includes(selectedYear.value)) {
+      selectedYear.value = markers[0];
+    }
+  },
+  { immediate: true },
+);
+
 onUnmounted(() => {
   window.removeEventListener("keydown", handleCtrlS);
   clearAlert();
@@ -654,17 +709,11 @@ async function onSaveMap() {
 
     const payload = camelToSnake(prepareFeaturesForSave(features.value));
 
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/${projectId.value}/features`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+    const response = await apiFetch(`/projects/${projectId.value}/features`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
     if (!response.ok) {
       showAlert("error", "Erreur lors de la sauvegarde des éléments.");
@@ -687,3 +736,45 @@ async function onSaveMap() {
   }
 }
 </script>
+
+<style>
+.timeline-filter-toggle {
+  appearance: none;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-base-300);
+  background-color: var(--color-base-300);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.timeline-filter-toggle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 9999px;
+  background-color: var(--color-primary-content);
+  transform: translate(0, -50%);
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.timeline-filter-toggle:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.timeline-filter-toggle:checked::before {
+  background-color: var(--color-primary-content);
+  transform: translate(1rem, -50%);
+}
+
+.timeline-filter-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+</style>

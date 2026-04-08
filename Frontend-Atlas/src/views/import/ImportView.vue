@@ -199,7 +199,7 @@ import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
-import keycloak from "../../keycloak";
+import { apiFetch } from "../../utils/api";
 import type {
   WorldBounds,
   LatLngTuple,
@@ -410,18 +410,8 @@ async function handleLegendConfirmed(bounds: LegendBounds) {
 }
 
 async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
-  if (!keycloak.token) return null;
-
   try {
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/map-project/${id}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-      },
-    );
+    const response = await apiFetch(`/projects/map-project/${id}`);
 
     if (!response.ok) return null;
 

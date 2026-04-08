@@ -1,6 +1,7 @@
 // composables/useSiftPoints.ts
 import { ref } from "vue";
 import type { WorldBounds, CoastlineKeypointsResponse } from "../typescript/georef";
+import { apiFetch } from "../utils/api";
 
 export type SiftKeypoint = {
   x: number;
@@ -36,7 +37,7 @@ export function useSiftPoints() {
 //    formData.append("max_features", String(maxFeatures)); // backend expects Form field
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/projects/sift`, {
+      const response = await apiFetch(`/projects/sift`, {
         method: "POST",
         body: formData,
       });
@@ -81,13 +82,10 @@ export function useSiftPoints() {
     formData.append("height", String(height));
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/projects/coastline-keypoints`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+      const response = await apiFetch(`/projects/coastline-keypoints`, {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));

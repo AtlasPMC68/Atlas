@@ -9,8 +9,8 @@ import {
 } from "@heroicons/vue/24/outline";
 import { MapData } from "../typescript/map";
 import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
+import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
-import keycloak from "../keycloak";
 import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import Alert from "../components/Alert.vue";
@@ -97,11 +97,8 @@ async function createMap() {
   }
   isCreating.value = true;
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/projects/create`, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
+    const res = await apiFetch(`/projects/create`, {
+      headers: { "Content-Type": "application/json" },
       method: "POST",
       body: JSON.stringify(
         camelToSnake({
@@ -162,27 +159,21 @@ async function saveMap() {
   }
   isEditing.value = true;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/${mapToEdit.value.id}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-        method: "PUT",
-        body: JSON.stringify(
-          camelToSnake({
-            userId: currentUser.value.id,
-            title: editMapTitle.value,
-            description:
-              editMapDescription.value === ""
-                ? undefined
-                : editMapDescription.value,
-            isPrivate: editMapIsPrivate.value,
-          }),
-        ),
-      },
-    );
+    const res = await apiFetch(`/projects/${mapToEdit.value.id}`, {
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      body: JSON.stringify(
+        camelToSnake({
+          userId: currentUser.value.id,
+          title: editMapTitle.value,
+          description:
+            editMapDescription.value === ""
+              ? undefined
+              : editMapDescription.value,
+          isPrivate: editMapIsPrivate.value,
+        }),
+      ),
+    });
     if (!res.ok) {
       throw new Error(`Error updating map: ${res.status}`);
     }
@@ -203,13 +194,9 @@ async function executeDelete() {
   if (!mapToDelete.value) return;
   isDeleting.value = true;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/${mapToDelete.value.id}`,
-      {
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-        method: "DELETE",
-      },
-    );
+    const res = await apiFetch(`/projects/${mapToDelete.value.id}`, {
+      method: "DELETE",
+    });
     if (!res.ok) {
       throw new Error(`Error deleting map: ${res.status}`);
     }
@@ -230,15 +217,9 @@ async function fetchMapsAndRender() {
   }
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects?user_id=${currentUser.value.id}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-      },
+    const res = await apiFetch(
+      `/projects?user_id=${currentUser.value.id}`,
+      { headers: { "Content-Type": "application/json" } },
     );
 
     if (!res.ok) {

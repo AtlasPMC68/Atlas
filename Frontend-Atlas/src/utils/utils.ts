@@ -82,6 +82,10 @@ export function prepareFeaturesForSave(features: unknown[]): unknown[] {
   });
 }
 
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
   if (Array.isArray(maybeArray)) return maybeArray;
   if (maybeArray == null) return [];

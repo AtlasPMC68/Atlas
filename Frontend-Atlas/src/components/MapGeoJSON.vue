@@ -1,38 +1,14 @@
 <template>
-  <div class="relative h-full w-full z-0 flex flex-col min-h-0">
-    <div id="map" class="flex-1 min-h-0 w-full"></div>
-    <div class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300">
-      <div class="map-timeline-slider w-full min-w-0">
-        <TimelineSlider
-          v-model:year="selectedYear"
-          @exact-date-change="onExactDateChange"
-          :min="timelineMinYear"
-          :max="timelineMaxYear"
-          :marker-years="timelineMarkerYears"
-          :map-periods="enrichedPeriods"
-          :current-exact-date="selectedExactDate"
-        />
-      </div>
-      <div class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap">
-        <span>Filtrer par date</span>
-        <input
-          v-model="useTimelineFilter"
-          type="checkbox"
-          aria-label="Filtrer par date"
-          role="switch"
-          class="timeline-filter-toggle"
-        />
-      </div>
-    </div>
+  <div class="relative h-full w-full z-0">
+    <div id="map" class="h-full w-full"></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
-import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
 import {
@@ -50,9 +26,7 @@ import type {
   Geometry,
   FeatureId,
 } from "../typescript/feature";
-import type { MapPeriod, SliderPeriod } from "../typescript/map";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
-import { showAlert } from "../composables/useAlert";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -67,8 +41,8 @@ interface GeoJsonFeatureCollectionWithGeometry {
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
-  mapPeriods: MapPeriod[];
   projectId: string;
+  selectedYear: number;
 }>();
 
 const emit = defineEmits<{
@@ -78,78 +52,13 @@ const emit = defineEmits<{
   (
     e: "draw-delete-id",
     featureId: string,
-    callbacks: { onSuccess: () => void; onError: (message: string) => void },
+    callbacks?: { onSuccess?: () => void; onError?: (message?: string) => void },
   ): void;
   (e: "map-ready", map: L.Map): void;
 }>();
 
-const selectedYear = ref(-1);
-const selectedExactDate = ref<string | null>(null);
-const useTimelineFilter = ref(false);
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
-
-function toYear(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  return Number.isFinite(year) ? year : null;
-}
-
-// Enrich MapPeriod with parsed startYear/endYear, filtering out periods with invalid dates.
-const enrichedPeriods = computed((): SliderPeriod[] =>
-  props.mapPeriods
-    .map((p) => ({ ...p, startYear: toYear(p.startDate), endYear: toYear(p.endDate) }))
-    .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
-);
-
-// Keyed by map id for O(1) feature filtering.
-const periodByMapId = computed(() => new Map(enrichedPeriods.value.map((p) => [p.id, p])));
-
-const timelineMinYear = computed(() =>
-  enrichedPeriods.value.length ? Math.min(...enrichedPeriods.value.map((p) => p.startYear)) : 1400,
-);
-
-const timelineMaxYear = computed(() =>
-  enrichedPeriods.value.length ? Math.max(...enrichedPeriods.value.map((p) => p.endYear)) : new Date().getFullYear(),
-);
-
-const timelineMarkerYears = computed(() => {
-  const markers = new Set<number>([timelineMinYear.value, timelineMaxYear.value]);
-  enrichedPeriods.value.forEach((p) => { markers.add(p.startYear); markers.add(p.endYear); });
-  return [...markers].sort((a, b) => a - b);
-});
-
-const filteredFeatures = computed(() => {
-  return props.features.filter((feature: Feature) => {
-    if (!useTimelineFilter.value) return true;
-
-    // Project-level features without a map are always visible in timeline mode.
-    if (!feature.mapId) return true;
-
-    const period = periodByMapId.value.get(feature.mapId);
-    if (!period) return true;
-
-    if (selectedExactDate.value && period.startDate && period.endDate) {
-      return (
-        period.startDate <= selectedExactDate.value &&
-        period.endDate >= selectedExactDate.value
-      );
-    }
-
-    if (period.startYear == null || period.endYear == null) return true;
-    return (
-      period.startYear <= selectedYear.value &&
-      period.endYear >= selectedYear.value
-    );
-  });
-});
-
-function onExactDateChange(nextDate: string | null) {
-  selectedExactDate.value = nextDate;
-}
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
@@ -214,7 +123,7 @@ function applyLayerUpdate(layer: L.Layer) {
   try {
     const extracted = extractFeatureFromLayer(
       layer,
-      selectedYear.value,
+      props.selectedYear,
       props.projectId,
     );
     if (!extracted) return;
@@ -235,8 +144,8 @@ function syncFeaturesFromMapLayers(): Feature[] {
   const renderedFeatures = syncFeaturesFromLayerMap(
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
-    selectedYear.value,
     props.projectId,
+    props.selectedYear,
   );
 
   renderedFeatures.forEach((feature) => {
@@ -246,7 +155,7 @@ function syncFeaturesFromMapLayers(): Feature[] {
   drawing.drawnItems.value?.eachLayer((layer) => {
     const extracted = extractFeatureFromLayer(
       layer,
-      selectedYear.value,
+      props.selectedYear,
       props.projectId,
     );
     if (!extracted?.id) return;
@@ -290,15 +199,7 @@ const drawing = useMapDrawing(
       const next = current.filter((feature) => String(feature.id) !== deletedId);
       localFeaturesSnapshot.value = next;
 
-      emit("draw-delete-id", deletedId, {
-        onSuccess: () => {
-          showAlert("success", "Élément supprimé avec succès.");
-        },
-        onError: (message: string) => {
-          showAlert("error", message);
-        },
-      });
-
+    emit("draw-delete-id", deletedId);
       return;
     }
   },
@@ -680,7 +581,7 @@ function renderImages(features: Feature[]) {
 function renderAllFeatures() {
   if (!map) return;
 
-  const currentFeatures = filteredFeatures.value;
+  const currentFeatures = props.features;
   const currentIds = new Set(currentFeatures.map((f) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
@@ -742,7 +643,7 @@ onMounted(() => {
 
   L.control.zoom({ position: "topleft" }).addTo(map);
 
-  drawing.setSelectedYear(selectedYear.value);
+  drawing.setSelectedYear(props.selectedYear);
   emit("map-ready", map);
   renderAllFeatures();
 });
@@ -755,30 +656,9 @@ onBeforeUnmount(() => {
   }
 });
 
-watch([selectedYear, useTimelineFilter, selectedExactDate], () => {
-  if (!map) return;
-  renderAllFeatures();
+watch(() => props.selectedYear, (val) => {
+  drawing.setSelectedYear(val);
 });
-
-watch([timelineMinYear, timelineMaxYear], () => {
-  if (selectedYear.value < timelineMinYear.value) {
-    selectedYear.value = timelineMinYear.value;
-  }
-  if (selectedYear.value > timelineMaxYear.value) {
-    selectedYear.value = timelineMaxYear.value;
-  }
-});
-
-watch(
-  timelineMarkerYears,
-  (markers) => {
-    if (!markers.length) return;
-    if (!markers.includes(selectedYear.value)) {
-      selectedYear.value = markers[0];
-    }
-  },
-  { immediate: true },
-);
 
 watch(
   () => props.features,
