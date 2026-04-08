@@ -46,31 +46,15 @@ function extractCreatedMap(payload: unknown): CreatedMapRef | null {
 
   const obj = payload as Record<string, unknown>;
 
-  if (typeof obj.id === "string") {
-    return { id: obj.id } as CreatedMapRef;
-  }
-
   if (typeof obj.mapId === "string") {
     return { id: obj.mapId } as CreatedMapRef;
-  }
-
-  if (typeof obj.map_id === "string") {
-    return { id: obj.map_id } as CreatedMapRef;
   }
 
   if (obj.map && typeof obj.map === "object") {
     const map = obj.map as Record<string, unknown>;
 
-    if (typeof map.id === "string") {
-      return { id: map.id } as CreatedMapRef;
-    }
-
     if (typeof map.mapId === "string") {
       return { id: map.mapId } as CreatedMapRef;
-    }
-
-    if (typeof map.map_id === "string") {
-      return { id: map.map_id } as CreatedMapRef;
     }
   }
 
@@ -116,7 +100,7 @@ async function createMap() {
     }
 
     const rawPayload = await res.json().catch(() => null);
-    const payload = rawPayload ? snakeToCamel(rawPayload) : null;
+    const payload = snakeToCamel(rawPayload);
     const createdMap = extractCreatedMap(payload);
 
     if (!createdMap?.id) {
