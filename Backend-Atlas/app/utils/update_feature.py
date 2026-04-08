@@ -65,3 +65,12 @@ def serialize_db_feature(row: Feature) -> dict | None:
 		props["mimeType"] = props.get("mimeType", "image/png")
 
 	return feature
+
+
+def serialize_feature_rows(rows: list[Feature]) -> list[dict]:
+	serialized_features: list[dict] = []
+	for row in rows:
+		serialized = serialize_db_feature(row)
+		if serialized is not None:
+			serialized_features.append(serialized)
+	return serialized_features

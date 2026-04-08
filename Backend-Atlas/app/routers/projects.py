@@ -1,4 +1,3 @@
-import base64
 import logging
 from pathlib import Path
 from uuid import UUID
@@ -25,12 +24,11 @@ from app.services.projects import create_project_in_db, delete_project_in_db, up
 from app.utils.update_feature import (
     to_feature_collection,
     normalize_feature_collection,
-    serialize_db_feature,
+    serialize_feature_rows,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 
 from ..celery_app import celery_app
-from ..db import get_db
 from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
 from ..utils.auth import get_current_user_id, get_user_from_token
@@ -338,32 +336,6 @@ async def get_extraction_results(task_id: str):
         )
 
 
-def _serialize_features(features_rows: list[Feature]) -> list[dict]:
-    all_features = []
-    for f in features_rows:
-        if not f.data or not isinstance(f.data, dict):
-            continue
-
-        feature_data = f.data.get("features", [])
-        if not feature_data:
-            continue
-
-        feature = feature_data[0]
-        feature["id"] = str(f.id)
-        feature["project_id"] = str(f.project_id)
-        feature["map_id"] = str(f.map_id) if f.map_id else None
-
-        props = feature.get("properties", {})
-
-        if f.image:
-            feature["image"] = base64.b64encode(f.image).decode("ascii")
-            feature.setdefault("properties", {})
-            feature["properties"]["mimeType"] = props.get("mimeType", "image/png")
-
-        all_features.append(feature)
-
-    return all_features
-
 @router.put("/{project_id}/features")
 async def update_features(
     project_id: str,
@@ -435,13 +407,7 @@ async def update_features(
     )
     persisted_rows = refreshed_result.scalars().all()
 
-    persisted_features = []
-    for row in persisted_rows:
-        serialized = serialize_db_feature(row)
-        if serialized is not None:
-            persisted_features.append(serialized)
-
-    return persisted_features
+    return serialize_feature_rows(persisted_rows)
 
 
 @router.delete("/{project_id}/features/{feature_id}")
@@ -494,7 +460,7 @@ async def get_features(map_id: str, session: AsyncSession = Depends(get_async_se
     result = await session.execute(select(Feature).where(Feature.map_id == map_id))
     features_rows = result.scalars().all()
 
-    return _serialize_features(features_rows)
+    return serialize_feature_rows(features_rows)
 
 
 @router.get("/{project_id}/features")
@@ -521,7 +487,7 @@ async def get_project_features(
     )
     features_rows = features_result.scalars().all()
 
-    return _serialize_features(features_rows)
+    return serialize_feature_rows(features_rows)
 
 # Used to have lightweight data on maps for the timeline
 @router.get("/{project_id}/maps")

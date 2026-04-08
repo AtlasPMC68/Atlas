@@ -200,6 +200,7 @@ import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
 import { apiFetch } from "../../utils/api";
+import { snakeToCamel } from "../../utils/utils";
 import type {
   WorldBounds,
   LatLngTuple,
@@ -415,12 +416,11 @@ async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
 
     if (!response.ok) return null;
 
-    const data = (await response.json()) as {
-      project_id?: string;
-      projectId?: string;
-    };
+    const data = snakeToCamel(
+      (await response.json()) as { project_id?: string },
+    ) as { projectId?: string };
 
-    return data.project_id ?? data.projectId ?? null;
+    return data.projectId ?? null;
   } catch {
     return null;
   }
