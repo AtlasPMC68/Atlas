@@ -95,6 +95,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
 import type { SliderPeriod } from "../typescript/map";
 
 type DayTick = {
@@ -186,23 +187,6 @@ const periodTracksStyle = computed(() => {
 
   return { height: `${height}rem` };
 });
-
-function parseIsoDateUtc(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-function toIsoDateUtc(date: Date): string {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(date.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
 
 const exactDatesForYear = computed(() => {
   const year = internalYear.value;

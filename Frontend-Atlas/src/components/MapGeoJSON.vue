@@ -44,6 +44,7 @@ import {
   bindRenderedFeatureEvents,
 } from "../utils/mapLayersFeature";
 import { toArray, toImageSrc } from "../utils/utils";
+import { toYear } from "../utils/dateUtils";
 import type {
   Coordinate,
   Feature,
@@ -87,15 +88,6 @@ const selectedExactDate = ref<string | null>(null);
 const useTimelineFilter = ref(false);
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
-
-function toYear(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  return Number.isFinite(year) ? year : null;
-}
 
 // Enrich MapPeriod with parsed startYear/endYear, filtering out periods with invalid dates.
 const enrichedPeriods = computed((): SliderPeriod[] =>
@@ -279,14 +271,7 @@ const drawing = useMapDrawing((event, ...args) => {
     const next = current.filter((feature) => String(feature.id) !== deletedId);
     localFeaturesSnapshot.value = next;
 
-    emit("draw-delete-id", deletedId, {
-      onSuccess: () => {
-        showAlert("success", "Élément supprimé avec succès.");
-      },
-      onError: (message: string) => {
-        showAlert("error", message);
-      },
-    });
+    emit("draw-delete-id", deletedId);
 
     return;
   }
