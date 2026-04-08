@@ -266,7 +266,7 @@ const dayTickValues = computed(() => {
 });
 
 function getMonthName(monthIndex: number): string {
-  const names = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"];
+  const names = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
   return names[monthIndex] || "";
 }
 
