@@ -151,24 +151,33 @@ async def upload_and_process_map(
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
     enable_text_extraction: bool = Form(False),
+    project_id: str = Form(...),
     map_id: str = Form(...),
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
+        project_id = UUID(project_id)
         map_id = UUID(map_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid map_id")
+        raise HTTPException(status_code=400, detail="Invalid project_id or map_id")
     
     result = await session.execute(
         select(Map)
         .join(Project, Map.project_id == Project.id)
-        .where(Map.id == map_id, Project.user_id == UUID(user_id))
+        .where(
+            Map.id == map_id,
+            Map.project_id == project_id,
+            Project.user_id == UUID(user_id),
+        )
     )
     map_obj = result.scalar_one_or_none()
     if not map_obj:
-        raise HTTPException(status_code=404, detail="Map not found or access denied")
+        raise HTTPException(
+            status_code=404,
+            detail="Map not found for this project or access denied",
+        )
 
     # Validate file extension
     if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
@@ -247,6 +256,7 @@ async def upload_and_process_map(
         task = process_map_extraction.delay(
             filename=file.filename,
             file_content=file_content,
+            project_id=map_obj.project_id,
             map_id=map_id,
             pixel_points=pixel_points_list,
             geo_points_lonlat=geo_points_list,

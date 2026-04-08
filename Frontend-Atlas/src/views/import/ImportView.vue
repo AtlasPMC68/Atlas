@@ -223,6 +223,10 @@ const route = useRoute();
 const importStore = useImportStore();
 
 const routeMapId = computed(() => String(route.params.mapId)).value;
+const routeProjectId = computed(() => {
+  const qp = route.query.projectId;
+  return typeof qp === "string" ? qp : null;
+}).value;
 
 // Composables
 const {
@@ -339,6 +343,14 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
 async function submitImportWithGeoref(legend: LegendBounds | null) {
   if (!selectedFile.value) return;
 
+  const importProjectId =
+    routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
+  if (!importProjectId) {
+    console.error("Impossible de resoudre le project_id pour cette importation");
+    currentStep.value = 2;
+    return;
+  }
+
   const payload = pendingGeorefPayload.value;
 
   // Map to backend-expected shapes
@@ -352,6 +364,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
   // Pass matched point arrays to startImport with extraction options
   const result = await startImport(
     selectedFile.value,
+    importProjectId,
     routeMapId,
     imagePoints,
     worldPoints,

@@ -41,6 +41,7 @@ const mapId: Ref<string> = ref("");
 export function useImportProcess() {
   const startImport = async (
     file: File | null,
+    inputProjectId: string,
     inputMapId: string,
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
@@ -48,6 +49,16 @@ export function useImportProcess() {
     legendBounds?: LegendBounds | null,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
+    if (
+      !inputProjectId ||
+      inputProjectId === "undefined" ||
+      inputProjectId === "null"
+    ) {
+      return {
+        success: false,
+        error: "Aucun projet cible (project_id) n'a ete fourni pour l'extraction",
+      };
+    }
     if (!inputMapId || inputMapId === "undefined" || inputMapId === "null") {
       return {
         success: false,
@@ -61,6 +72,7 @@ export function useImportProcess() {
     processingProgress.value = 0;
 
     const formData = new FormData();
+    formData.append("project_id", inputProjectId);
     formData.append("map_id", inputMapId);
 
     // Add matched point pairs as expected by backend

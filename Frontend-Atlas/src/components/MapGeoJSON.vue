@@ -68,6 +68,7 @@ const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
   mapPeriods: MapPeriod[];
+  projectId: string;
 }>();
 
 const emit = defineEmits<{
@@ -211,7 +212,11 @@ function applyLayerUpdate(layer: L.Layer) {
   runtimeLayer.__atlasApplyingSync = true;
 
   try {
-    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      selectedYear.value,
+      props.projectId,
+    );
     if (!extracted) return;
 
     attachFeatureToLayer(layer, extracted);
@@ -231,6 +236,7 @@ function syncFeaturesFromMapLayers(): Feature[] {
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
     selectedYear.value,
+    props.projectId,
   );
 
   renderedFeatures.forEach((feature) => {
@@ -238,7 +244,11 @@ function syncFeaturesFromMapLayers(): Feature[] {
   });
 
   drawing.drawnItems.value?.eachLayer((layer) => {
-    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      selectedYear.value,
+      props.projectId,
+    );
     if (!extracted?.id) return;
     mergedById.set(String(extracted.id), extracted);
   });
@@ -255,42 +265,45 @@ defineExpose({
   clearDraftLayers,
 });
 
-const drawing = useMapDrawing((event, ...args) => {
-  const current = localFeaturesSnapshot.value;
+const drawing = useMapDrawing(
+  (event, ...args) => {
+    const current = localFeaturesSnapshot.value;
 
-  if (event === "feature-created") {
-    const payload = args[0] as Feature;
-    const next = upsertFeature(current, payload);
-    localFeaturesSnapshot.value = next;
-    emit("draw-create", next);
-    return;
-  }
+    if (event === "feature-created") {
+      const payload = args[0] as Feature;
+      const next = upsertFeature(current, payload);
+      localFeaturesSnapshot.value = next;
+      emit("draw-create", next);
+      return;
+    }
 
-  if (event === "feature-updated") {
-    const payload = args[0] as Feature;
-    const next = upsertFeature(current, payload);
-    localFeaturesSnapshot.value = next;
-    emit("draw-update", next);
-    return;
-  }
+    if (event === "feature-updated") {
+      const payload = args[0] as Feature;
+      const next = upsertFeature(current, payload);
+      localFeaturesSnapshot.value = next;
+      emit("draw-update", next);
+      return;
+    }
 
-  if (event === "feature-deleted") {
-    const deletedId = String(args[0]);
-    const next = current.filter((feature) => String(feature.id) !== deletedId);
-    localFeaturesSnapshot.value = next;
+    if (event === "feature-deleted") {
+      const deletedId = String(args[0]);
+      const next = current.filter((feature) => String(feature.id) !== deletedId);
+      localFeaturesSnapshot.value = next;
 
-    emit("draw-delete-id", deletedId, {
-      onSuccess: () => {
-        showAlert("success", "Élément supprimé avec succès.");
-      },
-      onError: (message: string) => {
-        showAlert("error", message);
-      },
-    });
+      emit("draw-delete-id", deletedId, {
+        onSuccess: () => {
+          showAlert("success", "Élément supprimé avec succès.");
+        },
+        onError: (message: string) => {
+          showAlert("error", message);
+        },
+      });
 
-    return;
-  }
-});
+      return;
+    }
+  },
+  () => props.projectId,
+);
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -789,61 +802,3 @@ watch(
   { deep: true },
 );
 </script>
-
-<style>
-.city-label-text {
-  font-size: 12px;
-  font-weight: bold;
-  color: black;
-  background: transparent;
-  padding: 2px 4px;
-  border-radius: 3px;
-  border: transparent;
-}
-
-.arrow-head {
-  font-size: 20px;
-  color: black;
-  transform: rotate(0deg);
-}
-
-.timeline-filter-toggle {
-  appearance: none;
-  width: 2.25rem;
-  height: 1.25rem;
-  border-radius: 9999px;
-  border: 1px solid var(--color-base-300);
-  background-color: var(--color-base-300);
-  position: relative;
-  cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease;
-}
-
-.timeline-filter-toggle::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 9999px;
-  background-color: var(--color-primary-content);
-  transform: translate(0, -50%);
-  transition: transform 150ms ease, background-color 150ms ease;
-}
-
-.timeline-filter-toggle:checked {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.timeline-filter-toggle:checked::before {
-  background-color: var(--color-primary-content);
-  transform: translate(1rem, -50%);
-}
-
-.timeline-filter-toggle:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-</style>

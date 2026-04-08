@@ -15,13 +15,6 @@ def normalize_feature_for_storage(feature: dict) -> dict:
 	if not isinstance(properties, dict):
 		properties = {}
 
-	start_date = payload.pop("start_date", None)
-	end_date = payload.pop("end_date", None)
-	if start_date is not None:
-		properties["start_date"] = start_date
-	if end_date is not None:
-		properties["end_date"] = end_date
-
 	payload["properties"] = properties
 	return payload
 
@@ -65,8 +58,6 @@ def serialize_db_feature(row: Feature) -> dict | None:
 		feature["updated_at"] = row.updated_at.isoformat()
 
 	props = feature.setdefault("properties", {})
-	feature["start_date"] = props.get("start_date")
-	feature["end_date"] = props.get("end_date")
 
 	if getattr(row, "image", None):
 		image_bytes = bytes(row.image)

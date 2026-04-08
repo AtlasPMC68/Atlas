@@ -21,6 +21,7 @@
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
+          :project-id="projectId || projectRouteId || ''"
           @features-loaded="handleFeaturesLoaded"
           @draw-create="handleDrawChange"
           @draw-update="handleDrawChange"
@@ -534,7 +535,9 @@ async function createMapForProject() {
 
     const payload = snakeToCamel(await res.json()) as { mapId: string };
     addMapDialogRef.value?.close();
-    router.push(`/televersement/${payload.mapId}`);
+    router.push(
+      `/televersement/${payload.mapId}?projectId=${targetProjectId}`,
+    );
   } catch (e) {
     console.error("Failed to create map for project:", e);
   } finally {
@@ -630,7 +633,7 @@ async function onSaveMap() {
   isSaving.value = true;
 
   try {
-    if (!currentUser.value) {
+    if (!keycloak.token) {
       showAlert("error", "Utilisateur non authentifié.");
       return;
     }
