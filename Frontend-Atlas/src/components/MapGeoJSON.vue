@@ -1,23 +1,12 @@
 <template>
-  <div class="relative h-full w-full z-0">
-    <div id="map" style="height: 80vh; width: 100%"></div>
-    <TimelineSlider v-model:year="selectedYear" />
-  </div>
+  <div id="map" class="relative z-0 h-full w-full"></div>
 </template>
 
 <script setup lang="ts">
-import {
-  onMounted,
-  onBeforeUnmount,
-  watch,
-  ref,
-  computed,
-  nextTick,
-} from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, computed, toRef, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
-import TimelineSlider from "../components/TimelineSlider.vue";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
 import {
@@ -51,6 +40,7 @@ interface GeoJsonFeatureCollectionWithGeometry {
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  selectedYear: number;
   canUndo: boolean;
   canRedo: boolean;
 }>();
@@ -64,7 +54,7 @@ const emit = defineEmits<{
   (e: "redo"): void;
 }>();
 
-const selectedYear = ref(1740);
+const selectedYear = toRef(props, "selectedYear");
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
@@ -695,12 +685,12 @@ function renderAllFeatures() {
   const featuresByType = {
     point: currentFeatures.filter((f) => getMapElementType(f) === "point"),
     zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
-    arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
     label: currentFeatures.filter((f) => getMapElementType(f) === "label"),
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
+    arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
     image: currentFeatures.filter((f) => getMapElementType(f) === "image"),
   };
 

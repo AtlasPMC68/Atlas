@@ -21,8 +21,12 @@ export type MapElementType =
   | "label"
   | "image";
 
+export type FeatureVisibilityGroupType =
+  | Exclude<MapElementType, "label" | "polyline" | "arrow">
+  | "other";
+
 export type FeatureVisibilityGroup = {
-  type: MapElementType;
+  type: FeatureVisibilityGroupType;
   label: string;
   features: Feature[];
 };
@@ -33,12 +37,12 @@ export interface FeatureProperties {
   name: string;
   labelText?: string;
   sizePx?: number;
-  colorName: string;
-  colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
-  opacity: number;
+  colorName?: string;
+  colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   strokeColor?: [number, number, number];
-  strokeWidth: number;
-  strokeOpacity: number;
+  opacity?: number;
+  strokeOpacity?: number;
+  strokeWidth?: number;
   mapElementType: MapElementType;
   shapeKind?: ShapeKind;
   mimeType?: string;
