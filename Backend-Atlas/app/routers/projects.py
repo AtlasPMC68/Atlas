@@ -414,7 +414,6 @@ async def update_features(
             new_feature = Feature(
                 project_id=project_uuid,
                 map_id=None,
-                is_feature_collection=False,
                 data=to_feature_collection(feature),
             )
             session.add(new_feature)
