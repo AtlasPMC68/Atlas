@@ -80,10 +80,10 @@ def check_for_match(actual: list[str], expected: list[str], levenshtein_params: 
     res: dict[str, tuple[str, float]] = {}
 
     # Try to find the closest match for every read wor
-    for ocr_word, ocr_word_ascii in actual_ascii_dict.items():
+    for expected_word, expected_word_ascii in expected_ascii_dict.items():
 
         min_dist: tuple[str, float] = ("a", 1000.0)
-        for expected_word, expected_word_ascii in expected_ascii_dict.items():
+        for ocr_word, ocr_word_ascii in actual_ascii_dict.items():
 
             # Perfect match
             if ocr_word == expected_word:

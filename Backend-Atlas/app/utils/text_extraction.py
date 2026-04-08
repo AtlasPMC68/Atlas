@@ -92,15 +92,16 @@ class TextExtraction:
         img: np.ndarray = deepcopy(self.image)
         img = preprocess.denoise_image(img)
         img = preprocess.scale_image(img, 2 * img_dim[1], 2 * img_dim[0])
-        # img = preprocess.clahe_color_amplification(img, 0.03)
+        img = preprocess.clahe_color_amplification(img, 0.03)
 
         img = preprocess.prepare_for_ocr(img)
+
         extracted_text = reader.readtext(img,
-                                         text_threshold=0.7,  # Slightly higher threshold
-                                         low_text=0.4,  # low res text detection
-                                         link_threshold=0.6,  # character linking tolerance
-                                         width_ths=0.7,  # character spacing tolerance
-                                         height_ths=0.7)
+                                         decoder='wordbeamsearch',
+                                         beamWidth=5,
+                                         rotation_info=[90, 270],
+                                         width_ths=2,
+                                         height_ths=1.5,)
 
         scaled_extracted_text = []
         ratio_x = img.shape[1] / self.image.shape[1]
