@@ -5,6 +5,7 @@ import json
 import math
 from json import JSONDecodeError
 from uuid import UUID
+import base64
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
 from sqlalchemy import not_, select, func
