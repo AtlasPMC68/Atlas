@@ -1,9 +1,9 @@
 from pydantic import BaseModel, ConfigDict
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-class MapOut(BaseModel):
+class ProjectOut(BaseModel):
     id: UUID
     user_id: UUID
     username: Optional[str] = None
@@ -11,8 +11,6 @@ class MapOut(BaseModel):
     description: Optional[str]
     is_private: bool
     image: Optional[str]
-    start_date: Optional[date]
-    end_date: Optional[date]
     created_at: datetime
     updated_at: datetime
 

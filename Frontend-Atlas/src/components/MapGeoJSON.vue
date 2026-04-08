@@ -1,9 +1,11 @@
 <template>
-  <div id="map" class="relative z-0 h-full w-full"></div>
+  <div class="relative h-full w-full z-0">
+    <div id="map" class="h-full w-full"></div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed, toRef } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -25,7 +27,6 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
-import { showAlert } from "../composables/useAlert";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -40,6 +41,7 @@ interface GeoJsonFeatureCollectionWithGeometry {
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  projectId: string;
   selectedYear: number;
 }>();
 
@@ -50,27 +52,13 @@ const emit = defineEmits<{
   (
     e: "draw-delete-id",
     featureId: string,
-    callbacks: { onSuccess: () => void; onError: (message: string) => void },
+    callbacks?: { onSuccess?: () => void; onError?: (message?: string) => void },
   ): void;
   (e: "map-ready", map: L.Map): void;
 }>();
 
-const selectedYear = toRef(props, "selectedYear");
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
-
-function getYearSafeUTC(dateText: string): number {
-  return new Date(dateText).getUTCFullYear();
-}
-
-const filteredFeatures = computed(() => {
-  return localFeaturesSnapshot.value.filter(
-    (feature: Feature) =>
-      getYearSafeUTC(feature.properties.startDate) <= selectedYear.value &&
-      (!feature.properties.endDate ||
-        getYearSafeUTC(feature.properties.endDate) >= selectedYear.value),
-  );
-});
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
@@ -133,7 +121,11 @@ function applyLayerUpdate(layer: L.Layer) {
   runtimeLayer.__atlasApplyingSync = true;
 
   try {
-    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      props.selectedYear,
+      props.projectId,
+    );
     if (!extracted) return;
 
     attachFeatureToLayer(layer, extracted);
@@ -152,7 +144,8 @@ function syncFeaturesFromMapLayers(): Feature[] {
   const renderedFeatures = syncFeaturesFromLayerMap(
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
-    selectedYear.value,
+    props.projectId,
+    props.selectedYear,
   );
 
   renderedFeatures.forEach((feature) => {
@@ -160,7 +153,11 @@ function syncFeaturesFromMapLayers(): Feature[] {
   });
 
   drawing.drawnItems.value?.eachLayer((layer) => {
-    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      props.selectedYear,
+      props.projectId,
+    );
     if (!extracted?.id) return;
     mergedById.set(String(extracted.id), extracted);
   });
@@ -177,42 +174,37 @@ defineExpose({
   clearDraftLayers,
 });
 
-const drawing = useMapDrawing((event, ...args) => {
-  const current = localFeaturesSnapshot.value;
+const drawing = useMapDrawing(
+  (event, ...args) => {
+    const current = localFeaturesSnapshot.value;
 
-  if (event === "feature-created") {
-    const payload = args[0] as Feature;
-    const next = upsertFeature(current, payload);
-    localFeaturesSnapshot.value = next;
-    emit("draw-create", next);
-    return;
-  }
+    if (event === "feature-created") {
+      const payload = args[0] as Feature;
+      const next = upsertFeature(current, payload);
+      localFeaturesSnapshot.value = next;
+      emit("draw-create", next);
+      return;
+    }
 
-  if (event === "feature-updated") {
-    const payload = args[0] as Feature;
-    const next = upsertFeature(current, payload);
-    localFeaturesSnapshot.value = next;
-    emit("draw-update", next);
-    return;
-  }
+    if (event === "feature-updated") {
+      const payload = args[0] as Feature;
+      const next = upsertFeature(current, payload);
+      localFeaturesSnapshot.value = next;
+      emit("draw-update", next);
+      return;
+    }
 
-  if (event === "feature-deleted") {
-    const deletedId = String(args[0]);
-    const next = current.filter((feature) => String(feature.id) !== deletedId);
-    localFeaturesSnapshot.value = next;
+    if (event === "feature-deleted") {
+      const deletedId = String(args[0]);
+      const next = current.filter((feature) => String(feature.id) !== deletedId);
+      localFeaturesSnapshot.value = next;
 
-    emit("draw-delete-id", deletedId, {
-      onSuccess: () => {
-        showAlert("success", "Élément supprimé avec succès.");
-      },
-      onError: (message: string) => {
-        showAlert("error", message);
-      },
-    });
-
-    return;
-  }
-});
+    emit("draw-delete-id", deletedId);
+      return;
+    }
+  },
+  () => props.projectId,
+);
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -589,7 +581,7 @@ function renderImages(features: Feature[]) {
 function renderAllFeatures() {
   if (!map) return;
 
-  const currentFeatures = filteredFeatures.value;
+  const currentFeatures = props.features;
   const currentIds = new Set(currentFeatures.map((f) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
@@ -651,7 +643,7 @@ onMounted(() => {
 
   L.control.zoom({ position: "topleft" }).addTo(map);
 
-  drawing.setSelectedYear(selectedYear.value);
+  drawing.setSelectedYear(props.selectedYear);
   emit("map-ready", map);
   renderAllFeatures();
 });
@@ -664,11 +656,8 @@ onBeforeUnmount(() => {
   }
 });
 
-watch(selectedYear, (newYear) => {
-  drawing.setSelectedYear(newYear);
-  void newYear;
-  if (!map) return;
-  renderAllFeatures();
+watch(() => props.selectedYear, (val) => {
+  drawing.setSelectedYear(val);
 });
 
 watch(
@@ -693,21 +682,3 @@ watch(
   { deep: true },
 );
 </script>
-
-<style>
-.city-label-text {
-  font-size: 12px;
-  font-weight: bold;
-  color: black;
-  background: transparent;
-  padding: 2px 4px;
-  border-radius: 3px;
-  border: transparent;
-}
-
-.arrow-head {
-  font-size: 20px;
-  color: black;
-  transform: rotate(0deg);
-}
-</style>
