@@ -79,7 +79,7 @@ export function layerToFeature(
 
   if (isTextMarkerLayer(layer)) {
     labelText = (layer.pm?.getText?.() ?? layer.options.text ?? "").trim();
-    sizePx = baseFeature?.properties?.sizePx ?? 12;
+    sizePx = baseFeature?.properties?.textSize ?? 12;
 
     if (!labelText) {
       return null;
@@ -157,7 +157,7 @@ export function layerToFeature(
     properties: {
       name: baseFeature?.properties?.name ?? "",
       labelText,
-      sizePx,
+      textSize: sizePx,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
       opacity: baseFeature?.properties?.opacity ?? 0.5,

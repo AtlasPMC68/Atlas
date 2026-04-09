@@ -159,7 +159,7 @@ async def is_project_owner(
         )
     )
 
-    return {"is_owner": result.scalar_one_or_none() is not None}
+    return result.scalar_one_or_none() is not None
 
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(

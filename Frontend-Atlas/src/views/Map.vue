@@ -651,8 +651,8 @@ async function isProjectOwner(targetProjectId: string): Promise<boolean> {
       return false;
     }
 
-    const data = snakeToCamel(await res.json()) as { isOwner?: boolean };
-    return data.isOwner === true;
+    const data = (await res.json()) as boolean;
+    return data === true;
   } catch (err) {
     console.error("Error checking project owner:", err);
     return false;

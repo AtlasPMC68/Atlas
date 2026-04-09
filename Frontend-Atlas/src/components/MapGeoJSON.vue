@@ -253,14 +253,18 @@ const drawing = useMapDrawing(
       return;
     }
 
-  if (event === "feature-deleted") {
-    const deletedId = String(args[0]);
-    const next = current.filter((feature) => String(feature.id) !== deletedId);
-    localFeaturesSnapshot.value = next;
-    emit("draw-delete", next);
-    return;
-  }
-}, () => props.projectId);
+    if (event === "feature-deleted") {
+      const deletedId = String(args[0]);
+      const next = current.filter(
+        (feature) => String(feature.id) !== deletedId,
+      );
+      localFeaturesSnapshot.value = next;
+      emit("draw-delete", next);
+      return;
+    }
+  },
+  () => props.projectId,
+);
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -311,7 +315,7 @@ function applyLabelStyle(marker: L.Marker, feature: Feature) {
   if (!el) return;
 
   const color = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-  const sizePx = feature.properties.sizePx ?? 12;
+  const sizePx = feature.properties.textSize ?? 12;
 
   el.style.setProperty("--label-color", color);
   el.style.setProperty("--label-size", `${sizePx}px`);
@@ -742,9 +746,12 @@ onBeforeUnmount(() => {
   }
 });
 
-watch(() => props.selectedYear, (val) => {
-  drawing.setSelectedYear(val);
-});
+watch(
+  () => props.selectedYear,
+  (val) => {
+    drawing.setSelectedYear(val);
+  },
+);
 
 watch(
   () => props.features,
@@ -793,68 +800,5 @@ watch(
   font-size: 20px;
   color: black;
   transform: rotate(0deg);
-}
-
-.leaflet-pm-toolbar .leaflet-pm-icon-atlas-undo,
-.leaflet-pm-toolbar .leaflet-pm-icon-atlas-redo {
-  position: relative;
-  background-image: none !important;
-}
-
-.leaflet-pm-toolbar .leaflet-pm-icon-atlas-undo::before,
-.leaflet-pm-toolbar .leaflet-pm-icon-atlas-redo::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 18px;
-  height: 18px;
-  background-color: #2c3e50;
-
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
-  -webkit-mask-image: none;
-
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  mask-image: none;
-}
-
-.leaflet-pm-toolbar .leaflet-pm-icon-atlas-undo::before {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='M9%2015%203%209m0%200%206-6M3%209h12a6%206%200%200%201%200%2012h-3'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='M9%2015%203%209m0%200%206-6M3%209h12a6%206%200%200%201%200%2012h-3'/%3E%3C/svg%3E");
-}
-
-.leaflet-pm-toolbar .leaflet-pm-icon-atlas-redo::before {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='m15%2015%206-6m0%200-6-6m6%206H9a6%206%200%200%200%200%2012h3'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke-width='1.5'%20stroke='black'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='m15%2015%206-6m0%200-6-6m6%206H9a6%206%200%200%200%200%2012h3'/%3E%3C/svg%3E");
-}
-
-.leaflet-pm-toolbar .leaflet-pm-control-disabled {
-  opacity: 0.4;
-  pointer-events: none;
-  cursor: not-allowed;
-}
-
-#map .leaflet-top.leaflet-left {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-}
-
-#map .leaflet-top.leaflet-left .leaflet-control {
-  clear: none;
-}
-
-#map .leaflet-top.leaflet-left .leaflet-control-zoom {
-  margin-right: 8px;
-}
-
-#map .leaflet-top.leaflet-left .leaflet-pm-toolbar {
-  display: flex;
-  flex-direction: row;
-  width: auto;
 }
 </style>
