@@ -235,7 +235,10 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import type { CreatedProjectRef, CreateProjectDialogExposed } from "../typescript/project";
+import type {
+  CreatedProjectRef,
+  CreateProjectDialogExposed,
+} from "../typescript/project";
 import CreateProjectDialog from "../components/CreateProjectDialog.vue";
 
 const route = useRoute();
@@ -455,14 +458,11 @@ async function onAddFeatureImage() {
     formData.append("image", selectedFile.value);
     formData.append("project_id", projectId.value);
 
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${projectId.value}/features/image`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-        body: formData,
-      },
-    );
+    const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${keycloak.token}` },
+      body: formData,
+    });
 
     if (!res.ok) {
       throw new Error(`HTTP error : ${res.status}`);
@@ -496,14 +496,18 @@ function onFileChange() {
   selectedFile.value = input?.files?.[0] ?? null;
 }
 
-async function uploadMapThumbnail(): Promise<boolean> {
+async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
   if (!leafletMap.value || !keycloak.token) return false;
 
-  if (!projectId.value) {
+  const resolvedProjectId = targetProjectId ?? projectId.value;
+
+  if (!resolvedProjectId && !targetProjectId) {
     const resolved = await resolveRouteContext();
     if (!resolved) return false;
   }
-  if (!projectId.value) return false;
+
+  const uploadProjectId = resolvedProjectId ?? projectId.value;
+  if (!uploadProjectId) return false;
 
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -532,7 +536,7 @@ async function uploadMapThumbnail(): Promise<boolean> {
         const formData = new FormData();
         formData.append("image", blob);
 
-        const res = await apiFetch(`/projects/${projectId.value}/thumbnail`, {
+        const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
           method: "POST",
           body: formData,
         });
@@ -753,15 +757,12 @@ async function loadInitialFeatures() {
 
 async function loadCurrentMapInfo(): Promise<void> {
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${projectId.value}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
+    const res = await apiFetch(`/projects/${projectId.value}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
       },
-    );
+    });
 
     if (!res.ok) {
       throw new Error(`Failed to fetch map info: ${res.status}`);
@@ -808,31 +809,28 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-async function isMapOwner(targetMapId: string): Promise<boolean> {
-  if (!targetMapId || !keycloak.token) {
+async function isProjectOwner(targetProjectId: string): Promise<boolean> {
+  if (!targetProjectId || !keycloak.token) {
     return false;
   }
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/is-owner/${targetMapId}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
+    const res = await apiFetch(`/projects/is-owner/${targetProjectId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
       },
-    );
+    });
 
     if (!res.ok) {
-      console.error(`Error checking map owner: ${res.status}`);
+      console.error(`Error checking project owner: ${res.status}`);
       return false;
     }
 
     const data = snakeToCamel(await res.json()) as { isOwner?: boolean };
     return data.isOwner === true;
   } catch (err) {
-    console.error("Error checking map owner:", err);
+    console.error("Error checking project owner:", err);
     return false;
   }
 }
@@ -846,8 +844,8 @@ function onCreateProjectDialogClosed() {
   shouldSaveAfterCopy.value = false;
 }
 
-async function onProjectCreated(map: CreatedProjectRef | null) {
-  if (!map?.id) {
+async function onProjectCreated(project: CreatedProjectRef | null) {
+  if (!project?.id) {
     pendingCopiedFeatures.value = null;
     shouldSaveAfterCopy.value = false;
 
@@ -871,14 +869,14 @@ async function onProjectCreated(map: CreatedProjectRef | null) {
   try {
     isSaving.value = true;
 
-    const targetProjectId = await requireProjectId();
+    const targetProjectId = project.id;
 
     await saveFeaturesToProject(targetProjectId, featuresToSave);
 
     pendingCopiedFeatures.value = null;
     shouldSaveAfterCopy.value = false;
 
-    await router.push(`/carte/${map.id}`);
+    await router.push(`/projet/${project.id}`);
     showAlert("success", "Une copie de la carte a été créée.");
   } catch (err) {
     console.error("Error while saving copied map features:", err);
@@ -979,17 +977,14 @@ async function saveFeaturesToProject(
 ): Promise<void> {
   const payload = camelToSnake(prepareFeaturesForSave(featuresToSave));
 
-  const response = await fetch(
-    `${import.meta.env.VITE_API_URL}/projects/features/${targetProjectId}`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-      body: JSON.stringify(payload),
+  const response = await apiFetch(`/projects/${targetProjectId}/features`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${keycloak.token}`,
     },
-  );
+    body: JSON.stringify(payload),
+  });
 
   if (!response.ok) {
     throw new Error(`Error saving features: ${response.status}`);
@@ -1000,7 +995,7 @@ async function saveFeaturesToProject(
   reconcileVisibility(savedFeatures);
 
   mapGeoJsonRef.value?.clearDraftLayers();
-  await uploadMapThumbnail();
+  await uploadMapThumbnail(targetProjectId);
 
   if (projectId.value === targetProjectId) {
     await loadInitialFeatures();
@@ -1032,26 +1027,13 @@ async function onSaveMap() {
       return;
     }
 
-    const isOwner = await isMapOwner(targetProjectId);
+    const isOwner = await isProjectOwner(targetProjectId);
 
     if (!isOwner) {
       pendingCopiedFeatures.value = [...featuresToSave];
       shouldSaveAfterCopy.value = true;
       await openCreateCopyDialog();
       return;
-    }
-
-    const payload = camelToSnake(prepareFeaturesForSave(features.value));
-
-    const response = await apiFetch(`/projects/${targetProjectId}/features`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      showAlert("error", "Erreur lors de la sauvegarde des éléments.");
-      throw new Error(`Error saving features: ${response.status}`);
     }
 
     await saveFeaturesToProject(targetProjectId, featuresToSave);

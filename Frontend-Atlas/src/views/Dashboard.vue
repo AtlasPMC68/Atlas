@@ -49,7 +49,7 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
   }
 
   await router.push({
-    path: `/carte/${project.id}`,
+    path: `/projet/${project.id}`,
   });
 }
 

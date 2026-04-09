@@ -6,28 +6,28 @@ import {
 } from "@heroicons/vue/24/outline";
 import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
-import keycloak from "../keycloak";
-import type { CreatedMapRef, CreateMapDialogPrefill } from "../typescript/map";
+import type { CreatedProjectRef, CreateProjectDialogPrefill } from "../typescript/project";
+import { apiFetch } from "../utils/api";
 
 const emit = defineEmits<{
-  (e: "created", map: CreatedMapRef | null): void;
+  (e: "created", project: CreatedProjectRef | null): void;
   (e: "error", message: string): void;
   (e: "closed"): void;
 }>();
 
 const dialogRef = ref<HTMLDialogElement | null>(null);
-const newMapTitle = ref<string | undefined>(undefined);
-const newMapDescription = ref<string | undefined>(undefined);
-const newMapIsPrivate = ref(true);
+const newProjectTitle = ref<string | undefined>(undefined);
+const newProjectDescription = ref<string | undefined>(undefined);
+const newProjectIsPrivate = ref(true);
 const isCreating = ref(false);
 const closeTriggeredByCreate = ref(false);
 
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 
-function open(prefill?: CreateMapDialogPrefill) {
-  newMapTitle.value = prefill?.title;
-  newMapDescription.value = prefill?.description;
-  newMapIsPrivate.value = prefill?.isPrivate ?? true;
+function open(prefill?: CreateProjectDialogPrefill) {
+  newProjectTitle.value = prefill?.title;
+  newProjectDescription.value = prefill?.description;
+  newProjectIsPrivate.value = prefill?.isPrivate ?? true;
   dialogRef.value?.showModal();
 }
 
@@ -36,25 +36,25 @@ function close() {
 }
 
 function resetForm() {
-  newMapTitle.value = undefined;
-  newMapDescription.value = undefined;
-  newMapIsPrivate.value = true;
+  newProjectTitle.value = undefined;
+  newProjectDescription.value = undefined;
+  newProjectIsPrivate.value = true;
 }
 
-function extractCreatedMap(payload: unknown): CreatedMapRef | null {
+function extractCreatedProject(payload: unknown): CreatedProjectRef | null {
   if (!payload || typeof payload !== "object") return null;
 
   const obj = payload as Record<string, unknown>;
 
-  if (typeof obj.mapId === "string") {
-    return { id: obj.mapId } as CreatedMapRef;
+  if (typeof obj.projectId === "string") {
+    return { id: obj.projectId } as CreatedProjectRef;
   }
 
   if (obj.map && typeof obj.map === "object") {
     const map = obj.map as Record<string, unknown>;
 
-    if (typeof map.mapId === "string") {
-      return { id: map.mapId } as CreatedMapRef;
+    if (typeof map.projectId === "string") {
+      return { id: map.projectId } as CreatedProjectRef;
     }
   }
 
@@ -71,49 +71,46 @@ async function createMap() {
     return;
   }
 
-  if (!newMapTitle.value?.trim()) {
-    emit("error", "Le titre de la carte est requis.");
+  if (!newProjectTitle.value?.trim()) {
+    emit("error", "Le titre du projet est requis.");
     return;
   }
 
   isCreating.value = true;
 
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/create`, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${keycloak.token}`,
-      },
+    const res = await apiFetch("/projects/create", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
         camelToSnake({
           userId: currentUser.value.id,
-          title: newMapTitle.value.trim(),
-          description: newMapDescription.value?.trim() || undefined,
-          isPrivate: newMapIsPrivate.value,
+          title: newProjectTitle.value.trim(),
+          description: newProjectDescription.value?.trim() || undefined,
+          isPrivate: newProjectIsPrivate.value,
         }),
       ),
     });
 
     if (!res.ok) {
-      throw new Error(`Error creating map: ${res.status}`);
+      throw new Error(`Error creating project: ${res.status}`);
     }
 
     const rawPayload = await res.json().catch(() => null);
     const payload = snakeToCamel(rawPayload);
-    const createdMap = extractCreatedMap(payload);
+    const createdProject = extractCreatedProject(payload);
 
-    if (!createdMap?.id) {
+    if (!createdProject?.id) {
       throw new Error(
-        "Aucun id valide retourné lors de la création de la carte.",
+        "Aucun id valide retourné lors de la création du projet.",
       );
     }
 
     closeTriggeredByCreate.value = true;
     close();
-    emit("created", createdMap);
+    emit("created", createdProject);
   } catch {
-    emit("error", "Erreur lors de la création de la carte.");
+    emit("error", "Erreur lors de la création du projet.");
   } finally {
     isCreating.value = false;
   }
@@ -146,27 +143,27 @@ defineExpose({
           <fieldset class="fieldset" :disabled="isCreating">
             <label class="label">Titre</label>
             <input
-              v-model="newMapTitle"
+              v-model="newProjectTitle"
               type="text"
               class="input"
-              placeholder="Titre de la carte"
+              placeholder="Titre du projet"
               required
             />
 
             <label class="label">Description</label>
             <input
-              v-model="newMapDescription"
+              v-model="newProjectDescription"
               type="text"
               class="input"
-              placeholder="Description de la carte"
+              placeholder="Description du projet"
             />
 
             <div class="gap-1">
               <div class="flex items-center gap-1">
-                <span class="fieldset-legend">Accès à la carte</span>
+                <span class="fieldset-legend">Accès au projet</span>
                 <div
                   class="tooltip tooltip-right items-center"
-                  data-tip="Les cartes publiques sont visibles par tous les utilisateurs, tandis que les cartes privées ne sont accessibles que par vous."
+                  data-tip="Les projets publics sont visibles par tous les utilisateurs, tandis que les projets privés ne sont accessibles que par vous."
                 >
                   <QuestionMarkCircleIcon class="h-4 w-4 text-gray-400" />
                 </div>
@@ -175,14 +172,14 @@ defineExpose({
               <label class="label cursor-pointer gap-2">
                 <input
                   type="checkbox"
-                  :checked="!newMapIsPrivate"
+                  :checked="!newProjectIsPrivate"
                   @change="
-                    newMapIsPrivate = !($event.target as HTMLInputElement)
+                    newProjectIsPrivate = !($event.target as HTMLInputElement)
                       .checked
                   "
                   class="toggle toggle-primary"
                 />
-                {{ newMapIsPrivate ? "Privé" : "Public" }}
+                {{ newProjectIsPrivate ? "Privé" : "Public" }}
               </label>
             </div>
           </fieldset>
@@ -200,7 +197,7 @@ defineExpose({
             <button
               type="submit"
               class="btn btn-primary flex items-center gap-2"
-              :disabled="!newMapTitle?.trim() || isCreating"
+              :disabled="!newProjectTitle?.trim() || isCreating"
             >
               <span>Créer</span>
               <span

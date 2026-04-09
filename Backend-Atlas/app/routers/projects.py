@@ -138,8 +138,63 @@ async def update_project(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating map: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update map")
+        logger.error(f"Error updating project: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update project")
+
+@router.get("/is-owner/{project_id}")
+async def is_project_owner(
+    project_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        user_id = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(Project.id).where(
+            Project.id == project_id,
+            Project.user_id == user_id,
+        )
+    )
+
+    return {"is_owner": result.scalar_one_or_none() is not None}
+
+@router.get("/{project_id}", response_model=ProjectOut)
+async def get_project(
+    project_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        user_id = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(Project, User.username)
+        .join(User, Project.user_id == User.id, isouter=True)
+        .where(Project.id == project_id)
+        .where((Project.user_id == user_id) | (Project.is_private.is_(False)))
+    )
+
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+    project_obj, username = row
+    return ProjectOut(
+        id=project_obj.id,
+        user_id=project_obj.user_id,
+        username=username,
+        title=project_obj.title,
+        description=project_obj.description,
+        is_private=project_obj.is_private,
+        image=project_obj.image,
+        created_at=project_obj.created_at,
+        updated_at=project_obj.updated_at,
+    )
 
 @router.post("/upload")
 async def upload_and_process_map(
@@ -471,20 +526,22 @@ async def get_project_features(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        project_uuid = UUID(project_id)
-        user_uuid = UUID(user_id)
+        project_id = UUID(project_id)
+        user_id = UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid project_id or user")
 
     project_result = await session.execute(
-        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+        select(Project.id)
+        .where(Project.id == project_id)
+        .where((Project.user_id == user_id) | (Project.is_private.is_(False)))
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:
         raise HTTPException(status_code=404, detail="Project not found or access denied")
 
     features_result = await session.execute(
-        select(Feature).where(Feature.project_id == project_uuid)
+        select(Feature).where(Feature.project_id == project_id)
     )
     features_rows = features_result.scalars().all()
 
@@ -504,7 +561,9 @@ async def get_project_maps(
         raise HTTPException(status_code=400, detail="Invalid project_id or user")
 
     project_result = await session.execute(
-        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+        select(Project.id)
+        .where(Project.id == project_uuid)
+        .where((Project.user_id == user_uuid) | (Project.is_private.is_(False)))
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:
