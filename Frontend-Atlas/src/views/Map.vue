@@ -1,12 +1,16 @@
 <template>
-  <div class="h-screen-minus-header w-full bg-base-100 flex flex-col overflow-hidden">
+  <div
+    class="h-screen-minus-header w-full bg-base-100 flex flex-col overflow-hidden"
+  >
     <div class="flex flex-1 min-h-0 overflow-hidden">
-      <div class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col">
+      <div
+        class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+      >
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
-          @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
+          @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @add-map="openAddMapDialog"
@@ -30,7 +34,9 @@
           @draw-delete-id="onDeleteFeature"
           @map-ready="onMapReady"
         />
-        <div class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300">
+        <div
+          class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+        >
           <div class="map-timeline-slider w-full min-w-0">
             <TimelineSlider
               v-model:year="selectedYear"
@@ -42,7 +48,9 @@
               :current-exact-date="selectedExactDate"
             />
           </div>
-          <div class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap">
+          <div
+            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
+          >
             <span>Filtrer par date</span>
             <input
               v-model="useTimelineFilter"
@@ -59,143 +67,23 @@
     <Alert />
   </div>
 
-  <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
-    <div class="modal-box">
-      <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
+  <AddImageDialog
+    ref="addFeatureImageDialogRef"
+    :is-adding="isAdding"
+    @submit="onAddFeatureImage"
+  />
 
-      <fieldset class="fieldset">
-        <input
-          ref="fileInputRef"
-          type="file"
-          class="file-input file-input-ghost"
-          accept="image/*"
-          @change="onFileChange"
-        />
-        <label class="label">Taille maximale de 10MB</label>
-      </fieldset>
-      <div class="modal-action">
-        <button
-          class="btn"
-          :disabled="isAdding"
-          @click="onCloseAddFeatureImageDialog"
-        >
-          Annuler
-        </button>
-        <button
-          class="btn btn-primary"
-          :disabled="isAdding || !selectedFile"
-          @click="onAddFeatureImage"
-        >
-          <span
-            v-if="isAdding"
-            class="loading loading-spinner loading-xs"
-          ></span>
-          <span v-else class="text-white">Ajouter</span>
-        </button>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isAdding">close</button>
-    </form>
-  </dialog>
-
-  <dialog ref="addMapDialogRef" class="modal">
-    <div class="modal-box p-0">
-      <form @submit.prevent="createMapForProject">
-        <div class="card-body">
-          <h3 class="text-lg font-bold">Ajouter une carte au projet</h3>
-
-          <fieldset class="fieldset" :disabled="isCreatingMap">
-            <label class="label">Nom de la carte</label>
-            <input
-              v-model="newMapTitle"
-              type="text"
-              class="input"
-              placeholder="Ex: Carte politique de 1850"
-              required
-            />
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="label">Date debut</label>
-                <input
-                  v-if="!usePreciseDates"
-                  v-model.number="startYear"
-                  type="number"
-                  min="1"
-                  max="9999"
-                  class="input"
-                  placeholder="Ex: 1850"
-                  required
-                />
-                <input
-                  v-else
-                  v-model="startDate"
-                  type="date"
-                  class="input"
-                  required
-                />
-              </div>
-
-              <div>
-                <label class="label">Date fin</label>
-                <input
-                  v-if="!usePreciseDates"
-                  v-model.number="endYear"
-                  type="number"
-                  min="1"
-                  max="9999"
-                  class="input"
-                  placeholder="Ex: 1900"
-                />
-                <input
-                  v-else
-                  v-model="endDate"
-                  type="date"
-                  class="input"
-                />
-              </div>
-            </div>
-          </fieldset>
-          <label class="label cursor-pointer gap-2 mb-2">
-            <input
-              v-model="usePreciseDates"
-              type="checkbox"
-              class="checkbox checkbox-sm"
-            />
-            <span>Utiliser la date exacte</span>
-          </label>
-          <div class="flex justify-end gap-2 mt-6">
-            <button
-              type="button"
-              class="btn btn-ghost"
-              :disabled="isCreatingMap"
-              @click="addMapDialogRef?.close()"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              class="btn btn-primary"
-              :disabled="!newMapTitle.trim() || !hasValidImportDates() || isCreatingMap"
-            >
-              <span
-                v-if="isCreatingMap"
-                class="loading loading-spinner loading-xs"
-              ></span>
-              <span v-else>Creer et importer</span>
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isCreatingMap">close</button>
-    </form>
-  </dialog>
+  <AddMapDialog
+    ref="addMapDialogRef"
+    :is-creating-map="isCreatingMap"
+    @submit="createMapForProject"
+  />
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import AddImageDialog from "../components/add/AddImage.vue";
+import AddMapDialog from "../components/add/AddMap.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
@@ -208,7 +96,7 @@ import {
   prepareFeaturesForSave,
   snakeToCamel,
 } from "../utils/utils";
-import { yearToIsoStart, yearToIsoEnd, toYear } from "../utils/dateUtils";
+import { toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
@@ -232,23 +120,21 @@ const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
 } | null>(null);
+const addMapDialogRef = ref<{
+  open: () => void;
+  close: () => void;
+} | null>(null);
+const addFeatureImageDialogRef = ref<{
+  open: () => void;
+  close: () => void;
+} | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
-const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
-const addMapDialogRef = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
-const newMapTitle = ref("");
-const startYear = ref<number | null>(null);
-const endYear = ref<number | null>(null);
-const startDate = ref<string>("");
-const endDate = ref<string>("");
-const usePreciseDates = ref(false);
-const selectedFile = ref<File | null>(null);
-const fileInputRef = ref<HTMLInputElement | null>(null);
 const mapPeriods = ref<MapPeriod[]>([]);
 
 const selectedYear = ref(-1);
@@ -257,23 +143,39 @@ const useTimelineFilter = ref(false);
 
 const enrichedPeriods = computed((): SliderPeriod[] =>
   mapPeriods.value
-    .map((p) => ({ ...p, startYear: toYear(p.startDate), endYear: toYear(p.endDate) }))
+    .map((p) => ({
+      ...p,
+      startYear: toYear(p.startDate),
+      endYear: toYear(p.endDate),
+    }))
     .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
 );
 
-const periodByMapId = computed(() => new Map(enrichedPeriods.value.map((p) => [p.id, p])));
+const periodByMapId = computed(
+  () => new Map(enrichedPeriods.value.map((p) => [p.id, p])),
+);
 
 const timelineMinYear = computed(() =>
-  enrichedPeriods.value.length ? Math.min(...enrichedPeriods.value.map((p) => p.startYear)) : 1400,
+  enrichedPeriods.value.length
+    ? Math.min(...enrichedPeriods.value.map((p) => p.startYear))
+    : 1400,
 );
 
 const timelineMaxYear = computed(() =>
-  enrichedPeriods.value.length ? Math.max(...enrichedPeriods.value.map((p) => p.endYear)) : new Date().getFullYear(),
+  enrichedPeriods.value.length
+    ? Math.max(...enrichedPeriods.value.map((p) => p.endYear))
+    : new Date().getFullYear(),
 );
 
 const timelineMarkerYears = computed(() => {
-  const markers = new Set<number>([timelineMinYear.value, timelineMaxYear.value]);
-  enrichedPeriods.value.forEach((p) => { markers.add(p.startYear); markers.add(p.endYear); });
+  const markers = new Set<number>([
+    timelineMinYear.value,
+    timelineMaxYear.value,
+  ]);
+  enrichedPeriods.value.forEach((p) => {
+    markers.add(p.startYear);
+    markers.add(p.endYear);
+  });
   return [...markers].sort((a, b) => a - b);
 });
 
@@ -306,51 +208,16 @@ function onExactDateChange(nextDate: string | null) {
   selectedExactDate.value = nextDate;
 }
 
-function getStartDateForImport(): string | null {
-  if (usePreciseDates.value) {
-    if (!startDate.value) return null;
-    const parsed = new Date(startDate.value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return startDate.value;
-  }
-
-  if (!startYear.value || startYear.value < 1 || startYear.value > 9999) {
-    return null;
-  }
-  return yearToIsoStart(startYear.value);
-}
-
-function getEndDateForImport(): string | null {
-  if (usePreciseDates.value) {
-    if (!endDate.value) return null;
-    const parsed = new Date(endDate.value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return endDate.value;
-  }
-
-  if (!endYear.value || endYear.value < 1 || endYear.value > 9999) {
-    return null;
-  }
-  return yearToIsoEnd(endYear.value);
-}
-
-function hasValidImportDates(): boolean {
-  const start = getStartDateForImport();
-  const end = getEndDateForImport();
-  if (!start || !end) return false;
-  return start <= end;
-}
-
-async function onAddFeatureImage() {
-  if (!selectedFile.value || !keycloak.token) {
-    onCloseAddFeatureImageDialog();
+async function onAddFeatureImage(file: File) {
+  if (!keycloak.token) {
+    addFeatureImageDialogRef.value?.close();
     return;
   }
 
   if (!projectId.value) {
     const resolved = await resolveRouteContext();
     if (!resolved || !projectId.value) {
-      onCloseAddFeatureImageDialog();
+      addFeatureImageDialogRef.value?.close();
       return;
     }
   }
@@ -358,7 +225,7 @@ async function onAddFeatureImage() {
   isAdding.value = true;
   try {
     const formData = new FormData();
-    formData.append("image", selectedFile.value);
+    formData.append("image", file);
 
     const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
       method: "POST",
@@ -370,8 +237,7 @@ async function onAddFeatureImage() {
     }
 
     await loadInitialFeatures();
-    selectedFile.value = null;
-    onCloseAddFeatureImageDialog();
+    addFeatureImageDialogRef.value?.close();
   } catch (e) {
     console.error("Upload image failed:", e);
   } finally {
@@ -381,20 +247,6 @@ async function onAddFeatureImage() {
 
 function onMapReady(map: LeafletMap) {
   leafletMap.value = map;
-}
-
-function onCloseAddFeatureImageDialog() {
-  isAdding.value = false;
-  selectedFile.value = null;
-  if (fileInputRef.value) {
-    fileInputRef.value.value = "";
-  }
-  addFeatureImageDialog.value?.close();
-}
-
-function onFileChange() {
-  const input = fileInputRef.value;
-  selectedFile.value = input?.files?.[0] ?? null;
 }
 
 async function uploadMapThumbnail(): Promise<boolean> {
@@ -535,26 +387,22 @@ async function resolveRouteContext(): Promise<boolean> {
 }
 
 function openAddMapDialog() {
-  newMapTitle.value = "";
-  startYear.value = null;
-  endYear.value = null;
-  startDate.value = "";
-  endDate.value = "";
-  usePreciseDates.value = false;
-  addMapDialogRef.value?.showModal();
+  addMapDialogRef.value?.open();
 }
 
-async function createMapForProject() {
+async function createMapForProject(formPayload: {
+  title: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
   if (!keycloak.token) return;
   const targetProjectId = projectId.value || projectRouteId.value;
 
-  if (!targetProjectId || !newMapTitle.value.trim()) {
+  if (!targetProjectId || !formPayload.title.trim()) {
     return;
   }
-  const startDateForImport = getStartDateForImport();
-  const endDateForImport = getEndDateForImport();
-  if (!startDateForImport || !endDateForImport) return;
-  if (startDateForImport > endDateForImport) return;
+  if (formPayload.startDate > formPayload.endDate) return;
 
   isCreatingMap.value = true;
   try {
@@ -563,10 +411,10 @@ async function createMapForProject() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
         camelToSnake({
-          title: newMapTitle.value.trim(),
-          startDate: startDateForImport,
-          endDate: endDateForImport,
-          exactDate: usePreciseDates.value,
+          title: formPayload.title.trim(),
+          startDate: formPayload.startDate,
+          endDate: formPayload.endDate,
+          exactDate: formPayload.exactDate,
         }),
       ),
     });
@@ -577,9 +425,7 @@ async function createMapForProject() {
 
     const payload = snakeToCamel(await res.json()) as { mapId: string };
     addMapDialogRef.value?.close();
-    router.push(
-      `/televersement/${payload.mapId}?projectId=${targetProjectId}`,
-    );
+    router.push(`/televersement/${payload.mapId}?projectId=${targetProjectId}`);
   } catch (e) {
     console.error("Failed to create map for project:", e);
   } finally {
@@ -747,7 +593,9 @@ async function onSaveMap() {
   background-color: var(--color-base-300);
   position: relative;
   cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
 }
 
 .timeline-filter-toggle::before {
@@ -760,7 +608,9 @@ async function onSaveMap() {
   border-radius: 9999px;
   background-color: var(--color-primary-content);
   transform: translate(0, -50%);
-  transition: transform 150ms ease, background-color 150ms ease;
+  transition:
+    transform 150ms ease,
+    background-color 150ms ease;
 }
 
 .timeline-filter-toggle:checked {
