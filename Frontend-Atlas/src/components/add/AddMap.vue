@@ -16,7 +16,7 @@
             />
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label class="label">Date debut</label>
+                <label class="label">Date début</label>
                 <input
                   v-if="!usePreciseDates"
                   v-model.number="startYear"
@@ -79,7 +79,7 @@
                 v-if="isCreatingMap"
                 class="loading loading-spinner loading-xs"
               ></span>
-              <span v-else>Creer et importer</span>
+              <span v-else>Créer et importer</span>
             </button>
           </div>
         </div>

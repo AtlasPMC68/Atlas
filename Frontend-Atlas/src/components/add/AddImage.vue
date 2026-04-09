@@ -1,9 +1,5 @@
 <template>
-  <dialog
-    id="addFeatureImageDialog"
-    ref="addFeatureImageDialogRef"
-    class="modal"
-  >
+  <dialog ref="addFeatureImageDialogRef" class="modal">
     <div class="modal-box">
       <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
 
