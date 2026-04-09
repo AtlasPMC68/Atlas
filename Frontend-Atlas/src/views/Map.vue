@@ -1,28 +1,36 @@
 <template>
-  <div class="h-full w-full bg-base-100 flex flex-col">
-    <div class="flex flex-1 min-h-0">
-      <div class="w-80 bg-base-200 border-r border-base-300 min-h-0">
+  <div
+    class="h-screen-minus-header w-full bg-base-100 flex flex-col overflow-hidden"
+  >
+    <div class="flex flex-1 min-h-0 overflow-hidden">
+      <div
+        class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+      >
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
-          @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
+          @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
-          @add-map="upload(mapId)"
+          @add-map="openAddMapDialog"
           @update-feature="onSaveMap"
         />
       </div>
-      <div class="flex-1 min-h-0 flex flex-col">
+      <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
         <div class="flex-1 relative min-h-0 h-full w-full">
           <MapGeoJSON
-            class="h-full w-full"
-            :features="features"
-            :feature-visibility="featureVisibility"
+            ref="mapGeoJsonRef"
+            class="flex-1 min-h-0 w-full"
+            :features="filteredFeatures"
             :selected-year="selectedYear"
+            :feature-visibility="featureVisibility"
+            :map-periods="mapPeriods"
+            :project-id="projectId || projectRouteId || ''"
             @features-loaded="handleFeaturesLoaded"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
+            @draw-delete="handleDrawChange"
             @draw-delete-id="onDeleteFeature"
             @map-ready="onMapReady"
           />
@@ -34,67 +42,71 @@
             />
           </div>
         </div>
-
-        <TimelineSlider v-model:year="selectedYear" />
+        <div
+          class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+        >
+          <div class="map-timeline-slider w-full min-w-0">
+            <TimelineSlider
+              v-model:year="selectedYear"
+              @exact-date-change="onExactDateChange"
+              :min="timelineMinYear"
+              :max="timelineMaxYear"
+              :marker-years="timelineMarkerYears"
+              :map-periods="enrichedPeriods"
+              :current-exact-date="selectedExactDate"
+            />
+          </div>
+          <div
+            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
+          >
+            <span>Filtrer par date</span>
+            <input
+              v-model="useTimelineFilter"
+              type="checkbox"
+              aria-label="Filtrer par date"
+              role="switch"
+              class="timeline-filter-toggle"
+            />
+          </div>
+        </div>
       </div>
     </div>
+
+    <Alert />
   </div>
 
-  <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
-    <div class="modal-box">
-      <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
+  <AddImageDialog
+    ref="addFeatureImageDialogRef"
+    :is-adding="isAdding"
+    @submit="onAddFeatureImage"
+  />
 
-      <fieldset class="fieldset">
-        <input
-          ref="fileInputRef"
-          type="file"
-          class="file-input file-input-ghost"
-          accept="image/*"
-          @change="onFileChange"
-        />
-        <label class="label">Taille maximale de 10MB</label>
-      </fieldset>
-      <div class="modal-action">
-        <button
-          class="btn"
-          :disabled="isAdding"
-          @click="onCloseAddFeatureImageDialog"
-        >
-          Annuler
-        </button>
-        <button
-          class="btn btn-primary"
-          :disabled="isAdding || !selectedFile"
-          @click="onAddFeatureImage"
-        >
-          <span
-            v-if="isAdding"
-            class="loading loading-spinner loading-xs"
-          ></span>
-          <span v-else class="text-white">Ajouter</span>
-        </button>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isAdding">close</button>
-    </form>
-  </dialog>
-  <Alert />
+  <AddMapDialog
+    ref="addMapDialogRef"
+    :is-creating-map="isCreatingMap"
+    @submit="createMapForProject"
+  />
 </template>
-
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from "vue";
+import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import AddImageDialog from "../components/add/AddImage.vue";
+import AddMapDialog from "../components/add/AddMap.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
+import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
+import type { SliderPeriod } from "../typescript/map";
 import {
   camelToSnake,
+  isUuid,
   prepareFeaturesForSave,
   snakeToCamel,
 } from "../utils/utils";
+import { toYear } from "../utils/dateUtils";
+import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
@@ -109,54 +121,136 @@ const handleDrawChange = (updatedFeatures: Feature[]) => {
 
 const route = useRoute();
 const router = useRouter();
-const mapId = ref(route.params.mapId as string).value;
+const projectRouteId = computed(
+  () => (route.params.projectId as string | undefined) ?? null,
+);
+const projectId = ref<string | null>(null);
 const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
 } | null>(null);
+const addMapDialogRef = ref<{
+  open: () => void;
+  close: () => void;
+} | null>(null);
+const addFeatureImageDialogRef = ref<{
+  open: () => void;
+  close: () => void;
+} | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
-const selectedYear = ref(1740);
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
-const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
-const selectedFile = ref<File | null>(null);
-const fileInputRef = ref<HTMLInputElement | null>(null);
+const isCreatingMap = ref(false);
+const mapPeriods = ref<MapPeriod[]>([]);
 
 const zoneFeatures = computed(() =>
   features.value.filter((f) => f.properties?.mapElementType === "zone"),
 );
 
-async function onAddFeatureImage() {
-  if (!selectedFile.value || !keycloak.token) {
-    onCloseAddFeatureImageDialog();
+const selectedYear = ref(-1);
+const selectedExactDate = ref<string | null>(null);
+const useTimelineFilter = ref(false);
+
+const enrichedPeriods = computed((): SliderPeriod[] =>
+  mapPeriods.value
+    .map((p) => ({
+      ...p,
+      startYear: toYear(p.startDate),
+      endYear: toYear(p.endDate),
+    }))
+    .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
+);
+
+const periodByMapId = computed(
+  () => new Map(enrichedPeriods.value.map((p) => [p.id, p])),
+);
+
+const timelineMinYear = computed(() =>
+  enrichedPeriods.value.length
+    ? Math.min(...enrichedPeriods.value.map((p) => p.startYear))
+    : 1400,
+);
+
+const timelineMaxYear = computed(() =>
+  enrichedPeriods.value.length
+    ? Math.max(...enrichedPeriods.value.map((p) => p.endYear))
+    : new Date().getFullYear(),
+);
+
+const timelineMarkerYears = computed(() => {
+  const markers = new Set<number>([
+    timelineMinYear.value,
+    timelineMaxYear.value,
+  ]);
+  enrichedPeriods.value.forEach((p) => {
+    markers.add(p.startYear);
+    markers.add(p.endYear);
+  });
+  return [...markers].sort((a, b) => a - b);
+});
+
+const filteredFeatures = computed(() => {
+  return features.value.filter((feature: Feature) => {
+    if (!useTimelineFilter.value) return true;
+
+    // Project-level features without a map are always visible in timeline mode.
+    if (!feature.mapId) return true;
+
+    const period = periodByMapId.value.get(feature.mapId);
+    if (!period) return true;
+
+    if (selectedExactDate.value && period.startDate && period.endDate) {
+      return (
+        period.startDate <= selectedExactDate.value &&
+        period.endDate >= selectedExactDate.value
+      );
+    }
+
+    if (period.startYear == null || period.endYear == null) return true;
+    return (
+      period.startYear <= selectedYear.value &&
+      period.endYear >= selectedYear.value
+    );
+  });
+});
+
+function onExactDateChange(nextDate: string | null) {
+  selectedExactDate.value = nextDate;
+}
+
+async function onAddFeatureImage(file: File) {
+  if (!keycloak.token) {
+    addFeatureImageDialogRef.value?.close();
     return;
+  }
+
+  if (!projectId.value) {
+    const resolved = await resolveRouteContext();
+    if (!resolved || !projectId.value) {
+      addFeatureImageDialogRef.value?.close();
+      return;
+    }
   }
 
   isAdding.value = true;
   try {
     const formData = new FormData();
-    formData.append("image", selectedFile.value);
-    formData.append("map_id", mapId);
+    formData.append("image", file);
 
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/${mapId}/features/image`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-        body: formData,
-      },
-    );
+    const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
+      method: "POST",
+      body: formData,
+    });
 
     if (!res.ok) {
       throw new Error(`HTTP error : ${res.status}`);
     }
 
     await loadInitialFeatures();
-    selectedFile.value = null;
-    onCloseAddFeatureImageDialog();
+    addFeatureImageDialogRef.value?.close();
   } catch (e) {
     console.error("Upload image failed:", e);
   } finally {
@@ -168,22 +262,14 @@ function onMapReady(map: LeafletMap) {
   leafletMap.value = map;
 }
 
-function onCloseAddFeatureImageDialog() {
-  isAdding.value = false;
-  selectedFile.value = null;
-  if (fileInputRef.value) {
-    fileInputRef.value.value = "";
-  }
-  addFeatureImageDialog.value?.close();
-}
-
-function onFileChange() {
-  const input = fileInputRef.value;
-  selectedFile.value = input?.files?.[0] ?? null;
-}
-
 async function uploadMapThumbnail(): Promise<boolean> {
-  if (!leafletMap.value || !mapId || !keycloak.token) return false;
+  if (!leafletMap.value || !keycloak.token) return false;
+
+  if (!projectId.value) {
+    const resolved = await resolveRouteContext();
+    if (!resolved) return false;
+  }
+  if (!projectId.value) return false;
 
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -201,30 +287,62 @@ async function uploadMapThumbnail(): Promise<boolean> {
       const formData = new FormData();
       formData.append("image", blob);
 
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/${mapId}/thumbnail`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${keycloak.token}` },
-          body: formData,
-        },
-      );
+      const res = await apiFetch(`/projects/${projectId.value}/thumbnail`, {
+        method: "POST",
+        body: formData,
+      });
 
+      if (!res.ok) {
+        console.error("Project thumbnail upload failed:", res.status);
+      }
       resolve(res.ok);
     });
   });
 }
 
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
+async function loadProjectIdForMap(): Promise<boolean> {
+  if (!projectRouteId.value) return false;
+  projectId.value = projectRouteId.value;
+  return true;
+}
+
+async function loadProjectMapsForTimeline() {
+  if (!keycloak.token || !projectId.value) {
+    mapPeriods.value = [];
+    return;
+  }
+
+  try {
+    const res = await apiFetch(`/projects/${projectId.value}/maps`);
+    if (!res.ok) throw new Error("Failed to fetch project maps for timeline");
+
+    const rows = snakeToCamel(
+      (await res.json()) as Array<{
+        id: string;
+        title: string;
+        startDate?: string | null;
+        endDate?: string | null;
+        exactDate?: boolean;
+      }>,
+    );
+
+    mapPeriods.value = rows.map((row, idx) => ({
+      id: row.id,
+      title: row.title,
+      startDate: row.startDate ?? null,
+      endDate: row.endDate ?? null,
+      exactDate: Boolean(row.exactDate),
+      color: PERIOD_COLORS[idx % PERIOD_COLORS.length],
+    }));
+  } catch (e) {
+    console.error("Failed to load map periods for timeline:", e);
+    mapPeriods.value = [];
+  }
 }
 
 async function onDeleteFeature(
   featureId: string,
-  // TODO : remove optional
-  callbacks: {
+  callbacks?: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
   },
@@ -245,15 +363,20 @@ async function onDeleteFeature(
     return;
   }
 
+  if (!projectId.value) {
+    const resolved = await resolveRouteContext();
+    if (!resolved || !projectId.value) {
+      const message = "Projet introuvable pour supprimer cet élément.";
+      showAlert("error", message);
+      callbacks?.onError?.(message);
+      return;
+    }
+  }
+
   try {
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}/${featureId}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-      },
+    const response = await apiFetch(
+      `/projects/${projectId.value}/features/${featureId}`,
+      { method: "DELETE" },
     );
 
     if (!response.ok) {
@@ -267,14 +390,64 @@ async function onDeleteFeature(
 
     callbacks?.onSuccess?.();
   } catch (error) {
-    const message = "Erreur lors de la suppression de l'élément.";
     console.error("Failed to delete feature:", error);
-    callbacks?.onError?.(message);
+    callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
+  }
+}
+
+async function resolveRouteContext(): Promise<boolean> {
+  return loadProjectIdForMap();
+}
+
+function openAddMapDialog() {
+  addMapDialogRef.value?.open();
+}
+
+async function createMapForProject(formPayload: {
+  title: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
+  if (!keycloak.token) return;
+  const targetProjectId = projectId.value || projectRouteId.value;
+
+  if (!targetProjectId || !formPayload.title.trim()) {
+    return;
+  }
+  if (formPayload.startDate > formPayload.endDate) return;
+
+  isCreatingMap.value = true;
+  try {
+    const res = await apiFetch(`/projects/${targetProjectId}/maps`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        camelToSnake({
+          title: formPayload.title.trim(),
+          startDate: formPayload.startDate,
+          endDate: formPayload.endDate,
+          exactDate: formPayload.exactDate,
+        }),
+      ),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Error creating map for project: ${res.status}`);
+    }
+
+    const payload = snakeToCamel(await res.json()) as { mapId: string };
+    addMapDialogRef.value?.close();
+    router.push(`/televersement/${payload.mapId}?projectId=${targetProjectId}`);
+  } catch (e) {
+    console.error("Failed to create map for project:", e);
+  } finally {
+    isCreatingMap.value = false;
   }
 }
 
 function reconcileVisibility(list: Feature[]) {
-  const next = new Map(featureVisibility.value);
+  const next = new Map<string, boolean>(featureVisibility.value);
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
@@ -289,10 +462,18 @@ function reconcileVisibility(list: Feature[]) {
 }
 
 async function loadInitialFeatures() {
+  if (!keycloak.token) {
+    return;
+  }
+
+  if (!projectId.value) {
+    features.value = [];
+    featureVisibility.value = new Map();
+    return;
+  }
+
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
-    );
+    const res = await apiFetch(`/projects/${projectId.value}/features`);
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
@@ -305,12 +486,8 @@ async function loadInitialFeatures() {
   }
 }
 
-function upload(mapId: string) {
-  router.push(`/televersement/${mapId}`);
-}
-
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
-  const next = new Map(featureVisibility.value);
+  const next = new Map<string, boolean>(featureVisibility.value);
   next.set(featureId, visible);
   featureVisibility.value = next;
 }
@@ -328,9 +505,37 @@ const handleCtrlS = (e: KeyboardEvent) => {
 
 onMounted(async () => {
   await fetchCurrentUser();
+  await resolveRouteContext();
+  await loadProjectMapsForTimeline();
   await loadInitialFeatures();
   window.addEventListener("keydown", handleCtrlS);
 });
+
+watch([projectRouteId], async () => {
+  await resolveRouteContext();
+  await loadProjectMapsForTimeline();
+  await loadInitialFeatures();
+});
+
+watch([timelineMinYear, timelineMaxYear], () => {
+  if (selectedYear.value < timelineMinYear.value) {
+    selectedYear.value = timelineMinYear.value;
+  }
+  if (selectedYear.value > timelineMaxYear.value) {
+    selectedYear.value = timelineMaxYear.value;
+  }
+});
+
+watch(
+  timelineMarkerYears,
+  (markers) => {
+    if (!markers.length) return;
+    if (!markers.includes(selectedYear.value)) {
+      selectedYear.value = markers[0];
+    }
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleCtrlS);
@@ -342,7 +547,7 @@ async function onSaveMap() {
   isSaving.value = true;
 
   try {
-    if (!currentUser.value) {
+    if (!keycloak.token) {
       showAlert("error", "Utilisateur non authentifié.");
       return;
     }
@@ -353,19 +558,21 @@ async function onSaveMap() {
       reconcileVisibility(syncedFeatures);
     }
 
+    if (!projectId.value) {
+      const resolved = await resolveRouteContext();
+      if (!resolved || !projectId.value) {
+        showAlert("error", "Projet introuvable pour la sauvegarde.");
+        return;
+      }
+    }
+
     const payload = camelToSnake(prepareFeaturesForSave(features.value));
 
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/features/${mapId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+    const response = await apiFetch(`/projects/${projectId.value}/features`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
     if (!response.ok) {
       showAlert("error", "Erreur lors de la sauvegarde des éléments.");
@@ -377,6 +584,7 @@ async function onSaveMap() {
     reconcileVisibility(savedFeatures);
 
     mapGeoJsonRef.value?.clearDraftLayers();
+    showAlert("success", "Projet sauvegardée avec succès !");
   } catch (err) {
     showAlert("error", "Erreur lors de la sauvegarde des éléments.");
     throw new Error(
@@ -384,7 +592,52 @@ async function onSaveMap() {
     );
   } finally {
     isSaving.value = false;
-    showAlert("success", "Carte sauvegardée avec succès !");
   }
 }
 </script>
+
+<style>
+.timeline-filter-toggle {
+  appearance: none;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-base-300);
+  background-color: var(--color-base-300);
+  position: relative;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.timeline-filter-toggle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 9999px;
+  background-color: var(--color-primary-content);
+  transform: translate(0, -50%);
+  transition:
+    transform 150ms ease,
+    background-color 150ms ease;
+}
+
+.timeline-filter-toggle:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.timeline-filter-toggle:checked::before {
+  background-color: var(--color-primary-content);
+  transform: translate(1rem, -50%);
+}
+
+.timeline-filter-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+</style>

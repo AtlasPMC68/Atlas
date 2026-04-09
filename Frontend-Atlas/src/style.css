@@ -86,3 +86,149 @@
 .leaflet-pm-toolbar .leaflet-pm-icon-freehand {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%235B5B5B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7'/%3E%3Cpath d='M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'/%3E%3C/svg%3E");
 }
+
+.timeline-container {
+  position: relative;
+  z-index: 1000;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.8rem 1.2rem;
+  background: white;
+  min-height: 6.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  border-top: 1px solid #ddd;
+}
+
+.slider-wrap {
+  position: relative;
+  z-index: 1000;
+  flex: 1;
+}
+
+.slider-axis {
+  --axis-inset: 0.55rem;
+  padding: 0 var(--axis-inset);
+  color: var(--color-primary);
+}
+
+.ticks-row,
+.labels-row {
+  position: relative;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: #6b7280;
+}
+
+.ticks-row {
+  height: 0.8rem;
+}
+
+.labels-row {
+  height: 1rem;
+}
+
+.day-labels-row {
+  height: 2rem;
+}
+
+.tick-mark,
+.tick-label {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+
+.period-tracks {
+  position: relative;
+  margin-bottom: 0.4rem;
+  border-radius: 0.25rem;
+  background: #ffffff;
+  overflow: visible;
+  z-index: 1000;
+}
+
+.period-track {
+  position: absolute;
+  border-radius: 999px;
+  opacity: 0.95;
+  z-index: 1000;
+  --tooltip-color: #ffffff;
+  --tooltip-text-color: #111827;
+}
+
+.period-track .tooltip-content {
+  z-index: 2000;
+  background: #ffffff;
+  color: #111827;
+}
+
+.period-track.tooltip::before,
+.period-track.tooltip::after {
+  background-color: #ffffff !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+}
+
+.timeline-year-range,
+.timeline-day-range {
+  display: block;
+}
+
+.city-label-text {
+  font-size: 12px;
+  font-weight: bold;
+  color: black;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: transparent;
+}
+
+.arrow-head {
+  font-size: 20px;
+  color: black;
+  transform: rotate(0deg);
+}
+
+.timeline-filter-toggle {
+  appearance: none;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-base-300);
+  background-color: var(--color-base-300);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.timeline-filter-toggle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 9999px;
+  background-color: var(--color-primary-content);
+  transform: translate(0, -50%);
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.timeline-filter-toggle:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.timeline-filter-toggle:checked::before {
+  background-color: var(--color-primary-content);
+  transform: translate(1rem, -50%);
+}
+
+.timeline-filter-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

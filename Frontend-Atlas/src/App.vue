@@ -7,7 +7,7 @@
     <Footer
       v-if="
         !noFooterRoutes.includes(route.path) &&
-        withFooterRouter.includes(route.path)
+        withFooterRoutes.includes(route.path)
       "
     />
   </div>
@@ -19,6 +19,6 @@ import Footer from "./components/layout/Footer.vue";
 import { useRoute } from "vue-router";
 const noHeaderRoutes = ["/connexion", "/inscription"];
 const noFooterRoutes = ["/connexion", "/inscription"];
-const withFooterRouter = ["/"];
+const withFooterRoutes = ["/"];
 const route = useRoute();
 </script>

@@ -1,6 +1,6 @@
 <template>
-  <div class="flex h-screen-minus-header min-h-0 flex-col">
-    <div class="tabs tabs-boxed bg-base-200 gap-2 p-2">
+  <div class="flex h-full min-h-0 flex-col">
+    <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5">
       <button
         v-for="group in featureGroups"
         :key="group.type"
@@ -19,7 +19,7 @@
 
     <!-- Liste des éléments avec contrôle de visibilité -->
 
-    <div class="p-4 py-0 flex flex-1 flex-col min-h-0">
+    <div class="px-3 py-0 flex flex-1 flex-col min-h-0">
       <div
         class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
       >
@@ -70,7 +70,7 @@
       </div>
     </div>
 
-    <div class="px-4 py-2 flex flex-col gap-2">
+    <div class="px-3 py-1.5 flex flex-col gap-1.5">
       <div class="divider m-0"></div>
       <div class="flex gap-2 items-center">
         <button
@@ -168,7 +168,7 @@
         </div>
         <div
           class="flex flex-col gap-2"
-          v-if="featureToEdit.properties.labelText"
+          v-if="featureToEdit.properties.labelText !== undefined"
         >
           <label class="label">Texte</label>
           <input v-model="featureToEditLabelText" type="text" class="input" />
@@ -176,20 +176,20 @@
         <div
           class="flex gap-2"
           v-if="
-            featureToEdit.properties.opacity ||
-            featureToEdit.properties.strokeOpacity
+            featureToEdit.properties.opacity !== undefined ||
+            featureToEdit.properties.strokeOpacity !== undefined
           "
         >
           <div
             class="flex flex-col gap-2 w-full"
-            v-if="featureToEdit.properties.opacity"
+            v-if="featureToEdit.properties.opacity !== undefined"
           >
             <label class="label">Opacité</label>
             <input v-model="featureToEditOpacity" type="number" class="input" />
           </div>
           <div
             class="flex flex-col gap-2 w-full"
-            v-if="featureToEdit.properties.strokeOpacity"
+            v-if="featureToEdit.properties.strokeOpacity !== undefined"
           >
             <label class="label">Opacité du contour</label>
             <input
@@ -201,7 +201,7 @@
         </div>
         <div
           class="flex flex-col gap-2 w-full"
-          v-if="featureToEdit.properties.strokeWidth"
+          v-if="featureToEdit.properties.strokeWidth !== undefined"
         >
           <label class="label">Épaisseur du contour</label>
           <input
@@ -216,7 +216,7 @@
         >
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.colorRgb"
+            v-if="featureToEdit.properties.colorRgb !== undefined"
           >
             <label class="label">Couleur :</label>
             <input
@@ -227,7 +227,7 @@
           </div>
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.strokeColor"
+            v-if="featureToEdit.properties.strokeColor !== undefined"
           >
             <label class="label">Couleur du contour :</label>
             <input
@@ -263,8 +263,6 @@
       <button :disabled="isEditing">close</button>
     </form>
   </dialog>
-
-  <Alert />
 </template>
 
 <script setup lang="ts">
@@ -286,7 +284,6 @@ import type {
 } from "../typescript/feature";
 import { getMapElementType } from "../utils/featureHelpers";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
-import Alert from "./Alert.vue";
 import { showAlert } from "../composables/useAlert";
 import { hexToRgb, rgbToHex } from "../utils/utils";
 
