@@ -13,6 +13,7 @@
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body space-y-6">
           <FileDropZone
+            v-if="!selectedFile"
             @file-selected="onDropzoneFileSelected"
             :is-loading="isUploading"
           />

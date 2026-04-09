@@ -140,6 +140,7 @@ async function loadTestCases(currentMapId: string) {
   try {
     const res = await fetch(
       `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${currentMapId}`,
+      { headers: { Authorization: `Bearer ${keycloak.token}` } },
     );
     if (!res.ok) {
       testCases.value = [];
@@ -161,6 +162,7 @@ async function loadTestZones(currentMapId: string) {
   try {
     const res = await fetch(
       `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${currentMapId}`,
+      { headers: { Authorization: `Bearer ${keycloak.token}` } },
     );
     if (!res.ok) {
       // For a brand-new test map, it's normal to have no zones yet.
