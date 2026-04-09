@@ -10,7 +10,7 @@
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
-          @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
+          @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @add-map="openAddMapDialog"
@@ -69,151 +69,30 @@
       <Alert />
     </div>
 
-    <dialog
-      id="addFeatureImageDialog"
-      ref="addFeatureImageDialog"
-      class="modal"
-    >
-      <div class="modal-box">
-        <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
+  <AddImageDialog
+    ref="addFeatureImageDialogRef"
+    :is-adding="isAdding"
+    @submit="onAddFeatureImage"
+  />
 
-        <fieldset class="fieldset">
-          <input
-            ref="fileInputRef"
-            type="file"
-            class="file-input file-input-ghost"
-            accept="image/*"
-            @change="onFileChange"
-          />
-          <label class="label">Taille maximale de 10MB</label>
-        </fieldset>
-        <div class="modal-action">
-          <button
-            class="btn"
-            :disabled="isAdding"
-            @click="onCloseAddFeatureImageDialog"
-          >
-            Annuler
-          </button>
-          <button
-            class="btn btn-primary"
-            :disabled="isAdding || !selectedFile"
-            @click="onAddFeatureImage"
-          >
-            <span
-              v-if="isAdding"
-              class="loading loading-spinner loading-xs"
-            ></span>
-            <span v-else class="text-white">Ajouter</span>
-          </button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button :disabled="isAdding">close</button>
-      </form>
-    </dialog>
-    <CreateProjectDialog
+  <AddMapDialog
+    ref="addMapDialogRef"
+    :is-creating-map="isCreatingMap"
+    @submit="createMapForProject"
+  />
+
+  <CreateProjectDialog
       ref="createProjectDialogRef"
       @created="onProjectCreated"
       @error="onCreateProjectError"
       @closed="onCreateProjectDialogClosed"
     />
-    <dialog ref="addMapDialogRef" class="modal">
-      <div class="modal-box p-0">
-        <form @submit.prevent="createMapForProject">
-          <div class="card-body">
-            <h3 class="text-lg font-bold">Ajouter une carte au projet</h3>
-
-            <fieldset class="fieldset" :disabled="isCreatingMap">
-              <label class="label">Nom de la carte</label>
-              <input
-                v-model="newMapTitle"
-                type="text"
-                class="input"
-                placeholder="Ex: Carte politique de 1850"
-                required
-              />
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label class="label">Date debut</label>
-                  <input
-                    v-if="!usePreciseDates"
-                    v-model.number="startYear"
-                    type="number"
-                    min="1"
-                    max="9999"
-                    class="input"
-                    placeholder="Ex: 1850"
-                    required
-                  />
-                  <input
-                    v-else
-                    v-model="startDate"
-                    type="date"
-                    class="input"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label class="label">Date fin</label>
-                  <input
-                    v-if="!usePreciseDates"
-                    v-model.number="endYear"
-                    type="number"
-                    min="1"
-                    max="9999"
-                    class="input"
-                    placeholder="Ex: 1900"
-                  />
-                  <input v-else v-model="endDate" type="date" class="input" />
-                </div>
-              </div>
-            </fieldset>
-            <label class="label cursor-pointer gap-2 mb-2">
-              <input
-                v-model="usePreciseDates"
-                type="checkbox"
-                class="checkbox checkbox-sm"
-              />
-              <span>Utiliser la date exacte</span>
-            </label>
-            <div class="flex justify-end gap-2 mt-6">
-              <button
-                type="button"
-                class="btn btn-ghost"
-                :disabled="isCreatingMap"
-                @click="addMapDialogRef?.close()"
-              >
-                Annuler
-              </button>
-              <button
-                type="submit"
-                class="btn btn-primary"
-                :disabled="
-                  !newMapTitle.trim() || !hasValidImportDates() || isCreatingMap
-                "
-              >
-                <span
-                  v-if="isCreatingMap"
-                  class="loading loading-spinner loading-xs"
-                ></span>
-                <span v-else>Creer et importer</span>
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button :disabled="isCreatingMap">close</button>
-      </form>
-    </dialog>
-    <Alert />
-  </div>
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import AddImageDialog from "../components/add/AddImage.vue";
+import AddMapDialog from "../components/add/AddMap.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
@@ -226,7 +105,7 @@ import {
   prepareFeaturesForSave,
   snakeToCamel,
 } from "../utils/utils";
-import { yearToIsoStart, yearToIsoEnd, toYear } from "../utils/dateUtils";
+import { toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
@@ -251,23 +130,21 @@ const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
 } | null>(null);
+const addMapDialogRef = ref<{
+  open: () => void;
+  close: () => void;
+} | null>(null);
+const addFeatureImageDialogRef = ref<{
+  open: () => void;
+  close: () => void;
+} | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
-const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
-const addMapDialogRef = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
-const newMapTitle = ref("");
-const startYear = ref<number | null>(null);
-const endYear = ref<number | null>(null);
-const startDate = ref<string>("");
-const endDate = ref<string>("");
-const usePreciseDates = ref(false);
-const selectedFile = ref<File | null>(null);
-const fileInputRef = ref<HTMLInputElement | null>(null);
 const mapPeriods = ref<MapPeriod[]>([]);
 
 const selectedYear = ref(-1);
@@ -439,15 +316,15 @@ function onRedo() {
 }
 
 async function onAddFeatureImage() {
-  if (!selectedFile.value || !keycloak.token) {
-    onCloseAddFeatureImageDialog();
+  if (!keycloak.token) {
+    addFeatureImageDialogRef.value?.close();
     return;
   }
 
   if (!projectId.value) {
     const resolved = await resolveRouteContext();
     if (!resolved || !projectId.value) {
-      onCloseAddFeatureImageDialog();
+      addFeatureImageDialogRef.value?.close();
       return;
     }
   }
@@ -455,8 +332,7 @@ async function onAddFeatureImage() {
   isAdding.value = true;
   try {
     const formData = new FormData();
-    formData.append("image", selectedFile.value);
-    formData.append("project_id", projectId.value);
+    formData.append("image", file);
 
     const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
       method: "POST",
@@ -469,8 +345,7 @@ async function onAddFeatureImage() {
     }
 
     await loadInitialFeatures();
-    selectedFile.value = null;
-    onCloseAddFeatureImageDialog();
+    addFeatureImageDialogRef.value?.close();
   } catch (e) {
     console.error("Upload image failed:", e);
   } finally {
@@ -666,26 +541,22 @@ async function requireProjectId(): Promise<string> {
 }
 
 function openAddMapDialog() {
-  newMapTitle.value = "";
-  startYear.value = null;
-  endYear.value = null;
-  startDate.value = "";
-  endDate.value = "";
-  usePreciseDates.value = false;
-  addMapDialogRef.value?.showModal();
+  addMapDialogRef.value?.open();
 }
 
-async function createMapForProject() {
+async function createMapForProject(formPayload: {
+  title: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
   if (!keycloak.token) return;
   const targetProjectId = projectId.value;
 
-  if (!targetProjectId || !newMapTitle.value.trim()) {
+  if (!targetProjectId || !formPayload.title.trim()) {
     return;
   }
-  const startDateForImport = getStartDateForImport();
-  const endDateForImport = getEndDateForImport();
-  if (!startDateForImport || !endDateForImport) return;
-  if (startDateForImport > endDateForImport) return;
+  if (formPayload.startDate > formPayload.endDate) return;
 
   isCreatingMap.value = true;
   try {
@@ -694,10 +565,10 @@ async function createMapForProject() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
         camelToSnake({
-          title: newMapTitle.value.trim(),
-          startDate: startDateForImport,
-          endDate: endDateForImport,
-          exactDate: usePreciseDates.value,
+          title: formPayload.title.trim(),
+          startDate: formPayload.startDate,
+          endDate: formPayload.endDate,
+          exactDate: formPayload.exactDate,
         }),
       ),
     });
