@@ -87,6 +87,7 @@
       @error="onCreateProjectError"
       @closed="onCreateProjectDialogClosed"
     />
+  </div>
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
@@ -218,40 +219,6 @@ function onExactDateChange(nextDate: string | null) {
   selectedExactDate.value = nextDate;
 }
 
-function getStartDateForImport(): string | null {
-  if (usePreciseDates.value) {
-    if (!startDate.value) return null;
-    const parsed = new Date(startDate.value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return startDate.value;
-  }
-
-  if (!startYear.value || startYear.value < 1 || startYear.value > 9999) {
-    return null;
-  }
-  return yearToIsoStart(startYear.value);
-}
-
-function getEndDateForImport(): string | null {
-  if (usePreciseDates.value) {
-    if (!endDate.value) return null;
-    const parsed = new Date(endDate.value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return endDate.value;
-  }
-
-  if (!endYear.value || endYear.value < 1 || endYear.value > 9999) {
-    return null;
-  }
-  return yearToIsoEnd(endYear.value);
-}
-
-function hasValidImportDates(): boolean {
-  const start = getStartDateForImport();
-  const end = getEndDateForImport();
-  if (!start || !end) return false;
-  return start <= end;
-}
 const createProjectDialogRef = ref<CreateProjectDialogExposed | null>(null);
 const pendingCopiedFeatures = ref<Feature[] | null>(null);
 const shouldSaveAfterCopy = ref(false);
@@ -315,7 +282,7 @@ function onRedo() {
   applyFeatureSnapshot(featureHistoryService.redo(features.value), false);
 }
 
-async function onAddFeatureImage() {
+async function onAddFeatureImage(file: File) {
   if (!keycloak.token) {
     addFeatureImageDialogRef.value?.close();
     return;
@@ -355,20 +322,6 @@ async function onAddFeatureImage() {
 
 async function onMapReady(map: LeafletMap) {
   leafletMap.value = map;
-}
-
-function onCloseAddFeatureImageDialog() {
-  isAdding.value = false;
-  selectedFile.value = null;
-  if (fileInputRef.value) {
-    fileInputRef.value.value = "";
-  }
-  addFeatureImageDialog.value?.close();
-}
-
-function onFileChange() {
-  const input = fileInputRef.value;
-  selectedFile.value = input?.files?.[0] ?? null;
 }
 
 async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
