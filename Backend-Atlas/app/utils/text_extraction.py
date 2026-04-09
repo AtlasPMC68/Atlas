@@ -1,158 +1,172 @@
-import os
-import easyocr
-import cv2
-import copy
+import json
 import logging
-import numpy as np
+import os
+import re
+from typing import Any
+from uuid import UUID
+
+from celery import chain
+
+from app.utils.cities_validation import find_first_city
 
 logger = logging.getLogger(__name__)
 
-def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False) -> tuple[list, np.ndarray]:
+# OCR pipeline directory configuration
+OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/input")
+OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/intermediate")
+OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/result")
+OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "1200"))
+
+
+def _bbox_xyxy_to_quad_points(bbox_xyxy: list[Any]) -> list[list[float]]:
+    """Convert [x1, y1, x2, y2] bbox to quad [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]."""
+    x1, y1, x2, y2 = [float(v) for v in bbox_xyxy]
+    return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+
+
+def _run_ocr_pipeline(
+    map_id: UUID,
+    filename: str,
+    file_content: bytes,
+    celery_app,
+) -> list[tuple[list, str, float]]:
     """
-    Wrapper method handling the text extraction logic. This is mainly to reduce
-    the memory overhead as this method is very much resource intensive, and it is
-    possible that multiple of these run in parallel.
-
-    :param image: Numpy image array of bytes.
-    :param image_name: Name of the image file.
-    :param languages: List of language codes to use for text extraction.
-    :param gpu_acc: Whether a GPU is available to accelerate image analysis.
-    :return: values, clean_image: Returns a tuple of the text information and the pixel
-        array of the image, devoid of text.
+    Execute Florence+Qwen OCR pipeline on file_content.
+    Returns extracted_text in format: [(quad_points, text, confidence), ...]
     """
-    logger.debug("Initiating text extraction")
-    extractor = TextExtraction(img=image,lang=languages, gpu_acc=gpu_acc)
-    extractor.check_language_code_validity()
+    os.makedirs(OCR_INPUT_DIR, exist_ok=True)
+    os.makedirs(OCR_INTERMEDIATE_DIR, exist_ok=True)
+    os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)
 
-    text_info =  extractor.read_text_from_image()
-    #TODO : image cleaning, just send a copy for now
-    #clean_image = extractor.remove_text_from_image(image, text_info)
-    clean_image = copy.deepcopy(image)
+    input_basename = f"{map_id}_{os.path.basename(filename)}"
+    input_stem = os.path.splitext(input_basename)[0]
 
-    logger.debug("Completed text extraction")
-    return text_info, clean_image
+    ocr_input_path = os.path.join(OCR_INPUT_DIR, input_basename)
+    ocr_intermediate_path = os.path.join(
+        OCR_INTERMEDIATE_DIR, f"{input_stem}-florence.json"
+    )
+    ocr_output_json_path = os.path.join(OCR_OUTPUT_DIR, f"{input_stem}-qwen.json")
 
-class TextExtraction:
+    # Write image file to OCR input directory
+    with open(ocr_input_path, "wb") as input_file:
+        input_file.write(file_content)
 
-    # Static class variables
-    LANGUAGE_CODES_HASHMAP = {
-        "Abaza": "abq", "Adyghe": "ady", "Afrikaans": "af", "Angika": "ang", "Arabic": "ar", "Assamese": "as",
-        "Avar": "ava", "Azerbaijani": "az", "Belarusian": "be", "Bulgarian": "bg", "Bihari": "bh",
-        "Bhojpuri": "bho",
-        "Bengali": "bn", "Bosnian": "bs", "Simplified Chinese": "ch_sim", "Traditional Chinese": "ch_tra",
-        "Chechen": "che",
-        "Czech": "cs", "Welsh": "cy", "Danish": "da", "Dargwa": "dar", "German": "de", "English": "en",
-        "Spanish": "es",
-        "Estonian": "et", "Persian (Farsi)": "fa", "French": "fr", "Irish": "ga", "Goan Konkani": "gom",
-        "Hindi": "hi",
-        "Croatian": "hr", "Hungarian": "hu", "Indonesian": "id", "Ingush": "inh", "Icelandic": "is",
-        "Italian": "it",
-        "Japanese": "ja", "Kabardian": "kbd", "Kannada": "kn", "Korean": "ko", "Kurdish": "ku", "Latin": "la",
-        "Lak": "lbe", "Lezghian": "lez", "Lithuanian": "lt", "Latvian": "lv", "Magahi": "mah", "Maithili": "mai",
-        "Maori": "mi", "Mongolian": "mn", "Marathi": "mr", "Malay": "ms", "Maltese": "mt", "Nepali": "ne",
-        "Newari": "new",
-        "Dutch": "nl", "Norwegian": "no", "Occitan": "oc", "Pali": "pi", "Polish": "pl", "Portuguese": "pt",
-        "Romanian": "ro", "Russian": "ru", "Serbian (cyrillic)": "rs_cyrillic", "Serbian (latin)": "rs_latin",
-        "Nagpuri": "sck", "Slovak": "sk", "Slovenian": "sl", "Albanian": "sq", "Swedish": "sv", "Swahili": "sw",
-        "Tamil": "ta", "Tabassaran": "tab", "Telugu": "te", "Thai": "th", "Tajik": "tjk", "Tagalog": "tl",
-        "Turkish": "tr",
-        "Uyghur": "ug", "Ukranian": "uk", "Urdu": "ur", "Uzbek": "uz", "Vietnamese": "vi"
-    }
-    LANGUAGE_CODES = [
-        "abq", "ady", "af", "ang", "ar", "as", "ava", "az", "be", "bg", "bh", "bho",
-        "bn", "bs", "ch_sim", "ch_tra", "che", "cs", "cy", "da", "dar", "de", "en", "es",
-        "et", "fa", "fr", "ga", "gom", "hi", "hr", "hu", "id", "inh", "is", "it", "ja",
-        "kbd", "kn", "ko", "ku", "la", "lbe", "lez", "lt", "lv", "mah", "mai", "mi", "mn",
-        "mr", "ms", "mt", "ne", "new", "nl", "no", "oc", "pi", "pl", "pt", "ro", "ru",
-        "rs_cyrillic", "rs_latin", "sck", "sk", "sl", "sq", "sv", "sw", "ta", "tab",
-        "te", "th", "tjk", "tl", "tr", "ug", "uk", "ur", "uz", "vi"
-    ]
-    image: np.ndarray
+    # Chains together Florence and Qwen tasks, passing intermediate results via file paths
+    workflow = chain(
+        celery_app.signature(
+            "florence.run_pipeline",
+            args=[ocr_input_path, ocr_intermediate_path],
+        ).set(queue="florence"),
+        celery_app.signature(
+            "qwen.run_pipeline",
+            args=[ocr_input_path, ocr_intermediate_path, ocr_output_json_path],
+        ).set(queue="qwen"),
+    )
 
-    # Class members
-    def __init__(self, img, lang: list[str] = ['en', 'fr'], gpu_acc: bool = False):
-        self.image      : np.ndarray    = img
-        self.lang       : list[str]     = list(lang)
-        self.gpu_acc    : bool          = gpu_acc
+    # Execute and wait for completion (gevent yields during this blocking call)
+    ocr_result = workflow.apply_async()
+    ocr_result.get(timeout=OCR_PIPELINE_TIMEOUT_SECONDS)
 
-    # Class methods
-    def read_text_from_image(self, scale_xy: tuple[float, float] = (2.0,2.0)):
+    # Load Qwen output JSON
+    with open(ocr_output_json_path, "r", encoding="utf-8") as qwen_result_file:
+        qwen_result = json.load(qwen_result_file)
 
-        reader = easyocr.Reader(
-            lang_list=list(self.lang),
-            gpu=self.gpu_acc,
-            verbose=False
+    # Convert detections to expected format: (quad_points, text, confidence)
+    detections = qwen_result.get("detections", [])
+    extracted_text = [
+        (
+            _bbox_xyxy_to_quad_points(detection.get("bbox_xyxy", [0, 0, 0, 0])),
+            str(detection.get("text", "")),
+            1.0,
         )
+        for detection in detections
+        if isinstance(detection, dict)
+        and isinstance(detection.get("bbox_xyxy"), list)
+        and len(detection.get("bbox_xyxy")) == 4
+    ]
 
-        shading = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+    # Clean up temporary OCR input and intermediate files
+    for ocr_temp_path in [ocr_input_path, ocr_intermediate_path]:
+        try:
+            if os.path.exists(ocr_temp_path):
+                os.unlink(ocr_temp_path)
+        except Exception as e:
+            logger.warning(f"Failed to clean OCR temp file {ocr_temp_path}: {e}")
 
-        # NOTE: resizing MUST implies scaling the resulting text or the proportion won't match the original image
-        upscaling = cv2.resize(shading, None, fx=scale_xy[0], fy=scale_xy[1], interpolation=cv2.INTER_LANCZOS4)
-
-        extracted_text = reader.readtext(upscaling,
-                                  text_threshold=0.7,  # Slightly higher threshold
-                                  low_text=0.4,  # low res text detection
-                                  link_threshold=0.4,  # character linking tolerance
-                                  width_ths=0.7,  # character  spacing tolerance
-                                  height_ths=0.7)
-
-        scaled_extracted_text = []
-        for (coords, text, prob) in extracted_text:
-            #  coords : [top_left, top_right, bottom_right, bottom_left]
-            rescaled_coords = []
-            for [x, y] in coords:
-                rescaled_x = int(x / scale_xy[0])
-                rescaled_y = int(y / scale_xy[1])
-                rescaled_coords.append([rescaled_x, rescaled_y])
-
-            scaled_extracted_text.append((rescaled_coords, text, prob))
-
-        logger.debug(f"Extracted text: \n{extracted_text}")
-
-        return scaled_extracted_text
+    return extracted_text
 
 
-    def remove_text_from_image(self, text_info: list):
+def detect_and_persist_cities(
+    extracted_text: list[tuple], map_id: UUID
+) -> dict:
+    """
+    Tokenize extracted OCR text and run city detection per token, then persist to DB.
 
-        image_no_text: np.ndarray = copy.deepcopy(self.image)
-        return image_no_text
+    Args:
+        extracted_text: List of (quad_points, text, confidence) tuples
+        map_id: Map UUID for DB persistence
 
-    def draw_bounding_box(self, scaled_extracted_text) -> np.ndarray:
+    Returns:
+        Dict with city detection stats: cities_detected, cities_persisted, errors
+    """
+    result = {"cities_detected": 0, "cities_persisted": 0, "errors": []}
 
-        image_with_boxes: np.ndarray = copy.deepcopy(self.image)
+    if not extracted_text:
+        return result
 
-        # Results and drawing bounding boxes
-        for bbox, text, conf in scaled_extracted_text:
+    try:
+        # Extract just the text strings from tuples [(coords, text, prob), ...]
+        text_strings = [block[1] for block in extracted_text]
+        full_text = " ".join(text_strings)
+        tokens = re.findall(r"\b[\w\-']+\b", full_text)
 
-            # Convert to numpy array for cv2.polylines
-            boxes = np.array(image_with_boxes, dtype=np.int32)
+        for tok in tokens:
+            try:
+                candidate = find_first_city(tok)
+                result["cities_detected"] += 1
+                if candidate.get("found"):
+                    result["cities_persisted"] += 1
+            except Exception as e:
+                logger.debug(f"find_first_city error for token '{tok}': {e}")
+                result["errors"].append({"token": tok, "error": str(e)})
 
-            # Draw red bounding box (thickness=2, red color in BGR format)
-            cv2.polylines(image_with_boxes, [boxes], isClosed=True, color=(0, 0, 255), thickness=2)
+    except Exception as e:
+        logger.error(f"City detection batch processing failed: {e}")
+        result["errors"].append({"batch": "city_detection", "error": str(e)})
 
-            # Optional: Add text label above the bounding box
-            # Get the top-left corner for text placement
-            text_x = bbox[0][0]
-            text_y = bbox[0][1] - 10 if bbox[0][1] - 10 > 10 else bbox[0][1] + 20
+    return result
 
-            # Add confidence score to the label
-            label = f"{text} ({conf:.2f})"
-            cv2.putText(image_with_boxes, label, (text_x, text_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-        # TODO: tester cette partie dans une tache future
-        # Save the image with bounding boxes
-        #filename = os.path.basename(image_path)
-        #output_path = os.path.join(os.path.dirname(image_path), f"bbox_{filename}")
-        #cv2.imwrite(output_path, image_with_boxes)
-        #print(f"Saved image with bounding boxes: {output_path}")
+def extract_text(
+    map_id: UUID,
+    filename: str,
+    file_content: bytes,
+    celery_app,
+) -> tuple[list[tuple], list[Any]]:
+    """
+    Master text extraction function using OCR pipeline (Florence + Qwen).
 
-        return results
+    Args:
+        map_id: UUID of the map being processed
+        filename: Original filename
+        file_content: Raw image bytes
+        celery_app: Celery app instance for task dispatch
 
-    def check_language_code_validity(self) -> None:
-        """
-        :raises ValueError: If at least one language code is not supported.
-        """
-        for code in self.lang:
-            if code not in self.LANGUAGE_CODES:
-                raise ValueError(f"Invalid language code: {code}")
+    Returns:
+        (extracted_text, text_regions)
+        - extracted_text: list of (quad_points, text, confidence)
+        - text_regions: list of quad_points for each detection
+
+    Raises:
+        Exception: If OCR pipeline fails or times out
+    """
+    logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
+
+    extracted_text = _run_ocr_pipeline(map_id, filename, file_content, celery_app)
+    text_regions = [block[0] for block in extracted_text]
+
+    logger.info(
+        f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}"
+    )
+
+    return extracted_text, text_regions

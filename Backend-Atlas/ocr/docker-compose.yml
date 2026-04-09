@@ -1,0 +1,40 @@
+services:
+  ocr-base:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+      args:
+        UID: ${UID:-1000}
+    image: atlas-ocr-base
+
+  florence-worker:
+    build:
+      context: ./florence
+      additional_contexts:
+        ocr-base: service:ocr-base
+    container_name: atlas-florence-worker
+    restart: unless-stopped
+    env_file:
+      - ../.env.dev
+    volumes:
+      - ocr-data:/data
+      - ocr-models:/app/models
+    depends_on:
+      - redis
+      - ocr-base
+
+  qwen-worker:
+    build:
+      context: ./qwen
+      additional_contexts:
+        ocr-base: service:ocr-base
+    container_name: atlas-qwen-worker
+    restart: unless-stopped
+    env_file:
+      - ../.env.dev
+    volumes:
+      - ocr-data:/data
+      - ocr-models:/app/models
+    depends_on:
+      - redis
+      - ocr-base

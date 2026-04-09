@@ -98,79 +98,20 @@ def process_map_extraction(
             meta={
                 "current": 3,
                 "total": nb_task,
-                "status": "Extracting text with EasyOCR",
+                "status": "Extracting text with OCR pipeline",
             },
         )
 
         if enable_text_extraction:
-            # GPU acceleration make the text extraction MUCH faster i
-            extracted_text, clean_image = extract_text(
-                image=image, languages=["en", "fr"], gpu_acc=False
+            extracted_text, text_regions = extract_text(
+                map_id=map_id,
+                filename=filename,
+                file_content=file_content,
+                celery_app=celery_app,
             )
-
-            text_regions = [block[0] for block in extracted_text]
-
-            # TODO : Amener ca dans la fonction de detection de texte ===========================================================
-            # Tokenize OCR text to single words and run city detection per token
-            try:
-                # Extract just the text strings from the list of tuples [(coords, text, prob), ...]
-                text_strings = [block[1] for block in extracted_text]
-                full_text = " ".join(text_strings)
-                tokens = re.findall(r"\b[\w\-']+\b", full_text)
-                for tok in tokens:
-                    try:
-                        candidate = find_first_city(tok)
-                    except Exception as e:
-                        logger.debug(f"find_first_city error for token '{tok}': {e}")
-                        # treat as not found but persist the token
-                        candidate = {
-                            "found": False,
-                            "query": tok,
-                            "name": tok,
-                            "lat": 0.0,
-                            "lon": 0.0,
-                        }
-
-                    # Build feature using returned candidate; if not found, coordinates will be 0,0
-                    city_feature = {
-                        "type": "Feature",
-                        "properties": {
-                            "name": candidate.get("name") or tok,
-                            "show": bool(candidate.get("found")),
-                            "mapElementType": "point",
-                            "color_name": "black",
-                            "color_rgb": [0, 0, 0],
-                            "start_date": "0-01-01",
-                            "end_date": "5000-01-01",
-                        },
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [
-                                candidate.get("lon") or 0.0,
-                                candidate.get("lat") or 0.0,
-                            ],
-                        },
-                    }
-
-                    city_feature_collection = {
-                        "type": "FeatureCollection",
-                        "features": [city_feature],
-                    }
-
-                    try:
-                        asyncio.run(
-                            persist_city_feature(map_id, city_feature_collection)
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to persist city token '{tok}': {e}")
-
-            except Exception as e:
-                logger.error(f"City detection failed: {e}")
-
         else:
+            extracted_text = []
             text_regions = None
-
-        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # Step 4: Shapes Extraction (conditionally enabled)
         if enable_shapes_extraction:

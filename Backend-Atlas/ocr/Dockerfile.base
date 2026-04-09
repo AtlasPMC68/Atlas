@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+ARG UID=1000
+ENV UID=${UID}
+RUN useradd -m -u ${UID} appuser
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Shared heavy dependencies first, so that modifying later instruction do not force their reinstallation
+RUN pip install --no-cache-dir torch torchvision
+
+RUN pip install --no-cache-dir \
+    Pillow \
+    numpy \
+    accelerate \
+    celery \
+    redis \
+    scikit-image
+
+ENV HF_HOME=/app/models
+RUN mkdir -p /app/models/hub /app/models /data/result /data/input /data/intermediate && \
+    chown -R appuser:appuser /app/models/hub /app/models /data/result /data/input /data/intermediate
