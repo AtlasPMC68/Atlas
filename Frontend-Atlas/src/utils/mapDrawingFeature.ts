@@ -64,11 +64,13 @@ function getStableLayerFeatureId(layer: L.Layer): string {
 
 export function layerToFeature(
   layer: L.Layer,
-  selectedYear: number,
+  _selectedYear: number,
+  currentProjectId: string,
 ): Feature | null {
   const layerWithFeature = layer as LayerWithFeatureRuntime;
   const baseFeature = layerWithFeature.feature;
   const existingType = baseFeature?.properties?.mapElementType;
+  const resolvedProjectId = baseFeature?.projectId ?? currentProjectId;
 
   let geometry: Feature["geometry"] | null = null;
   let inferredType: MapElementType = "zone";
@@ -140,6 +142,7 @@ export function layerToFeature(
   }
 
   if (!geometry) return null;
+  if (!resolvedProjectId) return null;
 
   const type: MapElementType = existingType ?? inferredType;
 
@@ -148,7 +151,8 @@ export function layerToFeature(
   return {
     id: getStableLayerFeatureId(layer),
     type: "Feature",
-    mapId: baseFeature?.mapId ?? "",
+    projectId: resolvedProjectId,
+    mapId: baseFeature?.mapId ?? null,
     geometry,
     properties: {
       name: baseFeature?.properties?.name ?? "",
@@ -161,8 +165,6 @@ export function layerToFeature(
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
-      startDate: baseFeature?.properties?.startDate ?? `${selectedYear}-01-01`,
-      endDate: baseFeature?.properties?.endDate ?? `${selectedYear}-01-01`,
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,
@@ -262,10 +264,11 @@ function featureIdAsString(featureOrId: Feature | string | number): string {
 export function extractFeatureFromLayer(
   layer: L.Layer,
   selectedYear: number,
+  currentProjectId: string,
 ): Feature | null {
   const layerWithFeature = layer as LayerWithFeatureRuntime;
   const baseFeature = layerWithFeature.feature;
-  const extracted = layerToFeature(layer, selectedYear);
+  const extracted = layerToFeature(layer, selectedYear, currentProjectId);
 
   if (extracted) {
     if (baseFeature?.id) {
@@ -289,9 +292,13 @@ export function extractFeatureFromLayer(
 
   if (typeof layerWithFeature.eachLayer === "function") {
     let childFeature: Feature | null = null;
-    layerWithFeature.eachLayer((childLayer) => {
+    layerWithFeature.eachLayer((childLayer: L.Layer) => {
       if (childFeature) return;
-      childFeature = extractFeatureFromLayer(childLayer, selectedYear);
+      childFeature = extractFeatureFromLayer(
+        childLayer,
+        selectedYear,
+        currentProjectId,
+      );
     });
     if (childFeature) {
       return childFeature;
@@ -305,6 +312,7 @@ export function syncFeaturesFromLayerMap(
   layers: Map<string, L.Layer>,
   snapshot: Feature[],
   selectedYear: number,
+  currentProjectId: string,
 ): Feature[] {
   const nextById = new Map<string, Feature>();
   snapshot.forEach((feature) => {
@@ -313,7 +321,11 @@ export function syncFeaturesFromLayerMap(
 
   layers.forEach((layer, featureId) => {
     const layerId = String(featureId);
-    const extracted = extractFeatureFromLayer(layer, selectedYear);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      selectedYear,
+      currentProjectId,
+    );
     if (extracted) {
       extracted.id = layerId;
       nextById.set(layerId, extracted);

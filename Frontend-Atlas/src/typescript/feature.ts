@@ -3,7 +3,8 @@ export type FeatureId = string;
 export interface Feature {
   type: "Feature";
   id: string;
-  mapId: string;
+  projectId: string;
+  mapId?: string | null;
   geometry: Geometry;
   properties: FeatureProperties;
   createdAt: string;
@@ -47,8 +48,6 @@ export interface FeatureProperties {
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
-  startDate: string; // Format: "YYYY-MM-DD"
-  endDate: string; // Format: "YYYY-MM-DD"
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;

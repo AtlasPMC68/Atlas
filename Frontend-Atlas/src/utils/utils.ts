@@ -1,5 +1,3 @@
-import type { Feature, FeatureForSave } from "../typescript/feature";
-
 // ---------- helpers ----------
 type IsTuple<T> = T extends readonly any[]
   ? number extends T["length"]
@@ -66,8 +64,26 @@ export function camelToSnake(obj: unknown): unknown {
   return obj;
 }
 
-export function prepareFeaturesForSave(features: Feature[]): FeatureForSave[] {
-  return features.map(({ mapId, createdAt, updatedAt, ...next }) => next);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function prepareFeaturesForSave(features: unknown[]): unknown[] {
+  return features.map((rawFeature) => {
+    if (!isRecord(rawFeature)) {
+      return rawFeature;
+    }
+
+    const { createdAt, updatedAt, ...next } = rawFeature;
+    void createdAt;
+    void updatedAt;
+
+    return next;
+  });
+}
+
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {

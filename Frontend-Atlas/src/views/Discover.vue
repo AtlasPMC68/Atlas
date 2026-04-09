@@ -5,7 +5,7 @@ import { MapData } from "../typescript/map";
 import { snakeToCamel, toImageSrc } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 
-const maps = ref<MapData[]>([]);
+const projects = ref<MapData[]>([]);
 const { fetchCurrentUser } = useCurrentUser();
 
 const searchQuery = ref("");
@@ -21,9 +21,9 @@ const hasActiveFilters = computed(
   () => filterDateFrom.value !== "" || filterDateTo.value !== "",
 );
 
-const filteredMaps = computed(() => {
+const filteredProjects = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
-  return maps.value.filter((m) => {
+  return projects.value.filter((m) => {
     if (
       q &&
       !m.title.toLowerCase().includes(q) &&
@@ -47,12 +47,12 @@ const filteredMaps = computed(() => {
 
 onMounted(async () => {
   await fetchCurrentUser();
-  await fetchMapsAndRender();
+  await fetchProjectsAndRender();
 });
 
-async function fetchMapsAndRender() {
+async function fetchProjectsAndRender() {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/maps/map`);
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/projects`);
 
     if (!res.ok) {
       throw new Error(`HTTP error : ${res.status}`);
@@ -60,7 +60,7 @@ async function fetchMapsAndRender() {
 
     const data = snakeToCamel(await res.json()) as MapData[];
 
-    maps.value = data.map((map: MapData) => {
+    projects.value = data.map((map: MapData) => {
       return {
         id: map.id,
         title: map.title,
@@ -116,19 +116,19 @@ async function fetchMapsAndRender() {
             v-model="searchQuery"
             type="search"
             required
-            placeholder="Rechercher une carte par titre, description ou nom d'utilisateur"
+            placeholder="Rechercher un projet par titre, description ou nom d'utilisateur"
           />
         </label>
       </div>
     </div>
 
-    <!-- Maps grid -->
+    <!-- Projects grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div
-        v-for="map in filteredMaps"
+      <RouterLink
+        v-for="map in filteredProjects"
         :key="map.id"
-        class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer"
-        @click="$router.push(`/carte/${map.id}`)"
+        :to="`/projet/${map.id}`"
+        class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <figure>
           <img :src="toImageSrc(map.image)" class="w-full h-full" />
@@ -152,15 +152,15 @@ async function fetchMapsAndRender() {
             </div>
           </div>
         </div>
-      </div>
+      </RouterLink>
     </div>
 
     <!-- Empty state -->
     <div
-      v-if="filteredMaps.length === 0"
+      v-if="filteredProjects.length === 0"
       class="text-center py-16 text-base-content/50"
     >
-      <p class="text-lg">Aucune carte publique trouvée.</p>
+      <p class="text-lg">Aucun projet public trouvé.</p>
     </div>
   </div>
 </template>
