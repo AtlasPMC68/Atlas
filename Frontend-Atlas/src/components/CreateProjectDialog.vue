@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import {
   QuestionMarkCircleIcon,
   PaperAirplaneIcon,
@@ -22,12 +22,17 @@ const newProjectIsPrivate = ref(true);
 const isCreating = ref(false);
 const closeTriggeredByCreate = ref(false);
 
-const { currentUser, fetchCurrentUser } = useCurrentUser();
+const { currentUser, fetchCurrentUser, isLoading } = useCurrentUser();
 
 function open(prefill?: CreateProjectDialogPrefill) {
   newProjectTitle.value = prefill?.title;
   newProjectDescription.value = prefill?.description;
   newProjectIsPrivate.value = prefill?.isPrivate ?? true;
+
+  if (!currentUser.value && !isLoading.value) {
+    void fetchCurrentUser();
+  }
+
   dialogRef.value?.showModal();
 }
 
@@ -126,6 +131,12 @@ function onDialogClose() {
 
   emit("closed");
 }
+
+onMounted(() => {
+  if (!currentUser.value) {
+    void fetchCurrentUser();
+  }
+});
 
 defineExpose({
   open,
