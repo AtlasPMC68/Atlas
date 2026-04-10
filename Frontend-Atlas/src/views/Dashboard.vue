@@ -217,10 +217,9 @@ async function fetchMapsAndRender() {
   }
 
   try {
-    const res = await apiFetch(
-      `/projects?user_id=${currentUser.value.id}`,
-      { headers: { "Content-Type": "application/json" } },
-    );
+    const res = await apiFetch(`/projects?user_id=${currentUser.value.id}`, {
+      headers: { "Content-Type": "application/json" },
+    });
 
     if (!res.ok) {
       throw new Error(`Error while fetching the projects: ${res.status}`);

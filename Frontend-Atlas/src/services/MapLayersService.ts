@@ -5,7 +5,10 @@ import { toArray } from "../utils/utils";
 import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
 import type { Feature } from "../typescript/feature";
 import { FeatureLayerManager } from "./FeatureLayerManagerService.ts";
-import { isAxisAlignedRectangle, rectangleFromLatLngs } from "../utils/mapLayersFeature.ts";
+import {
+  isAxisAlignedRectangle,
+  rectangleFromLatLngs,
+} from "../utils/mapLayersFeature.ts";
 import type {
   FeatureLayer,
   MapLayersProps,
@@ -47,7 +50,8 @@ export class MapLayersService {
 
       const featureProperties = feature.properties || {};
       const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+      const strokeColor =
+        colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const circle = L.circleMarker(coord, {
         radius,
@@ -81,7 +85,8 @@ export class MapLayersService {
 
       const featureProperties = feature.properties || {};
       const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+      const strokeColor =
+        colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const targetGeometry = feature.geometry;
 
@@ -90,16 +95,12 @@ export class MapLayersService {
       if (targetGeometry.type === "Polygon") {
         const outer = targetGeometry.coordinates?.[0];
         if (Array.isArray(outer) && outer.length >= 4) {
-          latLngs = outer.map(
-            (pair) => [pair[1], pair[0]] as L.LatLngTuple,
-          );
+          latLngs = outer.map((pair) => [pair[1], pair[0]] as L.LatLngTuple);
         }
       } else if (targetGeometry.type === "MultiPolygon") {
         const outer = targetGeometry.coordinates?.[0]?.[0];
         if (Array.isArray(outer) && outer.length >= 4) {
-          latLngs = outer.map(
-            (pair) => [pair[1], pair[0]] as L.LatLngTuple,
-          );
+          latLngs = outer.map((pair) => [pair[1], pair[0]] as L.LatLngTuple);
         }
       } else {
         continue;
@@ -110,9 +111,9 @@ export class MapLayersService {
       const styleOptions = {
         color: strokeColor,
         weight: feature.properties.strokeWidth ?? 2,
-        strokeOpacity: feature.properties.strokeOpacity ?? 1,
+        opacity: feature.properties.strokeOpacity ?? 1,
         fillColor: fillColor,
-        fillOpacity: 0.5,
+        fillOpacity: feature.properties.opacity ?? 0.5,
         interactive: true,
       };
       const canUseRectangle = isAxisAlignedRectangle(latLngs);
@@ -133,8 +134,7 @@ export class MapLayersService {
     const safeFeatures = toArray(features) as Feature[];
 
     for (const feature of safeFeatures) {
-      if (feature.geometry.type !== "LineString")
-        continue;
+      if (feature.geometry.type !== "LineString") continue;
 
       const latLngs = feature.geometry.coordinates.map(
         (pair) => [pair[1], pair[0]] as L.LatLngTuple,
@@ -142,7 +142,8 @@ export class MapLayersService {
 
       const featureProperties = feature.properties || {};
       const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+      const strokeColor =
+        colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const line = L.polyline(latLngs, {
         color: strokeColor,
@@ -184,7 +185,8 @@ export class MapLayersService {
 
       const featureProperties = feature.properties || {};
       const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-      const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+      const strokeColor =
+        colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
       const outerRing = feature.geometry.coordinates[0];
       if (
@@ -200,7 +202,7 @@ export class MapLayersService {
       const styleOptions = {
         color: strokeColor,
         weight: feature.properties.strokeWidth ?? 2,
-        strokeOpacity: feature.properties.strokeOpacity ?? 1,
+        opacity: feature.properties.strokeOpacity ?? 1,
         fillColor: fillColor,
         fillOpacity: feature.properties.opacity ?? 0.5,
         interactive: true,

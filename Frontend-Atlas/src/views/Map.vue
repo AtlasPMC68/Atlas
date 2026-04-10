@@ -17,23 +17,30 @@
           @update-feature="onSaveMap"
         />
       </div>
-
       <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <MapGeoJSON
-          ref="mapGeoJsonRef"
-          class="flex-1 min-h-0 w-full"
-          :features="filteredFeatures"
-          :selected-year="selectedYear"
-          :feature-visibility="featureVisibility"
-          :map-periods="mapPeriods"
-          :project-id="projectId || projectRouteId || ''"
-          @features-loaded="handleFeaturesLoaded"
-          @draw-create="handleDrawChange"
-          @draw-update="handleDrawChange"
-          @draw-delete="handleDrawChange"
-          @draw-delete-id="onDeleteFeature"
-          @map-ready="onMapReady"
-        />
+        <div class="flex-1 relative min-h-0 h-full w-full">
+          <MapGeoJSON
+            ref="mapGeoJsonRef"
+            class="flex-1 min-h-0 w-full"
+            :features="filteredFeatures"
+            :selected-year="selectedYear"
+            :feature-visibility="featureVisibility"
+            :map-periods="mapPeriods"
+            :project-id="projectId || projectRouteId || ''"
+            @features-loaded="handleFeaturesLoaded"
+            @draw-create="handleDrawChange"
+            @draw-update="handleDrawChange"
+            @draw-delete="handleDrawChange"
+            @draw-delete-id="onDeleteFeature"
+            @map-ready="onMapReady"
+          />
+          <div class="absolute bottom-4 left-4 z-[1001]">
+            <Legend
+              :zone-features="zoneFeatures"
+              :feature-visibility="featureVisibility"
+            />
+          </div>
+        </div>
         <div
           class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
         >
@@ -87,6 +94,7 @@ import AddMapDialog from "../components/add/AddMap.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
+import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
 import type { SliderPeriod } from "../typescript/map";
@@ -136,6 +144,10 @@ const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
+
+const zoneFeatures = computed(() =>
+  filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
+);
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);

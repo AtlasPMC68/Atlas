@@ -52,7 +52,10 @@ const emit = defineEmits<{
   (
     e: "draw-delete-id",
     featureId: string,
-    callbacks?: { onSuccess?: () => void; onError?: (message?: string) => void },
+    callbacks?: {
+      onSuccess?: () => void;
+      onError?: (message?: string) => void;
+    },
   ): void;
   (e: "map-ready", map: L.Map): void;
 }>();
@@ -144,8 +147,8 @@ function syncFeaturesFromMapLayers(): Feature[] {
   const renderedFeatures = syncFeaturesFromLayerMap(
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
-    props.projectId,
     props.selectedYear,
+    props.projectId,
   );
 
   renderedFeatures.forEach((feature) => {
@@ -196,10 +199,12 @@ const drawing = useMapDrawing(
 
     if (event === "feature-deleted") {
       const deletedId = String(args[0]);
-      const next = current.filter((feature) => String(feature.id) !== deletedId);
+      const next = current.filter(
+        (feature) => String(feature.id) !== deletedId,
+      );
       localFeaturesSnapshot.value = next;
 
-    emit("draw-delete-id", deletedId);
+      emit("draw-delete-id", deletedId);
       return;
     }
   },
@@ -424,7 +429,7 @@ function renderZones(features: Feature[]) {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
-        fillOpacity: 0.5,
+        fillOpacity: featureProperties.opacity ?? 0.5,
         color: strokeColor || fillColor,
         weight: featureProperties.strokeWidth || 1,
         opacity: featureProperties.strokeOpacity ?? 1,
@@ -656,9 +661,12 @@ onBeforeUnmount(() => {
   }
 });
 
-watch(() => props.selectedYear, (val) => {
-  drawing.setSelectedYear(val);
-});
+watch(
+  () => props.selectedYear,
+  (val) => {
+    drawing.setSelectedYear(val);
+  },
+);
 
 watch(
   () => props.features,
