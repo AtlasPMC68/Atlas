@@ -472,46 +472,6 @@ async def update_features(
     return serialize_feature_rows(persisted_rows)
 
 
-@router.delete("/{project_id}/features/{feature_id}")
-async def delete_feature(
-    project_id: str,
-    feature_id: str,
-    user_id: str = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    try:
-        project_uuid = UUID(project_id)
-        feature_uuid = UUID(feature_id)
-        user_uuid = UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or feature_id")
-
-    project_result = await session.execute(
-        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
-    )
-    allowed_project = project_result.scalar_one_or_none()
-    if not allowed_project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
-
-    result = await session.execute(
-        select(Feature).where(
-            Feature.id == feature_uuid,
-            Feature.project_id == project_uuid,
-        )
-    )
-    db_feature = result.scalar_one_or_none()
-
-    if not db_feature:
-        raise HTTPException(status_code=404, detail="Feature not found")
-
-    await session.delete(db_feature)
-    await session.commit()
-
-    return {
-        "feature_id": str(feature_uuid),
-    }
-
-
 @router.delete("/{project_id}/features")
 async def delete_features_bulk(
     project_id: str,
