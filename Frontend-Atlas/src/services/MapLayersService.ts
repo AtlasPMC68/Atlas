@@ -111,7 +111,7 @@ export class MapLayersService {
       const styleOptions = {
         color: strokeColor,
         weight: feature.properties.strokeWidth ?? 2,
-        strokeOpacity: feature.properties.strokeOpacity ?? 1,
+        opacity: feature.properties.strokeOpacity ?? 1,
         fillColor: fillColor,
         fillOpacity: feature.properties.opacity ?? 0.5,
         interactive: true,
@@ -202,7 +202,7 @@ export class MapLayersService {
       const styleOptions = {
         color: strokeColor,
         weight: feature.properties.strokeWidth ?? 2,
-        strokeOpacity: feature.properties.strokeOpacity ?? 1,
+        opacity: feature.properties.strokeOpacity ?? 1,
         fillColor: fillColor,
         fillOpacity: feature.properties.opacity ?? 0.5,
         interactive: true,

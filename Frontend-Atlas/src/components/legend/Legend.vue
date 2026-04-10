@@ -25,13 +25,14 @@
             <span
               class="inline-block h-5 w-5 rounded-sm shrink-0 border-2"
               :style="{
-                backgroundColor: rgbtoRgba(
+                backgroundColor: rgbToRgba(
                   feature.properties?.colorRgb,
                   feature.properties?.opacity ?? 0.5,
                 ),
-                borderColor: rgbtoRgba(
-                  feature.properties?.strokeColor,
-                  feature.properties?.strokeOpacity ?? 0.5,
+                borderColor: rgbToRgba(
+                  feature.properties?.strokeColor ??
+                    feature.properties?.colorRgb,
+                  feature.properties?.strokeOpacity ?? 1.0,
                 ),
                 backgroundClip: 'padding-box',
               }"
@@ -49,7 +50,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Feature } from "../../typescript/feature";
-import { rgbtoRgba } from "../../utils/utils";
+import { rgbToRgba } from "../../utils/utils";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/vue/24/outline";
 
 const props = withDefaults(

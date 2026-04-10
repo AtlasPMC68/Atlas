@@ -125,10 +125,13 @@ export function rgbToHex(rgb: [number, number, number] | undefined) {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-export function rgbtoRgba(
+export function rgbToRgba(
   rgb: [number, number, number] | undefined,
   alpha: number,
 ): string {
   if (!rgb) return "transparent";
-  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+  const safeAlpha = Number.isFinite(alpha)
+    ? Math.max(0, Math.min(1, alpha))
+    : 1;
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${safeAlpha})`;
 }

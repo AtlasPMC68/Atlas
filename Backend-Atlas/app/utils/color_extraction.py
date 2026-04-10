@@ -557,6 +557,10 @@ def build_normalized_feature(
             "mapElementType": "zone",
             "name": f"Zone {color_name}",
             "is_normalized": True,
+            "opacity": 0.5,
+            "stroke_color": rgb,
+            "stroke_width": 2,
+            "stroke_opacity": 1.0,
         },
         "geometry": normalized_geom.__geo_interface__,
     }
