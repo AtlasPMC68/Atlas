@@ -58,6 +58,7 @@ def get_mock_color_extraction():
 def test_process_map_extraction(real_image_np):
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
+    project_id = str(uuid.uuid4())
     map_id = str(uuid.uuid4())
 
     mock_ocr_result = [
@@ -96,7 +97,7 @@ def test_process_map_extraction(real_image_np):
 
         # Call with all extraction options enabled
         result = process_map_extraction.apply(
-            args=[filename, file_bytes, map_id],
+            args=[filename, file_bytes, project_id, map_id],
             kwargs={
                 "pixel_points": None,
                 "geo_points_lonlat": None,
@@ -129,6 +130,7 @@ def test_process_map_extraction_minimal(real_image_np):
     """Test with all extractions disabled"""
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
+    project_id = str(uuid.uuid4())
     map_id = str(uuid.uuid4())
 
     with patch("app.tasks.process_map_extraction.update_state"), \
@@ -147,7 +149,7 @@ def test_process_map_extraction_minimal(real_image_np):
 
         # Call with all extraction options disabled
         result = process_map_extraction.apply(
-            args=[filename, file_bytes, map_id],
+            args=[filename, file_bytes, project_id, map_id],
             kwargs={
                 "enable_color_extraction": False,
                 "enable_shapes_extraction": False,
