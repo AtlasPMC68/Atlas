@@ -315,7 +315,7 @@ function applyLabelStyle(marker: L.Marker, feature: Feature) {
   if (!el) return;
 
   const color = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-  const sizePx = feature.properties.textSize ?? 12;
+  const sizePx = feature.properties.sizePx ?? 12;
 
   el.style.setProperty("--label-color", color);
   el.style.setProperty("--label-size", `${sizePx}px`);

@@ -79,7 +79,7 @@ export function layerToFeature(
 
   if (isTextMarkerLayer(layer)) {
     labelText = (layer.pm?.getText?.() ?? layer.options.text ?? "").trim();
-    sizePx = baseFeature?.properties?.textSize ?? 12;
+    sizePx = baseFeature?.properties?.sizePx ?? 12;
 
     if (!labelText) {
       return null;
@@ -157,11 +157,13 @@ export function layerToFeature(
     properties: {
       name: baseFeature?.properties?.name ?? "",
       labelText,
-      textSize: sizePx,
+      sizePx: sizePx,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
       fillOpacity: baseFeature?.properties?.fillOpacity ?? 0.5,
-      strokeColor: baseFeature?.properties?.strokeColor ?? baseFeature?.properties?.colorRgb,
+      strokeColor:
+        baseFeature?.properties?.strokeColor ??
+        baseFeature?.properties?.colorRgb,
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
@@ -178,7 +180,8 @@ export function featureToLayer(feature: Feature): L.Layer | null {
   if (!geom) return null;
 
   const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-  const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+  const strokeColor =
+    colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
   const style = {
     weight: feature.properties.strokeWidth || 2,
