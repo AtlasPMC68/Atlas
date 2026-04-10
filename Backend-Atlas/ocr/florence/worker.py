@@ -4,7 +4,7 @@ import gc
 import logging
 from celery import Celery
 
-import main as florence
+import inference as florence
 from output import save_result
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,16 @@ app.conf.task_acks_late = True
 
 
 @app.task(name="florence.run_pipeline")
-def run_florence(image_path: str, intermediate_path: str) -> str:
+def run_florence(image_path: str, intermediate_path: str) -> bool:
+    """
+    Run the Florence OCR extraction stage and save its intermediate JSON output.
+
+    Loads the Florence model, runs OCR/text-detection on image_path, frees model
+    memory after inference, then writes the intermediate result consumed by Qwen.
+
+    Returns:
+        bool: True when the Florence result is successfully saved.
+    """
     logger.info(f"Received Florence OCR task to process image: {image_path}\nOutput JSON: {intermediate_path}")
 
     config = florence.get_runtime_config()
@@ -32,7 +41,7 @@ def run_florence(image_path: str, intermediate_path: str) -> str:
 
     # Use save_result from output.py
     save_result(image_path, intermediate_path, result)
-    logger.info(f"[Florence] Saved: {intermediate_path}")
+    logger.info(f"Florence result saved: {intermediate_path}")
     return True
 
 

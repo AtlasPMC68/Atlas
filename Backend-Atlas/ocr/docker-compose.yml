@@ -16,6 +16,9 @@ services:
     restart: unless-stopped
     env_file:
       - ../.env.dev
+    environment:
+      - HF_HUB_VERBOSITY=warning
+      - HF_HUB_DISABLE_PROGRESS_BARS=1
     volumes:
       - ocr-data:/data
       - ocr-models:/app/models
@@ -32,6 +35,9 @@ services:
     restart: unless-stopped
     env_file:
       - ../.env.dev
+    environment:
+      - HF_HUB_VERBOSITY=warning
+      - HF_HUB_DISABLE_PROGRESS_BARS=1
     volumes:
       - ocr-data:/data
       - ocr-models:/app/models

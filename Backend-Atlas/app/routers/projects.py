@@ -265,12 +265,15 @@ async def upload_and_process_map(
             "legend_bounds": legend_bounds_dict,
         }
 
-        # Text-enabled jobs are funneled to a dedicated serial queue to avoid worker saturation.
+        # Text-enabled jobs are funneled to a dedicated serial queue as to not
+        # block the faster general processing queue which handles
         if enable_text_extraction:
             task = process_map_extraction.apply_async(
                 kwargs=task_kwargs,
                 queue="maps_ocr",
             )
+        # Otherwise they are processed in the general maps queue which handles
+        # more parallelism, and is much quicker.
         else:
             task = process_map_extraction.apply_async(
                 kwargs=task_kwargs,

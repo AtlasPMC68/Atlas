@@ -1,12 +1,14 @@
 import os
 import gc
 import json
-
+import logging
+from typing import Any
 from celery import Celery
 from PIL import Image
 
-import main as qwen
+import inference as qwen
 
+logger = logging.getLogger(__name__)
 os.environ.setdefault("HF_HOME", "/app/models")
 
 app = Celery(
@@ -17,19 +19,8 @@ app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True
 
 
-def _normalize_image_size(image_size_value, fallback_image):
-    """Return image_size as {'width': int, 'height': int} to match intermediate JSON format."""
-    if isinstance(image_size_value, dict):
-        w = int(image_size_value.get("width", fallback_image.size[0]))
-        h = int(image_size_value.get("height", fallback_image.size[1]))
-        return {"width": w, "height": h}
-    if isinstance(image_size_value, (list, tuple)) and len(image_size_value) == 2:
-        return {"width": int(image_size_value[0]), "height": int(image_size_value[1])}
-    return {"width": int(fallback_image.size[0]), "height": int(fallback_image.size[1])}
-
-
-def _strip_quad_fields(detections):
-    """Keep qwen output aligned with florence format minus quad boxes."""
+def _strip_quad_fields(detections: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Normalize Qwen detections to valid {text, bbox_xyxy} entries only."""
     cleaned = []
     for det in detections or []:
         if not isinstance(det, dict):
@@ -48,16 +39,25 @@ def _strip_quad_fields(detections):
 
 
 @app.task(name="qwen.run_pipeline")
-def run_qwen(florence_result: bool, input_path: str, intermediate_path: str, output_path: str) -> str:
+def run_qwen(
+    florence_result: bool,
+    input_path: str,
+    intermediate_path: str,
+    output_path: str,
+) -> str:
     """
-    input_path: absolute path to the image (.png, .jpg, etc)
-    intermediate_path: absolute path to the Florence JSON
-    output_path: absolute path to the resulting Qwen JSON
+    Run the Qwen OCR refinement stage using Florence intermediate detections.
+
+    Loads Florence output, optionally resizes the image to fit Qwen pixel limits,
+    applies per-detection text correction, post-processes detections, then writes
+    the final JSON payload to output_path.
+
+    Returns:
+        str: output_path on success, or "florence_failed" when upstream failed.
     """
-    print(f"Received Qwen OCR task to process image: {input_path}\nFlorence JSON: {intermediate_path}\nOutput JSON: {output_path}")
 
     if not florence_result:
-        print("Florence OCR task failed. Skipping Qwen processing.")
+        logger.error("Florence OCR task failed. Skipping Qwen processing.")
         return "florence_failed"
 
     # Load Florence JSON
@@ -67,11 +67,8 @@ def run_qwen(florence_result: bool, input_path: str, intermediate_path: str, out
     image_size = florence_data.get("image_size", {})
     context = florence_data.get("context", "")
     detections = florence_data.get("detections", [])
-    # Resizing image
-    image = Image.open(input_path).convert("RGB")
 
-    # Load image and resize if too large for Qwen. Precision loss should be minimal since we
-    # only need a general understanding of the layout for the cleaning pass.
+    # Load image and resize if too large for Qwen while keeping aspect ratio.
     image = Image.open(input_path).convert("RGB")
     w, h = image.size
     if w * h > qwen.MAX_IMAGE_PIXELS:
@@ -81,21 +78,22 @@ def run_qwen(florence_result: bool, input_path: str, intermediate_path: str, out
     config = qwen.get_runtime_config()
     model, processor = qwen.load_model_and_processor(config)
 
-    print(f"Running per-detection Qwen inference ({len(detections)} detections)")
+    logger.debug(f"Qwen initialized for ({len(detections)} detections)")
     raw_detections = qwen.run_per_detection(model, processor, image, detections, config, context)
     detections = _strip_quad_fields(raw_detections)
     detections = qwen.merge_same_text_bboxes_keep_first(detections)
-    image_size = _normalize_image_size(image_size, image)
 
+    # Forcing model loaded in memory to be cleared
     del model, processor
     gc.collect()
 
     # Use save_result from main.py for consistent output
-    qwen.save_result(input_path,
-                     output_path,
-                     {"image_size": image_size, "detections": detections, "context": context}
-                     )
-    print(f"[Qwen] Saved: {output_path}")
+    qwen.save_result(
+        input_path,
+        output_path,
+        {"image_size": image_size, "detections": detections, "context": context}
+    )
+    logger.info(f"Qwen result Saved: {output_path}")
 
     return output_path
 

@@ -4,6 +4,7 @@ import cv2
 import torch
 import logging
 import unicodedata
+from typing import Any
 from PIL import Image
 from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 
@@ -17,10 +18,12 @@ MAX_PROMPT_DETECTIONS = 160
 ASSISTANT_JSON_PREFILL = '{"detections":['
 CROP_PADDING = 15
 MAX_NEW_TOKENS_SINGLE = 32
+MERGE_MAX_VERTICAL_DISTANCE_PX = 15
+MERGE_MAX_HORIZONTAL_DISTANCE_PX = 15
 
 
-def get_runtime_config():
-    """Central config for model/runtime values used across the pipeline."""
+def get_runtime_config() -> dict[str, Any]:
+    """Return model/runtime settings used by the Qwen OCR pipeline."""
     return {
         "model_id": MODEL_ID,
         "torch_dtype": torch.float32,
@@ -30,8 +33,8 @@ def get_runtime_config():
     }
 
 
-def _sanitize_detection_for_prompt(det):
-    """Keep only compact fields needed for repair, dropping noisy keys."""
+def _sanitize_detection_for_prompt(det: Any) -> dict[str, Any] | None:
+    """Normalize one detection to a minimal {text, bbox_xyxy} structure."""
     if not isinstance(det, dict):
         return None
     text = str(det.get("text", "")).strip()
@@ -45,7 +48,11 @@ def _sanitize_detection_for_prompt(det):
     return {"text": text, "bbox_xyxy": [x1, y1, x2, y2]}
 
 
-def crop_detection(image: Image.Image, bbox_xyxy: list, padding: int = CROP_PADDING) -> Image.Image:
+def _crop_detection(
+    image: Image.Image,
+    bbox_xyxy: list[int],
+    padding: int = CROP_PADDING,
+) -> Image.Image:
     """Crop image around a detection bbox with padding, clamped to image bounds."""
     iw, ih = image.size
     x1, y1, x2, y2 = [int(v) for v in bbox_xyxy]
@@ -58,7 +65,10 @@ def crop_detection(image: Image.Image, bbox_xyxy: list, padding: int = CROP_PADD
     return image.crop((x1, y1, x2, y2))
 
 
-def build_single_det_prompt(text: str, context: str = "") -> str:
+def _build_single_det_prompt(
+        text: str, 
+        context: str = ""
+    ) -> str:
     """Prompt for correcting a single OCR detection from a cropped image."""
     short_context = " ".join(str(context).split())[:180]
     context_line = f"Context hint of the whole image: {short_context}\n" if short_context else ""
@@ -75,15 +85,20 @@ def build_single_det_prompt(text: str, context: str = "") -> str:
     )
 
 
-def build_cleaning_prompt(detections: list, context: str = "") -> str:
+def _build_cleaning_prompt(
+    detections: list[dict[str, Any]] | None,
+    context: str = "",
+) -> str:
+    """Build a JSON-constrained cleaning prompt for batched OCR detections."""
     cleaned = []
     for det in detections or []:
         compact = _sanitize_detection_for_prompt(det)
         if compact is not None:
             cleaned.append(compact)
 
-    # Keep prompt compact for lower latency on CPU inference.
-    cleaned = cleaned[:MAX_PROMPT_DETECTIONS]
+    # Put an artificially high limit on the number of detection.
+    # It is unlikely that a map would have more than 75 text regions.
+    cleaned = cleaned[:75]
     packed_detections = json.dumps(
         [d["text"] for d in cleaned], ensure_ascii=False, separators=(",", ":")
     )
@@ -111,8 +126,8 @@ def build_cleaning_prompt(detections: list, context: str = "") -> str:
 
 
 
-def build_ocr_messages(image, prompt, processor):
-    """Generic prompt input builder: builds messages, applies chat template, and returns processor inputs."""
+def _build_ocr_messages(image: Image.Image, prompt: str, processor: Any) -> Any:
+    """Build chat-formatted multimodal inputs for model.generate()."""
     messages = [
         {
             "role": "user",
@@ -140,7 +155,10 @@ def build_ocr_messages(image, prompt, processor):
     )
 
 
-def load_model_and_processor(config):
+def load_model_and_processor(
+    config: dict[str, Any],
+) -> tuple[Qwen3_5ForConditionalGeneration, AutoProcessor]:
+    """Load and configure the Qwen model and processor."""
     model = Qwen3_5ForConditionalGeneration.from_pretrained(
         config["model_id"],
         torch_dtype=config["torch_dtype"],
@@ -161,13 +179,17 @@ def load_model_and_processor(config):
     return model, processor
 
 
-def run_inference(
-    model, processor, image, prompt,
-    config, skip_special_tokens = True
-):
-    """Runs model inference on a pre-loaded PIL image with the given prompt."""
+def _run_inference(
+    model: Qwen3_5ForConditionalGeneration,
+    processor: Any,
+    image: Image.Image,
+    prompt: str,
+    config: dict[str, Any],
+    skip_special_tokens: bool = True,
+) -> str:
+    """Run one model pass for a full-image JSON-cleaning prompt."""
 
-    inputs = build_ocr_messages(image, prompt, processor)
+    inputs = _build_ocr_messages(image, prompt, processor)
     with torch.inference_mode():
         output_ids = model.generate(
             **inputs,
@@ -189,11 +211,16 @@ def run_inference(
     return ASSISTANT_JSON_PREFILL + decoded
 
     
-def run_single_det_inference(
-    model, processor, crop: Image.Image, text: str, config, context: str = ""
+def _run_single_det_inference(
+    model: Qwen3_5ForConditionalGeneration,
+    processor: Any,
+    crop: Image.Image,
+    text: str,
+    config: dict[str, Any],
+    context: str = "",
 ) -> str:
     """Run Qwen on one cropped detection image. Returns corrected text string."""
-    prompt = build_single_det_prompt(text, context)
+    prompt = _build_single_det_prompt(text, context)
     messages = [
         {
             "role": "user",
@@ -232,39 +259,75 @@ def run_single_det_inference(
 
 
 def run_per_detection(
-    model, processor, image: Image.Image, detections: list, config, context: str = ""
-) -> list:
+    model: Qwen3_5ForConditionalGeneration,
+    processor: Any,
+    image: Image.Image,
+    detections: list[dict[str, Any]],
+    config: dict[str, Any],
+    context: str = "",
+) -> list[dict[str, Any]]:
     """
     Run Qwen once per detection on a cropped image region.
     Returns list of dicts with 'text' (corrected) and 'bbox_xyxy' (unchanged).
     """
     results = []
-    total = len(detections)
-    for i, det in enumerate(detections):
+    for det in detections:
         compact = _sanitize_detection_for_prompt(det)
         if compact is None:
             continue
         text = compact["text"]
         bbox = compact["bbox_xyxy"]
-        crop = crop_detection(image, bbox)
-        corrected = run_single_det_inference(model, processor, crop, text, config, context)
+        crop = _crop_detection(image, bbox)
+        corrected = _run_single_det_inference(model, processor, crop, text, config, context)
+        logger.debug(f"Qwen correction input={text} output={corrected}")
         results.append({"text": corrected, "bbox_xyxy": bbox})
     return results
 
 
 def _normalize_text_key(text: str) -> str:
-    """Normalize text for accent-insensitive/case-insensitive equality checks."""
+    """Normalize text for accent/case-insensitive equality checks."""
     normalized = unicodedata.normalize("NFKD", str(text or ""))
     no_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
     return " ".join(no_accents.casefold().split())
 
 
-def merge_same_text_bboxes_keep_first(detections: list) -> list:
-    """
-    Merge detections with the same normalized text.
+def _within_merge_distance_constraints(
+    first_bbox_xyxy: list[int],
+    second_bbox_xyxy: list[int],
+) -> bool:
+    """Return True when candidate bbox is close enough to be merged with first bbox."""
+    ax1, ay1, ax2, ay2 = first_bbox_xyxy
+    bx1, by1, bx2, by2 = second_bbox_xyxy
 
-    - Equality is accent-insensitive + case-insensitive.
-    - Keeps the first detection text/value.
+    a_width = max(1, ax2 - ax1)
+    a_height = max(1, ay2 - ay1)
+    b_width = max(1, bx2 - bx1)
+    b_height = max(1, by2 - by1)
+
+    a_cx = (ax1 + ax2) / 2.0
+    a_cy = (ay1 + ay2) / 2.0
+    b_cx = (bx1 + bx2) / 2.0
+    b_cy = (by1 + by2) / 2.0
+
+    horizontal_distance = abs(a_cx - b_cx)
+    vertical_distance = abs(a_cy - b_cy)
+
+    return (
+        vertical_distance <= MERGE_MAX_VERTICAL_DISTANCE_PX and
+        horizontal_distance <= MERGE_MAX_HORIZONTAL_DISTANCE_PX
+    )
+
+
+def merge_same_text_bboxes_keep_first(
+    detections: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """
+    Merge detections with the same normalized text. Has distance constraints.
+    This is a post-processing step in case Qwen finds it fitting to merge two
+    text detections that were kept split during pre-processing.
+    
+    - Compares with accent and case insensitivity.
+    - Keeps the first of the compared detection text/value.
     - Expands first detection bbox to include matching duplicates.
     """
     merged = []
@@ -290,6 +353,11 @@ def merge_same_text_bboxes_keep_first(detections: list) -> list:
 
         ax1, ay1, ax2, ay2 = first["bbox_xyxy"]
         bx1, by1, bx2, by2 = clean["bbox_xyxy"]
+
+        if not _within_merge_distance_constraints(first["bbox_xyxy"], clean["bbox_xyxy"]):
+            merged.append(clean)
+            continue
+
         first["bbox_xyxy"] = [
             min(ax1, bx1),
             min(ay1, by1),
@@ -300,7 +368,8 @@ def merge_same_text_bboxes_keep_first(detections: list) -> list:
     return merged
 
 
-def _extract_first_json_value(text):
+def _extract_first_json_value(text: str) -> Any | None:
+    """Extract the first decodable JSON object or array from free-form text."""
     decoder = json.JSONDecoder()
     starts = [i for i, ch in enumerate(text) if ch in "[{"]
     for start in starts:
@@ -312,7 +381,8 @@ def _extract_first_json_value(text):
     return None
 
 
-def _normalize_detections(obj):
+def _normalize_detections(obj: Any) -> list[dict[str, Any]]:
+    """Normalize parsed JSON from florence into a validated detections list."""
     if isinstance(obj, dict):
         detections = obj.get("detections", [])
     elif isinstance(obj, list):
@@ -328,7 +398,8 @@ def _normalize_detections(obj):
     return cleaned
 
 
-def parse_json_or_empty(raw_text):
+def _parse_json_or_empty(raw_text: str) -> list[dict[str, Any]]:
+    """Parse JSON detections from model text, returning an empty list on failure."""
     raw = raw_text.strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
@@ -341,7 +412,11 @@ def parse_json_or_empty(raw_text):
     return _normalize_detections(obj)
 
 
-def _save_bbox_preview_image(image_path, output_path, result):
+def _save_bbox_preview_image(
+    image_path: str,
+    output_path: str,
+    result: dict[str, Any],
+) -> None:
     """Optional helper to render detections on the source image and save a -bbx preview."""
     img = cv2.imread(image_path)
     ext = os.path.splitext(image_path)[1]
@@ -366,17 +441,13 @@ def _save_bbox_preview_image(image_path, output_path, result):
     cv2.imwrite(bbx_path, img)
 
 
-def save_result(image_path, output_path, result):
-    """
-    Save the cleaned Qwen results to output_path (JSON) and output a -bbx image with bboxes drawn, matching Florence's output.py.
-    result: dict with keys 'image_size', 'detections', and optionally 'context'.
-    """
+def save_result(image_path: str, output_path: str, result: dict[str, Any]) -> None:
+    """Save cleaned Qwen results as JSON; optional preview rendering is disabled."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     logger.info(f"Saved: {output_path}")
 
-    # Preview image rendering is intentionally disabled in this flow.
     # _save_bbox_preview_image(image_path, output_path, result)
 
 

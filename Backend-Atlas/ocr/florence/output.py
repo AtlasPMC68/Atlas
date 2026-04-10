@@ -6,7 +6,8 @@ import cv2
 import numpy as np
 
 
-def _interval_gap(a1, a2, b1, b2):
+def _interval_gap(a1: int, a2: int, b1: int, b2: int) -> int:
+    """Return the non-overlapping gap between two 1D intervals."""
     if a2 < b1:
         return b1 - a2
     if b2 < a1:
@@ -14,9 +15,9 @@ def _interval_gap(a1, a2, b1, b2):
     return 0
 
 
-# Pixel tolerance for left/right/center edge alignment in vertical merges.
+# Pixel tolerance for merge rules
 ALIGN_TOLERANCE = 5
-ANGLE_TOLERANCE = 5.0
+ANGLE_TOLERANCE = 25.0
 HEIGHT_DELTA_TOLERANCE = 5
 H_MERGE_GAP_RATIO = 0.5
 H_MERGE_GAP_MIN_PX = 5
@@ -26,35 +27,21 @@ H_ROW_ALIGN_RATIO = 0.4
 
 
 def _box_angle(w: int, h: int) -> float:
-    """Angle in degrees of the box's long axis, always in [0°, 45°].
-    0° = perfectly wide/flat, 45° = perfectly square."""
+    """Return the aspect-derived angle of an axis-aligned box in degrees."""
     long_side = max(w, h)
     short_side = min(w, h)
     return math.degrees(math.atan2(short_side, long_side))
 
 
 def _quad_angle(quad: list) -> float:
-    """True rotation angle of the bottom edge of a quad [x1,y1,x2,y2,x3,y3,x4,y4], in degrees.
-    Returns the absolute angle in [0°, 90°] of the baseline."""
-    # Bottom edge is corner 0→1 (Florence quad order: top-left, top-right, bottom-right, bottom-left)
+    """Return the baseline rotation angle of a Florence quad in degrees."""
     dx = quad[2] - quad[0]
     dy = quad[3] - quad[1]
     return abs(math.degrees(math.atan2(dy, dx)))
 
 
 def _get_merge_direction(det_a: dict, det_b: dict) -> str | None:
-    """
-    Determine how two detections should be merged based on their spatial relationship.
-
-    Args:
-        det_a (dict[str,list[int]]): dict with "bbox_xyxy" key containing [x1, y1, x2, y2] of the first box
-        det_b (dict[str,list[int]]): dict with "bbox_xyxy" key containing [x1, y1, x2, y2] of the second box
-
-    Returns:
-        orientation (str | None): 'horizontal' if the boxes are side by side on the same row,
-        'vertical' if one is stacked above the other with matching alignment,
-        or None if they should not be merged.
-    """
+    """Decide whether two detections should merge horizontally, vertically, or not at all."""
 
     # Fetch text box dimension and orientation values for calculations
     ax1, ay1, ax2, ay2 = det_a.get("bbox_xyxy", [0, 0, 0, 0])
@@ -87,7 +74,6 @@ def _get_merge_direction(det_a: dict, det_b: dict) -> str | None:
     min_h = min(cmp_ah, cmp_bh)
 
     # Horizontal merge since it is more common
-    # Need a gap smaller than 1/2 of text height, and y-aligned
     if x_gap <= max(max_h * H_MERGE_GAP_RATIO, H_MERGE_GAP_MIN_PX):
         a_cy = (ay1 + ay2) / 2
         b_cy = (by1 + by2) / 2
@@ -95,7 +81,6 @@ def _get_merge_direction(det_a: dict, det_b: dict) -> str | None:
             return "horizontal"
 
     # Vertical merge
-    # Gap at most a 1/4 of text height, and text alignment check.
     if y_gap <= max(max_h * V_MERGE_GAP_RATIO, V_MERGE_GAP_MIN_PX):
         align_tol = max(ALIGN_TOLERANCE, int(min(aw, bw) * 0.08))
         if abs(ax1 - bx1) <= align_tol:
@@ -109,16 +94,8 @@ def _get_merge_direction(det_a: dict, det_b: dict) -> str | None:
 
 
 def _apply_merge(det_a: dict, det_b: dict, direction: str) -> dict:
-    """
-    Merge two detected text boxes into one, combining their text and redimensioning the bounding box to encompass both.
-    Args:
-        det_a (dict): dict with "text" and "bbox_xyxy" keys for the first detection
-        det_b (dict): dict with "text" and "bbox_xyxy" keys for the second detection
-        direction (str): 'horizontal' or 'vertical' indicating how the boxes should be merged
-
-    Returns:
-        merged (dict): dict with combined "text" and new "bbox_xyxy" that covers both input boxes
-    """
+    """Merge two detections into one combined text box using the given direction."""
+    
     ax1, ay1, ax2, ay2 = det_a["bbox_xyxy"]
     bx1, by1, bx2, by2 = det_b["bbox_xyxy"]
 
@@ -145,7 +122,7 @@ def _apply_merge(det_a: dict, det_b: dict, direction: str) -> dict:
 
 
 def _sanitize_detections(detections: list[dict]) -> list[dict]:
-    """Validate and normalize raw Florence detections before merging."""
+    """Validate and normalize raw Florence detections before merge heuristics."""
     result = []
     for det in detections or []:
         bbox = det.get("bbox_xyxy", [])
@@ -165,12 +142,7 @@ def _sanitize_detections(detections: list[dict]) -> list[dict]:
 
 
 def merge_related_detections(detections: list[dict]) -> list[dict]:
-    """
-    Merge text boxes likely belonging to one label.
-
-    Args:
-        detections: list of {"text": str, "bbox_xyxy": [x1, y1, x2, y2]} dicts
-    """
+    """Merge Florence text boxes that likely belong to the same label."""
 
     # Build a list of valid detections with filtered clean text and bbox formatting.
     merged = _sanitize_detections(detections)
@@ -204,14 +176,14 @@ def merge_related_detections(detections: list[dict]) -> list[dict]:
 
 
 def quad_to_bbox_xyxy(quad: list[float]) -> list[int]:
-    """Convert Florence quad_box [x1,y1,x2,y2,x3,y3,x4,y4] to axis-aligned bbox_xyxy."""
+    """Convert a Florence quad into an axis-aligned bbox_xyxy list."""
     xs = quad[0::2]
     ys = quad[1::2]
     return [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
 
 
 def _save_bbox_preview_image(image_path: str, intermediate_path: str, parsed: dict) -> None:
-    """Optional helper to render detections on the source image and save a -bbx preview."""
+    """Render a preview image showing parsed Florence detections and their boxes."""
     ext = os.path.splitext(os.path.basename(image_path))[1]
     img = cv2.imread(image_path)
     for det in parsed.get("detections", []):
@@ -244,6 +216,7 @@ def _save_bbox_preview_image(image_path: str, intermediate_path: str, parsed: di
 
 
 def save_result(image_path: str, intermediate_path: str, parsed: dict) -> None:
+    """Save the Florence parsed result as JSON, stripping internal-only quad fields."""
 
     # Save JSON — strip internal fields not part of the output format
     import copy

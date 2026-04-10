@@ -26,7 +26,7 @@ OCR_TASK = "<OCR_WITH_REGION>"
 
 
 def get_runtime_config() -> dict:
-    """CPU mode for model."""
+    """Return Florence runtime settings used for OCR inference."""
     return {
         "model_id": MODEL_ID,
         "torch_dtype": torch.bfloat16,
@@ -36,6 +36,7 @@ def get_runtime_config() -> dict:
 
 
 def list_input_images(input_dir: str) -> list[str]:
+    """List supported input image files from the configured input directory."""
     if not os.path.isdir(input_dir):
         return []
     files = []
@@ -46,13 +47,14 @@ def list_input_images(input_dir: str) -> list[str]:
 
 
 def manually_preprocess_image(image_path: str) -> Image.Image:
-    """Stage 2: apply lightweight manual preprocessing before inference."""
+    """Apply lightweight preprocessing to improve OCR quality before inference."""
     img = preprocess.read_image(image_path)
     img = preprocess.bilateral_denoise(img, sigma_color=0.03, sigma_spatial=8)
     return Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
 
 
-def load_model_and_processor(config: dict):
+def load_model_and_processor(config: dict) -> tuple:
+    """Load the Florence model and processor for OCR inference."""
     logger.info("Loading model...")
     model = AutoModelForCausalLM.from_pretrained(
         config["model_id"],
@@ -65,11 +67,14 @@ def load_model_and_processor(config: dict):
     return model, processor
 
 
-def run_inference(model, processor, image: Image.Image, task_prompt: str, config: dict) -> dict:
-    """
-    Run Florence-2 inference for the given task token.
-    Returns the post-processed structured dict (e.g. {'<OCR_WITH_REGION>': {...}}).
-    """
+def run_inference(
+        model: object, 
+        processor: object, 
+        image: Image.Image, 
+        task_prompt: str, 
+        config: dict
+    ) -> dict:
+    """Run Florence inference for one task prompt and return structured output."""
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
     with torch.inference_mode():
@@ -90,7 +95,9 @@ def run_inference(model, processor, image: Image.Image, task_prompt: str, config
     )
 
 
-def get_image_context(model, processor, image, config):
+def get_image_context(
+        model: object, processor: object, image: Image.Image, config: dict) -> str:
+    """Generate a short geographic context summary for the map image."""
     context_prompt = "\
         Describe the context of this map image. \
         Then, list the biggest and major geographical features visible in this historical map: \
@@ -111,8 +118,9 @@ def get_image_context(model, processor, image, config):
     logger.info(f"Generated context: {context_text}")
     return context_text
 
+
 def get_context_config() -> dict:
-    """Config for Florence context generation."""
+    """Return Florence runtime settings specialized for context generation."""
     return {
         "model_id": MODEL_ID,
         "torch_dtype": torch.bfloat16,
@@ -120,8 +128,14 @@ def get_context_config() -> dict:
         "max_new_tokens": 256,  # Shorter output for context
     }
 
-def run_pipeline(model, processor, image_path: str, config: dict) -> dict:
-    """Pipeline for running Florence-2 OCR on a single image path."""
+
+def run_pipeline(
+        model: object, 
+        processor: object, 
+        image_path: str, 
+        config: dict
+    ) -> dict:
+    """Run the Florence OCR pipeline on one image and build the parsed result payload."""
 
     preprocessed = manually_preprocess_image(image_path)
 
