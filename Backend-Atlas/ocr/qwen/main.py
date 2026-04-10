@@ -3,6 +3,7 @@ import json
 import cv2
 import torch
 import logging
+import unicodedata
 from PIL import Image
 from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 
@@ -148,6 +149,14 @@ def load_model_and_processor(config):
     processor = AutoProcessor.from_pretrained(
         config["model_id"],
     )
+
+    # Prevent repeated generate() warnings about pad_token_id fallback.
+    eos_token_id = getattr(getattr(processor, "tokenizer", None), "eos_token_id", None)
+    if eos_token_id is not None:
+        model.config.pad_token_id = eos_token_id
+        if getattr(model, "generation_config", None) is not None:
+            model.generation_config.pad_token_id = eos_token_id
+
     logger.debug("Qwen 3.5 model ready.")
     return model, processor
 
@@ -165,6 +174,7 @@ def run_inference(
             max_new_tokens=config["max_new_tokens"],
             do_sample=True,
             num_beams=1,
+            pad_token_id=getattr(model.generation_config, "pad_token_id", None),
         )
     trimmed_ids = [out[len(inp):] for inp, out in zip(inputs.input_ids, output_ids)]
     decoded = processor.batch_decode(
@@ -210,6 +220,7 @@ def run_single_det_inference(
             **inputs,
             max_new_tokens=MAX_NEW_TOKENS_SINGLE,
             do_sample=False,
+            pad_token_id=getattr(model.generation_config, "pad_token_id", None),
         )
     trimmed = [out[len(inp):] for inp, out in zip(inputs.input_ids, output_ids)]
     result = processor.batch_decode(
@@ -239,6 +250,54 @@ def run_per_detection(
         corrected = run_single_det_inference(model, processor, crop, text, config, context)
         results.append({"text": corrected, "bbox_xyxy": bbox})
     return results
+
+
+def _normalize_text_key(text: str) -> str:
+    """Normalize text for accent-insensitive/case-insensitive equality checks."""
+    normalized = unicodedata.normalize("NFKD", str(text or ""))
+    no_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return " ".join(no_accents.casefold().split())
+
+
+def merge_same_text_bboxes_keep_first(detections: list) -> list:
+    """
+    Merge detections with the same normalized text.
+
+    - Equality is accent-insensitive + case-insensitive.
+    - Keeps the first detection text/value.
+    - Expands first detection bbox to include matching duplicates.
+    """
+    merged = []
+    text_index = {}
+
+    for det in detections or []:
+        clean = _sanitize_detection_for_prompt(det)
+        if clean is None:
+            continue
+
+        key = _normalize_text_key(clean.get("text", ""))
+        if not key:
+            merged.append(clean)
+            continue
+
+        if key not in text_index:
+            text_index[key] = len(merged)
+            merged.append(clean)
+            continue
+
+        first_idx = text_index[key]
+        first = merged[first_idx]
+
+        ax1, ay1, ax2, ay2 = first["bbox_xyxy"]
+        bx1, by1, bx2, by2 = clean["bbox_xyxy"]
+        first["bbox_xyxy"] = [
+            min(ax1, bx1),
+            min(ay1, by1),
+            max(ax2, bx2),
+            max(ay2, by2),
+        ]
+
+    return merged
 
 
 def _extract_first_json_value(text):

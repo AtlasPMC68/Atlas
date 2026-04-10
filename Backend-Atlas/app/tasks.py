@@ -222,7 +222,15 @@ def process_map_extraction(
             output_filename = f"{timestamp}_{base_name}.txt"
             output_path = os.path.join(output_dir, output_filename)
 
-            lines = [str(block.get("text", "")) for block in extracted_text]
+            lines = []
+            for block in extracted_text:
+                if isinstance(block, dict):
+                    lines.append(str(block.get("text", "")))
+                elif isinstance(block, (list, tuple)) and len(block) >= 2:
+                    # Backward compatibility for legacy OCR tuples: (bbox, text, ...)
+                    lines.append(str(block[1]))
+                else:
+                    lines.append(str(block))
             full_text = "\n".join(lines)
             try:
                 with open(output_path, "w", encoding="utf-8") as f:

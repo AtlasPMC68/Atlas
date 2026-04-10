@@ -84,6 +84,7 @@ def run_qwen(florence_result: bool, input_path: str, intermediate_path: str, out
     print(f"Running per-detection Qwen inference ({len(detections)} detections)")
     raw_detections = qwen.run_per_detection(model, processor, image, detections, config, context)
     detections = _strip_quad_fields(raw_detections)
+    detections = qwen.merge_same_text_bboxes_keep_first(detections)
     image_size = _normalize_image_size(image_size, image)
 
     del model, processor

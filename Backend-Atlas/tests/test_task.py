@@ -60,13 +60,23 @@ def test_process_map_extraction(real_image_np):
     file_bytes = b"fake_image_data"
     map_id = str(uuid.uuid4())
 
-    mock_ocr_result = [([0, 0], "Hello World", 0.99), ([1, 1], "World Map", 0.95)]
+    mock_ocr_result = [
+        {
+            "text": "Hello World",
+            "bbox": [[0, 0], [10, 0], [10, 10], [0, 10]],
+        },
+        {
+            "text": "World Map",
+            "bbox": [[20, 20], [30, 20], [30, 30], [20, 30]],
+        },
+    ]
+    mock_text_regions = [det["bbox"] for det in mock_ocr_result]
     mock_colors = get_mock_color_extraction()
     mock_shapes = {"circles": 1, "lines": 5, "normalized_features": []}
 
     with patch("app.tasks.process_map_extraction.update_state") as mock_update_state, \
          patch("app.tasks.cv2.imread", return_value=real_image_np), \
-         patch("app.tasks.extract_text", return_value=(mock_ocr_result, real_image_np)), \
+         patch("app.tasks.extract_text", return_value=(mock_ocr_result, mock_text_regions)), \
          patch("app.tasks.extract_colors", return_value=mock_colors), \
          patch("app.tasks.extract_shapes", return_value=mock_shapes), \
          patch("app.tasks.asyncio.run") as mock_asyncio_run, \
