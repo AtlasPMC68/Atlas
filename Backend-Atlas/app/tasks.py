@@ -222,7 +222,7 @@ def process_map_extraction(
             output_filename = f"{timestamp}_{base_name}.txt"
             output_path = os.path.join(output_dir, output_filename)
 
-            lines = [block[1] for block in extracted_text]
+            lines = [str(block.get("text", "")) for block in extracted_text]
             full_text = "\n".join(lines)
             try:
                 with open(output_path, "w", encoding="utf-8") as f:
@@ -257,7 +257,11 @@ def process_map_extraction(
             },
         }
 
-        logger.info(f"Map processing completed for {filename}: 0 characters extracted")
+        logger.info(
+            "Map processing completed for %s: %s text detections extracted",
+            filename,
+            len(extracted_text),
+        )
 
         return result
 

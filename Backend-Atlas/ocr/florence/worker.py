@@ -1,12 +1,13 @@
 
 import os
 import gc
-
+import logging
 from celery import Celery
 
 import main as florence
 from output import save_result
 
+logger = logging.getLogger(__name__)
 os.environ.setdefault("HF_HOME", "/app/models")
 
 app = Celery(
@@ -19,7 +20,7 @@ app.conf.task_acks_late = True
 
 @app.task(name="florence.run_pipeline")
 def run_florence(image_path: str, intermediate_path: str) -> str:
-    print(f"Received Florence OCR task to process {image_path}")
+    logger.info(f"Received Florence OCR task to process image: {image_path}\nOutput JSON: {intermediate_path}")
 
     config = florence.get_runtime_config()
     model, processor = florence.load_model_and_processor(config)
@@ -31,7 +32,7 @@ def run_florence(image_path: str, intermediate_path: str) -> str:
 
     # Use save_result from output.py
     save_result(image_path, intermediate_path, result)
-    print(f"[Florence] Saved: {intermediate_path}")
+    logger.info(f"[Florence] Saved: {intermediate_path}")
     return True
 
 

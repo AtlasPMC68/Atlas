@@ -2,9 +2,11 @@ import os
 import json
 import cv2
 import torch
+import logging
 from PIL import Image
 from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 
+logger = logging.getLogger(__name__)
 
 MODEL_ID = "Qwen/Qwen3.5-4B"
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
@@ -12,7 +14,7 @@ MAX_NEW_TOKENS = 512
 MAX_IMAGE_PIXELS = 2560 * 2560
 MAX_PROMPT_DETECTIONS = 160
 ASSISTANT_JSON_PREFILL = '{"detections":['
-CROP_PADDING = 20
+CROP_PADDING = 15
 MAX_NEW_TOKENS_SINGLE = 32
 
 
@@ -138,7 +140,6 @@ def build_ocr_messages(image, prompt, processor):
 
 
 def load_model_and_processor(config):
-    print("Loading model...")
     model = Qwen3_5ForConditionalGeneration.from_pretrained(
         config["model_id"],
         torch_dtype=config["torch_dtype"],
@@ -147,7 +148,7 @@ def load_model_and_processor(config):
     processor = AutoProcessor.from_pretrained(
         config["model_id"],
     )
-    print("Model ready.")
+    logger.debug("Qwen 3.5 model ready.")
     return model, processor
 
 
@@ -236,7 +237,6 @@ def run_per_detection(
         bbox = compact["bbox_xyxy"]
         crop = crop_detection(image, bbox)
         corrected = run_single_det_inference(model, processor, crop, text, config, context)
-        print(f"  [{i + 1}/{total}] {text!r} -> {corrected!r}")
         results.append({"text": corrected, "bbox_xyxy": bbox})
     return results
 
@@ -282,17 +282,8 @@ def parse_json_or_empty(raw_text):
     return _normalize_detections(obj)
 
 
-def save_result(image_path, output_path, result):
-    """
-    Save the cleaned Qwen results to output_path (JSON) and output a -bbx image with bboxes drawn, matching Florence's output.py.
-    result: dict with keys 'image_size', 'detections', and optionally 'context'.
-    """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
-    print(f"Saved: {output_path}")
-
-    # Draw bboxes on the raw input image
+def _save_bbox_preview_image(image_path, output_path, result):
+    """Optional helper to render detections on the source image and save a -bbx preview."""
     img = cv2.imread(image_path)
     ext = os.path.splitext(image_path)[1]
     for det in result.get("detections", []):
@@ -303,10 +294,30 @@ def save_result(image_path, output_path, result):
             label_x, label_y = x1, max(y1 - 4, 0)
         else:
             continue
-        cv2.putText(img, det["text"], (label_x, label_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
+        cv2.putText(
+            img,
+            det["text"],
+            (label_x, label_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (0, 0, 255),
+            1,
+        )
     bbx_path = os.path.splitext(output_path)[0] + f"-bbx{ext}"
     cv2.imwrite(bbx_path, img)
-    print(f"Saved: {bbx_path}")
+
+
+def save_result(image_path, output_path, result):
+    """
+    Save the cleaned Qwen results to output_path (JSON) and output a -bbx image with bboxes drawn, matching Florence's output.py.
+    result: dict with keys 'image_size', 'detections', and optionally 'context'.
+    """
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    logger.info(f"Saved: {output_path}")
+
+    # Preview image rendering is intentionally disabled in this flow.
+    # _save_bbox_preview_image(image_path, output_path, result)
 
 

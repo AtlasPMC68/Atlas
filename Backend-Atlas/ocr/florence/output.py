@@ -202,6 +202,7 @@ def merge_related_detections(detections: list[dict]) -> list[dict]:
 
     return merged
 
+
 def quad_to_bbox_xyxy(quad: list[float]) -> list[int]:
     """Convert Florence quad_box [x1,y1,x2,y2,x3,y3,x4,y4] to axis-aligned bbox_xyxy."""
     xs = quad[0::2]
@@ -209,45 +210,40 @@ def quad_to_bbox_xyxy(quad: list[float]) -> list[int]:
     return [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
 
 
-def deduplicate_detections(detections: list[dict], containment_threshold: float = 0.8) -> list[dict]:
-    """
-    Remove duplicate detections caused by tile overlap.
-    If the smaller box has >= containment_threshold of its area inside the larger box, drop the smaller one.
-    """
-    def bbox_area(bbox):
-        return max(0, bbox[2] - bbox[0]) * max(0, bbox[3] - bbox[1])
-
-    def intersection_area(a, b):
-        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
-        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
-        return max(0, ix2 - ix1) * max(0, iy2 - iy1)
-
-    suppressed = set()
-    for i, det_i in enumerate(detections):
-        if i in suppressed:
+def _save_bbox_preview_image(image_path: str, intermediate_path: str, parsed: dict) -> None:
+    """Optional helper to render detections on the source image and save a -bbx preview."""
+    ext = os.path.splitext(os.path.basename(image_path))[1]
+    img = cv2.imread(image_path)
+    for det in parsed.get("detections", []):
+        quad = det.get("quad", [])
+        bbox = det.get("bbox_xyxy", [])
+        if len(quad) == 8:
+            pts = np.array(
+                [[int(quad[i]), int(quad[i + 1])] for i in range(0, 8, 2)],
+                dtype=np.int32,
+            )
+            cv2.polylines(img, [pts], isClosed=True, color=(0, 0, 255), thickness=1)
+            label_x, label_y = int(quad[0]), max(int(quad[1]) - 4, 0)
+        elif len(bbox) == 4:
+            x1, y1, x2, y2 = bbox
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 1)
+            label_x, label_y = x1, max(y1 - 4, 0)
+        else:
             continue
-        bbox_i = det_i.get("bbox_xyxy", [])
-        if len(bbox_i) != 4:
-            continue
-        area_i = bbox_area(bbox_i)
-        for j, det_j in enumerate(detections):
-            if j <= i or j in suppressed:
-                continue
-            bbox_j = det_j.get("bbox_xyxy", [])
-            if len(bbox_j) != 4:
-                continue
-            area_j = bbox_area(bbox_j)
-            inter = intersection_area(bbox_i, bbox_j)
-            smaller_area = min(area_i, area_j)
-            if smaller_area > 0 and inter / smaller_area >= containment_threshold:
-                suppressed.add(i if area_i <= area_j else j)
-
-    return [det for k, det in enumerate(detections) if k not in suppressed]
+        cv2.putText(
+            img,
+            det["text"],
+            (label_x, label_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (0, 0, 255),
+            1,
+        )
+    bbx_path = os.path.splitext(intermediate_path)[0] + f"-bbx{ext}"
+    cv2.imwrite(bbx_path, img)
 
 
 def save_result(image_path: str, intermediate_path: str, parsed: dict) -> None:
-
-    base, ext = os.path.splitext(os.path.basename(image_path))
 
     # Save JSON — strip internal fields not part of the output format
     import copy
@@ -257,25 +253,3 @@ def save_result(image_path: str, intermediate_path: str, parsed: dict) -> None:
     parsed_for_json = {**parsed, "detections": json_detections}
     with open(intermediate_path, "w", encoding="utf-8") as f:
         json.dump(parsed_for_json, f, ensure_ascii=False, indent=2)
-    print(f"Saved: {intermediate_path}")
-
-    # Draw bboxes on the raw input image
-    img = cv2.imread(image_path)
-    for det in parsed.get("detections", []):
-        quad = det.get("quad", [])
-        bbox = det.get("bbox_xyxy", [])
-        if len(quad) == 8:
-            pts = np.array([[int(quad[i]), int(quad[i+1])] for i in range(0, 8, 2)], dtype=np.int32)
-            cv2.polylines(img, [pts], isClosed=True, color=(0, 0, 255), thickness=1)
-            label_x, label_y = int(quad[0]), max(int(quad[1]) - 4, 0)
-        elif len(bbox) == 4:
-            x1, y1, x2, y2 = bbox
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 1)
-            label_x, label_y = x1, max(y1 - 4, 0)
-        else:
-            continue
-        cv2.putText(img, det["text"], (label_x, label_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
-    bbx_path = os.path.splitext(intermediate_path)[0] + f"-bbx{ext}"
-    cv2.imwrite(bbx_path, img)
-    print(f"Saved: {bbx_path}")
