@@ -27,6 +27,7 @@
               :style="{
                 backgroundColor: rgbToHex(feature.properties?.colorRgb),
                 borderColor: rgbToHex(feature.properties?.strokeColor),
+                opacity: feature.properties?.opacity ?? 0.5,
               }"
             />
             <span class="text-sm leading-tight">
@@ -49,7 +50,6 @@ const props = withDefaults(
   defineProps<{
     zoneFeatures: Feature[];
     featureVisibility: Map<string, boolean>;
-    selectedYear: number;
   }>(),
   {
     zoneFeatures: () => [],
@@ -66,14 +66,7 @@ const visibleZoneFeatures = computed(() =>
   props.zoneFeatures.filter((feature) => {
     const id = feature?.id;
     if (id == null) return true;
-    if (props.featureVisibility.get(id) === false) return false;
-
-    const startYear = new Date(feature.properties?.startDate).getUTCFullYear();
-    const endYear = new Date(feature.properties?.endDate).getUTCFullYear();
-
-    if (startYear != null && props.selectedYear < startYear) return false;
-    if (endYear != null && props.selectedYear > endYear) return false;
-    return true;
+    return props.featureVisibility.get(id) !== false;
   }),
 );
 </script>

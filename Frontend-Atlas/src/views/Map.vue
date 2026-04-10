@@ -38,7 +38,6 @@
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
-              :selected-year="selectedYear"
             />
           </div>
         </div>
@@ -147,7 +146,7 @@ const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
 
 const zoneFeatures = computed(() =>
-  features.value.filter((f) => f.properties?.mapElementType === "zone"),
+  filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
 );
 
 const selectedYear = ref(-1);

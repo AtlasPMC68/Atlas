@@ -27,8 +27,6 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
-import { showAlert } from "../composables/useAlert";
-import Alert from "./Alert.vue";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -149,8 +147,8 @@ function syncFeaturesFromMapLayers(): Feature[] {
   const renderedFeatures = syncFeaturesFromLayerMap(
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
-    props.projectId,
     props.selectedYear,
+    props.projectId,
   );
 
   renderedFeatures.forEach((feature) => {
@@ -431,7 +429,7 @@ function renderZones(features: Feature[]) {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
-        fillOpacity: 0.5,
+        fillOpacity: featureProperties.opacity ?? 0.5,
         color: strokeColor || fillColor,
         weight: featureProperties.strokeWidth || 1,
         opacity: featureProperties.strokeOpacity ?? 1,
