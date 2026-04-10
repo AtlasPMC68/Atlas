@@ -252,18 +252,30 @@ async def upload_and_process_map(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        task = process_map_extraction.delay(
-            filename=file.filename,
-            file_content=file_content,
-            project_id=map_obj.project_id,
-            map_id=map_id,
-            pixel_points=pixel_points_list,
-            geo_points_lonlat=geo_points_list,
-            enable_color_extraction=enable_color_extraction,
-            enable_shapes_extraction=enable_shapes_extraction,
-            enable_text_extraction=enable_text_extraction,
-            legend_bounds=legend_bounds_dict,
-        )
+        task_kwargs = {
+            "filename": file.filename,
+            "file_content": file_content,
+            "project_id": map_obj.project_id,
+            "map_id": map_id,
+            "pixel_points": pixel_points_list,
+            "geo_points_lonlat": geo_points_list,
+            "enable_color_extraction": enable_color_extraction,
+            "enable_shapes_extraction": enable_shapes_extraction,
+            "enable_text_extraction": enable_text_extraction,
+            "legend_bounds": legend_bounds_dict,
+        }
+
+        # Text-enabled jobs are funneled to a dedicated serial queue to avoid worker saturation.
+        if enable_text_extraction:
+            task = process_map_extraction.apply_async(
+                kwargs=task_kwargs,
+                queue="maps_ocr",
+            )
+        else:
+            task = process_map_extraction.apply_async(
+                kwargs=task_kwargs,
+                queue="maps",
+            )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
         logger.info(f"Map processing task started: {task.id} for file {file.filename}")
