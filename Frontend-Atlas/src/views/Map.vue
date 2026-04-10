@@ -18,7 +18,7 @@
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="flex-1 min-h-0">
+        <div class="flex-1 relative min-h-0 h-full w-full">
           <MapGeoJSON
             ref="mapGeoJsonRef"
             class="flex-1 min-h-0 w-full"
@@ -36,38 +36,45 @@
             @undo="onUndo"
             @redo="onRedo"
           />
+          <div class="absolute bottom-4 left-4 z-[1001]">
+            <Legend
+              :zone-features="zoneFeatures"
+              :feature-visibility="featureVisibility"
+            />
+          </div>
+        </div>
+        <div
+          class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+        >
+          <div class="map-timeline-slider w-full min-w-0">
+            <TimelineSlider
+              v-model:year="selectedYear"
+              @exact-date-change="onExactDateChange"
+              :min="timelineMinYear"
+              :max="timelineMaxYear"
+              :marker-years="timelineMarkerYears"
+              :map-periods="enrichedPeriods"
+              :current-exact-date="selectedExactDate"
+            />
+          </div>
           <div
-            class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
           >
-            <div class="map-timeline-slider w-full min-w-0">
-              <TimelineSlider
-                v-model:year="selectedYear"
-                @exact-date-change="onExactDateChange"
-                :min="timelineMinYear"
-                :max="timelineMaxYear"
-                :marker-years="timelineMarkerYears"
-                :map-periods="enrichedPeriods"
-                :current-exact-date="selectedExactDate"
-              />
-            </div>
-            <div
-              class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
-            >
-              <span>Filtrer par date</span>
-              <input
-                v-model="useTimelineFilter"
-                type="checkbox"
-                aria-label="Filtrer par date"
-                role="switch"
-                class="timeline-filter-toggle"
-              />
-            </div>
+            <span>Filtrer par date</span>
+            <input
+              v-model="useTimelineFilter"
+              type="checkbox"
+              aria-label="Filtrer par date"
+              role="switch"
+              class="timeline-filter-toggle"
+            />
           </div>
         </div>
       </div>
-
-      <Alert />
     </div>
+
+    <Alert />
+  </div>
 
   <AddImageDialog
     ref="addFeatureImageDialogRef"
@@ -87,7 +94,6 @@
       @error="onCreateProjectError"
       @closed="onCreateProjectDialogClosed"
     />
-  </div>
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
@@ -97,6 +103,7 @@ import AddMapDialog from "../components/add/AddMap.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
+import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
 import type { SliderPeriod } from "../typescript/map";
@@ -149,6 +156,10 @@ const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
+
+const zoneFeatures = computed(() =>
+  filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
+);
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
