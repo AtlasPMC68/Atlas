@@ -83,7 +83,9 @@ export function prepareFeaturesForSave(features: unknown[]): unknown[] {
 }
 
 export function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
@@ -121,4 +123,12 @@ export function rgbToHex(rgb: [number, number, number] | undefined) {
   const [r, g, b] = rgb;
   const toHex = (n: number) => clamp(n).toString(16).padStart(2, "0");
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+export function rgbtoRgba(
+  rgb: [number, number, number] | undefined,
+  alpha: number,
+): string {
+  if (!rgb) return "transparent";
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
 }

@@ -23,11 +23,17 @@
             class="flex items-center gap-2"
           >
             <span
-              class="inline-block h-4 w-4 rounded-sm shrink-0 border-2"
+              class="inline-block h-5 w-5 rounded-sm shrink-0 border-2"
               :style="{
-                backgroundColor: rgbToHex(feature.properties?.colorRgb),
-                borderColor: rgbToHex(feature.properties?.strokeColor),
-                opacity: feature.properties?.opacity ?? 0.5,
+                backgroundColor: rgbtoRgba(
+                  feature.properties?.colorRgb,
+                  feature.properties?.opacity ?? 0.5,
+                ),
+                borderColor: rgbtoRgba(
+                  feature.properties?.strokeColor,
+                  feature.properties?.strokeOpacity ?? 0.5,
+                ),
+                backgroundClip: 'padding-box',
               }"
             />
             <span class="text-sm leading-tight">
@@ -43,7 +49,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Feature } from "../../typescript/feature";
-import { rgbToHex } from "../../utils/utils";
+import { rgbtoRgba } from "../../utils/utils";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/vue/24/outline";
 
 const props = withDefaults(
