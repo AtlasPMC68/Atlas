@@ -16,8 +16,8 @@ const emit = defineEmits<{
 }>();
 
 const dialogRef = ref<HTMLDialogElement | null>(null);
-const newProjectTitle = ref<string | undefined>(undefined);
-const newProjectDescription = ref<string | undefined>(undefined);
+const newProjectTitle = ref<string | undefined>("");
+const newProjectDescription = ref<string | undefined>("");
 const newProjectIsPrivate = ref(true);
 const isCreating = ref(false);
 const closeTriggeredByCreate = ref(false);
@@ -61,7 +61,7 @@ function extractCreatedProject(payload: unknown): CreatedProjectRef | null {
   return null;
 }
 
-async function createMap() {
+async function createProject() {
   if (!currentUser.value) {
     await fetchCurrentUser();
   }
@@ -136,7 +136,7 @@ defineExpose({
 <template>
   <dialog ref="dialogRef" class="modal" @close="onDialogClose">
     <div class="modal-box p-0">
-      <form @submit.prevent="createMap">
+      <form @submit.prevent="createProject">
         <div class="card-body">
           <h3 class="text-lg font-bold">Créer une nouvelle carte</h3>
 

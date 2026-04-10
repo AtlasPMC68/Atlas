@@ -32,7 +32,7 @@ from app.utils.sift_key_points_finder import find_coastline_keypoints
 from ..celery_app import celery_app
 from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
-from ..utils.auth import get_current_user_id, get_user_from_token
+from ..utils.auth import get_current_user_id
 
 router = APIRouter()
 
@@ -184,6 +184,12 @@ async def get_project(
         raise HTTPException(status_code=404, detail="Project not found or access denied")
 
     project_obj, username = row
+    encoded_image = (
+        base64.b64encode(project_obj.image).decode("ascii")
+        if project_obj.image
+        else None
+    )
+
     return ProjectOut(
         id=project_obj.id,
         user_id=project_obj.user_id,
@@ -191,7 +197,7 @@ async def get_project(
         title=project_obj.title,
         description=project_obj.description,
         is_private=project_obj.is_private,
-        image=project_obj.image,
+        image=encoded_image,
         created_at=project_obj.created_at,
         updated_at=project_obj.updated_at,
     )
@@ -504,19 +510,6 @@ async def delete_feature(
     return {
         "feature_id": str(feature_uuid),
     }
-
-
-@router.get("/features/{map_id}")
-async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
-    try:
-        map_id = UUID(map_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid map_id")
-
-    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
-    features_rows = result.scalars().all()
-
-    return serialize_feature_rows(features_rows)
 
 
 @router.get("/{project_id}/features")

@@ -41,7 +41,7 @@ export interface FeatureProperties {
   colorName?: string;
   colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   strokeColor?: [number, number, number];
-  opacity?: number;
+  fillOpacity?: number;
   strokeOpacity?: number;
   strokeWidth?: number;
   mapElementType: MapElementType;

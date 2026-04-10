@@ -285,7 +285,7 @@ function renderCities(features: Feature[]) {
       color: strokeColor,
       weight: feature.properties.strokeWidth ?? 1,
       opacity: feature.properties.strokeOpacity ?? 1,
-      fillOpacity: feature.properties.opacity ?? 0.5,
+      fillOpacity: feature.properties.fillOpacity ?? 0.5,
     });
 
     const featureProperties = feature.properties;
@@ -495,7 +495,7 @@ function renderZones(features: Feature[]) {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
-        fillOpacity: 0.5,
+        fillOpacity: featureProperties.fillOpacity ?? 0.5,
         color: strokeColor || fillColor,
         weight: featureProperties.strokeWidth || 1,
         opacity: featureProperties.strokeOpacity ?? 1,
@@ -610,7 +610,7 @@ function renderShapes(features: Feature[]) {
         renderer: vectorRenderer ?? undefined,
         fillColor: fillColor,
         opacity: feature.properties.strokeOpacity ?? 1,
-        fillOpacity: feature.properties.strokeOpacity ?? 1,
+        fillOpacity: feature.properties.fillOpacity ?? 0.5,
         color: strokeColor,
         weight: feature.properties.strokeWidth || 1,
       },
@@ -640,7 +640,7 @@ function renderImages(features: Feature[]) {
 
     const src = toImageSrc(feature.image);
     const overlay = L.imageOverlay(src, bounds, {
-      opacity: feature.properties.opacity ?? 1,
+      opacity: feature.properties.fillOpacity ?? 1,
       interactive: true,
     });
 

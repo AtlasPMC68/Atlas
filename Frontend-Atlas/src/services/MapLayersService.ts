@@ -54,8 +54,8 @@ export class MapLayersService {
         fillColor: fillColor,
         color: strokeColor,
         weight: feature.properties.strokeWidth ?? 2,
-        opacity: feature.properties.opacity ?? 0.8,
-        fillOpacity: feature.properties.opacity ?? 0.8,
+        opacity: feature.properties.strokeOpacity ?? 0.8,
+        fillOpacity: feature.properties.fillOpacity ?? 0.8,
       });
 
       const labelText = featureProperties.name || feature.name || "";
@@ -112,7 +112,7 @@ export class MapLayersService {
         weight: feature.properties.strokeWidth ?? 2,
         strokeOpacity: feature.properties.strokeOpacity ?? 1,
         fillColor: fillColor,
-        fillOpacity: 0.5,
+        fillOpacity: feature.properties.fillOpacity ?? 0.5,
         interactive: true,
       };
       const canUseRectangle = isAxisAlignedRectangle(latLngs);
@@ -202,7 +202,7 @@ export class MapLayersService {
         weight: feature.properties.strokeWidth ?? 2,
         strokeOpacity: feature.properties.strokeOpacity ?? 1,
         fillColor: fillColor,
-        fillOpacity: feature.properties.opacity ?? 0.5,
+        fillOpacity: feature.properties.fillOpacity ?? 0.5,
         interactive: true,
       };
       const canUseRectangle = isAxisAlignedRectangle(latLngs);
