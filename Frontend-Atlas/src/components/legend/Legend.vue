@@ -16,7 +16,10 @@
       </h2>
       <template v-if="isLegendVisible">
         <p v-if="visibleZoneFeatures.length === 0">Aucune zone</p>
-        <ul v-else class="space-y-2 max-h-[25vh] overflow-y-auto">
+        <ul
+          v-else
+          class="space-y-2 max-h-[25vh] max-w-[20vh] overflow-y-auto pr-2"
+        >
           <li
             v-for="feature in visibleZoneFeatures"
             :key="feature.id ?? feature.properties?.name"
@@ -37,7 +40,10 @@
                 backgroundClip: 'padding-box',
               }"
             />
-            <span class="text-sm leading-tight">
+            <span
+              class="text-sm leading-tight truncate min-w-0 flex-1"
+              :title="feature.properties?.name || 'Élément sans nom'"
+            >
               {{ feature.properties?.name || "Élément sans nom" }}
             </span>
           </li>
