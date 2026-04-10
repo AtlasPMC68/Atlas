@@ -112,7 +112,7 @@ async function createProject() {
     }
 
     closeTriggeredByCreate.value = true;
-    close();
+    dialogRef.value?.close();
     emit("created", createdProject);
   } catch {
     emit("error", "Erreur lors de la création du projet.");
@@ -140,7 +140,7 @@ onMounted(() => {
 
 defineExpose({
   open,
-  close,
+  close: () => dialogRef.value?.close(),
 });
 </script>
 
