@@ -157,7 +157,7 @@ export function layerToFeature(
     properties: {
       name: baseFeature?.properties?.name ?? "",
       labelText,
-      sizePx: sizePx,
+      sizePx,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
       fillOpacity: baseFeature?.properties?.fillOpacity ?? 0.5,

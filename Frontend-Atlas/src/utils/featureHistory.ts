@@ -3,7 +3,7 @@ import type { Feature } from "../typescript/feature";
 import type {
   FeatureHistoryStack,
   FeatureSnapshot,
-} from "../typescript/featureHistory";
+} from "../typescript/feature";
 
 // TODO: exclure ou normaliser les champs lourds comme image pour éviter les problèmes de performance et de taille de snapshot
 function toPlainFeatureSnapshot(features: Feature[]): FeatureSnapshot {

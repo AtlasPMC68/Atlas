@@ -96,3 +96,8 @@ export type Geometry =
   | MultiPointGeometry
   | MultiLineStringGeometry
   | MultiPolygonGeometry;
+
+export type FeatureSnapshot = Feature[];
+export type FeatureHistoryStack = FeatureSnapshot[];
+
+export type FeatureTrackingCallback<T> = () => T;

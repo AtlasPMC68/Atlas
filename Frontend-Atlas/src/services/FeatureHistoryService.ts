@@ -3,7 +3,7 @@ import type { Feature } from "../typescript/feature";
 import type {
   FeatureSnapshot,
   FeatureTrackingCallback,
-} from "../typescript/featureHistory";
+} from "../typescript/feature";
 import {
   buildFeatureSnapshotSignature,
   cloneFeatureSnapshot,

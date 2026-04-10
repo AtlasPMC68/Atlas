@@ -36,10 +36,6 @@ function open(prefill?: CreateProjectDialogPrefill) {
   dialogRef.value?.showModal();
 }
 
-function close() {
-  dialogRef.value?.close();
-}
-
 function resetForm() {
   newProjectTitle.value = undefined;
   newProjectDescription.value = undefined;
@@ -200,7 +196,7 @@ defineExpose({
               type="button"
               class="btn btn-ghost"
               :disabled="isCreating"
-              @click="close"
+              @click="dialogRef?.close();"
             >
               Annuler
             </button>
