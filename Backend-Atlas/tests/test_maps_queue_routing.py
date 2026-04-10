@@ -1,3 +1,9 @@
+"""
+Test that maps with text extraction enabled are routed to "maps_ocr" queue, while maps without text extraction are routed to "maps" queue.
+Reason for this is that OCR only has a concurrency of 1 to avoid memory bottlenecks, so the routing logic ensures that non-OCR tasks are
+segregated to a different queue.
+"""
+
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,13 +13,6 @@ import pytest
 from fastapi import UploadFile
 
 from app.routers.projects import upload_and_process_map
-
-
-"""
-Test that maps with text extraction enabled are routed to "maps_ocr" queue, while maps without text extraction are routed to "maps" queue.
-Reason for this is that OCR only has a concurrency of 1 to avoid memory bottlenecks, so the routing logic ensures that non-OCR tasks are
-segregated to a different queue.
-"""
 
 def _make_upload_file(filename: str = "map.png", content: bytes = b"fake-image-bytes") -> UploadFile:
     return UploadFile(filename=filename, file=BytesIO(content))

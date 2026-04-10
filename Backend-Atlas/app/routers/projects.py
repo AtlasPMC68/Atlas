@@ -266,7 +266,7 @@ async def upload_and_process_map(
         }
 
         # Text-enabled jobs are funneled to a dedicated serial queue as to not
-        # block the faster general processing queue which handles
+        # block the faster general processing queue which handles tasks quicker.
         if enable_text_extraction:
             task = process_map_extraction.apply_async(
                 kwargs=task_kwargs,

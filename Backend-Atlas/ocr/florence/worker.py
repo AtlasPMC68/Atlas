@@ -46,4 +46,4 @@ def run_florence(image_path: str, intermediate_path: str) -> bool:
 
 
 if __name__ == "__main__":
-    app.worker_main(["worker", "--loglevel=debug", "--concurrency=1"])
+    app.worker_main(["worker", "--loglevel=debug", "--concurrency=1", "--queues=florence", "-n", "florence@%h"])

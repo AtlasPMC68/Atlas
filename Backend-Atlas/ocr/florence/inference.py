@@ -9,8 +9,10 @@ import preprocessing as preprocess
 import output as out
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForCausalLM
+from transformers.utils import logging as hf_transformers_logging
 
 logger = logging.getLogger(__name__)
+hf_transformers_logging.disable_progress_bar()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if "HF_HOME" not in os.environ:
@@ -55,14 +57,21 @@ def manually_preprocess_image(image_path: str) -> Image.Image:
 
 def load_model_and_processor(config: dict) -> tuple:
     """Load the Florence model and processor for OCR inference."""
-    logger.info("Loading model...")
+    logger.info("Loading Florence model %s from local cache under %s", config["model_id"], os.environ.get("HF_HOME", "/app/models"))
     model = AutoModelForCausalLM.from_pretrained(
         config["model_id"],
         torch_dtype=config["torch_dtype"],
         trust_remote_code=True,
         attn_implementation="eager",
+        cache_dir=os.environ.get("HF_HOME", "/app/models"),
+        local_files_only=True,
     ).to(config["device"])
-    processor = AutoProcessor.from_pretrained(config["model_id"], trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(
+        config["model_id"],
+        trust_remote_code=True,
+        cache_dir=os.environ.get("HF_HOME", "/app/models"),
+        local_files_only=True,
+    )
     logger.info("Model ready.")
     return model, processor
 

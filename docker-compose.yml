@@ -60,8 +60,8 @@ services:
       - db
     command: >
       sh -c "
-        celery -A app.celery_app worker --loglevel=info -E -Q maps &
-        celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 &
+        celery -A app.celery_app worker --loglevel=info -E -Q default,maps -n maps@%h &
+        celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
         wait
       "
 
@@ -174,4 +174,3 @@ volumes:
   redis-data:
   keycloak-data:
   ocr-data:
-  ocr-models:

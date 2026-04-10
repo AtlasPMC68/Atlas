@@ -99,4 +99,4 @@ def run_qwen(
 
 
 if __name__ == "__main__":
-    app.worker_main(["worker", "--loglevel=info", "--concurrency=1"])
+    app.worker_main(["worker", "--loglevel=info", "--concurrency=1", "--queues=qwen", "-n", "qwen@%h"])

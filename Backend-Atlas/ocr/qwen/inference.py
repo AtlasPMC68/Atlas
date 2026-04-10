@@ -7,10 +7,13 @@ import unicodedata
 from typing import Any
 from PIL import Image
 from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
+from transformers.utils import logging as hf_transformers_logging
 
 logger = logging.getLogger(__name__)
+hf_transformers_logging.disable_progress_bar()
 
 MODEL_ID = "Qwen/Qwen3.5-4B"
+MODELS_ROOT_DIR = os.getenv("MODELS_ROOT_DIR", "/app/models")
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 MAX_NEW_TOKENS = 512
 MAX_IMAGE_PIXELS = 2560 * 2560
@@ -158,14 +161,20 @@ def _build_ocr_messages(image: Image.Image, prompt: str, processor: Any) -> Any:
 def load_model_and_processor(
     config: dict[str, Any],
 ) -> tuple[Qwen3_5ForConditionalGeneration, AutoProcessor]:
-    """Load and configure the Qwen model and processor."""
+    """Load and configure the Qwen model and processor from the local HF cache only."""
+    logger.info(f"Loading Qwen model {config['model_id']} from local cache under {MODELS_ROOT_DIR}")
+
     model = Qwen3_5ForConditionalGeneration.from_pretrained(
         config["model_id"],
         torch_dtype=config["torch_dtype"],
+        cache_dir=MODELS_ROOT_DIR,
+        local_files_only=True,
     ).to(config["device"])
 
     processor = AutoProcessor.from_pretrained(
         config["model_id"],
+        cache_dir=MODELS_ROOT_DIR,
+        local_files_only=True,
     )
 
     # Prevent repeated generate() warnings about pad_token_id fallback.
