@@ -141,6 +141,8 @@ const addFeatureImageDialogRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
+const pendingDeletions = ref<string[]>([]);
+const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
@@ -232,25 +234,10 @@ const canRedo = featureHistoryService.canRedo;
 const trackingEnabled = featureHistoryService.trackingEnabled;
 
 function handleDrawChange(updatedFeatures: Feature[]) {
-  const removedIds = features.value
-    .map((feature) => feature.id)
-    .filter((id): id is string => typeof id === "string")
-    .filter((id) => !updatedFeatures.some((feature) => feature.id === id));
-
-  for (const featureId of removedIds) {
-    void onDeleteFeature(featureId, {
-      onSuccess: () => {},
-      onError: (message) => {
-        showAlert(
-          "error",
-          message || `Impossible de supprimer l'élément: ${featureId}`,
-        );
-      },
-    });
-  }
-
   if (trackingEnabled.value) {
     commitFeatureSnapshot(updatedFeatures);
+  } else {
+    applyFeatureSnapshot(updatedFeatures, false);
   }
 }
 
@@ -258,6 +245,16 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
   const apply = () => {
     features.value = next;
     reconcileVisibility(next);
+
+    const currentUuidIds = new Set(
+      next
+        .map((feature) => String(feature.id))
+        .filter((id) => isUuid(id)),
+    );
+
+    pendingDeletions.value = [...persistedFeatureIds.value].filter(
+      (id) => !currentUuidIds.has(id),
+    );
   };
 
   if (track) {
@@ -428,46 +425,16 @@ async function onDeleteFeature(
     onError?: (message?: string) => void;
   },
 ) {
-  if (!isUuid(featureId)) {
-    features.value = features.value.filter(
-      (feature) => feature.id !== featureId,
-    );
-    reconcileVisibility(features.value);
-    callbacks?.onSuccess?.();
-    return;
-  }
-
-  if (!currentUser.value) {
-    const message = "Utilisateur non authentifié.";
-    showAlert("error", message);
-    callbacks?.onError?.(message);
-    return;
-  }
-
-  if (!projectId.value) {
-    const resolved = await resolveRouteContext();
-    if (!resolved || !projectId.value) {
-      const message = "Projet introuvable pour supprimer cet élément.";
-      showAlert("error", message);
-      callbacks?.onError?.(message);
-      return;
-    }
-  }
-
   try {
-    const response = await apiFetch(
-      `/projects/${projectId.value}/features/${featureId}`,
-      { method: "DELETE" },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Error deleting feature: ${response.status}`);
-    }
-
-    features.value = features.value.filter(
+    const nextFeatures = features.value.filter(
       (feature) => feature.id !== featureId,
     );
-    reconcileVisibility(features.value);
+
+    if (trackingEnabled.value) {
+      commitFeatureSnapshot(nextFeatures);
+    } else {
+      applyFeatureSnapshot(nextFeatures, false);
+    }
 
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -572,7 +539,13 @@ async function loadInitialFeatures() {
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
 
+    persistedFeatureIds.value = new Set(
+      allFeatures
+        .map((feature) => String(feature.id))
+        .filter((id) => isUuid(id)),
+    );
     applyFeatureSnapshot(featureHistoryService.reset(allFeatures), false);
+    pendingDeletions.value = [];
   } catch (e) {
     console.error("Failed to load initial map features:", e);
     showAlert("error", "Erreur lors du chargement des éléments de la carte.");
@@ -798,6 +771,7 @@ onUnmounted(() => {
 async function saveFeaturesToProject(
   targetProjectId: string,
   featuresToSave: Feature[],
+  deletionIds: string[] = [],
 ): Promise<void> {
   const payload = camelToSnake(prepareFeaturesForSave(featuresToSave));
 
@@ -814,9 +788,34 @@ async function saveFeaturesToProject(
     throw new Error(`Error saving features: ${response.status}`);
   }
 
-  const savedFeatures = snakeToCamel(await response.json()) as Feature[];
+  const pendingDeleteSet = new Set(deletionIds);
+  const savedFeatures = (
+    snakeToCamel(await response.json()) as Feature[]
+  ).filter((feature) => !pendingDeleteSet.has(String(feature.id)));
   features.value = savedFeatures;
   reconcileVisibility(savedFeatures);
+
+  if (deletionIds.length > 0) {
+    const bulkDeleteResponse = await apiFetch(
+      `/projects/${targetProjectId}/features`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(deletionIds),
+      },
+    );
+
+    if (!bulkDeleteResponse.ok) {
+      console.error(
+        `Failed to bulk delete features: ${bulkDeleteResponse.status}`,
+      );
+    }
+  }
+
+  pendingDeletions.value = [];
 
   mapGeoJsonRef.value?.clearDraftLayers();
   await uploadMapThumbnail(targetProjectId);
@@ -831,7 +830,7 @@ async function onSaveMap() {
   isSaving.value = true;
 
   try {
-    if (!keycloak.token) {
+    if (!currentUser.value || !keycloak.token) {
       showAlert("error", "Utilisateur non authentifié.");
       return;
     }
@@ -860,7 +859,11 @@ async function onSaveMap() {
       return;
     }
 
-    await saveFeaturesToProject(targetProjectId, featuresToSave);
+    await saveFeaturesToProject(
+      targetProjectId,
+      featuresToSave,
+      pendingDeletions.value,
+    );
     showAlert("success", "Projet sauvegardée avec succès !");
   } catch (err) {
     showAlert("error", "Erreur lors de la sauvegarde des éléments.");

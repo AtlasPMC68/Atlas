@@ -61,7 +61,7 @@ const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
 let map: L.Map | null = null;
-let vectorRenderer: L.Canvas | null = null;
+let vectorRenderer: L.SVG | null = null;
 
 const undoControlName = "atlasUndo";
 const redoControlName = "atlasRedo";
@@ -280,6 +280,7 @@ function renderCities(features: Feature[]) {
       colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
+      renderer: vectorRenderer ?? undefined,
       radius: 6,
       fillColor: fillColor,
       color: strokeColor,
@@ -570,6 +571,7 @@ function renderPolylines(features: Feature[]) {
       colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
+      renderer: vectorRenderer ?? undefined,
       color: strokeColor,
       weight: feature.properties.strokeWidth ?? 2,
       opacity: feature.properties.strokeOpacity ?? 1,
@@ -713,7 +715,7 @@ onMounted(() => {
     [52.9399, -73.5491],
     5,
   );
-  vectorRenderer = L.canvas({ padding: 0.5 });
+  vectorRenderer = L.svg({ padding: 0.5 });
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",

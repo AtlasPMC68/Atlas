@@ -8,7 +8,7 @@ from uuid import UUID
 import base64
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
-from sqlalchemy import not_, select, func
+from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -510,6 +510,54 @@ async def delete_feature(
     return {
         "feature_id": str(feature_uuid),
     }
+
+
+@router.delete("/{project_id}/features")
+async def delete_features_bulk(
+    project_id: str,
+    feature_ids: list[str] = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        project_uuid = UUID(project_id)
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+
+    project_result = await session.execute(
+        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+    )
+    allowed_project = project_result.scalar_one_or_none()
+    if not allowed_project:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+    if not feature_ids:
+        return {"deleted_feature_ids": []}
+
+    try:
+        feature_uuid_ids = [UUID(feature_id) for feature_id in feature_ids]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid feature_id in payload")
+
+    existing_result = await session.execute(
+        select(Feature.id).where(
+            Feature.project_id == project_uuid,
+            Feature.id.in_(feature_uuid_ids),
+        )
+    )
+    deleted_feature_ids = [str(feature_id) for feature_id in existing_result.scalars().all()]
+
+    await session.execute(
+        delete(Feature).where(
+            Feature.project_id == project_uuid,
+            Feature.id.in_(feature_uuid_ids),
+        )
+    )
+
+    await session.commit()
+
+    return {"deleted_feature_ids": deleted_feature_ids}
 
 
 @router.get("/{project_id}/features")
