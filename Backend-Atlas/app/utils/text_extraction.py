@@ -35,7 +35,7 @@ def _extract_bbox_center_anchor(bbox_quad: object) -> tuple[float | None, float 
 
 
 def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
-    """Build one city point feature collection from gazetteer match output."""
+    """Build one city point feature for each geolocated city candidate."""
     return {
         "type": "FeatureCollection",
         "features": [
@@ -61,7 +61,7 @@ def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict
 
 
 def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[str, Any]:
-    """Build one pixel-space text point feature collection from bbox anchor."""
+    """Build text zones for the rest of the text boxes that are not geolocated to cities."""
     return {
         "type": "FeatureCollection",
         "features": [
@@ -69,8 +69,9 @@ def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[
                 "type": "Feature",
                 "properties": {
                     "name": text,
-                    "show": False,
-                    "mapElementType": "point",
+                    "labelText": text,
+                    "show": True,
+                    "mapElementType": "label",
                     "color_name": "black",
                     "color_rgb": [0, 0, 0],
                     "source": "ocr_bbox_anchor",

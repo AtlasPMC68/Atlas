@@ -325,6 +325,7 @@ def merge_related_detections(detections: list[dict]) -> list[dict]:
                 changed = True
                 break
 
+    # Removing temporary params, and adding bbox_xyxy because they are easier to work with.
     for det in merged:
         det["bbox_xyxy"] = quad_to_bbox_xyxy(det["quad"])
         det.pop("source_w", None)
