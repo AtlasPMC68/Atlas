@@ -17,22 +17,24 @@
           @update-feature="onSaveMap"
         />
       </div>
-      <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div class="flex-1 min-h-0 flex flex-col">
         <div class="flex-1 relative min-h-0 h-full w-full">
           <MapGeoJSON
             ref="mapGeoJsonRef"
             class="flex-1 min-h-0 w-full"
             :features="filteredFeatures"
-            :selected-year="selectedYear"
             :feature-visibility="featureVisibility"
+            :selected-year="selectedYear"
             :map-periods="mapPeriods"
             :project-id="projectId || projectRouteId || ''"
-            @features-loaded="handleFeaturesLoaded"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
-            @draw-delete-id="onDeleteFeature"
             @map-ready="onMapReady"
+            @undo="onUndo"
+            @redo="onRedo"
           />
           <div class="absolute bottom-4 left-4 z-[1001]">
             <Legend
@@ -85,6 +87,13 @@
     :is-creating-map="isCreatingMap"
     @submit="createMapForProject"
   />
+
+  <CreateProjectDialog
+      ref="createProjectDialogRef"
+      @created="onProjectCreated"
+      @error="onCreateProjectError"
+      @closed="onCreateProjectDialogClosed"
+    />
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
@@ -109,14 +118,15 @@ import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import { type Map as LeafletMap } from "leaflet";
+import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
-
-const handleDrawChange = (updatedFeatures: Feature[]) => {
-  features.value = updatedFeatures;
-  reconcileVisibility(updatedFeatures);
-};
+import { FeatureHistoryService } from "../services/FeatureHistoryService";
+import type {
+  CreatedProjectRef,
+  CreateProjectDialogExposed,
+} from "../typescript/project";
+import CreateProjectDialog from "../components/CreateProjectDialog.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -138,6 +148,8 @@ const addFeatureImageDialogRef = ref<{
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
+const pendingDeletions = ref<string[]>([]);
+const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
@@ -220,6 +232,64 @@ function onExactDateChange(nextDate: string | null) {
   selectedExactDate.value = nextDate;
 }
 
+const createProjectDialogRef = ref<CreateProjectDialogExposed | null>(null);
+const pendingCopiedFeatures = ref<Feature[] | null>(null);
+const shouldSaveAfterCopy = ref(false);
+
+const currentMapTitle = ref<string | undefined>(undefined);
+const currentMapDescription = ref<string | undefined>(undefined);
+
+const featureHistoryService = new FeatureHistoryService(5);
+const canUndo = featureHistoryService.canUndo;
+const canRedo = featureHistoryService.canRedo;
+const trackingEnabled = featureHistoryService.trackingEnabled;
+
+function handleDrawChange(updatedFeatures: Feature[]) {
+  if (trackingEnabled.value) {
+    commitFeatureSnapshot(updatedFeatures);
+  } else {
+    applyFeatureSnapshot(updatedFeatures, false);
+  }
+}
+
+function applyFeatureSnapshot(next: Feature[], track = true) {
+  const apply = () => {
+    features.value = next;
+    reconcileVisibility(next);
+
+    const currentUuidIds = new Set(
+      next
+        .map((feature) => String(feature.id))
+        .filter((id) => isUuid(id)),
+    );
+
+    pendingDeletions.value = [...persistedFeatureIds.value].filter(
+      (id) => !currentUuidIds.has(id),
+    );
+  };
+
+  if (track) {
+    apply();
+    return;
+  }
+
+  featureHistoryService.withoutTracking(apply);
+}
+
+function commitFeatureSnapshot(next: Feature[]) {
+  applyFeatureSnapshot(featureHistoryService.commit(features.value, next));
+}
+
+function onUndo() {
+  if (!canUndo.value) return;
+  applyFeatureSnapshot(featureHistoryService.undo(features.value), false);
+}
+
+function onRedo() {
+  if (!canRedo.value) return;
+  applyFeatureSnapshot(featureHistoryService.redo(features.value), false);
+}
+
 async function onAddFeatureImage(file: File) {
   if (!keycloak.token) {
     addFeatureImageDialogRef.value?.close();
@@ -241,6 +311,7 @@ async function onAddFeatureImage(file: File) {
 
     const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
       method: "POST",
+      headers: { Authorization: `Bearer ${keycloak.token}` },
       body: formData,
     });
 
@@ -257,44 +328,63 @@ async function onAddFeatureImage(file: File) {
   }
 }
 
-function onMapReady(map: LeafletMap) {
+async function onMapReady(map: LeafletMap) {
   leafletMap.value = map;
 }
 
-async function uploadMapThumbnail(): Promise<boolean> {
+async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
   if (!leafletMap.value || !keycloak.token) return false;
 
-  if (!projectId.value) {
+  const resolvedProjectId = targetProjectId ?? projectId.value;
+
+  if (!resolvedProjectId && !targetProjectId) {
     const resolved = await resolveRouteContext();
     if (!resolved) return false;
   }
-  if (!projectId.value) return false;
+
+  const uploadProjectId = resolvedProjectId ?? projectId.value;
+  if (!uploadProjectId) return false;
 
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
 
+  const removedLayers: L.Layer[] = [];
+
+  leafletMap.value.eachLayer((layer) => {
+    if (layer instanceof L.Marker && layer.options.icon instanceof L.DivIcon) {
+      removedLayers.push(layer);
+    }
+  });
+
+  removedLayers.forEach((layer) => leafletMap.value?.removeLayer(layer));
+
   return await new Promise<boolean>((resolve) => {
     leafletImage(leafletMap.value as LeafletMap, async (err, canvas) => {
-      if (err || !canvas) return resolve(false);
+      try {
+        if (err || !canvas) return resolve(false);
 
-      const blob = await new Promise<Blob | null>((r) =>
-        canvas.toBlob(r, "image/png"),
-      );
-      if (!blob) return resolve(false);
+        const blob = await new Promise<Blob | null>((r) =>
+          canvas.toBlob(r, "image/png"),
+        );
+        if (!blob) return resolve(false);
 
-      const formData = new FormData();
-      formData.append("image", blob);
+        const formData = new FormData();
+        formData.append("image", blob);
 
-      const res = await apiFetch(`/projects/${projectId.value}/thumbnail`, {
-        method: "POST",
-        body: formData,
-      });
+        const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!res.ok) {
-        console.error("Project thumbnail upload failed:", res.status);
+        if (!res.ok) {
+          console.error("Project thumbnail upload failed:", res.status);
+        }
+        resolve(res.ok);
+        resolve(res.ok);
+      } finally {
+        removedLayers.forEach((layer) => leafletMap.value?.addLayer(layer));
       }
-      resolve(res.ok);
     });
   });
 }
@@ -346,46 +436,16 @@ async function onDeleteFeature(
     onError?: (message?: string) => void;
   },
 ) {
-  if (!isUuid(featureId)) {
-    features.value = features.value.filter(
-      (feature) => feature.id !== featureId,
-    );
-    reconcileVisibility(features.value);
-    callbacks?.onSuccess?.();
-    return;
-  }
-
-  if (!currentUser.value) {
-    const message = "Utilisateur non authentifié.";
-    showAlert("error", message);
-    callbacks?.onError?.(message);
-    return;
-  }
-
-  if (!projectId.value) {
-    const resolved = await resolveRouteContext();
-    if (!resolved || !projectId.value) {
-      const message = "Projet introuvable pour supprimer cet élément.";
-      showAlert("error", message);
-      callbacks?.onError?.(message);
-      return;
-    }
-  }
-
   try {
-    const response = await apiFetch(
-      `/projects/${projectId.value}/features/${featureId}`,
-      { method: "DELETE" },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Error deleting feature: ${response.status}`);
-    }
-
-    features.value = features.value.filter(
+    const nextFeatures = features.value.filter(
       (feature) => feature.id !== featureId,
     );
-    reconcileVisibility(features.value);
+
+    if (trackingEnabled.value) {
+      commitFeatureSnapshot(nextFeatures);
+    } else {
+      applyFeatureSnapshot(nextFeatures, false);
+    }
 
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -396,6 +456,19 @@ async function onDeleteFeature(
 
 async function resolveRouteContext(): Promise<boolean> {
   return loadProjectIdForMap();
+}
+
+async function requireProjectId(): Promise<string> {
+  if (projectId.value) {
+    return projectId.value;
+  }
+
+  const resolved = await resolveRouteContext();
+  if (!resolved || !projectId.value) {
+    throw new Error("Can't find project.");
+  }
+
+  return projectId.value;
 }
 
 function openAddMapDialog() {
@@ -409,7 +482,7 @@ async function createMapForProject(formPayload: {
   exactDate: boolean;
 }) {
   if (!keycloak.token) return;
-  const targetProjectId = projectId.value || projectRouteId.value;
+  const targetProjectId = projectId.value;
 
   if (!targetProjectId || !formPayload.title.trim()) {
     return;
@@ -477,12 +550,54 @@ async function loadInitialFeatures() {
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
 
-    features.value = allFeatures;
-    reconcileVisibility(allFeatures);
+    persistedFeatureIds.value = new Set(
+      allFeatures
+        .map((feature) => String(feature.id))
+        .filter((id) => isUuid(id)),
+    );
+    applyFeatureSnapshot(featureHistoryService.reset(allFeatures), false);
+    pendingDeletions.value = [];
   } catch (e) {
     console.error("Failed to load initial map features:", e);
     showAlert("error", "Erreur lors du chargement des éléments de la carte.");
   }
+}
+
+async function loadCurrentMapInfo(): Promise<void> {
+  try {
+    const res = await apiFetch(`/projects/${projectId.value}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch map info: ${res.status}`);
+    }
+
+    const map = snakeToCamel(await res.json()) as {
+      title?: string;
+      description?: string;
+    };
+
+    currentMapTitle.value = map.title ?? undefined;
+    currentMapDescription.value = map.description ?? undefined;
+  } catch (err) {
+    console.error("Failed to load current map info:", err);
+    currentMapTitle.value = undefined;
+    currentMapDescription.value = undefined;
+  }
+}
+
+async function openCreateCopyDialog() {
+  await loadCurrentMapInfo();
+
+  createProjectDialogRef.value?.open({
+    title: currentMapTitle.value,
+    description: currentMapDescription.value,
+    isPrivate: true,
+  });
 }
 
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
@@ -491,14 +606,120 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
-  uploadMapThumbnail();
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    target.isContentEditable
+  );
 }
 
-const handleCtrlS = (e: KeyboardEvent) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+async function isProjectOwner(targetProjectId: string): Promise<boolean> {
+  if (!targetProjectId || !keycloak.token) {
+    return false;
+  }
+
+  try {
+    const res = await apiFetch(`/projects/is-owner/${targetProjectId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+    });
+
+    if (!res.ok) {
+      console.error(`Error checking project owner: ${res.status}`);
+      return false;
+    }
+
+    const data = (await res.json()) as boolean;
+    return data === true;
+  } catch (err) {
+    console.error("Error checking project owner:", err);
+    return false;
+  }
+}
+
+function onCreateProjectError(message: string) {
+  showAlert("error", message);
+}
+
+function onCreateProjectDialogClosed() {
+  pendingCopiedFeatures.value = null;
+  shouldSaveAfterCopy.value = false;
+}
+
+async function onProjectCreated(project: CreatedProjectRef | null) {
+  if (!project?.id) {
+    pendingCopiedFeatures.value = null;
+    shouldSaveAfterCopy.value = false;
+
+    showAlert(
+      "error",
+      "La nouvelle carte a été créée, mais aucun identifiant valide n'a été retourné.",
+    );
+    return;
+  }
+
+  const featuresToSave = pendingCopiedFeatures.value;
+
+  if (!featuresToSave) {
+    pendingCopiedFeatures.value = null;
+    shouldSaveAfterCopy.value = false;
+
+    showAlert("error", "Aucune donnée à copier vers la nouvelle carte.");
+    return;
+  }
+
+  try {
+    isSaving.value = true;
+
+    const targetProjectId = project.id;
+
+    await saveFeaturesToProject(targetProjectId, featuresToSave);
+
+    pendingCopiedFeatures.value = null;
+    shouldSaveAfterCopy.value = false;
+
+    await router.push(`/projet/${project.id}`);
+    showAlert("success", "Une copie de la carte a été créée.");
+  } catch (err) {
+    console.error("Error while saving copied map features:", err);
+    showAlert(
+      "error",
+      "La copie a été créée, mais la sauvegarde des éléments a échoué.",
+    );
+  } finally {
+    isSaving.value = false;
+  }
+}
+
+const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+  if (isEditableTarget(e.target)) {
+    return;
+  }
+
+  const isMod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  if (isMod && key === "s") {
     e.preventDefault();
     void onSaveMap();
+    return;
+  }
+
+  if (isMod && !e.shiftKey && key === "z") {
+    e.preventDefault();
+    onUndo();
+    return;
+  }
+
+  if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
+    e.preventDefault();
+    onRedo();
   }
 };
 
@@ -506,8 +727,9 @@ onMounted(async () => {
   await fetchCurrentUser();
   await resolveRouteContext();
   await loadProjectMapsForTimeline();
+  await loadCurrentMapInfo();
   await loadInitialFeatures();
-  window.addEventListener("keydown", handleCtrlS);
+  window.addEventListener("keydown", handleKeyboardShortcuts);
 });
 
 watch([projectRouteId], async () => {
@@ -536,53 +758,123 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => route.params.mapId,
+  async (newMapId, oldMapId) => {
+    if (!newMapId || newMapId === oldMapId) return;
+
+    featureVisibility.value = new Map();
+    await loadCurrentMapInfo();
+
+    if (shouldSaveAfterCopy.value) {
+      return;
+    }
+
+    await loadInitialFeatures();
+  },
+);
+
 onUnmounted(() => {
-  window.removeEventListener("keydown", handleCtrlS);
+  window.removeEventListener("keydown", handleKeyboardShortcuts);
   clearAlert();
 });
+
+async function saveFeaturesToProject(
+  targetProjectId: string,
+  featuresToSave: Feature[],
+  deletionIds: string[] = [],
+): Promise<void> {
+  const payload = camelToSnake(prepareFeaturesForSave(featuresToSave));
+
+  const response = await apiFetch(`/projects/${targetProjectId}/features`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${keycloak.token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error saving features: ${response.status}`);
+  }
+
+  const pendingDeleteSet = new Set(deletionIds);
+  const savedFeatures = (
+    snakeToCamel(await response.json()) as Feature[]
+  ).filter((feature) => !pendingDeleteSet.has(String(feature.id)));
+  features.value = savedFeatures;
+  reconcileVisibility(savedFeatures);
+
+  if (deletionIds.length > 0) {
+    const bulkDeleteResponse = await apiFetch(
+      `/projects/${targetProjectId}/features`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(deletionIds),
+      },
+    );
+
+    if (!bulkDeleteResponse.ok) {
+      console.error(
+        `Failed to bulk delete features: ${bulkDeleteResponse.status}`,
+      );
+    }
+  }
+
+  pendingDeletions.value = [];
+
+  mapGeoJsonRef.value?.clearDraftLayers();
+  await uploadMapThumbnail(targetProjectId);
+
+  if (projectId.value === targetProjectId) {
+    await loadInitialFeatures();
+  }
+}
 
 async function onSaveMap() {
   if (isSaving.value) return;
   isSaving.value = true;
 
   try {
-    if (!keycloak.token) {
+    if (!currentUser.value || !keycloak.token) {
       showAlert("error", "Utilisateur non authentifié.");
       return;
     }
 
     const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
+    const featuresToSave = syncedFeatures ?? features.value;
+
     if (syncedFeatures) {
       features.value = syncedFeatures;
       reconcileVisibility(syncedFeatures);
     }
 
-    if (!projectId.value) {
-      const resolved = await resolveRouteContext();
-      if (!resolved || !projectId.value) {
-        showAlert("error", "Projet introuvable pour la sauvegarde.");
-        return;
-      }
+    const targetProjectId = await requireProjectId();
+
+    if (!targetProjectId) {
+      showAlert("error", "Projet introuvable.");
+      return;
     }
 
-    const payload = camelToSnake(prepareFeaturesForSave(features.value));
+    const isOwner = await isProjectOwner(targetProjectId);
 
-    const response = await apiFetch(`/projects/${projectId.value}/features`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      showAlert("error", "Erreur lors de la sauvegarde des éléments.");
-      throw new Error(`Error saving features: ${response.status}`);
+    if (!isOwner) {
+      pendingCopiedFeatures.value = [...featuresToSave];
+      shouldSaveAfterCopy.value = true;
+      await openCreateCopyDialog();
+      return;
     }
 
-    const savedFeatures = snakeToCamel(await response.json()) as Feature[];
-    features.value = savedFeatures;
-    reconcileVisibility(savedFeatures);
-
-    mapGeoJsonRef.value?.clearDraftLayers();
+    await saveFeaturesToProject(
+      targetProjectId,
+      featuresToSave,
+      pendingDeletions.value,
+    );
     showAlert("success", "Projet sauvegardée avec succès !");
   } catch (err) {
     showAlert("error", "Erreur lors de la sauvegarde des éléments.");

@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -27,6 +27,7 @@ import type {
   FeatureId,
 } from "../typescript/feature";
 import type { AtlasRuntimeLayer } from "../typescript/mapLayers";
+import type { MapWithPm } from "../typescript/mapDrawing";
 
 interface GeoJsonFeatureWithGeometry {
   geometry: Geometry;
@@ -43,28 +44,83 @@ const props = defineProps<{
   featureVisibility: Map<string, boolean>;
   projectId: string;
   selectedYear: number;
+  canUndo: boolean;
+  canRedo: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (
-    e: "draw-delete-id",
-    featureId: string,
-    callbacks?: {
-      onSuccess?: () => void;
-      onError?: (message?: string) => void;
-    },
-  ): void;
+  (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
   (e: "map-ready", map: L.Map): void;
+  (e: "undo"): void;
+  (e: "redo"): void;
 }>();
 
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
 
 let map: L.Map | null = null;
-let vectorRenderer: L.Canvas | null = null;
+let vectorRenderer: L.SVG | null = null;
+
+const undoControlName = "atlasUndo";
+const redoControlName = "atlasRedo";
+const undoControlClass = "leaflet-pm-icon-atlas-undo";
+const redoControlClass = "leaflet-pm-icon-atlas-redo";
+
+function setToolbarButtonEnabled(className: string, enabled: boolean) {
+  document.querySelectorAll<HTMLElement>(`.${className}`).forEach((el) => {
+    el.classList.toggle("leaflet-pm-control-disabled", !enabled);
+    el.setAttribute("aria-disabled", String(!enabled));
+    el.tabIndex = enabled ? 0 : -1;
+  });
+}
+
+function updateHistoryToolbarState() {
+  setToolbarButtonEnabled(undoControlClass, props.canUndo);
+  setToolbarButtonEnabled(redoControlClass, props.canRedo);
+}
+
+function addUndoRedoControls(mapInstance: L.Map) {
+  const toolbar = (mapInstance as MapWithPm).pm?.Toolbar;
+
+  if (!toolbar?.createCustomControl) {
+    return;
+  }
+
+  if (!toolbar.controlExists?.(undoControlName)) {
+    toolbar.createCustomControl({
+      name: undoControlName,
+      block: "custom",
+      title: "Annuler",
+      className: undoControlClass,
+      toggle: false,
+      onClick: () => {
+        if (!props.canUndo) return;
+        emit("undo");
+      },
+    });
+  }
+
+  if (!toolbar.controlExists?.(redoControlName)) {
+    toolbar.createCustomControl({
+      name: redoControlName,
+      block: "custom",
+      title: "Rétablir",
+      className: redoControlClass,
+      toggle: false,
+      onClick: () => {
+        if (!props.canRedo) return;
+        emit("redo");
+      },
+    });
+  }
+
+  toolbar.setBlockPosition?.("custom", "topleft");
+  toolbar.changeControlOrder?.([undoControlName, redoControlName]);
+
+  updateHistoryToolbarState();
+}
 
 const featureLayerManager = {
   layers: new Map<FeatureId, L.Layer>(),
@@ -203,8 +259,7 @@ const drawing = useMapDrawing(
         (feature) => String(feature.id) !== deletedId,
       );
       localFeaturesSnapshot.value = next;
-
-      emit("draw-delete-id", deletedId);
+      emit("draw-delete", next);
       return;
     }
   },
@@ -225,12 +280,13 @@ function renderCities(features: Feature[]) {
       colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
+      renderer: vectorRenderer ?? undefined,
       radius: 6,
       fillColor: fillColor,
       color: strokeColor,
       weight: feature.properties.strokeWidth ?? 1,
       opacity: feature.properties.strokeOpacity ?? 1,
-      fillOpacity: feature.properties.opacity ?? 0.5,
+      fillOpacity: feature.properties.fillOpacity ?? 0.5,
     });
 
     const featureProperties = feature.properties;
@@ -255,6 +311,17 @@ function renderCities(features: Feature[]) {
   });
 }
 
+function applyLabelStyle(marker: L.Marker, feature: Feature) {
+  const el = marker.getElement() as HTMLElement | null;
+  if (!el) return;
+
+  const color = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+  const sizePx = feature.properties.sizePx ?? 12;
+
+  el.style.setProperty("--label-color", color);
+  el.style.setProperty("--label-size", `${sizePx}px`);
+}
+
 function renderLabels(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -264,21 +331,21 @@ function renderLabels(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
-    const labelText = feature.properties.labelText || "";
-
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text geoman-text-label",
-        html: labelText,
+        html: feature.properties.labelText || "",
         iconSize: [120, 20],
         iconAnchor: [0, 10],
       }),
     });
 
+    label.on("add", () => applyLabelStyle(label, feature));
+
     const textMarker = label as L.Marker & {
       options: L.MarkerOptions & { text: string; textMarker?: boolean };
     };
-    textMarker.options.text = labelText;
+    textMarker.options.text = feature.properties.labelText || "";
     textMarker.options.textMarker = true;
 
     attachFeatureToLayer(label, feature);
@@ -429,7 +496,7 @@ function renderZones(features: Feature[]) {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
-        fillOpacity: featureProperties.opacity ?? 0.5,
+        fillOpacity: featureProperties.fillOpacity ?? 0.5,
         color: strokeColor || fillColor,
         weight: featureProperties.strokeWidth || 1,
         opacity: featureProperties.strokeOpacity ?? 1,
@@ -504,6 +571,7 @@ function renderPolylines(features: Feature[]) {
       colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
+      renderer: vectorRenderer ?? undefined,
       color: strokeColor,
       weight: feature.properties.strokeWidth ?? 2,
       opacity: feature.properties.strokeOpacity ?? 1,
@@ -544,7 +612,7 @@ function renderShapes(features: Feature[]) {
         renderer: vectorRenderer ?? undefined,
         fillColor: fillColor,
         opacity: feature.properties.strokeOpacity ?? 1,
-        fillOpacity: feature.properties.strokeOpacity ?? 1,
+        fillOpacity: feature.properties.fillOpacity ?? 0.5,
         color: strokeColor,
         weight: feature.properties.strokeWidth || 1,
       },
@@ -574,13 +642,32 @@ function renderImages(features: Feature[]) {
 
     const src = toImageSrc(feature.image);
     const overlay = L.imageOverlay(src, bounds, {
-      opacity: feature.properties.opacity ?? 1,
+      opacity: feature.properties.fillOpacity ?? 1,
       interactive: true,
     });
 
     attachFeatureToLayer(overlay, feature);
     featureLayerManager.addFeatureLayer(feature.id, overlay);
   });
+}
+
+function renderAllFeaturesSafely() {
+  if (!map) return;
+
+  const pm = (map as MapWithPm).pm;
+  const wasGlobalRotateEnabled = pm?.globalRotateModeEnabled?.() ?? false;
+
+  if (wasGlobalRotateEnabled) {
+    pm?.disableGlobalRotateMode?.();
+  }
+
+  try {
+    renderAllFeatures();
+  } finally {
+    if (wasGlobalRotateEnabled) {
+      pm?.enableGlobalRotateMode?.();
+    }
+  }
 }
 
 function renderAllFeatures() {
@@ -621,7 +708,6 @@ function renderAllFeatures() {
   renderImages(featuresByType.image);
 
   previousFeatureIds.value = currentIds;
-  emit("features-loaded", currentFeatures);
 }
 
 onMounted(() => {
@@ -629,7 +715,7 @@ onMounted(() => {
     [52.9399, -73.5491],
     5,
   );
-  vectorRenderer = L.canvas({ padding: 0.5 });
+  vectorRenderer = L.svg({ padding: 0.5 });
 
   L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
@@ -642,15 +728,16 @@ onMounted(() => {
 
   drawing.initializeDrawing(map);
 
+  L.control.zoom({ position: "topleft" }).addTo(map);
+  addUndoRedoControls(map);
+
   L.control
     .scale({ position: "bottomright", metric: true, imperial: false })
     .addTo(map);
 
-  L.control.zoom({ position: "topleft" }).addTo(map);
-
   drawing.setSelectedYear(props.selectedYear);
   emit("map-ready", map);
-  renderAllFeatures();
+  renderAllFeaturesSafely();
 });
 
 onBeforeUnmount(() => {
@@ -673,7 +760,7 @@ watch(
   (newFeatures) => {
     localFeaturesSnapshot.value = [...newFeatures];
     if (!map) return;
-    renderAllFeatures();
+    renderAllFeaturesSafely();
   },
   { deep: true },
 );
@@ -689,4 +776,31 @@ watch(
   },
   { deep: true },
 );
+
+watch(
+  () => [props.canUndo, props.canRedo],
+  async () => {
+    await nextTick();
+    updateHistoryToolbarState();
+  },
+  { immediate: true },
+);
 </script>
+
+<style>
+.city-label-text {
+  font-size: var(--label-size, 12px);
+  font-weight: bold;
+  color: var(--label-color, #000);
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: transparent;
+}
+
+.arrow-head {
+  font-size: 20px;
+  color: black;
+  transform: rotate(0deg);
+}
+</style>

@@ -26,24 +26,30 @@ export type TextMarkerLayer = L.Marker & {
   };
 };
 
+export type PmCustomControlOptions = {
+  name: string;
+  block: "draw" | "edit" | "custom" | "options";
+  title: string;
+  className: string;
+  toggle?: boolean;
+  disableOtherButtons?: boolean;
+  disableByOtherButtons?: boolean;
+  actions?: string[];
+  onClick?: () => void;
+  afterClick?: (
+    event: unknown,
+    context: { button: { toggled: () => boolean } },
+  ) => void;
+};
+
 export type PmToolbar = {
-  createCustomControl?: (options: {
-    name: string;
-    block: string;
-    title: string;
-    className: string;
-    toggle: boolean;
-    disableOtherButtons: boolean;
-    disableByOtherButtons: boolean;
-    actions: string[];
-    onClick: () => void;
-    afterClick: (
-      event: unknown,
-      context: { button: { toggled: () => boolean } },
-    ) => void;
-  }) => void;
+  createCustomControl?: (options: PmCustomControlOptions) => void;
   controlExists?: (name: string) => boolean;
-  changeControlOrder?: () => void;
+  changeControlOrder?: (order?: string[]) => void;
+  setBlockPosition?: (
+    block: "draw" | "edit" | "custom" | "options",
+    position: "topleft" | "topright" | "bottomleft" | "bottomright",
+  ) => void;
 };
 
 export type PmMapDrawingTool = {
@@ -53,6 +59,9 @@ export type PmMapDrawingTool = {
   globalRemovalModeEnabled?: () => boolean;
   enableGlobalLassoMode?: (options: Record<string, unknown>) => void;
   disableGlobalLassoMode?: () => void;
+  globalRotateModeEnabled?: () => boolean;
+  enableGlobalRotateMode?: () => void;
+  disableGlobalRotateMode?: () => void;
   Toolbar?: PmToolbar;
 };
 

@@ -176,13 +176,13 @@
         <div
           class="flex gap-2"
           v-if="
-            featureToEdit.properties.opacity !== undefined ||
+            featureToEdit.properties.fillOpacity !== undefined ||
             featureToEdit.properties.strokeOpacity !== undefined
           "
         >
           <div
             class="flex flex-col gap-2 w-full"
-            v-if="featureToEdit.properties.opacity !== undefined"
+            v-if="featureToEdit.properties.fillOpacity !== undefined"
           >
             <label class="label">Opacité</label>
             <input v-model="featureToEditOpacity" type="number" class="input" />
@@ -401,7 +401,7 @@ async function showEditFeatureDialog(feature: Feature) {
   featureToEditLabelText.value = feature.properties.labelText;
   featureToEditColor.value = rgbToHex(feature.properties.colorRgb);
   featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
-  featureToEditOpacity.value = feature.properties.opacity;
+  featureToEditOpacity.value = feature.properties.fillOpacity;
   featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
   featureToEditStrokeWidth.value = feature.properties.strokeWidth;
 
@@ -434,7 +434,7 @@ async function onEditFeature() {
   featureToEdit.value.properties.strokeColor = hexToRgb(
     featureToEditStrokeColor.value,
   );
-  featureToEdit.value.properties.opacity = featureToEditOpacity.value;
+  featureToEdit.value.properties.fillOpacity = featureToEditOpacity.value;
   featureToEdit.value.properties.strokeOpacity =
     featureToEditStrokeOpacity.value;
   featureToEdit.value.properties.strokeWidth = featureToEditStrokeWidth.value;

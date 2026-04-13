@@ -7,35 +7,55 @@ import {
   QuestionMarkCircleIcon,
   PencilSquareIcon,
 } from "@heroicons/vue/24/outline";
-import { MapData } from "../typescript/map";
+import {
+  CreatedProjectRef,
+  CreateProjectDialogExposed,
+} from "../typescript/project";
+import type { MapData } from "../typescript/map";
 import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
-import { PaperAirplaneIcon, TrashIcon } from "@heroicons/vue/24/solid";
+import { TrashIcon } from "@heroicons/vue/24/solid";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import Alert from "../components/Alert.vue";
+import CreateProjectDialog from "../components/CreateProjectDialog.vue";
 
 const maps = ref<MapData[]>([]);
 const router = useRouter();
 const { currentUser, fetchCurrentUser } = useCurrentUser();
-const newMapTitle = ref<string | undefined>(undefined);
-const newMapDescription = ref<string | undefined>(undefined);
-const newMapIsPrivate = ref(true);
-const isCreating = ref(false);
-const createMapDialogRef = ref<HTMLDialogElement | null>(null);
-const mapToDelete = ref<MapData | null>(null);
+const createProjectDialogRef = ref<CreateProjectDialogExposed | null>(null);
+const projectToDelete = ref<MapData | null>(null);
 const isDeleting = ref(false);
 const deleteConfirmDialogRef = ref<HTMLDialogElement | null>(null);
-const editMapDialogRef = ref<HTMLDialogElement | null>(null);
-const mapToEdit = ref<MapData | null>(null);
-const editMapTitle = ref<string | undefined>(undefined);
-const editMapDescription = ref<string | undefined>(undefined);
-const editMapIsPrivate = ref(true);
+const editProjectDialogRef = ref<HTMLDialogElement | null>(null);
+const projectToEdit = ref<MapData | null>(null);
+const editProjectTitle = ref<string | undefined>(undefined);
+const editProjectDescription = ref<string | undefined>(undefined);
+const editProjectIsPrivate = ref(true);
 const isEditing = ref(false);
 const searchQuery = ref("");
 const filterVisibility = ref<"all" | "public" | "private">("all");
 const filterDateFrom = ref("");
 const filterDateTo = ref("");
+
+function openCreateProjectDialog() {
+  createProjectDialogRef.value?.open();
+}
+
+async function onProjectCreated(project: CreatedProjectRef | null) {
+  if (!project?.id) {
+    showAlert("error", "Impossible de récupérer l'identifiant du projet.");
+    return;
+  }
+
+  await router.push({
+    path: `/projet/${project.id}`,
+  });
+}
+
+function onCreateProjectError(message: string) {
+  showAlert("error", message);
+}
 
 function resetFilters() {
   filterVisibility.value = "all";
@@ -50,7 +70,7 @@ const hasActiveFilters = computed(
     filterDateTo.value !== "",
 );
 
-const filteredMaps = computed(() => {
+const filteredProjects = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   return maps.value.filter((m) => {
     if (
@@ -85,71 +105,25 @@ onUnmounted(() => {
   clearAlert();
 });
 
-// TODO: Add startDate endDate
-async function createMap() {
-  if (!currentUser.value) {
-    showAlert("error", "Utilisateur non authentifié.");
-    return;
-  }
-  if (!newMapTitle.value?.trim()) {
-    showAlert("error", "Le titre de la carte est requis.");
-    return;
-  }
-  isCreating.value = true;
-  try {
-    const res = await apiFetch(`/projects/create`, {
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-      body: JSON.stringify(
-        camelToSnake({
-          userId: currentUser.value.id,
-          title: newMapTitle.value,
-          description: newMapDescription.value,
-          isPrivate: newMapIsPrivate.value,
-        }),
-      ),
-    });
-    if (!res.ok) {
-      throw new Error(`Error creating map: ${res.status}`);
-    }
-    newMapTitle.value = undefined;
-    newMapDescription.value = undefined;
-    newMapIsPrivate.value = true;
-    createMapDialogRef.value?.close();
-    await fetchMapsAndRender();
-    showAlert("success", "Projet créé avec succès !");
-  } catch (err) {
-    showAlert("error", "Erreur lors de la création du projet.");
-  } finally {
-    isCreating.value = false;
-  }
-}
-
-function resetCreateMapForm() {
-  newMapTitle.value = undefined;
-  newMapDescription.value = undefined;
-  newMapIsPrivate.value = true;
-}
-
-function confirmDelete(map: MapData) {
-  mapToDelete.value = map;
+function confirmDelete(project: MapData) {
+  projectToDelete.value = project;
   deleteConfirmDialogRef.value?.showModal();
 }
 
-function openEditDialog(map: MapData) {
-  mapToEdit.value = map;
-  editMapTitle.value = map.title;
-  editMapDescription.value = map.description ?? undefined;
-  editMapIsPrivate.value = map.isPrivate ?? true;
-  editMapDialogRef.value?.showModal();
+function openEditDialog(project: MapData) {
+  projectToEdit.value = project;
+  editProjectTitle.value = project.title;
+  editProjectDescription.value = project.description ?? undefined;
+  editProjectIsPrivate.value = project.isPrivate ?? true;
+  editProjectDialogRef.value?.showModal();
 }
 
-async function saveMap() {
-  if (!mapToEdit.value) {
+async function saveProject() {
+  if (!projectToEdit.value) {
     showAlert("error", "Aucun projet sélectionné pour la modification.");
     return;
   }
-  if (!editMapTitle.value?.trim()) {
+  if (!editProjectTitle.value?.trim()) {
     showAlert("error", "Le titre du projet est requis.");
     return;
   }
@@ -159,28 +133,28 @@ async function saveMap() {
   }
   isEditing.value = true;
   try {
-    const res = await apiFetch(`/projects/${mapToEdit.value.id}`, {
+    const res = await apiFetch(`/projects/${projectToEdit.value.id}`, {
       headers: { "Content-Type": "application/json" },
       method: "PUT",
       body: JSON.stringify(
         camelToSnake({
           userId: currentUser.value.id,
-          title: editMapTitle.value,
+          title: editProjectTitle.value,
           description:
-            editMapDescription.value === ""
+            editProjectDescription.value === ""
               ? undefined
-              : editMapDescription.value,
-          isPrivate: editMapIsPrivate.value,
+              : editProjectDescription.value,
+          isPrivate: editProjectIsPrivate.value,
         }),
       ),
     });
     if (!res.ok) {
-      throw new Error(`Error updating map: ${res.status}`);
+      throw new Error(`Error updating project: ${res.status}`);
     }
-    editMapTitle.value = undefined;
-    editMapDescription.value = undefined;
-    editMapIsPrivate.value = true;
-    editMapDialogRef.value?.close();
+    editProjectTitle.value = undefined;
+    editProjectDescription.value = undefined;
+    editProjectIsPrivate.value = true;
+    editProjectDialogRef.value?.close();
     await fetchMapsAndRender();
     showAlert("success", "Projet modifié avec succès !");
   } catch (err) {
@@ -191,17 +165,17 @@ async function saveMap() {
 }
 
 async function executeDelete() {
-  if (!mapToDelete.value) return;
+  if (!projectToDelete.value) return;
   isDeleting.value = true;
   try {
-    const res = await apiFetch(`/projects/${mapToDelete.value.id}`, {
+    const res = await apiFetch(`/projects/${projectToDelete.value.id}`, {
       method: "DELETE",
     });
     if (!res.ok) {
-      throw new Error(`Error deleting map: ${res.status}`);
+      throw new Error(`Error deleting project: ${res.status}`);
     }
     deleteConfirmDialogRef.value?.close();
-    mapToDelete.value = null;
+    projectToDelete.value = null;
     await fetchMapsAndRender();
     showAlert("success", "Projet supprimé avec succès !");
   } catch (err) {
@@ -295,127 +269,57 @@ async function fetchMapsAndRender() {
         </label>
         <button
           class="btn-primary flex items-center"
-          onclick="createMap.showModal()"
+          @click="openCreateProjectDialog"
         >
           <PlusIcon class="h-5 w-5" />
           Nouveau Projet
         </button>
       </div>
     </div>
-    <dialog
-      id="createMap"
-      ref="createMapDialogRef"
-      class="modal"
-      @close="resetCreateMapForm"
-    >
-      <div class="modal-box p-0">
-        <form @submit.prevent="createMap">
-          <div class="card-body">
-            <h3 class="text-lg font-bold">Créer un nouveau projet</h3>
+    <CreateProjectDialog
+      ref="createProjectDialogRef"
+      @created="onProjectCreated"
+      @error="onCreateProjectError"
+    />
 
-            <fieldset class="fieldset" :disabled="isCreating">
-              <label class="label">Titre</label>
-              <input
-                v-model="newMapTitle"
-                type="text"
-                class="input"
-                placeholder="Titre du projet"
-                required
-              />
-              <label class="label">Description</label>
-              <input
-                v-model="newMapDescription"
-                type="text"
-                class="input"
-                placeholder="Description du projet"
-              />
-              <div class="gap-1">
-                <div class="flex items-center gap-1">
-                  <span class="fieldset-legend">Accès au projet</span>
-                  <div
-                    class="tooltip tooltip-right items-center"
-                    data-tip="Les projets publics sont visibles par tous les utilisateurs, tandis que les projets privés ne sont accessibles que par vous."
-                  >
-                    <QuestionMarkCircleIcon
-                      class="h-4 w-4 text-gray-400"
-                    ></QuestionMarkCircleIcon>
-                  </div>
-                </div>
-                <label class="label cursor-pointer gap-2">
-                  <input
-                    type="checkbox"
-                    :checked="!newMapIsPrivate"
-                    @change="
-                      newMapIsPrivate = !($event.target as HTMLInputElement)
-                        .checked
-                    "
-                    class="toggle toggle-primary"
-                  />
-                  Public
-                </label>
-              </div>
-            </fieldset>
-
-            <div class="flex justify-end mt-8">
-              <button
-                type="submit"
-                class="btn btn-primary flex items-center"
-                :disabled="!newMapTitle"
-              >
-                <span>Créer</span>
-                <span
-                  v-if="isCreating"
-                  class="loading loading-spinner loading-xs"
-                ></span>
-                <PaperAirplaneIcon v-else class="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button :disabled="isCreating">close</button>
-      </form>
-    </dialog>
-
-    <!-- Maps grid -->
+    <!-- Projects grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
-        v-for="map in filteredMaps"
-        :key="map.id"
+        v-for="project in filteredProjects"
+        :key="project.id"
         class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer"
-        @click="router.push(`/projet/${map.id}`)"
+        @click="router.push(`/projet/${project.id}`)"
       >
         <figure>
-          <img :src="toImageSrc(map.image)" class="w-full h-full" />
+          <img :src="toImageSrc(project.image)" class="w-full h-full" />
         </figure>
         <div class="card-body pb-0">
           <h2 class="card-title text-sm xl:text-lg">
-            {{ map.title }}
+            {{ project.title }}
           </h2>
           <p class="pb-2">
-            {{ map.description || "Aucune description" }}
+            {{ project.description || "Aucune description" }}
           </p>
         </div>
         <div class="flex justify-between items-center">
           <div class="flex gap-2">
             <div class="badge badge-outline align-bottom">
-              {{ new Date(map.createdAt).toLocaleDateString() }}
+              {{ new Date(project.createdAt).toLocaleDateString() }}
             </div>
             <div class="badge badge-outline align-bottom">
-              {{ map.isPrivate ? "Privé" : "Public" }}
+              {{ project.isPrivate ? "Privé" : "Public" }}
             </div>
           </div>
           <div class="flex gap-1 p-2">
             <button
               class="btn btn-ghost btn-sm text-primary-600"
-              @click.stop="openEditDialog(map)"
+              @click.stop="openEditDialog(project)"
             >
               <PencilSquareIcon class="h-5 w-5" />
             </button>
             <button
               class="btn btn-ghost btn-sm text-error"
-              @click.stop="confirmDelete(map)"
+              @click.stop="confirmDelete(project)"
             >
               <TrashIcon class="h-5 w-5" />
             </button>
@@ -430,7 +334,7 @@ async function fetchMapsAndRender() {
         <h3 class="text-lg font-bold">Supprimer le projet</h3>
         <p class="py-4">
           Êtes-vous sûr de vouloir supprimer
-          <span class="font-semibold">{{ mapToDelete?.title }}</span> ? Cette
+          <span class="font-semibold">{{ projectToDelete?.title }}</span> ? Cette
           action est irréversible.
         </p>
         <div class="modal-action">
@@ -459,17 +363,17 @@ async function fetchMapsAndRender() {
       </form>
     </dialog>
 
-    <!-- Edit map dialog -->
-    <dialog ref="editMapDialogRef" class="modal">
+    <!-- Edit project dialog -->
+    <dialog ref="editProjectDialogRef" class="modal">
       <div class="modal-box p-0">
-        <form @submit.prevent="saveMap">
+        <form @submit.prevent="saveProject">
           <div class="card-body">
             <h3 class="text-lg font-bold">Modifier le projet</h3>
 
             <fieldset class="fieldset" :disabled="isEditing">
               <label class="label">Titre</label>
               <input
-                v-model="editMapTitle"
+                v-model="editProjectTitle"
                 type="text"
                 class="input"
                 placeholder="Titre du projet"
@@ -477,7 +381,7 @@ async function fetchMapsAndRender() {
               />
               <label class="label">Description</label>
               <input
-                v-model="editMapDescription"
+                v-model="editProjectDescription"
                 type="text"
                 class="input"
                 placeholder="Description du projet"
@@ -495,14 +399,14 @@ async function fetchMapsAndRender() {
                 <label class="label cursor-pointer gap-2">
                   <input
                     type="checkbox"
-                    :checked="!editMapIsPrivate"
+                    :checked="!editProjectIsPrivate"
                     @change="
-                      editMapIsPrivate = !($event.target as HTMLInputElement)
+                      editProjectIsPrivate = !($event.target as HTMLInputElement)
                         .checked
                     "
                     class="toggle toggle-primary"
                   />
-                  {{ editMapIsPrivate ? "Privé" : "Public" }}
+                  {{ editProjectIsPrivate ? "Privé" : "Public" }}
                 </label>
               </div>
             </fieldset>
@@ -512,14 +416,14 @@ async function fetchMapsAndRender() {
                 type="button"
                 class="btn btn-ghost"
                 :disabled="isEditing"
-                @click="editMapDialogRef?.close()"
+                @click="editProjectDialogRef?.close()"
               >
                 Annuler
               </button>
               <button
                 type="submit"
                 class="btn btn-primary flex items-center"
-                :disabled="!editMapTitle?.trim() || isEditing"
+                :disabled="!editProjectTitle?.trim() || isEditing"
               >
                 <span
                   v-if="isEditing"

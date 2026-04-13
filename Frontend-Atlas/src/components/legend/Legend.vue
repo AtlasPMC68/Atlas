@@ -30,7 +30,7 @@
               :style="{
                 backgroundColor: rgbToRgba(
                   feature.properties?.colorRgb,
-                  feature.properties?.opacity ?? 0.5,
+                  feature.properties?.fillOpacity ?? 0.5,
                 ),
                 borderColor: rgbToRgba(
                   feature.properties?.strokeColor ??
