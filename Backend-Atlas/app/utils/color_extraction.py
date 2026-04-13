@@ -659,7 +659,6 @@ def extract_colors(
         imposed_colors = extract_colors_from_legend_shapes(
             rgb,
             legend_shapes,
-            opaque_mask=opaque_mask,
             debug=debug,
             debug_dir=image_output_dir if debug else None,
         ) 
@@ -735,6 +734,12 @@ def extract_colors(
         mask = binary_fill_holes(mask)
 
         if not np.any(mask):
+            continue
+
+        mask_pixels = np.count_nonzero(mask)
+        ratio_mask = mask_pixels / np.count_nonzero(opaque_mask)
+
+        if ratio_mask < dominant_ratio: 
             continue
 
         rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
