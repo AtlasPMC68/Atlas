@@ -565,7 +565,6 @@ def extract_colors(
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
     legend_shapes: Optional[List[Dict]] = None,
-
     # -----------------------------
     # LAB binning
     # -----------------------------
@@ -651,14 +650,19 @@ def extract_colors(
         norm_p_low=1.0,
         norm_p_high=99.0,
         debug=debug,
-        debug_dir=image_output_dir,
-    )
+        debug_dir=image_output_dir,    )
 
     # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
     if legend_shapes: 
-        imposed_colors = extract_colors_from_legend_shapes(rgb, legend_shapes) 
+        imposed_colors = extract_colors_from_legend_shapes(
+            rgb,
+            legend_shapes,
+            opaque_mask=opaque_mask,
+            debug=debug,
+            debug_dir=image_output_dir if debug else None,
+        ) 
     else: 
         imposed_colors = None
 
