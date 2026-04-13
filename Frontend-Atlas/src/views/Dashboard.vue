@@ -363,8 +363,8 @@ async function fetchMapsAndRender() {
       </form>
     </dialog>
 
-    <!-- Edit map dialog -->
-    <dialog ref="editMapDialogRef" class="modal">
+    <!-- Edit project dialog -->
+    <dialog ref="editProjectDialogRef" class="modal">
       <div class="modal-box p-0">
         <form @submit.prevent="saveProject">
           <div class="card-body">
