@@ -38,8 +38,21 @@ def get_color_extraction_cases() -> list[Dict[str, Any]]:
         {
             "name": "nouvelle_france_1750_test1",
             "image_path": ASSETS_DIR / "Nouvelle-France1750.png",
-            "expected_masks_dir": EXPECTED_COLOR_ROOT / "test1",
+            "expected_masks_dir": EXPECTED_COLOR_ROOT / "test1_ratio",
             "attributes": {},
+        },
+        {
+            "name": "sols_monde_test2",
+            "image_path": ASSETS_DIR / "Sols_Monde.png",
+            "expected_masks_dir": EXPECTED_COLOR_ROOT / "test2_legend",
+            "attributes": {
+                "legend_bounds": {
+                    "x": 245,
+                    "y": 340,
+                    "width": 50,
+                    "height": 120,
+                }
+            },
         },
     ]
 
@@ -67,6 +80,10 @@ def mask_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
     union = np.logical_or(mask_a, mask_b).sum()
     return float(intersection) / float(union) if union > 0 else 0.0
 
+def _normalize_color_token(token: str) -> str:
+    token = token.lower().strip()
+    return re.sub(r"-\d+$", "", token)
+
 
 def extract_color_name_from_expected(path: Path) -> str:
     """
@@ -74,18 +91,21 @@ def extract_color_name_from_expected(path: Path) -> str:
 
     Supported examples:
     - color_01_silver_1_ratio_0.50.png -> silver
+    - silver-1_ratio_0.50.png -> silver
     - silver.png -> silver
     """
     stem = path.stem.lower()
-    match = re.search(r"color_\d+_([a-z0-9]+)_\d+", stem)
+    match = re.search(r"color_\d+_([a-z0-9-]+)_\d+", stem)
     if match:
-        return match.group(1)
-    return stem.split("_")[0]
+        return _normalize_color_token(match.group(1))
+
+    base = stem.split("_", maxsplit=1)[0]
+    return _normalize_color_token(base)
 
 
 def extract_color_name_from_generated_key(key: str) -> str:
     # Current generated format: "dodgerblue-2"
-    return key.split("-", maxsplit=1)[0].lower()
+    return _normalize_color_token(key)
 
 
 def build_extract_colors_kwargs(
