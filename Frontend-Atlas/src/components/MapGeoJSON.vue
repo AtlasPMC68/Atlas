@@ -160,8 +160,10 @@ const featureLayerManager = {
     this.layers.set(id, layer);
 
     layer.on("click", () => {
+      const pm = (map as MapWithPm)?.pm;
       // Don't steal clicks from active drawing tools
       if (drawing.activeDrawingMode.value !== null) return;
+      if (pm?.globalRemovalModeEnabled?.()) return;
       // In canvas mode, Leaflet fires the layer click AND the map click as two
       // separate events from the same mouse event. Without this flag, the map
       // click handler would immediately deselect what we just selected.
