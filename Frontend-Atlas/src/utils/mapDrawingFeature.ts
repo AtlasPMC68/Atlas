@@ -74,10 +74,12 @@ export function layerToFeature(
 
   let geometry: Feature["geometry"] | null = null;
   let inferredType: MapElementType = "zone";
-  let labelText = "";
+  let labelText = undefined;
+  let sizePx = undefined;
 
   if (isTextMarkerLayer(layer)) {
     labelText = (layer.pm?.getText?.() ?? layer.options.text ?? "").trim();
+    sizePx = baseFeature?.properties?.sizePx ?? 12;
 
     if (!labelText) {
       return null;
@@ -155,10 +157,13 @@ export function layerToFeature(
     properties: {
       name: baseFeature?.properties?.name ?? "",
       labelText,
+      sizePx,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
-      opacity: baseFeature?.properties?.opacity ?? 0.5,
-      strokeColor: baseFeature?.properties?.strokeColor ?? baseFeature?.properties?.colorRgb,
+      fillOpacity: baseFeature?.properties?.fillOpacity ?? 0.5,
+      strokeColor:
+        baseFeature?.properties?.strokeColor ??
+        baseFeature?.properties?.colorRgb,
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
@@ -175,12 +180,13 @@ export function featureToLayer(feature: Feature): L.Layer | null {
   if (!geom) return null;
 
   const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-  const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+  const strokeColor =
+    colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
   const style = {
     weight: feature.properties.strokeWidth || 2,
     fillColor: fillColor,
-    fillOpacity: feature.properties.opacity || 0.5,
+    fillOpacity: feature.properties.fillOpacity || 0.5,
     strokeColor: strokeColor,
     strokeWidth: feature.properties.strokeWidth || 2,
     strokeOpacity: feature.properties.strokeOpacity ?? 0.5,
@@ -273,7 +279,7 @@ export function extractFeatureFromLayer(
       extracted.mapId = baseFeature.mapId;
       extracted.createdAt = baseFeature.createdAt;
       extracted.name = baseFeature.name;
-      extracted.properties.opacity = baseFeature.properties.opacity;
+      extracted.properties.fillOpacity = baseFeature.properties.fillOpacity;
       extracted.properties = {
         ...(baseFeature.properties || {}),
         ...(extracted.properties || {}),

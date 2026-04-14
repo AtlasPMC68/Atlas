@@ -8,7 +8,7 @@ from uuid import UUID
 import base64
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
-from sqlalchemy import not_, select, func
+from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ from app.utils.sift_key_points_finder import find_coastline_keypoints
 from ..celery_app import celery_app
 from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
-from ..utils.auth import get_current_user_id, get_user_from_token
+from ..utils.auth import get_current_user_id
 
 router = APIRouter()
 
@@ -138,8 +138,69 @@ async def update_project(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating map: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update map")
+        logger.error(f"Error updating project: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update project")
+
+@router.get("/is-owner/{project_id}")
+async def is_project_owner(
+    project_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        user_id = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(Project.id).where(
+            Project.id == project_id,
+            Project.user_id == user_id,
+        )
+    )
+
+    return result.scalar_one_or_none() is not None
+
+@router.get("/{project_id}", response_model=ProjectOut)
+async def get_project(
+    project_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        user_id = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(Project, User.username)
+        .join(User, Project.user_id == User.id, isouter=True)
+        .where(Project.id == project_id)
+        .where((Project.user_id == user_id) | (Project.is_private.is_(False)))
+    )
+
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+    project_obj, username = row
+    encoded_image = (
+        base64.b64encode(project_obj.image).decode("ascii")
+        if project_obj.image
+        else None
+    )
+
+    return ProjectOut(
+        id=project_obj.id,
+        user_id=project_obj.user_id,
+        username=username,
+        title=project_obj.title,
+        description=project_obj.description,
+        is_private=project_obj.is_private,
+        image=encoded_image,
+        created_at=project_obj.created_at,
+        updated_at=project_obj.updated_at,
+    )
 
 @router.post("/upload")
 async def upload_and_process_map(
@@ -411,62 +472,10 @@ async def update_features(
     return serialize_feature_rows(persisted_rows)
 
 
-@router.delete("/{project_id}/features/{feature_id}")
-async def delete_feature(
+@router.delete("/{project_id}/features")
+async def delete_features_bulk(
     project_id: str,
-    feature_id: str,
-    user_id: str = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    try:
-        project_uuid = UUID(project_id)
-        feature_uuid = UUID(feature_id)
-        user_uuid = UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or feature_id")
-
-    project_result = await session.execute(
-        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
-    )
-    allowed_project = project_result.scalar_one_or_none()
-    if not allowed_project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
-
-    result = await session.execute(
-        select(Feature).where(
-            Feature.id == feature_uuid,
-            Feature.project_id == project_uuid,
-        )
-    )
-    db_feature = result.scalar_one_or_none()
-
-    if not db_feature:
-        raise HTTPException(status_code=404, detail="Feature not found")
-
-    await session.delete(db_feature)
-    await session.commit()
-
-    return {
-        "feature_id": str(feature_uuid),
-    }
-
-
-@router.get("/features/{map_id}")
-async def get_features(map_id: str, session: AsyncSession = Depends(get_async_session)):
-    try:
-        map_id = UUID(map_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid map_id")
-
-    result = await session.execute(select(Feature).where(Feature.map_id == map_id))
-    features_rows = result.scalars().all()
-
-    return serialize_feature_rows(features_rows)
-
-
-@router.get("/{project_id}/features")
-async def get_project_features(
-    project_id: str,
+    feature_ids: list[str] = Body(...),
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -483,8 +492,57 @@ async def get_project_features(
     if not allowed_project:
         raise HTTPException(status_code=404, detail="Project not found or access denied")
 
+    if not feature_ids:
+        return {"deleted_feature_ids": []}
+
+    try:
+        feature_uuid_ids = [UUID(feature_id) for feature_id in feature_ids]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid feature_id in payload")
+
+    existing_result = await session.execute(
+        select(Feature.id).where(
+            Feature.project_id == project_uuid,
+            Feature.id.in_(feature_uuid_ids),
+        )
+    )
+    deleted_feature_ids = [str(feature_id) for feature_id in existing_result.scalars().all()]
+
+    await session.execute(
+        delete(Feature).where(
+            Feature.project_id == project_uuid,
+            Feature.id.in_(feature_uuid_ids),
+        )
+    )
+
+    await session.commit()
+
+    return {"deleted_feature_ids": deleted_feature_ids}
+
+
+@router.get("/{project_id}/features")
+async def get_project_features(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        project_id = UUID(project_id)
+        user_id = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+
+    project_result = await session.execute(
+        select(Project.id)
+        .where(Project.id == project_id)
+        .where((Project.user_id == user_id) | (Project.is_private.is_(False)))
+    )
+    allowed_project = project_result.scalar_one_or_none()
+    if not allowed_project:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
     features_result = await session.execute(
-        select(Feature).where(Feature.project_id == project_uuid)
+        select(Feature).where(Feature.project_id == project_id)
     )
     features_rows = features_result.scalars().all()
 
@@ -504,7 +562,9 @@ async def get_project_maps(
         raise HTTPException(status_code=400, detail="Invalid project_id or user")
 
     project_result = await session.execute(
-        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+        select(Project.id)
+        .where(Project.id == project_uuid)
+        .where((Project.user_id == user_uuid) | (Project.is_private.is_(False)))
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:

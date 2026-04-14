@@ -8,9 +8,9 @@ class ProjectOut(BaseModel):
     user_id: UUID
     username: Optional[str] = None
     title: str
-    description: Optional[str]
+    description: Optional[str] = None
     is_private: bool
-    image: Optional[str]
+    image: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
