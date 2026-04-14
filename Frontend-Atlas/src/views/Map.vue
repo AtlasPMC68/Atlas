@@ -281,13 +281,19 @@ function commitFeatureSnapshot(next: Feature[]) {
   applyFeatureSnapshot(featureHistoryService.commit(features.value, next));
 }
 
+function resetMapSelection() {
+  mapGeoJsonRef.value?.resetSelection();
+}
+
 function onUndo() {
   if (!canUndo.value) return;
+  resetMapSelection();
   applyFeatureSnapshot(featureHistoryService.undo(features.value), false);
 }
 
 function onRedo() {
   if (!canRedo.value) return;
+  resetMapSelection();
   applyFeatureSnapshot(featureHistoryService.redo(features.value), false);
 }
 

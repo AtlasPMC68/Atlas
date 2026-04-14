@@ -805,7 +805,7 @@ onMounted(() => {
         cityMode.cancel();
       } else {
         cityMode.start();
-        selectedFeatureId.value = null;
+        resetSelection();
       }
       return;
     }
@@ -865,7 +865,7 @@ onMounted(() => {
       cityMode.handleMapClick((e as L.LeafletMouseEvent).latlng);
       return;
     }
-    selectedFeatureId.value = null;
+    resetSelection();
   });
 
   L.control
@@ -902,7 +902,7 @@ onMounted(() => {
     if (pm?.globalRotateModeEnabled?.()) { pm.disableGlobalRotateMode?.(); return; }
     // Deselect the currently selected feature if no mode is active
     if (selectedFeatureId.value !== null) {
-      selectedFeatureId.value = null;
+      resetSelection();
       return;
     }
   };
