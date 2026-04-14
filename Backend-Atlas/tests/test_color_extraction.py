@@ -170,29 +170,42 @@ def test_extract_colors(case: Dict[str, Any], tmp_path: Path) -> None:
     generated_masks = result.get("masks", {})
     assert generated_masks, f"No masks generated for test case: {test_name}"
 
-    generated_by_color = {
-        extract_color_name_from_generated_key(mask_key): Path(mask_path)
-        for mask_key, mask_path in generated_masks.items()
-    }
+    generated_by_color: Dict[str, list[Path]] = {}
+    for mask_key, mask_path in generated_masks.items():
+        color_name = extract_color_name_from_generated_key(mask_key)
+        generated_by_color.setdefault(color_name, []).append(Path(mask_path))
 
     missing = []
     for expected_path in expected_mask_paths:
         expected_color = extract_color_name_from_expected(expected_path)
-        generated_path = generated_by_color.get(expected_color)
+        candidate_paths = generated_by_color.get(expected_color, [])
 
-        if generated_path is None:
+        if not candidate_paths:
             missing.append(expected_color)
             continue
 
         expected_mask = load_binary_mask(expected_path)
-        generated_mask = load_binary_mask(generated_path)
-        iou = mask_iou(expected_mask, generated_mask)
+        best_generated_path = None
+        best_iou = -1.0
 
-        assert iou >= MIN_MASK_IOU, (
+        for candidate_path in candidate_paths:
+            generated_mask = load_binary_mask(candidate_path)
+            candidate_iou = mask_iou(expected_mask, generated_mask)
+            if candidate_iou > best_iou:
+                best_iou = candidate_iou
+                best_generated_path = candidate_path
+
+        assert best_generated_path is not None, (
+            f"[{test_name}] no generated mask candidates available for '{expected_color}'"
+        )
+        
+        candidate_paths.remove(best_generated_path)
+
+        assert best_iou >= MIN_MASK_IOU, (
             f"[{test_name}] mask mismatch for '{expected_color}' | "
-            f"IoU={iou:.3f}, expected >= {MIN_MASK_IOU:.2f}\n"
+            f"IoU={best_iou:.3f}, expected >= {MIN_MASK_IOU:.2f}\n"
             f"Expected: {expected_path}\n"
-            f"Generated: {generated_path}"
+            f"Generated: {best_generated_path}"
         )
 
     assert not missing, (

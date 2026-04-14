@@ -655,7 +655,8 @@ def extract_colors(
         norm_p_low=1.0,
         norm_p_high=99.0,
         debug=debug,
-        debug_dir=image_output_dir,    )
+        debug_dir=image_output_dir,    
+    )
 
     # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
@@ -744,7 +745,7 @@ def extract_colors(
         mask_pixels = np.count_nonzero(mask)
         ratio_mask = mask_pixels / np.count_nonzero(opaque_mask)
 
-        if ratio_mask < dominant_ratio: 
+        if ratio_mask < dominant_ratio and legend_shapes is None: 
             continue
 
         rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])

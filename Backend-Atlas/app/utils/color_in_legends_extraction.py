@@ -6,7 +6,6 @@ import numpy as np
 def extract_colors_from_legend_shapes(
     image_rgb: np.ndarray,
     legends_shapes: List[Dict],
-    opaque_mask: Optional[np.ndarray] = None,
     debug: bool = False,
     debug_dir: Optional[str] = None,
 ) -> List[Tuple[int, int, int]]:
@@ -22,11 +21,6 @@ def extract_colors_from_legend_shapes(
         image_rgb = (np.clip(image_rgb, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
 
     img_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-
-    if opaque_mask is not None:
-        opaque_mask = opaque_mask.astype(bool)
-        if opaque_mask.shape != img_bgr.shape[:2]:
-            raise ValueError("opaque_mask shape does not match image shape")
 
     if debug and debug_dir is not None:
         os.makedirs(debug_dir, exist_ok=True)
@@ -65,15 +59,6 @@ def extract_colors_from_legend_shapes(
             if roi.size == 0:
                 continue
 
-            if opaque_mask is not None:
-                roi_mask = opaque_mask[max(0, y):y+h, max(0, x):x+w]
-                roi_pixels = roi[roi_mask]
-            else:
-                roi_pixels = roi.reshape(-1, 3)
-
-            if roi_pixels.size == 0:
-                continue
-
             # Median color in BGR → convert to RGB
             med = np.median(roi_pixels.reshape(-1, 3), axis=0)
             b, g, r = [int(round(v)) for v in med]
@@ -94,10 +79,6 @@ def extract_colors_from_legend_shapes(
         ys, xs = np.where(mask == 255)
 
         pixels = img_bgr[ys, xs]
-
-        if opaque_mask is not None:
-            valid = opaque_mask[ys, xs]
-            pixels = pixels[valid]
 
         if debug:
             print(f"  pixels_in_shape: {pixels.shape[0]}")
