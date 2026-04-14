@@ -154,8 +154,6 @@ export function layerToFeature(
     projectId: resolvedProjectId,
     mapId: baseFeature?.mapId ?? null,
     geometry,
-    opacity: baseFeature?.opacity ?? 0.5,
-    strokeWidth: baseFeature?.strokeWidth ?? 2,
     properties: {
       name: baseFeature?.properties?.name ?? "",
       labelText,

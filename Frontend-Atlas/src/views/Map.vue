@@ -770,6 +770,11 @@ onMounted(async () => {
   await loadProjectMapsForTimeline();
   await loadCurrentMapInfo();
   await loadInitialFeatures();
+
+  if (projectId.value) {
+    await uploadMapThumbnail();
+  }
+  
   window.addEventListener("keydown", handleKeyboardShortcuts);
 });
 
