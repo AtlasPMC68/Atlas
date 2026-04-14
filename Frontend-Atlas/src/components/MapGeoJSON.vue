@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, nextTick } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, nextTick, toRef } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -383,7 +383,7 @@ const drawing = useMapDrawing(
 const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
 const cityMode = useAddCityMode({
   getMap: () => map,
-  selectedYear,
+  selectedYear: toRef(props, "selectedYear"),
   localFeaturesSnapshot,
   cityInput,
   onCreated: (next) => emit('draw-create', next),
@@ -875,6 +875,38 @@ onMounted(() => {
   drawing.setSelectedYear(props.selectedYear);
   emit("map-ready", map);
   renderAllFeaturesSafely();
+  escapeKeyHandler = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || !map) return;
+    const pm = (map as MapWithPm).pm;
+    // Cancel city placement mode
+    if (addCityMode.value) {
+      cityMode.cancel();
+      return;
+    }
+    // Cancel active freehand drawing — also untoggle the custom toolbar button
+    if (drawing.activeDrawingMode.value === "freehand") {
+      drawing.stopFreehandDrawing(map);
+      drawing.activeDrawingMode.value = null;
+      pm?.Toolbar?.toggleButton?.("drawFreehand", false);
+      return;
+    }
+    // Cancel active regular draw mode
+    if (drawing.activeDrawingMode.value !== null) {
+      pm?.disableDraw();
+      return;
+    }
+    // Cancel active global removal mode
+    if (pm?.globalRemovalModeEnabled?.()) { pm.disableGlobalRemovalMode?.(); return; }
+    // Cancel active global edit/rotate mode (fires even when scoped to a selected feature)
+    if (pm?.globalEditModeEnabled?.()) { pm.disableGlobalEditMode?.(); return; }
+    if (pm?.globalRotateModeEnabled?.()) { pm.disableGlobalRotateMode?.(); return; }
+    // Deselect the currently selected feature if no mode is active
+    if (selectedFeatureId.value !== null) {
+      selectedFeatureId.value = null;
+      return;
+    }
+  };
+  document.addEventListener("keydown", escapeKeyHandler);
 });
 
 onBeforeUnmount(() => {

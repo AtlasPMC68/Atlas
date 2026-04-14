@@ -147,20 +147,11 @@ const addFeatureImageDialogRef = ref<{
   open: () => void;
   close: () => void;
 } | null>(null);
-const addMapDialogRef = ref<{
-  open: () => void;
-  close: () => void;
-} | null>(null);
-const addFeatureImageDialogRef = ref<{
-  open: () => void;
-  close: () => void;
-} | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
-const pendingDeletions = ref<string[]>([]);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
