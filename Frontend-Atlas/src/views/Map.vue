@@ -670,7 +670,7 @@ async function isProjectOwner(targetProjectId: string): Promise<boolean | null> 
   if (!keycloak.token) {
     showAlert(
         "error",
-        "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
+        "Impossible de vérifier la propriété du projet, le jeton d'authentification est invalide.",
       );
     return null;
   }
