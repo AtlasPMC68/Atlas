@@ -1,7 +1,7 @@
 // composables/useImportProcess.ts
 import { ref, Ref } from "vue";
-import keycloak from "../keycloak";
 import { snakeToCamel } from "../utils/utils";
+import { apiFetch } from "../utils/api";
 import type { LegendBounds } from "../typescript/legend";
 
 type ImagePoint = { x: number; y: number };
@@ -41,6 +41,7 @@ const mapId: Ref<string> = ref("");
 export function useImportProcess() {
   const startImport = async (
     file: File | null,
+    inputProjectId: string,
     inputMapId: string,
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
@@ -48,6 +49,22 @@ export function useImportProcess() {
     legendBounds?: LegendBounds | null,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
+    if (
+      !inputProjectId ||
+      inputProjectId === "undefined" ||
+      inputProjectId === "null"
+    ) {
+      return {
+        success: false,
+        error: "Aucun projet cible (project_id) n'a ete fourni pour l'extraction",
+      };
+    }
+    if (!inputMapId || inputMapId === "undefined" || inputMapId === "null") {
+      return {
+        success: false,
+        error: "Aucune carte cible (map_id) n'a ete fournie pour l'extraction",
+      };
+    }
 
     isProcessing.value = true;
     showProcessingModal.value = true;
@@ -55,6 +72,7 @@ export function useImportProcess() {
     processingProgress.value = 0;
 
     const formData = new FormData();
+    formData.append("project_id", inputProjectId);
     formData.append("map_id", inputMapId);
 
     // Add matched point pairs as expected by backend
@@ -90,16 +108,10 @@ export function useImportProcess() {
     formData.append("file", file);
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/upload`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${keycloak.token}`,
-          },
-          body: formData,
-        },
-      );
+      const response = await apiFetch(`/projects/upload`, {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         const error: Partial<{ detail: string }> = await response.json();
@@ -137,9 +149,7 @@ export function useImportProcess() {
   const pollStatus = (taskId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/maps/status/${taskId}`,
-        );
+        const res = await apiFetch(`/projects/status/${taskId}`);
         const data: StatusResponse = await res.json();
 
         processingProgress.value = data.progress_percentage || 0;

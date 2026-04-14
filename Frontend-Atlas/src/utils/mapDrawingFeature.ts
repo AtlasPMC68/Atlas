@@ -64,18 +64,22 @@ function getStableLayerFeatureId(layer: L.Layer): string {
 
 export function layerToFeature(
   layer: L.Layer,
-  selectedYear: number,
+  _selectedYear: number,
+  currentProjectId: string,
 ): Feature | null {
   const layerWithFeature = layer as LayerWithFeatureRuntime;
   const baseFeature = layerWithFeature.feature;
   const existingType = baseFeature?.properties?.mapElementType;
+  const resolvedProjectId = baseFeature?.projectId ?? currentProjectId;
 
   let geometry: Feature["geometry"] | null = null;
   let inferredType: MapElementType = "zone";
-  let labelText = "";
+  let labelText = undefined;
+  let sizePx = undefined;
 
   if (isTextMarkerLayer(layer)) {
     labelText = (layer.pm?.getText?.() ?? layer.options.text ?? "").trim();
+    sizePx = baseFeature?.properties?.sizePx ?? 12;
 
     if (!labelText) {
       return null;
@@ -138,6 +142,7 @@ export function layerToFeature(
   }
 
   if (!geometry) return null;
+  if (!resolvedProjectId) return null;
 
   const type: MapElementType = existingType ?? inferredType;
 
@@ -146,22 +151,24 @@ export function layerToFeature(
   return {
     id: getStableLayerFeatureId(layer),
     type: "Feature",
-    mapId: baseFeature?.mapId ?? "",
+    projectId: resolvedProjectId,
+    mapId: baseFeature?.mapId ?? null,
     geometry,
     opacity: baseFeature?.opacity ?? 0.5,
     strokeWidth: baseFeature?.strokeWidth ?? 2,
     properties: {
       name: baseFeature?.properties?.name ?? "",
       labelText,
+      sizePx,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
-      opacity: baseFeature?.properties?.opacity ?? 0.5,
-      strokeColor: baseFeature?.properties?.strokeColor ?? baseFeature?.properties?.colorRgb,
+      fillOpacity: baseFeature?.properties?.fillOpacity ?? 0.5,
+      strokeColor:
+        baseFeature?.properties?.strokeColor ??
+        baseFeature?.properties?.colorRgb,
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
-      startDate: baseFeature?.properties?.startDate ?? `${selectedYear}-01-01`,
-      endDate: baseFeature?.properties?.endDate ?? `${selectedYear}-01-01`,
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,
@@ -175,12 +182,13 @@ export function featureToLayer(feature: Feature): L.Layer | null {
   if (!geom) return null;
 
   const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-  const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+  const strokeColor =
+    colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
   const style = {
     weight: feature.properties.strokeWidth || 2,
     fillColor: fillColor,
-    fillOpacity: feature.properties.opacity || 0.5,
+    fillOpacity: feature.properties.fillOpacity || 0.5,
     strokeColor: strokeColor,
     strokeWidth: feature.properties.strokeWidth || 2,
     strokeOpacity: feature.properties.strokeOpacity ?? 0.5,
@@ -261,10 +269,11 @@ function featureIdAsString(featureOrId: Feature | string | number): string {
 export function extractFeatureFromLayer(
   layer: L.Layer,
   selectedYear: number,
+  currentProjectId: string,
 ): Feature | null {
   const layerWithFeature = layer as LayerWithFeatureRuntime;
   const baseFeature = layerWithFeature.feature;
-  const extracted = layerToFeature(layer, selectedYear);
+  const extracted = layerToFeature(layer, selectedYear, currentProjectId);
 
   if (extracted) {
     if (baseFeature?.id) {
@@ -272,7 +281,7 @@ export function extractFeatureFromLayer(
       extracted.mapId = baseFeature.mapId;
       extracted.createdAt = baseFeature.createdAt;
       extracted.name = baseFeature.name;
-      extracted.properties.opacity = baseFeature.properties.opacity;
+      extracted.properties.fillOpacity = baseFeature.properties.fillOpacity;
       extracted.properties = {
         ...(baseFeature.properties || {}),
         ...(extracted.properties || {}),
@@ -288,9 +297,13 @@ export function extractFeatureFromLayer(
 
   if (typeof layerWithFeature.eachLayer === "function") {
     let childFeature: Feature | null = null;
-    layerWithFeature.eachLayer((childLayer) => {
+    layerWithFeature.eachLayer((childLayer: L.Layer) => {
       if (childFeature) return;
-      childFeature = extractFeatureFromLayer(childLayer, selectedYear);
+      childFeature = extractFeatureFromLayer(
+        childLayer,
+        selectedYear,
+        currentProjectId,
+      );
     });
     if (childFeature) {
       return childFeature;
@@ -304,6 +317,7 @@ export function syncFeaturesFromLayerMap(
   layers: Map<string, L.Layer>,
   snapshot: Feature[],
   selectedYear: number,
+  currentProjectId: string,
 ): Feature[] {
   const nextById = new Map<string, Feature>();
   snapshot.forEach((feature) => {
@@ -312,7 +326,11 @@ export function syncFeaturesFromLayerMap(
 
   layers.forEach((layer, featureId) => {
     const layerId = String(featureId);
-    const extracted = extractFeatureFromLayer(layer, selectedYear);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      selectedYear,
+      currentProjectId,
+    );
     if (extracted) {
       extracted.id = layerId;
       nextById.set(layerId, extracted);

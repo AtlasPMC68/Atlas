@@ -15,13 +15,6 @@ def normalize_feature_for_storage(feature: dict) -> dict:
     if not isinstance(properties, dict):
         properties = {}
 
-    start_date = payload.pop("start_date", None)
-    end_date = payload.pop("end_date", None)
-    if start_date is not None:
-        properties["start_date"] = start_date
-    if end_date is not None:
-        properties["end_date"] = end_date
-
     payload["properties"] = properties
     return payload
 
@@ -57,15 +50,15 @@ def serialize_db_feature(row: Feature) -> dict | None:
     feature = deepcopy(raw_feature)
 
     feature["id"] = str(row.id)
-    feature["map_id"] = str(row.map_id)
+    feature["project_id"] = str(row.project_id)
+    feature["map_id"] = str(row.map_id) if row.map_id else None
+
     if row.created_at:
         feature["created_at"] = row.created_at.isoformat()
     if hasattr(row, "updated_at") and row.updated_at:
         feature["updated_at"] = row.updated_at.isoformat()
 
     props = feature.setdefault("properties", {})
-    feature["start_date"] = props.get("start_date")
-    feature["end_date"] = props.get("end_date")
 
     if getattr(row, "image", None):
         image_bytes = bytes(row.image)
@@ -73,3 +66,12 @@ def serialize_db_feature(row: Feature) -> dict | None:
         props["mimeType"] = props.get("mimeType", "image/png")
 
     return feature
+
+
+def serialize_feature_rows(rows: list[Feature]) -> list[dict]:
+    serialized_features: list[dict] = []
+    for row in rows:
+        serialized = serialize_db_feature(row)
+        if serialized is not None:
+            serialized_features.append(serialized)
+    return serialized_features

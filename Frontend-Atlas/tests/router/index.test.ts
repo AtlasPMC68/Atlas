@@ -16,6 +16,7 @@ vi.mock("../../src/keycloak", () => ({
 
 global.fetch = vi.fn().mockResolvedValue({
   ok: true,
+  json: async () => ({}),
 });
 
 Object.defineProperty(window, "scrollTo", {

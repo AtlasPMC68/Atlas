@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import keycloak from "../keycloak";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { apiFetch } from "../utils/api";
 
 const errorMessage = ref("");
 const router = useRouter();
@@ -21,17 +21,11 @@ const saveSettings = async () => {
   errorMessage.value = "";
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/user/update-user`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-        body: JSON.stringify({ username: localUsername.value }),
-      },
-    );
+    const res = await apiFetch(`/user/update-user`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: localUsername.value }),
+    });
 
     const data = await res.json();
 

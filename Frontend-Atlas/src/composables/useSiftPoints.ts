@@ -1,6 +1,7 @@
 // composables/useSiftPoints.ts
 import { ref } from "vue";
 import type { WorldBounds, CoastlineKeypointsResponse } from "../typescript/georef";
+import { apiFetch } from "../utils/api";
 
 export type SiftKeypoint = {
   x: number;
@@ -23,7 +24,7 @@ const error = ref<string | null>(null);
 const siftData = ref<SiftResponse | null>(null);
 
 export function useSiftPoints() {
-  // Legacy: POST /maps/sift (image upload) — keep if you still need it.
+  // Legacy: POST /projects/sift (image upload) — keep if you still need it.
   const fetchSiftPoints = async (file: File) => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
 
@@ -36,7 +37,7 @@ export function useSiftPoints() {
 //    formData.append("max_features", String(maxFeatures)); // backend expects Form field
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/maps/sift`, {
+      const response = await apiFetch(`/projects/sift`, {
         method: "POST",
         body: formData,
       });
@@ -58,7 +59,7 @@ export function useSiftPoints() {
     }
   };
 
-  // New: POST /maps/coastline-keypoints (bounds from WorldAreaPickerModal)
+  // New: POST /projects/coastline-keypoints (bounds from WorldAreaPickerModal)
   const fetchCoastlineKeypoints = async (
     bounds: WorldBounds,
     options?: { width?: number; height?: number },
@@ -81,13 +82,10 @@ export function useSiftPoints() {
     formData.append("height", String(height));
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/maps/coastline-keypoints`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+      const response = await apiFetch(`/projects/coastline-keypoints`, {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));

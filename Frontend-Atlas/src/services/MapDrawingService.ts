@@ -52,7 +52,10 @@ export class MapDrawingService {
   // synchronous cut cycle (pm:cut / pm:remove) has fully processed.
   private isCuttingActive = false;
 
-  constructor(private emit: EmitFn) {}
+  constructor(
+    private emit: EmitFn,
+    private getProjectId: () => string,
+  ) {}
 
   private finalizedTextLayers = new WeakSet<L.Layer>();
 
@@ -97,7 +100,11 @@ export class MapDrawingService {
       return;
     }
 
-    const feature = layerToFeature(textLayer, this.selectedYear);
+    const feature = layerToFeature(
+      textLayer,
+      this.selectedYear,
+      this.getProjectId(),
+    );
     if (!feature || !isPointFeature(feature)) {
       return;
     }
@@ -281,7 +288,11 @@ export class MapDrawingService {
 
       if (points.length > 1) {
         this.drawnItems.value?.addLayer(polyline);
-        const feature = layerToFeature(polyline, this.selectedYear);
+        const feature = layerToFeature(
+          polyline,
+          this.selectedYear,
+          this.getProjectId(),
+        );
         if (feature) {
           (polyline as FeatureBearingLayer).feature = feature;
           this.emit("feature-created", feature);
@@ -510,7 +521,11 @@ export class MapDrawingService {
         return;
       }
 
-      const feature = layerToFeature(layer, this.selectedYear);
+      const feature = layerToFeature(
+        layer,
+        this.selectedYear,
+        this.getProjectId(),
+      );
       this.attachFeatureAndEmit(layer, feature, "feature-created");
 
       setTimeout(() => {
@@ -530,7 +545,11 @@ export class MapDrawingService {
         return;
       }
 
-      const updatedFeature = layerToFeature(resultLayer, this.selectedYear);
+      const updatedFeature = layerToFeature(
+        resultLayer,
+        this.selectedYear,
+        this.getProjectId(),
+      );
       if (!updatedFeature) {
         return;
       }
@@ -541,7 +560,7 @@ export class MapDrawingService {
       updatedFeature.name = sourceLayer.feature.name;
       updatedFeature.createdAt = sourceLayer.feature.createdAt;
       updatedFeature.updatedAt = new Date().toISOString();
-      updatedFeature.properties.opacity = sourceLayer.feature.properties.opacity ?? updatedFeature.properties.opacity;
+      updatedFeature.properties.fillOpacity = sourceLayer.feature.properties.fillOpacity;
       updatedFeature.properties.name = sourceLayer.feature.properties.name;
       updatedFeature.properties.labelText = sourceLayer.feature.properties.labelText;
       updatedFeature.properties.colorName = sourceLayer.feature.properties.colorName;
@@ -551,8 +570,6 @@ export class MapDrawingService {
       updatedFeature.properties.strokeOpacity = sourceLayer.feature.properties.strokeOpacity;
       updatedFeature.properties.mapElementType = sourceLayer.feature.properties.mapElementType;
       updatedFeature.properties.shapeKind = sourceLayer.feature.properties.shapeKind;
-      updatedFeature.properties.startDate = sourceLayer.feature.properties.startDate;
-      updatedFeature.properties.endDate = sourceLayer.feature.properties.endDate;
 
       resultLayer.feature = updatedFeature;
       this.emit("feature-updated", updatedFeature);

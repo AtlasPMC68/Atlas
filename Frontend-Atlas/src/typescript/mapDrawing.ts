@@ -30,24 +30,30 @@ export type TextMarkerLayer = L.Marker & {
   };
 };
 
+export type PmCustomControlOptions = {
+  name: string;
+  block: "draw" | "edit" | "custom" | "options";
+  title: string;
+  className: string;
+  toggle?: boolean;
+  disableOtherButtons?: boolean;
+  disableByOtherButtons?: boolean;
+  actions?: string[];
+  onClick?: () => void;
+  afterClick?: (
+    event: unknown,
+    context: { button: { toggled: () => boolean } },
+  ) => void;
+};
+
 export type PmToolbar = {
-  createCustomControl?: (options: {
-    name: string;
-    block: string;
-    title: string;
-    className: string;
-    toggle: boolean;
-    disableOtherButtons: boolean;
-    disableByOtherButtons: boolean;
-    actions: string[];
-    onClick: () => void;
-    afterClick: (
-      event: unknown,
-      context: { button: { toggled: () => boolean } },
-    ) => void;
-  }) => void;
+  createCustomControl?: (options: PmCustomControlOptions) => void;
   controlExists?: (name: string) => boolean;
-  changeControlOrder?: () => void;
+  changeControlOrder?: (order?: string[]) => void;
+  setBlockPosition?: (
+    block: "draw" | "edit" | "custom" | "options",
+    position: "topleft" | "topright" | "bottomleft" | "bottomright",
+  ) => void;
   toggleButton?: (name: string, active: boolean) => void;
 };
 
@@ -67,6 +73,9 @@ export type PmMapDrawingTool = {
   enableGlobalLassoMode?: (options: Record<string, unknown>) => void;
   disableGlobalLassoMode?: () => void;
   setLang?: (lang: string, translations?: Record<string, unknown>, fallbackLang?: string) => void;
+  globalRotateModeEnabled?: () => boolean;
+  enableGlobalRotateMode?: () => void;
+  disableGlobalRotateMode?: () => void;
   Toolbar?: PmToolbar;
 };
 

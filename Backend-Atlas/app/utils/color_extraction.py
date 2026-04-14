@@ -1,26 +1,23 @@
-import os
 import math
-
+import os
 from typing import Dict, List, Optional, Tuple
 
-import numpy as np
 import cv2
-
-from skimage.color import rgb2lab, lab2rgb, deltaE_ciede2000
-from skimage.morphology import opening, closing, disk
-from skimage.util import img_as_float
-from skimage.measure import find_contours
-from scipy.ndimage import binary_fill_holes
-
+import numpy as np
 from matplotlib import colors as mcolors
-
-from shapely.geometry import Polygon
-from shapely.ops import unary_union
-from shapely.geometry.base import BaseGeometry
+from scipy.ndimage import binary_fill_holes
 from shapely import affinity
+from shapely.geometry import Polygon
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
+from skimage.color import deltaE_ciede2000, lab2rgb, rgb2lab
+from skimage.measure import find_contours
+from skimage.morphology import closing, disk, opening
+from skimage.util import img_as_float
+
+from app.utils.color_in_legends_extraction import extract_colors_from_legend_shapes
 
 from . import preprocessing
-from app.utils.color_in_legends_extraction import extract_colors_from_legend_shapes
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
@@ -509,8 +506,10 @@ def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
             "mapElementType": "zone",
             "name": f"{color_name}",
             "is_pixel_space": True,
-            "start_date": "1700-01-01",
-            "end_date": "2026-01-01",
+            "opacity": 0.5,
+            "stroke_color": rgb,
+            "stroke_width": 2,
+            "stroke_opacity": 1.0,
         },
         "geometry": merged_geometry.__geo_interface__,
     }
@@ -556,10 +555,12 @@ def build_normalized_feature(
             "color_rgb": rgb,
             "color_hex": "#{:02x}{:02x}{:02x}".format(*rgb),
             "mapElementType": "zone",
-            "name": f"{color_name}",
-            "start_date": "1700-01-01",
-            "end_date": "2026-01-01",
+            "name": f"Zone {color_name}",
             "is_normalized": True,
+            "opacity": 0.5,
+            "stroke_color": rgb,
+            "stroke_width": 2,
+            "stroke_opacity": 1.0,
         },
         "geometry": normalized_geom.__geo_interface__,
     }

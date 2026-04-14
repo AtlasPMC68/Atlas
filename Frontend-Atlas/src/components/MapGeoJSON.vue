@@ -1,7 +1,6 @@
 <template>
   <div class="relative h-full w-full z-0">
-    <div id="map" style="height: 80vh; width: 100%"></div>
-    <TimelineSlider v-model:year="selectedYear" />
+    <div id="map" class="h-full w-full"></div>
     <div
       v-if="pendingCity"
       class="city-name-input-container"
@@ -21,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, computed, toRef } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -56,33 +55,23 @@ import type { MapWithPm, PmIgnoreOptions } from "../typescript/mapDrawing";
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  projectId: string;
   selectedYear: number;
+  canUndo: boolean;
+  canRedo: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: "features-loaded", features: Feature[]): void;
   (e: "draw-create", features: Feature[]): void;
   (e: "draw-update", features: Feature[]): void;
-  (e: "draw-delete-id", featureId: string): void;
+  (e: "draw-delete", features: Feature[]): void; // Delete the Leaflet layer (unsaved feature)
   (e: "map-ready", map: L.Map): void;
+  (e: "undo"): void;
+  (e: "redo"): void;
 }>();
 
-const selectedYear = toRef(props, "selectedYear");
 const previousFeatureIds = ref(new Set<FeatureId>());
 const localFeaturesSnapshot = ref<Feature[]>([]);
-
-function getYearSafeUTC(dateText: string): number {
-  return new Date(dateText).getUTCFullYear();
-}
-
-const filteredFeatures = computed(() => {
-  return localFeaturesSnapshot.value.filter(
-    (feature: Feature) =>
-      getYearSafeUTC(feature.properties.startDate) <= selectedYear.value &&
-      (!feature.properties.endDate ||
-        getYearSafeUTC(feature.properties.endDate) >= selectedYear.value),
-  );
-});
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
@@ -98,6 +87,65 @@ let pixelSpaceDragCleanup: (() => void) | null = null;
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 const selectedFeatureId = ref<string | null>(null);
+
+const undoControlName = "atlasUndo";
+const redoControlName = "atlasRedo";
+const undoControlClass = "leaflet-pm-icon-atlas-undo";
+const redoControlClass = "leaflet-pm-icon-atlas-redo";
+
+function setToolbarButtonEnabled(className: string, enabled: boolean) {
+  document.querySelectorAll<HTMLElement>(`.${className}`).forEach((el) => {
+    el.classList.toggle("leaflet-pm-control-disabled", !enabled);
+    el.setAttribute("aria-disabled", String(!enabled));
+    el.tabIndex = enabled ? 0 : -1;
+  });
+}
+
+function updateHistoryToolbarState() {
+  setToolbarButtonEnabled(undoControlClass, props.canUndo);
+  setToolbarButtonEnabled(redoControlClass, props.canRedo);
+}
+
+function addUndoRedoControls(mapInstance: L.Map) {
+  const toolbar = (mapInstance as MapWithPm).pm?.Toolbar;
+
+  if (!toolbar?.createCustomControl) {
+    return;
+  }
+
+  if (!toolbar.controlExists?.(undoControlName)) {
+    toolbar.createCustomControl({
+      name: undoControlName,
+      block: "custom",
+      title: "Annuler",
+      className: undoControlClass,
+      toggle: false,
+      onClick: () => {
+        if (!props.canUndo) return;
+        emit("undo");
+      },
+    });
+  }
+
+  if (!toolbar.controlExists?.(redoControlName)) {
+    toolbar.createCustomControl({
+      name: redoControlName,
+      block: "custom",
+      title: "Rétablir",
+      className: redoControlClass,
+      toggle: false,
+      onClick: () => {
+        if (!props.canRedo) return;
+        emit("redo");
+      },
+    });
+  }
+
+  toolbar.setBlockPosition?.("custom", "topleft");
+  toolbar.changeControlOrder?.([undoControlName, redoControlName]);
+
+  updateHistoryToolbarState();
+}
 
 const featureLayerManager = {
   layers: new Map<FeatureId, L.Layer>(),
@@ -181,7 +229,11 @@ function applyLayerUpdate(layer: L.Layer) {
   runtimeLayer.__atlasApplyingSync = true;
 
   try {
-    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      props.selectedYear,
+      props.projectId,
+    );
     if (!extracted) return;
 
     attachFeatureToLayer(layer, extracted);
@@ -201,7 +253,8 @@ function syncFeaturesFromMapLayers(): Feature[] {
   const renderedFeatures = syncFeaturesFromLayerMap(
     featureLayerManager.layers,
     localFeaturesSnapshot.value,
-    selectedYear.value,
+    props.selectedYear,
+    props.projectId,
   );
 
   renderedFeatures.forEach((feature) => {
@@ -209,7 +262,11 @@ function syncFeaturesFromMapLayers(): Feature[] {
   });
 
   drawing.drawnItems.value?.eachLayer((layer) => {
-    const extracted = extractFeatureFromLayer(layer, selectedYear.value);
+    const extracted = extractFeatureFromLayer(
+      layer,
+      props.selectedYear,
+      props.projectId,
+    );
     if (!extracted?.id) return;
     mergedById.set(String(extracted.id), extracted);
   });
@@ -238,91 +295,90 @@ defineExpose({
 // map but were NOT updated.
 let cuttingUpdatedIds: Set<string> | null = null;
 
-const drawing = useMapDrawing((event, ...args) => {
-  const current = localFeaturesSnapshot.value;
 
-  if (event === "cut-started") {
-    cuttingUpdatedIds = new Set<string>();
-    return;
-  }
-
-  if (event === "feature-created") {
-    const payload = args[0] as Feature;
-    const next = upsertFeature(current, payload);
-    localFeaturesSnapshot.value = next;
-    emit("draw-create", next);
-    return;
-  }
-
-  if (event === "feature-updated") {
-    const payload = args[0] as Feature;
-    // Track IDs updated during a cut so cut-complete can identify enclosed zones.
-    cuttingUpdatedIds?.add(String(payload.id));
-    const next = upsertFeature(current, payload);
-    localFeaturesSnapshot.value = next;
-    suppressNextPropsRender = true;
-    emit("draw-update", next);
-    return;
-  }
-
-  if (event === "feature-deleted") {
-    const deletedId = String(args[0]);
-    const next = current.filter(
-      (feature) => String(feature.id) !== deletedId,
-    );
-    localFeaturesSnapshot.value = next;
-
-    emit("draw-delete-id", deletedId);
-
-    return;
-  }
-
-  if (event === "cut-complete") {
-    // Detect zones that geoman silently removed (fully enclosed by the cut
-    // polygon). Geoman calls map.removeLayer() on them directly — pm:remove
-    // never fires. They are identified as layers that are no longer on the map
-    // but were NOT processed by pm:cut (feature-updated).
-    //
-    // Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
-    // PM on the inner L.Polygon sublayers and removes those, NOT the outer
-    // container. map.hasLayer(container) therefore still returns true even
-    // after geoman removed the enclosed zone. We must check the children.
-    if (map && cuttingUpdatedIds !== null) {
-      const isRemovedFromMap = (layer: L.Layer): boolean => {
-        if (!map!.hasLayer(layer)) return true;
-        const asGroup = layer as unknown as Partial<L.LayerGroup>;
-        if (typeof asGroup.getLayers === "function") {
-          const children = asGroup.getLayers();
-          // All children gone (removed from group entirely, or none left on map)
-          if (children.length === 0) return true;
-          return children.every((c) => !map!.hasLayer(c));
-        }
-        return false;
-      };
-
-      const removedIds: string[] = [];
-      featureLayerManager.layers.forEach((layer, id) => {
-        if (isRemovedFromMap(layer) && !cuttingUpdatedIds!.has(id)) {
-          removedIds.push(id);
-        }
-      });
-      if (removedIds.length > 0) {
-        let next = localFeaturesSnapshot.value;
-        for (const deletedId of removedIds) {
-          next = next.filter((f) => String(f.id) !== deletedId);
-          featureLayerManager.layers.delete(deletedId);
-          emit("draw-delete-id", deletedId);
-        }
-        localFeaturesSnapshot.value = next;
-      }
+const drawing = useMapDrawing(
+  (event, ...args) => {
+    const current = localFeaturesSnapshot.value;
+    if (event === "cut-started") {
+      cuttingUpdatedIds = new Set<string>();
+      return;
     }
-    cuttingUpdatedIds = null;
-    // Re-render so intersected zones get their updated geometry and the
-    // enclosed zones (now removed from localFeaturesSnapshot) stay gone.
-    renderAllFeatures();
-    return;
-  }
-});
+    if (event === "feature-created") {
+      const payload = args[0] as Feature;
+      const next = upsertFeature(current, payload);
+      localFeaturesSnapshot.value = next;
+      emit("draw-create", next);
+      return;
+    }
+
+    if (event === "feature-updated") {
+      const payload = args[0] as Feature;
+      // Track IDs updated during a cut so cut-complete can identify enclosed zones.
+      cuttingUpdatedIds?.add(String(payload.id));
+      const next = upsertFeature(current, payload);
+      localFeaturesSnapshot.value = next;
+      suppressNextPropsRender = true;
+      emit("draw-update", next);
+      return;
+    }
+
+    if (event === "feature-deleted") {
+      const deletedId = String(args[0]);
+      const next = current.filter(
+        (feature) => String(feature.id) !== deletedId,
+      );
+      localFeaturesSnapshot.value = next;
+      emit("draw-delete", next);
+      return;
+    }
+    if (event === "cut-complete") {
+      // Detect zones that geoman silently removed (fully enclosed by the cut
+      // polygon). Geoman calls map.removeLayer() on them directly — pm:remove
+      // never fires. They are identified as layers that are no longer on the map
+      // but were NOT processed by pm:cut (feature-updated).
+      //
+      // Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
+      // PM on the inner L.Polygon sublayers and removes those, NOT the outer
+      // container. map.hasLayer(container) therefore still returns true even
+      // after geoman removed the enclosed zone. We must check the children.
+      if (map && cuttingUpdatedIds !== null) {
+        const isRemovedFromMap = (layer: L.Layer): boolean => {
+          if (!map!.hasLayer(layer)) return true;
+          const asGroup = layer as unknown as Partial<L.LayerGroup>;
+          if (typeof asGroup.getLayers === "function") {
+            const children = asGroup.getLayers();
+            // All children gone (removed from group entirely, or none left on map)
+            if (children.length === 0) return true;
+            return children.every((c) => !map!.hasLayer(c));
+          }
+          return false;
+        };
+
+        const removedIds: string[] = [];
+        featureLayerManager.layers.forEach((layer, id) => {
+          if (isRemovedFromMap(layer) && !cuttingUpdatedIds!.has(id)) {
+            removedIds.push(id);
+          }
+        });
+        if (removedIds.length > 0) {
+          let next = localFeaturesSnapshot.value;
+          for (const deletedId of removedIds) {
+            next = next.filter((f) => String(f.id) !== deletedId);
+            featureLayerManager.layers.delete(deletedId);
+            emit("draw-delete", next);
+          }
+          localFeaturesSnapshot.value = next;
+        }
+      }
+      cuttingUpdatedIds = null;
+      // Re-render so intersected zones get their updated geometry and the
+      // enclosed zones (now removed from localFeaturesSnapshot) stay gone.
+      renderAllFeatures();
+      return;
+    }
+  },
+  () => props.projectId,
+);
 
 const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
 const cityMode = useAddCityMode({
@@ -343,7 +399,8 @@ const imageOverlay = useImageOverlay({
   localFeaturesSnapshot,
   onBeforeEmit: () => { suppressNextPropsRender = true; },
   onUpdate: (next) => emit('draw-update', next),
-});
+  }
+);
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -359,12 +416,13 @@ function renderCities(features: Feature[]) {
       colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const point = L.circleMarker(coord, {
+      renderer: vectorRenderer ?? undefined,
       radius: 6,
       fillColor: fillColor,
       color: strokeColor,
       weight: feature.properties.strokeWidth ?? 1,
       opacity: feature.properties.strokeOpacity ?? 1,
-      fillOpacity: feature.properties.opacity ?? 0.5,
+      fillOpacity: feature.properties.fillOpacity ?? 0.5,
     });
 
     const featureProperties = feature.properties;
@@ -406,6 +464,17 @@ function renderCities(features: Feature[]) {
   });
 }
 
+function applyLabelStyle(marker: L.Marker, feature: Feature) {
+  const el = marker.getElement() as HTMLElement | null;
+  if (!el) return;
+
+  const color = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+  const sizePx = feature.properties.sizePx ?? 12;
+
+  el.style.setProperty("--label-color", color);
+  el.style.setProperty("--label-size", `${sizePx}px`);
+}
+
 function renderLabels(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -415,21 +484,21 @@ function renderLabels(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
-    const labelText = feature.properties.labelText || "";
-
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text geoman-text-label",
-        html: labelText,
+        html: feature.properties.labelText || "",
         iconSize: [120, 20],
         iconAnchor: [0, 10],
       }),
     });
 
+    label.on("add", () => applyLabelStyle(label, feature));
+
     const textMarker = label as L.Marker & {
       options: L.MarkerOptions & { text: string; textMarker?: boolean };
     };
-    textMarker.options.text = labelText;
+    textMarker.options.text = feature.properties.labelText || "";
     textMarker.options.textMarker = true;
 
     attachFeatureToLayer(label, feature);
@@ -459,7 +528,7 @@ function renderZones(features: Feature[]) {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
-        fillOpacity: 0.5,
+        fillOpacity: featureProperties.fillOpacity ?? 0.5,
         color: strokeColor || fillColor,
         weight: featureProperties.strokeWidth || 1,
         opacity: featureProperties.strokeOpacity ?? 1,
@@ -522,6 +591,7 @@ function renderPolylines(features: Feature[]) {
       colorRgbToCss(feature.properties.strokeColor) || fillColor;
 
     const line = L.polyline(latLngs, {
+      renderer: vectorRenderer ?? undefined,
       color: strokeColor,
       weight: feature.properties.strokeWidth ?? 2,
       opacity: feature.properties.strokeOpacity ?? 1,
@@ -555,7 +625,7 @@ function renderShapes(features: Feature[]) {
         renderer: vectorRenderer ?? undefined,
         fillColor: fillColor,
         opacity: feature.properties.strokeOpacity ?? 1,
-        fillOpacity: feature.properties.strokeOpacity ?? 1,
+        fillOpacity: feature.properties.fillOpacity ?? 0.5,
         color: strokeColor,
         weight: feature.properties.strokeWidth || 1,
       },
@@ -580,7 +650,7 @@ function renderImages(features: Feature[]) {
 
     const src = toImageSrc(feature.image);
     const overlay = L.imageOverlay(src, bounds, {
-      opacity: feature.properties.opacity ?? 1,
+      opacity: feature.properties.fillOpacity ?? 1,
       interactive: true,
       pane: 'imagePane',
     });
@@ -591,10 +661,29 @@ function renderImages(features: Feature[]) {
   });
 }
 
+function renderAllFeaturesSafely() {
+  if (!map) return;
+
+  const pm = (map as MapWithPm).pm;
+  const wasGlobalRotateEnabled = pm?.globalRotateModeEnabled?.() ?? false;
+
+  if (wasGlobalRotateEnabled) {
+    pm?.disableGlobalRotateMode?.();
+  }
+
+  try {
+    renderAllFeatures();
+  } finally {
+    if (wasGlobalRotateEnabled) {
+      pm?.enableGlobalRotateMode?.();
+    }
+  }
+}
+
 function renderAllFeatures() {
   if (!map) return;
 
-  const currentFeatures = filteredFeatures.value;
+  const currentFeatures = props.features;
   const currentIds = new Set(currentFeatures.map((f) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
@@ -639,7 +728,6 @@ function renderAllFeatures() {
   }
 
   previousFeatureIds.value = currentIds;
-  emit("features-loaded", currentFeatures);
 }
 
 // --- per-feature drag ---
@@ -688,6 +776,8 @@ onMounted(() => {
   map.on('resize', updateMinZoom);
 
   drawing.initializeDrawing(map);
+  L.control.zoom({ position: "topleft" }).addTo(map);
+  addUndoRedoControls(map);
   drawing.setToolbarMode("global");
   
   // pmIgnore values saved before edit/rotate mode is enabled, restored after.
@@ -782,44 +872,9 @@ onMounted(() => {
     .scale({ position: "bottomright", metric: true, imperial: false })
     .addTo(map);
 
-  L.control.zoom({ position: "topleft" }).addTo(map);
-
-  drawing.setSelectedYear(selectedYear.value);
+  drawing.setSelectedYear(props.selectedYear);
   emit("map-ready", map);
-  renderAllFeatures();
-
-  escapeKeyHandler = (e: KeyboardEvent) => {
-    if (e.key !== "Escape" || !map) return;
-    const pm = (map as MapWithPm).pm;
-    // Cancel city placement mode
-    if (addCityMode.value) {
-      cityMode.cancel();
-      return;
-    }
-    // Cancel active freehand drawing — also untoggle the custom toolbar button
-    if (drawing.activeDrawingMode.value === "freehand") {
-      drawing.stopFreehandDrawing(map);
-      drawing.activeDrawingMode.value = null;
-      pm?.Toolbar?.toggleButton?.("drawFreehand", false);
-      return;
-    }
-    // Cancel active regular draw mode
-    if (drawing.activeDrawingMode.value !== null) {
-      pm?.disableDraw();
-      return;
-    }
-    // Cancel active global removal mode
-    if (pm?.globalRemovalModeEnabled?.()) { pm.disableGlobalRemovalMode?.(); return; }
-    // Cancel active global edit/rotate mode (fires even when scoped to a selected feature)
-    if (pm?.globalEditModeEnabled?.()) { pm.disableGlobalEditMode?.(); return; }
-    if (pm?.globalRotateModeEnabled?.()) { pm.disableGlobalRotateMode?.(); return; }
-    // Deselect the currently selected feature if no mode is active
-    if (selectedFeatureId.value !== null) {
-      selectedFeatureId.value = null;
-      return;
-    }
-  };
-  document.addEventListener("keydown", escapeKeyHandler);
+  renderAllFeaturesSafely();
 });
 
 onBeforeUnmount(() => {
@@ -837,11 +892,12 @@ onBeforeUnmount(() => {
   }
 });
 
-watch(selectedYear, (newYear) => {
-  drawing.setSelectedYear(newYear);
-  if (!map) return;
-  renderAllFeatures();
-});
+watch(
+  () => props.selectedYear,
+  (val) => {
+    drawing.setSelectedYear(val);
+  },
+);
 
 // While any draw mode is active, disable pointer-events on the canvas so that
 // hovering/clicking existing features doesn't override the draw cursor or steal clicks.
@@ -863,7 +919,7 @@ watch(
       return;
     }
     if (!map) return;
-    renderAllFeatures();
+    renderAllFeaturesSafely();
   },
   { deep: true },
 );
@@ -959,13 +1015,22 @@ watch(
   },
   { deep: true },
 );
+
+watch(
+  () => [props.canUndo, props.canRedo],
+  async () => {
+    await nextTick();
+    updateHistoryToolbarState();
+  },
+  { immediate: true },
+);
 </script>
 
 <style>
 .city-label-text {
-  font-size: 12px;
+  font-size: var(--label-size, 12px);
   font-weight: bold;
-  color: black;
+  color: var(--label-color, #000);
   background: transparent;
   padding: 2px 4px;
   border-radius: 3px;
