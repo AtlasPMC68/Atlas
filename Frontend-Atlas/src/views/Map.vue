@@ -137,6 +137,7 @@ const projectId = ref<string | null>(null);
 const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
+  resetSelection: () => void;
 } | null>(null);
 const addMapDialogRef = ref<{
   open: () => void;
@@ -280,14 +281,36 @@ function commitFeatureSnapshot(next: Feature[]) {
   applyFeatureSnapshot(featureHistoryService.commit(features.value, next));
 }
 
+function resetMapSelection() {
+  mapGeoJsonRef.value?.resetSelection();
+}
+
 function onUndo() {
   if (!canUndo.value) return;
+  resetMapSelection();
   applyFeatureSnapshot(featureHistoryService.undo(features.value), false);
 }
 
 function onRedo() {
   if (!canRedo.value) return;
+  resetMapSelection();
   applyFeatureSnapshot(featureHistoryService.redo(features.value), false);
+}
+
+function getImageNaturalSize(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: 1, height: 1 }); // fallback: square, backend will recompute
+    };
+    img.src = url;
+  });
 }
 
 async function onAddFeatureImage(file: File) {
@@ -308,6 +331,24 @@ async function onAddFeatureImage(file: File) {
   try {
     const formData = new FormData();
     formData.append("image", file);
+
+    // Spawn the image at the center of the user's current map view instead of [0,0].
+    // Use the same 16° height constant as the backend, preserving the image aspect ratio.
+    if (leafletMap.value) {
+      const LAT_SPAN = 16.0;
+      const { width, height } = await getImageNaturalSize(file);
+      // Divide by cos(lat) to correct for Mercator: longitude degrees get physically
+      // shorter away from the equator, so we need more of them to cover the same
+      // screen width. Without this, images appear horizontally squished at high latitudes.
+      const center = leafletMap.value.getCenter();
+      const latRad = center.lat * (Math.PI / 180);
+      const lngSpan = (LAT_SPAN * (width / height)) / Math.cos(latRad);
+      const bounds = [
+        [center.lat - LAT_SPAN / 2, center.lng - lngSpan / 2],
+        [center.lat + LAT_SPAN / 2, center.lng + lngSpan / 2],
+      ];
+      formData.append("bounds", JSON.stringify(bounds));
+    }
 
     const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
       method: "POST",
@@ -729,6 +770,11 @@ onMounted(async () => {
   await loadProjectMapsForTimeline();
   await loadCurrentMapInfo();
   await loadInitialFeatures();
+
+  if (projectId.value) {
+    await uploadMapThumbnail();
+  }
+  
   window.addEventListener("keydown", handleKeyboardShortcuts);
 });
 
@@ -839,6 +885,7 @@ async function saveFeaturesToProject(
 async function onSaveMap() {
   if (isSaving.value) return;
   isSaving.value = true;
+  mapGeoJsonRef.value?.resetSelection();
 
   try {
     if (!currentUser.value || !keycloak.token) {

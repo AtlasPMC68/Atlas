@@ -108,3 +108,22 @@ export function bindRenderedFeatureEvents(
     bindLayerEventsOnce(layer, events, () => onSync(layer));
   }
 }
+
+export function applyStyleToLayer(layer: L.Layer, style: L.PathOptions) {
+  if (layer instanceof L.LayerGroup) {
+    layer.eachLayer((child) => applyStyleToLayer(child, style));
+  } else if (layer instanceof L.Path) {
+    layer.setStyle(style);
+  }
+}
+
+export function getLayerStrokeColor(layer: L.Layer): string | undefined {
+  if (layer instanceof L.LayerGroup) {
+    let color: string | undefined;
+    layer.eachLayer((child) => { color ??= getLayerStrokeColor(child); });
+    return color;
+  } else if (layer instanceof L.Path) {
+    return layer.options.color;
+  }
+  return undefined;
+}
