@@ -685,6 +685,16 @@ async function isProjectOwner(targetProjectId: string): Promise<boolean | null> 
 
     if (!res.ok) {
       console.error(`Error checking project owner: ${res.status}`);
+
+      if (res.status === 401 || res.status === 403) {
+        showAlert(
+          "error",
+          "Votre session a expiré. Veuillez vous reconnecter.",
+        );
+        void keycloak.login({ redirectUri: window.location.href });
+        return null;
+      }
+
       showAlert(
         "error",
         "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
