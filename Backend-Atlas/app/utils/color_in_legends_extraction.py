@@ -5,7 +5,7 @@ import numpy as np
 
 def extract_colors_from_legend_shapes(
     image_rgb: np.ndarray,
-    legends_shapes: List[Dict],
+    legend_shapes: List[Dict],
     debug: bool = False,
     debug_dir: Optional[str] = None,
 ) -> List[Tuple[int, int, int]]:
@@ -27,7 +27,7 @@ def extract_colors_from_legend_shapes(
 
     colors: List[Tuple[int, int, int]] = []
 
-    for shape in legends_shapes:
+    for shape in legend_shapes:
         shape_id = shape.get("id", "unknown")
 
         # 1) Retrieve contour_points (format used in shapes_extraction.py)
@@ -60,7 +60,7 @@ def extract_colors_from_legend_shapes(
                 continue
 
             # Median color in BGR → convert to RGB
-            med = np.median(roi_pixels.reshape(-1, 3), axis=0)
+            med = np.median(roi.reshape(-1, 3), axis=0)
             b, g, r = [int(round(v)) for v in med]
             if debug:
                 print(f"  sampled_rgb: ({r}, {g}, {b}) [bbox fallback]")
