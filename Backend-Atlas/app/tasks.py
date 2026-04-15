@@ -55,6 +55,7 @@ def process_map_extraction(
     self,
     filename: str,
     file_content: bytes,
+    project_id: UUID,
     map_id: UUID,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
@@ -143,8 +144,6 @@ def process_map_extraction(
                             "mapElementType": "point",
                             "color_name": "black",
                             "color_rgb": [0, 0, 0],
-                            "start_date": "0-01-01",
-                            "end_date": "5000-01-01",
                         },
                         "geometry": {
                             "type": "Point",
@@ -162,7 +161,7 @@ def process_map_extraction(
 
                     try:
                         asyncio.run(
-                            persist_city_feature(map_id, city_feature_collection)
+                            persist_city_feature(project_id, map_id, city_feature_collection)
                         )
                     except Exception as e:
                         logger.error(f"Failed to persist city token '{tok}': {e}")
@@ -200,14 +199,14 @@ def process_map_extraction(
                     georef_shape_features = georeference_features_with_sift_points(
                         shape_pixel_features, pixel_points, geo_points_lonlat
                     )
-                    asyncio.run(persist_features(map_id, georef_shape_features))
+                    asyncio.run(persist_features(project_id, map_id, georef_shape_features))
                 except Exception as e:
                     logger.error(
                         f"SIFT georeferencing step failed for shapes {map_id}: {e}",
                         exc_info=True,
                     )
             elif shape_normalized_features:
-                asyncio.run(persist_features(map_id, shape_normalized_features))
+                asyncio.run(persist_features(project_id, map_id, shape_normalized_features))
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}
@@ -249,7 +248,7 @@ def process_map_extraction(
                         geo_points_lonlat,
                         snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
                     )
-                    asyncio.run(persist_features(map_id, georef_features))
+                    asyncio.run(persist_features(project_id, map_id, georef_features))
 
                 except Exception as e:
                     logger.error(
@@ -257,7 +256,7 @@ def process_map_extraction(
                         exc_info=True,
                     )
             elif normalized_features:
-                asyncio.run(persist_features(map_id, normalized_features))
+                asyncio.run(persist_features(project_id, map_id, normalized_features))
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
@@ -339,8 +338,11 @@ def process_map_extraction(
         raise e
 
 
-# TODO : Remove type Any
-async def persist_features(map_id: UUID, normalized_features: List[dict[str, Any]]):
+async def persist_features(
+    project_id: UUID,
+    map_id: UUID,
+    normalized_features: List[dict[str, Any]],
+):
     async with AsyncSessionLocal() as db:
         for feature_collection in normalized_features:
             for feature in feature_collection.get("features", []):
@@ -352,8 +354,8 @@ async def persist_features(map_id: UUID, normalized_features: List[dict[str, Any
                     await insert_feature_in_db(
                         db=db,
                         map_id=map_id,
-                        is_feature_collection=False,
                         data=feature_data,
+                        project_id=project_id,
                     )
                 except Exception as e:
                     logger.error(
@@ -361,14 +363,14 @@ async def persist_features(map_id: UUID, normalized_features: List[dict[str, Any
                     )
 
 
-async def persist_city_feature(map_id: UUID, feature: dict[str, Any]):
+async def persist_city_feature(project_id: UUID, map_id: UUID, feature: dict[str, Any]):
     async with AsyncSessionLocal() as db:
         try:
             await insert_feature_in_db(
                 db=db,
                 map_id=map_id,
-                is_feature_collection=False,
                 data=feature,
+                project_id=project_id,
             )
         except Exception as e:
             logger.error(f"Failed to persist city feature for map {map_id}: {str(e)}")

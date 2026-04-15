@@ -4,6 +4,17 @@ import type {
   MapElementType,
 } from "../typescript/feature";
 
+export function upsertFeature(features: Feature[], feature: Feature): Feature[] {
+  const next = [...features];
+  const index = next.findIndex((f) => f.id === feature.id);
+  if (index >= 0) {
+    next[index] = feature;
+    return next;
+  }
+  next.push(feature);
+  return next;
+}
+
 export function getMapElementType(
   featureOrProperties: Pick<Feature, "properties" | "geometry"> | FeatureProperties,
 ): MapElementType | null {

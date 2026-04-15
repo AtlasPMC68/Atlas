@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routers import celery_router
 from .routers import auth
-from .routers import maps
+from .routers import projects
 from .routers import user
 
 app = FastAPI(
@@ -11,7 +11,7 @@ app = FastAPI(
     version="0.1.0"
 )
 app.include_router(celery_router.router)
-app.include_router(maps.router)
+app.include_router(projects.router)
 app.include_router(auth.router)
 app.include_router(user.router)
 app.add_middleware(
