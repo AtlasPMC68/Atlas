@@ -658,9 +658,21 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-async function isProjectOwner(targetProjectId: string): Promise<boolean> {
-  if (!targetProjectId || !keycloak.token) {
-    return false;
+async function isProjectOwner(targetProjectId: string): Promise<boolean | null> {
+  if (!targetProjectId) {
+    showAlert(
+        "error",
+        "Impossible de vérifier la propriété, l'identifiant du projet est invalide.",
+      );
+    return null;
+  }
+
+  if (!keycloak.token) {
+    showAlert(
+        "error",
+        "Impossible de vérifier la propriété du projet, le jeton d'authentification est invalide.",
+      );
+    return null;
   }
 
   try {
@@ -673,14 +685,32 @@ async function isProjectOwner(targetProjectId: string): Promise<boolean> {
 
     if (!res.ok) {
       console.error(`Error checking project owner: ${res.status}`);
-      return false;
+
+      if (res.status === 401 || res.status === 403) {
+        showAlert(
+          "error",
+          "Votre session a expiré. Veuillez vous reconnecter.",
+        );
+        void keycloak.login({ redirectUri: window.location.href });
+        return null;
+      }
+
+      showAlert(
+        "error",
+        "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
+      );
+      return null;
     }
 
     const data = (await res.json()) as boolean;
     return data === true;
   } catch (err) {
     console.error("Error checking project owner:", err);
-    return false;
+    showAlert(
+      "error",
+      "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
+    );
+    return null;
   }
 }
 
@@ -909,6 +939,10 @@ async function onSaveMap() {
     }
 
     const isOwner = await isProjectOwner(targetProjectId);
+
+    if (isOwner === null) {
+      return;
+    }
 
     if (!isOwner) {
       pendingCopiedFeatures.value = [...featuresToSave];
