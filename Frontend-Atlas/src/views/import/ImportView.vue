@@ -339,10 +339,14 @@ async function startImportProcess() {
     legendReturnStep.value = 2;
     currentStep.value = 5;
     showLegendPickerModal.value = true;
+
+    const importProjectId =
+      routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
+
     const result = await startImport(
       selectedFile.value,
+      importProjectId,
       routeMapId,
-      undefined,
       undefined,
       {
         enableGeoreferencing: false,
