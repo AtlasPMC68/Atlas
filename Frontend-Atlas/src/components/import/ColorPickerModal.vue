@@ -286,7 +286,7 @@ async function onContainerClick(event: MouseEvent) {
     formData.append("radius", "20");
 
     const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/maps/sample-color`,
+      `${import.meta.env.VITE_API_URL}/projects/sample-color`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${keycloak.token}` },

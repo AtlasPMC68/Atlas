@@ -1,6 +1,7 @@
 import math
 import os
 from typing import Dict, List, Optional, Tuple
+from venv import logger
 
 import cv2
 import numpy as np
@@ -744,6 +745,9 @@ def extract_colors(
 
     # 7) Build per-color masks and features
     color_index = 1
+    logger.info(
+        f"Selected {len(dominants)} dominant colors for extraction. and {dominants}"
+    )
     for k, entry in enumerate(dominants):
         mask = (best_idx == k) & valid
 
