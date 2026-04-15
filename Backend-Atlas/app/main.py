@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from .routers import celery_router
 from .routers import auth
 from .routers import dev_test
-from .routers import maps
+from .routers import projects
 from .routers import user
 from .utils.dev_test_assets import GEOREF_ASSETS_DIR, ensure_georef_assets_dir
 
@@ -15,7 +15,7 @@ app = FastAPI(
     version="0.1.0",
 )
 app.include_router(celery_router.router)
-app.include_router(maps.router)
+app.include_router(projects.router)
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(dev_test.router)

@@ -9,12 +9,11 @@ class Map(Base):
     __tablename__ = "maps"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True))
+    project_id = Column(UUID(as_uuid=True))
     title = Column(Text, nullable=False)
-    description = Column(Text)
-    image = Column(LargeBinary, nullable=True)
-    is_private = Column(Boolean, default=True)
     start_date = Column(Date)
     end_date = Column(Date)
+    exact_date = Column(Boolean, nullable=False, default=False)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+    

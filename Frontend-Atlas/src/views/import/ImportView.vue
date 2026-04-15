@@ -214,6 +214,8 @@ import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
+import { apiFetch } from "../../utils/api";
+import { snakeToCamel } from "../../utils/utils";
 import type {
   WorldBounds,
   LatLngTuple,
@@ -242,6 +244,10 @@ type ImportMode = "user" | "dev-test";
 
 const mode = (route.meta.importMode as ImportMode | undefined) ?? "user";
 const isDevTest = computed(() => mode === "dev-test");
+const routeProjectId = computed(() => {
+  const qp = route.query.projectId;
+  return typeof qp === "string" ? qp : null;
+}).value;
 
 // Composables
 const {
@@ -286,6 +292,7 @@ const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoi
 
 // Dev-test: stable identifier to store assets/config under backend tests/assets
 const devTestCaseName = ref<string | null>(null);
+const isRedirecting = ref<boolean>(false);
 
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
@@ -402,6 +409,14 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
 async function submitImportWithGeoref(legend: LegendBounds | null) {
   if (!selectedFile.value) return;
 
+  const importProjectId =
+    routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
+  if (!importProjectId) {
+    console.error("Impossible de resoudre le project_id pour cette importation");
+    currentStep.value = 2;
+    return;
+  }
+
   const payload = pendingGeorefPayload.value;
 
   // Map to backend-expected shapes
@@ -415,6 +430,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
   // Pass matched point arrays to startImport with extraction options
   const result = await startImport(
     selectedFile.value,
+    importProjectId,
     routeMapId,
     imagePoints,
     worldPoints,
@@ -460,16 +476,40 @@ async function handleLegendConfirmed(bounds: LegendBounds) {
   await submitImportWithGeoref(bounds);
 }
 
+async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
+  try {
+    const response = await apiFetch(`/projects/map-project/${id}`);
+
+    if (!response.ok) return null;
+
+    const data = snakeToCamel(
+      (await response.json()) as { project_id?: string },
+    ) as { projectId?: string };
+
+    return data.projectId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Redirect when extraction is finished
-watch([isProcessing, resultData, mapId], ([processing, result, id]) => {
-  if (!processing && result && id) {
+watch([isProcessing, resultData, mapId], async ([processing, result, id]) => {
+  if (isRedirecting.value || processing || !result || !id) return;
+
+  isRedirecting.value = true;
+  const projectId = await resolveProjectIdFromMapId(String(id));
+
+  if (projectId) {
       if (isDevTest.value) {
         console.log("Import finished in test mode, redirecting to test editor with mapId:", id);
         router.push({ path: `/test-editor/${id}` });
       } else {
-      router.push(`/carte/${id}`);
+      await router.push(`/projet/${projectId}`);
+    return;
       }
   }
+
+  await router.push(`/tableau-de-bord`);
 });
 
 const resetImport = () => {

@@ -3,7 +3,8 @@ export type FeatureId = string;
 export interface Feature {
   type: "Feature";
   id: string;
-  mapId: string;
+  projectId: string;
+  mapId?: string | null;
   geometry: Geometry;
   properties: FeatureProperties;
   createdAt: string;
@@ -21,8 +22,12 @@ export type MapElementType =
   | "label"
   | "image";
 
+export type FeatureVisibilityGroupType =
+  | Exclude<MapElementType, "label" | "polyline" | "arrow">
+  | "other";
+
 export type FeatureVisibilityGroup = {
-  type: MapElementType;
+  type: FeatureVisibilityGroupType;
   label: string;
   features: Feature[];
 };
@@ -32,19 +37,20 @@ export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 export interface FeatureProperties {
   name: string;
   labelText?: string;
-  colorName: string;
-  colorRgb: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
-  opacity: number;
+  sizePx?: number;
+  colorName?: string;
+  colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   strokeColor?: [number, number, number];
-  strokeWidth: number;
-  strokeOpacity: number;
+  fillOpacity?: number;
+  strokeOpacity?: number;
+  strokeWidth?: number;
   mapElementType: MapElementType;
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
-  startDate: string; // Format: "YYYY-MM-DD"
-  endDate: string; // Format: "YYYY-MM-DD"
 }
+
+export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;
 
 // Geometry types
 export type Coordinate = [number, number];
@@ -90,3 +96,8 @@ export type Geometry =
   | MultiPointGeometry
   | MultiLineStringGeometry
   | MultiPolygonGeometry;
+
+export type FeatureSnapshot = Feature[];
+export type FeatureHistoryStack = FeatureSnapshot[];
+
+export type FeatureTrackingCallback<T> = () => T;

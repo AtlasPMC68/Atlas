@@ -59,7 +59,7 @@ const routes = [
   { path: "/parametres", component: Settings, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
   { path: "/inscription", component: Home }, // Dummy route
-  { path: "/carte/:mapId", component: Map, meta: { requiresAuth: true } },
+  { path: "/projet/:projectId", component: Map, meta: { requiresAuth: true } },
 ];
 
 export const router = createRouter({

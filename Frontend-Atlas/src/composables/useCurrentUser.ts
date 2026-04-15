@@ -2,6 +2,7 @@ import { ref, computed } from "vue";
 import keycloak from "../keycloak";
 import { User } from "../typescript/user";
 import { snakeToCamel } from "../utils/utils";
+import { apiFetch } from "../utils/api";
 
 const currentUser = ref<User | null>(null);
 const isLoading = ref(false);
@@ -22,12 +23,8 @@ export function useCurrentUser() {
     error.value = null;
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/me`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
+      const res = await apiFetch(`/me`, {
+        headers: { "Content-Type": "application/json" },
       });
 
       if (!res.ok) {

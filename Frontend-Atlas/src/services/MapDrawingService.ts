@@ -17,6 +17,7 @@ import type {
 } from "../typescript/mapDrawing";
 
 const freehandControlName = "drawFreehand";
+const addCityControlName = "addCity";
 const removalSelectionStyle: L.PathOptions = {
   color: "#ef4444",
   weight: 2,
@@ -46,8 +47,15 @@ export class MapDrawingService {
   private fallbackSelectionStart: L.LatLng | null = null;
   private fallbackSelectionDragging = false;
   private fallbackRemovalListeners: MouseDrawListeners = {};
+  // True from pm:drawstart (shape=Cut) until the deferred setTimeout in
+  // pm:drawend fires. Used only to know whether to emit cut-complete after the
+  // synchronous cut cycle (pm:cut / pm:remove) has fully processed.
+  private isCuttingActive = false;
 
-  constructor(private emit: EmitFn) {}
+  constructor(
+    private emit: EmitFn,
+    private getProjectId: () => string,
+  ) {}
 
   private finalizedTextLayers = new WeakSet<L.Layer>();
 
@@ -92,7 +100,11 @@ export class MapDrawingService {
       return;
     }
 
-    const feature = layerToFeature(textLayer, this.selectedYear);
+    const feature = layerToFeature(
+      textLayer,
+      this.selectedYear,
+      this.getProjectId(),
+    );
     if (!feature || !isPointFeature(feature)) {
       return;
     }
@@ -159,12 +171,13 @@ export class MapDrawingService {
 
     mapWithPm.pm.addControls({
       position: "topright",
-      drawMarker: true,
+      continueDrawing: false,
+      drawMarker: false,
       drawPolyline: true,
       drawPolygon: true,
       drawCircle: true,
       drawRectangle: true,
-      drawCircleMarker: true,
+      drawCircleMarker: false,
       drawText: true,
       editMode: true,
       dragMode: true,
@@ -173,7 +186,10 @@ export class MapDrawingService {
       removalMode: true,
     });
 
+    // 'fr' locale is missing drawTextButton — merge it in by passing 'fr' as both lang and fallback
+    mapWithPm.pm.setLang?.('fr', { buttonTitles: { drawTextButton: 'Insérer du texte' } } as unknown as Record<string, unknown>, 'fr');
     this.addFreehandButton(map);
+    this.addCityButton(map);
     this.setupDrawingListeners(map);
   }
 
@@ -189,7 +205,7 @@ export class MapDrawingService {
     toolbar.createCustomControl({
       name: freehandControlName,
       block: "draw",
-      title: "Draw Freehand Line",
+      title: "Dessiner ligne à main levée",
       className: "leaflet-pm-icon-freehand",
       toggle: true,
       disableOtherButtons: true,
@@ -206,6 +222,31 @@ export class MapDrawingService {
         }
         this.setDrawingMode(null);
       },
+    });
+
+    toolbar.changeControlOrder?.();
+  }
+
+  private addCityButton(map: L.Map) {
+    const toolbar = (map as MapWithPm).pm?.Toolbar;
+    if (
+      !toolbar?.createCustomControl ||
+      toolbar.controlExists?.(addCityControlName)
+    ) {
+      return;
+    }
+
+    toolbar.createCustomControl({
+      name: addCityControlName,
+      block: "draw",
+      title: "Ajouter une ville",
+      className: "leaflet-pm-icon-add-city",
+      toggle: true,
+      disableOtherButtons: true,
+      disableByOtherButtons: true,
+      actions: ["cancel"],
+      onClick: () => {},
+      afterClick: () => {},
     });
 
     toolbar.changeControlOrder?.();
@@ -247,17 +288,29 @@ export class MapDrawingService {
 
       if (points.length > 1) {
         this.drawnItems.value?.addLayer(polyline);
-        const feature = layerToFeature(polyline, this.selectedYear);
+        const feature = layerToFeature(
+          polyline,
+          this.selectedYear,
+          this.getProjectId(),
+        );
         if (feature) {
           (polyline as FeatureBearingLayer).feature = feature;
           this.emit("feature-created", feature);
         }
+        const drawnLine = polyline;
+        setTimeout(() => {
+          this.drawnItems.value?.removeLayer(drawnLine);
+          if (map.hasLayer(drawnLine)) {
+            map.removeLayer(drawnLine);
+          }
+        }, 0);
       } else {
         map.removeLayer(polyline);
       }
 
       polyline = null;
       points = [];
+      this.stopFreehandDrawing(map);
     };
 
     this.freehandListeners = { onMouseDown, onMouseMove, onMouseUp };
@@ -285,8 +338,9 @@ export class MapDrawingService {
   private enableRemovalLasso(map: L.Map) {
     if (this.removalLassoEnabled) return;
 
-    if (map.pm?.enableGlobalLassoMode) {
-      map.pm.enableGlobalLassoMode(lassoDeleteOptions);
+    const mapWithPm = map as MapWithPm;
+    if (mapWithPm.pm?.enableGlobalLassoMode) {
+      mapWithPm.pm.enableGlobalLassoMode(lassoDeleteOptions);
       this.removalLassoEnabled = true;
       return;
     }
@@ -298,8 +352,9 @@ export class MapDrawingService {
   private disableRemovalLasso(map: L.Map) {
     if (!this.removalLassoEnabled) return;
 
-    if (map.pm?.disableGlobalLassoMode) {
-      map.pm.disableGlobalLassoMode();
+    const mapWithPm = map as MapWithPm;
+    if (mapWithPm.pm?.disableGlobalLassoMode) {
+      mapWithPm.pm.disableGlobalLassoMode();
     }
 
     this.disableFallbackRemovalSelection(map);
@@ -355,7 +410,7 @@ export class MapDrawingService {
     if (this.fallbackRemovalSelectionEnabled) return;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
-      if (!e.originalEvent?.shiftKey || !map.pm?.globalRemovalModeEnabled?.()) {
+      if (!e.originalEvent?.shiftKey || !(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
@@ -397,7 +452,7 @@ export class MapDrawingService {
       this.fallbackSelectionStart = null;
       map.dragging.enable();
 
-      if (!map.pm?.globalRemovalModeEnabled?.()) {
+      if (!(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
@@ -449,23 +504,14 @@ export class MapDrawingService {
     map.boxZoom.enable();
   }
 
-  private emitUpdatedFeatureFromLayer(layer: FeatureBearingLayer) {
-    const feature = layerToFeature(layer, this.selectedYear);
-
-    if (feature && layer.feature?.id) {
-      feature.id = layer.feature.id;
-      feature.properties = {
-        ...(layer.feature?.properties || {}),
-        ...(feature.properties || {}),
-      };
-      this.attachFeatureAndEmit(layer, feature, "feature-updated");
-    }
-  }
-
   private setupDrawingListeners(map: L.Map) {
     map.on("pm:create", (e) => {
       const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
       const shape = (e as PmLayerEvent).shape;
+
+      // Geoman fires pm:create for the cut polygon itself. Treat it as internal
+      // — the actual result is handled via pm:cut events on the affected layers.
+      if (shape === "Cut") return;
 
       if (shape === "text" || this.isTextLayer(layer)) {
         layer.once("pm:textblur", () => {
@@ -475,7 +521,11 @@ export class MapDrawingService {
         return;
       }
 
-      const feature = layerToFeature(layer, this.selectedYear);
+      const feature = layerToFeature(
+        layer,
+        this.selectedYear,
+        this.getProjectId(),
+      );
       this.attachFeatureAndEmit(layer, feature, "feature-created");
 
       setTimeout(() => {
@@ -495,7 +545,11 @@ export class MapDrawingService {
         return;
       }
 
-      const updatedFeature = layerToFeature(resultLayer, this.selectedYear);
+      const updatedFeature = layerToFeature(
+        resultLayer,
+        this.selectedYear,
+        this.getProjectId(),
+      );
       if (!updatedFeature) {
         return;
       }
@@ -506,7 +560,7 @@ export class MapDrawingService {
       updatedFeature.name = sourceLayer.feature.name;
       updatedFeature.createdAt = sourceLayer.feature.createdAt;
       updatedFeature.updatedAt = new Date().toISOString();
-      updatedFeature.properties.opacity = sourceLayer.feature.properties.opacity ?? updatedFeature.properties.opacity;
+      updatedFeature.properties.fillOpacity = sourceLayer.feature.properties.fillOpacity;
       updatedFeature.properties.name = sourceLayer.feature.properties.name;
       updatedFeature.properties.labelText = sourceLayer.feature.properties.labelText;
       updatedFeature.properties.colorName = sourceLayer.feature.properties.colorName;
@@ -516,8 +570,6 @@ export class MapDrawingService {
       updatedFeature.properties.strokeOpacity = sourceLayer.feature.properties.strokeOpacity;
       updatedFeature.properties.mapElementType = sourceLayer.feature.properties.mapElementType;
       updatedFeature.properties.shapeKind = sourceLayer.feature.properties.shapeKind;
-      updatedFeature.properties.startDate = sourceLayer.feature.properties.startDate;
-      updatedFeature.properties.endDate = sourceLayer.feature.properties.endDate;
 
       resultLayer.feature = updatedFeature;
       this.emit("feature-updated", updatedFeature);
@@ -545,7 +597,7 @@ export class MapDrawingService {
     });
 
     map.on("pm:globalremovalmodetoggled", (e) => {
-      const removalEvent = e as PmRemovalToggleEvent;
+      const removalEvent = e as unknown as PmRemovalToggleEvent;
       this.setBoxZoomForRemovalMode(map, removalEvent.enabled);
 
       if (removalEvent.enabled) {
@@ -578,13 +630,32 @@ export class MapDrawingService {
       if (this.freehandActive) {
         this.stopFreehandDrawing(map);
       }
-      this.activeDrawingMode.value = (e as PmDrawStartEvent)
-        .shape as DrawingMode;
+      const shape = (e as unknown as PmDrawStartEvent).shape;
+      if (shape === "Cut") {
+        this.isCuttingActive = true;
+        this.emit("cut-started");
+      }
+      this.activeDrawingMode.value = shape as DrawingMode;
       map.dragging.disable();
     });
 
     map.on("pm:drawend", () => {
       map.dragging.enable();
+      this.activeDrawingMode.value = null;
+      // Defer the reset so that synchronous cut processing (pm:cut / pm:remove)
+      // which fires inside pm:create after pm:drawend has a chance to complete
+      // before we clear the flag.
+      if (this.isCuttingActive) {
+        setTimeout(() => {
+          this.isCuttingActive = false;
+          // Signal MapGeoJSON to finalise the cut: detect any zones that geoman
+          // silently removed from the map (fully enclosed by the cut polygon)
+          // and delete them, then re-render intersected zones with their new
+          // geometry. Deferred so the Vue watcher echo cycle (suppressNextPropsRender)
+          // has already flushed before we call renderAllFeatures.
+          this.emit("cut-complete");
+        }, 0);
+      }
     });
   }
 
@@ -595,7 +666,7 @@ export class MapDrawingService {
       this.stopFreehandDrawing(this.pmMapInstance);
     }
 
-    this.pmMapInstance.pm.disableDraw();
+    this.pmMapInstance.pm?.disableDraw();
 
     if (mode === null) {
       this.activeDrawingMode.value = null;
@@ -618,7 +689,7 @@ export class MapDrawingService {
       circle: "Circle",
     };
 
-    this.pmMapInstance.pm.enableDraw(modeMap[mode], {
+    this.pmMapInstance.pm?.enableDraw(modeMap[mode], {
       snappingOrder: ["vertex", "edge", "middleLatLng"],
     });
 
@@ -647,6 +718,37 @@ export class MapDrawingService {
     this.selectedYear = selectedYear;
   }
 
+  setToolbarMode(mode: "global" | "feature") {
+    if (!this.pmMapInstance?.pm) return;
+
+    const pm = this.pmMapInstance.pm;
+    const isFeatureMode = mode === "feature";
+
+    pm.addControls({
+      drawMarker: false,
+      drawPolyline: !isFeatureMode,
+      drawPolygon: !isFeatureMode,
+      drawCircle: !isFeatureMode,
+      drawRectangle: !isFeatureMode,
+      drawCircleMarker: false,
+      drawText: !isFeatureMode,
+      editMode: isFeatureMode,
+      dragMode: false,
+      rotateMode: isFeatureMode,
+      cutPolygon: !isFeatureMode,
+      removalMode: !isFeatureMode,
+      [freehandControlName]: !isFeatureMode,
+      [addCityControlName]: !isFeatureMode,
+    });
+
+    if (isFeatureMode) {
+      if (this.freehandActive) {
+        this.stopFreehandDrawing(this.pmMapInstance);
+      }
+      pm.disableDraw();
+    }
+  } 
+
   getDrawnFeatures(): Feature[] {
     const features: Feature[] = [];
 
@@ -671,6 +773,7 @@ export class MapDrawingService {
       loadFeaturesForEditing: this.loadFeaturesForEditing.bind(this),
       clearDrawnItems: this.clearDrawnItems.bind(this),
       setSelectedYear: this.setSelectedYear.bind(this),
+      setToolbarMode: this.setToolbarMode.bind(this),
       getDrawnFeatures: this.getDrawnFeatures.bind(this),
       startFreehandDrawing: this.startFreehandDrawing.bind(this),
       stopFreehandDrawing: this.stopFreehandDrawing.bind(this),

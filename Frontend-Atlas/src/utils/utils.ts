@@ -74,16 +74,18 @@ export function prepareFeaturesForSave(features: unknown[]): unknown[] {
       return rawFeature;
     }
 
-    const { mapId, createdAt, updatedAt, startDate, endDate, ...next } =
-      rawFeature;
-    void mapId;
+    const { createdAt, updatedAt, ...next } = rawFeature;
     void createdAt;
     void updatedAt;
-    void startDate;
-    void endDate;
 
     return next;
   });
+}
+
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 export function toArray<T>(maybeArray: T | T[] | null | undefined): T[] {
@@ -98,4 +100,38 @@ export function toImageSrc(
 ): string {
   if (!image) return "images/default.jpg";
   return `data:${mimeType};base64,${image}`;
+}
+
+export function clamp(v: number) {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+export function hexToRgb(
+  hex: string | undefined,
+): [number, number, number] | undefined {
+  if (!hex) return;
+  const clean = hex.replace("#", "").trim();
+  return [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16),
+  ];
+}
+
+export function rgbToHex(rgb: [number, number, number] | undefined) {
+  if (!rgb) return;
+  const [r, g, b] = rgb;
+  const toHex = (n: number) => clamp(n).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+export function rgbToRgba(
+  rgb: [number, number, number] | undefined,
+  alpha: number,
+): string {
+  if (!rgb) return "transparent";
+  const safeAlpha = Number.isFinite(alpha)
+    ? Math.max(0, Math.min(1, alpha))
+    : 1;
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${safeAlpha})`;
 }
