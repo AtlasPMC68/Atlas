@@ -1,24 +1,16 @@
-// composables/useImportProcess.ts
-import { ref, Ref } from "vue";
+// composables/useDevTestImportProcess.ts
+import { ref, type Ref } from "vue";
 import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
-import type { LegendBounds } from "../typescript/legend";
-
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
-type ExtractionOptions = {
-  enableGeoreferencing?: boolean;
-  enableColorExtraction?: boolean;
-  enableShapesExtraction?: boolean;
-  enableTextExtraction?: boolean;
-};
-
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
-
-type StartImportResult = { success: true } | { success: false; error: string };
+type StartDevTestImportResult =
+  | { success: true }
+  | { success: false; error: string };
 
 interface UploadResponse {
-  taskId: string | null;
+  taskId: string;
   mapId: string;
 }
 
@@ -30,6 +22,7 @@ interface StatusResponse {
   error?: string;
 }
 
+// Module-level singleton refs — same pattern as useImportProcess
 const isProcessing: Ref<boolean> = ref(false);
 const processingStep: Ref<ProcessingStep> = ref("upload");
 const processingProgress: Ref<number> = ref(0);
@@ -38,33 +31,17 @@ const taskId: Ref<string | null> = ref(null);
 const resultData: Ref<unknown | null> = ref(null);
 const mapId: Ref<string> = ref("");
 
-export function useImportProcess() {
+export function useDevTestImportProcess() {
   const startImport = async (
-    file: File | null,
-    inputProjectId: string,
-    inputMapId: string,
+    file: File,
+    testId: string,
+    testCase: string,
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
-    options?: ExtractionOptions,
-    legendBounds?: LegendBounds | null,
-  ): Promise<StartImportResult> => {
+  ): Promise<StartDevTestImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
-    if (
-      !inputProjectId ||
-      inputProjectId === "undefined" ||
-      inputProjectId === "null"
-    ) {
-      return {
-        success: false,
-        error: "Aucun projet cible (project_id) n'a ete fourni pour l'extraction",
-      };
-    }
-    if (!inputMapId || inputMapId === "undefined" || inputMapId === "null") {
-      return {
-        success: false,
-        error: "Aucune carte cible (map_id) n'a ete fournie pour l'extraction",
-      };
-    }
+    if (!testId) return { success: false, error: "Identifiant de test manquant" };
+    if (!testCase) return { success: false, error: "Nom du cas de test manquant" };
 
     isProcessing.value = true;
     showProcessingModal.value = true;
@@ -72,54 +49,31 @@ export function useImportProcess() {
     processingProgress.value = 0;
 
     const formData = new FormData();
-    formData.append("project_id", inputProjectId);
-    formData.append("map_id", inputMapId);
+    formData.append("test_id", testId);
+    formData.append("test_case", testCase);
 
-    // Add matched point pairs as expected by backend
     if (imagePoints && imagePoints.length) {
       formData.append("image_points", JSON.stringify(imagePoints));
     }
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
-
-    if (options) {
-      formData.append(
-        "enable_georeferencing",
-        String(options.enableGeoreferencing ?? true),
-      );
-      formData.append(
-        "enable_color_extraction",
-        String(options.enableColorExtraction ?? true),
-      );
-      formData.append(
-        "enable_shapes_extraction",
-        String(options.enableShapesExtraction ?? false),
-      );
-      formData.append(
-        "enable_text_extraction",
-        String(options.enableTextExtraction ?? false),
-      );
-    }
-
-    if (legendBounds) {
-      formData.append("legend_bounds", JSON.stringify(legendBounds));
-    }
     formData.append("file", file);
 
     try {
-      const response = await apiFetch(`/projects/upload`, {
+      const response = await apiFetch("/dev-test-api/upload", {
         method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
         const error: Partial<{ detail: string }> = await response.json();
-        throw new Error(error.detail || "Erreur lors de l'envoi du fichier");
+        throw new Error(
+          error.detail || "Erreur lors de l'envoi du fichier de test",
+        );
       }
 
       const data: UploadResponse = snakeToCamel(await response.json());
-
       taskId.value = data.taskId;
       mapId.value = data.mapId;
 
@@ -128,10 +82,10 @@ export function useImportProcess() {
       }
 
       pollStatus(taskId.value);
-
       return { success: true };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erreur inattendue";
+      const message =
+        err instanceof Error ? err.message : "Erreur inattendue";
       isProcessing.value = false;
       showProcessingModal.value = false;
       return { success: false, error: message };
@@ -139,17 +93,21 @@ export function useImportProcess() {
   };
 
   const mapStatusToStep = (statusText: string): ProcessingStep => {
-    if (statusText.includes("Saving")) return "upload";
+    if (statusText.includes("Saving uploaded")) return "upload";
     if (statusText.includes("Loading")) return "analysis";
     if (statusText.includes("Extracting")) return "extraction";
-    if (statusText.includes("Cleaning")) return "processing";
+    if (
+      statusText.includes("Saving test") ||
+      statusText.includes("Cleaning")
+    )
+      return "processing";
     return "upload";
   };
 
-  const pollStatus = (taskId: string) => {
+  const pollStatus = (currentTaskId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await apiFetch(`/projects/status/${taskId}`);
+        const res = await apiFetch(`/projects/status/${currentTaskId}`);
         const data: StatusResponse = await res.json();
 
         processingProgress.value = data.progress_percentage || 0;
@@ -166,10 +124,10 @@ export function useImportProcess() {
           clearInterval(interval);
           isProcessing.value = false;
           showProcessingModal.value = false;
-          console.error("Erreur de traitement:", data.error);
+          console.error("[DEV-TEST] Erreur de traitement:", data.error);
         }
       } catch (err) {
-        console.error("Erreur lors du polling:", err);
+        console.error("[DEV-TEST] Erreur lors du polling:", err);
         clearInterval(interval);
         isProcessing.value = false;
         showProcessingModal.value = false;

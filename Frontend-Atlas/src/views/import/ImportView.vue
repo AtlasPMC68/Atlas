@@ -213,6 +213,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
+import { useDevTestImportProcess } from "../../composables/useDevTestImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
 import { apiFetch } from "../../utils/api";
 import { snakeToCamel } from "../../utils/utils";
@@ -257,16 +258,21 @@ const {
   handleFileSelected: onFileSelected,
 } = useFileUpload();
 
+const prodImport = useImportProcess();
+const devImport = useDevTestImportProcess();
+
+// Pick the reactive state from the composable that matches the current mode.
+// isDevTest is based on a const so this selection is stable for the component lifetime.
+const activeImport = isDevTest.value ? devImport : prodImport;
 const {
   isProcessing,
   processingStep,
   processingProgress,
   showProcessingModal,
-  startImport,
   cancelImport,
   resultData,
   mapId,
-} = useImportProcess();
+} = activeImport;
 
 const { fetchCoastlineKeypoints } = useSiftPoints();
 
@@ -334,6 +340,7 @@ async function startImportProcess() {
   }
   
   // If georeferencing is disabled, skip world area selection and go straight to upload
+  // Note: dev-test mode always forces georef on, so this path is production-only.
   if (!enableGeoreferencing.value) {
     pendingGeorefPayload.value = null;
     legendReturnStep.value = 2;
@@ -342,11 +349,17 @@ async function startImportProcess() {
 
     const importProjectId =
       routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
+    if (!importProjectId) {
+      console.error("Impossible de resoudre le project_id pour cette importation");
+      currentStep.value = 2;
+      return;
+    }
 
-    const result = await startImport(
+    const result = await prodImport.startImport(
       selectedFile.value,
       importProjectId,
       routeMapId,
+      undefined,
       undefined,
       {
         enableGeoreferencing: false,
@@ -354,7 +367,6 @@ async function startImportProcess() {
         enableShapesExtraction: enableShapesExtraction.value,
         enableTextExtraction: enableTextExtraction.value,
       },
-      isDevTest.value ? (devTestCaseName.value ?? undefined) : undefined,
     );
     if (result.success) {
       currentStep.value = 5;
@@ -413,6 +425,39 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
 async function submitImportWithGeoref(legend: LegendBounds | null) {
   if (!selectedFile.value) return;
 
+  const payload = pendingGeorefPayload.value;
+
+  const imagePoints = payload
+    ? payload.imagePoints.map(([x, y]) => ({ x, y }))
+    : undefined;
+  const worldPoints = payload
+    ? payload.worldPoints.map(([lat, lng]) => ({ lat, lng }))
+    : undefined;
+
+  if (isDevTest.value) {
+    if (!devTestCaseName.value) {
+      console.error("[DEV-TEST] Test case name is missing");
+      currentStep.value = 2;
+      return;
+    }
+    const result = await devImport.startImport(
+      selectedFile.value,
+      routeMapId,
+      devTestCaseName.value,
+      imagePoints,
+      worldPoints,
+    );
+    if (result.success) {
+      currentStep.value = 6;
+    } else {
+      console.error("Erreur importation:", result.error);
+      currentStep.value = 2;
+    }
+    pendingGeorefPayload.value = null;
+    return;
+  }
+
+  // Production path
   const importProjectId =
     routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
   if (!importProjectId) {
@@ -421,18 +466,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
     return;
   }
 
-  const payload = pendingGeorefPayload.value;
-
-  // Map to backend-expected shapes
-  const worldPoints = payload
-    ? payload.worldPoints.map(([lat, lng]) => ({ lat, lng }))
-    : undefined;
-  const imagePoints = payload
-    ? payload.imagePoints.map(([x, y]) => ({ x, y }))
-    : undefined;
-
-  // Pass matched point arrays to startImport with extraction options
-  const result = await startImport(
+  const result = await prodImport.startImport(
     selectedFile.value,
     importProjectId,
     routeMapId,
@@ -444,7 +478,6 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
     },
-    isDevTest.value ? (devTestCaseName.value ?? undefined) : undefined,
     legend,
   );
   if (result.success) {
@@ -501,16 +534,21 @@ watch([isProcessing, resultData, mapId], async ([processing, result, id]) => {
   if (isRedirecting.value || processing || !result || !id) return;
 
   isRedirecting.value = true;
-  const projectId = await resolveProjectIdFromMapId(String(id));
 
-  if (projectId) {
-      if (isDevTest.value) {
-        console.log("Import finished in test mode, redirecting to test editor with mapId:", id);
-        router.push({ path: `/test-editor/${id}` });
-      } else {
-      await router.push(`/projet/${projectId}`);
+  if (isDevTest.value) {
+    const caseName = devTestCaseName.value;
+    if (caseName) {
+      router.push({ path: `/test-editor/${id}/case/${encodeURIComponent(caseName)}` });
+    } else {
+      router.push({ path: `/test-editor/${id}` });
+    }
     return;
-      }
+  }
+
+  const projectId = await resolveProjectIdFromMapId(String(id));
+  if (projectId) {
+    await router.push(`/projet/${projectId}`);
+    return;
   }
 
   await router.push(`/tableau-de-bord`);

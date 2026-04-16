@@ -1,0 +1,45 @@
+{
+  "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
+  "testCaseId": "un-bo-6",
+  "evaluatedAt": "2026-04-16T01:41:30.643181Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1772842734708",
+          "name": "DarkKhaki_1",
+          "area": 203.3187314685591
+        },
+        "bestMatch": {
+          "iou": 0.8958147158167807,
+          "intersectionArea": 184.10326131827534,
+          "unionArea": 205.5148883666359,
+          "precision": 0.9882116813937495,
+          "recall": 0.9054909008555604,
+          "falseNegativeArea": 19.215470150278506,
+          "falsePositiveArea": 2.1961568981355133,
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "yellowgreen-1",
+            "area": 186.29941821636902
+          }
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.8958147158167807,
+      "meanPrecision": 0.9882116813937495,
+      "meanRecall": 0.9054909008555604,
+      "totalFalseNegativeArea": 19.215470150278506,
+      "totalFalsePositiveArea": 2.1961568981355133
+    },
+    "scoreUsed": 0.8958147158167807,
+    "scoreUsedKey": "mean.meanIou"
+  }
+}

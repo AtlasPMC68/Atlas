@@ -1,8 +1,8 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
-  "testCase": "5 sift points",
+  "testCase": "5-sift-points",
   "testCaseId": "5-sift-points",
-  "updatedAt": "2026-03-17T20:45:10.207746Z",
+  "updatedAt": "2026-04-16T01:41:05.594146Z",
   "filename": "7362bf3a-c85b-4df1-9b21-6a0a528b323e.jpg",
   "georef": {
     "imagePoints": [
@@ -29,31 +29,25 @@
     ],
     "worldPoints": [
       {
-        "lat": 53.59061224565411,
-        "lng": -57.34292267279081
+        "lng": -57.34292267279081,
+        "lat": 53.59061224565411
       },
       {
-        "lat": 53.96806584534747,
-        "lng": -58.87782303546784
+        "lng": -58.87782303546784,
+        "lat": 53.96806584534747
       },
       {
-        "lat": 61.541807102207684,
-        "lng": -77.74667451337162
+        "lng": -77.74667451337162,
+        "lat": 61.541807102207684
       },
       {
-        "lat": 60.404988669956595,
-        "lng": -64.64695164969119
+        "lng": -64.64695164969119,
+        "lat": 60.404988669956595
       },
       {
-        "lat": 47.53907074816397,
-        "lng": -70.07121217291959
+        "lng": -70.07121217291959,
+        "lat": 47.53907074816397
       }
     ]
-  },
-  "options": {
-    "enableGeoreferencing": true,
-    "enableColorExtraction": true,
-    "enableShapesExtraction": false,
-    "enableTextExtraction": false
   }
 }

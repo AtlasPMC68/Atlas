@@ -28,7 +28,7 @@
           :feature-visibility="featureVisibility"
           :is-dev-test-creation="true"
           @toggle-feature="toggleFeatureVisibility"
-          @rename-feature="renameFeature"
+          @update-feature="updateFeature"
           @delete-feature="deleteFeature"
         />
       </div>
@@ -201,26 +201,6 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = new Map(featureVisibility.value);
 }
 
-async function renameFeature(featureId: string) {
-  const feature = features.value.find((f) => f.id === featureId);
-  if (!feature) return;
-
-  const currentName = (feature.properties as any)?.name || "";
-  const newName = window.prompt("Nouveau nom de la zone", currentName) ?? "";
-  const trimmed = newName.trim();
-  if (!trimmed || trimmed === currentName) return;
-
-  if (!feature.properties) {
-    (feature as any).properties = {};
-  }
-  (feature.properties as any).name = trimmed;
-
-  // Reassign array to ensure reactivity
-  features.value = [...features.value];
-
-  await persistZonesToBackend();
-}
-
 async function deleteFeature(featureId: string) {
   // Only allow deletion of features that actually exist in this test
   const existing = features.value.find((f) => f.id === featureId);
@@ -235,7 +215,31 @@ async function deleteFeature(featureId: string) {
   featureVisibility.value.delete(featureId);
   featureVisibility.value = new Map(featureVisibility.value);
 
-  await persistZonesToBackend();
+  try {
+    await persistZonesToBackend();
+  } catch (err) {
+    console.error("Error deleting test feature:", err);
+    if (mapId.value) {
+      await loadTestZones(mapId.value);
+    }
+  }
+}
+
+async function updateFeature(callbacks?: {
+  onSuccess?: () => void;
+  onError?: (message: string) => void;
+}) {
+  try {
+    features.value = [...features.value];
+    await persistZonesToBackend();
+    callbacks?.onSuccess?.();
+  } catch (err) {
+    console.error("Error updating test feature:", err);
+    if (mapId.value) {
+      await loadTestZones(mapId.value);
+    }
+    callbacks?.onError?.("Erreur lors de la mise a jour de l'element.");
+  }
 }
 
 function handleCreateUpdated(geometry: any | null) {
@@ -264,15 +268,15 @@ async function persistZonesToBackend() {
     );
 
     if (res.status === 401 || res.status === 403) {
-      console.error("Not authorised to persist test zones", res.status);
-      return;
+      throw new Error(`Not authorised to persist test zones (${res.status})`);
     }
 
     if (!res.ok) {
-      console.error("Failed to persist test zones", res.status);
+      throw new Error(`Failed to persist test zones (${res.status})`);
     }
   } catch (err) {
     console.error("Error persisting test zones:", err);
+    throw err;
   }
 }
 
@@ -374,7 +378,14 @@ async function saveCreatedZone() {
 
   features.value = [...features.value, feature];
 
-  await persistZonesToBackend();
+  try {
+    await persistZonesToBackend();
+  } catch (err) {
+    console.error("Error saving created zone:", err);
+    if (mapId.value) {
+      await loadTestZones(mapId.value);
+    }
+  }
 
   isCreateMode.value = false;
   clearCreateDrawing();

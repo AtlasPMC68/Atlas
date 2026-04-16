@@ -288,35 +288,23 @@ def _parse_extraction_inputs(
     str,
     list[tuple[float, float]] | None,
     list[tuple[float, float]] | None,
-    bool,
-    bool,
-    bool,
 ]:
     georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
-    options = config.get("options") if isinstance(config.get("options"), dict) else {}
-
-    enable_georeferencing = bool(options.get("enableGeoreferencing", True))
-    enable_color_extraction = bool(options.get("enableColorExtraction", True))
-    enable_shapes_extraction = bool(options.get("enableShapesExtraction", False))
-    enable_text_extraction = bool(options.get("enableTextExtraction", False))
 
     pixel_points_list = None
     geo_points_list = None
-    if enable_georeferencing:
-        img_pts = georef.get("imagePoints")
-        world_pts = georef.get("worldPoints")
-        if (
-            isinstance(img_pts, list)
-            and isinstance(world_pts, list)
-            and len(img_pts) == len(world_pts)
-        ):
-            try:
-                pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
-                geo_points_list = [
-                    (float(p["lng"]), float(p["lat"])) for p in world_pts
-                ]
-            except Exception as e:
-                raise ValueError(f"Invalid georef points in config: {e}")
+    img_pts = georef.get("imagePoints")
+    world_pts = georef.get("worldPoints")
+    if (
+        isinstance(img_pts, list)
+        and isinstance(world_pts, list)
+        and len(img_pts) == len(world_pts)
+    ):
+        try:
+            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
+            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
+        except Exception as e:
+            raise ValueError(f"Invalid georef points in config: {e}")
 
     filename = config.get("filename")
     if not isinstance(filename, str) or not filename.strip():
@@ -326,20 +314,13 @@ def _parse_extraction_inputs(
         filename,
         pixel_points_list,
         geo_points_list,
-        enable_color_extraction,
-        enable_shapes_extraction,
-        enable_text_extraction,
     )
 
 
 def build_extraction_task_args_for_case(
     *, assets_root: str, test_id: str, test_case_id: str
 ) -> list[Any]:
-    """Build Celery task args for rerunning extraction from a saved dev-test case.
-
-    This is shared between the API run-evaluate endpoint (async delay) and
-    the pytest evaluation harness (sync Task.apply).
-    """
+    """Build positional args for process_dev_test_extraction.apply(args=...)."""
 
     config = _load_case_config(assets_root, test_id, test_case_id)
     image_path = find_test_image_path(test_id)
@@ -352,9 +333,6 @@ def build_extraction_task_args_for_case(
         filename,
         pixel_points_list,
         geo_points_list,
-        enable_color_extraction,
-        enable_shapes_extraction,
-        enable_text_extraction,
     ) = _parse_extraction_inputs(config, image_path)
 
     try:
@@ -367,13 +345,9 @@ def build_extraction_task_args_for_case(
         filename,
         file_content,
         test_id,
+        test_case_id,
         pixel_points_list,
         geo_points_list,
-        enable_color_extraction,
-        enable_shapes_extraction,
-        enable_text_extraction,
-        True,
-        test_case_id,
     ]
 
 
@@ -386,9 +360,9 @@ def _start_extraction_for_case(
         test_case_id=test_case_id,
     )
 
-    from app.tasks import process_map_extraction
+    from app.tasks import process_dev_test_extraction
 
-    task = process_map_extraction.delay(*args)
+    task = process_dev_test_extraction.delay(*args)
     return task.id
 
 

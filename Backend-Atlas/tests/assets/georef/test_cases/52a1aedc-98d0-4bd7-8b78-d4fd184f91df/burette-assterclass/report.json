@@ -1,0 +1,45 @@
+{
+  "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
+  "testCaseId": "burette-assterclass",
+  "evaluatedAt": "2026-04-16T01:41:18.547920Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1772842734708",
+          "name": "DarkKhaki_1",
+          "area": 203.3187314685591
+        },
+        "bestMatch": {
+          "iou": 0.927854298789924,
+          "intersectionArea": 188.82437906538698,
+          "unionArea": 203.50649806941166,
+          "precision": 0.9990065897607205,
+          "recall": 0.9287111802317461,
+          "falseNegativeArea": 14.494352403171968,
+          "falsePositiveArea": 0.18776660085243774,
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "yellowgreen-1",
+            "area": 189.01214566624
+          }
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.927854298789924,
+      "meanPrecision": 0.9990065897607205,
+      "meanRecall": 0.9287111802317461,
+      "totalFalseNegativeArea": 14.494352403171968,
+      "totalFalsePositiveArea": 0.18776660085243774
+    },
+    "scoreUsed": 0.927854298789924,
+    "scoreUsedKey": "mean.meanIou"
+  }
+}

@@ -145,9 +145,9 @@ def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, An
 
         expected_name = exp.get("name") if isinstance(exp, dict) else None
         expected_label = (
-            f"expected_positive_{expected_name}"
+            expected_name.strip()
             if isinstance(expected_name, str) and expected_name.strip()
-            else f"expected_positive_{exp.get('index')}"
+            else f"expected_{exp.get('index')}"
         )
 
         expected_index = exp.get("index") if isinstance(exp, dict) else None

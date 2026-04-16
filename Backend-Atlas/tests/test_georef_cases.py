@@ -1,16 +1,12 @@
+import json
 import os
 
 import pytest
 
 from app.utils.dev_test import build_extraction_task_args_for_case
-from app.utils.dev_test_evaluator import (
-    build_test_case_paths,
-    evaluate_georef_test_case,
-    write_geojson,
-    write_report,
-)
+from app.utils.dev_test_evaluator import build_test_case_paths
 
-from app.tasks import process_map_extraction
+from app.tasks import process_dev_test_extraction
 
 MIN_IOU = 0.7
 
@@ -72,8 +68,8 @@ def _rerun_extraction_from_config(
         pytest.skip(str(e))
 
     # Run the Celery task synchronously (no broker) via Task.apply.
-    # Args are the same as the /maps/upload path.
-    res = process_map_extraction.apply(args=args)
+    # The task writes zones.geojson and the evaluation report itself.
+    res = process_dev_test_extraction.apply(args=args)
 
     if res.failed():
         raise AssertionError(
@@ -93,25 +89,17 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
         )
 
     # Rerun extraction from saved anchors/options so we test the current algorithm.
+    # The task writes zones.geojson, evaluates, and persists the report itself.
     _rerun_extraction_from_config(assets_root, test_id, test_case_id)
 
-    if not os.path.exists(paths.extracted_zones_path):
+    # Report is written by the task; just read it back.
+    if not os.path.exists(paths.report_path):
         pytest.skip(
-            f"Missing extracted zones after rerun for {test_id}/{test_case_id}: {paths.extracted_zones_path}"
+            f"Report not written after rerun for {test_id}/{test_case_id}: {paths.report_path}"
         )
 
-    report, errors_geojson = evaluate_georef_test_case(
-        assets_root,
-        test_id,
-        test_case_id,
-        min_iou=MIN_IOU,
-    )
-
-    # Persist error overlay (false positive/negative areas) for later frontend display.
-    write_geojson(errors_geojson, paths.errors_geojson_path)
-
-    # Persist latest report (overwrite)
-    write_report(report, paths.report_path)
+    with open(paths.report_path, "r", encoding="utf-8") as f:
+        report = json.load(f)
 
     # Basic sanity invariants
     assert report["testId"] == test_id

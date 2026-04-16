@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 from fastapi import (
@@ -13,6 +14,7 @@ from fastapi import (
 )
 
 from app.utils.auth import get_current_user_id
+from ..tasks import process_dev_test_extraction
 from app.utils.dev_test import (
     delete_dev_test,
     list_dev_test_cases,
@@ -20,11 +22,17 @@ from app.utils.dev_test import (
     run_evaluate_case_blocking,
     slugify_test_case,
     upload_dev_test,
+    write_test_config,
 )
 from app.utils.dev_test_assets import GEOREF_ASSETS_DIR, ZONES_DIR
 from app.utils.dev_test_evaluator import build_test_case_paths
 
 router = APIRouter(prefix="/dev-test-api", tags=["Dev Test"])
+
+logger = logging.getLogger(__name__)
+
+_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 def _safe_id(value: str, label: str = "id") -> str:
@@ -36,6 +44,94 @@ def _safe_id(value: str, label: str = "id") -> str:
             detail=f"Invalid {label}: must contain at least one alphanumeric character",
         )
     return slug
+
+
+@router.post("/upload")
+async def upload_dev_test_map(
+    test_id: str = Form(...),
+    test_case: str = Form(...),
+    image_points: str | None = Form(None),
+    world_points: str | None = Form(None),
+    file: UploadFile = File(...),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Upload a map image and start a dev-test extraction (file-only, no DB persistence)."""
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_test_case = _safe_id(test_case, "test_case")
+
+    filename = (file.filename or "").lower()
+    if not any(filename.endswith(ext) for ext in _ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not supported. Allowed: {', '.join(_ALLOWED_EXTENSIONS)}",
+        )
+
+    pixel_points_list = None
+    geo_points_list = None
+
+    if image_points and world_points:
+        try:
+            img_pts = json.loads(image_points)
+            world_pts = json.loads(world_points)
+            if not isinstance(img_pts, list) or not isinstance(world_pts, list):
+                raise ValueError("image_points and world_points must be JSON arrays")
+            if len(img_pts) != len(world_pts):
+                raise ValueError(
+                    "image_points and world_points must have the same length"
+                )
+            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
+            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid georeferencing payload: {e}"
+            )
+
+    file_content = await file.read()
+    if len(file_content) > _MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {_MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+    if len(file_content) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    # Persist anchor points immediately so the test case can be rerun from config
+    # even if the async task fails. We do this synchronously before dispatching.
+    write_test_config(
+        parent_test_id=safe_test_id,
+        test_case_id=safe_test_case,
+        test_case_name=test_case,
+        original_filename=file.filename,
+        img_pts=[{"x": float(p[0]), "y": float(p[1])} for p in pixel_points_list]
+        if pixel_points_list
+        else None,
+        world_pts=[{"lng": float(p[0]), "lat": float(p[1])} for p in geo_points_list]
+        if geo_points_list
+        else None,
+    )
+
+    try:
+        task = process_dev_test_extraction.delay(
+            filename=file.filename,
+            file_content=file_content,
+            test_id=safe_test_id,
+            test_case=safe_test_case,
+            pixel_points=pixel_points_list,
+            geo_points_lonlat=geo_points_list,
+        )
+        logger.info(
+            f"[DEV-TEST] Started extraction task {task.id} for test_id={safe_test_id} case={safe_test_case}"
+        )
+        return {
+            "task_id": task.id,
+            "map_id": safe_test_id,
+            "status": "processing_started",
+        }
+    except Exception as e:
+        logger.error(f"[DEV-TEST] Error starting extraction: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="Failed to start dev-test processing"
+        )
 
 
 @router.put("/georef_zones/{map_id}")
