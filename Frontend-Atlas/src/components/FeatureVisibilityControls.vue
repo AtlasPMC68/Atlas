@@ -72,31 +72,33 @@
 
     <div class="px-3 py-1.5 flex flex-col gap-1.5">
       <div class="divider m-0"></div>
-      <div class="flex gap-2 items-center">
-        <button
-          class="btn btn-primary btn-sm flex-1 font-bold"
-          @click="$emit('add-map')"
-        >
-          <PlusIcon class="w-5 h-5" />
-          Ajouter une carte
-        </button>
-      </div>
-      <div class="flex gap-2 items-center">
-        <button
-          class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
-          @click="$emit('open-add-image-feature-dialog')"
-        >
-          <PlusIcon class="w-5 h-5" />
-          Image
-        </button>
-        <button
-          class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
-          @click="$emit('save-map')"
-        >
-          <FolderArrowDownIcon class="w-5 h-5" />
-          Enregistrer
-        </button>
-      </div>
+      <template v-if="!props.isDevTestCreation">
+        <div class="flex gap-2 items-center">
+          <button
+            class="btn btn-primary btn-sm flex-1 font-bold"
+            @click="$emit('add-map')"
+          >
+            <PlusIcon class="w-5 h-5" />
+            Ajouter une carte
+          </button>
+        </div>
+        <div class="flex gap-2 items-center">
+          <button
+            class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
+            @click="$emit('open-add-image-feature-dialog')"
+          >
+            <PlusIcon class="w-5 h-5" />
+            Image
+          </button>
+          <button
+            class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
+            @click="$emit('save-map')"
+          >
+            <FolderArrowDownIcon class="w-5 h-5" />
+            Enregistrer
+          </button>
+        </div>
+      </template>
       <div class="flex gap-2 items-center">
         <button
           @click="toggleAll(true)"
@@ -254,6 +256,7 @@ import { hexToRgb, rgbToHex } from "../utils/utils";
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  isDevTestCreation?: boolean;
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);

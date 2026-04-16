@@ -5,9 +5,21 @@
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-base-content mb-2">
           Importer une carte
+          <span
+            v-if="isDevTest && (routeMapId || devTestCaseName)"
+            class="ml-2 text-sm font-normal text-base-content/60"
+          >
+            <span v-if="routeMapId">test: {{ routeMapId }}</span>
+            <span v-if="routeMapId && devTestCaseName"> · </span>
+            <span v-if="devTestCaseName">case: {{ devTestCaseName }}</span>
+          </span>
         </h1>
         <p class="text-base-content/70">
-          Glissez votre image de carte ou cliquez pour la sélectionner
+          {{
+            isDevTest
+              ? "Utiliser la carte associée au test actuel"
+              : "Glissez votre image de carte ou cliquez pour la sélectionner"
+          }}
         </p>
       </div>
 
@@ -52,7 +64,10 @@
             />
 
             <!-- Extraction Options -->
-            <div class="bg-base-200 rounded-lg p-4 space-y-3">
+            <div
+              v-if="!isDevTest"
+              class="bg-base-200 rounded-lg p-4 space-y-3"
+            >
               <h3 class="font-semibold text-sm mb-3">Options d'extraction</h3>
 
               <!-- Georeferencing Option -->
@@ -143,7 +158,7 @@
     </div>
 
     <!-- World area selection modal -->
-    <WorldAreaPickerModal
+     <WorldAreaPickerModal
       v-if="showWorldAreaPickerModal && previewUrl"
       :is-open="showWorldAreaPickerModal"
       :image-url="previewUrl"
@@ -198,6 +213,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useImportStore } from "../../stores/import";
 import { useFileUpload } from "../../composables/useFileUpload";
 import { useImportProcess } from "../../composables/useImportProcess";
+import { useDevTestImportProcess } from "../../composables/useDevTestImportProcess";
 import { useSiftPoints } from "../../composables/useSiftPoints";
 import { apiFetch } from "../../utils/api";
 import { snakeToCamel } from "../../utils/utils";
@@ -224,6 +240,11 @@ const route = useRoute();
 const importStore = useImportStore();
 
 const routeMapId = computed(() => String(route.params.mapId)).value;
+
+type ImportMode = "user" | "dev-test";
+
+const mode = (route.meta.importMode as ImportMode | undefined) ?? "user";
+const isDevTest = computed(() => mode === "dev-test");
 const routeProjectId = computed(() => {
   const qp = route.query.projectId;
   return typeof qp === "string" ? qp : null;
@@ -237,16 +258,21 @@ const {
   handleFileSelected: onFileSelected,
 } = useFileUpload();
 
+const prodImport = useImportProcess();
+const devImport = useDevTestImportProcess();
+
+// Pick the reactive state from the composable that matches the current mode.
+// isDevTest is based on a const so this selection is stable for the component lifetime.
+const activeImport = isDevTest.value ? devImport : prodImport;
 const {
   isProcessing,
   processingStep,
   processingProgress,
   showProcessingModal,
-  startImport,
   cancelImport,
   resultData,
   mapId,
-} = useImportProcess();
+} = activeImport;
 
 const { fetchCoastlineKeypoints } = useSiftPoints();
 
@@ -269,6 +295,9 @@ const legendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const legendReturnStep = ref<number>(2);
 const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
+
+// Dev-test: stable identifier to store assets/config under backend tests/assets
+const devTestCaseName = ref<string | null>(null);
 const isRedirecting = ref<boolean>(false);
 
 // Extraction options (all enabled by default)
@@ -286,12 +315,64 @@ const handleFileSelected = (file: File) => {
 async function startImportProcess() {
   if (!selectedFile.value) return;
 
-  // If georeferencing is disabled, still show legend step before upload
+  if (!isDevTest.value) {
+    devTestCaseName.value = null;
+  }
+
+  if (isDevTest.value) {
+    if (!devTestCaseName.value) {
+      const entered = window.prompt(
+        routeMapId
+          ? `Nom du test-case pour le test ${routeMapId} (ex: '5 sift points')`
+          : "Nom du test-case (scénario, ex: '5 sift points')",
+        "",
+      );
+      const trimmed = (entered ?? "").trim();
+      if (!trimmed) return;
+      devTestCaseName.value = trimmed;
+    }
+    // In test mode, force georeferencing and color extraction on,
+    // and disable other extraction options.
+    enableGeoreferencing.value = true;
+    enableColorExtraction.value = true;
+    enableShapesExtraction.value = false;
+    enableTextExtraction.value = false;
+  }
+  
+  // If georeferencing is disabled, skip world area selection and go straight to upload
+  // Note: dev-test mode always forces georef on, so this path is production-only.
   if (!enableGeoreferencing.value) {
     pendingGeorefPayload.value = null;
     legendReturnStep.value = 2;
     currentStep.value = 5;
     showLegendPickerModal.value = true;
+
+    const importProjectId =
+      routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
+    if (!importProjectId) {
+      console.error("Impossible de resoudre le project_id pour cette importation");
+      currentStep.value = 2;
+      return;
+    }
+
+    const result = await prodImport.startImport(
+      selectedFile.value,
+      importProjectId,
+      routeMapId,
+      undefined,
+      undefined,
+      {
+        enableGeoreferencing: false,
+        enableColorExtraction: enableColorExtraction.value,
+        enableShapesExtraction: enableShapesExtraction.value,
+        enableTextExtraction: enableTextExtraction.value,
+      },
+    );
+    if (result.success) {
+      currentStep.value = 5;
+    } else {
+      console.error("Erreur importation:", result.error);
+    }
     return;
   }
 
@@ -344,6 +425,39 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
 async function submitImportWithGeoref(legend: LegendBounds | null) {
   if (!selectedFile.value) return;
 
+  const payload = pendingGeorefPayload.value;
+
+  const imagePoints = payload
+    ? payload.imagePoints.map(([x, y]) => ({ x, y }))
+    : undefined;
+  const worldPoints = payload
+    ? payload.worldPoints.map(([lat, lng]) => ({ lat, lng }))
+    : undefined;
+
+  if (isDevTest.value) {
+    if (!devTestCaseName.value) {
+      console.error("[DEV-TEST] Test case name is missing");
+      currentStep.value = 2;
+      return;
+    }
+    const result = await devImport.startImport(
+      selectedFile.value,
+      routeMapId,
+      devTestCaseName.value,
+      imagePoints,
+      worldPoints,
+    );
+    if (result.success) {
+      currentStep.value = 6;
+    } else {
+      console.error("Erreur importation:", result.error);
+      currentStep.value = 2;
+    }
+    pendingGeorefPayload.value = null;
+    return;
+  }
+
+  // Production path
   const importProjectId =
     routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
   if (!importProjectId) {
@@ -352,18 +466,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
     return;
   }
 
-  const payload = pendingGeorefPayload.value;
-
-  // Map to backend-expected shapes
-  const worldPoints = payload
-    ? payload.worldPoints.map(([lat, lng]) => ({ lat, lng }))
-    : undefined;
-  const imagePoints = payload
-    ? payload.imagePoints.map(([x, y]) => ({ x, y }))
-    : undefined;
-
-  // Pass matched point arrays to startImport with extraction options
-  const result = await startImport(
+  const result = await prodImport.startImport(
     selectedFile.value,
     importProjectId,
     routeMapId,
@@ -431,8 +534,18 @@ watch([isProcessing, resultData, mapId], async ([processing, result, id]) => {
   if (isRedirecting.value || processing || !result || !id) return;
 
   isRedirecting.value = true;
-  const projectId = await resolveProjectIdFromMapId(String(id));
 
+  if (isDevTest.value) {
+    const caseName = devTestCaseName.value;
+    if (caseName) {
+      router.push({ path: `/test-editor/${id}/case/${encodeURIComponent(caseName)}` });
+    } else {
+      router.push({ path: `/test-editor/${id}` });
+    }
+    return;
+  }
+
+  const projectId = await resolveProjectIdFromMapId(String(id));
   if (projectId) {
     await router.push(`/projet/${projectId}`);
     return;

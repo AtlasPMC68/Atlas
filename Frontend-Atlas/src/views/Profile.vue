@@ -6,6 +6,7 @@ import { useCurrentUser } from "../composables/useCurrentUser";
 
 const router = useRouter();
 const goToSettings = () => router.push("/parametres");
+const goToTestBrowser = () => router.push("/tests");
 
 const { currentUser, isLoading, fetchCurrentUser } = useCurrentUser();
 
@@ -47,6 +48,12 @@ onMounted(async () => {
           Membre depuis le
           {{ new Date(currentUser!.createdAt).toLocaleDateString("fr-CA") }}
         </p>
+
+        <div class="mt-6">
+          <button class="btn btn-secondary" @click="goToTestBrowser">
+            Voir tests
+          </button>
+        </div>
       </div>
     </div>
   </div>

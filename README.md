@@ -120,6 +120,57 @@ To run the project using Docker Compose, follow these steps:
 
 ---
 
+### 🧪 Run Georef Evaluation Manually
+
+If you changed the georeferencing/extraction algorithm and want to re-run the georef evaluation locally without restarting the whole stack, you can run the dedicated georef pytest directly.
+
+**Option A — cross-platform script (Windows/macOS/Linux):**
+
+Run all georef cases:
+
+```sh
+python scripts/run_georef_tests.py
+```
+
+Run a single case (filters with pytest `-k`):
+
+```sh
+python scripts/run_georef_tests.py --test-id "<test_id>" --case-id "<case_id>"
+```
+
+Tip: if you prefer, you can also pass a raw pytest `-k` expression:
+
+```sh
+python scripts/run_georef_tests.py -k "<your expression>"
+```
+
+**Option B — Docker command (no script):**
+
+```sh
+docker compose run --rm test-backend pytest tests/test_georef_cases.py -v
+```
+
+Run a single case:
+
+```sh
+docker compose run --rm test-backend pytest tests/test_georef_cases.py -v -k "<test_id> and <case_id>"
+```
+
+**Option C — from inside an already running container:**
+
+If the backend container is already running (after `docker compose up`), you can execute pytest inside it:
+
+```sh
+docker compose exec backend pytest tests/test_georef_cases.py -v
+```
+
+How it works:
+- The script simply runs `docker compose run --rm test-backend pytest tests/test_georef_cases.py -v`.
+- If you pass `--test-id/--case-id` (or `-k`), it appends `-k "..."` to select a subset of cases.
+- It runs in an ephemeral container (`--rm`) and uses the same bind-mounted code as the rest of the dev stack.
+
+---
+
 ### ⚙️ CI/CD Pipeline & Tests
 
 To ensure reliability and consistency across the project, a Continuous Integration (CI) pipeline is configured to automatically run tests on every pull request to main.
