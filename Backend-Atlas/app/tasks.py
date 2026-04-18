@@ -63,7 +63,7 @@ def process_map_extraction(
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
-    imposed_colors_rgb: list | None = None,
+    imposed_click_positions: list | None = None,
     imposed_colors_names: list | None = None,
 ):
     try:
@@ -230,8 +230,8 @@ def process_map_extraction(
                 tmp_file_path,
                 debug=False,
                 legend_shapes=legends_shapes if legends_shapes else None,
-                imposed_colors_rgb=[tuple(c) for c in imposed_colors_rgb]
-                if imposed_colors_rgb
+                imposed_click_positions=[tuple(c) for c in imposed_click_positions]
+                if imposed_click_positions
                 else None,
                 imposed_colors_names=imposed_colors_names,
             )

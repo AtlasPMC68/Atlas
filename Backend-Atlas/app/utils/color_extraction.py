@@ -594,7 +594,7 @@ def extract_colors(
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
     legend_shapes: Optional[List[Dict]] = None,
-    imposed_colors_rgb: Optional[List[Tuple[int, int, int]]] = None,
+    imposed_click_positions: Optional[List[Tuple[float, float]]] = None,
     imposed_colors_names: Optional[List[Optional[str]]] = None,
     # -----------------------------
     # LAB binning
@@ -678,10 +678,22 @@ def extract_colors(
     # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
-    if imposed_colors_rgb:
-        # User-picked colors take priority over everything else
+    if imposed_click_positions:
+        # Sample colors directly from the preprocessed image at the click positions.
+        # Coordinates are normalised [0,1]; convert to pixel indices.
+        H, W = rgb.shape[:2]
+        sampled_rgb: List[Tuple[int, int, int]] = []
+        for nx, ny in imposed_click_positions:
+            px = int(min(round(nx * (W - 1)), W - 1))
+            py = int(min(round(ny * (H - 1)), H - 1))
+            r, g, b = rgb[py, px]
+            sampled_rgb.append((
+                int(round(float(r) * 255.0)),
+                int(round(float(g) * 255.0)),
+                int(round(float(b) * 255.0)),
+            ))
         imposed_dominants = prepare_imposed_dominants(
-            imposed_colors_rgb, names=imposed_colors_names
+            sampled_rgb, names=imposed_colors_names
         )
     elif legend_shapes:
         imposed_colors = extract_colors_from_legend_shapes(rgb, legend_shapes)

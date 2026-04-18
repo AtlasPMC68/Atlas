@@ -128,6 +128,8 @@ interface PickedColor {
   name: string;
   displayX: number;
   displayY: number;
+  normalizedX: number;
+  normalizedY: number;
 }
 
 interface PendingClick {
@@ -155,7 +157,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "skip"): void;
-  (e: "confirmed", colors: { rgb: [number, number, number]; name: string }[]): void;
+  (e: "confirmed", colors: { x: number; y: number; name: string }[]): void;
 }>();
 
 const modalRef = ref<HTMLDialogElement | null>(null);
@@ -306,6 +308,8 @@ async function onContainerClick(event: MouseEvent) {
       name: data.name,
       displayX: pos.display.x,
       displayY: pos.display.y,
+      normalizedX: pos.normalized.x,
+      normalizedY: pos.normalized.y,
     });
   } catch (err) {
     sampleError.value =
@@ -331,7 +335,7 @@ function onConfirm() {
   closeReason = "success";
   emit(
     "confirmed",
-    pickedColors.value.map((c) => ({ rgb: c.rgb, name: c.name })),
+    pickedColors.value.map((c) => ({ x: c.normalizedX, y: c.normalizedY, name: c.name })),
   );
   if (modalRef.value?.open) modalRef.value.close();
 }

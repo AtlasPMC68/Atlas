@@ -326,28 +326,25 @@ async def upload_and_process_map(
                 detail=f"Invalid legend bounds payload: {e}",
             )
 
-    # Parse optional user-picked colors as [{"rgb": [r,g,b], "name": "..."}, ...]
-    imposed_colors_rgb = None
+    # Parse optional user-picked click positions as [{"x": 0.5, "y": 0.3, "name": "..."}, ...]
+    imposed_click_positions = None
     imposed_colors_names = None
     if imposed_colors:
         try:
             parsed_colors = json.loads(imposed_colors)
             if not isinstance(parsed_colors, list):
                 raise ValueError("imposed_colors must be a JSON array")
-            imposed_colors_rgb = []
+            imposed_click_positions = []
             imposed_colors_names = []
             for entry in parsed_colors:
-                if not isinstance(entry, dict) or "rgb" not in entry:
+                if not isinstance(entry, dict) or "x" not in entry or "y" not in entry:
                     raise ValueError(
-                        'Each color must be {"rgb": [r, g, b], "name": "..."}'
+                        'Each entry must be {"x": float, "y": float, "name": "..."}'
                     )
-                rgb = entry["rgb"]
-                if not isinstance(rgb, list) or len(rgb) != 3:
-                    raise ValueError("rgb must be [r, g, b]")
-                r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
-                if not all(0 <= v <= 255 for v in (r, g, b)):
-                    raise ValueError("Color values must be in [0, 255]")
-                imposed_colors_rgb.append((r, g, b))
+                x, y = float(entry["x"]), float(entry["y"])
+                if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+                    raise ValueError("x and y must be normalised floats in [0, 1]")
+                imposed_click_positions.append((x, y))
                 imposed_colors_names.append(str(entry.get("name", "")).strip() or None)
         except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
             raise HTTPException(
@@ -355,7 +352,7 @@ async def upload_and_process_map(
                 detail=f"Invalid imposed_colors payload: {e}",
             )
     logger.info(
-        f"imposed_colors_rgb: {imposed_colors_rgb}, imposed_colors_names: {imposed_colors_names}"
+        f"imposed_click_positions: {imposed_click_positions}, imposed_colors_names: {imposed_colors_names}"
     )
     file_content = await file.read()
 
@@ -380,7 +377,7 @@ async def upload_and_process_map(
             enable_shapes_extraction=enable_shapes_extraction,
             enable_text_extraction=enable_text_extraction,
             legend_bounds=legend_bounds_dict,
-            imposed_colors_rgb=imposed_colors_rgb,
+            imposed_click_positions=imposed_click_positions,
             imposed_colors_names=imposed_colors_names,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
