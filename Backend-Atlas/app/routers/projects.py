@@ -942,6 +942,13 @@ async def sample_color(
     Returns: { rgb: [r,g,b], lab: [L,a,b], hex: "#rrggbb" }
     """
     raw = await file.read()
+    if len(raw) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
     nparr = np.frombuffer(raw, dtype=np.uint8)
     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img_bgr is None:

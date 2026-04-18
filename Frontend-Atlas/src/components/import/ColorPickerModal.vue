@@ -211,7 +211,6 @@ function onDialogClose() {
 
 function requestClose() {
   closeReason = "cancel";
-  emit("close");
   if (modalRef.value?.open) modalRef.value.close();
 }
 

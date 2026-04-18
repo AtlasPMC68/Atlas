@@ -1,7 +1,6 @@
 import math
 import os
 from typing import Dict, List, Optional, Tuple
-from venv import logger
 
 import cv2
 import numpy as np
@@ -16,7 +15,10 @@ from skimage.measure import find_contours
 from skimage.morphology import closing, disk, opening
 from skimage.util import img_as_float
 
-from app.utils.color_in_legends_extraction import extract_colors_from_legend_shapes
+from app.utils.color_in_legends_extraction import (
+    extract_colors_from_legend_shapes,
+    sample_color_at,
+)
 
 from . import preprocessing
 
@@ -589,6 +591,15 @@ def build_normalized_feature(
     }
 
 
+def _sanitize_name(name: str, max_length: int = 64) -> str:
+    """Strip whitespace, replace filesystem-unsafe characters, and enforce a max length."""
+    name = name.strip()
+    for ch in ("/", "\\", "\0"):
+        name = name.replace(ch, "-")
+    name = name[:max_length]
+    return name or "unnamed"
+
+
 def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
@@ -636,6 +647,7 @@ def extract_colors(
     opening_radius: int = 1,  # Erosion then dilation to remove small noise/speckles
     closing_radius: int = 3,  # Dilation then erosion to fill small gaps
     simplify_tolerance: float = 0.5,
+    sampling_radius: int = 20,  # Neighbourhood radius (px) used when sampling imposed click positions
 ) -> Dict:
     """
     Extract exclusive color layers using:
@@ -679,19 +691,16 @@ def extract_colors(
     lab = compute_lab(rgb)
 
     if imposed_click_positions:
-        # Sample colors directly from the preprocessed image at the click positions.
-        # Coordinates are normalised [0,1]; convert to pixel indices.
-        H, W = rgb.shape[:2]
+        # Sample the dominant (mode) colour in a neighbourhood around each click,
+        # using the same logic as /sample-color so preview and extraction are consistent.
+        # rgb is the preprocessed float [0,1] image; sample_color_at accepts both
+        # float and uint8 inputs.
         sampled_rgb: List[Tuple[int, int, int]] = []
         for nx, ny in imposed_click_positions:
-            px = int(min(round(nx * (W - 1)), W - 1))
-            py = int(min(round(ny * (H - 1)), H - 1))
-            r, g, b = rgb[py, px]
-            sampled_rgb.append((
-                int(round(float(r) * 255.0)),
-                int(round(float(g) * 255.0)),
-                int(round(float(b) * 255.0)),
-            ))
+            result = sample_color_at(rgb, nx, ny, radius_px=sampling_radius)
+            if result is not None:
+                r, g, b = result["rgb"]
+                sampled_rgb.append((int(r), int(g), int(b)))
         imposed_dominants = prepare_imposed_dominants(
             sampled_rgb, names=imposed_colors_names
         )
@@ -756,10 +765,8 @@ def extract_colors(
     )
 
     # 7) Build per-color masks and features
+    seen_names: Dict[str, int] = {}
     color_index = 1
-    logger.info(
-        f"Selected {len(dominants)} dominant colors for extraction. and {dominants}"
-    )
     for k, entry in enumerate(dominants):
         mask = (best_idx == k) & valid
 
@@ -780,11 +787,13 @@ def extract_colors(
         rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
         user_name = entry.get("user_name")
         if user_name:
-            # Use the name the user typed in the color picker verbatim
-            unique_color_name = user_name
+            base_name = _sanitize_name(user_name)
         else:
             color_name = get_nearest_css4_color_name(rgb_u8_center)
-            unique_color_name = f"{color_name}-{color_index}"
+            base_name = f"{color_name}-{color_index}"
+        count = seen_names.get(base_name, 0) + 1
+        seen_names[base_name] = count
+        unique_color_name = base_name if count == 1 else f"{base_name}_{count}"
         L, a, b = entry["lab_center"]
 
         if debug:
