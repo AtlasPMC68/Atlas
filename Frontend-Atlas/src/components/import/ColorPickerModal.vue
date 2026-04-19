@@ -34,7 +34,6 @@
             :src="imageUrl"
             class="w-full h-full object-contain pointer-events-none"
             alt="Carte importée"
-            @load="onImageLoad"
           />
 
           <!-- Pending click dots (loading) -->
@@ -197,10 +196,6 @@ watch(
     }
   },
 );
-
-function onImageLoad() {
-  // nothing needed — naturalWidth/Height are read on click
-}
 
 function onDialogClose() {
   if (closeReason !== "success" && closeReason !== "programmatic") {
