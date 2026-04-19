@@ -18,41 +18,89 @@
       </p>
 
       <div class="border rounded-md overflow-hidden">
-        <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
-          Carte importée — cliquez pour échantillonner une couleur
-        </h3>
+        <div class="px-3 py-2 text-xs font-medium bg-base-200 border-b flex items-center justify-between gap-3">
+          <span class="text-xs text-base-content/80">
+            Carte importée — cliquez pour échantillonner une couleur
+          </span>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-base-content/60 whitespace-nowrap">
+              {{ Math.round(zoom * 100) }}%
+            </span>
+            <button
+              class="btn btn-xs"
+              type="button"
+              :disabled="isLoading || zoom <= ZOOM_MIN"
+              @click="zoomOut"
+            >
+              −
+            </button>
+            <button
+              class="btn btn-xs"
+              type="button"
+              :disabled="isLoading || zoom === 1"
+              @click="resetZoom"
+            >
+              100%
+            </button>
+            <button
+              class="btn btn-xs"
+              type="button"
+              :disabled="isLoading || zoom >= ZOOM_MAX"
+              @click="zoomIn"
+            >
+              +
+            </button>
+          </div>
+        </div>
 
         <div
           ref="container"
-          class="relative h-[28rem] bg-base-200 select-none"
-          :class="isLoading ? 'cursor-wait' : 'cursor-crosshair'"
-          @click="onContainerClick"
+          class="relative h-[28rem] bg-base-200 select-none overflow-hidden"
+          :class="containerCursorClass"
+          @mousedown.left="onPointerDown"
+          @mousemove="onPointerMove"
+          @mouseup.left="onPointerUp"
+          @mouseleave="onPointerLeave"
+          @wheel.prevent="onWheel"
         >
-          <img
-            v-if="imageUrl"
-            ref="imageEl"
-            :src="imageUrl"
-            class="w-full h-full object-contain pointer-events-none"
-            alt="Carte importée"
-          />
+          <div v-if="imageUrl" class="absolute" :style="stageStyle">
+            <img
+              ref="imageEl"
+              :src="imageUrl"
+              class="w-full h-full object-contain pointer-events-none select-none"
+              alt="Carte importée"
+              @load="onImageLoad"
+            />
+          </div>
 
-          <!-- Pending click dots (loading) -->
+          <!-- Pending click markers (loading) -->
           <div
+            v-if="baseStage"
             v-for="pending in pendingClicks"
             :key="pending.id"
-            class="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-base-300 animate-pulse pointer-events-none"
-            :style="{ left: `${pending.displayX}px`, top: `${pending.displayY}px` }"
+            class="absolute rounded-full border-2 border-white bg-base-300 animate-pulse pointer-events-none"
+            :style="{
+              width: `${markerDiameterFromRadius(pending.sampleRadiusPx) * zoom}px`,
+              height: `${markerDiameterFromRadius(pending.sampleRadiusPx) * zoom}px`,
+              left: `${stageToContainerX(pending.stageX)}px`,
+              top: `${stageToContainerY(pending.stageY)}px`,
+              transform: 'translate(-50%, -50%)',
+            }"
           />
 
-          <!-- Confirmed click dots -->
+          <!-- Confirmed click markers -->
           <div
+            v-if="baseStage"
             v-for="(color, index) in pickedColors"
             :key="`dot-${index}`"
-            class="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white pointer-events-none shadow"
+            class="absolute rounded-full border-2 border-white pointer-events-none shadow"
             :style="{
-              left: `${color.displayX}px`,
-              top: `${color.displayY}px`,
+              width: `${markerDiameterFromRadius(color.sampleRadiusPx) * zoom}px`,
+              height: `${markerDiameterFromRadius(color.sampleRadiusPx) * zoom}px`,
+              left: `${stageToContainerX(color.stageX)}px`,
+              top: `${stageToContainerY(color.stageY)}px`,
               backgroundColor: color.hex,
+              transform: 'translate(-50%, -50%)',
             }"
           />
         </div>
@@ -117,8 +165,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from "vue";
+import { ref, watch, onMounted, computed, nextTick } from "vue";
 import { showAlert } from "../../composables/useAlert";
+import { useZoomableStage } from "../../composables/useZoomableStage";
 import { apiFetch } from "../../utils/api";
 import type {
   PendingClick,
@@ -138,18 +187,79 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "confirmed", colors: { x: number; y: number; name: string }[]): void;
+  (e: "confirmed", colors: { x: number; y: number; name: string; radius: number }[]): void;
 }>();
 
 const modalRef = ref<HTMLDialogElement | null>(null);
+
 const container = ref<HTMLDivElement | null>(null);
 const imageEl = ref<HTMLImageElement | null>(null);
+
+const {
+  baseStage,
+  stagePxPerImagePx,
+  stageStyle,
+  zoom,
+  panX,
+  panY,
+  zoomMin: ZOOM_MIN,
+  zoomMax: ZOOM_MAX,
+  updateBaseStage,
+  clampPan,
+  getLocalPointer,
+  getStagePositionFromEvent,
+  zoomIn,
+  zoomOut,
+  resetView,
+  onWheel,
+} = useZoomableStage({
+  containerRef: container,
+  imageRef: imageEl,
+  zoomMin: 1,
+  zoomMax: 8,
+  zoomStepFactor: 1.25,
+});
 
 const pickedColors = ref<PickedColor[]>([]);
 const pendingClicks = ref<PendingClick[]>([]);
 const isLoading = ref(false);
 const sampleError = ref<string | null>(null);
 let pendingIdCounter = 0;
+
+const BASE_SAMPLE_RADIUS_PX = 20;
+const sampleRadiusPx = computed(() =>
+  Math.max(3, Math.min(200, Math.round(BASE_SAMPLE_RADIUS_PX / zoom.value))),
+);
+
+function markerDiameterFromRadius(radiusImagePx: number) {
+  const r = Number(radiusImagePx);
+  if (!Number.isFinite(r)) return 6;
+  const diameterStagePx = 2 * Math.max(1, Math.min(200, r)) * stagePxPerImagePx.value;
+  return Math.max(6, Math.round(diameterStagePx));
+}
+
+function stageToContainerX(stageX: number) {
+  if (!baseStage.value) return 0;
+  return baseStage.value.offsetX + panX.value + stageX * zoom.value;
+}
+
+function stageToContainerY(stageY: number) {
+  if (!baseStage.value) return 0;
+  return baseStage.value.offsetY + panY.value + stageY * zoom.value;
+}
+
+const isPointerDown = ref(false);
+const hasDragged = ref(false);
+const pointerStart = ref({ x: 0, y: 0 });
+const panStart = ref({ x: 0, y: 0 });
+
+const containerCursorClass = computed(() => {
+  if (isLoading.value) return "cursor-wait";
+  if (zoom.value > 1) {
+    return isPointerDown.value ? "cursor-grabbing" : "cursor-grab";
+  }
+  return "cursor-crosshair";
+});
 
 let closeReason: DialogCloseReason = "programmatic";
 
@@ -166,9 +276,11 @@ watch(
       pickedColors.value = [];
       pendingClicks.value = [];
       sampleError.value = null;
+      resetView();
       if (modalRef.value && !modalRef.value.open) {
         modalRef.value.showModal();
       }
+      nextTick(() => updateBaseStage());
       return;
     }
     if (modalRef.value?.open) {
@@ -190,59 +302,58 @@ function requestClose() {
   if (modalRef.value?.open) modalRef.value.close();
 }
 
-/** Compute normalized [0,1] coordinates and display pixel position for a click,
- *  accounting for object-contain letterboxing inside the container. */
-function getClickPosition(event: MouseEvent): {
-  normalized: { x: number; y: number };
-  display: { x: number; y: number };
-} | null {
-  if (!imageEl.value || !container.value) return null;
-
-  const containerRect = container.value.getBoundingClientRect();
-  const naturalW = imageEl.value.naturalWidth;
-  const naturalH = imageEl.value.naturalHeight;
-  if (!naturalW || !naturalH) return null;
-
-  const containerW = containerRect.width;
-  const containerH = containerRect.height;
-  const containerAspect = containerW / containerH;
-  const imageAspect = naturalW / naturalH;
-
-  let renderedW: number, renderedH: number, offsetX: number, offsetY: number;
-  if (imageAspect > containerAspect) {
-    renderedW = containerW;
-    renderedH = containerW / imageAspect;
-    offsetX = 0;
-    offsetY = (containerH - renderedH) / 2;
-  } else {
-    renderedH = containerH;
-    renderedW = containerH * imageAspect;
-    offsetX = (containerW - renderedW) / 2;
-    offsetY = 0;
-  }
-
-  const clickX = event.clientX - containerRect.left - offsetX;
-  const clickY = event.clientY - containerRect.top - offsetY;
-
-  const nx = clickX / renderedW;
-  const ny = clickY / renderedH;
-
-  // Ignore clicks in the letterbox area
-  if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
-
-  return {
-    normalized: { x: nx, y: ny },
-    display: {
-      x: event.clientX - containerRect.left,
-      y: event.clientY - containerRect.top,
-    },
-  };
+function onImageLoad() {
+  updateBaseStage();
 }
 
-async function onContainerClick(event: MouseEvent) {
-  if (isLoading.value) return;
+function resetZoom() {
+  resetView();
+}
 
-  const pos = getClickPosition(event);
+function onPointerDown(event: MouseEvent) {
+  if (isLoading.value) return;
+  if (event.button !== 0) return;
+  isPointerDown.value = true;
+  hasDragged.value = false;
+  const local = getLocalPointer(event);
+  if (!local) return;
+  pointerStart.value = local;
+  panStart.value = { x: panX.value, y: panY.value };
+}
+
+function onPointerMove(event: MouseEvent) {
+  if (!isPointerDown.value) return;
+  if (zoom.value <= 1) return;
+  const local = getLocalPointer(event);
+  if (!local) return;
+
+  const dx = local.x - pointerStart.value.x;
+  const dy = local.y - pointerStart.value.y;
+  if (!hasDragged.value && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+    hasDragged.value = true;
+  }
+
+  if (!hasDragged.value) return;
+
+  const clamped = clampPan(panStart.value.x + dx, panStart.value.y + dy);
+  panX.value = clamped.x;
+  panY.value = clamped.y;
+}
+
+function onPointerUp(event: MouseEvent) {
+  if (!isPointerDown.value) return;
+  isPointerDown.value = false;
+  if (hasDragged.value) return;
+  void sampleAtEvent(event);
+}
+
+function onPointerLeave() {
+  isPointerDown.value = false;
+}
+
+async function sampleAtEvent(event: MouseEvent) {
+  if (isLoading.value) return;
+  const pos = getStagePositionFromEvent(event);
   if (!pos) return;
 
   sampleError.value = null;
@@ -251,8 +362,9 @@ async function onContainerClick(event: MouseEvent) {
   const pendingId = ++pendingIdCounter;
   pendingClicks.value.push({
     id: pendingId,
-    displayX: pos.display.x,
-    displayY: pos.display.y,
+    stageX: pos.stage.x,
+    stageY: pos.stage.y,
+    sampleRadiusPx: sampleRadiusPx.value,
   });
 
   try {
@@ -260,7 +372,7 @@ async function onContainerClick(event: MouseEvent) {
     formData.append("file", props.imageFile);
     formData.append("x", String(pos.normalized.x));
     formData.append("y", String(pos.normalized.y));
-    formData.append("radius", "20");
+    formData.append("radius", String(sampleRadiusPx.value));
 
     const response = await apiFetch("/projects/sample-color", {
       method: "POST",
@@ -297,10 +409,11 @@ async function onContainerClick(event: MouseEvent) {
       hex: data.hex,
       rgb: data.rgb,
       name: data.name,
-      displayX: pos.display.x,
-      displayY: pos.display.y,
+      stageX: pos.stage.x,
+      stageY: pos.stage.y,
       normalizedX: pos.normalized.x,
       normalizedY: pos.normalized.y,
+      sampleRadiusPx: sampleRadiusPx.value,
     });
   } catch (err) {
     sampleError.value =
@@ -320,7 +433,12 @@ function onConfirm() {
   closeReason = "success";
   emit(
     "confirmed",
-    pickedColors.value.map((c) => ({ x: c.normalizedX, y: c.normalizedY, name: c.name })),
+    pickedColors.value.map((c) => ({
+      x: c.normalizedX,
+      y: c.normalizedY,
+      name: c.name,
+      radius: c.sampleRadiusPx,
+    })),
   );
   if (modalRef.value?.open) modalRef.value.close();
 }

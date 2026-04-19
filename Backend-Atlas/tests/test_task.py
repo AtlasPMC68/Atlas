@@ -224,6 +224,59 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
     _, call_kwargs = mock_extract_colors.call_args
     assert call_kwargs["imposed_click_positions"] == imposed_positions
     assert call_kwargs["imposed_colors_names"] == imposed_names
+    assert call_kwargs.get("imposed_sampling_radii") is None
+
+
+def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
+    """If per-click sampling radii are provided, they must be forwarded to extract_colors."""
+    filename = "test_map.png"
+    file_bytes = b"fake_image_data"
+    project_id = str(uuid.uuid4())
+    map_id = str(uuid.uuid4())
+
+    imposed_positions = [(0.25, 0.75), (0.5, 0.5)]
+    imposed_names = ["Forest", "Ocean"]
+    imposed_radii = [7, 21]
+
+    mock_colors = get_mock_color_extraction()
+
+    with (
+        patch("app.tasks.process_map_extraction.update_state"),
+        patch("app.tasks.cv2.imread", return_value=real_image_np),
+        patch(
+            "app.tasks.extract_colors", return_value=mock_colors
+        ) as mock_extract_colors,
+        patch(
+            "app.tasks.extract_shapes",
+            return_value={"shapes": [], "normalized_features": []},
+        ),
+        patch("app.tasks.asyncio.run"),
+        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
+        patch("os.unlink"),
+    ):
+        mock_tmp_file = MagicMock()
+        mock_tmp_file.name = "/tmp/test_map.png"
+        mock_tmp_file.__enter__ = MagicMock(return_value=mock_tmp_file)
+        mock_tmp_file.__exit__ = MagicMock(return_value=None)
+        mock_tempfile.return_value = mock_tmp_file
+
+        process_map_extraction.apply(
+            args=[filename, file_bytes, project_id, map_id],
+            kwargs={
+                "enable_color_extraction": True,
+                "enable_shapes_extraction": False,
+                "enable_text_extraction": False,
+                "imposed_click_positions": imposed_positions,
+                "imposed_colors_names": imposed_names,
+                "imposed_sampling_radii": imposed_radii,
+            },
+        ).get(timeout=20)
+
+    mock_extract_colors.assert_called_once()
+    _, call_kwargs = mock_extract_colors.call_args
+    assert call_kwargs["imposed_click_positions"] == imposed_positions
+    assert call_kwargs["imposed_colors_names"] == imposed_names
+    assert call_kwargs["imposed_sampling_radii"] == imposed_radii
 
 
 def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):

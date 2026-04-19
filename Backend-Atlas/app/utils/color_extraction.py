@@ -422,6 +422,7 @@ def extract_colors(
     legend_shapes: Optional[List[Dict]] = None,
     imposed_click_positions: Optional[List[Tuple[float, float]]] = None,
     imposed_colors_names: Optional[List[Optional[str]]] = None,
+    imposed_sampling_radii: Optional[List[int]] = None,
     # -----------------------------
     # Mask construction (pixel assignment)
     # -----------------------------
@@ -482,8 +483,16 @@ def extract_colors(
         # rgb is the preprocessed float [0,1] image; sample_color_at accepts both
         # float and uint8 inputs.
         sampled_rgb: List[Tuple[int, int, int]] = []
-        for nx, ny in imposed_click_positions:
-            result = sample_color_at(rgb, nx, ny, radius_px=sampling_radius)
+        for idx, (nx, ny) in enumerate(imposed_click_positions):
+            radius_px = sampling_radius
+            if imposed_sampling_radii and idx < len(imposed_sampling_radii):
+                try:
+                    radius_px = int(imposed_sampling_radii[idx])
+                except (TypeError, ValueError):
+                    radius_px = sampling_radius
+            radius_px = max(1, min(200, radius_px))
+
+            result = sample_color_at(rgb, nx, ny, radius_px=radius_px)
             if result is not None:
                 r, g, b = result["rgb"]
                 sampled_rgb.append((int(r), int(g), int(b)))

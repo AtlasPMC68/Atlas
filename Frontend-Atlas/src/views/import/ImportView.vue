@@ -281,7 +281,8 @@ const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, n
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
 const legendBounds = ref<LegendBounds | null>(null);
-const pickedColors = ref<{ x: number; y: number; name: string }[]>([]);
+type ImposedColor = { x: number; y: number; name: string; radius: number };
+const pickedColors = ref<ImposedColor[]>([]);
 const pendingLegendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const legendReturnStep = ref<number>(2);
@@ -463,7 +464,9 @@ function handleColorPickerClose() {
   currentStep.value = 5;
 }
 
-async function handleColorPickerConfirmed(colors: { x: number; y: number; name: string }[]) {
+async function handleColorPickerConfirmed(
+  colors: { x: number; y: number; name: string; radius: number }[],
+) {
   showColorPickerModal.value = false;
   pickedColors.value = colors;
   await submitImportWithGeoref(pendingLegendBounds.value);

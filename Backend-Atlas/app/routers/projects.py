@@ -329,6 +329,7 @@ async def upload_and_process_map(
     # Parse optional user-picked click positions as [{"x": 0.5, "y": 0.3, "name": "..."}, ...]
     imposed_click_positions = None
     imposed_colors_names = None
+    imposed_sampling_radii = None
     if imposed_colors:
         try:
             parsed_colors = json.loads(imposed_colors)
@@ -336,6 +337,7 @@ async def upload_and_process_map(
                 raise ValueError("imposed_colors must be a JSON array")
             imposed_click_positions = []
             imposed_colors_names = []
+            imposed_sampling_radii = []
             for entry in parsed_colors:
                 if not isinstance(entry, dict) or "x" not in entry or "y" not in entry:
                     raise ValueError(
@@ -344,15 +346,22 @@ async def upload_and_process_map(
                 x, y = float(entry["x"]), float(entry["y"])
                 if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
                     raise ValueError("x and y must be normalised floats in [0, 1]")
+
+                radius_raw = entry.get("radius", 20)
+                radius = int(float(radius_raw))
+                if radius < 1 or radius > 200:
+                    raise ValueError("radius must be an int in [1, 200]")
+
                 imposed_click_positions.append((x, y))
                 imposed_colors_names.append(str(entry.get("name", "")).strip() or None)
+                imposed_sampling_radii.append(radius)
         except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid imposed_colors payload: {e}",
             )
     logger.info(
-        f"imposed_click_positions: {imposed_click_positions}, imposed_colors_names: {imposed_colors_names}"
+        f"imposed_click_positions: {imposed_click_positions}, imposed_colors_names: {imposed_colors_names}, imposed_sampling_radii: {imposed_sampling_radii}"
     )
     file_content = await file.read()
 
@@ -379,6 +388,7 @@ async def upload_and_process_map(
             legend_bounds=legend_bounds_dict,
             imposed_click_positions=imposed_click_positions,
             imposed_colors_names=imposed_colors_names,
+            imposed_sampling_radii=imposed_sampling_radii,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 

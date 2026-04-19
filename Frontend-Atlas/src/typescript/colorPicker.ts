@@ -2,16 +2,18 @@ export interface PickedColor {
   hex: string;
   rgb: [number, number, number];
   name: string;
-  displayX: number;
-  displayY: number;
+  stageX: number;
+  stageY: number;
   normalizedX: number;
   normalizedY: number;
+  sampleRadiusPx: number;
 }
 
 export interface PendingClick {
   id: number;
-  displayX: number;
-  displayY: number;
+  stageX: number;
+  stageY: number;
+  sampleRadiusPx: number;
 }
 
 export interface SampleColorResponse {

@@ -65,6 +65,7 @@ def process_map_extraction(
     enable_text_extraction: bool = False,
     imposed_click_positions: list | None = None,
     imposed_colors_names: list | None = None,
+    imposed_sampling_radii: list | None = None,
 ):
     try:
         # Step 1: temp save
@@ -238,6 +239,12 @@ def process_map_extraction(
                 else None
             )
 
+            imposed_sampling_radii_ints = (
+                [int(r) for r in imposed_sampling_radii]
+                if imposed_sampling_radii
+                else None
+            )
+
             # If the frontend provided a legend box but shapes extraction was disabled,
             # we still need legend shapes to perform legend-based color extraction.
             if (
@@ -278,6 +285,7 @@ def process_map_extraction(
                     legend_shapes=legends_shapes if legends_shapes else None,
                     imposed_click_positions=imposed_click_positions_tuples,
                     imposed_colors_names=imposed_colors_names,
+                    imposed_sampling_radii=imposed_sampling_radii_ints,
                 )
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])

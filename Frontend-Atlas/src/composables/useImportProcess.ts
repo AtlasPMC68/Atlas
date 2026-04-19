@@ -11,7 +11,7 @@ type ExtractionOptions = {
   enableColorExtraction?: boolean;
   enableShapesExtraction?: boolean;
   enableTextExtraction?: boolean;
-  imposedColors?: { x: number; y: number; name: string }[];
+  imposedColors?: { x: number; y: number; name: string; radius: number }[];
 };
 
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
@@ -102,7 +102,23 @@ export function useImportProcess() {
         String(options.enableTextExtraction ?? false),
       );
       if (options.imposedColors && options.imposedColors.length > 0) {
-        formData.append("imposed_colors", JSON.stringify(options.imposedColors.map((c) => ({ x: c.x, y: c.y, name: c.name }))));
+        formData.append(
+          "imposed_colors",
+          JSON.stringify(
+            options.imposedColors.map((c) => {
+              const rawRadius = Number(c.radius);
+              const radius = Number.isFinite(rawRadius)
+                ? Math.max(1, Math.min(200, Math.round(rawRadius)))
+                : 20;
+              return {
+                x: c.x,
+                y: c.y,
+                name: c.name,
+                radius,
+              };
+            }),
+          ),
+        );
       }
     }
 
