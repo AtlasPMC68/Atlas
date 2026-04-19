@@ -360,9 +360,6 @@ async def upload_and_process_map(
                 status_code=400,
                 detail=f"Invalid imposed_colors payload: {e}",
             )
-    logger.info(
-        f"imposed_click_positions: {imposed_click_positions}, imposed_colors_names: {imposed_colors_names}, imposed_sampling_radii: {imposed_sampling_radii}"
-    )
     file_content = await file.read()
 
     if len(file_content) > MAX_FILE_SIZE:

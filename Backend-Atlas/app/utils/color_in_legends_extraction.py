@@ -28,13 +28,27 @@ def sample_color_at(
         image_rgb = (np.clip(image_rgb, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
 
     h, w = image_rgb.shape[:2]
-    cx = int(round(x_norm * w))
-    cy = int(round(y_norm * h))
 
-    x1 = max(0, cx - radius_px)
-    x2 = min(w, cx + radius_px + 1)
-    y1 = max(0, cy - radius_px)
-    y2 = min(h, cy + radius_px + 1)
+    # Map normalized coords into valid pixel indices.
+    # Using (w-1)/(h-1) ensures x_norm==1.0 maps to the last pixel, not w/h.
+    if w <= 0 or h <= 0:
+        return None
+
+    cx = int(round(x_norm * (w - 1))) if w > 1 else 0
+    cy = int(round(y_norm * (h - 1))) if h > 1 else 0
+    cx = max(0, min(w - 1, cx))
+    cy = max(0, min(h - 1, cy))
+
+    try:
+        radius_px_int = int(radius_px)
+    except (TypeError, ValueError):
+        radius_px_int = 20
+    radius_px_int = max(0, radius_px_int)
+
+    x1 = max(0, cx - radius_px_int)
+    x2 = min(w, cx + radius_px_int + 1)
+    y1 = max(0, cy - radius_px_int)
+    y2 = min(h, cy + radius_px_int + 1)
 
     roi = image_rgb[y1:y2, x1:x2]
     if roi.size == 0:

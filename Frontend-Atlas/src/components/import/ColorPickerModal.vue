@@ -291,15 +291,23 @@ watch(
 );
 
 function onDialogClose() {
-  if (closeReason !== "success" && closeReason !== "programmatic") {
+  const returnValue = modalRef.value?.returnValue;
+
+  // We emit "close" for user-driven closes (✕ / ESC / native cancel),
+  // but not when we close programmatically in response to prop changes.
+  const isProgrammaticClose = returnValue === "programmatic";
+  const isSuccessClose = closeReason === "success" || returnValue === "success";
+
+  if (!isProgrammaticClose && !isSuccessClose) {
     emit("close");
   }
+
   closeReason = "programmatic";
 }
 
 function requestClose() {
   closeReason = "cancel";
-  if (modalRef.value?.open) modalRef.value.close();
+  if (modalRef.value?.open) modalRef.value.close("cancel");
 }
 
 function onImageLoad() {
@@ -369,6 +377,7 @@ async function sampleAtEvent(event: MouseEvent) {
 
   try {
     const formData = new FormData();
+    modalRef.value?.close("programmatic");
     formData.append("file", props.imageFile);
     formData.append("x", String(pos.normalized.x));
     formData.append("y", String(pos.normalized.y));
@@ -440,6 +449,6 @@ function onConfirm() {
       radius: c.sampleRadiusPx,
     })),
   );
-  if (modalRef.value?.open) modalRef.value.close();
+  if (modalRef.value?.open) modalRef.value.close("success");
 }
 </script>
