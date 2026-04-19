@@ -64,7 +64,13 @@ def test_process_map_extraction(real_image_np):
 
     mock_ocr_result = [([0, 0], "Hello World", 0.99), ([1, 1], "World Map", 0.95)]
     mock_colors = get_mock_color_extraction()
-    mock_shapes = {"circles": 1, "lines": 5, "normalized_features": []}
+    # Include at least one legend shape so color extraction isn't skipped.
+    mock_shapes = {
+        "circles": 1,
+        "lines": 5,
+        "normalized_features": [],
+        "shapes": [{"isLegend": True}],
+    }
 
     with (
         patch("app.tasks.process_map_extraction.update_state") as mock_update_state,
@@ -221,8 +227,8 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
 
 
 def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
-    """When imposed_click_positions is omitted, extract_colors must receive None
-    for both imposed kwargs."""
+    """When imposed_click_positions is omitted and no legend shapes are available,
+    color extraction is skipped and extract_colors is not called."""
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
     project_id = str(uuid.uuid4())
@@ -259,7 +265,4 @@ def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
             },
         ).get(timeout=20)
 
-    mock_extract_colors.assert_called_once()
-    _, call_kwargs = mock_extract_colors.call_args
-    assert call_kwargs["imposed_click_positions"] is None
-    assert call_kwargs["imposed_colors_names"] is None
+    mock_extract_colors.assert_not_called()

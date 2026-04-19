@@ -14,7 +14,7 @@
 
       <p class="text-sm text-base-content/70">
         Cliquez sur les zones colorées de la carte pour sélectionner les couleurs
-        à extraire. Sautez cette étape pour utiliser la détection automatique.
+        à extraire. Vous devez sélectionner au moins une couleur pour continuer.
       </p>
 
       <div class="border rounded-md overflow-hidden">
@@ -59,40 +59,42 @@
       </div>
 
       <!-- Picked color list with editable names -->
-      <div v-if="pickedColors.length > 0" class="flex flex-col gap-2">
+      <div v-if="pickedColors.length > 0" class="flex flex-col gap-2 min-h-0">
         <span class="text-sm font-medium">Couleurs sélectionnées :</span>
-        <div
-          v-for="(color, index) in pickedColors"
-          :key="`row-${index}`"
-          class="flex items-center gap-3 bg-base-200 rounded-lg px-3 py-2"
-        >
-          <!-- Color dot -->
+        <div class="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
           <div
-            class="w-8 h-8 rounded-full border border-base-300 shrink-0 shadow-sm"
-            :style="{ backgroundColor: color.hex }"
-          />
-          <!-- Hex label -->
-          <span class="text-xs font-mono text-base-content/50 w-16 shrink-0">{{ color.hex }}</span>
-          <!-- Editable name -->
-          <input
-            v-model="color.name"
-            type="text"
-            class="input input-sm input-bordered flex-1 min-w-0"
-            placeholder="Nom de la zone…"
-          />
-          <!-- Remove -->
-          <button
-            class="btn btn-sm btn-ghost btn-circle shrink-0"
-            type="button"
-            @click="removeColor(index)"
+            v-for="(color, index) in pickedColors"
+            :key="`row-${index}`"
+            class="flex items-center gap-3 bg-base-200 rounded-lg px-3 py-2"
           >
-            ✕
-          </button>
+            <!-- Color dot -->
+            <div
+              class="w-8 h-8 rounded-full border border-base-300 shrink-0 shadow-sm"
+              :style="{ backgroundColor: color.hex }"
+            />
+            <!-- Hex label -->
+            <span class="text-xs font-mono text-base-content/50 w-16 shrink-0">{{ color.hex }}</span>
+            <!-- Editable name -->
+            <input
+              v-model="color.name"
+              type="text"
+              class="input input-sm input-bordered flex-1 min-w-0"
+              placeholder="Nom de la zone…"
+            />
+            <!-- Remove -->
+            <button
+              class="btn btn-sm btn-ghost btn-circle shrink-0"
+              type="button"
+              @click="removeColor(index)"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       </div>
 
       <p v-else class="text-sm text-base-content/50 italic">
-        Aucune couleur sélectionnée — la détection automatique sera utilisée si vous sautez l'étape.
+        Aucune couleur sélectionnée — sélectionnez au moins une couleur pour continuer.
       </p>
 
       <p v-if="sampleError" class="text-sm text-error">{{ sampleError }}</p>
@@ -100,9 +102,6 @@
       <div class="modal-action">
         <button class="btn btn-ghost" type="button" @click="requestClose">
           Annuler
-        </button>
-        <button class="btn btn-outline" type="button" @click="onSkip">
-          Sauter l'étape
         </button>
         <button
           class="btn btn-primary"
@@ -119,30 +118,12 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
-import keycloak from "../../keycloak";
-
-interface PickedColor {
-  hex: string;
-  rgb: [number, number, number];
-  name: string;
-  displayX: number;
-  displayY: number;
-  normalizedX: number;
-  normalizedY: number;
-}
-
-interface PendingClick {
-  id: number;
-  displayX: number;
-  displayY: number;
-}
-
-interface SampleColorResponse {
-  hex: string;
-  rgb: [number, number, number];
-  lab: [number, number, number];
-  name: string;
-}
+import { apiFetch } from "../../utils/api";
+import type {
+  PendingClick,
+  PickedColor,
+  SampleColorResponse,
+} from "../../typescript/colorPicker";
 
 const props = withDefaults(
   defineProps<{
@@ -155,7 +136,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "skip"): void;
   (e: "confirmed", colors: { x: number; y: number; name: string }[]): void;
 }>();
 
@@ -281,14 +261,10 @@ async function onContainerClick(event: MouseEvent) {
     formData.append("y", String(pos.normalized.y));
     formData.append("radius", "20");
 
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/projects/sample-color`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-        body: formData,
-      },
-    );
+    const response = await apiFetch("/projects/sample-color", {
+      method: "POST",
+      body: formData,
+    });
 
     if (!response.ok) {
       throw new Error("Échec de l'échantillonnage de la couleur");
@@ -316,12 +292,6 @@ async function onContainerClick(event: MouseEvent) {
 
 function removeColor(index: number) {
   pickedColors.value.splice(index, 1);
-}
-
-function onSkip() {
-  closeReason = "success";
-  emit("skip");
-  if (modalRef.value?.open) modalRef.value.close();
 }
 
 function onConfirm() {

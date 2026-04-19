@@ -161,7 +161,9 @@ def process_map_extraction(
 
                     try:
                         asyncio.run(
-                            persist_city_feature(project_id, map_id, city_feature_collection)
+                            persist_city_feature(
+                                project_id, map_id, city_feature_collection
+                            )
                         )
                     except Exception as e:
                         logger.error(f"Failed to persist city token '{tok}': {e}")
@@ -199,14 +201,18 @@ def process_map_extraction(
                     georef_shape_features = georeference_features_with_sift_points(
                         shape_pixel_features, pixel_points, geo_points_lonlat
                     )
-                    asyncio.run(persist_features(project_id, map_id, georef_shape_features))
+                    asyncio.run(
+                        persist_features(project_id, map_id, georef_shape_features)
+                    )
                 except Exception as e:
                     logger.error(
                         f"SIFT georeferencing step failed for shapes {map_id}: {e}",
                         exc_info=True,
                     )
             elif shape_normalized_features:
-                asyncio.run(persist_features(project_id, map_id, shape_normalized_features))
+                asyncio.run(
+                    persist_features(project_id, map_id, shape_normalized_features)
+                )
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}
@@ -226,15 +232,29 @@ def process_map_extraction(
                 s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)
             ]
 
-            color_result = extract_colors(
-                tmp_file_path,
-                debug=False,
-                legend_shapes=legends_shapes if legends_shapes else None,
-                imposed_click_positions=[tuple(c) for c in imposed_click_positions]
+            imposed_click_positions_tuples = (
+                [tuple(c) for c in imposed_click_positions]
                 if imposed_click_positions
-                else None,
-                imposed_colors_names=imposed_colors_names,
+                else None
             )
+
+            if not imposed_click_positions_tuples and not legends_shapes:
+                logger.info(
+                    "[DEBUG] Color extraction skipped - no imposed colors provided"
+                )
+                color_result = {
+                    "normalized_features": [],
+                    "pixel_features": [],
+                    "masks": {},
+                }
+            else:
+                color_result = extract_colors(
+                    tmp_file_path,
+                    debug=False,
+                    legend_shapes=legends_shapes if legends_shapes else None,
+                    imposed_click_positions=imposed_click_positions_tuples,
+                    imposed_colors_names=imposed_colors_names,
+                )
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])
 

@@ -178,62 +178,6 @@ def compute_lab(rgb: np.ndarray) -> np.ndarray:
     return rgb2lab(rgb_f)
 
 
-def dominant_bins_lab(
-    lab: np.ndarray,
-    opaque_mask: np.ndarray,
-    top_n: int,
-    bin_L: float,
-    bin_a: float,
-    bin_b: float,
-) -> List[Dict]:
-    """
-    Find frequent LAB bins using 3D quantization (binning).
-    Returns a list of dicts with bin_id, ratio, count, and lab_center.
-    """
-    lab_px = lab[opaque_mask]  # (N, 3)
-
-    Lq = np.floor(lab_px[:, 0] / bin_L).astype(np.int32)
-    aq = np.floor((lab_px[:, 1] + 128.0) / bin_a).astype(np.int32)
-    bq = np.floor((lab_px[:, 2] + 128.0) / bin_b).astype(np.int32)
-
-    # Pack (Lq, aq, bq) into a single integer for fast counting.
-    # Assumption: aq and bq stay < 1000
-    ids = (Lq * 1_000_000) + (aq * 1_000) + bq
-
-    unique_ids, counts = np.unique(ids, return_counts=True)
-    ratios = counts / counts.sum()
-
-    order = np.argsort(-ratios)
-    unique_ids = unique_ids[order]
-    counts = counts[order]
-    ratios = ratios[order]
-
-    dom: List[Dict] = []
-    for k in range(min(top_n, len(unique_ids))):
-        uid = int(unique_ids[k])
-
-        Lq_k = uid // 1_000_000
-        aq_k = (uid % 1_000_000) // 1_000
-        bq_k = uid % 1_000
-
-        # Bin center in LAB
-        L_center = (Lq_k + 0.5) * bin_L
-        a_center = (aq_k + 0.5) * bin_a - 128.0
-        b_center = (bq_k + 0.5) * bin_b - 128.0
-
-        dom.append(
-            {
-                "bin_id": uid,
-                "ratio": float(ratios[k]),
-                "count": int(counts[k]),
-                "lab_center": (float(L_center), float(a_center), float(b_center)),
-                "bin_index": (int(Lq_k), int(aq_k), int(bq_k)),
-            }
-        )
-
-    return dom
-
-
 def prepare_imposed_dominants(
     imposed_colors: List[Tuple[int, int, int]],
     names: Optional[List[Optional[str]]] = None,
@@ -262,135 +206,6 @@ def prepare_imposed_dominants(
         )
 
     return imposed_entries
-
-
-def _lab_center_as_array(entry: Dict) -> np.ndarray:
-    return np.array(entry["lab_center"], dtype=np.float64).reshape(1, 1, 3)
-
-
-def _min_deltaE_to_group(entry: Dict, group: List[Dict]) -> float:
-    if not group:
-        return float("inf")
-
-    entry_lab = _lab_center_as_array(entry)
-    return min(
-        float(deltaE_ciede2000(entry_lab, _lab_center_as_array(g))[0, 0]) for g in group
-    )
-
-
-def select_dominants_and_accents(
-    dominant_ratio,
-    accent_min_ratio,
-    dominant_min_deltaE_from_existing,
-    accent_min_deltaE_from_dominants,
-    accent_min_deltaE_from_accents,
-    bins: List[Dict],
-    imposed_dominants: Optional[List[Dict]] = None,
-    min_accents_fallback: Optional[int] = None,
-) -> Dict[str, List[Dict]]:
-    """
-    Select colors in 2 levels:
-    - imposed_dominants are always kept as dominants
-    - auto dominants are selected from bins if large enough and far from existing dominants
-    - accents are selected from remaining bins if far enough from dominants and accents
-
-    Returns:
-        {
-            "dominants": [...],
-            "accents": [...],
-            "selected": [...]
-        }
-    """
-    if imposed_dominants is None:
-        imposed_dominants = []
-
-    if not bins and not imposed_dominants:
-        return {
-            "dominants": [],
-            "accents": [],
-            "selected": [],
-        }
-
-    bins = sorted(bins, key=lambda e: -e["ratio"])
-
-    # 1) Start with imposed colors as dominants
-    dominants: List[Dict] = [dict(d) for d in imposed_dominants]
-    dominant_ids = {d["bin_id"] for d in dominants if d.get("bin_id") is not None}
-
-    # 2) Add auto-dominants from bins
-    for b in bins:
-        if b["ratio"] < dominant_ratio:
-            continue
-
-        if b["bin_id"] in dominant_ids:
-            continue
-
-        candidate = dict(b)
-        min_dE_existing = _min_deltaE_to_group(candidate, dominants)
-
-        if min_dE_existing >= dominant_min_deltaE_from_existing:
-            candidate["source"] = "bin"
-            candidate["kind"] = "dominant"
-            candidate["min_dE_to_existing_dominants"] = float(min_dE_existing)
-            dominants.append(candidate)
-            dominant_ids.add(candidate["bin_id"])
-
-    # 3) Select accents from remaining bins
-    accents: List[Dict] = []
-    selected_ids = set(dominant_ids)
-
-    for b in bins:
-        if b["bin_id"] in selected_ids:
-            continue
-        if b["ratio"] < accent_min_ratio:
-            continue
-
-        candidate = dict(b)
-
-        min_dE_dom = _min_deltaE_to_group(candidate, dominants)
-        min_dE_acc = _min_deltaE_to_group(candidate, accents)
-
-        if (
-            min_dE_dom >= accent_min_deltaE_from_dominants
-            and min_dE_acc >= accent_min_deltaE_from_accents
-        ):
-            candidate["source"] = "bin"
-            candidate["kind"] = "accent"
-            candidate["min_dE_to_dominants"] = float(min_dE_dom)
-            candidate["min_dE_to_accents"] = float(min_dE_acc)
-            accents.append(candidate)
-            selected_ids.add(candidate["bin_id"])
-
-    # 4) Optional fallback for accents
-    if min_accents_fallback is not None and len(accents) < min_accents_fallback:
-        for b in bins:
-            if len(accents) >= min_accents_fallback:
-                break
-            if b["bin_id"] in selected_ids:
-                continue
-
-            candidate = dict(b)
-            min_dE_dom = _min_deltaE_to_group(candidate, dominants)
-            min_dE_acc = _min_deltaE_to_group(candidate, accents)
-
-            relaxed_dom = accent_min_deltaE_from_dominants * 0.5
-            relaxed_acc = accent_min_deltaE_from_accents * 0.5
-
-            if min_dE_dom >= relaxed_dom and min_dE_acc >= relaxed_acc:
-                candidate["source"] = "bin"
-                candidate["kind"] = "accent"
-                candidate["min_dE_to_dominants"] = float(min_dE_dom)
-                candidate["min_dE_to_accents"] = float(min_dE_acc)
-                accents.append(candidate)
-                selected_ids.add(candidate["bin_id"])
-
-    dominants.sort(key=lambda e: -float(e.get("ratio", 0.0)))
-    accents.sort(key=lambda e: -float(e.get("ratio", 0.0)))
-
-    return {
-        "dominants": dominants,
-        "accents": accents,
-    }
 
 
 def build_exclusive_masks_by_nearest_center(
@@ -608,33 +423,6 @@ def extract_colors(
     imposed_click_positions: Optional[List[Tuple[float, float]]] = None,
     imposed_colors_names: Optional[List[Optional[str]]] = None,
     # -----------------------------
-    # LAB binning
-    # -----------------------------
-    top_n_bins: int = 200,
-    # Maximum number of LAB bins kept after quantization.
-    # Higher value → more candidate colors discovered (useful for complex maps).
-    # Lower value → faster, but may miss rare colors (e.g. small symbols, stars).
-    bin_L: float = 4.0,
-    # Quantization step on the L (lightness) axis.
-    # Larger value → bins cover wider lightness range (fewer, broader colors).
-    # Smaller value → more precise separation of light/dark variants.
-    bin_a: float = 8.0,
-    # Quantization step on the a (green–red) axis.
-    # Larger value → merge nearby reds/greens into same bin.
-    # Smaller value → finer separation of hue variations.
-    bin_b: float = 8.0,
-    # Quantization step on the b (blue–yellow) axis.
-    # Larger value → merge nearby blues/yellows.
-    # Smaller value → more sensitive to color differences.
-    # -----------------------------
-    # Color selection logic (if no imposed colors are provided)
-    # -----------------------------
-    dominant_ratio: float = 0.01,  #  Minimum pixel ratio for a color to be considered dominant.
-    accent_min_ratio: float = 0.0001,  #  Minimum ratio for a non-dominant (accent) color to be considered.
-    min_colors_fallback: Optional[
-        int
-    ] = None,  # If set, ensures at least this many colors are selected.
-    # -----------------------------
     # Mask construction (pixel assignment)
     # -----------------------------
     mask_deltaE: float = 5.0,
@@ -651,9 +439,7 @@ def extract_colors(
 ) -> Dict:
     """
     Extract exclusive color layers using:
-    - LAB binning (frequency estimate)
-    - Dominants: ratio >= dominant_ratio
-    - Accents: low ratio but far (ΔE) from dominants
+    - Imposed colors (from click positions or legend-derived colors)
     - Exclusive assignment: each pixel belongs to exactly one selected color (nearest ΔE)
 
     Returns:
@@ -712,37 +498,8 @@ def extract_colors(
     else:
         imposed_dominants = []
 
-    if imposed_dominants:
-        # If colors are imposed, extract only those colors.
-        dominants = imposed_dominants
-    else:
-        # 4) Dominant LAB bins (computed on opaque pixels)
-        dom = dominant_bins_lab(
-            lab,
-            opaque_mask,
-            top_n=top_n_bins,
-            bin_L=bin_L,
-            bin_a=bin_a,
-            bin_b=bin_b,
-        )
-
-        # 5) Select colors (dominants + accents)
-        selection = select_dominants_and_accents(
-            bins=dom,
-            imposed_dominants=[],
-            dominant_ratio=dominant_ratio,
-            accent_min_ratio=accent_min_ratio,
-            dominant_min_deltaE_from_existing=12.0,  # 0.5 * std gloabal
-            accent_min_deltaE_from_dominants=15.0,  # 0.2 * on color variance
-            accent_min_deltaE_from_accents=12.0,
-            min_accents_fallback=min_colors_fallback,
-        )
-        # TODO: Try using dynamic variables
-        dominants = selection["dominants"]
-        accents = selection[
-            "accents"
-        ]  # accents are selected from remaining bins if far enough from dominants. Can be used for shape extraction.
-        # TODO: Remove accents or use it for small detail extraction
+    # Colors are always imposed (click positions or legend-derived colors).
+    dominants = imposed_dominants
 
     masks: Dict[str, str] = {}
     normalized_features: List[Dict] = []
