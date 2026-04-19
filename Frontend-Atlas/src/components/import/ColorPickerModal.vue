@@ -118,6 +118,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
+import { showAlert } from "../../composables/useAlert";
 import { apiFetch } from "../../utils/api";
 import type {
   PendingClick,
@@ -271,6 +272,26 @@ async function onContainerClick(event: MouseEvent) {
     }
 
     const data: SampleColorResponse = await response.json();
+
+    const normalizedReturnedName = (data.name ?? "").trim().toLowerCase();
+    const normalizedReturnedHex = (data.hex ?? "").trim().toLowerCase();
+    const alreadyPicked = pickedColors.value.some((c) => {
+      const normalizedExistingName = (c.name ?? "").trim().toLowerCase();
+      const normalizedExistingHex = (c.hex ?? "").trim().toLowerCase();
+      return (
+        (normalizedReturnedName.length > 0 &&
+          normalizedExistingName === normalizedReturnedName) ||
+        (normalizedReturnedHex.length > 0 &&
+          normalizedExistingHex === normalizedReturnedHex)
+      );
+    });
+
+    if (alreadyPicked) {
+      const msg = "Couleur déjà sélectionnée. Cliquez sur une autre zone.";
+      sampleError.value = msg;
+      showAlert("error", msg);
+      return;
+    }
 
     pickedColors.value.push({
       hex: data.hex,
