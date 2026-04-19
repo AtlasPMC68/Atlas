@@ -1,36 +1,51 @@
 <template>
-  <div class="h-screen-minus-header w-full bg-base-100 flex flex-col overflow-hidden">
+  <div
+    class="h-screen-minus-header w-full bg-base-100 flex flex-col overflow-hidden"
+  >
     <div class="flex flex-1 min-h-0 overflow-hidden">
-      <div class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col">
+      <div
+        class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+      >
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
           @toggle-feature="toggleFeatureVisibility"
-          @open-add-image-feature-dialog="addFeatureImageDialog?.showModal()"
+          @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @add-map="openAddMapDialog"
           @update-feature="onSaveMap"
         />
       </div>
-
-      <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <MapGeoJSON
-          ref="mapGeoJsonRef"
-          class="flex-1 min-h-0 w-full"
-          :features="filteredFeatures"
-          :selected-year="selectedYear"
-          :feature-visibility="featureVisibility"
-          :map-periods="mapPeriods"
-          :project-id="projectId || projectRouteId || ''"
-          @features-loaded="handleFeaturesLoaded"
-          @draw-create="handleDrawChange"
-          @draw-update="handleDrawChange"
-          @draw-delete="handleDrawChange"
-          @draw-delete-id="onDeleteFeature"
-          @map-ready="onMapReady"
-        />
-        <div class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300">
+      <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 relative min-h-0 h-full w-full">
+          <MapGeoJSON
+            ref="mapGeoJsonRef"
+            class="flex-1 min-h-0 w-full"
+            :features="filteredFeatures"
+            :feature-visibility="featureVisibility"
+            :selected-year="selectedYear"
+            :map-periods="mapPeriods"
+            :project-id="projectId || projectRouteId || ''"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            @draw-create="handleDrawChange"
+            @draw-update="handleDrawChange"
+            @draw-delete="handleDrawChange"
+            @map-ready="onMapReady"
+            @undo="onUndo"
+            @redo="onRedo"
+          />
+          <div class="absolute bottom-4 left-4 z-[1001]">
+            <Legend
+              :zone-features="zoneFeatures"
+              :feature-visibility="featureVisibility"
+            />
+          </div>
+        </div>
+        <div
+          class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+        >
           <div class="map-timeline-slider w-full min-w-0">
             <TimelineSlider
               v-model:year="selectedYear"
@@ -42,7 +57,9 @@
               :current-exact-date="selectedExactDate"
             />
           </div>
-          <div class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap">
+          <div
+            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
+          >
             <span>Filtrer par date</span>
             <input
               v-model="useTimelineFilter"
@@ -59,146 +76,34 @@
     <Alert />
   </div>
 
-  <dialog id="addFeatureImageDialog" ref="addFeatureImageDialog" class="modal">
-    <div class="modal-box">
-      <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
+  <AddImageDialog
+    ref="addFeatureImageDialogRef"
+    :is-adding="isAdding"
+    @submit="onAddFeatureImage"
+  />
 
-      <fieldset class="fieldset">
-        <input
-          ref="fileInputRef"
-          type="file"
-          class="file-input file-input-ghost"
-          accept="image/*"
-          @change="onFileChange"
-        />
-        <label class="label">Taille maximale de 10MB</label>
-      </fieldset>
-      <div class="modal-action">
-        <button
-          class="btn"
-          :disabled="isAdding"
-          @click="onCloseAddFeatureImageDialog"
-        >
-          Annuler
-        </button>
-        <button
-          class="btn btn-primary"
-          :disabled="isAdding || !selectedFile"
-          @click="onAddFeatureImage"
-        >
-          <span
-            v-if="isAdding"
-            class="loading loading-spinner loading-xs"
-          ></span>
-          <span v-else class="text-white">Ajouter</span>
-        </button>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isAdding">close</button>
-    </form>
-  </dialog>
+  <AddMapDialog
+    ref="addMapDialogRef"
+    :is-creating-map="isCreatingMap"
+    @submit="createMapForProject"
+  />
 
-  <dialog ref="addMapDialogRef" class="modal">
-    <div class="modal-box p-0">
-      <form @submit.prevent="createMapForProject">
-        <div class="card-body">
-          <h3 class="text-lg font-bold">Ajouter une carte au projet</h3>
-
-          <fieldset class="fieldset" :disabled="isCreatingMap">
-            <label class="label">Nom de la carte</label>
-            <input
-              v-model="newMapTitle"
-              type="text"
-              class="input"
-              placeholder="Ex: Carte politique de 1850"
-              required
-            />
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="label">Date debut</label>
-                <input
-                  v-if="!usePreciseDates"
-                  v-model.number="startYear"
-                  type="number"
-                  min="1"
-                  max="9999"
-                  class="input"
-                  placeholder="Ex: 1850"
-                  required
-                />
-                <input
-                  v-else
-                  v-model="startDate"
-                  type="date"
-                  class="input"
-                  required
-                />
-              </div>
-
-              <div>
-                <label class="label">Date fin</label>
-                <input
-                  v-if="!usePreciseDates"
-                  v-model.number="endYear"
-                  type="number"
-                  min="1"
-                  max="9999"
-                  class="input"
-                  placeholder="Ex: 1900"
-                />
-                <input
-                  v-else
-                  v-model="endDate"
-                  type="date"
-                  class="input"
-                />
-              </div>
-            </div>
-          </fieldset>
-          <label class="label cursor-pointer gap-2 mb-2">
-            <input
-              v-model="usePreciseDates"
-              type="checkbox"
-              class="checkbox checkbox-sm"
-            />
-            <span>Utiliser la date exacte</span>
-          </label>
-          <div class="flex justify-end gap-2 mt-6">
-            <button
-              type="button"
-              class="btn btn-ghost"
-              :disabled="isCreatingMap"
-              @click="addMapDialogRef?.close()"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              class="btn btn-primary"
-              :disabled="!newMapTitle.trim() || !hasValidImportDates() || isCreatingMap"
-            >
-              <span
-                v-if="isCreatingMap"
-                class="loading loading-spinner loading-xs"
-              ></span>
-              <span v-else>Creer et importer</span>
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isCreatingMap">close</button>
-    </form>
-  </dialog>
+  <CreateProjectDialog
+      ref="createProjectDialogRef"
+      @created="onProjectCreated"
+      @error="onCreateProjectError"
+      @closed="onCreateProjectDialogClosed"
+    />
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import AddImageDialog from "../components/add/AddImage.vue";
+import AddMapDialog from "../components/add/AddMap.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
+import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
 import type { SliderPeriod } from "../typescript/map";
@@ -208,19 +113,20 @@ import {
   prepareFeaturesForSave,
   snakeToCamel,
 } from "../utils/utils";
-import { yearToIsoStart, yearToIsoEnd, toYear } from "../utils/dateUtils";
+import { toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
-import { type Map as LeafletMap } from "leaflet";
+import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
-
-const handleDrawChange = (updatedFeatures: Feature[]) => {
-  features.value = updatedFeatures;
-  reconcileVisibility(updatedFeatures);
-};
+import { FeatureHistoryService } from "../services/FeatureHistoryService";
+import type {
+  CreatedProjectRef,
+  CreateProjectDialogExposed,
+} from "../typescript/project";
+import CreateProjectDialog from "../components/CreateProjectDialog.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -231,25 +137,30 @@ const projectId = ref<string | null>(null);
 const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
+  resetSelection: () => void;
+} | null>(null);
+const addMapDialogRef = ref<{
+  open: () => void;
+  close: () => void;
+} | null>(null);
+const addFeatureImageDialogRef = ref<{
+  open: () => void;
+  close: () => void;
 } | null>(null);
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
+const pendingDeletions = ref<string[]>([]);
+const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
-const addFeatureImageDialog = ref<HTMLDialogElement | null>(null);
-const addMapDialogRef = ref<HTMLDialogElement | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
-const newMapTitle = ref("");
-const startYear = ref<number | null>(null);
-const endYear = ref<number | null>(null);
-const startDate = ref<string>("");
-const endDate = ref<string>("");
-const usePreciseDates = ref(false);
-const selectedFile = ref<File | null>(null);
-const fileInputRef = ref<HTMLInputElement | null>(null);
 const mapPeriods = ref<MapPeriod[]>([]);
+
+const zoneFeatures = computed(() =>
+  filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
+);
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
@@ -257,23 +168,39 @@ const useTimelineFilter = ref(false);
 
 const enrichedPeriods = computed((): SliderPeriod[] =>
   mapPeriods.value
-    .map((p) => ({ ...p, startYear: toYear(p.startDate), endYear: toYear(p.endDate) }))
+    .map((p) => ({
+      ...p,
+      startYear: toYear(p.startDate),
+      endYear: toYear(p.endDate),
+    }))
     .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
 );
 
-const periodByMapId = computed(() => new Map(enrichedPeriods.value.map((p) => [p.id, p])));
+const periodByMapId = computed(
+  () => new Map(enrichedPeriods.value.map((p) => [p.id, p])),
+);
 
 const timelineMinYear = computed(() =>
-  enrichedPeriods.value.length ? Math.min(...enrichedPeriods.value.map((p) => p.startYear)) : 1400,
+  enrichedPeriods.value.length
+    ? Math.min(...enrichedPeriods.value.map((p) => p.startYear))
+    : 1400,
 );
 
 const timelineMaxYear = computed(() =>
-  enrichedPeriods.value.length ? Math.max(...enrichedPeriods.value.map((p) => p.endYear)) : new Date().getFullYear(),
+  enrichedPeriods.value.length
+    ? Math.max(...enrichedPeriods.value.map((p) => p.endYear))
+    : new Date().getFullYear(),
 );
 
 const timelineMarkerYears = computed(() => {
-  const markers = new Set<number>([timelineMinYear.value, timelineMaxYear.value]);
-  enrichedPeriods.value.forEach((p) => { markers.add(p.startYear); markers.add(p.endYear); });
+  const markers = new Set<number>([
+    timelineMinYear.value,
+    timelineMaxYear.value,
+  ]);
+  enrichedPeriods.value.forEach((p) => {
+    markers.add(p.startYear);
+    markers.add(p.endYear);
+  });
   return [...markers].sort((a, b) => a - b);
 });
 
@@ -306,51 +233,96 @@ function onExactDateChange(nextDate: string | null) {
   selectedExactDate.value = nextDate;
 }
 
-function getStartDateForImport(): string | null {
-  if (usePreciseDates.value) {
-    if (!startDate.value) return null;
-    const parsed = new Date(startDate.value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return startDate.value;
-  }
+const createProjectDialogRef = ref<CreateProjectDialogExposed | null>(null);
+const pendingCopiedFeatures = ref<Feature[] | null>(null);
+const shouldSaveAfterCopy = ref(false);
 
-  if (!startYear.value || startYear.value < 1 || startYear.value > 9999) {
-    return null;
+const currentMapTitle = ref<string | undefined>(undefined);
+const currentMapDescription = ref<string | undefined>(undefined);
+
+const featureHistoryService = new FeatureHistoryService(5);
+const canUndo = featureHistoryService.canUndo;
+const canRedo = featureHistoryService.canRedo;
+const trackingEnabled = featureHistoryService.trackingEnabled;
+
+function handleDrawChange(updatedFeatures: Feature[]) {
+  if (trackingEnabled.value) {
+    commitFeatureSnapshot(updatedFeatures);
+  } else {
+    applyFeatureSnapshot(updatedFeatures, false);
   }
-  return yearToIsoStart(startYear.value);
 }
 
-function getEndDateForImport(): string | null {
-  if (usePreciseDates.value) {
-    if (!endDate.value) return null;
-    const parsed = new Date(endDate.value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return endDate.value;
+function applyFeatureSnapshot(next: Feature[], track = true) {
+  const apply = () => {
+    features.value = next;
+    reconcileVisibility(next);
+
+    const currentUuidIds = new Set(
+      next
+        .map((feature) => String(feature.id))
+        .filter((id) => isUuid(id)),
+    );
+
+    pendingDeletions.value = [...persistedFeatureIds.value].filter(
+      (id) => !currentUuidIds.has(id),
+    );
+  };
+
+  if (track) {
+    apply();
+    return;
   }
 
-  if (!endYear.value || endYear.value < 1 || endYear.value > 9999) {
-    return null;
-  }
-  return yearToIsoEnd(endYear.value);
+  featureHistoryService.withoutTracking(apply);
 }
 
-function hasValidImportDates(): boolean {
-  const start = getStartDateForImport();
-  const end = getEndDateForImport();
-  if (!start || !end) return false;
-  return start <= end;
+function commitFeatureSnapshot(next: Feature[]) {
+  applyFeatureSnapshot(featureHistoryService.commit(features.value, next));
 }
 
-async function onAddFeatureImage() {
-  if (!selectedFile.value || !keycloak.token) {
-    onCloseAddFeatureImageDialog();
+function resetMapSelection() {
+  mapGeoJsonRef.value?.resetSelection();
+}
+
+function onUndo() {
+  if (!canUndo.value) return;
+  resetMapSelection();
+  applyFeatureSnapshot(featureHistoryService.undo(features.value), false);
+}
+
+function onRedo() {
+  if (!canRedo.value) return;
+  resetMapSelection();
+  applyFeatureSnapshot(featureHistoryService.redo(features.value), false);
+}
+
+function getImageNaturalSize(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: 1, height: 1 }); // fallback: square, backend will recompute
+    };
+    img.src = url;
+  });
+}
+
+async function onAddFeatureImage(file: File) {
+  if (!keycloak.token) {
+    addFeatureImageDialogRef.value?.close();
     return;
   }
 
   if (!projectId.value) {
     const resolved = await resolveRouteContext();
     if (!resolved || !projectId.value) {
-      onCloseAddFeatureImageDialog();
+      addFeatureImageDialogRef.value?.close();
       return;
     }
   }
@@ -358,10 +330,29 @@ async function onAddFeatureImage() {
   isAdding.value = true;
   try {
     const formData = new FormData();
-    formData.append("image", selectedFile.value);
+    formData.append("image", file);
+
+    // Spawn the image at the center of the user's current map view instead of [0,0].
+    // Use the same 16° height constant as the backend, preserving the image aspect ratio.
+    if (leafletMap.value) {
+      const LAT_SPAN = 16.0;
+      const { width, height } = await getImageNaturalSize(file);
+      // Divide by cos(lat) to correct for Mercator: longitude degrees get physically
+      // shorter away from the equator, so we need more of them to cover the same
+      // screen width. Without this, images appear horizontally squished at high latitudes.
+      const center = leafletMap.value.getCenter();
+      const latRad = center.lat * (Math.PI / 180);
+      const lngSpan = (LAT_SPAN * (width / height)) / Math.cos(latRad);
+      const bounds = [
+        [center.lat - LAT_SPAN / 2, center.lng - lngSpan / 2],
+        [center.lat + LAT_SPAN / 2, center.lng + lngSpan / 2],
+      ];
+      formData.append("bounds", JSON.stringify(bounds));
+    }
 
     const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
       method: "POST",
+      headers: { Authorization: `Bearer ${keycloak.token}` },
       body: formData,
     });
 
@@ -370,8 +361,7 @@ async function onAddFeatureImage() {
     }
 
     await loadInitialFeatures();
-    selectedFile.value = null;
-    onCloseAddFeatureImageDialog();
+    addFeatureImageDialogRef.value?.close();
   } catch (e) {
     console.error("Upload image failed:", e);
   } finally {
@@ -379,58 +369,63 @@ async function onAddFeatureImage() {
   }
 }
 
-function onMapReady(map: LeafletMap) {
+async function onMapReady(map: LeafletMap) {
   leafletMap.value = map;
 }
 
-function onCloseAddFeatureImageDialog() {
-  isAdding.value = false;
-  selectedFile.value = null;
-  if (fileInputRef.value) {
-    fileInputRef.value.value = "";
-  }
-  addFeatureImageDialog.value?.close();
-}
-
-function onFileChange() {
-  const input = fileInputRef.value;
-  selectedFile.value = input?.files?.[0] ?? null;
-}
-
-async function uploadMapThumbnail(): Promise<boolean> {
+async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
   if (!leafletMap.value || !keycloak.token) return false;
 
-  if (!projectId.value) {
+  const resolvedProjectId = targetProjectId ?? projectId.value;
+
+  if (!resolvedProjectId && !targetProjectId) {
     const resolved = await resolveRouteContext();
     if (!resolved) return false;
   }
-  if (!projectId.value) return false;
+
+  const uploadProjectId = resolvedProjectId ?? projectId.value;
+  if (!uploadProjectId) return false;
 
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
 
+  const removedLayers: L.Layer[] = [];
+
+  leafletMap.value.eachLayer((layer) => {
+    if (layer instanceof L.Marker && layer.options.icon instanceof L.DivIcon) {
+      removedLayers.push(layer);
+    }
+  });
+
+  removedLayers.forEach((layer) => leafletMap.value?.removeLayer(layer));
+
   return await new Promise<boolean>((resolve) => {
     leafletImage(leafletMap.value as LeafletMap, async (err, canvas) => {
-      if (err || !canvas) return resolve(false);
+      try {
+        if (err || !canvas) return resolve(false);
 
-      const blob = await new Promise<Blob | null>((r) =>
-        canvas.toBlob(r, "image/png"),
-      );
-      if (!blob) return resolve(false);
+        const blob = await new Promise<Blob | null>((r) =>
+          canvas.toBlob(r, "image/png"),
+        );
+        if (!blob) return resolve(false);
 
-      const formData = new FormData();
-      formData.append("image", blob);
+        const formData = new FormData();
+        formData.append("image", blob);
 
-      const res = await apiFetch(`/projects/${projectId.value}/thumbnail`, {
-        method: "POST",
-        body: formData,
-      });
+        const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!res.ok) {
-        console.error("Project thumbnail upload failed:", res.status);
+        if (!res.ok) {
+          console.error("Project thumbnail upload failed:", res.status);
+        }
+        resolve(res.ok);
+        resolve(res.ok);
+      } finally {
+        removedLayers.forEach((layer) => leafletMap.value?.addLayer(layer));
       }
-      resolve(res.ok);
     });
   });
 }
@@ -482,46 +477,16 @@ async function onDeleteFeature(
     onError?: (message?: string) => void;
   },
 ) {
-  if (!isUuid(featureId)) {
-    features.value = features.value.filter(
-      (feature) => feature.id !== featureId,
-    );
-    reconcileVisibility(features.value);
-    callbacks?.onSuccess?.();
-    return;
-  }
-
-  if (!currentUser.value) {
-    const message = "Utilisateur non authentifié.";
-    showAlert("error", message);
-    callbacks?.onError?.(message);
-    return;
-  }
-
-  if (!projectId.value) {
-    const resolved = await resolveRouteContext();
-    if (!resolved || !projectId.value) {
-      const message = "Projet introuvable pour supprimer cet élément.";
-      showAlert("error", message);
-      callbacks?.onError?.(message);
-      return;
-    }
-  }
-
   try {
-    const response = await apiFetch(
-      `/projects/${projectId.value}/features/${featureId}`,
-      { method: "DELETE" },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Error deleting feature: ${response.status}`);
-    }
-
-    features.value = features.value.filter(
+    const nextFeatures = features.value.filter(
       (feature) => feature.id !== featureId,
     );
-    reconcileVisibility(features.value);
+
+    if (trackingEnabled.value) {
+      commitFeatureSnapshot(nextFeatures);
+    } else {
+      applyFeatureSnapshot(nextFeatures, false);
+    }
 
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -534,27 +499,36 @@ async function resolveRouteContext(): Promise<boolean> {
   return loadProjectIdForMap();
 }
 
-function openAddMapDialog() {
-  newMapTitle.value = "";
-  startYear.value = null;
-  endYear.value = null;
-  startDate.value = "";
-  endDate.value = "";
-  usePreciseDates.value = false;
-  addMapDialogRef.value?.showModal();
+async function requireProjectId(): Promise<string> {
+  if (projectId.value) {
+    return projectId.value;
+  }
+
+  const resolved = await resolveRouteContext();
+  if (!resolved || !projectId.value) {
+    throw new Error("Can't find project.");
+  }
+
+  return projectId.value;
 }
 
-async function createMapForProject() {
-  if (!keycloak.token) return;
-  const targetProjectId = projectId.value || projectRouteId.value;
+function openAddMapDialog() {
+  addMapDialogRef.value?.open();
+}
 
-  if (!targetProjectId || !newMapTitle.value.trim()) {
+async function createMapForProject(formPayload: {
+  title: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
+  if (!keycloak.token) return;
+  const targetProjectId = projectId.value;
+
+  if (!targetProjectId || !formPayload.title.trim()) {
     return;
   }
-  const startDateForImport = getStartDateForImport();
-  const endDateForImport = getEndDateForImport();
-  if (!startDateForImport || !endDateForImport) return;
-  if (startDateForImport > endDateForImport) return;
+  if (formPayload.startDate > formPayload.endDate) return;
 
   isCreatingMap.value = true;
   try {
@@ -563,10 +537,10 @@ async function createMapForProject() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
         camelToSnake({
-          title: newMapTitle.value.trim(),
-          startDate: startDateForImport,
-          endDate: endDateForImport,
-          exactDate: usePreciseDates.value,
+          title: formPayload.title.trim(),
+          startDate: formPayload.startDate,
+          endDate: formPayload.endDate,
+          exactDate: formPayload.exactDate,
         }),
       ),
     });
@@ -577,9 +551,7 @@ async function createMapForProject() {
 
     const payload = snakeToCamel(await res.json()) as { mapId: string };
     addMapDialogRef.value?.close();
-    router.push(
-      `/televersement/${payload.mapId}?projectId=${targetProjectId}`,
-    );
+    router.push(`/televersement/${payload.mapId}?projectId=${targetProjectId}`);
   } catch (e) {
     console.error("Failed to create map for project:", e);
   } finally {
@@ -619,12 +591,54 @@ async function loadInitialFeatures() {
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
 
-    features.value = allFeatures;
-    reconcileVisibility(allFeatures);
+    persistedFeatureIds.value = new Set(
+      allFeatures
+        .map((feature) => String(feature.id))
+        .filter((id) => isUuid(id)),
+    );
+    applyFeatureSnapshot(featureHistoryService.reset(allFeatures), false);
+    pendingDeletions.value = [];
   } catch (e) {
     console.error("Failed to load initial map features:", e);
     showAlert("error", "Erreur lors du chargement des éléments de la carte.");
   }
+}
+
+async function loadCurrentMapInfo(): Promise<void> {
+  try {
+    const res = await apiFetch(`/projects/${projectId.value}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch map info: ${res.status}`);
+    }
+
+    const map = snakeToCamel(await res.json()) as {
+      title?: string;
+      description?: string;
+    };
+
+    currentMapTitle.value = map.title ?? undefined;
+    currentMapDescription.value = map.description ?? undefined;
+  } catch (err) {
+    console.error("Failed to load current map info:", err);
+    currentMapTitle.value = undefined;
+    currentMapDescription.value = undefined;
+  }
+}
+
+async function openCreateCopyDialog() {
+  await loadCurrentMapInfo();
+
+  createProjectDialogRef.value?.open({
+    title: currentMapTitle.value,
+    description: currentMapDescription.value,
+    isPrivate: true,
+  });
 }
 
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
@@ -633,14 +647,150 @@ function toggleFeatureVisibility(featureId: string, visible: boolean) {
   featureVisibility.value = next;
 }
 
-function handleFeaturesLoaded(_loadedFeatures: Feature[]) {
-  uploadMapThumbnail();
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    target.isContentEditable
+  );
 }
 
-const handleCtrlS = (e: KeyboardEvent) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+async function isProjectOwner(targetProjectId: string): Promise<boolean | null> {
+  if (!targetProjectId) {
+    showAlert(
+        "error",
+        "Impossible de vérifier la propriété, l'identifiant du projet est invalide.",
+      );
+    return null;
+  }
+
+  if (!keycloak.token) {
+    showAlert(
+        "error",
+        "Impossible de vérifier la propriété du projet, le jeton d'authentification est invalide.",
+      );
+    return null;
+  }
+
+  try {
+    const res = await apiFetch(`/projects/is-owner/${targetProjectId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${keycloak.token}`,
+      },
+    });
+
+    if (!res.ok) {
+      console.error(`Error checking project owner: ${res.status}`);
+
+      if (res.status === 401 || res.status === 403) {
+        showAlert(
+          "error",
+          "Votre session a expiré. Veuillez vous reconnecter.",
+        );
+        void keycloak.login({ redirectUri: window.location.href });
+        return null;
+      }
+
+      showAlert(
+        "error",
+        "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
+      );
+      return null;
+    }
+
+    const data = (await res.json()) as boolean;
+    return data === true;
+  } catch (err) {
+    console.error("Error checking project owner:", err);
+    showAlert(
+      "error",
+      "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
+    );
+    return null;
+  }
+}
+
+function onCreateProjectError(message: string) {
+  showAlert("error", message);
+}
+
+function onCreateProjectDialogClosed() {
+  pendingCopiedFeatures.value = null;
+  shouldSaveAfterCopy.value = false;
+}
+
+async function onProjectCreated(project: CreatedProjectRef | null) {
+  if (!project?.id) {
+    pendingCopiedFeatures.value = null;
+    shouldSaveAfterCopy.value = false;
+
+    showAlert(
+      "error",
+      "La nouvelle carte a été créée, mais aucun identifiant valide n'a été retourné.",
+    );
+    return;
+  }
+
+  const featuresToSave = pendingCopiedFeatures.value;
+
+  if (!featuresToSave) {
+    pendingCopiedFeatures.value = null;
+    shouldSaveAfterCopy.value = false;
+
+    showAlert("error", "Aucune donnée à copier vers la nouvelle carte.");
+    return;
+  }
+
+  try {
+    isSaving.value = true;
+
+    const targetProjectId = project.id;
+
+    await saveFeaturesToProject(targetProjectId, featuresToSave);
+
+    pendingCopiedFeatures.value = null;
+    shouldSaveAfterCopy.value = false;
+
+    await router.push(`/projet/${project.id}`);
+    showAlert("success", "Une copie de la carte a été créée.");
+  } catch (err) {
+    console.error("Error while saving copied map features:", err);
+    showAlert(
+      "error",
+      "La copie a été créée, mais la sauvegarde des éléments a échoué.",
+    );
+  } finally {
+    isSaving.value = false;
+  }
+}
+
+const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+  if (isEditableTarget(e.target)) {
+    return;
+  }
+
+  const isMod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  if (isMod && key === "s") {
     e.preventDefault();
     void onSaveMap();
+    return;
+  }
+
+  if (isMod && !e.shiftKey && key === "z") {
+    e.preventDefault();
+    onUndo();
+    return;
+  }
+
+  if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
+    e.preventDefault();
+    onRedo();
   }
 };
 
@@ -648,8 +798,14 @@ onMounted(async () => {
   await fetchCurrentUser();
   await resolveRouteContext();
   await loadProjectMapsForTimeline();
+  await loadCurrentMapInfo();
   await loadInitialFeatures();
-  window.addEventListener("keydown", handleCtrlS);
+
+  if (projectId.value) {
+    await uploadMapThumbnail();
+  }
+  
+  window.addEventListener("keydown", handleKeyboardShortcuts);
 });
 
 watch([projectRouteId], async () => {
@@ -678,53 +834,128 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => route.params.mapId,
+  async (newMapId, oldMapId) => {
+    if (!newMapId || newMapId === oldMapId) return;
+
+    featureVisibility.value = new Map();
+    await loadCurrentMapInfo();
+
+    if (shouldSaveAfterCopy.value) {
+      return;
+    }
+
+    await loadInitialFeatures();
+  },
+);
+
 onUnmounted(() => {
-  window.removeEventListener("keydown", handleCtrlS);
+  window.removeEventListener("keydown", handleKeyboardShortcuts);
   clearAlert();
 });
+
+async function saveFeaturesToProject(
+  targetProjectId: string,
+  featuresToSave: Feature[],
+  deletionIds: string[] = [],
+): Promise<void> {
+  const payload = camelToSnake(prepareFeaturesForSave(featuresToSave));
+
+  const response = await apiFetch(`/projects/${targetProjectId}/features`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${keycloak.token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error saving features: ${response.status}`);
+  }
+
+  const pendingDeleteSet = new Set(deletionIds);
+  const savedFeatures = (
+    snakeToCamel(await response.json()) as Feature[]
+  ).filter((feature) => !pendingDeleteSet.has(String(feature.id)));
+  features.value = savedFeatures;
+  reconcileVisibility(savedFeatures);
+
+  if (deletionIds.length > 0) {
+    const bulkDeleteResponse = await apiFetch(
+      `/projects/${targetProjectId}/features`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(deletionIds),
+      },
+    );
+
+    if (!bulkDeleteResponse.ok) {
+      console.error(
+        `Failed to bulk delete features: ${bulkDeleteResponse.status}`,
+      );
+    }
+  }
+
+  pendingDeletions.value = [];
+
+  mapGeoJsonRef.value?.clearDraftLayers();
+  await uploadMapThumbnail(targetProjectId);
+
+  if (projectId.value === targetProjectId) {
+    await loadInitialFeatures();
+  }
+}
 
 async function onSaveMap() {
   if (isSaving.value) return;
   isSaving.value = true;
+  mapGeoJsonRef.value?.resetSelection();
 
   try {
-    if (!keycloak.token) {
+    if (!currentUser.value || !keycloak.token) {
       showAlert("error", "Utilisateur non authentifié.");
       return;
     }
 
     const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
+    const featuresToSave = syncedFeatures ?? features.value;
+
     if (syncedFeatures) {
       features.value = syncedFeatures;
       reconcileVisibility(syncedFeatures);
     }
 
-    if (!projectId.value) {
-      const resolved = await resolveRouteContext();
-      if (!resolved || !projectId.value) {
-        showAlert("error", "Projet introuvable pour la sauvegarde.");
-        return;
-      }
+    const targetProjectId = await requireProjectId();
+
+    if (!targetProjectId) {
+      showAlert("error", "Projet introuvable.");
+      return;
     }
 
-    const payload = camelToSnake(prepareFeaturesForSave(features.value));
+    const isOwner = await isProjectOwner(targetProjectId);
 
-    const response = await apiFetch(`/projects/${projectId.value}/features`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      showAlert("error", "Erreur lors de la sauvegarde des éléments.");
-      throw new Error(`Error saving features: ${response.status}`);
+    if (isOwner === null) {
+      return;
     }
 
-    const savedFeatures = snakeToCamel(await response.json()) as Feature[];
-    features.value = savedFeatures;
-    reconcileVisibility(savedFeatures);
+    if (!isOwner) {
+      pendingCopiedFeatures.value = [...featuresToSave];
+      shouldSaveAfterCopy.value = true;
+      await openCreateCopyDialog();
+      return;
+    }
 
-    mapGeoJsonRef.value?.clearDraftLayers();
+    await saveFeaturesToProject(
+      targetProjectId,
+      featuresToSave,
+      pendingDeletions.value,
+    );
     showAlert("success", "Projet sauvegardée avec succès !");
   } catch (err) {
     showAlert("error", "Erreur lors de la sauvegarde des éléments.");
@@ -747,7 +978,9 @@ async function onSaveMap() {
   background-color: var(--color-base-300);
   position: relative;
   cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
 }
 
 .timeline-filter-toggle::before {
@@ -760,7 +993,9 @@ async function onSaveMap() {
   border-radius: 9999px;
   background-color: var(--color-primary-content);
   transform: translate(0, -50%);
-  transition: transform 150ms ease, background-color 150ms ease;
+  transition:
+    transform 150ms ease,
+    background-color 150ms ease;
 }
 
 .timeline-filter-toggle:checked {

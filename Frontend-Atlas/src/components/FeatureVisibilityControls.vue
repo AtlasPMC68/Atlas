@@ -58,7 +58,7 @@
                   class="w-5 h-5 text-gray-500 hover:text-gray-800"
                 />
               </button>
-              <button @click="showDeleteFeatureDialog(feature)">
+              <button @click="emit('delete-feature', feature.id)">
                 <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
               </button>
             </div>
@@ -114,42 +114,6 @@
     </div>
   </div>
 
-  <dialog ref="deleteFeatureConfirmDialogRef" class="modal">
-    <div class="modal-box">
-      <h3 class="text-lg font-bold">Supprimer l'élément</h3>
-      <p class="py-4">
-        Êtes-vous sûr de vouloir supprimer
-        <span class="font-semibold">{{
-          featureToDelete?.properties?.name
-        }}</span>
-        ? Cette action est irréversible.
-      </p>
-      <div class="modal-action">
-        <button
-          class="btn"
-          :disabled="isDeleting"
-          @click="deleteFeatureConfirmDialogRef?.close()"
-        >
-          Annuler
-        </button>
-        <button
-          class="btn btn-error"
-          :disabled="isDeleting"
-          @click="onDeleteFeature"
-        >
-          <span
-            v-if="isDeleting"
-            class="loading loading-spinner loading-xs"
-          ></span>
-          <span v-else class="text-white">Supprimer</span>
-        </button>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isDeleting">close</button>
-    </form>
-  </dialog>
-
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
     <div class="modal-box flex flex-col gap-4">
       <h3 class="text-lg font-bold truncate">
@@ -176,13 +140,13 @@
         <div
           class="flex gap-2"
           v-if="
-            featureToEdit.properties.opacity !== undefined ||
+            featureToEdit.properties.fillOpacity !== undefined ||
             featureToEdit.properties.strokeOpacity !== undefined
           "
         >
           <div
             class="flex flex-col gap-2 w-full"
-            v-if="featureToEdit.properties.opacity !== undefined"
+            v-if="featureToEdit.properties.fillOpacity !== undefined"
           >
             <label class="label">Opacité</label>
             <input v-model="featureToEditOpacity" type="number" class="input" />
@@ -291,11 +255,6 @@ const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
 }>();
-const deleteFeatureConfirmDialogRef = ref<HTMLDialogElement | undefined>(
-  undefined,
-);
-const featureToDelete = ref<Feature | undefined>(undefined);
-const isDeleting = ref(false);
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
 const featureToEditName = ref<string>("");
@@ -390,39 +349,18 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
   return groupIcons[type];
 }
 
-function showDeleteFeatureDialog(feature: Feature) {
-  featureToDelete.value = feature;
-  deleteFeatureConfirmDialogRef.value?.showModal();
-}
-
 async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
   featureToEditName.value = feature.properties.name;
   featureToEditLabelText.value = feature.properties.labelText;
   featureToEditColor.value = rgbToHex(feature.properties.colorRgb);
   featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
-  featureToEditOpacity.value = feature.properties.opacity;
+  featureToEditOpacity.value = feature.properties.fillOpacity;
   featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
   featureToEditStrokeWidth.value = feature.properties.strokeWidth;
 
   await nextTick();
   editFeatureDialogRef.value?.showModal();
-}
-
-function onDeleteFeature() {
-  if (!featureToDelete.value) return;
-
-  isDeleting.value = true;
-  emit("delete-feature", featureToDelete.value.id, {
-    onSuccess: () => {
-      showAlert("success", "Élément supprimé avec succès.");
-    },
-    onError: (message: string) => {
-      showAlert("error", message);
-    },
-  });
-  isDeleting.value = false;
-  deleteFeatureConfirmDialogRef.value?.close();
 }
 
 async function onEditFeature() {
@@ -434,7 +372,7 @@ async function onEditFeature() {
   featureToEdit.value.properties.strokeColor = hexToRgb(
     featureToEditStrokeColor.value,
   );
-  featureToEdit.value.properties.opacity = featureToEditOpacity.value;
+  featureToEdit.value.properties.fillOpacity = featureToEditOpacity.value;
   featureToEdit.value.properties.strokeOpacity =
     featureToEditStrokeOpacity.value;
   featureToEdit.value.properties.strokeWidth = featureToEditStrokeWidth.value;
