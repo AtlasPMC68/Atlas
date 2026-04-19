@@ -200,7 +200,6 @@
       :image-url="previewUrl"
       :image-file="selectedFile"
       @close="handleColorPickerClose"
-      @skip="handleColorPickerSkip"
       @confirmed="handleColorPickerConfirmed"
     />
   </div>
@@ -434,12 +433,10 @@ async function handleLegendSkip() {
 async function handleLegendConfirmed(bounds: LegendBounds) {
   showLegendPickerModal.value = false;
   legendBounds.value = bounds;
-  if (enableColorExtraction.value) {
-    pendingLegendBounds.value = bounds;
-    currentStep.value = 6;
-    showColorPickerModal.value = true;
-    return;
-  }
+  // If the user provided a legend area, we use that as the imposed source and
+  // skip the color picker step.
+  pickedColors.value = [];
+  pendingLegendBounds.value = bounds;
   await submitImportWithGeoref(bounds);
 }
 
@@ -464,12 +461,6 @@ function handleColorPickerClose() {
   // Go back to legend step
   showLegendPickerModal.value = true;
   currentStep.value = 5;
-}
-
-async function handleColorPickerSkip() {
-  showColorPickerModal.value = false;
-  pickedColors.value = [];
-  await submitImportWithGeoref(pendingLegendBounds.value);
 }
 
 async function handleColorPickerConfirmed(colors: { x: number; y: number; name: string }[]) {

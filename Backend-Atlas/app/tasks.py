@@ -238,6 +238,30 @@ def process_map_extraction(
                 else None
             )
 
+            # If the frontend provided a legend box but shapes extraction was disabled,
+            # we still need legend shapes to perform legend-based color extraction.
+            if (
+                not imposed_click_positions_tuples
+                and not legends_shapes
+                and legend_bounds is not None
+            ):
+                try:
+                    legend_shapes_result = extract_shapes(
+                        tmp_file_path,
+                        text_regions=text_regions,
+                        legend_bounds=legend_bounds,
+                    )
+                    legends_shapes = [
+                        s
+                        for s in legend_shapes_result.get("shapes", [])
+                        if s.get("isLegend", False)
+                    ]
+                except Exception as e:
+                    logger.error(
+                        f"Legend-only shapes extraction failed for map {map_id}: {e}",
+                        exc_info=True,
+                    )
+
             if not imposed_click_positions_tuples and not legends_shapes:
                 logger.info(
                     "[DEBUG] Color extraction skipped - no imposed colors provided"

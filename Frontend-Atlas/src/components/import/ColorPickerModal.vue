@@ -124,6 +124,7 @@ import type {
   PendingClick,
   PickedColor,
   SampleColorResponse,
+  DialogCloseReason,
 } from "../../typescript/colorPicker";
 
 const props = withDefaults(
@@ -150,7 +151,6 @@ const isLoading = ref(false);
 const sampleError = ref<string | null>(null);
 let pendingIdCounter = 0;
 
-type DialogCloseReason = "cancel" | "success" | "programmatic";
 let closeReason: DialogCloseReason = "programmatic";
 
 onMounted(() => {

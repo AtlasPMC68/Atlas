@@ -20,3 +20,5 @@ export interface SampleColorResponse {
   lab: [number, number, number];
   name: string;
 }
+
+export type DialogCloseReason = "cancel" | "success" | "programmatic";
