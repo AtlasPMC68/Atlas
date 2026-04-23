@@ -29,6 +29,9 @@
           Légende
         </div>
         <div class="step" :class="{ 'step-primary': currentStep >= 6 }">
+          Couleurs
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 7 }">
           Extraction
         </div>
       </div>
@@ -189,6 +192,16 @@
       @skip="handleLegendSkip"
       @confirmed="handleLegendConfirmed"
     />
+
+    <!-- Color picker modal -->
+    <ColorPickerModal
+      v-if="showColorPickerModal && previewUrl && selectedFile"
+      :is-open="showColorPickerModal"
+      :image-url="previewUrl"
+      :image-file="selectedFile"
+      @close="handleColorPickerClose"
+      @confirmed="handleColorPickerConfirmed"
+    />
   </div>
 </template>
 
@@ -218,6 +231,7 @@ import ProcessingModal from "../../components/import/ProcessingModal.vue";
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
 import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal.vue";
+import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -262,10 +276,14 @@ const currentStep = ref<number>(1);
 const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
 const showLegendPickerModal = ref<boolean>(false);
+const showColorPickerModal = ref<boolean>(false);
 const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
 const legendBounds = ref<LegendBounds | null>(null);
+type ImposedColor = { x: number; y: number; name: string; radius: number };
+const pickedColors = ref<ImposedColor[]>([]);
+const pendingLegendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const legendReturnStep = ref<number>(2);
 const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
@@ -374,17 +392,20 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       enableColorExtraction: enableColorExtraction.value,
       enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
+      imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
     },
     legend,
   );
   if (result.success) {
-    currentStep.value = 6;
+    currentStep.value = 7;
   } else {
     console.error("Erreur importation:", result.error);
     currentStep.value = 2;
   }
 
   pendingGeorefPayload.value = null;
+  pickedColors.value = [];
+  pendingLegendBounds.value = null;
 }
 
 function handleLegendClose() {
@@ -401,12 +422,22 @@ function handleLegendClose() {
 async function handleLegendSkip() {
   showLegendPickerModal.value = false;
   legendBounds.value = null;
+  pendingLegendBounds.value = null;
+  if (enableColorExtraction.value) {
+    currentStep.value = 6;
+    showColorPickerModal.value = true;
+    return;
+  }
   await submitImportWithGeoref(null);
 }
 
 async function handleLegendConfirmed(bounds: LegendBounds) {
   showLegendPickerModal.value = false;
   legendBounds.value = bounds;
+  // If the user provided a legend area, we use that as the imposed source and
+  // skip the color picker step.
+  pickedColors.value = [];
+  pendingLegendBounds.value = bounds;
   await submitImportWithGeoref(bounds);
 }
 
@@ -424,6 +455,21 @@ async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function handleColorPickerClose() {
+  showColorPickerModal.value = false;
+  // Go back to legend step
+  showLegendPickerModal.value = true;
+  currentStep.value = 5;
+}
+
+async function handleColorPickerConfirmed(
+  colors: { x: number; y: number; name: string; radius: number }[],
+) {
+  showColorPickerModal.value = false;
+  pickedColors.value = colors;
+  await submitImportWithGeoref(pendingLegendBounds.value);
 }
 
 // Redirect when extraction is finished
@@ -446,9 +492,12 @@ const resetImport = () => {
   showWorldAreaPickerModal.value = false;
   showSiftGeorefModal.value = false;
   showLegendPickerModal.value = false;
+  showColorPickerModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
   legendBounds.value = null;
+  pickedColors.value = [];
+  pendingLegendBounds.value = null;
   pendingGeorefPayload.value = null;
   coastlineKeypoints.value = null;
   usedLakes.value = false;
