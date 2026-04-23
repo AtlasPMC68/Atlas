@@ -471,7 +471,7 @@ def extract_colors(
         norm_p_low=1.0,
         norm_p_high=99.0,
         debug=debug,
-        debug_dir=image_output_dir,    
+        debug_dir=image_output_dir,
     )
 
     # 3) Convert preprocessed image to LAB
@@ -530,14 +530,6 @@ def extract_colors(
         lab, opaque_mask, centers_lab, mask_deltaE
     )
 
-    opaque_count = int(np.count_nonzero(opaque_mask))
-    if opaque_count == 0:
-        return {
-            "normalized_features": normalized_features,
-            "pixel_features": pixel_features,
-            "masks": masks,
-        }
-
     # 7) Build per-color masks and features
     seen_names: Dict[str, int] = {}
     color_index = 1
@@ -558,12 +550,6 @@ def extract_colors(
         if not np.any(mask):
             continue
 
-        mask_pixels = np.count_nonzero(mask)
-        ratio_mask = float(mask_pixels) / float(opaque_count)
-
-        if ratio_mask < dominant_ratio and legend_shapes is None: 
-            continue
-
         rgb_u8_center = lab_center_to_rgb_u8(entry["lab_center"])
         user_name = entry.get("user_name")
         if user_name:
@@ -577,6 +563,7 @@ def extract_colors(
         L, a, b = entry["lab_center"]
 
         if debug:
+            opaque_count = max(1, int(np.count_nonzero(opaque_mask)))
             ratio_value = float(np.count_nonzero(mask)) / float(opaque_count)
 
             file_name = (

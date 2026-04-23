@@ -36,15 +36,9 @@ def get_color_extraction_cases() -> list[Dict[str, Any]]:
     """
     return [
         {
-            "name": "nouvelle_france_1750_test1",
-            "image_path": ASSETS_DIR / "Nouvelle-France1750.png",
-            "expected_masks_dir": EXPECTED_COLOR_ROOT / "test1_ratio",
-            "attributes": {},
-        },
-        {
             "name": "sols_monde_test2",
             "image_path": ASSETS_DIR / "Sols_Monde.png",
-            "expected_masks_dir": EXPECTED_COLOR_ROOT / "test2_legend",
+            "expected_masks_dir": EXPECTED_COLOR_ROOT / "test_legend",
             "attributes": {
                 "legend_bounds": {
                     "x": 245,
