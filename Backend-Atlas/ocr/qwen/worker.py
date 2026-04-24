@@ -7,6 +7,7 @@ from celery import Celery
 from PIL import Image
 
 import inference as qwen
+from merge import merge_same_text_bboxes_keep_first
 
 logger = logging.getLogger(__name__)
 os.environ.setdefault("HF_HOME", "/app/models")
@@ -81,7 +82,7 @@ def run_qwen(
     logger.debug(f"Qwen initialized for ({len(detections)} detections)")
     raw_detections = qwen.run_per_detection(model, processor, image, detections, config, context)
     detections = _strip_quad_fields(raw_detections)
-    detections = qwen.merge_same_text_bboxes_keep_first(detections)
+    detections = merge_same_text_bboxes_keep_first(detections)
 
     # Forcing model loaded in memory to be cleared
     del model, processor

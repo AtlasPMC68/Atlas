@@ -6,8 +6,11 @@ import math
 from json import JSONDecodeError
 from uuid import UUID
 import base64
+import cv2
+import numpy as np
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
+from fastapi.params import Form as FormParam
 from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -21,7 +24,11 @@ from app.schemas.project import ProjectOut
 from app.schemas.projectCreateRequest import ProjectCreateRequest
 from app.schemas.mapImportRequest import MapImportRequest
 from app.services.maps import create_map_in_db
-from app.services.projects import create_project_in_db, delete_project_in_db, update_project_in_db
+from app.services.projects import (
+    create_project_in_db,
+    delete_project_in_db,
+    update_project_in_db,
+)
 from app.utils.update_feature import (
     to_feature_collection,
     normalize_feature_collection,
@@ -33,6 +40,8 @@ from ..celery_app import celery_app
 from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
 from ..utils.auth import get_current_user_id
+from ..utils.color_in_legends_extraction import sample_color_at
+from ..utils.color_extraction import get_nearest_css4_color_name
 
 router = APIRouter()
 
@@ -68,13 +77,16 @@ async def create_map_for_project(
             exact_date=request.exact_date,
         )
         if not created_map_id:
-            raise HTTPException(status_code=404, detail="Project not found or access denied")
+            raise HTTPException(
+                status_code=404, detail="Project not found or access denied"
+            )
         return {"map_id": str(created_map_id)}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating map for project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create map")
+
 
 @router.post("/create")
 async def create_project(
@@ -95,6 +107,7 @@ async def create_project(
         logger.error(f"Error creating project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create project")
 
+
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: UUID,
@@ -108,13 +121,16 @@ async def delete_project(
             user_id=UUID(user_id),
         )
         if not deleted:
-            raise HTTPException(status_code=404, detail="Project not found or access denied")
+            raise HTTPException(
+                status_code=404, detail="Project not found or access denied"
+            )
         return {"detail": "Project deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete project")
+
 
 @router.put("/{project_id}")
 async def update_project(
@@ -133,13 +149,16 @@ async def update_project(
             is_private=request.is_private,
         )
         if not updated_project:
-            raise HTTPException(status_code=404, detail="Project not found or access denied")
+            raise HTTPException(
+                status_code=404, detail="Project not found or access denied"
+            )
         return {"project_id": str(updated_project.id)}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update project")
+
 
 @router.get("/is-owner/{project_id}")
 async def is_project_owner(
@@ -161,6 +180,7 @@ async def is_project_owner(
 
     return result.scalar_one_or_none() is not None
 
+
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(
     project_id: UUID,
@@ -181,7 +201,9 @@ async def get_project(
 
     row = result.first()
     if not row:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
 
     project_obj, username = row
     encoded_image = (
@@ -202,11 +224,13 @@ async def get_project(
         updated_at=project_obj.updated_at,
     )
 
+
 @router.post("/upload")
 async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
     legend_bounds: str | None = Form(None),
+    imposed_colors: str | None = Form(None),
     enable_georeferencing: bool = Form(True),
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
@@ -222,7 +246,7 @@ async def upload_and_process_map(
         map_id = UUID(map_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid project_id or map_id")
-    
+
     result = await session.execute(
         select(Map)
         .join(Project, Map.project_id == Project.id)
@@ -249,6 +273,12 @@ async def upload_and_process_map(
     pixel_points_list = None
     geo_points_list = None
     legend_bounds_dict = None
+
+    # When called directly in tests, FastAPI parameter defaults can arrive as Form objects.
+    if isinstance(legend_bounds, FormParam):
+        legend_bounds = None
+    if isinstance(imposed_colors, FormParam):
+        imposed_colors = None
 
     # Parse matched point pairs for SIFT georeferencing
     if enable_georeferencing and image_points and world_points:
@@ -278,7 +308,9 @@ async def upload_and_process_map(
         try:
             parsed = json.loads(legend_bounds)
             required_keys = {"x", "y", "width", "height"}
-            if not isinstance(parsed, dict) or not required_keys.issubset(parsed.keys()):
+            if not isinstance(parsed, dict) or not required_keys.issubset(
+                parsed.keys()
+            ):
                 raise ValueError(
                     "legend_bounds must be a JSON object with x, y, width, height"
                 )
@@ -301,6 +333,40 @@ async def upload_and_process_map(
                 detail=f"Invalid legend bounds payload: {e}",
             )
 
+    # Parse optional user-picked click positions as [{"x": 0.5, "y": 0.3, "name": "..."}, ...]
+    imposed_click_positions = None
+    imposed_colors_names = None
+    imposed_sampling_radii = None
+    if imposed_colors:
+        try:
+            parsed_colors = json.loads(imposed_colors)
+            if not isinstance(parsed_colors, list):
+                raise ValueError("imposed_colors must be a JSON array")
+            imposed_click_positions = []
+            imposed_colors_names = []
+            imposed_sampling_radii = []
+            for entry in parsed_colors:
+                if not isinstance(entry, dict) or "x" not in entry or "y" not in entry:
+                    raise ValueError(
+                        'Each entry must be {"x": float, "y": float, "name": "..."}'
+                    )
+                x, y = float(entry["x"]), float(entry["y"])
+                if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+                    raise ValueError("x and y must be normalised floats in [0, 1]")
+
+                radius_raw = entry.get("radius", 20)
+                radius = int(float(radius_raw))
+                if radius < 1 or radius > 200:
+                    raise ValueError("radius must be an int in [1, 200]")
+
+                imposed_click_positions.append((x, y))
+                imposed_colors_names.append(str(entry.get("name", "")).strip() or None)
+                imposed_sampling_radii.append(radius)
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid imposed_colors payload: {e}",
+            )
     file_content = await file.read()
 
     if len(file_content) > MAX_FILE_SIZE:
@@ -324,6 +390,9 @@ async def upload_and_process_map(
             "enable_shapes_extraction": enable_shapes_extraction,
             "enable_text_extraction": enable_text_extraction,
             "legend_bounds": legend_bounds_dict,
+            "imposed_click_positions": imposed_click_positions,
+            "imposed_colors_names": imposed_colors_names,
+            "imposed_sampling_radii": imposed_sampling_radii,
         }
 
         # Text-enabled jobs are funneled to a dedicated serial queue as to not
@@ -427,11 +496,15 @@ async def update_features(
         raise HTTPException(status_code=400, detail="Invalid project_id or user")
 
     project_result = await session.execute(
-        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+        select(Project.id).where(
+            Project.id == project_uuid, Project.user_id == user_uuid
+        )
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
 
     result = await session.execute(
         select(Feature).where(Feature.project_id == project_uuid)
@@ -501,11 +574,15 @@ async def delete_features_bulk(
         raise HTTPException(status_code=400, detail="Invalid project_id or user")
 
     project_result = await session.execute(
-        select(Project.id).where(Project.id == project_uuid, Project.user_id == user_uuid)
+        select(Project.id).where(
+            Project.id == project_uuid, Project.user_id == user_uuid
+        )
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
 
     if not feature_ids:
         return {"deleted_feature_ids": []}
@@ -521,7 +598,9 @@ async def delete_features_bulk(
             Feature.id.in_(feature_uuid_ids),
         )
     )
-    deleted_feature_ids = [str(feature_id) for feature_id in existing_result.scalars().all()]
+    deleted_feature_ids = [
+        str(feature_id) for feature_id in existing_result.scalars().all()
+    ]
 
     await session.execute(
         delete(Feature).where(
@@ -554,7 +633,9 @@ async def get_project_features(
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
 
     features_result = await session.execute(
         select(Feature).where(Feature.project_id == project_id)
@@ -562,6 +643,7 @@ async def get_project_features(
     features_rows = features_result.scalars().all()
 
     return serialize_feature_rows(features_rows)
+
 
 # Used to have lightweight data on maps for the timeline
 @router.get("/{project_id}/maps")
@@ -583,7 +665,9 @@ async def get_project_maps(
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
 
     maps_result = await session.execute(
         select(Map)
@@ -596,7 +680,9 @@ async def get_project_maps(
         {
             "id": str(map_obj.id),
             "title": map_obj.title,
-            "start_date": map_obj.start_date.isoformat() if map_obj.start_date else None,
+            "start_date": map_obj.start_date.isoformat()
+            if map_obj.start_date
+            else None,
             "end_date": map_obj.end_date.isoformat() if map_obj.end_date else None,
             "exact_date": bool(map_obj.exact_date),
         }
@@ -677,6 +763,7 @@ async def get_projects(
 
     return projects
 
+
 @router.post("/coastline-keypoints")
 async def get_coastline_keypoints(
     west: float = Form(...),
@@ -726,7 +813,9 @@ async def upload_map_thumbnail(
     )
     project_obj = result.scalar_one_or_none()
     if not project_obj:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
 
     content = await image.read()
     if not content:
@@ -773,7 +862,9 @@ async def upload_image(
     )
     project_obj = project_result.scalar_one_or_none()
     if not project_obj:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
 
     content = await image.read()
     if not content:
@@ -852,3 +943,54 @@ async def upload_image(
         await session.rollback()
         logger.error(f"Error saving feature image: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to save feature image")
+
+
+@router.post("/sample-color")
+async def sample_color(
+    x: float = Form(
+        ..., ge=0.0, le=1.0, description="Normalised X position [0,1] from left"
+    ),
+    y: float = Form(
+        ..., ge=0.0, le=1.0, description="Normalised Y position [0,1] from top"
+    ),
+    radius: int = Form(20, ge=1, le=200, description="Sampling radius in pixels"),
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Stateless endpoint — no map or DB needed.
+
+    The frontend sends the image file it already has from the file picker,
+    along with normalised click coordinates [0,1].  The backend samples the
+    dominant colour in a neighbourhood around the click and returns the result
+    so the frontend can show a colour swatch.
+
+    The returned LAB values are consistent with what extract_colors() will
+    compute on the same file during /upload.
+
+    Returns: { rgb: [r,g,b], lab: [L,a,b], hex: "#rrggbb" }
+    """
+    raw = await file.read()
+    if len(raw) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+    nparr = np.frombuffer(raw, dtype=np.uint8)
+    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        raise HTTPException(status_code=422, detail="Could not decode image file")
+
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+    color = sample_color_at(img_rgb, x, y, radius_px=radius)
+    if color is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Click coordinates are outside the image bounds",
+        )
+
+    name = get_nearest_css4_color_name(tuple(color["rgb"]))
+    return {**color, "name": name}

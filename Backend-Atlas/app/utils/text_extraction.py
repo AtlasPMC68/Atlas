@@ -1,15 +1,10 @@
 import asyncio
-import copy
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import cv2
-import easyocr
-import numpy as np
 from celery import chain
 
 from app.utils.cities_validation import find_first_city
@@ -116,7 +111,7 @@ def geolocate_cities_and_leftover_text(
         try:
             candidate = find_first_city(text)
         except Exception as exc:
-            logger.debug("find_first_city error for text '%s': %s", text, exc)
+            logger.debug(f"find_first_city error for text '{text}': {exc}")
             candidate = {
                 "found": False,
                 "query": text,
@@ -132,7 +127,7 @@ def geolocate_cities_and_leftover_text(
                     persist_city_feature_fn(project_id, map_id, city_feature_collection)
                 )
             except Exception as exc:
-                logger.error("Failed to persist city text '%s': %s", text, exc)
+                logger.error(f"Failed to persist city text '{text}': {exc}")
         elif anchor_x is not None and anchor_y is not None:
             pixel_text_feature_collections.append(
                 _build_pixel_text_feature_collection(text, anchor_x, anchor_y)
@@ -191,12 +186,12 @@ def _run_ocr_pipeline(
 
     try:
         ocr_result = task_chain.apply_async()
-        logger.info("Waiting for OCR chain to complete for map %s", map_id)
+        logger.info(f"Waiting for OCR chain to complete for map {map_id}")
         ocr_result.get(
             timeout=OCR_PIPELINE_TIMEOUT_SECONDS,
             disable_sync_subtasks=False,
         )
-        logger.info("OCR chain completed for map %s", map_id)
+        logger.info(f"OCR chain completed for map {map_id}")
 
         with open(ocr_output_json_path, "r", encoding="utf-8") as qwen_result_file:
             qwen_result = json.load(qwen_result_file)
@@ -231,7 +226,7 @@ def _run_ocr_pipeline(
             except FileNotFoundError:
                 pass
             except Exception as exc:
-                logger.warning("Failed to clean OCR temp file %s: %s", temp_path, exc)
+                logger.warning(f"Failed to clean OCR temp file {temp_path}: {exc}")
 
 
 def _extract_text_via_pipeline(
@@ -251,180 +246,22 @@ def _extract_text_via_pipeline(
     return extracted_text, text_regions
 
 
-def _extract_text_via_easyocr(
-    image: np.ndarray,
-    languages: list[str],
-    gpu_acc: bool = False,
-) -> tuple[list, np.ndarray]:
-    logger.debug("Initiating legacy EasyOCR text extraction")
-    extractor = TextExtraction(img=image, lang=languages, gpu_acc=gpu_acc)
-    extractor.check_language_code_validity()
-
-    text_info = extractor.read_text_from_image()
-    clean_image = copy.deepcopy(image)
-
-    logger.debug("Completed legacy EasyOCR text extraction")
-    return text_info, clean_image
-
-
 def extract_text(
-    image: np.ndarray | None = None,
-    languages: list[str] | None = None,
-    gpu_acc: bool = False,
-    image_path: str | os.PathLike[str] | None = None,
-    map_id: UUID | None = None,
-    filename: str | None = None,
-    file_content: bytes | None = None,
+    map_id: UUID,
+    filename: str,
+    file_content: bytes,
     celery_app=None,
 ):
-    """
-    Unified text extraction entrypoint.
+    """Extract text using the Florence+Qwen Celery OCR pipeline."""
+    if celery_app is None:
+        raise ValueError("celery_app must be provided")
 
-    Supported modes:
-    1) Legacy EasyOCR mode (used by tests):
-       - Provide image_path + languages, or image + languages.
-       - Returns (found_texts, clean_image).
-
-    2) Celery OCR pipeline mode (used by map task flow):
-       - Provide map_id + filename + file_content + celery_app.
-       - Returns (extracted_text, text_regions).
-    """
-    if map_id is not None and filename is not None and file_content is not None and celery_app is not None:
-        logger.info("Starting OCR pipeline for map %s: %s", map_id, filename)
-        extracted_text, text_regions = _extract_text_via_pipeline(
-            map_id=map_id,
-            filename=filename,
-            file_content=file_content,
-            celery_app=celery_app,
-        )
-        logger.info(
-            "OCR pipeline completed: %s detections extracted from %s",
-            len(extracted_text),
-            filename,
-        )
-        return extracted_text, text_regions
-
-    if languages is None:
-        raise ValueError("languages must be provided for legacy EasyOCR mode")
-
-    if image is None:
-        if image_path is None:
-            raise ValueError("Provide either image or image_path for legacy EasyOCR mode")
-        image = cv2.imread(str(Path(image_path)))
-        if image is None:
-            raise ValueError(f"Could not read image at path: {image_path}")
-
-    return _extract_text_via_easyocr(image=image, languages=languages, gpu_acc=gpu_acc)
-
-
-class TextExtraction:
-    LANGUAGE_CODES_HASHMAP = {
-        "Abaza": "abq", "Adyghe": "ady", "Afrikaans": "af", "Angika": "ang", "Arabic": "ar", "Assamese": "as",
-        "Avar": "ava", "Azerbaijani": "az", "Belarusian": "be", "Bulgarian": "bg", "Bihari": "bh",
-        "Bhojpuri": "bho",
-        "Bengali": "bn", "Bosnian": "bs", "Simplified Chinese": "ch_sim", "Traditional Chinese": "ch_tra",
-        "Chechen": "che",
-        "Czech": "cs", "Welsh": "cy", "Danish": "da", "Dargwa": "dar", "German": "de", "English": "en",
-        "Spanish": "es",
-        "Estonian": "et", "Persian (Farsi)": "fa", "French": "fr", "Irish": "ga", "Goan Konkani": "gom",
-        "Hindi": "hi",
-        "Croatian": "hr", "Hungarian": "hu", "Indonesian": "id", "Ingush": "inh", "Icelandic": "is",
-        "Italian": "it",
-        "Japanese": "ja", "Kabardian": "kbd", "Kannada": "kn", "Korean": "ko", "Kurdish": "ku", "Latin": "la",
-        "Lak": "lbe", "Lezghian": "lez", "Lithuanian": "lt", "Latvian": "lv", "Magahi": "mah", "Maithili": "mai",
-        "Maori": "mi", "Mongolian": "mn", "Marathi": "mr", "Malay": "ms", "Maltese": "mt", "Nepali": "ne",
-        "Newari": "new",
-        "Dutch": "nl", "Norwegian": "no", "Occitan": "oc", "Pali": "pi", "Polish": "pl", "Portuguese": "pt",
-        "Romanian": "ro", "Russian": "ru", "Serbian (cyrillic)": "rs_cyrillic", "Serbian (latin)": "rs_latin",
-        "Nagpuri": "sck", "Slovak": "sk", "Slovenian": "sl", "Albanian": "sq", "Swedish": "sv", "Swahili": "sw",
-        "Tamil": "ta", "Tabassaran": "tab", "Telugu": "te", "Thai": "th", "Tajik": "tjk", "Tagalog": "tl",
-        "Turkish": "tr",
-        "Uyghur": "ug", "Ukranian": "uk", "Urdu": "ur", "Uzbek": "uz", "Vietnamese": "vi"
-    }
-    LANGUAGE_CODES = [
-        "abq", "ady", "af", "ang", "ar", "as", "ava", "az", "be", "bg", "bh", "bho",
-        "bn", "bs", "ch_sim", "ch_tra", "che", "cs", "cy", "da", "dar", "de", "en", "es",
-        "et", "fa", "fr", "ga", "gom", "hi", "hr", "hu", "id", "inh", "is", "it", "ja",
-        "kbd", "kn", "ko", "ku", "la", "lbe", "lez", "lt", "lv", "mah", "mai", "mi", "mn",
-        "mr", "ms", "mt", "ne", "new", "nl", "no", "oc", "pi", "pl", "pt", "ro", "ru",
-        "rs_cyrillic", "rs_latin", "sck", "sk", "sl", "sq", "sv", "sw", "ta", "tab",
-        "te", "th", "tjk", "tl", "tr", "ug", "uk", "ur", "uz", "vi"
-    ]
-    image: np.ndarray
-
-    def __init__(self, img: np.ndarray, lang: list[str] | None = None, gpu_acc: bool = False):
-        self.image: np.ndarray = img
-        self.lang: list[str] = list(lang if lang is not None else ["en", "fr"])
-        self.gpu_acc: bool = gpu_acc
-
-    def read_text_from_image(self, scale_xy: tuple[float, float] = (2.0, 2.0)):
-        reader = easyocr.Reader(
-            lang_list=list(self.lang),
-            gpu=self.gpu_acc,
-        )
-
-        shading = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-
-        # Resizing implies rescaling resulting coordinates to preserve original pixel references.
-        upscaling = cv2.resize(
-            shading,
-            None,
-            fx=scale_xy[0],
-            fy=scale_xy[1],
-            interpolation=cv2.INTER_LANCZOS4,
-        )
-
-        extracted_text = reader.readtext(
-            upscaling,
-            text_threshold=0.7,
-            low_text=0.4,
-            link_threshold=0.4,
-            width_ths=0.7,
-            height_ths=0.7,
-        )
-
-        scaled_extracted_text = []
-        for coords, text, prob in extracted_text:
-            rescaled_coords = []
-            for x, y in coords:
-                rescaled_x = int(x / scale_xy[0])
-                rescaled_y = int(y / scale_xy[1])
-                rescaled_coords.append([rescaled_x, rescaled_y])
-
-            scaled_extracted_text.append((rescaled_coords, text, prob))
-
-        logger.debug("Extracted text: %s", extracted_text)
-        return scaled_extracted_text
-
-    def remove_text_from_image(self, text_info: list):
-        _ = text_info
-        image_no_text: np.ndarray = copy.deepcopy(self.image)
-        return image_no_text
-
-    def draw_bounding_box(self, scaled_extracted_text) -> np.ndarray:
-        image_with_boxes: np.ndarray = copy.deepcopy(self.image)
-
-        for bbox, text, conf in scaled_extracted_text:
-            boxes = np.array(bbox, dtype=np.int32)
-            cv2.polylines(image_with_boxes, [boxes], isClosed=True, color=(0, 0, 255), thickness=2)
-
-            text_x = bbox[0][0]
-            text_y = bbox[0][1] - 10 if bbox[0][1] - 10 > 10 else bbox[0][1] + 20
-            label = f"{text} ({conf:.2f})"
-            cv2.putText(
-                image_with_boxes,
-                label,
-                (text_x, text_y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 0, 255),
-                1,
-            )
-
-        return image_with_boxes
-
-    def check_language_code_validity(self) -> None:
-        """Raises ValueError if at least one language code is not supported."""
-        for code in self.lang:
-            if code not in self.LANGUAGE_CODES:
-                raise ValueError(f"Invalid language code: {code}")
+    logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
+    extracted_text, text_regions = _extract_text_via_pipeline(
+        map_id=map_id,
+        filename=filename,
+        file_content=file_content,
+        celery_app=celery_app,
+    )
+    logger.info(f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}")
+    return extracted_text, text_regions

@@ -25,6 +25,7 @@ MAX_NEW_TOKENS = 4096
 
 # Florence-2 uses task tokens instead of instruction
 OCR_TASK = "<OCR_WITH_REGION>"
+CONTEXT_TASK = "<MORE_DETAILED_CAPTION>"
 
 
 def get_runtime_config() -> dict:
@@ -72,7 +73,11 @@ def load_model_and_processor(config: dict) -> tuple:
         cache_dir=os.environ.get("HF_HOME", "/app/models"),
         local_files_only=True,
     )
-    logger.info("Model ready.")
+
+    if getattr(model, "generation_config", None) is not None:
+        model.generation_config.early_stopping = False
+
+    logger.debug("Florence model ready.")
     return model, processor
 
 
@@ -107,13 +112,7 @@ def run_inference(
 def get_image_context(
         model: object, processor: object, image: Image.Image, config: dict) -> str:
     """Generate a short geographic context summary for the map image."""
-    context_prompt = "\
-        Describe the context of this map image. \
-        Then, list the biggest and major geographical features visible in this historical map: \
-        countries, regions, provinces, cities, rivers, lakes, oceans, and seas. \
-        Keep it concise.\
-        "
-    inputs = processor(text=context_prompt, images=image, return_tensors="pt")
+    inputs = processor(text=CONTEXT_TASK, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
     with torch.inference_mode():
         generated_ids = model.generate(
@@ -123,8 +122,9 @@ def get_image_context(
             do_sample=False,
             num_beams=1,
         )
-    context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    logger.info(f"Generated context: {context_text}")
+    generated_ids = generated_ids[:, inputs["input_ids"].shape[1]:]
+    context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+    logger.debug(f"Generated context: {context_text}")
     return context_text
 
 
@@ -149,7 +149,7 @@ def run_pipeline(
     preprocessed = manually_preprocess_image(image_path)
 
     context = get_image_context(model, processor, preprocessed, get_context_config())
-    logger.info("Running OCR on full image (tiling disabled)")
+    logger.debug("Running OCR on full image (tiling disabled)")
 
     result = run_inference(model, processor, preprocessed, OCR_TASK, config)
     ocr_data = result.get(OCR_TASK, {})
@@ -181,11 +181,11 @@ def main() -> None:
         return
 
     for image_path in images:
-        logger.info(f"Processing: {image_path}")
+        logger.debug(f"Processing: {image_path}")
         parsed = run_pipeline(model, processor, image_path, config)
         out.save_result(image_path, parsed)
 
-    logger.info(f"Total time: {time.time() - start:.2f}s")
+    logger.debug(f"Total time: {time.time() - start:.2f}s")
 
 
 if __name__ == "__main__":

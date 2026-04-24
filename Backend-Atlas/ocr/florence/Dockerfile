@@ -15,5 +15,5 @@ USER appuser
 WORKDIR /app/florence
 
 CMD bash -c "\
-    python3 -u -m celery -A worker worker --loglevel=info --concurrency=1 --queues=florence -n florence@%h \
+    python3 -u -m celery -A worker worker --loglevel=warning --concurrency=1 --queues=florence -n florence@%h \
     "

@@ -41,7 +41,7 @@ def run_florence(image_path: str, intermediate_path: str) -> bool:
 
     # Use save_result from output.py
     save_result(image_path, intermediate_path, result)
-    logger.info(f"Florence result saved: {intermediate_path}")
+    logger.debug(f"Florence result saved: {intermediate_path}")
     return True
 
 
