@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
+from fastapi.params import Form as FormParam
 from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -273,6 +274,12 @@ async def upload_and_process_map(
     geo_points_list = None
     legend_bounds_dict = None
 
+    # When called directly in tests, FastAPI parameter defaults can arrive as Form objects.
+    if isinstance(legend_bounds, FormParam):
+        legend_bounds = None
+    if isinstance(imposed_colors, FormParam):
+        imposed_colors = None
+
     # Parse matched point pairs for SIFT georeferencing
     if enable_georeferencing and image_points and world_points:
         try:
@@ -372,21 +379,36 @@ async def upload_and_process_map(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        task = process_map_extraction.delay(
-            filename=file.filename,
-            file_content=file_content,
-            project_id=map_obj.project_id,
-            map_id=map_id,
-            pixel_points=pixel_points_list,
-            geo_points_lonlat=geo_points_list,
-            enable_color_extraction=enable_color_extraction,
-            enable_shapes_extraction=enable_shapes_extraction,
-            enable_text_extraction=enable_text_extraction,
-            legend_bounds=legend_bounds_dict,
-            imposed_click_positions=imposed_click_positions,
-            imposed_colors_names=imposed_colors_names,
-            imposed_sampling_radii=imposed_sampling_radii,
-        )
+        task_kwargs = {
+            "filename": file.filename,
+            "file_content": file_content,
+            "project_id": map_obj.project_id,
+            "map_id": map_id,
+            "pixel_points": pixel_points_list,
+            "geo_points_lonlat": geo_points_list,
+            "enable_color_extraction": enable_color_extraction,
+            "enable_shapes_extraction": enable_shapes_extraction,
+            "enable_text_extraction": enable_text_extraction,
+            "legend_bounds": legend_bounds_dict,
+            "imposed_click_positions": imposed_click_positions,
+            "imposed_colors_names": imposed_colors_names,
+            "imposed_sampling_radii": imposed_sampling_radii,
+        }
+
+        # Text-enabled jobs are funneled to a dedicated serial queue as to not
+        # block the faster general processing queue which handles tasks quicker.
+        if enable_text_extraction:
+            task = process_map_extraction.apply_async(
+                kwargs=task_kwargs,
+                queue="maps_ocr",
+            )
+        # Otherwise they are processed in the general maps queue which handles
+        # more parallelism, and is much quicker.
+        else:
+            task = process_map_extraction.apply_async(
+                kwargs=task_kwargs,
+                queue="maps",
+            )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
         logger.info(f"Map processing task started: {task.id} for file {file.filename}")

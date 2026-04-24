@@ -1,7 +1,7 @@
 import asyncio
+import json
 import logging
 import os
-import re
 import tempfile
 import time
 from datetime import datetime
@@ -17,7 +17,7 @@ from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
-from app.utils.text_extraction import extract_text
+from app.utils.text_extraction import extract_text, geolocate_cities_and_leftover_text
 
 from .celery_app import celery_app
 
@@ -103,79 +103,35 @@ def process_map_extraction(
             meta={
                 "current": 3,
                 "total": nb_task,
-                "status": "Extracting text with EasyOCR",
+                "status": "Extracting text with OCR pipeline",
             },
         )
 
         if enable_text_extraction:
-            # GPU acceleration make the text extraction MUCH faster i
-            extracted_text, clean_image = extract_text(
-                image=image, languages=["en", "fr"], gpu_acc=False
+            extracted_text, text_regions = extract_text(
+                map_id=map_id,
+                filename=filename,
+                file_content=file_content,
+                celery_app=celery_app,
             )
 
-            text_regions = [block[0] for block in extracted_text]
-
-            # TODO : Amener ca dans la fonction de detection de texte ===========================================================
-            # Tokenize OCR text to single words and run city detection per token
             try:
-                # Extract just the text strings from the list of tuples [(coords, text, prob), ...]
-                text_strings = [block[1] for block in extracted_text]
-                full_text = " ".join(text_strings)
-                tokens = re.findall(r"\b[\w\-']+\b", full_text)
-                for tok in tokens:
-                    try:
-                        candidate = find_first_city(tok)
-                    except Exception as e:
-                        logger.debug(f"find_first_city error for token '{tok}': {e}")
-                        # treat as not found but persist the token
-                        candidate = {
-                            "found": False,
-                            "query": tok,
-                            "name": tok,
-                            "lat": 0.0,
-                            "lon": 0.0,
-                        }
-
-                    # Build feature using returned candidate; if not found, coordinates will be 0,0
-                    city_feature = {
-                        "type": "Feature",
-                        "properties": {
-                            "name": candidate.get("name") or tok,
-                            "show": bool(candidate.get("found")),
-                            "mapElementType": "point",
-                            "color_name": "black",
-                            "color_rgb": [0, 0, 0],
-                        },
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [
-                                candidate.get("lon") or 0.0,
-                                candidate.get("lat") or 0.0,
-                            ],
-                        },
-                    }
-
-                    city_feature_collection = {
-                        "type": "FeatureCollection",
-                        "features": [city_feature],
-                    }
-
-                    try:
-                        asyncio.run(
-                            persist_city_feature(
-                                project_id, map_id, city_feature_collection
-                            )
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to persist city token '{tok}': {e}")
+                geolocate_cities_and_leftover_text(
+                    extracted_text=extracted_text,
+                    project_id=project_id,
+                    map_id=map_id,
+                    pixel_points=pixel_points,
+                    geo_points_lonlat=geo_points_lonlat,
+                    persist_city_feature_fn=persist_city_feature,
+                    persist_features_fn=persist_features,
+                )
 
             except Exception as e:
                 logger.error(f"City detection failed: {e}")
 
         else:
+            extracted_text = []
             text_regions = None
-
-        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # Step 4: Shapes Extraction (conditionally enabled)
         if enable_shapes_extraction:
@@ -340,8 +296,20 @@ def process_map_extraction(
             output_filename = f"{timestamp}_{base_name}.txt"
             output_path = os.path.join(output_dir, output_filename)
 
-            lines = [block[1] for block in extracted_text]
-            full_text = "\n".join(lines)
+            exported_lines = []
+            for idx, block in enumerate(extracted_text, start=1):
+                if not isinstance(block, dict):
+                    continue
+                text_value = str(block.get("text", ""))
+                bbox_value = block.get("bbox")
+                # Use JSON-escaped text so embedded newlines are preserved as "\\n".
+                text_escaped = json.dumps(text_value, ensure_ascii=False)
+                bbox_serialized = json.dumps(bbox_value, ensure_ascii=False)
+                exported_lines.append(f"--- detection {idx} ---")
+                exported_lines.append(f"bbox: {bbox_serialized}")
+                exported_lines.append(f"text: {text_escaped}")
+
+            full_text = "\n".join(exported_lines)
             try:
                 with open(output_path, "w", encoding="utf-8") as f:
                     f.write("=== OCR EXTRACTION  ===\n")
@@ -375,7 +343,11 @@ def process_map_extraction(
             },
         }
 
-        logger.info(f"Map processing completed for {filename}: 0 characters extracted")
+        logger.info(
+            "Map processing completed for %s: %s text detections extracted",
+            filename,
+            len(extracted_text),
+        )
 
         return result
 
