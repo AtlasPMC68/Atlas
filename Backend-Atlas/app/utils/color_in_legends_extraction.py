@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Optional, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 from skimage.color import rgb2lab
