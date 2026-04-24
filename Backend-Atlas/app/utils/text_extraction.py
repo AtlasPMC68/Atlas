@@ -17,6 +17,8 @@ OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/input")
 OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/intermediate")
 OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/result")
 OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "900"))
+CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
+CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
 
 def _extract_bbox_center_anchor(bbox_quad: object) -> tuple[float | None, float | None]:
@@ -86,6 +88,31 @@ def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[
     }
 
 
+def _compute_geo_bounds(geo_points_lonlat: list) -> dict[str, float] | None:
+    """Return {min_lon, max_lon, min_lat, max_lat} from a list of (lon, lat) points, or None."""
+    if not geo_points_lonlat or len(geo_points_lonlat) < 2:
+        return None
+    try:
+        lons = [float(p[0]) for p in geo_points_lonlat]
+        lats = [float(p[1]) for p in geo_points_lonlat]
+        min_lon, max_lon = min(lons), max(lons)
+        min_lat, max_lat = min(lats), max(lats)
+
+        lon_span = max_lon - min_lon
+        lat_span = max_lat - min_lat
+        lon_pad = max(lon_span * CITY_BOUNDS_PAD_RATIO, CITY_BOUNDS_PAD_MIN_DEG)
+        lat_pad = max(lat_span * CITY_BOUNDS_PAD_RATIO, CITY_BOUNDS_PAD_MIN_DEG)
+
+        return {
+            "min_lon": min_lon - lon_pad,
+            "max_lon": max_lon + lon_pad,
+            "min_lat": min_lat - lat_pad,
+            "max_lat": max_lat + lat_pad,
+        }
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 def geolocate_cities_and_leftover_text(
     extracted_text: list[dict[str, Any]],
     project_id: UUID,
@@ -97,6 +124,7 @@ def geolocate_cities_and_leftover_text(
 ) -> None:
     """Persist city-matched text points and georeference unmatched OCR text anchors."""
     pixel_text_feature_collections = []
+    geo_bounds = _compute_geo_bounds(geo_points_lonlat) if geo_points_lonlat else None
 
     for block in extracted_text:
         if not isinstance(block, dict):
@@ -109,7 +137,7 @@ def geolocate_cities_and_leftover_text(
         anchor_x, anchor_y = _extract_bbox_center_anchor(block.get("bbox"))
 
         try:
-            candidate = find_first_city(text)
+            candidate = find_first_city(text, geo_bounds=geo_bounds)
         except Exception as exc:
             logger.debug(f"find_first_city error for text '{text}': {exc}")
             candidate = {
