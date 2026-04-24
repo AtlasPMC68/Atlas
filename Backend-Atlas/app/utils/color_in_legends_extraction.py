@@ -107,25 +107,25 @@ def extract_colors_from_legend_shapes(
         )
 
         if debug:
-            bb = shape.get("bounding_box") or shape.get("geometry", {}).get("pixel_coords", {}).get("bounding_box")
+            bbox = shape.get("bounding_box") or shape.get("geometry", {}).get("pixel_coords", {}).get("bounding_box")
             print(f"Legend shape {shape_id}")
-            if bb:
+            if bbox:
                 print(
-                    f"  bbox: x={bb.get('x')} y={bb.get('y')} "
-                    f"w={bb.get('width')} h={bb.get('height')}"
+                    f"  bbox: x={bbox.get('x')} y={bbox.get('y')} "
+                    f"w={bbox.get('width')} h={bbox.get('height')}"
                 )
             if contour_points:
                 print(f"  contour_points: {len(contour_points)} points")
 
         if not contour_points:
             # Fallback: if no contour, use bounding box
-            bb = shape.get("bounding_box") or shape.get("geometry", {}).get(
+            bbox = shape.get("bounding_box") or shape.get("geometry", {}).get(
                 "pixel_coords", {}
             ).get("bounding_box")
-            if not bb:
+            if not bbox:
                 continue
 
-            x, y, w, h = int(bb["x"]), int(bb["y"]), int(bb["width"]), int(bb["height"])
+            x, y, w, h = int(bbox["x"]), int(bbox["y"]), int(bbox["width"]), int(bbox["height"])
             roi = img_bgr[max(0, y) : y + h, max(0, x) : x + w]
             if roi.size == 0:
                 continue
