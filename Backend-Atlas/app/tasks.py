@@ -51,20 +51,22 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
-
 @celery_app.task(bind=True)
 def process_map_extraction(
     self,
     filename: str,
     file_content: bytes,
     project_id: UUID,
-    map_id: str,
+    map_id: UUID,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
     legend_bounds: dict | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
+    imposed_click_positions: list | None = None,
+    imposed_colors_names: list | None = None,
+    imposed_sampling_radii: list | None = None,
 ):
     try:
         map_uuid = UUID(map_id)
@@ -166,7 +168,7 @@ def process_map_extraction(
                     try:
                         asyncio.run(
                             persist_city_feature(
-                                project_id, map_uuid, city_feature_collection
+                                project_id, map_id, city_feature_collection
                             )
                         )
                     except Exception as e:
@@ -207,7 +209,7 @@ def process_map_extraction(
                         shape_pixel_features, pixel_points, geo_points_lonlat
                     )
                     asyncio.run(
-                        persist_features(project_id, map_uuid, georef_shape_features)
+                        persist_features(project_id, map_id, georef_shape_features)
                     )
                 except Exception as e:
                     logger.error(
@@ -216,7 +218,7 @@ def process_map_extraction(
                     )
             elif shape_normalized_features:
                 asyncio.run(
-                    persist_features(project_id, map_uuid, shape_normalized_features)
+                    persist_features(project_id, map_id, shape_normalized_features)
                 )
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
@@ -237,11 +239,60 @@ def process_map_extraction(
                 s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)
             ]
 
-            color_result = extract_colors(
-                tmp_file_path,
-                debug=False,
-                legend_shapes=legends_shapes if legends_shapes else None,
+            imposed_click_positions_tuples = (
+                [tuple(c) for c in imposed_click_positions]
+                if imposed_click_positions
+                else None
             )
+
+            imposed_sampling_radii_ints = (
+                [int(r) for r in imposed_sampling_radii]
+                if imposed_sampling_radii
+                else None
+            )
+
+            # If the frontend provided a legend box but shapes extraction was disabled,
+            # we still need legend shapes to perform legend-based color extraction.
+            if (
+                not imposed_click_positions_tuples
+                and not legends_shapes
+                and legend_bounds is not None
+            ):
+                try:
+                    legend_shapes_result = extract_shapes(
+                        tmp_file_path,
+                        text_regions=text_regions,
+                        legend_bounds=legend_bounds,
+                    )
+                    legends_shapes = [
+                        s
+                        for s in legend_shapes_result.get("shapes", [])
+                        if s.get("isLegend", False)
+                    ]
+                except Exception as e:
+                    logger.error(
+                        f"Legend-only shapes extraction failed for map {map_id}: {e}",
+                        exc_info=True,
+                    )
+
+            if not imposed_click_positions_tuples and not legends_shapes:
+                logger.info(
+                    "[DEBUG] Color extraction skipped - no imposed colors provided"
+                )
+                color_result = {
+                    "normalized_features": [],
+                    "pixel_features": [],
+                    "masks": {},
+                }
+            else:
+                color_result = extract_colors(
+                    tmp_file_path,
+                    debug=False,
+                    legend_shapes=legends_shapes if legends_shapes else None,
+                    imposed_click_positions=imposed_click_positions_tuples,
+                    imposed_colors_names=imposed_colors_names,
+                    imposed_sampling_radii=imposed_sampling_radii_ints,
+                )
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])
 

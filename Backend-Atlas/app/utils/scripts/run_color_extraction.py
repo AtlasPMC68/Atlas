@@ -5,19 +5,23 @@ from app.utils.color_extraction import extract_colors
 
 # Run the script with:
 # cd "\Atlas\Backend-Atlas"
-# py -m app.utils.scripts.run_color_extraction 
+# py -m app.utils.scripts.run_color_extraction
 
 ASSETS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "tests", "assets"
 )
 
-def extract_color_from_assets():
 
+def extract_color_from_assets():
 
     for filename in os.listdir(ASSETS_DIR):
         file_path = os.path.join(ASSETS_DIR, filename)
         if os.path.isfile(file_path) and validate_file_extension(file_path):
             print(f"Extracting color from {filename}...")
+            # TODO: extract_colors no longer auto-detects colors.
+            # Update this script to provide imposed click positions OR run shapes extraction
+            # first and pass legend_shapes.
             extract_colors(file_path, debug=True)
-   
+
+
 extract_color_from_assets()

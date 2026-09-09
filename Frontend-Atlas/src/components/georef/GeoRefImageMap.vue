@@ -2,56 +2,60 @@
   <div
     ref="container"
     class="relative w-full h-full bg-base-200 overflow-hidden"
-    @mousedown="onMouseDown"
-    @mousemove="onMouseMove"
-    @mouseup="onMouseUp"
-    @mouseleave="onMouseUp"
+    :class="containerCursorClass"
+    @mousedown.left="onPointerDown"
+    @mousemove="onPointerMove"
+    @mouseup.left="onPointerUp"
+    @mouseleave="onPointerLeave"
     @wheel.prevent="onWheel"
   >
-    <!-- Mode toggle: Click (place points) vs Move (pan) -->
-    <div class="absolute top-2 right-2 z-10 flex gap-2">
+    <div class="absolute top-2 right-2 z-10 flex items-center gap-2">
+      <span class="text-xs text-base-content/60 whitespace-nowrap">
+        {{ Math.round(zoom * 100) }}%
+      </span>
       <button
-        type="button"
         class="btn btn-xs"
-        :class="interactionMode === 'click' ? 'btn-primary' : 'btn-ghost'"
+        type="button"
+        :disabled="zoom <= ZOOM_MIN"
         @mousedown.stop
-        @click.stop="interactionMode = 'click'"
+        @click.stop="zoomOut"
       >
-        Click
+        −
       </button>
       <button
-        type="button"
         class="btn btn-xs"
-        :class="interactionMode === 'move' ? 'btn-primary' : 'btn-ghost'"
+        type="button"
+        :disabled="zoom === 1"
         @mousedown.stop
-        @click.stop="interactionMode = 'move'"
+        @click.stop="resetZoom"
       >
-        Move
+        100%
+      </button>
+      <button
+        class="btn btn-xs"
+        type="button"
+        :disabled="zoom >= ZOOM_MAX"
+        @mousedown.stop
+        @click.stop="zoomIn"
+      >
+        +
       </button>
     </div>
 
-    <div
-      class="absolute inset-0"
-      :style="{
-        transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-        transformOrigin: 'top left',
-      }"
-    >
+    <div v-if="imageUrl" class="absolute" :style="stageStyle">
       <img
-        v-if="imageUrl"
         ref="imageEl"
         :src="imageUrl"
         class="w-full h-full object-contain select-none pointer-events-none"
-        @load="updateSize"
+        @load="onImageLoad"
       />
+
       <svg
-        v-if="imageEl && matchedPoints.length"
-        class="absolute"
-        :style="svgStyle"
-        :viewBox="`0 0 ${imageNaturalWidth} ${imageNaturalHeight}`"
+        v-if="baseStage && matchedPoints.length"
+        class="absolute inset-0"
+        :viewBox="`0 0 ${baseStage.naturalW} ${baseStage.naturalH}`"
         preserveAspectRatio="none"
       >
-        <!-- Matched world/image pairs as triangles with stable colors -->
         <polygon
           v-for="m in matchedPoints"
           :key="`matched-${m.index}`"
@@ -69,6 +73,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
+import { useZoomableStage } from "../../composables/useZoomableStage";
 import type { XYTuple, MatchedImagePoint } from "../../typescript/georef";
 
 type PointTuple = XYTuple;
@@ -96,142 +101,99 @@ const emit = defineEmits<{
 const container = ref<HTMLDivElement | null>(null);
 const imageEl = ref<HTMLImageElement | null>(null);
 
-const imageNaturalWidth = ref<number>(0);
-const imageNaturalHeight = ref<number>(0);
+const {
+  baseStage,
+  stageStyle,
+  stagePxPerImagePx,
+  zoom,
+  panX,
+  panY,
+  zoomMin: ZOOM_MIN,
+  zoomMax: ZOOM_MAX,
+  updateBaseStage,
+  clampPan,
+  getLocalPointer,
+  getStagePositionFromEvent,
+  onWheel,
+  zoomIn,
+  zoomOut,
+  resetView,
+} = useZoomableStage({
+  containerRef: container,
+  imageRef: imageEl,
+  zoomMin: 1,
+  zoomMax: 5,
+  zoomStepFactor: 1.25,
+});
 
-const scale = ref<number>(1);
-const offset = ref<{ x: number; y: number }>({ x: 0, y: 0 });
-const isPanning = ref<boolean>(false);
-const lastMouse = ref<{ x: number; y: number }>({ x: 0, y: 0 });
+function resetZoom() {
+  resetView();
+}
 
-// 'click' = place point, 'move' = pan by dragging
-const interactionMode = ref<'click' | 'move'>("click");
+const isPointerDown = ref(false);
+const hasDragged = ref(false);
+const pointerStart = ref({ x: 0, y: 0 });
+const panStart = ref({ x: 0, y: 0 });
 
-const svgStyle = computed(() => {
-  if (
-    !container.value ||
-    !imageEl.value ||
-    !imageNaturalWidth.value ||
-    !imageNaturalHeight.value
-  ) {
-    return {};
+const containerCursorClass = computed(() => {
+  if (zoom.value > 1) {
+    return isPointerDown.value ? "cursor-grabbing" : "cursor-grab";
   }
-
-  const c = container.value.getBoundingClientRect();
-  const cw = c.width;
-  const ch = c.height;
-
-  const natW = imageNaturalWidth.value;
-  const natH = imageNaturalHeight.value;
-
-  // Use the same fitting logic as in setPointFromEvent so that
-  // the SVG overlay matches exactly the displayed image area
-  // (object-contain with possible gray bars around).
-  const baseScale = Math.min(cw / natW, ch / natH);
-  const displayW = natW * baseScale;
-  const displayH = natH * baseScale;
-  const offsetX = (cw - displayW) / 2;
-  const offsetY = (ch - displayH) / 2;
-
-  return {
-    left: `${offsetX}px`,
-    top: `${offsetY}px`,
-    width: `${displayW}px`,
-    height: `${displayH}px`,
-  };
+  return "cursor-crosshair";
 });
 
 onMounted(() => {
-  updateSize();
+  updateBaseStage();
 });
 
 watch(
   () => props.imageUrl,
   () => {
-    updateSize();
+    updateBaseStage();
   },
 );
 
-function updateSize(): void {
-  if (!container.value) return;
-  if (imageEl.value) {
-    imageNaturalWidth.value = imageEl.value.naturalWidth || 0;
-    imageNaturalHeight.value = imageEl.value.naturalHeight || 0;
-  }
+function onImageLoad() {
+  updateBaseStage();
 }
 
-function onWheel(e: WheelEvent): void {
-  const factor = 0.001;
-  const next = scale.value * (1 - e.deltaY * factor);
-  scale.value = Math.min(5, Math.max(1, next));
-
-  // After zooming, make sure the content stays within bounds
-  clampOffset();
+function onPointerDown(event: MouseEvent): void {
+  if (event.button !== 0) return;
+  isPointerDown.value = true;
+  hasDragged.value = false;
+  const local = getLocalPointer(event);
+  if (!local) return;
+  pointerStart.value = local;
+  panStart.value = { x: panX.value, y: panY.value };
 }
 
-function onMouseDown(event: MouseEvent): void {
-  if (!container.value) return;
+function onPointerMove(event: MouseEvent): void {
+  if (!isPointerDown.value) return;
+  if (zoom.value <= 1) return;
+  const local = getLocalPointer(event);
+  if (!local) return;
 
-  // In move mode, start panning instead of drawing
-  if (interactionMode.value === "move") {
-    isPanning.value = true;
-    lastMouse.value = { x: event.clientX, y: event.clientY };
-    return;
+  const dx = local.x - pointerStart.value.x;
+  const dy = local.y - pointerStart.value.y;
+  if (!hasDragged.value && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+    hasDragged.value = true;
   }
+  if (!hasDragged.value) return;
 
-  // Click mode: single click to place a point
+  const clamped = clampPan(panStart.value.x + dx, panStart.value.y + dy);
+  panX.value = clamped.x;
+  panY.value = clamped.y;
+}
+
+function onPointerUp(event: MouseEvent): void {
+  if (!isPointerDown.value) return;
+  isPointerDown.value = false;
+  if (hasDragged.value) return;
   setPointFromEvent(event);
 }
 
-function onMouseMove(event: MouseEvent): void {
-  if (!container.value) return;
-
-  // Handle panning independently of drawing
-  if (isPanning.value) {
-    const dx = event.clientX - lastMouse.value.x;
-    const dy = event.clientY - lastMouse.value.y;
-
-    // Apply drag
-    offset.value = { x: offset.value.x + dx, y: offset.value.y + dy };
-
-    // Clamp so the scaled content (the wrapper that matches
-    // the container size) always covers the container.
-    // At scale = 1 this prevents any panning (you already see
-    // the whole image with gray bars). For scale > 1 you can
-    // pan, but never beyond the container edges.
-    clampOffset();
-
-    lastMouse.value = { x: event.clientX, y: event.clientY };
-    return;
-  }
-}
-
-function onMouseUp(): void {
-  isPanning.value = false;
-}
-
-function clampOffset(): void {
-  if (!container.value) return;
-
-  const rect = container.value.getBoundingClientRect();
-  const cw = rect.width;
-  const ch = rect.height;
-
-  const s = scale.value;
-
-  // The transformed wrapper has size (cw * s, ch * s) and we
-  // want it to always fully cover the container (0..cw, 0..ch).
-  // This gives classic bounds for panning a zoomed element that
-  // is originally the same size as the viewport.
-  const minX = cw - cw * s;
-  const maxX = 0;
-  const minY = ch - ch * s;
-  const maxY = 0;
-
-  offset.value = {
-    x: Math.min(maxX, Math.max(minX, offset.value.x)),
-    y: Math.min(maxY, Math.max(minY, offset.value.y)),
-  };
+function onPointerLeave(): void {
+  isPointerDown.value = false;
 }
 
 function onTriangleClick(index: number): void {
@@ -244,29 +206,10 @@ function trianglePoints(m: MatchedPoint): string {
   // Keep its apparent size roughly constant on screen by
   // compensating for both the base image fit (baseScale)
   // and the interactive zoom (scale).
-  const s = scale.value || 1;
-
-  const natW = imageNaturalWidth.value;
-  const natH = imageNaturalHeight.value;
-  const containerEl = container.value;
-
-  let size;
-  if (!containerEl || !natW || !natH) {
-    // Fallback: behave like before if we can't compute baseScale
-    size = 36 / s;
-  } else {
-    const rect = containerEl.getBoundingClientRect();
-    const cw = rect.width;
-    const ch = rect.height;
-
-    const baseScale = Math.min(cw / natW, ch / natH) || 1;
-
-    // Desired triangle height in on-screen pixels
-    const desiredScreenSize = 6; // px
-
-    // size (in image pixels) * baseScale * s ~= desiredScreenSize
-    size = desiredScreenSize / (baseScale * s);
-  }
+  // Desired triangle height in on-screen pixels.
+  // svg is scaled by (baseStage fit) * zoom, so compensate by both.
+  const desiredScreenSize = 6; // px
+  const size = desiredScreenSize / (stagePxPerImagePx.value * Math.max(1, zoom.value));
   const x = m.x;
   const y = m.y;
 
@@ -281,48 +224,21 @@ function trianglePoints(m: MatchedPoint): string {
 }
 
 function setPointFromEvent(event: MouseEvent): void {
-  if (!container.value || !imageEl.value) return;
+  if (!baseStage.value) return;
+  const pos = getStagePositionFromEvent(event);
+  if (!pos) return;
 
-  const natW = imageEl.value.naturalWidth;
-  const natH = imageEl.value.naturalHeight;
-  if (!natW || !natH) return;
-
-  const containerRect = container.value.getBoundingClientRect();
-  const cw = containerRect.width;
-  const ch = containerRect.height;
-
-  // Mouse position in viewport -> container local
-  const cx = event.clientX - containerRect.left;
-  const cy = event.clientY - containerRect.top;
-
-  // Undo current pan/zoom applied to the wrapper
-  const localX = (cx - offset.value.x) / scale.value;
-  const localY = (cy - offset.value.y) / scale.value;
-
-  // How the image is fitted inside the container with object-contain
-  const baseScale = Math.min(cw / natW, ch / natH);
-  const displayW = natW * baseScale;
-  const displayH = natH * baseScale;
-  const offsetX = (cw - displayW) / 2;
-  const offsetY = (ch - displayH) / 2;
-
-  // Coords inside the displayed image content
-  const ix = localX - offsetX;
-  const iy = localY - offsetY;
-
-  if (ix < 0 || iy < 0 || ix > displayW || iy > displayH) return;
-
-  // Back to original pixel space
-  const xPx = ix / baseScale;
-  const yPx = iy / baseScale;
-
+  // Convert stage coords (in rendered pixels) back to image pixel space.
+  const xPx = (pos.stage.x / Math.max(1, baseStage.value.renderedW)) * baseStage.value.naturalW;
+  const yPx = (pos.stage.y / Math.max(1, baseStage.value.renderedH)) * baseStage.value.naturalH;
   emit("update:point", [xPx, yPx]);
 }
 
 defineExpose({
-  // Allow parent to force the component back into click mode
+  // Kept for backward compatibility: click is always enabled now.
   focusClickMode() {
-    interactionMode.value = "click";
+    isPointerDown.value = false;
+    hasDragged.value = false;
   },
 });
 
