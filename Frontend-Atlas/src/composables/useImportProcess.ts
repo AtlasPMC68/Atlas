@@ -83,7 +83,7 @@ export function useImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
-    // Add extraction options
+
     if (options) {
       formData.append(
         "enable_georeferencing",

@@ -6,6 +6,10 @@ import Dashboard from "../views/Dashboard.vue";
 import Profile from "../views/Profile.vue";
 import Settings from "../views/Settings.vue";
 import Discover from "../views/Discover.vue";
+import TestEditor from "../views/dev/TestEditor.vue";
+import TestCreation from "../views/dev/TestCreation.vue";
+import TestBrowser from "../views/dev/TestBrowser.vue";
+import TestCaseResult from "../views/dev/TestCaseResult.vue";
 import keycloak from "../keycloak";
 import { useCurrentUser } from "../composables/useCurrentUser";
 
@@ -17,6 +21,16 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: "/upload-test/:mapId",
+    component: ImportView,
+    meta: { requiresAuth: true, importMode: "dev-test" },
+  },
+  {
+    path: "/tests",
+    component: TestBrowser,
+    meta: { requiresAuth: true },
+  },
+  {
     path: "/tableau-de-bord",
     component: Dashboard,
     meta: { requiresAuth: true },
@@ -24,6 +38,21 @@ const routes = [
   {
     path: "/projets-publiques",
     component: Discover,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-editor/:mapId",
+    component: TestEditor,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-editor/:mapId/case/:caseId",
+    component: TestCaseResult,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-creation",
+    component: TestCreation,
     meta: { requiresAuth: true },
   },
   { path: "/profil", component: Profile, meta: { requiresAuth: true } },

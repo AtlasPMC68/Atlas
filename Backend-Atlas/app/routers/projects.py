@@ -34,6 +34,7 @@ from app.utils.update_feature import (
     serialize_feature_rows,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
+from app.utils.imposed_colors import parse_imposed_colors
 
 from ..celery_app import celery_app
 from ..tasks import process_map_extraction
@@ -327,39 +328,18 @@ async def upload_and_process_map(
             )
 
     # Parse optional user-picked click positions as [{"x": 0.5, "y": 0.3, "name": "..."}, ...]
-    imposed_click_positions = None
-    imposed_colors_names = None
-    imposed_sampling_radii = None
-    if imposed_colors:
-        try:
-            parsed_colors = json.loads(imposed_colors)
-            if not isinstance(parsed_colors, list):
-                raise ValueError("imposed_colors must be a JSON array")
-            imposed_click_positions = []
-            imposed_colors_names = []
-            imposed_sampling_radii = []
-            for entry in parsed_colors:
-                if not isinstance(entry, dict) or "x" not in entry or "y" not in entry:
-                    raise ValueError(
-                        'Each entry must be {"x": float, "y": float, "name": "..."}'
-                    )
-                x, y = float(entry["x"]), float(entry["y"])
-                if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
-                    raise ValueError("x and y must be normalised floats in [0, 1]")
+    try:
+        (
+            imposed_click_positions,
+            imposed_colors_names,
+            imposed_sampling_radii,
+        ) = parse_imposed_colors(imposed_colors)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid imposed_colors payload: {e}",
+        )
 
-                radius_raw = entry.get("radius", 20)
-                radius = int(float(radius_raw))
-                if radius < 1 or radius > 200:
-                    raise ValueError("radius must be an int in [1, 200]")
-
-                imposed_click_positions.append((x, y))
-                imposed_colors_names.append(str(entry.get("name", "")).strip() or None)
-                imposed_sampling_radii.append(radius)
-        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid imposed_colors payload: {e}",
-            )
     file_content = await file.read()
 
     if len(file_content) > MAX_FILE_SIZE:
