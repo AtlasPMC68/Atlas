@@ -68,10 +68,6 @@ def process_map_extraction(
     imposed_colors_names: list | None = None,
     imposed_sampling_radii: list | None = None,
 ):
-    try:
-        map_uuid = UUID(map_id)
-    except (ValueError, AttributeError) as e:
-        raise ValueError(f"Invalid map_id: {map_id!r}") from e
 
     try:
         # Step 1: temp save
@@ -306,7 +302,7 @@ def process_map_extraction(
                         geo_points_lonlat,
                         snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
                     )
-                    asyncio.run(persist_features(project_id, map_uuid, georef_features))
+                    asyncio.run(persist_features(project_id, map_id, georef_features))
 
                 except Exception as e:
                     logger.error(
@@ -314,7 +310,7 @@ def process_map_extraction(
                         exc_info=True,
                     )
             elif normalized_features:
-                asyncio.run(persist_features(project_id, map_uuid, normalized_features))
+                asyncio.run(persist_features(project_id, map_id, normalized_features))
         else:
             logger.info("[DEBUG] Color extraction disabled - skipping")
             color_result = {"colors_detected": 0}
