@@ -31,6 +31,15 @@ def _normalize(s: str) -> str:
     return s.casefold().strip()
 
 
+def _normalize_query(s: str) -> str:
+    """Like _normalize but also replaces punctuation and extra whitespace with single spaces."""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    s = re.sub(r"\s+", " ", s)
+    return s.casefold().strip()
+
+
 # Load geonamescache cities into a mapping: normalized name -> list of candidate dicts
 _gc = geonamescache.GeonamesCache()
 _city_map: Dict[str, List[Dict[str, Any]]] = {}
@@ -42,14 +51,20 @@ for info in _gc.get_cities().values():
         lon = float(info.get("longitude"))
     except Exception:
         continue
-    key = _normalize(name)
-    _city_map.setdefault(key, []).append({
+    city_entry = {
         "name": name,
         "lat": lat,
         "lon": lon,
         "country": country,
         "population": info.get("population"),
-    })
+    }
+
+    key = _normalize(name)
+    _city_map.setdefault(key, []).append(city_entry)
+
+    query_key = _normalize_query(name)
+    if query_key != key:
+        _city_map.setdefault(query_key, []).append(city_entry)
 
 def detect_cities_from_text(
     text: str, max_ngram: int = 4, use_search: bool = False, search_limit: int = 10
@@ -127,49 +142,62 @@ def detect_cities_from_text(
 _all_ = ["detect_cities_from_text", "_city_map", "find_first_city"]
 
 
-def find_first_city(text: str) -> Dict[str, Any]:
+def find_first_city(
+    text: str,
+    geo_bounds: Optional[Dict[str, float]] = None,
+) -> Dict[str, Any]:
     """Return a standardized result for a city search.
 
+    Performs a direct full-string match (accent/case insensitive, punctuation stripped)
+    against the city gazetteer.  When geo_bounds is provided
+    (``{'min_lon': ..., 'max_lon': ..., 'min_lat': ..., 'max_lat': ...}``),
+    only candidates whose coordinates fall inside that rectangle are considered;
+    if none survive the filter the function returns not-found.
+
     Always returns a dict with at least the keys:
-      - `found`: bool
-      - `query`: the original text passed in
-      - `name`, `lat`, `lon`: populated when `found` is True
-      - `matched_text`: phrase matched from the input when found, else None
-
-    This makes it easier for callers to persist a record even when no
-    local match is available (we can store coordinates as 0,0 in that case).
+      - ``found``: bool
+      - ``query``: the original text passed in
+      - ``name``, ``lat``, ``lon``: populated when ``found`` is True
+      - ``matched_text``: normalised query string when found, else None
     """
-    result: Dict[str, Any] = {"found": False, "query": text, "name": text, "lat": 0.0, "lon": 0.0, "matched_text": None}
+    result: Dict[str, Any] = {
+        "found": False,
+        "query": text,
+        "name": text,
+        "lat": 0.0,
+        "lon": 0.0,
+        "matched_text": None,
+    }
 
-    try:
-        matches = detect_cities_from_text(text)
-    except Exception:
-        # On error, return non-found with query preserved
+    key = _normalize_query(text)
+    candidates: List[Dict[str, Any]] = list(_city_map.get(key, []))
+
+    if not candidates:
         return result
 
-    if not matches:
+    if geo_bounds is not None:
+        bounded = [
+            c for c in candidates
+            if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"]
+            and geo_bounds["min_lon"] <= c["lon"] <= geo_bounds["max_lon"]
+        ]
+        candidates = bounded if bounded else []
+
+    if not candidates:
         return result
 
-    for m in matches:
-        candidates = m.get("candidates") or []
-        if not candidates:
-            continue
+    def pop_key(c: Dict[str, Any]) -> int:
+        try:
+            return int(c.get("population") or 0)
+        except Exception:
+            return 0
 
-        # pick candidate with largest population when available
-        def pop_key(c):
-            try:
-                return int(c.get("population") or 0)
-            except Exception:
-                return 0
-
-        best = max(candidates, key=pop_key)
-        result.update({
-            "found": True,
-            "name": best.get("name"),
-            "lat": best.get("lat"),
-            "lon": best.get("lon"),
-            "matched_text": m.get("text"),
-        })
-        return result
-
+    best = max(candidates, key=pop_key)
+    result.update({
+        "found": True,
+        "name": best.get("name"),
+        "lat": best.get("lat"),
+        "lon": best.get("lon"),
+        "matched_text": key,
+    })
     return result
