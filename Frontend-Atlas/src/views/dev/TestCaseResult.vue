@@ -125,6 +125,20 @@
                 <span class="font-mono">{{ fmtRatio(expectedBestSummary?.totalFalsePositiveArea) }}</span>
               </div>
 
+              <!-- Zones are paired strictly by name (pipette name vs drawn zone
+                   name); anything unpaired scores 0, so make the cause visible. -->
+              <div
+                v-if="nameMatchWarnings.length > 0"
+                class="alert alert-warning text-xs mt-2 flex flex-col items-start gap-1 py-2"
+              >
+                <span
+                  v-for="(warning, i) in nameMatchWarnings"
+                  :key="`name-warning-${i}`"
+                >
+                  {{ warning }}
+                </span>
+              </div>
+
               <div v-if="typeof activeReport?.pass === 'boolean'" class="mt-2">
                 <div
                   class="badge"
@@ -153,6 +167,10 @@ type DevTestReport = {
   testCaseId?: string;
   pass?: boolean;
   metrics?: any;
+  nameMatching?: {
+    expectedWithoutNameMatch?: (string | null)[];
+    extractedNeverMatchedByName?: string[];
+  };
 };
 
 const route = useRoute();
@@ -226,6 +244,31 @@ const expected0Label = computed<string>(() => {
 
 const expected0Iou = computed<any>(() => {
   return primaryBestMatch.value?.iou;
+});
+
+const nameMatchWarnings = computed<string[]>(() => {
+  const nm = activeReport.value?.nameMatching;
+  if (!nm) return [];
+
+  const warnings: string[] = [];
+
+  const unmatchedExpected = (nm.expectedWithoutNameMatch ?? []).filter(
+    (n): n is string => typeof n === "string" && n.trim().length > 0,
+  );
+  if (unmatchedExpected.length > 0) {
+    warnings.push(
+      `Zones attendues sans couleur extraite du même nom (IoU 0) : ${unmatchedExpected.join(", ")}`,
+    );
+  }
+
+  const unusedExtracted = nm.extractedNeverMatchedByName ?? [];
+  if (unusedExtracted.length > 0) {
+    warnings.push(
+      `Couleurs extraites qui ne correspondent à aucune zone attendue : ${unusedExtracted.join(", ")}`,
+    );
+  }
+
+  return warnings;
 });
 
 const expectedBestSummary = computed<any>(() => {

@@ -17,6 +17,7 @@ from app.utils.auth import get_current_user_id
 from ..tasks import process_dev_test_extraction
 from app.utils.dev_test import (
     delete_dev_test,
+    delete_dev_test_case,
     list_dev_test_cases,
     list_dev_tests,
     run_evaluate_case_blocking,
@@ -25,6 +26,10 @@ from app.utils.dev_test import (
     write_test_config,
 )
 from app.utils.dev_test_assets import GEOREF_ASSETS_DIR, ZONES_DIR
+from app.utils.imposed_colors import (
+    imposed_colors_to_config_entries,
+    parse_imposed_colors,
+)
 from app.utils.dev_test_evaluator import build_test_case_paths
 
 router = APIRouter(prefix="/dev-test-api", tags=["Dev Test"])
@@ -52,6 +57,7 @@ async def upload_dev_test_map(
     test_case: str = Form(...),
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
+    imposed_colors: str | None = Form(None),
     file: UploadFile = File(...),
     _user_id: str = Depends(get_current_user_id),
 ):
@@ -86,6 +92,25 @@ async def upload_dev_test_map(
                 status_code=400, detail=f"Invalid georeferencing payload: {e}"
             )
 
+    # Pipette colors picked by the user; without them nothing is extracted at all,
+    # so the georeferencing step would have no zones to transform.
+    try:
+        (
+            imposed_click_positions,
+            imposed_colors_names,
+            imposed_sampling_radii,
+        ) = parse_imposed_colors(imposed_colors)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid imposed_colors payload: {e}"
+        )
+
+    if not imposed_click_positions:
+        logger.warning(
+            f"[DEV-TEST] No imposed colors provided for test_id={safe_test_id} "
+            f"case={safe_test_case}; extraction will produce no zones"
+        )
+
     file_content = await file.read()
     if len(file_content) > _MAX_FILE_SIZE:
         raise HTTPException(
@@ -108,6 +133,9 @@ async def upload_dev_test_map(
         world_pts=[{"lng": float(p[0]), "lat": float(p[1])} for p in geo_points_list]
         if geo_points_list
         else None,
+        imposed_colors=imposed_colors_to_config_entries(
+            imposed_click_positions, imposed_colors_names, imposed_sampling_radii
+        ),
     )
 
     try:
@@ -118,6 +146,9 @@ async def upload_dev_test_map(
             test_case=safe_test_case,
             pixel_points=pixel_points_list,
             geo_points_lonlat=geo_points_list,
+            imposed_click_positions=imposed_click_positions,
+            imposed_colors_names=imposed_colors_names,
+            imposed_sampling_radii=imposed_sampling_radii,
         )
         logger.info(
             f"[DEV-TEST] Started extraction task {task.id} for test_id={safe_test_id} case={safe_test_case}"
@@ -218,6 +249,29 @@ async def list_test_cases(
     safe_test_id = _safe_id(test_id, "test_id")
 
     return list_dev_test_cases(safe_test_id)
+
+
+@router.delete("/test-cases/{test_id}/{test_case_id}")
+async def delete_test_case(
+    test_id: str,
+    test_case_id: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Delete a single test case of a given test (map) id."""
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_test_case_id = _safe_id(test_case_id, "test_case_id")
+
+    result = delete_dev_test_case(safe_test_id, safe_test_case_id)
+    if result.get("status") == "not_found":
+        raise HTTPException(
+            status_code=404,
+            detail=f"Test case not found: {safe_test_id}/{safe_test_case_id}",
+        )
+
+    logger.info(
+        f"[DEV-TEST] Deleted test case {safe_test_id}/{safe_test_case_id}"
+    )
+    return result
 
 
 # Not really used for now but would be if we wanted to trigger evaluation through frontend

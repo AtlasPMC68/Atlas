@@ -377,7 +377,6 @@ async function sampleAtEvent(event: MouseEvent) {
 
   try {
     const formData = new FormData();
-    modalRef.value?.close("programmatic");
     formData.append("file", props.imageFile);
     formData.append("x", String(pos.normalized.x));
     formData.append("y", String(pos.normalized.y));

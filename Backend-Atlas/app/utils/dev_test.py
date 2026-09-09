@@ -15,6 +15,7 @@ from app.utils.dev_test_assets import (
     TEST_CASES_DIR,
     ZONES_DIR,
 )
+from app.utils.imposed_colors import parse_imposed_colors_entries
 
 
 def write_test_config(
@@ -24,6 +25,7 @@ def write_test_config(
     original_filename: str | None,
     img_pts: list | None,
     world_pts: list | None,
+    imposed_colors: list | None = None,
 ) -> None:
     # tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
     case_dir = os.path.join(TEST_CASES_DIR, parent_test_id, test_case_id)
@@ -39,6 +41,10 @@ def write_test_config(
         "georef": {
             "imagePoints": img_pts,
             "worldPoints": world_pts,
+        },
+        # Pipette selections, kept so the case can be re-run identically later.
+        "colors": {
+            "imposed": imposed_colors,
         },
     }
 
@@ -199,6 +205,26 @@ def list_dev_test_cases(test_id: str) -> list[str]:
     return sorted(cases)
 
 
+def delete_dev_test_case(test_id: str, test_case_id: str) -> dict[str, Any]:
+    """Delete a single test case folder (config, extracted zones, reports)."""
+    case_dir = os.path.join(TEST_CASES_DIR, test_id, test_case_id)
+    if not os.path.isdir(case_dir):
+        return {"status": "not_found", "testId": test_id, "testCaseId": test_case_id}
+
+    shutil.rmtree(case_dir)
+
+    # Drop the parent folder too once its last case is gone, so the test stops
+    # showing an empty case list.
+    parent_dir = os.path.join(TEST_CASES_DIR, test_id)
+    try:
+        if os.path.isdir(parent_dir) and not os.listdir(parent_dir):
+            os.rmdir(parent_dir)
+    except OSError:
+        pass
+
+    return {"status": "ok", "testId": test_id, "testCaseId": test_case_id}
+
+
 def evaluate_and_persist_case(
     *, assets_root: str, test_id: str, test_case_id: str, min_iou: float | None
 ) -> dict[str, Any]:
@@ -288,6 +314,9 @@ def _parse_extraction_inputs(
     str,
     list[tuple[float, float]] | None,
     list[tuple[float, float]] | None,
+    list[tuple[float, float]] | None,
+    list[str | None] | None,
+    list[int] | None,
 ]:
     georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
 
@@ -306,6 +335,16 @@ def _parse_extraction_inputs(
         except Exception as e:
             raise ValueError(f"Invalid georef points in config: {e}")
 
+    colors = config.get("colors") if isinstance(config.get("colors"), dict) else {}
+    try:
+        (
+            imposed_click_positions,
+            imposed_colors_names,
+            imposed_sampling_radii,
+        ) = parse_imposed_colors_entries(colors.get("imposed"))
+    except ValueError as e:
+        raise ValueError(f"Invalid imposed colors in config: {e}")
+
     filename = config.get("filename")
     if not isinstance(filename, str) or not filename.strip():
         filename = os.path.basename(image_path)
@@ -314,6 +353,9 @@ def _parse_extraction_inputs(
         filename,
         pixel_points_list,
         geo_points_list,
+        imposed_click_positions,
+        imposed_colors_names,
+        imposed_sampling_radii,
     )
 
 
@@ -333,6 +375,9 @@ def build_extraction_task_args_for_case(
         filename,
         pixel_points_list,
         geo_points_list,
+        imposed_click_positions,
+        imposed_colors_names,
+        imposed_sampling_radii,
     ) = _parse_extraction_inputs(config, image_path)
 
     try:
@@ -348,6 +393,9 @@ def build_extraction_task_args_for_case(
         test_case_id,
         pixel_points_list,
         geo_points_list,
+        imposed_click_positions,
+        imposed_colors_names,
+        imposed_sampling_radii,
     ]
 
 

@@ -4,6 +4,7 @@ import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
+type ImposedColor = { x: number; y: number; name: string; radius: number };
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
 type StartDevTestImportResult =
   | { success: true }
@@ -38,6 +39,7 @@ export function useDevTestImportProcess() {
     testCase: string,
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
+    imposedColors?: ImposedColor[],
   ): Promise<StartDevTestImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
     if (!testId) return { success: false, error: "Identifiant de test manquant" };
@@ -57,6 +59,21 @@ export function useDevTestImportProcess() {
     }
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
+    }
+    // Pipette selections: without them the backend extracts no color zones at all.
+    if (imposedColors && imposedColors.length) {
+      formData.append(
+        "imposed_colors",
+        JSON.stringify(
+          imposedColors.map((c) => {
+            const rawRadius = Number(c.radius);
+            const radius = Number.isFinite(rawRadius)
+              ? Math.max(1, Math.min(200, Math.round(rawRadius)))
+              : 20;
+            return { x: c.x, y: c.y, name: c.name, radius };
+          }),
+        ),
+      );
     }
     formData.append("file", file);
 

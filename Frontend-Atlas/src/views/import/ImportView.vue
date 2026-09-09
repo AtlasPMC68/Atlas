@@ -435,6 +435,16 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
   showSiftGeorefModal.value = false;
 
   pendingGeorefPayload.value = payload;
+
+  // Dev-test extraction ignores legend-derived colors, so the pipette is the only
+  // color source there: skip the legend step and go straight to the color picker.
+  if (isDevTest.value) {
+    pendingLegendBounds.value = null;
+    currentStep.value = 6;
+    showColorPickerModal.value = true;
+    return;
+  }
+
   legendReturnStep.value = 4;
   currentStep.value = 5;
   showLegendPickerModal.value = true;
@@ -464,6 +474,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       devTestCaseName.value,
       imagePoints,
       worldPoints,
+      pickedColors.value.length > 0 ? pickedColors.value : undefined,
     );
     if (result.success) {
       currentStep.value = 6;
@@ -472,6 +483,8 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       currentStep.value = 2;
     }
     pendingGeorefPayload.value = null;
+    pickedColors.value = [];
+    pendingLegendBounds.value = null;
     return;
   }
 
@@ -562,6 +575,12 @@ async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
 
 function handleColorPickerClose() {
   showColorPickerModal.value = false;
+  if (isDevTest.value) {
+    // No legend step in dev-test: go back to the georeferencing step.
+    showSiftGeorefModal.value = true;
+    currentStep.value = 4;
+    return;
+  }
   // Go back to legend step
   showLegendPickerModal.value = true;
   currentStep.value = 5;

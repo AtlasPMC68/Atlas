@@ -438,6 +438,9 @@ def process_dev_test_extraction(
     test_case: str,
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
+    imposed_click_positions: list | None = None,
+    imposed_colors_names: list | None = None,
+    imposed_sampling_radii: list | None = None,
 ):
     """Dev-test-only extraction task: no DB persistence, results saved to files,
     evaluation report written automatically at the end."""
@@ -502,7 +505,31 @@ def process_dev_test_extraction(
                 "status": "Extracting colors from image",
             },
         )
-        color_result = extract_colors(tmp_file_path, debug=False, legend_shapes=None)
+        # Colors are always imposed (pipette): without click positions the
+        # extraction returns nothing and there is no zone left to georeference.
+        imposed_click_positions_tuples = (
+            [tuple(c) for c in imposed_click_positions]
+            if imposed_click_positions
+            else None
+        )
+        imposed_sampling_radii_ints = (
+            [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
+        )
+
+        if not imposed_click_positions_tuples:
+            logger.warning(
+                f"[DEV-TEST] No imposed colors for test {test_id}/{test_case}; "
+                "color extraction will return no zones"
+            )
+
+        color_result = extract_colors(
+            tmp_file_path,
+            debug=False,
+            legend_shapes=None,
+            imposed_click_positions=imposed_click_positions_tuples,
+            imposed_colors_names=imposed_colors_names,
+            imposed_sampling_radii=imposed_sampling_radii_ints,
+        )
         normalized_features = color_result.get("normalized_features", [])
         pixel_features = color_result.get("pixel_features", [])
 

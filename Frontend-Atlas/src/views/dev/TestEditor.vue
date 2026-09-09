@@ -90,16 +90,34 @@
         </div>
 
         <div v-else class="mt-2 space-y-2">
-          <button
-            v-for="tc in testCases"
-            :key="tc"
-            type="button"
-            class="btn btn-sm btn-outline w-full justify-start"
-            @click="openTestCaseResult(tc)"
-          >
-            {{ tc }}
-          </button>
+          <div v-for="tc in testCases" :key="tc" class="flex items-center gap-1">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline flex-1 justify-start min-w-0"
+              @click="openTestCaseResult(tc)"
+            >
+              <span class="truncate">{{ tc }}</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-ghost btn-square text-error"
+              :disabled="deletingTestCase === tc"
+              :title="`Supprimer le test case ${tc}`"
+              :aria-label="`Supprimer le test case ${tc}`"
+              @click="deleteTestCase(tc)"
+            >
+              <span
+                v-if="deletingTestCase === tc"
+                class="loading loading-spinner loading-xs"
+              />
+              <span v-else>✕</span>
+            </button>
+          </div>
         </div>
+
+        <p v-if="testCaseError" class="text-xs text-error mt-2">
+          {{ testCaseError }}
+        </p>
       </div>
 
       </div>
@@ -134,6 +152,8 @@ const subGeometries = ref<any[]>([]);
 
 const testCases = ref<string[]>([]);
 const isLoadingTestCases = ref(false);
+const deletingTestCase = ref<string | null>(null);
+const testCaseError = ref<string | null>(null);
 
 async function loadTestCases(currentMapId: string) {
   isLoadingTestCases.value = true;
@@ -155,6 +175,36 @@ async function loadTestCases(currentMapId: string) {
     testCases.value = [];
   } finally {
     isLoadingTestCases.value = false;
+  }
+}
+
+async function deleteTestCase(testCase: string) {
+  if (!mapId.value) return;
+  if (!confirm(`Supprimer le test case "${testCase}" ? Les resultats et la configuration seront perdus.`))
+    return;
+
+  deletingTestCase.value = testCase;
+  testCaseError.value = null;
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${mapId.value}/${encodeURIComponent(testCase)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${keycloak.token}` },
+      },
+    );
+
+    if (!res.ok) {
+      throw new Error(`Erreur lors de la suppression (${res.status})`);
+    }
+
+    testCases.value = testCases.value.filter((tc) => tc !== testCase);
+  } catch (err) {
+    console.error("Error deleting test case", err);
+    testCaseError.value =
+      err instanceof Error ? err.message : "Erreur inattendue lors de la suppression";
+  } finally {
+    deletingTestCase.value = null;
   }
 }
 

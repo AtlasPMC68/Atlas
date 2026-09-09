@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -226,6 +227,57 @@ def _union_or_empty(geoms: list[BaseGeometry]) -> BaseGeometry:
         return u
 
 
+def _normalize_name(name: str | None) -> str | None:
+    """Normalize a zone name for matching (case/whitespace-insensitive).
+
+    Also drops the `_2`, `_3`... suffix that color extraction appends when two
+    picked colors share the same name, so `Forest` and `Forest_2` both match the
+    expected zone named `Forest`.
+    """
+    if not isinstance(name, str):
+        return None
+    cleaned = re.sub(r"\s+", " ", name).strip().lower()
+    if not cleaned:
+        return None
+    cleaned = re.sub(r"_\d+$", "", cleaned).strip()
+    return cleaned or None
+
+
+def _index_by_name(features: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    index: dict[str, list[dict[str, Any]]] = {}
+    for feat in features:
+        key = _normalize_name(feat.get("name"))
+        if key is None:
+            continue
+        index.setdefault(key, []).append(feat)
+    return index
+
+
+def _match_metrics(exp_geom: BaseGeometry, exp_area: float, ext: dict[str, Any]) -> dict[str, Any]:
+    ext_geom: BaseGeometry = ext["geometry"]
+    iou, inter_area, uni_area = _safe_iou(exp_geom, ext_geom)
+    ext_area = float(ext_geom.area) if not ext_geom.is_empty else 0.0
+    fn = _safe_make_valid(exp_geom.difference(ext_geom))
+    fp = _safe_make_valid(ext_geom.difference(exp_geom))
+    return {
+        "iou": iou,
+        "intersectionArea": inter_area,
+        "unionArea": uni_area,
+        "precision": _safe_ratio(inter_area, ext_area),
+        "recall": _safe_ratio(inter_area, exp_area),
+        "falseNegativeArea": float(fn.area) if not fn.is_empty else 0.0,
+        "falsePositiveArea": float(fp.area) if not fp.is_empty else 0.0,
+        "extracted": {
+            "index": ext.get("index"),
+            "id": ext.get("id"),
+            "name": ext.get("name"),
+            "area": ext_area,
+        },
+        # Keep geometry only for producing error overlays (not persisted in report JSON).
+        "geometry": ext_geom,
+    }
+
+
 def build_test_case_paths(
     assets_root: str, test_id: str, test_case_id: str
 ) -> DevTestPaths:
@@ -282,42 +334,29 @@ def evaluate_georef_zones_from_paths(
     expected_features = _feature_collection_geoms_with_meta(expected_fc)
     extracted_features = _feature_collection_geoms_with_meta(extracted_fc)
 
-    # Best-match IoU per expected feature (compare each expected to all extracted)
+    # Match each expected zone to an extracted one strictly by name. The pipette
+    # requires the user to name every picked color, and drawn zones are named too,
+    # so names are the pairing key: an expected zone with no identically named
+    # extracted zone simply has no match (IoU 0), rather than being silently paired
+    # with whatever geometry happened to overlap it the most.
+    extracted_by_name = _index_by_name(extracted_features)
+    matched_names: set[str] = set()
+
     matches: list[dict[str, Any]] = []
     for exp in expected_features:
-        best: dict[str, Any] | None = None
         exp_geom: BaseGeometry = exp["geometry"]
-
         exp_area = float(exp_geom.area) if not exp_geom.is_empty else 0.0
 
-        for ext in extracted_features:
-            ext_geom: BaseGeometry = ext["geometry"]
-            iou, inter_area, uni_area = _safe_iou(exp_geom, ext_geom)
-            if best is None or iou > float(best.get("iou", 0.0)):
-                ext_area = float(ext_geom.area) if not ext_geom.is_empty else 0.0
-                precision = _safe_ratio(inter_area, ext_area)
-                recall = _safe_ratio(inter_area, exp_area)
-                fn = _safe_make_valid(exp_geom.difference(ext_geom))
-                fp = _safe_make_valid(ext_geom.difference(exp_geom))
-                fn_area = float(fn.area) if not fn.is_empty else 0.0
-                fp_area = float(fp.area) if not fp.is_empty else 0.0
-                best = {
-                    "iou": iou,
-                    "intersectionArea": inter_area,
-                    "unionArea": uni_area,
-                    "precision": precision,
-                    "recall": recall,
-                    "falseNegativeArea": fn_area,
-                    "falsePositiveArea": fp_area,
-                    "extracted": {
-                        "index": ext.get("index"),
-                        "id": ext.get("id"),
-                        "name": ext.get("name"),
-                        "area": float(ext_geom.area) if not ext_geom.is_empty else 0.0,
-                    },
-                    # Keep geometry only for producing error overlays (not persisted in report JSON).
-                    "geometry": ext_geom,
-                }
+        expected_key = _normalize_name(exp.get("name"))
+        candidates = extracted_by_name.get(expected_key, []) if expected_key else []
+
+        best: dict[str, Any] | None = None
+        # Several extracted zones can share a name (duplicate pipette names get a
+        # `_2` suffix); keep the one that overlaps the expected zone best.
+        for ext in candidates:
+            candidate = _match_metrics(exp_geom, exp_area, ext)
+            if best is None or candidate["iou"] > float(best.get("iou", 0.0)):
+                best = candidate
 
         if best is None:
             best = {
@@ -330,7 +369,12 @@ def evaluate_georef_zones_from_paths(
                 "falsePositiveArea": 0.0,
                 "extracted": None,
                 "geometry": None,
+                "matchedBy": "none",
             }
+        else:
+            best["matchedBy"] = "name"
+            if expected_key:
+                matched_names.add(expected_key)
 
         matches.append(
             {
@@ -338,12 +382,23 @@ def evaluate_georef_zones_from_paths(
                     "index": exp.get("index"),
                     "id": exp.get("id"),
                     "name": exp.get("name"),
-                    "area": float(exp_geom.area) if not exp_geom.is_empty else 0.0,
+                    "area": exp_area,
                     "geometry": exp_geom,
                 },
                 "bestMatch": best,
             }
         )
+
+    # Surface naming mismatches: an unmatched zone scores 0, and the cause is almost
+    # always a typo in the pipette name or in the drawn zone name.
+    expected_without_name_match = [
+        (m["expected"].get("name") or f"expected_{m['expected'].get('index')}")
+        for m in matches
+        if m["bestMatch"].get("matchedBy") != "name"
+    ]
+    extracted_never_matched = sorted(
+        {key for key in extracted_by_name if key not in matched_names}
+    )
 
     errors_geojson = _errors_feature_collection(matches=matches)
 
@@ -414,6 +469,10 @@ def evaluate_georef_zones_from_paths(
             },
             "scoreUsed": mean_iou,
             "scoreUsedKey": "mean.meanIou",
+        },
+        "nameMatching": {
+            "expectedWithoutNameMatch": expected_without_name_match,
+            "extractedNeverMatchedByName": extracted_never_matched,
         },
     }
 
