@@ -120,77 +120,77 @@ To run the project using Docker Compose, follow these steps:
 
 ---
 
-### 🧪 Tester le projet
+### 🧪 Testing the project
 
-Pour ce projet, les tests doivent être lancés dans Docker. C’est la méthode supportée et fiable pour valider le backend et le frontend.
+For this project, tests must be run inside Docker. This is the supported and reliable way to validate the backend and frontend.
 
-#### Démarrer le projet
+#### Start the project
 
 ```sh
 docker compose up -d
 ```
 
-#### Lancer tous les tests backend
+#### Run all backend tests
 
 ```sh
 docker compose exec test-backend pytest -q
 ```
 
-#### Lancer un fichier de test précis
+#### Run a specific test file
 
 ```sh
 docker compose exec test-backend pytest tests/test_extraction_text.py -q
 ```
 
-#### Lancer un test avec plus de détails
+#### Run a test with more details
 
 ```sh
 docker compose exec test-backend pytest tests/test_extraction_text.py -q -vv
 ```
 
-#### Lancer les tests frontend
+#### Run the frontend tests
 
 ```sh
 docker compose exec frontend npm run test -- --run
 ```
 
-#### Voir les logs d’un test
+#### Check test logs
 
 ```sh
 docker compose logs -f test-backend
 ```
 
-#### Exemple de résultat
+#### Example result
 
 ```sh
 ..ssssssss [100%]
 2 passed, 8 skipped in 20.13s
 ```
 
-Cela signifie :
-- `..` = 2 tests ont réussi
-- `ssssssss` = 8 tests ont été ignorés
-- la suite s’est terminée correctement
+This means:
+- `..` = 2 tests passed
+- `ssssssss` = 8 tests were skipped
+- the suite completed successfully
 
-#### Erreurs fréquentes
+#### Common errors
 
 ```sh
 service "test-backend" is not running
 ```
 
-Solution :
+Solution:
 
 ```sh
 docker compose up -d
 ```
 
-Puis relancer le test.
+Then rerun the test.
 
-#### Règle importante
+#### Important rule
 
-Ne pas lancer pytest directement sur la machine locale pour valider le projet. La méthode correcte est de passer par Docker, où l’environnement du projet est bien configuré.
+Do not run pytest directly on the local machine to validate this project. The correct workflow is to use Docker, where the project environment is configured correctly.
 
-Cela évite les erreurs de dépendances Python et les imports cassés qui n’ont rien à voir avec le code testé.
+This avoids Python dependency issues and broken imports that are unrelated to the code being tested.
 
 ---
 
