@@ -120,6 +120,80 @@ To run the project using Docker Compose, follow these steps:
 
 ---
 
+### 🧪 Tester le projet
+
+Pour ce projet, les tests doivent être lancés dans Docker. C’est la méthode supportée et fiable pour valider le backend et le frontend.
+
+#### Démarrer le projet
+
+```sh
+docker compose up -d
+```
+
+#### Lancer tous les tests backend
+
+```sh
+docker compose exec test-backend pytest -q
+```
+
+#### Lancer un fichier de test précis
+
+```sh
+docker compose exec test-backend pytest tests/test_extraction_text.py -q
+```
+
+#### Lancer un test avec plus de détails
+
+```sh
+docker compose exec test-backend pytest tests/test_extraction_text.py -q -vv
+```
+
+#### Lancer les tests frontend
+
+```sh
+docker compose exec frontend npm run test -- --run
+```
+
+#### Voir les logs d’un test
+
+```sh
+docker compose logs -f test-backend
+```
+
+#### Exemple de résultat
+
+```sh
+..ssssssss [100%]
+2 passed, 8 skipped in 20.13s
+```
+
+Cela signifie :
+- `..` = 2 tests ont réussi
+- `ssssssss` = 8 tests ont été ignorés
+- la suite s’est terminée correctement
+
+#### Erreurs fréquentes
+
+```sh
+service "test-backend" is not running
+```
+
+Solution :
+
+```sh
+docker compose up -d
+```
+
+Puis relancer le test.
+
+#### Règle importante
+
+Ne pas lancer pytest directement sur la machine locale pour valider le projet. La méthode correcte est de passer par Docker, où l’environnement du projet est bien configuré.
+
+Cela évite les erreurs de dépendances Python et les imports cassés qui n’ont rien à voir avec le code testé.
+
+---
+
 ### ⚙️ CI/CD Pipeline & Tests
 
 To ensure reliability and consistency across the project, a Continuous Integration (CI) pipeline is configured to automatically run tests on every pull request to main.
