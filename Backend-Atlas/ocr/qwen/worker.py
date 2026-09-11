@@ -14,7 +14,9 @@ os.environ.setdefault("HF_HOME", "/app/models")
 
 app = Celery(
     "qwen_worker",
-    broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
+    broker=os.environ.get("CELERY_BROKER_URL")
+    or os.environ.get("REDIS_URL")
+    or "redis://redis:6379/0",
 )
 app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True
@@ -70,14 +72,19 @@ def run_qwen(
     detections = florence_data.get("detections", [])
 
     # Load image and resize if too large for Qwen while keeping aspect ratio.
+    # Load image and resize if too large for Qwen while keeping aspect ratio.
     image = Image.open(input_path).convert("RGB")
     w, h = image.size
     if w * h > qwen.MAX_IMAGE_PIXELS:
         scale = (qwen.MAX_IMAGE_PIXELS / (w * h)) ** 0.5
-        image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        image = image.resize(
+            (int(w * scale), int(h * scale)),
+            Image.Resampling.LANCZOS,
+        )
 
     config = qwen.get_runtime_config()
     model, processor = qwen.load_model_and_processor(config)
+
 
     logger.debug(f"Qwen initialized for ({len(detections)} detections)")
     raw_detections = qwen.run_per_detection(model, processor, image, detections, config, context)

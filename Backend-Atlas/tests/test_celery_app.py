@@ -1,8 +1,21 @@
 import pytest
-from app.celery_app import celery_app
+from app.celery_app import celery_app, resolve_redis_url
+
 
 def test_celery_app_instance():
     assert celery_app is not None
+
+
+def test_resolve_redis_url_prefers_celery_broker_env(monkeypatch):
+    monkeypatch.setenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    assert resolve_redis_url() == "redis://redis:6379/0"
+
+
+def test_resolve_redis_url_falls_back_to_redis_url_env(monkeypatch):
+    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    assert resolve_redis_url() == "redis://redis:6379/0"
 
 def test_celery_broker_and_backend():
     assert celery_app.conf.broker_url.startswith("redis://")

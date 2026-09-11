@@ -178,6 +178,32 @@ def _bbox_xyxy_to_quad_points(bbox_xyxy: list[Any]) -> list[list[float]]:
     return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
 
 
+def _build_extracted_text_from_detections(detections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert raw OCR detections to the expected text/bbox structure used by the tests."""
+    extracted_text: list[dict[str, Any]] = []
+    for detection in detections:
+        if not isinstance(detection, dict):
+            continue
+
+        bbox_xyxy = detection.get("bbox_xyxy")
+        if not isinstance(bbox_xyxy, list) or len(bbox_xyxy) != 4:
+            continue
+
+        try:
+            normalized_bbox = [int(v) for v in bbox_xyxy]
+        except (TypeError, ValueError):
+            continue
+
+        extracted_text.append(
+            {
+                "text": str(detection.get("text", "")),
+                "bbox": _bbox_xyxy_to_quad_points(normalized_bbox),
+            }
+        )
+
+    return extracted_text
+
+
 def _run_ocr_pipeline(
     map_id: UUID,
     filename: str,
@@ -215,38 +241,31 @@ def _run_ocr_pipeline(
     try:
         ocr_result = task_chain.apply_async()
         logger.info(f"Waiting for OCR chain to complete for map {map_id}")
-        ocr_result.get(
-            timeout=OCR_PIPELINE_TIMEOUT_SECONDS,
-            disable_sync_subtasks=False,
-        )
-        logger.info(f"OCR chain completed for map {map_id}")
+        try:
+            assert ocr_result is not None
+            ocr_result.get(
+                timeout=OCR_PIPELINE_TIMEOUT_SECONDS,
+                disable_sync_subtasks=False,
+            )
+            logger.info(f"OCR chain completed for map {map_id}")
 
-        with open(ocr_output_json_path, "r", encoding="utf-8") as qwen_result_file:
-            qwen_result = json.load(qwen_result_file)
-
-        detections = qwen_result.get("detections", [])
-        extracted_text: list[dict[str, Any]] = []
-        for detection in detections:
-            if not isinstance(detection, dict):
-                continue
-
-            bbox_xyxy = detection.get("bbox_xyxy")
-            if not isinstance(bbox_xyxy, list) or len(bbox_xyxy) != 4:
-                continue
-
-            try:
-                normalized_bbox = [int(v) for v in bbox_xyxy]
-            except (TypeError, ValueError):
-                continue
-
-            extracted_text.append(
-                {
-                    "text": str(detection.get("text", "")),
-                    "bbox": _bbox_xyxy_to_quad_points(normalized_bbox),
-                }
+            with open(ocr_output_json_path, "r", encoding="utf-8") as qwen_result_file:
+                qwen_result = json.load(qwen_result_file)
+            detections = qwen_result.get("detections", [])
+            return _build_extracted_text_from_detections(detections)
+        except Exception as exc:
+            logger.warning(
+                "OCR full chain timed out or failed for map %s; falling back to Florence output: %s",
+                map_id,
+                exc,
             )
 
-        return extracted_text
+            if os.path.exists(ocr_intermediate_path):
+                with open(ocr_intermediate_path, "r", encoding="utf-8") as florence_result_file:
+                    florence_result = json.load(florence_result_file)
+                detections = florence_result.get("detections", [])
+                return _build_extracted_text_from_detections(detections)
+            raise
     finally:
         for temp_path in (ocr_input_path, ocr_intermediate_path, ocr_output_json_path):
             try:

@@ -1,3 +1,4 @@
+import os
 import unicodedata
 import logging
 from copy import deepcopy
@@ -22,7 +23,7 @@ def get_image_paths() -> list[Path]:
     assets_dir = current_dir / "assets"
 
     if not assets_dir.exists():
-        pytest.fail(UserWarning(f"Searching for assets in non-existent directory: {assets_dir}"))
+        pytest.fail(f"Searching for assets in non-existent directory: {assets_dir}")
         return []
 
     return [p for p in assets_dir.iterdir() if p.suffix.lower() in valid_extensions]
@@ -38,49 +39,122 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
     return data
 
 
-def normalize_array_to_ascii_format(text: list[str]) -> dict[str, str]:
-    """Replace all characters by their ASCII-normalized variant."""
-    result: dict[str, str] = {}
-    for word in text:
-        result[word] = (unicodedata.normalize("NFKD", word).encode("ascii", "ignore").decode("ascii"))
-    return result
+def should_run_ocr_integration_tests() -> bool:
+    """Run the heavy OCR integration tests only when explicitly enabled."""
+    value = os.getenv("ATLAS_RUN_OCR_INTEGRATION_TESTS", "0").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
+    """Return ASCII-normalized words while preserving duplicate entries."""
+    return [
+        unicodedata.normalize("NFKD", word).encode("ascii", "ignore").decode("ascii")
+        for word in text
+    ]
 
 
 def check_for_match(
     actual: list[str],
     expected: list[str],
-) -> dict[str, tuple[str, float]]:
+) -> list[tuple[str, tuple[str, float]]]:
     """
-    Map each OCR word to the closest expected word and distance. Expected refers to
-    the ground truth text, while actual refers to the OCR output. The distance is a
-    levenshtein distance between the ASCII-normalized versions of the actual and 
-    expected strings.
+    Map each OCR word to the closest expected word and distance while preserving
+    repeated OCR detections. Expected refers to the ground truth text, while actual
+    refers to the OCR output. The distance is a Levenshtein distance between the
+    ASCII-normalized versions of the actual and expected strings.
     """
-    actual_ascii_dict = normalize_array_to_ascii_format(actual)
-    expected_ascii_dict = normalize_array_to_ascii_format(expected)
-    result: dict[str, tuple[str, float]] = {}
+    actual_ascii = normalize_array_to_ascii_format(actual)
+    expected_ascii = normalize_array_to_ascii_format(expected)
+    result: list[tuple[str, tuple[str, float]]] = []
+    used_expected_indices: set[int] = set()
 
-    for ocr_word, ocr_word_ascii in actual_ascii_dict.items():
+    for ocr_index, ocr_word in enumerate(actual):
+        ocr_word_ascii = actual_ascii[ocr_index]
         min_dist: tuple[str, float] = ("", 1000.0)
+        min_dist_index: int | None = None
 
-        for expected_word, expected_word_ascii in expected_ascii_dict.items():
+        for expected_index, expected_word in enumerate(expected):
+            if expected_index in used_expected_indices and ocr_word == expected_word:
+                continue
+
+            expected_word_ascii = expected_ascii[expected_index]
             if ocr_word == expected_word:
                 min_dist = (expected_word, 0.0)
+                min_dist_index = expected_index
                 break
 
             if ocr_word_ascii == expected_word_ascii:
                 min_dist = (expected_word, 0.1)
+                min_dist_index = expected_index
                 break
 
             tmp_dist = float(levenshtein_distance(ocr_word_ascii, expected_word_ascii))
             if tmp_dist < min_dist[1]:
                 min_dist = (expected_word, tmp_dist)
+                min_dist_index = expected_index
 
-        result[ocr_word] = min_dist
+        if min_dist_index is not None:
+            used_expected_indices.add(min_dist_index)
+
+        result.append((ocr_word, min_dist))
+
     return result
 
 
-@pytest.mark.skip(reason="temporarily disabled")
+def calculate_match_metrics(
+    matches: list[tuple[str, tuple[str, float]]],
+    expected: list[str],
+) -> tuple[float, float]:
+    """Compute coverage and average distance from matched OCR results."""
+    if not matches:
+        return (0.0, 0.0)
+
+    total_distance = sum(distance for _, (_, distance) in matches)
+    matched_expected_words = {
+        expected_word
+        for _, (expected_word, distance) in matches
+        if expected_word and distance <= 1.0
+    }
+    box_find_rate = (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
+    average_dist = total_distance / len(matches)
+    return box_find_rate, average_dist
+
+
+def test_match_metrics_count_expected_coverage_once() -> None:
+    matches = [
+        ("Quebec", ("Québec", 0.0)),
+        ("Quebec", ("Québec", 0.0)),
+    ]
+
+    box_find_rate, average_dist = calculate_match_metrics(matches, ["Québec"])
+
+    assert box_find_rate == 100.0
+    assert average_dist == 0.0
+
+
+def test_check_for_match_keeps_duplicate_ocr_words() -> None:
+    actual = ["Quebec", "Quebec", "Boston"]
+    expected = ["Québec", "Boston"]
+
+    matches = check_for_match(actual, expected)
+
+    assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Quebec", "Boston"]
+
+
+def test_should_run_ocr_integration_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ATLAS_RUN_OCR_INTEGRATION_TESTS", "1")
+    assert should_run_ocr_integration_tests() is True
+
+    monkeypatch.delenv("ATLAS_RUN_OCR_INTEGRATION_TESTS", raising=False)
+    assert should_run_ocr_integration_tests() is False
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not should_run_ocr_integration_tests(),
+    reason="OCR integration tests are opt-in; set ATLAS_RUN_OCR_INTEGRATION_TESTS=1 to run them",
+)
 @pytest.mark.parametrize(
     "image_path, expected_text",
     get_test_data(),
@@ -103,7 +177,7 @@ def test_text_extraction(
         celery_app=celery_app,
     )
 
-    # Pair every single OCR word with the closest word from the dictionary of exepected words
+    # Pair every single OCR word with the closest word from the dictionary of expected words
     unpaired_ocr_words: list[str] = [str(block.get("text", "")) for block in extracted_text]
     unpaired_expected_words: list[str] = deepcopy(expected_text)
     results = check_for_match(
@@ -111,24 +185,18 @@ def test_text_extraction(
         unpaired_expected_words,
     )
 
-    # Calculating average distance and box find rate
     total_distance = 0.0
-    comparison_details: list[str] = []
-    mismatch_details: list[str] = []
-    for ocr_word, (expected_word, distance) in results.items():
+    for ocr_word, (expected_word, distance) in results:
         total_distance += distance
 
         if distance > 1.0:
             logger.warning(f"expected='{expected_word}' | ocr='{ocr_word}' | d={distance:.3f}")
 
-
-
-    box_find_rate = len(unpaired_ocr_words)/len(unpaired_expected_words) * 100
-    average_dist = total_distance / len(unpaired_ocr_words) if unpaired_ocr_words else 0.0
-    request.node.user_metadata = {
+    box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
+    setattr(request.node, "user_metadata", {
         "average_distance": average_dist,
         "hit_rate": box_find_rate,
-    }
+    })
 
     assert box_find_rate > 90.0, (
         f"Box find rate too low: {box_find_rate:.2f}%"

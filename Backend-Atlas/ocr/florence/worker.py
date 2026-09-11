@@ -12,7 +12,9 @@ os.environ.setdefault("HF_HOME", "/app/models")
 
 app = Celery(
     "florence_worker",
-    broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
+    broker=os.environ.get("CELERY_BROKER_URL")
+    or os.environ.get("REDIS_URL")
+    or "redis://redis:6379/0",
 )
 app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True

@@ -18,6 +18,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ocr-data:/data
     depends_on:
       - keycloak
   frontend:
