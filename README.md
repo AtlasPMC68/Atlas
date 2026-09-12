@@ -2,13 +2,13 @@
 
 This is our PMC for university : Atlas
 
-## 📚 Git & Jira Naming Conventions
+## Git & Jira Naming Conventions
 
 To ensure clarity and traceability across branches and commits, all contributors must follow the naming conventions outlined below.
 
 ---
 
-### 🔀 Branch Naming Convention
+### Branch Naming Convention
 
 All branches must follow the format:
 
@@ -20,12 +20,12 @@ Where:
 - `<issue-number>` is the **Jira ticket number** (e.g., `123`)
 - `<short-description>` is a **1–3 word summary** of the purpose (lowercase, hyphen-separated)
 
-✅ **Example**:
+**Example**:
 ATLAS-123-add-login-feature
 
 ---
 
-### ✅ Pull Request Message Convention
+### Pull Request Message Convention
 
 All pull request messages must follow this format:
 
@@ -39,11 +39,11 @@ Where:
   - `bugfix`
 - `<short-description>` is a concise, lowercase, hyphen-separated summary (1–3 words)
 
-✅ **Examples**:
+**Examples**:
 ATLAS-123: feature-add-login
 ATLAS-210: bugfix-fix-auth-error
 
-### 📌 Additional Notes
+### Additional Notes
 
 - Use the "Create branch" button directly in Jira when possible — it helps auto-fill the correct format.
 - Always open Pull Requests into the `dev` branch unless otherwise instructed.
@@ -54,7 +54,7 @@ ATLAS-210: bugfix-fix-auth-error
 
 ---
 
-### 🐳 Running the Project with Docker Compose
+### Running the Project with Docker Compose
 
 To run the project using Docker Compose, follow these steps:
 
@@ -120,7 +120,7 @@ To run the project using Docker Compose, follow these steps:
 
 ---
 
-### 🧪 Run Georef Evaluation Manually
+### Run Georef Evaluation Manually
 
 If you changed the georeferencing/extraction algorithm and want to re-run the georef evaluation locally without restarting the whole stack, you can run the dedicated georef pytest directly.
 
@@ -165,24 +165,25 @@ docker compose exec backend pytest tests/test_georef_cases.py -v
 ```
 
 How it works:
+
 - The script simply runs `docker compose run --rm test-backend pytest tests/test_georef_cases.py -v`.
 - If you pass `--test-id/--case-id` (or `-k`), it appends `-k "..."` to select a subset of cases.
 - It runs in an ephemeral container (`--rm`) and uses the same bind-mounted code as the rest of the dev stack.
 
 ---
 
-### ⚙️ CI/CD Pipeline & Tests
+### CI/CD Pipeline & Tests
 
 To ensure reliability and consistency across the project, a Continuous Integration (CI) pipeline is configured to automatically run tests on every pull request to main.
 
-### 🧪 When Are Tests Run?
+### When Are Tests Run?
 
 **Tests are automatically triggered when:**
 
 - You open a Pull Request targeting the main branch
 - You manually re-run GitHub Actions from the Actions tab
 
-### 📦 What Does the CI/CD Pipeline Do?
+### What Does the CI/CD Pipeline Do?
 
 1. **Builds Docker images for frontend and backend**
 
@@ -196,9 +197,9 @@ To ensure reliability and consistency across the project, a Continuous Integrati
 ✅ If all tests pass, your PR can be reviewed and merged
 ❌ If a test fails, the PR is blocked until the issue is resolved
 
-### 🧰 How to Add New Tests
+### How to Add New Tests
 
-### ✅ Backend (Python – FastAPI)
+### Backend (Python – FastAPI)
 
 1. **Create a new test file in the Backend-Atlas/tests/ folder.**
    Example: Backend-Atlas/tests/test_example.py
@@ -210,7 +211,7 @@ To ensure reliability and consistency across the project, a Continuous Integrati
 3. **Run locally inside the backend container:**
    docker compose run backend pytest
 
-### ✅ Frontend (TypeScript – Vue + Vite + Vitest)
+### Frontend (TypeScript – Vue + Vite + Vitest)
 
 1. **Create a new file like ComponentName.test.ts inside Frontend-Atlas/tests/**
 
@@ -228,7 +229,7 @@ To ensure reliability and consistency across the project, a Continuous Integrati
 
 ### Make sure vitest is installed. It’s already configured in the Dockerfile.
 
-### ✅ Add Test-Only Dependencies
+### Add Test-Only Dependencies
 
 **If you need new dev tools or testing libraries:**
 
@@ -238,7 +239,7 @@ To ensure reliability and consistency across the project, a Continuous Integrati
 **Then rebuild containers:**
 docker compose build
 
-### 📌 Notes
+### Notes
 
 - The CI/CD configuration is managed in .github/workflows/ci.yml
 - Docker images used for testing are the same as in production to ensure reliability
