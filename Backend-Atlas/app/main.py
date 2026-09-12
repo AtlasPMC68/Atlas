@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,9 +21,13 @@ app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(dev_test.router)
 # TODO: gate dev_test router and /dev-test static mount behind an ENABLE_DEV_TOOLS env var before any non-local deployment
+
+cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost,https://localhost,http://localhost:3000,http://localhost:5173")
+allow_origins = [origin.strip() for origin in cors_origins_raw.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

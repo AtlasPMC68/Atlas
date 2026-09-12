@@ -3,7 +3,7 @@
 # TODO Add real credentials for deployment
 echo "Configuring Keycloak..."
 /opt/keycloak/bin/kcadm.sh config credentials \
-  --server http://localhost:8080 \
+  --server http://localhost:8080/auth \
   --realm master \
   --user admin \
   --password admin

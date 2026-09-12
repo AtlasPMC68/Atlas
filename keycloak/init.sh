@@ -1,7 +1,8 @@
 #!/bin/bash
 
 echo "Starting Keycloak in background..."
-/opt/keycloak/bin/kc.sh start-dev --http-port 8080 &
+/opt/keycloak/bin/kc.sh start-dev --http-port 8080 --http-relative-path=/auth &
+
 
 # On récupère le PID du serveur
 KEYCLOAK_PID=$!

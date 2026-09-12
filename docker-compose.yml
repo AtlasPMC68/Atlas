@@ -3,12 +3,10 @@ services:
     build:
       context: ./Backend-Atlas
     container_name: atlas-backend
-    ports:
-      - "8000:8000"
     env_file:
       - ./Backend-Atlas/.env.dev
     environment:
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/atlas
+      KEYCLOAK_ISSUER: http://keycloak:8080/auth/realms/atlas
       KEYCLOAK_AUDIENCE: atlas-backend
     restart: unless-stopped
     volumes:
@@ -22,14 +20,12 @@ services:
     build:
       context: ./Frontend-Atlas
     container_name: atlas-frontend
-    ports:
-      - "3000:5173" # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
     env_file:
       - ./Frontend-Atlas/.env
     volumes:
-      - ./Frontend-Atlas:/app # bind mount pour hot reload
-      - /app/node_modules # éviter conflit node_modules
+      - ./Frontend-Atlas:/app # bind mount for hot reload
+      - /app/node_modules # prevent node_modules conflict
 
   redis:
     image: redis:7-alpine
@@ -91,33 +87,32 @@ services:
       - ./Backend-Atlas/db:/docker-entrypoint-initdb.d
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0.6  # Revenir à une version plus stable
+    image: quay.io/keycloak/keycloak:25.0.6
     container_name: atlas-keycloak
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     environment:
       # Admin credentials
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
-      
+
       # Database configuration
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
-      
+
       # Simple development configuration
       KC_HOSTNAME_STRICT: false
       KC_HTTP_ENABLED: true
-      KC_PROXY: edge  # Important pour les environnements proxied
-      
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY: edge
+
       # Disable health checks and metrics to avoid connection issues
       KC_HEALTH_ENABLED: false
       KC_METRICS_ENABLED: false
-      
+
       # Logging
-      KC_LOG_LEVEL: WARN  # Reduce log noise
+      KC_LOG_LEVEL: WARN
     volumes:
       - ./keycloak:/var/tmp
     entrypoint: sh -c "/var/tmp/init.sh"
@@ -140,6 +135,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: atlas-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
+      - backend
+      - keycloak
 
   test-backend:
     build:
@@ -167,3 +178,5 @@ volumes:
   postgres-data:
   redis-data:
   keycloak-data:
+  caddy-data:
+  caddy-config:

@@ -7,8 +7,11 @@ import textwrap
 
 load_dotenv(dotenv_path=".env.dev")
 
+raw_server_url = os.getenv("KEYCLOAK_URL", "http://keycloak:8080/auth/")
+server_url = raw_server_url.rstrip("/") + "/"
+
 keycloak_open_id = KeycloakOpenID(
-    server_url=os.getenv("KEYCLOAK_URL"),
+    server_url=server_url,
     client_id=os.getenv("KEYCLOAK_CLIENT_ID"),
     realm_name=os.getenv("KEYCLOAK_REALM"),
     client_secret_key=os.getenv("KEYCLOAK_CLIENT_SECRET"),
