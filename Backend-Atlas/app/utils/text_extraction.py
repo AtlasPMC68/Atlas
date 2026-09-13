@@ -13,9 +13,6 @@ from app.utils.georeferencingSift import georeference_features_with_sift_points
 logger = logging.getLogger(__name__)
 
 # OCR pipeline folders configuration
-OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/input")
-OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/intermediate")
-OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/result")
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
 OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/ocr_intermediate")
 OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
@@ -266,11 +263,6 @@ def _run_ocr_pipeline(
 
     input_basename = f"{map_id}_{os.path.basename(filename)}"
     input_stem = os.path.splitext(input_basename)[0]
-    ocr_input_path = os.path.join(OCR_INPUT_DIR, input_basename)
-    ocr_intermediate_path = os.path.join(
-        OCR_INTERMEDIATE_DIR, f"{input_stem}-florence.json"
-    )
-    ocr_output_json_path = os.path.join(OCR_OUTPUT_DIR, f"{input_stem}-qwen.json")
     ocr_input_path = f"{OCR_INPUT_DIR}/{input_basename}"
     ocr_intermediate_path = f"{OCR_INTERMEDIATE_DIR}/{input_stem}-florence.json"
     ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-qwen.json"
