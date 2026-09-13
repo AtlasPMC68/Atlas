@@ -286,14 +286,55 @@ def _run_ocr_pipeline(
 
     try:
         ocr_result = task_chain.apply_async()
-        logger.info(f"Waiting for OCR chain to complete for map {map_id}")
+        logger.info(f"==> [OCR] Task chain launched for {filename} (ID: {map_id})")
+        logger.info(
+            "==> [OCR] Step 1/2: Florence-2 processing text detection and captioning..."
+        )
         try:
             assert ocr_result is not None
-            ocr_result.get(
-                timeout=OCR_PIPELINE_TIMEOUT_SECONDS,
-                disable_sync_subtasks=False,
+            # Poll with timeout to give live user feedback instead of a silent hang
+            elapsed = 0
+            poll_interval = 5
+            stage = "florence"
+            while elapsed < OCR_PIPELINE_TIMEOUT_SECONDS:
+                if stage == "florence" and os.path.exists(ocr_intermediate_path):
+                    stage = "qwen"
+                    logger.info(
+                        f"==> [OCR] Step 1/2 complete ({elapsed}s)! Step 2/2: Qwen model correcting text..."
+                    )
+
+                if ocr_result.ready():
+                    break
+
+                try:
+                    ocr_result.get(timeout=poll_interval, disable_sync_subtasks=False)
+                    break
+                except Exception as poll_err:
+                    # TimeoutError means task is still running in background Celery worker
+                    if poll_err.__class__.__name__ in (
+                        "TimeoutError",
+                        "CeleryTimeoutError",
+                    ):
+                        elapsed += poll_interval
+                        if elapsed % 15 == 0:
+                            current_step = (
+                                "Florence-2 (detecting text)"
+                                if stage == "florence"
+                                else "Qwen (correcting text)"
+                            )
+                            logger.info(
+                                f"    ... Still running {current_step} - elapsed: {elapsed}s"
+                            )
+                    else:
+                        raise poll_err
+            else:
+                raise TimeoutError(
+                    f"OCR pipeline timed out after {OCR_PIPELINE_TIMEOUT_SECONDS}s"
+                )
+
+            logger.info(
+                f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!"
             )
-            logger.info(f"OCR chain completed for map {map_id}")
 
             with open(ocr_output_json_path, "r", encoding="utf-8") as qwen_result_file:
                 qwen_result = json.load(qwen_result_file)

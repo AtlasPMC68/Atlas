@@ -220,6 +220,11 @@ def test_text_extraction(
     assert image_path.exists()
 
     # Extract text from image using the OCR pipeline
+    logger.info(f"\n========================================================")
+    logger.info(f"🔎 Testing Image: {image_path.name}")
+    logger.info(f"   Expected ground truth targets: {len(expected_text)} words")
+    logger.info(f"========================================================")
+
     with open(image_path, "rb") as input_file:
         file_content = input_file.read()
     extracted_text, _ = extract_text(
@@ -251,6 +256,14 @@ def test_text_extraction(
     box_find_rate, average_dist = calculate_match_metrics(
         results, unpaired_expected_words
     )
+
+    status_icon = "✅" if box_find_rate >= 40.0 else "❌"
+    logger.info(
+        f"{status_icon} Result for {image_path.name}: "
+        f"Hit Rate = {box_find_rate:.1f}% | Avg Dist = {average_dist:.2f} "
+        f"(Detections: {len(unpaired_ocr_words)} OCR words extracted)"
+    )
+
     setattr(
         request.node,
         "user_metadata",

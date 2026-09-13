@@ -26,12 +26,12 @@ jobs:
 
       - name: Run fast unit tests in parallel
         run: >
-          docker compose run --rm test-backend
+          docker compose run --rm -q test-backend
           pytest tests/ -n auto -v --color=yes --tb=short -rA
           -m "not integration and not slow"
 
       - name: Run OCR integration tests sequentially
         run: >
-          docker compose run --rm test-backend
+          docker compose run --rm -q test-backend
           pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO
           -m "integration"
