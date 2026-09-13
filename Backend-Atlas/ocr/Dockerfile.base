@@ -25,3 +25,5 @@ RUN pip install --no-cache-dir \
 ENV HF_HOME=/app/models
 RUN mkdir -p /app/models/hub /app/models /data/result /data/input /data/intermediate && \
     chown -R appuser:appuser /app/models/hub /app/models /data/result /data/input /data/intermediate
+RUN mkdir -p /app/models/hub /app/models /data/ocr_result /data/ocr_input /data/ocr_intermediate && \
+    chown -R appuser:appuser /app/models/hub /app/models /data
