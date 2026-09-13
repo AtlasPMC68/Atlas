@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import torch
 import logging
 from typing import Any
@@ -101,6 +102,24 @@ def load_model_and_processor(
     return model, processor
 
 
+def _sanitize_generated_text(text: str) -> str:
+    """Remove generation artifacts like EOS markers and trailing punctuation noise."""
+    if text is None:
+        return ""
+
+    sanitized = str(text)
+    for marker in ("</s>", "<|im_end|>", "<|endoftext|>"):
+        sanitized = sanitized.replace(marker, " ")
+
+    sanitized = sanitized.replace("\r\n", "\n").replace("\r", "\n")
+    sanitized = sanitized.replace("\u200b", "")
+    sanitized = re.sub(r"\s+", " ", sanitized)
+    sanitized = sanitized.strip(" \t\n.-_:;,.!?()[]{}<>|/\\")
+    sanitized = re.sub(r"(?:^|\s)[.,;:!?]+(?=\s|$)", "", sanitized)
+    sanitized = re.sub(r"[\u0000-\u001F\u007F]+", "", sanitized)
+    return sanitized.strip()
+
+
 def _run_single_det_inference(
     model: Qwen3_5ForConditionalGeneration,
     processor: Any,
@@ -144,8 +163,8 @@ def _run_single_det_inference(
         trimmed,
         skip_special_tokens=True,
         clean_up_tokenization_spaces=True,
-    )[0].strip()
-    return result
+    )[0]
+    return _sanitize_generated_text(result)
 
 
 def run_per_detection(

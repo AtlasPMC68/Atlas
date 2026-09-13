@@ -141,6 +141,15 @@ def test_check_for_match_keeps_duplicate_ocr_words() -> None:
     assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Quebec", "Boston"]
 
 
+def test_qwen_generated_text_strips_eos_artifacts() -> None:
+    raw = "</s>Progress of the Wehrmacht\nduring 10th May 1940"
+
+    cleaned = raw.replace("</s>", " ").replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = " ".join(cleaned.split()).strip()
+
+    assert cleaned == "Progress of the Wehrmacht during 10th May 1940"
+
+
 def test_should_run_ocr_integration_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ATLAS_RUN_OCR_INTEGRATION_TESTS", "1")
     assert should_run_ocr_integration_tests() is True

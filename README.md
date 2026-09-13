@@ -146,6 +146,8 @@ docker compose exec test-backend pytest tests/test_extraction_text.py -q
 
 ```sh
 docker compose exec test-backend pytest tests/test_extraction_text.py -q -vv
+docker compose exec -e ATLAS_RUN_OCR_INTEGRATION_TESTS=true test-backend pytest tests/test_extraction_text.py -q -vv
+
 ```
 
 #### Run the frontend tests
