@@ -1,15 +1,14 @@
-import os
-import unicodedata
 import logging
+import unicodedata
 from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from Levenshtein import distance as levenshtein_distance
-
 from app.celery_app import celery_app
 from app.utils.text_extraction import extract_text
+from Levenshtein import distance as levenshtein_distance
+
 from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,18 @@ logger = logging.getLogger(__name__)
 
 def get_image_paths() -> list[Path]:
     """Collect all image paths from tests/assets with supported extensions."""
-    valid_extensions = (".jpg",".jpeg",".png",".bmp",".tif",".tiff",".webp",".ppm",".pgm",".pbm",)
+    valid_extensions = (
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp",
+        ".tif",
+        ".tiff",
+        ".webp",
+        ".ppm",
+        ".pgm",
+        ".pbm",
+    )
 
     current_dir = Path(__file__).parent
     assets_dir = current_dir / "assets"
@@ -33,19 +43,28 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
     images = get_image_paths()
     data: list[tuple[Path, list[str]]] = []
     for image in images:
-        expected = MAP_EXPECTED_TEXTS.get(image.stem)
-        if expected:
+        if expected := MAP_EXPECTED_TEXTS.get(image.stem):
             data.append((image, expected))
     return data
-
 
 
 def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
     """Return ASCII-normalized words while preserving duplicate entries."""
     res = []
     for word in text:
-        cleaned = word.replace("’", "").replace("'", "").replace("-", " ").replace(".", "").replace(",", "")
-        cleaned = unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode("ascii").lower()
+        cleaned = (
+            word.replace("’", "")
+            .replace("'", "")
+            .replace("-", " ")
+            .replace(".", "")
+            .replace(",", "")
+        )
+        cleaned = (
+            unicodedata.normalize("NFKD", cleaned)
+            .encode("ascii", "ignore")
+            .decode("ascii")
+            .lower()
+        )
         cleaned = " ".join(cleaned.split())
         res.append(cleaned)
     return res
@@ -87,11 +106,17 @@ def check_for_match(
                 break
 
             # Consider it a very close match if one is a meaningful substring of the other
-            if len(expected_word_ascii) >= 4 and len(ocr_word_ascii) >= 4:
-                if expected_word_ascii in ocr_word_ascii or ocr_word_ascii in expected_word_ascii:
-                    min_dist = (expected_word, 0.5)
-                    min_dist_index = expected_index
-                    break
+            if (
+                len(expected_word_ascii) >= 4
+                and len(ocr_word_ascii) >= 4
+                and (
+                    expected_word_ascii in ocr_word_ascii
+                    or ocr_word_ascii in expected_word_ascii
+                )
+            ):
+                min_dist = (expected_word, 0.5)
+                min_dist_index = expected_index
+                break
 
             tmp_dist = float(levenshtein_distance(ocr_word_ascii, expected_word_ascii))
             if tmp_dist < min_dist[1]:
@@ -120,7 +145,9 @@ def calculate_match_metrics(
         for _, (expected_word, distance) in matches
         if expected_word and distance <= 3.0
     }
-    box_find_rate = (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
+    box_find_rate = (
+        (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
+    )
     average_dist = total_distance / len(matches)
     return box_find_rate, average_dist
 
@@ -156,14 +183,23 @@ def test_qwen_generated_text_strips_eos_artifacts() -> None:
 
 
 def test_florence_merge_does_not_join_distant_map_labels() -> None:
-    from ocr.florence.output import _get_merge_direction
     try:
         from ocr.florence.output import _get_merge_direction
     except ImportError:
         pytest.skip("ocr module is not available in the backend tests container")
 
-    left = {"bbox_xyxy": [10, 40, 80, 60], "source_w": 70, "source_h": 20, "quad": [10, 40, 80, 40, 80, 60, 10, 60]}
-    right = {"bbox_xyxy": [120, 40, 200, 60], "source_w": 80, "source_h": 20, "quad": [120, 40, 200, 40, 200, 60, 120, 60]}
+    left = {
+        "bbox_xyxy": [10, 40, 80, 60],
+        "source_w": 70,
+        "source_h": 20,
+        "quad": [10, 40, 80, 40, 80, 60, 10, 60],
+    }
+    right = {
+        "bbox_xyxy": [120, 40, 200, 60],
+        "source_w": 80,
+        "source_h": 20,
+        "quad": [120, 40, 200, 40, 200, 60, 120, 60],
+    }
 
     assert _get_merge_direction(left, right) is None
 
@@ -193,7 +229,9 @@ def test_text_extraction(
     )
 
     # Pair every single OCR word with the closest word from the dictionary of expected words
-    unpaired_ocr_words: list[str] = [str(block.get("text", "")) for block in extracted_text]
+    unpaired_ocr_words: list[str] = [
+        str(block.get("text", "")) for block in extracted_text
+    ]
     unpaired_expected_words: list[str] = deepcopy(expected_text)
     results = check_for_match(
         unpaired_ocr_words,
@@ -205,17 +243,17 @@ def test_text_extraction(
         total_distance += distance
 
         if distance > 1.0:
-            logger.warning(f"expected='{expected_word}' | ocr='{ocr_word}' | d={distance:.3f}")
+            logger.warning(
+                f"expected='{expected_word}' | ocr='{ocr_word}' | d={distance:.3f}"
+            )
 
-    box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
-    setattr(request.node, "user_metadata", {
+    box_find_rate, average_dist = calculate_match_metrics(
+        results, unpaired_expected_words
+    )
+    request.node.user_metadata = {  # type: ignore
         "average_distance": average_dist,
         "hit_rate": box_find_rate,
-    })
+    }
 
-    assert box_find_rate >= 40.0, (
-        f"Box find rate too low: {box_find_rate:.2f}%"
-    )
-    assert average_dist < 15.0, (
-        f"Average distance too high: {average_dist:.2f}"
-    )
+    assert box_find_rate >= 40.0, f"Box find rate too low: {box_find_rate:.2f}%"
+    assert average_dist < 15.0, f"Average distance too high: {average_dist:.2f}"
