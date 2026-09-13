@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import patch, MagicMock, mock_open
 
 import numpy as np
 import pytest
@@ -85,14 +85,11 @@ def test_process_map_extraction(real_image_np):
     with (
         patch("app.tasks.process_map_extraction.update_state") as mock_update_state,
         patch("app.tasks.cv2.imread", return_value=real_image_np),
-        patch(
-            "app.tasks.extract_text", return_value=(mock_ocr_result, mock_text_regions)
-        ),
+        patch("app.tasks.extract_text", return_value=(mock_ocr_result, mock_text_regions)),
         patch("app.tasks.extract_colors", return_value=mock_colors),
         patch("app.tasks.extract_shapes", return_value=mock_shapes),
-        patch(
-            "app.tasks.asyncio.run", side_effect=lambda coro: coro.close()
-        ) as mock_asyncio_run,
+        patch("app.tasks.asyncio.run") as mock_asyncio_run,
+        patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()) as mock_asyncio_run,
         patch(
             "app.tasks.find_first_city",
             return_value={
@@ -213,6 +210,7 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
             "app.tasks.extract_shapes",
             return_value={"shapes": [], "normalized_features": []},
         ),
+        patch("app.tasks.asyncio.run"),
         patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("os.unlink"),
@@ -264,6 +262,7 @@ def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
             "app.tasks.extract_shapes",
             return_value={"shapes": [], "normalized_features": []},
         ),
+        patch("app.tasks.asyncio.run"),
         patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("os.unlink"),
@@ -313,6 +312,7 @@ def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
             "app.tasks.extract_shapes",
             return_value={"shapes": [], "normalized_features": []},
         ),
+        patch("app.tasks.asyncio.run"),
         patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("os.unlink"),

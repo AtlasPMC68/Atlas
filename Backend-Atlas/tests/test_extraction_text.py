@@ -1,4 +1,5 @@
 import logging
+import os
 import unicodedata
 from copy import deepcopy
 from pathlib import Path
@@ -43,7 +44,8 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
     images = get_image_paths()
     data: list[tuple[Path, list[str]]] = []
     for image in images:
-        if expected := MAP_EXPECTED_TEXTS.get(image.stem):
+        expected = MAP_EXPECTED_TEXTS.get(image.stem)
+        if expected:
             data.append((image, expected))
     return data
 
@@ -106,17 +108,14 @@ def check_for_match(
                 break
 
             # Consider it a very close match if one is a meaningful substring of the other
-            if (
-                len(expected_word_ascii) >= 4
-                and len(ocr_word_ascii) >= 4
-                and (
+            if len(expected_word_ascii) >= 4 and len(ocr_word_ascii) >= 4:
+                if (
                     expected_word_ascii in ocr_word_ascii
                     or ocr_word_ascii in expected_word_ascii
-                )
-            ):
-                min_dist = (expected_word, 0.5)
-                min_dist_index = expected_index
-                break
+                ):
+                    min_dist = (expected_word, 0.5)
+                    min_dist_index = expected_index
+                    break
 
             tmp_dist = float(levenshtein_distance(ocr_word_ascii, expected_word_ascii))
             if tmp_dist < min_dist[1]:
@@ -182,6 +181,30 @@ def test_qwen_generated_text_strips_eos_artifacts() -> None:
     assert cleaned == "Progress of the Wehrmacht during 10th May 1940"
 
 
+def test_florence_merge_does_not_join_distant_map_labels() -> None:
+    from ocr.florence.output import _get_merge_direction
+
+    try:
+        from ocr.florence.output import _get_merge_direction
+    except ImportError:
+        pytest.skip("ocr module is not available in the backend tests container")
+
+    left = {
+        "bbox_xyxy": [10, 40, 80, 60],
+        "source_w": 70,
+        "source_h": 20,
+        "quad": [10, 40, 80, 40, 80, 60, 10, 60],
+    }
+    right = {
+        "bbox_xyxy": [120, 40, 200, 60],
+        "source_w": 80,
+        "source_h": 20,
+        "quad": [120, 40, 200, 40, 200, 60, 120, 60],
+    }
+
+    assert _get_merge_direction(left, right) is None
+
+
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.parametrize(
@@ -228,10 +251,14 @@ def test_text_extraction(
     box_find_rate, average_dist = calculate_match_metrics(
         results, unpaired_expected_words
     )
-    request.node.user_metadata = {  # type: ignore
-        "average_distance": average_dist,
-        "hit_rate": box_find_rate,
-    }
+    setattr(
+        request.node,
+        "user_metadata",
+        {
+            "average_distance": average_dist,
+            "hit_rate": box_find_rate,
+        },
+    )
 
     assert box_find_rate >= 40.0, f"Box find rate too low: {box_find_rate:.2f}%"
     assert average_dist < 15.0, f"Average distance too high: {average_dist:.2f}"
