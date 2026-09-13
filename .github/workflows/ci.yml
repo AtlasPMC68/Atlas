@@ -2,9 +2,11 @@ name: CI - Atlas Project Tests
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "*"
   pull_request:
-    branches: [main]
+    branches:
+      - "*"
 
 jobs:
   tests:
@@ -25,8 +27,8 @@ jobs:
       - name: Build all services
         run: docker compose build
 
-      - name: Run backend tests
+      - name: Run backend unit tests
         run: docker compose run --rm test-backend
 
-      - name: Run backend tests
+      - name: Run backend OCR integration tests
         run: docker compose run --rm -e ATLAS_RUN_OCR_INTEGRATION_TESTS=1 test-backend
