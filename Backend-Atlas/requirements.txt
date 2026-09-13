@@ -33,5 +33,6 @@ PyJWT[crypto]==2.8.0
 pywavelets>=1.9.0
 python-Levenshtein
 pytest-xdist
+coloredlogs
 transformers
 

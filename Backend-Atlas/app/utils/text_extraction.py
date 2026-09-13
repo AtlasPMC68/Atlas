@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from typing import Any
 from uuid import UUID
 
@@ -10,7 +11,33 @@ from celery import chain
 from app.utils.cities_validation import find_first_city
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 
+try:
+    import coloredlogs
+
+    HAS_COLOREDLOGS = True
+except ImportError:
+    HAS_COLOREDLOGS = False
+
 logger = logging.getLogger(__name__)
+log_level = os.getenv("OCR_LOG_LEVEL", "INFO").upper()
+
+if HAS_COLOREDLOGS:
+    coloredlogs.install(
+        level=log_level,
+        logger=logger,
+        fmt="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+else:
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
+            )
+        )
+        logger.addHandler(handler)
 
 # OCR pipeline folders configuration
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
