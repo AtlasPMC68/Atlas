@@ -7,7 +7,7 @@ def read_image(image_path) -> np.ndarray:
     # OpenCV reads in RGB format
     img = skimage.io.imread(image_path)
     if img is None:
-        raise IOError(f'Could not read image for given path: {image_path}')
+        raise IOError(f"Could not read image for given path: {image_path}")
 
     # Reads the saved image and normalize to float64
     img = skimage.util.img_as_float(img)
@@ -36,9 +36,28 @@ def read_image(image_path) -> np.ndarray:
     return img
 
 
-def bilateral_denoise(img: np.ndarray, sigma_color: float = 0.05, sigma_spatial: float = 1.0) -> np.ndarray:
+def bilateral_denoise(
+    img: np.ndarray, sigma_color: float = 0.05, sigma_spatial: float = 1.0
+) -> np.ndarray:
     """Apply bilateral denoising while preserving text edges for OCR."""
-    return skimage.restoration.denoise_bilateral(img,
-                                                  sigma_color=sigma_color,
-                                                  sigma_spatial=sigma_spatial,
-                                                  channel_axis=-1)
+    return skimage.restoration.denoise_bilateral(
+        img, sigma_color=sigma_color, sigma_spatial=sigma_spatial, channel_axis=-1
+    )
+
+
+def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 3.0) -> np.ndarray:
+    """
+    Apply non-destructive contrast stretching and sharpening.
+    Does not use strict binarization to preserve colors.
+    """
+    intensity = max(1.0, min(10.0, float(intensity)))
+
+    p_low, p_high = np.percentile(img, (intensity, 100 - intensity))
+    img_rescaled = skimage.exposure.rescale_intensity(img, in_range=(p_low, p_high))
+
+    amount = intensity / 2.0
+    img_sharpened = skimage.filters.unsharp_mask(
+        img_rescaled, radius=1.5, amount=amount, channel_axis=-1
+    )
+
+    return np.clip(img_sharpened, 0.0, 1.0)

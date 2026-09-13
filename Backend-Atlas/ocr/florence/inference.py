@@ -50,15 +50,24 @@ def list_input_images(input_dir: str) -> list[str]:
 
 
 def manually_preprocess_image(image_path: str) -> Image.Image:
-    """Apply lightweight preprocessing to improve OCR quality before inference."""
     img = preprocess.read_image(image_path)
     img = preprocess.bilateral_denoise(img, sigma_color=0.03, sigma_spatial=8)
+
+    preprocessing_intensity = 3.0
+    img = preprocess.enhance_contrast_and_sharpen(
+        img, intensity=preprocessing_intensity
+    )
+
     return Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
 
 
 def load_model_and_processor(config: dict) -> tuple:
     """Load the Florence model and processor for OCR inference."""
-    logger.info("Loading Florence model %s from local cache under %s", config["model_id"], os.environ.get("HF_HOME", "/app/models"))
+    logger.info(
+        "Loading Florence model %s from local cache under %s",
+        config["model_id"],
+        os.environ.get("HF_HOME", "/app/models"),
+    )
     model = AutoModelForCausalLM.from_pretrained(
         config["model_id"],
         torch_dtype=config["torch_dtype"],
@@ -82,12 +91,8 @@ def load_model_and_processor(config: dict) -> tuple:
 
 
 def run_inference(
-        model: object, 
-        processor: object, 
-        image: Image.Image, 
-        task_prompt: str, 
-        config: dict
-    ) -> dict:
+    model: object, processor: object, image: Image.Image, task_prompt: str, config: dict
+) -> dict:
     """Run Florence inference for one task prompt and return structured output."""
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
@@ -110,7 +115,8 @@ def run_inference(
 
 
 def get_image_context(
-        model: object, processor: object, image: Image.Image, config: dict) -> str:
+    model: object, processor: object, image: Image.Image, config: dict
+) -> str:
     """Generate a short geographic context summary for the map image."""
     inputs = processor(text=CONTEXT_TASK, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
@@ -122,8 +128,10 @@ def get_image_context(
             do_sample=False,
             num_beams=1,
         )
-    generated_ids = generated_ids[:, inputs["input_ids"].shape[1]:]
-    context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+    generated_ids = generated_ids[:, inputs["input_ids"].shape[1] :]
+    context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[
+        0
+    ].strip()
     logger.debug(f"Generated context: {context_text}")
     return context_text
 
@@ -139,11 +147,8 @@ def get_context_config() -> dict:
 
 
 def run_pipeline(
-        model: object, 
-        processor: object, 
-        image_path: str, 
-        config: dict
-    ) -> dict:
+    model: object, processor: object, image_path: str, config: dict
+) -> dict:
     """Run the Florence OCR pipeline on one image and build the parsed result payload."""
 
     preprocessed = manually_preprocess_image(image_path)
