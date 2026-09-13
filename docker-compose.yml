@@ -1,7 +1,36 @@
-include:
-  - ./Backend-Atlas/ocr/docker-compose.yml
-
 services:
+  ocr-base:
+    build:
+      context: ./Backend-Atlas/ocr
+      dockerfile: Dockerfile.base
+      args:
+        UID: ${UID:-1000}
+    image: atlas-ocr-base
+
+  florence-worker:
+    build:
+      context: ./Backend-Atlas/ocr/florence
+    container_name: atlas-florence-worker
+    restart: unless-stopped
+    env_file:
+      - ./Backend-Atlas/.env.dev
+    volumes:
+      - ocr-data:/data
+    depends_on:
+      - redis
+
+  qwen-worker:
+    build:
+      context: ./Backend-Atlas/ocr/qwen
+    container_name: atlas-qwen-worker
+    restart: unless-stopped
+    env_file:
+      - ./Backend-Atlas/.env.dev
+    volumes:
+      - ocr-data:/data
+    depends_on:
+      - redis
+
   backend:
     build:
       context: ./Backend-Atlas
@@ -102,36 +131,27 @@ services:
       - ./Backend-Atlas/db:/docker-entrypoint-initdb.d
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0.6  # Revenir à une version plus stable
+    image: quay.io/keycloak/keycloak:25.0.6
     container_name: atlas-keycloak
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      # Admin credentials
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
-      
-      # Database configuration
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
-      
-      # Simple development configuration
       KC_HOSTNAME_STRICT: false
       KC_HTTP_ENABLED: true
-      KC_PROXY: edge  # Important pour les environnements proxied
-      
-      # Disable health checks and metrics to avoid connection issues
+      KC_PROXY: edge
       KC_HEALTH_ENABLED: false
       KC_METRICS_ENABLED: false
-      
-      # Logging
-      KC_LOG_LEVEL: WARN  # Reduce log noise
+      KC_LOG_LEVEL: WARN
     volumes:
       - ./keycloak:/var/tmp
-    entrypoint: sh -c "/var/tmp/init.sh"
+    command: /bin/sh -c "/var/tmp/init.sh"
     depends_on:
       keycloak-db:
         condition: service_healthy
