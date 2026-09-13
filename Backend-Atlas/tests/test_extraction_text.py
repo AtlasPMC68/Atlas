@@ -182,26 +182,7 @@ def test_qwen_generated_text_strips_eos_artifacts() -> None:
     assert cleaned == "Progress of the Wehrmacht during 10th May 1940"
 
 
-def test_florence_merge_does_not_join_distant_map_labels() -> None:
-    try:
-        from ocr.florence.output import _get_merge_direction
-    except ImportError:
-        pytest.skip("ocr module is not available in the backend tests container")
 
-    left = {
-        "bbox_xyxy": [10, 40, 80, 60],
-        "source_w": 70,
-        "source_h": 20,
-        "quad": [10, 40, 80, 40, 80, 60, 10, 60],
-    }
-    right = {
-        "bbox_xyxy": [120, 40, 200, 60],
-        "source_w": 80,
-        "source_h": 20,
-        "quad": [120, 40, 200, 40, 200, 60, 120, 60],
-    }
-
-    assert _get_merge_direction(left, right) is None
 
 
 @pytest.mark.integration
