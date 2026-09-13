@@ -398,5 +398,6 @@ def save_result(image_path: str, intermediate_path: str, parsed: dict) -> None:
     json_detections = copy.deepcopy(parsed.get("detections", []))
 
     parsed_for_json = {**parsed, "detections": json_detections}
+    os.makedirs(os.path.dirname(intermediate_path), exist_ok=True)
     with open(intermediate_path, "w", encoding="utf-8") as f:
         json.dump(parsed_for_json, f, ensure_ascii=False, indent=2)

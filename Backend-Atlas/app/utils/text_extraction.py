@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/input")
 OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/intermediate")
 OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/result")
+OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
+OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/ocr_intermediate")
+OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
 OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "900"))
 CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
 CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
@@ -268,6 +271,9 @@ def _run_ocr_pipeline(
         OCR_INTERMEDIATE_DIR, f"{input_stem}-florence.json"
     )
     ocr_output_json_path = os.path.join(OCR_OUTPUT_DIR, f"{input_stem}-qwen.json")
+    ocr_input_path = f"{OCR_INPUT_DIR}/{input_basename}"
+    ocr_intermediate_path = f"{OCR_INTERMEDIATE_DIR}/{input_stem}-florence.json"
+    ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-qwen.json"
 
     # Preprocess the image to enhance text visibility before OCR
     processed_content = preprocess_image_for_ocr(file_content)
