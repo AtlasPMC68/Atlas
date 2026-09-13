@@ -89,6 +89,7 @@ def test_process_map_extraction(real_image_np):
         patch("app.tasks.extract_colors", return_value=mock_colors),
         patch("app.tasks.extract_shapes", return_value=mock_shapes),
         patch("app.tasks.asyncio.run") as mock_asyncio_run,
+        patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()) as mock_asyncio_run,
         patch(
             "app.tasks.find_first_city",
             return_value={
@@ -210,6 +211,7 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
             return_value={"shapes": [], "normalized_features": []},
         ),
         patch("app.tasks.asyncio.run"),
+        patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("os.unlink"),
     ):
@@ -261,6 +263,7 @@ def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
             return_value={"shapes": [], "normalized_features": []},
         ),
         patch("app.tasks.asyncio.run"),
+        patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("os.unlink"),
     ):
@@ -310,6 +313,7 @@ def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
             return_value={"shapes": [], "normalized_features": []},
         ),
         patch("app.tasks.asyncio.run"),
+        patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close()),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("os.unlink"),
     ):

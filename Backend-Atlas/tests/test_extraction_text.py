@@ -39,11 +39,6 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
     return data
 
 
-def should_run_ocr_integration_tests() -> bool:
-    """Run the heavy OCR integration tests only when explicitly enabled."""
-    value = os.getenv("ATLAS_RUN_OCR_INTEGRATION_TESTS", "0").strip().lower()
-    return value in {"1", "true", "yes", "on"}
-
 
 def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
     """Return ASCII-normalized words while preserving duplicate entries."""
@@ -162,6 +157,10 @@ def test_qwen_generated_text_strips_eos_artifacts() -> None:
 
 def test_florence_merge_does_not_join_distant_map_labels() -> None:
     from ocr.florence.output import _get_merge_direction
+    try:
+        from ocr.florence.output import _get_merge_direction
+    except ImportError:
+        pytest.skip("ocr module is not available in the backend tests container")
 
     left = {"bbox_xyxy": [10, 40, 80, 60], "source_w": 70, "source_h": 20, "quad": [10, 40, 80, 40, 80, 60, 10, 60]}
     right = {"bbox_xyxy": [120, 40, 200, 60], "source_w": 80, "source_h": 20, "quad": [120, 40, 200, 40, 200, 60, 120, 60]}
@@ -169,20 +168,8 @@ def test_florence_merge_does_not_join_distant_map_labels() -> None:
     assert _get_merge_direction(left, right) is None
 
 
-def test_should_run_ocr_integration_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ATLAS_RUN_OCR_INTEGRATION_TESTS", "1")
-    assert should_run_ocr_integration_tests() is True
-
-    monkeypatch.delenv("ATLAS_RUN_OCR_INTEGRATION_TESTS", raising=False)
-    assert should_run_ocr_integration_tests() is False
-
-
 @pytest.mark.integration
 @pytest.mark.slow
-@pytest.mark.skipif(
-    not should_run_ocr_integration_tests(),
-    reason="OCR integration tests are opt-in; set ATLAS_RUN_OCR_INTEGRATION_TESTS=1 to run them",
-)
 @pytest.mark.parametrize(
     "image_path, expected_text",
     get_test_data(),

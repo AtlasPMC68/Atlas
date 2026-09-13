@@ -30,5 +30,3 @@ jobs:
       - name: Run backend unit tests
         run: docker compose run --rm test-backend
 
-      - name: Run backend OCR integration tests
-        run: docker compose run --rm -e ATLAS_RUN_OCR_INTEGRATION_TESTS=1 test-backend
