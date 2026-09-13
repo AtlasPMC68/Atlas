@@ -33,5 +33,5 @@ jobs:
       - name: Run OCR integration tests sequentially
         run: >
           docker compose run --rm test-backend
-          pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true
+          pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO
           -m "integration"
