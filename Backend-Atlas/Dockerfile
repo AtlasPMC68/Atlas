@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code and test suite into the container
 COPY app ./app
 COPY tests ./tests
+COPY ocr ./ocr
 
 COPY .env.dev /app/app/.env.dev
 
