@@ -204,6 +204,46 @@ def _build_extracted_text_from_detections(detections: list[dict[str, Any]]) -> l
     return extracted_text
 
 
+def preprocess_image_for_ocr(file_content: bytes) -> bytes:
+    """Preprocess the image bytes for better OCR results using CLAHE and sharpening."""
+    try:
+        import cv2
+        import numpy as np
+
+        np_arr = np.frombuffer(file_content, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            return file_content
+
+        # Enhance contrast without losing color information using LAB color space
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        
+        # Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) to the L-channel
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        cl = clahe.apply(l)
+        
+        # Merge back and convert to BGR
+        limg = cv2.merge((cl, a, b))
+        enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+        
+        # Slight sharpening kernel to make text edges crisper
+        kernel = np.array([[0, -1, 0], 
+                           [-1, 5, -1], 
+                           [0, -1, 0]])
+        sharpened_img = cv2.filter2D(enhanced_img, -1, kernel)
+
+        success, encoded_img = cv2.imencode('.png', sharpened_img)
+        if success:
+            return encoded_img.tobytes()
+            
+    except Exception as exc:
+        logger.warning(f"Failed to preprocess image for OCR: {exc}")
+        
+    return file_content
+
+
 def _run_ocr_pipeline(
     map_id: UUID,
     filename: str,
@@ -224,8 +264,11 @@ def _run_ocr_pipeline(
     ocr_intermediate_path = os.path.join(OCR_INTERMEDIATE_DIR, f"{input_stem}-florence.json")
     ocr_output_json_path = os.path.join(OCR_OUTPUT_DIR, f"{input_stem}-qwen.json")
 
+    # Preprocess the image to enhance text visibility before OCR
+    processed_content = preprocess_image_for_ocr(file_content)
+
     with open(ocr_input_path, "wb") as input_file:
-        input_file.write(file_content)
+        input_file.write(processed_content)
 
     task_chain = chain(
         celery_app.signature(
