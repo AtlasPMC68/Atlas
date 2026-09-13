@@ -52,12 +52,18 @@ def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 3.0) -> np.
     """
     intensity = max(1.0, min(10.0, float(intensity)))
 
-    p_low, p_high = np.percentile(img, (intensity, 100 - intensity))
+    # Échelle douce : intensity=3.0 -> coupe seulement 0.3% des extrêmes (au lieu de 3%)
+    # Cela évite de détruire le texte fin qui représente une infime partie de l'image.
+    clip_percent = intensity * 0.1
+    p_low, p_high = np.percentile(img, (clip_percent, 100 - clip_percent))
+
     img_rescaled = skimage.exposure.rescale_intensity(img, in_range=(p_low, p_high))
 
-    amount = intensity / 2.0
+    # Sharpening beaucoup plus léger (amount de 0.2 à 2.0 max au lieu de 5.0)
+    # Radius réduit pour éviter les gros halos autour des petites lettres historiques
+    amount = intensity * 0.2
     img_sharpened = skimage.filters.unsharp_mask(
-        img_rescaled, radius=1.5, amount=amount, channel_axis=-1
+        img_rescaled, radius=1.0, amount=amount, channel_axis=-1
     )
 
     return np.clip(img_sharpened, 0.0, 1.0)
