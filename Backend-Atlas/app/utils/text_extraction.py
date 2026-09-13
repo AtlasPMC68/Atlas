@@ -257,9 +257,12 @@ def _run_ocr_pipeline(
     Execute Florence+Qwen OCR pipeline on file_content.
     Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
     """
-    os.makedirs(OCR_INPUT_DIR, exist_ok=True)
-    os.makedirs(OCR_INTERMEDIATE_DIR, exist_ok=True)
-    os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)
+    for d in (OCR_INPUT_DIR, OCR_INTERMEDIATE_DIR, OCR_OUTPUT_DIR):
+        os.makedirs(d, exist_ok=True)
+        try:
+            os.chmod(d, 0o777)
+        except Exception as e:
+            logger.debug(f"Failed to chmod {d}: {e}")
 
     input_basename = f"{map_id}_{os.path.basename(filename)}"
     input_stem = os.path.splitext(input_basename)[0]

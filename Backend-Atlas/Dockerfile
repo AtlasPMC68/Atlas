@@ -29,9 +29,6 @@ COPY ocr ./ocr
 
 COPY .env.dev /app/app/.env.dev
 
-RUN mkdir -p /data/ocr_result /data/ocr_input /data/ocr_intermediate && \
-    chown -R 1000:1000 /data
-
 # Expose the default FastAPI port
 EXPOSE 8000
 
