@@ -182,9 +182,6 @@ def test_qwen_generated_text_strips_eos_artifacts() -> None:
     assert cleaned == "Progress of the Wehrmacht during 10th May 1940"
 
 
-
-
-
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.parametrize(

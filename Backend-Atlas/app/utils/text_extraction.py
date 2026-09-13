@@ -239,6 +239,11 @@ def preprocess_image_for_ocr(file_content: bytes) -> bytes:
         limg = cv2.merge((cl, a, b))
         enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
 
+        # Upscale the image by 2x to help OCR models read small and blurry historical fonts
+        enhanced_img = cv2.resize(
+            enhanced_img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC
+        )
+
         # Encode back to bytes
         _, encoded_img = cv2.imencode(".jpg", enhanced_img)
         return encoded_img.tobytes()
