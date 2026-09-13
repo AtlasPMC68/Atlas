@@ -275,6 +275,7 @@ def _run_ocr_pipeline(
 
     with open(ocr_input_path, "wb") as input_file:
         input_file.write(processed_content)
+        input_file.write(file_content)
 
     task_chain = chain(
         celery_app.signature(

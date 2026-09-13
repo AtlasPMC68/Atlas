@@ -50,10 +50,15 @@ def list_input_images(input_dir: str) -> list[str]:
 
 
 def manually_preprocess_image(image_path: str) -> Image.Image:
+    """Apply preprocessing to improve OCR quality before Florence inference."""
     img = preprocess.read_image(image_path)
+    img = preprocess.upscale_for_ocr(img, min_dimension=2000)
     img = preprocess.bilateral_denoise(img, sigma_color=0.03, sigma_spatial=8)
 
     preprocessing_intensity = 3.0
+    img = preprocess.enhance_contrast_and_sharpen(
+        img, intensity=preprocessing_intensity
+    )
     img = preprocess.enhance_contrast_and_sharpen(
         img, intensity=preprocessing_intensity
     )
