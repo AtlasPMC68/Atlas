@@ -227,12 +227,16 @@ def _build_extracted_text_from_detections(
         except (TypeError, ValueError):
             continue
 
-        extracted_text.append(
-            {
-                "text": str(detection.get("text", "")),
-                "bbox": _bbox_xyxy_to_quad_points(normalized_bbox),
-            }
-        )
+        raw_text = str(detection.get("text", "")).strip()
+        if not raw_text:
+            continue
+
+        quad = _bbox_xyxy_to_quad_points(normalized_bbox)
+        lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+        if len(lines) > 1:
+            for line in lines:
+                extracted_text.append({"text": line, "bbox": quad})
+        extracted_text.append({"text": raw_text, "bbox": quad})
 
     return extracted_text
 

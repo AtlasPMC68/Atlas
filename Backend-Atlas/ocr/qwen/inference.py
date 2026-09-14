@@ -1,3 +1,4 @@
+import gc
 import json
 import logging
 import os
@@ -26,7 +27,7 @@ def get_runtime_config() -> dict[str, Any]:
     """Return model/runtime settings used by the Qwen OCR pipeline."""
     return {
         "model_id": MODEL_ID,
-        "torch_dtype": torch.float32,
+        "torch_dtype": torch.bfloat16,
         "device": "cpu",
         "max_new_tokens": MAX_NEW_TOKENS,
         "max_image_pixels": MAX_IMAGE_PIXELS,
@@ -166,6 +167,7 @@ def _run_single_det_inference(
         skip_special_tokens=True,
         clean_up_tokenization_spaces=True,
     )[0]
+    del inputs, output_ids, trimmed
     return _sanitize_generated_text(result)
 
 
@@ -182,7 +184,7 @@ def run_per_detection(
     Returns list of dicts with 'text' (corrected) and 'bbox_xyxy' (unchanged).
     """
     results = []
-    for det in detections:
+    for idx, det in enumerate(detections):
         compact = _sanitize_detection_for_prompt(det)
         if compact is None:
             continue
@@ -194,6 +196,11 @@ def run_per_detection(
         )
         logger.debug(f"Qwen correction input={text} output={corrected}")
         results.append({"text": corrected, "bbox_xyxy": bbox})
+
+        if idx % 8 == 0:
+            gc.collect()
+
+    gc.collect()
     return results
 
 
