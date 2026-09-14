@@ -14,6 +14,15 @@ from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS
 
 logger = logging.getLogger(__name__)
 
+# ANSI Color constants for readable, spaced test reports
+CYAN = "\033[96m"
+BLUE = "\033[94m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
 
 def get_image_paths() -> list[Path]:
     """Collect all image paths from tests/assets with supported extensions."""
@@ -220,10 +229,14 @@ def test_text_extraction(
     assert image_path.exists()
 
     # Extract text from image using the OCR pipeline
-    logger.info(f"\n========================================================")
-    logger.info(f"🔎 Testing Image: {image_path.name}")
-    logger.info(f"   Expected ground truth targets: {len(expected_text)} words")
-    logger.info(f"========================================================")
+    header = (
+        f"\n\n"
+        f"{CYAN}{BOLD}================================================================================{RESET}\n"
+        f"🔎  {BOLD}TESTING IMAGE : {YELLOW}{image_path.name}{RESET}\n"
+        f"    Target Ground Truth : {BOLD}{len(expected_text)}{RESET} expected words\n"
+        f"{CYAN}{BOLD}================================================================================{RESET}\n"
+    )
+    logger.info(header)
 
     with open(image_path, "rb") as input_file:
         file_content = input_file.read()
@@ -245,24 +258,40 @@ def test_text_extraction(
     )
 
     total_distance = 0.0
+    mismatches = []
     for ocr_word, (expected_word, distance) in results:
         total_distance += distance
-
         if distance > 1.0:
-            logger.warning(
-                f"expected='{expected_word}' | ocr='{ocr_word}' | d={distance:.3f}"
+            mismatches.append((expected_word, ocr_word, distance))
+
+    if mismatches:
+        logger.info(f"\n{YELLOW}{BOLD}--- Low-Confidence / Mismatched Words (Top 8) ---{RESET}")
+        for expected_word, ocr_word, distance in mismatches[:8]:
+            d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
+            logger.info(
+                f"   • Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}"
             )
+        if len(mismatches) > 8:
+            logger.info(f"   ... and {len(mismatches) - 8} more.\n")
 
     box_find_rate, average_dist = calculate_match_metrics(
         results, unpaired_expected_words
     )
 
     status_icon = "✅" if box_find_rate >= 40.0 else "❌"
-    logger.info(
-        f"{status_icon} Result for {image_path.name}: "
-        f"Hit Rate = {box_find_rate:.1f}% | Avg Dist = {average_dist:.2f} "
-        f"(Detections: {len(unpaired_ocr_words)} OCR words extracted)"
+    rate_color = GREEN if box_find_rate >= 70.0 else (YELLOW if box_find_rate >= 40.0 else RED)
+    dist_color = GREEN if average_dist <= 1.0 else (YELLOW if average_dist <= 3.0 else RED)
+
+    summary = (
+        f"\n"
+        f"{rate_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
+        f"{status_icon}  {BOLD}SUMMARY for {YELLOW}{image_path.name}{RESET} :\n"
+        f"    • Hit Rate   : {rate_color}{BOLD}{box_find_rate:.1f}%{RESET}\n"
+        f"    • Avg Dist   : {dist_color}{BOLD}{average_dist:.2f}{RESET}\n"
+        f"    • Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
+        f"{rate_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n\n"
     )
+    logger.info(summary)
 
     setattr(
         request.node,

@@ -343,7 +343,7 @@ def _run_ocr_pipeline(
                         "CeleryTimeoutError",
                     ):
                         elapsed += poll_interval
-                        if elapsed % 15 == 0:
+                        if elapsed % 60 == 0:
                             current_step = (
                                 "Florence-2 (detecting text)"
                                 if stage == "florence"
