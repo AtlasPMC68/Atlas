@@ -1,51 +1,32 @@
+import cv2
 import numpy as np
-import skimage
-
 
 def read_image(image_path) -> np.ndarray:
-    """Read an image file and normalize it to a 3-channel RGB float array."""
-    img = skimage.io.imread(image_path)
+    """Read an image file and return it as an RGB uint8 array."""
+    # Use cv2 to read the image (returns BGR)
+    img = cv2.imread(image_path, cv2.IMREAD_COLOR)
     if img is None:
         raise IOError(f"Could not read image for given path: {image_path}")
-
-    img = skimage.util.img_as_float(img)
-
-    if img.ndim == 2:
-        img = skimage.color.gray2rgb(img)
-
-    elif img.ndim == 3:
-        channels = img.shape[2]
-
-        if channels == 4:
-            alpha = img[:, :, 3:4]
-            rgb = img[:, :, :3]
-            white_bg = np.ones_like(rgb)
-            img = (rgb * alpha) + (white_bg * (1 - alpha))
-
-        elif channels > 4:
-            img = img[:, :, :3]
-
-    return img
-
+    # Florence uses RGB internally via PIL
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 def bilateral_denoise(
     img: np.ndarray, sigma_color: float = 0.05, sigma_spatial: float = 1.0
 ) -> np.ndarray:
     """Apply bilateral denoising while preserving text edges for OCR."""
-    return skimage.restoration.denoise_bilateral(
-        img, sigma_color=sigma_color, sigma_spatial=sigma_spatial, channel_axis=-1
-    )
-
+    # OpenCV bilateral filter takes integers for sigma
+    sigma_c = int(sigma_color * 255)
+    sigma_s = int(sigma_spatial)
+    return cv2.bilateralFilter(img, d=-1, sigmaColor=sigma_c, sigmaSpace=sigma_s)
 
 def upscale_for_ocr(img: np.ndarray, min_dimension: int = 2000) -> np.ndarray:
     """Upscale the image by 2x only when its largest side is below min_dimension."""
     h, w = img.shape[:2]
     if max(h, w) >= min_dimension:
         return img
-    return skimage.transform.rescale(
-        img, 2.0, channel_axis=-1, anti_aliasing=True, preserve_range=True
-    )
-
+    
+    # Bicubic interpolation is good for text
+    return cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
 
 def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 3.0) -> np.ndarray:
     """
@@ -53,23 +34,28 @@ def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 3.0) -> np.
     followed by a gentle unsharp mask. Preserves color information.
     """
     intensity = max(1.0, min(10.0, float(intensity)))
-
-    img_uint8 = skimage.util.img_as_ubyte(np.clip(img, 0.0, 1.0))
-    lab = skimage.color.rgb2lab(img_uint8)
-
-    l_channel = lab[:, :, 0]
-    l_norm = l_channel / 100.0
-    clip_limit = 0.005 + intensity * 0.003
-    l_enhanced = skimage.exposure.equalize_adapthist(
-        l_norm, kernel_size=None, clip_limit=clip_limit
-    )
-    lab[:, :, 0] = l_enhanced * 100.0
-
-    enhanced_rgb = skimage.color.lab2rgb(lab)
-
+    
+    # 1. Convert to LAB color space
+    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab)
+    
+    # 2. Apply CLAHE to L channel only
+    clip_limit = max(1.0, intensity)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
+    l_enhanced = clahe.apply(l_channel)
+    
+    # 3. Merge back and convert to RGB
+    lab_enhanced = cv2.merge((l_enhanced, a_channel, b_channel))
+    enhanced_rgb = cv2.cvtColor(lab_enhanced, cv2.COLOR_LAB2RGB)
+    
+    # 4. Unsharp mask
+    # formula: sharpened = original + amount * (original - blurred)
     amount = 0.1 * intensity
-    sharpened = skimage.filters.unsharp_mask(
-        enhanced_rgb, radius=0.8, amount=amount, channel_axis=-1
-    )
-
-    return np.clip(sharpened, 0.0, 1.0)
+    blur = cv2.GaussianBlur(enhanced_rgb, (0, 0), 1.0)
+    
+    # Convert to float for accurate calculation
+    enhanced_float = enhanced_rgb.astype(np.float32)
+    blur_float = blur.astype(np.float32)
+    
+    sharpened = enhanced_float + amount * (enhanced_float - blur_float)
+    return np.clip(sharpened, 0, 255).astype(np.uint8)

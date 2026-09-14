@@ -63,7 +63,7 @@ def manually_preprocess_image(image_path: str) -> Image.Image:
         img, intensity=preprocessing_intensity
     )
 
-    return Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
+    return Image.fromarray(img)
 
 
 def load_model_and_processor(config: dict) -> tuple:

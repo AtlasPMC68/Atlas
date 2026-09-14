@@ -18,6 +18,7 @@ services:
       - ../.env.dev
     volumes:
       - ocr-data:/data
+      - ./florence:/app/florence
     depends_on:
       - redis
       - ocr-base
@@ -33,6 +34,7 @@ services:
       - ../.env.dev
     volumes:
       - ocr-data:/data
+      - ./qwen:/app/qwen
     depends_on:
       - redis
       - ocr-base
