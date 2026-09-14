@@ -11,18 +11,22 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Create .env.dev file from secret
         run: |
-          echo "${{ secrets.ENV_DEV }}" > ./Backend-Atlas/.env.dev
+          if [ -n "${{ secrets.ENV_DEV }}" ]; then
+            echo "${{ secrets.ENV_DEV }}" > ./Backend-Atlas/.env.dev
+          elif [ ! -f "./Backend-Atlas/.env.dev" ]; then
+            touch ./Backend-Atlas/.env.dev
+          fi
 
-      - name: Set up Docker Compose
-        run: |
-          docker compose version
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build all services
-        run: docker compose build
+      - name: Clean stale volumes and containers
+        run: docker compose down -v --remove-orphans || true
+
       - name: Build testing services
         run: docker compose build test-backend florence-worker qwen-worker
         env:
@@ -40,3 +44,4 @@ jobs:
           docker compose run --rm -q test-backend
           pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO
           -m "integration"
+

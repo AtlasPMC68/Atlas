@@ -5,7 +5,8 @@ WORKDIR /app
 
 # Évite de copier node_modules depuis ta machine
 COPY package*.json ./
-RUN npm install && npm install daisyui
+RUN npm install
+
 
 # Copie le reste
 COPY . .
