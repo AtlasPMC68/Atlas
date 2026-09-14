@@ -160,6 +160,7 @@ services:
       - db
       - florence-worker
       - qwen-worker
+      - redis
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests

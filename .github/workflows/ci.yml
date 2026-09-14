@@ -40,8 +40,8 @@ jobs:
           -m "not integration and not slow"
 
       - name: Run OCR integration tests sequentially
-        run: >
-          docker compose run --rm -q test-backend
-          pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO
-          -m "integration"
+        run: |
+          docker compose up -d florence-worker qwen-worker
+          docker compose run --rm -q test-backend pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO -m "integration"
+
 
