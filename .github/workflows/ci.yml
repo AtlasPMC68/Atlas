@@ -24,11 +24,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Backend-Atlas/Dockerfile', 'Backend-Atlas/requirements.txt', 'Backend-Atlas/ocr/**', 'docker-compose.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Clean stale volumes and containers
         run: docker compose down -v --remove-orphans || true
 
       - name: Build testing AI services
-        run: docker compose build test-backend florence-worker qwen-worker
+        run: |
+          docker compose build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            test-backend florence-worker qwen-worker
         env:
           DOCKER_BUILDKIT: 1
           COMPOSE_DOCKER_CLI_BUILD: 1
