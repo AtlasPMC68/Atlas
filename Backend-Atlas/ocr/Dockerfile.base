@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Shared heavy dependencies first, so that modifying later instruction do not force their reinstallation
-RUN pip install --no-cache-dir torch torchvision
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision
 
 RUN pip install --no-cache-dir \
     Pillow \

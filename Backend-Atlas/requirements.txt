@@ -20,9 +20,6 @@ bcrypt==4.0.0
 pydantic==2.12.5
 email-validator
 matplotlib
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-torchvision
 opencv-python-headless
 scikit-image==0.26.0
 scipy==1.16.3
