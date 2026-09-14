@@ -23,5 +23,7 @@ RUN pip install --no-cache-dir \
     scikit-image
 
 ENV HF_HOME=/app/models
+RUN mkdir -p /app/models/hub /app/models /data/result /data/input /data/intermediate && \
+    chown -R appuser:appuser /app/models/hub /app/models /data/result /data/input /data/intermediate
 RUN mkdir -p /app/models/hub /app/models /data && \
     chown -R appuser:appuser /app/models/hub /app/models /data
