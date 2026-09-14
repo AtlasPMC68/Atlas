@@ -159,6 +159,13 @@ def run_pipeline(
     preprocessed = manually_preprocess_image(image_path)
 
     context = get_image_context(model, processor, preprocessed, get_context_config())
+    enable_context = os.environ.get("ENABLE_IMAGE_CONTEXT", "false").lower() == "true"
+    if enable_context:
+        context = get_image_context(
+            model, processor, preprocessed, get_context_config()
+        )
+    else:
+        context = ""
     logger.debug("Running OCR on full image (tiling disabled)")
 
     result = run_inference(model, processor, preprocessed, OCR_TASK, config)

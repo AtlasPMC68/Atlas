@@ -45,3 +45,11 @@ def pytest_collection_modifyitems(config, items):
 def pytest_configure(config):
     config.addinivalue_line("markers", "integration: marks tests as integration")
     config.addinivalue_line("markers", "slow: marks tests as slow-running")
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:.*Please use `import python_multipart` instead.*:PendingDeprecationWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore::PendingDeprecationWarning:starlette.formparsers",
+    )

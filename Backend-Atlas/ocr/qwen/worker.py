@@ -22,6 +22,21 @@ app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True
 
 
+KEEP_MODEL_IN_MEMORY = os.environ.get("KEEP_MODEL_IN_MEMORY", "true").lower() == "true"
+_CACHED_MODEL = None
+_CACHED_PROCESSOR = None
+_CACHED_CONFIG = None
+
+
+def get_qwen_model():
+    """Get cached Qwen model and processor or load them if not cached."""
+    global _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
+    if _CACHED_MODEL is None or _CACHED_PROCESSOR is None:
+        _CACHED_CONFIG = qwen.get_runtime_config()
+        _CACHED_MODEL, _CACHED_PROCESSOR = qwen.load_model_and_processor(_CACHED_CONFIG)
+    return _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
+
+
 def _strip_quad_fields(detections: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """Normalize Qwen detections to valid {text, bbox_xyxy} entries only."""
     cleaned = []
@@ -84,22 +99,30 @@ def run_qwen(
 
     config = qwen.get_runtime_config()
     model, processor = qwen.load_model_and_processor(config)
-
+    model, processor, config = get_qwen_model()
 
     logger.debug(f"Qwen initialized for ({len(detections)} detections)")
-    raw_detections = qwen.run_per_detection(model, processor, image, detections, config, context)
+    raw_detections = qwen.run_per_detection(
+        model, processor, image, detections, config, context
+    )
     detections = _strip_quad_fields(raw_detections)
     detections = merge_same_text_bboxes_keep_first(detections)
 
     # Forcing model loaded in memory to be cleared
     del model, processor
     gc.collect()
+    if not KEEP_MODEL_IN_MEMORY:
+        global _CACHED_MODEL, _CACHED_PROCESSOR
+        del model, processor
+        _CACHED_MODEL = None
+        _CACHED_PROCESSOR = None
+        gc.collect()
 
     # Use save_result from main.py for consistent output
     qwen.save_result(
         input_path,
         output_path,
-        {"image_size": image_size, "detections": detections, "context": context}
+        {"image_size": image_size, "detections": detections, "context": context},
     )
     logger.info(f"Qwen result Saved: {output_path}")
 
@@ -107,4 +130,13 @@ def run_qwen(
 
 
 if __name__ == "__main__":
-    app.worker_main(["worker", "--loglevel=info", "--concurrency=1", "--queues=qwen", "-n", "qwen@%h"])
+    app.worker_main(
+        [
+            "worker",
+            "--loglevel=info",
+            "--concurrency=1",
+            "--queues=qwen",
+            "-n",
+            "qwen@%h",
+        ]
+    )

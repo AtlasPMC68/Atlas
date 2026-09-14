@@ -23,6 +23,11 @@ jobs:
 
       - name: Build all services
         run: docker compose build
+      - name: Build testing services
+        run: docker compose build test-backend florence-worker qwen-worker
+        env:
+          DOCKER_BUILDKIT: 1
+          COMPOSE_DOCKER_CLI_BUILD: 1
 
       - name: Run fast unit tests in parallel
         run: >
