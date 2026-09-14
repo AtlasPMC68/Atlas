@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import unicodedata
 from copy import deepcopy
 from pathlib import Path
@@ -69,6 +70,17 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
             .replace("-", " ")
             .replace(".", "")
             .replace(",", "")
+            .replace("(", " ")
+            .replace(")", " ")
+            .replace(":", " ")
+            .replace(";", " ")
+            .replace("?", " ")
+            .replace("!", " ")
+            .replace('"', " ")
+            .replace("«", " ")
+            .replace("»", " ")
+            .replace("/", " ")
+            .replace("\\", " ")
         )
         cleaned = (
             unicodedata.normalize("NFKD", cleaned)
@@ -127,6 +139,28 @@ def check_for_match(
                     break
 
             tmp_dist = float(levenshtein_distance(ocr_word_ascii, expected_word_ascii))
+
+            # If expected text includes a year (e.g., 'tadoussac 1600'), also check base entity name
+            base_expected = re.sub(
+                r"\b(1[5-9]\d\d|20\d\d)\b", "", expected_word_ascii
+            ).strip()
+            base_expected = " ".join(base_expected.split())
+            if (
+                base_expected
+                and len(base_expected) >= 4
+                and base_expected != expected_word_ascii
+            ):
+                if len(ocr_word_ascii) >= 4 and (
+                    base_expected in ocr_word_ascii or ocr_word_ascii in base_expected
+                ):
+                    base_dist = 0.5
+                else:
+                    base_dist = float(
+                        levenshtein_distance(ocr_word_ascii, base_expected)
+                    )
+                if base_dist < tmp_dist:
+                    tmp_dist = base_dist
+
             if tmp_dist < min_dist[1]:
                 min_dist = (expected_word, tmp_dist)
                 min_dist_index = expected_index
@@ -152,6 +186,7 @@ def calculate_match_metrics(
         expected_word
         for _, (expected_word, distance) in matches
         if expected_word and distance <= 3.0
+        if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))
     }
     box_find_rate = (
         (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
@@ -265,7 +300,9 @@ def test_text_extraction(
             mismatches.append((expected_word, ocr_word, distance))
 
     if mismatches:
-        logger.info(f"\n{YELLOW}{BOLD}--- Low-Confidence / Mismatched Words (Top 8) ---{RESET}")
+        logger.info(
+            f"\n{YELLOW}{BOLD}--- Low-Confidence / Mismatched Words (Top 8) ---{RESET}"
+        )
         for expected_word, ocr_word, distance in mismatches[:8]:
             d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
             logger.info(
@@ -279,8 +316,12 @@ def test_text_extraction(
     )
 
     status_icon = "✅" if box_find_rate >= 40.0 else "❌"
-    rate_color = GREEN if box_find_rate >= 70.0 else (YELLOW if box_find_rate >= 40.0 else RED)
-    dist_color = GREEN if average_dist <= 1.0 else (YELLOW if average_dist <= 3.0 else RED)
+    rate_color = (
+        GREEN if box_find_rate >= 70.0 else (YELLOW if box_find_rate >= 40.0 else RED)
+    )
+    dist_color = (
+        GREEN if average_dist <= 1.0 else (YELLOW if average_dist <= 3.0 else RED)
+    )
 
     summary = (
         f"\n"

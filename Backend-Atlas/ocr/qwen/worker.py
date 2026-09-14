@@ -86,16 +86,40 @@ def run_qwen(
     context = florence_data.get("context", "")
     detections = florence_data.get("detections", [])
 
-    # Load image and resize if too large for Qwen while keeping aspect ratio.
-    # Load image and resize if too large for Qwen while keeping aspect ratio.
+    # Load image and align detection coordinates with Qwen image size
     image = Image.open(input_path).convert("RGB")
     w, h = image.size
+
+    florence_w = image_size.get("width")
+    florence_h = image_size.get("height")
+    if florence_w and florence_h and (florence_w != w or florence_h != h):
+        scale_x = w / float(florence_w)
+        scale_y = h / float(florence_h)
+        for det in detections:
+            bbox = det.get("bbox_xyxy")
+            if isinstance(bbox, list) and len(bbox) == 4:
+                det["bbox_xyxy"] = [
+                    int(bbox[0] * scale_x),
+                    int(bbox[1] * scale_y),
+                    int(bbox[2] * scale_x),
+                    int(bbox[3] * scale_y),
+                ]
+
     if w * h > qwen.MAX_IMAGE_PIXELS:
         scale = (qwen.MAX_IMAGE_PIXELS / (w * h)) ** 0.5
         image = image.resize(
             (int(w * scale), int(h * scale)),
             Image.Resampling.LANCZOS,
         )
+        for det in detections:
+            bbox = det.get("bbox_xyxy")
+            if isinstance(bbox, list) and len(bbox) == 4:
+                det["bbox_xyxy"] = [
+                    int(bbox[0] * scale),
+                    int(bbox[1] * scale),
+                    int(bbox[2] * scale),
+                    int(bbox[3] * scale),
+                ]
 
     config = qwen.get_runtime_config()
     model, processor = qwen.load_model_and_processor(config)
