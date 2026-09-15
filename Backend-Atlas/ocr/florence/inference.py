@@ -152,6 +152,14 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     preprocessed = manually_preprocess_image(image_path)
 
+    if os.environ.get("SAVE_PREPROCESSED_IMAGES", "false").lower() == "true":
+        img_dir = os.path.dirname(image_path)
+        prep_dir = os.path.join(img_dir, "preprocessed")
+        os.makedirs(prep_dir, exist_ok=True)
+        prep_path = os.path.join(prep_dir, f"prep_{os.path.basename(image_path)}")
+        preprocessed.save(prep_path)
+        logger.debug(f"Saved preprocessed image to {prep_path}")
+
     enable_context = os.environ.get("ENABLE_IMAGE_CONTEXT", "false").lower() == "true"
     if enable_context:
         context = get_image_context(
