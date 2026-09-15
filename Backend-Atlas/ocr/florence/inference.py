@@ -184,14 +184,15 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     all_detections = []
     for quad, text in zip(quad_boxes, labels):
-        # Downscale the coordinates if the image was upscaled
-        if scale_factor != 1.0:
-            quad = [v / scale_factor for v in quad]
-
         bbox = out.quad_to_bbox_xyxy(quad)
         all_detections.append({"text": text, "bbox_xyxy": bbox, "quad": quad})
 
     all_detections = out.merge_related_detections(all_detections)
+
+    if scale_factor != 1.0:
+        for det in all_detections:
+            det["quad"] = [v / scale_factor for v in det["quad"]]
+            det["bbox_xyxy"] = out.quad_to_bbox_xyxy(det["quad"])
 
     # Return original dimensions
     orig_width = int(preprocessed.width / scale_factor)
