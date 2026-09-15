@@ -36,7 +36,7 @@ def get_florence_model():
     return _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
 
 
-@app.task(name="florence.run_pipeline")
+@app.task(name="florence.run_pipeline", soft_time_limit=180, time_limit=240)
 def run_florence(image_path: str, intermediate_path: str) -> bool:
     """
     Run the Florence OCR extraction stage and save its intermediate JSON output.

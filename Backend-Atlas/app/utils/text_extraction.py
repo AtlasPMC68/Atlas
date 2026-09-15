@@ -288,12 +288,14 @@ def _run_ocr_pipeline(
     Execute Florence+Qwen OCR pipeline on file_content.
     Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
     """
+    is_development = os.environ.get("ENV", "development").lower() not in ("production", "prod")
     for d in (OCR_INPUT_DIR, OCR_INTERMEDIATE_DIR, OCR_OUTPUT_DIR):
         os.makedirs(d, exist_ok=True)
-        try:
-            os.chmod(d, 0o777)
-        except Exception as e:
-            logger.debug(f"Failed to chmod {d}: {e}")
+        if is_development:
+            try:
+                os.chmod(d, 0o777)
+            except Exception as e:
+                logger.debug(f"Failed to chmod {d}: {e}")
 
     input_basename = f"{map_id}_{os.path.basename(filename)}"
     input_stem = os.path.splitext(input_basename)[0]
@@ -422,6 +424,15 @@ def extract_text(
     """Extract text using the Florence+Qwen Celery OCR pipeline."""
     if celery_app is None:
         raise ValueError("celery_app must be provided")
+
+    # Limite préventive pour éviter le crash OOM (Out of Memory) sur les workers OCR
+    MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
+    if len(file_content) > MAX_FILE_SIZE_BYTES:
+        logger.warning(
+            f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). "
+            f"Rejetée pour éviter un crash OOM (limite à 25 MB)."
+        )
+        return [], []
 
     logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
     extracted_text, text_regions = _extract_text_via_pipeline(

@@ -56,7 +56,7 @@ def _strip_quad_fields(detections: list[dict[str, Any]] | None) -> list[dict[str
     return cleaned
 
 
-@app.task(name="qwen.run_pipeline")
+@app.task(name="qwen.run_pipeline", soft_time_limit=180, time_limit=240)
 def run_qwen(
     florence_result: bool,
     input_path: str,
