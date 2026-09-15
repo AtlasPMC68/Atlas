@@ -186,7 +186,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     for quad, text in zip(quad_boxes, labels):
         # Downscale the coordinates if the image was upscaled
         if scale_factor != 1.0:
-            quad = [[x / scale_factor, y / scale_factor] for x, y in quad]
+            quad = [v / scale_factor for v in quad]
 
         bbox = out.quad_to_bbox_xyxy(quad)
         all_detections.append({"text": text, "bbox_xyxy": bbox, "quad": quad})

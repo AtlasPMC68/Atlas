@@ -378,7 +378,7 @@ def _run_ocr_pipeline(
             detections = qwen_result.get("detections", [])
             return _build_extracted_text_from_detections(detections)
         except Exception as exc:
-            logger.warning(
+            logger.exception(
                 "OCR full chain timed out or failed for map %s; falling back to Florence output: %s",
                 map_id,
                 exc,
