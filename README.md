@@ -120,6 +120,80 @@ To run the project using Docker Compose, follow these steps:
 
 ---
 
+### 🧪 Testing the project
+
+For this project, tests must be run inside Docker. This is the supported and reliable way to validate the backend and frontend.
+
+#### Start the project
+
+```sh
+docker compose up -d
+```
+
+#### Run all backend tests
+
+```sh
+docker compose exec test-backend pytest -q
+```
+
+#### Run a specific test file
+
+```sh
+docker compose exec test-backend pytest tests/test_extraction_text.py -q
+```
+
+#### Run a test with more details
+
+```sh
+docker compose exec test-backend pytest tests/test_extraction_text.py -q -vv
+```
+
+#### Run the frontend tests
+
+```sh
+docker compose exec frontend npm run test -- --run
+```
+
+#### Check test logs
+
+```sh
+docker compose logs -f test-backend
+```
+
+#### Example result
+
+```sh
+..ssssssss [100%]
+2 passed, 8 skipped in 20.13s
+```
+
+This means:
+- `..` = 2 tests passed
+- `ssssssss` = 8 tests were skipped
+- the suite completed successfully
+
+#### Common errors
+
+```sh
+service "test-backend" is not running
+```
+
+Solution:
+
+```sh
+docker compose up -d
+```
+
+Then rerun the test.
+
+#### Important rule
+
+Do not run pytest directly on the local machine to validate this project. The correct workflow is to use Docker, where the project environment is configured correctly.
+
+This avoids Python dependency issues and broken imports that are unrelated to the code being tested.
+
+---
+
 ### ⚙️ CI/CD Pipeline & Tests
 
 To ensure reliability and consistency across the project, a Continuous Integration (CI) pipeline is configured to automatically run tests on every pull request to main.

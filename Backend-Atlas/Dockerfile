@@ -18,15 +18,22 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python dependencies and install them
+# Install PyTorch CPU in a dedicated layer for optimal Docker caching
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision
+
+# Copy remaining Python dependencies and install them
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+ENV SAVE_PREPROCESSED_IMAGES=false
 
 # Copy application code and test suite into the container
 COPY app ./app
 COPY tests ./tests
+COPY ocr ./ocr
 
 COPY .env.dev /app/app/.env.dev
+
 # Expose the default FastAPI port
 EXPOSE 8000
 

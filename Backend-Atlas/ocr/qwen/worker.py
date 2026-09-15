@@ -14,10 +14,27 @@ os.environ.setdefault("HF_HOME", "/app/models")
 
 app = Celery(
     "qwen_worker",
-    broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
+    broker=os.environ.get("CELERY_BROKER_URL")
+    or os.environ.get("REDIS_URL")
+    or "redis://redis:6379/0",
 )
 app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True
+
+
+KEEP_MODEL_IN_MEMORY = os.environ.get("KEEP_MODEL_IN_MEMORY", "true").lower() == "true"
+_CACHED_MODEL = None
+_CACHED_PROCESSOR = None
+_CACHED_CONFIG = None
+
+
+def get_qwen_model():
+    """Get cached Qwen model and processor or load them if not cached."""
+    global _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
+    if _CACHED_MODEL is None or _CACHED_PROCESSOR is None:
+        _CACHED_CONFIG = qwen.get_runtime_config()
+        _CACHED_MODEL, _CACHED_PROCESSOR = qwen.load_model_and_processor(_CACHED_CONFIG)
+    return _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
 
 
 def _strip_quad_fields(detections: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -39,7 +56,7 @@ def _strip_quad_fields(detections: list[dict[str, Any]] | None) -> list[dict[str
     return cleaned
 
 
-@app.task(name="qwen.run_pipeline")
+@app.task(name="qwen.run_pipeline", soft_time_limit=840, time_limit=900)
 def run_qwen(
     florence_result: bool,
     input_path: str,
@@ -69,30 +86,66 @@ def run_qwen(
     context = florence_data.get("context", "")
     detections = florence_data.get("detections", [])
 
-    # Load image and resize if too large for Qwen while keeping aspect ratio.
+    # Load image and align detection coordinates with Qwen image size
     image = Image.open(input_path).convert("RGB")
     w, h = image.size
+
+    florence_w = image_size.get("width")
+    florence_h = image_size.get("height")
+    if florence_w and florence_h and (florence_w != w or florence_h != h):
+        scale_x = w / float(florence_w)
+        scale_y = h / float(florence_h)
+        for det in detections:
+            bbox = det.get("bbox_xyxy")
+            if isinstance(bbox, list) and len(bbox) == 4:
+                det["bbox_xyxy"] = [
+                    int(bbox[0] * scale_x),
+                    int(bbox[1] * scale_y),
+                    int(bbox[2] * scale_x),
+                    int(bbox[3] * scale_y),
+                ]
+
     if w * h > qwen.MAX_IMAGE_PIXELS:
         scale = (qwen.MAX_IMAGE_PIXELS / (w * h)) ** 0.5
-        image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        image = image.resize(
+            (int(w * scale), int(h * scale)),
+            Image.Resampling.LANCZOS,
+        )
+        for det in detections:
+            bbox = det.get("bbox_xyxy")
+            if isinstance(bbox, list) and len(bbox) == 4:
+                det["bbox_xyxy"] = [
+                    int(bbox[0] * scale),
+                    int(bbox[1] * scale),
+                    int(bbox[2] * scale),
+                    int(bbox[3] * scale),
+                ]
 
-    config = qwen.get_runtime_config()
-    model, processor = qwen.load_model_and_processor(config)
+    model, processor, config = get_qwen_model()
+    config = config or {}
 
     logger.debug(f"Qwen initialized for ({len(detections)} detections)")
-    raw_detections = qwen.run_per_detection(model, processor, image, detections, config, context)
+    raw_detections = qwen.run_per_detection(
+        model, processor, image, detections, config, context
+    )
     detections = _strip_quad_fields(raw_detections)
     detections = merge_same_text_bboxes_keep_first(detections)
 
     # Forcing model loaded in memory to be cleared
     del model, processor
     gc.collect()
+    if not KEEP_MODEL_IN_MEMORY:
+        global _CACHED_MODEL, _CACHED_PROCESSOR
+        del model, processor
+        _CACHED_MODEL = None
+        _CACHED_PROCESSOR = None
+        gc.collect()
 
     # Use save_result from main.py for consistent output
     qwen.save_result(
         input_path,
         output_path,
-        {"image_size": image_size, "detections": detections, "context": context}
+        {"image_size": image_size, "detections": detections, "context": context},
     )
     logger.info(f"Qwen result Saved: {output_path}")
 
@@ -100,4 +153,13 @@ def run_qwen(
 
 
 if __name__ == "__main__":
-    app.worker_main(["worker", "--loglevel=info", "--concurrency=1", "--queues=qwen", "-n", "qwen@%h"])
+    app.worker_main(
+        [
+            "worker",
+            "--loglevel=info",
+            "--concurrency=1",
+            "--queues=qwen",
+            "-n",
+            "qwen@%h",
+        ]
+    )
