@@ -50,16 +50,24 @@ def list_input_images(input_dir: str) -> list[str]:
     return files
 
 
-def manually_preprocess_image(image_path: str) -> Image.Image:
+from typing import Any, Tuple
+
+
+def manually_preprocess_image(image_path: str) -> Tuple[Image.Image, float]:
     """Apply preprocessing to improve OCR quality before Florence inference."""
     img = preprocess.read_image(image_path)
+
+    h_orig, w_orig = img.shape[:2]
     img = preprocess.upscale_for_ocr(img, min_dimension=2000)
+    h_new, w_new = img.shape[:2]
+    scale_factor = h_new / float(h_orig) if h_orig > 0 else 1.0
+
     img = preprocess.bilateral_denoise(img, sigma_color=0.04, sigma_spatial=3.0)
 
     # Single balanced contrast enhancement pass to avoid creating halos on small fonts
     img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
 
-    return Image.fromarray(img)
+    return Image.fromarray(img), scale_factor
 
 
 def load_model_and_processor(config: dict) -> tuple:
@@ -150,7 +158,7 @@ def get_context_config() -> dict:
 def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> dict:
     """Run the Florence OCR pipeline on one image and build the parsed result payload."""
 
-    preprocessed = manually_preprocess_image(image_path)
+    preprocessed, scale_factor = manually_preprocess_image(image_path)
 
     if os.environ.get("SAVE_PREPROCESSED_IMAGES", "false").lower() == "true":
         img_dir = os.path.dirname(image_path)
@@ -176,13 +184,21 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     all_detections = []
     for quad, text in zip(quad_boxes, labels):
+        # Downscale the coordinates if the image was upscaled
+        if scale_factor != 1.0:
+            quad = [[x / scale_factor, y / scale_factor] for x, y in quad]
+
         bbox = out.quad_to_bbox_xyxy(quad)
         all_detections.append({"text": text, "bbox_xyxy": bbox, "quad": quad})
 
     all_detections = out.merge_related_detections(all_detections)
 
+    # Return original dimensions
+    orig_width = int(preprocessed.width / scale_factor)
+    orig_height = int(preprocessed.height / scale_factor)
+
     return {
-        "image_size": {"width": preprocessed.width, "height": preprocessed.height},
+        "image_size": {"width": orig_width, "height": orig_height},
         "context": context,
         "detections": all_detections,
     }
