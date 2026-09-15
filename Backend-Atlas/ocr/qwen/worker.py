@@ -122,6 +122,7 @@ def run_qwen(
                 ]
 
     model, processor, config = get_qwen_model()
+    config = config or {}
 
     logger.debug(f"Qwen initialized for ({len(detections)} detections)")
     raw_detections = qwen.run_per_detection(

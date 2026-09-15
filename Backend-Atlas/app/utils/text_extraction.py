@@ -236,7 +236,8 @@ def _build_extracted_text_from_detections(
         if len(lines) > 1:
             for line in lines:
                 extracted_text.append({"text": line, "bbox": quad})
-        extracted_text.append({"text": raw_text, "bbox": quad})
+        else:
+            extracted_text.append({"text": raw_text, "bbox": quad})
 
     return extracted_text
 
@@ -395,7 +396,7 @@ def _run_ocr_pipeline(
                     logger.warning(
                         "Florence intermediate file exists but is incomplete (race condition during fallback)."
                     )
-            raise
+            return []
     finally:
         for temp_path in (ocr_input_path, ocr_intermediate_path, ocr_output_json_path):
             try:
