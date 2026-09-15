@@ -51,8 +51,6 @@ def run_florence(image_path: str, intermediate_path: str) -> bool:
         f"Received Florence OCR task to process image: {image_path}\nOutput JSON: {intermediate_path}"
     )
 
-    config = florence.get_runtime_config()
-    model, processor = florence.load_model_and_processor(config)
     model, processor, config = get_florence_model()
     result = florence.run_pipeline(model, processor, image_path, config)
 

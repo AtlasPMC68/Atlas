@@ -288,7 +288,10 @@ def _run_ocr_pipeline(
     Execute Florence+Qwen OCR pipeline on file_content.
     Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
     """
-    is_development = os.environ.get("ENV", "development").lower() not in ("production", "prod")
+    is_development = os.environ.get("ENV", "development").lower() not in (
+        "production",
+        "prod",
+    )
     for d in (OCR_INPUT_DIR, OCR_INTERMEDIATE_DIR, OCR_OUTPUT_DIR):
         os.makedirs(d, exist_ok=True)
         if is_development:
@@ -381,12 +384,17 @@ def _run_ocr_pipeline(
             )
 
             if os.path.exists(ocr_intermediate_path):
-                with open(
-                    ocr_intermediate_path, "r", encoding="utf-8"
-                ) as florence_result_file:
-                    florence_result = json.load(florence_result_file)
-                detections = florence_result.get("detections", [])
-                return _build_extracted_text_from_detections(detections)
+                try:
+                    with open(
+                        ocr_intermediate_path, "r", encoding="utf-8"
+                    ) as florence_result_file:
+                        florence_result = json.load(florence_result_file)
+                    detections = florence_result.get("detections", [])
+                    return _build_extracted_text_from_detections(detections)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Florence intermediate file exists but is incomplete (race condition during fallback)."
+                    )
             raise
     finally:
         for temp_path in (ocr_input_path, ocr_intermediate_path, ocr_output_json_path):

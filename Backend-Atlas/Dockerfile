@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENV SAVE_PREPROCESSED_IMAGES=true
+ENV SAVE_PREPROCESSED_IMAGES=false
 
 # Copy application code and test suite into the container
 COPY app ./app

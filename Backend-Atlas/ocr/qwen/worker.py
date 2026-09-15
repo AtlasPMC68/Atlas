@@ -121,8 +121,6 @@ def run_qwen(
                     int(bbox[3] * scale),
                 ]
 
-    config = qwen.get_runtime_config()
-    model, processor = qwen.load_model_and_processor(config)
     model, processor, config = get_qwen_model()
 
     logger.debug(f"Qwen initialized for ({len(detections)} detections)")
