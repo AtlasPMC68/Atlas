@@ -268,7 +268,7 @@ def preprocess_image_for_ocr(file_content: bytes) -> bytes:
 
         # Upscale the image by 2x to help OCR models read small and blurry historical fonts
         enhanced_img = cv2.resize(
-            enhanced_img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC
+            enhanced_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
         )
 
         # Encode back to bytes

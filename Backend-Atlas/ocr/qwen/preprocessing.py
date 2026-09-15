@@ -9,9 +9,14 @@ def read_image(image_path) -> np.ndarray:
     return np.array(img).astype(np.float64) / 255.0
 
 
-def bilateral_denoise(img: np.ndarray, sigma_color: float = 0.05, sigma_spatial: float = 1.0) -> np.ndarray:
+def bilateral_denoise(
+    img: np.ndarray, sigma_color: float = 0.05, sigma_spatial: float = 1.0
+) -> np.ndarray:
     img_f32 = img.astype(np.float32)
-    result = cv2.bilateralFilter(img_f32, d=-1, sigmaColor=sigma_color, sigmaSpace=sigma_spatial)
+    result = cv2.bilateralFilter(
+        img_f32, d=-1, sigmaColor=sigma_color, sigmaSpace=sigma_spatial
+    )
+    result = cv2.bilateralFilter(img_f32, -1, float(sigma_color), float(sigma_spatial))
     return result.astype(np.float64)
 
 
@@ -21,7 +26,7 @@ def upscale_lanczos(img: np.ndarray, scale: int = 2) -> np.ndarray:
         return img
     h, w = img.shape[:2]
     pil_img = PILImage.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
-    pil_img = pil_img.resize((w * scale, h * scale), PILImage.LANCZOS)
+    pil_img = pil_img.resize((w * scale, h * scale), PILImage.Resampling.LANCZOS)
     return np.array(pil_img).astype(np.float64) / 255.0
 
 
