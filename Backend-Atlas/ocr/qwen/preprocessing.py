@@ -15,7 +15,7 @@ def bilateral_denoise(img: np.ndarray, sigma_color: float = 0.05, sigma_spatial:
     Converts to float32 for OpenCV processing and returns the denoised image as float64.
     """
     img_f32 = img.astype(np.float32)
-    result = cv2.bilateralFilter(img_f32, -1, float(sigma_color), float(sigma_spatial))
+    result = cv2.bilateralFilter(img_f32, d=-1, sigmaColor=int(sigma_color * 255), sigmaSpace=sigma_spatial)
     return result.astype(np.float64)
 
 

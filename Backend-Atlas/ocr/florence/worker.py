@@ -31,7 +31,6 @@ def get_florence_model() -> Tuple[Any, Any, dict[str, Any]]:
     if _CACHED_MODEL is None or _CACHED_PROCESSOR is None:
         _CACHED_CONFIG = florence.get_runtime_config()
         _CACHED_MODEL, _CACHED_PROCESSOR = florence.load_model_and_processor(_CACHED_CONFIG)
-    assert _CACHED_CONFIG is not None
     return _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
 
 
@@ -49,12 +48,12 @@ def run_florence(image_path: str, intermediate_path: str) -> bool:
     model, processor, config = get_florence_model()
     result = florence.run_pipeline(model, processor, image_path, config)
 
-    model = None
-    processor = None
+    del model, processor
     gc.collect()
 
     if not KEEP_MODEL_IN_MEMORY:
         global _CACHED_MODEL, _CACHED_PROCESSOR
+        del model, processor
         _CACHED_MODEL = None
         _CACHED_PROCESSOR = None
         gc.collect()

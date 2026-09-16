@@ -33,7 +33,6 @@ def get_qwen_model() -> Tuple[Any, Any, dict[str, Any]]:
     if _CACHED_MODEL is None or _CACHED_PROCESSOR is None:
         _CACHED_CONFIG = qwen.get_runtime_config()
         _CACHED_MODEL, _CACHED_PROCESSOR = qwen.load_model_and_processor(_CACHED_CONFIG)
-    assert _CACHED_CONFIG is not None
     return _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
 
 
@@ -124,12 +123,12 @@ def run_qwen(
     detections = _strip_quad_fields(raw_detections)
     detections = merge_same_text_bboxes_keep_first(detections)
 
-    model = None
-    processor = None
+    del model, processor
     gc.collect()
 
     if not KEEP_MODEL_IN_MEMORY:
         global _CACHED_MODEL, _CACHED_PROCESSOR
+        del model, processor
         _CACHED_MODEL = None
         _CACHED_PROCESSOR = None
         gc.collect()

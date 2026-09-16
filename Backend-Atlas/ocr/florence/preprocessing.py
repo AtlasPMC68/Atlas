@@ -20,7 +20,7 @@ def bilateral_denoise(img: np.ndarray, sigma_color: float = 0.04, sigma_spatial:
     """
     sigma_c = int(sigma_color * 255)
     sigma_s = int(sigma_spatial)
-    return cv2.bilateralFilter(img, 5, float(sigma_c), float(sigma_s))
+    return cv2.bilateralFilter(img, d=5, sigmaColor=sigma_c, sigmaSpace=sigma_s)
 
 
 def upscale_for_ocr(img: np.ndarray, min_dimension: int = 2000) -> np.ndarray:
@@ -31,7 +31,7 @@ def upscale_for_ocr(img: np.ndarray, min_dimension: int = 2000) -> np.ndarray:
     h, w = img.shape[:2]
     if max(h, w) >= min_dimension:
         return img
-    return cv2.resize(img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    return cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
 
 
 def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 1.8) -> np.ndarray:
