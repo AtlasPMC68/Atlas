@@ -48,11 +48,11 @@ jobs:
       #   run: >
       #     docker compose run --rm test-frontend
           
-      # - name: Run backend unit tests in parallel
-      #   run: >
-      #     docker compose run --rm -q test-backend
-      #     pytest tests/ -n auto -v --color=yes --tb=short -rA
-      #     -m "not integration and not slow"
+      - name: Run backend unit tests in parallel
+        run: >
+          docker compose run --rm -q test-backend
+          pytest tests/ -n auto -v --color=yes --tb=short -rA
+          -m "not integration and not slow"
 
       - name: Run OCR integration tests sequentially
         run: |
