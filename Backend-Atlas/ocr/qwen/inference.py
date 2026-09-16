@@ -3,12 +3,12 @@ import json
 import logging
 import os
 import re
-from typing import Any
+from typing import Any, cast
 
 import torch
 from merge import _sanitize_detection_for_prompt
 from PIL import Image, ImageEnhance, ImageOps
-from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
+from transformers import AutoProcessor, PreTrainedModel, Qwen3_5ForConditionalGeneration
 from transformers.utils import logging as hf_transformers_logging
 
 logger = logging.getLogger(__name__)
@@ -78,9 +78,7 @@ def _crop_detection(
 def _build_single_det_prompt(text: str, context: str = "") -> str:
     """Prompt for correcting a single OCR detection from a cropped image."""
     short_context = " ".join(str(context).split())[:180]
-    context_line = (
-        f"Context hint of the whole image: {short_context}\n" if short_context else ""
-    )
+    context_line = f"Context hint of the whole image: {short_context}\n" if short_context else ""
     return (
         "You are correcting character-level OCR errors in a historical map label.\n"
         "The image may show nearby text: focus only on the region matching the OCR input.\n"
@@ -98,9 +96,7 @@ def load_model_and_processor(
     config: dict[str, Any],
 ) -> tuple[Qwen3_5ForConditionalGeneration, AutoProcessor]:
     """Load and configure the Qwen model and processor from the local HF cache only."""
-    logger.info(
-        f"Loading Qwen model {config['model_id']} from local cache under {MODELS_ROOT_DIR}"
-    )
+    logger.info(f"Loading Qwen model {config['model_id']} from local cache under {MODELS_ROOT_DIR}")
 
     model = Qwen3_5ForConditionalGeneration.from_pretrained(
         config["model_id"],
@@ -166,18 +162,8 @@ def _run_single_det_inference(
             ],
         }
     ]
-    text_input = processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
-    inputs = processor(
-        text=[text_input],
-        images=[crop],
-        padding=True,
-        return_tensors="pt",
-    )
+    text_input = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+    inputs = processor(text=[text_input], images=[crop], padding=True, return_tensors="pt")
 
     # Dynamic token limit based on input length to avoid wasting CPU cycles
     words_count = max(1, len(text.split()))
@@ -186,9 +172,8 @@ def _run_single_det_inference(
     tokenizer = getattr(processor, "tokenizer", None)
     eos_id = getattr(tokenizer, "eos_token_id", None)
     pad_id = getattr(model.generation_config, "pad_token_id", None) or eos_id
-
     with torch.inference_mode():
-        output_ids = model.generate(
+        output_ids = cast(Any, model).generate(
             **inputs,
             max_new_tokens=token_limit,
             do_sample=False,
@@ -233,9 +218,7 @@ def run_per_detection(
             continue
 
         crop = _crop_detection(image, bbox)
-        corrected = _run_single_det_inference(
-            model, processor, crop, text, config, context
-        )
+        corrected = _run_single_det_inference(model, processor, crop, text, config, context)
         logger.debug(f"Qwen correction ({idx + 1}/{total_detections}) input='{text}' output='{corrected}'")
         # Fallback to original text if Qwen returned empty
         results.append({"text": corrected or text, "bbox_xyxy": bbox})

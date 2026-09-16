@@ -243,7 +243,13 @@ def _build_extracted_text_from_detections(
 
 
 def preprocess_image_for_ocr(file_content: bytes) -> bytes:
-    """Preprocess the image bytes for better OCR results using CLAHE and sharpening."""
+    """
+    Preprocess the image to improve OCR results.
+
+    # Improve contrast using LAB color space and CLAHE.
+    # Upscale the image by 2x to improve small text recognition.
+    # Encode the processed image back into bytes.
+    """
     try:
         import cv2
         import numpy as np
@@ -254,24 +260,19 @@ def preprocess_image_for_ocr(file_content: bytes) -> bytes:
         if img is None:
             return file_content
 
-        # Enhance contrast without losing color information using LAB color space
         lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
 
-        # Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) to the L-channel
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         cl = clahe.apply(l)
 
-        # Merge back and convert to BGR
         limg = cv2.merge((cl, a, b))
         enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
 
-        # Upscale the image by 2x to help OCR models read small and blurry historical fonts
         enhanced_img = cv2.resize(
             enhanced_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
         )
 
-        # Encode back to bytes
         _, encoded_img = cv2.imencode(".jpg", enhanced_img)
         return encoded_img.tobytes()
 
@@ -329,7 +330,7 @@ def _run_ocr_pipeline(
         )
         try:
             assert ocr_result is not None
-            # Poll with timeout to give live user feedback instead of a silent hang
+            # Poll with timeout to give live user feedback
             elapsed = 0
             poll_interval = 5
             stage = "florence"
@@ -430,11 +431,13 @@ def extract_text(
     file_content: bytes,
     celery_app=None,
 ):
-    """Extract text using the Florence+Qwen Celery OCR pipeline."""
+    """
+    Extract text using the Florence+Qwen OCR pipeline.
+    """
     if celery_app is None:
         raise ValueError("celery_app must be provided")
 
-    # Limite préventive pour éviter le crash OOM (Out of Memory) sur les workers OCR
+    # Reject files larger than 25 MB to prevent out-of-memory errors.
     MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
     if len(file_content) > MAX_FILE_SIZE_BYTES:
         logger.warning(
