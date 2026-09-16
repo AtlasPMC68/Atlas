@@ -3,11 +3,11 @@ import json
 import logging
 import os
 import re
-from typing import Any, cast
+from typing import Any
 
 import torch
 from merge import _sanitize_detection_for_prompt
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageOps
 from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 from transformers.utils import logging as hf_transformers_logging
 
@@ -78,7 +78,9 @@ def _crop_detection(
 
 
 def _build_single_det_prompt(text: str, context: str = "") -> str:
-    """Construct system and user prompt for correcting a single OCR detection from a cropped image."""
+    """Prompt for correcting a single OCR detection from a cropped image."""
+    short_context = " ".join(str(context).split())[:180]
+    context_line = f"Context hint of the whole image: {short_context}\n" if short_context else ""
     return (
         "You are correcting character-level OCR errors in a historical map label.\n"
         "The image may show nearby text: focus only on the region matching the OCR input.\n"
@@ -93,10 +95,7 @@ def _build_single_det_prompt(text: str, context: str = "") -> str:
 def load_model_and_processor(
     config: dict[str, Any],
 ) -> tuple[Qwen3_5ForConditionalGeneration, AutoProcessor]:
-    """
-    Load and configure the Qwen model and processor from local cache.
-    Configures pad_token_id to prevent generate() warnings and disables early stopping.
-    """
+    """Load and configure the Qwen model and processor from the local HF cache only."""
     logger.info(f"Loading Qwen model {config['model_id']} from local cache under {MODELS_ROOT_DIR}")
 
     model = Qwen3_5ForConditionalGeneration.from_pretrained(
@@ -165,8 +164,18 @@ def _run_single_det_inference(
             ],
         }
     ]
-    text_input = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-    inputs = processor(text=[text_input], images=[crop], padding=True, return_tensors="pt")
+    text_input = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=False,
+    )
+    inputs = processor(
+        text=[text_input],
+        images=[crop],
+        padding=True,
+        return_tensors="pt",
+    )
 
     words_count = max(1, len(text.split()))
     token_limit = max(8, min(24, words_count * 5))
@@ -174,8 +183,9 @@ def _run_single_det_inference(
     tokenizer = getattr(processor, "tokenizer", None)
     eos_id = getattr(tokenizer, "eos_token_id", None)
     pad_id = getattr(model.generation_config, "pad_token_id", None) or eos_id
+
     with torch.inference_mode():
-        output_ids = cast(Any, model).generate(
+        output_ids = model.generate(
             **inputs,
             max_new_tokens=token_limit,
             do_sample=False,
