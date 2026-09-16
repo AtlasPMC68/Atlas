@@ -168,7 +168,6 @@ def _merge_quads(det_a: dict[str, Any], det_b: dict[str, Any], direction: str) -
         min_u = center_u - source_w / 2.0
         max_u = center_u + source_w / 2.0
         min_v = min(min_v_a, min_v_b)
-        max_v = max(max_u_a, max_v_b)
         max_v = max(max_v_a, max_v_b)
 
     return _quad_from_projected_bounds(min_u, max_u, min_v, max_v, axis_u, axis_v)
