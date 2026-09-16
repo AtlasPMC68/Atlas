@@ -47,7 +47,6 @@ jobs:
       - name: Run frontend unit tests 
         run: >
           docker compose run --rm test-frontend
-          pytest tests/ --color=yes --tb=short -rA
           
       - name: Run backend unit tests in parallel
         run: >
