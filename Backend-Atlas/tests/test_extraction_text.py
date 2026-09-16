@@ -1,9 +1,9 @@
 import logging
-import os
 import re
 import unicodedata
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -15,7 +15,6 @@ from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS
 
 logger = logging.getLogger(__name__)
 
-# ANSI Color constants for readable, spaced test reports
 CYAN = "\033[96m"
 BLUE = "\033[94m"
 GREEN = "\033[92m"
@@ -26,7 +25,7 @@ RESET = "\033[0m"
 
 
 def get_image_paths() -> list[Path]:
-    """Collect all image paths from tests/assets with supported extensions."""
+    """Collect all valid image file paths from tests/assets directory with supported extensions."""
     valid_extensions = (
         ".jpg",
         ".jpeg",
@@ -51,6 +50,7 @@ def get_image_paths() -> list[Path]:
 
 
 def get_test_data() -> list[tuple[Path, list[str]]]:
+    """Load image paths and their corresponding expected ground truth text lists for testing."""
     images = get_image_paths()
     data: list[tuple[Path, list[str]]] = []
     for image in images:
@@ -61,7 +61,7 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
 
 
 def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
-    """Return ASCII-normalized words while preserving duplicate entries."""
+    """Return ASCII-normalized words stripping punctuation and accents while preserving word count."""
     res = []
     for word in text:
         cleaned = (
@@ -82,12 +82,7 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
             .replace("/", " ")
             .replace("\\", " ")
         )
-        cleaned = (
-            unicodedata.normalize("NFKD", cleaned)
-            .encode("ascii", "ignore")
-            .decode("ascii")
-            .lower()
-        )
+        cleaned = unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode("ascii").lower()
         cleaned = " ".join(cleaned.split())
         res.append(cleaned)
     return res
@@ -98,10 +93,8 @@ def check_for_match(
     expected: list[str],
 ) -> list[tuple[str, tuple[str, float]]]:
     """
-    Map each OCR word to the closest expected word and distance while preserving
-    repeated OCR detections. Expected refers to the ground truth text, while actual
-    refers to the OCR output. The distance is a Levenshtein distance between the
-    ASCII-normalized versions of the actual and expected strings.
+    Map each OCR word to the closest expected word and calculate Levenshtein distance.
+    Preserves repeated OCR detections and handles substring matching and year suffix matching.
     """
     actual_ascii = normalize_array_to_ascii_format(actual)
     expected_ascii = normalize_array_to_ascii_format(expected)
@@ -128,36 +121,21 @@ def check_for_match(
                 min_dist_index = expected_index
                 break
 
-            # Consider it a very close match if one is a meaningful substring of the other
             if len(expected_word_ascii) >= 4 and len(ocr_word_ascii) >= 4:
-                if (
-                    expected_word_ascii in ocr_word_ascii
-                    or ocr_word_ascii in expected_word_ascii
-                ):
+                if expected_word_ascii in ocr_word_ascii or ocr_word_ascii in expected_word_ascii:
                     min_dist = (expected_word, 0.5)
                     min_dist_index = expected_index
                     break
 
             tmp_dist = float(levenshtein_distance(ocr_word_ascii, expected_word_ascii))
 
-            # If expected text includes a year (e.g., 'tadoussac 1600'), also check base entity name
-            base_expected = re.sub(
-                r"\b(1[5-9]\d\d|20\d\d)\b", "", expected_word_ascii
-            ).strip()
+            base_expected = re.sub(r"\b(1[5-9]\d\d|20\d\d)\b", "", expected_word_ascii).strip()
             base_expected = " ".join(base_expected.split())
-            if (
-                base_expected
-                and len(base_expected) >= 4
-                and base_expected != expected_word_ascii
-            ):
-                if len(ocr_word_ascii) >= 4 and (
-                    base_expected in ocr_word_ascii or ocr_word_ascii in base_expected
-                ):
+            if base_expected and len(base_expected) >= 4 and base_expected != expected_word_ascii:
+                if len(ocr_word_ascii) >= 4 and (base_expected in ocr_word_ascii or ocr_word_ascii in base_expected):
                     base_dist = 0.5
                 else:
-                    base_dist = float(
-                        levenshtein_distance(ocr_word_ascii, base_expected)
-                    )
+                    base_dist = float(levenshtein_distance(ocr_word_ascii, base_expected))
                 if base_dist < tmp_dist:
                     tmp_dist = base_dist
 
@@ -177,25 +155,19 @@ def calculate_match_metrics(
     matches: list[tuple[str, tuple[str, float]]],
     expected: list[str],
 ) -> tuple[float, float]:
-    """Compute coverage and average distance from matched OCR results."""
+    """Compute hit rate coverage percentage and average distance from matched OCR results."""
     if not matches:
         return (0.0, 0.0)
 
     total_distance = sum(distance for _, (_, distance) in matches)
-    matched_expected_words = {
-        expected_word
-        for _, (expected_word, distance) in matches
-        if expected_word and distance <= 3.0
-        if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))
-    }
-    box_find_rate = (
-        (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
-    )
+    matched_expected_words = {expected_word for _, (expected_word, distance) in matches if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))}
+    box_find_rate = (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
     average_dist = total_distance / len(matches)
     return box_find_rate, average_dist
 
 
 def test_match_metrics_count_expected_coverage_once() -> None:
+    """Verify that calculate_match_metrics counts unique expected words correctly."""
     matches = [
         ("Quebec", ("Québec", 0.0)),
         ("Quebec", ("Québec", 0.0)),
@@ -208,6 +180,7 @@ def test_match_metrics_count_expected_coverage_once() -> None:
 
 
 def test_check_for_match_keeps_duplicate_ocr_words() -> None:
+    """Verify that check_for_match retains duplicate OCR words in output list."""
     actual = ["Quebec", "Quebec", "Boston"]
     expected = ["Québec", "Boston"]
 
@@ -217,6 +190,7 @@ def test_check_for_match_keeps_duplicate_ocr_words() -> None:
 
 
 def test_qwen_generated_text_strips_eos_artifacts() -> None:
+    """Verify stripping of end-of-sentence tags and newline normalization."""
     raw = "</s>Progress of the Wehrmacht\nduring 10th May 1940"
 
     cleaned = raw.replace("</s>", " ").replace("\r\n", "\n").replace("\r", "\n")
@@ -226,8 +200,7 @@ def test_qwen_generated_text_strips_eos_artifacts() -> None:
 
 
 def test_florence_merge_does_not_join_distant_map_labels() -> None:
-    from ocr.florence.output import _get_merge_direction
-
+    """Verify that merge_related_detections avoids merging distant bounding boxes."""
     try:
         from ocr.florence.output import _get_merge_direction
     except ImportError:
@@ -261,13 +234,13 @@ def test_text_extraction(
     expected_text: list[str],
     request: pytest.FixtureRequest,
 ) -> None:
+    """Run full OCR pipeline integration test on test asset images and validate accuracy metrics."""
     assert image_path.exists()
 
-    # Extract text from image using the OCR pipeline
     header = (
         f"\n\n"
         f"{CYAN}{BOLD}================================================================================{RESET}\n"
-        f"🔎  {BOLD}TESTING IMAGE : {YELLOW}{image_path.name}{RESET}\n"
+        f"    {BOLD}TESTING IMAGE : {YELLOW}{image_path.name}{RESET}\n"
         f"    Target Ground Truth : {BOLD}{len(expected_text)}{RESET} expected words\n"
         f"{CYAN}{BOLD}================================================================================{RESET}\n"
     )
@@ -282,10 +255,7 @@ def test_text_extraction(
         celery_app=celery_app,
     )
 
-    # Pair every single OCR word with the closest word from the dictionary of expected words
-    unpaired_ocr_words: list[str] = [
-        str(block.get("text", "")) for block in extracted_text
-    ]
+    unpaired_ocr_words: list[str] = [str(block.get("text", "")) for block in extracted_text]
     unpaired_expected_words: list[str] = deepcopy(expected_text)
     results = check_for_match(
         unpaired_ocr_words,
@@ -300,28 +270,18 @@ def test_text_extraction(
             mismatches.append((expected_word, ocr_word, distance))
 
     if mismatches:
-        logger.info(
-            f"\n{YELLOW}{BOLD}--- Low-Confidence / Mismatched Words (Top 8) ---{RESET}"
-        )
+        logger.info(f"\n{YELLOW}{BOLD}--- Low-Confidence / Mismatched Words (Top 8) ---{RESET}")
         for expected_word, ocr_word, distance in mismatches[:8]:
             d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
-            logger.info(
-                f"   • Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}"
-            )
+            logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
         if len(mismatches) > 8:
             logger.info(f"   ... and {len(mismatches) - 8} more.\n")
 
-    box_find_rate, average_dist = calculate_match_metrics(
-        results, unpaired_expected_words
-    )
+    box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
     status_icon = "✅" if box_find_rate >= 40.0 else "❌"
-    rate_color = (
-        GREEN if box_find_rate >= 70.0 else (YELLOW if box_find_rate >= 40.0 else RED)
-    )
-    dist_color = (
-        GREEN if average_dist <= 1.0 else (YELLOW if average_dist <= 3.0 else RED)
-    )
+    rate_color = GREEN if box_find_rate >= 70.0 else (YELLOW if box_find_rate >= 40.0 else RED)
+    dist_color = GREEN if average_dist <= 1.0 else (YELLOW if average_dist <= 3.0 else RED)
 
     summary = (
         f"\n"
@@ -343,5 +303,5 @@ def test_text_extraction(
         },
     )
 
-    assert box_find_rate >= 40.0, f"Box find rate too low: {box_find_rate:.2f}%"
+    assert box_find_rate >= 50.0, f"Box find rate too low: {box_find_rate:.2f}%"
     assert average_dist < 15.0, f"Average distance too high: {average_dist:.2f}"

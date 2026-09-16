@@ -1,8 +1,8 @@
-import os
 import gc
 import json
 import logging
-from typing import Any
+import os
+from typing import Any, Tuple
 from celery import Celery
 from PIL import Image
 
@@ -21,19 +21,19 @@ app = Celery(
 app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True
 
-
 KEEP_MODEL_IN_MEMORY = os.environ.get("KEEP_MODEL_IN_MEMORY", "true").lower() == "true"
-_CACHED_MODEL = None
-_CACHED_PROCESSOR = None
-_CACHED_CONFIG = None
+_CACHED_MODEL: Any = None
+_CACHED_PROCESSOR: Any = None
+_CACHED_CONFIG: dict[str, Any] | None = None
 
 
-def get_qwen_model():
-    """Get cached Qwen model and processor or load them if not cached."""
+def get_qwen_model() -> Tuple[Any, Any, dict[str, Any]]:
+    """Retrieve cached Qwen model, processor, and runtime configuration or load them on first use."""
     global _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
     if _CACHED_MODEL is None or _CACHED_PROCESSOR is None:
         _CACHED_CONFIG = qwen.get_runtime_config()
         _CACHED_MODEL, _CACHED_PROCESSOR = qwen.load_model_and_processor(_CACHED_CONFIG)
+    assert _CACHED_CONFIG is not None
     return _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
 
 
@@ -65,20 +65,14 @@ def run_qwen(
 ) -> str:
     """
     Run the Qwen OCR refinement stage using Florence intermediate detections.
-
-    Loads Florence output, optionally resizes the image to fit Qwen pixel limits,
-    applies per-detection text correction, post-processes detections, then writes
-    the final JSON payload to output_path.
-
-    Returns:
-        str: output_path on success, or "florence_failed" when upstream failed.
+    Loads Florence JSON output, aligns detection coordinates with Qwen image bounds,
+    resizes images exceeding pixel thresholds, executes per-detection correction,
+    performs memory cleanup, and saves final OCR results.
     """
-
     if not florence_result:
         logger.error("Florence OCR task failed. Skipping Qwen processing.")
         return "florence_failed"
 
-    # Load Florence JSON
     with open(intermediate_path, "r", encoding="utf-8") as f:
         florence_data = json.load(f)
 
@@ -86,7 +80,6 @@ def run_qwen(
     context = florence_data.get("context", "")
     detections = florence_data.get("detections", [])
 
-    # Load image and align detection coordinates with Qwen image size
     image = Image.open(input_path).convert("RGB")
     w, h = image.size
 
@@ -131,17 +124,16 @@ def run_qwen(
     detections = _strip_quad_fields(raw_detections)
     detections = merge_same_text_bboxes_keep_first(detections)
 
-    # Forcing model loaded in memory to be cleared
-    del model, processor
+    model = None
+    processor = None
     gc.collect()
+
     if not KEEP_MODEL_IN_MEMORY:
         global _CACHED_MODEL, _CACHED_PROCESSOR
-        del model, processor
         _CACHED_MODEL = None
         _CACHED_PROCESSOR = None
         gc.collect()
 
-    # Use save_result from main.py for consistent output
     qwen.save_result(
         input_path,
         output_path,

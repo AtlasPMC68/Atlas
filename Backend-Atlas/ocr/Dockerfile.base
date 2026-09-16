@@ -1,3 +1,4 @@
+# Base Docker Image for OCR Processing Workers
 FROM python:3.12-slim
 
 ARG UID=1000
@@ -11,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Shared heavy dependencies first, so that modifying later instruction do not force their reinstallation
+# Install shared heavy dependencies to leverage Docker layer caching
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision
 
 RUN pip install --no-cache-dir \
@@ -26,4 +27,3 @@ ENV HF_HOME=/app/models
 RUN mkdir -p /app/models/hub /app/models /data && \
     chown -R appuser:appuser /app/models /data && \
     chmod -R 777 /data
-

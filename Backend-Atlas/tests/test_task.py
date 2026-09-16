@@ -1,5 +1,6 @@
 import uuid
-from unittest.mock import patch, MagicMock, mock_open
+from typing import Any
+from unittest.mock import MagicMock, mock_open, patch
 
 import numpy as np
 import pytest
@@ -7,12 +8,13 @@ from app.tasks import process_map_extraction
 
 
 @pytest.fixture
-def real_image_np():
-    # OpenCV image (NumPy array)
+def real_image_np() -> np.ndarray:
+    """Fixture returning a mock NumPy array image for testing map extractions."""
     return np.zeros((100, 100, 3), dtype=np.uint8)
 
 
-def get_mock_color_extraction():
+def get_mock_color_extraction() -> dict[str, Any]:
+    """Return mock color extraction dictionary payload for unit tests."""
     return {
         "colors_detected": ["royal-blue"],
         "masks": {"royal-blue": "/app/extracted_color/test_map/royal-blue.png"},
@@ -56,7 +58,12 @@ def get_mock_color_extraction():
     }
 
 
-def test_process_map_extraction(real_image_np):
+def test_process_map_extraction(real_image_np: np.ndarray) -> None:
+    """
+    Test process_map_extraction task with all extractions enabled.
+    Verifies that status, output paths, color, shape, and text results match expected structures,
+    validates extractions_performed flags, and asserts progress update state call counts.
+    """
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
     project_id = str(uuid.uuid4())
@@ -74,7 +81,6 @@ def test_process_map_extraction(real_image_np):
     ]
     mock_text_regions = [det["bbox"] for det in mock_ocr_result]
     mock_colors = get_mock_color_extraction()
-    # Include at least one legend shape so color extraction isn't skipped.
     mock_shapes = {
         "circles": 1,
         "lines": 5,
@@ -110,7 +116,6 @@ def test_process_map_extraction(real_image_np):
         mock_tmp_file.__exit__ = MagicMock(return_value=None)
         mock_tempfile.return_value = mock_tmp_file
 
-        # Call with all extraction options enabled
         result = process_map_extraction.apply(
             args=[filename, file_bytes, project_id, map_id],
             kwargs={
@@ -122,29 +127,27 @@ def test_process_map_extraction(real_image_np):
             },
         ).get(timeout=20)
 
-    # Verify result structure
     assert result["status"] == "completed"
     assert result["filename"] == filename
     assert "output_path" in result
     assert result["color_result"] == mock_colors
     assert result["shapes_result"] == mock_shapes
 
-    # Verify extractions_performed flags
     assert "extractions_performed" in result
-    assert (
-        result["extractions_performed"]["georeferencing"] is False
-    )  # No points provided
+    assert result["extractions_performed"]["georeferencing"] is False
     assert result["extractions_performed"]["color_extraction"] is True
     assert result["extractions_performed"]["shapes_extraction"] is True
     assert result["extractions_performed"]["text_extraction"] is True
 
-    # Verify mocks were called appropriately
-    assert mock_update_state.call_count >= 5  # At least 5 progress updates
-    assert mock_asyncio_run.call_count >= 1  # At least one async persist call
+    assert mock_update_state.call_count >= 5
+    assert mock_asyncio_run.call_count >= 1
 
 
-def test_process_map_extraction_minimal(real_image_np):
-    """Test with all extractions disabled"""
+def test_process_map_extraction_minimal(real_image_np: np.ndarray) -> None:
+    """
+    Test process_map_extraction task with all extraction options disabled.
+    Verifies that extractions_performed flags are set to False and extraction functions are not invoked.
+    """
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
     project_id = str(uuid.uuid4())
@@ -165,7 +168,6 @@ def test_process_map_extraction_minimal(real_image_np):
         mock_tmp_file.__exit__ = MagicMock(return_value=None)
         mock_tempfile.return_value = mock_tmp_file
 
-        # Call with all extraction options disabled
         result = process_map_extraction.apply(
             args=[filename, file_bytes, project_id, map_id],
             kwargs={
@@ -175,20 +177,20 @@ def test_process_map_extraction_minimal(real_image_np):
             },
         ).get(timeout=20)
 
-    # Verify extractions were skipped
     assert result["extractions_performed"]["color_extraction"] is False
     assert result["extractions_performed"]["shapes_extraction"] is False
     assert result["extractions_performed"]["text_extraction"] is False
 
-    # Verify extraction functions were not called
     mock_extract_text.assert_not_called()
     mock_extract_colors.assert_not_called()
     mock_extract_shapes.assert_not_called()
 
 
-def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
-    """extract_colors must receive imposed_click_positions and imposed_colors_names
-    exactly as passed to process_map_extraction."""
+def test_process_map_extraction_forwards_imposed_click_positions(real_image_np: np.ndarray) -> None:
+    """
+    Verify that extract_colors receives imposed_click_positions and imposed_colors_names
+    parameters exactly as passed to process_map_extraction.
+    """
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
     project_id = str(uuid.uuid4())
@@ -202,9 +204,7 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
     with (
         patch("app.tasks.process_map_extraction.update_state"),
         patch("app.tasks.cv2.imread", return_value=real_image_np),
-        patch(
-            "app.tasks.extract_colors", return_value=mock_colors
-        ) as mock_extract_colors,
+        patch("app.tasks.extract_colors", return_value=mock_colors) as mock_extract_colors,
         patch(
             "app.tasks.extract_shapes",
             return_value={"shapes": [], "normalized_features": []},
@@ -237,8 +237,8 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
     assert call_kwargs.get("imposed_sampling_radii") is None
 
 
-def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
-    """If per-click sampling radii are provided, they must be forwarded to extract_colors."""
+def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np: np.ndarray) -> None:
+    """Verify that per-click sampling radii parameters are forwarded correctly to extract_colors."""
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
     project_id = str(uuid.uuid4())
@@ -253,9 +253,7 @@ def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
     with (
         patch("app.tasks.process_map_extraction.update_state"),
         patch("app.tasks.cv2.imread", return_value=real_image_np),
-        patch(
-            "app.tasks.extract_colors", return_value=mock_colors
-        ) as mock_extract_colors,
+        patch("app.tasks.extract_colors", return_value=mock_colors) as mock_extract_colors,
         patch(
             "app.tasks.extract_shapes",
             return_value={"shapes": [], "normalized_features": []},
@@ -289,9 +287,11 @@ def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
     assert call_kwargs["imposed_sampling_radii"] == imposed_radii
 
 
-def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
-    """When imposed_click_positions is omitted and no legend shapes are available,
-    color extraction is skipped and extract_colors is not called."""
+def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np: np.ndarray) -> None:
+    """
+    Verify that color extraction is skipped and extract_colors is not invoked
+    when imposed_click_positions is omitted and no legend shapes are available.
+    """
     filename = "test_map.png"
     file_bytes = b"fake_image_data"
     project_id = str(uuid.uuid4())
@@ -302,9 +302,7 @@ def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
     with (
         patch("app.tasks.process_map_extraction.update_state"),
         patch("app.tasks.cv2.imread", return_value=real_image_np),
-        patch(
-            "app.tasks.extract_colors", return_value=mock_colors
-        ) as mock_extract_colors,
+        patch("app.tasks.extract_colors", return_value=mock_colors) as mock_extract_colors,
         patch(
             "app.tasks.extract_shapes",
             return_value={"shapes": [], "normalized_features": []},

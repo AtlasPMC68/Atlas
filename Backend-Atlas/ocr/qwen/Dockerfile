@@ -1,3 +1,4 @@
+# Qwen 3.5 Celery Worker Container Image
 FROM ocr-base
 
 USER root
@@ -12,4 +13,3 @@ COPY --chown=appuser:appuser . /app/qwen/
 WORKDIR /app/qwen
 
 CMD ["python", "-m", "celery", "-A", "worker", "worker", "--loglevel=warning", "--concurrency=1", "--queues=qwen", "-n", "qwen@%h"]
-
