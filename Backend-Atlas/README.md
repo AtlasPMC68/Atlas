@@ -1,17 +1,26 @@
-# Backend Atlas - Map Processing API
+# Backend - Maps Processing API
 
-FastAPI backend and OCR task pipeline for historical map extraction.
+## Installation
 
-## 🚀 Quick Start (Docker)
+1. Créer l'environnement virtuel :
+   python -m venv .venv
 
-```sh
-# Start backend and OCR worker services
-docker compose up -d backend florence-worker qwen-worker
-```
+2. Activer l'environnement :
+   .venv\Scripts\activate
 
-## 🧪 Testing
+3. Installer les dépendances :
+   pip install -r requirements.txt
 
-```sh
-# Run backend test suite in Docker
-docker compose exec test-backend pytest -q
-```
+4. uvicorn app.main:app --reload
+
+# Dans autre terminal :
+
+curl http://localhost:8000/ping
+
+La reponse recue devrait etre "pong"
+
+# Test bd
+
+curl http://localhost:8000/db-test
+
+La reponse reçu devrait être {"db_status":"connected","result":[1]}
