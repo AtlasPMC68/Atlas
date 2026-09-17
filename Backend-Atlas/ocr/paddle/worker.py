@@ -23,7 +23,7 @@ _CACHED_OCR = None
 def get_ocr():
     global _CACHED_OCR
     if _CACHED_OCR is None:
-        _CACHED_OCR = PaddleOCR(use_angle_cls=True, lang="fr")
+        _CACHED_OCR = PaddleOCR(use_angle_cls=True, lang="fr", enable_mkldnn=False)
     return _CACHED_OCR
 
 
