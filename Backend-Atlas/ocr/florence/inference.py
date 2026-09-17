@@ -99,9 +99,7 @@ def load_model_and_processor(config: dict) -> tuple:
     return model, processor
 
 
-def run_inference(
-    model: Any, processor: Any, image: Image.Image, task_prompt: str, config: dict
-) -> dict:
+def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: str, config: dict) -> dict:
     """Run Florence inference for one task prompt and return structured output."""
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
@@ -113,7 +111,7 @@ def run_inference(
             do_sample=False,
             num_beams=1,
         )
-    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
     del inputs, generated_ids
     gc.collect()
     return processor.post_process_generation(
@@ -123,9 +121,7 @@ def run_inference(
     )
 
 
-def get_image_context(
-    model: Any, processor: Any, image: Image.Image, config: dict
-) -> str:
+def get_image_context(model: Any, processor: Any, image: Image.Image, config: dict) -> str:
     """Generate a short geographic context summary for the map image."""
     inputs = processor(text=CONTEXT_TASK, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
@@ -138,9 +134,7 @@ def get_image_context(
             num_beams=1,
         )
     generated_ids = generated_ids[:, inputs["input_ids"].shape[1] :]
-    context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[
-        0
-    ].strip()
+    context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
     logger.debug(f"Generated context: {context_text}")
     return context_text
 
@@ -170,9 +164,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     enable_context = os.environ.get("ENABLE_IMAGE_CONTEXT", "false").lower() == "true"
     if enable_context:
-        context = get_image_context(
-            model, processor, preprocessed, get_context_config()
-        )
+        context = get_image_context(model, processor, preprocessed, get_context_config())
     else:
         context = ""
     logger.debug("Running OCR on full image (tiling disabled)")
