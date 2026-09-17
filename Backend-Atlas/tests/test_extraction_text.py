@@ -224,14 +224,15 @@ def test_florence_merge_does_not_join_distant_map_labels() -> None:
 
 CARD_THRESHOLDS = {
     "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 95.0, "max_dist": 0.15},
-    "Quebec_1791.png":                     {"min_hit_rate": 85.0, "max_dist": 0.55},
-    "Sahel_Afrique.png":                   {"min_hit_rate": 85.0, "max_dist": 0.20},
-    "Nouvelle-France1750.png":             {"min_hit_rate": 50.0, "max_dist": 1.20},
-    "genocide_Monde.png":                  {"min_hit_rate": 80.0, "max_dist": 1.40},
-    "Quebec_1800.png":                     {"min_hit_rate": 70.0, "max_dist": 1.15},
-    "1775_Quebec_NordUSA.png":             {"min_hit_rate": 65.0, "max_dist": 2.10},
-    "Quebec_Traite1783.png":               {"min_hit_rate": 70.0, "max_dist": 1.15},
+    "Quebec_1791.png": {"min_hit_rate": 85.0, "max_dist": 0.55},
+    "Sahel_Afrique.png": {"min_hit_rate": 85.0, "max_dist": 0.20},
+    "Nouvelle-France1750.png": {"min_hit_rate": 50.0, "max_dist": 1.20},
+    "genocide_Monde.png": {"min_hit_rate": 80.0, "max_dist": 1.40},
+    "Quebec_1800.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
+    "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 2.10},
+    "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
 }
+
 
 @pytest.mark.integration
 @pytest.mark.slow
@@ -314,16 +315,7 @@ def test_text_extraction(
         },
     )
 
-    thresholds = CARD_THRESHOLDS.get(
-        image_path.name, 
-        {"min_hit_rate": 40.0, "max_dist": 15.0} 
-    )
+    thresholds = CARD_THRESHOLDS.get(image_path.name, {"min_hit_rate": 40.0, "max_dist": 15.0})
 
-    assert box_find_rate >= thresholds["min_hit_rate"], (
-        f"Regression sur {image_path.name}! "
-        f"Hit rate actuel: {box_find_rate:.2f}% (Seuil min: {thresholds['min_hit_rate']}%)"
-    )
-    assert average_dist <= thresholds["max_dist"], (
-        f"Regression sur {image_path.name}! "
-        f"Distance moyenne actuelle: {average_dist:.2f} (Seuil max: {thresholds['max_dist']})"
-    )
+    assert box_find_rate >= thresholds["min_hit_rate"], f"Regression sur {image_path.name}! " f"Hit rate actuel: {box_find_rate:.2f}% (Seuil min: {thresholds['min_hit_rate']}%)"
+    assert average_dist <= thresholds["max_dist"], f"Regression sur {image_path.name}! " f"Distance moyenne actuelle: {average_dist:.2f} (Seuil max: {thresholds['max_dist']})"

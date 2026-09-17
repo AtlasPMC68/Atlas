@@ -32,11 +32,7 @@ else:
     logger.setLevel(getattr(logging, log_level, logging.INFO))
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
-            )
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
         logger.addHandler(handler)
 
 # OCR pipeline folders configuration
@@ -46,6 +42,8 @@ OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
 OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "900"))
 CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
 CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
+
+from app.utils.map_dictionary import apply_map_dictionary_correction
 
 
 def _extract_bbox_center_anchor(bbox_quad: object) -> tuple[float | None, float | None]:
@@ -63,9 +61,7 @@ def _extract_bbox_center_anchor(bbox_quad: object) -> tuple[float | None, float 
         return None, None
 
 
-def _build_city_feature_collection(
-    text: str, candidate: dict[str, Any]
-) -> dict[str, Any]:
+def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
     """Build one city point feature for each geolocated city candidate."""
     return {
         "type": "FeatureCollection",
@@ -91,9 +87,7 @@ def _build_city_feature_collection(
     }
 
 
-def _build_pixel_text_feature_collection(
-    text: str, x: float, y: float
-) -> dict[str, Any]:
+def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[str, Any]:
     """Build text zones for OCR detections that could not be geolocated as cities."""
     return {
         "type": "FeatureCollection",
@@ -182,15 +176,11 @@ def geolocate_cities_and_leftover_text(
         if bool(candidate.get("found")):
             city_feature_collection = _build_city_feature_collection(text, candidate)
             try:
-                asyncio.run(
-                    persist_city_feature_fn(project_id, map_id, city_feature_collection)
-                )
+                asyncio.run(persist_city_feature_fn(project_id, map_id, city_feature_collection))
             except Exception as exc:
                 logger.error(f"Failed to persist city text '{text}': {exc}")
         elif anchor_x is not None and anchor_y is not None:
-            pixel_text_feature_collections.append(
-                _build_pixel_text_feature_collection(text, anchor_x, anchor_y)
-            )
+            pixel_text_feature_collections.append(_build_pixel_text_feature_collection(text, anchor_x, anchor_y))
 
     if pixel_text_feature_collections and pixel_points and geo_points_lonlat:
         georef_text_features = georeference_features_with_sift_points(
@@ -235,9 +225,11 @@ def _build_extracted_text_from_detections(
         lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
         if len(lines) > 1:
             for line in lines:
-                extracted_text.append({"text": line, "bbox": quad})
+                corrected_line = apply_map_dictionary_correction(line)
+                extracted_text.append({"text": corrected_line, "bbox": quad})
         else:
-            extracted_text.append({"text": raw_text, "bbox": quad})
+            corrected_text = apply_map_dictionary_correction(raw_text)
+            extracted_text.append({"text": corrected_text, "bbox": quad})
 
     return extracted_text
 
@@ -267,9 +259,7 @@ def preprocess_image_for_ocr(file_content: bytes) -> bytes:
         enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
 
         # Upscale the image by 2x to help OCR models read small and blurry historical fonts
-        enhanced_img = cv2.resize(
-            enhanced_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
-        )
+        enhanced_img = cv2.resize(enhanced_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
 
         # Encode back to bytes
         _, encoded_img = cv2.imencode(".jpg", enhanced_img)
@@ -324,9 +314,7 @@ def _run_ocr_pipeline(
     try:
         ocr_result = task_chain.apply_async()
         logger.info(f"==> [OCR] Task chain launched for {filename} (ID: {map_id})")
-        logger.info(
-            "==> [OCR] Step 1/2: Florence-2 processing text detection and captioning..."
-        )
+        logger.info("==> [OCR] Step 1/2: Florence-2 processing text detection and captioning...")
         try:
             assert ocr_result is not None
             # Poll with timeout to give live user feedback instead of a silent hang
@@ -336,9 +324,7 @@ def _run_ocr_pipeline(
             while elapsed < OCR_PIPELINE_TIMEOUT_SECONDS:
                 if stage == "florence" and os.path.exists(ocr_intermediate_path):
                     stage = "qwen"
-                    logger.info(
-                        f"==> [OCR] Step 1/2 complete ({elapsed}s)! Step 2/2: Qwen model correcting text..."
-                    )
+                    logger.info(f"==> [OCR] Step 1/2 complete ({elapsed}s)! Step 2/2: Qwen model correcting text...")
 
                 if ocr_result.ready():
                     break
@@ -354,24 +340,14 @@ def _run_ocr_pipeline(
                     ):
                         elapsed += poll_interval
                         if elapsed % 60 == 0:
-                            current_step = (
-                                "Florence-2 (detecting text)"
-                                if stage == "florence"
-                                else "Qwen (correcting text)"
-                            )
-                            logger.info(
-                                f"    ... Still running {current_step} - elapsed: {elapsed}s"
-                            )
+                            current_step = "Florence-2 (detecting text)" if stage == "florence" else "Qwen (correcting text)"
+                            logger.info(f"    ... Still running {current_step} - elapsed: {elapsed}s")
                     else:
                         raise poll_err
             else:
-                raise TimeoutError(
-                    f"OCR pipeline timed out after {OCR_PIPELINE_TIMEOUT_SECONDS}s"
-                )
+                raise TimeoutError(f"OCR pipeline timed out after {OCR_PIPELINE_TIMEOUT_SECONDS}s")
 
-            logger.info(
-                f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!"
-            )
+            logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!")
 
             with open(ocr_output_json_path, "r", encoding="utf-8") as qwen_result_file:
                 qwen_result = json.load(qwen_result_file)
@@ -386,16 +362,12 @@ def _run_ocr_pipeline(
 
             if os.path.exists(ocr_intermediate_path):
                 try:
-                    with open(
-                        ocr_intermediate_path, "r", encoding="utf-8"
-                    ) as florence_result_file:
+                    with open(ocr_intermediate_path, "r", encoding="utf-8") as florence_result_file:
                         florence_result = json.load(florence_result_file)
                     detections = florence_result.get("detections", [])
                     return _build_extracted_text_from_detections(detections)
                 except json.JSONDecodeError:
-                    logger.warning(
-                        "Florence intermediate file exists but is incomplete (race condition during fallback)."
-                    )
+                    logger.warning("Florence intermediate file exists but is incomplete (race condition during fallback).")
             return []
     finally:
         for temp_path in (ocr_input_path, ocr_intermediate_path, ocr_output_json_path):
@@ -414,13 +386,7 @@ def _extract_text_via_pipeline(
     celery_app,
 ) -> tuple[list[dict[str, Any]], list[list[list[float]]]]:
     extracted_text = _run_ocr_pipeline(map_id, filename, file_content, celery_app)
-    text_regions = [
-        block["bbox"]
-        for block in extracted_text
-        if isinstance(block, dict)
-        and isinstance(block.get("bbox"), list)
-        and len(block["bbox"]) == 4
-    ]
+    text_regions = [block["bbox"] for block in extracted_text if isinstance(block, dict) and isinstance(block.get("bbox"), list) and len(block["bbox"]) == 4]
     return extracted_text, text_regions
 
 
@@ -437,10 +403,7 @@ def extract_text(
     # Limite préventive pour éviter le crash OOM (Out of Memory) sur les workers OCR
     MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
     if len(file_content) > MAX_FILE_SIZE_BYTES:
-        logger.warning(
-            f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). "
-            f"Rejetée pour éviter un crash OOM (limite à 25 MB)."
-        )
+        logger.warning(f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). " f"Rejetée pour éviter un crash OOM (limite à 25 MB).")
         return [], []
 
     logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
@@ -450,7 +413,5 @@ def extract_text(
         file_content=file_content,
         celery_app=celery_app,
     )
-    logger.info(
-        f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}"
-    )
+    logger.info(f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}")
     return extracted_text, text_regions
