@@ -218,8 +218,6 @@ def _build_extracted_text_from_detections(
             continue
 
         raw_text = str(detection.get("text", "")).strip()
-        # Remove Florence-2's EOS token which ruins Levenshtein distance
-        raw_text = raw_text.replace("</s>", "").strip()
 
         if not raw_text:
             continue
@@ -304,27 +302,20 @@ def _run_ocr_pipeline(
     input_basename = f"{map_id}_{os.path.basename(filename)}"
     input_stem = os.path.splitext(input_basename)[0]
     ocr_input_path = f"{OCR_INPUT_DIR}/{input_basename}"
-    ocr_intermediate_path = f"{OCR_INTERMEDIATE_DIR}/{input_stem}-florence.json"
-    ocr_intermediate_path = f"{OCR_INTERMEDIATE_DIR}/{input_stem}-paddle.json"
-    ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-qwen.json"
+    ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-paddle.json"
 
     with open(ocr_input_path, "wb") as input_file:
         input_file.write(file_content)
 
-    # We now only use Florence-2 since dictionary correction is robust enough
-    task_chain = chain(
-        celery_app.signature(
-            "florence.run_pipeline",
-            "paddle.run_pipeline",
-            args=[ocr_input_path, ocr_intermediate_path],
-        ).set(queue="florence")
-        ).set(queue="paddle")
-    )
+    # We use PaddleOCR for text detection and extraction
+    task_chain = celery_app.signature(
+        "paddle.run_pipeline",
+        args=[ocr_input_path, ocr_output_json_path],
+    ).set(queue="paddle")
 
     try:
         ocr_result = task_chain.apply_async()
         logger.info(f"==> [OCR] Task launched for {filename} (ID: {map_id})")
-        logger.info("==> [OCR] Florence-2 processing text detection and extraction...")
         logger.info("==> [OCR] PaddleOCR processing text detection and extraction...")
 
         try:
@@ -341,9 +332,7 @@ def _run_ocr_pipeline(
                     if poll_err.__class__.__name__ in ("TimeoutError", "CeleryTimeoutError"):
                         elapsed += poll_interval
                         if elapsed % 60 == 0:
-                            logger.info(f"    ... Still running Florence-2 - elapsed: {elapsed}s")
-                        if elapsed % 60 == 0:
-                            logger.info(f"    ... Still running PaddleOCR - elapsed: {elapsed}s")
+                            logger.info(f"    ... Still running OCR pipeline - elapsed: {elapsed}s")
                     else:
                         raise poll_err
             else:
@@ -351,13 +340,10 @@ def _run_ocr_pipeline(
 
             logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!")
 
-            # Load the intermediate florence result directly
-            with open(ocr_intermediate_path, "r", encoding="utf-8") as florence_result_file:
-                florence_result = json.load(florence_result_file)
-            with open(ocr_intermediate_path, "r", encoding="utf-8") as paddle_result_file:
+            # Load the final PaddleOCR result
+            with open(ocr_output_json_path, "r", encoding="utf-8") as paddle_result_file:
                 paddle_result = json.load(paddle_result_file)
 
-            detections = florence_result.get("detections", [])
             detections = paddle_result.get("detections", [])
             return _build_extracted_text_from_detections(detections)
 
@@ -365,7 +351,7 @@ def _run_ocr_pipeline(
             logger.exception("OCR pipeline failed or timed out for map %s: %s", map_id, exc)
             return []
     finally:
-        for temp_path in (ocr_input_path, ocr_intermediate_path, ocr_output_json_path):
+        for temp_path in (ocr_input_path, ocr_output_json_path):
             try:
                 os.unlink(temp_path)
             except FileNotFoundError:
@@ -391,7 +377,7 @@ def extract_text(
     file_content: bytes,
     celery_app=None,
 ):
-    """Extract text using the Florence+Qwen Celery OCR pipeline."""
+    """Extract text using the PaddleOCR Celery pipeline."""
     if celery_app is None:
         raise ValueError("celery_app must be provided")
 

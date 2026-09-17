@@ -32,6 +32,7 @@ celery_app.conf.update(
         "app.tasks.process_map": {"queue": "maps"},
         "florence.run_pipeline": {"queue": "florence"},
         "qwen.run_pipeline": {"queue": "qwen"},
+        "paddle.run_pipeline": {"queue": "paddle"},
         "app.tasks.*": {"queue": "default"},
     },
 )
