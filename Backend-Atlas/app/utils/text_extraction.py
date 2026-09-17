@@ -217,21 +217,8 @@ def _build_extracted_text_from_detections(
         except (TypeError, ValueError):
             continue
 
-        raw_text = str(detection.get("text", "")).strip()
-        if not raw_text:
-            continue
-
-        quad = _bbox_xyxy_to_quad_points(normalized_bbox)
-        lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
-        if len(lines) > 1:
-            for line in lines:
-                corrected_line = apply_map_dictionary_correction(line)
-                extracted_text.append({"text": corrected_line, "bbox": quad})
-        else:
-            corrected_text = apply_map_dictionary_correction(raw_text)
-            extracted_text.append({"text": corrected_text, "bbox": quad})
-
-    return extracted_text
+from app.utils.map_dictionary.py imports... Wait, I need to see the top of text_extraction.py to change the import. I will do that separately.
+For now, let's just use `from app.utils.map_dictionary import MAP_IGNORED_WORDS` or similar. Let's do the `_build_extracted_text_from_detections` body first.
 
 
 def preprocess_image_for_ocr(file_content: bytes) -> bytes:
