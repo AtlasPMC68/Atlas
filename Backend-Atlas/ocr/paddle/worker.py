@@ -35,7 +35,7 @@ def run_paddle(image_path: str, intermediate_path: str) -> bool:
     logger.info(f"Received PaddleOCR task to process image: {image_path}")
 
     ocr = get_ocr()
-    result = ocr.ocr(image_path, cls=True)
+    result = ocr.ocr(image_path)
 
     detections = []
 
