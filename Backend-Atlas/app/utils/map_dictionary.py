@@ -435,7 +435,6 @@ def _correct_word(word: str) -> str:
         dict_word = MAP_DICTIONARY_LOWER[word_lower]
         return dict_word.upper() if word.isupper() else dict_word
 
-    # Fuzzy match with cutoff
     # Priority to 1-letter difference (Levenshtein distance == 1)
     for dict_word_lower, original_dict_word in MAP_DICTIONARY_LOWER.items():
         if abs(len(word_lower) - len(dict_word_lower)) > 1:

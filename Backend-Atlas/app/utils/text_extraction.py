@@ -300,48 +300,34 @@ def _run_ocr_pipeline(
     with open(ocr_input_path, "wb") as input_file:
         input_file.write(file_content)
 
+    # We now only use Florence-2 since dictionary correction is robust enough
     task_chain = chain(
         celery_app.signature(
             "florence.run_pipeline",
             args=[ocr_input_path, ocr_intermediate_path],
-        ).set(queue="florence"),
-        celery_app.signature(
-            "qwen.run_pipeline",
-            args=[ocr_input_path, ocr_intermediate_path, ocr_output_json_path],
-        ).set(queue="qwen"),
+        ).set(queue="florence")
     )
 
     try:
         ocr_result = task_chain.apply_async()
-        logger.info(f"==> [OCR] Task chain launched for {filename} (ID: {map_id})")
-        logger.info("==> [OCR] Step 1/2: Florence-2 processing text detection and captioning...")
+        logger.info(f"==> [OCR] Task launched for {filename} (ID: {map_id})")
+        logger.info("==> [OCR] Florence-2 processing text detection and extraction...")
+
         try:
             assert ocr_result is not None
-            # Poll with timeout to give live user feedback instead of a silent hang
             elapsed = 0
             poll_interval = 5
-            stage = "florence"
             while elapsed < OCR_PIPELINE_TIMEOUT_SECONDS:
-                if stage == "florence" and os.path.exists(ocr_intermediate_path):
-                    stage = "qwen"
-                    logger.info(f"==> [OCR] Step 1/2 complete ({elapsed}s)! Step 2/2: Qwen model correcting text...")
-
                 if ocr_result.ready():
                     break
-
                 try:
                     ocr_result.get(timeout=poll_interval, disable_sync_subtasks=False)
                     break
                 except Exception as poll_err:
-                    # TimeoutError means task is still running in background Celery worker
-                    if poll_err.__class__.__name__ in (
-                        "TimeoutError",
-                        "CeleryTimeoutError",
-                    ):
+                    if poll_err.__class__.__name__ in ("TimeoutError", "CeleryTimeoutError"):
                         elapsed += poll_interval
                         if elapsed % 60 == 0:
-                            current_step = "Florence-2 (detecting text)" if stage == "florence" else "Qwen (correcting text)"
-                            logger.info(f"    ... Still running {current_step} - elapsed: {elapsed}s")
+                            logger.info(f"    ... Still running Florence-2 - elapsed: {elapsed}s")
                     else:
                         raise poll_err
             else:
@@ -349,25 +335,15 @@ def _run_ocr_pipeline(
 
             logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!")
 
-            with open(ocr_output_json_path, "r", encoding="utf-8") as qwen_result_file:
-                qwen_result = json.load(qwen_result_file)
-            detections = qwen_result.get("detections", [])
-            return _build_extracted_text_from_detections(detections)
-        except Exception as exc:
-            logger.exception(
-                "OCR full chain timed out or failed for map %s; falling back to Florence output: %s",
-                map_id,
-                exc,
-            )
+            # Load the intermediate florence result directly
+            with open(ocr_intermediate_path, "r", encoding="utf-8") as florence_result_file:
+                florence_result = json.load(florence_result_file)
 
-            if os.path.exists(ocr_intermediate_path):
-                try:
-                    with open(ocr_intermediate_path, "r", encoding="utf-8") as florence_result_file:
-                        florence_result = json.load(florence_result_file)
-                    detections = florence_result.get("detections", [])
-                    return _build_extracted_text_from_detections(detections)
-                except json.JSONDecodeError:
-                    logger.warning("Florence intermediate file exists but is incomplete (race condition during fallback).")
+            detections = florence_result.get("detections", [])
+            return _build_extracted_text_from_detections(detections)
+
+        except Exception as exc:
+            logger.exception("OCR pipeline failed or timed out for map %s: %s", map_id, exc)
             return []
     finally:
         for temp_path in (ocr_input_path, ocr_intermediate_path, ocr_output_json_path):
