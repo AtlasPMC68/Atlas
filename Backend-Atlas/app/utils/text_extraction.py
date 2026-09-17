@@ -307,7 +307,7 @@ def _run_ocr_pipeline(
     celery_app,
 ) -> list[dict[str, Any]]:
     """
-    Execute Florence+Qwen OCR pipeline on file_content.
+    Execute PaddleOCR pipeline on file_content.
     Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
     """
     is_development = os.environ.get("ENV", "development").lower() not in (
