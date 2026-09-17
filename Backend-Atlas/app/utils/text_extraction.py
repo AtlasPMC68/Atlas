@@ -206,6 +206,7 @@ def geolocate_cities_and_leftover_text(
             asyncio.run(_run_all())
         except RuntimeError:
             import threading
+
             thread = threading.Thread(target=lambda: asyncio.run(_run_all()))
             thread.start()
             thread.join()
@@ -307,7 +308,7 @@ def _run_ocr_pipeline(
     celery_app,
 ) -> list[dict[str, Any]]:
     """
-    Execute PaddleOCR pipeline on file_content.
+    Execute Florence-2 OCR pipeline on file_content.
     Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
     """
     is_development = os.environ.get("ENV", "development").lower() not in (
@@ -325,21 +326,21 @@ def _run_ocr_pipeline(
     input_basename = f"{map_id}_{os.path.basename(filename)}"
     input_stem = os.path.splitext(input_basename)[0]
     ocr_input_path = f"{OCR_INPUT_DIR}/{input_basename}"
-    ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-paddle.json"
+    ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-florence.json"
 
     with open(ocr_input_path, "wb") as input_file:
         input_file.write(file_content)
 
-    # We use PaddleOCR for text detection and extraction
+    # We use Florence-2 for text detection and extraction
     task_chain = celery_app.signature(
-        "paddle.run_pipeline",
+        "florence.run_pipeline",
         args=[ocr_input_path, ocr_output_json_path],
-    ).set(queue="paddle")
+    ).set(queue="florence")
 
     try:
         ocr_result = task_chain.apply_async()
         logger.info(f"==> [OCR] Task launched for {filename} (ID: {map_id})")
-        logger.info("==> [OCR] PaddleOCR processing text detection and extraction...")
+        logger.info("==> [OCR] Florence-2 processing text detection and extraction...")
 
         try:
             assert ocr_result is not None
@@ -363,11 +364,11 @@ def _run_ocr_pipeline(
 
             logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!")
 
-            # Load the final PaddleOCR result
-            with open(ocr_output_json_path, "r", encoding="utf-8") as paddle_result_file:
-                paddle_result = json.load(paddle_result_file)
+            # Load the final Florence result
+            with open(ocr_output_json_path, "r", encoding="utf-8") as florence_result_file:
+                florence_result = json.load(florence_result_file)
 
-            detections = paddle_result.get("detections", [])
+            detections = florence_result.get("detections", [])
             return _build_extracted_text_from_detections(detections)
 
         except Exception as exc:
@@ -411,10 +412,10 @@ def extract_text(
         return [], []
 
     logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
-    
+
     # Appliquer le traitement d'image pour améliorer l'OCR
     processed_content = preprocess_image_for_ocr(file_content)
-    
+
     extracted_text, text_regions = _extract_text_via_pipeline(
         map_id=map_id,
         filename=filename,

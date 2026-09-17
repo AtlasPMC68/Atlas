@@ -39,7 +39,7 @@ jobs:
         run: |
           docker compose build -q \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            test-backend paddle-worker
+            test-backend florence-worker
         env:
           DOCKER_BUILDKIT: 1
           COMPOSE_DOCKER_CLI_BUILD: 1
@@ -56,6 +56,6 @@ jobs:
 
       - name: Run OCR integration tests sequentially
         run: |
-          docker compose build -q ocr-base paddle-worker
-          docker compose up -d paddle-worker
+          docker compose build -q ocr-base florence-worker
+          docker compose up -d florence-worker
           docker compose run --rm -q test-backend pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO -m "integration"
