@@ -39,7 +39,7 @@ jobs:
         run: |
           docker compose build \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            test-backend florence-worker
+            test-backend paddle-worker
         env:
           DOCKER_BUILDKIT: 1
           COMPOSE_DOCKER_CLI_BUILD: 1
