@@ -314,7 +314,7 @@ def test_text_extraction(
         },
     )
 
-     thresholds = CARD_THRESHOLDS.get(
+    thresholds = CARD_THRESHOLDS.get(
         image_path.name, 
         {"min_hit_rate": 40.0, "max_dist": 15.0} 
     )
