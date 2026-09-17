@@ -1,9 +1,7 @@
 import difflib
 import re
 
-MAP_IGNORED_WORDS = {
-    "n", "s", "e", "o", "kilomètres", "kilometres", "0", "50", "100", "3", "5", "6"
-}
+MAP_IGNORED_WORDS = {"n", "s", "e", "o", "kilomètres", "kilometres", "0", "50", "100", "3", "5", "6"}
 
 MAP_DICTIONARY = {
     # French terms

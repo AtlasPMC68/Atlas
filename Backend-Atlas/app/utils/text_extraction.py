@@ -217,29 +217,25 @@ def _build_extracted_text_from_detections(
         except (TypeError, ValueError):
             continue
 
-            
         raw_text = str(detection.get("text", "")).strip()
         # Remove Florence-2's EOS token which ruins Levenshtein distance
         raw_text = raw_text.replace("</s>", "").strip()
-        
+
         if not raw_text:
             continue
 
         quad = _bbox_xyxy_to_quad_points(normalized_bbox)
-        ignored_words = {"n", "s", "e", "o", "kilomètres", "kilometres", "0", "50", "100", "3", "5", "6"}
-        
+
         from app.utils.map_dictionary import MAP_IGNORED_WORDS
 
         lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
         if len(lines) > 1:
             for line in lines:
-                if line.lower() in ignored_words:
                 if line.lower() in MAP_IGNORED_WORDS:
                     continue
                 corrected_line = apply_map_dictionary_correction(line)
                 extracted_text.append({"text": corrected_line, "bbox": quad})
         else:
-            if raw_text.lower() in ignored_words:
             if raw_text.lower() in MAP_IGNORED_WORDS:
                 continue
             corrected_text = apply_map_dictionary_correction(raw_text)
@@ -340,7 +336,6 @@ def _run_ocr_pipeline(
                 except Exception as poll_err:
                     if poll_err.__class__.__name__ in ("TimeoutError", "CeleryTimeoutError"):
                         elapsed += poll_interval
-                        if elapsed % 5 == 0:
                         if elapsed % 60 == 0:
                             logger.info(f"    ... Still running Florence-2 - elapsed: {elapsed}s")
                     else:

@@ -8,18 +8,18 @@ services:
         UID: ${UID:-1000}
     image: atlas-ocr-base
 
-  florence-worker:
+  paddle-worker:
     build:
-      context: ./florence
+      context: ./paddle
       additional_contexts:
         ocr-base: service:ocr-base
-    container_name: atlas-florence-worker
+    container_name: atlas-paddle-worker
     restart: unless-stopped
     env_file:
       - ../.env.dev
     volumes:
       - ocr-data:/data
-      - ./florence:/app/florence
+      - ./paddle:/app/paddle
     depends_on:
       - redis
       - ocr-base
