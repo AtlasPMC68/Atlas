@@ -151,6 +151,8 @@ def geolocate_cities_and_leftover_text(
     pixel_text_feature_collections = []
     geo_bounds = _compute_geo_bounds(geo_points_lonlat) if geo_points_lonlat else None
 
+    city_persist_coroutines = []
+
     for block in extracted_text:
         if not isinstance(block, dict):
             continue
@@ -175,22 +177,38 @@ def geolocate_cities_and_leftover_text(
 
         if bool(candidate.get("found")):
             city_feature_collection = _build_city_feature_collection(text, candidate)
-            try:
-                asyncio.run(persist_city_feature_fn(project_id, map_id, city_feature_collection))
-            except Exception as exc:
-                logger.error(f"Failed to persist city text '{text}': {exc}")
+            city_persist_coroutines.append(persist_city_feature_fn(project_id, map_id, city_feature_collection))
         elif anchor_x is not None and anchor_y is not None:
             pixel_text_feature_collections.append(_build_pixel_text_feature_collection(text, anchor_x, anchor_y))
 
-    if pixel_text_feature_collections and pixel_points and geo_points_lonlat:
-        georef_text_features = georeference_features_with_sift_points(
-            pixel_text_feature_collections,
-            pixel_points,
-            geo_points_lonlat,
-            snap_to_coastline=False,
-            clip_to_land_mask=False,
-        )
-        asyncio.run(persist_features_fn(project_id, map_id, georef_text_features))
+    async def _run_all():
+        if city_persist_coroutines:
+            results = await asyncio.gather(*city_persist_coroutines, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.error(f"Failed to persist city text: {res}")
+
+        if pixel_text_feature_collections and pixel_points and geo_points_lonlat:
+            georef_text_features = georeference_features_with_sift_points(
+                pixel_text_feature_collections,
+                pixel_points,
+                geo_points_lonlat,
+                snap_to_coastline=False,
+                clip_to_land_mask=False,
+            )
+            try:
+                await persist_features_fn(project_id, map_id, georef_text_features)
+            except Exception as exc:
+                logger.error(f"Failed to persist georeferenced features: {exc}")
+
+    if city_persist_coroutines or pixel_text_feature_collections:
+        try:
+            asyncio.run(_run_all())
+        except RuntimeError:
+            import threading
+            thread = threading.Thread(target=lambda: asyncio.run(_run_all()))
+            thread.start()
+            thread.join()
 
 
 def _bbox_xyxy_to_quad_points(bbox_xyxy: list[Any]) -> list[list[float]]:
@@ -208,21 +226,26 @@ def _build_extracted_text_from_detections(
         if not isinstance(detection, dict):
             continue
 
-        bbox_xyxy = detection.get("bbox_xyxy")
-        if not isinstance(bbox_xyxy, list) or len(bbox_xyxy) != 4:
-            continue
-
-        try:
-            normalized_bbox = [int(v) for v in bbox_xyxy]
-        except (TypeError, ValueError):
-            continue
-
         raw_text = str(detection.get("text", "")).strip()
-
         if not raw_text:
             continue
 
-        quad = _bbox_xyxy_to_quad_points(normalized_bbox)
+        quad = detection.get("quad")
+        if not isinstance(quad, list) or len(quad) != 4:
+            # Fallback for older worker versions without valid quad
+            bbox_xyxy = detection.get("bbox_xyxy")
+            if not isinstance(bbox_xyxy, list) or len(bbox_xyxy) != 4:
+                continue
+            try:
+                normalized_bbox = [int(v) for v in bbox_xyxy]
+                quad = _bbox_xyxy_to_quad_points(normalized_bbox)
+            except (TypeError, ValueError):
+                continue
+        else:
+            try:
+                quad = [[int(pt[0]), int(pt[1])] for pt in quad]
+            except (TypeError, ValueError, IndexError):
+                continue
 
         from app.utils.map_dictionary import MAP_IGNORED_WORDS
 
@@ -388,10 +411,14 @@ def extract_text(
         return [], []
 
     logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
+    
+    # Appliquer le traitement d'image pour améliorer l'OCR
+    processed_content = preprocess_image_for_ocr(file_content)
+    
     extracted_text, text_regions = _extract_text_via_pipeline(
         map_id=map_id,
         filename=filename,
-        file_content=file_content,
+        file_content=processed_content,
         celery_app=celery_app,
     )
     logger.info(f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}")

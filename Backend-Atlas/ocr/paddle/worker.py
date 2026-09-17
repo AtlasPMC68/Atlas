@@ -39,20 +39,33 @@ def run_paddle(image_path: str, intermediate_path: str) -> bool:
 
     detections = []
 
-    # result can be a list of lines (one for each block)
     if result and result[0]:
         for line in result[0]:
-            box = line[0]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
-            text = line[1][0]
-            confidence = line[1][1]
+            if not isinstance(line, (list, tuple)) or len(line) < 2:
+                logger.warning(f"Unexpected line format from PaddleOCR: {line}")
+                continue
+                
+            try:
+                box = line[0]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                text_info = line[1]
+                
+                if not isinstance(text_info, (list, tuple)) or len(text_info) < 2:
+                    logger.warning(f"Unexpected text_info format from PaddleOCR: {text_info}")
+                    continue
+                    
+                text = str(text_info[0])
+                confidence = float(text_info[1])
 
-            xs = [pt[0] for pt in box]
-            ys = [pt[1] for pt in box]
+                xs = [pt[0] for pt in box]
+                ys = [pt[1] for pt in box]
 
-            bbox_xyxy = [min(xs), min(ys), max(xs), max(ys)]
-            quad = [box[0][0], box[0][1], box[1][0], box[1][1], box[2][0], box[2][1], box[3][0], box[3][1]]
+                bbox_xyxy = [min(xs), min(ys), max(xs), max(ys)]
+                quad = box
 
-            detections.append({"text": text, "bbox_xyxy": bbox_xyxy, "quad": quad, "confidence": float(confidence)})
+                detections.append({"text": text, "bbox_xyxy": bbox_xyxy, "quad": quad, "confidence": confidence})
+            except Exception as e:
+                logger.error(f"Error parsing line {line}: {e}")
+                continue
 
     output_data = {"detections": detections}
 
