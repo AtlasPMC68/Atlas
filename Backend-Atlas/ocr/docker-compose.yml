@@ -17,6 +17,8 @@ services:
     restart: unless-stopped
     env_file:
       - ../.env.dev
+    environment:
+      - KEEP_MODEL_IN_MEMORY=true
     volumes:
       - ocr-data:/data
       - ./florence:/app/florence

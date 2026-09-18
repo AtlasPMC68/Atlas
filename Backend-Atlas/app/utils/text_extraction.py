@@ -277,41 +277,6 @@ def _build_extracted_text_from_detections(
     return extracted_text
 
 
-def preprocess_image_for_ocr(file_content: bytes) -> bytes:
-    """Preprocess the image bytes for better OCR results using CLAHE and sharpening."""
-    try:
-        import cv2
-        import numpy as np
-
-        np_arr = np.frombuffer(file_content, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-        if img is None:
-            return file_content
-
-        # Enhance contrast without losing color information using LAB color space
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-
-        # Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) to the L-channel
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        cl = clahe.apply(l)
-
-        # Merge back and convert to BGR
-        limg = cv2.merge((cl, a, b))
-        enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
-
-        # Upscale the image by 2x to help OCR models read small and blurry historical fonts
-        enhanced_img = cv2.resize(enhanced_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-
-        # Encode back to bytes
-        _, encoded_img = cv2.imencode(".jpg", enhanced_img)
-        return encoded_img.tobytes()
-
-    except (ImportError, AttributeError):
-        return file_content
-
-
 def _run_ocr_pipeline(
     map_id: UUID,
     filename: str,
@@ -424,13 +389,10 @@ def extract_text(
 
     logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
 
-    # Appliquer le traitement d'image pour améliorer l'OCR
-    processed_content = preprocess_image_for_ocr(file_content)
-
     extracted_text, text_regions = _extract_text_via_pipeline(
         map_id=map_id,
         filename=filename,
-        file_content=processed_content,
+        file_content=file_content,
         celery_app=celery_app,
     )
     logger.info(f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}")
