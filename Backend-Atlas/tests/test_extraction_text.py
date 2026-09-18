@@ -98,28 +98,34 @@ def check_for_match(
     """
     actual_ascii = normalize_array_to_ascii_format(actual)
     expected_ascii = normalize_array_to_ascii_format(expected)
+
+    # Create dictionaries for O(1) exact match lookups to reduce complexity
+    actual_dict = {actual_ascii[i]: (i, actual[i]) for i in range(len(actual))}
+
     result: list[tuple[str, tuple[str, float]]] = []
     used_expected_indices: set[int] = set()
 
     for expected_index, expected_word in enumerate(expected):
         expected_word_ascii = expected_ascii[expected_index]
+
+        # O(1) Exact Match lookup
+        if expected_word_ascii in actual_dict:
+            ocr_index, ocr_word = actual_dict[expected_word_ascii]
+            if ocr_index not in used_expected_indices:
+                used_expected_indices.add(ocr_index)
+                dist = 0.0 if ocr_word == expected_word else 0.1
+                result.append((ocr_word, (expected_word, dist)))
+                continue
+
+        # Fallback to Levenshtein distance for fuzzy matches
         min_dist: tuple[str, float] = ("", 1000.0)
         min_dist_index: int | None = None
 
         for ocr_index, ocr_word in enumerate(actual):
-            if ocr_index in used_expected_indices and ocr_word == expected_word:
+            if ocr_index in used_expected_indices:
                 continue
 
             ocr_word_ascii = actual_ascii[ocr_index]
-            if ocr_word == expected_word:
-                min_dist = (ocr_word, 0.0)
-                min_dist_index = ocr_index
-                break
-
-            if ocr_word_ascii == expected_word_ascii:
-                min_dist = (ocr_word, 0.1)
-                min_dist_index = ocr_index
-                break
 
             if len(expected_word_ascii) >= 4 and len(ocr_word_ascii) >= 4:
                 if expected_word_ascii in ocr_word_ascii or ocr_word_ascii in expected_word_ascii:
@@ -146,8 +152,6 @@ def check_for_match(
         if min_dist_index is not None:
             used_expected_indices.add(min_dist_index)
 
-        # To keep the signature of result list[tuple[str, tuple[str, float]]]
-        # where it is (ocr_word, (expected_word, distance))
         best_ocr_word = min_dist[0] if min_dist_index is not None else ""
         distance = min_dist[1]
         result.append((best_ocr_word, (expected_word, distance)))
