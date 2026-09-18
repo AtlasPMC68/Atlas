@@ -101,30 +101,30 @@ def check_for_match(
     result: list[tuple[str, tuple[str, float]]] = []
     used_expected_indices: set[int] = set()
 
-    for ocr_index, ocr_word in enumerate(actual):
-        ocr_word_ascii = actual_ascii[ocr_index]
+    for expected_index, expected_word in enumerate(expected):
+        expected_word_ascii = expected_ascii[expected_index]
         min_dist: tuple[str, float] = ("", 1000.0)
         min_dist_index: int | None = None
 
-        for expected_index, expected_word in enumerate(expected):
-            if expected_index in used_expected_indices and ocr_word == expected_word:
+        for ocr_index, ocr_word in enumerate(actual):
+            if ocr_index in used_expected_indices and ocr_word == expected_word:
                 continue
 
-            expected_word_ascii = expected_ascii[expected_index]
+            ocr_word_ascii = actual_ascii[ocr_index]
             if ocr_word == expected_word:
-                min_dist = (expected_word, 0.0)
-                min_dist_index = expected_index
+                min_dist = (ocr_word, 0.0)
+                min_dist_index = ocr_index
                 break
 
             if ocr_word_ascii == expected_word_ascii:
-                min_dist = (expected_word, 0.1)
-                min_dist_index = expected_index
+                min_dist = (ocr_word, 0.1)
+                min_dist_index = ocr_index
                 break
 
             if len(expected_word_ascii) >= 4 and len(ocr_word_ascii) >= 4:
                 if expected_word_ascii in ocr_word_ascii or ocr_word_ascii in expected_word_ascii:
-                    min_dist = (expected_word, 0.5)
-                    min_dist_index = expected_index
+                    min_dist = (ocr_word, 0.5)
+                    min_dist_index = ocr_index
                     break
 
             tmp_dist = float(levenshtein_distance(ocr_word_ascii, expected_word_ascii))
@@ -140,13 +140,17 @@ def check_for_match(
                     tmp_dist = base_dist
 
             if tmp_dist < min_dist[1]:
-                min_dist = (expected_word, tmp_dist)
-                min_dist_index = expected_index
+                min_dist = (ocr_word, tmp_dist)
+                min_dist_index = ocr_index
 
         if min_dist_index is not None:
             used_expected_indices.add(min_dist_index)
 
-        result.append((ocr_word, min_dist))
+        # To keep the signature of result list[tuple[str, tuple[str, float]]]
+        # where it is (ocr_word, (expected_word, distance))
+        best_ocr_word = min_dist[0] if min_dist_index is not None else ""
+        distance = min_dist[1]
+        result.append((best_ocr_word, (expected_word, distance)))
 
     return result
 
@@ -159,10 +163,13 @@ def calculate_match_metrics(
     if not matches:
         return (0.0, 0.0)
 
-    total_distance = sum(distance for _, (_, distance) in matches)
+    valid_distances = [distance for _, (_, distance) in matches if distance < 500.0]
+    total_distance = sum(valid_distances)
+
     matched_expected_words = {expected_word for _, (expected_word, distance) in matches if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))}
     box_find_rate = (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
-    average_dist = total_distance / len(matches)
+
+    average_dist = total_distance / len(valid_distances) if valid_distances else 0.0
     return box_find_rate, average_dist
 
 
@@ -179,14 +186,14 @@ def test_match_metrics_count_expected_coverage_once() -> None:
     assert average_dist == 0.0
 
 
-def test_check_for_match_keeps_duplicate_ocr_words() -> None:
-    """Verify that check_for_match retains duplicate OCR words in output list."""
-    actual = ["Quebec", "Quebec", "Boston"]
+def test_check_for_match_drops_extra_ocr_words() -> None:
+    """Verify that check_for_match drops extra OCR words (like legends) that do not match expected words."""
+    actual = ["Quebec", "Boston", "Légende: territoires"]
     expected = ["Québec", "Boston"]
 
     matches = check_for_match(actual, expected)
 
-    assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Quebec", "Boston"]
+    assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Boston"]
 
 
 def test_paddleocr_output_format_conversion() -> None:
@@ -275,15 +282,18 @@ def test_text_extraction(
     total_distance = 0.0
     mismatches = []
     for ocr_word, (expected_word, distance) in results:
-        total_distance += distance
         if distance > 1.0:
             mismatches.append((expected_word, ocr_word, distance))
 
     if mismatches:
-        logger.info(f"\n{YELLOW}{BOLD}--- Low-Confidence / Mismatched Words (Top 8) ---{RESET}")
+        mismatches.sort(key=lambda x: x[2], reverse=True)
+        logger.info(f"\n{YELLOW}{BOLD}--- Missing / Mismatched Words (Top 8) ---{RESET}")
         for expected_word, ocr_word, distance in mismatches[:8]:
             d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
-            logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
+            if distance > 500:
+                logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
+            else:
+                logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
         if len(mismatches) > 8:
             logger.info(f"   ... and {len(mismatches) - 8} more.\n")
 

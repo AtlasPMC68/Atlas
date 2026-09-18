@@ -250,15 +250,26 @@ def _build_extracted_text_from_detections(
 
         from app.utils.map_dictionary import MAP_IGNORED_WORDS
 
-
         def should_ignore(text_val: str) -> bool:
-            # Native Python strip is much faster than regex
             clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
+
+            # 1. Exact match for compass points and small junk
             if clean in MAP_IGNORED_WORDS:
                 return True
-            # Also ignore standalone numbers and scales like "50 100" without regex
+
+            # 2. Ignore standalone numbers and scales like "50 100"
             if all(c.isdigit() or c.isspace() or c in ".," for c in clean):
                 return True
+
+            # 3. Ignore if it contains legend or scale keywords
+            for keyword in ["légende", "legende", "échelle", "echelle", "scale", "kilomètre", "kilometre", "miles"]:
+                if keyword in clean:
+                    return True
+
+            # 4. Ignore long descriptive sentences (map labels are rarely > 5 words)
+            if len(clean.split()) > 5:
+                return True
+
             return False
 
         lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
