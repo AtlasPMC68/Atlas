@@ -307,6 +307,12 @@ def _run_ocr_pipeline(
     with open(ocr_input_path, "wb") as input_file:
         input_file.write(file_content)
 
+    if is_development:
+        try:
+            os.chmod(ocr_input_path, 0o666)
+        except Exception as e:
+            logger.debug(f"Failed to chmod {ocr_input_path}: {e}")
+
     # We use Florence-2 for text detection and extraction
     task_chain = celery_app.signature(
         "florence.run_pipeline",

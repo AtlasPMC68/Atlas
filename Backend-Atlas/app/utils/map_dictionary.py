@@ -3,7 +3,7 @@ import re
 
 # fmt: off
 # ruff: noqa
-MAP_IGNORED_WORDS = {"n", "s", "e", "o", "kilomètres", "kilometres", "0", "50", "100", "3", "5", "6", "légende", "échelle", "legend", "scale", "territoires", "cédés", "par", "la", "le", "traité", "d'utrecht", "de", "1713", "contrôle", "des", "frontière", "définie", "approximative"}
+MAP_IGNORED_WORDS = {"n", "s", "e", "o",".", "km" "kilomètres", "kilometres", "1", "2", "3", "4", "5", "6", "7","8","9", "légende", "échelle"}
 
 MAP_DICTIONARY = {
     # French terms
