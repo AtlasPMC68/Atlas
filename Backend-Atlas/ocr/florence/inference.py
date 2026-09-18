@@ -19,7 +19,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if "HF_HOME" not in os.environ:
     os.environ["HF_HOME"] = os.path.join(BASE_DIR, "models")
 
-MODEL_ID = "microsoft/Florence-2-large"
+MODEL_ID = "microsoft/Florence-2-base"
 INPUT_DIR = os.environ.get("INPUT_DIR", "/data/input")
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 MAX_NEW_TOKENS = 4096

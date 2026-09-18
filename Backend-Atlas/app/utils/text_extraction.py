@@ -249,15 +249,15 @@ def _build_extracted_text_from_detections(
                 continue
 
         from app.utils.map_dictionary import MAP_IGNORED_WORDS
-        import re
+
 
         def should_ignore(text_val: str) -> bool:
-            # Strip leading/trailing punctuation for checking
-            clean = re.sub(r"^[^\w]+|[^\w]+$", "", text_val.lower())
+            # Native Python strip is much faster than regex
+            clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
             if clean in MAP_IGNORED_WORDS:
                 return True
-            # Also ignore standalone numbers and scales like "50 100"
-            if re.fullmatch(r"[\d\s\.\,]+", clean):
+            # Also ignore standalone numbers and scales like "50 100" without regex
+            if all(c.isdigit() or c.isspace() or c in ".," for c in clean):
                 return True
             return False
 
