@@ -111,7 +111,8 @@ def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: s
             do_sample=False,
             num_beams=1,
         )
-    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+    generated_text = generated_text.replace("</s>", "").replace("<s>", "")
     del inputs, generated_ids
     gc.collect()
     return processor.post_process_generation(
