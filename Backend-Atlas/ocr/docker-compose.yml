@@ -1,3 +1,4 @@
+# Docker Compose configuration for OCR standalone services and workers
 services:
   ocr-base:
     build:
@@ -18,21 +19,7 @@ services:
       - ../.env.dev
     volumes:
       - ocr-data:/data
-    depends_on:
-      - redis
-      - ocr-base
-
-  qwen-worker:
-    build:
-      context: ./qwen
-      additional_contexts:
-        ocr-base: service:ocr-base
-    container_name: atlas-qwen-worker
-    restart: unless-stopped
-    env_file:
-      - ../.env.dev
-    volumes:
-      - ocr-data:/data
+      - ./florence:/app/florence
     depends_on:
       - redis
       - ocr-base

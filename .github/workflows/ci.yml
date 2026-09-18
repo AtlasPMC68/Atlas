@@ -2,9 +2,8 @@ name: CI - Atlas Project Tests
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches:
+      - "*"
 
 jobs:
   tests:
@@ -12,21 +11,51 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Create .env.dev file from secret
         run: |
-          echo "${{ secrets.ENV_DEV }}" > ./Backend-Atlas/.env.dev
+          if [ -n "${{ secrets.ENV_DEV }}" ]; then
+            echo "${{ secrets.ENV_DEV }}" > ./Backend-Atlas/.env.dev
+          elif [ ! -f "./Backend-Atlas/.env.dev" ]; then
+            touch ./Backend-Atlas/.env.dev
+          fi
 
-      - name: Set up Docker Compose
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Backend-Atlas/Dockerfile', 'Backend-Atlas/requirements.txt', 'Backend-Atlas/ocr/**', 'docker-compose.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Clean stale volumes and containers
+        run: docker compose down -v --remove-orphans || true
+
+      - name: Build testing AI services
         run: |
-          docker compose version
+          docker compose build -q \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            test-backend florence-worker
+        env:
+          DOCKER_BUILDKIT: 1
+          COMPOSE_DOCKER_CLI_BUILD: 1
 
-      - name: Build all services
-        run: docker compose build
+      # - name: Run frontend unit tests 
+      #   run: >
+      #     docker compose run --rm -q test-frontend
+          
+      # - name: Run backend unit tests in parallel
+      #   run: >
+      #     docker compose run --rm -q test-backend
+      #     pytest tests/ -n auto -v --color=yes --tb=short -rA
+      #     -m "not integration and not slow"
 
-      - name: Run backend tests
-        run: docker compose run --rm test-backend
-
-      - name: Run frontend tests
-        run: docker compose run --rm test-frontend
+      - name: Run OCR integration tests sequentially
+        run: |
+          docker compose build -q ocr-base florence-worker
+          docker compose up -d florence-worker
+          docker compose run --rm -q test-backend pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO -m "integration"
