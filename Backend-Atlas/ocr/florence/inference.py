@@ -84,17 +84,28 @@ def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: s
     """Run Florence inference for one task prompt and return structured output."""
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
-    with torch.inference_mode():
-        generated_ids = model.generate(
-            input_ids=inputs["input_ids"],
-            pixel_values=pixel_values,
-            max_new_tokens=config["max_new_tokens"],
-            do_sample=False,
-            num_beams=1,
-        )
-    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-    generated_text = generated_text.replace("</s>", "").replace("<s>", "")
-    del inputs, generated_ids
+    
+    try:
+        with torch.inference_mode():
+            generated_ids = model.generate(
+                input_ids=inputs["input_ids"],
+                pixel_values=pixel_values,
+                max_new_tokens=config["max_new_tokens"],
+                do_sample=False,
+                num_beams=1,
+            )
+        generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+        generated_text = generated_text.replace("</s>", "").replace("<s>", "")
+    except IndexError as e:
+        logger.warning(f"Florence-2 generation failed with IndexError (likely coordinate hallucination): {e}")
+        return {}
+    except Exception as e:
+        logger.warning(f"Florence-2 generation failed: {e}")
+        return {}
+        
+    del inputs
+    if 'generated_ids' in locals():
+        del generated_ids
     gc.collect()
     return processor.post_process_generation(
         generated_text,
