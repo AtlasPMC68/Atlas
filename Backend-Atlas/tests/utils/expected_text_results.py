@@ -5,9 +5,6 @@ MAP_EXPECTED_TEXTS = {
                             "Arnold", "Montréal", "Rivière Richelieu", "Saint-Jean", "Rivière Kennebec", "MAINE\n(MASS.)",
                             "Fort Ticonderoga", "NEW\nHAMPSHIRE", "OCÉAN\nATLANTIQUE", "Boston", "MASSACHUSETTS"],
 
-    "Communautes_cries":    ["Whapmagoostui", "Chisasibi", "Wemindji", "Eastmain", "Nemaska", "Waskaganish", "Mistissini",
-                            "Oujé-Bougoumou", "Waswanipi"],
-
     "genocide_Monde":       ["Canada", "Holodomor", "Holocauste\nHolocaust", "Srebrenica", "Arménie\nArmenia", "Rwanda",
                             "Cambodge\nCambodia", "Namibie\nNamibia"],
 

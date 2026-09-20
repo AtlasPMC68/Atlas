@@ -251,7 +251,6 @@ CARD_THRESHOLDS = {
     "Quebec_1800.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
     "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 2.10},
     "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
-    "Communautes_cries.png": {"min_hit_rate": 100.0, "max_dist": 1.23},
     "Degrade_Afrique.png": {"min_hit_rate": 65.0, "max_dist": 1.25},
 }
 

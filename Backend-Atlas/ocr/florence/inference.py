@@ -306,8 +306,9 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         for i in range(0, len(quad) - 1, 2):
             x, y = quad[i], quad[i + 1]
             x_sh, y_sh = x - cx_new, y - cy_new
-            x_orig_sh = x_sh * cos_a - y_sh * sin_a
-            y_orig_sh = x_sh * sin_a + y_sh * cos_a
+            # Apply CLOCKWISE rotation to map back from the COUNTER-CLOCKWISE rotated image
+            x_orig_sh = x_sh * cos_a + y_sh * sin_a
+            y_orig_sh = -x_sh * sin_a + y_sh * cos_a
             mapped_quad.extend([x_orig_sh + cx_orig, y_orig_sh + cy_orig])
         return mapped_quad
 
