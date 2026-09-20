@@ -267,6 +267,37 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
                     shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
                 all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
 
+    # Pass 3: Multi-angle passes for diagonal/vertical text (Rivers, Lakes)
+    # Rotating the image transforms vertical/diagonal text into horizontal text, which Florence can read.
+    import math
+
+    def _map_quad_back(quad, orig_w, orig_h, new_w, new_h, angle_deg):
+        rad = math.radians(angle_deg)
+        cos_a = math.cos(rad)
+        sin_a = math.sin(rad)
+        cx_orig, cy_orig = orig_w / 2.0, orig_h / 2.0
+        cx_new, cy_new = new_w / 2.0, new_h / 2.0
+
+        mapped_quad = []
+        for i in range(0, len(quad), 2):
+            x, y = quad[i], quad[i + 1]
+            x_sh, y_sh = x - cx_new, y - cy_new
+            x_orig_sh = x_sh * cos_a - y_sh * sin_a
+            y_orig_sh = x_sh * sin_a + y_sh * cos_a
+            mapped_quad.extend([x_orig_sh + cx_orig, y_orig_sh + cy_orig])
+        return mapped_quad
+
+    angles = [90, -45]  # 90 catches vertical text, -45 catches diagonal rivers (like St-Laurent)
+    for angle in angles:
+        logger.debug(f"Running multi-angle pass: {angle} degrees")
+        rot_img = preprocessed.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
+        rot_result = run_inference(model, processor, rot_img, OCR_TASK, config)
+        r_data = rot_result.get(OCR_TASK, {})
+
+        for quad, text in zip(r_data.get("quad_boxes", []), r_data.get("labels", [])):
+            mapped_quad = _map_quad_back(quad, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
+            all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad), "quad": mapped_quad})
+
     # Remove duplicates from overlapping tiles
     unique_dets = _remove_duplicate_detections(all_detections)
     all_detections = out.merge_related_detections(unique_dets)
