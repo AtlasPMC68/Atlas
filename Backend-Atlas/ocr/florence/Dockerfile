@@ -3,7 +3,7 @@ FROM ocr-base
 USER root
 
 # Florence-2 requires transformers==4.43.0
-RUN pip install --no-cache-dir transformers==4.43.0 opencv-python-headless timm einops \
+RUN pip install --no-cache-dir transformers==4.43.0 opencv-python-headless timm einops shapely \
     && mkdir -p /usr/local/lib/python3.12/site-packages/flash_attn \
     && touch /usr/local/lib/python3.12/site-packages/flash_attn/__init__.py
 

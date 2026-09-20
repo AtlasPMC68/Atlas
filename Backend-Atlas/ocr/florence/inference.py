@@ -180,27 +180,45 @@ def _generate_tiles(w: int, h: int, grid: int, overlap_pct: float = 0.10) -> lis
 
 def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     """Remove duplicate detections where one box overlaps >60% of another (IoA dedup)."""
+    import shapely.geometry
 
-    def box_area(d):
-        b = d["bbox_xyxy"]
-        return max(0, b[2] - b[0]) * max(0, b[3] - b[1])
+    def get_poly(d):
+        quad = d.get("quad")
+        if quad and len(quad) >= 8:
+            return shapely.geometry.Polygon([(quad[0], quad[1]), (quad[2], quad[3]), (quad[4], quad[5]), (quad[6], quad[7])])
+        b = d.get("bbox_xyxy", [0, 0, 0, 0])
+        return shapely.geometry.Polygon([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])])
 
-    all_detections.sort(key=box_area, reverse=True)
+    polys = []
+    for d in all_detections:
+        try:
+            p = get_poly(d)
+            if not p.is_valid:
+                p = p.buffer(0)
+            if p.area > 0:
+                polys.append({"det": d, "poly": p, "area": p.area})
+        except Exception:
+            pass
+
+    polys.sort(key=lambda x: x["area"], reverse=True)
     unique_dets = []
-    for det in all_detections:
-        boxA = det["bbox_xyxy"]
-        areaA = box_area(det)
+    unique_polys = []
+
+    for item in polys:
+        det = item["det"]
+        pA = item["poly"]
+        areaA = item["area"]
         is_dup = False
-        for udet in unique_dets:
-            boxB = udet["bbox_xyxy"]
-            xA, yA = max(boxA[0], boxB[0]), max(boxA[1], boxB[1])
-            xB, yB = min(boxA[2], boxB[2]), min(boxA[3], boxB[3])
-            interArea = max(0, xB - xA) * max(0, yB - yA)
-            if areaA > 0 and (interArea / areaA) > 0.6:
-                is_dup = True
-                break
+
+        for upoly, uarea in unique_polys:
+            if pA.intersects(upoly):
+                inter_area = pA.intersection(upoly).area
+                if inter_area / areaA > 0.6:
+                    is_dup = True
+                    break
         if not is_dup:
             unique_dets.append(det)
+            unique_polys.append((pA, areaA))
 
     return unique_dets
 
@@ -263,9 +281,12 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
             for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
                 shifted_quad = []
-                for i in range(0, len(quad), 2):
+                # Fix IndexError by ensuring we don't read out of bounds if len(quad) is odd
+                for i in range(0, len(quad) - 1, 2):
                     shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
-                all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
+
+                if len(shifted_quad) >= 4:
+                    all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
 
     # Pass 3: Multi-angle passes for diagonal/vertical text (Rivers, Lakes)
     # Rotating the image transforms vertical/diagonal text into horizontal text, which Florence can read.
@@ -279,7 +300,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         cx_new, cy_new = new_w / 2.0, new_h / 2.0
 
         mapped_quad = []
-        for i in range(0, len(quad), 2):
+        for i in range(0, len(quad) - 1, 2):
             x, y = quad[i], quad[i + 1]
             x_sh, y_sh = x - cx_new, y - cy_new
             x_orig_sh = x_sh * cos_a - y_sh * sin_a
@@ -288,6 +309,8 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         return mapped_quad
 
     angles = [90, -45]  # 90 catches vertical text, -45 catches diagonal rivers (like St-Laurent)
+    image_area = preprocessed.width * preprocessed.height
+
     for angle in angles:
         logger.debug(f"Running multi-angle pass: {angle} degrees")
         rot_img = preprocessed.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
@@ -295,8 +318,13 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         r_data = rot_result.get(OCR_TASK, {})
 
         for quad, text in zip(r_data.get("quad_boxes", []), r_data.get("labels", [])):
-            mapped_quad = _map_quad_back(quad, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
-            all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad), "quad": mapped_quad})
+            if len(quad) >= 4:
+                mapped_quad = _map_quad_back(quad, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
+                # Reject massive bounding boxes to prevent hallucination swallow bugs
+                xs, ys = mapped_quad[0::2], mapped_quad[1::2]
+                if (max(xs) - min(xs)) * (max(ys) - min(ys)) > 0.1 * image_area:
+                    continue
+                all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad), "quad": mapped_quad})
 
     # Remove duplicates from overlapping tiles
     unique_dets = _remove_duplicate_detections(all_detections)
