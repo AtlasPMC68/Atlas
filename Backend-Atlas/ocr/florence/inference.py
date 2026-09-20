@@ -31,10 +31,11 @@ CONTEXT_TASK = "<MORE_DETAILED_CAPTION>"
 
 def get_runtime_config() -> dict:
     """Return Florence runtime settings used for OCR inference."""
+    device = "cpu"  # Usually determined dynamically, assuming CPU here
     return {
         "model_id": MODEL_ID,
-        "torch_dtype": torch.bfloat16,
-        "device": "cpu",
+        "torch_dtype": torch.float32 if device == "cpu" else torch.bfloat16,
+        "device": device,
         "max_new_tokens": MAX_NEW_TOKENS,
     }
 
@@ -58,7 +59,7 @@ def manually_preprocess_image(image_path: str) -> Tuple[Image.Image, float]:
     img = preprocess.read_image(image_path)
 
     h_orig, w_orig = img.shape[:2]
-    img = preprocess.upscale_for_ocr(img, min_dimension=2000)
+    img = preprocess.upscale_for_ocr(img, min_dimension=1500)
     h_new, w_new = img.shape[:2]
     scale_factor = h_new / float(h_orig) if h_orig > 0 else 1.0
 
@@ -142,10 +143,11 @@ def get_image_context(model: Any, processor: Any, image: Image.Image, config: di
 
 def get_context_config() -> dict:
     """Return Florence runtime settings specialized for context generation."""
+    device = "cpu"
     return {
         "model_id": MODEL_ID,
-        "torch_dtype": torch.bfloat16,
-        "device": "cpu",
+        "torch_dtype": torch.float32 if device == "cpu" else torch.bfloat16,
+        "device": device,
         "max_new_tokens": 256,  # Shorter output for context
     }
 
@@ -169,9 +171,9 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     else:
         context = ""
     logger.debug("Running OCR on full image and 4 tiles to capture both huge and tiny texts")
-    
+
     all_detections = []
-    
+
     # Pass 1: Full image
     result = run_inference(model, processor, preprocessed, OCR_TASK, config)
     ocr_data = result.get(OCR_TASK, {})
@@ -181,33 +183,34 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     # Pass 2: 2x2 Tiling with overlap
     w, h = preprocessed.width, preprocessed.height
     mid_x, mid_y = w // 2, h // 2
-    overlap = int(min(w, h) * 0.1) # 10% overlap
-    
+    overlap = int(min(w, h) * 0.1)  # 10% overlap
+
     tiles = [
         (0, 0, mid_x + overlap, mid_y + overlap),
         (mid_x - overlap, 0, w, mid_y + overlap),
         (0, mid_y - overlap, mid_x + overlap, h),
         (mid_x - overlap, mid_y - overlap, w, h),
     ]
-    
-    for (x1, y1, x2, y2) in tiles:
+
+    for x1, y1, x2, y2 in tiles:
         x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
-        if x2 <= x1 or y2 <= y1: continue
-        
+        if x2 <= x1 or y2 <= y1:
+            continue
+
         tile_img = preprocessed.crop((x1, y1, x2, y2))
         tile_result = run_inference(model, processor, tile_img, OCR_TASK, config)
         t_data = tile_result.get(OCR_TASK, {})
-        
+
         for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
             shifted_quad = []
             for i in range(0, len(quad), 2):
-                shifted_quad.extend([quad[i] + x1, quad[i+1] + y1])
+                shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
             all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
 
     # Remove duplicates where a tile detection is completely inside a full-image detection (or vice versa)
     def box_area(d):
         b = d["bbox_xyxy"]
-        return max(0, b[2]-b[0]) * max(0, b[3]-b[1])
+        return max(0, b[2] - b[0]) * max(0, b[3] - b[1])
 
     all_detections.sort(key=box_area, reverse=True)
     unique_dets = []
