@@ -55,36 +55,23 @@ def upscale_for_ocr(img: np.ndarray, min_dimension: int = 1800) -> np.ndarray:
 
 def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 1.8) -> np.ndarray:
     """
-    Apply non-destructive contrast enhancement, Gamma correction, and an unsharp mask.
-    The Gamma correction darkens midtones (helping dark text on colored backgrounds pop),
-    and a slight LAB saturation boost helps separate text color from background color.
+    Apply non-destructive contrast enhancement via LAB-space CLAHE followed by an unsharp mask.
+    Converts to LAB color space, enhances L-channel with CLAHE, converts back to RGB,
+    and applies a gentle unsharp mask (sharpened = original + amount * (original - blurred))
+    to sharpen text edges without amplifying background noise or creating color halos.
     """
     intensity = max(1.0, min(5.0, float(intensity)))
 
-    # 1. Gamma Correction: Darkens the overall image slightly so dark text becomes much darker
-    gamma = 1.2
-    img_float = img.astype(np.float32) / 255.0
-    img_gamma = np.clip(np.power(img_float, gamma) * 255.0, 0, 255).astype(np.uint8)
-
-    # 2. Convert to LAB color space
-    lab = cv2.cvtColor(img_gamma, cv2.COLOR_RGB2LAB)
+    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
     l_channel, a_channel, b_channel = cv2.split(lab)
 
-    # 3. Boost Saturation (A and B channels) by pulling values away from center (128)
-    sat_boost = 1.25  # +25% saturation
-    a_channel = np.clip(128 + (a_channel.astype(np.float32) - 128) * sat_boost, 0, 255).astype(np.uint8)
-    b_channel = np.clip(128 + (b_channel.astype(np.float32) - 128) * sat_boost, 0, 255).astype(np.uint8)
-
-    # 4. Enhance Lightness (L channel) using CLAHE
     clip_limit = max(1.0, min(intensity, 2.5))
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
     l_enhanced = clahe.apply(l_channel)
 
-    # 5. Merge back to RGB
     lab_enhanced = cv2.merge((l_enhanced, a_channel, b_channel))
     enhanced_rgb = cv2.cvtColor(lab_enhanced, cv2.COLOR_LAB2RGB)
 
-    # 6. Unsharp Mask to sharpen text edges
     amount = 0.08 * intensity
     blur = cv2.GaussianBlur(enhanced_rgb, (0, 0), 1.0)
 
