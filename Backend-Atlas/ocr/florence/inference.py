@@ -134,13 +134,11 @@ def get_context_config() -> dict:
 
 def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
     """
-    Apply adaptive preprocessing based on the original image dimensions.
+    Apply preprocessing to improve OCR quality before Florence inference.
 
-    Strategy:
-    - Small images (<= 1000px longest side): Full preprocessing (upscale + denoise + contrast)
-      because the text is likely blurry at low resolution.
-    - Large images (> 1000px longest side): Skip bilateral_denoise because it blurs the tiny
-      text labels that are already sharp at native resolution. Only apply contrast enhancement.
+    Always applies: upscale + bilateral_denoise + contrast enhancement.
+    The bilateral_denoise removes background color noise on ALL images without
+    blurring text edges (data showed skipping it causes regressions on Quebec maps).
 
     Returns: (preprocessed PIL Image, scale_factor, longest_side of original)
     """
@@ -155,15 +153,9 @@ def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
     h_new, w_new = img.shape[:2]
     scale_factor = h_new / float(h_orig) if h_orig > 0 else 1.0
 
-    if longest_side <= 1000:
-        # Small image: apply full pipeline (denoise smooths background noise)
-        logger.debug(f"Small image ({longest_side}px). Applying denoise + contrast.")
-        img = preprocess.bilateral_denoise(img, sigma_color=0.04, sigma_spatial=3.0)
-        img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
-    else:
-        # Large/dense image: skip denoise to preserve tiny text sharpness
-        logger.debug(f"Large image ({longest_side}px). Skipping denoise, applying contrast only.")
-        img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
+    # Always apply full pipeline: denoise removes background noise, contrast sharpens text
+    img = preprocess.bilateral_denoise(img, sigma_color=0.04, sigma_spatial=3.0)
+    img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
 
     return Image.fromarray(img), scale_factor, longest_side
 

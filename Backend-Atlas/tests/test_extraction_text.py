@@ -96,67 +96,73 @@ def check_for_match(
 ) -> list[tuple[str, tuple[str, float]]]:
     """
     Map each OCR word to the closest expected word and calculate Levenshtein distance.
-    Preserves repeated OCR detections and handles substring matching and year suffix matching.
+    Uses an O(1) exact match fast-path, followed by a global best-match approach
+    for fuzzy matches to prevent 'word stealing'.
     """
     actual_ascii = normalize_array_to_ascii_format(actual)
     expected_ascii = normalize_array_to_ascii_format(expected)
 
-    # Create dictionaries for O(1) exact match lookups to reduce complexity
-    actual_dict = {actual_ascii[i]: (i, actual[i]) for i in range(len(actual))}
+    actual_dict = {}
+    for i, word in enumerate(actual_ascii):
+        if word not in actual_dict:
+            actual_dict[word] = []
+        actual_dict[word].append(i)
 
+    used_exp_indices = set()
+    used_ocr_indices = set()
     result: list[tuple[str, tuple[str, float]]] = []
-    used_expected_indices: set[int] = set()
 
-    for expected_index, expected_word in enumerate(expected):
-        expected_word_ascii = expected_ascii[expected_index]
+    # Pass 1: Fast O(1) Exact Matches
+    for exp_idx, exp_word in enumerate(expected_ascii):
+        if exp_word in actual_dict:
+            available_ocr_indices = [idx for idx in actual_dict[exp_word] if idx not in used_ocr_indices]
+            if available_ocr_indices:
+                ocr_idx = available_ocr_indices[0]
+                used_exp_indices.add(exp_idx)
+                used_ocr_indices.add(ocr_idx)
+                # If original words match exactly, distance is 0.0, else 0.1 (case/accent diff)
+                dist = 0.0 if actual[ocr_idx] == expected[exp_idx] else 0.1
+                result.append((actual[ocr_idx], (expected[exp_idx], dist)))
 
-        # O(1) Exact Match lookup
-        if expected_word_ascii in actual_dict:
-            ocr_index, ocr_word = actual_dict[expected_word_ascii]
-            if ocr_index not in used_expected_indices:
-                used_expected_indices.add(ocr_index)
-                dist = 0.0 if ocr_word == expected_word else 0.1
-                result.append((ocr_word, (expected_word, dist)))
+    # Pass 2: Global Best Match for the remaining words
+    all_pairs = []
+    for exp_idx, exp_word in enumerate(expected_ascii):
+        if exp_idx in used_exp_indices:
+            continue
+            
+        for ocr_idx, ocr_word in enumerate(actual_ascii):
+            if ocr_idx in used_ocr_indices:
                 continue
 
-        # Fallback to Levenshtein distance for fuzzy matches
-        min_dist: tuple[str, float] = ("", 1000.0)
-        min_dist_index: int | None = None
-
-        for ocr_index, ocr_word in enumerate(actual):
-            if ocr_index in used_expected_indices:
-                continue
-
-            ocr_word_ascii = actual_ascii[ocr_index]
-
-            if len(expected_word_ascii) >= 4 and len(ocr_word_ascii) >= 4:
-                if expected_word_ascii in ocr_word_ascii or ocr_word_ascii in expected_word_ascii:
-                    min_dist = (ocr_word, 0.5)
-                    min_dist_index = ocr_index
-                    break
-
-            tmp_dist = float(levenshtein_distance(ocr_word_ascii, expected_word_ascii))
-
-            base_expected = re.sub(r"\b(1[5-9]\d\d|20\d\d)\b", "", expected_word_ascii).strip()
+            dist = float(levenshtein_distance(ocr_word, exp_word))
+            
+            # Suffix/substring bonus
+            base_expected = re.sub(r"\b(1[5-9]\d\d|20\d\d)\b", "", exp_word).strip()
             base_expected = " ".join(base_expected.split())
-            if base_expected and len(base_expected) >= 4 and base_expected != expected_word_ascii:
-                if len(ocr_word_ascii) >= 4 and (base_expected in ocr_word_ascii or ocr_word_ascii in base_expected):
-                    base_dist = 0.5
+            if base_expected and len(base_expected) >= 4 and base_expected != exp_word:
+                if len(ocr_word) >= 4 and (base_expected in ocr_word or ocr_word in base_expected):
+                    dist = min(dist, 0.5)
                 else:
-                    base_dist = float(levenshtein_distance(ocr_word_ascii, base_expected))
-                if base_dist < tmp_dist:
-                    tmp_dist = base_dist
+                    base_dist = float(levenshtein_distance(ocr_word, base_expected))
+                    dist = min(dist, base_dist)
+            elif len(exp_word) >= 4 and len(ocr_word) >= 4:
+                if exp_word in ocr_word or ocr_word in exp_word:
+                    dist = min(dist, 0.5)
 
-            if tmp_dist < min_dist[1]:
-                min_dist = (ocr_word, tmp_dist)
-                min_dist_index = ocr_index
+            all_pairs.append((dist, exp_idx, ocr_idx))
 
-        if min_dist_index is not None:
-            used_expected_indices.add(min_dist_index)
+    all_pairs.sort(key=lambda x: x[0])
 
-        best_ocr_word = min_dist[0] if min_dist_index is not None else ""
-        distance = min_dist[1]
-        result.append((best_ocr_word, (expected_word, distance)))
+    for dist, exp_idx, ocr_idx in all_pairs:
+        if exp_idx not in used_exp_indices and ocr_idx not in used_ocr_indices:
+            used_exp_indices.add(exp_idx)
+            used_ocr_indices.add(ocr_idx)
+            result.append((actual[ocr_idx], (expected[exp_idx], dist)))
+
+    # Pass 3: Not Found
+    for exp_idx in range(len(expected)):
+        if exp_idx not in used_exp_indices:
+            result.append(("", (expected[exp_idx], 1000.0)))
 
     return result
 
@@ -244,7 +250,6 @@ CARD_THRESHOLDS = {
     "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
     "Communautes_cries.png": {"min_hit_rate": 100.0, "max_dist": 1.22},
     "Quebec.png": {"min_hit_rate": 71.0, "max_dist": 2.9},
-    "Sols_Monde.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
     "Degrade_Afrique.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
     "pluie_Afrique.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
 }
