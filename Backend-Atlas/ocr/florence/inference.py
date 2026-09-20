@@ -168,19 +168,65 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         context = get_image_context(model, processor, preprocessed, get_context_config())
     else:
         context = ""
-    logger.debug("Running OCR on full image (tiling disabled)")
-
+    logger.debug("Running OCR on full image and 4 tiles to capture both huge and tiny texts")
+    
+    all_detections = []
+    
+    # Pass 1: Full image
     result = run_inference(model, processor, preprocessed, OCR_TASK, config)
     ocr_data = result.get(OCR_TASK, {})
-    quad_boxes = ocr_data.get("quad_boxes", [])
-    labels = ocr_data.get("labels", [])
+    for quad, text in zip(ocr_data.get("quad_boxes", []), ocr_data.get("labels", [])):
+        all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(quad), "quad": quad})
 
-    all_detections = []
-    for quad, text in zip(quad_boxes, labels):
-        bbox = out.quad_to_bbox_xyxy(quad)
-        all_detections.append({"text": text, "bbox_xyxy": bbox, "quad": quad})
+    # Pass 2: 2x2 Tiling with overlap
+    w, h = preprocessed.width, preprocessed.height
+    mid_x, mid_y = w // 2, h // 2
+    overlap = int(min(w, h) * 0.1) # 10% overlap
+    
+    tiles = [
+        (0, 0, mid_x + overlap, mid_y + overlap),
+        (mid_x - overlap, 0, w, mid_y + overlap),
+        (0, mid_y - overlap, mid_x + overlap, h),
+        (mid_x - overlap, mid_y - overlap, w, h),
+    ]
+    
+    for (x1, y1, x2, y2) in tiles:
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
+        if x2 <= x1 or y2 <= y1: continue
+        
+        tile_img = preprocessed.crop((x1, y1, x2, y2))
+        tile_result = run_inference(model, processor, tile_img, OCR_TASK, config)
+        t_data = tile_result.get(OCR_TASK, {})
+        
+        for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
+            shifted_quad = []
+            for i in range(0, len(quad), 2):
+                shifted_quad.extend([quad[i] + x1, quad[i+1] + y1])
+            all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
 
-    all_detections = out.merge_related_detections(all_detections)
+    # Remove duplicates where a tile detection is completely inside a full-image detection (or vice versa)
+    def box_area(d):
+        b = d["bbox_xyxy"]
+        return max(0, b[2]-b[0]) * max(0, b[3]-b[1])
+
+    all_detections.sort(key=box_area, reverse=True)
+    unique_dets = []
+    for det in all_detections:
+        boxA = det["bbox_xyxy"]
+        areaA = box_area(det)
+        is_dup = False
+        for udet in unique_dets:
+            boxB = udet["bbox_xyxy"]
+            xA, yA = max(boxA[0], boxB[0]), max(boxA[1], boxB[1])
+            xB, yB = min(boxA[2], boxB[2]), min(boxA[3], boxB[3])
+            interArea = max(0, xB - xA) * max(0, yB - yA)
+            if areaA > 0 and (interArea / areaA) > 0.6:
+                is_dup = True
+                break
+        if not is_dup:
+            unique_dets.append(det)
+
+    all_detections = out.merge_related_detections(unique_dets)
 
     if scale_factor != 1.0:
         for det in all_detections:

@@ -278,6 +278,7 @@ def test_text_extraction(
 
     unpaired_ocr_words: list[str] = [str(block.get("text", "")) for block in extracted_text]
     unpaired_expected_words: list[str] = deepcopy(expected_text)
+
     results = check_for_match(
         unpaired_ocr_words,
         unpaired_expected_words,

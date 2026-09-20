@@ -23,15 +23,16 @@ def bilateral_denoise(img: np.ndarray, sigma_color: float = 0.04, sigma_spatial:
     return cv2.bilateralFilter(img, d=5, sigmaColor=sigma_c, sigmaSpace=sigma_s)
 
 
-def upscale_for_ocr(img: np.ndarray, min_dimension: int = 2000) -> np.ndarray:
+def upscale_for_ocr(img: np.ndarray, min_dimension: int = 1800) -> np.ndarray:
     """
-    Upscale image by 2x using bicubic interpolation when its largest side is below min_dimension.
+    Upscale image exactly to min_dimension (on its longest side) if it's smaller.
     Enhances readability for small fonts on historical maps without blowing up memory.
     """
     h, w = img.shape[:2]
-    if max(h, w) >= min_dimension:
+    scale = min_dimension / max(h, w)
+    if scale <= 1.0:
         return img
-    return cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    return cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
 
 def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 1.8) -> np.ndarray:
