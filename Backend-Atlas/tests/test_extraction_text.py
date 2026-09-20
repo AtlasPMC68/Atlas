@@ -129,13 +129,13 @@ def check_for_match(
     for exp_idx, exp_word in enumerate(expected_ascii):
         if exp_idx in used_exp_indices:
             continue
-            
+
         for ocr_idx, ocr_word in enumerate(actual_ascii):
             if ocr_idx in used_ocr_indices:
                 continue
 
             dist = float(levenshtein_distance(ocr_word, exp_word))
-            
+
             # Suffix/substring bonus
             base_expected = re.sub(r"\b(1[5-9]\d\d|20\d\d)\b", "", exp_word).strip()
             base_expected = " ".join(base_expected.split())
@@ -153,11 +153,14 @@ def check_for_match(
 
     all_pairs.sort(key=lambda x: x[0])
 
+    MAX_ALLOWED_DIST = 6.0
+
     for dist, exp_idx, ocr_idx in all_pairs:
         if exp_idx not in used_exp_indices and ocr_idx not in used_ocr_indices:
-            used_exp_indices.add(exp_idx)
-            used_ocr_indices.add(ocr_idx)
-            result.append((actual[ocr_idx], (expected[exp_idx], dist)))
+            if dist <= MAX_ALLOWED_DIST:
+                used_exp_indices.add(exp_idx)
+                used_ocr_indices.add(ocr_idx)
+                result.append((actual[ocr_idx], (expected[exp_idx], dist)))
 
     # Pass 3: Not Found
     for exp_idx in range(len(expected)):
