@@ -16,7 +16,12 @@ from app.services.features import insert_feature_in_db
 from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
-from app.utils.georeferencingSift import georeference_features_with_sift_points
+from app.utils.georeferencing import (
+    ControlPoint,
+    DEFAULT_GEOREF_CONFIG,
+    RunRecord,
+    georeference_features,
+)
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
@@ -28,7 +33,36 @@ logger = logging.getLogger(__name__)
 nb_task = 6
 
 # TODO : maybe remove this debud parameter pour l'instant j'aimerais ca le garder tho
+# Roadmap section 4.3: turn this off as soon as chamfer alignment begins -- blind
+# snapping will fight the alignment.
 ENABLE_COASTLINE_SNAPPING = True
+
+# One config for every georeferencing call in this module, so the snapping flag
+# actually governs both producers. It previously only reached the colors path
+# (current section 9, limitation 7).
+GEOREF_CONFIG = DEFAULT_GEOREF_CONFIG.with_overrides(
+    snap_to_coastline=ENABLE_COASTLINE_SNAPPING
+)
+
+
+def _georeference(
+    pixel_feature_collections: list,
+    pixel_points: list,
+    geo_points_lonlat: list,
+    frame_bounds: dict | None = None,
+    record: "RunRecord | None" = None,
+):
+    """Fit and apply the pixel -> EPSG:4326 transform for one feature producer."""
+    control_points = ControlPoint.from_pairs(
+        pixel_points, geo_points_lonlat, source="sift"
+    )
+    return georeference_features(
+        pixel_feature_collections,
+        control_points,
+        frame_bounds=frame_bounds,
+        config=GEOREF_CONFIG,
+        record=record,
+    )
 
 
 @celery_app.task(bind=True)
@@ -67,7 +101,20 @@ def process_map_extraction(
     imposed_click_positions: list | None = None,
     imposed_colors_names: list | None = None,
     imposed_sampling_radii: list | None = None,
+    frame_bounds: dict | None = None,
+    water_click_positions: list | None = None,
+    water_colors_names: list | None = None,
+    water_sampling_radii: list | None = None,
 ):
+
+    # The water pipette is carried but not yet consumed: Step 3 builds the water
+    # mask from it. Feeding it to colour extraction now would change output, and
+    # Step 1 must leave output identical.
+    if water_click_positions:
+        logger.info(
+            f"[GEOREF] {len(water_click_positions)} water pipette pick(s) received "
+            f"for map {map_id}; unused until the water mask lands."
+        )
 
     try:
         # Step 1: temp save
@@ -201,11 +248,16 @@ def process_map_extraction(
             # Georeference pixel-space shape features if SIFT point pairs are provided
             if pixel_points and geo_points_lonlat:
                 try:
-                    georef_shape_features = georeference_features_with_sift_points(
-                        shape_pixel_features, pixel_points, geo_points_lonlat
+                    shapes_georef = _georeference(
+                        shape_pixel_features,
+                        pixel_points,
+                        geo_points_lonlat,
+                        frame_bounds=frame_bounds,
                     )
                     asyncio.run(
-                        persist_features(project_id, map_id, georef_shape_features)
+                        persist_features(
+                            project_id, map_id, shapes_georef.collections
+                        )
                     )
                 except Exception as e:
                     logger.error(
@@ -296,13 +348,15 @@ def process_map_extraction(
             # Georeference pixel-space features if SIFT point pairs are provided
             if pixel_points and geo_points_lonlat:
                 try:
-                    georef_features = georeference_features_with_sift_points(
+                    colors_georef = _georeference(
                         pixel_features,
                         pixel_points,
                         geo_points_lonlat,
-                        snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
+                        frame_bounds=frame_bounds,
                     )
-                    asyncio.run(persist_features(project_id, map_id, georef_features))
+                    asyncio.run(
+                        persist_features(project_id, map_id, colors_georef.collections)
+                    )
 
                 except Exception as e:
                     logger.error(
@@ -416,6 +470,23 @@ async def persist_features(
                     )
 
 
+def _iou_summary_from_report(report: dict[str, Any] | None) -> dict[str, Any]:
+    """Pull the IoU numbers out of an evaluation report for the run record."""
+    metrics = (report or {}).get("metrics") or {}
+    per_zone = {}
+    for expected in metrics.get("expected") or []:
+        if not isinstance(expected, dict):
+            continue
+        best = expected.get("bestMatch") or {}
+        per_zone[str(expected.get("name"))] = best.get("iou")
+
+    return {
+        "scoreUsed": metrics.get("scoreUsed"),
+        "meanIou": (metrics.get("mean") or {}).get("meanIou"),
+        "perZone": per_zone,
+    }
+
+
 async def persist_city_feature(project_id: UUID, map_id: UUID, feature: dict[str, Any]):
     async with AsyncSessionLocal() as db:
         try:
@@ -441,9 +512,17 @@ def process_dev_test_extraction(
     imposed_click_positions: list | None = None,
     imposed_colors_names: list | None = None,
     imposed_sampling_radii: list | None = None,
+    frame_bounds: dict | None = None,
+    water_click_positions: list | None = None,
+    water_colors_names: list | None = None,
+    water_sampling_radii: list | None = None,
 ):
     """Dev-test-only extraction task: no DB persistence, results saved to files,
     evaluation report written automatically at the end."""
+    georef_record = RunRecord(run_id=f"{test_id}/{test_case}")
+    georef_record.set_inputs(
+        waterPickCount=len(water_click_positions or []),
+    )
     try:
         # Step 1: temp save
         self.update_state(
@@ -535,20 +614,24 @@ def process_dev_test_extraction(
 
         if pixel_points and geo_points_lonlat:
             try:
-                georef_features = georeference_features_with_sift_points(
+                georef = _georeference(
                     pixel_features,
                     pixel_points,
                     geo_points_lonlat,
-                    snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
+                    frame_bounds=frame_bounds,
+                    record=georef_record,
                 )
-                all_extracted_features = georef_features
+                all_extracted_features = georef.collections
+                georef_record.set_model("chosen", georef.transform_payload)
             except Exception as e:
                 logger.error(
                     f"[DEV-TEST] SIFT georeferencing failed for test {test_id}: {e}",
                     exc_info=True,
                 )
+                georef_record.note(f"georeferencing failed: {e}")
                 all_extracted_features = normalized_features
         else:
+            georef_record.note("no control points; features stay in normalised space")
             all_extracted_features = normalized_features
 
         # Step 6: save assets to files
@@ -614,12 +697,13 @@ def process_dev_test_extraction(
             from app.utils.dev_test import evaluate_and_persist_case
             from app.utils.dev_test_assets import GEOREF_ASSETS_DIR
 
-            evaluate_and_persist_case(
+            report = evaluate_and_persist_case(
                 assets_root=GEOREF_ASSETS_DIR,
                 test_id=test_id,
                 test_case_id=test_case,
                 min_iou=None,
             )
+            georef_record.set_errors(iou=_iou_summary_from_report(report))
             logger.info(
                 f"[DEV-TEST] Evaluation report written for {test_id}/{test_case}"
             )
@@ -627,6 +711,11 @@ def process_dev_test_extraction(
             logger.warning(
                 f"[DEV-TEST] Evaluation skipped (expected zones may be missing): {e}"
             )
+
+        # The run record goes next to report.json whether or not evaluation ran:
+        # an IoU number alone cannot tell you which stage moved it.
+        record_dir = os.path.join(TEST_CASES_DIR, test_id, test_case)
+        georef_record.write(record_dir)
 
         result = {
             "filename": filename,

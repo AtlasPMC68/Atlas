@@ -232,6 +232,7 @@ import { apiFetch } from "../../utils/api";
 import { snakeToCamel } from "../../utils/utils";
 import type {
   WorldBounds,
+  ImposedColor,
   LatLngTuple,
   XYTuple,
   CoastlineKeypoint,
@@ -307,7 +308,6 @@ const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, n
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
 const legendBounds = ref<LegendBounds | null>(null);
-type ImposedColor = { x: number; y: number; name: string; radius: number };
 const pickedColors = ref<ImposedColor[]>([]);
 const pendingLegendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
@@ -475,6 +475,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       imagePoints,
       worldPoints,
       pickedColors.value.length > 0 ? pickedColors.value : undefined,
+      worldAreaBounds.value,
     );
     if (result.success) {
       currentStep.value = 6;
@@ -509,6 +510,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
       imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
+      frameBounds: worldAreaBounds.value,
     },
     legend,
   );
@@ -586,9 +588,7 @@ function handleColorPickerClose() {
   currentStep.value = 5;
 }
 
-async function handleColorPickerConfirmed(
-  colors: { x: number; y: number; name: string; radius: number }[],
-) {
+async function handleColorPickerConfirmed(colors: ImposedColor[]) {
   showColorPickerModal.value = false;
   pickedColors.value = colors;
   await submitImportWithGeoref(pendingLegendBounds.value);

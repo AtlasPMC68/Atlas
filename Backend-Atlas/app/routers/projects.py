@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
-from sqlalchemy import delete, not_, select, func
+from sqlalchemy import delete, not_, select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -34,7 +34,18 @@ from app.utils.update_feature import (
     serialize_feature_rows,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
-from app.utils.imposed_colors import parse_imposed_colors
+from app.utils.georeferencing import (
+    ControlPoint,
+    build_georef_inputs,
+    parse_frame_bounds,
+)
+from app.utils.imposed_colors import (
+    KIND_WATER,
+    KIND_ZONE,
+    imposed_colors_to_config_entries,
+    parse_imposed_colors,
+    split_imposed_colors_by_kind,
+)
 
 from ..celery_app import celery_app
 from ..tasks import process_map_extraction
@@ -229,6 +240,7 @@ async def get_project(
 async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
+    frame_bounds: str | None = Form(None),
     legend_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
     enable_georeferencing: bool = Form(True),
@@ -327,18 +339,47 @@ async def upload_and_process_map(
                 detail=f"Invalid legend bounds payload: {e}",
             )
 
-    # Parse optional user-picked click positions as [{"x": 0.5, "y": 0.3, "name": "..."}, ...]
+    # Parse the world area the user framed before matching keypoints. It is the
+    # working extent for the reference layers, so it has to reach the task.
+    try:
+        frame_bounds_dict = parse_frame_bounds(frame_bounds)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid frame_bounds payload: {e}",
+        )
+
+    # Parse optional user-picked click positions as
+    # [{"x": 0.5, "y": 0.3, "name": "...", "kind": "zone"|"water"}, ...]
     try:
         (
-            imposed_click_positions,
-            imposed_colors_names,
-            imposed_sampling_radii,
+            all_click_positions,
+            all_colors_names,
+            all_sampling_radii,
+            all_color_kinds,
         ) = parse_imposed_colors(imposed_colors)
     except ValueError as e:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid imposed_colors payload: {e}",
         )
+
+    # Zone picks drive colour extraction; water picks are evidence for
+    # georeferencing and never become zones.
+    (
+        imposed_click_positions,
+        imposed_colors_names,
+        imposed_sampling_radii,
+    ) = split_imposed_colors_by_kind(
+        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_ZONE
+    )
+    (
+        water_click_positions,
+        water_colors_names,
+        water_sampling_radii,
+    ) = split_imposed_colors_by_kind(
+        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_WATER
+    )
 
     file_content = await file.read()
 
@@ -350,6 +391,43 @@ async def upload_and_process_map(
 
     if len(file_content) == 0:
         raise HTTPException(status_code=400, detail="Empty file")
+
+    # Store the georeferencing inputs on the map before dispatching, the same way
+    # the dev-test route writes config.json first: they survive a failed task,
+    # and without them the only way to georeference this map differently is to
+    # re-import it and re-click every point.
+    georef_inputs = build_georef_inputs(
+        control_points=(
+            ControlPoint.from_pairs(
+                pixel_points_list, geo_points_list, source="sift"
+            )
+            if pixel_points_list and geo_points_list
+            else None
+        ),
+        frame_bounds=frame_bounds_dict,
+        imposed_colors=imposed_colors_to_config_entries(
+            all_click_positions,
+            all_colors_names,
+            all_sampling_radii,
+            all_color_kinds,
+        ),
+    )
+    if georef_inputs is not None:
+        try:
+            await session.execute(
+                update(Map)
+                .where(Map.id == map_id)
+                .values(georef_inputs=georef_inputs)
+            )
+            await session.commit()
+        except Exception as e:
+            # The column arrives with db/04_add_georef_inputs_to_maps.sql, which
+            # Postgres only runs on a fresh volume. An older database logs and
+            # carries on rather than losing the import.
+            await session.rollback()
+            logger.warning(
+                f"Could not store georef inputs for map {map_id}: {e}"
+            )
 
     try:
         task = process_map_extraction.delay(
@@ -366,6 +444,10 @@ async def upload_and_process_map(
             imposed_click_positions=imposed_click_positions,
             imposed_colors_names=imposed_colors_names,
             imposed_sampling_radii=imposed_sampling_radii,
+            frame_bounds=frame_bounds_dict,
+            water_click_positions=water_click_positions,
+            water_colors_names=water_colors_names,
+            water_sampling_radii=water_sampling_radii,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 

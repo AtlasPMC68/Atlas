@@ -152,6 +152,21 @@ services:
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/scripts:/app/scripts
+      - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./Backend-Atlas/.env.dev:/app/.env.dev
+
+  # Fast georeferencing loop: no broker, no database, no pytest collection, and
+  # colour extraction cached between runs. See scripts/run_georef_alignment.py.
+  georef-dev:
+    build:
+      context: ./Backend-Atlas
+    command: python scripts/run_georef_alignment.py
+    volumes:
+      - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/scripts:/app/scripts
+      - ./Backend-Atlas/.georef_cache:/app/.georef_cache
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
 

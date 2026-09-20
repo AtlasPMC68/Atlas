@@ -36,6 +36,19 @@ export interface CoastlineKeypoint {
   [key: string]: unknown;
 }
 
+// A pipette pick. Zone fill and water are pipetted separately because they are
+// routinely the same hue -- colour alone cannot disambiguate them, and the user
+// can in one click.
+export type ImposedColorKind = "zone" | "water";
+
+export interface ImposedColor {
+  x: number;
+  y: number;
+  name: string;
+  radius: number;
+  kind?: ImposedColorKind;
+}
+
 // Full match between a world keypoint and an image point
 export interface GeorefMatch {
   index: number;

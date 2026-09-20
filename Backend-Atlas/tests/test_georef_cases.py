@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from app.utils.dev_test import build_extraction_task_args_for_case
+from app.utils.dev_test import build_extraction_task_kwargs_for_case
 from app.utils.dev_test_evaluator import build_test_case_paths
 
 from app.tasks import process_dev_test_extraction
@@ -55,7 +55,7 @@ def _rerun_extraction_from_config(
         pytest.skip(f"Missing config for {test_id}/{test_case_id}: {paths.config_path}")
 
     try:
-        args = build_extraction_task_args_for_case(
+        kwargs = build_extraction_task_kwargs_for_case(
             assets_root=assets_root,
             test_id=test_id,
             test_case_id=test_case_id,
@@ -69,7 +69,7 @@ def _rerun_extraction_from_config(
 
     # Run the Celery task synchronously (no broker) via Task.apply.
     # The task writes zones.geojson and the evaluation report itself.
-    res = process_dev_test_extraction.apply(args=args)
+    res = process_dev_test_extraction.apply(kwargs=kwargs)
 
     if res.failed():
         raise AssertionError(

@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 from datetime import datetime
@@ -15,7 +16,13 @@ from app.utils.dev_test_assets import (
     TEST_CASES_DIR,
     ZONES_DIR,
 )
-from app.utils.imposed_colors import parse_imposed_colors_entries
+from app.utils.georeferencing import parse_frame_bounds_entry
+from app.utils.imposed_colors import (
+    KIND_WATER,
+    KIND_ZONE,
+    parse_imposed_colors_entries,
+    split_imposed_colors_by_kind,
+)
 
 
 def write_test_config(
@@ -26,6 +33,7 @@ def write_test_config(
     img_pts: list | None,
     world_pts: list | None,
     imposed_colors: list | None = None,
+    frame_bounds: dict | None = None,
 ) -> None:
     # tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
     case_dir = os.path.join(TEST_CASES_DIR, parent_test_id, test_case_id)
@@ -41,6 +49,9 @@ def write_test_config(
         "georef": {
             "imagePoints": img_pts,
             "worldPoints": world_pts,
+            # The world area the user framed; the working extent for every
+            # reference layer, so a case has to re-run with the same one.
+            "frameBounds": frame_bounds,
         },
         # Pipette selections, kept so the case can be re-run identically later.
         "colors": {
@@ -288,7 +299,7 @@ def evaluate_and_persist_case(
     return report
 
 
-def _load_case_config(
+def load_case_config(
     assets_root: str, test_id: str, test_case_id: str
 ) -> dict[str, Any]:
     from app.utils.dev_test_evaluator import build_test_case_paths
@@ -308,16 +319,25 @@ def _load_case_config(
     return config
 
 
-def _parse_extraction_inputs(
+@dataclass(frozen=True)
+class CaseExtractionInputs:
+    """Everything a stored case needs to re-run identically."""
+
+    filename: str
+    pixel_points: list[tuple[float, float]] | None
+    geo_points_lonlat: list[tuple[float, float]] | None
+    frame_bounds: dict[str, float] | None
+    imposed_click_positions: list[tuple[float, float]] | None
+    imposed_colors_names: list[str | None] | None
+    imposed_sampling_radii: list[int] | None
+    water_click_positions: list[tuple[float, float]] | None
+    water_colors_names: list[str | None] | None
+    water_sampling_radii: list[int] | None
+
+
+def parse_extraction_inputs(
     config: dict[str, Any], image_path: str
-) -> tuple[
-    str,
-    list[tuple[float, float]] | None,
-    list[tuple[float, float]] | None,
-    list[tuple[float, float]] | None,
-    list[str | None] | None,
-    list[int] | None,
-]:
+) -> CaseExtractionInputs:
     georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
 
     pixel_points_list = None
@@ -335,50 +355,74 @@ def _parse_extraction_inputs(
         except Exception as e:
             raise ValueError(f"Invalid georef points in config: {e}")
 
+    # Cases written before the framing box was plumbed through simply have none.
+    try:
+        frame_bounds = parse_frame_bounds_entry(georef.get("frameBounds"))
+    except ValueError as e:
+        raise ValueError(f"Invalid frame bounds in config: {e}")
+
     colors = config.get("colors") if isinstance(config.get("colors"), dict) else {}
     try:
         (
-            imposed_click_positions,
-            imposed_colors_names,
-            imposed_sampling_radii,
+            all_click_positions,
+            all_colors_names,
+            all_sampling_radii,
+            all_color_kinds,
         ) = parse_imposed_colors_entries(colors.get("imposed"))
     except ValueError as e:
         raise ValueError(f"Invalid imposed colors in config: {e}")
+
+    zone_picks = split_imposed_colors_by_kind(
+        all_click_positions,
+        all_colors_names,
+        all_sampling_radii,
+        all_color_kinds,
+        KIND_ZONE,
+    )
+    water_picks = split_imposed_colors_by_kind(
+        all_click_positions,
+        all_colors_names,
+        all_sampling_radii,
+        all_color_kinds,
+        KIND_WATER,
+    )
 
     filename = config.get("filename")
     if not isinstance(filename, str) or not filename.strip():
         filename = os.path.basename(image_path)
 
-    return (
-        filename,
-        pixel_points_list,
-        geo_points_list,
-        imposed_click_positions,
-        imposed_colors_names,
-        imposed_sampling_radii,
+    return CaseExtractionInputs(
+        filename=filename,
+        pixel_points=pixel_points_list,
+        geo_points_lonlat=geo_points_list,
+        frame_bounds=frame_bounds,
+        imposed_click_positions=zone_picks[0],
+        imposed_colors_names=zone_picks[1],
+        imposed_sampling_radii=zone_picks[2],
+        water_click_positions=water_picks[0],
+        water_colors_names=water_picks[1],
+        water_sampling_radii=water_picks[2],
     )
 
 
-def build_extraction_task_args_for_case(
+def build_extraction_task_kwargs_for_case(
     *, assets_root: str, test_id: str, test_case_id: str
-) -> list[Any]:
-    """Build positional args for process_dev_test_extraction.apply(args=...)."""
+) -> dict[str, Any]:
+    """Build kwargs for process_dev_test_extraction.
 
-    config = _load_case_config(assets_root, test_id, test_case_id)
+    Keyword arguments rather than positional ones: the task keeps gaining
+    optional inputs (framing box, water picks), and a positional list silently
+    misaligns when one is inserted in the middle.
+    """
+
+    config = load_case_config(assets_root, test_id, test_case_id)
     image_path = find_test_image_path(test_id)
     if not image_path or not os.path.exists(image_path):
         raise FileNotFoundError(
             f"Test image not found for test_id={test_id} under {MAPS_DIR}"
         )
 
-    (
-        filename,
-        pixel_points_list,
-        geo_points_list,
-        imposed_click_positions,
-        imposed_colors_names,
-        imposed_sampling_radii,
-    ) = _parse_extraction_inputs(config, image_path)
+    inputs = parse_extraction_inputs(config, image_path)
 
     try:
         with open(image_path, "rb") as f:
@@ -386,23 +430,27 @@ def build_extraction_task_args_for_case(
     except Exception as e:
         raise RuntimeError(f"Failed to read test image: {e}")
 
-    return [
-        filename,
-        file_content,
-        test_id,
-        test_case_id,
-        pixel_points_list,
-        geo_points_list,
-        imposed_click_positions,
-        imposed_colors_names,
-        imposed_sampling_radii,
-    ]
+    return {
+        "filename": inputs.filename,
+        "file_content": file_content,
+        "test_id": test_id,
+        "test_case": test_case_id,
+        "pixel_points": inputs.pixel_points,
+        "geo_points_lonlat": inputs.geo_points_lonlat,
+        "imposed_click_positions": inputs.imposed_click_positions,
+        "imposed_colors_names": inputs.imposed_colors_names,
+        "imposed_sampling_radii": inputs.imposed_sampling_radii,
+        "frame_bounds": inputs.frame_bounds,
+        "water_click_positions": inputs.water_click_positions,
+        "water_colors_names": inputs.water_colors_names,
+        "water_sampling_radii": inputs.water_sampling_radii,
+    }
 
 
 def _start_extraction_for_case(
     *, assets_root: str, test_id: str, test_case_id: str
 ) -> str:
-    args = build_extraction_task_args_for_case(
+    kwargs = build_extraction_task_kwargs_for_case(
         assets_root=assets_root,
         test_id=test_id,
         test_case_id=test_case_id,
@@ -410,7 +458,7 @@ def _start_extraction_for_case(
 
     from app.tasks import process_dev_test_extraction
 
-    task = process_dev_test_extraction.delay(*args)
+    task = process_dev_test_extraction.delay(**kwargs)
     return task.id
 
 

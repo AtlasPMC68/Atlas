@@ -2,9 +2,9 @@
 import { ref, type Ref } from "vue";
 import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
+import type { ImposedColor, WorldBounds } from "../typescript/georef";
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
-type ImposedColor = { x: number; y: number; name: string; radius: number };
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
 type StartDevTestImportResult =
   | { success: true }
@@ -40,6 +40,7 @@ export function useDevTestImportProcess() {
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     imposedColors?: ImposedColor[],
+    frameBounds?: WorldBounds | null,
   ): Promise<StartDevTestImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
     if (!testId) return { success: false, error: "Identifiant de test manquant" };
@@ -60,6 +61,11 @@ export function useDevTestImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
+    // The framing box is persisted into the case config, so a case re-runs with
+    // the same working extent.
+    if (frameBounds) {
+      formData.append("frame_bounds", JSON.stringify(frameBounds));
+    }
     // Pipette selections: without them the backend extracts no color zones at all.
     if (imposedColors && imposedColors.length) {
       formData.append(
@@ -70,7 +76,7 @@ export function useDevTestImportProcess() {
             const radius = Number.isFinite(rawRadius)
               ? Math.max(1, Math.min(200, Math.round(rawRadius)))
               : 20;
-            return { x: c.x, y: c.y, name: c.name, radius };
+            return { x: c.x, y: c.y, name: c.name, radius, kind: c.kind ?? "zone" };
           }),
         ),
       );

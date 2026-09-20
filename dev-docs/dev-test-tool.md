@@ -136,9 +136,11 @@ maps/<test_id>.jpg                      the map image
 georef_zones/<test_id>_zones.geojson    the expected zones you drew   ← the valuable part
 tests_metadata.json                     test names / creation dates
 test_cases/<test_id>/<case_id>/
-    config.json          SIFT point pairs + pipette picks (position, name, radius)
+    config.json          SIFT point pairs, framing box, pipette picks
+                         (position, name, radius, zone-or-water)
     zones.geojson        zones extracted by the last run
     report.json          metrics of the last run
+    run_record.json      structured record of the last georeferencing run
     errors.geojson       FP/FN overlay of the last run
     zones_best.geojson   \
     best_report.json      >  same three, for the best run so far
@@ -149,8 +151,15 @@ Because it's plain files in the repo, results are versioned in git — you can d
 between branches, and a deleted test case can be restored with `git checkout` if it had been
 committed.
 
-`config.json` is what makes a test case reproducible: **both the SIFT anchor points and the
-pipette picks are saved there**, so a case can be replayed without you clicking anything again.
+`config.json` is what makes a test case reproducible: **the SIFT anchor points, the framing
+box and the pipette picks are all saved there**, so a case can be replayed without you
+clicking anything again.
+
+`run_record.json` sits next to `report.json` and holds what the georeferencing run knew and
+decided: control points with their source and sigma, the fitted model, every gate check
+(logged whether or not it passed), the errors and the per-phase timings. An IoU number alone
+cannot tell you which stage moved it; this can. See
+[`georeferencing-plan.md`](georeferencing-plan.md) section 4.
 
 ---
 
@@ -183,3 +192,24 @@ test suite**. If a case is a known-bad experiment, delete it rather than leaving
 - **Zoom in the pipette** for small or thin areas; the sample radius follows the zoom.
 - A case created before the pipette existed has no colors in its `config.json` and can't be
   replayed — recreate it.
+- Older cases have no `kind` on their pipette picks and no `frameBounds`. Both are optional:
+  picks without a kind are zones, and a missing framing box simply means the reference layers
+  have no user-supplied extent.
+
+---
+
+## 9. The fast loop
+
+The pytest path boots a container, collects every test and runs a task with literal
+`time.sleep(2)` calls in it. When you are iterating on georeferencing itself, use the direct
+entry point instead — no broker, no database, no pytest collection, and colour extraction
+cached between runs:
+
+```
+docker compose run --rm georef-dev
+docker compose run --rm georef-dev python scripts/run_georef_alignment.py --case-id pip_7sift
+```
+
+It prints the control-point RMSE in kilometres, the IoU and the per-phase timings, and writes
+the same `zones.geojson`, `report.json` and `run_record.json` the task would. Pass `--no-write`
+to leave the case untouched, or `--no-cache` when colour extraction itself is what changed.

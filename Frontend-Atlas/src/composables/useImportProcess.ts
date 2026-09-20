@@ -3,6 +3,7 @@ import { ref, Ref } from "vue";
 import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
 import type { LegendBounds } from "../typescript/legend";
+import type { ImposedColor, WorldBounds } from "../typescript/georef";
 
 type ImagePoint = { x: number; y: number };
 type WorldPoint = { lat: number; lng: number };
@@ -11,7 +12,10 @@ type ExtractionOptions = {
   enableColorExtraction?: boolean;
   enableShapesExtraction?: boolean;
   enableTextExtraction?: boolean;
-  imposedColors?: { x: number; y: number; name: string; radius: number }[];
+  imposedColors?: ImposedColor[];
+  // The world area the user framed. It is the working extent for every
+  // reference layer on the backend, so it has to travel with the upload.
+  frameBounds?: WorldBounds | null;
 };
 
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
@@ -83,6 +87,9 @@ export function useImportProcess() {
     if (worldPoints && worldPoints.length) {
       formData.append("world_points", JSON.stringify(worldPoints));
     }
+    if (options?.frameBounds) {
+      formData.append("frame_bounds", JSON.stringify(options.frameBounds));
+    }
 
     if (options) {
       formData.append(
@@ -115,6 +122,7 @@ export function useImportProcess() {
                 y: c.y,
                 name: c.name,
                 radius,
+                kind: c.kind ?? "zone",
               };
             }),
           ),

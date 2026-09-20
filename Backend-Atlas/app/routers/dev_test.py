@@ -26,9 +26,13 @@ from app.utils.dev_test import (
     write_test_config,
 )
 from app.utils.dev_test_assets import GEOREF_ASSETS_DIR, ZONES_DIR
+from app.utils.georeferencing import frame_bounds_to_config_entry, parse_frame_bounds
 from app.utils.imposed_colors import (
+    KIND_WATER,
+    KIND_ZONE,
     imposed_colors_to_config_entries,
     parse_imposed_colors,
+    split_imposed_colors_by_kind,
 )
 from app.utils.dev_test_evaluator import build_test_case_paths
 
@@ -57,6 +61,7 @@ async def upload_dev_test_map(
     test_case: str = Form(...),
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
+    frame_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
     file: UploadFile = File(...),
     _user_id: str = Depends(get_current_user_id),
@@ -92,18 +97,39 @@ async def upload_dev_test_map(
                 status_code=400, detail=f"Invalid georeferencing payload: {e}"
             )
 
+    try:
+        frame_bounds_dict = parse_frame_bounds(frame_bounds)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid frame_bounds payload: {e}")
+
     # Pipette colors picked by the user; without them nothing is extracted at all,
     # so the georeferencing step would have no zones to transform.
     try:
         (
-            imposed_click_positions,
-            imposed_colors_names,
-            imposed_sampling_radii,
+            all_click_positions,
+            all_colors_names,
+            all_sampling_radii,
+            all_color_kinds,
         ) = parse_imposed_colors(imposed_colors)
     except ValueError as e:
         raise HTTPException(
             status_code=400, detail=f"Invalid imposed_colors payload: {e}"
         )
+
+    (
+        imposed_click_positions,
+        imposed_colors_names,
+        imposed_sampling_radii,
+    ) = split_imposed_colors_by_kind(
+        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_ZONE
+    )
+    (
+        water_click_positions,
+        water_colors_names,
+        water_sampling_radii,
+    ) = split_imposed_colors_by_kind(
+        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_WATER
+    )
 
     if not imposed_click_positions:
         logger.warning(
@@ -134,8 +160,12 @@ async def upload_dev_test_map(
         if geo_points_list
         else None,
         imposed_colors=imposed_colors_to_config_entries(
-            imposed_click_positions, imposed_colors_names, imposed_sampling_radii
+            all_click_positions,
+            all_colors_names,
+            all_sampling_radii,
+            all_color_kinds,
         ),
+        frame_bounds=frame_bounds_to_config_entry(frame_bounds_dict),
     )
 
     try:
@@ -149,6 +179,10 @@ async def upload_dev_test_map(
             imposed_click_positions=imposed_click_positions,
             imposed_colors_names=imposed_colors_names,
             imposed_sampling_radii=imposed_sampling_radii,
+            frame_bounds=frame_bounds_dict,
+            water_click_positions=water_click_positions,
+            water_colors_names=water_colors_names,
+            water_sampling_radii=water_sampling_radii,
         )
         logger.info(
             f"[DEV-TEST] Started extraction task {task.id} for test_id={safe_test_id} case={safe_test_case}"

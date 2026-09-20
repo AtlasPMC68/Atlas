@@ -67,3 +67,5 @@ yarn-error.log*
 # Process folders
 Backend-Atlas/app/extracted_color
 Backend-Atlas/app/extracted_texts
+# Cached colour-extraction results for scripts/run_georef_alignment.py
+Backend-Atlas/.georef_cache/
