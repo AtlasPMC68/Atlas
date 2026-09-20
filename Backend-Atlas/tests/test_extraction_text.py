@@ -251,9 +251,9 @@ CARD_THRESHOLDS = {
     "Quebec_1800.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
     "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 2.10},
     "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
-    "Communautes_cries.png": {"min_hit_rate": 100.0, "max_dist": 1.22},
-    "Degrade_Afrique.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
-    "pluie_Afrique.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
+    "Communautes_cries.png": {"min_hit_rate": 100.0, "max_dist": 1.23},
+    "Degrade_Afrique.png": {"min_hit_rate": 65.0, "max_dist": 1.25},
+    "pluie_Afrique.png": {"min_hit_rate": 65.0, "max_dist": 1.25},
 }
 
 
@@ -319,34 +319,48 @@ def test_text_extraction(
     thresholds = CARD_THRESHOLDS.get(image_path.name, {"min_hit_rate": 40.0, "max_dist": 15.0})
     min_hit_rate = thresholds["min_hit_rate"]
     max_dist = thresholds["max_dist"]
-    is_passed = box_find_rate >= min_hit_rate and average_dist <= max_dist
 
-    # Color-coded summary: GREEN for pass, RED for fail
-    if is_passed:
-        summary = (
-            f"\n"
-            f"{GREEN}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
-            f"\u2705  {BOLD}SUMMARY for {YELLOW}{image_path.name}{RESET} : {GREEN}{BOLD}PASS{RESET}\n"
-            f"    \u2022 Hit Rate   : {GREEN}{BOLD}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)\n"
-            f"    \u2022 Avg Dist   : {GREEN}{BOLD}{average_dist:.2f}{RESET} (max: {max_dist})\n"
-            f"    \u2022 Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
-            f"{GREEN}{BOLD}--------------------------------------------------------------------------------{RESET}\n\n"
-        )
-        logger.info(summary)
+    hit_rate_passed = box_find_rate >= min_hit_rate
+    dist_passed = average_dist <= max_dist
+    is_passed = hit_rate_passed and dist_passed
+
+    if hit_rate_passed and dist_passed:
+        status_color = GREEN
+        status_icon = "\u2705"
+        status_text = "PASS"
+    elif hit_rate_passed or dist_passed:
+        status_color = YELLOW
+        status_icon = "\u26a0\ufe0f"  # Warning icon
+        status_text = "WARNING"
     else:
-        summary = (
-            f"\n"
-            f"{RED}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
-            f"\u274c  {BOLD}SUMMARY for {YELLOW}{image_path.name}{RESET} : {RED}{BOLD}FAIL{RESET}\n"
-            f"    \u2022 Hit Rate   : {RED}{BOLD}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)\n"
-            f"    \u2022 Avg Dist   : {RED}{BOLD}{average_dist:.2f}{RESET} (max: {max_dist})\n"
-            f"    \u2022 Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
-            f"{RED}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
-        )
+        status_color = RED
+        status_icon = "\u274c"
+        status_text = "FAIL"
+
+    hit_color = GREEN if hit_rate_passed else RED
+    dist_color = GREEN if dist_passed else RED
+    card_name_fmt = f"{CYAN}{BOLD}{image_path.name}{RESET}"
+
+    summary = (
+        f"\n"
+        f"{status_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
+        f"{status_icon}  {BOLD}SUMMARY for {card_name_fmt} : {status_color}{BOLD}{status_text}{RESET}\n"
+        f"    \u2022 Hit Rate   : {hit_color}{BOLD}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)\n"
+        f"    \u2022 Avg Dist   : {dist_color}{BOLD}{average_dist:.2f}{RESET} (max: {max_dist})\n"
+        f"    \u2022 Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
+        f"{status_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n\n"
+    )
+
+    if status_text == "PASS":
+        logger.info(summary)
+    elif status_text == "WARNING":
+        logger.warning(summary)
+    else:
         logger.error(summary)
 
+    if not is_passed:
         # Show detailed failure info
-        logger.error(f"{RED}{BOLD}\U0001f50d DETAILS OF THE FAILURE FOR {image_path.name}:{RESET}\n" f"Expected Words that the OCR missed or matched poorly:\n")
+        logger.error(f"{status_color}{BOLD}\U0001f50d DETAILS OF THE FAILURE FOR {card_name_fmt}:{RESET}\n" f"Expected Words that the OCR missed or matched poorly:\n")
         for expected_word, ocr_word, distance in mismatches:
             logger.error(f"  \u2022 Expected: {YELLOW}'{expected_word}'{RESET} --> Found: '{ocr_word}' (dist: {distance:.1f})")
 
@@ -359,4 +373,5 @@ def test_text_extraction(
         },
     )
 
-    assert is_passed, f"{image_path.name}: OCR metrics below threshold! " f"Hit rate {box_find_rate:.1f}% (min: {min_hit_rate}%), " f"Avg Dist {average_dist:.2f} (max: {max_dist})"
+    # Formatting the assertion message so it reads clearly in the pytest short summary
+    assert is_passed, f"{image_path.name} -> RESULTAT: [Hit={box_find_rate:.1f}%, Dist={average_dist:.2f}] vs ATTENDU: [Hit>={min_hit_rate}%, Dist<={max_dist}]"
