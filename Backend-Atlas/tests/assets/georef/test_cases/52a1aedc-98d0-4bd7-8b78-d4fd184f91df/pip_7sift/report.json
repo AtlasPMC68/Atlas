@@ -1,7 +1,7 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "pip_7sift",
-  "evaluatedAt": "2026-09-09T03:34:02.268879Z",
+  "evaluatedAt": "2026-09-20T03:35:39.499337Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"

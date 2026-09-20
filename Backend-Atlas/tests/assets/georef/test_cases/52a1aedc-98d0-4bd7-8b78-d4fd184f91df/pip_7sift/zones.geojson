@@ -25,7 +25,8 @@
         "is_georeferenced": true,
         "crs": "EPSG:4326",
         "transform_method": "affine",
-        "rmse_meters": 10978.61
+        "rmse_km": 9.092,
+        "rmse_status": "ok"
       },
       "geometry": {
         "type": "MultiPolygon",
