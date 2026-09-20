@@ -43,8 +43,6 @@ OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "90
 CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
 CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
-from app.utils.map_dictionary import apply_map_dictionary_correction
-
 
 def _extract_bbox_center_anchor(bbox_quad: object) -> tuple[float | None, float | None]:
     """Return bbox center anchor (x, y) from a quad list, or (None, None) if invalid."""
@@ -248,7 +246,7 @@ def _build_extracted_text_from_detections(
             except (TypeError, ValueError, IndexError):
                 continue
 
-        from app.utils.map_dictionary import MAP_IGNORED_WORDS
+        MAP_IGNORED_WORDS = {"n", "s", "e", "w", "o", "ne", "nw", "no", "se", "sw", "so", "nord", "sud", "est", "ouest", "n.-e.", "n.-o.", "s.-e.", "s.-o."}
 
         def should_ignore(text_val: str) -> bool:
             clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
@@ -277,13 +275,11 @@ def _build_extracted_text_from_detections(
             for line in lines:
                 if should_ignore(line):
                     continue
-                corrected_line = apply_map_dictionary_correction(line)
-                extracted_text.append({"text": corrected_line, "bbox": quad})
+                extracted_text.append({"text": line, "bbox": quad})
         else:
             if should_ignore(raw_text):
                 continue
-            corrected_text = apply_map_dictionary_correction(raw_text)
-            extracted_text.append({"text": corrected_text, "bbox": quad})
+            extracted_text.append({"text": raw_text, "bbox": quad})
 
     return extracted_text
 
