@@ -320,10 +320,19 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         for quad, text in zip(r_data.get("quad_boxes", []), r_data.get("labels", [])):
             if len(quad) >= 4:
                 mapped_quad = _map_quad_back(quad, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
-                # Reject massive bounding boxes to prevent hallucination swallow bugs
-                xs, ys = mapped_quad[0::2], mapped_quad[1::2]
-                if (max(xs) - min(xs)) * (max(ys) - min(ys)) > 0.1 * image_area:
-                    continue
+
+                # Use exact polygon area to reject massive hallucinations (e.g., ocean/map boundaries)
+                import shapely.geometry
+
+                try:
+                    poly = shapely.geometry.Polygon([(mapped_quad[0], mapped_quad[1]), (mapped_quad[2], mapped_quad[3]), (mapped_quad[4], mapped_quad[5]), (mapped_quad[6], mapped_quad[7])])
+                    if not poly.is_valid:
+                        poly = poly.buffer(0)
+                    if poly.area > 0.1 * image_area:
+                        continue
+                except Exception:
+                    pass
+
                 all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad), "quad": mapped_quad})
 
     # Remove duplicates from overlapping tiles
