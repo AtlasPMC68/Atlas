@@ -19,7 +19,8 @@ reasoning behind those decisions is recoverable later.
 
 Two distinct things live here, and they should not be confused:
 
-- **Runtime stages** (§3, §4) — further pipeline work, executed per map.
+- **Runtime stages** (§4) — further pipeline work, executed per map. (§3 has moved into the
+PoC; the section is kept as a pointer so cross-references still resolve.)
 - **Method framework** (§5–§8) — how the constants in that pipeline get chosen at all.
   These are not per-map computations; they are the discipline that keeps the pipeline from
   being a pile of hand-tuned magic numbers.
@@ -33,39 +34,38 @@ PoC decisions in the plan are marked `[fwd]` and point here.
 
 - An alignment model with a fit/apply/inverse interface that accepts per-point weights and
   a regularizer object (plan §3).
+- Explicit, orientation-filtered curve correspondences from ICP (plan §8.1, Phase B), frozen
+  once converged so model selection (§5) has a fixed dataset to work on.
 - Cached reference layers and distance transforms over a framing box (plan §6).
 - A structured per-run record (plan §4) — the seed of §8.
 - A gate framework of named, individually-logged checks (plan §8.2).
 
-If the PoC is a no-go, §5–§8 still apply to whatever replaces it; only §3 and §4 are
-specific to the chamfer/ICP approach.
+If the PoC is a no-go, §5–§8 still apply to whatever replaces it; only §4 is specific to the
+chamfer/ICP approach — §3 has moved into the PoC itself.
 
 ---
 
-## 3. Stage 5 — normal-search ICP
+## 3. Stage 5 — normal-search ICP — *moved into the PoC*
 
-Coarse chamfer alignment (plan §8) gets the map into the right neighbourhood. ICP turns
-that into explicit correspondences.
+**This stage now lives in [`georeferencing-plan.md`](georeferencing-plan.md) §8.1 as Phase B of
+Step 4.** It is no longer conditional on the go/no-go; it is part of what the go/no-go measures.
 
-**Directed search along curve normals.** For each reference curve sample, search along the
-normal rather than in all directions, with a shrinking radius per iteration.
+The move was driven by a measurement, not a preference. Step 3 found that straight-line
+suppression down-weights only 22.3% of surviving edge pixels, because it can only catch what is
+straight. What remains on a real map is long, curved, high-contrast linework with no reference
+counterpart — drawn rivers and reservoir outlines, road corridors, the curved watershed-following
+sections of a province border. A plain chamfer cannot distinguish those from a coast, so running
+the PoC without orientation filtering would have measured the idea at its worst and risked a
+false no-go.
 
-**Orientation filtering (~30° tolerance) is the point of the stage.** A plain chamfer
-distance cannot tell a coastline from a graticule line or a political border crossing it —
-they are all just "nearby edge pixels". Requiring the matched edge's local orientation to
-agree with the reference curve's rejects those outright. This is the same failure mode that
-straight-line suppression (plan §7) attacks earlier and more cheaply; the two are
-complementary, not redundant.
+Its content is unchanged: directed search along curve normals with a shrinking radius,
+orientation filtering at ~30° tolerance, confidence weighting applied at correspondence time
+rather than left to the robust loss, and explicit correspondences that slot into the same
+weighted system as the GCPs.
 
-**Confidence weighting from the start, before the robust loss.** A coastline segment
-adjacent to detected water is trustworthy. A zone edge with no adjacent water is quite
-possibly invented. Weight accordingly at correspondence time rather than hoping the Tukey
-loss sorts it out afterwards.
-
-**Output is explicit correspondences**, which slot into the same weighted system as GCPs —
-the reason the fit interface takes a weight vector from Step 1. Run to convergence with a
-provisional model, then freeze the correspondences so model selection (§5) has a fixed
-dataset to work on.
+Sequencing note preserved from the original: coarse chamfer remains ICP's initialisation, so the
+two are built in sequence and a number is taken at each — Stage 2 affine, + chamfer, + ICP — so a
+regression can be attributed to one half or the other.
 
 ---
 
@@ -121,7 +121,10 @@ alignment has happened. **Turn `ENABLE_COASTLINE_SNAPPING` off as soon as PoC St
 
 Worth noting for sequencing: once the PoC lands, a confidence-weighted, orientation-filtered
 version of snapping may deliver more value than the non-rigid warp, for a fraction of the
-work, since a crude version already ships.
+work, since a crude version already ships. That is more true now than when it was written —
+with ICP inside the PoC (§3), the normal search, the orientation test and the confidence
+weights all already exist by the time this stage starts; only the promote-and-refit loop is
+new.
 
 ### 4.4 Stage 9 — confidence and targeted input
 

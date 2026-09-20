@@ -142,6 +142,7 @@ test_cases/<test_id>/<case_id>/
     report.json          metrics of the last run
     run_record.json      structured record of the last georeferencing run
     reference_debug/     PNG per reference layer (only with --reference; gitignored)
+    evidence_debug/      edge map and water overlays (only with --evidence; gitignored)
     errors.geojson       FP/FN overlay of the last run
     zones_best.geojson   \
     best_report.json      >  same three, for the best run so far
@@ -219,3 +220,19 @@ Add `--reference` to build the reference layers for the case's framing box and d
 layer (coastline, lakes, rivers, land, distance transform, plus a composite showing whether
 they agree with each other). Cases with no `frameBounds` fall back to a padded box derived from
 their control points.
+
+Add `--evidence` to build the user-side evidence and dump overlays: the Canny edge map, and an
+overlay of the map with kept edges in green and suppressed straight lines (neatlines, graticules,
+title and scale boxes) in red. With water picks in the case config it also writes a water
+overlay, ocean and lakes in different colours.
+
+Add `--ocr` (which implies `--evidence`) to run text extraction so the edge map gets a text
+mask. It costs ~135 s per map the first time and is cached afterwards, and it is worth it:
+without it roughly **half** the edge pixels on a labelled map are place names rather than
+geography.
+
+**Pin your dependencies before trusting a number from this tool.** `numpy` and
+`opencv-python-headless` are pinned in `requirements.txt` for a reason: an image rebuilt with a
+different numpy produced a different zone geometry on the same map (IoU 0.9406 vs 0.9414). If
+you rebuild and a score shifts slightly for no reason you can name, check `pip freeze` across
+your containers before believing it.

@@ -238,6 +238,56 @@ def load_reference_linework(filename: str) -> Optional[BaseGeometry]:
     return _load_linework_cached(path, mtime)
 
 
+@lru_cache(maxsize=4)
+def _load_polygons_cached(path: str, mtime: float) -> Optional[BaseGeometry]:
+    """Union the *filled* polygons of a layer, keeping their interiors.
+
+    The counterpart to `_load_linework_cached`: that one wants a lake's
+    shoreline as a curve, this one wants its surface as an area.
+    """
+    _ = mtime
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to read reference layer {path}: {e}")
+        return None
+
+    parts: List[BaseGeometry] = []
+    for feature in data.get("features", []):
+        geom_data = feature.get("geometry")
+        if not geom_data:
+            continue
+        try:
+            geom = shape(geom_data)
+        except Exception:
+            continue
+        if geom is None or geom.is_empty:
+            continue
+        if geom.geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        if not geom.is_valid:
+            geom = geom.buffer(0)
+            if geom.is_empty:
+                continue
+        parts.append(geom)
+
+    if not parts:
+        return None
+
+    return unary_union(parts)
+
+
+def load_reference_polygons(filename: str) -> Optional[BaseGeometry]:
+    path = _layer_path(filename)
+    mtime = _mtime_or_none(path)
+    if mtime is None:
+        logger.warning(f"Reference layer not found: {path}")
+        return None
+    return _load_polygons_cached(path, mtime)
+
+
 # --------------------------------------------------------------------------
 # Rasterization
 # --------------------------------------------------------------------------
@@ -306,21 +356,18 @@ def rasterize_layer(grid: ReferenceGrid, geom: Optional[BaseGeometry]) -> np.nda
     return canvas
 
 
-def rasterize_land_mask(grid: ReferenceGrid) -> np.ndarray:
-    """Rasterize the land/water mask: True where a pixel centre is on land.
+def rasterize_polygon_fill(
+    grid: ReferenceGrid, geom: Optional[BaseGeometry]
+) -> np.ndarray:
+    """True where a pixel *centre* falls inside *geom*.
 
-    The mask is built once as a vector geometry by the polygonize + ocean-seed
-    flood fill, then clipped to the framing box before testing so the point-in-
-    polygon work is proportional to the region, not to the whole world.
+    The geometry is clipped to the framing box before testing, so the point-in-
+    polygon work is proportional to the region rather than to the whole world.
     """
-    land = np.zeros((grid.height, grid.width), dtype=bool)
+    filled = np.zeros((grid.height, grid.width), dtype=bool)
+    if geom is None or geom.is_empty:
+        return filled
 
-    land_geom = load_land_mask_from_coastline_and_ocean_points()
-    if land_geom is None:
-        logger.warning("Land/ocean mask unavailable; land raster will be empty.")
-        return land
-
-    # Pixel centres, not corners: a pixel is land if its middle is.
     cols = np.arange(grid.width, dtype=float) + 0.5
     rows = np.arange(grid.height, dtype=float) + 0.5
     px, py = np.meshgrid(cols, rows)
@@ -331,17 +378,41 @@ def rasterize_land_mask(grid: ReferenceGrid) -> np.ndarray:
     # unlike rasterize_layer, which goes the other way.
     for clip_box, _lon_shift in grid.clip_boxes():
         try:
-            clipped = land_geom.intersection(clip_box)
+            clipped = geom.intersection(clip_box)
         except Exception as e:
-            logger.warning(f"Failed to clip land mask to framing box: {e}")
+            logger.warning(f"Failed to clip polygon layer to framing box: {e}")
             continue
         if clipped.is_empty:
             continue
 
         shapely.prepare(clipped)
-        land |= shapely.contains_xy(clipped, lon, lat)
+        filled |= shapely.contains_xy(clipped, lon, lat)
 
-    return land
+    return filled
+
+
+def rasterize_land_mask(grid: ReferenceGrid) -> np.ndarray:
+    """Rasterize the land mask: True where a pixel centre is **not ocean**.
+
+    Built once as a vector geometry by the polygonize + ocean-seed flood fill.
+
+    Note what this does *not* mean. Lakes are absent from the coastline layer,
+    so a lake interior falls inside the land face and reads as land here. That
+    is correct for clipping zones -- a territory includes its lakes, and
+    punching lake-shaped holes in a zone would be wrong -- but it means `land`
+    is "not ocean", not "not water". `ReferenceLayers.water` is the one to use
+    when water is what you mean.
+    """
+    land_geom = load_land_mask_from_coastline_and_ocean_points()
+    if land_geom is None:
+        logger.warning("Land/ocean mask unavailable; land raster will be empty.")
+        return np.zeros((grid.height, grid.width), dtype=bool)
+    return rasterize_polygon_fill(grid, land_geom)
+
+
+def rasterize_lake_interiors(grid: ReferenceGrid) -> np.ndarray:
+    """Rasterize lake *surfaces*, as opposed to their shorelines."""
+    return rasterize_polygon_fill(grid, load_reference_polygons(LAKES_FILE))
 
 
 # --------------------------------------------------------------------------
@@ -358,6 +429,7 @@ class ReferenceLayers:
     lakes: np.ndarray
     rivers: np.ndarray
     land: np.ndarray
+    lake_interior: np.ndarray
     curves: np.ndarray
     distance_px: np.ndarray
     signed_distance_px: np.ndarray
@@ -369,6 +441,30 @@ class ReferenceLayers:
     def has_curves(self) -> bool:
         return bool(self.curves.any())
 
+    @property
+    def ocean(self) -> np.ndarray:
+        """Everything the flood fill reached from an ocean seed."""
+        return ~self.land
+
+    @property
+    def water(self) -> np.ndarray:
+        """Ocean *and* lake surfaces -- what a blue pipette actually selects.
+
+        `land` means "not ocean", because lakes are absent from the coastline
+        layer and so fall inside the land face. Comparing a user water mask
+        against `ocean` alone therefore scores a correct alignment as wrong:
+        measured, that is harmless where the framing box has coast (IoU 0.97 on
+        Quebec + Gulf) and total where it does not (IoU 0.00 on an interior box,
+        where lakes are the only water). Since a box without coastline is
+        exactly where alignment is weakest and the water gate matters most, the
+        gate of section 8.2 compares against this, not against `ocean`.
+        """
+        return self.ocean | self.lake_interior
+
+    @property
+    def has_water(self) -> bool:
+        return bool(self.water.any())
+
     def coverage(self) -> Dict[str, float]:
         """Fraction of the raster each layer occupies. Cheap sanity signal: a
         framing box with almost no coastline in it is a known failure cause."""
@@ -379,6 +475,8 @@ class ReferenceLayers:
             "rivers": float(self.rivers.sum()) / total,
             "curves": float(self.curves.sum()) / total,
             "land": float(self.land.sum()) / total,
+            "lakeInterior": float(self.lake_interior.sum()) / total,
+            "water": float(self.water.sum()) / total,
         }
 
     def sample_curve_points(
@@ -470,6 +568,7 @@ def _build_reference_layers_cached(
     lakes = rasterize_layer(grid, load_reference_linework(LAKES_FILE))
     rivers = rasterize_layer(grid, load_reference_linework(RIVERS_FILE))
     land = rasterize_land_mask(grid)
+    lake_interior = rasterize_lake_interiors(grid)
 
     curves = coastline | lakes | rivers
     distance_px, signed, gradient_y, gradient_x = _derive_distance_fields(
@@ -482,6 +581,7 @@ def _build_reference_layers_cached(
         lakes=lakes,
         rivers=rivers,
         land=land,
+        lake_interior=lake_interior,
         curves=curves,
         distance_px=distance_px,
         signed_distance_px=signed,
@@ -567,6 +667,7 @@ def dump_reference_debug_pngs(layers: ReferenceLayers, out_dir: str) -> List[str
     _save("lakes", layers.lakes.astype(np.uint8), "gray")
     _save("rivers", layers.rivers.astype(np.uint8), "gray")
     _save("land", layers.land.astype(np.uint8), "gray")
+    _save("water", layers.water.astype(np.uint8), "gray")
     _save("curves", layers.curves.astype(np.uint8), "gray")
     _save("distance_px", layers.distance_px, "magma")
     _save("signed_distance_px", layers.signed_distance_px, "coolwarm")
@@ -575,6 +676,7 @@ def dump_reference_debug_pngs(layers: ReferenceLayers, out_dir: str) -> List[str
     # which is the thing a per-layer dump cannot show.
     rgb = np.zeros((layers.grid.height, layers.grid.width, 3), dtype=np.uint8)
     rgb[layers.land] = (40, 48, 40)
+    rgb[layers.lake_interior] = (20, 60, 110)
     rgb[layers.rivers] = (80, 140, 255)
     rgb[layers.lakes] = (120, 200, 255)
     rgb[layers.coastline] = (255, 240, 120)

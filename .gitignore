@@ -72,3 +72,4 @@ Backend-Atlas/.georef_cache/
 
 # Regenerable reference-layer debug dumps from the georef dev loop
 Backend-Atlas/tests/assets/georef/test_cases/**/reference_debug/
+Backend-Atlas/tests/assets/georef/test_cases/**/evidence_debug/

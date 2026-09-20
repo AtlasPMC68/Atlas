@@ -11,7 +11,10 @@ Package layout (plan section 3), filled in as the steps land:
     pipeline.py     fit -> snap -> clip -> EPSG:4326
     records.py      structured per-run record
     reference.py    framing box -> reference rasters + distance transform, cached
-    evidence.py     (Step 3) user-side edge map, water mask
+    evidence.py     user-side edge map, straight-line suppression, water mask
+                    -- NOT re-exported here: it is the only module that needs
+                    cv2, and importing it from the package would drag the image
+                    stack into every consumer. Import it directly.
     align.py        (Step 4) coarse alignment, gates
 """
 
@@ -45,6 +48,7 @@ from .reference import (
     ReferenceLayers,
     build_reference_layers,
     dump_reference_debug_pngs,
+    rasterize_lake_interiors,
 )
 from .projection import (
     mercator_scale_factor,
@@ -78,6 +82,7 @@ __all__ = [
     "parse_frame_bounds",
     "parse_frame_bounds_entry",
     "parse_georef_inputs",
+    "rasterize_lake_interiors",
     "reference_latitude",
     "ReferenceGrid",
     "ReferenceLayers",

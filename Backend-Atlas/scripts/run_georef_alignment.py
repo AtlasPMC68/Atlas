@@ -19,6 +19,8 @@ Usage, from Backend-Atlas with the dependencies installed:
     python scripts/run_georef_alignment.py --no-cache          # re-extract colours
     python scripts/run_georef_alignment.py --no-write          # touch nothing on disk
     python scripts/run_georef_alignment.py --reference         # + reference layer PNGs
+    python scripts/run_georef_alignment.py --evidence          # + user-side evidence PNGs
+    python scripts/run_georef_alignment.py --ocr               # + text mask (slow once, then cached)
 
 Or through the dedicated compose service, which depends on no broker, no
 database and no backend:
@@ -81,6 +83,70 @@ def discover_cases(assets_root: str) -> list[tuple[str, str]]:
     return found
 
 
+def _ocr_cache_key(image_path: str) -> str:
+    """Cache key for OCR regions: the image plus the libraries that read it."""
+    import easyocr
+    import torch
+
+    payload = {
+        "image": os.path.basename(image_path),
+        "mtime": os.path.getmtime(image_path),
+        "size": os.path.getsize(image_path),
+        "easyocr": getattr(easyocr, "__version__", "?"),
+        "torch": torch.__version__,
+    }
+    blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return "ocr_" + hashlib.sha256(blob).hexdigest()[:32]
+
+
+def extract_text_regions_cached(image_path: str, image_bgr: Any, use_cache: bool):
+    """OCR regions for the map, cached on disk.
+
+    EasyOCR takes ~135 s on CPU for a 1736x1350 scan, which is why the dev-test
+    task skips text extraction entirely. But without a text mask roughly half the
+    edge pixels on a labelled map are place names, so the edge map the dev loop
+    shows is not the one Step 4 should be tuned against. Running it once and
+    caching the regions buys the realistic edge map for the price of one run.
+    """
+    cache_path = os.path.join(CACHE_DIR, f"{_ocr_cache_key(image_path)}.pickle")
+
+    if use_cache and os.path.exists(cache_path):
+        try:
+            with open(cache_path, "rb") as f:
+                return pickle.load(f)
+        except Exception:
+            pass
+
+    from app.utils.text_extraction import extract_text
+
+    blocks, _clean = extract_text(image=image_bgr, languages=["en", "fr"], gpu_acc=False)
+    regions = [block[0] for block in blocks]
+
+    if use_cache:
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(cache_path, "wb") as f:
+                pickle.dump(regions, f)
+        except Exception as e:
+            print(f"  (could not cache OCR regions: {e})")
+
+    return regions
+
+
+def _extraction_library_versions() -> dict:
+    """Versions of the libraries colour extraction actually depends on.
+
+    Part of the cache key. Learned the hard way: a cached result computed under
+    OpenCV 5.0.0 was served after the image was rebuilt on 4.13, and the two
+    disagree on zone geometry (IoU 0.9406 vs 0.9414). A measurement harness
+    handing back a silently stale number is worse than having no cache.
+    """
+    import cv2
+    import skimage
+
+    return {"cv2": cv2.__version__, "skimage": skimage.__version__}
+
+
 def _cache_key(image_path: str, inputs: Any) -> str:
     """Identify a colour-extraction result by everything that could change it."""
     payload = {
@@ -90,6 +156,7 @@ def _cache_key(image_path: str, inputs: Any) -> str:
         "clicks": inputs.imposed_click_positions,
         "names": inputs.imposed_colors_names,
         "radii": inputs.imposed_sampling_radii,
+        "libs": _extraction_library_versions(),
     }
     blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()[:32]
@@ -141,6 +208,8 @@ def run_case(
     use_cache: bool,
     write: bool,
     reference: bool,
+    evidence: bool,
+    ocr: bool,
 ) -> Optional[dict]:
     print(f"\n=== {test_id}/{case_id}")
 
@@ -199,6 +268,61 @@ def run_case(
             )
             dump_reference_debug_pngs(layers, debug_dir)
             print(f"  reference debug PNGs -> {debug_dir}")
+
+    if evidence:
+        # Imported here, not at module scope: evidence.py is the only part of
+        # the package that needs cv2.
+        import cv2
+
+        from app.utils.georeferencing.evidence import (
+            build_user_evidence,
+            dump_evidence_debug_pngs,
+        )
+
+        image_bgr = cv2.imread(image_path)
+        if image_bgr is None:
+            print("  evidence: could not read the map image")
+        else:
+            text_regions = None
+            if ocr:
+                with record.phase("ocr"):
+                    text_regions = extract_text_regions_cached(
+                        image_path, image_bgr, use_cache
+                    )
+                print(f"  ocr:       {len(text_regions)} text regions")
+            with record.phase("user_evidence"):
+                user_evidence = build_user_evidence(
+                    image_bgr,
+                    text_regions=text_regions,
+                    water_click_positions=inputs.water_click_positions,
+                    water_sampling_radii=inputs.water_sampling_radii,
+                )
+            record.set_inputs(userEvidence=user_evidence.stats)
+            st = user_evidence.stats
+            print(
+                "  evidence:  edges %.2f%%  straight lines %d (%.1f%% of edge px"
+                " down-weighted)  water %.2f%%"
+                % (
+                    st["edgeFraction"] * 100,
+                    st["straightLineCount"],
+                    st["suppressedEdgeFraction"] * 100,
+                    st["waterFraction"] * 100,
+                )
+            )
+            if not st["hasWater"]:
+                print("             (no water picks in this case's config)")
+            if not ocr:
+                print(
+                    "             (no text mask: pass --ocr, or ~half these edge"
+                    " pixels are place names)"
+                )
+            if write:
+                debug_dir = os.path.join(
+                    build_test_case_paths(assets_root, test_id, case_id).case_dir,
+                    "evidence_debug",
+                )
+                dump_evidence_debug_pngs(user_evidence, image_bgr, debug_dir)
+                print(f"  evidence debug PNGs -> {debug_dir}")
 
     t0 = time.perf_counter()
     with record.phase("color_extraction"):
@@ -288,6 +412,19 @@ def main() -> int:
         action="store_true",
         help="Build the reference layers and dump a debug PNG per layer",
     )
+    parser.add_argument(
+        "--evidence",
+        action="store_true",
+        help="Build the user-side evidence and dump debug overlays",
+    )
+    parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help=(
+            "Run text extraction so the edge map has a text mask. Slow on the"
+            " first run (~135 s/map on CPU), cached afterwards. Implies --evidence."
+        ),
+    )
     args = parser.parse_args()
 
     cases = discover_cases(args.assets_root)
@@ -309,6 +446,8 @@ def main() -> int:
                 use_cache=not args.no_cache,
                 write=not args.no_write,
                 reference=args.reference,
+                evidence=args.evidence or args.ocr,
+                ocr=args.ocr,
             )
         except Exception as e:
             print(f"  FAILED: {e}")

@@ -13,7 +13,7 @@ changes, so run records made under different settings stay comparable.
 from dataclasses import dataclass, replace
 from typing import Any, Dict
 
-CONFIG_VERSION = "1"
+CONFIG_VERSION = "2"
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,30 @@ class GeorefConfig:
     # accuracy floor, so resolution is not a precision constraint here.
     reference_raster_width: int = 1024
     reference_raster_height: int = 768
+
+    # --- User-side evidence (Step 3) -----------------------------------------
+    # Canny thresholds match the existing coastline keypoint finder.
+    edge_blur_ksize: int = 5
+    edge_canny_low: int = 75
+    edge_canny_high: int = 175
+    # Canny fires outside a glyph as readily as inside, so a mask tight to the
+    # OCR box still leaves a rectangle of edges around every label.
+    text_mask_dilation_px: int = 7
+
+    # Straight-line suppression. The length threshold is a fraction of the image
+    # diagonal so it means the same thing at any scan resolution.
+    straight_line_min_length_ratio: float = 0.15
+    straight_line_hough_threshold: int = 80
+    straight_line_max_gap_px: int = 8
+    straight_line_thickness_px: int = 3
+    # Down-weighted, not deleted: a real coast can run straight for a while, and
+    # a neatline sitting on a coast should not take the coast with it.
+    straight_line_weight: float = 0.15
+
+    # Water mask from the water pipette. Same colour metric as zone extraction.
+    water_delta_e: float = 12.0
+    water_morph_radius_px: int = 2
+    water_min_component_px: int = 200
 
     def to_dict(self) -> Dict[str, Any]:
         return {f: getattr(self, f) for f in self.__dataclass_fields__}

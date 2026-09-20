@@ -379,12 +379,9 @@ both gates to pass, a 0.0 here would fail a run whose primary GCP gate passed, s
 the recovery ladder to the GCP-only affine: §10's "outcome to minimise", triggered by a
 measurement artifact.
 
-Step 3 should add a filled `lake_interior` raster and derive `water = ocean | lakes` from it,
-keeping `land` unchanged. Lakes are already loaded and the point-in-polygon machinery already
-exists, so it is small. It also gives the reference side the same ocean/lake split §7 already
-specifies on the user side (largest border-connected component is ocean, interior components are
-lakes), so the gate compares like with like. Independently, the gate should report
-`applicable: false` when neither side has any water at all.
+**Done in Step 3** — see §7b. `lake_interior` is a raster, `water = ocean | lakes` is a
+derived property, and `land` is unchanged. The gate should still report `applicable: false`
+when neither side has any water at all, which is independent and remains Step 4's.
 
 ### Also worth revisiting
 
@@ -430,27 +427,191 @@ is that text extraction does not need enabling in the dev-test path
 
 ---
 
-## 8. Step 4 — coarse alignment and the gates (2–3 days) — *the PoC*
+## 7b. Step 3 — what changed, and what it costs later
 
-### 8.1 Alignment
+Landed as written in §7: `evidence.py` produces the Canny edge map with text masked out, the
+straight-line weighting, and the water mask split into ocean and lakes. Toponym water cues stay
+cut. No pipeline change — the dev script builds evidence behind `--evidence`.
 
-Two fits, with different jobs (§10.3). Both optimise the affine's 6 parameters; `D_user` is
-the distance transform of the user edge map, and `T` maps reference → pixel space (hence
-the inverse from §3). Samples `s_i` are reference coastline, lake and river points inside
-the framing box.
+Visually confirmed on the one test map: suppression marks the neatline, the title box, the
+scale-bar frame and the straight Quebec–Labrador border, while keeping coastline, lakes and
+rivers. 14 straight lines found, 14.4% of edge pixels down-weighted.
 
-**Production fit — joint.** This is what ships:
+### The lake fold, as agreed
+
+`ReferenceLayers` gained `lake_interior` (filled lake surfaces) and two derived properties:
+`ocean` (`~land`) and `water` (`ocean | lake_interior`). **`land` is unchanged** — it still
+means "not ocean", which is what clipping zones needs, since a territory includes its lakes.
+
+The §8.2 gate must compare against `water`, not `ocean`. Measured, comparing a user mask of
+`ocean | lakes` against a reference mask of `ocean` alone:
+
+| Framing box | ocean | lakes | water-mask IoU |
+|---|---|---|---|
+| Quebec + Gulf | 32.6% | 1.2% | 0.966 |
+| Interior Quebec | 0% | 3.5% | **0.000** |
+| Great Lakes | 0% | 23.4% | **0.000** |
+
+Negligible where there is coast, total where there is not — and a box without coastline is
+exactly where alignment is weakest and the gate matters most. Step 4 should still report the
+gate as `applicable: false` when neither side has any water, which is independent of this.
+
+### Decisions
+
+| Decision | Why |
+|---|---|
+| `evidence.py` is **not** re-exported from the package `__init__` | It is the only module needing cv2. Re-exporting would drag the image stack into every consumer and break the other 92 tests on a bare host. Import it directly. |
+| Straight lines are down-weighted to 0.15, not deleted | A real coast can run straight for a while, and a neatline sitting on a coast should not take the coast with it. |
+| The length threshold is a fraction of the image diagonal | So it means the same thing on a 900 px scan and a 6000 px one. |
+| Ocean is the largest *border-touching* component | The sea runs off the edge of a map; a lake does not. A sea cut in two by a peninsula at the frame edge contributes its smaller piece to `lakes` — harmless for a gate comparing total water. |
+| Water uses CIELAB + CIEDE2000, same as zone extraction | A water pick then behaves exactly like a zone pick; it simply never becomes a zone. |
+
+### Owed to Step 4
+
+- **Text masking is not optional, and it is bigger than it looks.** Measured on the one test
+  map: masking OCR regions removes **49.7% of edge pixels** (100,547 → 50,578; the mask covers
+  17.7% of the image). Without it, half the "evidence" a chamfer fit would see is place names,
+  which correspond to nothing geographic.
+
+  This was invisible at first because the dev-test task skips text extraction, so the dev loop
+  built its edge map with `text_regions=None` and the debug dump wrote an all-black
+  `text_mask.png` that read as a broken file rather than as "no OCR ran". Both are fixed: the
+  script has an `--ocr` flag that runs EasyOCR once (~135 s/map on CPU) and caches the regions,
+  and empty masks are no longer written at all.
+
+  **Production defaults `enable_text_extraction` to `False`**, so the production
+  georeferencing path has no text regions either. Decided: georeferencing must run OCR
+  regardless of that flag. It is not optional evidence.
+
+- **Masked text must be treated as *no data*, not as empty space.** Deleting the glyphs
+  punches holes in any coastline that ran under a label: 16.4% of the removed edge pixels
+  (8,205 px across 55 components) belong to long components the mask cut rather than to
+  glyphs. Where that happens, `D_user` does not return "unknown", it returns the distance to
+  the nearest *surviving* edge — mean 20.8 px, p95 63 px, max 135 px, which at this map's
+  1.203 km/px is a p95 bias of **76 km**, the same order as the accuracy floor the project is
+  trying to beat. Worse, the error is structured rather than random: labels sit on the
+  features they name, so holes fall preferentially on the coastline and rivers we most want to
+  match, and the distance gradient inside a hole points *along* the coast instead of across it.
+
+  **Rejected: preserving connected components that are only partly inside the mask.** The idea
+  was that a glyph is wholly inside the mask while a coastline passing under a label is mostly
+  outside, so keeping the latter would heal the holes. It does not survive contact with the
+  data: a letter whose stroke touches the coast merges into one 8-connected component, that
+  component is overwhelmingly coastline, and the letter rides along. Measured, 4 of 96 text
+  regions keep ≥50% of their own edge pixels under this rule (worst: 79%) and 17 keep ≥15%.
+  No refinement fixes it either — a letter fused to a line genuinely looks like part of the
+  line locally, so any pixel classifier is guessing.
+
+  **Decided instead:** keep deleting everything under the mask, so no glyph can ever pollute
+  `D_user`, and carry the text mask forward as a **validity mask**. A reference sample
+  projecting into an unknown region gets weight zero in the curve term rather than a large
+  spurious residual:
+
+  ```
+  E_curve = Σ  v(T(s_i)) · ρ( D_user(T(s_i)) )        v = 0 under a label
+  ```
+
+  Measured cost: of 9,015 reference curve samples, 6,586 project inside the image and 1,212 of
+  those (18.4%) land under a label, leaving **5,374 usable samples** to constrain 6 affine
+  parameters. That loss is free in practice, and the samples are now *absent* rather than
+  *wrong*. Losing evidence beats fabricating it. This is also the first instance of the
+  "confidence weighting before the robust loss" that roadmap §3 already called for.
+
+  Implementation note: a hard 0/1 validity makes the energy discontinuous as `T` moves and
+  samples cross the mask boundary. Blur the validity so `v` lands in [0, 1] at the edges and
+  the objective stays smooth for LM.
+
+  Optionally recoverable later: bridging a *small* gap between two confident coastline
+  endpoints is interpolation between real observations, which is defensible — unlike
+  preserving a merged glyph, which is fabrication. A refinement to reach for if 18% sample
+  loss ever bites, not the baseline.
+- **The one test case has no water picks**, so the water gate cannot be exercised on it at all.
+  Adding a case with water pipetted is worth more than it sounds: it is the only way to test
+  the secondary gate before Step 4 depends on it.
+- **The Tier 3 constants are guesses.** `straight_line_weight`, `water_delta_e`, the Hough
+  thresholds and the Canny pair are all in `GeorefConfig` (now version 2) so the offline track
+  can tune them as a set, but none has been tuned against anything.
+
+### The dependency problem found on the way
+
+Running the dev loop against the test suite exposed something pre-existing and more serious
+than anything in Step 3.
+
+`opencv-python-headless` and `numpy` were **unpinned** in `requirements.txt`. The `backend` and
+`test-backend` images were built a week ago; the new `georef-dev` image was built today. They
+got OpenCV 4.13.0.92 vs 5.0.0, and numpy 2.4.4 vs 2.5.3. Consequences, both observed:
+
+1. OpenCV 5.0 changed `HoughLinesP`'s return shape from `(N, 1, 4)` to `(N, 4)`, so the new
+   code crashed in the dev loop while its own tests passed in the older image.
+2. **numpy 2.5.3 produced different zone geometry** — the same map scored IoU 0.9406 instead of
+   0.9414, with 30 polygon parts instead of 28. Pixel-space extraction was identical; the
+   divergence appears downstream, in the shapely snapping and land-clipping stage.
+
+The second is the one that matters. The whole PoC is an IoU *delta* measured on this harness,
+and a silent 0.0008 drift from a rebuild is the same order as the effect Step 4 is trying to
+detect. It also breaks the dev-test tool's stated premise that a report can be diffed between
+branches.
+
+Both are now pinned to the versions production already runs (`opencv-python-headless==4.13.0.92`,
+`numpy==2.4.4`), and with them pinned the script and the Celery task produce **byte-identical**
+geometry and exactly the same IoU. `normalize_hough_output()` accepts either OpenCV layout
+regardless, with tests for both.
+
+The dev script's colour-extraction cache also now keys on the library versions. It had served a
+result computed under OpenCV 5 after the image was rebuilt on 4.13 — a measurement harness
+handing back a silently stale number is worse than having no cache at all.
+
+Six more were then pinned to the versions production already runs — `Pillow==12.2.0`,
+`python-multipart==0.0.24`, `sqlalchemy==2.0.49`, `matplotlib==3.10.8`,
+`email-validator==2.3.0`, `geonamescache==3.0.1`. The last of those is the one that matters:
+**geonamescache 3.0.2 carries 1,562 more cities than 3.0.1** (34,006 vs 32,444), a 5% shift in
+the gazetteer that drives city detection today and is the entire data source for §9. It is
+reference data wearing a library's clothes, and it should be pinned like the Natural Earth
+files are.
+
+`geoalchemy2` was **removed** rather than pinned: it has no imports anywhere, no `Geometry`
+column, and `Feature.data` is a plain `JSON` column. It had drifted 0.18.4 → 0.20.0, the widest
+semver gap in the list, on a dependency that does nothing.
+
+**Still unpinned, deliberately:** `torch`, `torchvision`, `easyocr`. Their wheels come from the
+pytorch CPU index, which prunes old builds, so a hand-pinned `torch==2.11.0+cpu` will eventually
+fail to resolve; the three also have tight mutual constraints. They only affect the optional
+text-extraction path. They did drift hard (torch 2.11 → 2.14), so this is a deferral, not a
+dismissal — the right fix is a lockfile.
+
+**The transitive deps drift too** — cryptography 46 → 50, click 8.3 → 8.5, greenlet, cffi,
+contourpy. Pinning direct requirements stops what you can see. Genuine reproducibility needs a
+lockfile generated from a known-good image (`pip freeze > requirements.lock`, installed with
+`-c`), which would also resolve the torch problem by recording whatever resolved rather than
+guessing.
+
+### Verification
+
+115 tests pass in both containers (23 new for evidence). The dev script and the Celery task
+produce identical geometry and IoU 0.9414069377250001 — the unchanged baseline. Overlays
+inspected.
+
+---
+
+## 8. Step 4 — alignment and the gates (4–6 days) — *the PoC*
+
+### 8.1 Alignment — two phases
+
+`D_user` is the distance transform of the user edge map, `T` maps reference → pixel space
+(hence the inverse from §3), and samples `s_i` are reference coastline, lake and river points
+inside the framing box. Both phases optimise the affine's 6 parameters.
+
+Every curve term carries the validity weight `v` of §7b: samples projecting under a text label
+contribute nothing rather than a spurious residual.
+
+**Phase A — coarse chamfer.** Gets the map into the right neighbourhood.
 
 ```
-E = w_gcp * Σ ρ(||T(p_j) - q_j||)  +  w_curve * Σ ρ(D_user(T(s_i)))
+E = w_gcp * Σ ρ(||T(p_j) - q_j||)  +  w_curve * Σ v(T(s_i)) · ρ( D_user(T(s_i)) )
 ```
 
-with `w_gcp` from the per-GCP `sigma_px` of Step 1. The GCP-only affine of Stage 2 supplies
-the initialisation.
-
-**Probe fit — curve only.** `E = Σ ρ(D_user(T(s_i)))`, GCPs held out. Its transform is
-discarded; only its disagreement with the held-out GCPs is kept, as the independence
-measurement in §8.2.
+with `w_gcp` from the per-GCP `sigma_px` of Step 1. The GCP-only affine of Stage 2 supplies the
+initialisation.
 
 - **Robust loss: Tukey**, not Huber. Schematic maps carry huge outlier fractions — on a map
   like Leclerc a large share of the drawn outline is invented (the *Territoire non exploré*
@@ -461,6 +622,56 @@ measurement in §8.2.
   a callable `loss` returning `[rho, rho', rho'']`, so Tukey is available, just hand-written.
 - **Levenberg–Marquardt**, annealed: heavy distance-transform blur first for a wide basin of
   attraction, sharpening as it converges; Tukey cutoff tightens on the same schedule.
+- **`D_user` is built from a weight map, not a binary one.** Straight-line suppression (§7)
+  leaves edges at weight 0.15 rather than deleting them, and `distance_transform_edt` needs
+  binary input. Build two transforms and combine: `D = min(D_strong, D_weak + penalty_px)`, so
+  a suppressed edge behaves as if it were some pixels further away instead of vanishing or
+  counting in full.
+
+**Phase B — normal-search ICP.** Turns the neighbourhood into explicit correspondences.
+Moved here from roadmap §3; the reasoning is below.
+
+- **Directed search along curve normals.** For each reference sample, search along its normal
+  rather than in all directions, with a radius that shrinks per iteration.
+- **Orientation filtering (~30° tolerance) is the point of the stage.** A chamfer distance
+  cannot tell a coastline from a political border crossing it — both are just "nearby edge
+  pixels". Requiring the matched edge's local orientation to agree with the reference curve's
+  rejects those outright.
+- **Confidence weighting at correspondence time**, before the robust loss: the §7b validity
+  weight, plus a preference for coastline arcs adjacent to detected water. A coastline segment
+  next to detected water is trustworthy; a zone edge with no adjacent water may well be
+  invented. Weight it then rather than hoping Tukey sorts it out afterwards.
+- **Output is explicit correspondences** `c_i`, so the curve term becomes
+  `Σ w_i ρ(||T(s_i) - c_i||)` and slots into the same weighted system as the GCPs — which is
+  why the fit interface takes a weight vector (§3). Run to convergence, then freeze the
+  correspondences.
+
+**Why ICP is inside the PoC and not after it.** The original split put chamfer in the PoC and
+ICP in the roadmap, on the assumption that straight-line suppression would handle wrong-feature
+lock well enough to get an honest go/no-go. Step 3's measurements say otherwise: suppression
+down-weights only **22.3%** of surviving edge pixels, because it can only catch what is
+*straight*. What it leaves behind on a real map is not noise — it is long, curved, high-contrast
+linework with no reference counterpart: drawn rivers and reservoir outlines, road corridors, and
+the curved watershed-following sections of a province border. Those are precisely the features a
+plain chamfer mistakes for a coast, and orientation filtering is the only thing in the plan that
+separates them. Shipping the PoC without it would measure the idea at its worst and risk a
+false no-go.
+
+**Measure at both phases anyway.** Phase A is Phase B's initialisation, so they are built in
+sequence regardless, and taking a number at each costs nothing:
+
+| | |
+|---|---|
+| Stage 2 affine | the GCP-only baseline |
+| + Phase A | does coastline evidence help at all? |
+| + Phase B | does orientation filtering pay for itself? |
+
+That keeps §2's "measurable before clever" intact: if the joint result is worse, these three
+numbers say which half caused it. Bundling them into one measurement would not.
+
+**Probe fit — curve only.** `E = Σ v · ρ(D_user(T(s_i)))`, GCPs held out, run through the same
+phases. Its transform is discarded; only its disagreement with the held-out GCPs is kept, as the
+independence measurement in §8.2.
 
 ### 8.2 The gates
 
@@ -490,7 +701,9 @@ actually discriminates, which is a corpus-level question (roadmap §5).
   shows up here first.
 - **Optimizer health** — LM did not converge, converged on the boundary of the search region,
   or the Tukey inlier count collapsed below ~20% of samples, meaning the "fit" rests on a
-  handful of points.
+  handful of points. After Phase B, the count of samples surviving *orientation filtering* is
+  the same kind of signal and a more specific one: a collapse there says the curve evidence
+  matched nothing of the right orientation, which is wrong-feature lock caught in the act.
 
 Known causes, worth naming because they are what will actually be hit: lock onto a parallel
 coast segment, a graticule line, a neatline, an inset frame or a legend edge; insufficient
@@ -626,7 +839,6 @@ silent downgrade. Aggregated across runs, these records are what tell us which p
 
 | Item | Where it goes |
 |---|---|
-| Normal-search ICP with orientation filtering | roadmap §3 |
 | FFD / non-rigid warp, local-similarity regularizer, fold barrier | roadmap §4, §6 |
 | Model selection and cross-validation | roadmap §5 |
 | Hydrography-driven boundary snapping | roadmap §4 |
@@ -645,8 +857,8 @@ silent downgrade. Aggregated across runs, these records are what tell us which p
 | 1 | 1 day | No (verify IoU unchanged) | Framing box + water pipette plumbed, GCP records, honest units, package split |
 | 2 | 1 day | No | Cached reference rasters incl. rivers, distance transform |
 | 3 | 1 day | No | Edge map with straight-line suppression, water mask |
-| 4 | 2–3 days | **Yes, gated** | Chamfer alignment + gates + recovery ladder → **go/no-go** |
+| 4 | 4–6 days | **Yes, gated** | Chamfer + normal-search ICP + gates + recovery ladder → **go/no-go** |
 | 5 | post-PoC | Yes | Cities as GCPs |
 
-Steps 0–4 is roughly a week and answers the only question that matters. Everything in the
+Steps 0–4 is a week and a half and answers the only question that matters. Everything in the
 roadmap is conditional on that answer.
