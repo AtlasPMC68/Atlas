@@ -251,20 +251,15 @@ def _build_extracted_text_from_detections(
         def should_ignore(text_val: str) -> bool:
             clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
 
-            # 1. Exact match for compass points and small junk
             if clean in MAP_IGNORED_WORDS:
                 return True
 
-            # 2. Ignore standalone numbers and scales like "50 100"
             if all(c.isdigit() or c.isspace() or c in ".," for c in clean):
                 return True
-
-            # 3. Ignore if it contains legend or scale keywords
             for keyword in ["légende", "legende", "échelle", "echelle", "scale", "kilomètre", "kilometre", "miles"]:
                 if keyword in clean:
                     return True
 
-            # 4. Ignore long descriptive sentences (map labels are rarely > 5 words)
             if len(clean.split()) > 5:
                 return True
 
@@ -394,7 +389,6 @@ def extract_text(
     if celery_app is None:
         raise ValueError("celery_app must be provided")
 
-    # Limite préventive pour éviter le crash OOM (Out of Memory) sur les workers OCR
     MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
     if len(file_content) > MAX_FILE_SIZE_BYTES:
         logger.warning(f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). " f"Rejetée pour éviter un crash OOM (limite à 25 MB).")
