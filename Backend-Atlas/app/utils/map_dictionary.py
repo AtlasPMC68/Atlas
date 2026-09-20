@@ -6,24 +6,35 @@ import re
 MAP_IGNORED_WORDS = {"n", "s", "e", "o",".", "km" "kilomètres", "kilometres", "1", "2", "3", "4", "5", "6", "7","8","9", "légende", "échelle"}
 
 MAP_DICTIONARY = {
-    # French terms
-    "Océan", "Mer", "Golfe", "Baie", "Détroit", "Lac", "Fleuve", "Rivière", "Ruisseau", "Canal", "Île", "Archipel", "Cap", "Péninsule", "Presqu'île", "Isthme", "Mont", "Montagne", "Massif", "Pic", "Volcan", "Vallée", "Gorge", "Plaine", "Plateau", "Désert", "Oasis", "Forêt", "Jungle", "Fort", "Nord", "Sud", "Est", "Ouest", "Équateur", "Tropique", "Cancer", "Capricorne", "Méridien", "Légende", "Échelle", "Carte", "Atlas", "Plan", "Mappemonde", "Globe",
-    # English terms
-    "Ocean", "Sea", "Gulf", "Bay", "Strait", "Lake", "River", "Stream", "Canal", "Island", "Archipelago", "Cape", "Peninsula", "Isthmus", "Mount", "Mountain", "Massif", "Peak", "Volcano", "Valley", "Gorge", "Plain", "Plateau", "Desert", "Oasis", "Forest", "Jungle", "North", "South", "East", "West", "Equator", "Tropic", "Meridian", "Legend", "Scale", "Map", "Plan", "Globe",
-    # Continents & Regions 
-    "Afrique", "Africa", "Amérique", "America", "Asie", "Asia", "Europe", "Océanie", "Oceania", "Antarctique", "Antarctica", "Eurasie", "Eurasia", "Moyen-Orient", "Middle-East", "Proche-Orient", "Extrême-Orient", "Occident", "Orient",
-    # Oceans & Seas
-    "Atlantique", "Atlantic", "Pacifique", "Pacific", "Indien", "Indian", "Arctique", "Arctic", "Méditerranée", "Mediterranean", "Noir", "Noire", "Black", "Rouge", "Red", "Morte", "Dead", "Caspienne", "Caspian", "Aral", "Baltique", "Baltic", "Manche", "Channel", "Adriatique", "Adriatic", "Égée", "Aegean", "Ionienne", "Ionian", "Tyrrhénienne", "Tyrrhenian", "Caraïbes", "Caribbean", "Béring", "Bering", "Sargasses", "Sargasso",
-    # Specific Rivers
-    "Nil", "Nile", "Amazone", "Amazon", "Yangtsé", "Yangtze", "Mississippi", "Ienisseï", "Yenisei", "Ob", "Paraná", "Congo", "Amour", "Amur", "Léna", "Lena", "Mékong", "Mekong", "Mackenzie", "Niger", "Brahmapoutre", "Brahmaputra", "Murray", "Volga", "Gange", "Ganges", "Danube", "Euphrate", "Euphrates", "Tigre", "Tigris", "Indus", "Rhin", "Rhine", "Rhône", "Seine", "Loire", "Garonne", "Tamise", "Thames", "Èbre", "Ebro", "Pô", "Po", "Oural", "Ural", "Saint-Laurent",
-    # Specific Lakes
-    "Léman","Supérieur","Superior","Huron","Michigan","Érié","Erie","Ontario","Victoria","Tanganyika","Malawi","Baïkal","Baikal","Titicaca","Tchad","Chad","Aral",
-    # Historical entities & politics
-    "Empire", "Royaume", "Kingdom", "République", "Republic", "Principauté", "Principality", "Duché", "Duchy", "Comté", "County", "Khanat", "Khanate", "Califat", "Caliphate", "Sultanat", "Sultanate", "Tsarat", "Tsardom", "Fédération", "Federation", "Confédération", "Confederacy", "Émirat", "Emirate", "État", "State", "Province", "Territoire", "Territory", "Colonie", "Colony", "Protectorat", "Protectorate", "Mandat", "Mandate", "Dominion", "Génocide", "Genocide", "Massacre", "Holocauste", "Holocaust", "Shoah", "Goulag", "Gulag", "Guerre", "War", "Bataille", "Battle", "Traité", "Treaty", "Paix", "Peace", "Armistice", "Révolution", "Revolution", "Croisade", "Crusade", "Siège", "Siege", "Campagne", "Campaign", "Route", "Road", "Soie", "Silk", "Épices", "Spices", "Ambre", "Amber",
-    # Historical Empires, States, and Peoples
-    "Romain", "Roman", "Byzantin", "Byzantine", "Ottoman", "Perse", "Persian", "Mongol", "Aztèque", "Aztec", "Inca", "Maya", "Olmèque", "Olmec", "Toltèque", "Toltec", "Égypte", "Egypt", "Grèce", "Greece", "Macédoine", "Macedonia", "Gaule", "Gaul", "Franc", "Francs", "Frankish", "Franks", "Saint-Empire", "URSS", "USSR", "Yougoslavie", "Yugoslavia", "Prusse", "Prussia", "Autriche-Hongrie", "Carthage", "Mésopotamie", "Mesopotamia", "Babylone", "Babylon", "Sumer", "Assyrie", "Assyria", "Phénicie", "Phoenicia", "Hittite", "Spartiate", "Sparta", "Athènes", "Athens", "Francie", "Neustrie", "Austrasie", "Lotharingie", "Burgondie", "Wisigoth", "Ostrogoth", "Vandale", "Huns", "Vikings", "Normands", "Celtes", "Celts", "Ibères", "Iberians", "Gaulois", "Gauls", "Bretons", "Britons", "Saxons", "Angles", "Jutes", "Pictes", "Scots",
-    # Common modifiers in map names
-    "Grand", "Grandes", "Great", "Petit", "Petites", "Little", "Nouveau", "Nouvelle", "New", "Ancien", "Ancienne", "Old", "Haut", "Haute", "High", "Upper", "Bas", "Basse", "Low", "Lower", "Central", "Centrale", "Moyen", "Moyenne", "Middle", "Septentrional", "Septentrionale", "Méridional", "Méridionale", "Oriental", "Orientale", "Occidental", "Occidentale", "Majeur", "Mineur", "Saint", "Sainte", "San", "Santa", "São",
+    # Hydrologie & Relief
+    "Océan", "Mer", "Golfe", "Baie", "Détroit", "Lac", "Fleuve", "Rivière", "Ruisseau", "Canal", "Île", "Archipel", "Cap", "Péninsule", "Presqu'île", "Isthme", "Mont", "Montagne", "Massif", "Pic", "Volcan", "Vallée", "Gorge", "Plaine", "Plateau", "Désert", "Oasis", "Forêt", "Jungle", "Nord", "Sud", "Est", "Ouest", "Équateur", "Tropique", "Cancer", "Capricorne", "Méridien",
+    
+    # Continents & Régions
+    "Afrique", "Amérique", "Asie", "Europe", "Océanie", "Antarctique", "Eurasie", "Moyen-Orient", "Proche-Orient", "Extrême-Orient", "Occident", "Orient",
+
+    # Océans & Mers
+    "Atlantique", "Pacifique", "Indien", "Arctique", "Méditerranée", "Noire", "Rouge", "Morte", "Caspienne", "Aral", "Baltique", "Manche", "Adriatique", "Égée", "Ionienne", "Tyrrhénienne", "Caraïbes", "Béring", "Sargasses",
+
+    # Canada & Québec (Histoire et Actuel)
+    "Canada", "Québec", "Montréal", "Trois-Rivières", "Gaspésie", "Abitibi", "Témiscamingue", "Saguenay", "Lac-Saint-Jean", "Mauricie", "Outaouais", "Laurentides", "Lanaudière", "Montérégie", "Estrie", "Chaudière-Appalaches", "Bas-Saint-Laurent", "Côte-Nord", "Nord-du-Québec", "Nunavik", "Jamésie", "Iles-de-la-Madeleine", "Acadie", "Louisbourg", "Port-Royal", "Tadoussac", "Nouvelle-France", "Nouvelle-Écosse", "Nouveau-Brunswick", "Terre-Neuve", "Labrador", "Île-du-Prince-Édouard", "Ontario", "Haut-Canada", "Bas-Canada", "Manitoba", "Saskatchewan", "Alberta", "Colombie-Britannique", "Yukon", "Nunavut", "Territoires-du-Nord-Ouest", "Terre-de-Rupert",
+    
+    # Forts historiques & Lieux coloniaux
+    "Fort", "Chambly", "Richelieu", "Saint-Jean", "Frontenac", "Niagara", "Détroit", "Michilimakinac", "Duquesne", "Beauharnois", "Saint-Louis", "De-Chartres", "Orléans", "Rouillé", "Carillon", "Ticonderoga", "William-Henry", "Sainte-Marie", "Oswego", "Louisiane", "Pays-d'en-Haut", "Illinois",
+    
+    # Rivières et Lacs (Québec/Canada)
+    "Saint-Laurent", "Outaouais", "Richelieu", "Chaudière", "Saint-Maurice", "Saguenay", "Manicouagan", "Koksoak", "La-Grande", "Rupert", "Eastmain", "Nottaway", "Harricana", "Abitibi", "Témiscamingue", "Mistassini", "Saint-Jean", "Champlain", "Supérieur", "Huron", "Michigan", "Érié", "Ontario", "Winnipeg", "Athabasca", "Grand-Lac-de-l'Ours", "Grand-Lac-des-Esclaves",
+    
+    # Peuples Autochtones
+    "Autochtones", "Amérindiens", "Inuits", "Premières-Nations", "Métis", "Algonquins", "Iroquois", "Hurons", "Wendats", "Mohawks", "Abénaquis", "Cris", "Innus", "Montagnais", "Attikameks", "Micmacs", "Malécites", "Naskapis", "Béothuks",
+    
+    # Termes politiques et historiques
+    "Empire", "Royaume", "République", "Principauté", "Duché", "Comté", "Fédération", "Confédération", "État", "Province", "Territoire", "Colonie", "Protectorat", "Mandat", "Dominion", "Génocide", "Massacre", "Holocauste", "Guerre", "Bataille", "Traité", "Paix", "Armistice", "Révolution", "Siège", "Campagne", "Constitution", "Charte", "Acte",
+    
+    # Treize Colonies & USA
+    "États-Unis", "Treize-Colonies", "Massachusetts", "New-Hampshire", "Rhode-Island", "Connecticut", "New-York", "Pennsylvanie", "New-Jersey", "Delaware", "Maryland", "Virginie", "Caroline-du-Nord", "Caroline-du-Sud", "Géorgie", "Boston", "Philadelphie", "Washington", "Appalaches", "Mississippi", "Missouri", "Ohio",
+
+    # Modificateurs communs
+    "Grand", "Grandes", "Petit", "Petites", "Nouveau", "Nouvelle", "Ancien", "Ancienne", "Haut", "Haute", "Bas", "Basse", "Central", "Centrale", "Moyen", "Moyenne", "Septentrional", "Septentrionale", "Méridional", "Méridionale", "Oriental", "Orientale", "Occidental", "Occidentale", "Majeur", "Mineur", "Saint", "Sainte", "Isle",
 }
 # fmt: on
 MAP_DICTIONARY_LOWER = {w.lower(): w for w in MAP_DICTIONARY}

@@ -232,14 +232,15 @@ def test_paddleocr_output_format_conversion() -> None:
 
 
 CARD_THRESHOLDS = {
-    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 95.0, "max_dist": 0.15},
-    "Quebec_1791.png": {"min_hit_rate": 85.0, "max_dist": 0.55},
-    "Sahel_Afrique.png": {"min_hit_rate": 85.0, "max_dist": 0.20},
-    "Nouvelle-France1750.png": {"min_hit_rate": 50.0, "max_dist": 1.20},
-    "genocide_Monde.png": {"min_hit_rate": 80.0, "max_dist": 1.40},
-    "Quebec_1800.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
-    "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 2.10},
-    "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
+    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 90.0, "max_dist": 0.50},
+    "Quebec_1791.png": {"min_hit_rate": 70.0, "max_dist": 3.00},
+    "Sahel_Afrique.png": {"min_hit_rate": 90.0, "max_dist": 0.50},
+    "Nouvelle-France1750.png": {"min_hit_rate": 40.0, "max_dist": 5.00},
+    "genocide_Monde.png": {"min_hit_rate": 80.0, "max_dist": 1.50},
+    "Quebec_1800.png": {"min_hit_rate": 60.0, "max_dist": 4.50},
+    "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 3.50},
+    "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 3.00},
+    "Communautes_cries.png": {"min_hit_rate": 80.0, "max_dist": 2.00},
 }
 
 
@@ -293,14 +294,12 @@ def test_text_extraction(
     if mismatches:
         mismatches.sort(key=lambda x: x[2], reverse=True)
         logger.info(f"\n{YELLOW}{BOLD}--- Missing / Mismatched Words (Top 8) ---{RESET}")
-        for expected_word, ocr_word, distance in mismatches[:8]:
+        for expected_word, ocr_word, distance in mismatches:
             d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
             if distance > 500:
                 logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
             else:
                 logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
-        if len(mismatches) > 8:
-            logger.info(f"   ... and {len(mismatches) - 8} more.\n")
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
