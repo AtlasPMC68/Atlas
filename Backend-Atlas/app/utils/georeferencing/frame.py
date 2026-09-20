@@ -13,7 +13,7 @@ way ``imposed_colors.py`` is.
 import json
 import math
 from json import JSONDecodeError
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 FrameBounds = Dict[str, float]
 
@@ -76,3 +76,47 @@ def frame_bounds_to_config_entry(
     if not bounds:
         return None
     return {key: float(bounds[key]) for key in _REQUIRED_KEYS}
+
+
+def frame_bounds_from_geo_points(
+    geo_points_lonlat: Sequence[Sequence[float]],
+    padding_ratio: float = 0.25,
+    min_padding_deg: float = 1.0,
+) -> Optional[FrameBounds]:
+    """Derive a working extent from the control points, padded outwards.
+
+    A fallback, not a replacement. Maps imported before the framing box was
+    plumbed through -- including the one existing dev-test case -- have no box,
+    and the reference layers need *some* extent. The control-point bounding box
+    is the best available guess, but it is systematically too tight: the points
+    sit inside the mapped area, so the real map extends past them. Hence the
+    padding.
+
+    Returns None when there are too few points, or when they are degenerate.
+    """
+    lons: list = []
+    lats: list = []
+    for point in geo_points_lonlat or []:
+        try:
+            lon, lat = float(point[0]), float(point[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if math.isfinite(lon) and math.isfinite(lat):
+            lons.append(lon)
+            lats.append(lat)
+
+    if len(lons) < 2:
+        return None
+
+    west, east = min(lons), max(lons)
+    south, north = min(lats), max(lats)
+
+    lon_pad = max((east - west) * padding_ratio, min_padding_deg)
+    lat_pad = max((north - south) * padding_ratio, min_padding_deg)
+
+    return {
+        "west": max(-180.0, west - lon_pad),
+        "south": max(-90.0, south - lat_pad),
+        "east": min(180.0, east + lon_pad),
+        "north": min(90.0, north + lat_pad),
+    }

@@ -18,6 +18,7 @@ Usage, from Backend-Atlas with the dependencies installed:
     python scripts/run_georef_alignment.py --case-id pip_7sift # one case
     python scripts/run_georef_alignment.py --no-cache          # re-extract colours
     python scripts/run_georef_alignment.py --no-write          # touch nothing on disk
+    python scripts/run_georef_alignment.py --reference         # + reference layer PNGs
 
 Or through the dedicated compose service, which depends on no broker, no
 database and no backend:
@@ -54,6 +55,9 @@ from app.utils.georeferencing import (  # noqa: E402
     DEFAULT_GEOREF_CONFIG,
     ControlPoint,
     RunRecord,
+    build_reference_layers,
+    dump_reference_debug_pngs,
+    frame_bounds_from_geo_points,
     georeference_features,
 )
 
@@ -136,6 +140,7 @@ def run_case(
     case_id: str,
     use_cache: bool,
     write: bool,
+    reference: bool,
 ) -> Optional[dict]:
     print(f"\n=== {test_id}/{case_id}")
 
@@ -153,6 +158,48 @@ def run_case(
 
     record = RunRecord(run_id=f"{test_id}/{case_id}")
 
+    # Cases predating the framing box fall back to a padded control-point box,
+    # which is the best available guess at the map's working extent.
+    frame_bounds = inputs.frame_bounds
+    frame_source = "config"
+    if not frame_bounds:
+        frame_bounds = frame_bounds_from_geo_points(inputs.geo_points_lonlat)
+        frame_source = "derived_from_control_points" if frame_bounds else "none"
+    record.set_inputs(frameBoundsSource=frame_source)
+
+    if reference and frame_bounds:
+        with record.phase("reference_layers"):
+            layers = build_reference_layers(frame_bounds)
+        record.set_inputs(
+            referenceLayers={
+                "grid": {
+                    "width": layers.grid.width,
+                    "height": layers.grid.height,
+                    "kmPerPixel": round(layers.grid.km_per_pixel, 3),
+                },
+                "versions": layers.layer_versions,
+                "coverage": {k: round(v, 5) for k, v in layers.coverage().items()},
+            }
+        )
+        coverage = layers.coverage()
+        print(
+            "  reference: %.2f km/px  coast %.2f%%  lakes %.2f%%  rivers %.2f%%  land %.1f%%"
+            % (
+                layers.grid.km_per_pixel,
+                coverage["coastline"] * 100,
+                coverage["lakes"] * 100,
+                coverage["rivers"] * 100,
+                coverage["land"] * 100,
+            )
+        )
+        if write:
+            debug_dir = os.path.join(
+                build_test_case_paths(assets_root, test_id, case_id).case_dir,
+                "reference_debug",
+            )
+            dump_reference_debug_pngs(layers, debug_dir)
+            print(f"  reference debug PNGs -> {debug_dir}")
+
     t0 = time.perf_counter()
     with record.phase("color_extraction"):
         color_result = extract_colors_cached(image_path, inputs, use_cache)
@@ -168,7 +215,7 @@ def run_case(
     georef = georeference_features(
         pixel_features,
         control_points,
-        frame_bounds=inputs.frame_bounds,
+        frame_bounds=frame_bounds,
         config=DEFAULT_GEOREF_CONFIG,
         record=record,
     )
@@ -236,6 +283,11 @@ def main() -> int:
         action="store_true",
         help="Do not write zones, report or run record",
     )
+    parser.add_argument(
+        "--reference",
+        action="store_true",
+        help="Build the reference layers and dump a debug PNG per layer",
+    )
     args = parser.parse_args()
 
     cases = discover_cases(args.assets_root)
@@ -256,6 +308,7 @@ def main() -> int:
                 case_id,
                 use_cache=not args.no_cache,
                 write=not args.no_write,
+                reference=args.reference,
             )
         except Exception as e:
             print(f"  FAILED: {e}")

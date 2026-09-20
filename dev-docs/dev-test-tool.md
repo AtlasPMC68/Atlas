@@ -141,6 +141,7 @@ test_cases/<test_id>/<case_id>/
     zones.geojson        zones extracted by the last run
     report.json          metrics of the last run
     run_record.json      structured record of the last georeferencing run
+    reference_debug/     PNG per reference layer (only with --reference; gitignored)
     errors.geojson       FP/FN overlay of the last run
     zones_best.geojson   \
     best_report.json      >  same three, for the best run so far
@@ -213,3 +214,8 @@ docker compose run --rm georef-dev python scripts/run_georef_alignment.py --case
 It prints the control-point RMSE in kilometres, the IoU and the per-phase timings, and writes
 the same `zones.geojson`, `report.json` and `run_record.json` the task would. Pass `--no-write`
 to leave the case untouched, or `--no-cache` when colour extraction itself is what changed.
+
+Add `--reference` to build the reference layers for the case's framing box and dump a PNG per
+layer (coastline, lakes, rivers, land, distance transform, plus a composite showing whether
+they agree with each other). Cases with no `frameBounds` fall back to a padded box derived from
+their control points.

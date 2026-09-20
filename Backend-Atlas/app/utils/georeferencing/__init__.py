@@ -10,7 +10,7 @@ Package layout (plan section 3), filled in as the steps land:
     snapping.py     post-hoc coastline vertex snap (due for replacement)
     pipeline.py     fit -> snap -> clip -> EPSG:4326
     records.py      structured per-run record
-    reference.py    (Step 2) framing box -> reference rasters + distance transform
+    reference.py    framing box -> reference rasters + distance transform, cached
     evidence.py     (Step 3) user-side edge map, water mask
     align.py        (Step 4) coarse alignment, gates
 """
@@ -18,6 +18,7 @@ Package layout (plan section 3), filled in as the steps land:
 from .config import CONFIG_VERSION, DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import (
     FrameBounds,
+    frame_bounds_from_geo_points,
     frame_bounds_to_config_entry,
     parse_frame_bounds,
     parse_frame_bounds_entry,
@@ -36,6 +37,15 @@ from .models import (
     sigma_px_for_source,
 )
 from .pipeline import GeorefResult, georeference_features
+from .reference import (
+    COASTLINE_FILE,
+    LAKES_FILE,
+    RIVERS_FILE,
+    ReferenceGrid,
+    ReferenceLayers,
+    build_reference_layers,
+    dump_reference_debug_pngs,
+)
 from .projection import (
     mercator_scale_factor,
     reference_latitude,
@@ -46,12 +56,16 @@ from .records import GateCheck, RunRecord
 __all__ = [
     "AffineModel",
     "build_georef_inputs",
+    "build_reference_layers",
+    "COASTLINE_FILE",
     "CONFIG_VERSION",
     "control_point_weights",
     "ControlPoint",
     "DEFAULT_GEOREF_CONFIG",
     "DEFAULT_SIGMA_PX_BY_SOURCE",
+    "dump_reference_debug_pngs",
     "fit_affine_from_control_points",
+    "frame_bounds_from_geo_points",
     "frame_bounds_to_config_entry",
     "FrameBounds",
     "GateCheck",
@@ -59,11 +73,15 @@ __all__ = [
     "GeorefConfig",
     "georeference_features",
     "GeorefResult",
+    "LAKES_FILE",
     "mercator_scale_factor",
     "parse_frame_bounds",
     "parse_frame_bounds_entry",
     "parse_georef_inputs",
     "reference_latitude",
+    "ReferenceGrid",
+    "ReferenceLayers",
+    "RIVERS_FILE",
     "RunRecord",
     "sigma_px_for_source",
     "webmercator_meters_to_km",

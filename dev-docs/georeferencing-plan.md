@@ -187,222 +187,79 @@ scale.
 
 ---
 
-## 5b. What landed — Steps 0 and 1
+## 5b. Steps 0–1 — what changed, and what it costs later
 
-Numbered `5b` rather than `6` on purpose: both this document and
-[`georeferencing-roadmap.md`](georeferencing-roadmap.md) cross-reference sections by number,
-and renumbering would silently rot every one of them.
+Both steps landed as written in §4 and §5, so this records only what departs from the plan,
+the one reported number that moved, and what later steps now inherit.
 
-Implemented on branch `georef-exp`. Output is **byte-identical** to the previous pipeline —
-see [§5b.4](#5b4-verification).
+### Deviations
 
-### 5b.1 Step 0 — debuggability
+| Decision | Plan said | Why, and what it changes |
+|---|---|---|
+| Persist the georeferencing **inputs** (`maps.georef_inputs`) | §3: persist the fitted model | Below. Makes a re-georeference endpoint possible; the fitted matrix would not have. |
+| Package also has `projection.py`, `frame.py`, `inputs.py`, `snapping.py`, `pipeline.py` | §3 lists six modules | §3's list has no home for projection maths, the framing box, or the fit→snap→clip orchestration. `reference.py`/`evidence.py`/`align.py` are created by the steps that own them, not stubbed. |
+| Colour extraction cached to disk by the dev script | — | Colour extraction is the slow phase and does not change while alignment is tuned, so runs after the first are alignment-only. This is what makes Step 4's "dozens of runs a day" actually cheap. |
+| A `georef-dev` compose service | — | `scripts/` was in neither the image nor any mount, so the Step 0 script was unrunnable as delivered. Depends on no broker, database or backend. |
+| `build_extraction_task_kwargs_for_case` returns kwargs | positional args | The task gained four optional arguments in Step 1 and will gain more; a positional list misaligns silently when one is inserted mid-list. |
 
-**`Backend-Atlas/scripts/run_georef_alignment.py`** — the direct entry point. Loads a case
-config, runs colour extraction, fits and applies the transform, evaluates, prints control-point
-RMSE in kilometres, IoU and per-phase timings. Flags: `--test-id`, `--case-id`, `--no-cache`,
-`--no-write`, `--assets-root`.
+**On inputs vs the fitted transform.** §3's two justifications do not hold: refitting is `lstsq`
+on 14×6 from 7 points, and feature edits are lon/lat round-trips that never touch pixel space.
+Nothing in the codebase reads any georeferencing output property. More decisively there is no
+refit at all today — `process_map_extraction` is dispatched only from `POST /projects/upload`,
+and there is no re-extraction endpoint. The refit the plan gestures at is roadmap §4.4's active
+GCP suggestion, which refits *by construction*, so a stored matrix is the wrong artifact for
+it. What was actually missing is the inputs: control points, framing box and pipette picks
+existed only as task arguments and were gone when it returned, so the only way to
+re-georeference a map was to re-import and re-click. `AffineModel.serialize()` is kept;
+nothing writes a matrix to the database.
 
-Two additions beyond the plan, both in service of the same goal:
+### The number that moved
 
-- **Colour extraction is cached on disk** (`Backend-Atlas/.georef_cache/`, gitignored), keyed
-  on image mtime/size plus the zone pipette picks. Colour extraction is by far the slowest
-  phase and does not change while alignment is being tuned, so the second run onwards is
-  alignment-only — which is what the plan actually asked for ("builds reference rasters once,
-  runs only alignment") once Step 2's rasters exist.
-- **A `georef-dev` compose service** that depends on no broker, no database and no backend.
-  The script is useless if running it still means `docker compose run --rm test-backend`, and
-  `scripts/` was in neither the image nor any mount. The Dockerfile now `COPY`s it and
-  `test-backend` mounts it too.
+`rmse_meters` is replaced by `rmse_km` + `rmse_status`. Two corrections, and the second was not
+anticipated by the plan:
 
-**`records.py`** — `RunRecord` and `GateCheck`. Written as `run_record.json` next to
-`report.json` by both the dev-test task and the script, carrying inputs (control points with
-source and sigma, framing box, water pick count), models, gates, errors (GCP residuals, IoU
-per zone) and per-phase timings, plus the versioned config. `GateCheck` is populated by nothing
-yet — Step 4 fills it — but the shape and the "log every check, even the ones that passed and
-the ones that did not apply" rule are in place.
+1. The `1/cos(φ)` WebMercator correction, φ from the framing-box centre.
+2. **The old value was RMS per coordinate *component*, not per point *distance*** — it divided
+   by `2n` for `n` points. The new one is RMS point distance, which is what §8.3's gate means,
+   and is larger by exactly `sqrt(2)` before the latitude correction.
 
-`RunRecord.write()` never raises, and `phase()` accumulates rather than overwriting. Diagnostics
-must not be able to fail a run.
+On `pip_7sift` the old code reported `10979` "metres"; the same fit is **9.09 km**.
+`rmse_status` is `ok`, `no_redundancy` or `no_reference_latitude` — with exactly 3 points the
+RMSE is `None`, not `0.0`, because an exact fit means *no evidence*, not perfect confidence.
 
-**Deferred as planned:** no new test cases. The one existing case (`pip_7sift`) remains the
-only ground truth, and the §4 caveat about its thin headroom stands unchanged.
+### Inherited by later steps
 
-### 5b.2 Step 1 — inputs and data model
+- **Water picks are carried, logged and not consumed.** Feeding them to colour extraction would
+  have moved output. Step 3 builds the water mask from them.
+- **`GateCheck` exists and nothing populates it.** Step 4 fills it. The "log every check, even
+  the ones that passed or did not apply" rule is already enforced by the record.
+- **`fit()` accepts weights and a regularizer, and uses neither.** Turning weights on changes
+  output; Stage 7 is where they start mattering.
+- **Nothing reads `georef_inputs`.** There is no re-georeference endpoint to consume it. Writing
+  one is the obvious follow-up and would give production the counterpart of the dev-test
+  harness's `config.json`.
 
-**The package split.** `app/utils/georeferencingSift.py` is gone, replaced by
-`app/utils/georeferencing/`. The layout deviates from §3 in two places:
+### Verification
 
-| Module | Status |
-|---|---|
-| `config.py` | as planned — `GeorefConfig`, frozen, versioned, with `with_overrides` |
-| `models.py` | as planned — `ControlPoint`, `AffineModel`, `Regularizer` protocol |
-| `records.py` | as planned |
-| **`projection.py`** | **added** — EPSG:3857 maths and the km conversion, needed by models, pipeline and (soon) `reference.py`; it did not belong in any of the planned modules |
-| **`frame.py`** | **added** — framing-box parsing, shared by both upload routes the way `imposed_colors.py` is |
-| **`inputs.py`** | **added** — what a map was georeferenced from, built and parsed for the `maps.georef_inputs` column |
-| **`snapping.py`** | **added** — the coastline vertex snap, lifted out so it can be deleted in one piece when Step 4 turns it off |
-| **`pipeline.py`** | **added** — the fit → snap → clip → EPSG:4326 orchestration. §3 lists no home for it; `align.py` is Step 4's and means something else |
-| `reference.py`, `evidence.py`, `align.py` | not created — they belong to Steps 2, 3 and 4 and empty stubs are noise |
+Geometry is byte-identical: the pre-split `georeferencingSift.py` was restored from git and run
+side by side with the new pipeline on `pip_7sift`, with snapping and land clipping on. Both
+outputs satisfy `equals_exact(1e-9)` with symmetric difference exactly `0.0`, and the fitted
+matrix matches at `atol=0`. That is stronger than "IoU unchanged", and a regression test pins
+it. `vue-tsc` is clean on every touched frontend file.
 
-`georeference_features()` returns a `GeorefResult` (collections + model + record) rather than a
-bare list, so the caller can persist the fit and read the record without a second call.
+### Operational note
 
-**The four `[fwd]` interface decisions are all in.** `AffineModel.inverse()` returns the
-EPSG:3857 → pixel model; `fit()` takes a `weights` vector (weighted least squares by row
-scaling, tested, off by default because turning it on would move output); `fit()` takes a
-`regularizer` object implementing `augment(design, target)`; and `GeorefConfig` is one frozen
-versioned dataclass.
+`Backend-Atlas/db/*.sql` is mounted into `docker-entrypoint-initdb.d`, which Postgres runs only
+when initialising a volume, so an existing database does not get `georef_inputs`. The write logs
+a warning rather than failing the import. To add it without rebuilding anything:
 
-**The georeferencing *inputs* are persisted — not the fitted transform.**
-`maps.georef_inputs JSONB`, added by `db/04_add_georef_inputs_to_maps.sql`, built by
-`inputs.build_georef_inputs()` and written by the upload route before it dispatches the task.
-It holds the control points with their source and sigma, the framing box, and the pipette
-picks, in a shape that mirrors the dev-test `config.json`.
+```
+docker compose exec db psql -U postgres -d atlas \
+  -c "ALTER TABLE maps ADD COLUMN IF NOT EXISTS georef_inputs JSONB;"
+```
 
-This deviates from §3, which says to persist the fitted model. §3's two justifications do not
-survive contact with the code:
-
-- *"Re-runs reuse it instead of refitting"* — the fit is `lstsq` on a 14×6 matrix from 7
-  points. A re-run also re-uploads the image and redoes colour extraction, which is seconds.
-  The refit is not measurable against that.
-- *"Later feature edits reuse it"* — feature edits are lon/lat GeoJSON round-trips through
-  `update_feature.py` and never touch pixel space. The image overlay takes its bounds from
-  `default_bounds_from_image`, a ±8° placeholder unrelated to the fit.
-
-Nothing in the codebase reads any georeferencing output property — not `transform_method`,
-not `rmse_km`, not even `is_georeferenced`.
-
-More decisively, **there is no refit today at all**: `process_map_extraction` is dispatched
-from exactly one place, `POST /projects/upload`, and there is no re-extraction endpoint.
-Georeferencing runs once at import and its zones are the permanent record. The refit the plan
-alludes to is roadmap §4.4's active GCP suggestion ("rank candidates by expected error
-reduction, refit live") — and that loop refits *by construction*, so a stored output matrix is
-the wrong artifact for it.
-
-What that loop needs, and what was actually missing, is the inputs. Before this change the
-control points, framing box and pipette picks of a production map existed only as arguments to
-the Celery task; once it returned they were gone, and the only way to georeference a map
-differently was to re-import it and re-click every point by hand. That is precisely the problem
-`config.json` was invented to solve on the dev-test side, and production had no equivalent.
-
-With the inputs stored you can refit *anything*, including a better model later; with a stored
-matrix you can only re-apply the same affine. `AffineModel.serialize()`/`deserialize()` are
-kept — they cost nothing and the run record already exercises them — but nothing writes the
-matrix to the database.
-
-**The framing box reaches the backend.** `frame_bounds` is a form field on both
-`POST /projects/upload` and `POST /dev-test-api/upload`, parsed by `frame.parse_frame_bounds`,
-threaded to both Celery tasks, and persisted into dev-test `config.json` under
-`georef.frameBounds`. On the frontend `worldAreaBounds` now travels in the upload payload from
-`ImportView.vue` through both import composables. Longitudes may wrap the antimeridian
-(`west > east` is accepted); `south >= north` is rejected.
-
-**Water gets pipetted separately.** `imposed_colors.py` entries carry
-`kind: "zone" | "water"`, with a missing `kind` meaning `zone` so every payload and every
-stored config written before this change still parses. `split_imposed_colors_by_kind()` does
-the separation once, in the routes; zone picks drive colour extraction exactly as before and
-water picks travel to the task as their own arguments.
-
-In `ColorPickerModal.vue` the pipette gained a Zones / Eau toggle, a per-row badge, and a
-confirm button that requires at least one *zone* colour. The duplicate-colour check is now
-scoped to the current kind — rejecting a water pick because a zone already has that hue would
-break the exact case the feature exists for.
-
-**Water picks are carried but not consumed.** They are logged and counted in the run record,
-and nothing else. Feeding them to colour extraction would change output, and Step 1's test is
-that output does not change. Step 3 builds the water mask from them.
-
-**GCPs became records.** `ControlPoint(pixel, geo, source, sigma_px)`, built by
-`ControlPoint.from_pairs()`. Default sigmas: `sift` 6 px, `manual` 8 px, `city` 40 px. The
-city figure is a placeholder for §9 and deliberately an order of magnitude off the keypoint
-one; nothing reads it yet.
-
-**Units became honest, and changed meaning.** `rmse_meters` is gone from feature properties,
-replaced by `rmse_km` plus `rmse_status`. Two separate corrections, and the second was not
-anticipated in the plan:
-
-1. The `1/cos(φ)` WebMercator correction is applied, φ from the framing-box centre, falling
-   back to the mean control-point latitude and then to `None`.
-2. **The old number was RMS per coordinate *component*, not per point *distance*** — it divided
-   by `2n` where `n` points give `n` distances. The new figure is RMS point distance, which is
-   what §8.3 means by "RMS distance to the held-out GCPs", and it is larger than the old one by
-   exactly `sqrt(2)` before the latitude correction.
-
-On `pip_7sift` the old code reported `10979` (labelled metres); the same fit now reports
-**9.09 km**.
-
-`rmse_status` is `"ok"`, `"no_redundancy"` or `"no_reference_latitude"`. With exactly 3 control
-points `AffineModel.rmse_3857` is `None` rather than `0.0`: the fit is exact by construction, so
-a zero residual is *no evidence*, not perfect confidence (limitation 2).
-
-**The cheap fixes.** Limitation 1 (units) and 2 (false-zero RMSE) as above. Limitation 7: both
-producers now share one `GEOREF_CONFIG`, so `ENABLE_COASTLINE_SNAPPING` actually governs the
-shapes path too. Limitation 8 was also taken since it is free and provably identical — the
-per-point Python loop converting EPSG:3857 back to lon/lat is now vectorised like its forward
-counterpart.
-
-Limitations 9 and 10 were left alone deliberately: both would move output. Each is now
-documented at the code that causes it.
-
-### 5b.3 Other changes made along the way
-
-- `build_extraction_task_args_for_case` became **`build_extraction_task_kwargs_for_case`** and
-  returns a dict. The task has gained four optional arguments and will gain more; a positional
-  list silently misaligns when one is inserted in the middle. `tests/test_georef_cases.py`
-  calls `.apply(kwargs=...)` accordingly.
-- `_load_case_config` / `_parse_extraction_inputs` are now public and
-  `parse_extraction_inputs` returns a `CaseExtractionInputs` dataclass instead of a
-  six-tuple — the script needs them, and the tuple had grown to ten fields.
-- **`tests/test_georeferencing.py`** — 36 unit tests over the model interface, the honest
-  units, the framing box parser, the pipette kinds and the run record. They need neither cv2
-  nor Celery nor a database, so they run in under a second.
-- `dev-docs/dev-test-tool.md` updated for `run_record.json`, the new `config.json` fields and
-  the fast loop.
-
-### 5b.4 Verification
-
-- **Geometry is unchanged.** The pre-split `georeferencingSift.py` was restored from git and
-  run side by side with the new pipeline on the `pip_7sift` control points over two test
-  polygons, with snapping and land clipping on. Both outputs satisfy `equals_exact(1e-9)` with
-  a symmetric difference of exactly `0.0`. The fitted matrix matches to `atol=0`. This is a
-  stronger check than "IoU unchanged", and it is pinned by a regression test.
-- 36/36 unit tests pass.
-- `vue-tsc -b` reports no errors in any touched frontend file. The ten pre-existing errors
-  elsewhere (`GeoRefSiftWorldMap.vue`, `WorldAreaPickerModal.vue`, `mapDrawing.ts`,
-  `AddCityModeService.ts`, `ImportPreview.vue`, `Profile.vue`) are untouched and unrelated.
-- **The dev-test case itself was not re-run**: Docker Desktop was not running on the machine
-  this landed on, and colour extraction needs `cv2`, which is not in the host environment.
-  Given byte-identical geometry from identical pixel features, IoU cannot have moved — but
-  someone should confirm with `docker compose run --rm georef-dev` before building on this.
-
-### 5b.5 Caveats and follow-ups
-
-1. **The `maps.georef_inputs` column only appears on a fresh database volume.** The repo's
-   migration mechanism is `Backend-Atlas/db/*.sql` mounted into
-   `docker-entrypoint-initdb.d`, which Postgres runs only when initialising, so an existing dev
-   database will not have the column. The write is wrapped so it logs a warning rather than
-   failing the import, but on an older volume the inputs are silently not stored. Apply it by
-   hand without rebuilding anything:
-
-   ```
-   docker compose exec db psql -U postgres -d atlas      -c "ALTER TABLE maps ADD COLUMN IF NOT EXISTS georef_inputs JSONB;"
-   ```
-2. **Nothing reads `georef_inputs` yet.** There is no re-georeference endpoint to consume it;
-   this stores the inputs so that one becomes possible. Writing an endpoint that refits a map
-   from its stored inputs is the obvious small follow-up, and it would also give the dev-test
-   harness a production counterpart.
-3. **The existing `pip_7sift` case has no framing box.** It predates the field, and the box the
-   user originally drew was never recorded. Step 2 needs an extent for its reference layers, so
-   it must decide what to do when `frameBounds` is absent — deriving one from the control-point
-   bounding box with padding is the obvious fallback, but it is Step 2's call and is not
-   implemented here.
-4. **`water_colors_names` and `water_sampling_radii` are accepted and unused** in both tasks.
-   Deliberate: they are Step 3's inputs and it is cheaper to plumb them once.
-5. **[`georeferencing-current.md`](georeferencing-current.md) is now partly stale.** Its §6-§8
-   describe `georeferencingSift.py`, which no longer exists, and its §9 limitations 1, 2, 7 and
-   8 are fixed. It was left alone on purpose: it is the record of what the PoC is measured
-   against. Re-describe it after the Step 4 go/no-go, not before.
+`app/` is bind-mounted, so code changes need only `docker compose restart celery-worker`
+(the backend auto-reloads; the worker does not).
 
 ---
 
@@ -446,6 +303,100 @@ orders of magnitude below the expected accuracy floor. Resolution is not a preci
 constraint here; do not over-spend. Match the existing `find_coastline_keypoints` defaults.
 
 **Deliverable:** debug PNG dumps of every layer. Visually verifiable, no pipeline change.
+
+---
+
+## 6b. Step 2 — what changed, and what it costs later
+
+Landed as written in §6: `reference.py` builds coastline, lakes, rivers, land and distance-
+transform layers over a framing box, cached on the box plus each source file's mtime, with a
+debug PNG per layer. `ne_50m_rivers_lake_centerlines.geojson` added to `app/geojson/`
+(the backend reads reference data from there, not from `Frontend-Atlas/public/geojson/`).
+
+**No pipeline change.** Nothing consumes the layers until Step 4, so `process_map_extraction`
+does not build them — paying ~2 s per production import for an unused artifact is waste. The
+dev script builds them behind `--reference`.
+
+### The one real deviation: the rasterizer was rewritten, not promoted
+
+§6 says to promote `draw_geojson_features` / `draw_coastline`. Promoted verbatim they would
+have poisoned the distance transform.
+
+`draw_coastline` **drops** out-of-bounds vertices instead of clipping. A line that leaves the
+framing box and re-enters loses its crossing vertices, and `cv2.polylines` then joins the
+surviving runs with a straight segment that exists nowhere on Earth. That is harmless when all
+you want is SIFT corner responses off the render, and ruin for a distance transform, which
+cannot tell an invented edge from a real coast — wrong-feature lock being the failure mode all
+of §10 is written against. It also drew a 3 px antialiased stroke, which widens the curve and
+flattens the field beside it.
+
+Measured on a line crossing out of a box and back: the old logic marks an 11-pixel phantom edge
+where nothing exists and marks **nothing** where the real clipped geometry belongs; the new one
+does exactly the opposite. A test pins this, and was itself checked to fail against the old
+logic — a test that passes both ways pins nothing.
+
+`sift_key_points_finder.py` keeps its own copy deliberately: rasterizing differently would move
+the keypoints suggested to users, and that path has no test coverage. Unifying them is a
+follow-up needing its own before/after check.
+
+### Smaller decisions
+
+| Decision | Why |
+|---|---|
+| No cv2 in the package — numpy rasterization, matplotlib (lazy) for debug PNGs | Keeps the module's tests runnable without the image stack: 41 tests in ~5 s on a bare host. |
+| Signed distance is signed against the **coastline only**, not all curves | Lakes and rivers sit inside land; signing against the union would carve meaningless sign flips through the interior. |
+| Antimeridian framing boxes work (two clip boxes, +360 shift) | `parse_frame_bounds` has always accepted `west > east`; leaving a silently wrong raster for a case the parser permits is worse than the ~10 lines. |
+| Curve samples come from the rasterized curves, not source vertices | Uniform density in image space rather than whatever vertex spacing Natural Earth used. Step 4 consumes these. |
+
+### Resolved from §5b
+
+The existing `pip_7sift` case predates the framing box. `frame_bounds_from_geo_points()` derives
+one from the control points padded outwards 25% — the points sit *inside* the mapped area, so
+their bounding box is systematically too tight. The run record logs `frameBoundsSource` so a
+derived box is never mistaken for a drawn one.
+
+### Owed to Step 3: lake interiors count as land
+
+The land mask is built from coastline linework plus ocean seed points, and lakes are not in the
+coastline layer — so a lake's interior falls inside the land face. `land` therefore means
+"not ocean", not "not water".
+
+This is *correct* for clipping zones to land (a territory includes its lakes, and punching holes
+in zones would be wrong), and it is what production already does. It breaks the water-mask IoU
+gate of §8.2, because the user's blue pipette selects lakes *and* ocean while the reference side
+can currently only offer ocean. Measured, comparing a user water mask of `ocean | lakes` against
+a reference mask of `ocean`:
+
+| Framing box | ocean | lakes | water-mask IoU |
+|---|---|---|---|
+| Quebec + Gulf | 32.6% | 1.2% | 0.966 |
+| Interior Quebec | 0% | 3.5% | **0.000** |
+| Great Lakes | 0% | 23.4% | **0.000** |
+
+So the error is negligible where there is coast and total where there is not — and a box with no
+coastline is exactly where alignment is weakest and the gate matters most. Since §8.3 requires
+both gates to pass, a 0.0 here would fail a run whose primary GCP gate passed, sending it down
+the recovery ladder to the GCP-only affine: §10's "outcome to minimise", triggered by a
+measurement artifact.
+
+Step 3 should add a filled `lake_interior` raster and derive `water = ocean | lakes` from it,
+keeping `land` unchanged. Lakes are already loaded and the point-in-polygon machinery already
+exists, so it is small. It also gives the reference side the same ocean/lake split §7 already
+specifies on the user side (largest border-connected component is ocean, interior components are
+lakes), so the gate compares like with like. Independently, the gate should report
+`applicable: false` when neither side has any water at all.
+
+### Also worth revisiting
+
+**Rivers are thin** — 0.20% of the Quebec raster against the coastline's 1.10%. §6 predicted
+this ("the marginal value of rivers may be smaller for the first target maps"). Step 4 should
+measure whether they contribute before more is invested in hydrography.
+
+### Verification
+
+87 unit tests pass (41 new). Debug PNGs inspected: land fill matches the coastline, Hudson Bay
+and the Gulf are water, the St. Lawrence channel is correct, and the signed field changes sign
+exactly at the coast. Output is unchanged because no production path calls any of this.
 
 ---
 
