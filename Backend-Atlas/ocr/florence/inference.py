@@ -193,6 +193,12 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     """Remove duplicate detections where one box overlaps >60% of another (IoA dedup)."""
     import shapely.geometry
 
+    # Import dictionary for smart deduplication
+    try:
+        from app.utils.map_dictionary import MAP_DICTIONARY_LOWER
+    except ImportError:
+        MAP_DICTIONARY_LOWER = set()
+
     def get_poly(d):
         quad = d.get("quad")
         if quad and len(quad) >= 8:
@@ -207,11 +213,15 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
             if not p.is_valid:
                 p = p.buffer(0)
             if p.area > 0:
-                polys.append({"det": d, "poly": p, "area": p.area})
+                text_clean = d.get("text", "").lower().strip()
+                # Score: +10 if in dictionary, to prioritize keeping accurate historical words over giant hallucinated squares
+                dict_score = 10 if text_clean in MAP_DICTIONARY_LOWER else 0
+                polys.append({"det": d, "poly": p, "area": p.area, "score": dict_score})
         except Exception:
             pass
 
-    polys.sort(key=lambda x: x["area"], reverse=True)
+    # Sort by Dictionary Score first, then Area (descending)
+    polys.sort(key=lambda x: (x["score"], x["area"]), reverse=True)
     unique_dets = []
     unique_polys = []
 
@@ -226,7 +236,7 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
                 inter_area = pA.intersection(upoly).area
                 ioa_small = inter_area / areaA
                 ioa_large = inter_area / uarea
-                # Only merge if the smaller box is mostly inside, AND the larger box isn't a massive hallucination (>5x size)
+                # Only merge if the smaller box is mostly inside
                 if ioa_small > 0.6 and ioa_large > 0.2:
                     is_dup = True
                     break
