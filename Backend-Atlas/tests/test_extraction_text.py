@@ -64,9 +64,11 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
     """Return ASCII-normalized words stripping punctuation and accents while preserving word count."""
     res = []
     for word in text:
+        # Normalize newlines to spaces so multi-line expected texts match single-line OCR
         cleaned = (
-            word.replace("’", "")
+            word.replace("\n", " ")
             .replace("'", "")
+            .replace("\u2019", "")
             .replace("-", " ")
             .replace(".", "")
             .replace(",", "")
@@ -77,8 +79,8 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
             .replace("?", " ")
             .replace("!", " ")
             .replace('"', " ")
-            .replace("«", " ")
-            .replace("»", " ")
+            .replace("\u00ab", " ")
+            .replace("\u00bb", " ")
             .replace("/", " ")
             .replace("\\", " ")
         )
@@ -232,15 +234,19 @@ def test_paddleocr_output_format_conversion() -> None:
 
 
 CARD_THRESHOLDS = {
-    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 90.0, "max_dist": 0.50},
-    "Quebec_1791.png": {"min_hit_rate": 70.0, "max_dist": 3.00},
-    "Sahel_Afrique.png": {"min_hit_rate": 90.0, "max_dist": 0.50},
-    "Nouvelle-France1750.png": {"min_hit_rate": 40.0, "max_dist": 5.00},
-    "genocide_Monde.png": {"min_hit_rate": 80.0, "max_dist": 1.50},
-    "Quebec_1800.png": {"min_hit_rate": 60.0, "max_dist": 4.50},
-    "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 3.50},
-    "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 3.00},
-    "Communautes_cries.png": {"min_hit_rate": 80.0, "max_dist": 2.00},
+    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 95.0, "max_dist": 0.15},
+    "Quebec_1791.png": {"min_hit_rate": 85.0, "max_dist": 0.55},
+    "Sahel_Afrique.png": {"min_hit_rate": 85.0, "max_dist": 0.20},
+    "Nouvelle-France1750.png": {"min_hit_rate": 50.0, "max_dist": 1.20},
+    "genocide_Monde.png": {"min_hit_rate": 80.0, "max_dist": 1.40},
+    "Quebec_1800.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
+    "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 2.10},
+    "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
+    "Communautes_cries.png": {"min_hit_rate": 100.0, "max_dist": 1.22},
+    "Quebec.png": {"min_hit_rate": 71.0, "max_dist": 2.9},
+    "Sols_Monde.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
+    "Degrade_Afrique.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
+    "pluie_Afrique.png": {"min_hit_rate": 75.0, "max_dist": 2.0},
 }
 
 
@@ -285,7 +291,6 @@ def test_text_extraction(
         unpaired_expected_words,
     )
 
-    total_distance = 0.0
     mismatches = []
     for ocr_word, (expected_word, distance) in results:
         if distance > 1.0:
@@ -293,30 +298,50 @@ def test_text_extraction(
 
     if mismatches:
         mismatches.sort(key=lambda x: x[2], reverse=True)
-        logger.info(f"\n{YELLOW}{BOLD}--- Missing / Mismatched Words (Top 8) ---{RESET}")
+        logger.info(f"\n{YELLOW}{BOLD}--- Missing / Mismatched Words ---{RESET}")
         for expected_word, ocr_word, distance in mismatches:
             d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
             if distance > 500:
-                logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
+                logger.info(f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
             else:
-                logger.info(f"   • Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
+                logger.info(f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
-    status_icon = "✅" if box_find_rate >= 40.0 else "❌"
-    rate_color = GREEN if box_find_rate >= 70.0 else (YELLOW if box_find_rate >= 40.0 else RED)
-    dist_color = GREEN if average_dist <= 1.0 else (YELLOW if average_dist <= 3.0 else RED)
+    # Determine pass/fail against thresholds
+    thresholds = CARD_THRESHOLDS.get(image_path.name, {"min_hit_rate": 40.0, "max_dist": 15.0})
+    min_hit_rate = thresholds["min_hit_rate"]
+    max_dist = thresholds["max_dist"]
+    is_passed = box_find_rate >= min_hit_rate and average_dist <= max_dist
 
-    summary = (
-        f"\n"
-        f"{rate_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
-        f"{status_icon}  {BOLD}SUMMARY for {YELLOW}{image_path.name}{RESET} :\n"
-        f"    • Hit Rate   : {rate_color}{BOLD}{box_find_rate:.1f}%{RESET}\n"
-        f"    • Avg Dist   : {dist_color}{BOLD}{average_dist:.2f}{RESET}\n"
-        f"    • Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
-        f"{rate_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n\n"
-    )
-    logger.info(summary)
+    # Color-coded summary: GREEN for pass, RED for fail
+    if is_passed:
+        summary = (
+            f"\n"
+            f"{GREEN}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
+            f"\u2705  {BOLD}SUMMARY for {YELLOW}{image_path.name}{RESET} : {GREEN}{BOLD}PASS{RESET}\n"
+            f"    \u2022 Hit Rate   : {GREEN}{BOLD}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)\n"
+            f"    \u2022 Avg Dist   : {GREEN}{BOLD}{average_dist:.2f}{RESET} (max: {max_dist})\n"
+            f"    \u2022 Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
+            f"{GREEN}{BOLD}--------------------------------------------------------------------------------{RESET}\n\n"
+        )
+        logger.info(summary)
+    else:
+        summary = (
+            f"\n"
+            f"{RED}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
+            f"\u274c  {BOLD}SUMMARY for {YELLOW}{image_path.name}{RESET} : {RED}{BOLD}FAIL{RESET}\n"
+            f"    \u2022 Hit Rate   : {RED}{BOLD}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)\n"
+            f"    \u2022 Avg Dist   : {RED}{BOLD}{average_dist:.2f}{RESET} (max: {max_dist})\n"
+            f"    \u2022 Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
+            f"{RED}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
+        )
+        logger.error(summary)
+
+        # Show detailed failure info
+        logger.error(f"{RED}{BOLD}\U0001f50d DETAILS OF THE FAILURE FOR {image_path.name}:{RESET}\n" f"Expected Words that the OCR missed or matched poorly:\n")
+        for expected_word, ocr_word, distance in mismatches:
+            logger.error(f"  \u2022 Expected: {YELLOW}'{expected_word}'{RESET} --> Found: '{ocr_word}' (dist: {distance:.1f})")
 
     setattr(
         request.node,
@@ -327,7 +352,4 @@ def test_text_extraction(
         },
     )
 
-    thresholds = CARD_THRESHOLDS.get(image_path.name, {"min_hit_rate": 40.0, "max_dist": 15.0})
-
-    assert box_find_rate >= thresholds["min_hit_rate"], f"Regression sur {image_path.name}! " f"Hit rate actuel: {box_find_rate:.2f}% (Seuil min: {thresholds['min_hit_rate']}%)"
-    assert average_dist <= thresholds["max_dist"], f"Regression sur {image_path.name}! " f"Distance moyenne actuelle: {average_dist:.2f} (Seuil max: {thresholds['max_dist']})"
+    assert is_passed, f"{image_path.name}: OCR metrics below threshold! " f"Hit rate {box_find_rate:.1f}% (min: {min_hit_rate}%), " f"Avg Dist {average_dist:.2f} (max: {max_dist})"

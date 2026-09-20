@@ -2,7 +2,7 @@ import os
 import time
 import gc
 import logging
-from typing import Any
+from typing import Any, Tuple
 
 import torch
 import numpy as np
@@ -31,7 +31,7 @@ CONTEXT_TASK = "<MORE_DETAILED_CAPTION>"
 
 def get_runtime_config() -> dict:
     """Return Florence runtime settings used for OCR inference."""
-    device = "cpu"  # Usually determined dynamically, assuming CPU here
+    device = "cpu"
     return {
         "model_id": MODEL_ID,
         "torch_dtype": torch.float32 if device == "cpu" else torch.bfloat16,
@@ -49,26 +49,6 @@ def list_input_images(input_dir: str) -> list[str]:
         if os.path.splitext(name)[1].lower() in SUPPORTED_EXTENSIONS:
             files.append(os.path.join(input_dir, name))
     return files
-
-
-from typing import Any, Tuple
-
-
-def manually_preprocess_image(image_path: str) -> Tuple[Image.Image, float]:
-    """Apply preprocessing to improve OCR quality before Florence inference."""
-    img = preprocess.read_image(image_path)
-
-    h_orig, w_orig = img.shape[:2]
-    img = preprocess.upscale_for_ocr(img, min_dimension=1500)
-    h_new, w_new = img.shape[:2]
-    scale_factor = h_new / float(h_orig) if h_orig > 0 else 1.0
-
-    img = preprocess.bilateral_denoise(img, sigma_color=0.04, sigma_spatial=3.0)
-
-    # Single balanced contrast enhancement pass to avoid creating halos on small fonts
-    img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
-
-    return Image.fromarray(img), scale_factor
 
 
 def load_model_and_processor(config: dict) -> tuple:
@@ -148,66 +128,67 @@ def get_context_config() -> dict:
         "model_id": MODEL_ID,
         "torch_dtype": torch.float32 if device == "cpu" else torch.bfloat16,
         "device": device,
-        "max_new_tokens": 256,  # Shorter output for context
+        "max_new_tokens": 256,
     }
 
 
-def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> dict:
-    """Run the Florence OCR pipeline on one image and build the parsed result payload."""
+def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
+    """
+    Apply adaptive preprocessing based on the original image dimensions.
 
-    preprocessed, scale_factor = manually_preprocess_image(image_path)
+    Strategy:
+    - Small images (<= 1000px longest side): Full preprocessing (upscale + denoise + contrast)
+      because the text is likely blurry at low resolution.
+    - Large images (> 1000px longest side): Skip bilateral_denoise because it blurs the tiny
+      text labels that are already sharp at native resolution. Only apply contrast enhancement.
 
-    if os.environ.get("SAVE_PREPROCESSED_IMAGES", "false").lower() == "true":
-        img_dir = os.path.dirname(image_path)
-        prep_dir = os.path.join(img_dir, "preprocessed")
-        os.makedirs(prep_dir, exist_ok=True)
-        prep_path = os.path.join(prep_dir, f"prep_{os.path.basename(image_path)}")
-        preprocessed.save(prep_path)
-        logger.debug(f"Saved preprocessed image to {prep_path}")
+    Returns: (preprocessed PIL Image, scale_factor, longest_side of original)
+    """
+    img = preprocess.read_image(image_path)
+    h_orig, w_orig = img.shape[:2]
+    longest_side = max(h_orig, w_orig)
 
-    enable_context = os.environ.get("ENABLE_IMAGE_CONTEXT", "false").lower() == "true"
-    if enable_context:
-        context = get_image_context(model, processor, preprocessed, get_context_config())
+    # Dynamic upscale target: 1.75x but capped [1000, 2000]
+    target_dim = max(1000, min(2000, int(longest_side * 1.75)))
+    img = preprocess.upscale_for_ocr(img, min_dimension=target_dim)
+
+    h_new, w_new = img.shape[:2]
+    scale_factor = h_new / float(h_orig) if h_orig > 0 else 1.0
+
+    if longest_side <= 1000:
+        # Small image: apply full pipeline (denoise smooths background noise)
+        logger.debug(f"Small image ({longest_side}px). Applying denoise + contrast.")
+        img = preprocess.bilateral_denoise(img, sigma_color=0.04, sigma_spatial=3.0)
+        img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
     else:
-        context = ""
-    logger.debug("Running OCR on full image and 4 tiles to capture both huge and tiny texts")
+        # Large/dense image: skip denoise to preserve tiny text sharpness
+        logger.debug(f"Large image ({longest_side}px). Skipping denoise, applying contrast only.")
+        img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
 
-    all_detections = []
+    return Image.fromarray(img), scale_factor, longest_side
 
-    # Pass 1: Full image
-    result = run_inference(model, processor, preprocessed, OCR_TASK, config)
-    ocr_data = result.get(OCR_TASK, {})
-    for quad, text in zip(ocr_data.get("quad_boxes", []), ocr_data.get("labels", [])):
-        all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(quad), "quad": quad})
 
-    # Pass 2: 2x2 Tiling with overlap
-    w, h = preprocessed.width, preprocessed.height
-    mid_x, mid_y = w // 2, h // 2
-    overlap = int(min(w, h) * 0.1)  # 10% overlap
+def _generate_tiles(w: int, h: int, grid: int, overlap_pct: float = 0.10) -> list[tuple[int, int, int, int]]:
+    """Generate tile coordinates for a given grid size (2 for 2x2, 3 for 3x3) with overlap."""
+    tiles = []
+    overlap_x = int(w * overlap_pct)
+    overlap_y = int(h * overlap_pct)
 
-    tiles = [
-        (0, 0, mid_x + overlap, mid_y + overlap),
-        (mid_x - overlap, 0, w, mid_y + overlap),
-        (0, mid_y - overlap, mid_x + overlap, h),
-        (mid_x - overlap, mid_y - overlap, w, h),
-    ]
+    for row in range(grid):
+        for col in range(grid):
+            x1 = max(0, col * w // grid - (overlap_x if col > 0 else 0))
+            y1 = max(0, row * h // grid - (overlap_y if row > 0 else 0))
+            x2 = min(w, (col + 1) * w // grid + (overlap_x if col < grid - 1 else 0))
+            y2 = min(h, (row + 1) * h // grid + (overlap_y if row < grid - 1 else 0))
+            if x2 > x1 and y2 > y1:
+                tiles.append((x1, y1, x2, y2))
 
-    for x1, y1, x2, y2 in tiles:
-        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
-        if x2 <= x1 or y2 <= y1:
-            continue
+    return tiles
 
-        tile_img = preprocessed.crop((x1, y1, x2, y2))
-        tile_result = run_inference(model, processor, tile_img, OCR_TASK, config)
-        t_data = tile_result.get(OCR_TASK, {})
 
-        for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
-            shifted_quad = []
-            for i in range(0, len(quad), 2):
-                shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
-            all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
+def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
+    """Remove duplicate detections where one box overlaps >60% of another (IoA dedup)."""
 
-    # Remove duplicates where a tile detection is completely inside a full-image detection (or vice versa)
     def box_area(d):
         b = d["bbox_xyxy"]
         return max(0, b[2] - b[0]) * max(0, b[3] - b[1])
@@ -229,6 +210,73 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         if not is_dup:
             unique_dets.append(det)
 
+    return unique_dets
+
+
+def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> dict:
+    """
+    Run the Florence OCR pipeline on one image with adaptive preprocessing and tiling.
+
+    The pipeline automatically adapts to each image:
+    1. Small images (<=800px): Single pass, no tiling (fast)
+    2. Medium images (800-1200px): 2x2 tiling (balanced)
+    3. Large/dense images (>1200px): 2x2 tiling, then check density.
+       If first pass detects many labels, switch to 3x3 tiling for better coverage.
+    """
+    preprocessed, scale_factor, longest_side = _adaptive_preprocess(image_path)
+
+    if os.environ.get("SAVE_PREPROCESSED_IMAGES", "false").lower() == "true":
+        img_dir = os.path.dirname(image_path)
+        prep_dir = os.path.join(img_dir, "preprocessed")
+        os.makedirs(prep_dir, exist_ok=True)
+        prep_path = os.path.join(prep_dir, f"prep_{os.path.basename(image_path)}")
+        preprocessed.save(prep_path)
+
+    enable_context = os.environ.get("ENABLE_IMAGE_CONTEXT", "false").lower() == "true"
+    context = get_image_context(model, processor, preprocessed, get_context_config()) if enable_context else ""
+
+    all_detections = []
+
+    # Pass 1: Full image (always)
+    result = run_inference(model, processor, preprocessed, OCR_TASK, config)
+    ocr_data = result.get(OCR_TASK, {})
+    for quad, text in zip(ocr_data.get("quad_boxes", []), ocr_data.get("labels", [])):
+        all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(quad), "quad": quad})
+
+    first_pass_count = len(all_detections)
+    logger.debug(f"First pass: {first_pass_count} detections on full image ({longest_side}px)")
+
+    # Pass 2: Adaptive tiling based on image size and detection density
+    if longest_side <= 800:
+        # Small image: no tiling needed, single pass is enough
+        logger.debug("Small image. Skipping tiling.")
+        tile_grid = 0
+    elif longest_side > 1200 or first_pass_count >= 15:
+        # Large or dense image: use 3x3 tiling for maximum coverage
+        logger.debug(f"Dense map detected ({first_pass_count} detections, {longest_side}px). Using 3x3 tiling.")
+        tile_grid = 3
+    else:
+        # Medium image: standard 2x2 tiling
+        logger.debug(f"Medium image ({first_pass_count} detections, {longest_side}px). Using 2x2 tiling.")
+        tile_grid = 2
+
+    if tile_grid > 0:
+        w, h = preprocessed.width, preprocessed.height
+        tiles = _generate_tiles(w, h, tile_grid, overlap_pct=0.10)
+
+        for x1, y1, x2, y2 in tiles:
+            tile_img = preprocessed.crop((x1, y1, x2, y2))
+            tile_result = run_inference(model, processor, tile_img, OCR_TASK, config)
+            t_data = tile_result.get(OCR_TASK, {})
+
+            for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
+                shifted_quad = []
+                for i in range(0, len(quad), 2):
+                    shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
+                all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
+
+    # Remove duplicates from overlapping tiles
+    unique_dets = _remove_duplicate_detections(all_detections)
     all_detections = out.merge_related_detections(unique_dets)
 
     if scale_factor != 1.0:
