@@ -213,7 +213,6 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
         for upoly, uarea in unique_polys:
             if pA.intersects(upoly):
                 inter_area = pA.intersection(upoly).area
-                if inter_area / areaA > 0.6:
                 ioa_small = inter_area / areaA
                 ioa_large = inter_area / uarea
                 # Only merge if the smaller box is mostly inside, AND the larger box isn't a massive hallucination (>5x size)
@@ -317,7 +316,6 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     for angle in angles:
         logger.debug(f"Running multi-angle pass: {angle} degrees")
-        rot_img = preprocessed.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
         # Pad with white to prevent Florence-2 hallucinating coordinate tokens > 999 (IndexError) on large black regions
         rot_img = preprocessed.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC, fillcolor=(255, 255, 255))
         rot_result = run_inference(model, processor, rot_img, OCR_TASK, config)
