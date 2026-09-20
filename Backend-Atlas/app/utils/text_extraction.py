@@ -265,16 +265,20 @@ def _build_extracted_text_from_detections(
 
             return False
 
-        lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
-        if len(lines) > 1:
+        from app.utils.map_dictionary import apply_map_dictionary_correction
+
+        if "\n" in raw_text:
+            lines = raw_text.split("\n")
             for line in lines:
                 if should_ignore(line):
                     continue
-                extracted_text.append({"text": line, "bbox": quad})
+                corrected_line = apply_map_dictionary_correction(line)
+                extracted_text.append({"text": corrected_line, "bbox": quad})
         else:
             if should_ignore(raw_text):
                 continue
-            extracted_text.append({"text": raw_text, "bbox": quad})
+            corrected_text = apply_map_dictionary_correction(raw_text)
+            extracted_text.append({"text": corrected_text, "bbox": quad})
 
     return extracted_text
 

@@ -84,7 +84,7 @@ def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: s
     """Run Florence inference for one task prompt and return structured output."""
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
-    
+
     try:
         with torch.inference_mode():
             generated_ids = model.generate(
@@ -102,9 +102,9 @@ def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: s
     except Exception as e:
         logger.warning(f"Florence-2 generation failed: {e}")
         return {}
-        
+
     del inputs
-    if 'generated_ids' in locals():
+    if "generated_ids" in locals():
         del generated_ids
     gc.collect()
     return processor.post_process_generation(
