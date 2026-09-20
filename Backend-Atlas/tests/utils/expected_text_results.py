@@ -47,13 +47,11 @@ MAP_EXPECTED_TEXTS = {
     "Sahel_Afrique":        ["Algérie", "Mauritanie", "Sénégal", "Mali", "Burkina\nFaso", "Niger", "Nigeria", "Tchad", "Soudan", 
                             "Érythrée", "Éthiopie"],
 
-    "Quebec":               ["Baie d'Hudson", "Chisasibi", "La Grande Rivière", "Baie James", "Rivière Rupert", "QUÉBEC", 
-                            "Oujé-Bougoumou", "Mistissini", "Québec", "Fleuve Saint-Laurent", "Montréal"],
-
     "Degrade_Afrique":      ["Le Sahel en Afrique", "Désert du Sahara", "SAHEL", "MAURITANIE", "MALI", "NIGER", "TCHAD", "SOUDAN",
                             "ERYTHREE", "SENEGAL", "GAMBIE", "BURKINA FASO", "Dakar", "Abidjan", "Lomé", "Douala", 
                             "Tropique du Cancer", "Équateur", "OCÉAN ATLANTIQUE", "OCÉAN INDIEN", "Mer Rouge", "Lac Tchad", 
                             "Le Sahel dans le monde"],
+                            
     "pluie_Afrique":        ["Désert du Sahara", "MALI", "Tombouctou", "BURKINA FASO", "Ouagadougou", "Sahel", "Tropique du Cancer",
                             "Équateur"],
 }

@@ -5,11 +5,29 @@ import numpy as np
 def read_image(image_path: str) -> np.ndarray:
     """
     Read an image file from disk and return it as an RGB uint8 NumPy array.
-    Converts from OpenCV default BGR format to RGB format required by Florence and PIL.
+    If the image has a transparent background (alpha channel), it blends the image
+    over a solid white background so dark text remains visible.
     """
-    img = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise IOError(f"Could not read image for given path: {image_path}")
+
+    # If image has an alpha channel (4 channels: BGRA)
+    if len(img.shape) == 3 and img.shape[2] == 4:
+        bgr = img[:, :, :3]
+        alpha = img[:, :, 3]
+
+        # Create solid white background
+        white_bg = np.ones_like(bgr, dtype=np.uint8) * 255
+
+        # Blend using the alpha channel as a mask
+        alpha_mask = alpha.astype(np.float32)[:, :, np.newaxis] / 255.0
+        blended = (bgr.astype(np.float32) * alpha_mask) + (white_bg.astype(np.float32) * (1.0 - alpha_mask))
+        img = blended.astype(np.uint8)
+    elif len(img.shape) == 2:
+        # Grayscale
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
