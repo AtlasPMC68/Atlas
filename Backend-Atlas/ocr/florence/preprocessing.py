@@ -55,17 +55,12 @@ def upscale_for_ocr(img: np.ndarray, min_dimension: int = 1800) -> np.ndarray:
 
 def enhance_contrast_and_sharpen(img: np.ndarray, intensity: float = 1.8) -> np.ndarray:
     """
-    Apply non-destructive contrast enhancement via LAB-space CLAHE followed by an unsharp mask.
-    Converts to LAB color space, enhances L-channel with CLAHE, converts back to RGB,
-    and applies a gentle unsharp mask (sharpened = original + amount * (original - blurred))
-    to sharpen text edges without amplifying background noise or creating color halos.
     Apply non-destructive contrast enhancement, Gamma correction, and an unsharp mask.
     The Gamma correction darkens midtones (helping dark text on colored backgrounds pop),
     and a slight LAB saturation boost helps separate text color from background color.
     """
     intensity = max(1.0, min(5.0, float(intensity)))
 
-    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
     # 1. Gamma Correction: Darkens the overall image slightly so dark text becomes much darker
     gamma = 1.2
     img_float = img.astype(np.float32) / 255.0
