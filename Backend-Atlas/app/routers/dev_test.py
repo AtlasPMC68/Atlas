@@ -26,6 +26,12 @@ from app.utils.dev_test import (
     write_test_config,
 )
 from app.utils.dev_test_assets import GEOREF_ASSETS_DIR, ZONES_DIR
+from app.utils.dev_test_cases import (
+    VALID_KINDS,
+    load_case_state,
+    normalize_kind,
+    resolve_case_kind,
+)
 from app.utils.georeferencing import frame_bounds_to_config_entry, parse_frame_bounds
 from app.utils.imposed_colors import (
     KIND_WATER,
@@ -63,6 +69,7 @@ async def upload_dev_test_map(
     world_points: str | None = Form(None),
     frame_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
+    kind: str | None = Form(None),
     file: UploadFile = File(...),
     _user_id: str = Depends(get_current_user_id),
 ):
@@ -166,6 +173,9 @@ async def upload_dev_test_map(
             all_color_kinds,
         ),
         frame_bounds=frame_bounds_to_config_entry(frame_bounds_dict),
+        # Only stored when this case overrides its map's kind, so the common
+        # case carries no redundant flag.
+        kind=normalize_kind(kind, default="") or None,
     )
 
     try:
@@ -253,13 +263,28 @@ async def list_tests(_user_id: str = Depends(get_current_user_id)):
 async def upload_test(
     file: UploadFile = File(...),
     name: str = Form(...),
+    kind: str = Form("regression"),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Create a dev test by saving the map image and metadata."""
+    """Create a dev test by saving the map image and metadata.
+
+    ``kind`` decides what every case on this map is for. A ``regression`` test
+    is scored against expected zones you draw and gates the backend suite; a
+    ``probe`` test carries no ground truth and exists to replay a map's stored
+    clicks quickly while georeferencing is being changed.
+    """
+    if kind not in VALID_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid kind: {kind}. Allowed: {', '.join(VALID_KINDS)}",
+        )
 
     contents = await file.read()
     return upload_dev_test(
-        file_bytes=contents, original_filename=file.filename, name=name
+        file_bytes=contents,
+        original_filename=file.filename,
+        name=name,
+        kind=kind,
     )
 
 
@@ -308,7 +333,6 @@ async def delete_test_case(
     return result
 
 
-# Not really used for now but would be if we wanted to trigger evaluation through frontend
 @router.post("/test-cases/{test_id}/{test_case_id}/run-evaluate")
 async def run_evaluate_dev_test_case(
     test_id: str,
@@ -316,14 +340,42 @@ async def run_evaluate_dev_test_case(
     min_iou: float | None = Query(
         None, description="Optional minimum IoU to mark pass/fail"
     ),
+    snap_to_coastline: bool | None = Query(
+        None,
+        description=(
+            "Blind coastline snapping. Turn it OFF when judging alignment: it"
+            " corrects transform error after the fact, so it both flatters the"
+            " baseline and hides the improvement you are trying to see."
+        ),
+    ),
+    enable_curve_alignment: bool | None = Query(
+        None, description="Step 4 chamfer + ICP alignment"
+    ),
+    clip_to_land_mask: bool | None = Query(
+        None, description="Drop zone area falling in the ocean"
+    ),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Run extraction from saved anchors *and then* evaluate.
+    """Re-run a test case from its saved inputs, and evaluate it if it is scored.
 
-    This endpoint blocks until the Celery task finishes.
+    Blocks until the Celery task finishes. The switches apply to this run only;
+    omitting one leaves it at the worker's ambient setting. A run using any
+    non-ambient switch is written as the latest result but never promoted to
+    `zones_best`, because a snapped and an unsnapped run are not the same
+    measurement.
     """
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
+
+    overrides = {
+        key: value
+        for key, value in (
+            ("snap_to_coastline", snap_to_coastline),
+            ("enable_curve_alignment", enable_curve_alignment),
+            ("clip_to_land_mask", clip_to_land_mask),
+        )
+        if value is not None
+    }
 
     try:
         return await run_evaluate_case_blocking(
@@ -331,6 +383,7 @@ async def run_evaluate_dev_test_case(
             test_case_id=safe_case_id,
             min_iou=min_iou,
             assets_root=GEOREF_ASSETS_DIR,
+            config_overrides=overrides or None,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -362,6 +415,36 @@ async def get_dev_test_case_report(
             return json.load(f)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/test-cases/{test_id}/{test_case_id}/state")
+async def get_dev_test_case_state(
+    test_id: str,
+    test_case_id: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """What this case is for, and whether its stored inputs still suffice.
+
+    Read from ``case_state.json``, written by the last run. When no run has
+    happened yet the kind is still resolvable from config and metadata, so a
+    minimal answer is returned rather than a 404 -- the UI needs to know whether
+    to expect a score before anything has been run.
+    """
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+
+    state = load_case_state(safe_test_id, safe_case_id)
+    if state is not None:
+        return state
+
+    return {
+        "testId": safe_test_id,
+        "testCaseId": safe_case_id,
+        "kind": resolve_case_kind(safe_test_id, safe_case_id),
+        "scored": None,
+        "requirements": None,
+        "derived": [],
+    }
 
 
 @router.get("/test-cases/{test_id}/{test_case_id}/best-report")

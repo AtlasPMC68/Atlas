@@ -3,10 +3,12 @@ import os
 
 import pytest
 
-from app.utils.dev_test import build_extraction_task_kwargs_for_case
+from app.utils.dev_test import build_extraction_task_kwargs_for_case, inspect_case
+from app.utils.dev_test_cases import KIND_PROBE
 from app.utils.dev_test_evaluator import build_test_case_paths
+from app.utils.georeferencing.requirements import MissingUserInputError
 
-from app.tasks import process_dev_test_extraction
+from app.tasks import GEOREF_CONFIG, process_dev_test_extraction
 
 MIN_IOU = 0.7
 
@@ -50,22 +52,11 @@ def _rerun_extraction_from_config(
     extracted GeoJSON left on disk.
     """
 
-    paths = build_test_case_paths(assets_root, test_id, test_case_id)
-    if not os.path.exists(paths.config_path):
-        pytest.skip(f"Missing config for {test_id}/{test_case_id}: {paths.config_path}")
-
-    try:
-        kwargs = build_extraction_task_kwargs_for_case(
-            assets_root=assets_root,
-            test_id=test_id,
-            test_case_id=test_case_id,
-        )
-    except FileNotFoundError as e:
-        pytest.skip(str(e))
-    except ValueError as e:
-        pytest.skip(str(e))
-    except Exception as e:
-        pytest.skip(str(e))
+    kwargs = build_extraction_task_kwargs_for_case(
+        assets_root=assets_root,
+        test_id=test_id,
+        test_case_id=test_case_id,
+    )
 
     # Run the Celery task synchronously (no broker) via Task.apply.
     # The task writes zones.geojson and the evaluation report itself.
@@ -80,13 +71,46 @@ def _rerun_extraction_from_config(
 @pytest.mark.parametrize("test_id,test_case_id", _discover_cases(_assets_root()))
 def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
     assets_root = _assets_root()
+    label = f"{test_id}/{test_case_id}"
 
-    # Skip cases that don't have expected zones present.
+    # Resolve the case against what the current algorithm needs *before*
+    # spending a pipeline run on it. Two outcomes are not failures and two are.
+    try:
+        state, _inputs = inspect_case(
+            assets_root=assets_root,
+            test_id=test_id,
+            test_case_id=test_case_id,
+            config=GEOREF_CONFIG,
+        )
+    except FileNotFoundError as e:
+        pytest.skip(str(e))
+    except ValueError as e:
+        pytest.fail(f"Unreadable case config for {label}: {e}")
+
+    state.write()
+
+    # A probe case is a persisted set of clicks for replaying a map quickly. It
+    # has no ground truth on purpose, so there is nothing here to assert.
+    if state.kind == KIND_PROBE:
+        pytest.skip(f"{label} is a probe case: replay-only, never scored")
+
+    # A regression case with no expected zones is a broken regression case, not
+    # a probe. Skipping it would silently drop coverage, which is exactly the
+    # thing declaring the kind exists to prevent -- so fail and say which it is.
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
     if not os.path.exists(paths.expected_zones_path):
-        pytest.skip(
-            f"Missing expected zones for {test_id}: {paths.expected_zones_path}"
+        pytest.fail(
+            f"{label} is a regression case but has no expected zones at"
+            f" {paths.expected_zones_path}. Draw them, or mark the test as a"
+            f" probe (kind='probe') if it is only meant for replaying."
         )
+
+    # Missing *user* input cannot be repaired by re-running anything, so this is
+    # a hard failure carrying the remedy rather than a silent degraded run.
+    try:
+        state.requirements.raise_if_blocked(label)
+    except MissingUserInputError as e:
+        pytest.fail(str(e))
 
     # Rerun extraction from saved anchors/options so we test the current algorithm.
     # The task writes zones.geojson, evaluates, and persists the report itself.
@@ -94,8 +118,8 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
 
     # Report is written by the task; just read it back.
     if not os.path.exists(paths.report_path):
-        pytest.skip(
-            f"Report not written after rerun for {test_id}/{test_case_id}: {paths.report_path}"
+        pytest.fail(
+            f"No report written after rerun for {label}: {paths.report_path}"
         )
 
     with open(paths.report_path, "r", encoding="utf-8") as f:

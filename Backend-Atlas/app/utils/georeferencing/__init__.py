@@ -3,6 +3,8 @@
 Package layout (plan section 3), filled in as the steps land:
 
     config.py       frozen hyperparameters as one versioned dataclass
+    requirements.py what inputs the current algorithm needs, and which of them
+                    a re-run can recover versus which need a human
     models.py       fit / apply / inverse / serialize -- one interface per model
     projection.py   EPSG:3857 maths and honest distance units
     frame.py        the user's framing box, parsed and persisted

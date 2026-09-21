@@ -10,6 +10,12 @@
           >
             ({{ mapId }})
           </span>
+          <span
+            class="badge badge-sm ml-2 align-middle"
+            :class="isProbe ? 'badge-info' : 'badge-neutral'"
+          >
+            {{ isProbe ? "Exploration" : "Régression" }}
+          </span>
         </h1>
       </div>
 
@@ -54,6 +60,15 @@
         </div>
 
     <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
+      <!-- A probe test has no expected zones by design: it exists to replay a
+           map's persisted clicks quickly. Drawing still works if you want it,
+           but nothing scores against it. -->
+      <div v-if="isProbe" class="alert alert-info text-xs py-2">
+        Test d'exploration : aucun score n'est calculé. Les test cases servent à
+        rejouer la carte (points de contrôle, pipette, cadrage persistés) pour
+        voir le résultat du géoréférencement rapidement.
+      </div>
+
       <!-- Create zone -->
       <CreateZonePanel
         :is-create-mode="isCreateMode"
@@ -127,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
@@ -149,6 +164,9 @@ const undoCreateKey = ref(0);
 const isFrontierMode = ref(false);
 const isGeoBorderMode = ref(false);
 const subGeometries = ref<any[]>([]);
+
+const testKind = ref<"regression" | "probe">("regression");
+const isProbe = computed(() => testKind.value === "probe");
 
 const testCases = ref<string[]>([]);
 const isLoadingTestCases = ref(false);
@@ -205,6 +223,22 @@ async function deleteTestCase(testCase: string) {
       err instanceof Error ? err.message : "Erreur inattendue lors de la suppression";
   } finally {
     deletingTestCase.value = null;
+  }
+}
+
+async function loadTestKind(currentMapId: string) {
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`, {
+      headers: { Authorization: `Bearer ${keycloak.token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const entry = Array.isArray(data)
+      ? data.find((t: any) => t?.mapId === currentMapId)
+      : null;
+    testKind.value = entry?.kind === "probe" ? "probe" : "regression";
+  } catch {
+    // Falling back to "regression" only affects labelling here.
   }
 }
 
@@ -453,6 +487,7 @@ onMounted(() => {
   const idParam = route.params.mapId;
   if (typeof idParam === "string" && idParam.length > 0) {
     mapId.value = idParam;
+    loadTestKind(idParam);
     loadTestZones(idParam);
     loadTestCases(idParam);
   } else {

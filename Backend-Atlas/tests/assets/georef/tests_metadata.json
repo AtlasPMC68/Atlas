@@ -2,5 +2,10 @@
   "52a1aedc-98d0-4bd7-8b78-d4fd184f91df": {
     "name": "Test 1",
     "createdAt": "2026-03-06T23:15:39.756508Z"
+  },
+  "3bebfa45-24a0-4653-a7b7-5f9372561db3": {
+    "name": "quebec_traite1783",
+    "kind": "probe",
+    "createdAt": "2026-09-21T04:00:25.944092Z"
   }
 }

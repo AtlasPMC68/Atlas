@@ -34,6 +34,7 @@ def write_test_config(
     world_pts: list | None,
     imposed_colors: list | None = None,
     frame_bounds: dict | None = None,
+    kind: str | None = None,
 ) -> None:
     # tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
     case_dir = os.path.join(TEST_CASES_DIR, parent_test_id, test_case_id)
@@ -46,6 +47,9 @@ def write_test_config(
         "testCaseId": test_case_id,
         "updatedAt": datetime.utcnow().isoformat() + "Z",
         "filename": original_filename,
+        # Only written when this case departs from its map's kind; absent means
+        # "whatever the map says", which is what almost every case wants.
+        "kind": kind,
         "georef": {
             "imagePoints": img_pts,
             "worldPoints": world_pts,
@@ -102,9 +106,17 @@ def _write_tests_metadata(metadata: dict[str, dict[str, Any]]) -> None:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
 
+def load_test_metadata_entry(test_id: str) -> dict[str, Any]:
+    """The metadata row for one map, or an empty dict."""
+    entry = _load_tests_metadata().get(test_id)
+    return entry if isinstance(entry, dict) else {}
+
+
 def list_dev_tests() -> list[dict[str, Any]]:
     if not os.path.isdir(MAPS_DIR):
         return []
+
+    from app.utils.dev_test_cases import normalize_kind
 
     metadata = _load_tests_metadata()
 
@@ -126,6 +138,7 @@ def list_dev_tests() -> list[dict[str, Any]]:
                 "imageFilename": filename,
                 "hasZones": has_zones,
                 "createdAt": meta_entry.get("createdAt"),
+                "kind": normalize_kind(meta_entry.get("kind")),
             }
         )
 
@@ -134,8 +147,14 @@ def list_dev_tests() -> list[dict[str, Any]]:
 
 
 def upload_dev_test(
-    *, file_bytes: bytes, original_filename: str | None, name: str
+    *,
+    file_bytes: bytes,
+    original_filename: str | None,
+    name: str,
+    kind: str | None = None,
 ) -> dict[str, Any]:
+    from app.utils.dev_test_cases import normalize_kind
+
     os.makedirs(MAPS_DIR, exist_ok=True)
 
     original_filename = original_filename or "map"
@@ -150,9 +169,12 @@ def upload_dev_test(
     with open(dest_path, "wb") as f:
         f.write(file_bytes)
 
+    resolved_kind = normalize_kind(kind)
+
     metadata = _load_tests_metadata()
     entry = metadata.get(map_id, {}) if isinstance(metadata, dict) else {}
     entry["name"] = name
+    entry["kind"] = resolved_kind
     entry.setdefault("createdAt", datetime.utcnow().isoformat() + "Z")
     metadata[map_id] = entry
     _write_tests_metadata(metadata)
@@ -162,6 +184,7 @@ def upload_dev_test(
         "mapId": map_id,
         "name": name,
         "imageFilename": image_filename,
+        "kind": resolved_kind,
     }
 
 
@@ -190,6 +213,13 @@ def delete_dev_test(map_id: str) -> dict[str, Any]:
             shutil.rmtree(cases_dir)
         except OSError:
             pass
+
+    # Derived artifacts are keyed on the map's image; with the image gone they
+    # describe nothing, and leaving them would let a re-upload under the same id
+    # inherit another map's OCR.
+    from app.utils.dev_test_derived import delete_derived
+
+    delete_derived(map_id)
 
     metadata = _load_tests_metadata()
     if map_id in metadata:
@@ -237,8 +267,22 @@ def delete_dev_test_case(test_id: str, test_case_id: str) -> dict[str, Any]:
 
 
 def evaluate_and_persist_case(
-    *, assets_root: str, test_id: str, test_case_id: str, min_iou: float | None
+    *,
+    assets_root: str,
+    test_id: str,
+    test_case_id: str,
+    min_iou: float | None,
+    allow_best_promotion: bool = True,
 ) -> dict[str, Any]:
+    """Score a case and write its report.
+
+    ``allow_best_promotion`` is False for a run made under non-default
+    switches. ``zones_best`` means "the best run so far", and a run with
+    coastline snapping flipped is not measuring the same thing -- snapping
+    alone moves one map 0.941 vs 0.926 -- so promoting across settings would
+    make "best" a mixture of two metrics. Such a run is still written as the
+    latest result; it just cannot win.
+    """
     from app.utils.dev_test_evaluator import (
         build_test_case_paths,
         evaluate_georef_test_case,
@@ -284,7 +328,11 @@ def evaluate_and_persist_case(
             return None
 
     best_score = _read_best_score()
-    if latest_score is not None and (best_score is None or latest_score > best_score):
+    if (
+        allow_best_promotion
+        and latest_score is not None
+        and (best_score is None or latest_score > best_score)
+    ):
         try:
             if os.path.exists(paths.extracted_zones_path):
                 shutil.copyfile(paths.extracted_zones_path, best_zones_path)
@@ -405,6 +453,40 @@ def parse_extraction_inputs(
     )
 
 
+def inspect_case(
+    *,
+    assets_root: str,
+    test_id: str,
+    test_case_id: str,
+    config: Any = None,
+) -> tuple[Any, CaseExtractionInputs]:
+    """Load a case and resolve it against the current algorithm's requirements.
+
+    The one place that answers "is this case still runnable, and is it scored"
+    so the task, the regression suite and the dev script cannot drift apart on
+    it. Returns ``(CaseState, CaseExtractionInputs)``.
+    """
+    from app.utils.dev_test_cases import build_case_state
+
+    case_config = load_case_config(assets_root, test_id, test_case_id)
+    image_path = find_test_image_path(test_id)
+    if not image_path or not os.path.exists(image_path):
+        raise FileNotFoundError(
+            f"Test image not found for test_id={test_id} under {MAPS_DIR}"
+        )
+
+    inputs = parse_extraction_inputs(case_config, image_path)
+    state = build_case_state(
+        test_id=test_id,
+        test_case_id=test_case_id,
+        inputs=inputs,
+        image_path=image_path,
+        config=config,
+        case_config=case_config,
+    )
+    return state, inputs
+
+
 def build_extraction_task_kwargs_for_case(
     *, assets_root: str, test_id: str, test_case_id: str
 ) -> dict[str, Any]:
@@ -448,13 +530,19 @@ def build_extraction_task_kwargs_for_case(
 
 
 def _start_extraction_for_case(
-    *, assets_root: str, test_id: str, test_case_id: str
+    *,
+    assets_root: str,
+    test_id: str,
+    test_case_id: str,
+    config_overrides: dict | None = None,
 ) -> str:
     kwargs = build_extraction_task_kwargs_for_case(
         assets_root=assets_root,
         test_id=test_id,
         test_case_id=test_case_id,
     )
+    if config_overrides:
+        kwargs["config_overrides"] = config_overrides
 
     from app.tasks import process_dev_test_extraction
 
@@ -468,11 +556,14 @@ async def run_evaluate_case_blocking(
     test_case_id: str,
     min_iou: float | None,
     assets_root: str,
+    config_overrides: dict | None = None,
 ) -> dict[str, Any]:
+    """Re-run a case and, when it is scored, evaluate it. Blocks on the task."""
     task_id = _start_extraction_for_case(
         assets_root=assets_root,
         test_id=test_id,
         test_case_id=test_case_id,
+        config_overrides=config_overrides,
     )
 
     async_result = celery_app.AsyncResult(task_id)
@@ -481,16 +572,30 @@ async def run_evaluate_case_blocking(
     except Exception as e:
         raise RuntimeError(f"Extraction task ended in state {async_result.state}: {e}")
 
-    report = evaluate_and_persist_case(
-        assets_root=assets_root,
-        test_id=test_id,
-        test_case_id=test_case_id,
-        min_iou=min_iou,
-    )
+    from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
+    from app.utils.dev_test_evaluator import build_test_case_paths
+
+    kind = resolve_case_kind(test_id, test_case_id)
+
+    # A probe has no expected zones by design, so there is nothing to evaluate
+    # against. The task already wrote the zones; that is the whole deliverable.
+    # The task already evaluated and wrote the report; re-running it here
+    # would double the work and, worse, re-decide best-promotion without
+    # knowing which switches the run used.
+    report = None
+    if kind != KIND_PROBE:
+        paths = build_test_case_paths(assets_root, test_id, test_case_id)
+        try:
+            with open(paths.report_path, "r", encoding="utf-8") as f:
+                report = json.load(f)
+        except (OSError, ValueError):
+            report = None
 
     return {
         "status": "ok",
         "task_id": task_id,
         "task_state": async_result.state,
+        "kind": kind,
+        "switches": config_overrides or None,
         "report": report,
     }

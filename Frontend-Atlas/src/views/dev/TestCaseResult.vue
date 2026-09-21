@@ -45,7 +45,123 @@
         <div
           class="w-96 border-l border-base-300 bg-base-200 p-4 space-y-4 overflow-y-auto"
         >
-          <div class="bg-base-100 rounded-box border border-base-300 p-3">
+          <!-- Re-run this case from its saved inputs. The switches apply to
+               this run only; the worker's own settings are left alone. -->
+          <div class="bg-base-100 rounded-box border border-base-300 p-3 space-y-3">
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-semibold">Relancer</h2>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                :disabled="isRerunning || !canRerun"
+                :title="canRerun ? '' : rerunBlockedReason"
+                @click="rerunCase"
+              >
+                <span
+                  v-if="isRerunning"
+                  class="loading loading-spinner loading-xs mr-1"
+                />
+                {{ isRerunning ? "En cours…" : "Relancer" }}
+              </button>
+            </div>
+
+            <label class="flex items-start gap-2 cursor-pointer">
+              <input
+                v-model="runSnap"
+                type="checkbox"
+                class="checkbox checkbox-sm mt-0.5"
+                :disabled="isRerunning"
+              />
+              <span class="text-xs">
+                Snapping côtier
+                <span class="block text-base-content/60">
+                  À laisser <strong>désactivé</strong> pour juger le
+                  géoréférencement : le snapping corrige l'erreur de transformation
+                  après coup, ce qui flatte la référence et masque l'amélioration
+                  que vous cherchez à voir.
+                </span>
+              </span>
+            </label>
+
+            <label class="flex items-start gap-2 cursor-pointer">
+              <input
+                v-model="runAlign"
+                type="checkbox"
+                class="checkbox checkbox-sm mt-0.5"
+                :disabled="isRerunning"
+              />
+              <span class="text-xs">
+                Alignement (étape 4)
+                <span class="block text-base-content/60">
+                  Chamfer + ICP. Lance l'OCR au premier passage sur cette carte
+                  (~135 s), puis réutilise le cache.
+                </span>
+              </span>
+            </label>
+
+            <p v-if="isScored" class="text-xs text-warning">
+              Ce cas est noté : relancer réécrit <code>report.json</code>. Un run
+              avec des réglages non standard n'est jamais promu en «&nbsp;best&nbsp;».
+            </p>
+
+            <p v-if="rerunError" class="text-xs text-error">{{ rerunError }}</p>
+            <p v-else-if="rerunNote" class="text-xs text-success">{{ rerunNote }}</p>
+          </div>
+
+          <!-- What this case is for, and whether its stored inputs still cover
+               what the current algorithm needs. Shown above the metrics because
+               it changes how the metrics should be read. -->
+          <div
+            v-if="caseState"
+            class="bg-base-100 rounded-box border border-base-300 p-3 space-y-2"
+          >
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-semibold">Cas de test</h2>
+              <div
+                class="badge badge-sm"
+                :class="isProbe ? 'badge-info' : 'badge-neutral'"
+              >
+                {{ isProbe ? "Exploration" : "Régression" }}
+              </div>
+            </div>
+
+            <p v-if="isProbe" class="text-xs text-base-content/70">
+              Aucune zone attendue : ce cas sert à rejouer la carte rapidement.
+              Les zones extraites sont affichées telles quelles, sans score.
+            </p>
+
+            <div v-if="requirementGaps.length > 0" class="space-y-1 pt-1">
+              <p class="text-xs font-semibold text-base-content/70">
+                Entrées manquantes pour l'algorithme actuel
+              </p>
+              <div
+                v-for="gap in requirementGaps"
+                :key="gap.key"
+                class="text-xs flex items-start gap-2"
+              >
+                <span class="badge badge-xs mt-0.5" :class="requirementBadgeClass(gap.status)">
+                  {{ gap.status }}
+                </span>
+                <span class="min-w-0">
+                  <span class="font-mono">{{ gap.key }}</span>
+                  <span class="text-base-content/60"> (étape {{ gap.sinceStep }})</span>
+                  <span class="block text-base-content/70">{{ gap.detail || gap.remedy }}</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Only a human can supply these, so the case has to be recreated:
+                 no amount of re-running recovers a click that never happened. -->
+            <div
+              v-if="blockedRequirements.length > 0"
+              class="alert alert-error text-xs py-2"
+            >
+              Ce cas ne peut plus être rejoué tel quel : recréez-le pour fournir
+              {{ blockedRequirements.map((r) => r.key).join(", ") }}.
+            </div>
+          </div>
+
+          <div v-if="isScored" class="bg-base-100 rounded-box border border-base-300 p-3">
             <div class="flex items-center justify-between">
               <h2 class="text-sm font-semibold">Rapport</h2>
               <div class="join">
@@ -149,6 +265,21 @@
               </div>
             </div>
           </div>
+
+          <!-- An unscored case still has an output worth stating plainly. -->
+          <div v-else class="bg-base-100 rounded-box border border-base-300 p-3">
+            <h2 class="text-sm font-semibold">Extraction</h2>
+            <div v-if="isLoading" class="text-sm text-base-content/60 mt-2">
+              Chargement…
+            </div>
+            <div v-else-if="loadError" class="text-sm text-error mt-2">
+              {{ loadError }}
+            </div>
+            <div v-else class="mt-2 text-sm flex items-center justify-between">
+              <span class="text-base-content/70">Zones extraites</span>
+              <span class="font-mono">{{ extractedFeatures.length }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -161,6 +292,36 @@ import { useRoute, useRouter } from "vue-router";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 import keycloak from "../../keycloak";
+import { zoneFillColor } from "../../typescript/zoneColors";
+
+type RequirementState = {
+  key: string;
+  kind: "user_input" | "derived";
+  level: "required" | "optional";
+  sinceStep: string;
+  summary: string;
+  remedy: string;
+  status:
+    | "satisfied"
+    | "stale"
+    | "refreshable"
+    | "blocked"
+    | "absent";
+  detail: string | null;
+};
+
+type CaseState = {
+  kind?: "regression" | "probe";
+  scored?: boolean | null;
+  hasExpectedZones?: boolean;
+  requirements?: {
+    version?: string;
+    runnable?: boolean;
+    blocked?: string[];
+    refreshable?: string[];
+    requirements?: RequirementState[];
+  } | null;
+};
 
 type DevTestReport = {
   testId?: string;
@@ -185,6 +346,16 @@ const errorFeatures = ref<any[]>([]);
 
 const latestReport = ref<DevTestReport | null>(null);
 const bestReport = ref<DevTestReport | null>(null);
+const caseState = ref<CaseState | null>(null);
+
+// Snapping defaults OFF: the docs say to judge alignment with it off, and a
+// re-run button exists to judge alignment. Alignment defaults ON because
+// seeing what the current pipeline does is the point of re-running at all.
+const runSnap = ref(false);
+const runAlign = ref(true);
+const isRerunning = ref(false);
+const rerunError = ref<string | null>(null);
+const rerunNote = ref<string | null>(null);
 const isLoading = ref(false);
 const loadError = ref<string | null>(null);
 
@@ -196,6 +367,35 @@ let suppressModeWatch = false;
 const cacheBuster = ref(0);
 
 const featureVisibility = ref(new Map<string, boolean>());
+
+const isProbe = computed<boolean>(() => caseState.value?.kind === "probe");
+
+// A run only produces a number when there is ground truth to compare it with.
+// Fall back to "is there a report" for a case that has never been inspected.
+const isScored = computed<boolean>(() => {
+  if (caseState.value?.scored != null) return Boolean(caseState.value.scored);
+  if (isProbe.value) return false;
+  return latestReport.value != null;
+});
+
+// Everything the current algorithm wants that this case does not have. A case
+// authored before a requirement existed otherwise runs quietly with less
+// evidence than the pipeline expects and reports a worse number for a reason
+// that has nothing to do with the change being measured.
+const requirementGaps = computed<RequirementState[]>(() => {
+  const all = caseState.value?.requirements?.requirements ?? [];
+  return all.filter((r) => r.status !== "satisfied");
+});
+
+const blockedRequirements = computed<RequirementState[]>(() =>
+  requirementGaps.value.filter((r) => r.status === "blocked"),
+);
+
+function requirementBadgeClass(status: RequirementState["status"]): string {
+  if (status === "blocked") return "badge-error";
+  if (status === "stale" || status === "refreshable") return "badge-warning";
+  return "badge-ghost";
+}
 
 const activeReport = computed<DevTestReport | null>(() => {
   if (mode.value === "best" && bestReport.value) return bestReport.value;
@@ -313,6 +513,65 @@ const expectedBestSummary = computed<any>(() => {
   };
 });
 
+// A case missing a user input cannot be re-run at all -- no amount of
+// re-running recovers a click that never happened.
+const canRerun = computed<boolean>(
+  () => (caseState.value?.requirements?.runnable ?? true) === true,
+);
+
+const rerunBlockedReason = computed<string>(() =>
+  blockedRequirements.value.length
+    ? `Entrées manquantes : ${blockedRequirements.value
+        .map((r) => r.key)
+        .join(", ")}. Recréez le cas.`
+    : "",
+);
+
+async function rerunCase() {
+  if (!testId.value || !testCaseId.value || isRerunning.value) return;
+
+  isRerunning.value = true;
+  rerunError.value = null;
+  rerunNote.value = null;
+
+  const params = new URLSearchParams({
+    snap_to_coastline: String(runSnap.value),
+    enable_curve_alignment: String(runAlign.value),
+  });
+
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/run-evaluate?${params}`,
+      { method: "POST", headers: { Authorization: `Bearer ${keycloak.token}` } },
+    );
+
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = ((await res.json()) as any)?.detail ?? "";
+      } catch {
+        detail = "";
+      }
+      throw new Error(
+        `Échec de la relance (${res.status})${detail ? `: ${detail}` : ""}`,
+      );
+    }
+
+    const data = await res.json();
+    rerunNote.value =
+      data?.kind === "probe"
+        ? "Relancé. Zones réextraites, pas de score (cas d'exploration)."
+        : "Relancé et réévalué.";
+
+    await reloadAll();
+  } catch (err) {
+    rerunError.value =
+      err instanceof Error ? err.message : "Erreur inattendue lors de la relance";
+  } finally {
+    isRerunning.value = false;
+  }
+}
+
 function goBack() {
   if (testId.value) {
     router.push({ path: `/test-editor/${testId.value}` });
@@ -337,7 +596,6 @@ function normalizeZoneFeatures(
   source: "expected" | "extracted",
 ): any[] {
   const feats = Array.isArray(raw?.features) ? raw.features : [];
-  const color = source === "expected" ? "blue" : "green";
 
   // Important: keep __sourceIndex equal to the original Feature index in the GeoJSON.
   // The backend stores extracted feature indices based on the on-disk FeatureCollection.
@@ -348,6 +606,10 @@ function normalizeZoneFeatures(
 
     const id = String(f.id ?? `${source}-${idx}`);
     const name = String(f?.properties?.name ?? `${source}-${idx}`);
+    // Extracted zones render in the colour they were sampled from; expected
+    // zones are hand-drawn and carry none, so they stay a flat blue and the two
+    // layers remain tellable apart.
+    const color = zoneFillColor(f.properties, source);
     out.push({
       ...f,
       id,
@@ -384,6 +646,10 @@ function normalizeErrorFeatures(raw: any): any[] {
         ...f,
         id,
         color: "red",
+        // Dashed, so the error layer reads as an overlay even on a map whose
+        // own zones are red.
+        strokeColor: "#7f1d1d",
+        dashArray: "6 4",
         properties: {
           ...(f.properties || {}),
           name: `${baseName} (${label})`,
@@ -424,6 +690,14 @@ async function loadExtracted() {
 
   const all = normalizeZoneFeatures(data, "extracted");
 
+  // A probe case has no report to filter against, and filtering to nothing
+  // would render an empty map — which is the whole output of a probe run.
+  // Show everything that was extracted.
+  if (!isScored.value) {
+    extractedFeatures.value = all;
+    return;
+  }
+
   // Only show extracted zones that were actually selected as best matches.
   const usedIdx = new Set<number>();
   const m = activeReport.value?.metrics as any;
@@ -463,6 +737,19 @@ async function loadLatestReport() {
   latestReport.value = await res.json();
 }
 
+async function loadCaseState() {
+  if (!testId.value || !testCaseId.value) return;
+  const res = await fetch(
+    `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/state`,
+    { headers: { Authorization: `Bearer ${keycloak.token}` } },
+  );
+  if (!res.ok) {
+    caseState.value = null;
+    return;
+  }
+  caseState.value = await res.json();
+}
+
 async function loadBestReport() {
   if (!testId.value || !testCaseId.value) return;
   const res = await fetch(
@@ -490,7 +777,7 @@ async function reloadAll() {
   cacheBuster.value = Date.now();
   try {
     // Load report first (extracted filtering depends on it).
-    await Promise.all([loadLatestReport(), loadBestReport()]);
+    await Promise.all([loadLatestReport(), loadBestReport(), loadCaseState()]);
     if (mode.value === "best" && !bestReport.value) {
       suppressModeWatch = true;
       mode.value = "latest";

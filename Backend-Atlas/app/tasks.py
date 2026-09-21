@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 import time
 from datetime import datetime
@@ -83,14 +84,20 @@ def _align_if_enabled(
     water_sampling_radii: list | None,
     record: "RunRecord | None" = None,
     debug_dir: str | None = None,
+    config=None,
 ):
     """Step 4 curve alignment, when it is switched on.
 
     Returns the `AlignmentResult`, or None when alignment is switched off.
     Never raises: `align_map` gates its own result and hands back the GCP-only
     baseline on any failure, so the caller can always use it.
+
+    `config` defaults to the process-wide `GEOREF_CONFIG`; a dev-test re-run
+    passes its own so switches like snapping can be flipped per run rather than
+    per deployment.
     """
-    if not GEOREF_CONFIG.enable_curve_alignment or image_bgr is None:
+    config = config or GEOREF_CONFIG
+    if not config.enable_curve_alignment or image_bgr is None:
         return None
 
     from app.utils.georeferencing.runner import align_map
@@ -119,7 +126,7 @@ def _align_if_enabled(
         text_regions=text_regions,
         water_click_positions=water_click_positions,
         water_sampling_radii=water_sampling_radii,
-        config=GEOREF_CONFIG,
+        config=config,
         record=record,
         debug_dir=debug_dir,
     )
@@ -128,6 +135,88 @@ def _align_if_enabled(
         + (f" failed={result.failed_checks}" if result.failed_checks else "")
     )
     return result
+
+
+def _dev_test_text_regions(test_id: str, image_bgr, config=None) -> list | None:
+    """OCR regions for a dev-test map, from the derived store.
+
+    Returns None when alignment is off (nothing consumes them) or when OCR is
+    unavailable. Never raises: a missing text mask degrades the evidence, it
+    does not fail the run.
+    """
+    if not (config or GEOREF_CONFIG).enable_curve_alignment:
+        return None
+
+    from app.utils.dev_test import find_test_image_path
+    from app.utils.dev_test_derived import ensure_text_regions
+
+    image_path = find_test_image_path(test_id)
+    if not image_path:
+        return None
+
+    try:
+        regions, state = ensure_text_regions(
+            test_id, image_path, image_bgr, refresh=False
+        )
+        logger.info(
+            f"[DEV-TEST] text regions for {test_id}: {len(regions or [])}"
+            f" ({state.detail or 'reused from cache'})"
+        )
+        return regions
+    except Exception as e:
+        logger.warning(f"[DEV-TEST] Could not obtain text regions for {test_id}: {e}")
+        return None
+
+
+def _dev_test_debug_dir(test_id: str, test_case: str) -> str | None:
+    """Where this case's alignment diagnostics go, or None when off.
+
+    Into the case folder rather than the timestamped `debug_runs/` the
+    production import path uses: a harness case is re-run against the same map
+    over and over, so one folder per case that is overwritten beats an
+    ever-growing pile you have to date-match back to a run. It sits next to
+    `reference_debug/` and `evidence_debug/`, which already work this way.
+
+    Gated by `GEOREF_DEBUG`, which is already set on `celery-worker` and not on
+    `test-backend`, so a UI re-run gets diagnostics and the regression suite
+    stays fast without either needing its own switch.
+    """
+    if not debug_enabled():
+        return None
+
+    path = os.path.join(TEST_CASES_DIR, test_id, test_case, "alignment_debug")
+    try:
+        # Cleared, not merged: a run that writes fewer files than the last one
+        # would otherwise leave stale overlays that read as current.
+        shutil.rmtree(path, ignore_errors=True)
+        os.makedirs(path, exist_ok=True)
+        return path
+    except OSError as e:
+        logger.warning(f"[DEV-TEST] Could not prepare debug dir {path}: {e}")
+        return None
+
+
+def _write_dev_test_case_state(test_id: str, test_case: str, config=None) -> None:
+    """Record which requirements this case satisfied. Never raises."""
+    try:
+        from app.utils.dev_test import inspect_case
+        from app.utils.dev_test_assets import GEOREF_ASSETS_DIR
+
+        state, _inputs = inspect_case(
+            assets_root=GEOREF_ASSETS_DIR,
+            test_id=test_id,
+            test_case_id=test_case,
+            config=config or GEOREF_CONFIG,
+        )
+        state.write()
+        if state.requirements.blocked:
+            logger.warning(
+                f"[DEV-TEST] {test_id}/{test_case} is missing user inputs the"
+                f" current algorithm needs: "
+                + ", ".join(s.key for s in state.requirements.blocked)
+            )
+    except Exception as e:
+        logger.warning(f"[DEV-TEST] Could not record case state for {test_id}: {e}")
 
 
 def _dump_zones_debug(debug_dir: str | None, collections: list) -> None:
@@ -179,13 +268,14 @@ def _georeference(
     record: "RunRecord | None" = None,
     model=None,
     extra_properties: dict | None = None,
+    config=None,
 ):
     """Fit and apply the pixel -> EPSG:4326 transform for one feature producer."""
     return georeference_features(
         pixel_feature_collections,
         _control_points(pixel_points, geo_points_lonlat),
         frame_bounds=frame_bounds,
-        config=GEOREF_CONFIG,
+        config=config or GEOREF_CONFIG,
         record=record,
         model=model,
         extra_properties=extra_properties,
@@ -685,12 +775,47 @@ def process_dev_test_extraction(
     water_click_positions: list | None = None,
     water_colors_names: list | None = None,
     water_sampling_radii: list | None = None,
+    config_overrides: dict | None = None,
 ):
     """Dev-test-only extraction task: no DB persistence, results saved to files,
-    evaluation report written automatically at the end."""
+    evaluation report written automatically at the end.
+
+    ``config_overrides`` flips per-run switches (``snap_to_coastline``,
+    ``enable_curve_alignment``, ``clip_to_land_mask``) for this run only. It is
+    one extensible dict rather than a flag per switch on purpose: every kwarg
+    added to a Celery task breaks in-flight messages and any caller that has
+    not restarted alongside the worker, so the next switch should not change
+    this signature at all. Unknown keys are dropped; see ``parse_run_switches``.
+
+    Whether the run is *scored* comes from the case's kind, which is resolved
+    here from disk rather than passed in. A ``probe`` case has no hand-drawn
+    expected zones and exists only to replay a map's stored clicks quickly, so
+    it writes zones and a run record but no report -- there is nothing to
+    compare against, and a fabricated one would be worse than none.
+
+    Resolved rather than passed because the worker mounts the test assets and
+    already re-reads this config below, so a kwarg would be a second source of
+    truth for the same fact -- and every kwarg added here breaks in-flight
+    tasks and any caller that has not restarted alongside the worker.
+    """
+    from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
+    from app.utils.georeferencing.config import parse_run_switches
+
+    resolved_kind = resolve_case_kind(test_id, test_case)
+    switches = parse_run_switches(config_overrides)
+    run_config = GEOREF_CONFIG.with_overrides(**switches)
+
+    # A run under non-ambient switches is not comparable to one under the
+    # defaults -- snapping alone moves this map's IoU 0.941 vs 0.926 (plan 8c).
+    # Letting such a run win `zones_best` would mean "best" silently mixing two
+    # different metrics, so it is written but never promoted.
+    ambient_run = not switches
+
     georef_record = RunRecord(run_id=f"{test_id}/{test_case}")
     georef_record.set_inputs(
         waterPickCount=len(water_click_positions or []),
+        caseKind=resolved_kind,
+        runSwitches=switches or None,
     )
     try:
         # Step 1: temp save
@@ -783,15 +908,26 @@ def process_dev_test_extraction(
 
         if pixel_points and geo_points_lonlat:
             try:
+                # Text regions are a property of the *map*, not of the case, and
+                # OCR costs ~135 s on CPU. Pulling them from the derived store
+                # means the second case on a map -- and every re-run of the
+                # first -- pays nothing, which is what makes this loop usable.
+                text_regions = _dev_test_text_regions(
+                    test_id, image, config=run_config
+                )
+
+                debug_dir = _dev_test_debug_dir(test_id, test_case)
                 alignment = _align_if_enabled(
                     image,
                     pixel_points,
                     geo_points_lonlat,
                     frame_bounds,
-                    None,
+                    text_regions,
                     water_click_positions,
                     water_sampling_radii,
                     record=georef_record,
+                    config=run_config,
+                    debug_dir=debug_dir,
                 )
                 aligned_model = (
                     alignment.model
@@ -805,9 +941,13 @@ def process_dev_test_extraction(
                     frame_bounds=frame_bounds,
                     record=georef_record,
                     model=aligned_model,
+                    config=run_config,
                 )
                 all_extracted_features = georef.collections
                 georef_record.set_model("chosen", georef.transform_payload)
+                _dump_zones_debug(debug_dir, georef.collections)
+                if debug_dir:
+                    logger.info(f"[DEV-TEST] alignment debug dump -> {debug_dir}")
             except Exception as e:
                 logger.error(
                     f"[DEV-TEST] SIFT georeferencing failed for test {test_id}: {e}",
@@ -877,25 +1017,40 @@ def process_dev_test_extraction(
         except Exception as e:
             logger.error(f"[DEV-TEST] Failed to save test assets for {filename}: {e}")
 
-        # Evaluate and persist reports automatically
-        try:
-            from app.utils.dev_test import evaluate_and_persist_case
-            from app.utils.dev_test_assets import GEOREF_ASSETS_DIR
-
-            report = evaluate_and_persist_case(
-                assets_root=GEOREF_ASSETS_DIR,
-                test_id=test_id,
-                test_case_id=test_case,
-                min_iou=None,
-            )
-            georef_record.set_errors(iou=_iou_summary_from_report(report))
+        # Evaluate and persist reports automatically -- but only for a scored
+        # case. A probe has no expected zones by design, so there is nothing to
+        # evaluate and no report is written; the zones and the run record are
+        # the whole deliverable.
+        if resolved_kind == KIND_PROBE:
             logger.info(
-                f"[DEV-TEST] Evaluation report written for {test_id}/{test_case}"
+                f"[DEV-TEST] {test_id}/{test_case} is a probe case: zones written,"
+                " no score computed"
             )
-        except Exception as e:
-            logger.warning(
-                f"[DEV-TEST] Evaluation skipped (expected zones may be missing): {e}"
-            )
+            georef_record.note("probe case: no expected zones, run not scored")
+        else:
+            try:
+                from app.utils.dev_test import evaluate_and_persist_case
+                from app.utils.dev_test_assets import GEOREF_ASSETS_DIR
+
+                report = evaluate_and_persist_case(
+                    assets_root=GEOREF_ASSETS_DIR,
+                    test_id=test_id,
+                    test_case_id=test_case,
+                    min_iou=None,
+                    allow_best_promotion=ambient_run,
+                )
+                georef_record.set_errors(iou=_iou_summary_from_report(report))
+                logger.info(
+                    f"[DEV-TEST] Evaluation report written for {test_id}/{test_case}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[DEV-TEST] Evaluation skipped (expected zones may be missing): {e}"
+                )
+
+        # The resolved requirement state goes on disk next to the run record, so
+        # "why is this case's number odd" can be answered without re-deriving it.
+        _write_dev_test_case_state(test_id, test_case, config=run_config)
 
         # The run record goes next to report.json whether or not evaluation ran:
         # an IoU number alone cannot tell you which stage moved it.

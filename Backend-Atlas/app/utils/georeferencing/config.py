@@ -162,3 +162,48 @@ class GeorefConfig:
 
 
 DEFAULT_GEOREF_CONFIG = GeorefConfig()
+
+
+#: Fields a *caller* may flip on a single run -- currently the dev-test re-run
+#: button. An allowlist, not the whole dataclass: this config carries dozens of
+#: tuned hyperparameters and a UI button has no business setting the annealing
+#: schedule. Both entries are switches whose correct value depends on what you
+#: are looking at rather than on tuning, which is exactly what belongs here.
+RUN_SWITCHES = frozenset(
+    {
+        # Blind snapping corrects transform error after the fact, so it both
+        # flatters the baseline and hides alignment improvements (plan 8c).
+        # Judging alignment means turning it off, per run, not per deployment.
+        "snap_to_coastline",
+        "enable_curve_alignment",
+        "clip_to_land_mask",
+    }
+)
+
+
+def parse_run_switches(raw: Any) -> Dict[str, bool]:
+    """Coerce a caller-supplied switch map to known boolean fields.
+
+    Unknown keys are dropped rather than raising: these arrive from a URL query
+    and a stale frontend sending a retired switch should not fail the run. Only
+    real booleans are accepted -- a string "false" is a classic way to silently
+    turn a switch *on*, so it is rejected rather than guessed at.
+
+    Raises:
+        ValueError: if a known switch is given a non-boolean value, because
+            that is a caller bug and silently ignoring it would run the map
+            under settings the caller did not ask for.
+    """
+    if not isinstance(raw, dict):
+        return {}
+
+    switches: Dict[str, bool] = {}
+    for key, value in raw.items():
+        if key not in RUN_SWITCHES:
+            continue
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"{key} must be a boolean, got {type(value).__name__}: {value!r}"
+            )
+        switches[key] = value
+    return switches
