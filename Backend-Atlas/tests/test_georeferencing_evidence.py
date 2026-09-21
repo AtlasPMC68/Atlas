@@ -20,6 +20,7 @@ from app.utils.georeferencing.evidence import (  # noqa: E402
     build_user_evidence,
     build_water_mask,
     detect_straight_lines,
+    filter_edges_near_water,
     split_ocean_and_lakes,
     suppress_straight_lines,
 )
@@ -223,6 +224,87 @@ class TestWaterMask:
         water[150:153, 200:203] = True  # 9 px, well under the threshold
         _, lakes = split_ocean_and_lakes(water)
         assert not lakes.any()
+
+
+class TestWaterEdgeFilter:
+    """Edges survive only on the water/land boundary, within a small margin."""
+
+    @staticmethod
+    def _water_left_of(x: int) -> np.ndarray:
+        water = np.zeros((HEIGHT, WIDTH), dtype=bool)
+        water[:, :x] = True
+        return water
+
+    @staticmethod
+    def _column(x: int) -> np.ndarray:
+        edges = np.zeros((HEIGHT, WIDTH), dtype=bool)
+        edges[:, x] = True
+        return edges
+
+    def test_keeps_an_edge_on_the_shore(self):
+        filtered, applied = filter_edges_near_water(
+            self._column(100), self._water_left_of(100)
+        )
+        assert applied
+        assert filtered[:, 100].all()
+
+    def test_keeps_an_edge_a_couple_of_pixels_off_the_shore(self):
+        """Canny can land a pixel or two either side of the true boundary."""
+        margin = DEFAULT_GEOREF_CONFIG.edge_water_margin_px
+        water = self._water_left_of(100)
+        on_land, _ = filter_edges_near_water(self._column(100 + margin - 1), water)
+        in_water, _ = filter_edges_near_water(self._column(100 - margin), water)
+        assert on_land.any()
+        assert in_water.any()
+
+    def test_drops_an_edge_inland(self):
+        filtered, _ = filter_edges_near_water(
+            self._column(250), self._water_left_of(100)
+        )
+        assert not filtered.any()
+
+    def test_drops_an_edge_in_open_water(self):
+        """Graticules and routes drawn across the sea are surrounded by water."""
+        filtered, _ = filter_edges_near_water(
+            self._column(40), self._water_left_of(100)
+        )
+        assert not filtered.any()
+
+    def test_no_water_leaves_edges_untouched(self):
+        edges = self._column(250)
+        filtered, applied = filter_edges_near_water(
+            edges, np.zeros((HEIGHT, WIDTH), dtype=bool)
+        )
+        assert not applied
+        assert np.array_equal(filtered, edges)
+
+    def test_too_little_water_is_not_trusted(self):
+        """A stray pick on a legend swatch must not delete every edge."""
+        water = np.zeros((HEIGHT, WIDTH), dtype=bool)
+        water[10:15, 10:15] = True
+        edges = self._column(250)
+        filtered, applied = filter_edges_near_water(edges, water)
+        assert not applied
+        assert np.array_equal(filtered, edges)
+
+    def test_can_be_switched_off(self):
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(edge_water_filter=False)
+        edges = self._column(250)
+        filtered, applied = filter_edges_near_water(
+            edges, self._water_left_of(100), config
+        )
+        assert not applied
+        assert np.array_equal(filtered, edges)
+
+    def test_end_to_end_drops_a_river_and_keeps_the_coast(self):
+        image = TestWaterMask._sea_and_lake()
+        cv2.line(image, (330, 20), (330, 280), (0, 0, 0), 2)  # an inland "river"
+        evidence = build_user_evidence(
+            image, water_click_positions=[(0.1, 0.5)], water_sampling_radii=[10]
+        )
+        assert evidence.stats["waterEdgeFilterApplied"]
+        assert evidence.edges[:, 85:95].any(), "the sea's shore should survive"
+        assert not evidence.edges[:, 320:340].any(), "the river should be gone"
 
 
 class TestBuildUserEvidence:

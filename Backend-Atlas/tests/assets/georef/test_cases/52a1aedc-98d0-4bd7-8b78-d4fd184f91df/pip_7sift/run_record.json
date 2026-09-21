@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df/pip_7sift",
-  "startedAt": "2026-09-21T03:09:59.907383+00:00",
+  "startedAt": "2026-09-21T04:35:23.018894+00:00",
   "inputs": {
     "waterPickCount": 0,
     "controlPoints": [
@@ -177,13 +177,13 @@
     }
   },
   "timingMs": {
-    "fit": 26.216,
-    "load_coastline": 827.177,
-    "load_land_mask": 3120.066,
-    "apply": 1876.393
+    "fit": 2.209,
+    "load_coastline": 355.964,
+    "load_land_mask": 602.83,
+    "apply": 677.698
   },
   "config": {
-    "version": "4",
+    "version": "5",
     "snap_to_coastline": true,
     "coastline_snap_ratio_of_diagonal": 0.01,
     "coastline_snap_fallback_px": 8.0,
@@ -195,9 +195,9 @@
     "land_coverage_threshold": 0.01,
     "reference_raster_width": 1024,
     "reference_raster_height": 768,
-    "edge_blur_ksize": 5,
-    "edge_canny_low": 75,
-    "edge_canny_high": 175,
+    "edge_blur_ksize": 3,
+    "edge_canny_low": 40,
+    "edge_canny_high": 120,
     "text_mask_dilation_px": 7,
     "straight_line_min_length_ratio": 0.15,
     "straight_line_hough_threshold": 80,
@@ -207,6 +207,9 @@
     "water_delta_e": 12.0,
     "water_morph_radius_px": 2,
     "water_min_component_px": 200,
+    "edge_water_filter": false,
+    "edge_water_margin_px": 3,
+    "edge_water_min_fraction": 0.01,
     "enable_curve_alignment": false,
     "curve_sample_spacing_px": 2.0,
     "curve_max_samples": 8000,

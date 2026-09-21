@@ -13,7 +13,7 @@ changes, so run records made under different settings stay comparable.
 from dataclasses import dataclass, replace
 from typing import Any, Dict
 
-CONFIG_VERSION = "4"
+CONFIG_VERSION = "5"
 
 
 @dataclass(frozen=True)
@@ -45,10 +45,13 @@ class GeorefConfig:
     reference_raster_height: int = 768
 
     # --- User-side evidence (Step 3) -----------------------------------------
-    # Canny thresholds match the existing coastline keypoint finder.
-    edge_blur_ksize: int = 5
-    edge_canny_low: int = 75
-    edge_canny_high: int = 175
+    # Chosen by eye with scripts/edge_mask.py --sweep: blur 5 and 75/175 (the
+    # coastline keypoint finder's values) dropped whole stretches of coast where
+    # land and sea have similar grey levels. The extra interior linework this
+    # admits is what the water filter below is for.
+    edge_blur_ksize: int = 3
+    edge_canny_low: int = 40
+    edge_canny_high: int = 120
     # Canny fires outside a glyph as readily as inside, so a mask tight to the
     # OCR box still leaves a rectangle of edges around every label.
     text_mask_dilation_px: int = 7
@@ -67,6 +70,17 @@ class GeorefConfig:
     water_delta_e: float = 12.0
     water_morph_radius_px: int = 2
     water_min_component_px: int = 200
+
+    # Keep only edges on the water/land boundary, when water was picked. An
+    # edge counts if it lies within `margin` px of water *and* of non-water:
+    # Canny can put the edge a pixel or two either side of the true boundary,
+    # and anti-aliasing leaves a band that matches neither colour. Requiring
+    # both sides also drops lines drawn across open water (graticules, routes).
+    # Skipped when the water mask is too small to be trusted -- a stray pick on
+    # a legend swatch would otherwise delete nearly every edge.
+    edge_water_filter: bool = False
+    edge_water_margin_px: int = 3
+    edge_water_min_fraction: float = 0.01
 
     # --- Alignment (Step 4) --------------------------------------------------
     # Off by default: turning it on is the experiment, not the baseline.

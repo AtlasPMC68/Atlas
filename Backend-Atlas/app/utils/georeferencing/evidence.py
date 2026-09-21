@@ -111,7 +111,7 @@ def build_edge_map(
 
     if text_mask is not None and text_mask.any():
         edges = edges & ~text_mask
-
+    
     return edges
 
 
@@ -280,6 +280,40 @@ def split_ocean_and_lakes(
     return ocean, lakes
 
 
+def filter_edges_near_water(
+    edges: np.ndarray,
+    water: np.ndarray,
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
+) -> Tuple[np.ndarray, bool]:
+    """Keep only edges on the water/land boundary.
+
+    An edge survives when it lies within `edge_water_margin_px` of water *and*
+    within the same margin of non-water, i.e. inside a band straddling the
+    shoreline. Rivers, borders and the legend sit away from the water and go;
+    so do lines drawn across open water, which are surrounded by it.
+
+    `water` should already be cleaned of speckle (ocean | lakes, not the raw
+    colour mask), or every stray water-coloured pixel inland keeps the edges
+    around it.
+
+    Returns (edges, applied). Not applied -- edges unchanged -- when the filter
+    is off or the water mask covers less than `edge_water_min_fraction` of the
+    image, since a mask that small is more likely a bad pick than the sea.
+    """
+    if not config.edge_water_filter or not water.any():
+        return edges, False
+    if water.mean() < config.edge_water_min_fraction:
+        return edges, False
+
+    margin = max(int(config.edge_water_margin_px), 0)
+    size = 2 * margin + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
+    water_u8 = water.astype(np.uint8)
+    near_water = cv2.dilate(water_u8, kernel).astype(bool)
+    near_land = cv2.dilate(1 - water_u8, kernel).astype(bool)
+    return edges & near_water & near_land, True
+
+
 # --------------------------------------------------------------------------
 # The bundle
 # --------------------------------------------------------------------------
@@ -330,10 +364,6 @@ def build_user_evidence(
     text_mask = build_text_mask(
         (height, width), text_regions, config.text_mask_dilation_px
     )
-    edges = build_edge_map(image_bgr, text_mask, config)
-    lines = detect_straight_lines(edges, config)
-    edge_weight = suppress_straight_lines(edges, lines, config)
-
     image_rgb = (
         cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         if image_bgr.ndim == 3
@@ -344,10 +374,25 @@ def build_user_evidence(
     )
     ocean, lakes = split_ocean_and_lakes(water, config)
 
+    edges = build_edge_map(image_bgr, text_mask, config)
+    raw_edge_pixels = int(edges.sum())
+    # Filtered before straight-line detection, so Hough only sees what the
+    # alignment will actually use.
+    edges, water_filter_applied = filter_edges_near_water(
+        edges, ocean | lakes, config
+    )
+    lines = detect_straight_lines(edges, config)
+    edge_weight = suppress_straight_lines(edges, lines, config)
+
     pixels = float(width * height) or 1.0
     suppressed = int((edges & (edge_weight < 1.0)).sum())
     stats = {
         "edgeFraction": float(edges.sum()) / pixels,
+        "rawEdgePixels": raw_edge_pixels,
+        "waterEdgeFilterApplied": water_filter_applied,
+        "waterEdgeFilterKept": (
+            float(edges.sum()) / raw_edge_pixels if raw_edge_pixels else 0.0
+        ),
         "textMaskFraction": float(text_mask.sum()) / pixels,
         "straightLineCount": len(lines),
         "suppressedEdgePixels": suppressed,
