@@ -134,6 +134,10 @@ def dump_alignment_debug(
     try:
         aligned = alignment.model if alignment is not None else baseline
 
+        # The source map, so a past run's overlays can be re-rendered after a
+        # code change without re-importing (which costs an OCR pass).
+        _write("00_map.png", image_bgr)
+
         # --- user-side evidence ---------------------------------------------
         _write("01_edges.png", evidence.edges.astype(np.uint8) * 255)
         _write("02_edge_weight.png", (evidence.edge_weight * 255).astype(np.uint8))
@@ -310,6 +314,26 @@ def dump_alignment_debug(
             lines.append("  STATS")
             for key, value in (alignment.stats or {}).items():
                 lines.append(f"    {key:<20} {value}")
+        try:
+            from .gates import water_mask_iou
+
+            base_iou = water_mask_iou(baseline, layers, evidence)
+            aligned_iou = water_mask_iou(aligned, layers, evidence)
+            if base_iou is not None:
+                lines.append("")
+                lines.append("IS THE STARTING TRANSFORM ITSELF ANY GOOD?")
+                lines.append(f"  water IoU baseline   {base_iou:.4f}")
+                lines.append(f"  water IoU aligned    {aligned_iou:.4f}")
+                lines.append(
+                    "  (both low => the GCP-only affine is already misplaced, and"
+                )
+                lines.append(
+                    "   alignment is not the thing to fix -- check GCPs, framing box,")
+                lines.append(
+                    "   or whether an affine can represent this map's projection)")
+        except Exception:
+            pass
+
         lines.append("")
         lines.append("TRANSFORM")
         lines.append(f"  scale   baseline={base_scale:.4f} aligned={new_scale:.4f}")

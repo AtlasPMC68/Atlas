@@ -62,7 +62,21 @@ class TestTextMask:
         grown = build_text_mask((HEIGHT, WIDTH), [region], 8)
         assert grown.sum() > tight.sum()
         # Canny fires just outside a glyph, which is the point of dilating.
-        assert grown[120, 205] and not tight[120, 205]
+        assert grown[120, 201] and not tight[120, 201]
+
+    def test_dilation_scales_with_image_size(self):
+        """A fixed pixel count is proportionally huge on a small scan.
+
+        Measured on a real 521x481 map, an absolute 7 px dilation helped push
+        the text mask to 42% of the image, gutting the edge evidence. The
+        dilation is now keyed off the diagonal so it means the same thing at any
+        resolution.
+        """
+        region = [[10, 10], [60, 10], [60, 30], [10, 30]]
+        small = build_text_mask((200, 240), [region], 8).sum()
+        large = build_text_mask((1400, 1700), [region], 8).sum()
+        # Same region, same nominal dilation: the big image must not dilate less.
+        assert large > small
 
     def test_malformed_regions_are_skipped_not_fatal(self):
         mask = build_text_mask(

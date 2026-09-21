@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df/pip_7sift",
-  "startedAt": "2026-09-21T02:45:12.575091+00:00",
+  "startedAt": "2026-09-21T03:09:59.907383+00:00",
   "inputs": {
     "waterPickCount": 0,
     "controlPoints": [
@@ -177,10 +177,10 @@
     }
   },
   "timingMs": {
-    "fit": 1.862,
-    "load_coastline": 509.165,
-    "load_land_mask": 798.652,
-    "apply": 807.66
+    "fit": 26.216,
+    "load_coastline": 827.177,
+    "load_land_mask": 3120.066,
+    "apply": 1876.393
   },
   "config": {
     "version": "4",

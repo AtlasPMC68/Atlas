@@ -77,7 +77,12 @@ def build_text_mask(
             cv2.fillPoly(mask, [points], 255)
 
     if dilation_px > 0:
-        size = 2 * int(dilation_px) + 1
+        # Scale with the image: 7 px on a 1700 px scan is a hairline, but on a
+        # 520 px one it is three times as much of the picture. Keyed off the
+        # diagonal so it means the same thing at any resolution.
+        diagonal = float(np.hypot(shape_hw[0], shape_hw[1]))
+        scaled = max(1, int(round(dilation_px * diagonal / 2200.0)))
+        size = 2 * scaled + 1
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
         mask = cv2.dilate(mask, kernel)
 
