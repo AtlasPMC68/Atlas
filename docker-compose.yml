@@ -10,10 +10,13 @@ services:
     environment:
       KEYCLOAK_ISSUER: http://keycloak:8080/realms/atlas
       KEYCLOAK_AUDIENCE: atlas-backend
+      # Per-run georeferencing diagnostics -> ./Backend-Atlas/debug_runs
+      GEOREF_DEBUG: "true"
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/debug_runs:/app/debug_runs
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
     depends_on:
@@ -48,9 +51,14 @@ services:
     restart: unless-stopped
     env_file:
       - ./Backend-Atlas/.env.dev
+    environment:
+      # Per-run georeferencing diagnostics -> ./Backend-Atlas/debug_runs
+      # One folder per import: overlays, edge maps, gates, summary.txt.
+      GEOREF_DEBUG: "true"
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/debug_runs:/app/debug_runs
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
     depends_on:
@@ -145,6 +153,12 @@ services:
     build:
       context: ./Backend-Atlas
     command: pytest tests/ -v --color=yes --tb=short
+    environment:
+      # The regression suite measures the GCP-only floor, and keeping curve
+      # alignment off keeps it fast: with alignment on, the dev-test task runs
+      # EasyOCR per case (~135 s on CPU) because a text mask is not optional
+      # evidence. Set this to true to run the suite against the aligned pipeline.
+      GEOREF_ENABLE_CURVE_ALIGNMENT: "false"
     depends_on:
       - backend
       - db
@@ -162,6 +176,10 @@ services:
     build:
       context: ./Backend-Atlas
     command: python scripts/run_georef_alignment.py
+    environment:
+      # The script drives alignment explicitly with --align, so the ambient
+      # switch stays off here and one run cannot silently mean two things.
+      GEOREF_ENABLE_CURVE_ALIGNMENT: "false"
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests

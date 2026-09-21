@@ -48,7 +48,7 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import shapely
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, gaussian_filter
 from shapely.geometry import LineString, MultiLineString, box, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
@@ -479,8 +479,35 @@ class ReferenceLayers:
             "water": float(self.water.sum()) / total,
         }
 
+    def curve_mask(
+        self,
+        use_coastline: bool = True,
+        use_lakes: bool = True,
+        use_rivers: bool = True,
+    ) -> np.ndarray:
+        """Union of the chosen curve layers.
+
+        Selectable because the layers are not equally trustworthy as alignment
+        evidence. Coastline is the most distinctive structure on any map and the
+        one a user is most likely to have drawn faithfully; lake shorelines are
+        good interior anchors; rivers are dense, thin, and frequently drawn
+        schematically or not at all, so they can contribute far more lines than
+        a reader would recognise.
+        """
+        mask = np.zeros_like(self.curves, dtype=bool)
+        if use_coastline:
+            mask |= self.coastline
+        if use_lakes:
+            mask |= self.lakes
+        if use_rivers:
+            mask |= self.rivers
+        return mask
+
     def sample_curve_points(
-        self, spacing_px: float = 2.0, max_points: Optional[int] = 20000
+        self,
+        spacing_px: float = 2.0,
+        max_points: Optional[int] = 20000,
+        mask: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Reference curve points in lon/lat, for the chamfer term of Step 4.
 
@@ -488,7 +515,8 @@ class ReferenceLayers:
         density is uniform in *image* space instead of following whatever vertex
         spacing Natural Earth happened to use.
         """
-        rows, cols = np.nonzero(self.curves)
+        source = self.curves if mask is None else mask
+        rows, cols = np.nonzero(source)
         if rows.size == 0:
             return np.zeros(0), np.zeros(0)
 
@@ -506,6 +534,52 @@ class ReferenceLayers:
             rows, cols = rows[::step], cols[::step]
 
         return self.grid.to_lonlat(cols + 0.5, rows + 0.5)
+
+    def sample_curve_points_with_normals(
+        self,
+        spacing_px: float = 2.0,
+        max_points: Optional[int] = 20000,
+        mask: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Curve samples plus the local curve normal, for ICP's normal search.
+
+        Returns ``(lon, lat, dlon, dlat)`` where ``(dlon, dlat)`` is a small step
+        along the curve normal in degrees. The caller pushes both the point and
+        the stepped point through the transform and differences them, which
+        carries the normal into pixel space without needing the transform's
+        linear block here.
+
+        The normal comes from the gradient of a blurred curve raster: blurring a
+        one-pixel curve produces a ridge whose gradient points across it, which
+        is the normal by definition. Curve pixels where the gradient vanishes
+        (a junction, or an isolated speck) get a zero normal and are dropped by
+        the caller.
+        """
+        source = self.curves if mask is None else mask
+        lon, lat = self.sample_curve_points(spacing_px, max_points, mask=source)
+        if lon.size == 0:
+            empty = np.zeros(0)
+            return empty, empty, empty, empty
+
+        blurred = gaussian_filter(source.astype(np.float32), sigma=1.5)
+        gy, gx = np.gradient(blurred)
+
+        px, py = self.grid.to_pixel(lon, lat)
+        cols = np.clip(px.astype(int), 0, self.grid.width - 1)
+        rows = np.clip(py.astype(int), 0, self.grid.height - 1)
+
+        nx = gx[rows, cols]
+        ny = gy[rows, cols]
+        norm = np.hypot(nx, ny)
+        good = norm > 1e-12
+        nx = np.where(good, nx / np.where(good, norm, 1.0), 0.0)
+        ny = np.where(good, ny / np.where(good, norm, 1.0), 0.0)
+
+        # One raster pixel along the normal, expressed in degrees. The latitude
+        # step is negated because raster rows grow southward.
+        dlon = nx * (self.grid.lon_span / self.grid.width)
+        dlat = -ny * (self.grid.lat_span / self.grid.height)
+        return lon, lat, dlon, dlat
 
 
 def _derive_distance_fields(

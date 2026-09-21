@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df/pip_7sift",
-  "startedAt": "2026-09-20T06:17:34.121446+00:00",
+  "startedAt": "2026-09-21T02:45:12.575091+00:00",
   "inputs": {
     "waterPickCount": 0,
     "controlPoints": [
@@ -177,13 +177,13 @@
     }
   },
   "timingMs": {
-    "fit": 4.623,
-    "load_coastline": 596.488,
-    "load_land_mask": 879.867,
-    "apply": 967.024
+    "fit": 1.862,
+    "load_coastline": 509.165,
+    "load_land_mask": 798.652,
+    "apply": 807.66
   },
   "config": {
-    "version": "2",
+    "version": "4",
     "snap_to_coastline": true,
     "coastline_snap_ratio_of_diagonal": 0.01,
     "coastline_snap_fallback_px": 8.0,
@@ -206,7 +206,66 @@
     "straight_line_weight": 0.15,
     "water_delta_e": 12.0,
     "water_morph_radius_px": 2,
-    "water_min_component_px": 200
+    "water_min_component_px": 200,
+    "enable_curve_alignment": false,
+    "curve_sample_spacing_px": 2.0,
+    "curve_max_samples": 8000,
+    "use_rivers_for_alignment": false,
+    "use_lakes_for_alignment": true,
+    "weight_gcp": 1.0,
+    "weight_curve": 1.0,
+    "straight_line_distance_penalty_px": 25.0,
+    "coarse_blur_px": [
+      64.0,
+      40.0,
+      24.0,
+      14.0
+    ],
+    "coarse_cutoff_px": [
+      400.0,
+      260.0,
+      170.0,
+      110.0
+    ],
+    "anneal_blur_px": [
+      8.0,
+      4.0,
+      2.0,
+      0.0
+    ],
+    "anneal_cutoff_px": [
+      70.0,
+      45.0,
+      28.0,
+      18.0
+    ],
+    "max_iterations_per_level": 60,
+    "enable_icp": true,
+    "icp_iterations": 8,
+    "icp_search_radius_px": [
+      40.0,
+      30.0,
+      22.0,
+      16.0,
+      12.0,
+      9.0,
+      7.0,
+      5.0
+    ],
+    "icp_orientation_tolerance_deg": 30.0,
+    "icp_cutoff_px": 20.0,
+    "icp_min_correspondences": 50,
+    "gate_probe_gcp_ratio": 2.0,
+    "gate_probe_gcp_max_km": 150.0,
+    "gate_water_iou_min": 0.7,
+    "gate_max_scale_drift": 0.25,
+    "gate_max_rotation_deg": 15.0,
+    "gate_min_inlier_fraction": 0.2,
+    "gate_min_chamfer_improvement": 0.02,
+    "recovery_multistart_translation_px": 40.0,
+    "recovery_multistart_rotation_deg": 4.0,
+    "recovery_multistart_scale": 0.06,
+    "recovery_gcp_weight_boost": 8.0
   },
   "notes": []
 }

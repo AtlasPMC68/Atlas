@@ -22,6 +22,7 @@ from app.utils.georeferencing import (
     RunRecord,
     georeference_features,
 )
+from app.utils.georeferencing.debug import debug_enabled, make_run_dir
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
@@ -33,16 +34,141 @@ logger = logging.getLogger(__name__)
 nb_task = 6
 
 # TODO : maybe remove this debud parameter pour l'instant j'aimerais ca le garder tho
-# Roadmap section 4.3: turn this off as soon as chamfer alignment begins -- blind
-# snapping will fight the alignment.
-ENABLE_COASTLINE_SNAPPING = True
+# Roadmap section 4.3 says to turn this off once chamfer alignment begins, and
+# measurement now backs that up rather than just asserting it. Translating the
+# *same* transform by a few pixels and re-scoring gives, on the one test case:
+#
+#   snapping ON   IoU jumps around non-monotonically, spread 0.0125 over 8 px,
+#                 with a 0.012 spike down at 5 px
+#   snapping OFF  IoU falls smoothly and monotonically, spread 0.0063
+#
+# Blind vertex snapping corrects whatever the transform got wrong, so it both
+# flatters the baseline (0.941 vs 0.926 here) and hides any improvement an
+# aligned transform makes -- and it injects a step function into the very metric
+# used to judge alignment. Left ON by default so nothing changes silently; turn
+# it off when judging alignment quality.
+ENABLE_COASTLINE_SNAPPING = os.getenv(
+    "GEOREF_ENABLE_COASTLINE_SNAPPING", "true"
+).strip().lower() not in ("0", "false", "no", "off")
+
+# Step 4 curve alignment. Toggle without touching code:
+#   GEOREF_ENABLE_CURVE_ALIGNMENT=false docker compose up
+# Note it makes an import markedly slower: when text extraction is off,
+# georeferencing runs its own OCR (~135 s/map on CPU) because without a text
+# mask about half the edge map is place names.
+ENABLE_CURVE_ALIGNMENT = os.getenv(
+    "GEOREF_ENABLE_CURVE_ALIGNMENT", "true"
+).strip().lower() not in ("0", "false", "no", "off")
 
 # One config for every georeferencing call in this module, so the snapping flag
 # actually governs both producers. It previously only reached the colors path
 # (current section 9, limitation 7).
 GEOREF_CONFIG = DEFAULT_GEOREF_CONFIG.with_overrides(
-    snap_to_coastline=ENABLE_COASTLINE_SNAPPING
+    snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
+    enable_curve_alignment=ENABLE_CURVE_ALIGNMENT,
 )
+
+
+def _control_points(pixel_points: list, geo_points_lonlat: list):
+    return ControlPoint.from_pairs(pixel_points, geo_points_lonlat, source="sift")
+
+
+def _align_if_enabled(
+    image_bgr,
+    pixel_points: list,
+    geo_points_lonlat: list,
+    frame_bounds: dict | None,
+    text_regions: list | None,
+    water_click_positions: list | None,
+    water_sampling_radii: list | None,
+    record: "RunRecord | None" = None,
+    debug_dir: str | None = None,
+):
+    """Step 4 curve alignment, when it is switched on.
+
+    Returns the `AlignmentResult`, or None when alignment is switched off.
+    Never raises: `align_map` gates its own result and hands back the GCP-only
+    baseline on any failure, so the caller can always use it.
+    """
+    if not GEOREF_CONFIG.enable_curve_alignment or image_bgr is None:
+        return None
+
+    from app.utils.georeferencing.runner import align_map
+
+    if text_regions is None:
+        # Georeferencing runs OCR whether or not text *extraction* was asked
+        # for. Without a text mask about half the edge pixels on a labelled map
+        # are place names, which is not optional noise -- it is most of the
+        # evidence. Costs ~135 s/map on CPU, only when alignment is enabled.
+        try:
+            blocks, _clean = extract_text(
+                image=image_bgr, languages=["en", "fr"], gpu_acc=False
+            )
+            text_regions = [block[0] for block in blocks]
+            logger.info(
+                f"[GEOREF] ran OCR for alignment: {len(text_regions)} text regions"
+            )
+        except Exception as e:
+            logger.warning(f"[GEOREF] OCR for alignment failed, continuing: {e}")
+            text_regions = None
+
+    result = align_map(
+        image_bgr,
+        _control_points(pixel_points, geo_points_lonlat),
+        frame_bounds=frame_bounds,
+        text_regions=text_regions,
+        water_click_positions=water_click_positions,
+        water_sampling_radii=water_sampling_radii,
+        config=GEOREF_CONFIG,
+        record=record,
+        debug_dir=debug_dir,
+    )
+    logger.info(
+        f"[GEOREF] alignment method={result.method} rung={result.rung}"
+        + (f" failed={result.failed_checks}" if result.failed_checks else "")
+    )
+    return result
+
+
+def _dump_zones_debug(debug_dir: str | None, collections: list) -> None:
+    """Write the georeferenced output beside the overlays. Never raises."""
+    if not debug_dir:
+        return
+    try:
+        flat = [f for fc in collections for f in fc.get("features", [])]
+        with open(os.path.join(debug_dir, "zones.geojson"), "w", encoding="utf-8") as f:
+            json.dump(
+                {"type": "FeatureCollection", "features": flat},
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
+    except Exception as e:
+        logger.warning(f"Could not write debug zones: {e}")
+
+
+def _alignment_summary(result) -> dict[str, Any]:
+    """What the UI needs to tell the user what happened (plan section 8.4)."""
+    if result is None:
+        return {"enabled": False, "method": "gcp_only"}
+    return {
+        "enabled": True,
+        "method": result.method,
+        "rung": result.rung,
+        "used_curve_evidence": result.used_curve_evidence,
+        "failed_checks": result.failed_checks,
+        "probe_agreement_px": result.probe_agreement_px,
+        "gates": [
+            {
+                "name": g.name,
+                "value": g.value,
+                "threshold": g.threshold,
+                "applicable": g.applicable,
+                "passed": g.passed,
+            }
+            for g in result.gates
+        ],
+    }
 
 
 def _georeference(
@@ -51,17 +177,18 @@ def _georeference(
     geo_points_lonlat: list,
     frame_bounds: dict | None = None,
     record: "RunRecord | None" = None,
+    model=None,
+    extra_properties: dict | None = None,
 ):
     """Fit and apply the pixel -> EPSG:4326 transform for one feature producer."""
-    control_points = ControlPoint.from_pairs(
-        pixel_points, geo_points_lonlat, source="sift"
-    )
     return georeference_features(
         pixel_feature_collections,
-        control_points,
+        _control_points(pixel_points, geo_points_lonlat),
         frame_bounds=frame_bounds,
         config=GEOREF_CONFIG,
         record=record,
+        model=model,
+        extra_properties=extra_properties,
     )
 
 
@@ -225,6 +352,42 @@ def process_map_extraction(
 
         # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
+        # Curve alignment, once, before either producer runs, so shapes and
+        # colors are georeferenced with the same transform. It needs the text
+        # regions, hence its position right after the OCR step.
+        alignment = None
+        aligned_model = None
+        debug_dir = None
+        if debug_enabled():
+            debug_dir = make_run_dir(f"map{map_id}")
+        if pixel_points and geo_points_lonlat and GEOREF_CONFIG.enable_curve_alignment:
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": 3,
+                    "total": nb_task,
+                    "status": "Extracting reference geography and aligning the map",
+                },
+            )
+            alignment = _align_if_enabled(
+                image,
+                pixel_points,
+                geo_points_lonlat,
+                frame_bounds,
+                text_regions,
+                water_click_positions,
+                water_sampling_radii,
+                debug_dir=debug_dir,
+            )
+            if alignment is not None and alignment.used_curve_evidence:
+                aligned_model = alignment.model
+
+        alignment_props = (
+            {"alignment_method": alignment.method, "alignment_rung": alignment.rung}
+            if alignment is not None
+            else None
+        )
+
         # Step 4: Shapes Extraction (conditionally enabled)
         zones_features: list[dict[str, Any]] | None = None
         if enable_shapes_extraction:
@@ -253,6 +416,8 @@ def process_map_extraction(
                         pixel_points,
                         geo_points_lonlat,
                         frame_bounds=frame_bounds,
+                        model=aligned_model,
+                        extra_properties=alignment_props,
                     )
                     asyncio.run(
                         persist_features(
@@ -353,10 +518,13 @@ def process_map_extraction(
                         pixel_points,
                         geo_points_lonlat,
                         frame_bounds=frame_bounds,
+                        model=aligned_model,
+                        extra_properties=alignment_props,
                     )
                     asyncio.run(
                         persist_features(project_id, map_id, colors_georef.collections)
                     )
+                    _dump_zones_debug(debug_dir, colors_georef.collections)
 
                 except Exception as e:
                     logger.error(
@@ -428,6 +596,7 @@ def process_map_extraction(
                 "shapes_extraction": enable_shapes_extraction,
                 "text_extraction": enable_text_extraction,
             },
+            "alignment": _alignment_summary(alignment),
         }
 
         logger.info(f"Map processing completed for {filename}: 0 characters extracted")
@@ -614,12 +783,28 @@ def process_dev_test_extraction(
 
         if pixel_points and geo_points_lonlat:
             try:
+                alignment = _align_if_enabled(
+                    image,
+                    pixel_points,
+                    geo_points_lonlat,
+                    frame_bounds,
+                    None,
+                    water_click_positions,
+                    water_sampling_radii,
+                    record=georef_record,
+                )
+                aligned_model = (
+                    alignment.model
+                    if alignment is not None and alignment.used_curve_evidence
+                    else None
+                )
                 georef = _georeference(
                     pixel_features,
                     pixel_points,
                     geo_points_lonlat,
                     frame_bounds=frame_bounds,
                     record=georef_record,
+                    model=aligned_model,
                 )
                 all_extracted_features = georef.collections
                 georef_record.set_model("chosen", georef.transform_payload)

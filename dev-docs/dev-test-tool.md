@@ -231,6 +231,28 @@ mask. It costs ~135 s per map the first time and is cached afterwards, and it is
 without it roughly **half** the edge pixels on a labelled map are place names rather than
 geography.
 
+Add `--align` (which implies `--ocr`) to run Step 4 curve alignment and georeference with the
+gated result. It prints the chosen method, the recovery rung, the probe's disagreement with the
+held-out control points, and every gate with its value. Alignment is off in the pipeline by
+default, so this flag is how you see what it would do.
+
+Add `--no-snap` to disable blind coastline snapping. **Do this whenever you are judging
+alignment.** Snapping corrects transform error after the fact, which both flatters the baseline
+and hides the improvement you are trying to measure — with it on, translating the same transform
+5 px swings IoU by 0.012 non-monotonically; with it off the metric falls smoothly. Same switch
+in the app: `GEOREF_ENABLE_COASTLINE_SNAPPING`.
+
+For app runs rather than harness runs, `GEOREF_DEBUG=true` (already set on `backend` and
+`celery-worker`) writes a folder per import to `Backend-Atlas/debug_runs/`: `summary.txt`,
+overlays of the reference coastline through the transform, control-point residuals, the edge
+map, ICP correspondences and the output zones. See plan §8e.
+
+Note the split: curve alignment is **on** in `backend` and `celery-worker` (so the running app
+can be evaluated by hand) and **off** in `test-backend` and `georef-dev`, via
+`GEOREF_ENABLE_CURVE_ALIGNMENT`. The suite therefore keeps measuring the GCP-only floor, and
+stays fast — with alignment on, the dev-test task runs EasyOCR per case and the suite goes from
+about 90 seconds to over four minutes.
+
 **Pin your dependencies before trusting a number from this tool.** `numpy` and
 `opencv-python-headless` are pinned in `requirements.txt` for a reason: an image rebuilt with a
 different numpy produced a different zone geometry on the same map (IoU 0.9406 vs 0.9414). If

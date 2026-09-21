@@ -595,16 +595,33 @@ inspected.
 
 ## 8. Step 4 — alignment and the gates (4–6 days) — *the PoC*
 
-### 8.1 Alignment — two phases
+### 8.1 Alignment — staged
+
+> Updated after manual testing; see §8d. This section originally described two phases over
+> coastline, lake **and river** samples together. It is now three stages, coastline first, and
+> rivers are no longer used as evidence.
 
 `D_user` is the distance transform of the user edge map, `T` maps reference → pixel space
-(hence the inverse from §3), and samples `s_i` are reference coastline, lake and river points
-inside the framing box. Both phases optimise the affine's 6 parameters.
+(hence the inverse from §3), and samples `s_i` are reference curve points inside the framing
+box. Every stage optimises the same affine 6 parameters.
+
+**The stages, in order:**
+
+| Stage | Evidence | Schedule |
+|---|---|---|
+| A1 coarse chamfer | **coastline only** | wide: 64 px blur, 400 px cutoff |
+| A2 fine chamfer | coastline + lakes | 8 px blur, 70 px cutoff |
+| B normal-search ICP | coastline + lakes | shrinking search radius |
+
+Coastline goes first and alone because it is the most distinctive structure on a map and the
+one a user is most likely to have drawn faithfully; it should set the transform before anything
+finer is allowed to pull on it. Rivers are loaded but off (`use_rivers_for_alignment`).
 
 Every curve term carries the validity weight `v` of §7b: samples projecting under a text label
 contribute nothing rather than a spurious residual.
 
-**Phase A — coarse chamfer.** Gets the map into the right neighbourhood.
+**Stages A1 and A2 — chamfer.** Get the map into the right neighbourhood. A1 runs on
+coastline alone with the wide schedule; A2 repeats with lakes admitted and a sharper one.
 
 ```
 E = w_gcp * Σ ρ(||T(p_j) - q_j||)  +  w_curve * Σ v(T(s_i)) · ρ( D_user(T(s_i)) )
@@ -628,7 +645,7 @@ initialisation.
   a suppressed edge behaves as if it were some pixels further away instead of vanishing or
   counting in full.
 
-**Phase B — normal-search ICP.** Turns the neighbourhood into explicit correspondences.
+**Stage B — normal-search ICP.** Turns the neighbourhood into explicit correspondences.
 Moved here from roadmap §3; the reasoning is below.
 
 - **Directed search along curve normals.** For each reference sample, search along its normal
@@ -657,14 +674,14 @@ plain chamfer mistakes for a coast, and orientation filtering is the only thing 
 separates them. Shipping the PoC without it would measure the idea at its worst and risk a
 false no-go.
 
-**Measure at both phases anyway.** Phase A is Phase B's initialisation, so they are built in
-sequence regardless, and taking a number at each costs nothing:
+**Measure at each stage anyway.** Each stage initialises the next, so they are built in sequence
+regardless, and taking a number at each costs nothing:
 
 | | |
 |---|---|
 | Stage 2 affine | the GCP-only baseline |
-| + Phase A | does coastline evidence help at all? |
-| + Phase B | does orientation filtering pay for itself? |
+| + chamfer (A1+A2) | does coastline evidence help at all? |
+| + ICP (B) | does orientation filtering pay for itself? |
 
 That keeps §2's "measurable before clever" intact: if the joint result is worse, these three
 numbers say which half caused it. Bundling them into one measurement would not.
@@ -679,7 +696,8 @@ Three available signals, with distinct roles:
 
 | Signal | Role | Why |
 |---|---|---|
-| Chamfer residual | diagnostic and convergence only — **never a gate** | a fit locked onto the wrong feature has *low* residual by construction |
+| Chamfer residual, *magnitude* | diagnostic only — **never a gate** | a fit locked onto the wrong feature has *low* residual by construction |
+| Chamfer residual, *improvement* | convergence gate (`curve_fit_engaged`, added in §8d) | a fit that never moved passes every sanity check, since nothing drifted, and returns the baseline wearing a success label. Asking whether the residual *improved* is a convergence question, not a correctness one |
 | GCP disagreement **of the probe fit** | **primary gate**, always available | the probe never sees the GCPs, so this is genuinely independent of the curve objective — and it measures whether the coastline evidence is trustworthy, which is the thing actually in doubt |
 | Water-mask IoU | **secondary gate**, when a water mask exists | area overlap is a different measurement from curve distance, so it catches different failures |
 
@@ -699,9 +717,13 @@ actually discriminates, which is a corpus-level question (roadmap §5).
 - **Transform sanity** — negative determinant (mirror/fold), scale drift beyond ~±25%, or
   rotation beyond ~±15° relative to Stage 2. A fit that slid a whole feature-width usually
   shows up here first.
+- **Curve term never engaged** — the trimmed coastline chamfer did not improve by at least
+  ~2% between the baseline and the aligned model. Read as: the fit could not reach the real
+  coastline, usually because the starting transform was too far off for the annealing schedule.
+  Descending to a wider anneal (rung 1) or multi-start (rung 2) is the intended response.
 - **Optimizer health** — LM did not converge, converged on the boundary of the search region,
   or the Tukey inlier count collapsed below ~20% of samples, meaning the "fit" rests on a
-  handful of points. After Phase B, the count of samples surviving *orientation filtering* is
+  handful of points. After Stage B, the count of samples surviving *orientation filtering* is
   the same kind of signal and a more specific one: a collapse there says the curve evidence
   matched nothing of the right orientation, which is wrong-feature lock caught in the act.
 
@@ -719,6 +741,228 @@ names, so the UI can tell the user what happened and ask for more points.
 
 **Deliverable:** IoU delta on the harness, plus manual visual comparison on Leclerc. This is
 the go/no-go for the entire roadmap.
+
+---
+
+## 8b. Step 4 — what changed, and the go/no-go number
+
+Landed as written in §8: annealed chamfer, normal-search ICP with orientation filtering, the
+probe fit, the named gates, and the recovery ladder. New modules `align.py` (distance field,
+Tukey, chamfer, ICP), `gates.py`, `recovery.py` (the ladder) and `runner.py` (image → gated
+alignment, the one entry point the Celery task and the dev script share).
+
+### The number
+
+> **Superseded — see §8c.** Everything in this subsection was measured with blind coastline
+> snapping still on, which puts a ±0.012 step function into the metric. The deltas below are
+> smaller than that artifact and mean nothing. The corrected measurement is in §8c. The rest of
+> §8b (decisions, ladder coverage, what is owed) still stands.
+
+Measured on `pip_7sift`, same ground truth, same pipette picks, same GCPs, transform the only
+thing changing:
+
+| | IoU | delta |
+|---|---|---|
+| Stage 2 affine (baseline) | 0.941407 | — |
+| + chamfer | 0.944855 | **+0.003448** |
+| + chamfer + ICP | 0.944291 | +0.002884 |
+| | | *ICP alone: −0.000564* |
+
+All gates pass at rung 0. The probe fit — curve evidence alone, GCPs held out entirely —
+lands **9.5 px** from the held-out control points against a 7.6 px GCP-only baseline, well
+inside the 2× threshold. That is the most encouraging number here: coastline-only alignment,
+with no knowledge of the user's points, independently agrees with them.
+
+**What this does not establish.** One case, at IoU 0.94, is the case with the least headroom,
+exactly as §4 warned when it deferred new test cases. The deltas are ~0.003 and ~0.0006. §5.3's
+own discrimination rule says two models are distinguishable only when the difference exceeds
+the standard error of that difference — and with n = 1 there is no standard error to compare
+against. So: chamfer shows a small positive delta, ICP a small negative one, **and neither is
+resolvable at this sample size.** This is not a go, and it is not a no-go.
+
+Taking a number at each phase is what makes that statement possible at all; a single bundled
+figure would have shown +0.0029 and hidden that ICP moved it the wrong way.
+
+### 8c. Correction: the earlier numbers were noise, and snapping is why
+
+Everything in §8b's table was measured with blind coastline snapping still on. It should not
+have been, and the plan said so: roadmap §4.3 already required turning
+`ENABLE_COASTLINE_SNAPPING` off as soon as Step 4 began. Leaving it on to "keep the baseline
+comparable" was the wrong call, and measurement now shows why.
+
+**The metric had a cliff in it.** Translating the *same* transform by a few pixels and
+re-scoring, on `pip_7sift`:
+
+| dx (px) | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 8 | spread |
+|---|---|---|---|---|---|---|---|---|---|
+| snapping **on** | .9414 | .9408 | .9412 | .9410 | .9403 | **.9289** | .9392 | .9377 | 0.0125 |
+| snapping **off** | .9260 | .9265 | .9267 | .9264 | .9259 | .9250 | .9237 | .9203 | 0.0063 |
+
+With snapping on the score is non-monotonic and spikes 0.012 downward at 5 px. With it off it
+falls smoothly and monotonically, as a placement metric should.
+
+**Blind snapping corrects whatever the transform got wrong**, after the fact and without
+orientation filtering. It therefore does two damaging things at once: it flatters the baseline
+(0.941 vs 0.926 here) and it hides any improvement a better transform makes, because the error
+it would have fixed was already papered over. That is what roadmap §4.3 meant by "it will
+actively fight the alignment".
+
+**So §8b's deltas — chamfer +0.0034, ICP −0.0006 — were inside a ±0.012 artifact and meant
+nothing.** Re-measured with the confounder removed:
+
+| | IoU |
+|---|---|
+| Stage 2 affine, no snapping | 0.926047 |
+| + chamfer + ICP, no snapping | **0.930054** |
+| | **+0.004007** |
+
+The noise floor with snapping off is about 0.0001 over the first 4 px, so this delta is real on
+this case — still one case, still not a go/no-go, but for the first time it is a number rather
+than an artifact.
+
+`GEOREF_ENABLE_COASTLINE_SNAPPING` now switches it, defaulting to `true` so nothing changes
+silently. The dev script takes `--no-snap`. **Judge alignment with snapping off.**
+
+### 8d. Coastline-first staging, and rivers dropped
+
+Driven by manual testing on a second map, where the result was poor and the diagnosis was that
+the starting transform was too far off for the chamfer to reach the real coastline.
+
+- **Rivers are no longer alignment evidence** (`use_rivers_for_alignment=False`). They are still
+  loaded, rasterized and available; they simply contribute a lot of thin dense linework that a
+  reader does not recognise on the map, much of it drawn schematically or omitted entirely.
+- **Alignment is staged**: coastline alone with a wide annealing schedule, then a finer stage
+  admitting lakes, then ICP. Coastline is the most distinctive structure on a map and the one
+  most likely to be drawn faithfully, so it sets the transform before anything finer pulls on it.
+- **The coarse stage starts far wider** — 64 px blur, 400 px Tukey cutoff, against 16/120 before.
+  A map that starts a hundred pixels out is invisible to a 16 px blur.
+
+**And a gap the reported failure exposed: there was no check that alignment did anything.** A
+fit that never moved passes every sanity gate — scale drift zero, rotation zero, optimizer
+"converged" — and returns the baseline wearing a success label. `curve_fit_engaged` now compares
+the trimmed coastline chamfer before and after and fails when it did not improve, which sends
+the run down the recovery ladder (wider anneal, then multi-start) instead of silently reporting
+success. It is a *convergence* check, not a correctness one: residual magnitude is still never a
+gate, because a fit locked onto the wrong feature scores well by construction.
+
+### 8e. Per-run debug dumps
+
+An IoU number cannot tell you *why* a map placed badly, so every run can write a folder of
+diagnostics instead of adding to the logs. `GEOREF_DEBUG=true` (already set on `backend` and
+`celery-worker`) writes to `Backend-Atlas/debug_runs/<timestamp>_map<id>/`, bind-mounted to the
+host, gitignored, capped at the newest 20 runs.
+
+| File | What it answers |
+|---|---|
+| `summary.txt` | leads with **DID IT ACTUALLY ENGAGE?** — chamfer before/after, % improvement, how far the coastline moved, layers used. Then per-GCP residuals, every gate with value *and* threshold, evidence and reference stats, both matrices |
+| `06`/`07`/`08_reference_*` | the real coastline drawn through the transform onto the map — baseline red, aligned green. **If these do not sit on the drawn coast, that is the answer** |
+| `09_control_points` | yellow circle = where the user clicked, red cross = baseline prediction, green = aligned. Line length is the residual |
+| `04_edges_over_map` | green = edges used, red = suppressed straight lines |
+| `10_icp_correspondences` | what ICP matched, and to where |
+| `01`–`03`, `05` | raw edges, weight map, text mask, water (water only when pipetted) |
+| `alignment.json`, `zones.geojson` | machine-readable gates and phase matrices; the actual output |
+
+`GEOREF_DEBUG_KEEP` changes retention. The dump is written by `runner.align_map`, the only place
+holding the reference layers, the evidence and the result at once.
+
+This is deliberately throwaway: it is diagnostics for the PoC, not a feature, and it should be
+deleted or hidden behind a proper debug flag before any of this is considered finished.
+
+### How it is switched, and where it is on
+
+`GeorefConfig.enable_curve_alignment` defaults to False, but `tasks.py` overrides it from the
+environment so the running application can be evaluated by hand:
+
+```
+GEOREF_ENABLE_CURVE_ALIGNMENT   default "true"   -> backend, celery-worker
+                                set to "false"   -> test-backend, georef-dev
+```
+
+So **alignment is live in the app** and off in the regression suite. That split is deliberate:
+
+- The app has it on because a single dev-test case cannot decide this and manual evaluation on
+  real maps is what §4 said would carry the decision.
+- The suite has it off because it measures the GCP-only floor §2 promises never to fall below,
+  and because with alignment on the dev-test task runs EasyOCR per case (~135 s on CPU), which
+  took the suite from 90 s to over four minutes.
+- `georef-dev` has it off because the script drives alignment explicitly with `--align`, and one
+  run should not silently mean two different things.
+
+**This is a switch for evaluation, not a verdict.** +0.003 on one case is not the number §2
+asks for. If manual testing on other maps does not clearly help, the default should go back to
+false.
+
+Verified all the way through: with it off the harness reproduces 0.9414069377250001 exactly;
+with it on the Celery task and the dev script produce byte-identical results
+(0.9442911484509129 from both), so the production path and the measurement path cannot drift.
+
+### What the pipeline does now
+
+Alignment runs **once per map**, after text extraction and before either feature producer, so
+shapes and colors are georeferenced with the same transform. It needs the OCR regions, which is
+why it sits immediately after that step; when `enable_text_extraction` is off it runs its own
+OCR, and when it is on the existing regions are reused at no extra cost.
+
+The task result carries an `alignment` block — method, rung, whether curve evidence was used,
+failed check names, the probe's agreement in pixels, and every gate with its value and
+threshold — which is what §8.4 asked for so the UI can tell the user what happened. Each
+georeferenced feature also carries `alignment_method` and `alignment_rung` in its properties.
+
+### Decisions taken while building it
+
+| Decision | Why |
+|---|---|
+| Residuals in **image pixels** for both terms | One robust cutoff then means the same thing to the GCP term and the curve term. Each term is normalised by its own count first, so seven control points are not drowned by 4,481 curve samples. |
+| Tukey hand-written as a scipy `loss` callable | Confirmed `rho'` reaches exactly 0.0 at the cutoff — past it a sample contributes nothing. scipy's `cauchy` never reaches zero, which defeats the purpose. |
+| Numeric Jacobian | 6 parameters, so a numeric Jacobian costs 6 extra evaluations per iteration of a cheap bilinear lookup. Analytic derivatives through an inverted affine are a correctness risk for no measurable speed. |
+| Validity blurred, not hard 0/1 | Samples crossing a text-mask boundary would otherwise make the energy discontinuous and LM would stall on it. |
+| `align.py`, `gates.py`, `recovery.py` need **no cv2** | They consume the arrays `evidence.py` built and do their own gradients with scipy, so 27 Step 4 tests run on a bare host in ~1.5 s. Only `evidence.py` and `runner.py` touch cv2. |
+| ICP normals come from the gradient of a blurred curve raster | Blurring a one-pixel curve gives a ridge whose gradient is the normal by construction, and it works for coastline, lakes and rivers alike without special-casing. |
+| `AffineModel.measure_against()` added | A model from the optimiser arrives with no residuals and reported its error as "unknown". It now gets measured against the control points on the way into the pipeline. |
+| Georeferencing runs OCR regardless of `enable_text_extraction` | Recorded in §7b as decided; now implemented in the task. Costs ~135 s/map on CPU, only when alignment is on. |
+
+### The ladder: what is implemented, and what is not
+
+Rungs **1 (re-anneal wider), 2 (multi-start), 3 (raise `w_gcp`)** and **7 (GCP-only)** are
+implemented. On this case none is exercised, because rung 0 passes.
+
+Rungs **4, 5 and 6 are not implemented**, and that is a real gap rather than an oversight:
+
+- **4 — reduce DOF to a 4-parameter similarity.** Needs a second model class. Cheap, and worth
+  doing when a map appears that fails rungs 0–3.
+- **5 — restrict evidence to arcs near detected water.** Needs a water mask, and the one test
+  case has none. Untestable today.
+- **6 — regional acceptance.** Anticipates the λ(x) field of roadmap §6 and is the most
+  involved of the three.
+
+Since rung 0 passes on the only case available, building 4–6 would mean writing recovery paths
+that nothing can exercise. They stay recorded rather than written.
+
+### Owed to whoever picks this up
+
+1. **A second test case is now the bottleneck for everything.** The go/no-go, whether ICP earns
+   its place, whether the gates discriminate, and rungs 4–6 all need one. §4's estimate of
+   roughly an hour of rough clicking still stands, and it is the highest-value hour left in the
+   plan.
+2. **A case with water pipetted**, separately. The water gate has never been evaluated — it
+   reports `applicable: false` on every run so far.
+3. **Every Tier 3 constant is a guess**: the annealing schedules, the 30° orientation tolerance,
+   the ICP radii, the straight-line distance penalty, the gate thresholds. They live in
+   `GeorefConfig` (now version 4) so they can be tuned as a set, and none has been.
+4. ~~**ICP's negative delta needs explaining.**~~ There was no delta: −0.0006 sat inside the
+   ±0.012 snapping artifact (§8c). ICP has still never been isolated on a clean measurement —
+   the corrected +0.0040 is chamfer **and** ICP together. Separating them needs a second case,
+   which is item 1.
+6. **Rungs 4–6 of the ladder remain unimplemented**, and rung 0 still passes on the only case
+   available, so nothing exercises them. Rung 5 additionally needs a water mask that no case
+   has. See "The ladder" above.
+7. **The debug dump is throwaway** (§8e). It writes ~9 MB per import and exists to answer "why
+   did this map place badly". Delete it or put it behind a real debug flag before this is
+   considered finished.
+5. ~~**`ENABLE_COASTLINE_SNAPPING` is still on.**~~ Measured and resolved in §8c: it puts a
+   step function into the metric and hides alignment improvements. Now switchable via
+   `GEOREF_ENABLE_COASTLINE_SNAPPING`, still defaulting to on so nothing changes silently.
+   **Judge alignment with it off.**
 
 ---
 
@@ -857,7 +1101,7 @@ silent downgrade. Aggregated across runs, these records are what tell us which p
 | 1 | 1 day | No (verify IoU unchanged) | Framing box + water pipette plumbed, GCP records, honest units, package split |
 | 2 | 1 day | No | Cached reference rasters incl. rivers, distance transform |
 | 3 | 1 day | No | Edge map with straight-line suppression, water mask |
-| 4 | 4–6 days | **Yes, gated** | Chamfer + normal-search ICP + gates + recovery ladder → **go/no-go** |
+| 4 | 4–6 days | **Yes, gated**, on in the app | Chamfer + normal-search ICP + gates + ladder → §8b, §8c, §8d |
 | 5 | post-PoC | Yes | Cities as GCPs |
 
 Steps 0–4 is a week and a half and answers the only question that matters. Everything in the

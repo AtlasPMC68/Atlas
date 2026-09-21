@@ -223,6 +223,26 @@ class AffineModel:
         model.residuals_3857 = model._residual_distances(src_xy, dst_xy)
         return model
 
+    def measure_against(self, control_points: Sequence["ControlPoint"]) -> None:
+        """Attach control-point residuals to a model that was not fitted here.
+
+        Step 4 hands back a model produced by the chamfer/ICP optimiser rather
+        than by ``fit``, so it arrives with no residuals and would otherwise
+        report its error as unknown.
+        """
+        if not control_points:
+            return
+        src = np.array([cp.pixel for cp in control_points], dtype=float)
+        dst = np.array(
+            [
+                lonlat_to_webmercator(lon, lat)
+                for lon, lat in (cp.geo for cp in control_points)
+            ],
+            dtype=float,
+        )
+        self.n_points = len(control_points)
+        self.residuals_3857 = self._residual_distances(src, dst)
+
     def _residual_distances(self, src_xy: np.ndarray, dst_xy: np.ndarray) -> np.ndarray:
         """Per-point distance between predicted and target position, in 3857 m."""
         X, Y = self(src_xy[:, 0], src_xy[:, 1])

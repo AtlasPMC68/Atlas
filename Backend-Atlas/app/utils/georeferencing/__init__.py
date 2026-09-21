@@ -11,11 +11,15 @@ Package layout (plan section 3), filled in as the steps land:
     pipeline.py     fit -> snap -> clip -> EPSG:4326
     records.py      structured per-run record
     reference.py    framing box -> reference rasters + distance transform, cached
+    align.py        chamfer + normal-search ICP, the distance field, Tukey
+    gates.py        the named checks that decide whether alignment may ship
+    recovery.py     the attempt, and the ladder it climbs down on failure
     evidence.py     user-side edge map, straight-line suppression, water mask
-                    -- NOT re-exported here: it is the only module that needs
-                    cv2, and importing it from the package would drag the image
-                    stack into every consumer. Import it directly.
-    align.py        (Step 4) coarse alignment, gates
+    runner.py       image -> gated alignment, the shared entry point
+                    evidence.py and runner.py are NOT re-exported here: they are
+                    the only modules needing cv2, and importing them from the
+                    package would drag the image stack into every consumer.
+                    Import them directly.
 """
 
 from .config import CONFIG_VERSION, DEFAULT_GEOREF_CONFIG, GeorefConfig
@@ -39,7 +43,19 @@ from .models import (
     fit_affine_from_control_points,
     sigma_px_for_source,
 )
+from .align import (
+    CurveSamples,
+    PhaseResult,
+    UserField,
+    build_curve_samples,
+    build_user_field,
+    fit_chamfer,
+    icp_refine,
+    tukey_loss,
+)
+from .gates import evaluate_gates, failed_names, gates_passed, gcp_rms_px, water_mask_iou
 from .pipeline import GeorefResult, georeference_features
+from .recovery import AlignmentResult, align
 from .reference import (
     COASTLINE_FILE,
     LAKES_FILE,
@@ -59,29 +75,41 @@ from .records import GateCheck, RunRecord
 
 __all__ = [
     "AffineModel",
+    "align",
+    "AlignmentResult",
+    "build_curve_samples",
     "build_georef_inputs",
     "build_reference_layers",
+    "build_user_field",
     "COASTLINE_FILE",
     "CONFIG_VERSION",
     "control_point_weights",
     "ControlPoint",
+    "CurveSamples",
     "DEFAULT_GEOREF_CONFIG",
     "DEFAULT_SIGMA_PX_BY_SOURCE",
     "dump_reference_debug_pngs",
+    "evaluate_gates",
+    "failed_names",
     "fit_affine_from_control_points",
+    "fit_chamfer",
     "frame_bounds_from_geo_points",
     "frame_bounds_to_config_entry",
     "FrameBounds",
     "GateCheck",
+    "gates_passed",
+    "gcp_rms_px",
     "GEOREF_INPUTS_VERSION",
     "GeorefConfig",
     "georeference_features",
     "GeorefResult",
+    "icp_refine",
     "LAKES_FILE",
     "mercator_scale_factor",
     "parse_frame_bounds",
     "parse_frame_bounds_entry",
     "parse_georef_inputs",
+    "PhaseResult",
     "rasterize_lake_interiors",
     "reference_latitude",
     "ReferenceGrid",
@@ -89,5 +117,8 @@ __all__ = [
     "RIVERS_FILE",
     "RunRecord",
     "sigma_px_for_source",
+    "tukey_loss",
+    "UserField",
+    "water_mask_iou",
     "webmercator_meters_to_km",
 ]

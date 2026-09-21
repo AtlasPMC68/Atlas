@@ -61,6 +61,8 @@ def georeference_features(
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     record: Optional[RunRecord] = None,
     coastline_snap_tolerance_px: Optional[float] = None,
+    model: Optional[AffineModel] = None,
+    extra_properties: Optional[Dict[str, Any]] = None,
 ) -> GeorefResult:
     """Georeference pixel-space features with an affine fitted to *control_points*.
 
@@ -72,6 +74,10 @@ def georeference_features(
         config: hyperparameters; see ``config.GeorefConfig``.
         record: optional run record, populated in place.
         coastline_snap_tolerance_px: explicit pixel tolerance override.
+        model: a transform to apply instead of fitting one. Step 4 passes the
+            gated alignment here; leaving it None reproduces the GCP-only fit.
+        extra_properties: merged into every output feature's properties, so a
+            consumer can see how the feature was placed.
 
     Returns:
         A ``GeorefResult`` whose ``collections`` are FeatureCollections in
@@ -88,8 +94,13 @@ def georeference_features(
         return GeorefResult(collections=[], model=None, record=record)
 
     # --- fit ----------------------------------------------------------------
-    with record.phase("fit"):
-        model = fit_affine_from_control_points(control_points)
+    if model is None:
+        with record.phase("fit"):
+            model = fit_affine_from_control_points(control_points)
+    elif model.residuals_3857.size == 0:
+        # A model from Step 4's optimiser arrives without residuals; measure it
+        # against the control points so its error is reported, not "unknown".
+        model.measure_against(control_points)
 
     geo_points = [cp.geo for cp in control_points]
     ref_lat = reference_latitude(frame_bounds, geo_points)
@@ -228,6 +239,8 @@ def georeference_features(
                     float(round(rmse_km, 3)) if rmse_km is not None else None
                 )
                 props["rmse_status"] = rmse_status
+                if extra_properties:
+                    props.update(extra_properties)
 
                 new_features.append(
                     {

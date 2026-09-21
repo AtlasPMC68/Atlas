@@ -13,7 +13,7 @@ changes, so run records made under different settings stay comparable.
 from dataclasses import dataclass, replace
 from typing import Any, Dict
 
-CONFIG_VERSION = "2"
+CONFIG_VERSION = "4"
 
 
 @dataclass(frozen=True)
@@ -67,6 +67,76 @@ class GeorefConfig:
     water_delta_e: float = 12.0
     water_morph_radius_px: int = 2
     water_min_component_px: int = 200
+
+    # --- Alignment (Step 4) --------------------------------------------------
+    # Off by default: turning it on is the experiment, not the baseline.
+    enable_curve_alignment: bool = False
+
+    # Reference curve sampling, per stage. Alignment runs coastline-first and
+    # only then admits lakes: coastline is the most distinctive structure on a
+    # map and the one most likely to be drawn faithfully, so it should set the
+    # transform before anything finer is allowed to pull on it.
+    curve_sample_spacing_px: float = 2.0
+    curve_max_samples: int = 8000
+    # Rivers are loaded and rasterized but **not used as alignment evidence**.
+    # They contribute a lot of thin, dense linework that is often drawn
+    # schematically or omitted entirely, so on a real map most of it matches
+    # nothing a reader would recognise. Set true to put them back in.
+    use_rivers_for_alignment: bool = False
+    use_lakes_for_alignment: bool = True
+
+    # Term balance. Both terms are normalised by their own sample count first,
+    # so these are true relative weights and not an artifact of there being
+    # thousands of curve samples and seven control points.
+    weight_gcp: float = 1.0
+    weight_curve: float = 1.0
+
+    # A suppressed edge should act as if it were further away, not vanish:
+    # D = min(D_strong, D_weak + penalty).
+    straight_line_distance_penalty_px: float = 25.0
+
+    # Annealing. One entry per level, coarse to fine: the distance field is
+    # blurred by `sigma`, and Tukey rejects beyond `cutoff` pixels.
+    #
+    # Stage 1 is coastline-only and starts very wide on purpose. If the GCP-only
+    # affine leaves the map a hundred-odd pixels out, a 16 px blur and a 120 px
+    # cutoff cannot see the true coast at all, the fit does not move, and every
+    # sanity gate then passes because nothing changed -- success indistinguishable
+    # from never having engaged. Starting at 64 px of blur and a 400 px cutoff
+    # gives the basin of attraction somewhere to attract from.
+    coarse_blur_px: tuple = (64.0, 40.0, 24.0, 14.0)
+    coarse_cutoff_px: tuple = (400.0, 260.0, 170.0, 110.0)
+    # Stage 2 admits lakes and sharpens.
+    anneal_blur_px: tuple = (8.0, 4.0, 2.0, 0.0)
+    anneal_cutoff_px: tuple = (70.0, 45.0, 28.0, 18.0)
+    max_iterations_per_level: int = 60
+
+    # Normal-search ICP.
+    enable_icp: bool = True
+    icp_iterations: int = 8
+    icp_search_radius_px: tuple = (40.0, 30.0, 22.0, 16.0, 12.0, 9.0, 7.0, 5.0)
+    icp_orientation_tolerance_deg: float = 30.0
+    icp_cutoff_px: float = 20.0
+    icp_min_correspondences: int = 50
+
+    # Gates (section 8.3).
+    gate_probe_gcp_ratio: float = 2.0
+    gate_probe_gcp_max_km: float = 150.0
+    gate_water_iou_min: float = 0.7
+    gate_max_scale_drift: float = 0.25
+    gate_max_rotation_deg: float = 15.0
+    gate_min_inlier_fraction: float = 0.2
+    # Did the curve term actually engage? A fit that never moved passes every
+    # sanity check, because nothing drifted. This is a *convergence* check, not
+    # a correctness one -- a low chamfer residual still proves nothing, which is
+    # why residual magnitude is never a gate.
+    gate_min_chamfer_improvement: float = 0.02
+
+    # Recovery ladder (section 10.2).
+    recovery_multistart_translation_px: float = 40.0
+    recovery_multistart_rotation_deg: float = 4.0
+    recovery_multistart_scale: float = 0.06
+    recovery_gcp_weight_boost: float = 8.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {f: getattr(self, f) for f in self.__dataclass_fields__}

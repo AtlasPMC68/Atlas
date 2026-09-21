@@ -32,9 +32,14 @@ PoC decisions in the plan are marked `[fwd]` and point here.
 
 ## 2. What the PoC must deliver before any of this
 
+**All five are now built** (plan §5b, §6b, §7b, §8b–§8e). What is *not* settled is whether the
+approach earns its place: that still rests on one test case, and §8c showed the first
+measurement of it was an artifact. Treat this list as "the machinery exists", not "the question
+is answered".
+
 - An alignment model with a fit/apply/inverse interface that accepts per-point weights and
   a regularizer object (plan §3).
-- Explicit, orientation-filtered curve correspondences from ICP (plan §8.1, Phase B), frozen
+- Explicit, orientation-filtered curve correspondences from ICP (plan §8.1, Stage B), frozen
   once converged so model selection (§5) has a fixed dataset to work on.
 - Cached reference layers and distance transforms over a framing box (plan §6).
 - A structured per-run record (plan §4) — the seed of §8.
@@ -47,7 +52,7 @@ chamfer/ICP approach — §3 has moved into the PoC itself.
 
 ## 3. Stage 5 — normal-search ICP — *moved into the PoC*
 
-**This stage now lives in [`georeferencing-plan.md`](georeferencing-plan.md) §8.1 as Phase B of
+**This stage now lives in [`georeferencing-plan.md`](georeferencing-plan.md) §8.1 as Stage B of
 Step 4.** It is no longer conditional on the go/no-go; it is part of what the go/no-go measures.
 
 The move was driven by a measurement, not a preference. Step 3 found that straight-line
@@ -118,6 +123,12 @@ It supersedes the current blind vertex snapping
 without orientation filtering, without confidence weighting, and applied before any
 alignment has happened. **Turn `ENABLE_COASTLINE_SNAPPING` off as soon as PoC Step 4 begins**
 — it will actively fight the alignment.
+
+*Measured, not just asserted (plan §8c):* translating the same transform a few pixels and
+re-scoring gives a non-monotonic IoU with a 0.012 spike downward at 5 px when snapping is on,
+against a smooth monotonic fall when it is off. Blind snapping corrects whatever the transform
+got wrong, so it flatters the baseline and hides any improvement an aligned transform makes.
+It is now switchable with `GEOREF_ENABLE_COASTLINE_SNAPPING`, still defaulting to on.
 
 Worth noting for sequencing: once the PoC lands, a confidence-weighted, orientation-filtered
 version of snapping may deliver more value than the non-rigid warp, for a fraction of the

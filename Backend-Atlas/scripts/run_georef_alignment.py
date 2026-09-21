@@ -21,6 +21,7 @@ Usage, from Backend-Atlas with the dependencies installed:
     python scripts/run_georef_alignment.py --reference         # + reference layer PNGs
     python scripts/run_georef_alignment.py --evidence          # + user-side evidence PNGs
     python scripts/run_georef_alignment.py --ocr               # + text mask (slow once, then cached)
+    python scripts/run_georef_alignment.py --align             # Step 4 alignment (implies --ocr)
 
 Or through the dedicated compose service, which depends on no broker, no
 database and no backend:
@@ -210,6 +211,8 @@ def run_case(
     reference: bool,
     evidence: bool,
     ocr: bool,
+    align: bool,
+    snap: bool = True,
 ) -> Optional[dict]:
     print(f"\n=== {test_id}/{case_id}")
 
@@ -235,6 +238,8 @@ def run_case(
         frame_bounds = frame_bounds_from_geo_points(inputs.geo_points_lonlat)
         frame_source = "derived_from_control_points" if frame_bounds else "none"
     record.set_inputs(frameBoundsSource=frame_source)
+
+    text_regions = None
 
     if reference and frame_bounds:
         with record.phase("reference_layers"):
@@ -283,7 +288,6 @@ def run_case(
         if image_bgr is None:
             print("  evidence: could not read the map image")
         else:
-            text_regions = None
             if ocr:
                 with record.phase("ocr"):
                     text_regions = extract_text_regions_cached(
@@ -335,13 +339,66 @@ def run_case(
         inputs.pixel_points, inputs.geo_points_lonlat, source="sift"
     )
 
+    aligned_model = None
+    alignment = None
+    if align:
+        import cv2
+
+        from app.utils.georeferencing.runner import align_map
+
+        image_bgr = cv2.imread(image_path)
+        if image_bgr is None:
+            print("  align: could not read the map image")
+        else:
+            if text_regions is None and ocr:
+                text_regions = extract_text_regions_cached(
+                    image_path, image_bgr, use_cache
+                )
+            t0 = time.perf_counter()
+            alignment = align_map(
+                image_bgr,
+                control_points,
+                frame_bounds=frame_bounds,
+                text_regions=text_regions,
+                water_click_positions=inputs.water_click_positions,
+                water_sampling_radii=inputs.water_sampling_radii,
+                config=DEFAULT_GEOREF_CONFIG.with_overrides(
+                    enable_curve_alignment=True
+                ),
+                record=record,
+            )
+            print(
+                "  align:     %s (rung %d) in %.1fs  probe %.1f px  %s"
+                % (
+                    alignment.method,
+                    alignment.rung,
+                    time.perf_counter() - t0,
+                    alignment.probe_agreement_px or float("nan"),
+                    "gates passed"
+                    if not alignment.failed_checks
+                    else "FAILED: " + ", ".join(alignment.failed_checks),
+                )
+            )
+            for gate in alignment.gates:
+                print(
+                    "               %-26s %s  value=%s"
+                    % (
+                        gate.name,
+                        "n/a   " if not gate.applicable else ("pass  " if gate.passed else "FAIL  "),
+                        None if gate.value is None else round(gate.value, 3),
+                    )
+                )
+            if alignment.used_curve_evidence:
+                aligned_model = alignment.model
+
     t0 = time.perf_counter()
     georef = georeference_features(
         pixel_features,
         control_points,
         frame_bounds=frame_bounds,
-        config=DEFAULT_GEOREF_CONFIG,
+        config=DEFAULT_GEOREF_CONFIG.with_overrides(snap_to_coastline=snap),
         record=record,
+        model=aligned_model,
     )
     georef_ms = (time.perf_counter() - t0) * 1000.0
     record.set_model("chosen", georef.transform_payload)
@@ -418,6 +475,20 @@ def main() -> int:
         help="Build the user-side evidence and dump debug overlays",
     )
     parser.add_argument(
+        "--no-snap",
+        action="store_true",
+        help=(
+            "Disable blind coastline snapping. Recommended when judging"
+            " alignment: snapping corrects transform error after the fact, so it"
+            " hides the thing you are trying to measure."
+        ),
+    )
+    parser.add_argument(
+        "--align",
+        action="store_true",
+        help="Run Step 4 curve alignment and georeference with the gated result",
+    )
+    parser.add_argument(
         "--ocr",
         action="store_true",
         help=(
@@ -446,8 +517,10 @@ def main() -> int:
                 use_cache=not args.no_cache,
                 write=not args.no_write,
                 reference=args.reference,
-                evidence=args.evidence or args.ocr,
-                ocr=args.ocr,
+                evidence=args.evidence or args.ocr or args.align,
+                ocr=args.ocr or args.align,
+                align=args.align,
+                snap=not args.no_snap,
             )
         except Exception as e:
             print(f"  FAILED: {e}")
