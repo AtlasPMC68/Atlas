@@ -1,9 +1,10 @@
 {
   "schemaVersion": "1",
   "runId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df/pip_7sift",
-  "startedAt": "2026-09-21T03:09:59.907383+00:00",
+  "startedAt": "2026-09-21T03:51:51.515301+00:00",
   "inputs": {
     "waterPickCount": 0,
+    "caseKind": "regression",
     "controlPoints": [
       {
         "pixel": {
@@ -177,10 +178,10 @@
     }
   },
   "timingMs": {
-    "fit": 26.216,
-    "load_coastline": 827.177,
-    "load_land_mask": 3120.066,
-    "apply": 1876.393
+    "fit": 1.728,
+    "load_coastline": 485.676,
+    "load_land_mask": 670.987,
+    "apply": 603.591
   },
   "config": {
     "version": "4",

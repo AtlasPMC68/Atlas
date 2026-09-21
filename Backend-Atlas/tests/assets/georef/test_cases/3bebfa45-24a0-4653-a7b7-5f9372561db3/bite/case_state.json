@@ -1,0 +1,50 @@
+{
+  "testId": "3bebfa45-24a0-4653-a7b7-5f9372561db3",
+  "testCaseId": "bite",
+  "kind": "probe",
+  "scored": false,
+  "hasExpectedZones": false,
+  "checkedAt": "2026-09-21T04:43:11.522690+00:00",
+  "requirements": {
+    "version": "2",
+    "runnable": true,
+    "blocked": [],
+    "refreshable": [],
+    "requirements": [
+      {
+        "key": "controlPoints",
+        "kind": "user_input",
+        "level": "required",
+        "sinceStep": "0",
+        "summary": "Pixel <-> lon/lat pairs clicked by the user.",
+        "remedy": "Recreate the case: the control points come from a human matching keypoints to the map and cannot be recovered from anything on disk.",
+        "producer": null,
+        "status": "satisfied",
+        "detail": null
+      },
+      {
+        "key": "frameBounds",
+        "kind": "user_input",
+        "level": "required",
+        "sinceStep": "1",
+        "summary": "The world area the user framed; the extent for every reference layer.",
+        "remedy": "Recreate the case and draw the world area. The framing box is the extent of every reference raster, so it decides which geography the alignment can match against at all. Deriving one from the control points is not a substitute: that box is systematically too tight, because the points sit inside the mapped area. Your drawn expected zones are per-map and are not lost -- only this case's clicks are.",
+        "producer": null,
+        "status": "satisfied",
+        "detail": null
+      },
+      {
+        "key": "zonePicks",
+        "kind": "user_input",
+        "level": "required",
+        "sinceStep": "0",
+        "summary": "Pipette picks of kind 'zone'; without them nothing is extracted.",
+        "remedy": "Recreate the case. A case predating the pipette has no colours in its config and there is nothing to georeference.",
+        "producer": null,
+        "status": "satisfied",
+        "detail": null
+      }
+    ]
+  },
+  "derived": []
+}

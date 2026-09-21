@@ -115,12 +115,17 @@ function renderZones(features) {
     const fillColor = feature.color || colorFromRgb || "#ccc";
     let targetGeometry = feature.geometry;
 
+    // Extracted zones now render in the colour they were sampled from, so a
+    // zone can legitimately be red. An overlay that is *about* the zones (the
+    // FP/FN error layer) has to stay tellable apart from one, hence the
+    // optional dashed stroke rather than the shared dark outline.
     const layer = L.geoJSON(targetGeometry, {
       style: {
         fillColor,
         fillOpacity: 0.5,
-        color: "#333",
-        weight: 1,
+        color: feature.strokeColor || "#333",
+        weight: feature.strokeColor ? 2 : 1,
+        dashArray: feature.dashArray || undefined,
       },
     });
 
