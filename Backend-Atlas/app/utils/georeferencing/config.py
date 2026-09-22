@@ -14,7 +14,12 @@ import math
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "5"
+CONFIG_VERSION = "7"
+
+#: The transform models a run may choose between, in increasing order of
+#: freedom. Adding one here is not enough: ``pipeline`` has to know how to
+#: build it, and a test holds the two lists together.
+TRANSFORM_MODELS = ("affine", "piecewise_affine")
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,26 @@ class GeorefConfig:
     # --- Land clipping (current §8) ------------------------------------------
     clip_to_land_mask: bool = True
     land_coverage_threshold: float = 0.01
+
+    # --- Transform model (roadmap §5.4) --------------------------------------
+    # Which model places the map. One named choice rather than a flag per
+    # model: the roadmap's candidate registry adds similarity, affine +
+    # latitude stretch and FFD later, and a pile of mutually exclusive booleans
+    # would let a caller ask for two at once.
+    #
+    # ``affine`` is the baseline. ``piecewise_affine`` keeps that affine and
+    # adds a Delaunay correction pinned at each control point, decaying to zero
+    # on a frame around the image so nothing extrapolates. The correction
+    # interpolates rather than averages, so it reproduces a mis-clicked point
+    # instead of smoothing it away: judge it by the leave-one-out error it
+    # reports, never by its residual, which is 0 by construction.
+    #
+    # When Step 4 alignment supplies a model, this chooses what happens to it:
+    # ``affine`` uses the aligned affine as-is, ``piecewise_affine`` corrects it.
+    transform_model: str = "affine"
+    # Frame padding as a fraction of the map's width and height. Wider means
+    # the correction decays more gently and reaches further toward the edges.
+    piecewise_anchor_margin: float = 0.25
 
     # --- Reference rasters (Step 2) ------------------------------------------
     # Matches the existing find_coastline_keypoints defaults. At a ~2500 km
@@ -228,6 +253,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         ),
     ),
     ("Land clipping", ("clip_to_land_mask", "land_coverage_threshold")),
+    ("Transform model", ("transform_model", "piecewise_anchor_margin")),
     ("Reference rasters", ("reference_raster_width", "reference_raster_height")),
     (
         "Edge detection",
@@ -319,6 +345,13 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
 #: Never overridable: it labels which *code* produced a run, not a setting.
 _NOT_OVERRIDABLE = frozenset({"version"})
 
+#: Fields whose value comes from a fixed list. A free-text setting would be a
+#: typo away from silently running something other than what was asked for, so
+#: these are validated against the list and offered as a dropdown by the UI.
+FIELD_CHOICES: Dict[str, Tuple[str, ...]] = {
+    "transform_model": TRANSFORM_MODELS,
+}
+
 
 def _coerce_field(key: str, value: Any, default: Any) -> Any:
     """Coerce one override to the type of *default*, or raise ValueError.
@@ -338,6 +371,14 @@ def _coerce_field(key: str, value: Any, default: Any) -> Any:
         if not isinstance(value, bool):
             raise ValueError(
                 f"{key} must be a boolean, got {type(value).__name__}: {value!r}"
+            )
+        return value
+
+    if isinstance(default, str):
+        choices = FIELD_CHOICES.get(key)
+        if not isinstance(value, str) or (choices and value not in choices):
+            raise ValueError(
+                f"{key} must be one of {list(choices or ())}, got {value!r}"
             )
         return value
 
@@ -398,4 +439,5 @@ def describe_config(ambient: GeorefConfig) -> Dict[str, Any]:
         "fileDefaults": DEFAULT_GEOREF_CONFIG.to_dict(),
         "groups": [{"title": title, "fields": list(names)} for title, names in FIELD_GROUPS],
         "switches": sorted(RUN_SWITCHES),
+        "choices": {field: list(options) for field, options in FIELD_CHOICES.items()},
     }

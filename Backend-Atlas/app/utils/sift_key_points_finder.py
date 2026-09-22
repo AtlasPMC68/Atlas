@@ -4,63 +4,113 @@ import os
 import json
 
 NUMBER_OF_KEYPOINTS = 10
-BORDER_MARGIN = 20  # pixels from edge
-MIN_DISTANCE_BETWEEN_KEYPOINTS = 10  
+
+# Ratios of the image diagonal, not pixels: this module rasterizes the framing
+# box at whatever size the caller asks for (the endpoint takes width/height),
+# and a constant in pixels silently means something different at each size.
+BORDER_MARGIN_RATIO = 0.02  # ~25 px on the 1024x768 default
+# Only a duplicate floor, *not* how the points get spread out -- that is the
+# sampling below. SIFT reports several keypoints at one location (different
+# scales and orientations), and two control points in the same spot constrain
+# nothing.
+MIN_SEPARATION_RATIO = 0.01  # ~13 px on the 1024x768 default
+
+# Sampling cost is candidates x points, so a cap keeps the worst case bounded
+# on a dense raster. Candidates are taken strongest-first, so what is dropped
+# is the weak tail.
+MAX_CANDIDATES = 5000
+
 DEBUG = False
+
+
+def select_spread_keypoints(keypoints, count: int, min_separation_px: float):
+    """Pick `count` keypoints spread as widely as possible (farthest-point sampling).
+
+    Seeds with the strongest response, then repeatedly takes the candidate
+    farthest from everything already chosen.
+
+    Chosen over the previous "keep anything at least D pixels from the ones
+    kept so far" for two reasons:
+
+    - **D was doing two jobs and could only do one.** Small, it deduplicates but
+      leaves the points clustered on whichever stretch of coast SIFT likes;
+      large, it spreads them but exhausts the candidates and silently returns
+      fewer than asked. Measured on a Quebec framing box, D=10 px left a pool
+      of 19 while D=200 px left 6, so no single value both spreads and fills.
+      Here spread is the objective and the count is met whenever the candidates
+      allow it.
+    - **Spread is what the georeferencing actually needs.** Control points
+      bunched together make the affine badly conditioned, which is what the
+      `probe_gcp_disagreement` gate punishes. It should be maximised outright,
+      not fall out of a threshold.
+
+    `min_separation_px` only stops the selection once the best remaining
+    candidate is a near-duplicate of one already chosen, which happens when the
+    candidates run out before `count` is reached.
+    """
+    if count <= 0 or not keypoints:
+        return []
+
+    ordered = sorted(keypoints, key=lambda kp: kp.response, reverse=True)
+    ordered = ordered[:MAX_CANDIDATES]
+    points = np.array([kp.pt for kp in ordered], dtype=float)
+
+    chosen = [0]  # the strongest response seeds it
+    # Distance from every candidate to the nearest chosen point, kept as a
+    # running minimum so each round costs one pass rather than one per pair.
+    distance = np.hypot(points[:, 0] - points[0, 0], points[:, 1] - points[0, 1])
+
+    while len(chosen) < count:
+        farthest = int(np.argmax(distance))
+        if distance[farthest] < min_separation_px:
+            break  # everything left duplicates a point already chosen
+        chosen.append(farthest)
+        np.minimum(
+            distance,
+            np.hypot(
+                points[:, 0] - points[farthest, 0],
+                points[:, 1] - points[farthest, 1],
+            ),
+            out=distance,
+        )
+
+    return [ordered[i] for i in chosen]
+
 
 def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection: bool = True):
 
     height, width = gray_image.shape
-    
+    diagonal = float(np.hypot(width, height))
+    border_margin = BORDER_MARGIN_RATIO * diagonal
+
     if apply_edge_detection:
         # Apply blur to reduce noise before edge detection
         blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
-        # Create edge mask 
+        # Create edge mask
         edges = cv2.Canny(blurred, 75, 175)
     else:
         edges = None
-    
+
     # Detect ALL keypoints on edges (no limit)
     sift = cv2.SIFT_create()
     all_keypoints, _ = sift.detectAndCompute(gray_image, mask=edges)
-        
+
     if len(all_keypoints) == 0:
         return []
-    
+
     # Filter out keypoints too close to image borders
     filtered_keypoints = []
     for kp in all_keypoints:
         x, y = kp.pt
-        if (BORDER_MARGIN < x < width - BORDER_MARGIN and 
-            BORDER_MARGIN < y < height - BORDER_MARGIN):
+        if (border_margin < x < width - border_margin and
+            border_margin < y < height - border_margin):
             filtered_keypoints.append(kp)
-        
-    # Sort by response (strength) first
-    filtered_keypoints = sorted(filtered_keypoints, key=lambda x: x.response, reverse=True)
-    
-    # Filter out keypoints too close to each other
-    spaced_keypoints = []
-    
-    for kp in filtered_keypoints:
-        # Check distance to all already selected keypoints
-        too_close = False
-        for selected_kp in spaced_keypoints:
-            dx = kp.pt[0] - selected_kp.pt[0]
-            dy = kp.pt[1] - selected_kp.pt[1]
-            distance = (dx**2 + dy**2)**0.5
-            
-            if distance < MIN_DISTANCE_BETWEEN_KEYPOINTS:
-                too_close = True
-                break
-        
-        if not too_close:
-            spaced_keypoints.append(kp)
-            
-        # Stop when we have enough keypoints
-        if len(spaced_keypoints) >= NUMBER_OF_KEYPOINTS:
-            break
-        
-    return spaced_keypoints
+
+    return select_spread_keypoints(
+        filtered_keypoints,
+        NUMBER_OF_KEYPOINTS,
+        MIN_SEPARATION_RATIO * diagonal,
+    )
 
 
 def draw_geojson_features(img: np.ndarray, geojson_path: str, bounds: dict, width: int, height: int):

@@ -8,8 +8,11 @@ inspect, persist and compare.
 """
 
 import logging
+import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+
+import numpy as np
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from shapely.geometry import mapping, shape
 from shapely.ops import transform
@@ -22,6 +25,7 @@ from app.utils.coastline_land_mask import (
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import FrameBounds
 from .models import AffineModel, ControlPoint, fit_affine_from_control_points
+from .piecewise import PiecewiseAffineModel, fit_piecewise_from_control_points
 from .projection import (
     lonlat_arrays_to_webmercator,
     reference_latitude,
@@ -31,6 +35,7 @@ from .projection import (
 from .records import RunRecord
 from .snapping import (
     estimate_pixel_diagonal_from_features,
+    estimate_pixel_extent_from_features,
     load_coastline_geometry,
     snap_geometry_to_coastline,
 )
@@ -39,13 +44,17 @@ logger = logging.getLogger(__name__)
 
 JSONDict = Dict[str, Any]
 
+#: Either transform model. Both satisfy the same fit / apply / inverse /
+#: serialize interface, which is what lets this module stay indifferent.
+TransformModel = Union[AffineModel, PiecewiseAffineModel]
+
 
 @dataclass
 class GeorefResult:
     """What a georeferencing run produced, beyond the features themselves."""
 
     collections: List[JSONDict] = field(default_factory=list)
-    model: Optional[AffineModel] = None
+    model: Optional[TransformModel] = None
     record: Optional[RunRecord] = None
 
     @property
@@ -61,7 +70,7 @@ def georeference_features(
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     record: Optional[RunRecord] = None,
     coastline_snap_tolerance_px: Optional[float] = None,
-    model: Optional[AffineModel] = None,
+    model: Optional[TransformModel] = None,
     extra_properties: Optional[Dict[str, Any]] = None,
 ) -> GeorefResult:
     """Georeference pixel-space features with an affine fitted to *control_points*.
@@ -102,6 +111,20 @@ def georeference_features(
         # against the control points so its error is reported, not "unknown".
         model.measure_against(control_points)
 
+    if config.transform_model == "piecewise_affine":
+        # Applied to whatever affine we have, fitted here or handed in by Step
+        # 4: the correction is local, so it is worth strictly more on top of an
+        # aligned affine than on top of a GCP-only one. It runs *after* the
+        # gates, which judge the global affine and know nothing about this.
+        with record.phase("piecewise_correction"):
+            model = _apply_piecewise_correction(
+                model, control_points, pixel_feature_collections, config, record
+            )
+    elif config.transform_model != "affine":
+        # A model named in the config that nothing here knows how to build
+        # would otherwise place the map with the baseline and say nothing.
+        raise ValueError(f"Unknown transform_model: {config.transform_model!r}")
+
     geo_points = [cp.geo for cp in control_points]
     ref_lat = reference_latitude(frame_bounds, geo_points)
 
@@ -123,9 +146,16 @@ def georeference_features(
         frameBounds=frame_bounds,
         referenceLatitude=ref_lat,
     )
+    # Keyed "stage2_affine" for continuity with run records made before the
+    # model became a choice; `name` inside the payload says what it really is.
     record.set_model("stage2_affine", model.serialize())
     record.set_errors(
-        gcpResiduals3857=[float(v) for v in model.residuals_3857],
+        # None rather than NaN for a residual that could not be computed: a
+        # leave-one-out pass reports NaN when its refit was impossible, and
+        # NaN is not valid JSON for the readers of this record.
+        gcpResiduals3857=[
+            float(v) if math.isfinite(v) else None for v in model.residuals_3857
+        ],
         gcpRmse3857=rmse_3857,
         gcpRmseKm=rmse_km,
         gcpRmseStatus=rmse_status,
@@ -269,8 +299,50 @@ def georeference_features(
     return GeorefResult(collections=georef_collections, model=model, record=record)
 
 
+def _apply_piecewise_correction(
+    base: AffineModel,
+    control_points: Sequence[ControlPoint],
+    pixel_feature_collections: Sequence[JSONDict],
+    config: GeorefConfig,
+    record: RunRecord,
+) -> TransformModel:
+    """Wrap *base* in a local correction, or return it unchanged.
+
+    Never raises. The correction is refused for reasons that are properties of
+    the user's clicks -- two points in the same place, or a set that folds the
+    map -- and a refusal has to leave a working affine behind rather than fail
+    the import. The reason is recorded either way, because "piecewise was on
+    and the output is identical" is otherwise indistinguishable from a bug.
+    """
+    extent = estimate_pixel_extent_from_features(list(pixel_feature_collections))
+    try:
+        model = fit_piecewise_from_control_points(
+            control_points,
+            extent=extent,
+            base=base,
+            anchor_margin=config.piecewise_anchor_margin,
+        )
+    except (ValueError, np.linalg.LinAlgError) as e:
+        logger.warning(f"Piecewise correction refused, keeping the affine: {e}")
+        record.set_errors(piecewiseApplied=False, piecewiseRefusedBecause=str(e))
+        return base
+
+    corrections = model.corrections_3857
+    record.set_errors(
+        piecewiseApplied=True,
+        piecewiseLocalPoints=int(model.n_local_points),
+        # How far the correction pulls the affine, in EPSG:3857 metres. A large
+        # value is either real local distortion or a bad control point, and
+        # this number alone cannot tell them apart.
+        piecewiseMaxCorrection3857=float(corrections.max()) if corrections.size else 0.0,
+        # The honest error estimate: in-sample residuals are 0 by construction.
+        piecewiseLooRmse3857=model.rmse_3857,
+    )
+    return model
+
+
 def _resolve_snap_tolerance_m(
-    model: AffineModel,
+    model: TransformModel,
     pixel_feature_collections: Sequence[JSONDict],
     config: GeorefConfig,
     coastline_snap_tolerance_px: Optional[float],

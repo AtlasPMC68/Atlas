@@ -453,6 +453,28 @@ def test_config_overrides_coerce_to_the_field_type():
     assert isinstance(parsed["edge_canny_low"], int)
 
 
+def test_config_overrides_accept_a_listed_choice_and_reject_others():
+    """A free-text model name is a typo away from silently running the wrong
+    one, so the dropdown's values are the only ones accepted."""
+    from app.utils.georeferencing.config import (
+        TRANSFORM_MODELS,
+        describe_config,
+        parse_config_overrides,
+    )
+    from app.utils.georeferencing import DEFAULT_GEOREF_CONFIG
+
+    assert parse_config_overrides({"transform_model": "piecewise_affine"}) == {
+        "transform_model": "piecewise_affine"
+    }
+    for bad in ("piecewise", "", "affine ", 3, True, None):
+        with pytest.raises(ValueError):
+            parse_config_overrides({"transform_model": bad})
+
+    # What the UI renders the dropdown from has to be the same list.
+    described = describe_config(DEFAULT_GEOREF_CONFIG)
+    assert described["choices"]["transform_model"] == list(TRANSFORM_MODELS)
+
+
 def test_config_overrides_reject_wrong_types():
     from app.utils.georeferencing.config import parse_config_overrides
 

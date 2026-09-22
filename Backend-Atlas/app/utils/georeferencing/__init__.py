@@ -10,6 +10,7 @@ Package layout (plan section 3), filled in as the steps land:
     frame.py        the user's framing box, parsed and persisted
     inputs.py       what a map was georeferenced from, stored on the map row
     snapping.py     post-hoc coastline vertex snap (due for replacement)
+    piecewise.py    affine + Delaunay local correction, same model interface
     pipeline.py     fit -> snap -> clip -> EPSG:4326
     records.py      structured per-run record
     reference.py    framing box -> reference rasters + distance transform, cached
@@ -44,6 +45,11 @@ from .models import (
     control_point_weights,
     fit_affine_from_control_points,
     sigma_px_for_source,
+)
+from .piecewise import (
+    PiecewiseAffineModel,
+    deserialize_model,
+    fit_piecewise_from_control_points,
 )
 from .align import (
     CurveSamples,
@@ -90,11 +96,13 @@ __all__ = [
     "CurveSamples",
     "DEFAULT_GEOREF_CONFIG",
     "DEFAULT_SIGMA_PX_BY_SOURCE",
+    "deserialize_model",
     "dump_reference_debug_pngs",
     "evaluate_gates",
     "failed_names",
     "fit_affine_from_control_points",
     "fit_chamfer",
+    "fit_piecewise_from_control_points",
     "frame_bounds_from_geo_points",
     "frame_bounds_to_config_entry",
     "FrameBounds",
@@ -112,6 +120,7 @@ __all__ = [
     "parse_frame_bounds_entry",
     "parse_georef_inputs",
     "PhaseResult",
+    "PiecewiseAffineModel",
     "rasterize_lake_interiors",
     "reference_latitude",
     "ReferenceGrid",

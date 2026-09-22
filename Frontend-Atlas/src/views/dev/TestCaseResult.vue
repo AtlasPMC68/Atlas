@@ -99,6 +99,33 @@
               </span>
             </label>
 
+            <!-- Which model places the map. First-class rather than buried in
+                 the panel below: it decides what the run *is*, and with
+                 alignment on it also decides what happens to the aligned
+                 affine. -->
+            <label v-if="modelChoices.length > 0" class="block space-y-1">
+              <span class="text-xs font-semibold">Modèle de transformation</span>
+              <select
+                class="select select-bordered select-xs w-full font-mono"
+                :class="isParamChanged('transform_model') ? 'select-warning' : ''"
+                :value="String(paramDraft('transform_model'))"
+                :disabled="isRerunning"
+                @change="setParamDraft('transform_model', ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="choice in modelChoices" :key="choice" :value="choice">
+                  {{ choice }}
+                </option>
+              </select>
+              <span class="block text-[11px] text-base-content/60">
+                <code>piecewise_affine</code> garde l'affine globale et y ajoute
+                une correction locale, exacte à chaque point de contrôle et nulle
+                sur le cadre de l'image. Avec l'alignement activé, elle corrige
+                l'affine alignée. Elle interpole les points au lieu de les
+                moyenner : jugez-la sur l'erreur leave-one-out, jamais sur son
+                résidu, nul par construction.
+              </span>
+            </label>
+
             <!-- Tuning panel: any GeorefConfig field, for this run only. Edits
                  are sent with the re-run and never written to config.py. -->
             <div class="border-t border-base-300 pt-2 space-y-2">
@@ -177,6 +204,22 @@
                         :disabled="isRerunning"
                         @change="setParamDraft(name, ($event.target as HTMLInputElement).checked)"
                       />
+                      <select
+                        v-else-if="paramKind(name) === 'choice'"
+                        class="select select-bordered select-xs font-mono w-40"
+                        :class="isParamChanged(name) ? 'select-warning' : ''"
+                        :value="String(paramDraft(name))"
+                        :disabled="isRerunning"
+                        @change="setParamDraft(name, ($event.target as HTMLSelectElement).value)"
+                      >
+                        <option
+                          v-for="choice in configDesc.choices?.[name] || []"
+                          :key="choice"
+                          :value="choice"
+                        >
+                          {{ choice }}
+                        </option>
+                      </select>
                       <input
                         v-else
                         type="text"
@@ -492,13 +535,18 @@ type GeorefConfigDescription = {
   fileDefaults: Record<string, unknown>;
   groups: { title: string; fields: string[] }[];
   switches: string[];
+  choices?: Record<string, string[]>;
 };
-type ParamKind = "bool" | "number" | "list";
+type ParamKind = "bool" | "number" | "list" | "choice";
 type ParamDraft = string | boolean;
 
-// These two already have their own checkboxes above; showing them twice would
-// leave two controls fighting over one setting.
-const CHECKBOX_FIELDS = new Set(["snap_to_coastline", "enable_curve_alignment"]);
+// These have their own controls above; showing them twice would leave two
+// widgets fighting over one setting.
+const CHECKBOX_FIELDS = new Set([
+  "snap_to_coastline",
+  "enable_curve_alignment",
+  "transform_model",
+]);
 // Kept across reloads and cases on purpose: tuning means trying the same
 // thresholds on several maps. The badge keeps them visible when collapsed.
 const PARAM_DRAFTS_KEY = "atlas.devTest.georefParamDrafts";
@@ -529,10 +577,15 @@ watch(paramDrafts, (drafts) => {
 
 function paramKind(name: string): ParamKind {
   const value = configDesc.value?.values[name];
+  if (configDesc.value?.choices?.[name]) return "choice";
   if (typeof value === "boolean") return "bool";
   if (Array.isArray(value)) return "list";
   return "number";
 }
+
+const modelChoices = computed<string[]>(
+  () => configDesc.value?.choices?.transform_model ?? [],
+);
 
 function formatParam(value: unknown): string {
   return Array.isArray(value) ? value.join(", ") : String(value);
@@ -565,6 +618,14 @@ function parseParam(
   const kind = paramKind(name);
   if (kind === "bool") {
     return typeof raw === "boolean" ? { value: raw } : { error: "booléen attendu" };
+  }
+
+  if (kind === "choice") {
+    const allowed = configDesc.value?.choices?.[name] || [];
+    const text = String(raw);
+    return allowed.includes(text)
+      ? { value: text }
+      : { error: `valeur attendue parmi ${allowed.join(", ")}` };
   }
 
   const text = String(raw).trim();

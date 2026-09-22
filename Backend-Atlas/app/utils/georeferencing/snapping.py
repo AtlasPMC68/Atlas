@@ -194,16 +194,14 @@ def snap_geometry_to_coastline(
     return geom, total_points, snapped_points
 
 
-def estimate_pixel_diagonal_from_features(
+def estimate_pixel_extent_from_features(
     pixel_feature_collections: List[dict],
-) -> Optional[float]:
-    """Estimate pixel-space diagonal from all feature bounds.
+) -> Optional[Tuple[float, float, float, float]]:
+    """Bounding box (x0, y0, x1, y1) of every pixel-space feature, or None.
 
-    Note this keys off *feature* bounds rather than image size, so a map whose
-    zones cluster in one corner gets a much smaller tolerance than the same map
-    with spread-out zones (current section 9, limitation 9). Once the framing
-    box and image dimensions are both available end to end this should key off
-    the image instead.
+    Like ``estimate_pixel_diagonal_from_features``, this keys off *feature*
+    bounds rather than the image, and carries the same caveat: a map whose
+    zones sit in one corner reports a box much smaller than the map.
     """
     minx = float("inf")
     miny = float("inf")
@@ -233,7 +231,25 @@ def estimate_pixel_diagonal_from_features(
 
     if not found_any:
         return None
+    return (minx, miny, maxx, maxy)
 
+
+def estimate_pixel_diagonal_from_features(
+    pixel_feature_collections: List[dict],
+) -> Optional[float]:
+    """Estimate pixel-space diagonal from all feature bounds.
+
+    Note this keys off *feature* bounds rather than image size, so a map whose
+    zones cluster in one corner gets a much smaller tolerance than the same map
+    with spread-out zones (current section 9, limitation 9). Once the framing
+    box and image dimensions are both available end to end this should key off
+    the image instead.
+    """
+    extent = estimate_pixel_extent_from_features(pixel_feature_collections)
+    if extent is None:
+        return None
+
+    minx, miny, maxx, maxy = extent
     width_px = max(0.0, maxx - minx)
     height_px = max(0.0, maxy - miny)
     diagonal_px = math.sqrt(width_px * width_px + height_px * height_px)

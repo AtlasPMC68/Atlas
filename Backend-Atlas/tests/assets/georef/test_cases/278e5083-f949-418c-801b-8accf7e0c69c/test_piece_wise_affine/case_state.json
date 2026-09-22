@@ -1,10 +1,10 @@
 {
   "testId": "278e5083-f949-418c-801b-8accf7e0c69c",
-  "testCaseId": "test-5-sift-points-peut-etre",
+  "testCaseId": "test_piece_wise_affine",
   "kind": "probe",
   "scored": false,
   "hasExpectedZones": false,
-  "checkedAt": "2026-09-22T21:06:37.726764+00:00",
+  "checkedAt": "2026-09-22T21:06:37.805516+00:00",
   "requirements": {
     "version": "2",
     "runnable": true,
