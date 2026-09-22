@@ -14,7 +14,7 @@ from fastapi import (
 )
 
 from app.utils.auth import get_current_user_id
-from ..tasks import process_dev_test_extraction
+from ..tasks import GEOREF_CONFIG, process_dev_test_extraction
 from app.utils.dev_test import (
     delete_dev_test,
     delete_dev_test_case,
@@ -33,6 +33,7 @@ from app.utils.dev_test_cases import (
     resolve_case_kind,
 )
 from app.utils.georeferencing import frame_bounds_to_config_entry, parse_frame_bounds
+from app.utils.georeferencing.config import describe_config, parse_config_overrides
 from app.utils.imposed_colors import (
     KIND_WATER,
     KIND_ZONE,
@@ -333,6 +334,17 @@ async def delete_test_case(
     return result
 
 
+@router.get("/georef-config")
+async def get_georef_config(_user_id: str = Depends(get_current_user_id)):
+    """The georeferencing config a re-run uses when nothing is overridden.
+
+    Feeds the tuning panel. Values are the worker's ambient config -- the file
+    defaults with the environment applied -- since that is the baseline an
+    override is measured against. Read-only: overrides go with the run.
+    """
+    return describe_config(GEOREF_CONFIG)
+
+
 @router.post("/test-cases/{test_id}/{test_case_id}/run-evaluate")
 async def run_evaluate_dev_test_case(
     test_id: str,
@@ -354,6 +366,14 @@ async def run_evaluate_dev_test_case(
     clip_to_land_mask: bool | None = Query(
         None, description="Drop zone area falling in the ocean"
     ),
+    config_overrides: dict | None = Body(
+        None,
+        description=(
+            "Any GeorefConfig field, for this run only -- the tuning panel."
+            " See GET /georef-config for the fields and their current values."
+            " The query switches above win over the same key here."
+        ),
+    ),
     _user_id: str = Depends(get_current_user_id),
 ):
     """Re-run a test case from its saved inputs, and evaluate it if it is scored.
@@ -367,15 +387,24 @@ async def run_evaluate_dev_test_case(
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
 
-    overrides = {
-        key: value
-        for key, value in (
-            ("snap_to_coastline", snap_to_coastline),
-            ("enable_curve_alignment", enable_curve_alignment),
-            ("clip_to_land_mask", clip_to_land_mask),
-        )
-        if value is not None
-    }
+    # Validated here as well as in the task so a mistyped value is a 400 on
+    # the request, not a failure buried in the worker's log.
+    try:
+        overrides = parse_config_overrides(config_overrides)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    overrides.update(
+        {
+            key: value
+            for key, value in (
+                ("snap_to_coastline", snap_to_coastline),
+                ("enable_curve_alignment", enable_curve_alignment),
+                ("clip_to_land_mask", clip_to_land_mask),
+            )
+            if value is not None
+        }
+    )
 
     try:
         return await run_evaluate_case_blocking(

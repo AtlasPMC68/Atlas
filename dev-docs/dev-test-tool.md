@@ -426,6 +426,20 @@ people can re-run the same case differently at the same time. They reach the tas
 the Celery signature (which breaks in-flight tasks and any caller that has not restarted
 alongside the worker).
 
+**Paramètres (ce run seulement)** is a collapsible tuning panel under the switches. It lists
+every `GeorefConfig` field, grouped by section and filterable by name, pre-filled with the
+worker's ambient values from `GET /dev-test-api/georef-config`. Edit a threshold and re-run:
+only fields that differ from the ambient value are sent, as the JSON body of `run-evaluate`,
+and they are validated against the field's type (a 400 names the bad field). `config.py` is
+never written. What a run actually used is in its `run_record.json` under `runSwitches`.
+
+- Lists (annealing schedules, ICP radii) are comma-separated; their length may change, which
+  adds or removes a level.
+- Edits persist in the browser across reloads and cases, so the same thresholds can be tried
+  on several maps. The orange badge shows how many are active even when the panel is closed;
+  **Tout réinitialiser** clears them.
+- A run with any edited field counts as non-default: it is written as latest, never `best`.
+
 Two things it deliberately will not do:
 
 - **A run using any non-default switch is never promoted to `zones_best`.** "Best run so

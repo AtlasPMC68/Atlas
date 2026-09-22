@@ -4,7 +4,7 @@
   "kind": "probe",
   "scored": false,
   "hasExpectedZones": false,
-  "checkedAt": "2026-09-21T04:43:11.449778+00:00",
+  "checkedAt": "2026-09-22T18:40:36.511332+00:00",
   "requirements": {
     "version": "2",
     "runnable": true,

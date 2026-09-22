@@ -1,10 +1,10 @@
 {
-  "testId": "3bebfa45-24a0-4653-a7b7-5f9372561db3",
-  "testCaseId": "bite",
+  "testId": "278e5083-f949-418c-801b-8accf7e0c69c",
+  "testCaseId": "test-5-sift-points-peut-etre",
   "kind": "probe",
   "scored": false,
   "hasExpectedZones": false,
-  "checkedAt": "2026-09-22T18:40:36.579060+00:00",
+  "checkedAt": "2026-09-22T19:15:49.728055+00:00",
   "requirements": {
     "version": "2",
     "runnable": true,
@@ -43,8 +43,42 @@
         "producer": null,
         "status": "satisfied",
         "detail": null
+      },
+      {
+        "key": "textRegions",
+        "kind": "derived",
+        "level": "required",
+        "sinceStep": "3",
+        "summary": "OCR label boxes, masked out of the edge map and carried as the validity mask. Roughly half the edge pixels on a labelled map are place names, so this is most of the evidence, not optional noise.",
+        "remedy": "Re-run OCR once (~135 s/map on CPU); it is cached beside the map for every case on it. Text extraction is not part of georeferencing and does not change while georeferencing is tuned.",
+        "producer": "text_extraction",
+        "status": "satisfied",
+        "detail": null
+      },
+      {
+        "key": "waterPicks",
+        "kind": "user_input",
+        "level": "optional",
+        "sinceStep": "1",
+        "summary": "Pipette picks of kind 'water', used for the water-mask gate.",
+        "remedy": "Optional: a map with an unpainted ocean genuinely has none. Without them the water gate reports applicable=false and is never exercised.",
+        "producer": null,
+        "status": "satisfied",
+        "detail": null
       }
     ]
   },
-  "derived": []
+  "derived": [
+    {
+      "key": "textRegions",
+      "present": true,
+      "usable": true,
+      "detail": null,
+      "producedAt": "2026-09-22T18:48:25.736858+00:00",
+      "producer": {
+        "easyocr": "1.7.2",
+        "torch": "2.14.0+cpu"
+      }
+    }
+  ]
 }

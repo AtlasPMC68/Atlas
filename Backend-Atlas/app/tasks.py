@@ -780,12 +780,13 @@ def process_dev_test_extraction(
     """Dev-test-only extraction task: no DB persistence, results saved to files,
     evaluation report written automatically at the end.
 
-    ``config_overrides`` flips per-run switches (``snap_to_coastline``,
-    ``enable_curve_alignment``, ``clip_to_land_mask``) for this run only. It is
-    one extensible dict rather than a flag per switch on purpose: every kwarg
-    added to a Celery task breaks in-flight messages and any caller that has
-    not restarted alongside the worker, so the next switch should not change
-    this signature at all. Unknown keys are dropped; see ``parse_run_switches``.
+    ``config_overrides`` sets any ``GeorefConfig`` field for this run only --
+    the per-run switches (``snap_to_coastline`` and friends) and the dev tool's
+    tuning panel both arrive here. It is one extensible dict rather than a flag
+    per setting on purpose: every kwarg added to a Celery task breaks in-flight
+    messages and any caller that has not restarted alongside the worker, so a
+    new setting should not change this signature at all. Unknown keys are
+    dropped; see ``parse_config_overrides``.
 
     Whether the run is *scored* comes from the case's kind, which is resolved
     here from disk rather than passed in. A ``probe`` case has no hand-drawn
@@ -799,10 +800,17 @@ def process_dev_test_extraction(
     tasks and any caller that has not restarted alongside the worker.
     """
     from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
-    from app.utils.georeferencing.config import parse_run_switches
+    from app.utils.georeferencing.config import parse_config_overrides
 
     resolved_kind = resolve_case_kind(test_id, test_case)
-    switches = parse_run_switches(config_overrides)
+    # An "override" equal to the ambient value is not one. Dropping those keeps
+    # the record honest about what differed, and keeps a run the tuning panel
+    # sent back at defaults eligible for `zones_best`.
+    switches = {
+        key: value
+        for key, value in parse_config_overrides(config_overrides).items()
+        if getattr(GEOREF_CONFIG, key) != value
+    }
     run_config = GEOREF_CONFIG.with_overrides(**switches)
 
     # A run under non-ambient switches is not comparable to one under the

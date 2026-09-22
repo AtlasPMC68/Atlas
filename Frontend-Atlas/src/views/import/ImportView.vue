@@ -230,6 +230,7 @@ import { useDevTestImportProcess } from "../../composables/useDevTestImportProce
 import { useSiftPoints } from "../../composables/useSiftPoints";
 import { apiFetch } from "../../utils/api";
 import { snakeToCamel } from "../../utils/utils";
+import { slugifyTestCase } from "../../utils/devTestSlug";
 import type {
   WorldBounds,
   ImposedColor,
@@ -603,7 +604,11 @@ watch([isProcessing, resultData, mapId], async ([processing, result, id]) => {
   if (isDevTest.value) {
     const caseName = devTestCaseName.value;
     if (caseName) {
-      router.push({ path: `/test-editor/${id}/case/${encodeURIComponent(caseName)}` });
+      // The slug, not the typed name: the case is stored under it, and its
+      // static artifacts are served off that directory.
+      router.push({
+        path: `/test-editor/${id}/case/${encodeURIComponent(slugifyTestCase(caseName))}`,
+      });
     } else {
       router.push({ path: `/test-editor/${id}` });
     }

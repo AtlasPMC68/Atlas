@@ -1,0 +1,381 @@
+{
+  "schemaVersion": "1",
+  "runId": "278e5083-f949-418c-801b-8accf7e0c69c/test-5-sift-points-peut-etre",
+  "startedAt": "2026-09-22T19:15:42.379152+00:00",
+  "inputs": {
+    "waterPickCount": 2,
+    "caseKind": "probe",
+    "runSwitches": {
+      "gate_min_inlier_fraction": 0.01,
+      "gate_water_iou_min": 0.01,
+      "gate_probe_gcp_ratio": 1000.0,
+      "gate_probe_gcp_max_km": 1000.0,
+      "gate_max_scale_drift": 1000.0,
+      "gate_max_rotation_deg": 45.0,
+      "gate_min_chamfer_improvement": -1.0,
+      "snap_to_coastline": false
+    },
+    "referenceCoverage": {
+      "coastline": 0.00868,
+      "lakes": 0.01033,
+      "rivers": 0.00412,
+      "curves": 0.02288,
+      "land": 0.66997,
+      "lakeInterior": 0.03727,
+      "water": 0.3673
+    },
+    "userEvidence": {
+      "edgeFraction": 0.011707641196013288,
+      "rawEdgePixels": 7895,
+      "waterEdgeFilterApplied": true,
+      "waterEdgeFilterKept": 0.334768841038632,
+      "textMaskFraction": 0.24951495016611297,
+      "straightLineCount": 2,
+      "suppressedEdgePixels": 426,
+      "suppressedEdgeFraction": 0.1611804767309875,
+      "waterFraction": 0.26578959025470655,
+      "oceanFraction": 0.20322923588039868,
+      "lakeFraction": 0.05844518272425249,
+      "hasWater": true
+    },
+    "frameBounds": {
+      "west": -103.88506542857019,
+      "south": 38.67178632444846,
+      "east": -50.10592285714914,
+      "north": 60.23108420583782
+    },
+    "alignment": {
+      "method": "joint",
+      "rung": 0,
+      "failedChecks": [],
+      "probeAgreementPx": 23.06372857982899,
+      "coastlineSamples": 3794,
+      "fineSamples": 4042,
+      "usesLakes": true,
+      "usesRivers": false,
+      "baselineGcpRmsPx": 10.316059768727971,
+      "baselineChamferPx": 3.3794782161712646,
+      "probeGcpRmsPx": 23.06372857982899,
+      "alignedChamferPx": 3.0573904514312744,
+      "coastDisplacementPx": 9.780841359174394,
+      "inlierFraction": 0.08238495794161306,
+      "correspondences": 333,
+      "alignedGcpRmsPx": 13.573343100970265
+    },
+    "controlPoints": [
+      {
+        "pixel": {
+          "x": 248.61668709885964,
+          "y": 104.47395917076652
+        },
+        "geo": {
+          "lon": -79.27928320323124,
+          "lat": 53.98554512028851
+        },
+        "source": "sift",
+        "sigmaPx": 6.0
+      },
+      {
+        "pixel": {
+          "x": 499.78499575709424,
+          "y": 108.59342982191613
+        },
+        "geo": {
+          "lon": -54.484431756497635,
+          "lat": 49.73259819812631
+        },
+        "source": "sift",
+        "sigmaPx": 6.0
+      },
+      {
+        "pixel": {
+          "x": 464.93629389404776,
+          "y": 181.116403969337
+        },
+        "geo": {
+          "lon": -60.089209205295866,
+          "lat": 46.320200773143455
+        },
+        "source": "sift",
+        "sigmaPx": 6.0
+      },
+      {
+        "pixel": {
+          "x": 377.81453923643176,
+          "y": 242.33709643144556
+        },
+        "geo": {
+          "lon": -68.67813448749294,
+          "lat": 44.15959551623714
+        },
+        "source": "sift",
+        "sigmaPx": 6.0
+      },
+      {
+        "pixel": {
+          "x": 317.0647751778779,
+          "y": 13.70401941776009
+        },
+        "geo": {
+          "lon": -69.67816940287233,
+          "lat": 59.037844625268384
+        },
+        "source": "sift",
+        "sigmaPx": 6.0
+      },
+      {
+        "pixel": {
+          "x": 396.1807469750643,
+          "y": 41.95972363104096
+        },
+        "geo": {
+          "lon": -61.564566508910616,
+          "lat": 56.10241851852014
+        },
+        "source": "sift",
+        "sigmaPx": 6.0
+      }
+    ],
+    "controlPointCount": 6,
+    "referenceLatitude": 49.45143526514314,
+    "snapToCoastline": false,
+    "snapToleranceMeters": null,
+    "clipToLandMask": true
+  },
+  "models": {
+    "chosen": {
+      "name": "affine",
+      "dof": 6,
+      "matrix": [
+        [
+          11437.912962956076,
+          -3378.6337333298507,
+          -11334030.009414768
+        ],
+        [
+          -2956.24000508308,
+          -12271.599051657551,
+          9292917.747478813
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "nPoints": 6,
+      "redundancy": 6,
+      "rmse3857": 170465.3800313214,
+      "metersPerPixel": 12270.990574933596,
+      "determinant": -150349534.07414648
+    },
+    "stage2_affine": {
+      "name": "affine",
+      "dof": 6,
+      "matrix": [
+        [
+          11437.912962956076,
+          -3378.6337333298507,
+          -11334030.009414768
+        ],
+        [
+          -2956.24000508308,
+          -12271.599051657551,
+          9292917.747478813
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "nPoints": 6,
+      "redundancy": 6,
+      "rmse3857": 170465.3800313214,
+      "metersPerPixel": 12270.990574933596,
+      "determinant": -150349534.07414648
+    }
+  },
+  "gates": [
+    {
+      "name": "probe_gcp_disagreement",
+      "value": 23.06372857982899,
+      "threshold": 10316.059768727971,
+      "applicable": true,
+      "passed": true,
+      "detail": "curve-only fit misses held-out GCPs by 23.1px (169.3km); GCP-only baseline 10.3px"
+    },
+    {
+      "name": "water_mask_iou",
+      "value": 0.3790888722927558,
+      "threshold": 0.01,
+      "applicable": true,
+      "passed": true,
+      "detail": "user water vs reference ocean + lakes"
+    },
+    {
+      "name": "transform_determinant",
+      "value": -150349534.07414627,
+      "threshold": 0.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "a sign flip is a mirror or a fold"
+    },
+    {
+      "name": "scale_drift",
+      "value": 0.08576126568008235,
+      "threshold": 1000.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "scale moved 8.6% from the GCP-only affine"
+    },
+    {
+      "name": "rotation_drift",
+      "value": 0.8119268138885332,
+      "threshold": 45.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "rotated 0.8 degrees from the GCP-only affine"
+    },
+    {
+      "name": "curve_fit_engaged",
+      "value": 0.09530695099579467,
+      "threshold": -1.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "trimmed chamfer 3.4px -> 3.1px (+9.5%); below the threshold means the curve term never engaged, not that the fit is wrong"
+    },
+    {
+      "name": "optimizer_converged",
+      "value": 1.0,
+      "threshold": 1.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "41 function evaluations"
+    },
+    {
+      "name": "inlier_fraction",
+      "value": 0.08238495794161306,
+      "threshold": 0.01,
+      "applicable": true,
+      "passed": true,
+      "detail": "a collapse here means the fit rests on a handful of samples, or that orientation filtering matched almost nothing -- wrong-feature lock caught in the act"
+    }
+  ],
+  "errors": {
+    "gcpResiduals3857": [
+      109952.74123660711,
+      115601.06056356915,
+      149021.35202067814,
+      342960.1486917046,
+      2993.6136806295176,
+      95181.27733380564
+    ],
+    "gcpRmse3857": 170465.3800313214,
+    "gcpRmseKm": 110.81823883257229,
+    "gcpRmseStatus": "ok",
+    "snapTotalBoundaryPoints": 0,
+    "snapSnappedPoints": 0,
+    "zonesDroppedOffLand": 0
+  },
+  "timingMs": {
+    "reference_layers": 36.592,
+    "user_evidence": 150.916,
+    "probe_fit": 1139.001,
+    "align_rung0": 1250.361,
+    "alignment": 2518.069,
+    "load_land_mask": 255.957,
+    "apply": 56.004
+  },
+  "config": {
+    "version": "5",
+    "snap_to_coastline": false,
+    "coastline_snap_ratio_of_diagonal": 0.01,
+    "coastline_snap_fallback_px": 8.0,
+    "coastline_snap_min_px": 3.0,
+    "coastline_snap_max_px": 40.0,
+    "coastline_snap_min_m": 200.0,
+    "coastline_snap_max_m": 50000.0,
+    "clip_to_land_mask": true,
+    "land_coverage_threshold": 0.01,
+    "reference_raster_width": 1024,
+    "reference_raster_height": 768,
+    "edge_blur_ksize": 3,
+    "edge_canny_low": 40,
+    "edge_canny_high": 120,
+    "text_mask_dilation_px": 7,
+    "straight_line_min_length_ratio": 0.15,
+    "straight_line_hough_threshold": 80,
+    "straight_line_max_gap_px": 8,
+    "straight_line_thickness_px": 3,
+    "straight_line_weight": 0.15,
+    "water_delta_e": 12.0,
+    "water_morph_radius_px": 2,
+    "water_min_component_px": 200,
+    "edge_water_filter": true,
+    "edge_water_margin_px": 3,
+    "edge_water_min_fraction": 0.01,
+    "enable_curve_alignment": true,
+    "curve_sample_spacing_px": 2.0,
+    "curve_max_samples": 8000,
+    "use_rivers_for_alignment": false,
+    "use_lakes_for_alignment": true,
+    "weight_gcp": 1.0,
+    "weight_curve": 1.0,
+    "straight_line_distance_penalty_px": 25.0,
+    "coarse_blur_px": [
+      64.0,
+      40.0,
+      24.0,
+      14.0
+    ],
+    "coarse_cutoff_px": [
+      400.0,
+      260.0,
+      170.0,
+      110.0
+    ],
+    "anneal_blur_px": [
+      8.0,
+      4.0,
+      2.0,
+      0.0
+    ],
+    "anneal_cutoff_px": [
+      70.0,
+      45.0,
+      28.0,
+      18.0
+    ],
+    "max_iterations_per_level": 60,
+    "enable_icp": true,
+    "icp_iterations": 8,
+    "icp_search_radius_px": [
+      40.0,
+      30.0,
+      22.0,
+      16.0,
+      12.0,
+      9.0,
+      7.0,
+      5.0
+    ],
+    "icp_orientation_tolerance_deg": 30.0,
+    "icp_cutoff_px": 20.0,
+    "icp_min_correspondences": 50,
+    "gate_probe_gcp_ratio": 1000.0,
+    "gate_probe_gcp_max_km": 1000.0,
+    "gate_water_iou_min": 0.01,
+    "gate_max_scale_drift": 1000.0,
+    "gate_max_rotation_deg": 45.0,
+    "gate_min_inlier_fraction": 0.01,
+    "gate_min_chamfer_improvement": -1.0,
+    "recovery_multistart_translation_px": 40.0,
+    "recovery_multistart_rotation_deg": 4.0,
+    "recovery_multistart_scale": 0.06,
+    "recovery_gcp_weight_boost": 8.0
+  },
+  "notes": [
+    "probe case: no expected zones, run not scored"
+  ]
+}

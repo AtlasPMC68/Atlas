@@ -53,7 +53,7 @@
               <button
                 type="button"
                 class="btn btn-primary btn-sm"
-                :disabled="isRerunning || !canRerun"
+                :disabled="isRerunning || !canRerun || paramErrorCount > 0"
                 :title="canRerun ? '' : rerunBlockedReason"
                 @click="rerunCase"
               >
@@ -98,6 +98,129 @@
                 </span>
               </span>
             </label>
+
+            <!-- Tuning panel: any GeorefConfig field, for this run only. Edits
+                 are sent with the re-run and never written to config.py. -->
+            <div class="border-t border-base-300 pt-2 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs px-1"
+                  @click="showTuning = !showTuning"
+                >
+                  {{ showTuning ? "▾" : "▸" }} Paramètres (ce run seulement)
+                </button>
+                <span
+                  v-if="changedParamCount > 0"
+                  class="badge badge-warning badge-sm"
+                  :title="changedParamNames.join(', ')"
+                >
+                  {{ changedParamCount }} modifié{{ changedParamCount > 1 ? "s" : "" }}
+                </span>
+              </div>
+
+              <template v-if="showTuning">
+                <p v-if="configLoadError" class="text-xs text-error">
+                  {{ configLoadError }}
+                </p>
+                <p v-else-if="!configDesc" class="text-xs text-base-content/60">
+                  Chargement…
+                </p>
+                <template v-else>
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model="tuningFilter"
+                      type="search"
+                      class="input input-bordered input-xs flex-1"
+                      placeholder="Filtrer (ex. gate, canny)"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs"
+                      :disabled="changedParamCount === 0 && !hasParamDrafts"
+                      @click="resetAllParams"
+                    >
+                      Tout réinitialiser
+                    </button>
+                  </div>
+                  <p class="text-[11px] text-base-content/60">
+                    Valeurs actuelles du worker (config v{{ configDesc.version }}).
+                    Listes : valeurs séparées par des virgules. Un run modifié
+                    n'est jamais promu en «&nbsp;best&nbsp;».
+                  </p>
+
+                  <div
+                    v-for="group in visibleParamGroups"
+                    :key="group.title"
+                    class="space-y-1"
+                  >
+                    <h3 class="text-xs font-semibold text-base-content/70 pt-1">
+                      {{ group.title }}
+                    </h3>
+                    <div
+                      v-for="name in group.fields"
+                      :key="name"
+                      class="flex items-center gap-2"
+                    >
+                      <span
+                        class="font-mono text-[11px] flex-1 min-w-0 break-all"
+                        :class="isParamChanged(name) ? 'text-warning font-semibold' : ''"
+                        :title="`Valeur actuelle : ${formatParam(configDesc.values[name])}`"
+                      >
+                        {{ name }}
+                      </span>
+                      <input
+                        v-if="paramKind(name) === 'bool'"
+                        type="checkbox"
+                        class="checkbox checkbox-xs"
+                        :checked="Boolean(paramDraft(name))"
+                        :disabled="isRerunning"
+                        @change="setParamDraft(name, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <input
+                        v-else
+                        type="text"
+                        inputmode="decimal"
+                        class="input input-bordered input-xs font-mono"
+                        :class="[
+                          paramKind(name) === 'list' ? 'w-32' : 'w-20',
+                          paramErrors[name]
+                            ? 'input-error'
+                            : isParamChanged(name)
+                              ? 'input-warning'
+                              : '',
+                        ]"
+                        :value="String(paramDraft(name))"
+                        :title="paramErrors[name] || ''"
+                        :disabled="isRerunning"
+                        @input="setParamDraft(name, ($event.target as HTMLInputElement).value)"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs px-1"
+                        :class="name in paramDrafts ? '' : 'invisible'"
+                        :title="`Revenir à ${formatParam(configDesc.values[name])}`"
+                        @click="resetParam(name)"
+                      >
+                        ↺
+                      </button>
+                    </div>
+                  </div>
+                  <p
+                    v-if="visibleParamGroups.length === 0"
+                    class="text-xs text-base-content/60"
+                  >
+                    Aucun paramètre ne correspond.
+                  </p>
+                </template>
+              </template>
+
+              <p v-if="paramErrorCount > 0" class="text-xs text-error">
+                {{ paramErrorCount }} valeur{{ paramErrorCount > 1 ? "s" : "" }}
+                invalide{{ paramErrorCount > 1 ? "s" : "" }} :
+                {{ Object.keys(paramErrors).join(", ") }}
+              </p>
+            </div>
 
             <p v-if="isScored" class="text-xs text-warning">
               Ce cas est noté : relancer réécrit <code>report.json</code>. Un run
@@ -293,6 +416,7 @@ import FeatureVisibilityControls from "../../components/FeatureVisibilityControl
 import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 import keycloak from "../../keycloak";
 import { zoneFillColor } from "../../typescript/zoneColors";
+import { slugifyTestCase } from "../../utils/devTestSlug";
 
 type RequirementState = {
   key: string;
@@ -356,6 +480,177 @@ const runAlign = ref(true);
 const isRerunning = ref(false);
 const rerunError = ref<string | null>(null);
 const rerunNote = ref<string | null>(null);
+
+// --- Tuning panel ----------------------------------------------------------
+// Any GeorefConfig field can be overridden for a single re-run. The backend
+// reports the worker's ambient values; only fields that differ from them are
+// sent, so a panel put back to its values re-runs as a plain (promotable) run.
+
+type GeorefConfigDescription = {
+  version: string;
+  values: Record<string, unknown>;
+  fileDefaults: Record<string, unknown>;
+  groups: { title: string; fields: string[] }[];
+  switches: string[];
+};
+type ParamKind = "bool" | "number" | "list";
+type ParamDraft = string | boolean;
+
+// These two already have their own checkboxes above; showing them twice would
+// leave two controls fighting over one setting.
+const CHECKBOX_FIELDS = new Set(["snap_to_coastline", "enable_curve_alignment"]);
+// Kept across reloads and cases on purpose: tuning means trying the same
+// thresholds on several maps. The badge keeps them visible when collapsed.
+const PARAM_DRAFTS_KEY = "atlas.devTest.georefParamDrafts";
+
+function loadParamDrafts(): Record<string, ParamDraft> {
+  try {
+    const raw = localStorage.getItem(PARAM_DRAFTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const configDesc = ref<GeorefConfigDescription | null>(null);
+const configLoadError = ref<string | null>(null);
+const showTuning = ref(false);
+const tuningFilter = ref("");
+const paramDrafts = ref<Record<string, ParamDraft>>(loadParamDrafts());
+
+watch(paramDrafts, (drafts) => {
+  try {
+    localStorage.setItem(PARAM_DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    // Storage blocked: the edits still apply to this page, just not to the next.
+  }
+});
+
+function paramKind(name: string): ParamKind {
+  const value = configDesc.value?.values[name];
+  if (typeof value === "boolean") return "bool";
+  if (Array.isArray(value)) return "list";
+  return "number";
+}
+
+function formatParam(value: unknown): string {
+  return Array.isArray(value) ? value.join(", ") : String(value);
+}
+
+function paramDraft(name: string): ParamDraft {
+  if (name in paramDrafts.value) return paramDrafts.value[name];
+  const value = configDesc.value?.values[name];
+  return paramKind(name) === "bool" ? Boolean(value) : formatParam(value);
+}
+
+function setParamDraft(name: string, raw: ParamDraft) {
+  paramDrafts.value = { ...paramDrafts.value, [name]: raw };
+}
+
+function resetParam(name: string) {
+  const rest = { ...paramDrafts.value };
+  delete rest[name];
+  paramDrafts.value = rest;
+}
+
+function resetAllParams() {
+  paramDrafts.value = {};
+}
+
+function parseParam(
+  name: string,
+  raw: ParamDraft,
+): { value: unknown } | { error: string } {
+  const kind = paramKind(name);
+  if (kind === "bool") {
+    return typeof raw === "boolean" ? { value: raw } : { error: "booléen attendu" };
+  }
+
+  const text = String(raw).trim();
+  if (kind === "list") {
+    const parts = text.split(/[\s,;]+/).filter(Boolean);
+    const nums = parts.map(Number);
+    if (nums.length === 0 || !nums.every(Number.isFinite)) {
+      return { error: "liste de nombres attendue (ex. 64, 40, 24)" };
+    }
+    return { value: nums };
+  }
+
+  const n = Number(text);
+  if (text === "" || !Number.isFinite(n)) return { error: "nombre attendu" };
+  return { value: n };
+}
+
+function sameParam(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+  }
+  return a === b;
+}
+
+const parsedParams = computed(() => {
+  const overrides: Record<string, unknown> = {};
+  const errors: Record<string, string> = {};
+  const desc = configDesc.value;
+  if (!desc) return { overrides, errors };
+
+  for (const [name, raw] of Object.entries(paramDrafts.value)) {
+    // A field retired since the draft was saved, or one owned by a checkbox.
+    if (!(name in desc.values) || CHECKBOX_FIELDS.has(name)) continue;
+    const parsed = parseParam(name, raw);
+    if ("error" in parsed) {
+      errors[name] = parsed.error;
+    } else if (!sameParam(parsed.value, desc.values[name])) {
+      overrides[name] = parsed.value;
+    }
+  }
+  return { overrides, errors };
+});
+
+const paramErrors = computed(() => parsedParams.value.errors);
+const paramErrorCount = computed(() => Object.keys(paramErrors.value).length);
+const changedParamNames = computed(() => Object.keys(parsedParams.value.overrides));
+const changedParamCount = computed(() => changedParamNames.value.length);
+const hasParamDrafts = computed(() => Object.keys(paramDrafts.value).length > 0);
+
+function isParamChanged(name: string): boolean {
+  return name in parsedParams.value.overrides;
+}
+
+const visibleParamGroups = computed(() => {
+  const desc = configDesc.value;
+  if (!desc) return [];
+  const needle = tuningFilter.value.trim().toLowerCase();
+  return desc.groups
+    .map((group) => ({
+      title: group.title,
+      fields: group.fields.filter(
+        (name) =>
+          !CHECKBOX_FIELDS.has(name) &&
+          (!needle ||
+            name.toLowerCase().includes(needle) ||
+            group.title.toLowerCase().includes(needle)),
+      ),
+    }))
+    .filter((group) => group.fields.length > 0);
+});
+
+async function loadGeorefConfig() {
+  configLoadError.value = null;
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/georef-config`,
+      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    );
+    if (!res.ok) throw new Error(`Configuration indisponible (${res.status})`);
+    configDesc.value = (await res.json()) as GeorefConfigDescription;
+  } catch (err) {
+    configLoadError.value =
+      err instanceof Error ? err.message : "Configuration indisponible";
+  }
+}
+
 const isLoading = ref(false);
 const loadError = ref<string | null>(null);
 
@@ -529,6 +824,7 @@ const rerunBlockedReason = computed<string>(() =>
 
 async function rerunCase() {
   if (!testId.value || !testCaseId.value || isRerunning.value) return;
+  if (paramErrorCount.value > 0) return;
 
   isRerunning.value = true;
   rerunError.value = null;
@@ -538,11 +834,20 @@ async function rerunCase() {
     snap_to_coastline: String(runSnap.value),
     enable_curve_alignment: String(runAlign.value),
   });
+  const overrides = parsedParams.value.overrides;
+  const overrideCount = Object.keys(overrides).length;
 
   try {
     const res = await fetch(
       `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/run-evaluate?${params}`,
-      { method: "POST", headers: { Authorization: `Bearer ${keycloak.token}` } },
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${keycloak.token}`,
+          ...(overrideCount > 0 ? { "Content-Type": "application/json" } : {}),
+        },
+        body: overrideCount > 0 ? JSON.stringify(overrides) : undefined,
+      },
     );
 
     if (!res.ok) {
@@ -559,9 +864,12 @@ async function rerunCase() {
 
     const data = await res.json();
     rerunNote.value =
-      data?.kind === "probe"
+      (data?.kind === "probe"
         ? "Relancé. Zones réextraites, pas de score (cas d'exploration)."
-        : "Relancé et réévalué.";
+        : "Relancé et réévalué.") +
+      (overrideCount > 0
+        ? ` ${overrideCount} paramètre${overrideCount > 1 ? "s" : ""} modifié${overrideCount > 1 ? "s" : ""}.`
+        : "");
 
     await reloadAll();
   } catch (err) {
@@ -795,7 +1103,11 @@ function readParams() {
   const t = route.params.mapId;
   const c = route.params.caseId;
   testId.value = typeof t === "string" ? t : "";
-  testCaseId.value = typeof c === "string" ? c : "";
+  // Slugified here as well as at every call site: the API slugifies whatever
+  // it is given, but the zones and errors GeoJSON are static files served off
+  // the case directory, so a raw name in the URL 404s them and leaves an empty
+  // map with no error shown.
+  testCaseId.value = typeof c === "string" ? slugifyTestCase(c) : "";
 }
 
 watch(mode, async () => {
@@ -816,6 +1128,7 @@ watch(
 
 onMounted(async () => {
   readParams();
+  void loadGeorefConfig();
   await reloadAll();
 });
 </script>

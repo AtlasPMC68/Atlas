@@ -10,8 +10,9 @@ Bump ``CONFIG_VERSION`` whenever a field is added, removed or its default
 changes, so run records made under different settings stay comparable.
 """
 
+import math
 from dataclasses import dataclass, replace
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 CONFIG_VERSION = "5"
 
@@ -78,7 +79,7 @@ class GeorefConfig:
     # both sides also drops lines drawn across open water (graticules, routes).
     # Skipped when the water mask is too small to be trusted -- a stray pick on
     # a legend swatch would otherwise delete nearly every edge.
-    edge_water_filter: bool = False
+    edge_water_filter: bool = True
     edge_water_margin_px: int = 3
     edge_water_min_fraction: float = 0.01
 
@@ -164,11 +165,11 @@ class GeorefConfig:
 DEFAULT_GEOREF_CONFIG = GeorefConfig()
 
 
-#: Fields a *caller* may flip on a single run -- currently the dev-test re-run
-#: button. An allowlist, not the whole dataclass: this config carries dozens of
-#: tuned hyperparameters and a UI button has no business setting the annealing
-#: schedule. Both entries are switches whose correct value depends on what you
-#: are looking at rather than on tuning, which is exactly what belongs here.
+#: The on/off switches the dev-test re-run button shows as checkboxes: settings
+#: whose correct value depends on what you are looking at rather than on
+#: tuning. Every other field is reachable too, through the tuning panel and
+#: :func:`parse_config_overrides`; this set only decides which ones get a
+#: first-class control and which go in the panel.
 RUN_SWITCHES = frozenset(
     {
         # Blind snapping corrects transform error after the fact, so it both
@@ -207,3 +208,194 @@ def parse_run_switches(raw: Any) -> Dict[str, bool]:
             )
         switches[key] = value
     return switches
+
+
+#: The config's sections, in declaration order, so the dev tool can lay the
+#: fields out the way this file reads. A test holds it to cover every field
+#: exactly once: a field left out would be untunable from the UI, and nobody
+#: would notice.
+FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    (
+        "Coastline snapping",
+        (
+            "snap_to_coastline",
+            "coastline_snap_ratio_of_diagonal",
+            "coastline_snap_fallback_px",
+            "coastline_snap_min_px",
+            "coastline_snap_max_px",
+            "coastline_snap_min_m",
+            "coastline_snap_max_m",
+        ),
+    ),
+    ("Land clipping", ("clip_to_land_mask", "land_coverage_threshold")),
+    ("Reference rasters", ("reference_raster_width", "reference_raster_height")),
+    (
+        "Edge detection",
+        (
+            "edge_blur_ksize",
+            "edge_canny_low",
+            "edge_canny_high",
+            "text_mask_dilation_px",
+        ),
+    ),
+    (
+        "Straight-line suppression",
+        (
+            "straight_line_min_length_ratio",
+            "straight_line_hough_threshold",
+            "straight_line_max_gap_px",
+            "straight_line_thickness_px",
+            "straight_line_weight",
+        ),
+    ),
+    (
+        "Water",
+        (
+            "water_delta_e",
+            "water_morph_radius_px",
+            "water_min_component_px",
+            "edge_water_filter",
+            "edge_water_margin_px",
+            "edge_water_min_fraction",
+        ),
+    ),
+    (
+        "Alignment",
+        (
+            "enable_curve_alignment",
+            "curve_sample_spacing_px",
+            "curve_max_samples",
+            "use_rivers_for_alignment",
+            "use_lakes_for_alignment",
+            "weight_gcp",
+            "weight_curve",
+            "straight_line_distance_penalty_px",
+        ),
+    ),
+    (
+        "Annealing",
+        (
+            "coarse_blur_px",
+            "coarse_cutoff_px",
+            "anneal_blur_px",
+            "anneal_cutoff_px",
+            "max_iterations_per_level",
+        ),
+    ),
+    (
+        "ICP",
+        (
+            "enable_icp",
+            "icp_iterations",
+            "icp_search_radius_px",
+            "icp_orientation_tolerance_deg",
+            "icp_cutoff_px",
+            "icp_min_correspondences",
+        ),
+    ),
+    (
+        "Gates",
+        (
+            "gate_probe_gcp_ratio",
+            "gate_probe_gcp_max_km",
+            "gate_water_iou_min",
+            "gate_max_scale_drift",
+            "gate_max_rotation_deg",
+            "gate_min_inlier_fraction",
+            "gate_min_chamfer_improvement",
+        ),
+    ),
+    (
+        "Recovery ladder",
+        (
+            "recovery_multistart_translation_px",
+            "recovery_multistart_rotation_deg",
+            "recovery_multistart_scale",
+            "recovery_gcp_weight_boost",
+        ),
+    ),
+)
+
+#: Never overridable: it labels which *code* produced a run, not a setting.
+_NOT_OVERRIDABLE = frozenset({"version"})
+
+
+def _coerce_field(key: str, value: Any, default: Any) -> Any:
+    """Coerce one override to the type of *default*, or raise ValueError.
+
+    The type comes from the default rather than an annotation, so a field
+    added to the dataclass is tunable with no change here.
+    """
+    def _number(v: Any) -> float:
+        # bool is an int subclass; True as a threshold is always a caller bug.
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError(f"{key} must be a number, got {type(v).__name__}: {v!r}")
+        if not math.isfinite(v):
+            raise ValueError(f"{key} must be finite, got {v!r}")
+        return float(v)
+
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"{key} must be a boolean, got {type(value).__name__}: {value!r}"
+            )
+        return value
+
+    if isinstance(default, int):
+        number = _number(value)
+        if not number.is_integer():
+            raise ValueError(f"{key} must be an integer, got {value!r}")
+        return int(number)
+
+    if isinstance(default, float):
+        return _number(value)
+
+    if isinstance(default, tuple):
+        # JSON has no tuple, so a schedule arrives as a list. Length is free:
+        # a schedule is one entry per annealing level, and adding or dropping a
+        # level is a legitimate thing to try.
+        if not isinstance(value, (list, tuple)) or not value:
+            raise ValueError(f"{key} must be a non-empty list of numbers, got {value!r}")
+        return tuple(_number(v) for v in value)
+
+    raise ValueError(f"{key} has an unsupported type {type(default).__name__}")
+
+
+def parse_config_overrides(raw: Any) -> Dict[str, Any]:
+    """Coerce a caller-supplied override map to typed config fields.
+
+    The dev tool's tuning panel: unlike :func:`parse_run_switches`, this admits
+    *every* field, because its whole purpose is to try thresholds without
+    editing this file. Overrides live only in the run's config copy; nothing
+    here can reach the worker's ambient settings.
+
+    Unknown keys are dropped, for the same stale-frontend reason as the
+    switches. A known key with a value of the wrong type raises, because a
+    guessed conversion would run the map under settings nobody asked for.
+    """
+    if not isinstance(raw, dict):
+        return {}
+
+    fields = GeorefConfig.__dataclass_fields__
+    overrides: Dict[str, Any] = {}
+    for key, value in raw.items():
+        if key not in fields or key in _NOT_OVERRIDABLE:
+            continue
+        overrides[key] = _coerce_field(key, value, getattr(DEFAULT_GEOREF_CONFIG, key))
+    return overrides
+
+
+def describe_config(ambient: GeorefConfig) -> Dict[str, Any]:
+    """What the dev tool needs to render the tuning panel.
+
+    ``values`` is the *ambient* config -- the file defaults with the worker's
+    environment applied -- because that is what a run uses when nothing is
+    overridden, and so what an edit should be compared against.
+    """
+    return {
+        "version": ambient.version,
+        "values": ambient.to_dict(),
+        "fileDefaults": DEFAULT_GEOREF_CONFIG.to_dict(),
+        "groups": [{"title": title, "fields": list(names)} for title, names in FIELD_GROUPS],
+        "switches": sorted(RUN_SWITCHES),
+    }

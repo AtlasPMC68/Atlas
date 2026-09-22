@@ -7,5 +7,10 @@
     "name": "quebec_traite1783",
     "kind": "probe",
     "createdAt": "2026-09-21T04:00:25.944092Z"
+  },
+  "278e5083-f949-418c-801b-8accf7e0c69c": {
+    "name": "test carte difficile exploration",
+    "kind": "probe",
+    "createdAt": "2026-09-22T18:43:39.820650Z"
   }
 }

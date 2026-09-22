@@ -419,6 +419,91 @@ def test_switches_actually_change_the_resolved_config():
     assert flipped.enable_curve_alignment == base.enable_curve_alignment
 
 
+# --- tuning-panel overrides -------------------------------------------------
+
+
+def test_field_groups_cover_every_field_exactly_once():
+    """A field missing from the groups is untunable from the UI, silently."""
+    from app.utils.georeferencing import GeorefConfig
+    from app.utils.georeferencing.config import FIELD_GROUPS
+
+    grouped = [name for _title, names in FIELD_GROUPS for name in names]
+    assert len(grouped) == len(set(grouped))
+    assert set(grouped) == set(GeorefConfig.__dataclass_fields__) - {"version"}
+
+
+def test_config_overrides_coerce_to_the_field_type():
+    from app.utils.georeferencing.config import parse_config_overrides
+
+    parsed = parse_config_overrides(
+        {
+            "gate_max_rotation_deg": 20,  # int for a float field is fine
+            "edge_canny_low": 35.0,  # JS sends integral floats this way
+            "edge_water_filter": False,
+            "coarse_blur_px": [80, 50, 30],  # JSON list, and a level fewer
+        }
+    )
+
+    assert parsed == {
+        "gate_max_rotation_deg": 20.0,
+        "edge_canny_low": 35,
+        "edge_water_filter": False,
+        "coarse_blur_px": (80.0, 50.0, 30.0),
+    }
+    assert isinstance(parsed["edge_canny_low"], int)
+
+
+def test_config_overrides_reject_wrong_types():
+    from app.utils.georeferencing.config import parse_config_overrides
+
+    for bad in (
+        {"edge_canny_low": 35.5},
+        {"edge_canny_low": "35"},
+        {"gate_max_rotation_deg": True},
+        {"gate_max_rotation_deg": float("nan")},
+        {"edge_water_filter": "false"},
+        {"coarse_blur_px": []},
+        {"coarse_blur_px": [1.0, "x"]},
+    ):
+        with pytest.raises(ValueError):
+            parse_config_overrides(bad)
+
+
+def test_config_overrides_drop_unknown_keys_and_version():
+    from app.utils.georeferencing.config import parse_config_overrides
+
+    assert parse_config_overrides({"retired_field": 1.0}) == {}
+    # The version labels the code that made a run; a run cannot claim another.
+    assert parse_config_overrides({"version": "99"}) == {}
+    assert parse_config_overrides(None) == {}
+
+
+def test_config_overrides_apply_to_a_copy_only():
+    from app.utils.georeferencing import DEFAULT_GEOREF_CONFIG
+    from app.utils.georeferencing.config import parse_config_overrides
+
+    run = DEFAULT_GEOREF_CONFIG.with_overrides(
+        **parse_config_overrides({"gate_min_chamfer_improvement": 0.5})
+    )
+
+    assert run.gate_min_chamfer_improvement == 0.5
+    assert DEFAULT_GEOREF_CONFIG.gate_min_chamfer_improvement == 0.02
+
+
+def test_describe_config_reports_ambient_values():
+    from app.utils.georeferencing import DEFAULT_GEOREF_CONFIG
+    from app.utils.georeferencing.config import describe_config
+
+    ambient = DEFAULT_GEOREF_CONFIG.with_overrides(enable_curve_alignment=True)
+    described = describe_config(ambient)
+
+    assert described["values"]["enable_curve_alignment"] is True
+    assert described["fileDefaults"]["enable_curve_alignment"] is False
+    assert "snap_to_coastline" in described["switches"]
+    # Must survive the trip to the browser.
+    json.dumps(described)
+
+
 def test_non_ambient_run_does_not_win_best(tmp_path, monkeypatch):
     """`zones_best` must not mix a snapped run with an unsnapped one."""
     import app.utils.dev_test as dev_test
