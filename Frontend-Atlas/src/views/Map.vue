@@ -22,8 +22,8 @@
           <MapGeoJSON
             ref="mapGeoJsonRef"
             class="flex-1 min-h-0 w-full"
-            :features="filteredFeatures"
-            :feature-visibility="featureVisibility"
+            :features="features"
+            :feature-visibility="combinedFeatureVisibility"
             :selected-year="selectedYear"
             :map-periods="mapPeriods"
             :project-id="projectId || projectRouteId || ''"
@@ -227,6 +227,22 @@ const filteredFeatures = computed(() => {
       period.endYear >= selectedYear.value
     );
   });
+});
+
+const combinedFeatureVisibility = computed(() => {
+  const combined = new Map<string, boolean>();
+  
+  const visibleByTimeline = new Set(filteredFeatures.value.map(f => String(f.id)));
+  
+  features.value.forEach((feature) => {
+    const id = String(feature.id);
+    const explicitlyVisible = featureVisibility.value.get(id) ?? true;
+    const isTimelineVisible = visibleByTimeline.has(id);
+    
+    combined.set(id, explicitlyVisible && isTimelineVisible);
+  });
+  
+  return combined;
 });
 
 function onExactDateChange(nextDate: string | null) {
