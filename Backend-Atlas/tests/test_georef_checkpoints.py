@@ -3,6 +3,7 @@ import json
 from pyproj import Transformer
 
 from app.utils.dev_test_evaluator import evaluate_georef_check_points_from_config
+from app.utils.georef_baseline import compare_report_to_baseline
 
 
 def test_georef_check_points_exact_affine(tmp_path):
@@ -56,3 +57,46 @@ def test_georef_check_points_exact_affine(tmp_path):
     assert metrics["medianMeters"] < 0.01
     assert metrics["p95Meters"] < 0.01
     assert metrics["maxMeters"] < 0.01
+
+
+def test_baseline_comparison_accepts_platform_float_drift():
+    baseline = {
+        "meanIou": 0.94,
+        "meanPrecision": 0.99,
+        "meanRecall": 0.95,
+        "totalFalseNegativeArea": 10.0,
+        "totalFalsePositiveArea": 1.5,
+        "georefAccuracy": {
+            "rmseMeters": 1_344_457.452879488,
+            "medianMeters": 1_233_740.435818308,
+            "p95Meters": 1_532_999.9666341944,
+            "maxMeters": 1_566_251.0256137373,
+            "checkPoints": [{"errorMeters": 1_566_251.0256137373}],
+        },
+    }
+    report = {
+        "metrics": {
+            "mean": {
+                "meanIou": 0.94,
+                "meanPrecision": 0.99,
+                "meanRecall": 0.95,
+                "totalFalseNegativeArea": 10.0,
+                "totalFalsePositiveArea": 1.5,
+            }
+        },
+        "georefAccuracy": {
+            "rmseMeters": 1_344_457.452881115,
+            "medianMeters": 1_233_740.435818308,
+            "p95Meters": 1_532_999.9666374944,
+            "maxMeters": 1_566_251.0256173962,
+            "checkPoints": [{"errorMeters": 1_566_251.0256173962}],
+        },
+    }
+
+    not_worse, strictly_better, problems = compare_report_to_baseline(
+        report, baseline
+    )
+
+    assert not_worse
+    assert not strictly_better
+    assert problems == []
