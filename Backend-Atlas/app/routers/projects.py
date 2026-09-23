@@ -231,6 +231,7 @@ async def upload_and_process_map(
     world_points: str | None = Form(None),
     legend_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
+    imposed_shape_clicks: str | None = Form(None),
     enable_georeferencing: bool = Form(True),
     enable_color_extraction: bool = Form(True),
     enable_shapes_extraction: bool = Form(False),
@@ -340,6 +341,27 @@ async def upload_and_process_map(
             detail=f"Invalid imposed_colors payload: {e}",
         )
 
+    # Parse optional shape click positions [{"x": 0.5, "y": 0.3, "name": "..."}]
+    imposed_shape_click_positions_list: list | None = None
+    imposed_shape_names_list: list | None = None
+    if imposed_shape_clicks:
+        try:
+            raw_shapes = json.loads(imposed_shape_clicks)
+            if not isinstance(raw_shapes, list):
+                raise ValueError("imposed_shape_clicks must be a JSON array")
+            imposed_shape_click_positions_list = [
+                (float(s["x"]), float(s["y"])) for s in raw_shapes
+            ]
+            imposed_shape_names_list = [
+                str(s.get("name", f"Shape {i + 1}"))
+                for i, s in enumerate(raw_shapes)
+            ]
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid imposed_shape_clicks payload: {e}",
+            )
+
     file_content = await file.read()
 
     if len(file_content) > MAX_FILE_SIZE:
@@ -366,6 +388,8 @@ async def upload_and_process_map(
             imposed_click_positions=imposed_click_positions,
             imposed_colors_names=imposed_colors_names,
             imposed_sampling_radii=imposed_sampling_radii,
+            imposed_shape_click_positions=imposed_shape_click_positions_list,
+            imposed_shape_names=imposed_shape_names_list,
         )
         # TODO: either delete the created map if task fails or create cleanup mechanism
 

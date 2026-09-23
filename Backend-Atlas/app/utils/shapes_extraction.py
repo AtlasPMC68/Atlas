@@ -8,7 +8,8 @@ import cv2
 import numpy as np
 from shapely import affinity
 from shapely.geometry import Polygon
- 
+from skimage.measure import find_contours
+
 from . import preprocessing
 from .color_extraction import get_nearest_css4_color_name
 
@@ -836,7 +837,217 @@ def _write_debug_outputs(
         logger.error("Error writing debug reconstruction for %s: %s", image_path, e)
  
 # ---------------------------------------------------------------------------
-# Main pipeline
+# LAB perceptual distance extraction (point-and-click)
+# ---------------------------------------------------------------------------
+
+# Delta E thresholds for hysteresis masking in LAB color space.
+# STRICT: confident core of the region (low tolerance).
+# RELAX:  soft boundary that must overlap the strict core to be included.
+LAB_STRICT_THRESH: float = 15.0
+LAB_RELAX_THRESH: float = 45.0
+
+
+def _perceptual_distance_mask(
+    lab_image: np.ndarray,
+    seed_x: int,
+    seed_y: int,
+    strict_thresh: float = LAB_STRICT_THRESH,
+    relax_thresh: float = LAB_RELAX_THRESH,
+) -> np.ndarray:
+    """Return a binary mask (H×W, uint8 255/0) using LAB perceptual distance
+    (Delta E) with hysteresis thresholding.
+
+    Strategy:
+    1. Sample the median LAB value from a 5×5 patch around the seed pixel.
+    2. Compute per-pixel Delta E (Euclidean distance in LAB).
+    3. Build a strict mask (dist < strict_thresh) and a relaxed mask
+       (dist < relax_thresh).
+    4. Select the connected component in the relaxed mask that contains the
+       seed pixel, but only keep it if it overlaps the strict core region.
+    """
+    height, width = lab_image.shape[:2]
+
+    # 1. Sample local 5×5 patch for a stable reference colour
+    patch_size = 5
+    half = patch_size // 2
+    x_start, x_end = max(0, seed_x - half), min(width,  seed_x + half + 1)
+    y_start, y_end = max(0, seed_y - half), min(height, seed_y + half + 1)
+
+    patch_lab = lab_image[y_start:y_end, x_start:x_end]
+    median_lab = np.median(patch_lab, axis=(0, 1))
+
+    # 2. Delta E (Euclidean distance in LAB space)
+    diff = lab_image - median_lab
+    dist = np.sqrt(np.sum(diff ** 2, axis=2))
+
+    # 3. Hysteresis masks
+    strict_mask = (dist < strict_thresh).astype(np.uint8) * 255
+    relax_mask  = (dist < relax_thresh).astype(np.uint8)  * 255
+
+    # 4. Connected-component analysis on the relaxed mask
+    _, labels_relax = cv2.connectedComponents(relax_mask, connectivity=8)
+
+    relax_label = int(labels_relax[seed_y, seed_x])
+
+    # If the exact seed pixel falls on background in the relaxed mask,
+    # fall back to the most frequent label in the local patch.
+    if relax_label == 0:
+        neighborhood = labels_relax[y_start:y_end, x_start:x_end]
+        valid_labels = neighborhood[neighborhood > 0]
+        if len(valid_labels) > 0:
+            counts = np.bincount(valid_labels.flatten())
+            relax_label = int(np.argmax(counts))
+
+    # Build the final mask: accept the relaxed region only if it overlaps
+    # the strict core (hysteresis criterion).
+    final_mask = np.zeros_like(relax_mask)
+    if relax_label > 0:
+        relax_region = (labels_relax == relax_label)
+        if np.any(strict_mask[relax_region] > 0):
+            final_mask[relax_region] = 255
+
+    return final_mask
+
+
+
+
+def extract_shapes_from_clicks(
+    image_path: str,
+    click_positions: List[Tuple[float, float]],  # list of (norm_x, norm_y)
+    click_names: Optional[List[str]] = None,
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+    debug: bool = False,
+    strict_thresh: float = LAB_STRICT_THRESH,
+    relax_thresh: float = LAB_RELAX_THRESH,
+) -> Dict:
+    """Extract shapes via LAB perceptual distance at user-supplied click positions.
+
+    Each (norm_x, norm_y) is in [0, 1] relative to image dimensions.
+    Uses hysteresis thresholding in CIE LAB color space (Delta E) to accurately
+    isolate the color region at each click without being fooled by slight
+    lighting gradients.
+
+    Returns the same dict shape as ``extract_shapes`` (normalized_features,
+    pixel_features) so the caller can persist them without changes.
+    """
+    image = preprocessing.read_image(image_path)
+    if image is None:
+        raise ValueError(f"Unable to load image: {image_path}")
+
+    height, width = image.shape[:2]
+    image_uint8 = (image * 255).astype(np.uint8)
+    image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
+
+    # Convert once to LAB float32 for perceptual distance calculations
+    lab_image = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+    shapes_with_contours: List[Tuple[Dict, np.ndarray]] = []
+
+    for idx, (nx, ny) in enumerate(click_positions):
+        # Convert normalised → pixel coordinates
+        px = int(np.clip(nx * width,  0, width  - 1))
+        py = int(np.clip(ny * height, 0, height - 1))
+
+        # 1. Build a binary mask using LAB perceptual distance + hysteresis
+        final_mask = _perceptual_distance_mask(
+            lab_image, px, py,
+            strict_thresh=strict_thresh,
+            relax_thresh=relax_thresh,
+        )
+
+        if not np.any(final_mask):
+            logger.warning(
+                "LAB perceptual mask produced empty result at (%d, %d)", px, py
+            )
+            continue
+
+        # 2. Extract polygon contours from the mask
+        contours, _ = cv2.findContours(
+            final_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        if not contours:
+            logger.warning(
+                "No polygon contour found for click at (%d, %d)", px, py
+            )
+            continue
+
+        largest_contour = max(contours, key=cv2.contourArea)
+
+        if cv2.contourArea(largest_contour) < 5:
+            logger.warning(
+                "Contour area too small at (%d, %d), skipping", px, py
+            )
+            continue
+
+        # 3. Build shape properties using the standard extraction pipeline
+        # Sample the dominant colour from the seed patch for colour accuracy
+        seed_color_bgr = image_bgr[py, px]
+        color_rgb = (
+            int(seed_color_bgr[2]),
+            int(seed_color_bgr[1]),
+            int(seed_color_bgr[0]),
+        )
+
+        properties_dict = extract_contour_properties(
+            largest_contour,
+            image_bgr,
+            shape_id=idx + 1,
+            hough_circles=None,
+        )
+        if not properties_dict:
+            continue
+
+        # Override colour with the exact seed-pixel colour
+        properties_dict["color_rgb"] = color_rgb
+        properties_dict["color_hex"] = "#{:02x}{:02x}{:02x}".format(*color_rgb)
+        properties_dict["color_name"] = get_nearest_css4_color_name(color_rgb)
+        properties_dict["stroke_color"] = color_rgb
+
+        # Apply user-provided name if available
+        user_name = (
+            click_names[idx] if click_names and idx < len(click_names) else None
+        )
+        if user_name:
+            properties_dict["name"] = user_name
+
+        shapes_with_contours.append((properties_dict, largest_contour))
+
+    if debug:
+        base_name = os.path.splitext(os.path.basename(image_path))[0]
+        image_output_dir = os.path.join(output_dir, base_name + "_clicks")
+        os.makedirs(image_output_dir, exist_ok=True)
+
+        for idx, (shape, contour) in enumerate(shapes_with_contours, 1):
+            save_shape_image(
+                image_bgr,
+                contour,
+                image_output_dir,
+                idx,
+                shape.get("shape_type") or "Shape",
+            )
+
+        try:
+            reconstruct_shapes_debug(image_bgr, shapes_with_contours, image_output_dir)
+        except (cv2.error, OSError) as e:
+            logger.error(
+                "Error writing debug reconstruction for %s: %s", image_path, e
+            )
+
+    # Generate GeoJSON features using the standard pipeline
+    normalized_features = create_normalized_geojson_features(shapes_with_contours)
+    pixel_features = create_pixel_geojson_features(shapes_with_contours)
+
+    return {
+        "normalized_features": normalized_features,
+        "pixel_features": pixel_features,
+        "shapes": [],  # kept for API compatibility
+        "total_shapes": len(pixel_features),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main pipeline (OpenCV global contour extraction — kept for legend shapes)
 # ---------------------------------------------------------------------------
 
 def extract_shapes(

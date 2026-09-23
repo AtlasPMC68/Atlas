@@ -44,6 +44,9 @@
           Couleurs
         </div>
         <div class="step" :class="{ 'step-primary': currentStep >= 7 }">
+          Formes
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 8 }">
           Extraction
         </div>
       </div>
@@ -217,6 +220,16 @@
       @close="handleColorPickerClose"
       @confirmed="handleColorPickerConfirmed"
     />
+
+    <!-- Shape picker modal -->
+    <ShapePickerModal
+      v-if="showShapePickerModal && previewUrl"
+      :is-open="showShapePickerModal"
+      :image-url="previewUrl"
+      @close="handleShapePickerClose"
+      @skip="handleShapePickerSkip"
+      @confirmed="handleShapePickerConfirmed"
+    />
   </div>
 </template>
 
@@ -248,6 +261,7 @@ import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
 import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
+import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -303,12 +317,15 @@ const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
 const showLegendPickerModal = ref<boolean>(false);
 const showColorPickerModal = ref<boolean>(false);
+const showShapePickerModal = ref<boolean>(false);
 const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
 const legendBounds = ref<LegendBounds | null>(null);
 type ImposedColor = { x: number; y: number; name: string; radius: number };
 const pickedColors = ref<ImposedColor[]>([]);
+type ImposedShape = { x: number; y: number; name: string };
+const pickedShapes = ref<ImposedShape[]>([]);
 const pendingLegendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const legendReturnStep = ref<number>(2);
@@ -506,14 +523,15 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
     {
       enableGeoreferencing: Boolean(payload),
       enableColorExtraction: enableColorExtraction.value,
-      enableShapesExtraction: enableShapesExtraction.value,
+      enableShapesExtraction: enableShapesExtraction.value || pickedShapes.value.length > 0,
       enableTextExtraction: enableTextExtraction.value,
       imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
+      imposedShapes: pickedShapes.value.length > 0 ? pickedShapes.value : undefined,
     },
     legend,
   );
   if (result.success) {
-    currentStep.value = 7;
+    currentStep.value = 8;
   } else {
     console.error("Erreur importation:", result.error);
     currentStep.value = 2;
@@ -521,6 +539,7 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
 
   pendingGeorefPayload.value = null;
   pickedColors.value = [];
+  pickedShapes.value = [];
   pendingLegendBounds.value = null;
 }
 
@@ -544,7 +563,9 @@ async function handleLegendSkip() {
     showColorPickerModal.value = true;
     return;
   }
-  await submitImportWithGeoref(null);
+  // No color extraction — go straight to shape picker
+  currentStep.value = 7;
+  showShapePickerModal.value = true;
 }
 
 async function handleLegendConfirmed(bounds: LegendBounds) {
@@ -591,6 +612,29 @@ async function handleColorPickerConfirmed(
 ) {
   showColorPickerModal.value = false;
   pickedColors.value = colors;
+  // After colors, open the shape picker step
+  currentStep.value = 7;
+  showShapePickerModal.value = true;
+}
+
+function handleShapePickerClose() {
+  showShapePickerModal.value = false;
+  // Go back to color picker step
+  showColorPickerModal.value = true;
+  currentStep.value = 6;
+}
+
+async function handleShapePickerSkip() {
+  showShapePickerModal.value = false;
+  pickedShapes.value = [];
+  await submitImportWithGeoref(pendingLegendBounds.value);
+}
+
+async function handleShapePickerConfirmed(
+  shapes: { x: number; y: number; name: string }[],
+) {
+  showShapePickerModal.value = false;
+  pickedShapes.value = shapes;
   await submitImportWithGeoref(pendingLegendBounds.value);
 }
 
@@ -625,10 +669,12 @@ const resetImport = () => {
   showSiftGeorefModal.value = false;
   showLegendPickerModal.value = false;
   showColorPickerModal.value = false;
+  showShapePickerModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
   legendBounds.value = null;
   pickedColors.value = [];
+  pickedShapes.value = [];
   pendingLegendBounds.value = null;
   pendingGeorefPayload.value = null;
   coastlineKeypoints.value = null;
