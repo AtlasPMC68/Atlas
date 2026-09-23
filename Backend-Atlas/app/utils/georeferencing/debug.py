@@ -143,6 +143,8 @@ def dump_alignment_debug(
         _write("02_edge_weight.png", (evidence.edge_weight * 255).astype(np.uint8))
         if evidence.text_mask is not None and evidence.text_mask.any():
             _write("03_text_mask.png", evidence.text_mask.astype(np.uint8) * 255)
+        if evidence.legend_mask.any():
+            _write("03_legend_mask.png", evidence.legend_mask.astype(np.uint8) * 255)
 
         kept = evidence.edges & (evidence.edge_weight >= 1.0)
         suppressed = evidence.edges & (evidence.edge_weight < 1.0)

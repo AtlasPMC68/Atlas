@@ -8,9 +8,11 @@ framed is not on their map, and offering it would invite a wrong pairing.
 its whole JSON (15 MB for ``cities15000``, 56 MB for ``cities1000``) into Python
 objects, for the world, in every process that imports it. Here only the frame
 is wanted. So the gazetteer is built once from the pinned geonamescache into a
-small SQLite file with a (lat, lon) index, and each search reads just the
-frame's rows from disk: ~150 cities for a Quebec-sized box, in a few ms, with
-nothing held in memory between requests.
+small SQLite file with a (lat, lon) index, and a search reads just the
+frame's rows. Those rows are then kept for the few most recent frames
+(``FRAME_CACHE_SIZE``): the user types a name one keystroke at a time inside
+one frame, and re-reading ~1k-7k cities from disk per keystroke was most of the
+wait. A frame's rows are a few MB at most, so a handful is a bounded cost.
 
 **Which cities.** ``cities15000``: every place of 15,000+ inhabitants, ~32k
 worldwide. The cities a map is georeferenced from are the big, stable ones.
@@ -35,8 +37,9 @@ import sqlite3
 import threading
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib.metadata import version as package_version
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,9 @@ FUZZY_MIN_RATIO = 0.8
 PREFIX_MIN_LENGTH = 3
 
 _MATCH_RANK = {"exact": 3, "prefix": 2, "fuzzy": 1}
+
+#: How many frames' cities stay in memory. One import uses one frame.
+FRAME_CACHE_SIZE = 8
 
 _build_lock = threading.Lock()
 
@@ -214,22 +220,45 @@ def ensure_gazetteer() -> str:
 # --------------------------------------------------------------------------
 
 
-def _cities_in_frame(bounds: Dict[str, float]) -> Dict[int, Dict[str, Any]]:
-    """Every city inside *bounds* with all of its names, read from disk."""
-    west, south, east, north = (
+@dataclass(frozen=True)
+class _FrameCity:
+    geonameid: int
+    name: str
+    lat: float
+    lon: float
+    country: str
+    population: int
+    #: (normalised, shown) for the main name and every alternate one.
+    names: Tuple[Tuple[str, str], ...]
+
+
+def _frame_key(bounds: Dict[str, float]) -> Tuple[float, float, float, float]:
+    return (
         float(bounds["west"]),
         float(bounds["south"]),
         float(bounds["east"]),
         float(bounds["north"]),
     )
+
+
+def _cities_in_frame(bounds: Dict[str, float]) -> Tuple[_FrameCity, ...]:
+    """Every city inside *bounds* with all of its names."""
+    # Keyed on the file too, so a rebuilt gazetteer is never served stale.
+    return _read_frame(ensure_gazetteer(), _frame_key(bounds))
+
+
+@lru_cache(maxsize=FRAME_CACHE_SIZE)
+def _read_frame(
+    path: str, frame: Tuple[float, float, float, float]
+) -> Tuple[_FrameCity, ...]:
+    west, south, east, north = frame
     # A box crossing the antimeridian has west > east (frame.py accepts it).
     if west <= east:
         lon_clause, lon_args = "c.lon BETWEEN ? AND ?", (west, east)
     else:
         lon_clause, lon_args = "(c.lon >= ? OR c.lon <= ?)", (west, east)
 
-    uri = f"file:{ensure_gazetteer()}?mode=ro"
-    db = sqlite3.connect(uri, uri=True)
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
         rows = db.execute(
             f"""
@@ -248,28 +277,50 @@ def _cities_in_frame(bounds: Dict[str, float]) -> Dict[int, Dict[str, Any]]:
         city = cities.setdefault(
             city_id,
             {
+                "geonameid": int(city_id),
                 "name": name,
-                "lat": lat,
-                "lon": lon,
+                "lat": float(lat),
+                "lon": float(lon),
                 "country": country,
-                "population": population,
+                "population": int(population),
                 "names": [],
             },
         )
         city["names"].append((name_norm, shown))
-    return cities
+    return tuple(
+        _FrameCity(**{**city, "names": tuple(city["names"])}) for city in cities.values()
+    )
 
 
-def _best_match(query: str, names: List[tuple]) -> Optional[tuple]:
-    """(kind, score, shown name) of the best-matching name, or None."""
+def _best_match(
+    query: str, names: Tuple[Tuple[str, str], ...], matcher: difflib.SequenceMatcher
+) -> Optional[tuple]:
+    """(kind, score, shown name) of the best-matching name, or None.
+
+    *matcher* has the query set as its second sequence, the one
+    SequenceMatcher precomputes, so that work is done once per search rather
+    than once per name.
+    """
     best: Optional[tuple] = None
+    query_len = len(query)
     for norm, shown in names:
         if norm == query:
             candidate = ("exact", 1.0, shown)
-        elif len(query) >= PREFIX_MIN_LENGTH and norm.startswith(query):
-            candidate = ("prefix", len(query) / len(norm), shown)
+        elif query_len >= PREFIX_MIN_LENGTH and norm.startswith(query):
+            candidate = ("prefix", query_len / len(norm), shown)
         else:
-            ratio = difflib.SequenceMatcher(None, query, norm).ratio()
+            # The ratio is at most 2*min/sum of the lengths: most names are
+            # ruled out on length alone, the rest by the cheap upper bounds,
+            # before the real (quadratic) ratio is computed.
+            if 2.0 * min(query_len, len(norm)) / (query_len + len(norm)) < FUZZY_MIN_RATIO:
+                continue
+            matcher.set_seq1(norm)
+            if (
+                matcher.real_quick_ratio() < FUZZY_MIN_RATIO
+                or matcher.quick_ratio() < FUZZY_MIN_RATIO
+            ):
+                continue
+            ratio = matcher.ratio()
             if ratio < FUZZY_MIN_RATIO:
                 continue
             candidate = ("fuzzy", ratio, shown)
@@ -279,6 +330,17 @@ def _best_match(query: str, names: List[tuple]) -> Optional[tuple]:
         ):
             best = candidate
     return best
+
+
+def warm_frame(bounds: Dict[str, float]) -> None:
+    """Load a frame's cities into the cache ahead of the first search.
+
+    Never raises: a cold cache only makes that first search slower.
+    """
+    try:
+        _cities_in_frame(bounds)
+    except Exception as e:
+        logger.warning(f"[GAZETTEER] could not warm frame {bounds}: {e}")
 
 
 def search_cities(
@@ -294,20 +356,23 @@ def search_cities(
     if not normalized:
         return []
 
+    matcher = difflib.SequenceMatcher(autojunk=False)
+    matcher.set_seq2(normalized)
+
     found: List[CityCandidate] = []
-    for city_id, city in _cities_in_frame(bounds).items():
-        match = _best_match(normalized, city["names"])
+    for city in _cities_in_frame(bounds):
+        match = _best_match(normalized, city.names, matcher)
         if match is None:
             continue
         kind, score, shown = match
         found.append(
             CityCandidate(
-                geonameid=int(city_id),
-                name=city["name"],
-                lat=float(city["lat"]),
-                lon=float(city["lon"]),
-                country=city["country"],
-                population=int(city["population"]),
+                geonameid=city.geonameid,
+                name=city.name,
+                lat=city.lat,
+                lon=city.lon,
+                country=city.country,
+                population=city.population,
                 matched_name=shown,
                 match=kind,
                 score=float(score),
@@ -316,3 +381,73 @@ def search_cities(
 
     found.sort(key=lambda c: (-_MATCH_RANK[c.match], -c.score, -c.population, c.name))
     return found[:limit]
+
+
+# --------------------------------------------------------------------------
+# Place names read off the map
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FrameCityIndex:
+    """Exact-name lookup of the cities inside one frame, for OCR text.
+
+    Exact only, on the normalised name or an alternate one: OCR output is
+    noisy, and a near match on every misread word would scatter false cities
+    across the map. Where two cities share a name, the more populous wins.
+    """
+
+    by_name: Dict[str, _FrameCity]
+    #: Longest name in words, so a phrase scan knows when to stop growing.
+    max_words: int
+
+    def lookup(self, phrase: str) -> Optional[_FrameCity]:
+        return self.by_name.get(normalize_name(phrase))
+
+
+def frame_city_index(bounds: Dict[str, float]) -> FrameCityIndex:
+    return _frame_city_index(ensure_gazetteer(), _frame_key(bounds))
+
+
+@lru_cache(maxsize=FRAME_CACHE_SIZE)
+def _frame_city_index(
+    path: str, frame: Tuple[float, float, float, float]
+) -> FrameCityIndex:
+    by_name: Dict[str, _FrameCity] = {}
+    for city in _read_frame(path, frame):
+        for norm, _shown in city.names:
+            current = by_name.get(norm)
+            if current is None or city.population > current.population:
+                by_name[norm] = city
+    max_words = max((len(norm.split()) for norm in by_name), default=1)
+    return FrameCityIndex(by_name=by_name, max_words=max_words)
+
+
+_WORD_RE = re.compile(r"[\w\-']+")
+
+
+def find_cities_in_text(
+    text: str, index: FrameCityIndex, max_words: int = 4
+) -> List[Tuple[str, Optional[_FrameCity]]]:
+    """Split one OCR label into phrases, each matched to a city or not.
+
+    Greedy longest match, up to *max_words* words, so "New York" or "Trois
+    Rivieres" is read as one city rather than as two unknown words. Returns
+    ``(phrase, city or None)`` in reading order, unmatched words one by one.
+    """
+    words = _WORD_RE.findall(text or "")
+    limit = max(1, min(max_words, index.max_words))
+    found: List[Tuple[str, Optional[_FrameCity]]] = []
+    i = 0
+    while i < len(words):
+        for n in range(min(limit, len(words) - i), 0, -1):
+            phrase = " ".join(words[i : i + n])
+            city = index.lookup(phrase)
+            if city is not None:
+                found.append((phrase, city))
+                i += n
+                break
+        else:
+            found.append((words[i], None))
+            i += 1
+    return found

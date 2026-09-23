@@ -14,7 +14,11 @@ from fastapi import (
 )
 
 from app.utils.auth import get_current_user_id
-from ..tasks import GEOREF_CONFIG, process_dev_test_extraction
+from ..tasks import (
+    GEOREF_CONFIG,
+    process_dev_test_extraction,
+    warm_dev_test_text_regions,
+)
 from app.utils.dev_test import (
     delete_dev_test,
     delete_dev_test_case,
@@ -46,6 +50,7 @@ from app.utils.imposed_colors import (
     split_imposed_colors_by_kind,
 )
 from app.utils.dev_test_evaluator import build_test_case_paths
+from app.utils.legend import legend_to_entry, parse_legend_entry
 
 router = APIRouter(prefix="/dev-test-api", tags=["Dev Test"])
 
@@ -73,6 +78,7 @@ async def upload_dev_test_map(
     control_points: str | None = Form(None),
     frame_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
+    legend: str | None = Form(None),
     kind: str | None = Form(None),
     file: UploadFile = File(...),
     _user_id: str = Depends(get_current_user_id),
@@ -99,6 +105,15 @@ async def upload_dev_test_map(
         frame_bounds_dict = parse_frame_bounds(frame_bounds)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid frame_bounds payload: {e}")
+
+    # {"present": bool, "bounds": {...}}. Absent means the step was not answered,
+    # which the case state reports; the route does not refuse it.
+    try:
+        legend_answered, legend_bounds = parse_legend_entry(
+            json.loads(legend) if legend else None
+        )
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid legend payload: {e}")
 
     # Pipette colors picked by the user; without them nothing is extracted at all,
     # so the georeferencing step would have no zones to transform.
@@ -162,6 +177,7 @@ async def upload_dev_test_map(
         # Only stored when this case overrides its map's kind, so the common
         # case carries no redundant flag.
         kind=normalize_kind(kind, default="") or None,
+        legend=legend_to_entry(legend_bounds) if legend_answered else None,
     )
 
     try:
@@ -178,6 +194,7 @@ async def upload_dev_test_map(
             water_click_positions=water_click_positions,
             water_colors_names=water_colors_names,
             water_sampling_radii=water_sampling_radii,
+            legend_bounds=legend_bounds,
         )
         logger.info(
             f"[DEV-TEST] Started extraction task {task.id} for test_id={safe_test_id} case={safe_test_case}"
@@ -271,6 +288,33 @@ async def upload_test(
         name=name,
         kind=kind,
     )
+
+
+@router.post("/tests/{test_id}/warm-text-regions")
+async def warm_text_regions(
+    test_id: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Start OCR for a test map in the background if it is not cached yet.
+
+    Called when the import view opens, so the first case's run finds the text
+    regions ready instead of paying ~135 s for them.
+    """
+    safe_test_id = _safe_id(test_id, "test_id")
+    if not GEOREF_CONFIG.enable_curve_alignment:
+        return {"state": "disabled"}
+
+    from app.utils.dev_test import find_test_image_path
+    from app.utils.dev_test_derived import inspect_text_regions
+
+    image_path = find_test_image_path(safe_test_id)
+    if not image_path:
+        raise HTTPException(status_code=404, detail="Test image not found")
+    if inspect_text_regions(safe_test_id, image_path).usable:
+        return {"state": "cached"}
+
+    task = warm_dev_test_text_regions.delay(safe_test_id)
+    return {"state": "started", "task_id": task.id}
 
 
 @router.delete("/tests/{map_id}")

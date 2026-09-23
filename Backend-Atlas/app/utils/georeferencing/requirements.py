@@ -43,7 +43,9 @@ from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 #   2  frameBounds promoted to required; the degraded level removed entirely
 #   3  controlPoints counts only the sources the run uses (at least 3);
 #      cityControlPoints added, optional
-REQUIREMENTS_VERSION = "3"
+#   4  legend added, required as an answer (a rectangle or "no legend");
+#      the first requirement a run can execute without (blocks_execution)
+REQUIREMENTS_VERSION = "4"
 
 #: An affine has six unknowns and each point gives two equations.
 MIN_CONTROL_POINTS = 3
@@ -99,6 +101,11 @@ class Requirement:
     remedy: str
     #: For DERIVED requirements: the step that produces it.
     producer: Optional[str] = None
+    #: Whether the pipeline cannot execute at all without it. A required input
+    #: that only *changes* the result (the legend) is False: a scored case
+    #: still fails on it, since its number would not be comparable, but a probe
+    #: replays without it and says so.
+    blocks_execution: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -109,6 +116,7 @@ class Requirement:
             "summary": self.summary,
             "remedy": self.remedy,
             "producer": self.producer,
+            "blocksExecution": self.blocks_execution,
         }
 
 
@@ -180,6 +188,24 @@ _WATER_PICKS = Requirement(
     ),
 )
 
+_LEGEND = Requirement(
+    key="legend",
+    kind=RequirementKind.USER_INPUT,
+    level=RequirementLevel.REQUIRED,
+    since_step="6",
+    summary=(
+        "The legend rectangle, or an explicit 'no legend'. Masked out of the"
+        " colour masks and the alignment evidence, so it changes the zones."
+    ),
+    remedy=(
+        "Recreate the case and answer the legend step: draw the rectangle, or"
+        " choose 'Pas de légende sur la carte'. A probe case replays without it"
+        " and reports it missing; a scored case cannot, because its number"
+        " would not be comparable to one taken with the legend masked."
+    ),
+    blocks_execution=False,
+)
+
 _TEXT_REGIONS = Requirement(
     key="textRegions",
     kind=RequirementKind.DERIVED,
@@ -215,6 +241,7 @@ def georef_requirements(
         _CITY_CONTROL_POINTS,
         _FRAME_BOUNDS,
         _ZONE_PICKS,
+        _LEGEND,
     ]
     if cfg.enable_curve_alignment:
         reqs.append(_TEXT_REGIONS)
@@ -296,6 +323,11 @@ class RequirementsReport:
     @property
     def blocked(self) -> Tuple[RequirementState, ...]:
         return tuple(s for s in self.states if s.blocks_run)
+
+    @property
+    def blocks_execution(self) -> Tuple[RequirementState, ...]:
+        """Blocked requirements the pipeline cannot execute without."""
+        return tuple(s for s in self.blocked if s.requirement.blocks_execution)
 
     @property
     def refreshable(self) -> Tuple[RequirementState, ...]:

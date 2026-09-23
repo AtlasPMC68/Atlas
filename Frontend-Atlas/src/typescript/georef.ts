@@ -41,12 +41,15 @@ export interface CoastlineKeypoint {
 // can in one click.
 export type ImposedColorKind = "zone" | "water";
 
+// A confirmed pipette pick: normalised position, sampling radius, and the hex
+// the preview sampled (for swatches; extraction re-samples the pick).
 export interface ImposedColor {
   x: number;
   y: number;
   name: string;
   radius: number;
-  kind?: ImposedColorKind;
+  kind: ImposedColorKind;
+  hex: string;
 }
 
 // Where a control point came from. "sift": a suggested coastline keypoint the

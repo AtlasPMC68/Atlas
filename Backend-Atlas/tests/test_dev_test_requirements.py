@@ -57,6 +57,7 @@ def _full_presence(**overrides):
         "controlPoints": True,
         "frameBounds": True,
         "zonePicks": True,
+        "legend": True,
         "waterPicks": True,
         "textRegions": True,
     }
@@ -625,6 +626,7 @@ def _case_inputs(n_sift: int, n_city: int):
         frame_bounds={"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0},
         imposed_click_positions=[(0.5, 0.5)],
         water_click_positions=None,
+        legend_answered=True,
     )
 
 
@@ -721,3 +723,81 @@ def test_a_rerun_with_too_few_points_for_its_sources_is_refused_before_dispatch(
             test_case_id=case_id,
             config_overrides={"gcp_sources": ("city",)},
         )
+
+
+# --- legend -------------------------------------------------------------------
+
+
+def _legend_state(kind, legend_answered):
+    from types import SimpleNamespace
+
+    from app.utils.dev_test_cases import build_case_state
+
+    inputs = _case_inputs(n_sift=4, n_city=0)
+    inputs = SimpleNamespace(**{**vars(inputs), "legend_answered": legend_answered})
+    return build_case_state(
+        test_id="no-such-map",
+        test_case_id="case",
+        inputs=inputs,
+        image_path="unused.png",
+        config=DEFAULT_GEOREF_CONFIG,
+        case_config={},
+        kind=kind,
+    )
+
+
+def test_missing_legend_answer_is_blocked():
+    report = check_requirements(_full_presence(legend=False), ALIGNED)
+    assert [s.key for s in report.blocked] == ["legend"]
+    # ...but it is not something the pipeline needs in order to execute.
+    assert report.blocks_execution == ()
+
+
+def test_scored_case_without_legend_answer_cannot_run():
+    from app.utils.dev_test_cases import KIND_REGRESSION
+
+    state = _legend_state(KIND_REGRESSION, legend_answered=False)
+    assert not state.runnable
+    assert [s.key for s in state.run_blockers] == ["legend"]
+
+
+def test_probe_without_legend_answer_runs_with_a_warning():
+    state = _legend_state(KIND_PROBE, legend_answered=False)
+    assert state.runnable
+    assert [s.key for s in state.warnings] == ["legend"]
+    payload = state.to_dict()
+    assert payload["runnable"] is True
+    assert payload["warnings"] == ["legend"]
+    assert any("legend" in line for line in state.summary_lines())
+
+
+def test_probe_still_stops_on_inputs_the_pipeline_cannot_run_without():
+    from types import SimpleNamespace
+
+    from app.utils.dev_test_cases import build_case_state
+
+    inputs = _case_inputs(n_sift=4, n_city=0)
+    inputs = SimpleNamespace(**{**vars(inputs), "imposed_click_positions": None})
+    state = build_case_state(
+        test_id="no-such-map",
+        test_case_id="case",
+        inputs=inputs,
+        image_path="unused.png",
+        config=DEFAULT_GEOREF_CONFIG,
+        case_config={},
+        kind=KIND_PROBE,
+    )
+    assert not state.runnable
+    assert [s.key for s in state.run_blockers] == ["zonePicks"]
+
+
+def test_no_legend_is_an_answer():
+    from app.utils.dev_test import parse_extraction_inputs
+
+    config = {"georef": {"legend": {"present": False, "bounds": None}}}
+    inputs = parse_extraction_inputs(config, "map.png")
+    assert inputs.legend_answered is True
+    assert inputs.legend_bounds is None
+
+    unanswered = parse_extraction_inputs({"georef": {}}, "map.png")
+    assert unanswered.legend_answered is False

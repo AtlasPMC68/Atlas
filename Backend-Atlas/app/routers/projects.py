@@ -2,15 +2,13 @@ import logging
 from pathlib import Path
 from uuid import UUID
 import json
-import math
-from json import JSONDecodeError
 from uuid import UUID
 import base64
 import cv2
 import numpy as np
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
-from sqlalchemy import delete, not_, select, func, update
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, Body
+from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -34,26 +32,14 @@ from app.utils.update_feature import (
     serialize_feature_rows,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
-from app.utils.city_gazetteer import search_cities
-from app.utils.georeferencing import (
-    build_georef_inputs,
-    parse_control_points_field,
-    parse_frame_bounds,
-    parse_frame_bounds_entry,
-)
-from app.utils.imposed_colors import (
-    KIND_WATER,
-    KIND_ZONE,
-    imposed_colors_to_config_entries,
-    parse_imposed_colors,
-    split_imposed_colors_by_kind,
-)
+from app.utils.georeferencing import parse_frame_bounds_entry
+from app.utils.city_gazetteer import search_cities, warm_frame
 
 from ..celery_app import celery_app
-from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
 from ..utils.auth import get_current_user_id
-from ..utils.color_in_legends_extraction import sample_color_at
+from ..utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
+from ..utils.color_sampling import sample_color_at
 from ..utils.color_extraction import get_nearest_css4_color_name
 
 router = APIRouter()
@@ -61,8 +47,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["Projects operations"])
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
 
@@ -238,250 +222,38 @@ async def get_project(
     )
 
 
-@router.post("/upload")
-async def upload_and_process_map(
-    control_points: str | None = Form(None),
-    frame_bounds: str | None = Form(None),
-    legend_bounds: str | None = Form(None),
-    imposed_colors: str | None = Form(None),
-    enable_georeferencing: bool = Form(True),
-    enable_color_extraction: bool = Form(True),
-    enable_shapes_extraction: bool = Form(False),
-    enable_text_extraction: bool = Form(False),
-    project_id: str = Form(...),
-    map_id: str = Form(...),
-    file: UploadFile = File(...),
-    user_id: str = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    try:
-        project_id = UUID(project_id)
-        map_id = UUID(map_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or map_id")
-
-    result = await session.execute(
-        select(Map)
-        .join(Project, Map.project_id == Project.id)
-        .where(
-            Map.id == map_id,
-            Map.project_id == project_id,
-            Project.user_id == UUID(user_id),
-        )
-    )
-    map_obj = result.scalar_one_or_none()
-    if not map_obj:
-        raise HTTPException(
-            status_code=404,
-            detail="Map not found for this project or access denied",
-        )
-
-    # Validate file extension
-    if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
-
-    legend_bounds_dict = None
-
-    # SIFT and city control points, one list, each tagged with its source.
-    points = []
-    if enable_georeferencing:
-        try:
-            points = parse_control_points_field(control_points)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid control_points payload: {e}",
-            )
-
-    # Parse optional legend rectangle (pixel-space bounds)
-    if legend_bounds:
-        try:
-            parsed = json.loads(legend_bounds)
-            required_keys = {"x", "y", "width", "height"}
-            if not isinstance(parsed, dict) or not required_keys.issubset(
-                parsed.keys()
-            ):
-                raise ValueError(
-                    "legend_bounds must be a JSON object with x, y, width, height"
-                )
-
-            legend_bounds_dict = {
-                "x": float(parsed["x"]),
-                "y": float(parsed["y"]),
-                "width": float(parsed["width"]),
-                "height": float(parsed["height"]),
-            }
-
-            if not all(math.isfinite(value) for value in legend_bounds_dict.values()):
-                raise ValueError("legend_bounds values must be finite numbers")
-
-            if legend_bounds_dict["width"] <= 0 or legend_bounds_dict["height"] <= 0:
-                raise ValueError("legend_bounds width and height must be > 0")
-        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid legend bounds payload: {e}",
-            )
-
-    # Parse the world area the user framed before matching keypoints. It is the
-    # working extent for the reference layers, so it has to reach the task.
-    try:
-        frame_bounds_dict = parse_frame_bounds(frame_bounds)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid frame_bounds payload: {e}",
-        )
-
-    # Parse optional user-picked click positions as
-    # [{"x": 0.5, "y": 0.3, "name": "...", "kind": "zone"|"water"}, ...]
-    try:
-        (
-            all_click_positions,
-            all_colors_names,
-            all_sampling_radii,
-            all_color_kinds,
-        ) = parse_imposed_colors(imposed_colors)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid imposed_colors payload: {e}",
-        )
-
-    # Zone picks drive colour extraction; water picks are evidence for
-    # georeferencing and never become zones.
-    (
-        imposed_click_positions,
-        imposed_colors_names,
-        imposed_sampling_radii,
-    ) = split_imposed_colors_by_kind(
-        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_ZONE
-    )
-    (
-        water_click_positions,
-        water_colors_names,
-        water_sampling_radii,
-    ) = split_imposed_colors_by_kind(
-        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_WATER
-    )
-
-    file_content = await file.read()
-
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
-        )
-
-    if len(file_content) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-
-    # Store the georeferencing inputs on the map before dispatching, the same way
-    # the dev-test route writes config.json first: they survive a failed task,
-    # and without them the only way to georeference this map differently is to
-    # re-import it and re-click every point.
-    georef_inputs = build_georef_inputs(
-        control_points=points or None,
-        frame_bounds=frame_bounds_dict,
-        imposed_colors=imposed_colors_to_config_entries(
-            all_click_positions,
-            all_colors_names,
-            all_sampling_radii,
-            all_color_kinds,
-        ),
-    )
-    if georef_inputs is not None:
-        try:
-            await session.execute(
-                update(Map)
-                .where(Map.id == map_id)
-                .values(georef_inputs=georef_inputs)
-            )
-            await session.commit()
-        except Exception as e:
-            # The column arrives with db/04_add_georef_inputs_to_maps.sql, which
-            # Postgres only runs on a fresh volume. An older database logs and
-            # carries on rather than losing the import.
-            await session.rollback()
-            logger.warning(
-                f"Could not store georef inputs for map {map_id}: {e}"
-            )
-
-    try:
-        task = process_map_extraction.delay(
-            filename=file.filename,
-            file_content=file_content,
-            project_id=map_obj.project_id,
-            map_id=map_id,
-            control_points=[cp.to_dict() for cp in points],
-            enable_color_extraction=enable_color_extraction,
-            enable_shapes_extraction=enable_shapes_extraction,
-            enable_text_extraction=enable_text_extraction,
-            legend_bounds=legend_bounds_dict,
-            imposed_click_positions=imposed_click_positions,
-            imposed_colors_names=imposed_colors_names,
-            imposed_sampling_radii=imposed_sampling_radii,
-            frame_bounds=frame_bounds_dict,
-            water_click_positions=water_click_positions,
-            water_colors_names=water_colors_names,
-            water_sampling_radii=water_sampling_radii,
-        )
-        # TODO: either delete the created map if task fails or create cleanup mechanism
-
-        logger.info(f"Map processing task started: {task.id} for file {file.filename}")
-
-        return {
-            "task_id": task.id,
-            "filename": file.filename,
-            "status": "processing_started",
-            "message": f"Map upload successful. Processing started for {file.filename}",
-            "map_id": str(map_id),
-        }
-
-    except Exception as e:
-        logger.error(f"Error starting map processing: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to start processing")
-
-
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
-    """Get the status of a map processing task"""
+    """Get the status of a background task.
+
+    Every Celery state is reported as itself: REVOKED and RETRY used to fall
+    through to FAILURE, which made a cancelled task look like a crash.
+    """
     task = celery_app.AsyncResult(task_id)
+    response = {"task_id": task_id, "state": task.state}
 
     if task.state == "PENDING":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "status": "Task is waiting to be processed",
-        }
+        response["status"] = "Task is waiting to be processed"
+        response["progress_percentage"] = 0
     elif task.state == "PROGRESS":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "current": task.info.get("current", 0),
-            "total": task.info.get("total", 1),
-            "status": task.info.get("status", ""),
-            "progress_percentage": round(
-                (task.info.get("current", 0) / task.info.get("total", 1)) * 100, 2
-            ),
-        }
+        info = task.info if isinstance(task.info, dict) else {}
+        current = info.get("current", 0)
+        total = info.get("total", 1) or 1
+        response.update(
+            current=current,
+            total=total,
+            status=info.get("status", ""),
+            progress_percentage=round(current / total * 100, 2),
+        )
     elif task.state == "SUCCESS":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "result": task.result,
-            "progress_percentage": 100,
-        }
-    else:  # FAILURE
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "error": str(task.info),
-            "progress_percentage": 0,
-        }
+        response["result"] = task.result
+        response["progress_percentage"] = 100
+    elif task.state == "FAILURE":
+        response["error"] = str(task.info)
+        response["progress_percentage"] = 0
+    else:  # STARTED, RETRY, REVOKED
+        response["status"] = task.state
+        response["progress_percentage"] = 0
 
     return response
 
@@ -786,6 +558,7 @@ async def get_projects(
 
 @router.post("/coastline-keypoints")
 async def get_coastline_keypoints(
+    background_tasks: BackgroundTasks,
     west: float = Form(...),
     south: float = Form(...),
     east: float = Form(...),
@@ -797,6 +570,9 @@ async def get_coastline_keypoints(
     try:
         bounds = {"west": west, "south": south, "east": east, "north": north}
         result = find_coastline_keypoints(bounds, width, height)
+        # The frame is fixed from here on; load its cities now, after the
+        # response, so the first city search does not pay for reading them.
+        background_tasks.add_task(warm_frame, bounds)
         used_lakes = bool(result.get("used_lakes", False))
 
         return {
@@ -812,7 +588,7 @@ async def get_coastline_keypoints(
 
 
 @router.post("/city-candidates")
-async def get_city_candidates(
+def get_city_candidates(
     q: str = Form(...),
     west: float = Form(...),
     south: float = Form(...),
@@ -826,6 +602,9 @@ async def get_city_candidates(
     user framed is not on their map. Accent-insensitive, matches alternate
     names ("Kebek" finds Quebec) and near-misses, and returns an empty list --
     never an error -- when nothing matches.
+
+    A plain ``def``: the search is CPU and disk work, so FastAPI runs it in its
+    thread pool instead of stalling every other request on the event loop.
     """
     try:
         bounds = parse_frame_bounds_entry(

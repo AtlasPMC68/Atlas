@@ -362,6 +362,17 @@
               Ce cas ne peut plus être rejoué tel quel : recréez-le pour fournir
               {{ blockedRequirements.map((r) => r.key).join(", ") }}.
             </div>
+
+            <!-- A probe replays without inputs the pipeline can run without
+                 (the legend), but its result differs from a run with them. -->
+            <div
+              v-if="warningRequirements.length > 0"
+              class="alert alert-warning text-xs py-2"
+            >
+              Ce cas d'exploration est rejoué sans
+              {{ warningRequirements.map((r) => r.key).join(", ") }} : le résultat
+              diffère d'un run avec. Recréez-le pour le fournir.
+            </div>
           </div>
 
           <!-- Where each control point landed under the last run's transform:
@@ -534,6 +545,8 @@ type RequirementState = {
   sinceStep: string;
   summary: string;
   remedy: string;
+  // Whether the pipeline cannot run at all without it (false: the legend).
+  blocksExecution: boolean;
   status:
     | "satisfied"
     | "stale"
@@ -548,6 +561,9 @@ type CaseState = {
   scored?: boolean | null;
   hasExpectedZones?: boolean;
   controlPointsBySource?: Record<string, number>;
+  // Resolved for the case's kind: a probe runs without non-blocking inputs.
+  runnable?: boolean;
+  warnings?: string[];
   requirements?: {
     version?: string;
     runnable?: boolean;
@@ -904,8 +920,17 @@ const requirementGaps = computed<RequirementState[]>(() => {
   return all.filter((r) => r.status !== "satisfied");
 });
 
+// What stops a re-run: every missing user input for a scored case, only those
+// the pipeline cannot run without for a probe.
 const blockedRequirements = computed<RequirementState[]>(() =>
-  requirementGaps.value.filter((r) => r.status === "blocked"),
+  requirementGaps.value.filter(
+    (r) => r.status === "blocked" && (!isProbe.value || r.blocksExecution),
+  ),
+);
+
+// Missing, but a probe replays without them.
+const warningRequirements = computed<RequirementState[]>(() =>
+  requirementGaps.value.filter((r) => (caseState.value?.warnings ?? []).includes(r.key)),
 );
 
 function requirementBadgeClass(status: RequirementState["status"]): string {
@@ -1041,7 +1066,7 @@ const otherBlockedRequirements = computed<RequirementState[]>(() =>
 
 const canRerun = computed<boolean>(() => {
   if (selectedPointCount.value === null) {
-    return (caseState.value?.requirements?.runnable ?? true) === true;
+    return (caseState.value?.runnable ?? true) === true;
   }
   return (
     otherBlockedRequirements.value.length === 0 &&

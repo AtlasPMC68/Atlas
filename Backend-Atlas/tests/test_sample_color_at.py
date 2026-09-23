@@ -1,6 +1,6 @@
 import numpy as np
 
-from app.utils.color_in_legends_extraction import sample_color_at
+from app.utils.color_sampling import sample_color_at
 
 
 def test_sample_color_at_x_norm_one_maps_to_last_pixel():

@@ -9,7 +9,12 @@ import os
 import pytest
 
 from app.utils import city_gazetteer
-from app.utils.city_gazetteer import normalize_name, search_cities
+from app.utils.city_gazetteer import (
+    find_cities_in_text,
+    frame_city_index,
+    normalize_name,
+    search_cities,
+)
 
 QUEBEC = {"west": -80.0, "south": 44.0, "east": -56.0, "north": 53.0}
 
@@ -107,3 +112,37 @@ def test_candidates_serialise_for_the_frontend():
         "id", "name", "lat", "lon", "country", "population", "matchedName", "match",
     }
     assert isinstance(payload["id"], int) and payload["id"] > 0
+
+
+# --- place names read off the map -----------------------------------------
+
+
+def test_text_cities_are_looked_up_inside_the_frame_only():
+    index = frame_city_index(QUEBEC)
+    assert normalize_name(index.lookup("Montréal").name) == "montreal"
+    # Paris exists, but not inside a Quebec frame.
+    assert index.lookup("Paris") is None
+
+
+def test_text_matches_are_exact_not_fuzzy():
+    # OCR noise must not become a city: "Montral" is a near miss only.
+    assert frame_city_index(QUEBEC).lookup("Montral") is None
+
+
+def test_multi_word_names_are_read_as_one_city():
+    phrases = find_cities_in_text("Trois Rivieres et Quebec", frame_city_index(QUEBEC))
+    matched = [(phrase, city.name if city else None) for phrase, city in phrases]
+    assert matched[0][0] == "Trois Rivieres"
+    assert normalize_name(matched[0][1]) == "trois rivieres"
+    assert matched[1] == ("et", None)
+    assert matched[2][1] is not None and matched[2][1].startswith("Qu")
+
+
+def test_the_frame_is_read_once_per_frame():
+    from app.utils import city_gazetteer
+
+    city_gazetteer._read_frame.cache_clear()
+    search_cities("Montreal", QUEBEC)
+    search_cities("Quebec", QUEBEC)
+    info = city_gazetteer._read_frame.cache_info()
+    assert (info.misses, info.hits) == (1, 1)

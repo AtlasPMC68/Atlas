@@ -43,6 +43,7 @@ def align_map(
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     record: Optional[RunRecord] = None,
     debug_dir: Optional[str] = None,
+    legend_bounds: Optional[dict] = None,
 ) -> AlignmentResult:
     """Build the evidence and reference layers, then align and gate.
 
@@ -56,6 +57,8 @@ def align_map(
             map predates the field.
         text_regions: OCR polygons. Strongly recommended: without them roughly
             half the edge pixels on a labelled map are place names.
+        legend_bounds: the legend rectangle in image pixels, or None. Its
+            edges and water are dropped from the evidence.
         debug_dir: when set, every diagnostic for this run is written there.
             This is the only place that holds the reference layers, the evidence
             and the result at the same time, so the dump happens here.
@@ -87,6 +90,7 @@ def align_map(
                 water_click_positions=water_click_positions,
                 water_sampling_radii=water_sampling_radii,
                 config=config,
+                legend_bounds=legend_bounds,
             )
     except Exception as e:
         logger.error(f"Could not build alignment inputs: {e}", exc_info=True)

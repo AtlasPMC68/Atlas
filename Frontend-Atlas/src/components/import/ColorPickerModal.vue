@@ -210,6 +210,7 @@ import { ref, watch, onMounted, computed, nextTick } from "vue";
 import { showAlert } from "../../composables/useAlert";
 import { useZoomableStage } from "../../composables/useZoomableStage";
 import { apiFetch } from "../../utils/api";
+import { hexToRgb } from "../../utils/utils";
 import type {
   PendingClick,
   PickedColor,
@@ -223,8 +224,10 @@ const props = withDefaults(
     isOpen: boolean;
     imageUrl: string;
     imageFile: File;
+    // Picks confirmed earlier, restored when the user comes back to this step
+    initialColors?: ImposedColor[];
   }>(),
-  { isOpen: false },
+  { isOpen: false, initialColors: () => [] },
 );
 
 const emit = defineEmits<{
@@ -274,6 +277,25 @@ const pendingClicks = ref<PendingClick[]>([]);
 const isLoading = ref(false);
 const sampleError = ref<string | null>(null);
 let pendingIdCounter = 0;
+// Restored picks need the rendered image size to be placed, so they wait for it.
+let restorePending = true;
+
+function restoreInitialColors() {
+  const stage = baseStage.value;
+  if (!stage) return;
+  restorePending = false;
+  pickedColors.value = props.initialColors.map((c) => ({
+    kind: c.kind,
+    hex: c.hex,
+    rgb: hexToRgb(c.hex) ?? [0, 0, 0],
+    name: c.name,
+    stageX: c.x * stage.renderedW,
+    stageY: c.y * stage.renderedH,
+    normalizedX: c.x,
+    normalizedY: c.y,
+    sampleRadiusPx: c.radius,
+  }));
+}
 
 const BASE_SAMPLE_RADIUS_PX = 20;
 const sampleRadiusPx = computed(() =>
@@ -323,6 +345,7 @@ watch(
   (opened) => {
     if (opened) {
       pickedColors.value = [];
+      restorePending = true;
       pickKind.value = "zone";
       pendingClicks.value = [];
       sampleError.value = null;
@@ -330,7 +353,10 @@ watch(
       if (modalRef.value && !modalRef.value.open) {
         modalRef.value.showModal();
       }
-      nextTick(() => updateBaseStage());
+      nextTick(() => {
+        updateBaseStage();
+        if (restorePending) restoreInitialColors();
+      });
       return;
     }
     if (modalRef.value?.open) {
@@ -362,6 +388,7 @@ function requestClose() {
 
 function onImageLoad() {
   updateBaseStage();
+  if (restorePending) restoreInitialColors();
 }
 
 function resetZoom() {
@@ -502,6 +529,7 @@ function onConfirm() {
       name: c.name,
       radius: c.sampleRadiusPx,
       kind: c.kind,
+      hex: c.hex,
     })),
   );
   if (modalRef.value?.open) modalRef.value.close("success");

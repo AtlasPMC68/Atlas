@@ -142,6 +142,7 @@ def _cache_key(image_path: str, inputs: Any) -> str:
         "clicks": inputs.imposed_click_positions,
         "names": inputs.imposed_colors_names,
         "radii": inputs.imposed_sampling_radii,
+        "legend": inputs.legend_bounds,
         "libs": _extraction_library_versions(),
     }
     blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
@@ -162,7 +163,7 @@ def extract_colors_cached(image_path: str, inputs: Any, use_cache: bool) -> dict
     result = extract_colors(
         image_path,
         debug=False,
-        legend_shapes=None,
+        legend_bounds=inputs.legend_bounds,
         imposed_click_positions=(
             [tuple(c) for c in inputs.imposed_click_positions]
             if inputs.imposed_click_positions
@@ -238,7 +239,7 @@ def run_case(
         # Only a human can repair this, so say so once and move on rather than
         # producing a number nobody should read.
         print("  SKIP: missing user input that cannot be re-derived")
-        for blocked in case_state.requirements.blocked:
+        for blocked in case_state.run_blockers:
             print(f"    {blocked.requirement.remedy}")
         if write:
             case_state.write()
@@ -323,6 +324,7 @@ def run_case(
                     text_regions=text_regions,
                     water_click_positions=inputs.water_click_positions,
                     water_sampling_radii=inputs.water_sampling_radii,
+                    legend_bounds=inputs.legend_bounds,
                 )
             record.set_inputs(userEvidence=user_evidence.stats)
             st = user_evidence.stats
@@ -402,6 +404,7 @@ def run_case(
                 config=run_config.with_overrides(enable_curve_alignment=True),
                 record=record,
                 debug_dir=alignment_debug_dir,
+                legend_bounds=inputs.legend_bounds,
             )
             if alignment_debug_dir:
                 print(f"  alignment debug -> {alignment_debug_dir}")

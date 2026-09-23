@@ -28,6 +28,7 @@ import hashlib
 import json
 import logging
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -251,6 +252,30 @@ def _regions_to_payload(regions: Any) -> List[List[List[float]]]:
     return payload
 
 
+@contextmanager
+def _compute_lock(test_id: str):
+    """Serialise OCR per map across worker processes.
+
+    The import view warms the cache in the background while the user clicks, so
+    a case run can arrive while that OCR is still going. Waiting for it and
+    reading its result beats running the same 135 s twice. ``fcntl`` is POSIX;
+    the worker is Linux, and elsewhere the lock is simply skipped.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+
+    os.makedirs(derived_dir_for(test_id), exist_ok=True)
+    with open(os.path.join(derived_dir_for(test_id), ".ocr.lock"), "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def ensure_text_regions(
     test_id: str,
     image_path: str,
@@ -278,6 +303,18 @@ def ensure_text_regions(
     if not allow_compute:
         return None, state
 
+    with _compute_lock(test_id):
+        # Whoever held the lock may just have filled the cache.
+        if not refresh:
+            state = inspect_text_regions(test_id, image_path)
+            if state.usable and state.artifact is not None:
+                return list(state.artifact.payload or []), state
+        return _compute_text_regions(test_id, image_path, image_bgr)
+
+
+def _compute_text_regions(
+    test_id: str, image_path: str, image_bgr: Any
+) -> Tuple[List[Any], DerivedState]:
     from app.utils.text_extraction import extract_text
 
     blocks, _clean = extract_text(image=image_bgr, languages=["en", "fr"], gpu_acc=False)

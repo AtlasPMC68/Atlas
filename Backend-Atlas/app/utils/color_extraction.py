@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib import colors as mcolors
 from scipy.ndimage import binary_fill_holes
 from shapely import affinity
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from skimage.color import deltaE_ciede2000, lab2rgb, rgb2lab
@@ -15,10 +15,8 @@ from skimage.measure import find_contours
 from skimage.morphology import closing, disk, opening
 from skimage.util import img_as_float
 
-from app.utils.color_in_legends_extraction import (
-    extract_colors_from_legend_shapes,
-    sample_color_at,
-)
+from app.utils.color_sampling import sample_color_at
+from app.utils.legend import LegendBounds, legend_mask
 
 from . import preprocessing
 
@@ -209,7 +207,6 @@ def prepare_imposed_dominants(
 
 
 def build_exclusive_masks_by_nearest_center(
-    # TODO: ignore pixels that are in the legend box
     lab: np.ndarray,
     opaque_mask: np.ndarray,
     centers_lab: np.ndarray,
@@ -419,7 +416,7 @@ def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
-    legend_shapes: Optional[List[Dict]] = None,
+    legend_bounds: Optional[LegendBounds] = None,
     imposed_click_positions: Optional[List[Tuple[float, float]]] = None,
     imposed_colors_names: Optional[List[Optional[str]]] = None,
     imposed_sampling_radii: Optional[List[int]] = None,
@@ -440,8 +437,10 @@ def extract_colors(
 ) -> Dict:
     """
     Extract exclusive color layers using:
-    - Imposed colors (from click positions or legend-derived colors)
+    - Imposed colors (pipette click positions)
     - Exclusive assignment: each pixel belongs to exactly one selected color (nearest ΔE)
+    - The legend rectangle, when given, belongs to no color: its swatches are
+      a key, not territory
 
     Returns:
       - pixel_features (GeoJSON FeatureCollections with pixel-space geometries)
@@ -477,6 +476,11 @@ def extract_colors(
     # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
+    # Removed from both the assignment and the final masks: hole filling would
+    # otherwise hand a legend enclosed by a zone back to that zone.
+    legend_pixels = legend_mask(opaque_mask.shape, legend_bounds)
+    opaque_mask = opaque_mask & ~legend_pixels
+
     if imposed_click_positions:
         # Sample the dominant (mode) colour in a neighbourhood around each click,
         # using the same logic as /sample-color so preview and extraction are consistent.
@@ -499,15 +503,10 @@ def extract_colors(
         imposed_dominants = prepare_imposed_dominants(
             sampled_rgb, names=imposed_colors_names
         )
-    elif legend_shapes:
-        imposed_colors = extract_colors_from_legend_shapes(rgb, legend_shapes)
-        imposed_dominants = (
-            prepare_imposed_dominants(imposed_colors) if imposed_colors else []
-        )
     else:
         imposed_dominants = []
 
-    # Colors are always imposed (click positions or legend-derived colors).
+    # Colors are always imposed by the pipette.
     dominants = imposed_dominants
 
     masks: Dict[str, str] = {}
@@ -545,7 +544,7 @@ def extract_colors(
             mask = closing(mask, disk(closing_radius))
 
         # 3. Fill holes: Remove interior holes (text, small waters, etc.)
-        mask = binary_fill_holes(mask)
+        mask = binary_fill_holes(mask) & ~legend_pixels
 
         if not np.any(mask):
             continue
@@ -577,6 +576,19 @@ def extract_colors(
             masks[unique_color_name] = out_path
 
         geometry = mask_to_geometry(mask)
+        if geometry and legend_bounds:
+            # Contours are unioned without their holes, so a legend enclosed by
+            # the zone comes back at this stage unless it is cut out again.
+            geometry = geometry.difference(
+                box(
+                    legend_bounds["x"],
+                    legend_bounds["y"],
+                    legend_bounds["x"] + legend_bounds["width"],
+                    legend_bounds["y"] + legend_bounds["height"],
+                )
+            )
+            if geometry.is_empty:
+                geometry = None
         if geometry:
             geometry = simplify_geometry(geometry, simplify_tolerance)
 

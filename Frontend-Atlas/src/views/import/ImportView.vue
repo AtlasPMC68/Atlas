@@ -1,664 +1,408 @@
 <template>
-  <div class="min-h-screen bg-base-200 p-6">
-    <div class="max-w-4xl mx-auto">
-      <!-- Header -->
-      <div class="mb-8">
-        <h1 class="text-3xl font-bold text-base-content mb-2">
-          Importer une carte
-          <span
-            v-if="isDevTest && (routeMapId || devTestCaseName)"
-            class="ml-2 text-sm font-normal text-base-content/60"
-          >
-            <span v-if="routeMapId">test: {{ routeMapId }}</span>
-            <span v-if="routeMapId && devTestCaseName"> · </span>
-            <span v-if="devTestCaseName">case: {{ devTestCaseName }}</span>
-          </span>
-        </h1>
-        <p class="text-base-content/70">
-          {{
-            isDevTest
-              ? "Utiliser la carte associée au test actuel"
-              : "Glissez votre image de carte ou cliquez pour la sélectionner"
-          }}
-        </p>
-      </div>
+  <div class="bg-gray-100 flex flex-col lg:h-[calc(100vh-4rem)] min-h-[calc(100vh-4rem)]">
+    <ImportStepper :phase="store.phase" />
 
-      <!-- Process steps -->
-      <div class="steps w-full mb-8">
-        <div class="step" :class="{ 'step-primary': currentStep >= 1 }">
-          Sélection
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 2 }">
-          Prévisualisation
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 3 }">
-          Zone sur le monde
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 4 }">
-          Géoréférencement
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 5 }">
-          Villes
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 6 }">
-          Légende
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 7 }">
-          Couleurs
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 8 }">
-          Extraction
-        </div>
-      </div>
+    <div v-if="store.isLoading" class="flex-1 flex items-center justify-center">
+      <span class="loading loading-spinner loading-lg text-indigo-600" />
+    </div>
 
-      <!-- Main content by step -->
-      <div class="card bg-base-100 shadow-xl">
-        <div class="card-body">
-          <!-- Step 1: Drag & Drop -->
-          <FileDropZone
-            v-if="currentStep === 1"
-            @file-selected="handleFileSelected"
-            :is-loading="isUploading"
-          />
-
-          <!-- Step 2: Preview + Controls -->
-          <div v-else-if="currentStep === 2" class="space-y-6">
-            <ImportPreview
-              v-if="selectedFile"
-              :image-file="selectedFile"
-              :image-url="previewUrl"
+    <!-- 1. Import -->
+    <div v-else-if="store.phase === 'import'" class="flex-1 overflow-y-auto p-6">
+      <div class="max-w-4xl mx-auto">
+        <div class="mb-6">
+          <h1 class="text-3xl font-bold text-base-content mb-2">
+            Importer une carte
+            <span v-if="isDevTest" class="ml-2 text-sm font-normal text-base-content/60">
+              test: {{ mapId }}
+            </span>
+          </h1>
+          <p class="text-base-content/70">
+            {{
+              isDevTest
+                ? "Utiliser la carte associée au test actuel"
+                : "Glissez votre image de carte ou cliquez pour la sélectionner"
+            }}
+          </p>
+        </div>
+        <div class="card bg-base-100 shadow-xl">
+          <div class="card-body">
+            <FileDropZone
+              v-if="!store.file"
+              :is-loading="store.isSaving"
+              @file-selected="store.setFile"
             />
-
-            <!-- Extraction Options -->
-            <div
-              v-if="!isDevTest"
-              class="bg-base-200 rounded-lg p-4 space-y-3"
-            >
-              <h3 class="font-semibold text-sm mb-3">Options d'extraction</h3>
-
-              <!-- Georeferencing Option -->
-              <label
-                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
-              >
-                <input
-                  type="checkbox"
-                  v-model="enableGeoreferencing"
-                  class="checkbox checkbox-sm checkbox-primary"
-                />
-                <div class="flex-1">
-                  <div class="font-medium text-sm">Géoréférencement SIFT</div>
-                  <div class="text-xs text-base-content/60">
-                    Placer la carte dans l'espace géographique avec des points
-                    de contrôle
-                  </div>
-                </div>
-              </label>
-
-              <!-- Color Extraction -->
-              <label
-                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
-              >
-                <input
-                  type="checkbox"
-                  v-model="enableColorExtraction"
-                  class="checkbox checkbox-sm checkbox-primary"
-                />
-                <div class="flex-1">
-                  <div class="font-medium text-sm">
-                    Extraction des zones colorées
-                  </div>
-                  <div class="text-xs text-base-content/60">
-                    Détecter et extraire les régions par couleur (pays,
-                    territoires, etc.)
-                  </div>
-                </div>
-              </label>
-
-              <!-- Shapes Extraction -->
-              <label
-                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
-              >
-                <input
-                  type="checkbox"
-                  v-model="enableShapesExtraction"
-                  class="checkbox checkbox-sm checkbox-primary"
-                />
-                <div class="flex-1">
-                  <div class="font-medium text-sm">Extraction des formes</div>
-                  <div class="text-xs text-base-content/60">
-                    Détecter les formes géométriques (cercles, rectangles, etc.)
-                  </div>
-                </div>
-              </label>
-
-              <!-- Text Extraction -->
-              <label
-                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
-              >
-                <input
-                  type="checkbox"
-                  v-model="enableTextExtraction"
-                  class="checkbox checkbox-sm checkbox-primary"
-                />
-                <div class="flex-1">
-                  <div class="font-medium text-sm">
-                    Extraction de texte (OCR)
-                  </div>
-                  <div class="text-xs text-base-content/60">
-                    Détecter et extraire le texte de la carte (noms de lieux,
-                    légendes)
-                  </div>
-                </div>
-              </label>
+            <div v-else class="space-y-6">
+              <ImportPreview :image-file="store.file" :image-url="store.previewUrl" />
+              <ImportControls
+                :is-processing="store.isSaving"
+                start-label="Confirmer carte"
+                @start-import="confirmMap"
+                @cancel="store.setFile(null)"
+              />
             </div>
-
-            <ImportControls
-              @start-import="startImportProcess"
-              @cancel="resetImport"
-              :is-processing="isProcessing"
-              start-label="Confirmer carte"
-            />
           </div>
         </div>
       </div>
     </div>
 
-    <!-- World area selection modal -->
-     <WorldAreaPickerModal
-      v-if="showWorldAreaPickerModal && previewUrl"
-      :is-open="showWorldAreaPickerModal"
-      :image-url="previewUrl"
-      :initial-bounds="worldAreaBounds"
+    <!-- 2. Saisie utilisateur -->
+    <div
+      v-else-if="store.phase === 'saisie'"
+      class="flex-1 min-h-0 flex flex-col lg:flex-row gap-5 px-7 py-5"
+    >
+      <div class="lg:flex-[1.4] min-w-0 min-h-[26rem]">
+        <ImportMapCard
+          :image-url="store.previewUrl"
+          :title="store.mapTitle"
+          :legend="store.inputs.legend"
+          :sift-points="siftPts"
+          :city-points="cityPts"
+          :colors="store.inputs.colors ?? []"
+          can-change-map
+          @change-map="askChangeMap"
+        />
+      </div>
+      <div class="lg:w-[370px] shrink-0 lg:overflow-y-auto pr-0.5 pb-2">
+        <ExtractionChecklist
+          :inputs="store.inputs"
+          :options="isDevTest ? null : options"
+          :ocr-state="store.ocrState"
+          :disabled="store.isSaving || isStarting"
+          @open="openStep"
+          @update:options="(value) => save({ options: value })"
+          @start="startExtraction"
+        />
+      </div>
+    </div>
+
+    <!-- 3. Extraction -->
+    <div v-else class="flex-1 overflow-y-auto p-10">
+      <ExtractionPanel
+        :state="panel.state"
+        :progress="panel.progress"
+        :status="panel.status"
+        :error="panel.error"
+        @cancel="cancelExtraction"
+        @back="store.phase = 'saisie'"
+      />
+    </div>
+
+    <!-- Step modals -->
+    <WorldAreaPickerModal
+      v-if="openModal === 'zone' && store.previewUrl"
+      :is-open="true"
+      :image-url="store.previewUrl"
+      :initial-bounds="store.inputs.frameBounds ?? null"
       :initial-zoom="worldAreaZoom ?? 2"
-      @close="handleWorldAreaClose"
-      @confirmed="handleWorldAreaConfirmed"
+      @close="openModal = null"
+      @confirmed="onZoneConfirmed"
     />
 
-    <!-- SIFT-based georeferencing modal -->
+    <LegendAreaPickerModal
+      v-if="openModal === 'legend' && store.previewUrl"
+      :is-open="true"
+      :image-url="store.previewUrl"
+      :initial-bounds="store.inputs.legend?.present ? store.inputs.legend.bounds : null"
+      @close="openModal = null"
+      @no-legend="save({ legend: { present: false, bounds: null } })"
+      @confirmed="(bounds) => save({ legend: { present: true, bounds } })"
+    />
+
     <GeoRefSiftModal
       v-if="
-        showSiftGeorefModal &&
-        previewUrl &&
-        worldAreaBounds &&
-        coastlineKeypoints
+        openModal === 'sift' && store.previewUrl && store.inputs.frameBounds && store.keypoints
       "
-      :is-open="showSiftGeorefModal"
-      :image-url="previewUrl"
-      :world-bounds="worldAreaBounds"
-      :keypoints="coastlineKeypoints"
-      :used-lakes="usedLakes"
-      @close="showSiftGeorefModal = false"
-      @confirmed="handleGeorefConfirmed"
+      :is-open="true"
+      :image-url="store.previewUrl"
+      :world-bounds="store.inputs.frameBounds"
+      :keypoints="store.keypoints"
+      :used-lakes="store.usedLakes"
+      :initial-points="siftPts"
+      @close="openModal = null"
+      @confirmed="(points) => save({ controlPoints: [...points, ...cityPts] })"
     />
 
-    <!-- City control points: optional, after SIFT -->
     <GeoRefCitiesModal
-      v-if="showCitiesModal && previewUrl && worldAreaBounds"
-      :is-open="showCitiesModal"
-      :image-url="previewUrl"
-      :world-bounds="worldAreaBounds"
-      :sift-points="pendingSiftPoints"
-      :initial-cities="pendingCityPoints"
-      :used-lakes="usedLakes"
-      @close="handleCitiesClose"
-      @confirmed="handleCitiesConfirmed"
+      v-if="openModal === 'cities' && store.previewUrl && store.inputs.frameBounds"
+      :is-open="true"
+      :image-url="store.previewUrl"
+      :world-bounds="store.inputs.frameBounds"
+      :sift-points="siftPts"
+      :initial-cities="cityPts"
+      :used-lakes="store.usedLakes"
+      @close="openModal = null"
+      @confirmed="(cities) => save({ controlPoints: [...siftPts, ...cities] })"
     />
 
-    <!-- Processing modal -->
-    <ProcessingModal
-      v-if="showProcessingModal"
-      :is-open="showProcessingModal"
-      :current-step="processingStep"
-      :progress="processingProgress"
-      @cancel="cancelImport"
-    />
-
-    <!-- Legend area selection modal -->
-    <LegendAreaPickerModal
-      v-if="showLegendPickerModal && previewUrl"
-      :is-open="showLegendPickerModal"
-      :image-url="previewUrl"
-      :initial-bounds="legendBounds"
-      @close="handleLegendClose"
-      @skip="handleLegendSkip"
-      @confirmed="handleLegendConfirmed"
-    />
-
-    <!-- Color picker modal -->
     <ColorPickerModal
-      v-if="showColorPickerModal && previewUrl && selectedFile"
-      :is-open="showColorPickerModal"
-      :image-url="previewUrl"
-      :image-file="selectedFile"
-      @close="handleColorPickerClose"
-      @confirmed="handleColorPickerConfirmed"
+      v-if="openModal === 'colors' && store.previewUrl && store.file"
+      :is-open="true"
+      :image-url="store.previewUrl"
+      :image-file="store.file"
+      :initial-colors="store.inputs.colors ?? []"
+      @close="openModal = null"
+      @confirmed="(colors) => save({ colors })"
+    />
+
+    <ConfirmDialog
+      v-if="pendingConfirm"
+      :title="pendingConfirm.title"
+      :message="pendingConfirm.message"
+      :confirm-label="pendingConfirm.confirmLabel"
+      @confirm="onConfirmAccepted"
+      @cancel="pendingConfirm = null"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useImportStore } from "../../stores/import";
-import { useFileUpload } from "../../composables/useFileUpload";
-import { useImportProcess } from "../../composables/useImportProcess";
+import { useImportSessionStore, type ImportMode } from "../../stores/importSession";
 import { useDevTestImportProcess } from "../../composables/useDevTestImportProcess";
-import { useSiftPoints } from "../../composables/useSiftPoints";
-import { apiFetch } from "../../utils/api";
-import { snakeToCamel } from "../../utils/utils";
+import { usePolling } from "../../composables/usePolling";
+import { showAlert } from "../../composables/useAlert";
 import { slugifyTestCase } from "../../utils/devTestSlug";
+import { cityPoints, siftPoints, zoneRedoResetsPoints } from "../../utils/importSteps";
+import type { WorldAreaSelection } from "../../typescript/georef";
 import type {
-  WorldBounds,
-  ImposedColor,
-  CoastlineKeypoint,
-  ControlPointInput,
-  WorldAreaSelection,
-} from "../../typescript/georef";
-import type { LegendBounds } from "../../typescript/legend";
+  ExtractionState,
+  ImportInputsPatch,
+  ImportOptions,
+  StepId,
+} from "../../typescript/importSession";
 
-// Components
+import ConfirmDialog from "../../components/ConfirmDialog.vue";
 import FileDropZone from "../../components/import/FileDropZone.vue";
 import ImportPreview from "../../components/import/ImportPreview.vue";
 import ImportControls from "../../components/import/ImportControls.vue";
-import ProcessingModal from "../../components/import/ProcessingModal.vue";
-import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
-import GeoRefCitiesModal from "../../components/georef/GeoRefCitiesModal.vue";
+import ImportStepper from "../../components/import/ImportStepper.vue";
+import ImportMapCard from "../../components/import/ImportMapCard.vue";
+import ExtractionChecklist from "../../components/import/ExtractionChecklist.vue";
+import ExtractionPanel from "../../components/import/ExtractionPanel.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
 import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal.vue";
+import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
+import GeoRefCitiesModal from "../../components/georef/GeoRefCitiesModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 
-const router = useRouter();
 const route = useRoute();
-const importStore = useImportStore();
-
-const routeMapId = computed(() => String(route.params.mapId)).value;
-
-type ImportMode = "user" | "dev-test";
+const router = useRouter();
 
 const mode = (route.meta.importMode as ImportMode | undefined) ?? "user";
-const isDevTest = computed(() => mode === "dev-test");
-const routeProjectId = computed(() => {
-  const qp = route.query.projectId;
-  return typeof qp === "string" ? qp : null;
-}).value;
+const isDevTest = mode === "dev-test";
+const mapId = String(route.params.mapId);
 
-// Composables
-const {
-  selectedFile,
-  previewUrl,
-  isUploading,
-  handleFileSelected: onFileSelected,
-} = useFileUpload();
+const store = useImportSessionStore();
+store.reset(mode, mapId);
 
-const prodImport = useImportProcess();
 const devImport = useDevTestImportProcess();
 
-// Pick the reactive state from the composable that matches the current mode.
-// isDevTest is based on a const so this selection is stable for the component lifetime.
-const activeImport = isDevTest.value ? devImport : prodImport;
-const {
-  isProcessing,
-  processingStep,
-  processingProgress,
-  showProcessingModal,
-  cancelImport,
-  resultData,
-  mapId,
-} = activeImport;
-
-const { fetchCoastlineKeypoints } = useSiftPoints();
-
-// Local state
-const currentStep = ref<number>(1);
-const showWorldAreaPickerModal = ref<boolean>(false);
-const showSiftGeorefModal = ref<boolean>(false);
-const showCitiesModal = ref<boolean>(false);
-const showLegendPickerModal = ref<boolean>(false);
-const showColorPickerModal = ref<boolean>(false);
-const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
+const openModal = ref<StepId | null>(null);
 const worldAreaZoom = ref<number | null>(null);
-const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
-const legendBounds = ref<LegendBounds | null>(null);
-const pickedColors = ref<ImposedColor[]>([]);
-const pendingLegendBounds = ref<LegendBounds | null>(null);
-// Control points from the two georeferencing steps, sent together as one list.
-const pendingSiftPoints = ref<ControlPointInput[]>([]);
-const pendingCityPoints = ref<ControlPointInput[]>([]);
-const legendReturnStep = ref<number>(2);
-const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
+const isStarting = ref(false);
 
-// Dev-test: stable identifier to store assets/config under backend tests/assets
-const devTestCaseName = ref<string | null>(null);
-const isRedirecting = ref<boolean>(false);
-
-// Extraction options (all enabled by default)
-const enableGeoreferencing = ref<boolean>(true);
-const enableColorExtraction = ref<boolean>(true);
-const enableShapesExtraction = ref<boolean>(false);
-const enableTextExtraction = ref<boolean>(false);
-
-// Event handlers
-const handleFileSelected = (file: File) => {
-  onFileSelected(file);
-  currentStep.value = 2;
-};
-
-async function startImportProcess() {
-  if (!selectedFile.value) return;
-
-  if (!isDevTest.value) {
-    devTestCaseName.value = null;
-  }
-
-  if (isDevTest.value) {
-    if (!devTestCaseName.value) {
-      const entered = window.prompt(
-        routeMapId
-          ? `Nom du test-case pour le test ${routeMapId} (ex: '5 sift points')`
-          : "Nom du test-case (scénario, ex: '5 sift points')",
-        "",
-      );
-      const trimmed = (entered ?? "").trim();
-      if (!trimmed) return;
-      devTestCaseName.value = trimmed;
-    }
-    // In test mode, force georeferencing and color extraction on,
-    // and disable other extraction options.
-    enableGeoreferencing.value = true;
-    enableColorExtraction.value = true;
-    enableShapesExtraction.value = false;
-    enableTextExtraction.value = false;
-  }
-  
-  // If georeferencing is disabled, skip world area selection and go straight to upload
-  // Note: dev-test mode always forces georef on, so this path is production-only.
-  if (!enableGeoreferencing.value) {
-    pendingSiftPoints.value = [];
-    pendingCityPoints.value = [];
-    legendReturnStep.value = 2;
-    currentStep.value = 6;
-    showLegendPickerModal.value = true;
-
-    const importProjectId =
-      routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
-    if (!importProjectId) {
-      console.error("Impossible de resoudre le project_id pour cette importation");
-      currentStep.value = 2;
-      return;
-    }
-
-    const result = await prodImport.startImport(
-      selectedFile.value,
-      importProjectId,
-      routeMapId,
-      undefined,
-      {
-        enableGeoreferencing: false,
-        enableColorExtraction: enableColorExtraction.value,
-        enableShapesExtraction: enableShapesExtraction.value,
-        enableTextExtraction: enableTextExtraction.value,
-      },
-    );
-    if (result.success) {
-      currentStep.value = 6;
-    } else {
-      console.error("Erreur importation:", result.error);
-    }
-    return;
-  }
-
-  // With georeferencing enabled, show world area picker
-  currentStep.value = 3;
-  showWorldAreaPickerModal.value = true;
+interface PendingConfirm {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  action: () => void | Promise<void>;
 }
+const pendingConfirm = ref<PendingConfirm | null>(null);
 
-function handleWorldAreaClose() {
-  showWorldAreaPickerModal.value = false;
-  // Go back to preview step if the user cancels.
-  currentStep.value = 2;
-}
+const siftPts = computed(() => siftPoints(store.inputs));
+const cityPts = computed(() => cityPoints(store.inputs));
+const options = computed<ImportOptions>(
+  () => store.inputs.options ?? { textExtraction: false, shapesExtraction: false },
+);
 
-async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
-  // payload: { bounds: {west,south,east,north}, zoom }
-  worldAreaBounds.value = payload.bounds;
-  worldAreaZoom.value = payload.zoom;
-  showWorldAreaPickerModal.value = false;
+// --- 1. Import --------------------------------------------------------------
 
-  // Call backend to get coastline keypoints for this ROI and
-  // store the result for the next georef step.
-  const res = await fetchCoastlineKeypoints(payload.bounds);
-  if (res.success && res.data) {
-    // Prefer backend bounds if it returns a more precise ROI
-    worldAreaBounds.value = res.data.bounds || payload.bounds;
-    coastlineKeypoints.value = res.data.keypoints;
-    usedLakes.value = res.data.used_lakes || false;
-
-    // Next step: SIFT-based georeferencing
-    currentStep.value = 4;
-    showSiftGeorefModal.value = true;
-  } else {
-    console.error("Failed to fetch coastline keypoints:", res.error);
-    // In case of error, go back to previous step
-    currentStep.value = 2;
+async function confirmMap() {
+  if (!(await store.confirmMap())) {
+    showAlert("error", store.error ?? "Erreur lors de l'envoi de la carte");
   }
 }
 
-function handleGeorefConfirmed(points: ControlPointInput[]) {
-  showSiftGeorefModal.value = false;
-  pendingSiftPoints.value = points;
-
-  // Next: the cities the map shows. Optional, and it may add none.
-  currentStep.value = 5;
-  showCitiesModal.value = true;
-}
-
-function handleCitiesClose() {
-  // Back to SIFT matching, which starts over like every modal reopened here.
-  showCitiesModal.value = false;
-  showSiftGeorefModal.value = true;
-  currentStep.value = 4;
-}
-
-function handleCitiesConfirmed(cities: ControlPointInput[]) {
-  showCitiesModal.value = false;
-  pendingCityPoints.value = cities;
-
-  // Dev-test extraction ignores legend-derived colors, so the pipette is the only
-  // color source there: skip the legend step and go straight to the color picker.
-  if (isDevTest.value) {
-    pendingLegendBounds.value = null;
-    currentStep.value = 7;
-    showColorPickerModal.value = true;
-    return;
-  }
-
-  legendReturnStep.value = 5;
-  currentStep.value = 6;
-  showLegendPickerModal.value = true;
-}
-
-async function submitImportWithGeoref(legend: LegendBounds | null) {
-  if (!selectedFile.value) return;
-
-  const controlPoints = [...pendingSiftPoints.value, ...pendingCityPoints.value];
-
-  if (isDevTest.value) {
-    if (!devTestCaseName.value) {
-      console.error("[DEV-TEST] Test case name is missing");
-      currentStep.value = 2;
-      return;
-    }
-    const result = await devImport.startImport(
-      selectedFile.value,
-      routeMapId,
-      devTestCaseName.value,
-      controlPoints,
-      pickedColors.value.length > 0 ? pickedColors.value : undefined,
-      worldAreaBounds.value,
-    );
-    if (result.success) {
-      currentStep.value = 8;
-    } else {
-      console.error("Erreur importation:", result.error);
-      currentStep.value = 2;
-    }
-    pendingSiftPoints.value = [];
-    pendingCityPoints.value = [];
-    pickedColors.value = [];
-    pendingLegendBounds.value = null;
-    return;
-  }
-
-  // Production path
-  const importProjectId =
-    routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
-  if (!importProjectId) {
-    console.error("Impossible de resoudre le project_id pour cette importation");
-    currentStep.value = 2;
-    return;
-  }
-
-  const result = await prodImport.startImport(
-    selectedFile.value,
-    importProjectId,
-    routeMapId,
-    controlPoints,
-    {
-      enableGeoreferencing: controlPoints.length > 0,
-      enableColorExtraction: enableColorExtraction.value,
-      enableShapesExtraction: enableShapesExtraction.value,
-      enableTextExtraction: enableTextExtraction.value,
-      imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
-      frameBounds: worldAreaBounds.value,
+function askChangeMap() {
+  pendingConfirm.value = {
+    title: "Changer de carte ?",
+    message:
+      "La carte importée et toutes les étapes déjà complétées seront abandonnées.",
+    confirmLabel: "Changer de carte",
+    action: async () => {
+      if (!(await store.abandon())) {
+        showAlert("error", store.error ?? "Impossible d'abandonner l'import");
+      }
     },
-    legend,
-  );
-  if (result.success) {
-    currentStep.value = 8;
-  } else {
-    console.error("Erreur importation:", result.error);
-    currentStep.value = 2;
-  }
-
-  pendingSiftPoints.value = [];
-  pendingCityPoints.value = [];
-  pickedColors.value = [];
-  pendingLegendBounds.value = null;
+  };
 }
 
-function handleLegendClose() {
-  showLegendPickerModal.value = false;
-  if (legendReturnStep.value === 5) {
-    showCitiesModal.value = true;
-    currentStep.value = 5;
+async function onConfirmAccepted() {
+  const action = pendingConfirm.value?.action;
+  pendingConfirm.value = null;
+  await action?.();
+}
+
+// --- 2. Saisie utilisateur ---------------------------------------------------
+
+async function openStep(step: StepId) {
+  if (step === "zone" && zoneRedoResetsPoints(store.inputs)) {
+    pendingConfirm.value = {
+      title: "Redéfinir la zone sur le monde ?",
+      message:
+        "Les points SIFT et les villes déjà placés correspondent à la zone actuelle : ils seront réinitialisés.",
+      confirmLabel: "Redéfinir la zone",
+      action: () => {
+        openModal.value = "zone";
+      },
+    };
     return;
   }
-
-  currentStep.value = 2;
-}
-
-async function handleLegendSkip() {
-  showLegendPickerModal.value = false;
-  legendBounds.value = null;
-  pendingLegendBounds.value = null;
-  if (enableColorExtraction.value) {
-    currentStep.value = 7;
-    showColorPickerModal.value = true;
-    return;
-  }
-  await submitImportWithGeoref(null);
-}
-
-async function handleLegendConfirmed(bounds: LegendBounds) {
-  showLegendPickerModal.value = false;
-  legendBounds.value = bounds;
-  // If the user provided a legend area, we use that as the imposed source and
-  // skip the color picker step.
-  pickedColors.value = [];
-  pendingLegendBounds.value = bounds;
-  await submitImportWithGeoref(bounds);
-}
-
-async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
-  try {
-    const response = await apiFetch(`/projects/map-project/${id}`);
-
-    if (!response.ok) return null;
-
-    const data = snakeToCamel(
-      (await response.json()) as { project_id?: string },
-    ) as { projectId?: string };
-
-    return data.projectId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function handleColorPickerClose() {
-  showColorPickerModal.value = false;
-  if (isDevTest.value) {
-    // No legend step in dev-test: go back to the cities step.
-    showCitiesModal.value = true;
-    currentStep.value = 5;
-    return;
-  }
-  // Go back to legend step
-  showLegendPickerModal.value = true;
-  currentStep.value = 6;
-}
-
-async function handleColorPickerConfirmed(colors: ImposedColor[]) {
-  showColorPickerModal.value = false;
-  pickedColors.value = colors;
-  await submitImportWithGeoref(pendingLegendBounds.value);
-}
-
-// Redirect when extraction is finished
-watch([isProcessing, resultData, mapId], async ([processing, result, id]) => {
-  if (isRedirecting.value || processing || !result || !id) return;
-
-  isRedirecting.value = true;
-
-  if (isDevTest.value) {
-    const caseName = devTestCaseName.value;
-    if (caseName) {
-      // The slug, not the typed name: the case is stored under it, and its
-      // static artifacts are served off that directory.
-      router.push({
-        path: `/test-editor/${id}/case/${encodeURIComponent(slugifyTestCase(caseName))}`,
-      });
-    } else {
-      router.push({ path: `/test-editor/${id}` });
+  // The keypoints are fetched again after a reload; retry if that failed.
+  if (step === "sift" && !store.keypoints && store.inputs.frameBounds) {
+    if (!(await store.loadKeypoints(store.inputs.frameBounds))) {
+      showAlert("error", store.error ?? "Impossible de trouver des points SIFT");
+      return;
     }
-    return;
   }
+  openModal.value = step;
+}
 
-  const projectId = await resolveProjectIdFromMapId(String(id));
-  if (projectId) {
-    await router.push(`/projet/${projectId}`);
-    return;
+async function save(patch: ImportInputsPatch) {
+  openModal.value = null;
+  if (!(await store.saveInputs(patch))) {
+    showAlert("error", store.error ?? "Erreur lors de l'enregistrement");
   }
+}
 
-  await router.push(`/tableau-de-bord`);
+async function onZoneConfirmed(selection: WorldAreaSelection) {
+  openModal.value = null;
+  worldAreaZoom.value = selection.zoom;
+  if (!(await store.confirmZone(selection.bounds))) {
+    showAlert("error", store.error ?? "Impossible d'enregistrer la zone");
+  }
+}
+
+async function startExtraction() {
+  isStarting.value = true;
+  try {
+    if (isDevTest) await startDevTestExtraction();
+    else if (!(await store.startExtraction())) {
+      showAlert("error", store.error ?? "Erreur lors du lancement de l'extraction");
+    }
+  } finally {
+    isStarting.value = false;
+  }
+}
+
+// --- 3. Extraction -----------------------------------------------------------
+
+const devTestCaseName = ref<string | null>(null);
+
+async function startDevTestExtraction() {
+  if (!store.file) return;
+  if (!devTestCaseName.value) {
+    const entered = window.prompt(
+      `Nom du test-case pour le test ${mapId} (ex: '5 sift points')`,
+      "",
+    );
+    const trimmed = (entered ?? "").trim();
+    if (!trimmed) return;
+    devTestCaseName.value = trimmed;
+  }
+  const result = await devImport.startImport(store.file, mapId, devTestCaseName.value, {
+    controlPoints: store.inputs.controlPoints ?? [],
+    colors: store.inputs.colors ?? [],
+    frameBounds: store.inputs.frameBounds ?? null,
+    legend: store.inputs.legend ?? null,
+  });
+  if (result.success) store.phase = "extraction";
+  else showAlert("error", result.error);
+}
+
+// Dev-test runs are watched by their Celery task; imports by their row.
+const panel = computed<{
+  state: ExtractionState;
+  progress: number;
+  status: string;
+  error: string | null;
+}>(() => {
+  if (isDevTest) {
+    return {
+      state: devImport.error.value ? "failed" : "running",
+      progress: devImport.progress.value,
+      status: devImport.status.value,
+      error: devImport.error.value,
+    };
+  }
+  return {
+    state: store.extraction.state,
+    progress: store.extraction.progress,
+    status: store.extraction.status,
+    error: store.extraction.error,
+  };
 });
 
-const resetImport = () => {
-  currentStep.value = 1;
-  showWorldAreaPickerModal.value = false;
-  showSiftGeorefModal.value = false;
-  showCitiesModal.value = false;
-  showLegendPickerModal.value = false;
-  showColorPickerModal.value = false;
-  worldAreaBounds.value = null;
-  worldAreaZoom.value = null;
-  legendBounds.value = null;
-  pickedColors.value = [];
-  pendingLegendBounds.value = null;
-  pendingSiftPoints.value = [];
-  pendingCityPoints.value = [];
-  coastlineKeypoints.value = null;
-  usedLakes.value = false;
-  importStore.resetImport();
-};
+async function cancelExtraction() {
+  if (isDevTest) {
+    devImport.cancelImport();
+    store.phase = "saisie";
+    return;
+  }
+  await store.cancelExtraction();
+}
+
+// Polled while OCR runs in the background or an extraction is on its way.
+const poller = usePolling(() => store.refresh(), 1500);
+
+watch(
+  () => [store.phase, store.ocrState] as const,
+  ([phase, ocrState]) => {
+    const ocrRunning = ocrState === "pending" || ocrState === "running";
+    const watching =
+      !isDevTest && (phase === "extraction" || (phase === "saisie" && ocrRunning));
+    if (watching) poller.start();
+    else poller.stop();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => store.extraction.state,
+  (state) => {
+    if (store.phase !== "extraction" || state !== "cancelled") return;
+    store.phase = "saisie";
+    showAlert("success", "Extraction annulée. Rien n'a été enregistré.");
+  },
+);
+
+watch(
+  () => store.completed,
+  async (completed) => {
+    if (!completed) return;
+    poller.stop();
+    await router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
+  },
+);
+
+watch(devImport.resultData, (result) => {
+  if (!result) return;
+  const id = devImport.mapId.value || mapId;
+  const caseName = devTestCaseName.value;
+  // The slug, not the typed name: the case is stored under it, and its static
+  // artifacts are served off that directory.
+  router.push({
+    path: caseName
+      ? `/test-editor/${id}/case/${encodeURIComponent(slugifyTestCase(caseName))}`
+      : `/test-editor/${id}`,
+  });
+});
+
+onMounted(async () => {
+  await store.restore();
+  if (store.error) showAlert("error", store.error);
+  // The first case on a new test map should not wait ~135 s for OCR.
+  if (isDevTest) void devImport.warmTextRegions(mapId);
+});
 </script>

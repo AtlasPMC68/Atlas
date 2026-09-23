@@ -23,7 +23,8 @@ from .models import ControlPoint, parse_control_points
 from .requirements import MIN_CONTROL_POINTS
 
 # 2: control points carry a source and, for cities, the city; no sigma.
-GEOREF_INPUTS_VERSION = "2"
+# 3: the legend answer ({present, bounds}) is stored beside the framing box.
+GEOREF_INPUTS_VERSION = "3"
 
 
 def parse_control_points_field(raw: Optional[str]) -> List[ControlPoint]:
@@ -55,6 +56,7 @@ def build_georef_inputs(
     control_points: Optional[Sequence[ControlPoint]] = None,
     frame_bounds: Optional[FrameBounds] = None,
     imposed_colors: Optional[List[dict]] = None,
+    legend: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Assemble the payload stored on ``maps.georef_inputs``.
 
@@ -66,6 +68,8 @@ def build_georef_inputs(
         frame_bounds: the world area the user framed.
         imposed_colors: pipette entries as ``imposed_colors_to_config_entries``
             returns them, zone and water alike.
+        legend: the legend answer as ``legend_to_entry`` writes it. The
+            legend is masked out of the alignment evidence, so a refit needs it.
     """
     if not control_points and not frame_bounds and not imposed_colors:
         return None
@@ -78,6 +82,7 @@ def build_georef_inputs(
                 [cp.to_dict() for cp in control_points] if control_points else None
             ),
             "frameBounds": frame_bounds_to_config_entry(frame_bounds),
+            "legend": legend,
         },
         "colors": {
             "imposed": imposed_colors or None,

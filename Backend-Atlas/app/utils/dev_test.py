@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import shutil
@@ -27,6 +28,9 @@ from app.utils.imposed_colors import (
     parse_imposed_colors_entries,
     split_imposed_colors_by_kind,
 )
+from app.utils.legend import parse_legend_entry
+
+logger = logging.getLogger(__name__)
 
 
 def write_test_config(
@@ -38,6 +42,7 @@ def write_test_config(
     imposed_colors: list | None = None,
     frame_bounds: dict | None = None,
     kind: str | None = None,
+    legend: dict | None = None,
 ) -> None:
     # tests/assets/georef/test_cases/<test_id>/<test_case_id>/config.json
     case_dir = os.path.join(TEST_CASES_DIR, parent_test_id, test_case_id)
@@ -60,6 +65,9 @@ def write_test_config(
             # The world area the user framed; the working extent for every
             # reference layer, so a case has to re-run with the same one.
             "frameBounds": frame_bounds,
+            # {"present": bool, "bounds": {...}}: a rectangle or an explicit
+            # "no legend". Absent on cases authored before the legend step.
+            "legend": legend,
         },
         # Pipette selections, kept so the case can be re-run identically later.
         "colors": {
@@ -384,6 +392,9 @@ class CaseExtractionInputs:
     water_click_positions: list[tuple[float, float]] | None
     water_colors_names: list[str | None] | None
     water_sampling_radii: list[int] | None
+    #: Whether the case answered the legend step, and the rectangle if any.
+    legend_answered: bool = False
+    legend_bounds: dict[str, float] | None = None
 
 
 def parse_extraction_inputs(
@@ -401,6 +412,11 @@ def parse_extraction_inputs(
         frame_bounds = parse_frame_bounds_entry(georef.get("frameBounds"))
     except ValueError as e:
         raise ValueError(f"Invalid frame bounds in config: {e}")
+
+    try:
+        legend_answered, legend_bounds = parse_legend_entry(georef.get("legend"))
+    except ValueError as e:
+        raise ValueError(f"Invalid legend in config: {e}")
 
     colors = config.get("colors") if isinstance(config.get("colors"), dict) else {}
     try:
@@ -442,6 +458,8 @@ def parse_extraction_inputs(
         water_click_positions=water_picks[0],
         water_colors_names=water_picks[1],
         water_sampling_radii=water_picks[2],
+        legend_answered=legend_answered,
+        legend_bounds=legend_bounds,
     )
 
 
@@ -517,6 +535,7 @@ def build_extraction_task_kwargs_for_case(
         "water_click_positions": inputs.water_click_positions,
         "water_colors_names": inputs.water_colors_names,
         "water_sampling_radii": inputs.water_sampling_radii,
+        "legend_bounds": inputs.legend_bounds,
     }
 
 
@@ -539,13 +558,20 @@ def _start_extraction_for_case(
         test_case_id=test_case_id,
         config=run_config,
     )
-    if state.requirements.blocked:
+    # A probe replays without inputs the pipeline can execute without (the
+    # legend); a scored case cannot, since its number would not be comparable.
+    if state.run_blockers:
         raise ValueError(
             "Cannot run this case: "
             + "; ".join(
                 f"{s.key}: {s.detail or s.requirement.summary}"
-                for s in state.requirements.blocked
+                for s in state.run_blockers
             )
+        )
+    for warning in state.warnings:
+        logger.warning(
+            f"[DEV-TEST] {test_id}/{test_case_id} replays without {warning.key}:"
+            f" {warning.requirement.summary}"
         )
 
     kwargs = build_extraction_task_kwargs_for_case(

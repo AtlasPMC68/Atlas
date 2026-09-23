@@ -100,6 +100,8 @@ const props = withDefaults(
     keypoints: CoastlineKeypoint[];
     usedLakes?: boolean;
     minPairs?: number;
+    // Pairs confirmed earlier, restored when the user comes back to this step
+    initialPoints?: ControlPointInput[];
   }>(),
   {
     isOpen: false,
@@ -107,6 +109,7 @@ const props = withDefaults(
     keypoints: () => [],
     usedLakes: false,
     minPairs: 4,
+    initialPoints: () => [],
   },
 );
 
@@ -135,6 +138,35 @@ const PAIR_COLORS = [
   "#facc15",
   "#6366f1",
 ];
+
+// A stored point carries its keypoint's coordinates, not its index: find the
+// keypoint again by position. One the keypoints no longer offer is dropped.
+function matchesFromPoints(points: ControlPointInput[]): GeorefMatch[] {
+  const restored: GeorefMatch[] = [];
+  for (const point of points) {
+    if (point.source !== "sift") continue;
+    const index = props.keypoints.findIndex(
+      (kp) =>
+        Math.abs(kp.geo.lat - point.geo.lat) < 1e-9 &&
+        Math.abs(kp.geo.lng - point.geo.lon) < 1e-9,
+    );
+    if (index < 0 || restored.some((m) => m.index === index)) continue;
+    restored.push({
+      index,
+      world: [point.geo.lat, point.geo.lon],
+      image: [point.pixel.x, point.pixel.y],
+      color: PAIR_COLORS[index % PAIR_COLORS.length],
+    });
+  }
+  return restored;
+}
+
+matches.value = matchesFromPoints(props.initialPoints);
+// Start on a free keypoint, so the first click does not replace a restored pair.
+activeIndex.value = Math.max(
+  0,
+  props.keypoints.findIndex((_, i) => !matches.value.some((m) => m.index === i)),
+);
 
 const totalPoints = computed<number>(() => props.keypoints?.length || 0);
 const matchedCount = computed<number>(() => matches.value.length);

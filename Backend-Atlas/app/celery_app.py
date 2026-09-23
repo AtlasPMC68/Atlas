@@ -24,7 +24,6 @@ celery_app.conf.update(
     enable_utc=True,
     result_expires=3600,
     task_routes={
-        "app.tasks.process_map": {"queue": "maps"},
         "app.tasks.*": {"queue": "default"},
     },
 )

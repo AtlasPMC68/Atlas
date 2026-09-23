@@ -7,6 +7,34 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# One reader per (languages, gpu) per worker process. Building one loads the
+# detection and recognition models from disk, which every OCR call used to pay.
+_READERS: dict[tuple[tuple[str, ...], bool], "easyocr.Reader"] = {}
+
+
+def _get_reader(languages: list[str], gpu_acc: bool) -> "easyocr.Reader":
+    key = (tuple(languages), bool(gpu_acc))
+    reader = _READERS.get(key)
+    if reader is None:
+        reader = easyocr.Reader(lang_list=list(languages), gpu=gpu_acc, verbose=False)
+        _READERS[key] = reader
+    return reader
+
+
+def ocr_blocks_to_payload(blocks: list) -> list[list]:
+    """``extract_text`` blocks as plain JSON: ``[[[x, y], ...], text, prob]``.
+
+    EasyOCR hands back numpy scalars, which neither JSON nor Celery can carry.
+    """
+    return [
+        [
+            [[int(round(float(p[0]))), int(round(float(p[1])))] for p in coords],
+            str(text),
+            float(prob),
+        ]
+        for coords, text, prob in blocks
+    ]
+
 def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False) -> tuple[list, np.ndarray]:
     """
     Wrapper method handling the text extraction logic. This is mainly to reduce
@@ -78,11 +106,7 @@ class TextExtraction:
     # Class methods
     def read_text_from_image(self, scale_xy: tuple[float, float] = (2.0,2.0)):
 
-        reader = easyocr.Reader(
-            lang_list=list(self.lang),
-            gpu=self.gpu_acc,
-            verbose=False
-        )
+        reader = _get_reader(self.lang, self.gpu_acc)
 
         shading = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
 

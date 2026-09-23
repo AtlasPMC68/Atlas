@@ -77,26 +77,31 @@ The left panel lets you toggle visibility, rename, or delete a zone.
 
 ### Step 4 — Create a test case
 
-Click **Ajouter un test case** (top right). You get asked for a test case name
-(ex: *5 sift points*), then the import flow runs:
+Click **Ajouter un test case** (top right). Confirm the map, and the **Saisie utilisateur**
+checklist opens next to it. Opening that page also starts OCR for the map in the background
+when its text regions are not cached yet, so the first case's run does not wait for it.
+Steps can be done in any order, and redone with **Modifier**:
 
-1. **World area** — select the region of the world your map covers
-2. **Georeferencing (SIFT)** — place matching point pairs between your map image and the
-   real-world map. More/better spread points = better transformation.
-3. **Villes (optional)** — type the name of a city your map shows, pick it from the
+1. **Zone sur le monde** — select the region of the world your map covers. The control
+   points unlock once it is set; redrawing it resets them (you are warned first).
+2. **Délimiter la légende** — draw a rectangle around the legend, or choose **Pas de
+   légende sur la carte**. The rectangle is ignored by colour extraction and by the
+   alignment evidence, so it changes the zones — which is why a case stores the answer.
+3. **Points SIFT automatiques** — place matching point pairs between your map image and
+   the real-world map. More/better spread points = better transformation.
+4. **Villes (optional)** — type the name of a city your map shows, pick it from the
    candidates (only cities inside the world area are offered), then click where your map
-   draws it. Add as many as you can read; **Continuer sans ville** skips the step. A case
-   with both SIFT points and cities can later be re-run with either alone (see
-   [Re-running from the UI](#re-running-from-the-ui)).
-4. **Pipette (color picker)** — click each colored area of the map you want extracted.
-   For every pick, **type the name of the corresponding expected zone**.
+   draws it. Add as many as you can read. A case with both SIFT points and cities can
+   later be re-run with either alone (see [Re-running from the UI](#re-running-from-the-ui)).
+5. **Couleurs à extraire (pipette)** — click each colored area of the map you want
+   extracted. For every pick, **type the name of the corresponding expected zone**.
    Zoom in for small areas; the sampled radius adapts to the zoom.
-5. **Confirmer les couleurs** starts the extraction.
 
-When it finishes you are redirected to the test case result page.
+**Commencer l'extraction** asks for the test case name (ex: *5 sift points*) and starts
+the run. When it finishes you are redirected to the test case result page.
 
-> The legend step is skipped in dev-test mode on purpose: the pipette is the only color
-> source here.
+The text and shapes options of the production import are not offered here: dev-test runs
+extract colours only.
 
 ---
 
@@ -257,11 +262,12 @@ algorithm needs. Every run resolves it against the case and prints the result, s
 that has fallen behind says so instead of quietly scoring worse:
 
 ```
-regression case, requirements v3, scored
+regression case, requirements v4, scored
   ok        controlPoints      9 point(s) from sift, city (sift=6, city=3)
   ok        cityControlPoints  Cities the user named and located on the map.
   ok        frameBounds        The world area the user framed; the extent for every reference layer.
   ok        zonePicks          Pipette picks of kind 'zone'; without them nothing is extracted.
+  ok        legend             The legend rectangle, or an explicit 'no legend'. ...
   REFRESH   textRegions        not cached; text_extraction will be re-run once
   absent    waterPicks         Pipette picks of kind 'water', used for the water-mask gate.
 ```
@@ -283,8 +289,17 @@ So the statuses you will see:
 |---|---|---|
 | `ok` | present | nothing |
 | `REFRESH` / `STALE` | derived artifact missing or produced from a different image | recomputed once (~135 s for OCR), then cached under `derived/` |
-| `BLOCKED` | a required user input is missing | the run stops and prints how to fix it: recreate the case |
+| `BLOCKED` | a required user input is missing | the run stops and prints how to fix it: recreate the case — except the one exception below |
 | `absent` | a genuinely optional user input is missing | runs; a capability is simply not exercised (no water picks ⇒ the water gate reports `applicable: false`) |
+
+**The one exception: inputs the pipeline can run without.** `legend` is required as an
+*answer* — a rectangle, or "no legend" — because it changes the zones, so a scored case
+without one is `BLOCKED` like any other: its number would not be comparable. But nothing
+stops the pipeline from executing without it, so an exploration case (`probe`) replays
+anyway and says so: the result page shows a warning, and the dev script prints
+`WARNING: replaying without legend`. This is `Requirement.blocks_execution = False`; every
+other requirement blocks execution. It is not a middle level: the requirement is still
+required, and only what a *probe* does about it differs.
 
 **There is deliberately no middle level.** An input the pipeline reads is either required or
 genuinely optional — there is no "runs, but through a fallback that makes it weaker". That
@@ -302,8 +317,10 @@ measuring the GCP-only floor — never pays for OCR.
 
 `REQUIREMENTS_VERSION` bumps whenever a requirement is added, removed, or changes level, so
 a `case_state.json` written under an older version is re-checked rather than trusted. It is
-at **v3**: v1 had `frameBounds` as degraded, v2 promotes it to required, v3 counts control
-points per selected source and adds `cityControlPoints`.
+at **v4**: v1 had `frameBounds` as degraded, v2 promotes it to required, v3 counts control
+points per selected source and adds `cityControlPoints`, v4 adds `legend`. Every case
+recorded before v4 has no legend answer: scored cases need recreating, probes keep
+replaying with a warning.
 
 ---
 
