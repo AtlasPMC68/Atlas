@@ -56,32 +56,12 @@
               @mouseenter="openDropdown"
               @mouseleave="closeDropdown"
             >
-              <div
-                class="flex items-center space-x-0 text-gray-700 hover:text-primary-600 cursor-pointer"
+              <RouterLink
+                to="/profil"
+                class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
               >
                 <UserCircleIcon class="h-8 w-8" />
-                <ChevronDownIcon class="h-5 w-5" />
-              </div>
-
-              <!-- Dropdown menu -->
-              <div
-                v-show="isDropdownOpen"
-                class="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg p-4 space-y-4 flex flex-col z-50"
-              >
-                <RouterLink to="/profil" class="dropdown-item"
-                  >Mon profil</RouterLink
-                >
-                <RouterLink to="/parametres" class="dropdown-item"
-                  >Paramètres</RouterLink
-                >
-                <div class="h-0.5 bg-gray-200 my-1"></div>
-                <button
-                  @click="logout"
-                  class="dropdown-item text-red-600 hover:text-red-800 text-left"
-                >
-                  Déconnexion
-                </button>
-              </div>
+              </RouterLink>
             </div>
           </template>
 
@@ -131,11 +111,6 @@ const closeDropdown = () => {
 const isAuthenticated = computed(() => {
   return keycloak.authenticated;
 });
-
-const logout = async () => {
-  await keycloak.logout();
-  router.push("/");
-};
 
 const login = () => {
   (keycloak as any).loginToAtlas({

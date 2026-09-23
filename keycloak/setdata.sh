@@ -16,16 +16,24 @@ else
   /opt/keycloak/bin/kcadm.sh create realms -s realm=atlas -s enabled=true -o
 fi
 
+echo "Setting Atlas login theme..."
+
+/opt/keycloak/bin/kcadm.sh update realms/atlas \
+  -s loginTheme=atlas
+  
 # Update realm settings
 # TODO remove sslRequired=None for production
 echo "Updating realm settings..."
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
   -s registrationAllowed=true \
   -s loginWithEmailAllowed=true \
+  -s resetPasswordAllowed=true \
   -s sslRequired=None \
   -s accessTokenLifespan=3600 \
   -s ssoSessionMaxLifespan=86400 \
   -s ssoSessionIdleTimeout=3600
+  -s loginTheme=atlas
+  
 
 # Function to check if client exists
 client_exists() {
