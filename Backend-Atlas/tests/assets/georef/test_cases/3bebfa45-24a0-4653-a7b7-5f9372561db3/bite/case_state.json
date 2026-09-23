@@ -4,9 +4,13 @@
   "kind": "probe",
   "scored": false,
   "hasExpectedZones": false,
-  "checkedAt": "2026-09-22T21:06:38.043584+00:00",
+  "controlPointsBySource": {
+    "sift": 4,
+    "city": 0
+  },
+  "checkedAt": "2026-09-23T18:04:07.738136+00:00",
   "requirements": {
-    "version": "2",
+    "version": "3",
     "runnable": true,
     "blocked": [],
     "refreshable": [],
@@ -16,10 +20,21 @@
         "kind": "user_input",
         "level": "required",
         "sinceStep": "0",
-        "summary": "Pixel <-> lon/lat pairs clicked by the user.",
-        "remedy": "Recreate the case: the control points come from a human matching keypoints to the map and cannot be recovered from anything on disk.",
+        "summary": "Pixel <-> lon/lat pairs clicked by the user, at least 3 among the sources this run uses.",
+        "remedy": "If the case has enough points from another source, select it. Otherwise recreate the case: the control points come from a human matching keypoints and cities to the map and cannot be recovered from disk.",
         "producer": null,
         "status": "satisfied",
+        "detail": "4 point(s) from sift, city (sift=4, city=0)"
+      },
+      {
+        "key": "cityControlPoints",
+        "kind": "user_input",
+        "level": "optional",
+        "sinceStep": "5",
+        "summary": "Cities the user named and located on the map.",
+        "remedy": "Optional: a map may show no city the gazetteer knows. Recreate the case and name the cities on the map to compare SIFT, cities and both.",
+        "producer": null,
+        "status": "absent",
         "detail": null
       },
       {

@@ -9,31 +9,36 @@ import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import L from "leaflet";
 import type {
   WorldBounds,
-  CoastlineKeypoint,
+  WorldMapPoint,
   MatchedWorldPointSummary,
 } from "../../typescript/georef";
 
+// The reference side of a control-point modal: the real coastline, the points
+// to match (SIFT keypoints or gazetteer cities), and which are matched already.
 const props = withDefaults(
   defineProps<{
     worldBounds: WorldBounds | null;
-    keypoints: CoastlineKeypoint[];
+    points: WorldMapPoint[];
     activeIndex: number;
     // Matched control points coming from the modal
     // [{ index, color }]
     matchedPoints: MatchedWorldPointSummary[];
+    // Points from another step, shown greyed for context and not clickable
+    contextPoints?: WorldMapPoint[];
     usedLakes?: boolean;
   }>(),
   {
     worldBounds: null,
-    keypoints: () => [],
+    points: () => [],
     activeIndex: 0,
     matchedPoints: () => [],
+    contextPoints: () => [],
     usedLakes: false,
   },
 );
 
 const emit = defineEmits<{
-  (e: "select-keypoint", index: number): void;
+  (e: "select-point", index: number): void;
 }>();
 
 const mapContainer = ref<HTMLDivElement | null>(null);
@@ -69,14 +74,27 @@ function styleForIndex(isActive: boolean): L.CircleMarkerOptions {
   };
 }
 
-function renderKeypoints(): void {
+function renderPoints(): void {
   if (!map) return;
   const currentMap = map;
   clearMarkers();
 
-  props.keypoints.forEach((kp, index) => {
-    const lat = kp.geo?.lat;
-    const lng = kp.geo?.lng;
+  props.contextPoints.forEach((pt) => {
+    const marker = L.circleMarker([pt.lat, pt.lng], {
+      radius: 3,
+      fillColor: "#9ca3af",
+      color: "#6b7280",
+      weight: 1,
+      opacity: 0.8,
+      fillOpacity: 0.6,
+      interactive: false,
+    });
+    marker.addTo(currentMap);
+    markers.push(marker);
+  });
+
+  props.points.forEach((pt, index) => {
+    const { lat, lng } = pt;
     if (typeof lat !== "number" || typeof lng !== "number") return;
 
     const isActive = index === props.activeIndex;
@@ -104,9 +122,18 @@ function renderKeypoints(): void {
       marker = L.circleMarker([lat, lng], styleForIndex(isActive));
     }
 
+    if (pt.label) {
+      marker.bindTooltip(pt.label, {
+        permanent: true,
+        direction: "right",
+        offset: [6, 0],
+        className: "text-xs",
+      });
+    }
+
     // Allow user to choose the current point by clicking a marker
     marker.on("click", () => {
-      emit("select-keypoint", index);
+      emit("select-point", index);
     });
 
     marker.addTo(currentMap);
@@ -117,7 +144,7 @@ function renderKeypoints(): void {
 function updateActiveMarker(): void {
   // Re-render everything so both matched triangles and circles
   // reflect the current active index.
-  renderKeypoints();
+  renderPoints();
 }
 
 async function initMap(): Promise<void> {
@@ -128,7 +155,7 @@ async function initMap(): Promise<void> {
   }).setView([20, 0], 2);
 
   try {
-    // Load coastline and optionally lakes if they were used for SIFT detection
+    // Load coastline, plus lakes when they were used for SIFT detection
     const geojsonFiles = props.usedLakes
       ? ["/geojson/ne_coastline.geojson", "/geojson/ne_50m_lakes.geojson"]
       : ["/geojson/ne_coastline.geojson"];
@@ -146,7 +173,7 @@ async function initMap(): Promise<void> {
     );
 
     // Combine all features
-    const combinedGeoJSON = {
+    const combinedGeoJSON: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
       features: geojsonData.flatMap((data: any) => data.features || []),
     };
@@ -180,7 +207,7 @@ async function initMap(): Promise<void> {
     }
   }
 
-  renderKeypoints();
+  renderPoints();
 }
 
 onMounted(async () => {
@@ -200,9 +227,9 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => props.keypoints,
+  () => [props.points, props.contextPoints],
   () => {
-    renderKeypoints();
+    renderPoints();
   },
   { deep: true },
 );
@@ -217,7 +244,7 @@ watch(
 watch(
   () => props.matchedPoints,
   () => {
-    renderKeypoints();
+    renderPoints();
   },
   { deep: true },
 );

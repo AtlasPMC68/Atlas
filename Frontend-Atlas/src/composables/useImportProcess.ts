@@ -3,10 +3,12 @@ import { ref, Ref } from "vue";
 import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
 import type { LegendBounds } from "../typescript/legend";
-import type { ImposedColor, WorldBounds } from "../typescript/georef";
+import type {
+  ControlPointInput,
+  ImposedColor,
+  WorldBounds,
+} from "../typescript/georef";
 
-type ImagePoint = { x: number; y: number };
-type WorldPoint = { lat: number; lng: number };
 type ExtractionOptions = {
   enableGeoreferencing?: boolean;
   enableColorExtraction?: boolean;
@@ -48,8 +50,7 @@ export function useImportProcess() {
     file: File | null,
     inputProjectId: string,
     inputMapId: string,
-    imagePoints?: ImagePoint[],
-    worldPoints?: WorldPoint[],
+    controlPoints?: ControlPointInput[],
     options?: ExtractionOptions,
     legendBounds?: LegendBounds | null,
   ): Promise<StartImportResult> => {
@@ -80,12 +81,9 @@ export function useImportProcess() {
     formData.append("project_id", inputProjectId);
     formData.append("map_id", inputMapId);
 
-    // Add matched point pairs as expected by backend
-    if (imagePoints && imagePoints.length) {
-      formData.append("image_points", JSON.stringify(imagePoints));
-    }
-    if (worldPoints && worldPoints.length) {
-      formData.append("world_points", JSON.stringify(worldPoints));
+    // SIFT and city control points, one list, each tagged with its source
+    if (controlPoints && controlPoints.length) {
+      formData.append("control_points", JSON.stringify(controlPoints));
     }
     if (options?.frameBounds) {
       formData.append("frame_bounds", JSON.stringify(options.frameBounds));

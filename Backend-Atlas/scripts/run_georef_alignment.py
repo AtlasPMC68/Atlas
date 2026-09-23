@@ -24,6 +24,7 @@ Usage, from Backend-Atlas with the dependencies installed:
     python scripts/run_georef_alignment.py --align             # Step 4 alignment (implies --ocr)
     python scripts/run_georef_alignment.py --debug             # + alignment diagnostics (implies --align)
     python scripts/run_georef_alignment.py --kind probe        # only replay-only cases
+    python scripts/run_georef_alignment.py --sources city      # fit from the cities alone
     python scripts/run_georef_alignment.py --refresh-derived   # re-run OCR even if cached
 
 Or through the dedicated compose service, which depends on no broker, no
@@ -65,8 +66,10 @@ from app.utils.dev_test_derived import ensure_text_regions  # noqa: E402
 from app.utils.dev_test_evaluator import build_test_case_paths  # noqa: E402
 from app.utils.georeferencing import (  # noqa: E402
     DEFAULT_GEOREF_CONFIG,
-    ControlPoint,
+    GCP_SOURCES,
     RunRecord,
+    count_by_source,
+    select_control_points,
     build_reference_layers,
     dump_reference_debug_pngs,
     georeference_features,
@@ -198,6 +201,7 @@ def run_case(
     refresh_derived: bool = False,
     strict: bool = False,
     debug: bool = False,
+    sources: tuple = GCP_SOURCES,
 ) -> Optional[dict]:
     print(f"\n=== {test_id}/{case_id}")
 
@@ -217,6 +221,7 @@ def run_case(
     run_config = DEFAULT_GEOREF_CONFIG.with_overrides(
         enable_curve_alignment=True if align else None,
         snap_to_coastline=snap,
+        gcp_sources=tuple(sources),
     )
     case_state = build_case_state(
         test_id=test_id,
@@ -353,9 +358,10 @@ def run_case(
 
     pixel_features = color_result.get("pixel_features", [])
 
-    control_points = ControlPoint.from_pairs(
-        inputs.pixel_points, inputs.geo_points_lonlat, source="sift"
-    )
+    # Only the selected sources, for every stage below: the same filtering the
+    # Celery task applies, so --sources city means the cities alone throughout.
+    control_points = select_control_points(inputs.control_points, run_config.gcp_sources)
+    record.set_inputs(controlPointSources=list(run_config.gcp_sources))
 
     aligned_model = None
     alignment = None
@@ -393,9 +399,7 @@ def run_case(
                 text_regions=text_regions,
                 water_click_positions=inputs.water_click_positions,
                 water_sampling_radii=inputs.water_sampling_radii,
-                config=DEFAULT_GEOREF_CONFIG.with_overrides(
-                    enable_curve_alignment=True
-                ),
+                config=run_config.with_overrides(enable_curve_alignment=True),
                 record=record,
                 debug_dir=alignment_debug_dir,
             )
@@ -430,7 +434,7 @@ def run_case(
         pixel_features,
         control_points,
         frame_bounds=frame_bounds,
-        config=DEFAULT_GEOREF_CONFIG.with_overrides(snap_to_coastline=snap),
+        config=run_config,
         record=record,
         model=aligned_model,
     )
@@ -475,14 +479,21 @@ def run_case(
 
     errors = record.errors
     rmse_km = errors.get("gcpRmseKm")
+    by_source = count_by_source(control_points)
     print(
-        f"  control points: {len(control_points)}   "
+        f"  control points: {len(control_points)} "
+        f"({', '.join(f'{k}={v}' for k, v in by_source.items())})   "
         f"zones out: {sum(len(fc.get('features', [])) for fc in georef.collections)}"
     )
     print(
         "  gcp rmse: "
         + (f"{rmse_km:.2f} km" if rmse_km is not None else "n/a")
         + f"  ({errors.get('gcpRmseStatus')})"
+        + "".join(
+            f"  {source} {value:.2f} km"
+            for source, value in (errors.get("gcpRmseKmBySource") or {}).items()
+            if value is not None
+        )
     )
     if report:
         metrics = report.get("metrics") or {}
@@ -578,7 +589,23 @@ def main() -> int:
             " current algorithm without paying to bring them up to date."
         ),
     )
+    parser.add_argument(
+        "--sources",
+        default=",".join(GCP_SOURCES),
+        help=(
+            "Comma-separated control point sources to fit from, among"
+            f" {', '.join(GCP_SOURCES)}. Default: all. Run the same case with"
+            " 'sift', 'city' and both to see what each carries on its own."
+        ),
+    )
     args = parser.parse_args()
+
+    sources = tuple(s.strip() for s in args.sources.split(",") if s.strip())
+    unknown = [s for s in sources if s not in GCP_SOURCES]
+    if not sources or unknown:
+        print(f"--sources must list some of {', '.join(GCP_SOURCES)}; got {args.sources!r}")
+        return 1
+    sources = tuple(s for s in GCP_SOURCES if s in sources)
 
     cases = discover_cases(args.assets_root)
     if args.test_id:
@@ -609,6 +636,7 @@ def main() -> int:
                 refresh_derived=args.refresh_derived,
                 strict=args.no_refresh,
                 debug=args.debug,
+                sources=sources,
             )
         except Exception as e:
             failures += 1

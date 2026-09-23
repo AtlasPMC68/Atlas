@@ -1,14 +1,14 @@
 {
   "testId": "278e5083-f949-418c-801b-8accf7e0c69c",
-  "testCaseId": "test-5-sift-points-peut-etre",
+  "testCaseId": "ville2",
   "kind": "probe",
   "scored": false,
   "hasExpectedZones": false,
   "controlPointsBySource": {
-    "sift": 6,
-    "city": 0
+    "sift": 5,
+    "city": 4
   },
-  "checkedAt": "2026-09-23T18:04:00.430416+00:00",
+  "checkedAt": "2026-09-23T18:15:17.217648+00:00",
   "requirements": {
     "version": "3",
     "runnable": true,
@@ -24,7 +24,7 @@
         "remedy": "If the case has enough points from another source, select it. Otherwise recreate the case: the control points come from a human matching keypoints and cities to the map and cannot be recovered from disk.",
         "producer": null,
         "status": "satisfied",
-        "detail": "6 point(s) from sift, city (sift=6, city=0)"
+        "detail": "9 point(s) from sift, city (sift=5, city=4)"
       },
       {
         "key": "cityControlPoints",
@@ -34,7 +34,7 @@
         "summary": "Cities the user named and located on the map.",
         "remedy": "Optional: a map may show no city the gazetteer knows. Recreate the case and name the cities on the map to compare SIFT, cities and both.",
         "producer": null,
-        "status": "absent",
+        "status": "satisfied",
         "detail": null
       },
       {
@@ -58,8 +58,42 @@
         "producer": null,
         "status": "satisfied",
         "detail": null
+      },
+      {
+        "key": "textRegions",
+        "kind": "derived",
+        "level": "required",
+        "sinceStep": "3",
+        "summary": "OCR label boxes, masked out of the edge map and carried as the validity mask. Roughly half the edge pixels on a labelled map are place names, so this is most of the evidence, not optional noise.",
+        "remedy": "Re-run OCR once (~135 s/map on CPU); it is cached beside the map for every case on it. Text extraction is not part of georeferencing and does not change while georeferencing is tuned.",
+        "producer": "text_extraction",
+        "status": "satisfied",
+        "detail": "cached under torch 2.14.0+cpu (now 2.11.0+cpu)"
+      },
+      {
+        "key": "waterPicks",
+        "kind": "user_input",
+        "level": "optional",
+        "sinceStep": "1",
+        "summary": "Pipette picks of kind 'water', used for the water-mask gate.",
+        "remedy": "Optional: a map with an unpainted ocean genuinely has none. Without them the water gate reports applicable=false and is never exercised.",
+        "producer": null,
+        "status": "satisfied",
+        "detail": null
       }
     ]
   },
-  "derived": []
+  "derived": [
+    {
+      "key": "textRegions",
+      "present": true,
+      "usable": true,
+      "detail": "cached under torch 2.14.0+cpu (now 2.11.0+cpu)",
+      "producedAt": "2026-09-22T18:48:25.736858+00:00",
+      "producer": {
+        "easyocr": "1.7.2",
+        "torch": "2.14.0+cpu"
+      }
+    }
+  ]
 }

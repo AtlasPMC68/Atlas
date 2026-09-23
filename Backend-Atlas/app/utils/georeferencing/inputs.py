@@ -14,13 +14,41 @@ The shape deliberately mirrors the dev-test ``config.json`` (``georef`` +
 ``colors``) so a production map and a test case carry the same information.
 """
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from .frame import FrameBounds, frame_bounds_to_config_entry, parse_frame_bounds_entry
-from .models import ControlPoint
+from .models import ControlPoint, parse_control_points
+from .requirements import MIN_CONTROL_POINTS
 
-GEOREF_INPUTS_VERSION = "1"
+# 2: control points carry a source and, for cities, the city; no sigma.
+GEOREF_INPUTS_VERSION = "2"
+
+
+def parse_control_points_field(raw: Optional[str]) -> List[ControlPoint]:
+    """The ``control_points`` form field of both upload routes.
+
+    Shared, like ``imposed_colors.py`` and ``frame.py``, so the production and
+    dev-test routes cannot drift apart. Empty when absent. At least
+    ``MIN_CONTROL_POINTS`` when present, because an affine cannot be fitted
+    from fewer and the task would only fail on it later.
+
+    Raises:
+        ValueError: on invalid JSON, a malformed point, or too few points.
+    """
+    if not raw:
+        return []
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"control_points is not valid JSON: {e}")
+    points = parse_control_points(entries)
+    if points and len(points) < MIN_CONTROL_POINTS:
+        raise ValueError(
+            f"at least {MIN_CONTROL_POINTS} control points are needed, got {len(points)}"
+        )
+    return points
 
 
 def build_georef_inputs(
@@ -34,7 +62,7 @@ def build_georef_inputs(
     for maps imported without georeferencing.
 
     Args:
-        control_points: the pixel <-> geo pairs, with source and sigma.
+        control_points: the pixel <-> geo pairs, with their source.
         frame_bounds: the world area the user framed.
         imposed_colors: pipette entries as ``imposed_colors_to_config_entries``
             returns them, zone and water alike.
@@ -74,20 +102,9 @@ def parse_georef_inputs(
 
     control_points: List[ControlPoint] = []
     for entry in georef.get("controlPoints") or []:
-        if not isinstance(entry, dict):
-            continue
-        pixel = entry.get("pixel") or {}
-        geo = entry.get("geo") or {}
         try:
-            control_points.append(
-                ControlPoint.make(
-                    (pixel["x"], pixel["y"]),
-                    (geo["lon"], geo["lat"]),
-                    source=str(entry.get("source") or "manual"),
-                    sigma_px=entry.get("sigmaPx"),
-                )
-            )
-        except (KeyError, TypeError, ValueError):
+            control_points.append(ControlPoint.from_dict(entry))
+        except ValueError:
             continue
 
     try:

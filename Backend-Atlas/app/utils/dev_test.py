@@ -16,7 +16,11 @@ from app.utils.dev_test_assets import (
     TEST_CASES_DIR,
     ZONES_DIR,
 )
-from app.utils.georeferencing import parse_frame_bounds_entry
+from app.utils.georeferencing import (
+    ControlPoint,
+    parse_control_points,
+    parse_frame_bounds_entry,
+)
 from app.utils.imposed_colors import (
     KIND_WATER,
     KIND_ZONE,
@@ -30,8 +34,7 @@ def write_test_config(
     test_case_id: str,
     test_case_name: str | None,
     original_filename: str | None,
-    img_pts: list | None,
-    world_pts: list | None,
+    control_points: list[ControlPoint],
     imposed_colors: list | None = None,
     frame_bounds: dict | None = None,
     kind: str | None = None,
@@ -51,8 +54,9 @@ def write_test_config(
         # "whatever the map says", which is what almost every case wants.
         "kind": kind,
         "georef": {
-            "imagePoints": img_pts,
-            "worldPoints": world_pts,
+            # SIFT and city points in one list, each tagged with its source,
+            # in the same shape as maps.georef_inputs (ControlPoint.to_dict).
+            "controlPoints": [cp.to_dict() for cp in control_points],
             # The world area the user framed; the working extent for every
             # reference layer, so a case has to re-run with the same one.
             "frameBounds": frame_bounds,
@@ -372,8 +376,7 @@ class CaseExtractionInputs:
     """Everything a stored case needs to re-run identically."""
 
     filename: str
-    pixel_points: list[tuple[float, float]] | None
-    geo_points_lonlat: list[tuple[float, float]] | None
+    control_points: list[ControlPoint]
     frame_bounds: dict[str, float] | None
     imposed_click_positions: list[tuple[float, float]] | None
     imposed_colors_names: list[str | None] | None
@@ -388,20 +391,10 @@ def parse_extraction_inputs(
 ) -> CaseExtractionInputs:
     georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
 
-    pixel_points_list = None
-    geo_points_list = None
-    img_pts = georef.get("imagePoints")
-    world_pts = georef.get("worldPoints")
-    if (
-        isinstance(img_pts, list)
-        and isinstance(world_pts, list)
-        and len(img_pts) == len(world_pts)
-    ):
-        try:
-            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
-            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
-        except Exception as e:
-            raise ValueError(f"Invalid georef points in config: {e}")
+    try:
+        control_points = parse_control_points(georef.get("controlPoints") or [])
+    except ValueError as e:
+        raise ValueError(f"Invalid control points in config: {e}")
 
     # Cases written before the framing box was plumbed through simply have none.
     try:
@@ -441,8 +434,7 @@ def parse_extraction_inputs(
 
     return CaseExtractionInputs(
         filename=filename,
-        pixel_points=pixel_points_list,
-        geo_points_lonlat=geo_points_list,
+        control_points=control_points,
         frame_bounds=frame_bounds,
         imposed_click_positions=zone_picks[0],
         imposed_colors_names=zone_picks[1],
@@ -517,8 +509,7 @@ def build_extraction_task_kwargs_for_case(
         "file_content": file_content,
         "test_id": test_id,
         "test_case": test_case_id,
-        "pixel_points": inputs.pixel_points,
-        "geo_points_lonlat": inputs.geo_points_lonlat,
+        "control_points": [cp.to_dict() for cp in inputs.control_points],
         "imposed_click_positions": inputs.imposed_click_positions,
         "imposed_colors_names": inputs.imposed_colors_names,
         "imposed_sampling_radii": inputs.imposed_sampling_radii,
@@ -536,6 +527,27 @@ def _start_extraction_for_case(
     test_case_id: str,
     config_overrides: dict | None = None,
 ) -> str:
+    from app.tasks import GEOREF_CONFIG
+
+    # Refuse up front what the task could only fail on: a case missing a user
+    # input, or a source selection leaving fewer than 3 points ("cities only"
+    # on a case with two cities). A 400 names the reason; a worker log would not.
+    run_config = GEOREF_CONFIG.with_overrides(**(config_overrides or {}))
+    state, _inputs = inspect_case(
+        assets_root=assets_root,
+        test_id=test_id,
+        test_case_id=test_case_id,
+        config=run_config,
+    )
+    if state.requirements.blocked:
+        raise ValueError(
+            "Cannot run this case: "
+            + "; ".join(
+                f"{s.key}: {s.detail or s.requirement.summary}"
+                for s in state.requirements.blocked
+            )
+        )
+
     kwargs = build_extraction_task_kwargs_for_case(
         assets_root=assets_root,
         test_id=test_id,

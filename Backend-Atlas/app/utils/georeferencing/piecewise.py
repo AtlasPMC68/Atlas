@@ -4,15 +4,9 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import numpy as np
 from scipy.spatial import Delaunay
 
+from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .models import AffineModel, ControlPoint, Regularizer, control_point_weights
 from .projection import lonlat_to_webmercator
-
-#: Sources trusted enough to pin the local correction. A city control point
-#: (sigma 40 px, see ``models.DEFAULT_SIGMA_PX_BY_SOURCE``) still shapes the
-#: global affine, but interpolating exactly through a city that the map itself
-#: places wrongly would import that error into its whole neighbourhood --
-#: and old maps placing cities wrongly is the premise of the project.
-DEFAULT_LOCAL_SOURCES: Tuple[str, ...] = ("sift", "manual")
 
 #: Points located per pass. Locating is (triangles x points), so this bounds
 #: peak memory on a dense geometry rather than the number of triangles.
@@ -86,7 +80,6 @@ class PiecewiseAffineModel:
     verts_out: np.ndarray
     simplices: np.ndarray
     n_points: int = 0
-    n_local_points: int = 0
     #: Leave-one-out residuals (see ``fit``), NaN where a refit was impossible.
     residuals_3857: np.ndarray = field(default_factory=lambda: np.zeros(0))
     #: Whether ``residuals_3857`` are honest (leave-one-out) or in-sample.
@@ -112,7 +105,6 @@ class PiecewiseAffineModel:
         weights: Optional[np.ndarray] = None,
         regularizer: Optional[Regularizer] = None,
         *,
-        local_mask: Optional[np.ndarray] = None,
         extent: Optional[Extent] = None,
         anchor_margin: float = 0.25,
         base: Optional[AffineModel] = None,
@@ -125,8 +117,6 @@ class PiecewiseAffineModel:
             dst_xy: (n, 2) EPSG:3857 coordinates.
             weights: optional per-point weights for the global affine fit.
             regularizer: passed to the global affine fit.
-            local_mask: (n,) bool; which points pin the local correction. All of
-                them when omitted. Masked-out points only shape the affine.
             extent: (x0, y0, x1, y1) in pixels, where the frame anchors go.
             anchor_margin: frame padding, as a fraction of width and height.
             base: an existing affine (Step 4's aligned model, say) to correct
@@ -145,16 +135,13 @@ class PiecewiseAffineModel:
             raise ValueError("src_xy and dst_xy must be matching (n, 2) arrays")
 
         n = src_xy.shape[0]
-        mask = (
-            np.ones(n, dtype=bool) if local_mask is None else np.asarray(local_mask, bool)
-        )
         w = None if weights is None else np.asarray(weights, dtype=float).ravel()
         base_fixed = base is not None
 
         if base is None:
             base = AffineModel.fit(src_xy, dst_xy, weights=w, regularizer=regularizer)
 
-        model = cls._build(base, src_xy, dst_xy, mask, extent, anchor_margin)
+        model = cls._build(base, src_xy, dst_xy, extent, anchor_margin)
         model.n_points = n
 
         if leave_one_out:
@@ -163,7 +150,6 @@ class PiecewiseAffineModel:
                 dst_xy,
                 w,
                 regularizer,
-                mask,
                 extent,
                 anchor_margin,
                 base if base_fixed else None,
@@ -180,21 +166,21 @@ class PiecewiseAffineModel:
         base: AffineModel,
         src_xy: np.ndarray,
         dst_xy: np.ndarray,
-        mask: np.ndarray,
         extent: Optional[Extent],
         anchor_margin: float,
     ) -> "PiecewiseAffineModel":
-        local_src, local_dst = src_xy[mask], dst_xy[mask]
+        # Every control point pins the correction, whatever its source: SIFT
+        # points and cities are trusted alike (see config.gcp_sigma_px_*).
         anchors = _frame_anchors(src_xy, extent, anchor_margin)
         anchor_dst = np.column_stack(base(anchors[:, 0], anchors[:, 1]))
 
-        verts_in = np.vstack([local_src, anchors])
-        verts_out = np.vstack([local_dst, anchor_dst])
+        verts_in = np.vstack([src_xy, anchors])
+        verts_out = np.vstack([dst_xy, anchor_dst])
 
         tri = Delaunay(verts_in)
         if len(tri.coplanar):
-            dup = sorted({int(i) for i in tri.coplanar[:, 0] if i < len(local_src)})
-            raise ValueError(f"Duplicate control point positions (local indices {dup})")
+            dup = sorted({int(i) for i in tri.coplanar[:, 0] if i < len(src_xy)})
+            raise ValueError(f"Duplicate control point positions (indices {dup})")
         simplices = tri.simplices
 
         # A triangle whose orientation flips has folded the map over itself, so
@@ -205,9 +191,9 @@ class PiecewiseAffineModel:
         area_out = _signed_areas(verts_out, simplices)
         folded = np.sign(area_out) != np.sign(area_in) * np.sign(base.determinant)
         if np.any(folded):
-            bad = sorted({int(i) for i in simplices[folded].ravel() if i < len(local_src)})
+            bad = sorted({int(i) for i in simplices[folded].ravel() if i < len(src_xy)})
             raise ValueError(
-                "Control points fold the map (triangles flipped). Suspect local "
+                "Control points fold the map (triangles flipped). Suspect "
                 f"points {bad}; check them or remove one."
             )
 
@@ -216,12 +202,11 @@ class PiecewiseAffineModel:
             verts_in=verts_in,
             verts_out=verts_out,
             simplices=simplices,
-            n_local_points=int(local_src.shape[0]),
         )
 
     @classmethod
     def _leave_one_out(
-        cls, src_xy, dst_xy, w, regularizer, mask, extent, anchor_margin, fixed_base
+        cls, src_xy, dst_xy, w, regularizer, extent, anchor_margin, fixed_base
     ) -> np.ndarray:
         """Per-point error with that point excluded from the fit.
 
@@ -240,9 +225,7 @@ class PiecewiseAffineModel:
                     weights=None if w is None else w[keep],
                     regularizer=regularizer,
                 )
-                m = cls._build(
-                    b, src_xy[keep], dst_xy[keep], mask[keep], extent, anchor_margin
-                )
+                m = cls._build(b, src_xy[keep], dst_xy[keep], extent, anchor_margin)
             except (ValueError, np.linalg.LinAlgError):
                 continue
             X, Y = m(src_xy[i, 0], src_xy[i, 1])
@@ -368,7 +351,6 @@ class PiecewiseAffineModel:
             verts_out=self.verts_in,
             simplices=self.simplices,
             n_points=self.n_points,
-            n_local_points=self.n_local_points,
         )
 
     # --- serialization ------------------------------------------------------
@@ -381,7 +363,6 @@ class PiecewiseAffineModel:
             "vertsOut": self.verts_out.tolist(),
             "simplices": self.simplices.tolist(),
             "nPoints": int(self.n_points),
-            "nLocalPoints": int(self.n_local_points),
             "rmse3857": self.rmse_3857,
             # Which number `rmse3857` is: an in-sample residual from an
             # interpolating model is 0 by construction, so a reader has to be
@@ -404,7 +385,6 @@ class PiecewiseAffineModel:
             verts_out=np.array(payload["vertsOut"], dtype=float),
             simplices=np.array(payload["simplices"], dtype=int),
             n_points=int(payload.get("nPoints", 0)),
-            n_local_points=int(payload.get("nLocalPoints", 0)),
         )
         residuals = payload.get("residuals3857")
         if residuals is not None:
@@ -418,11 +398,11 @@ class PiecewiseAffineModel:
 def fit_piecewise_from_control_points(
     control_points: Sequence[ControlPoint],
     extent: Optional[Extent] = None,
-    local_sources: Sequence[str] = DEFAULT_LOCAL_SOURCES,
     use_sigma_weights: bool = False,
     regularizer: Optional[Regularizer] = None,
     base: Optional[AffineModel] = None,
     anchor_margin: float = 0.25,
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> PiecewiseAffineModel:
     """Drop-in counterpart of ``models.fit_affine_from_control_points``."""
     if len(control_points) < 3:
@@ -435,14 +415,14 @@ def fit_piecewise_from_control_points(
         ],
         dtype=float,
     )
-    weights = control_point_weights(control_points) if use_sigma_weights else None
-    local_mask = np.array([cp.source in local_sources for cp in control_points])
+    weights = (
+        control_point_weights(control_points, config) if use_sigma_weights else None
+    )
     return PiecewiseAffineModel.fit(
         src,
         dst,
         weights=weights,
         regularizer=regularizer,
-        local_mask=local_mask,
         extent=extent,
         anchor_margin=anchor_margin,
         base=base,

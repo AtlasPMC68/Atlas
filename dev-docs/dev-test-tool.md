@@ -83,10 +83,15 @@ Click **Ajouter un test case** (top right). You get asked for a test case name
 1. **World area** — select the region of the world your map covers
 2. **Georeferencing (SIFT)** — place matching point pairs between your map image and the
    real-world map. More/better spread points = better transformation.
-3. **Pipette (color picker)** — click each colored area of the map you want extracted.
+3. **Villes (optional)** — type the name of a city your map shows, pick it from the
+   candidates (only cities inside the world area are offered), then click where your map
+   draws it. Add as many as you can read; **Continuer sans ville** skips the step. A case
+   with both SIFT points and cities can later be re-run with either alone (see
+   [Re-running from the UI](#re-running-from-the-ui)).
+4. **Pipette (color picker)** — click each colored area of the map you want extracted.
    For every pick, **type the name of the corresponding expected zone**.
    Zoom in for small areas; the sampled radius adapts to the zoom.
-4. **Confirmer les couleurs** starts the extraction.
+5. **Confirmer les couleurs** starts the extraction.
 
 When it finishes you are redirected to the test case result page.
 
@@ -166,8 +171,9 @@ tests_metadata.json                     test names / creation dates / kind
 derived/<test_id>/
     text_regions.json    OCR label boxes for this map, with provenance
 test_cases/<test_id>/<case_id>/
-    config.json          SIFT point pairs, framing box, pipette picks
-                         (position, name, radius, zone-or-water), optional kind
+    config.json          control points (SIFT and city, each with its source), framing
+                         box, pipette picks (position, name, radius, zone-or-water),
+                         optional kind
     case_state.json      which requirements this case satisfies, and its kind
     zones.geojson        zones extracted by the last run
     report.json          metrics of the last run  (regression cases only)
@@ -185,9 +191,11 @@ Because it's plain files in the repo, results are versioned in git — you can d
 between branches, and a deleted test case can be restored with `git checkout` if it had been
 committed.
 
-`config.json` is what makes a test case reproducible: **the SIFT anchor points, the framing
+`config.json` is what makes a test case reproducible: **the control points, the framing
 box and the pipette picks are all saved there**, so a case can be replayed without you
-clicking anything again.
+clicking anything again. Control points are one list under `georef.controlPoints`, each
+`{source, pixel: {x, y}, geo: {lon, lat}}`, and a city point also carries
+`city: {id, name}` (its GeoNames id). See [`city-gcps.md`](city-gcps.md).
 
 `run_record.json` sits next to `report.json` and holds what the georeferencing run knew and
 decided: control points with their source and sigma, the fitted model, every gate check
@@ -249,13 +257,18 @@ algorithm needs. Every run resolves it against the case and prints the result, s
 that has fallen behind says so instead of quietly scoring worse:
 
 ```
-regression case, requirements v2, scored
-  ok        controlPoints    Pixel <-> lon/lat pairs clicked by the user.
-  ok        frameBounds      The world area the user framed; the extent for every reference layer.
-  ok        zonePicks        Pipette picks of kind 'zone'; without them nothing is extracted.
-  REFRESH   textRegions      not cached; text_extraction will be re-run once
-  absent    waterPicks       Pipette picks of kind 'water', used for the water-mask gate.
+regression case, requirements v3, scored
+  ok        controlPoints      9 point(s) from sift, city (sift=6, city=3)
+  ok        cityControlPoints  Cities the user named and located on the map.
+  ok        frameBounds        The world area the user framed; the extent for every reference layer.
+  ok        zonePicks          Pipette picks of kind 'zone'; without them nothing is extracted.
+  REFRESH   textRegions        not cached; text_extraction will be re-run once
+  absent    waterPicks         Pipette picks of kind 'water', used for the water-mask gate.
 ```
+
+`controlPoints` counts only the sources the run uses (at least 3), so the same case can be
+runnable with SIFT alone and blocked with cities alone. `cityControlPoints` is optional: a
+map may show no city the gazetteer knows.
 
 **The distinction that matters is whether a missing input can be recovered.**
 
@@ -289,7 +302,8 @@ measuring the GCP-only floor — never pays for OCR.
 
 `REQUIREMENTS_VERSION` bumps whenever a requirement is added, removed, or changes level, so
 a `case_state.json` written under an older version is re-checked rather than trusted. It is
-at **v2**: v1 had `frameBounds` as degraded, v2 promotes it to required.
+at **v3**: v1 had `frameBounds` as degraded, v2 promotes it to required, v3 counts control
+points per selected source and adds `cityControlPoints`.
 
 ---
 
@@ -362,6 +376,11 @@ gated result. It prints the chosen method, the recovery rung, the probe's disagr
 held-out control points, and every gate with its value. Alignment is off in the pipeline by
 default, so this flag is how you see what it would do.
 
+Add `--sources sift`, `--sources city` or `--sources sift,city` (the default) to fit from
+one source of control points only. Every stage uses the same subset, and the printout gives
+the RMS error per source. Run a case with SIFT points and cities three ways to see what each
+source carries on its own.
+
 Add `--no-snap` to disable blind coastline snapping. **Do this whenever you are judging
 alignment.** Snapping corrects transform error after the fact, which both flatters the baseline
 and hides the improvement you are trying to measure — with it on, translating the same transform
@@ -419,6 +438,17 @@ inputs and reloads the map in place, with two per-run switches.
   alignment and that is the one setting you must turn off to do so.
 - **Alignement** defaults **on**, because seeing what the current pipeline does is the
   point of re-running.
+
+On an **exploration** case, **Points de contrôle utilisés** has one checkbox per source (SIFT,
+Villes) with the case's point count for each. Untick one to re-run from the other alone. The
+last source that has points cannot be unticked, and a selection with fewer than 3 points
+disables the button. The selection travels as `gcp_sources` in the same `config_overrides`,
+so a run that does not use every source is never promoted to `best`.
+
+The **Points de contrôle (dernier run)** panel draws the last run's control points on the
+map: a dot at the point's true position (amber SIFT, magenta city, hover for the city name)
+and a dashed line to where the fitted transform put the pixel you clicked. It also shows the
+RMS error per source in km (leave-one-out with `piecewise_affine`).
 
 The switches apply to that run only — they never touch the worker's own settings, so two
 people can re-run the same case differently at the same time. They reach the task as one

@@ -36,7 +36,7 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter, map_coordinat
 from scipy.optimize import least_squares
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
-from .models import AffineModel, ControlPoint
+from .models import AffineModel, ControlPoint, gcp_sigma_px
 from .projection import lonlat_to_webmercator, webmercator_meters_to_km
 from .records import GateCheck, RunRecord
 
@@ -247,12 +247,15 @@ def _to_pixel(params: np.ndarray, xy: np.ndarray) -> Tuple[np.ndarray, np.ndarra
 
 def _gcp_arrays(
     control_points: Sequence[ControlPoint],
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     pixel = np.array([cp.pixel for cp in control_points], dtype=float)
     merc = np.array(
         [lonlat_to_webmercator(lon, lat) for lon, lat in (c.geo for c in control_points)]
     )
-    sigma = np.array([max(float(cp.sigma_px), 1e-6) for cp in control_points])
+    sigma = np.array(
+        [max(gcp_sigma_px(cp.source, config), 1e-6) for cp in control_points]
+    )
     return pixel, merc, sigma
 
 
@@ -379,7 +382,7 @@ def fit_chamfer(
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, sigma = _gcp_arrays(control_points)
+        gcp_pixel, gcp_merc, sigma = _gcp_arrays(control_points, config)
         # Normalise by count so seven control points are not drowned by
         # thousands of curve samples, then weight by 1/sigma**2 within the term.
         rel = (np.median(sigma) / sigma) ** 2
@@ -549,7 +552,7 @@ def icp_refine(
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, sigma = _gcp_arrays(control_points)
+        gcp_pixel, gcp_merc, sigma = _gcp_arrays(control_points, config)
         rel = (np.median(sigma) / sigma) ** 2
         gcp_w = (
             config.weight_gcp * gcp_weight_scale / max(len(control_points), 1)

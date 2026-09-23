@@ -22,6 +22,8 @@ from app.utils.georeferencing import (
     DEFAULT_GEOREF_CONFIG,
     RunRecord,
     georeference_features,
+    parse_control_points,
+    select_control_points,
 )
 from app.utils.georeferencing.debug import debug_enabled, make_run_dir
 from app.utils.shapes_extraction import extract_shapes
@@ -70,14 +72,21 @@ GEOREF_CONFIG = DEFAULT_GEOREF_CONFIG.with_overrides(
 )
 
 
-def _control_points(pixel_points: list, geo_points_lonlat: list):
-    return ControlPoint.from_pairs(pixel_points, geo_points_lonlat, source="sift")
+def _control_points(payload: list | None, config=None) -> list[ControlPoint]:
+    """The task's control points, restricted to the sources the run uses.
+
+    Filtered once, here, so the alignment, its gates, the baseline fit and the
+    piecewise correction all work from the same set. The payload was validated
+    by the route that dispatched the task, so a malformed one is a bug and
+    raises.
+    """
+    points = parse_control_points(payload or [])
+    return select_control_points(points, (config or GEOREF_CONFIG).gcp_sources)
 
 
 def _align_if_enabled(
     image_bgr,
-    pixel_points: list,
-    geo_points_lonlat: list,
+    control_points: list[ControlPoint],
     frame_bounds: dict | None,
     text_regions: list | None,
     water_click_positions: list | None,
@@ -121,7 +130,7 @@ def _align_if_enabled(
 
     result = align_map(
         image_bgr,
-        _control_points(pixel_points, geo_points_lonlat),
+        control_points,
         frame_bounds=frame_bounds,
         text_regions=text_regions,
         water_click_positions=water_click_positions,
@@ -262,8 +271,7 @@ def _alignment_summary(result) -> dict[str, Any]:
 
 def _georeference(
     pixel_feature_collections: list,
-    pixel_points: list,
-    geo_points_lonlat: list,
+    control_points: list[ControlPoint],
     frame_bounds: dict | None = None,
     record: "RunRecord | None" = None,
     model=None,
@@ -273,7 +281,7 @@ def _georeference(
     """Fit and apply the pixel -> EPSG:4326 transform for one feature producer."""
     return georeference_features(
         pixel_feature_collections,
-        _control_points(pixel_points, geo_points_lonlat),
+        control_points,
         frame_bounds=frame_bounds,
         config=config or GEOREF_CONFIG,
         record=record,
@@ -309,8 +317,7 @@ def process_map_extraction(
     file_content: bytes,
     project_id: UUID,
     map_id: UUID,
-    pixel_points: list | None = None,
-    geo_points_lonlat: list | None = None,
+    control_points: list | None = None,
     legend_bounds: dict | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
@@ -332,6 +339,9 @@ def process_map_extraction(
             f"[GEOREF] {len(water_click_positions)} water pipette pick(s) received "
             f"for map {map_id}; unused until the water mask lands."
         )
+
+    # SIFT and city points alike, as ControlPoint.to_dict writes them.
+    points = _control_points(control_points)
 
     try:
         # Step 1: temp save
@@ -450,7 +460,7 @@ def process_map_extraction(
         debug_dir = None
         if debug_enabled():
             debug_dir = make_run_dir(f"map{map_id}")
-        if pixel_points and geo_points_lonlat and GEOREF_CONFIG.enable_curve_alignment:
+        if points and GEOREF_CONFIG.enable_curve_alignment:
             self.update_state(
                 state="PROGRESS",
                 meta={
@@ -461,8 +471,7 @@ def process_map_extraction(
             )
             alignment = _align_if_enabled(
                 image,
-                pixel_points,
-                geo_points_lonlat,
+                points,
                 frame_bounds,
                 text_regions,
                 water_click_positions,
@@ -498,13 +507,12 @@ def process_map_extraction(
             shape_normalized_features = shapes_result["normalized_features"]
             shape_pixel_features = shapes_result.get("pixel_features", [])
 
-            # Georeference pixel-space shape features if SIFT point pairs are provided
-            if pixel_points and geo_points_lonlat:
+            # Georeference pixel-space shape features if control points are provided
+            if points:
                 try:
                     shapes_georef = _georeference(
                         shape_pixel_features,
-                        pixel_points,
-                        geo_points_lonlat,
+                        points,
                         frame_bounds=frame_bounds,
                         model=aligned_model,
                         extra_properties=alignment_props,
@@ -516,7 +524,7 @@ def process_map_extraction(
                     )
                 except Exception as e:
                     logger.error(
-                        f"SIFT georeferencing step failed for shapes {map_id}: {e}",
+                        f"Georeferencing step failed for shapes {map_id}: {e}",
                         exc_info=True,
                     )
             elif shape_normalized_features:
@@ -600,13 +608,12 @@ def process_map_extraction(
             pixel_features = color_result.get("pixel_features", [])
 
             # TODO : Rendre ca une etape pour toutes les extractions ===================================================================
-            # Georeference pixel-space features if SIFT point pairs are provided
-            if pixel_points and geo_points_lonlat:
+            # Georeference pixel-space features if control points are provided
+            if points:
                 try:
                     colors_georef = _georeference(
                         pixel_features,
-                        pixel_points,
-                        geo_points_lonlat,
+                        points,
                         frame_bounds=frame_bounds,
                         model=aligned_model,
                         extra_properties=alignment_props,
@@ -618,7 +625,7 @@ def process_map_extraction(
 
                 except Exception as e:
                     logger.error(
-                        f"SIFT georeferencing step failed for map {map_id}: {e}",
+                        f"Georeferencing step failed for map {map_id}: {e}",
                         exc_info=True,
                     )
             elif normalized_features:
@@ -681,7 +688,7 @@ def process_map_extraction(
             else {"colors_detected": 0},
             "status": "completed",
             "extractions_performed": {
-                "georeferencing": bool(pixel_points and geo_points_lonlat),
+                "georeferencing": bool(points),
                 "color_extraction": enable_color_extraction,
                 "shapes_extraction": enable_shapes_extraction,
                 "text_extraction": enable_text_extraction,
@@ -766,8 +773,7 @@ def process_dev_test_extraction(
     file_content: bytes,
     test_id: str,
     test_case: str,
-    pixel_points: list | None = None,
-    geo_points_lonlat: list | None = None,
+    control_points: list | None = None,
     imposed_click_positions: list | None = None,
     imposed_colors_names: list | None = None,
     imposed_sampling_radii: list | None = None,
@@ -819,11 +825,16 @@ def process_dev_test_extraction(
     # different metrics, so it is written but never promoted.
     ambient_run = not switches
 
+    # The run's sources only: unticking "cities" in the dev tool means the
+    # cities play no part anywhere, not merely in the final fit.
+    points = _control_points(control_points, run_config)
+
     georef_record = RunRecord(run_id=f"{test_id}/{test_case}")
     georef_record.set_inputs(
         waterPickCount=len(water_click_positions or []),
         caseKind=resolved_kind,
         runSwitches=switches or None,
+        controlPointSources=list(run_config.gcp_sources),
     )
     try:
         # Step 1: temp save
@@ -914,7 +925,7 @@ def process_dev_test_extraction(
         normalized_features = color_result.get("normalized_features", [])
         pixel_features = color_result.get("pixel_features", [])
 
-        if pixel_points and geo_points_lonlat:
+        if points:
             try:
                 # Text regions are a property of the *map*, not of the case, and
                 # OCR costs ~135 s on CPU. Pulling them from the derived store
@@ -927,8 +938,7 @@ def process_dev_test_extraction(
                 debug_dir = _dev_test_debug_dir(test_id, test_case)
                 alignment = _align_if_enabled(
                     image,
-                    pixel_points,
-                    geo_points_lonlat,
+                    points,
                     frame_bounds,
                     text_regions,
                     water_click_positions,
@@ -944,8 +954,7 @@ def process_dev_test_extraction(
                 )
                 georef = _georeference(
                     pixel_features,
-                    pixel_points,
-                    geo_points_lonlat,
+                    points,
                     frame_bounds=frame_bounds,
                     record=georef_record,
                     model=aligned_model,
@@ -958,7 +967,7 @@ def process_dev_test_extraction(
                     logger.info(f"[DEV-TEST] alignment debug dump -> {debug_dir}")
             except Exception as e:
                 logger.error(
-                    f"[DEV-TEST] SIFT georeferencing failed for test {test_id}: {e}",
+                    f"[DEV-TEST] Georeferencing failed for test {test_id}: {e}",
                     exc_info=True,
                 )
                 georef_record.note(f"georeferencing failed: {e}")
@@ -1070,7 +1079,7 @@ def process_dev_test_extraction(
             "status": "completed",
             "color_result": color_result,
             "extractions_performed": {
-                "georeferencing": bool(pixel_points and geo_points_lonlat),
+                "georeferencing": bool(points),
                 "color_extraction": True,
             },
             "test_assets": {

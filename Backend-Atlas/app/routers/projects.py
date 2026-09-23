@@ -34,10 +34,12 @@ from app.utils.update_feature import (
     serialize_feature_rows,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
+from app.utils.city_gazetteer import search_cities
 from app.utils.georeferencing import (
-    ControlPoint,
     build_georef_inputs,
+    parse_control_points_field,
     parse_frame_bounds,
+    parse_frame_bounds_entry,
 )
 from app.utils.imposed_colors import (
     KIND_WATER,
@@ -238,8 +240,7 @@ async def get_project(
 
 @router.post("/upload")
 async def upload_and_process_map(
-    image_points: str | None = Form(None),
-    world_points: str | None = Form(None),
+    control_points: str | None = Form(None),
     frame_bounds: str | None = Form(None),
     legend_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
@@ -282,31 +283,17 @@ async def upload_and_process_map(
             detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    pixel_points_list = None
-    geo_points_list = None
     legend_bounds_dict = None
 
-    # Parse matched point pairs for SIFT georeferencing
-    if enable_georeferencing and image_points and world_points:
+    # SIFT and city control points, one list, each tagged with its source.
+    points = []
+    if enable_georeferencing:
         try:
-            img_pts = json.loads(image_points)  # list of {"x":..,"y":..}
-            world_pts = json.loads(world_points)  # list of {"lat":..,"lng":..}
-
-            # Basic structural validation
-            if not isinstance(img_pts, list) or not isinstance(world_pts, list):
-                raise ValueError("image_points and world_points must be JSON arrays")
-
-            if len(img_pts) != len(world_pts):
-                raise ValueError(
-                    "image_points and world_points must have the same length"
-                )
-
-            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
-            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
-        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            points = parse_control_points_field(control_points)
+        except ValueError as e:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid georeferencing payload: {e}",
+                detail=f"Invalid control_points payload: {e}",
             )
 
     # Parse optional legend rectangle (pixel-space bounds)
@@ -397,13 +384,7 @@ async def upload_and_process_map(
     # and without them the only way to georeference this map differently is to
     # re-import it and re-click every point.
     georef_inputs = build_georef_inputs(
-        control_points=(
-            ControlPoint.from_pairs(
-                pixel_points_list, geo_points_list, source="sift"
-            )
-            if pixel_points_list and geo_points_list
-            else None
-        ),
+        control_points=points or None,
         frame_bounds=frame_bounds_dict,
         imposed_colors=imposed_colors_to_config_entries(
             all_click_positions,
@@ -435,8 +416,7 @@ async def upload_and_process_map(
             file_content=file_content,
             project_id=map_obj.project_id,
             map_id=map_id,
-            pixel_points=pixel_points_list,
-            geo_points_lonlat=geo_points_list,
+            control_points=[cp.to_dict() for cp in points],
             enable_color_extraction=enable_color_extraction,
             enable_shapes_extraction=enable_shapes_extraction,
             enable_text_extraction=enable_text_extraction,
@@ -829,6 +809,33 @@ async def get_coastline_keypoints(
     except Exception as e:
         logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/city-candidates")
+async def get_city_candidates(
+    q: str = Form(...),
+    west: float = Form(...),
+    south: float = Form(...),
+    east: float = Form(...),
+    north: float = Form(...),
+    limit: int = Form(10),
+):
+    """Gazetteer cities inside the framing box whose name matches *q*.
+
+    Only cities inside the box are returned: a city outside the world area the
+    user framed is not on their map. Accent-insensitive, matches alternate
+    names ("Kebek" finds Quebec) and near-misses, and returns an empty list --
+    never an error -- when nothing matches.
+    """
+    try:
+        bounds = parse_frame_bounds_entry(
+            {"west": west, "south": south, "east": east, "north": north}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid bounds: {e}")
+
+    candidates = search_cities(q, bounds, limit=max(1, min(int(limit), 25)))
+    return {"candidates": [c.to_dict() for c in candidates]}
 
 
 @router.post("/{project_id}/thumbnail")

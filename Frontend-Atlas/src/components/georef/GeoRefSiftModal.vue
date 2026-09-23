@@ -31,14 +31,14 @@
           <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
             Carte du monde (points SIFT)
           </h3>
-          <GeoRefSiftWorldMap
+          <GeoRefWorldMap
             class="h-80 md:h-[28rem]"
             :world-bounds="worldBounds"
-            :keypoints="keypoints"
+            :points="worldPoints"
             :active-index="activeIndex"
             :matched-points="matchedWorldPoints"
             :used-lakes="usedLakes"
-            @select-keypoint="onSelectWorldKeypoint"
+            @select-point="onSelectWorldKeypoint"
           />
         </div>
 
@@ -79,16 +79,17 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import GeoRefSiftWorldMap from "./GeoRefSiftWorldMap.vue";
+import GeoRefWorldMap from "./GeoRefWorldMap.vue";
 import GeoRefImageMap from "./GeoRefImageMap.vue";
 import type {
   WorldBounds,
-  LatLngTuple,
   XYTuple,
   CoastlineKeypoint,
+  ControlPointInput,
   GeorefMatch,
   MatchedWorldPointSummary,
   MatchedImagePoint,
+  WorldMapPoint,
 } from "../../typescript/georef";
 
 const props = withDefaults(
@@ -111,7 +112,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "confirmed", payload: { worldPoints: LatLngTuple[]; imagePoints: XYTuple[] }): void;
+  (e: "confirmed", points: ControlPointInput[]): void;
 }>();
 
 const imageMapRef = ref<InstanceType<typeof GeoRefImageMap> | null>(null);
@@ -147,6 +148,10 @@ const currentWorldKeypoint = computed<CoastlineKeypoint | null>(() => {
   if (activeIndex.value < 0 || activeIndex.value >= props.keypoints.length) return null;
   return props.keypoints[activeIndex.value];
 });
+
+const worldPoints = computed<WorldMapPoint[]>(() =>
+  props.keypoints.map((kp) => ({ lat: kp.geo.lat, lng: kp.geo.lng })),
+);
 
 const matchedWorldPoints = computed<MatchedWorldPointSummary[]>(() =>
   matches.value.map((m) => ({ index: m.index, color: m.color })),
@@ -203,10 +208,13 @@ function onSelectImageMatch(index: number): void {
 function onConfirm(): void {
   if (!canConfirm.value || matches.value.length === 0) return;
 
-  const worldPoints = matches.value.map((m) => m.world);
-  const imagePoints = matches.value.map((m) => m.image);
+  const points: ControlPointInput[] = matches.value.map((m) => ({
+    source: "sift",
+    pixel: { x: m.image[0], y: m.image[1] },
+    geo: { lon: m.world[1], lat: m.world[0] },
+  }));
 
-  emit("confirmed", { worldPoints, imagePoints });
+  emit("confirmed", points);
 }
 
 // Whenever the user clicks on the image, record a match

@@ -16,107 +16,210 @@ site:
   Stage 7 uses a spatially varying lambda(x) field, not a constant.
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 
+from .config import (
+    DEFAULT_GEOREF_CONFIG,
+    GCP_SOURCES,
+    SOURCE_CITY,
+    SOURCE_SIFT,
+    GeorefConfig,
+)
 from .projection import LonLat, XY, lonlat_to_webmercator
 
-# Positional uncertainty in *image pixels*, by where the control point came from.
-# A coastline keypoint's sigma is click precision; a city's is how wrong old maps
-# place cities, which is the premise of the whole project. They differ by an
-# order of magnitude, which is what makes a 1/sigma^2 weighting meaningful
-# rather than decorative (plan section 9).
-DEFAULT_SIGMA_PX_BY_SOURCE: Dict[str, float] = {
-    "sift": 6.0,
-    "manual": 8.0,
-    "city": 40.0,
-}
-FALLBACK_SIGMA_PX = 8.0
 
-GCP_SOURCES = tuple(DEFAULT_SIGMA_PX_BY_SOURCE)
+@dataclass(frozen=True)
+class CityRef:
+    """The gazetteer city a control point was matched to.
 
+    ``geonameid`` is the GeoNames id, stable across GeoNames-derived datasets,
+    which is what tells two spellings of one city ("Quebec", "Kebek") apart
+    from two different cities. ``name`` is the gazetteer's name, so run records
+    and overlays say which city a residual belongs to.
+    """
 
-def sigma_px_for_source(source: Optional[str]) -> float:
-    return DEFAULT_SIGMA_PX_BY_SOURCE.get(source or "", FALLBACK_SIGMA_PX)
+    geonameid: int
+    name: str
+
+    def __post_init__(self) -> None:
+        if isinstance(self.geonameid, bool) or not isinstance(self.geonameid, int):
+            raise ValueError(f"city id must be an integer, got {self.geonameid!r}")
+        if self.geonameid <= 0:
+            raise ValueError(f"city id must be positive, got {self.geonameid}")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("city name must be a non-empty string")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"id": self.geonameid, "name": self.name}
 
 
 @dataclass(frozen=True)
 class ControlPoint:
-    """One user-supplied pixel <-> geo pair, with its provenance.
+    """One pixel <-> geo pair, and where it came from.
 
-    ``sigma_px`` is a per-source constant until Stage 7 actually uses it for
-    weighting; carrying it now costs nothing and saves a migration later.
+    A discriminated union on ``source``: a ``city`` point always carries its
+    ``CityRef`` and a ``sift`` point never has one. Enforced at construction,
+    so no consumer ever handles a city without a name or a keypoint with one.
+
+    Positional uncertainty is deliberately *not* stored here. It is a model
+    setting, looked up from ``GeorefConfig`` by source when fitting
+    (``gcp_sigma_px``), so it can change without rewriting stored clicks.
     """
 
     pixel: XY
     geo: LonLat
-    source: str = "manual"
-    sigma_px: float = FALLBACK_SIGMA_PX
+    source: str
+    city: Optional[CityRef] = None
+
+    def __post_init__(self) -> None:
+        if self.source not in GCP_SOURCES:
+            raise ValueError(
+                f"Unknown control point source {self.source!r};"
+                f" expected one of {list(GCP_SOURCES)}"
+            )
+        if self.source == SOURCE_CITY and not isinstance(self.city, CityRef):
+            raise ValueError("A city control point needs the city it was matched to")
+        if self.source != SOURCE_CITY and self.city is not None:
+            raise ValueError(f"A {self.source} control point cannot carry a city")
+
+        pixel = _finite_pair(self.pixel, "pixel")
+        lon, lat = _finite_pair(self.geo, "geo")
+        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+            raise ValueError(f"geo out of range: lon={lon}, lat={lat}")
+        # Frozen, so normalise to plain float tuples through object.__setattr__.
+        object.__setattr__(self, "pixel", pixel)
+        object.__setattr__(self, "geo", (lon, lat))
 
     @classmethod
-    def make(
+    def sift(cls, pixel: Sequence[float], geo: Sequence[float]) -> "ControlPoint":
+        """A coastline keypoint the user matched on their map. ``geo`` is (lon, lat)."""
+        return cls(pixel=pixel, geo=geo, source=SOURCE_SIFT)
+
+    @classmethod
+    def from_city(
         cls,
         pixel: Sequence[float],
         geo: Sequence[float],
-        source: str = "manual",
-        sigma_px: Optional[float] = None,
+        geonameid: int,
+        name: str,
     ) -> "ControlPoint":
+        """A gazetteer city the user located on their map. ``geo`` is (lon, lat)."""
         return cls(
-            pixel=(float(pixel[0]), float(pixel[1])),
-            geo=(float(geo[0]), float(geo[1])),
-            source=source,
-            sigma_px=(
-                float(sigma_px) if sigma_px is not None else sigma_px_for_source(source)
-            ),
+            pixel=pixel,
+            geo=geo,
+            source=SOURCE_CITY,
+            city=CityRef(geonameid=geonameid, name=name),
         )
 
-    @classmethod
-    def from_pairs(
-        cls,
-        pixel_points: Sequence[Sequence[float]],
-        geo_points_lonlat: Sequence[Sequence[float]],
-        source: str = "sift",
-    ) -> List["ControlPoint"]:
-        """Build records from the two parallel arrays the routes still send.
-
-        Raises:
-            ValueError: on mismatched lengths.
-            TypeError: when given dicts instead of (x, y) tuples.
-        """
-        if pixel_points and isinstance(pixel_points[0], dict):
-            raise TypeError(
-                f"pixel_points contains dicts, expected (x, y) tuples: {pixel_points[0]}"
-            )
-        if geo_points_lonlat and isinstance(geo_points_lonlat[0], dict):
-            raise TypeError(
-                "geo_points_lonlat contains dicts, expected (lon, lat) tuples: "
-                f"{geo_points_lonlat[0]}"
-            )
-        if len(pixel_points) != len(geo_points_lonlat):
-            raise ValueError(
-                f"Mismatch in point counts: {len(pixel_points)} pixel points "
-                f"vs {len(geo_points_lonlat)} geo points"
-            )
-        return [
-            cls.make(px, geo, source=source)
-            for px, geo in zip(pixel_points, geo_points_lonlat)
-        ]
-
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload: Dict[str, Any] = {
+            "source": self.source,
             "pixel": {"x": self.pixel[0], "y": self.pixel[1]},
             "geo": {"lon": self.geo[0], "lat": self.geo[1]},
-            "source": self.source,
-            "sigmaPx": self.sigma_px,
         }
+        if self.city is not None:
+            payload["city"] = self.city.to_dict()
+        return payload
+
+    @classmethod
+    def from_dict(cls, entry: Any) -> "ControlPoint":
+        """Inverse of ``to_dict``. Strict: raises ValueError on anything else.
+
+        The one wire format for control points: the upload routes, the Celery
+        task arguments, dev-test ``config.json`` and ``maps.georef_inputs``.
+        """
+        if not isinstance(entry, dict):
+            raise ValueError(f"control point must be an object, got {entry!r}")
+        pixel = entry.get("pixel")
+        geo = entry.get("geo")
+        if not isinstance(pixel, dict) or not isinstance(geo, dict):
+            raise ValueError("control point needs 'pixel' {x, y} and 'geo' {lon, lat}")
+        try:
+            xy = (pixel["x"], pixel["y"])
+            lonlat = (geo["lon"], geo["lat"])
+        except KeyError as e:
+            raise ValueError(f"control point is missing {e}")
+
+        city = entry.get("city")
+        city_ref = None
+        if city is not None:
+            if not isinstance(city, dict) or "id" not in city or "name" not in city:
+                raise ValueError("control point 'city' must be {id, name}")
+            city_ref = CityRef(geonameid=city["id"], name=city["name"])
+
+        return cls(pixel=xy, geo=lonlat, source=entry.get("source"), city=city_ref)
 
 
-def control_point_weights(control_points: Sequence[ControlPoint]) -> np.ndarray:
-    """``1/sigma^2`` weights. Not yet applied to the fit -- see module docstring."""
+def _finite_pair(value: Any, label: str) -> Tuple[float, float]:
+    try:
+        a, b = value
+        pair = (_as_float(a), _as_float(b))
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be two numbers, got {value!r}")
+    if not all(math.isfinite(v) for v in pair):
+        raise ValueError(f"{label} must be finite, got {value!r}")
+    return pair
+
+
+def _as_float(value: Any) -> float:
+    # bool is an int subclass; a True coordinate is always a caller bug.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"not a number: {value!r}")
+    return float(value)
+
+
+def parse_control_points(entries: Any) -> List[ControlPoint]:
+    """A JSON list of control points, as ``ControlPoint.to_dict`` writes them.
+
+    Raises:
+        ValueError: naming the offending index, on anything malformed.
+    """
+    if not isinstance(entries, list):
+        raise ValueError("control points must be a JSON array")
+    points: List[ControlPoint] = []
+    for i, entry in enumerate(entries):
+        try:
+            points.append(ControlPoint.from_dict(entry))
+        except ValueError as e:
+            raise ValueError(f"control point {i}: {e}")
+    return points
+
+
+def select_control_points(
+    control_points: Sequence[ControlPoint], sources: Sequence[str]
+) -> List[ControlPoint]:
+    """The points whose source is in *sources*, in their original order."""
+    wanted = set(sources)
+    return [cp for cp in control_points if cp.source in wanted]
+
+
+def count_by_source(control_points: Sequence[ControlPoint]) -> Dict[str, int]:
+    """Point count per known source, zeros included, for records and the UI."""
+    counts = {source: 0 for source in GCP_SOURCES}
+    for cp in control_points:
+        counts[cp.source] += 1
+    return counts
+
+
+def gcp_sigma_px(source: str, config: GeorefConfig = DEFAULT_GEOREF_CONFIG) -> float:
+    """Expected positional error, in image pixels, of a point from *source*."""
+    if source == SOURCE_CITY:
+        return float(config.gcp_sigma_px_city)
+    return float(config.gcp_sigma_px_sift)
+
+
+def control_point_weights(
+    control_points: Sequence[ControlPoint],
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
+) -> np.ndarray:
+    """``1/sigma^2`` weights, sigma looked up per source from *config*."""
     sigmas = np.array(
-        [max(float(cp.sigma_px), 1e-6) for cp in control_points], dtype=float
+        [max(gcp_sigma_px(cp.source, config), 1e-6) for cp in control_points],
+        dtype=float,
     )
     return 1.0 / (sigmas**2)
 
@@ -344,11 +447,13 @@ def fit_affine_from_control_points(
     control_points: Sequence[ControlPoint],
     use_sigma_weights: bool = False,
     regularizer: Optional[Regularizer] = None,
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> AffineModel:
     """Fit pixel -> EPSG:3857 from control-point records.
 
-    ``use_sigma_weights`` stays off by default: turning it on changes output,
-    and Step 1 must leave output identical.
+    ``use_sigma_weights`` stays off by default: the baseline treats every
+    point alike, whatever its source. ``config`` supplies the per-source sigma
+    when it is turned on.
     """
     if len(control_points) < 3:
         raise ValueError(
@@ -360,5 +465,7 @@ def fit_affine_from_control_points(
         [lonlat_to_webmercator(lon, lat) for lon, lat in (cp.geo for cp in control_points)],
         dtype=float,
     )
-    weights = control_point_weights(control_points) if use_sigma_weights else None
+    weights = (
+        control_point_weights(control_points, config) if use_sigma_weights else None
+    )
     return AffineModel.fit(src, dst, weights=weights, regularizer=regularizer)

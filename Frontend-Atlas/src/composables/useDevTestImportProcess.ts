@@ -2,9 +2,11 @@
 import { ref, type Ref } from "vue";
 import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
-import type { ImposedColor, WorldBounds } from "../typescript/georef";
-type ImagePoint = { x: number; y: number };
-type WorldPoint = { lat: number; lng: number };
+import type {
+  ControlPointInput,
+  ImposedColor,
+  WorldBounds,
+} from "../typescript/georef";
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
 type StartDevTestImportResult =
   | { success: true }
@@ -37,8 +39,7 @@ export function useDevTestImportProcess() {
     file: File,
     testId: string,
     testCase: string,
-    imagePoints?: ImagePoint[],
-    worldPoints?: WorldPoint[],
+    controlPoints?: ControlPointInput[],
     imposedColors?: ImposedColor[],
     frameBounds?: WorldBounds | null,
   ): Promise<StartDevTestImportResult> => {
@@ -55,11 +56,9 @@ export function useDevTestImportProcess() {
     formData.append("test_id", testId);
     formData.append("test_case", testCase);
 
-    if (imagePoints && imagePoints.length) {
-      formData.append("image_points", JSON.stringify(imagePoints));
-    }
-    if (worldPoints && worldPoints.length) {
-      formData.append("world_points", JSON.stringify(worldPoints));
+    // SIFT and city control points, stored in the case config with their source
+    if (controlPoints && controlPoints.length) {
+      formData.append("control_points", JSON.stringify(controlPoints));
     }
     // The framing box is persisted into the case config, so a case re-runs with
     // the same working extent.

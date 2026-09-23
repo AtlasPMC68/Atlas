@@ -45,6 +45,13 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  // Control points of the last run: [{ lat, lng, predictedLat, predictedLng,
+  // source, label }]. Drawn at their true position, with a line to where the
+  // fitted transform put the clicked pixel -- the residual, on the map.
+  controlPointMarkers: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(["features-loaded", "zone-click", "create-updated"]);
@@ -67,6 +74,52 @@ let frontierStartRef = null; // { lineIdx, ptIdx, latlng }
 let geoBorderLines = [];
 let geoRegionsLayer = null;
 let subzoneLayerGroup = null;
+let controlPointLayerGroup = null;
+
+const CONTROL_POINT_COLORS = { sift: "#ca8a04", city: "#c026d3" };
+
+function renderControlPoints(points) {
+  if (!map || !controlPointLayerGroup) return;
+  controlPointLayerGroup.clearLayers();
+
+  toArray(points).forEach((p) => {
+    const color = CONTROL_POINT_COLORS[p.source] || "#333";
+    const hasPrediction =
+      Number.isFinite(p.predictedLat) && Number.isFinite(p.predictedLng);
+    if (hasPrediction) {
+      controlPointLayerGroup.addLayer(
+        L.polyline(
+          [
+            [p.lat, p.lng],
+            [p.predictedLat, p.predictedLng],
+          ],
+          { color, weight: 2, dashArray: "4 3", interactive: false },
+        ),
+      );
+      controlPointLayerGroup.addLayer(
+        L.circleMarker([p.predictedLat, p.predictedLng], {
+          radius: 3,
+          color,
+          weight: 1,
+          fillColor: "#fff",
+          fillOpacity: 1,
+          interactive: false,
+        }),
+      );
+    }
+    const marker = L.circleMarker([p.lat, p.lng], {
+      radius: 6,
+      color: "#111",
+      weight: 1,
+      fillColor: color,
+      fillOpacity: 0.9,
+    });
+    if (p.label) {
+      marker.bindTooltip(p.label, { direction: "top", offset: [0, -6] });
+    }
+    controlPointLayerGroup.addLayer(marker);
+  });
+}
 
 const featureLayerManager = {
   layers: new Map(),
@@ -533,8 +586,10 @@ onMounted(() => {
   ).addTo(map);
 
   subzoneLayerGroup = L.layerGroup().addTo(map);
+  controlPointLayerGroup = L.layerGroup().addTo(map);
 
   renderAllFeatures();
+  renderControlPoints(props.controlPointMarkers);
 
   map.on("mousedown", handleMouseDown);
   map.on("mousemove", handleMouseMove);
@@ -597,6 +652,7 @@ onBeforeUnmount(() => {
   createPolygonLayer = null;
   geoRegionsLayer = null;
   subzoneLayerGroup = null;
+  controlPointLayerGroup = null;
 });
 
 watch(
@@ -661,6 +717,14 @@ watch(
   () => props.subGeometries,
   (geoms) => {
     renderSubzones(geoms);
+  },
+  { deep: true },
+);
+
+watch(
+  () => props.controlPointMarkers,
+  (points) => {
+    renderControlPoints(points);
   },
   { deep: true },
 );

@@ -14,12 +14,19 @@ import math
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "7"
+CONFIG_VERSION = "8"
 
 #: The transform models a run may choose between, in increasing order of
 #: freedom. Adding one here is not enough: ``pipeline`` has to know how to
 #: build it, and a test holds the two lists together.
 TRANSFORM_MODELS = ("affine", "piecewise_affine")
+
+#: Where a control point came from. ``sift``: the user matched a suggested
+#: coastline keypoint to their map. ``city``: the user named a city their map
+#: shows, picked it from the gazetteer, and clicked where the map draws it.
+SOURCE_SIFT = "sift"
+SOURCE_CITY = "city"
+GCP_SOURCES = (SOURCE_SIFT, SOURCE_CITY)
 
 
 @dataclass(frozen=True)
@@ -27,6 +34,26 @@ class GeorefConfig:
     """All georeferencing hyperparameters, in one place."""
 
     version: str = CONFIG_VERSION
+
+    # --- Control points ------------------------------------------------------
+    # Which sources a run fits from. All of them by default; the dev tool
+    # unticks one to see what the other carries on its own, from the same
+    # clicks. Applied once, where the task reads the points, so the baseline,
+    # the alignment, the gates and the piecewise correction all see one set.
+    gcp_sources: tuple = GCP_SOURCES
+    # Expected positional error per source, in image pixels. Only the ratio
+    # matters: the alignment GCP term weights each point by (median/sigma)^2,
+    # and the GCP-only baseline is unweighted. Equal on purpose -- a SIFT point
+    # is a user matching an abstract coastline shape, a city is a named dot the
+    # map may place wrongly, and which is noisier is for residuals to say, not
+    # for a constant to assume. Kept per source so it can be set from them.
+    #
+    # Before making these differ: the GCP term is normalised by point count
+    # and median sigma, so its total strength against the coastline term would
+    # then shift with the mix of sources. Normalise by the sum of the weights
+    # instead at the same time (identical while the sigmas are equal).
+    gcp_sigma_px_sift: float = 6.0
+    gcp_sigma_px_city: float = 6.0
 
     # --- Coastline snapping (current §7) -------------------------------------
     # Kept as-is for now. Roadmap §4.3 turns this off once chamfer alignment
@@ -241,6 +268,10 @@ def parse_run_switches(raw: Any) -> Dict[str, bool]:
 #: would notice.
 FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     (
+        "Control points",
+        ("gcp_sources", "gcp_sigma_px_sift", "gcp_sigma_px_city"),
+    ),
+    (
         "Coastline snapping",
         (
             "snap_to_coastline",
@@ -352,6 +383,12 @@ FIELD_CHOICES: Dict[str, Tuple[str, ...]] = {
     "transform_model": TRANSFORM_MODELS,
 }
 
+#: Fields holding a non-empty subset of a fixed list, offered as checkboxes.
+#: Stored in the list's own order, so the same subset always compares equal.
+FIELD_MULTI_CHOICES: Dict[str, Tuple[str, ...]] = {
+    "gcp_sources": GCP_SOURCES,
+}
+
 
 def _coerce_field(key: str, value: Any, default: Any) -> Any:
     """Coerce one override to the type of *default*, or raise ValueError.
@@ -390,6 +427,20 @@ def _coerce_field(key: str, value: Any, default: Any) -> Any:
 
     if isinstance(default, float):
         return _number(value)
+
+    multi = FIELD_MULTI_CHOICES.get(key)
+    if multi is not None:
+        if (
+            not isinstance(value, (list, tuple))
+            or not value
+            or not all(isinstance(v, str) and v in multi for v in value)
+            or len(set(value)) != len(value)
+        ):
+            raise ValueError(
+                f"{key} must be a non-empty list of distinct values from"
+                f" {list(multi)}, got {value!r}"
+            )
+        return tuple(v for v in multi if v in value)
 
     if isinstance(default, tuple):
         # JSON has no tuple, so a schedule arrives as a list. Length is free:
@@ -440,4 +491,7 @@ def describe_config(ambient: GeorefConfig) -> Dict[str, Any]:
         "groups": [{"title": title, "fields": list(names)} for title, names in FIELD_GROUPS],
         "switches": sorted(RUN_SWITCHES),
         "choices": {field: list(options) for field, options in FIELD_CHOICES.items()},
+        "multiChoices": {
+            field: list(options) for field, options in FIELD_MULTI_CHOICES.items()
+        },
     }

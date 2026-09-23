@@ -32,7 +32,11 @@ from app.utils.dev_test_cases import (
     normalize_kind,
     resolve_case_kind,
 )
-from app.utils.georeferencing import frame_bounds_to_config_entry, parse_frame_bounds
+from app.utils.georeferencing import (
+    frame_bounds_to_config_entry,
+    parse_control_points_field,
+    parse_frame_bounds,
+)
 from app.utils.georeferencing.config import describe_config, parse_config_overrides
 from app.utils.imposed_colors import (
     KIND_WATER,
@@ -66,8 +70,7 @@ def _safe_id(value: str, label: str = "id") -> str:
 async def upload_dev_test_map(
     test_id: str = Form(...),
     test_case: str = Form(...),
-    image_points: str | None = Form(None),
-    world_points: str | None = Form(None),
+    control_points: str | None = Form(None),
     frame_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
     kind: str | None = Form(None),
@@ -85,25 +88,12 @@ async def upload_dev_test_map(
             detail=f"File type not supported. Allowed: {', '.join(_ALLOWED_EXTENSIONS)}",
         )
 
-    pixel_points_list = None
-    geo_points_list = None
-
-    if image_points and world_points:
-        try:
-            img_pts = json.loads(image_points)
-            world_pts = json.loads(world_points)
-            if not isinstance(img_pts, list) or not isinstance(world_pts, list):
-                raise ValueError("image_points and world_points must be JSON arrays")
-            if len(img_pts) != len(world_pts):
-                raise ValueError(
-                    "image_points and world_points must have the same length"
-                )
-            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
-            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid georeferencing payload: {e}"
-            )
+    try:
+        points = parse_control_points_field(control_points)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid control_points payload: {e}"
+        )
 
     try:
         frame_bounds_dict = parse_frame_bounds(frame_bounds)
@@ -161,12 +151,7 @@ async def upload_dev_test_map(
         test_case_id=safe_test_case,
         test_case_name=test_case,
         original_filename=file.filename,
-        img_pts=[{"x": float(p[0]), "y": float(p[1])} for p in pixel_points_list]
-        if pixel_points_list
-        else None,
-        world_pts=[{"lng": float(p[0]), "lat": float(p[1])} for p in geo_points_list]
-        if geo_points_list
-        else None,
+        control_points=points,
         imposed_colors=imposed_colors_to_config_entries(
             all_click_positions,
             all_colors_names,
@@ -185,8 +170,7 @@ async def upload_dev_test_map(
             file_content=file_content,
             test_id=safe_test_id,
             test_case=safe_test_case,
-            pixel_points=pixel_points_list,
-            geo_points_lonlat=geo_points_list,
+            control_points=[cp.to_dict() for cp in points],
             imposed_click_positions=imposed_click_positions,
             imposed_colors_names=imposed_colors_names,
             imposed_sampling_radii=imposed_sampling_radii,

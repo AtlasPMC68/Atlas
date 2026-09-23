@@ -125,7 +125,7 @@ def align(
 
     Args:
         baseline: the Stage 2 GCP-only affine. Also the floor we fall back to.
-        control_points: the user's GCPs, with source and sigma.
+        control_points: the user's GCPs, with their source.
         layers: `ReferenceLayers` for the framing box.
         evidence: `UserEvidence` for the map image.
         record: optional run record, populated in place.

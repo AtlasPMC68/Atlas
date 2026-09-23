@@ -329,8 +329,13 @@ def test_task_kwargs_match_the_task_signature(tmp_path, monkeypatch):
                 "testCaseId": case_id,
                 "filename": f"{test_id}.jpg",
                 "georef": {
-                    "imagePoints": [{"x": 1.0, "y": 2.0}],
-                    "worldPoints": [{"lng": -70.0, "lat": 50.0}],
+                    "controlPoints": [
+                        {
+                            "source": "sift",
+                            "pixel": {"x": 1.0, "y": 2.0},
+                            "geo": {"lon": -70.0, "lat": 50.0},
+                        }
+                    ],
                     "frameBounds": {
                         "west": -80.0,
                         "south": 40.0,
@@ -576,3 +581,143 @@ def test_non_ambient_run_does_not_win_best(tmp_path, monkeypatch):
     with open(paths.best_report_path, "r", encoding="utf-8") as f:
         best = json.load(f)
     assert best["metrics"]["scoreUsed"] == 0.99
+
+
+# --- control point sources --------------------------------------------------
+
+
+def test_gcp_sources_override_is_a_subset_in_canonical_order():
+    from app.utils.georeferencing.config import parse_config_overrides
+
+    assert parse_config_overrides({"gcp_sources": ["city"]}) == {
+        "gcp_sources": ("city",)
+    }
+    # Order-insensitive, so the same selection always compares equal to the
+    # ambient value and a re-ticked "both" stays a promotable run.
+    assert parse_config_overrides({"gcp_sources": ["city", "sift"]}) == {
+        "gcp_sources": ("sift", "city")
+    }
+    for bad in ([], ["manual"], ["sift", "sift"], "sift", [1], None):
+        with pytest.raises(ValueError):
+            parse_config_overrides({"gcp_sources": bad})
+
+
+def test_describe_config_offers_the_sources_as_checkboxes():
+    from app.utils.georeferencing.config import GCP_SOURCES, describe_config
+
+    described = describe_config(DEFAULT_GEOREF_CONFIG)
+    assert described["multiChoices"]["gcp_sources"] == list(GCP_SOURCES)
+    assert described["values"]["gcp_sources"] == GCP_SOURCES
+
+
+def _case_inputs(n_sift: int, n_city: int):
+    from types import SimpleNamespace
+
+    from app.utils.georeferencing import ControlPoint
+
+    points = [ControlPoint.sift((i, i), (-70.0, 45.0 + i)) for i in range(n_sift)]
+    points += [
+        ControlPoint.from_city((50 + i, i), (-71.0, 46.0 + i), 100 + i, f"City {i}")
+        for i in range(n_city)
+    ]
+    return SimpleNamespace(
+        control_points=points,
+        frame_bounds={"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0},
+        imposed_click_positions=[(0.5, 0.5)],
+        water_click_positions=None,
+    )
+
+
+def _state(inputs, sources):
+    from app.utils.dev_test_cases import build_case_state
+
+    return build_case_state(
+        test_id="no-such-map",
+        test_case_id="case",
+        inputs=inputs,
+        image_path="unused.png",
+        config=DEFAULT_GEOREF_CONFIG.with_overrides(gcp_sources=sources),
+        case_config={},
+        kind=KIND_PROBE,
+    )
+
+
+def _status(state, key):
+    return next(s.status for s in state.requirements.states if s.key == key)
+
+
+def test_control_points_are_counted_over_the_selected_sources_only():
+    """7 SIFT points and 2 cities: SIFT-only and both run, cities-only cannot."""
+    inputs = _case_inputs(n_sift=7, n_city=2)
+
+    assert _state(inputs, ("sift", "city")).runnable
+    assert _state(inputs, ("sift",)).runnable
+
+    cities_only = _state(inputs, ("city",))
+    assert not cities_only.runnable
+    assert _status(cities_only, "controlPoints") is RequirementStatus.BLOCKED
+    assert "2 point(s) from city" in next(
+        s.detail for s in cities_only.requirements.states if s.key == "controlPoints"
+    )
+
+
+def test_cities_are_optional_and_reported():
+    without = _state(_case_inputs(n_sift=4, n_city=0), ("sift", "city"))
+    assert without.runnable
+    assert _status(without, "cityControlPoints") is RequirementStatus.ABSENT
+
+    with_cities = _state(_case_inputs(n_sift=4, n_city=3), ("sift", "city"))
+    assert _status(with_cities, "cityControlPoints") is RequirementStatus.SATISFIED
+    assert with_cities.to_dict()["controlPointsBySource"] == {"sift": 4, "city": 3}
+
+
+def test_a_rerun_with_too_few_points_for_its_sources_is_refused_before_dispatch(
+    tmp_path, monkeypatch
+):
+    """"Cities only" on a case without cities is a 400 naming the reason, not a
+    task that fails in the worker log."""
+    import app.utils.dev_test as dev_test
+    from app.tasks import process_dev_test_extraction
+
+    test_id, case_id = "sources-check", "case"
+    maps_dir = tmp_path / "maps"
+    maps_dir.mkdir()
+    (maps_dir / f"{test_id}.jpg").write_bytes(b"never decoded")
+    monkeypatch.setattr(dev_test, "MAPS_DIR", str(maps_dir))
+
+    assets_root = tmp_path / "assets"
+    case_dir = assets_root / "test_cases" / test_id / case_id
+    case_dir.mkdir(parents=True)
+    sift = [
+        {"source": "sift", "pixel": {"x": float(i), "y": 2.0 * i},
+         "geo": {"lon": -70.0 + i, "lat": 50.0}}
+        for i in range(4)
+    ]
+    (case_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "filename": f"{test_id}.jpg",
+                "georef": {
+                    "controlPoints": sift,
+                    "frameBounds": {"west": -80.0, "south": 40.0, "east": -60.0,
+                                    "north": 60.0},
+                },
+                "colors": {"imposed": [{"x": 0.5, "y": 0.5, "name": "Zone",
+                                        "radius": 20, "kind": "zone"}]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def _no_dispatch(**_kwargs):
+        raise AssertionError("the task must not be dispatched")
+
+    monkeypatch.setattr(process_dev_test_extraction, "delay", _no_dispatch)
+
+    with pytest.raises(ValueError, match="controlPoints: 0 point"):
+        dev_test._start_extraction_for_case(
+            assets_root=str(assets_root),
+            test_id=test_id,
+            test_case_id=case_id,
+            config_overrides={"gcp_sources": ("city",)},
+        )

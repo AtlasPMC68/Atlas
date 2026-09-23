@@ -60,11 +60,7 @@ def _control_points(offsets=None):
     for i, (x, y) in enumerate(pixels):
         dx, dy = (offsets or {}).get(i, (0.0, 0.0))
         X, Y = _target_3857(x, y, dx, dy)
-        points.append(
-            ControlPoint.make(
-                pixel=(x, y), geo=webmercator_to_lonlat(X, Y), source="sift"
-            )
-        )
+        points.append(ControlPoint.sift((x, y), webmercator_to_lonlat(X, Y)))
     return points
 
 
@@ -101,25 +97,21 @@ class TestInterpolationAndFallback:
         )
         assert float(model.corrections_3857.max()) < 1e-3
 
-    def test_a_city_point_shapes_the_affine_but_does_not_pin_the_correction(self):
-        """Interpolating exactly through a city would import the map's own
-        error at that city into its whole neighbourhood."""
+    def test_a_city_point_pins_the_correction_like_any_other(self):
+        """Cities are trusted as much as SIFT points, so the correction passes
+        through them exactly too."""
         cps = _control_points()
-        # A city the map draws 30 km east and 20 km north of where it is.
+        # A city 30 px-equivalents east and 20 north of where the affine puts it.
         city_target = _target_3857(250.0, 250.0, 30.0, -20.0)
         cps.append(
-            ControlPoint.make(
-                pixel=(250.0, 250.0),
-                geo=webmercator_to_lonlat(*city_target),
-                source="city",
+            ControlPoint.from_city(
+                (250.0, 250.0), webmercator_to_lonlat(*city_target), 6325494, "Québec"
             )
         )
         model = fit_piecewise_from_control_points(cps, extent=IMAGE)
 
-        assert model.n_local_points == 6
         X, Y = model(250.0, 250.0)
-        # Not pinned to the city's own (wrong) position.
-        assert np.hypot(X - city_target[0], Y - city_target[1]) > 5_000.0
+        assert np.allclose([X, Y], city_target, atol=1e-6)
 
 
 class TestContinuity:
@@ -166,12 +158,8 @@ class TestRefusals:
         the mapping stops being one-to-one and the inverse is ambiguous."""
         cps = _control_points()
         swapped = list(cps)
-        swapped[2] = ControlPoint.make(
-            pixel=cps[2].pixel, geo=cps[4].geo, source="sift"
-        )
-        swapped[4] = ControlPoint.make(
-            pixel=cps[4].pixel, geo=cps[2].geo, source="sift"
-        )
+        swapped[2] = ControlPoint.sift(cps[2].pixel, cps[4].geo)
+        swapped[4] = ControlPoint.sift(cps[4].pixel, cps[2].geo)
         with pytest.raises(ValueError, match="fold the map"):
             fit_piecewise_from_control_points(swapped, extent=IMAGE)
 
@@ -327,3 +315,41 @@ class TestPipelineIntegration:
         residuals = payload["errors"]["gcpResiduals3857"]
         assert len(residuals) == len(cps)
         assert all(r is None or isinstance(r, float) for r in residuals)
+
+    def test_the_record_breaks_the_error_down_by_source(self):
+        """Which source is noisier is measured, not assumed: the record keeps a
+        count and an error per source."""
+        cps = _control_points({1: (15.0, 10.0)})
+        city_target = _target_3857(250.0, 250.0, 8.0, -5.0)
+        cps.append(
+            ControlPoint.from_city(
+                (250.0, 250.0), webmercator_to_lonlat(*city_target), 6325494, "Québec"
+            )
+        )
+        result = georeference_features([self._zone()], cps, config=self._config())
+
+        record = result.record.to_dict()
+        assert record["inputs"]["controlPointsBySource"] == {"sift": 6, "city": 1}
+        by_source = record["errors"]["gcpRmseKmBySource"]
+        assert set(by_source) == {"sift", "city"}
+        assert all(v is not None and v > 0 for v in by_source.values())
+        assert record["inputs"]["controlPoints"][-1]["city"]["name"] == "Québec"
+
+    def test_the_record_says_where_each_point_landed(self):
+        cps = _control_points({1: (15.0, 10.0)})
+        result = georeference_features([self._zone()], cps, config=self._config())
+
+        predicted = result.record.to_dict()["errors"]["gcpPredictedLonLat"]
+        assert len(predicted) == len(cps)
+        for cp, (lon, lat) in zip(cps, predicted):
+            X, Y = result.model(cp.pixel[0], cp.pixel[1])
+            assert np.allclose(lonlat_to_webmercator(lon, lat), [X, Y], atol=1e-3)
+
+    def test_an_exact_three_point_fit_reports_no_error_per_source(self):
+        """Three points fit an affine exactly: 0 km would be a false zero."""
+        cps = _control_points({1: (15.0, 10.0)})[:3]
+        result = georeference_features([self._zone()], cps, config=self._config())
+
+        errors = result.record.to_dict()["errors"]
+        assert errors["gcpRmseKm"] is None
+        assert errors["gcpRmseKmBySource"] == {"sift": None, "city": None}

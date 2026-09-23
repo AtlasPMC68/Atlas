@@ -41,7 +41,12 @@ from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 # stored state was checked under an older version is re-checked, never trusted.
 #   1  controlPoints, frameBounds (degraded), zonePicks, waterPicks, textRegions
 #   2  frameBounds promoted to required; the degraded level removed entirely
-REQUIREMENTS_VERSION = "2"
+#   3  controlPoints counts only the sources the run uses (at least 3);
+#      cityControlPoints added, optional
+REQUIREMENTS_VERSION = "3"
+
+#: An affine has six unknowns and each point gives two equations.
+MIN_CONTROL_POINTS = 3
 
 
 class RequirementKind(str, Enum):
@@ -112,10 +117,26 @@ _CONTROL_POINTS = Requirement(
     kind=RequirementKind.USER_INPUT,
     level=RequirementLevel.REQUIRED,
     since_step="0",
-    summary="Pixel <-> lon/lat pairs clicked by the user.",
+    summary=(
+        "Pixel <-> lon/lat pairs clicked by the user, at least"
+        f" {MIN_CONTROL_POINTS} among the sources this run uses."
+    ),
     remedy=(
-        "Recreate the case: the control points come from a human matching"
-        " keypoints to the map and cannot be recovered from anything on disk."
+        "If the case has enough points from another source, select it. Otherwise"
+        " recreate the case: the control points come from a human matching"
+        " keypoints and cities to the map and cannot be recovered from disk."
+    ),
+)
+
+_CITY_CONTROL_POINTS = Requirement(
+    key="cityControlPoints",
+    kind=RequirementKind.USER_INPUT,
+    level=RequirementLevel.OPTIONAL,
+    since_step="5",
+    summary="Cities the user named and located on the map.",
+    remedy=(
+        "Optional: a map may show no city the gazetteer knows. Recreate the case"
+        " and name the cities on the map to compare SIFT, cities and both."
     ),
 )
 
@@ -189,7 +210,12 @@ def georef_requirements(
     """
     cfg = config or DEFAULT_GEOREF_CONFIG
 
-    reqs: List[Requirement] = [_CONTROL_POINTS, _FRAME_BOUNDS, _ZONE_PICKS]
+    reqs: List[Requirement] = [
+        _CONTROL_POINTS,
+        _CITY_CONTROL_POINTS,
+        _FRAME_BOUNDS,
+        _ZONE_PICKS,
+    ]
     if cfg.enable_curve_alignment:
         reqs.append(_TEXT_REGIONS)
         reqs.append(_WATER_PICKS)
@@ -286,7 +312,7 @@ class RequirementsReport:
     def lines(self) -> List[str]:
         """One human-readable line per requirement, for the dev loop."""
         return [
-            "%-9s %-16s %s"
+            "%-9s %-18s %s"
             % (
                 _STATUS_MARKERS[state.status],
                 state.key,
