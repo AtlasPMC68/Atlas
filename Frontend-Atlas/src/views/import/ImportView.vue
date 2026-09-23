@@ -114,23 +114,6 @@
                 </div>
               </label>
 
-              <!-- Shapes Extraction -->
-              <label
-                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
-              >
-                <input
-                  type="checkbox"
-                  v-model="enableShapesExtraction"
-                  class="checkbox checkbox-sm checkbox-primary"
-                />
-                <div class="flex-1">
-                  <div class="font-medium text-sm">Extraction des formes</div>
-                  <div class="text-xs text-base-content/60">
-                    Détecter les formes géométriques (cercles, rectangles, etc.)
-                  </div>
-                </div>
-              </label>
-
               <!-- Text Extraction -->
               <label
                 class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
@@ -338,7 +321,6 @@ const isRedirecting = ref<boolean>(false);
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
 const enableColorExtraction = ref<boolean>(true);
-const enableShapesExtraction = ref<boolean>(false);
 const enableTextExtraction = ref<boolean>(false);
 
 // Event handlers
@@ -370,7 +352,6 @@ async function startImportProcess() {
     // and disable other extraction options.
     enableGeoreferencing.value = true;
     enableColorExtraction.value = true;
-    enableShapesExtraction.value = false;
     enableTextExtraction.value = false;
   }
   
@@ -399,7 +380,6 @@ async function startImportProcess() {
       {
         enableGeoreferencing: false,
         enableColorExtraction: enableColorExtraction.value,
-        enableShapesExtraction: enableShapesExtraction.value,
         enableTextExtraction: enableTextExtraction.value,
       },
     );
@@ -523,7 +503,6 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
     {
       enableGeoreferencing: Boolean(payload),
       enableColorExtraction: enableColorExtraction.value,
-      enableShapesExtraction: enableShapesExtraction.value || pickedShapes.value.length > 0,
       enableTextExtraction: enableTextExtraction.value,
       imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
       imposedShapes: pickedShapes.value.length > 0 ? pickedShapes.value : undefined,
@@ -571,11 +550,16 @@ async function handleLegendSkip() {
 async function handleLegendConfirmed(bounds: LegendBounds) {
   showLegendPickerModal.value = false;
   legendBounds.value = bounds;
-  // If the user provided a legend area, we use that as the imposed source and
-  // skip the color picker step.
-  pickedColors.value = [];
   pendingLegendBounds.value = bounds;
-  await submitImportWithGeoref(bounds);
+  
+  if (enableColorExtraction.value) {
+    currentStep.value = 6;
+    showColorPickerModal.value = true;
+    return;
+  }
+  // No color extraction — go straight to shape picker
+  currentStep.value = 7;
+  showShapePickerModal.value = true;
 }
 
 async function resolveProjectIdFromMapId(id: string): Promise<string | null> {

@@ -9,7 +9,6 @@ type WorldPoint = { lat: number; lng: number };
 type ExtractionOptions = {
   enableGeoreferencing?: boolean;
   enableColorExtraction?: boolean;
-  enableShapesExtraction?: boolean;
   enableTextExtraction?: boolean;
   imposedColors?: { x: number; y: number; name: string; radius: number }[];
   imposedShapes?: { x: number; y: number; name: string }[];
@@ -93,10 +92,6 @@ export function useImportProcess() {
       formData.append(
         "enable_color_extraction",
         String(options.enableColorExtraction ?? true),
-      );
-      formData.append(
-        "enable_shapes_extraction",
-        String(options.enableShapesExtraction ?? false),
       );
       formData.append(
         "enable_text_extraction",

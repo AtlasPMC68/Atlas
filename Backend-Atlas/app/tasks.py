@@ -62,7 +62,6 @@ def process_map_extraction(
     geo_points_lonlat: list | None = None,
     legend_bounds: dict | None = None,
     enable_color_extraction: bool = True,
-    enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
     imposed_click_positions: list | None = None,
     imposed_colors_names: list | None = None,
@@ -229,48 +228,9 @@ def process_map_extraction(
                     exc_info=True,
                 )
 
-        elif enable_shapes_extraction:
-            self.update_state(
-                state="PROGRESS",
-                meta={
-                    "current": 4,
-                    "total": nb_task,
-                    "status": "Extracting shapes from image",
-                },
-            )
-            time.sleep(2)
-            shapes_result = extract_shapes(
-                tmp_file_path,
-                text_regions=text_regions,
-                legend_bounds=legend_bounds,
-            )
-            shape_normalized_features = shapes_result["normalized_features"]
-            shape_pixel_features = shapes_result.get("pixel_features", [])
-
-            # Georeference pixel-space shape features if SIFT point pairs are provided
-            if pixel_points and geo_points_lonlat:
-                try:
-                    georef_shape_features = georeference_features_with_sift_points(
-                        shape_pixel_features, 
-                        pixel_points, 
-                        geo_points_lonlat,
-                        snap_to_coastline=False,
-                        clip_to_land_mask=False,
-                    )
-                    asyncio.run(
-                        persist_features(project_id, map_id, georef_shape_features)
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"SIFT georeferencing step failed for shapes {map_id}: {e}",
-                        exc_info=True,
-                    )
-            elif shape_normalized_features:
-                asyncio.run(
-                    persist_features(project_id, map_id, shape_normalized_features)
-                )
         else:
-            logger.info("[DEBUG] Shapes extraction disabled - skipping")
+            logger.info("[DEBUG] No shape click positions — skipping shapes extraction")
+
 
         # Step 5: Color Extraction (conditionally enabled)
         if enable_color_extraction:
@@ -282,10 +242,6 @@ def process_map_extraction(
                     "status": "Extracting colors from image",
                 },
             )
-
-            legends_shapes = [
-                s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)
-            ]
 
             imposed_click_positions_tuples = (
                 [tuple(c) for c in imposed_click_positions]
@@ -299,31 +255,7 @@ def process_map_extraction(
                 else None
             )
 
-            # If the frontend provided a legend box but shapes extraction was disabled,
-            # we still need legend shapes to perform legend-based color extraction.
-            if (
-                not imposed_click_positions_tuples
-                and not legends_shapes
-                and legend_bounds is not None
-            ):
-                try:
-                    legend_shapes_result = extract_shapes(
-                        tmp_file_path,
-                        text_regions=text_regions,
-                        legend_bounds=legend_bounds,
-                    )
-                    legends_shapes = [
-                        s
-                        for s in legend_shapes_result.get("shapes", [])
-                        if s.get("isLegend", False)
-                    ]
-                except Exception as e:
-                    logger.error(
-                        f"Legend-only shapes extraction failed for map {map_id}: {e}",
-                        exc_info=True,
-                    )
-
-            if not imposed_click_positions_tuples and not legends_shapes:
+            if not imposed_click_positions_tuples:
                 logger.info(
                     "[DEBUG] Color extraction skipped - no imposed colors provided"
                 )
@@ -336,7 +268,7 @@ def process_map_extraction(
                 color_result = extract_colors(
                     tmp_file_path,
                     debug=False,
-                    legend_shapes=legends_shapes if legends_shapes else None,
+                    legend_bounds=legend_bounds,
                     imposed_click_positions=imposed_click_positions_tuples,
                     imposed_colors_names=imposed_colors_names,
                     imposed_sampling_radii=imposed_sampling_radii_ints,
@@ -415,7 +347,7 @@ def process_map_extraction(
         result = {
             "filename": filename,
             "output_path": output_path if enable_text_extraction else "",
-            "shapes_result": shapes_result if enable_shapes_extraction else {},
+            "shapes_result": shapes_result,
             "color_result": color_result
             if enable_color_extraction
             else {"colors_detected": 0},
@@ -423,7 +355,7 @@ def process_map_extraction(
             "extractions_performed": {
                 "georeferencing": bool(pixel_points and geo_points_lonlat),
                 "color_extraction": enable_color_extraction,
-                "shapes_extraction": enable_shapes_extraction,
+                "shapes_extraction": bool(imposed_shape_click_positions),
                 "text_extraction": enable_text_extraction,
             },
         }
