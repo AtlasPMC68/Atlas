@@ -117,5 +117,21 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
     )
     assert 0.0 <= score_used <= 1.0
 
+    georef_accuracy = report.get("georefAccuracy")
+    if isinstance(georef_accuracy, dict):
+        checkpoint_count = int(georef_accuracy.get("checkpointCount", 0))
+        assert checkpoint_count > 0
+        assert len(georef_accuracy.get("checkPoints") or []) == checkpoint_count
+
+        rmse = float(georef_accuracy["rmseMeters"])
+        median = float(georef_accuracy["medianMeters"])
+        p95 = float(georef_accuracy["p95Meters"])
+        maximum = float(georef_accuracy["maxMeters"])
+
+        assert rmse >= 0.0
+        assert median >= 0.0
+        assert p95 >= median
+        assert maximum >= p95
+
     if MIN_IOU is not None:
         assert score_used >= MIN_IOU

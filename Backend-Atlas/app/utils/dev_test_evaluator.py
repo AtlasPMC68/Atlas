@@ -2,9 +2,11 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
+import numpy as np
+from pyproj import Geod
 from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
@@ -37,6 +39,110 @@ def _load_json(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Invalid JSON root in {path}")
     return data
+
+
+_WGS84_GEOD = Geod(ellps="WGS84")
+
+
+def evaluate_georef_check_points_from_config(config_path: str) -> dict[str, Any] | None:
+    """Evaluate independent image/world check points from one test config.
+
+    Control points under ``imagePoints`` / ``worldPoints`` build the affine
+    transform. ``checkPoints`` are never used to fit that transform; they only
+    measure how well it generalizes to other locations on the map.
+    """
+    if not os.path.exists(config_path):
+        return None
+
+    config = _load_json(config_path)
+    georef = config.get("georef")
+    if not isinstance(georef, dict):
+        return None
+
+    image_points = georef.get("imagePoints")
+    world_points = georef.get("worldPoints")
+    check_points = georef.get("checkPoints")
+
+    if not isinstance(check_points, list) or not check_points:
+        return None
+    if not isinstance(image_points, list) or not isinstance(world_points, list):
+        raise ValueError("checkPoints require georef.imagePoints and georef.worldPoints")
+    if len(image_points) != len(world_points):
+        raise ValueError("georef.imagePoints and georef.worldPoints must have the same length")
+
+    try:
+        pixel_points = [
+            (float(point["x"]), float(point["y"])) for point in image_points
+        ]
+        geo_points = [
+            (float(point["lng"]), float(point["lat"])) for point in world_points
+        ]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid control points in config: {exc}") from exc
+
+    from app.utils.georeferencingSift import (
+        build_affine_transformation,
+        transform_pixel_point_to_lonlat,
+    )
+
+    affine = build_affine_transformation(pixel_points, geo_points)
+
+    evaluated_points: list[dict[str, Any]] = []
+    errors_m: list[float] = []
+
+    for index, point in enumerate(check_points):
+        if not isinstance(point, dict):
+            raise ValueError(f"Invalid check point #{index}: expected object")
+
+        image_point = point.get("image")
+        world_point = point.get("world")
+        if not isinstance(image_point, dict) or not isinstance(world_point, dict):
+            raise ValueError(
+                f"Invalid check point #{index}: expected image and world objects"
+            )
+
+        try:
+            x = float(image_point["x"])
+            y = float(image_point["y"])
+            expected_lon = float(world_point["lng"])
+            expected_lat = float(world_point["lat"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid check point #{index}: {exc}") from exc
+
+        predicted_lon, predicted_lat = transform_pixel_point_to_lonlat(affine, x, y)
+        _az12, _az21, distance_m = _WGS84_GEOD.inv(
+            expected_lon,
+            expected_lat,
+            predicted_lon,
+            predicted_lat,
+        )
+        distance_m = abs(float(distance_m))
+        errors_m.append(distance_m)
+
+        name = point.get("name")
+        evaluated_points.append(
+            {
+                "name": name if isinstance(name, str) and name.strip() else f"check-{index + 1}",
+                "image": {"x": x, "y": y},
+                "expected": {"lng": expected_lon, "lat": expected_lat},
+                "predicted": {
+                    "lng": float(predicted_lon),
+                    "lat": float(predicted_lat),
+                },
+                "errorMeters": distance_m,
+            }
+        )
+
+    errors = np.asarray(errors_m, dtype=float)
+    return {
+        "controlPointCount": len(pixel_points),
+        "checkpointCount": len(evaluated_points),
+        "rmseMeters": float(np.sqrt(np.mean(np.square(errors)))),
+        "medianMeters": float(np.median(errors)),
+        "p95Meters": float(np.percentile(errors, 95)),
+        "maxMeters": float(np.max(errors)),
+        "checkPoints": evaluated_points,
+    }
 
 
 def _feature_collection_geoms_with_meta(fc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -453,7 +559,7 @@ def evaluate_georef_zones_from_paths(
     report: dict[str, Any] = {
         "testId": test_id,
         "testCaseId": test_case_id,
-        "evaluatedAt": datetime.utcnow().isoformat() + "Z",
+        "evaluatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "thresholds": {
             "minIou": min_iou,
             "scoreKey": "metrics.mean.meanIou",
@@ -496,13 +602,19 @@ def evaluate_georef_test_case(
     """
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
-    return evaluate_georef_zones_from_paths(
+    report, errors_geojson = evaluate_georef_zones_from_paths(
         test_id=test_id,
         test_case_id=test_case_id,
         expected_zones_path=paths.expected_zones_path,
         extracted_zones_path=paths.extracted_zones_path,
         min_iou=min_iou,
     )
+
+    georef_accuracy = evaluate_georef_check_points_from_config(paths.config_path)
+    if georef_accuracy is not None:
+        report["georefAccuracy"] = georef_accuracy
+
+    return report, errors_geojson
 
 
 def write_report(report: dict[str, Any], report_path: str) -> None:

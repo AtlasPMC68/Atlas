@@ -64,6 +64,41 @@
         "lng": -64.66533264577431,
         "lat": 60.411305760307975
       }
+    ],
+    "checkPoints": [
+      {
+        "name": "checkpoint-1",
+        "image": {
+          "x": 820,
+          "y": 411
+        },
+        "world": {
+          "lng": -71.8929,
+          "lat": 45.4042
+        }
+      },
+      {
+        "name": "checkpoint-2",
+        "image": {
+          "x": 650,
+          "y": 720
+        },
+        "world": {
+          "lng": -73.5673,
+          "lat": 45.5017
+        }
+      },
+      {
+        "name": "checkpoint-3",
+        "image": {
+          "x": 430,
+          "y": 530
+        },
+        "world": {
+          "lng": -71.208,
+          "lat": 46.8139
+        }
+      }
     ]
   },
   "colors": {

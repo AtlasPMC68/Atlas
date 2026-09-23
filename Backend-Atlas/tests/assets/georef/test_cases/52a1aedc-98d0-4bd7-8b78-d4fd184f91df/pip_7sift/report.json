@@ -1,7 +1,7 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "pip_7sift",
-  "evaluatedAt": "2026-09-09T03:34:02.268879Z",
+  "evaluatedAt": "2026-09-23T20:40:35.315218Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,35 +16,93 @@
           "area": 203.3187314685591
         },
         "bestMatch": {
-          "iou": 0.9414069377250001,
-          "intersectionArea": 192.83869959923297,
-          "unionArea": 204.84095864562687,
-          "precision": 0.992168039109942,
-          "recall": 0.948455158097685,
-          "falseNegativeArea": 10.48003186932648,
-          "falsePositiveArea": 1.5222271770674862,
+          "iou": 0.9408240405690721,
+          "intersectionArea": 192.7198488391293,
+          "unionArea": 204.84154372007723,
+          "precision": 0.9921602584984828,
+          "recall": 0.9478706041845004,
+          "falseNegativeArea": 10.59888262943007,
+          "falsePositiveArea": 1.5228122515177678,
           "extracted": {
             "index": 0,
             "id": null,
             "name": "Quebec",
-            "area": 194.36092677630037
+            "area": 194.24266109064678
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.9414069377250001,
-      "meanPrecision": 0.992168039109942,
-      "meanRecall": 0.948455158097685,
-      "totalFalseNegativeArea": 10.48003186932648,
-      "totalFalsePositiveArea": 1.5222271770674862
+      "meanIou": 0.9408240405690721,
+      "meanPrecision": 0.9921602584984828,
+      "meanRecall": 0.9478706041845004,
+      "totalFalseNegativeArea": 10.59888262943007,
+      "totalFalsePositiveArea": 1.5228122515177678
     },
-    "scoreUsed": 0.9414069377250001,
+    "scoreUsed": 0.9408240405690721,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
     "expectedWithoutNameMatch": [],
     "extractedNeverMatchedByName": []
+  },
+  "georefAccuracy": {
+    "controlPointCount": 7,
+    "checkpointCount": 3,
+    "rmseMeters": 1344457.452879488,
+    "medianMeters": 1233740.435818308,
+    "p95Meters": 1532999.9666341944,
+    "maxMeters": 1566251.0256137373,
+    "checkPoints": [
+      {
+        "name": "checkpoint-1",
+        "image": {
+          "x": 820.0,
+          "y": 411.0
+        },
+        "expected": {
+          "lng": -71.8929,
+          "lat": 45.4042
+        },
+        "predicted": {
+          "lng": -65.95397643485093,
+          "lat": 59.013379137744145
+        },
+        "errorMeters": 1566251.0256137373
+      },
+      {
+        "name": "checkpoint-2",
+        "image": {
+          "x": 650.0,
+          "y": 720.0
+        },
+        "expected": {
+          "lng": -73.5673,
+          "lat": 45.5017
+        },
+        "predicted": {
+          "lng": -69.13778393525554,
+          "lat": 55.95081379454471
+        },
+        "errorMeters": 1203095.9187032299
+      },
+      {
+        "name": "checkpoint-3",
+        "image": {
+          "x": 430.0,
+          "y": 530.0
+        },
+        "expected": {
+          "lng": -71.208,
+          "lat": 46.8139
+        },
+        "predicted": {
+          "lng": -73.20117433283401,
+          "lat": 57.83524434486932
+        },
+        "errorMeters": 1233740.435818308
+      }
+    ]
   }
 }
