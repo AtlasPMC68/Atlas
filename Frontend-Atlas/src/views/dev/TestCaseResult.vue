@@ -14,6 +14,25 @@
       </div>
     </div>
 
+    <!-- Control-point overlay, drawn by the backend with the last run's own
+         model. Full screen because the arrows are what matters and a 384 px
+         sidebar cannot show them. -->
+    <div
+      v-if="overlayUrl"
+      class="fixed inset-0 z-[1000] bg-black/80 flex flex-col items-center justify-center p-4 gap-2"
+      @click="closeOverlay"
+    >
+      <p class="text-xs text-white/80">
+        {{ overlayCaption }} Cliquez pour fermer.
+      </p>
+      <img
+        :src="overlayUrl"
+        :alt="overlayAlt"
+        class="max-h-[85vh] max-w-full object-contain bg-white"
+        @click.stop
+      />
+    </div>
+
     <div class="flex flex-1 min-h-0">
       <div class="w-96 bg-base-200 border-r border-base-300 p-4 overflow-y-auto">
         <FeatureVisibilityControls
@@ -85,6 +104,24 @@
 
             <label class="flex items-start gap-2 cursor-pointer">
               <input
+                v-model="runClip"
+                type="checkbox"
+                class="checkbox checkbox-sm mt-0.5"
+                :disabled="isRerunning"
+              />
+              <span class="text-xs">
+                Découpe océan (masque terre/mer)
+                <span class="block text-base-content/60">
+                  Retire la part des zones tombant en mer, et supprime celles
+                  qui n'ont presque plus de terre. Décochez pour voir les zones
+                  telles que la transformation les place réellement : la découpe
+                  corrige la sortie après coup, comme le snapping.
+                </span>
+              </span>
+            </label>
+
+            <label class="flex items-start gap-2 cursor-pointer">
+              <input
                 v-model="runAlign"
                 type="checkbox"
                 class="checkbox checkbox-sm mt-0.5"
@@ -116,15 +153,116 @@
                   {{ choice }}
                 </option>
               </select>
-              <span class="block text-[11px] text-base-content/60">
-                <code>piecewise_affine</code> garde l'affine globale et y ajoute
-                une correction locale, exacte à chaque point de contrôle et nulle
-                sur le cadre de l'image. Avec l'alignement activé, elle corrige
-                l'affine alignée. Elle interpole les points au lieu de les
-                moyenner : jugez-la sur l'erreur leave-one-out, jamais sur son
-                résidu, nul par construction.
-              </span>
             </label>
+
+            <!-- Control points, with their held-out error. Unchecking one
+                 leaves it out of the next run without touching the case's
+                 stored clicks. -->
+            <div v-if="controlPoints.length > 0" class="border-t border-base-300 pt-2 space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs px-1"
+                  @click="showPoints = !showPoints"
+                >
+                  {{ showPoints ? "▾" : "▸" }} Points de contrôle ({{
+                    controlPoints.length - excludedPoints.size
+                  }}/{{ controlPoints.length }})
+                </button>
+                <div class="flex items-center gap-1">
+                  <div class="join">
+                    <button
+                      v-for="view in OVERLAY_VIEWS"
+                      :key="view.value"
+                      type="button"
+                      class="btn btn-xs join-item"
+                      :class="overlayView === view.value ? 'btn-primary' : 'btn-outline'"
+                      :disabled="overlayLoading"
+                      :title="view.hint"
+                      @click="openOverlay(view.value)"
+                    >
+                      {{ view.label }}
+                    </button>
+                  </div>
+                  <button
+                    v-if="excludedPoints.size > 0"
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    @click="excludedPoints = new Set()"
+                  >
+                    Tout réactiver
+                  </button>
+                </div>
+              </div>
+
+              <p v-if="pointsSummary?.appliedModel" class="text-[11px] text-base-content/60">
+                Dernier run : <span class="font-mono">{{ pointsSummary.appliedModel }}</span
+                ><span v-if="pointsSummary.appliedRmseKm != null">
+                  — RMS {{ pointsSummary.appliedRmseKm }} km sur
+                  {{ pointsSummary.appliedPointCount }} points</span
+                >.
+              </p>
+
+              <p v-if="overlayError" class="text-xs text-error">{{ overlayError }}</p>
+
+              <template v-if="showPoints">
+                <p class="text-[11px] text-base-content/60">
+                  Erreur <strong>leave-one-out</strong> : le point est retiré, puis
+                  on mesure de combien l'affine le place à côté. Le résidu du fit
+                  ne sert à rien ici — une affine étale une mauvaise saisie sur
+                  tous les points.
+                  <span v-if="pointsSummary?.affineLooRmseKm">
+                    RMS LOO : {{ pointsSummary.affineLooRmseKm }} km (résidu
+                    {{ pointsSummary.affineRmseKm }} km).
+                  </span>
+                </p>
+
+                <div
+                  v-for="point in controlPoints"
+                  :key="point.index"
+                  class="flex items-center gap-2 text-[11px]"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs"
+                    :checked="!excludedPoints.has(point.index)"
+                    :disabled="isRerunning"
+                    @change="togglePoint(point.index)"
+                  />
+                  <span
+                    class="font-mono w-6"
+                    :class="point.usedInLastRun === false ? 'text-base-content/40' : ''"
+                    :title="
+                      point.usedInLastRun === false
+                        ? 'Exclu du dernier run'
+                        : `Placé à ${point.appliedKm} km par le dernier run`
+                    "
+                    >#{{ point.index }}</span
+                  >
+                  <span class="font-mono text-base-content/60 flex-1 min-w-0 truncate">
+                    ({{ Math.round(point.pixel.x) }},{{ Math.round(point.pixel.y) }})
+                    → {{ point.geo.lon.toFixed(2) }},{{ point.geo.lat.toFixed(2) }}
+                  </span>
+                  <span
+                    class="font-mono"
+                    :class="point.suspect ? 'text-error font-semibold' : 'text-base-content/70'"
+                    :title="
+                      point.looPx == null
+                        ? ''
+                        : `${point.looPx} px, pour un clic à ±${point.sigmaPx} px` +
+                          (point.suspect ? ' — bien au-delà de la médiane : à revérifier' : '')
+                    "
+                  >
+                    {{ point.looKm == null ? "—" : `${point.looKm} km` }}
+                  </span>
+                </div>
+
+                <p v-if="!pointsSummary?.looAvailable" class="text-[11px] text-warning">
+                  Moins de 4 points : le leave-one-out n'est pas calculable (3
+                  points suffisent à fixer une affine exactement).
+                </p>
+              </template>
+            </div>
 
             <!-- Tuning panel: any GeorefConfig field, for this run only. Edits
                  are sent with the re-run and never written to config.py. -->
@@ -263,6 +401,20 @@
                 invalide{{ paramErrorCount > 1 ? "s" : "" }} :
                 {{ Object.keys(paramErrors).join(", ") }}
               </p>
+
+              <!-- A retired setting is dropped by the backend, so it would
+                   otherwise look like the run simply ignored what was asked. -->
+              <p v-if="staleParamNames.length > 0" class="text-xs text-warning">
+                Réglages inconnus de la config actuelle, ignorés :
+                <span class="font-mono">{{ staleParamNames.join(", ") }}</span
+                >. Rechargez la page (Ctrl+Maj+R).
+              </p>
+
+              <p v-if="lastRunModel" class="text-[11px] text-base-content/60">
+                Dernier run effectué avec
+                <span class="font-mono">{{ lastRunModel }}</span
+                >.
+              </p>
             </div>
 
             <p v-if="isScored" class="text-xs text-warning">
@@ -272,6 +424,121 @@
 
             <p v-if="rerunError" class="text-xs text-error">{{ rerunError }}</p>
             <p v-else-if="rerunNote" class="text-xs text-success">{{ rerunNote }}</p>
+          </div>
+
+          <!-- The zones exactly as colour extraction produced them, on the
+               scan, before any transform or clip: separates an extraction
+               defect (holes under labels) from a placement one. -->
+          <div class="bg-base-100 rounded-box border border-base-300 p-3 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-sm font-semibold">Zones brutes</h2>
+              <div class="join">
+                <button
+                  type="button"
+                  class="btn btn-xs join-item btn-outline"
+                  :disabled="overlayLoading || !pixelZones"
+                  title="Les zones sur le scan : un trou laisse voir le scan"
+                  @click="openPixelZones('scan')"
+                >
+                  Scan
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-xs join-item btn-outline"
+                  :disabled="overlayLoading || !pixelZones"
+                  title="Les zones sur fond blanc : un trou est un vide blanc"
+                  @click="openPixelZones('blank')"
+                >
+                  Fond blanc
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-xs join-item btn-outline"
+                  :disabled="overlayLoading || !pixelZones || pixelZones.textFill?.method !== 'inpaint'"
+                  title="L'image classée par le dernier run, texte effacé (mode inpaint seulement)"
+                  @click="openClassifiedImage"
+                >
+                  Image nettoyée
+                </button>
+              </div>
+            </div>
+
+            <label class="flex items-center gap-2 cursor-pointer text-xs">
+              <input
+                v-model="pixelZonesShowOcr"
+                type="checkbox"
+                class="checkbox checkbox-xs"
+              />
+              Afficher les boîtes OCR
+            </label>
+
+            <p v-if="pixelZonesImageError" class="text-xs text-error">
+              {{ pixelZonesImageError }}
+            </p>
+
+            <p v-if="pixelZonesError" class="text-xs text-base-content/60">
+              {{ pixelZonesError }}
+            </p>
+
+            <template v-else-if="pixelZones">
+              <p class="text-[11px] text-base-content/60">
+                Avant transformation, dernier run. Le texte laisse surtout des
+                encoches qui touchent le bord de la zone, pas des trous : on
+                compare donc les surfaces d'un run à l'autre.
+                <span v-if="pixelZones.textCoverage">
+                  Boîtes OCR couvertes par une zone :
+                  <strong>{{ fmtPercent(pixelZones.textCoverage.coveredRatio) }}</strong>
+                  (100 % n'est pas le but : une boîte sur un lac ou la mer doit
+                  rester vide).
+                </span>
+                <span v-if="pixelZones.ocrBoxes == null" class="text-warning">
+                  OCR absent du cache.
+                </span>
+                <span v-else>{{ pixelZones.ocrBoxes }} boîtes OCR.</span>
+                <span v-if="pixelZones.textFill">
+                  Remplissage texte ({{ pixelZones.textFill.method || "label" }}) :
+                  {{ pixelZones.textFill.pixelsFilled }} px
+                  dans {{ pixelZones.textFill.boxesFilled }}/{{
+                    pixelZones.textFill.boxesConsidered
+                  }}
+                  boîtes.
+                </span>
+                <span v-else class="text-warning">
+                  Remplissage texte non appliqué au dernier run.
+                </span>
+              </p>
+
+              <table class="table table-xs">
+                <thead>
+                  <tr>
+                    <th>Zone</th>
+                    <th class="text-right">Surface</th>
+                    <th class="text-right" title="Surface de la zone à l'intérieur des boîtes OCR">
+                      Sous texte
+                    </th>
+                    <th class="text-right">Trous</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="zone in pixelZones.zones" :key="zone.index">
+                    <td class="max-w-[8rem] truncate" :title="zone.name">
+                      <span
+                        class="inline-block w-2 h-2 rounded-full mr-1 align-middle"
+                        :style="{ background: zone.colorHex || '#888' }"
+                      />{{ zone.name }}
+                    </td>
+                    <td class="text-right font-mono">{{ fmtPx(zone.areaPx) }}</td>
+                    <td class="text-right font-mono">{{ fmtPx(zone.areaInTextPx) }}</td>
+                    <td
+                      class="text-right font-mono"
+                      :title="`${fmtPercent(zone.holeAreaRatio)} de la zone, dont ${fmtPercent(zone.holeAreaInTextRatio)} sous du texte`"
+                    >
+                      {{ zone.holes }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
           </div>
 
           <!-- What this case is for, and whether its stored inputs still cover
@@ -520,6 +787,10 @@ const caseState = ref<CaseState | null>(null);
 // seeing what the current pipeline does is the point of re-running at all.
 const runSnap = ref(false);
 const runAlign = ref(true);
+// Clipping defaults ON, unlike snapping: it is what the app does, and a zone
+// half in the ocean is usually the transform being wrong rather than the clip.
+// Unchecking it shows where the transform actually put the zones.
+const runClip = ref(true);
 const isRerunning = ref(false);
 const rerunError = ref<string | null>(null);
 const rerunNote = ref<string | null>(null);
@@ -540,13 +811,18 @@ type GeorefConfigDescription = {
 type ParamKind = "bool" | "number" | "list" | "choice";
 type ParamDraft = string | boolean;
 
-// These have their own controls above; showing them twice would leave two
-// widgets fighting over one setting.
-const CHECKBOX_FIELDS = new Set([
+// Sent as query parameters by the re-run call, so they must NOT also travel in
+// the overrides body.
+const QUERY_SWITCH_FIELDS = new Set([
   "snap_to_coastline",
   "enable_curve_alignment",
-  "transform_model",
+  "clip_to_land_mask",
 ]);
+
+// Fields with a dedicated control above. Hidden from the generic list only --
+// keep this separate from the set above: conflating "has its own widget" with
+// "is not an override" is what made the model dropdown silently do nothing.
+const PANEL_HIDDEN_FIELDS = new Set([...QUERY_SWITCH_FIELDS, "transform_model"]);
 // Kept across reloads and cases on purpose: tuning means trying the same
 // thresholds on several maps. The badge keeps them visible when collapsed.
 const PARAM_DRAFTS_KEY = "atlas.devTest.georefParamDrafts";
@@ -558,6 +834,218 @@ function loadParamDrafts(): Record<string, ParamDraft> {
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
+  }
+}
+
+type ControlPointDiagnostic = {
+  index: number;
+  pixel: { x: number; y: number };
+  geo: { lon: number; lat: number };
+  source: string;
+  inSampleKm: number | null;
+  appliedKm: number | null;
+  usedInLastRun: boolean;
+  looKm: number | null;
+  looPx: number | null;
+  sigmaPx: number;
+  suspect: boolean;
+};
+type ControlPointsSummary = {
+  count: number;
+  affineRmseKm: number | null;
+  affineLooRmseKm: number | null;
+  appliedModel: string | null;
+  appliedRmseKm: number | null;
+  appliedPointCount: number | null;
+  excludedFromLastRun: number[];
+  looAvailable: boolean;
+  suspectIndices: number[];
+};
+
+const controlPoints = ref<ControlPointDiagnostic[]>([]);
+const pointsSummary = ref<ControlPointsSummary | null>(null);
+const showPoints = ref(false);
+// Per-run, and deliberately NOT persisted like the parameter drafts: leaving a
+// point silently excluded across cases would quietly change what every later
+// run measures.
+const excludedPoints = ref<Set<number>>(new Set());
+
+// The overlay is fetched as a blob rather than pointed at with <img src>:
+// the endpoint needs the bearer token, which a plain image request cannot
+// carry.
+const overlayUrl = ref<string | null>(null);
+const overlayLoading = ref(false);
+const overlayError = ref<string | null>(null);
+const overlayView = ref<"map" | "world" | "both">("both");
+
+// Two sides of one fact: on the scan the arrow runs from the click to where
+// the transform says that place is; in the world it runs from the point's
+// true position to where the click lands.
+const OVERLAY_VIEWS = [
+  { value: "map" as const, label: "Carte", hint: "Les points sur le scan" },
+  {
+    value: "world" as const,
+    label: "Monde",
+    hint: "Les points sur la côte de référence : montre un mauvais appariement",
+  },
+  { value: "both" as const, label: "Les deux", hint: "Côte à côte" },
+];
+
+const CONTROL_POINTS_CAPTION =
+  "Scan : jaune = clic, rouge = position selon la transformation. Monde : cyan = position réelle, rouge = où le clic atterrit.";
+const PIXEL_ZONES_CAPTION =
+  "Zones telles qu'extraites, avant transformation : contour rouge = trou, magenta = boîte OCR.";
+const overlayCaption = ref(CONTROL_POINTS_CAPTION);
+const overlayAlt = ref("Points de contrôle");
+
+// Shared by both overlays: fetch a PNG behind the bearer token and show it.
+async function showOverlayImage(path: string): Promise<string | null> {
+  overlayLoading.value = true;
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/${path}`,
+      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    );
+    if (!res.ok) throw new Error(`Image indisponible (${res.status})`);
+    closeOverlay();
+    overlayUrl.value = URL.createObjectURL(await res.blob());
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : "Erreur lors du rendu de l'image";
+  } finally {
+    overlayLoading.value = false;
+  }
+}
+
+async function openOverlay(view: "map" | "world" | "both" = overlayView.value) {
+  if (!testId.value || !testCaseId.value || overlayLoading.value) return;
+  overlayView.value = view;
+  overlayError.value = null;
+  overlayCaption.value = CONTROL_POINTS_CAPTION;
+  overlayAlt.value = "Points de contrôle";
+  overlayError.value = await showOverlayImage(`control-points.png?view=${view}`);
+}
+
+// --- Raw (pixel-space) zones ------------------------------------------------
+
+type PixelZoneStats = {
+  index: number;
+  name: string;
+  colorHex: string | null;
+  parts: number;
+  areaPx: number;
+  areaInTextPx: number | null;
+  holes: number;
+  holeAreaPx: number;
+  holeAreaRatio: number;
+  holeAreaInTextRatio: number | null;
+};
+type PixelZonesResponse = {
+  zones: PixelZoneStats[];
+  ocrBoxes: number | null;
+  textCoverage: {
+    boxAreaPx: number;
+    coveredPx: number;
+    coveredRatio: number;
+  } | null;
+  textFill: {
+    method?: string;
+    boxesConsidered: number;
+    boxesFilled: number;
+    pixelsFilled: number;
+  } | null;
+};
+
+const pixelZones = ref<PixelZonesResponse | null>(null);
+const pixelZonesError = ref<string | null>(null);
+const pixelZonesShowOcr = ref(true);
+const pixelZonesImageError = ref<string | null>(null);
+
+async function loadPixelZones() {
+  if (!testId.value || !testCaseId.value) return;
+  pixelZonesError.value = null;
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/pixel-zones`,
+      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    );
+    if (res.status === 404) {
+      // Runs from before the snapshot existed: a re-run produces it.
+      pixelZones.value = null;
+      pixelZonesError.value = "Aucune zone brute enregistrée : relancez le cas.";
+      return;
+    }
+    if (!res.ok) throw new Error(`Zones brutes indisponibles (${res.status})`);
+    pixelZones.value = (await res.json()) as PixelZonesResponse;
+  } catch (err) {
+    pixelZones.value = null;
+    pixelZonesError.value =
+      err instanceof Error ? err.message : "Zones brutes indisponibles";
+  }
+}
+
+async function openPixelZones(background: "scan" | "blank") {
+  if (!testId.value || !testCaseId.value || overlayLoading.value) return;
+  overlayCaption.value = PIXEL_ZONES_CAPTION;
+  overlayAlt.value = "Zones brutes";
+  const error = await showOverlayImage(
+    `pixel-zones.png?background=${background}&ocr=${pixelZonesShowOcr.value}`,
+  );
+  pixelZonesImageError.value = error;
+}
+
+const CLASSIFIED_IMAGE_CAPTION =
+  "Image sur laquelle le dernier run a classé les couleurs : prétraitée, texte effacé par l'inpaint. Magenta = boîte OCR.";
+
+async function openClassifiedImage() {
+  if (!testId.value || !testCaseId.value || overlayLoading.value) return;
+  overlayCaption.value = CLASSIFIED_IMAGE_CAPTION;
+  overlayAlt.value = "Image nettoyée";
+  const error = await showOverlayImage(
+    `classified-image.png?ocr=${pixelZonesShowOcr.value}`,
+  );
+  pixelZonesImageError.value = error;
+}
+
+function fmtPx(val: number | null | undefined): string {
+  if (val == null || !Number.isFinite(val)) return "—";
+  return val.toLocaleString("fr-CA");
+}
+
+function fmtPercent(val: number | null | undefined): string {
+  if (val == null || !Number.isFinite(val)) return "—";
+  return `${(val * 100).toFixed(1)} %`;
+}
+
+function closeOverlay() {
+  if (overlayUrl.value) {
+    URL.revokeObjectURL(overlayUrl.value);
+    overlayUrl.value = null;
+  }
+}
+
+function togglePoint(index: number) {
+  const next = new Set(excludedPoints.value);
+  if (next.has(index)) next.delete(index);
+  else next.add(index);
+  excludedPoints.value = next;
+}
+
+async function loadControlPoints() {
+  if (!testId.value || !testCaseId.value) return;
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/control-points`,
+      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    );
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    controlPoints.value = Array.isArray(data?.points) ? data.points : [];
+    pointsSummary.value = data?.summary ?? null;
+  } catch {
+    // Diagnostics only: a case can still be re-run without them.
+    controlPoints.value = [];
+    pointsSummary.value = null;
   }
 }
 
@@ -657,8 +1145,9 @@ const parsedParams = computed(() => {
   if (!desc) return { overrides, errors };
 
   for (const [name, raw] of Object.entries(paramDrafts.value)) {
-    // A field retired since the draft was saved, or one owned by a checkbox.
-    if (!(name in desc.values) || CHECKBOX_FIELDS.has(name)) continue;
+    // A field retired since the draft was saved, or one already sent as a
+    // query switch. Everything else goes in the body, dropdown included.
+    if (!(name in desc.values) || QUERY_SWITCH_FIELDS.has(name)) continue;
     const parsed = parseParam(name, raw);
     if ("error" in parsed) {
       errors[name] = parsed.error;
@@ -667,6 +1156,23 @@ const parsedParams = computed(() => {
     }
   }
   return { overrides, errors };
+});
+
+// Drafts for fields the *current* backend does not have. The task drops
+// unknown keys on purpose, so a page left open across a config change would
+// otherwise keep sending a retired setting and silently get the default --
+// which is exactly how `use_piecewise_affine` looked like it was ignored.
+const staleParamNames = computed<string[]>(() => {
+  const desc = configDesc.value;
+  if (!desc) return [];
+  return Object.keys(paramDrafts.value).filter((name) => !(name in desc.values));
+});
+
+// What the last run actually placed the map with, read back from the zones it
+// produced rather than from what the panel asked for.
+const lastRunModel = computed<string | null>(() => {
+  const method = extractedFeatures.value[0]?.properties?.transform_method;
+  return typeof method === "string" ? method : null;
 });
 
 const paramErrors = computed(() => parsedParams.value.errors);
@@ -688,7 +1194,7 @@ const visibleParamGroups = computed(() => {
       title: group.title,
       fields: group.fields.filter(
         (name) =>
-          !CHECKBOX_FIELDS.has(name) &&
+          !PANEL_HIDDEN_FIELDS.has(name) &&
           (!needle ||
             name.toLowerCase().includes(needle) ||
             group.title.toLowerCase().includes(needle)),
@@ -891,10 +1397,22 @@ async function rerunCase() {
   rerunError.value = null;
   rerunNote.value = null;
 
+  // Re-read the config first: the panel is built from it, and a page open
+  // across a backend change would otherwise send settings that no longer exist.
+  await loadGeorefConfig();
+  if (paramErrorCount.value > 0) {
+    isRerunning.value = false;
+    return;
+  }
+
   const params = new URLSearchParams({
     snap_to_coastline: String(runSnap.value),
     enable_curve_alignment: String(runAlign.value),
+    clip_to_land_mask: String(runClip.value),
   });
+  for (const index of [...excludedPoints.value].sort((a, b) => a - b)) {
+    params.append("exclude_gcp", String(index));
+  }
   const overrides = parsedParams.value.overrides;
   const overrideCount = Object.keys(overrides).length;
 
@@ -928,6 +1446,9 @@ async function rerunCase() {
       (data?.kind === "probe"
         ? "Relancé. Zones réextraites, pas de score (cas d'exploration)."
         : "Relancé et réévalué.") +
+      (excludedPoints.value.size > 0
+        ? ` ${excludedPoints.value.size} point(s) de contrôle exclu(s).`
+        : "") +
       (overrideCount > 0
         ? ` ${overrideCount} paramètre${overrideCount > 1 ? "s" : ""} modifié${overrideCount > 1 ? "s" : ""}.`
         : "");
@@ -1151,7 +1672,13 @@ async function reloadAll() {
       suppressModeWatch = true;
       mode.value = "latest";
     }
-    await Promise.all([loadExpected(), loadExtracted(), loadErrors()]);
+    await Promise.all([
+      loadExpected(),
+      loadExtracted(),
+      loadErrors(),
+      loadControlPoints(),
+      loadPixelZones(),
+    ]);
     rebuildVisibility();
   } catch (e: any) { 
     loadError.value = e?.message ? String(e.message) : "Erreur lors du chargement";

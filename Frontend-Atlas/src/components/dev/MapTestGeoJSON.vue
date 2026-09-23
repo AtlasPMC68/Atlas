@@ -7,6 +7,7 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import L from "leaflet";
+import { createCartoTileLayer } from "../../utils/basemap";
 
 const mapEl = ref(null);
 
@@ -523,14 +524,8 @@ async function loadGeoBorders() {
 onMounted(() => {
   map = L.map(mapEl.value).setView([52.9399, -73.5491], 5);
 
-  baseTileLayer = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-    {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-    },
-  ).addTo(map);
+  // Shared with the app's map so the CARTO API key is applied here too.
+  baseTileLayer = createCartoTileLayer().addTo(map);
 
   subzoneLayerGroup = L.layerGroup().addTo(map);
 

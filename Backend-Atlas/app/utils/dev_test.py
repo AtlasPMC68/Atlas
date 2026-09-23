@@ -3,7 +3,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 from uuid import uuid4
 from datetime import datetime
 from asyncio import to_thread
@@ -529,18 +529,52 @@ def build_extraction_task_kwargs_for_case(
     }
 
 
+def drop_control_points(kwargs: dict[str, Any], excluded: Sequence[int]) -> list[int]:
+    """Remove control points by index from task kwargs, in place.
+
+    Filtered here rather than passed to the task, because the exclusion belongs
+    to the *request*, not to the case: the stored inputs stay untouched, and
+    the task signature does not gain a kwarg (which would break in-flight
+    messages and any caller that has not restarted alongside the worker).
+
+    Returns the indices actually dropped. Out-of-range indices are ignored --
+    a stale UI holding indices from a case that has since been re-clicked
+    should not fail the run.
+    """
+    pixels = kwargs.get("pixel_points")
+    geos = kwargs.get("geo_points_lonlat")
+    if not excluded or not pixels or not geos:
+        return []
+
+    drop = {i for i in excluded if 0 <= i < len(pixels)}
+    if not drop:
+        return []
+
+    if len(pixels) - len(drop) < 3:
+        raise ValueError(
+            f"Excluding {len(drop)} of {len(pixels)} control points leaves fewer "
+            "than the 3 an affine needs"
+        )
+
+    kwargs["pixel_points"] = [p for i, p in enumerate(pixels) if i not in drop]
+    kwargs["geo_points_lonlat"] = [g for i, g in enumerate(geos) if i not in drop]
+    return sorted(drop)
+
+
 def _start_extraction_for_case(
     *,
     assets_root: str,
     test_id: str,
     test_case_id: str,
     config_overrides: dict | None = None,
+    excluded_control_points: Sequence[int] | None = None,
 ) -> str:
     kwargs = build_extraction_task_kwargs_for_case(
         assets_root=assets_root,
         test_id=test_id,
         test_case_id=test_case_id,
     )
+    drop_control_points(kwargs, excluded_control_points or [])
     if config_overrides:
         kwargs["config_overrides"] = config_overrides
 
@@ -557,6 +591,7 @@ async def run_evaluate_case_blocking(
     min_iou: float | None,
     assets_root: str,
     config_overrides: dict | None = None,
+    excluded_control_points: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     """Re-run a case and, when it is scored, evaluate it. Blocks on the task."""
     task_id = _start_extraction_for_case(
@@ -564,6 +599,7 @@ async def run_evaluate_case_blocking(
         test_id=test_id,
         test_case_id=test_case_id,
         config_overrides=config_overrides,
+        excluded_control_points=excluded_control_points,
     )
 
     async_result = celery_app.AsyncResult(task_id)
@@ -597,5 +633,6 @@ async def run_evaluate_case_blocking(
         "task_state": async_result.state,
         "kind": kind,
         "switches": config_overrides or None,
+        "excludedControlPoints": list(excluded_control_points or []) or None,
         "report": report,
     }

@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from shapely.geometry import mapping, shape
 from shapely.ops import transform
@@ -33,6 +33,7 @@ from .projection import (
     webmercator_meters_to_km,
 )
 from .records import RunRecord
+from .reference import LAKES_FILE, load_reference_polygons
 from .snapping import (
     estimate_pixel_diagonal_from_features,
     estimate_pixel_extent_from_features,
@@ -72,6 +73,7 @@ def georeference_features(
     coastline_snap_tolerance_px: Optional[float] = None,
     model: Optional[TransformModel] = None,
     extra_properties: Optional[Dict[str, Any]] = None,
+    image_size: Optional[Tuple[int, int]] = None,
 ) -> GeorefResult:
     """Georeference pixel-space features with an affine fitted to *control_points*.
 
@@ -87,6 +89,9 @@ def georeference_features(
             gated alignment here; leaving it None reproduces the GCP-only fit.
         extra_properties: merged into every output feature's properties, so a
             consumer can see how the feature was placed.
+        image_size: ``(width, height)`` of the scan, in pixels. The coastline
+            snap tolerance is a share of its diagonal; without it the zones'
+            extent stands in.
 
     Returns:
         A ``GeorefResult`` whose ``collections`` are FeatureCollections in
@@ -112,10 +117,6 @@ def georeference_features(
         model.measure_against(control_points)
 
     if config.transform_model == "piecewise_affine":
-        # Applied to whatever affine we have, fitted here or handed in by Step
-        # 4: the correction is local, so it is worth strictly more on top of an
-        # aligned affine than on top of a GCP-only one. It runs *after* the
-        # gates, which judge the global affine and know nothing about this.
         with record.phase("piecewise_correction"):
             model = _apply_piecewise_correction(
                 model, control_points, pixel_feature_collections, config, record
@@ -187,6 +188,24 @@ def georeference_features(
                     "Land/ocean mask unavailable; ocean clipping will be skipped."
                 )
 
+        # --- lakes are water too -------------------------------------------
+        # Comment this block out to stop cutting lakes out of the zones; the
+        # ocean clip above keeps working on its own. The land mask is built
+        # from the coastline, so it counts an inland lake as land: a zone
+        # drawn around one keeps the lake, the same way it used to keep a bay.
+        # Natural Earth's 50m lakes are the same source the alignment matches
+        # against, so what is cut here is what the reference thinks is water.
+        if land_mask_3857 is not None:
+            with record.phase("subtract_lakes"):
+                lakes_wgs84 = load_reference_polygons(LAKES_FILE)
+                if lakes_wgs84 is not None:
+                    land_mask_3857 = land_mask_3857.difference(
+                        transform(lonlat_arrays_to_webmercator, lakes_wgs84)
+                    )
+                else:
+                    logger.warning("Lake polygons unavailable; keeping lakes in zones.")
+        # --- end lakes block -------------------------------------------------
+
     snap_tolerance_m = None
     if snapping_enabled:
         snap_tolerance_m = _resolve_snap_tolerance_m(
@@ -194,7 +213,11 @@ def georeference_features(
             pixel_feature_collections,
             config,
             coastline_snap_tolerance_px,
+            image_size,
         )
+        if snap_tolerance_m is None:
+            # Nothing to measure a diagonal on: no image size and no zone.
+            snapping_enabled = False
 
     # --- apply --------------------------------------------------------------
     to_3857 = model.as_shapely_transform()
@@ -346,24 +369,19 @@ def _resolve_snap_tolerance_m(
     pixel_feature_collections: Sequence[JSONDict],
     config: GeorefConfig,
     coastline_snap_tolerance_px: Optional[float],
-) -> float:
-    """Pixel-space snap tolerance, converted to EPSG:3857 metres and clamped."""
-    if coastline_snap_tolerance_px is None:
-        diagonal_px = estimate_pixel_diagonal_from_features(
-            list(pixel_feature_collections)
-        )
-        if diagonal_px is not None:
-            tolerance_px = diagonal_px * config.coastline_snap_ratio_of_diagonal
-        else:
-            tolerance_px = config.coastline_snap_fallback_px
-    else:
+    image_size: Optional[Tuple[int, int]] = None,
+) -> Optional[float]:
+    if coastline_snap_tolerance_px is not None:
         tolerance_px = float(coastline_snap_tolerance_px)
+    else:
+        if image_size is not None and min(image_size) > 0:
+            diagonal_px = math.hypot(float(image_size[0]), float(image_size[1]))
+        else:
+            diagonal_px = estimate_pixel_diagonal_from_features(
+                list(pixel_feature_collections)
+            )
+        if diagonal_px is None:
+            return None
+        tolerance_px = diagonal_px * config.coastline_snap_ratio_of_diagonal
 
-    tolerance_px = min(
-        config.coastline_snap_max_px, max(config.coastline_snap_min_px, tolerance_px)
-    )
-
-    tolerance_m = tolerance_px * model.meters_per_pixel
-    return min(
-        config.coastline_snap_max_m, max(config.coastline_snap_min_m, tolerance_m)
-    )
+    return tolerance_px * model.meters_per_pixel

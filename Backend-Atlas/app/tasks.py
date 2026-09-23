@@ -27,6 +27,7 @@ from app.utils.georeferencing.debug import debug_enabled, make_run_dir
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
+from app.utils.dev_test_pixel_zones import write_classified_image, write_pixel_zones
 
 from .celery_app import celery_app
 
@@ -140,11 +141,19 @@ def _align_if_enabled(
 def _dev_test_text_regions(test_id: str, image_bgr, config=None) -> list | None:
     """OCR regions for a dev-test map, from the derived store.
 
-    Returns None when alignment is off (nothing consumes them) or when OCR is
-    unavailable. Never raises: a missing text mask degrades the evidence, it
+    Two consumers now: the alignment's text mask, and the text-aware zone fill.
+    When alignment is on, OCR runs (~135 s, once per map) and both get it.
+    When it is off, the cache is *read but never filled*: the regression suite
+    runs with alignment off, and paying OCR per case there would take it from
+    about 90 seconds to over four minutes. A map whose cache is warm from an
+    earlier run still gets the text fill.
+
+    Never raises: a missing text mask degrades the zones and the evidence, it
     does not fail the run.
     """
-    if not (config or GEOREF_CONFIG).enable_curve_alignment:
+    resolved = config or GEOREF_CONFIG
+    wants_ocr = resolved.enable_curve_alignment
+    if not wants_ocr and not resolved.text_aware_zone_fill:
         return None
 
     from app.utils.dev_test import find_test_image_path
@@ -156,8 +165,14 @@ def _dev_test_text_regions(test_id: str, image_bgr, config=None) -> list | None:
 
     try:
         regions, state = ensure_text_regions(
-            test_id, image_path, image_bgr, refresh=False
+            test_id, image_path, image_bgr, refresh=False, allow_compute=wants_ocr
         )
+        if regions is None:
+            logger.info(
+                f"[DEV-TEST] no cached text regions for {test_id};"
+                " skipping the text-aware zone fill (alignment is off)"
+            )
+            return None
         logger.info(
             f"[DEV-TEST] text regions for {test_id}: {len(regions or [])}"
             f" ({state.detail or 'reused from cache'})"
@@ -269,8 +284,13 @@ def _georeference(
     model=None,
     extra_properties: dict | None = None,
     config=None,
+    image=None,
 ):
-    """Fit and apply the pixel -> EPSG:4326 transform for one feature producer."""
+    """Fit and apply the pixel -> EPSG:4326 transform for one feature producer.
+
+    `image` is only read for its size: the coastline snap tolerance is a share
+    of the scan's diagonal.
+    """
     return georeference_features(
         pixel_feature_collections,
         _control_points(pixel_points, geo_points_lonlat),
@@ -279,6 +299,7 @@ def _georeference(
         record=record,
         model=model,
         extra_properties=extra_properties,
+        image_size=(image.shape[1], image.shape[0]) if image is not None else None,
     )
 
 
@@ -508,6 +529,7 @@ def process_map_extraction(
                         frame_bounds=frame_bounds,
                         model=aligned_model,
                         extra_properties=alignment_props,
+                        image=image,
                     )
                     asyncio.run(
                         persist_features(
@@ -595,7 +617,25 @@ def process_map_extraction(
                     imposed_click_positions=imposed_click_positions_tuples,
                     imposed_colors_names=imposed_colors_names,
                     imposed_sampling_radii=imposed_sampling_radii_ints,
+                    # Available whenever text extraction ran; a label belongs
+                    # to the zone it is written on, not to no zone at all.
+                    text_regions=(
+                        text_regions if GEOREF_CONFIG.text_aware_zone_fill else None
+                    ),
+                    text_fill_min_context=GEOREF_CONFIG.text_fill_min_context,
+                    text_fill_max_distance_px=GEOREF_CONFIG.text_fill_max_distance_px,
+                    text_fill_method=GEOREF_CONFIG.text_fill_method,
+                    text_inpaint_dilation_px=GEOREF_CONFIG.text_inpaint_dilation_px,
+                    text_inpaint_radius_px=GEOREF_CONFIG.text_inpaint_radius_px,
+                    text_inpaint_max_ink_ratio=GEOREF_CONFIG.text_inpaint_max_ink_ratio,
+                    text_inpaint_algo=GEOREF_CONFIG.text_inpaint_algo,
+                    text_inpaint_ink_deltaE=GEOREF_CONFIG.text_inpaint_ink_deltaE,
+                    zone_gap_fill=GEOREF_CONFIG.zone_gap_fill,
+                    zone_gap_max_ratio_of_diagonal=GEOREF_CONFIG.zone_gap_max_ratio_of_diagonal,
                 )
+                # A debug image for the dev tool only; this dict is returned
+                # to Celery, which cannot serialise an array.
+                color_result.pop("classified_rgb", None)
             normalized_features = color_result.get("normalized_features", [])
             pixel_features = color_result.get("pixel_features", [])
 
@@ -610,6 +650,7 @@ def process_map_extraction(
                         frame_bounds=frame_bounds,
                         model=aligned_model,
                         extra_properties=alignment_props,
+                        image=image,
                     )
                     asyncio.run(
                         persist_features(project_id, map_id, colors_georef.collections)
@@ -903,6 +944,13 @@ def process_dev_test_extraction(
                 "color extraction will return no zones"
             )
 
+        # Text regions are a property of the *map*, not of the case, and OCR
+        # costs ~135 s on CPU. Pulling them from the derived store means the
+        # second case on a map -- and every re-run of the first -- pays
+        # nothing, which is what makes this loop usable. Fetched before colour
+        # extraction because the zone fill needs them too, not only alignment.
+        text_regions = _dev_test_text_regions(test_id, image, config=run_config)
+
         color_result = extract_colors(
             tmp_file_path,
             debug=False,
@@ -910,20 +958,34 @@ def process_dev_test_extraction(
             imposed_click_positions=imposed_click_positions_tuples,
             imposed_colors_names=imposed_colors_names,
             imposed_sampling_radii=imposed_sampling_radii_ints,
+            text_regions=text_regions if run_config.text_aware_zone_fill else None,
+            text_fill_min_context=run_config.text_fill_min_context,
+            text_fill_max_distance_px=run_config.text_fill_max_distance_px,
+            text_fill_method=run_config.text_fill_method,
+            text_inpaint_dilation_px=run_config.text_inpaint_dilation_px,
+            text_inpaint_radius_px=run_config.text_inpaint_radius_px,
+            text_inpaint_max_ink_ratio=run_config.text_inpaint_max_ink_ratio,
+            text_inpaint_algo=run_config.text_inpaint_algo,
+            text_inpaint_ink_deltaE=run_config.text_inpaint_ink_deltaE,
+            zone_gap_fill=run_config.zone_gap_fill,
+            zone_gap_max_ratio_of_diagonal=run_config.zone_gap_max_ratio_of_diagonal,
         )
+        # Out of the dict before anything else: it is returned to Celery, which
+        # cannot serialise an array. Written beside the zones further down.
+        classified_rgb = color_result.pop("classified_rgb", None)
         normalized_features = color_result.get("normalized_features", [])
         pixel_features = color_result.get("pixel_features", [])
+        georef_record.set_errors(
+            textFill=color_result.get("text_fill"),
+            zoneGaps=color_result.get("zone_gaps"),
+        )
+        # Copied now: georeferencing rewrites these features' properties in
+        # place, and the test tool shows the extraction on its own, before
+        # any transform touched it.
+        pixel_zones_snapshot = json.loads(json.dumps(pixel_features))
 
         if pixel_points and geo_points_lonlat:
             try:
-                # Text regions are a property of the *map*, not of the case, and
-                # OCR costs ~135 s on CPU. Pulling them from the derived store
-                # means the second case on a map -- and every re-run of the
-                # first -- pays nothing, which is what makes this loop usable.
-                text_regions = _dev_test_text_regions(
-                    test_id, image, config=run_config
-                )
-
                 debug_dir = _dev_test_debug_dir(test_id, test_case)
                 alignment = _align_if_enabled(
                     image,
@@ -950,6 +1012,7 @@ def process_dev_test_extraction(
                     record=georef_record,
                     model=aligned_model,
                     config=run_config,
+                    image=image,
                 )
                 all_extracted_features = georef.collections
                 georef_record.set_model("chosen", georef.transform_payload)
@@ -1015,6 +1078,8 @@ def process_dev_test_extraction(
             zones_output_path = os.path.join(nested_case_dir, "zones.geojson")
             with open(zones_output_path, "w", encoding="utf-8") as f:
                 json.dump(zones_geojson, f, indent=2, ensure_ascii=False)
+            write_pixel_zones(nested_case_dir, pixel_zones_snapshot)
+            write_classified_image(nested_case_dir, classified_rgb)
 
             image_url = f"/dev-test/maps/{test_id}{ext}"
             zones_url = f"/dev-test/test_cases/{test_id}/{test_case}/zones.geojson"

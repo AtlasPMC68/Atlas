@@ -14,12 +14,19 @@ import math
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "7"
+CONFIG_VERSION = "12"
 
 #: The transform models a run may choose between, in increasing order of
 #: freedom. Adding one here is not enough: ``pipeline`` has to know how to
 #: build it, and a test holds the two lists together.
 TRANSFORM_MODELS = ("affine", "piecewise_affine")
+
+#: How labels are removed from the zones; see `color_extraction`. Kept in step
+#: with `color_extraction.TEXT_FILL_METHODS`, which is not imported here so the
+#: config stays free of the image stack.
+TEXT_FILL_METHODS = ("label", "inpaint")
+#: How the inpaint method finds and repaints ink; see `color_extraction`.
+TEXT_INPAINT_ALGOS = ("palette", "telea")
 
 
 @dataclass(frozen=True)
@@ -32,16 +39,70 @@ class GeorefConfig:
     # Kept as-is for now. Roadmap §4.3 turns this off once chamfer alignment
     # lands, because blind snapping fights the alignment.
     snap_to_coastline: bool = True
+    # Snap tolerance = this share of the image diagonal, converted to metres
+    # with the transform's scale. The only knob: no pixel or metre clamps.
     coastline_snap_ratio_of_diagonal: float = 0.01
-    coastline_snap_fallback_px: float = 8.0
-    coastline_snap_min_px: float = 3.0
-    coastline_snap_max_px: float = 40.0
-    coastline_snap_min_m: float = 200.0
-    coastline_snap_max_m: float = 50_000.0
 
     # --- Land clipping (current §8) ------------------------------------------
     clip_to_land_mask: bool = True
     land_coverage_threshold: float = 0.01
+
+    # --- Zone extraction ------------------------------------------------------
+    # Strictly upstream of georeferencing, and here anyway: it changes the
+    # zones every metric is computed on, so a run has to record what it used,
+    # and the dev tool has to be able to turn it off to compare.
+    #
+    # A place name is drawn *over* a zone, so its glyphs belong to that zone.
+    # Nearest-colour assignment drops them and hole filling cannot get them
+    # back -- on a real map the glyphs touch the rivers and borders, so the
+    # gaps reach the image edge and are not holes at all. On by default: that
+    # is a defect, not an experiment. Needs OCR boxes, so it does nothing when
+    # none are available.
+    text_aware_zone_fill: bool = True
+    # Fraction of the ring around a label that must already belong to a zone.
+    # A name floating in open water has almost no assigned neighbours, and
+    # filling it would invent land.
+    text_fill_min_context: float = 0.25
+    # How far a label pixel may reach for a zone to belong to. A glyph stroke
+    # is a few pixels wide, so anything genuinely written on a zone is close to
+    # it. Measured on the 1791 map: at 12 px and beyond the fill starts
+    # painting the empty caption band under the map as a solid rectangle,
+    # because an OCR box covers its background as well as its letters.
+    text_fill_max_distance_px: float = 8.0
+    # "label" (the two settings above) repairs the zones after classification.
+    # "inpaint" erases the labels' ink from the image before it, so a name
+    # written half over the sea comes back as sea on one side and land on the
+    # other; it ignores the two settings above. Default kept at "label" until
+    # the harness has compared the two.
+    text_fill_method: str = "label"
+    # Pixels added around the detected ink, for the anti-aliased fringe whose
+    # blended colour otherwise lands in the wrong zone.
+    text_inpaint_dilation_px: int = 1
+    # cv2.inpaint's neighbourhood radius.
+    text_inpaint_radius_px: float = 3.0
+    # A box whose "ink" covers more than this share of it did not split into
+    # strokes and background, and is left alone.
+    text_inpaint_max_ink_ratio: float = 0.6
+    # "palette": the background of each label is the palette of colours in the
+    # ring around its box, ink is whatever is far from that palette, and each
+    # ink pixel takes the colour most voted by its known neighbours -- never a
+    # blend. "telea": the earlier Otsu split + cv2.inpaint (weighted mean);
+    # the radius above only applies to it.
+    text_inpaint_algo: str = "palette"
+    # Palette mode: how far (ΔE2000) from every background colour of its box a
+    # pixel must be to count as ink. Lower catches more of the anti-aliased
+    # fringe, and more genuine texture with it.
+    text_inpaint_ink_deltaE: float = 12.0
+    # A border drawn between two zones matches neither colour, so both zones
+    # stop short of it and a strip of nothing runs between them. On: every
+    # zone grows at the same rate into unassigned pixels that sit in a narrow
+    # gap between two *different* zones (a lake, the sea or a coast is left
+    # alone), each pixel is settled on one zone, and all zones are vectorised
+    # together so neighbours share one border. Off until compared.
+    zone_gap_fill: bool = False
+    # Widest gap closed, as a share of the image diagonal (0.008 is ~6 px on a
+    # 600 px scan, ~40 px on a 5000 px one): a drawn line, not a strait.
+    zone_gap_max_ratio_of_diagonal: float = 0.008
 
     # --- Transform model (roadmap §5.4) --------------------------------------
     # Which model places the map. One named choice rather than a flag per
@@ -245,14 +306,25 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         (
             "snap_to_coastline",
             "coastline_snap_ratio_of_diagonal",
-            "coastline_snap_fallback_px",
-            "coastline_snap_min_px",
-            "coastline_snap_max_px",
-            "coastline_snap_min_m",
-            "coastline_snap_max_m",
         ),
     ),
     ("Land clipping", ("clip_to_land_mask", "land_coverage_threshold")),
+    (
+        "Zone extraction",
+        (
+            "text_aware_zone_fill",
+            "text_fill_min_context",
+            "text_fill_max_distance_px",
+            "text_fill_method",
+            "text_inpaint_algo",
+            "text_inpaint_ink_deltaE",
+            "zone_gap_fill",
+            "zone_gap_max_ratio_of_diagonal",
+            "text_inpaint_dilation_px",
+            "text_inpaint_radius_px",
+            "text_inpaint_max_ink_ratio",
+        ),
+    ),
     ("Transform model", ("transform_model", "piecewise_anchor_margin")),
     ("Reference rasters", ("reference_raster_width", "reference_raster_height")),
     (
@@ -350,6 +422,8 @@ _NOT_OVERRIDABLE = frozenset({"version"})
 #: these are validated against the list and offered as a dropdown by the UI.
 FIELD_CHOICES: Dict[str, Tuple[str, ...]] = {
     "transform_model": TRANSFORM_MODELS,
+    "text_fill_method": TEXT_FILL_METHODS,
+    "text_inpaint_algo": TEXT_INPAINT_ALGOS,
 }
 
 

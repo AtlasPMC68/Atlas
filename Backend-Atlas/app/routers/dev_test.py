@@ -10,6 +10,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
 )
 
@@ -18,8 +19,11 @@ from ..tasks import GEOREF_CONFIG, process_dev_test_extraction
 from app.utils.dev_test import (
     delete_dev_test,
     delete_dev_test_case,
+    find_test_image_path,
     list_dev_test_cases,
     list_dev_tests,
+    load_case_config,
+    parse_extraction_inputs,
     run_evaluate_case_blocking,
     slugify_test_case,
     upload_dev_test,
@@ -32,8 +36,19 @@ from app.utils.dev_test_cases import (
     normalize_kind,
     resolve_case_kind,
 )
-from app.utils.georeferencing import frame_bounds_to_config_entry, parse_frame_bounds
+from app.utils.georeferencing import (
+    ControlPoint,
+    fit_affine_from_control_points,
+    frame_bounds_to_config_entry,
+    parse_frame_bounds,
+)
 from app.utils.georeferencing.config import describe_config, parse_config_overrides
+from app.utils.georeferencing.diagnostics import (
+    control_point_diagnostics,
+    load_last_run_control_pixels,
+    load_last_run_model,
+)
+from app.utils.georeferencing.records import RUN_RECORD_FILENAME
 from app.utils.imposed_colors import (
     KIND_WATER,
     KIND_ZONE,
@@ -345,6 +360,397 @@ async def get_georef_config(_user_id: str = Depends(get_current_user_id)):
     return describe_config(GEOREF_CONFIG)
 
 
+def _last_run(test_id: str, test_case_id: str):
+    """The transform this case's last run used, and the clicks it used it on.
+
+    Both come from the run record: a run made with points excluded was fitted
+    on a subset, and measuring its model against every stored point would
+    report an error that run never had.
+    """
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
+    record_path = os.path.join(paths.case_dir, RUN_RECORD_FILENAME)
+    return (
+        load_last_run_model(record_path),
+        load_last_run_control_pixels(record_path),
+    )
+
+
+@router.get("/test-cases/{test_id}/{test_case_id}/control-points")
+async def get_dev_test_control_points(
+    test_id: str,
+    test_case_id: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Per-control-point error for this case, without running anything.
+
+    Leave-one-out rather than the fit's own residuals: an affine spreads one
+    bad click over all of them, so an in-sample residual both hides the guilty
+    point and blames its neighbours. Costs n small fits, so it answers while
+    the page is still being read -- a re-run costs minutes.
+    """
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+
+    try:
+        config = load_case_config(GEOREF_ASSETS_DIR, safe_test_id, safe_case_id)
+        image_path = find_test_image_path(safe_test_id)
+        inputs = parse_extraction_inputs(config, image_path or "")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not inputs.pixel_points or not inputs.geo_points_lonlat:
+        return {"points": [], "summary": {"count": 0, "looAvailable": False}}
+
+    control_points = ControlPoint.from_pairs(
+        inputs.pixel_points, inputs.geo_points_lonlat, source="sift"
+    )
+    model, pixels = _last_run(safe_test_id, safe_case_id)
+    return control_point_diagnostics(
+        control_points, inputs.frame_bounds, applied_model=model, applied_pixels=pixels
+    )
+
+
+@router.get("/test-cases/{test_id}/{test_case_id}/control-points.png")
+async def get_dev_test_control_points_image(
+    test_id: str,
+    test_case_id: str,
+    view: str = Query(
+        "both",
+        pattern="^(map|world|both)$",
+        description=(
+            "map: the points on the user's scan. world: the same points on the"
+            " reference coastline, where the arrow shows where a click lands"
+            " on the Earth. both: side by side."
+        ),
+    ),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """The control points drawn with an arrow per point.
+
+    Rendered on demand from the last run's stored model, not from a fresh fit:
+    the question is where *that* run put the points, so a piecewise run must
+    show its own placement.
+
+    Two views of one fact. On the map, the arrow runs from the click to where
+    the transform says that real place is. In the world, it runs from the
+    point's true position to where the click lands -- which is the one that
+    shows whether a point was matched to the wrong coastline feature.
+    """
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+
+    try:
+        config = load_case_config(GEOREF_ASSETS_DIR, safe_test_id, safe_case_id)
+        image_path = find_test_image_path(safe_test_id)
+        inputs = parse_extraction_inputs(config, image_path or "")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not inputs.pixel_points or not inputs.geo_points_lonlat:
+        raise HTTPException(status_code=404, detail="This case has no control points")
+
+    import cv2
+
+    from app.utils.georeferencing.gcp_overlay import (
+        draw_control_point_overlay,
+        encode_png,
+        side_by_side,
+    )
+
+    image = cv2.imread(image_path) if image_path else None
+    if image is None:
+        raise HTTPException(status_code=404, detail="Test image could not be read")
+
+    control_points = ControlPoint.from_pairs(
+        inputs.pixel_points, inputs.geo_points_lonlat, source="sift"
+    )
+    model, applied_pixels = _last_run(safe_test_id, safe_case_id)
+    if model is None:  # noqa: SIM108 - the two branches carry different captions
+        # No run recorded yet: draw the GCP-only affine, and say so, rather
+        # than refusing to show anything.
+        model = fit_affine_from_control_points(control_points)
+        caption = "aucun run enregistré - affine ajustée aux points"
+    else:
+        caption = f"dernier run : {model.name}"
+
+    diagnostics = control_point_diagnostics(
+        control_points,
+        inputs.frame_bounds,
+        applied_model=model,
+        applied_pixels=applied_pixels,
+    )
+    errors = [p["appliedKm"] for p in diagnostics["points"]]
+
+    suspects = diagnostics["summary"]["suspectIndices"]
+
+    # A model that interpolates its own control points -- piecewise does, by
+    # construction -- places every one of them exactly, so an arrow drawn from
+    # it has zero length and tells the reader nothing. Fall back to the
+    # leave-one-out placement, which is the honest arrow for any model.
+    interpolates = all(
+        (p["appliedKm"] or 0.0) < 1.0 for p in diagnostics["points"]
+    )
+    summary = diagnostics["summary"]
+    if interpolates:
+        # Its own RMS is 0 by construction, so reporting it would be worse
+        # than saying nothing: the leave-one-out number is the real one.
+        errors = [p["looKm"] for p in diagnostics["points"]]
+        caption += f"   fleche = leave-one-out, RMS {summary.get('affineLooRmseKm')} km"
+    elif summary.get("appliedRmseKm") is not None:
+        used = summary.get("appliedPointCount") or len(control_points)
+        caption += f"   RMS {summary['appliedRmseKm']} km sur {used} points"
+    placed_pixels, placed_world = _placements(control_points, model, interpolates)
+
+    overlay = None
+    if view in ("map", "both"):
+        overlay = draw_control_point_overlay(
+            image,
+            control_points,
+            placed_pixels,
+            errors_km=errors,
+            suspect_indices=suspects,
+            caption=caption,
+        )
+
+    if view in ("world", "both"):
+        world = _world_panel(
+            inputs.frame_bounds, control_points, placed_world, errors, suspects
+        )
+        if world is None and overlay is None:
+            raise HTTPException(
+                status_code=404,
+                detail="This case has no framing box, so the world view cannot be drawn",
+            )
+        if world is not None:
+            overlay = world if overlay is None else side_by_side(overlay, world)
+
+    return Response(content=encode_png(overlay), media_type="image/png")
+
+
+def _pixel_zones_context(test_id: str, test_case_id: str):
+    """The last run's pixel-space zones, the map, its cached OCR and text-fill stats.
+
+    OCR is read from the derived cache and never computed here: 135 s is not
+    something a diagnostic view should trigger.
+    """
+    from app.utils.dev_test_derived import text_regions_if_cached
+    from app.utils.dev_test_pixel_zones import load_pixel_zones
+
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
+    features = load_pixel_zones(paths.case_dir)
+    if features is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Aucune zone brute enregistrée pour ce cas : relancez-le.",
+        )
+
+    image_path = find_test_image_path(test_id)
+    text_regions = None
+    if image_path:
+        try:
+            text_regions = text_regions_if_cached(test_id, image_path)
+        except Exception as e:
+            logger.warning(f"[DEV-TEST] Could not read cached text regions: {e}")
+
+    text_fill = None
+    try:
+        with open(
+            os.path.join(paths.case_dir, RUN_RECORD_FILENAME), "r", encoding="utf-8"
+        ) as f:
+            text_fill = (json.load(f).get("errors") or {}).get("textFill")
+    except (OSError, ValueError):
+        pass
+
+    return features, image_path, text_regions, text_fill
+
+
+@router.get("/test-cases/{test_id}/{test_case_id}/pixel-zones")
+async def get_dev_test_pixel_zones(
+    test_id: str,
+    test_case_id: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Per-zone hole statistics for the last run, before any transform."""
+    from app.utils.dev_test_pixel_zones import pixel_zone_stats, text_box_coverage
+
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+    features, _image_path, text_regions, text_fill = _pixel_zones_context(
+        safe_test_id, safe_case_id
+    )
+    return {
+        "zones": pixel_zone_stats(features, text_regions),
+        "textCoverage": text_box_coverage(features, text_regions),
+        "ocrBoxes": None if text_regions is None else len(text_regions),
+        "textFill": text_fill,
+    }
+
+
+@router.get("/test-cases/{test_id}/{test_case_id}/pixel-zones.png")
+async def get_dev_test_pixel_zones_image(
+    test_id: str,
+    test_case_id: str,
+    background: str = Query("scan", pattern="^(scan|blank)$"),
+    ocr: bool = Query(True, description="Draw the cached OCR boxes"),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """The last run's zones on the scan, as extracted: no transform, no clip."""
+    import cv2
+
+    from app.utils.dev_test_pixel_zones import draw_pixel_zones
+    from app.utils.georeferencing.gcp_overlay import encode_png
+
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+    features, image_path, text_regions, text_fill = _pixel_zones_context(
+        safe_test_id, safe_case_id
+    )
+
+    image = cv2.imread(image_path) if image_path else None
+    if image is None:
+        raise HTTPException(status_code=404, detail="Test image could not be read")
+
+    lines = [f"{len(features)} zone(s) brutes - trous en rouge"]
+    if text_regions is None:
+        lines.append("OCR absent du cache (lancez un run avec l'alignement)")
+    elif ocr:
+        lines.append(f"{len(text_regions)} boites OCR en magenta")
+    if text_fill:
+        lines.append(
+            f"remplissage texte : {text_fill.get('pixelsFilled', 0)} px dans"
+            f" {text_fill.get('boxesFilled', 0)}/{text_fill.get('boxesConsidered', 0)} boites"
+        )
+    else:
+        lines.append("remplissage texte : non applique au dernier run")
+
+    canvas = draw_pixel_zones(
+        image,
+        features,
+        text_regions if ocr else None,
+        blank_background=background == "blank",
+        caption="\n".join(lines),
+    )
+    return Response(content=encode_png(canvas), media_type="image/png")
+
+
+@router.get("/test-cases/{test_id}/{test_case_id}/classified-image.png")
+async def get_dev_test_classified_image(
+    test_id: str,
+    test_case_id: str,
+    ocr: bool = Query(True, description="Draw the cached OCR boxes"),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """The image the last run classified, labels erased by the inpaint step.
+
+    Preprocessed (denoised, normalised), so its colours are the ones the
+    nearest-colour assignment compared, not the scan's.
+    """
+    import cv2
+    import numpy as np
+
+    from app.utils.dev_test_derived import text_regions_if_cached
+    from app.utils.dev_test_pixel_zones import CLASSIFIED_IMAGE_FILENAME, OCR_BOX_COLOR
+    from app.utils.georeferencing.gcp_overlay import encode_png
+
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, safe_test_id, safe_case_id)
+    image = cv2.imread(os.path.join(paths.case_dir, CLASSIFIED_IMAGE_FILENAME))
+    if image is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Aucune image nettoyée : le dernier run n'a pas utilisé"
+                " text_fill_method = inpaint."
+            ),
+        )
+
+    if ocr:
+        image_path = find_test_image_path(safe_test_id)
+        regions = text_regions_if_cached(safe_test_id, image_path) if image_path else None
+        for region in regions or []:
+            try:
+                pts = np.round(np.asarray(region, dtype=np.float64)).astype(np.int32)
+            except (TypeError, ValueError):
+                continue
+            if len(pts) >= 3:
+                cv2.polylines(image, [pts], True, OCR_BOX_COLOR, 1, cv2.LINE_AA)
+
+    return Response(content=encode_png(image), media_type="image/png")
+
+
+def _placements(control_points, model, leave_one_out: bool):
+    """Where each control point ends up, in both spaces.
+
+    ``placed_pixels`` is where the model says the point's real position sits on
+    the scan; ``placed_world`` is where the user's click lands on the Earth.
+    Same fact, told from each side, so the two panels stay consistent.
+    """
+    import numpy as np
+
+    from app.utils.georeferencing.diagnostics import leave_one_out_models
+    from app.utils.georeferencing.projection import lonlat_to_webmercator
+
+    per_point = (
+        leave_one_out_models(control_points)
+        if leave_one_out
+        else [model] * len(control_points)
+    )
+
+    placed_pixels: list = []
+    placed_world: list = []
+    for cp, point_model in zip(control_points, per_point):
+        if point_model is None:
+            placed_pixels.append(None)
+            placed_world.append(None)
+            continue
+        east, north = lonlat_to_webmercator(cp.geo[0], cp.geo[1])
+        try:
+            inverse = point_model.inverse()
+            px, py = inverse(np.array([east]), np.array([north]))
+            placed_pixels.append((float(px[0]), float(py[0])))
+        except Exception:
+            placed_pixels.append(None)
+        try:
+            wx, wy = point_model(
+                np.array([cp.pixel[0]]), np.array([cp.pixel[1]])
+            )
+            placed_world.append((float(wx[0]), float(wy[0])))
+        except Exception:
+            placed_world.append(None)
+    return placed_pixels, placed_world
+
+
+def _world_panel(frame_bounds, control_points, placed_world, errors_km, suspects):
+    """The reference-side panel, or None when the case has no framing box.
+
+    Never raises: the map-side panel is the one that must always render, and a
+    missing or unbuildable reference layer should not take it down with it.
+    """
+    if not frame_bounds:
+        return None
+    try:
+        from app.utils.georeferencing.gcp_overlay import draw_world_overlay
+        from app.utils.georeferencing.reference import build_reference_layers
+
+        layers = build_reference_layers(frame_bounds)
+        return draw_world_overlay(
+            layers,
+            control_points,
+            placed_world,
+            errors_km=errors_km,
+            suspect_indices=suspects,
+            caption="cadre de reference",
+        )
+    except Exception as e:
+        logger.warning(f"[DEV-TEST] Could not draw the world-side overlay: {e}")
+        return None
+
+
 @router.post("/test-cases/{test_id}/{test_case_id}/run-evaluate")
 async def run_evaluate_dev_test_case(
     test_id: str,
@@ -365,6 +771,13 @@ async def run_evaluate_dev_test_case(
     ),
     clip_to_land_mask: bool | None = Query(
         None, description="Drop zone area falling in the ocean"
+    ),
+    exclude_gcp: list[int] = Query(
+        default=[],
+        description=(
+            "Control-point indices to leave out of this run, for a hand-driven"
+            " leave-one-out. The case's stored clicks are not modified."
+        ),
     ),
     config_overrides: dict | None = Body(
         None,
@@ -413,6 +826,7 @@ async def run_evaluate_dev_test_case(
             min_iou=min_iou,
             assets_root=GEOREF_ASSETS_DIR,
             config_overrides=overrides or None,
+            excluded_control_points=exclude_gcp,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
