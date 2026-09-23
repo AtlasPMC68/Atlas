@@ -687,7 +687,7 @@ def extract_shapes_from_clicks(
     return {
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,
-        "shapes": [],  # kept for API compatibility
+        "shapes": [shape for shape, _ in shapes_with_contours],
         "total_shapes": len(pixel_features),
     }
 
