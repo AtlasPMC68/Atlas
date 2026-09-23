@@ -3,6 +3,7 @@ import Map from "../views/Map.vue";
 import Home from "../views/Home.vue";
 import ImportView from "../views/import/ImportView.vue";
 import Dashboard from "../views/Dashboard.vue";
+import About from "../views/About.vue";
 import Profile from "../views/Profile.vue";
 import Discover from "../views/Discover.vue";
 import TestEditor from "../views/dev/TestEditor.vue";
@@ -58,6 +59,7 @@ const routes = [
   { path: "/connexion", component: Home }, // Dummy route
   { path: "/inscription", component: Home }, // Dummy route
   { path: "/projet/:projectId", component: Map, meta: { requiresAuth: true } },
+  { path: "/a-propos", component: About },
 ];
 
 export const router = createRouter({
