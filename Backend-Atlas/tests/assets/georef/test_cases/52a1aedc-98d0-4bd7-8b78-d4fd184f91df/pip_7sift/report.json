@@ -1,10 +1,40 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "pip_7sift",
-  "evaluatedAt": "2026-09-23T20:40:35.315218Z",
+  "evaluatedAt": "2026-09-23T20:56:25.925759Z",
+  "expectedZonesFile": "georef_zones/52a1aedc-98d0-4bd7-8b78-d4fd184f91df_zones.geojson",
   "thresholds": {
     "minIou": null,
-    "scoreKey": "metrics.mean.meanIou"
+    "scoreKey": "metrics.mean.meanIou",
+    "nonRegressionBaseline": {
+      "meanIou": 0.9408240405690721,
+      "meanPrecision": 0.9921602584984828,
+      "meanRecall": 0.9478706041845004,
+      "totalFalseNegativeArea": 10.59888262943007,
+      "totalFalsePositiveArea": 1.5228122515177678,
+      "georefAccuracy": {
+        "controlPointCount": 7,
+        "checkpointCount": 3,
+        "rmseMeters": 1344457.452879488,
+        "medianMeters": 1233740.435818308,
+        "p95Meters": 1532999.9666341944,
+        "maxMeters": 1566251.0256137373,
+        "checkPoints": [
+          {
+            "name": "checkpoint-1",
+            "errorMeters": 1566251.0256137373
+          },
+          {
+            "name": "checkpoint-2",
+            "errorMeters": 1203095.9187032299
+          },
+          {
+            "name": "checkpoint-3",
+            "errorMeters": 1233740.435818308
+          }
+        ]
+      }
+    }
   },
   "metrics": {
     "expected": [

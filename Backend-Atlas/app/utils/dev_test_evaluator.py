@@ -560,6 +560,10 @@ def evaluate_georef_zones_from_paths(
         "testId": test_id,
         "testCaseId": test_case_id,
         "evaluatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "expectedZonesFile": os.path.relpath(
+            expected_zones_path,
+            start=os.path.dirname(os.path.dirname(expected_zones_path)),
+        ).replace(os.sep, "/"),
         "thresholds": {
             "minIou": min_iou,
             "scoreKey": "metrics.mean.meanIou",
@@ -613,6 +617,11 @@ def evaluate_georef_test_case(
     georef_accuracy = evaluate_georef_check_points_from_config(paths.config_path)
     if georef_accuracy is not None:
         report["georefAccuracy"] = georef_accuracy
+
+    config = _load_json(paths.config_path)
+    baseline = config.get("nonRegressionBaseline")
+    if isinstance(baseline, dict):
+        report.setdefault("thresholds", {})["nonRegressionBaseline"] = baseline
 
     return report, errors_geojson
 
