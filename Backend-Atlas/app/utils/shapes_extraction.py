@@ -55,48 +55,8 @@ def get_dominant_color_in_contour(
     return (r_bin * 32 + 16, g_bin * 32 + 16, b_bin * 32 + 16)
  
  
-def _overlaps_text(
-    contour: np.ndarray,
-    text_bboxes: List[Tuple[int, int, int, int]],
-    overlap_threshold: float,
-) -> bool:
-    """Check if a contour overlaps with a text region."""
-    x, y, w, h = cv2.boundingRect(contour)
-    shape_area = w * h
-    if shape_area == 0:
-        return False
-    for tx, ty, tx2, ty2 in text_bboxes:
-        ix1, iy1 = max(x, tx), max(y, ty)
-        ix2, iy2 = min(x + w, tx2), min(y + h, ty2)
-        if ix2 > ix1 and iy2 > iy1:
-            if (ix2 - ix1) * (iy2 - iy1) / shape_area >= overlap_threshold:
-                return True
-    return False
  
  
-def filter_text_overlapping_contours(
-    contours: List[np.ndarray],
-    text_regions: List[List[List[int]]],
-    overlap_threshold: float = 0.5,
-) -> Tuple[List[np.ndarray], int]:
-    """Drop contours whose bounding box overlaps a text region by ≥ *overlap_threshold*."""
-    if not text_regions:
-        return contours, 0
- 
-    text_bboxes = [
-        (
-            min(p[0] for p in r),
-            min(p[1] for p in r),
-            max(p[0] for p in r),
-            max(p[1] for p in r),
-        )
-        for r in text_regions
-    ]
- 
-    kept = [
-        c for c in contours if not _overlaps_text(c, text_bboxes, overlap_threshold)
-    ]
-    return kept, len(contours) - len(kept)
  
  
 # ---------------------------------------------------------------------------
@@ -104,48 +64,12 @@ def filter_text_overlapping_contours(
 # ---------------------------------------------------------------------------
  
  
-def preprocess_image(gray: np.ndarray, threshold_value: int = 127) -> np.ndarray:
-    """Binarise a grayscale image.  Uses a simple threshold for near-binary
-    inputs and adaptive Gaussian thresholding otherwise."""
-    if len(np.unique(gray)) <= SIMPLE_BINARY_UNIQUE_LEVELS:
-        return (gray > threshold_value).astype(np.uint8) * 255
-
-    return cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 6
-    )
  
  
-def detect_contours(binary_mask: np.ndarray) -> List[np.ndarray]:
-    contours, _ = cv2.findContours(binary_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    return list(contours) if contours else []
  
  
-def _should_keep_contour(
-    contour: np.ndarray,
-    min_area: int,
-    max_area: int,
-    image_area: int,
-) -> bool:
-    """Check if a contour should be kept based on area criteria."""
-    area = cv2.contourArea(contour)
-    return (
-        min_area <= area <= max_area
-        and area / image_area <= MAX_SHAPE_IMAGE_AREA_RATIO
-        and len(contour) >= 3
-    )
  
  
-def filter_contours(
-    contours: List[np.ndarray],
-    min_area: int,
-    max_area: int,
-    image_area: int,
-) -> List[np.ndarray]:
-    """Keep contours whose area falls in [min_area, max_area] and whose
-    ratio to the total image area is ≤ 50 %."""
-    return [
-        c for c in contours if _should_keep_contour(c, min_area, max_area, image_area)
-    ]
  
  
 def extract_contour_properties(
@@ -229,23 +153,6 @@ def extract_contour_properties(
 # ---------------------------------------------------------------------------
 # Classification
 # ---------------------------------------------------------------------------
-def detect_circles_hough(image_bgr: np.ndarray) -> List[Tuple[int, int, int]]:
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    gray_blurred = cv2.medianBlur(gray, 5)
-
-    circles = cv2.HoughCircles(
-        gray_blurred,
-        cv2.HOUGH_GRADIENT,
-        dp=1,
-        minDist=20,        
-        param1=50,         
-        param2=30,        
-        minRadius=5,
-        maxRadius=0,       
-    )
-    if circles is not None:
-        return [(int(x), int(y), int(r)) for x, y, r in circles[0]]
-    return []
 
 def compute_rect_score(contour: np.ndarray) -> float:
     area = cv2.contourArea(contour)
@@ -282,138 +189,9 @@ def classify_shape(
 
     return "Shape unknown"
 
-def _is_inside_legend_bounds(
-    cx: float,
-    cy: float,
-    legend_bounds: Optional[LegendBounds],
-) -> bool:
-    if not legend_bounds:
-        return False
 
-    x = legend_bounds.get("x", 0.0)
-    y = legend_bounds.get("y", 0.0)
-    w = legend_bounds.get("width", 0.0)
-    h = legend_bounds.get("height", 0.0)
 
-    if w <= 0 or h <= 0:
-        return False
 
-    return x <= cx <= (x + w) and y <= cy <= (y + h)
-
-def _contour_to_polygon(contour: np.ndarray) -> Optional[Polygon]:
-    if contour is None or len(contour) < 3:
-        return None
-
-    points = contour.reshape(-1, 2)
-    if len(points) < 3:
-        return None
-
-    polygon = Polygon(points)
-    if not polygon.is_valid:
-        polygon = polygon.buffer(0)
-
-    if polygon.is_empty:
-        return None
-
-    return polygon
-
-def _is_duplicate_shape(
-    candidate_contour: np.ndarray,
-    candidate_area: float,
-    kept_contour: np.ndarray,
-    kept_area: float,
-    overlap_threshold: float,
-    area_similarity_threshold: float,
-) -> bool:
-    if candidate_area <= 0 or kept_area <= 0:
-        return False
-
-    area_similarity = min(candidate_area, kept_area) / max(candidate_area, kept_area)
-    if area_similarity < area_similarity_threshold:
-        return False
-
-    candidate_poly = _contour_to_polygon(candidate_contour)
-    kept_poly = _contour_to_polygon(kept_contour)
-    if candidate_poly is None or kept_poly is None:
-        return False
-
-    intersection_area = candidate_poly.intersection(kept_poly).area
-    if intersection_area <= 0:
-        return False
-
-    overlap_ratio = intersection_area / min(candidate_area, kept_area)
-    return overlap_ratio >= overlap_threshold
-
-def post_filter_shapes(
-    shapes_with_contours: List[Tuple[Dict, np.ndarray]],
-    unknown_min_area: float = 80.0,
-    unknown_max_area: float = 3000.0,
-    overlap_threshold: float = 0.7,
-    area_similarity_threshold: float = 0.95,
-    legend_bounds: Optional[LegendBounds] = None,
-    legend_coverage_threshold: float = 0.9,
-) -> List[Tuple[Dict, np.ndarray]]:
-    """Final filtering pass:
-    1) Remove Shape unknown outside configured area range.
-    2) Remove shapes covering too much of selected legend zone.
-    3) Remove near-duplicate overlapping shapes across all classes.
-    """
-    filtered_unknown_noise: List[Tuple[Dict, np.ndarray]] = []
-    legend_area = 0.0
-    if legend_bounds:
-        legend_width = float(legend_bounds.get("width", 0.0))
-        legend_height = float(legend_bounds.get("height", 0.0))
-        if legend_width > 0 and legend_height > 0:
-            legend_area = legend_width * legend_height
-
-    for shape, contour in shapes_with_contours:
-        shape_type = shape.get("shape_type")
-        area = float(shape.get("area", 0.0))
-
-        if shape_type == "Shape unknown" and (
-            area < unknown_min_area or area > unknown_max_area
-        ):
-            continue
-
-        if legend_area > 0:
-            center = shape.get("center", {})
-            cx = float(center.get("x", -1.0))
-            cy = float(center.get("y", -1.0))
-            if _is_inside_legend_bounds(cx, cy, legend_bounds):
-                legend_coverage = area / legend_area
-                if legend_coverage >= legend_coverage_threshold:
-                    continue
-
-        filtered_unknown_noise.append((shape, contour))
-
-    sorted_candidates = sorted(
-        filtered_unknown_noise,
-        key=lambda item: float(item[0].get("area", 0.0)),
-        reverse=True,
-    )
-
-    deduped: List[Tuple[Dict, np.ndarray]] = []
-    for candidate_shape, candidate_contour in sorted_candidates:
-        candidate_area = float(candidate_shape.get("area", 0.0))
-
-        is_duplicate = False
-        for kept_shape, kept_contour in deduped:
-            kept_area = float(kept_shape.get("area", 0.0))
-            if _is_duplicate_shape(
-                candidate_contour,
-                candidate_area,
-                kept_contour,
-                kept_area,
-                overlap_threshold,
-                area_similarity_threshold,
-            ):
-                is_duplicate = True
-                break
-
-        if not is_duplicate:
-            deduped.append((candidate_shape, candidate_contour))
-
-    return deduped
 
 def idealize_shape_points(
     contour: np.ndarray,
@@ -674,59 +452,11 @@ def create_pixel_geojson_features(
  
     return [{"type": "FeatureCollection", "features": features}]
  
-def export_shapes_to_normalized_geojson(
-    shapes_with_contours: List[Tuple[Dict, np.ndarray]],
-    image_output_dir: str,
-) -> str:
-    """Write normalized GeoJSON to disk and return the path."""
-    geojson_path = os.path.join(image_output_dir, "shapes_normalized.geojson")
-    feature_collection = create_normalized_geojson_features(shapes_with_contours)[0]
-    with open(geojson_path, "w", encoding="utf-8") as f:
-        json.dump(feature_collection, f, indent=2, ensure_ascii=False)
-    return geojson_path
  
 # ---------------------------------------------------------------------------
 # Pipeline helpers
 # ---------------------------------------------------------------------------
  
-def _preprocess_for_contours(
-    image_path: str,
-    threshold_value: int,
-) -> Dict:
-    """Load, denoise, enhance contrast on L channel, and binarise an image.
-
-    Returns a dict with all intermediate images and dimensions.
-    """
-    image = preprocessing.read_image(image_path)
-    if image is None:
-        raise ValueError(f"Unable to load image: {image_path}")
-
-    height, width = image.shape[:2]
-    image_uint8 = (image * 255).astype(np.uint8)
-    image_bgr = cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR)
-
-    image_denoised = cv2.bilateralFilter(image_bgr, d=11, sigmaColor=75, sigmaSpace=75)
-
-    lab = cv2.cvtColor(image_denoised, cv2.COLOR_BGR2LAB)
-    lightness, _, _ = cv2.split(lab)
-
-    l_norm = cv2.normalize(lightness, np.empty_like(lightness), alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
-
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(64, 64))
-    l_enhanced = clahe.apply(l_norm)
-
-    binary_mask = preprocess_image(l_enhanced, threshold_value)
-
-    return {
-        "image_bgr": image_bgr,
-        "clahe": l_enhanced,
-        "binary_mask": binary_mask,
-        "width": width,
-        "height": height,
-        "image_denoised": image_denoised,
-        "lightness": lightness,
-        "l_norm": l_norm,
-    }
 
 def _build_shapes_metadata(
     shapes_with_contours: List[Tuple[Dict, np.ndarray]],
@@ -751,90 +481,6 @@ def _build_shapes_metadata(
         for idx, (shape, _) in enumerate(shapes_with_contours, 1)
     ]
  
-def _write_debug_outputs(
-    image_bgr: np.ndarray,
-    binary_mask: np.ndarray,
-    shapes_with_contours: List[Tuple[Dict, np.ndarray]],
-    image_path: str,
-    image_output_dir: str,
-    width: int,
-    height: int,
-    min_area: int,
-    max_area: int,
-    threshold_value: int,
-    shapes_metadata: List[Dict],
-    intermediate_images: Optional[Dict[str, np.ndarray]] = None,
-) -> None:
-    if intermediate_images:
-        cv2.imwrite(
-            os.path.join(image_output_dir, "debug_0_original_converted.png"),
-            intermediate_images.get("image_bgr", image_bgr),
-        )
-        if "image_denoised" in intermediate_images:
-            cv2.imwrite(
-                os.path.join(image_output_dir, "debug_1_denoised.png"),
-                intermediate_images["image_denoised"],
-            )
-        if "lightness" in intermediate_images:
-            cv2.imwrite(
-                os.path.join(image_output_dir, "debug_2_lightness.png"),
-                intermediate_images["lightness"],
-            )
-        if "l_norm" in intermediate_images:
-            cv2.imwrite(
-                os.path.join(image_output_dir, "debug_3_l_normalized.png"),
-                intermediate_images["l_norm"],
-            )
-        if "clahe" in intermediate_images:
-            cv2.imwrite(
-                os.path.join(image_output_dir, "debug_4_clahe.png"),
-                intermediate_images["clahe"],
-            )
-    else:
-        cv2.imwrite(
-            os.path.join(image_output_dir, "debug_0_original_converted.png"), image_bgr
-        )
-
-    cv2.imwrite(os.path.join(image_output_dir, "debug_6_binary.png"), binary_mask)
-
-    for idx, (shape, contour) in enumerate(shapes_with_contours, 1):
-        save_shape_image(
-            image_bgr,
-            contour,
-            image_output_dir,
-            idx,
-            shape.get("shape_type") or "Shape",
-        )
-
-    metadata_path = os.path.join(image_output_dir, "shapes_metadata.json")
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "image_info": {
-                    "source_path": image_path,
-                    "dimensions": f"{width}x{height}",
-                    "total_area": width * height,
-                    "extraction_date": datetime.now().isoformat(),
-                },
-                "extraction_params": {
-                    "min_area": min_area,
-                    "max_area": max_area,
-                    "threshold_value": threshold_value,
-                },
-                "total_shapes_extracted": len(shapes_metadata),
-                "shapes": shapes_metadata,
-            },
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
- 
-    export_shapes_to_normalized_geojson(shapes_with_contours, image_output_dir)
- 
-    try:
-        reconstruct_shapes_debug(image_bgr, shapes_with_contours, image_output_dir)
-    except (cv2.error, OSError) as e:
-        logger.error("Error writing debug reconstruction for %s: %s", image_path, e)
  
 # ---------------------------------------------------------------------------
 # LAB perceptual distance extraction (point-and-click)
@@ -1050,112 +696,3 @@ def extract_shapes_from_clicks(
 # Main pipeline (OpenCV global contour extraction — kept for legend shapes)
 # ---------------------------------------------------------------------------
 
-def extract_shapes(
-    image_path: str,
-    output_dir: str = DEFAULT_OUTPUT_DIR,
-    min_area: int = 50,
-    max_area: int = 5000,
-    threshold_value: int = 127,
-    text_regions: Optional[List[List[List[int]]]] = None,
-    legend_bounds: Optional[LegendBounds] = None,
-    unknown_min_area_post: float = 500.0,
-    unknown_max_area_post: float = 4000.0,
-    overlap_threshold_post: float = 0.6,
-    area_similarity_threshold_post: float = 0.6,
-    debug: bool = False,
-    legend_coverage_threshold_post: float = 0.9,
-) -> Dict:
-    preprocess_result = _preprocess_for_contours(image_path, threshold_value)
-    image_bgr = preprocess_result["image_bgr"]
-    binary_mask = preprocess_result["binary_mask"]
-    width = preprocess_result["width"]
-    height = preprocess_result["height"]
-    image_area = width * height
-
-    hough_circles = detect_circles_hough(image_bgr)
-
-    contours = detect_contours(binary_mask)
-    filtered = filter_contours(contours, min_area, max_area, image_area)
- 
-    if text_regions:
-        filtered, n_removed = filter_text_overlapping_contours(filtered, text_regions)
-        logger.info("Removed %d shape(s) overlapping with text regions.", n_removed)
-
-    shapes_with_contours = []
-    for idx, contour in enumerate(filtered, 1):
-        shape = extract_contour_properties(
-            contour,
-            image_bgr,
-            idx,
-            hough_circles=hough_circles,
-        )
-        
-        if shape:
-            ideal_pts = shape["geometry"]["pixel_coords"]["contour_points"]
-
-            ideal_contour_float = np.array(ideal_pts, dtype=np.float32).reshape((-1, 1, 2))
-            ideal_contour = np.rint(ideal_contour_float).astype(np.int32)
-
-            _sync_shape_metrics_with_contour(shape, ideal_contour)
-            
-            shapes_with_contours.append((shape, ideal_contour))
-
-    shapes_with_contours = post_filter_shapes(
-        shapes_with_contours,
-        unknown_min_area=unknown_min_area_post,
-        unknown_max_area=unknown_max_area_post,
-        overlap_threshold=overlap_threshold_post,
-        area_similarity_threshold=area_similarity_threshold_post,
-        legend_bounds=legend_bounds,
-        legend_coverage_threshold=legend_coverage_threshold_post,
-    )
-
-    for shape, _ in shapes_with_contours:
-        center = shape.get("center", {})
-        cx = float(center.get("x", -1.0))
-        cy = float(center.get("y", -1.0))
-        shape["isLegend"] = _is_inside_legend_bounds(cx, cy, legend_bounds)
-
-    legend_shapes_with_contours = [
-        (shape, contour)
-        for shape, contour in shapes_with_contours
-        if shape.get("isLegend", False)
-    ]
-    non_legend_shapes_with_contours = [
-        (shape, contour)
-        for shape, contour in shapes_with_contours
-        if not shape.get("isLegend", False)
-    ]
- 
-    if debug:
-        base_name = os.path.splitext(os.path.basename(image_path))[0]
-        image_output_dir = os.path.join(output_dir, base_name)
-        os.makedirs(image_output_dir, exist_ok=True)
- 
-        shapes_metadata = _build_shapes_metadata(shapes_with_contours, image_area)
-        _write_debug_outputs(
-            image_bgr,
-            binary_mask,
-            shapes_with_contours,
-            image_path,
-            image_output_dir,
-            width,
-            height,
-            min_area,
-            max_area,
-            threshold_value,
-            shapes_metadata,
-            intermediate_images=preprocess_result,
-        )
- 
-    return {
-        "total_shapes": len(shapes_with_contours),
-        "shapes": [shape for shape, _ in shapes_with_contours],
-        "normalized_features": create_normalized_geojson_features(
-            non_legend_shapes_with_contours
-        ),
-        "pixel_features": create_pixel_geojson_features(non_legend_shapes_with_contours),
-        "legend_pixel_features": create_pixel_geojson_features(
-            legend_shapes_with_contours
-        ),
-    }

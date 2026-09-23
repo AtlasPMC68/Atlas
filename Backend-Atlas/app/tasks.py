@@ -17,7 +17,7 @@ from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
-from app.utils.shapes_extraction import extract_shapes, extract_shapes_from_clicks
+from app.utils.shapes_extraction import extract_shapes_from_clicks
 from app.utils.text_extraction import extract_text
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 
@@ -509,7 +509,6 @@ def process_dev_test_extraction(
         color_result = extract_colors(
             tmp_file_path,
             debug=False,
-            legend_shapes=None,
             imposed_click_positions=imposed_click_positions_tuples,
             imposed_colors_names=imposed_colors_names,
             imposed_sampling_radii=imposed_sampling_radii_ints,
