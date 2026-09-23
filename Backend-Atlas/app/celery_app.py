@@ -1,41 +1,39 @@
 import os
-import socket
-from urllib.parse import urlparse
 
 from celery import Celery
 from dotenv import load_dotenv
 
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env.dev"))
 load_dotenv()
 
 
-def _resolve_celery_backend() -> str:
-    """Prefer Redis when available, otherwise fall back to an in-memory backend.
+CELERY_MODE = os.getenv("CELERY_MODE", "redis").strip().lower()
 
-    This keeps local task tests runnable on developer machines without a Docker
-    Redis container, while still using Redis in containerized deployments.
-    """
-    configured = os.getenv("REDIS_URL")
-    if not configured:
-        return "cache+memory://"
-
-    try:
-        parsed = urlparse(configured)
-        host = parsed.hostname or "localhost"
-        port = parsed.port or 6379
-        socket.create_connection((host, port), timeout=0.3).close()
-        return configured
-    except Exception:
-        return "cache+memory://"
-
-
-REDIS_URL = _resolve_celery_backend()
+if CELERY_MODE in {"eager", "local", "memory"}:
+    BROKER_URL = "memory://"
+    RESULT_BACKEND = "cache+memory://"
+    TASK_ALWAYS_EAGER = True
+    TASK_STORE_EAGER_RESULT = True
+elif CELERY_MODE == "redis":
+    BROKER_URL = os.getenv("REDIS_URL")
+    if not BROKER_URL:
+        raise RuntimeError("REDIS_URL is required when CELERY_MODE=redis")
+    RESULT_BACKEND = BROKER_URL
+    TASK_ALWAYS_EAGER = False
+    TASK_STORE_EAGER_RESULT = False
+else:
+    raise RuntimeError(
+        "Unsupported CELERY_MODE. Use 'redis' or 'eager' (local in-process mode)."
+    )
 
 celery_app = Celery(
     "atlas",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=BROKER_URL,
+    backend=RESULT_BACKEND,
     include=["app.tasks"],
     broker_connection_retry_on_startup=True,
+    task_always_eager=TASK_ALWAYS_EAGER,
+    task_store_eager_result=TASK_STORE_EAGER_RESULT,
 )
 
 # Configuration Celery

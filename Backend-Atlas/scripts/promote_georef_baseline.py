@@ -35,6 +35,14 @@ def promote(config_path: str, report_path: str) -> bool:
     with open(report_path, "r", encoding="utf-8") as input_file:
         report = json.load(input_file)
 
+    if (
+        config.get("testId") != report.get("testId")
+        or config.get("testCaseId") != report.get("testCaseId")
+    ):
+        raise ValueError(
+            "config.json and report.json refer to different test cases"
+        )
+
     baseline = config.get("nonRegressionBaseline")
     if not isinstance(baseline, dict):
         raise ValueError("config.json has no nonRegressionBaseline")

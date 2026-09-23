@@ -7,11 +7,10 @@ from app.database.base import Base
 import os 
 from dotenv import load_dotenv
 
-_backend_root = Path(__file__).resolve().parents[1]
+_backend_root = Path(__file__).resolve().parents[2]
 _env_candidates = [
     Path.cwd() / ".env.dev",
     _backend_root / ".env.dev",
-    _backend_root.parent / "Backend-Atlas" / ".env.dev",
 ]
 
 for candidate in _env_candidates:
