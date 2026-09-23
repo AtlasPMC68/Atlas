@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/vlle",
-  "startedAt": "2026-09-23T18:01:38.693263+00:00",
+  "startedAt": "2026-09-23T18:19:58.510868+00:00",
   "inputs": {
     "caseKind": "probe",
     "frameBoundsSource": "config",
@@ -195,11 +195,11 @@
     "zonesDroppedOffLand": 0
   },
   "timingMs": {
-    "color_extraction": 6895.037,
-    "fit": 2.295,
-    "load_coastline": 374.64,
-    "load_land_mask": 291.715,
-    "apply": 281.423
+    "color_extraction": 139.592,
+    "fit": 0.548,
+    "load_coastline": 167.654,
+    "load_land_mask": 470.689,
+    "apply": 455.921
   },
   "config": {
     "version": "8",

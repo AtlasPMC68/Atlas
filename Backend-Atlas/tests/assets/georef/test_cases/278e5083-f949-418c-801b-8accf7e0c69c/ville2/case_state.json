@@ -8,7 +8,7 @@
     "sift": 5,
     "city": 4
   },
-  "checkedAt": "2026-09-23T18:15:17.217648+00:00",
+  "checkedAt": "2026-09-23T18:20:55.481886+00:00",
   "requirements": {
     "version": "3",
     "runnable": true,
@@ -58,42 +58,8 @@
         "producer": null,
         "status": "satisfied",
         "detail": null
-      },
-      {
-        "key": "textRegions",
-        "kind": "derived",
-        "level": "required",
-        "sinceStep": "3",
-        "summary": "OCR label boxes, masked out of the edge map and carried as the validity mask. Roughly half the edge pixels on a labelled map are place names, so this is most of the evidence, not optional noise.",
-        "remedy": "Re-run OCR once (~135 s/map on CPU); it is cached beside the map for every case on it. Text extraction is not part of georeferencing and does not change while georeferencing is tuned.",
-        "producer": "text_extraction",
-        "status": "satisfied",
-        "detail": "cached under torch 2.14.0+cpu (now 2.11.0+cpu)"
-      },
-      {
-        "key": "waterPicks",
-        "kind": "user_input",
-        "level": "optional",
-        "sinceStep": "1",
-        "summary": "Pipette picks of kind 'water', used for the water-mask gate.",
-        "remedy": "Optional: a map with an unpainted ocean genuinely has none. Without them the water gate reports applicable=false and is never exercised.",
-        "producer": null,
-        "status": "satisfied",
-        "detail": null
       }
     ]
   },
-  "derived": [
-    {
-      "key": "textRegions",
-      "present": true,
-      "usable": true,
-      "detail": "cached under torch 2.14.0+cpu (now 2.11.0+cpu)",
-      "producedAt": "2026-09-22T18:48:25.736858+00:00",
-      "producer": {
-        "easyocr": "1.7.2",
-        "torch": "2.14.0+cpu"
-      }
-    }
-  ]
+  "derived": []
 }
