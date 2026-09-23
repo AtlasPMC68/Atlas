@@ -357,7 +357,7 @@ def _build_normalized_feature_properties(shape: Dict, idx: int) -> Dict:
         "stroke_width": 2,
         "stroke_opacity": 1.0,
         "mapElementType": "shape",
-        "name": f"{shape.get('shape_type') or 'Shape'} {idx}",
+        "name": shape.get("name") or f"{shape.get('shape_type') or 'Shape'} {idx}",
         "is_normalized": True,
     }
  
@@ -379,7 +379,7 @@ def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
         "stroke_width": 2,
         "stroke_opacity": 1.0,
         "mapElementType": "shape",
-        "name": f"{shape.get('shape_type') or 'Shape'} {idx}",
+        "name": shape.get("name") or f"{shape.get('shape_type') or 'Shape'} {idx}",
         "is_normalized": False,
     }
  

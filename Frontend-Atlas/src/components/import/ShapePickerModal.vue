@@ -1,59 +1,26 @@
 <template>
-  <dialog ref="modalRef" class="modal" @close="onDialogClose">
-    <div class="modal-box max-w-5xl w-full flex flex-col gap-4">
-      <form method="dialog">
-        <button
-          value="cancel"
-          class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-        >
-          ✕
-        </button>
-      </form>
-
-      <h2 class="text-xl font-semibold">Sélectionner les formes à extraire</h2>
-
-      <p class="text-sm text-base-content/70">
-        Cliquez sur les formes que vous souhaitez extraire. Chaque clic marque
-        une forme — la couleur au point cliqué servira à délimiter la région
-        par remplissage (flood fill).
-      </p>
-
-      <div class="border rounded-md overflow-hidden">
-        <div class="px-3 py-2 text-xs font-medium bg-base-200 border-b flex items-center justify-between gap-3">
-          <span class="text-xs text-base-content/80">
-            Carte importée — cliquez sur une forme pour la sélectionner
-          </span>
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-base-content/60 whitespace-nowrap">
-              {{ Math.round(zoom * 100) }}%
-            </span>
-            <button
-              class="btn btn-xs"
-              type="button"
-              :disabled="zoom <= ZOOM_MIN"
-              @click="zoomOut"
-            >
-              −
-            </button>
-            <button
-              class="btn btn-xs"
-              type="button"
-              :disabled="zoom === 1"
-              @click="resetZoom"
-            >
-              100%
-            </button>
-            <button
-              class="btn btn-xs"
-              type="button"
-              :disabled="zoom >= ZOOM_MAX"
-              @click="zoomIn"
-            >
-              +
-            </button>
-          </div>
-        </div>
-
+  <BasePickerModal
+    :is-open="isOpen"
+    title="Sélectionner les formes à extraire"
+    description="Cliquez sur les formes que vous souhaitez extraire. Chaque clic marque une forme — la couleur au point cliqué servira à délimiter la région par remplissage (flood fill)."
+    :confirm-label="`Confirmer les formes (${pickedShapes.length})`"
+    :is-confirm-disabled="pickedShapes.length === 0"
+    show-skip
+    @close="emit('close')"
+    @skip="emit('skip')"
+    @confirm="onConfirm"
+    @opened="onModalOpened"
+  >
+    <template #image-area>
+      <ZoomableImageContainer
+        header-text="Carte importée — cliquez sur une forme pour la sélectionner"
+        :zoom="zoom"
+        :zoom-min="ZOOM_MIN"
+        :zoom-max="ZOOM_MAX"
+        @zoom-in="zoomIn"
+        @zoom-out="zoomOut"
+        @reset-zoom="resetZoom"
+      >
         <div
           ref="container"
           class="relative h-[28rem] bg-base-200 select-none overflow-hidden"
@@ -103,9 +70,10 @@
             </div>
           </template>
         </div>
-      </div>
+      </ZoomableImageContainer>
+    </template>
 
-      <!-- Picked shape list -->
+    <template #list-area>
       <div v-if="pickedShapes.length > 0" class="flex flex-col gap-2 min-h-0">
         <span class="text-sm font-medium">Formes sélectionnées :</span>
         <div class="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1">
@@ -147,31 +115,15 @@
       <p v-else class="text-sm text-base-content/50 italic">
         Aucune forme sélectionnée — cliquez sur la carte pour ajouter des formes.
       </p>
-
-      <div class="modal-action">
-        <button class="btn btn-ghost" type="button" @click="requestClose">
-          Annuler
-        </button>
-        <button class="btn btn-outline" type="button" @click="onSkip">
-          Sauter l'étape
-        </button>
-        <button
-          class="btn btn-primary"
-          type="button"
-          :disabled="pickedShapes.length === 0"
-          @click="onConfirm"
-        >
-          Confirmer les formes ({{ pickedShapes.length }})
-        </button>
-      </div>
-    </div>
-  </dialog>
+    </template>
+  </BasePickerModal>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, nextTick } from "vue";
+import { ref, computed, nextTick } from "vue";
+import BasePickerModal from "./BasePickerModal.vue";
+import ZoomableImageContainer from "./ZoomableImageContainer.vue";
 import { useZoomableStage } from "../../composables/useZoomableStage";
-import type { DialogCloseReason } from "../../typescript/colorPicker";
 
 const MARKER_SIZE_PX = 22;
 
@@ -197,7 +149,6 @@ const emit = defineEmits<{
   (e: "confirmed", shapes: { x: number; y: number; name: string }[]): void;
 }>();
 
-const modalRef = ref<HTMLDialogElement | null>(null);
 const container = ref<HTMLDivElement | null>(null);
 const imageEl = ref<HTMLImageElement | null>(null);
 
@@ -227,8 +178,6 @@ const {
 
 const pickedShapes = ref<PickedShape[]>([]);
 
-let closeReason: DialogCloseReason = "programmatic";
-
 const isPointerDown = ref(false);
 const hasDragged = ref(false);
 const pointerStart = ref({ x: 0, y: 0 });
@@ -251,44 +200,10 @@ function stageToContainerY(stageY: number) {
   return baseStage.value.offsetY + panY.value + stageY * zoom.value;
 }
 
-onMounted(() => {
-  if (props.isOpen && modalRef.value && !modalRef.value.open) {
-    modalRef.value.showModal();
-  }
-});
-
-watch(
-  () => props.isOpen,
-  (opened) => {
-    if (opened) {
-      pickedShapes.value = [];
-      resetView();
-      if (modalRef.value && !modalRef.value.open) {
-        modalRef.value.showModal();
-      }
-      nextTick(() => updateBaseStage());
-      return;
-    }
-    if (modalRef.value?.open) {
-      closeReason = "programmatic";
-      modalRef.value.close();
-    }
-  },
-);
-
-function onDialogClose() {
-  const returnValue = modalRef.value?.returnValue;
-  const isProgrammaticClose = returnValue === "programmatic";
-  const isSuccessClose = closeReason === "success" || returnValue === "success";
-  if (!isProgrammaticClose && !isSuccessClose) {
-    emit("close");
-  }
-  closeReason = "programmatic";
-}
-
-function requestClose() {
-  closeReason = "cancel";
-  if (modalRef.value?.open) modalRef.value.close("cancel");
+function onModalOpened() {
+  pickedShapes.value = [];
+  resetView();
+  nextTick(() => updateBaseStage());
 }
 
 function onImageLoad() {
@@ -355,15 +270,8 @@ function removeShape(index: number) {
   pickedShapes.value.splice(index, 1);
 }
 
-function onSkip() {
-  closeReason = "success";
-  emit("skip");
-  if (modalRef.value?.open) modalRef.value.close("success");
-}
-
 function onConfirm() {
   if (pickedShapes.value.length === 0) return;
-  closeReason = "success";
   emit(
     "confirmed",
     pickedShapes.value.map((s) => ({
@@ -372,6 +280,5 @@ function onConfirm() {
       name: s.name,
     })),
   );
-  if (modalRef.value?.open) modalRef.value.close("success");
 }
 </script>
