@@ -469,12 +469,27 @@ function handleMapClick(e) {
 }
 async function loadGeoBorders() {
   if (!map) return;
-  const filename = "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson";
+  const filenames = [
+    "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-JPN-ADM1_simplified.geojson",
+  ];
 
   try {
-    const res = await fetch(filename);
-    if (!res.ok) throw new Error(`File not found: ${filename}`);
-    const data = await res.json();
+    const responses = await Promise.all(
+      filenames.map((filename) => fetch(filename)),
+    );
+    const failedResponse = responses.find((response) => !response.ok);
+    if (failedResponse) {
+      throw new Error(`File not found: ${failedResponse.url}`);
+    }
+
+    const datasets = await Promise.all(
+      responses.map((response) => response.json()),
+    );
+    const data = {
+      ...datasets[0],
+      features: datasets.flatMap((dataset) => dataset.features || []),
+    };
 
     if (geoRegionsLayer) {
       map.removeLayer(geoRegionsLayer);
