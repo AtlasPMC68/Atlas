@@ -18,7 +18,8 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./Backend-Atlas/ocr:/app/ocr
+      - ocr-data:/data
     depends_on:
       - keycloak
   frontend:
@@ -55,7 +56,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./Backend-Atlas/ocr:/app/ocr
       - ocr-data:/data
     depends_on:
       - redis
@@ -79,7 +80,7 @@ services:
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./Backend-Atlas/ocr:/app/ocr
     depends_on:
       - redis
     command: celery -A app.celery_app flower --port=5555
@@ -155,23 +156,24 @@ services:
     build:
       context: ./Backend-Atlas
     command: pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true
+    env_file:
+      - ./Backend-Atlas/.env.dev
     depends_on:
       - backend
       - db
       - redis
       - florence-worker
-      - qwen-worker
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./Backend-Atlas/ocr:/app/ocr
       - ocr-data:/data
 
   test-frontend:
     build:
       context: ./Frontend-Atlas
-    command: npm test
+    command: npm run test:ci
     volumes:
       - ./Frontend-Atlas:/app
       - /app/node_modules
