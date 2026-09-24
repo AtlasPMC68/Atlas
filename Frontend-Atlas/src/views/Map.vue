@@ -9,6 +9,7 @@
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
+          :map-periods="mapPeriods"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
