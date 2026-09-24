@@ -106,7 +106,7 @@ watch(
 
 function onDialogClose() {
   const returnValue = modalRef.value?.returnValue;
-  const isProgrammaticClose = returnValue === "programmatic" || closeReason === "programmatic";
+  const isProgrammaticClose = returnValue === "programmatic";
   const isSuccessClose = closeReason === "success" || returnValue === "success";
 
   if (!isProgrammaticClose && !isSuccessClose) {
