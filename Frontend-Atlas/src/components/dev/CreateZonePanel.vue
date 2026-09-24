@@ -5,8 +5,8 @@
     <div v-if="!isCreateMode" class="space-y-2 text-xs text-base-content/70">
       <p>
         Active le mode création, puis dessine un ou plusieurs traits à la
-        souris. Quand le contour revient près de son point de départ, tu
-        pourras enregistrer la zone.
+        souris. Quand le contour revient près de son point de départ, tu pourras
+        enregistrer la zone.
       </p>
       <button
         class="btn btn-xs btn-primary w-full"
@@ -19,8 +19,8 @@
 
     <div v-else class="space-y-2 text-xs text-base-content/70">
       <p>
-        Dessine un ou plusieurs traits sur la carte. Les extrémités des
-        traits se collent automatiquement si elles sont proches.
+        Dessine un ou plusieurs traits sur la carte. Les extrémités des traits
+        se collent automatiquement si elles sont proches.
       </p>
 
       <label class="flex flex-col gap-1 text-xs" :for="zoneNameInputId">
@@ -58,14 +58,16 @@
 
         <div class="form-control">
           <div class="flex items-center gap-2">
-            <span class="label-text min-w-0 flex-1 text-xs">Frontières géopolitiques</span>
+            <span class="label-text min-w-0 flex-1 text-xs"
+              >Frontières géopolitiques</span
+            >
             <input
               type="checkbox"
               class="toggle toggle-xs toggle-secondary"
               :checked="isGeoBorderMode"
               @change="$emit('toggle-geo-border')"
             />
-              <details ref="geoBorderDropdown" class="dropdown dropdown-end w-40">
+            <details ref="geoBorderDropdown" class="dropdown dropdown-end w-40">
               <summary
                 class="btn btn-xs btn-outline w-full justify-between"
                 :class="{ 'btn-disabled': !isGeoBorderMode }"
@@ -74,17 +76,27 @@
                 <span class="truncate">{{ selectedBorderSummary }}</span>
                 <span aria-hidden="true">⌄</span>
               </summary>
-              <div class="dropdown-content z-[2] mt-1 max-h-64 w-56 overflow-y-auto rounded-box bg-base-100 p-2 shadow-lg">
-                <label class="flex w-full cursor-pointer items-center gap-2 border-b border-base-300 py-1">
+              <div
+                class="dropdown-content z-[2] mt-1 max-h-64 w-56 overflow-y-auto rounded-box bg-base-100 p-2 shadow-lg"
+              >
+                <label
+                  class="flex w-full cursor-pointer items-center gap-2 border-b border-base-300 py-1"
+                >
                   <input
                     type="checkbox"
                     class="checkbox checkbox-xs checkbox-secondary"
                     :checked="allGeoBordersSelected"
-                    :indeterminate="someGeoBordersSelected && !allGeoBordersSelected"
-                    :disabled="!isGeoBorderMode || geoBorderOptions.length === 0"
+                    :indeterminate="
+                      someGeoBordersSelected && !allGeoBordersSelected
+                    "
+                    :disabled="
+                      !isGeoBorderMode || geoBorderOptions.length === 0
+                    "
                     @change="toggleAllGeoBorders"
                   />
-                  <span class="label-text text-xs font-semibold">Tout sélectionner</span>
+                  <span class="label-text text-xs font-semibold"
+                    >Tout sélectionner</span
+                  >
                 </label>
 
                 <details
@@ -92,7 +104,9 @@
                   :key="group.id"
                   class="w-full border-b border-base-200 last:border-b-0"
                 >
-                  <summary class="group flex w-full cursor-pointer list-none items-center gap-2 py-1 font-semibold text-xs">
+                  <summary
+                    class="group flex w-full cursor-pointer list-none items-center gap-2 py-1 font-semibold text-xs"
+                  >
                     <input
                       type="checkbox"
                       class="checkbox checkbox-xs checkbox-secondary"
@@ -122,7 +136,9 @@
                         :disabled="!isGeoBorderMode"
                         @change="toggleGeoBorderSelection(border.id)"
                       />
-                      <span class="label-text text-xs whitespace-nowrap">{{ border.label }}</span>
+                      <span class="label-text text-xs whitespace-nowrap">{{
+                        border.label
+                      }}</span>
                     </label>
                   </div>
                 </details>
@@ -171,8 +187,8 @@
         Contour fermé — prêt à enregistrer.
       </p>
       <p v-else class="text-[11px] text-warning">
-        Le contour doit revenir près de son point de départ pour pouvoir
-        être enregistré.
+        Le contour doit revenir près de son point de départ pour pouvoir être
+        enregistré.
       </p>
     </div>
   </div>
@@ -268,11 +284,15 @@ function toggleAllGeoBorders() {
 function isGroupFullySelected(group: (typeof props.geoBorderGroups)[number]) {
   return (
     group.borders.length > 0 &&
-    group.borders.every((border) => props.selectedGeoBorders.includes(border.id))
+    group.borders.every((border) =>
+      props.selectedGeoBorders.includes(border.id),
+    )
   );
 }
 
-function isGroupPartiallySelected(group: (typeof props.geoBorderGroups)[number]) {
+function isGroupPartiallySelected(
+  group: (typeof props.geoBorderGroups)[number],
+) {
   const selectedCount = group.borders.filter((border) =>
     props.selectedGeoBorders.includes(border.id),
   ).length;
@@ -280,7 +300,10 @@ function isGroupPartiallySelected(group: (typeof props.geoBorderGroups)[number])
 }
 
 function toggleGeoBorderGroup(group: (typeof props.geoBorderGroups)[number]) {
-  emit("toggle-geo-border-group", group.borders.map((border) => border.id));
+  emit(
+    "toggle-geo-border-group",
+    group.borders.map((border) => border.id),
+  );
 }
 
 const addSubzoneTitle = computed(() => {

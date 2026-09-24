@@ -277,7 +277,8 @@ function rebuildCreateLayers() {
 
   const first = pts[0];
   const last = pts[pts.length - 1];
-  const isClosed = latLngDistance(first, last) <= SNAP_EPS_METERS && pts.length >= 3;
+  const isClosed =
+    latLngDistance(first, last) <= SNAP_EPS_METERS && pts.length >= 3;
 
   if (!isClosed) {
     emit("create-updated", null);
@@ -354,7 +355,8 @@ function undoLastStroke() {
 }
 
 function handleMouseDown(e) {
-  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode) return;
+  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode)
+    return;
   if (e.originalEvent && e.originalEvent.button !== 0) return;
 
   // Decide which end of the existing chain we want to continue from.
@@ -389,7 +391,13 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
-  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode || !isDrawing) return;
+  if (
+    !props.isCreateMode ||
+    props.isFrontierMode ||
+    props.isGeoBorderMode ||
+    !isDrawing
+  )
+    return;
   currentStroke.push(e.latlng);
   rebuildCreateLayers();
 }
@@ -402,7 +410,9 @@ function handleMouseUp(e) {
   }
 
   if (currentStroke.length > 1) {
-    const endPoint = snapToExistingEndpoints(currentStroke[currentStroke.length - 1]);
+    const endPoint = snapToExistingEndpoints(
+      currentStroke[currentStroke.length - 1],
+    );
     currentStroke[currentStroke.length - 1] = endPoint;
     strokes.push(currentStroke);
   }
@@ -411,7 +421,8 @@ function handleMouseUp(e) {
 }
 
 function handleMapClick(e) {
-  if (!props.isCreateMode || (!props.isFrontierMode && !props.isGeoBorderMode)) return;
+  if (!props.isCreateMode || (!props.isFrontierMode && !props.isGeoBorderMode))
+    return;
   if (!map) return;
 
   const nearest = findNearestCoastVertex(e.latlng);
@@ -427,7 +438,9 @@ function handleMapClick(e) {
 
   if (start.lineIdx !== nearest.lineIdx) {
     // For now, require both points on the same coastline line
-    console.warn("Frontier points are on different coastline segments; ignoring.");
+    console.warn(
+      "Frontier points are on different coastline segments; ignoring.",
+    );
     return;
   }
 
@@ -478,11 +491,11 @@ async function loadGeoBorders() {
     geoRegionsLayer = L.geoJSON(
       { ...data, features: visibleFeatures },
       {
-      style: {
-        color: "#666",
-        weight: 2,
-        fill: false,
-      },
+        style: {
+          color: "#666",
+          weight: 2,
+          fill: false,
+        },
       },
     ).addTo(map);
 
@@ -562,7 +575,9 @@ onMounted(() => {
           if (!geom || !geom.type || !geom.coordinates) return;
 
           if (geom.type === "LineString") {
-            const line = geom.coordinates.map(([lng, lat]) => L.latLng(lat, lng));
+            const line = geom.coordinates.map(([lng, lat]) =>
+              L.latLng(lat, lng),
+            );
             coastlineLines.push(line);
           } else if (geom.type === "MultiLineString") {
             geom.coordinates.forEach((coords) => {

@@ -14,7 +14,11 @@
       </div>
 
       <div class="flex-none">
-        <button class="btn btn-secondary btn-sm" type="button" @click="goToTestImport">
+        <button
+          class="btn btn-secondary btn-sm"
+          type="button"
+          @click="goToTestImport"
+        >
           Ajouter un test case
         </button>
       </div>
@@ -54,80 +58,88 @@
           </div>
         </div>
 
-    <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
-      <!-- Create zone -->
-      <CreateZonePanel
-        :is-create-mode="isCreateMode"
-        v-model:zone-name="newZoneName"
-        :pending-create-geometry="pendingCreateGeometry"
-        :is-frontier-mode="isFrontierMode"
-        :is-geo-border-mode="isGeoBorderMode"
-        :geo-border-groups="geoBorderGroups"
-        :geo-border-options="geoBorderOptions"
-        :selected-geo-borders="selectedGeoBorders"
-        :subzone-count="subGeometries.length"
-        @start-create="startCreateMode"
-        @cancel-create="cancelCreateMode"
-        @undo-last-stroke="undoLastStroke"
-        @toggle-frontier="toggleFrontierMode"
-        @toggle-geo-border="toggleGeoBorderMode"
-        @toggle-geo-border-selection="toggleGeoBorderSelection"
-        @toggle-all-geo-borders="toggleAllGeoBorders"
-        @toggle-geo-border-group="toggleGeoBorderGroup"
-        @save-zone="saveCreatedZone"
-        @add-subzone="addSubzone"
-      />
+        <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
+          <!-- Create zone -->
+          <CreateZonePanel
+            :is-create-mode="isCreateMode"
+            v-model:zone-name="newZoneName"
+            :pending-create-geometry="pendingCreateGeometry"
+            :is-frontier-mode="isFrontierMode"
+            :is-geo-border-mode="isGeoBorderMode"
+            :geo-border-groups="geoBorderGroups"
+            :geo-border-options="geoBorderOptions"
+            :selected-geo-borders="selectedGeoBorders"
+            :subzone-count="subGeometries.length"
+            @start-create="startCreateMode"
+            @cancel-create="cancelCreateMode"
+            @undo-last-stroke="undoLastStroke"
+            @toggle-frontier="toggleFrontierMode"
+            @toggle-geo-border="toggleGeoBorderMode"
+            @toggle-geo-border-selection="toggleGeoBorderSelection"
+            @toggle-all-geo-borders="toggleAllGeoBorders"
+            @toggle-geo-border-group="toggleGeoBorderGroup"
+            @save-zone="saveCreatedZone"
+            @add-subzone="addSubzone"
+          />
 
-      <!-- Test cases list -->
-      <div class="bg-base-100 rounded-box border border-base-300 p-3">
-        <div class="flex items-center justify-between gap-2">
-          <h2 class="text-sm font-semibold">Test cases</h2>
-          <span class="text-xs text-base-content/60">{{ testCases.length }}</span>
-        </div>
+          <!-- Test cases list -->
+          <div class="bg-base-100 rounded-box border border-base-300 p-3">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-sm font-semibold">Test cases</h2>
+              <span class="text-xs text-base-content/60">{{
+                testCases.length
+              }}</span>
+            </div>
 
-        <div v-if="isLoadingTestCases" class="text-sm text-base-content/60 mt-2">
-          Chargement…
-        </div>
-
-        <div
-          v-else-if="testCases.length === 0"
-          class="text-sm text-base-content/60 mt-2"
-        >
-          Aucun test case pour ce test.
-        </div>
-
-        <div v-else class="mt-2 space-y-2">
-          <div v-for="tc in testCases" :key="tc" class="flex items-center gap-1">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline flex-1 justify-start min-w-0"
-              @click="openTestCaseResult(tc)"
+            <div
+              v-if="isLoadingTestCases"
+              class="text-sm text-base-content/60 mt-2"
             >
-              <span class="truncate">{{ tc }}</span>
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm btn-ghost btn-square text-error"
-              :disabled="deletingTestCase === tc"
-              :title="`Supprimer le test case ${tc}`"
-              :aria-label="`Supprimer le test case ${tc}`"
-              @click="deleteTestCase(tc)"
+              Chargement…
+            </div>
+
+            <div
+              v-else-if="testCases.length === 0"
+              class="text-sm text-base-content/60 mt-2"
             >
-              <span
-                v-if="deletingTestCase === tc"
-                class="loading loading-spinner loading-xs"
-              />
-              <span v-else>✕</span>
-            </button>
+              Aucun test case pour ce test.
+            </div>
+
+            <div v-else class="mt-2 space-y-2">
+              <div
+                v-for="tc in testCases"
+                :key="tc"
+                class="flex items-center gap-1"
+              >
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline flex-1 justify-start min-w-0"
+                  @click="openTestCaseResult(tc)"
+                >
+                  <span class="truncate">{{ tc }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-ghost btn-square text-error"
+                  :disabled="deletingTestCase === tc"
+                  :title="`Supprimer le test case ${tc}`"
+                  :aria-label="`Supprimer le test case ${tc}`"
+                  @click="deleteTestCase(tc)"
+                >
+                  <span
+                    v-if="deletingTestCase === tc"
+                    class="loading loading-spinner loading-xs"
+                  />
+                  <span v-else>✕</span>
+                </button>
+              </div>
+            </div>
+
+            <p v-if="testCaseError" class="text-xs text-error mt-2">
+              {{ testCaseError }}
+            </p>
           </div>
         </div>
-
-        <p v-if="testCaseError" class="text-xs text-error mt-2">
-          {{ testCaseError }}
-        </p>
-      </div>
-
-      </div>
       </div>
     </div>
   </div>
@@ -210,7 +222,11 @@ async function loadTestCases(currentMapId: string) {
 
 async function deleteTestCase(testCase: string) {
   if (!mapId.value) return;
-  if (!confirm(`Supprimer le test case "${testCase}" ? Les resultats et la configuration seront perdus.`))
+  if (
+    !confirm(
+      `Supprimer le test case "${testCase}" ? Les resultats et la configuration seront perdus.`,
+    )
+  )
     return;
 
   deletingTestCase.value = testCase;
@@ -232,7 +248,9 @@ async function deleteTestCase(testCase: string) {
   } catch (err) {
     console.error("Error deleting test case", err);
     testCaseError.value =
-      err instanceof Error ? err.message : "Erreur inattendue lors de la suppression";
+      err instanceof Error
+        ? err.message
+        : "Erreur inattendue lors de la suppression";
   } finally {
     deletingTestCase.value = null;
   }
@@ -257,7 +275,9 @@ async function loadTestZones(currentMapId: string) {
     }
 
     const data = await res.json();
-    const rawFeatures: any[] = Array.isArray(data.features) ? data.features : [];
+    const rawFeatures: any[] = Array.isArray(data.features)
+      ? data.features
+      : [];
 
     const withIds: Feature[] = rawFeatures.map((f, idx) => ({
       ...f,
@@ -415,7 +435,9 @@ function toggleGeoBorderMode() {
 
 function toggleGeoBorderSelection(borderId: string) {
   if (selectedGeoBorders.value.includes(borderId)) {
-    selectedGeoBorders.value = selectedGeoBorders.value.filter((id) => id !== borderId);
+    selectedGeoBorders.value = selectedGeoBorders.value.filter(
+      (id) => id !== borderId,
+    );
   } else {
     selectedGeoBorders.value = [...selectedGeoBorders.value, borderId];
   }
@@ -429,7 +451,9 @@ function toggleAllGeoBorders() {
 }
 
 function toggleGeoBorderGroup(borderIds: string[]) {
-  const allSelected = borderIds.every((id) => selectedGeoBorders.value.includes(id));
+  const allSelected = borderIds.every((id) =>
+    selectedGeoBorders.value.includes(id),
+  );
   if (allSelected) {
     selectedGeoBorders.value = selectedGeoBorders.value.filter(
       (id) => !borderIds.includes(id),
