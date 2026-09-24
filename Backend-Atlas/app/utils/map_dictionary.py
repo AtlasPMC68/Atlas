@@ -82,7 +82,12 @@ def _correct_word(word: str) -> str:
             continue
 
         dist = Levenshtein.distance(word_lower, dict_word_lower)
-        allowed_dist = 1 if len(dict_word_lower) <= 6 else 2
+        if len(dict_word_lower) <= 5:
+            allowed_dist = 1
+        elif len(dict_word_lower) <= 8:
+            allowed_dist = 2
+        else:
+            allowed_dist = 3
 
         if dist <= allowed_dist and dist < min_dist:
             min_dist = dist

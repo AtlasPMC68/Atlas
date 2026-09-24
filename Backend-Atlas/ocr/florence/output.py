@@ -7,12 +7,12 @@ import cv2
 import numpy as np
 
 # Pixel tolerance for merge rules
-ALIGN_TOLERANCE = 5
+ALIGN_TOLERANCE = 10
 ANGLE_TOLERANCE = 20.0
 HEIGHT_DELTA_TOLERANCE = 5
 H_MERGE_GAP_RATIO = 0.2
 H_MERGE_GAP_MIN_PX = 5
-V_MERGE_GAP_RATIO = 0.1
+V_MERGE_GAP_RATIO = 0.5
 V_MERGE_GAP_MIN_PX = 5
 H_ROW_ALIGN_RATIO = 0.4
 
@@ -78,9 +78,7 @@ def _quad_metrics(quad: list[float]) -> tuple[float, float, tuple[float, float]]
 
     avg_02 = (pair_02[0][2] + pair_02[1][2]) / 2.0
     avg_13 = (pair_13[0][2] + pair_13[1][2]) / 2.0
-    width_pair, height_pair = (
-        (pair_02, pair_13) if avg_02 >= avg_13 else (pair_13, pair_02)
-    )
+    width_pair, height_pair = (pair_02, pair_13) if avg_02 >= avg_13 else (pair_13, pair_02)
 
     width = (width_pair[0][2] + width_pair[1][2]) / 2.0
     height = (height_pair[0][2] + height_pair[1][2]) / 2.0
@@ -155,14 +153,8 @@ def _merge_quads(det_a: dict, det_b: dict, direction: str) -> list[float]:
 
     center_a = _quad_center(quad_a)
     center_b = _quad_center(quad_b)
-    center_u = (
-        (center_a[0] * axis_u[0] + center_a[1] * axis_u[1])
-        + (center_b[0] * axis_u[0] + center_b[1] * axis_u[1])
-    ) / 2.0
-    center_v = (
-        (center_a[0] * axis_v[0] + center_a[1] * axis_v[1])
-        + (center_b[0] * axis_v[0] + center_b[1] * axis_v[1])
-    ) / 2.0
+    center_u = ((center_a[0] * axis_u[0] + center_a[1] * axis_u[1]) + (center_b[0] * axis_u[0] + center_b[1] * axis_u[1])) / 2.0
+    center_v = ((center_a[0] * axis_v[0] + center_a[1] * axis_v[1]) + (center_b[0] * axis_v[0] + center_b[1] * axis_v[1])) / 2.0
 
     source_w = max(det_a.get("source_w", 0.0), det_b.get("source_w", 0.0))
     source_h = max(det_a.get("source_h", 0.0), det_b.get("source_h", 0.0))
@@ -356,9 +348,7 @@ def quad_to_bbox_xyxy(quad: list[float]) -> list[int]:
     return [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
 
 
-def _save_bbox_preview_image(
-    image_path: str, intermediate_path: str, parsed: dict
-) -> None:
+def _save_bbox_preview_image(image_path: str, intermediate_path: str, parsed: dict) -> None:
     """Render a preview image showing parsed Florence detections and their boxes."""
     ext = os.path.splitext(os.path.basename(image_path))[1]
     img = cv2.imread(image_path)
