@@ -1,8 +1,8 @@
 import asyncio
 import json
+import json
 import logging
 import os
-import re
 import tempfile
 import time
 from datetime import datetime
@@ -18,7 +18,7 @@ from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
-from app.utils.text_extraction import extract_text
+from app.utils.text_extraction import extract_text, geolocate_cities_and_leftover_text
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 
 from .celery_app import celery_app
@@ -51,6 +51,7 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
+
 @celery_app.task(bind=True)
 def process_map_extraction(
     self,
@@ -77,9 +78,7 @@ def process_map_extraction(
         )
         time.sleep(2)
 
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=os.path.splitext(filename)[1]
-        ) as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
 
@@ -105,78 +104,35 @@ def process_map_extraction(
             meta={
                 "current": 3,
                 "total": nb_task,
-                "status": "Extracting text with EasyOCR",
+                "status": "Extracting text with OCR pipeline",
             },
         )
 
         if enable_text_extraction:
-            # GPU acceleration make the text extraction MUCH faster i
-            extracted_text, clean_image = extract_text(
-                image=image, languages=["en", "fr"], gpu_acc=False
+            extracted_text, text_regions = extract_text(
+                map_id=map_id,
+                filename=filename,
+                file_content=file_content,
+                celery_app=celery_app,
             )
 
-            text_regions = [block[0] for block in extracted_text]
-
-            # TODO : Amener ca dans la fonction de detection de texte ===========================================================
-            # Tokenize OCR text to single words and run city detection per token
             try:
-                # Extract just the text strings from the list of tuples [(coords, text, prob), ...]
-                text_strings = [block[1] for block in extracted_text]
-                full_text = " ".join(text_strings)
-                tokens = re.findall(r"\b[\w\-']+\b", full_text)
-                for tok in tokens:
-                    try:
-                        candidate = find_first_city(tok)
-                    except Exception as e:
-                        logger.debug(f"find_first_city error for token '{tok}': {e}")
-                        # treat as not found but persist the token
-                        candidate = {
-                            "found": False,
-                            "query": tok,
-                            "name": tok,
-                            "lat": 0.0,
-                            "lon": 0.0,
-                        }
-
-                    # Build feature using returned candidate; if not found, coordinates will be 0,0
-                    city_feature = {
-                        "type": "Feature",
-                        "properties": {
-                            "name": candidate.get("name") or tok,
-                            "show": bool(candidate.get("found")),
-                            "mapElementType": "point",
-                            "color_name": "black",
-                            "color_rgb": [0, 0, 0],
-                        },
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [
-                                candidate.get("lon") or 0.0,
-                                candidate.get("lat") or 0.0,
-                            ],
-                        },
-                    }
-
-                    city_feature_collection = {
-                        "type": "FeatureCollection",
-                        "features": [city_feature],
-                    }
-                    try:
-                        asyncio.run(
-                            persist_city_feature(
-                                project_id, map_id, city_feature_collection
-                            )
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to persist city token '{tok}': {e}")
+                geolocate_cities_and_leftover_text(
+                    extracted_text=extracted_text,
+                    project_id=project_id,
+                    map_id=map_id,
+                    pixel_points=pixel_points,
+                    geo_points_lonlat=geo_points_lonlat,
+                    persist_city_feature_fn=persist_city_feature,
+                    persist_features_fn=persist_features,
+                )
 
             except Exception as e:
                 logger.error(f"City detection failed: {e}")
 
         else:
+            extracted_text = []
             text_regions = None
-
-        # TODO : Amener ca dans la fonction de detection de texte ===========================================================
 
         # Step 4: Shapes Extraction (conditionally enabled)
         zones_features: list[dict[str, Any]] | None = None
@@ -201,21 +157,15 @@ def process_map_extraction(
             # Georeference pixel-space shape features if SIFT point pairs are provided
             if pixel_points and geo_points_lonlat:
                 try:
-                    georef_shape_features = georeference_features_with_sift_points(
-                        shape_pixel_features, pixel_points, geo_points_lonlat
-                    )
-                    asyncio.run(
-                        persist_features(project_id, map_id, georef_shape_features)
-                    )
+                    georef_shape_features = georeference_features_with_sift_points(shape_pixel_features, pixel_points, geo_points_lonlat)
+                    asyncio.run(persist_features(project_id, map_id, georef_shape_features))
                 except Exception as e:
                     logger.error(
                         f"SIFT georeferencing step failed for shapes {map_id}: {e}",
                         exc_info=True,
                     )
             elif shape_normalized_features:
-                asyncio.run(
-                    persist_features(project_id, map_id, shape_normalized_features)
-                )
+                asyncio.run(persist_features(project_id, map_id, shape_normalized_features))
         else:
             logger.info("[DEBUG] Shapes extraction disabled - skipping")
             shapes_result = {}
@@ -231,40 +181,22 @@ def process_map_extraction(
                 },
             )
 
-            legends_shapes = [
-                s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)
-            ]
+            legends_shapes = [s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)]
 
-            imposed_click_positions_tuples = (
-                [tuple(c) for c in imposed_click_positions]
-                if imposed_click_positions
-                else None
-            )
+            imposed_click_positions_tuples = [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
 
-            imposed_sampling_radii_ints = (
-                [int(r) for r in imposed_sampling_radii]
-                if imposed_sampling_radii
-                else None
-            )
+            imposed_sampling_radii_ints = [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
 
             # If the frontend provided a legend box but shapes extraction was disabled,
             # we still need legend shapes to perform legend-based color extraction.
-            if (
-                not imposed_click_positions_tuples
-                and not legends_shapes
-                and legend_bounds is not None
-            ):
+            if not imposed_click_positions_tuples and not legends_shapes and legend_bounds is not None:
                 try:
                     legend_shapes_result = extract_shapes(
                         tmp_file_path,
                         text_regions=text_regions,
                         legend_bounds=legend_bounds,
                     )
-                    legends_shapes = [
-                        s
-                        for s in legend_shapes_result.get("shapes", [])
-                        if s.get("isLegend", False)
-                    ]
+                    legends_shapes = [s for s in legend_shapes_result.get("shapes", []) if s.get("isLegend", False)]
                 except Exception as e:
                     logger.error(
                         f"Legend-only shapes extraction failed for map {map_id}: {e}",
@@ -272,9 +204,7 @@ def process_map_extraction(
                     )
 
             if not imposed_click_positions_tuples and not legends_shapes:
-                logger.info(
-                    "[DEBUG] Color extraction skipped - no imposed colors provided"
-                )
+                logger.info("[DEBUG] Color extraction skipped - no imposed colors provided")
                 color_result = {
                     "normalized_features": [],
                     "pixel_features": [],
@@ -331,9 +261,7 @@ def process_map_extraction(
             output_dir = os.path.join(current_dir, "extracted_texts")
             try:
                 os.makedirs(output_dir, exist_ok=True)
-                logger.info(
-                    f"[DEBUG] Directory created or already exists: {output_dir}"
-                )
+                logger.info(f"[DEBUG] Directory created or already exists: {output_dir}")
             except Exception as e:
                 logger.error(f"[ERROR] Failed to create directory {output_dir}: {e}")
 
@@ -342,15 +270,25 @@ def process_map_extraction(
             output_filename = f"{timestamp}_{base_name}.txt"
             output_path = os.path.join(output_dir, output_filename)
 
-            lines = [block[1] for block in extracted_text]
-            full_text = "\n".join(lines)
+            exported_lines = []
+            for idx, block in enumerate(extracted_text, start=1):
+                if not isinstance(block, dict):
+                    continue
+                text_value = str(block.get("text", ""))
+                bbox_value = block.get("bbox")
+                # Use JSON-escaped text so embedded newlines are preserved as "\\n".
+                text_escaped = json.dumps(text_value, ensure_ascii=False)
+                bbox_serialized = json.dumps(bbox_value, ensure_ascii=False)
+                exported_lines.append(f"--- detection {idx} ---")
+                exported_lines.append(f"bbox: {bbox_serialized}")
+                exported_lines.append(f"text: {text_escaped}")
+
+            full_text = "\n".join(exported_lines)
             try:
                 with open(output_path, "w", encoding="utf-8") as f:
                     f.write("=== OCR EXTRACTION  ===\n")
                     f.write(f"Source File: {filename}\n")
-                    f.write(
-                        f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    )
+                    f.write(f"Date extraction: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write("\n=== TEXTE EXTRAIT ===\n\n")
                     f.write(full_text)
 
@@ -364,9 +302,7 @@ def process_map_extraction(
             "filename": filename,
             "output_path": output_path if enable_text_extraction else "",
             "shapes_result": shapes_result if enable_shapes_extraction else {},
-            "color_result": color_result
-            if enable_color_extraction
-            else {"colors_detected": 0},
+            "color_result": color_result if enable_color_extraction else {"colors_detected": 0},
             "status": "completed",
             "extractions_performed": {
                 "georeferencing": bool(pixel_points and geo_points_lonlat),
@@ -376,7 +312,11 @@ def process_map_extraction(
             },
         }
 
-        logger.info(f"Map processing completed for {filename}: 0 characters extracted")
+        logger.info(
+            "Map processing completed for %s: %s text detections extracted",
+            filename,
+            len(extracted_text),
+        )
 
         return result
 
@@ -411,9 +351,7 @@ async def persist_features(
                         project_id=project_id,
                     )
                 except Exception as e:
-                    logger.error(
-                        f"Failed to persist individual feature for map {map_id}: {str(e)}"
-                    )
+                    logger.error(f"Failed to persist individual feature for map {map_id}: {str(e)}")
 
 
 async def persist_city_feature(project_id: UUID, map_id: UUID, feature: dict[str, Any]):
@@ -452,9 +390,7 @@ def process_dev_test_extraction(
         )
         time.sleep(2)
 
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=os.path.splitext(filename)[1]
-        ) as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
 
@@ -507,20 +443,11 @@ def process_dev_test_extraction(
         )
         # Colors are always imposed (pipette): without click positions the
         # extraction returns nothing and there is no zone left to georeference.
-        imposed_click_positions_tuples = (
-            [tuple(c) for c in imposed_click_positions]
-            if imposed_click_positions
-            else None
-        )
-        imposed_sampling_radii_ints = (
-            [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
-        )
+        imposed_click_positions_tuples = [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
+        imposed_sampling_radii_ints = [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
 
         if not imposed_click_positions_tuples:
-            logger.warning(
-                f"[DEV-TEST] No imposed colors for test {test_id}/{test_case}; "
-                "color extraction will return no zones"
-            )
+            logger.warning(f"[DEV-TEST] No imposed colors for test {test_id}/{test_case}; " "color extraction will return no zones")
 
         color_result = extract_colors(
             tmp_file_path,
@@ -603,9 +530,7 @@ def process_dev_test_extraction(
             image_url = f"/dev-test/maps/{test_id}{ext}"
             zones_url = f"/dev-test/test_cases/{test_id}/{test_case}/zones.geojson"
 
-            logger.info(
-                f"[DEV-TEST] Saved image to {image_output_path} and zones to {zones_output_path}"
-            )
+            logger.info(f"[DEV-TEST] Saved image to {image_output_path} and zones to {zones_output_path}")
         except Exception as e:
             logger.error(f"[DEV-TEST] Failed to save test assets for {filename}: {e}")
 
@@ -620,13 +545,9 @@ def process_dev_test_extraction(
                 test_case_id=test_case,
                 min_iou=None,
             )
-            logger.info(
-                f"[DEV-TEST] Evaluation report written for {test_id}/{test_case}"
-            )
+            logger.info(f"[DEV-TEST] Evaluation report written for {test_id}/{test_case}")
         except Exception as e:
-            logger.warning(
-                f"[DEV-TEST] Evaluation skipped (expected zones may be missing): {e}"
-            )
+            logger.warning(f"[DEV-TEST] Evaluation skipped (expected zones may be missing): {e}")
 
         result = {
             "filename": filename,
@@ -644,9 +565,7 @@ def process_dev_test_extraction(
             },
         }
 
-        logger.info(
-            f"[DEV-TEST] Extraction completed for {filename} (test_id={test_id}, case={test_case})"
-        )
+        logger.info(f"[DEV-TEST] Extraction completed for {filename} (test_id={test_id}, case={test_case})")
         return result
 
     except Exception as e:

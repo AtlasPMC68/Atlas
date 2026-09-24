@@ -1,0 +1,25 @@
+# Docker Compose configuration for OCR standalone services and workers
+services:
+  ocr-base:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+      args:
+        UID: ${UID:-1000}
+    image: atlas-ocr-base
+
+  florence-worker:
+    build:
+      context: ./florence
+      additional_contexts:
+        ocr-base: service:ocr-base
+    container_name: atlas-florence-worker
+    restart: unless-stopped
+    env_file:
+      - ../.env.dev
+    volumes:
+      - ocr-data:/data
+      - ./florence:/app/florence
+    depends_on:
+      - redis
+      - ocr-base
