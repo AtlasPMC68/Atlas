@@ -30,7 +30,7 @@ celery_app.conf.update(
     result_expires=3600,
     task_routes={
         "app.tasks.process_map": {"queue": "maps"},
-        "paddle.run_pipeline": {"queue": "paddle"},
+        "florence.run_pipeline": {"queue": "florence"},
         "app.tasks.*": {"queue": "default"},
     },
 )

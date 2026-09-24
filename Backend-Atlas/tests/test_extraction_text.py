@@ -205,35 +205,6 @@ def test_check_for_match_drops_extra_ocr_words() -> None:
     assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Boston"]
 
 
-def test_paddleocr_output_format_conversion() -> None:
-    """Verify that PaddleOCR's output is correctly transformed into the generic schema."""
-    paddle_raw = [
-        [
-            [
-                [[10.0, 10.0], [50.0, 10.0], [50.0, 20.0], [10.0, 20.0]],
-                ("Québec", 0.98),
-            ]
-        ]
-    ]
-
-    detections = []
-    if paddle_raw and paddle_raw[0]:
-        for line in paddle_raw[0]:
-            box = line[0]
-            text = line[1][0]
-            confidence = line[1][1]
-            xs = [pt[0] for pt in box]
-            ys = [pt[1] for pt in box]
-            bbox_xyxy = [min(xs), min(ys), max(xs), max(ys)]
-            quad = [box[0][0], box[0][1], box[1][0], box[1][1], box[2][0], box[2][1], box[3][0], box[3][1]]
-            detections.append({"text": text, "bbox_xyxy": bbox_xyxy, "quad": quad, "confidence": float(confidence)})
-
-    assert len(detections) == 1
-    assert detections[0]["text"] == "Québec"
-    assert detections[0]["bbox_xyxy"] == [10.0, 10.0, 50.0, 20.0]
-    assert detections[0]["confidence"] == 0.98
-
-
 CARD_THRESHOLDS = {
     "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 100.0, "max_dist": 0.19},
     "Quebec_1791.png": {"min_hit_rate": 92.6, "max_dist": 0.72},
