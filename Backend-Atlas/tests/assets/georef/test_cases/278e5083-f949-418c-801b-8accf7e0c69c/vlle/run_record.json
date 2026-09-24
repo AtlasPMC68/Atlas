@@ -1,0 +1,308 @@
+{
+  "schemaVersion": "1",
+  "runId": "278e5083-f949-418c-801b-8accf7e0c69c/vlle",
+  "startedAt": "2026-09-24T00:09:04.328283+00:00",
+  "inputs": {
+    "caseKind": "probe",
+    "frameBoundsSource": "config",
+    "controlPointSources": [
+      "sift",
+      "city"
+    ],
+    "controlPoints": [
+      {
+        "source": "sift",
+        "pixel": {
+          "x": 230.43746723447526,
+          "y": 386.15995931625366
+        },
+        "geo": {
+          "lon": -80.16218585191609,
+          "lat": 32.798293231666406
+        }
+      },
+      {
+        "source": "sift",
+        "pixel": {
+          "x": 322.7722886630467,
+          "y": 259.4679950305394
+        },
+        "geo": {
+          "lon": -71.81563576538198,
+          "lat": 41.17316041696306
+        }
+      },
+      {
+        "source": "sift",
+        "pixel": {
+          "x": 237.95309223447526,
+          "y": 74.79835217339652
+        },
+        "geo": {
+          "lon": -78.38680114660087,
+          "lat": 55.22752969629839
+        }
+      },
+      {
+        "source": "sift",
+        "pixel": {
+          "x": 359.27675294876093,
+          "y": 29.70460217339652
+        },
+        "geo": {
+          "lon": -62.21937079786634,
+          "lat": 56.5196792821077
+        }
+      },
+      {
+        "source": "sift",
+        "pixel": {
+          "x": 477.37943152018954,
+          "y": 124.18674503053937
+        },
+        "geo": {
+          "lon": -53.7362192056451,
+          "lat": 47.27374586013157
+        }
+      },
+      {
+        "source": "sift",
+        "pixel": {
+          "x": 329.214252948761,
+          "y": 154.24924503053938
+        },
+        "geo": {
+          "lon": -72.1038609294398,
+          "lat": 46.784778538451384
+        }
+      }
+    ],
+    "controlPointCount": 6,
+    "controlPointsBySource": {
+      "sift": 6,
+      "city": 0
+    },
+    "frameBounds": {
+      "west": -104.16032897019501,
+      "south": 26.640913850765674,
+      "east": -50.51411774049899,
+      "north": 59.385449607279426
+    },
+    "referenceLatitude": 43.01318172902255,
+    "snapToCoastline": true,
+    "snapToleranceMeters": 74587.80078083358,
+    "clipToLandMask": true
+  },
+  "models": {
+    "stage2_affine": {
+      "name": "affine",
+      "dof": 6,
+      "matrix": [
+        [
+          11360.1952146044,
+          -1160.8981712057284,
+          -11269495.592196139
+        ],
+        [
+          -3556.9854394003555,
+          -11628.190584487282,
+          9131766.345201911
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "nPoints": 6,
+      "redundancy": 6,
+      "rmse3857": 235357.08579197899,
+      "metersPerPixel": 11795.0182246748,
+      "determinant": -136227812.92400584
+    },
+    "chosen": {
+      "name": "affine",
+      "dof": 6,
+      "matrix": [
+        [
+          11360.1952146044,
+          -1160.8981712057284,
+          -11269495.592196139
+        ],
+        [
+          -3556.9854394003555,
+          -11628.190584487282,
+          9131766.345201911
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "nPoints": 6,
+      "redundancy": 6,
+      "rmse3857": 235357.08579197899,
+      "metersPerPixel": 11795.0182246748,
+      "determinant": -136227812.92400584
+    }
+  },
+  "gates": [],
+  "errors": {
+    "gcpResiduals3857": [
+      182463.4172341627,
+      115287.52335828164,
+      73453.97026104477,
+      334001.2709964653,
+      9092.283624251591,
+      410778.07990231743
+    ],
+    "gcpRmse3857": 235357.08579197899,
+    "gcpRmseKm": 172.09234295276713,
+    "gcpRmseStatus": "ok",
+    "gcpRmseKmBySource": {
+      "sift": 172.09234295276713,
+      "city": null
+    },
+    "gcpPredictedLonLat": [
+      [
+        -81.74645163546215,
+        32.444207320381686
+      ],
+      [
+        -71.00243854613687,
+        40.688658208450754
+      ],
+      [
+        -77.73243680040164,
+        55.27591694031494
+      ],
+      [
+        -64.88105101361931,
+        55.74800565104297
+      ],
+      [
+        -53.81393843247648,
+        47.29078560345347
+      ],
+      [
+        -69.24775726875379,
+        48.360955447733254
+      ]
+    ],
+    "snapTotalBoundaryPoints": 578,
+    "snapSnappedPoints": 130,
+    "zonesDroppedOffLand": 0
+  },
+  "timingMs": {
+    "color_extraction": 931.54,
+    "fit": 0.275,
+    "load_coastline": 541.169,
+    "load_land_mask": 466.403,
+    "subtract_lakes": 210.863,
+    "apply": 274.38
+  },
+  "config": {
+    "version": "13",
+    "gcp_sources": [
+      "sift",
+      "city"
+    ],
+    "gcp_sigma_px_sift": 6.0,
+    "gcp_sigma_px_city": 6.0,
+    "snap_to_coastline": true,
+    "coastline_snap_ratio_of_diagonal": 0.01,
+    "clip_to_land_mask": true,
+    "land_coverage_threshold": 0.01,
+    "text_aware_zone_fill": true,
+    "text_fill_min_context": 0.25,
+    "text_fill_max_distance_px": 8.0,
+    "text_fill_method": "label",
+    "text_inpaint_dilation_px": 1,
+    "text_inpaint_radius_px": 3.0,
+    "text_inpaint_max_ink_ratio": 0.6,
+    "text_inpaint_algo": "palette",
+    "text_inpaint_ink_deltaE": 12.0,
+    "zone_gap_fill": false,
+    "zone_gap_max_ratio_of_diagonal": 0.008,
+    "transform_model": "affine",
+    "piecewise_anchor_margin": 0.25,
+    "reference_raster_width": 1024,
+    "reference_raster_height": 768,
+    "edge_blur_ksize": 3,
+    "edge_canny_low": 40,
+    "edge_canny_high": 120,
+    "text_mask_dilation_px": 7,
+    "straight_line_min_length_ratio": 0.15,
+    "straight_line_hough_threshold": 80,
+    "straight_line_max_gap_px": 8,
+    "straight_line_thickness_px": 3,
+    "straight_line_weight": 0.15,
+    "water_delta_e": 12.0,
+    "water_morph_radius_px": 2,
+    "water_min_component_px": 200,
+    "edge_water_filter": true,
+    "edge_water_margin_px": 3,
+    "edge_water_min_fraction": 0.01,
+    "enable_curve_alignment": false,
+    "curve_sample_spacing_px": 2.0,
+    "curve_max_samples": 8000,
+    "use_rivers_for_alignment": false,
+    "use_lakes_for_alignment": true,
+    "weight_gcp": 1.0,
+    "weight_curve": 1.0,
+    "straight_line_distance_penalty_px": 25.0,
+    "coarse_blur_px": [
+      64.0,
+      40.0,
+      24.0,
+      14.0
+    ],
+    "coarse_cutoff_px": [
+      400.0,
+      260.0,
+      170.0,
+      110.0
+    ],
+    "anneal_blur_px": [
+      8.0,
+      4.0,
+      2.0,
+      0.0
+    ],
+    "anneal_cutoff_px": [
+      70.0,
+      45.0,
+      28.0,
+      18.0
+    ],
+    "max_iterations_per_level": 60,
+    "enable_icp": true,
+    "icp_iterations": 8,
+    "icp_search_radius_px": [
+      40.0,
+      30.0,
+      22.0,
+      16.0,
+      12.0,
+      9.0,
+      7.0,
+      5.0
+    ],
+    "icp_orientation_tolerance_deg": 30.0,
+    "icp_cutoff_px": 20.0,
+    "icp_min_correspondences": 50,
+    "gate_probe_gcp_ratio": 2.0,
+    "gate_probe_gcp_max_km": 150.0,
+    "gate_water_iou_min": 0.7,
+    "gate_max_scale_drift": 0.25,
+    "gate_max_rotation_deg": 15.0,
+    "gate_min_inlier_fraction": 0.2,
+    "gate_min_chamfer_improvement": 0.02,
+    "recovery_multistart_translation_px": 40.0,
+    "recovery_multistart_rotation_deg": 4.0,
+    "recovery_multistart_scale": 0.06,
+    "recovery_gcp_weight_boost": 8.0
+  },
+  "notes": []
+}

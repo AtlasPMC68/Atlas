@@ -1,12 +1,92 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/test_piece_wise_affine",
-  "startedAt": "2026-09-23T21:43:42.980263+00:00",
+  "startedAt": "2026-09-24T00:14:26.176265+00:00",
   "inputs": {
+    "waterPickCount": 2,
+    "legendBounds": null,
     "caseKind": "probe",
-    "frameBoundsSource": "config",
+    "runSwitches": {
+      "gate_probe_gcp_ratio": 1000.0,
+      "gate_probe_gcp_max_km": 1000.0,
+      "gate_water_iou_min": 0.0,
+      "gate_max_scale_drift": 1000.0,
+      "gate_max_rotation_deg": 360.0,
+      "gate_min_inlier_fraction": 0.0,
+      "gate_min_chamfer_improvement": 0.0,
+      "icp_search_radius_px": [
+        100.0,
+        80.0,
+        50.0,
+        30.0,
+        22.0,
+        15.0,
+        10.0,
+        5.0
+      ],
+      "icp_cutoff_px": 100.0,
+      "icp_orientation_tolerance_deg": 60.0,
+      "text_fill_method": "inpaint",
+      "text_inpaint_max_ink_ratio": 1.0,
+      "coastline_snap_ratio_of_diagonal": 0.015,
+      "zone_gap_fill": true,
+      "snap_to_coastline": false
+    },
+    "controlPointSources": [
+      "sift",
+      "city"
+    ],
+    "referenceCoverage": {
+      "coastline": 0.00904,
+      "lakes": 0.00941,
+      "rivers": 0.00442,
+      "curves": 0.02265,
+      "land": 0.63617,
+      "lakeInterior": 0.03384,
+      "water": 0.39767
+    },
+    "userEvidence": {
+      "edgeFraction": 0.011707641196013288,
+      "rawEdgePixels": 7895,
+      "waterEdgeFilterApplied": true,
+      "waterEdgeFilterKept": 0.334768841038632,
+      "textMaskFraction": 0.24951495016611297,
+      "legendMaskFraction": 0.0,
+      "straightLineCount": 2,
+      "suppressedEdgePixels": 426,
+      "suppressedEdgeFraction": 0.1611804767309875,
+      "waterFraction": 0.26578959025470655,
+      "oceanFraction": 0.20322923588039868,
+      "lakeFraction": 0.05844518272425249,
+      "hasWater": true
+    },
+    "frameBounds": {
+      "west": -101.95030462814913,
+      "south": 37.00606124525699,
+      "east": -49.57715271219007,
+      "north": 60.49186798375776
+    },
+    "alignment": {
+      "method": "joint",
+      "rung": 0,
+      "failedChecks": [],
+      "probeAgreementPx": 20.03237113684363,
+      "coastlineSamples": 3900,
+      "fineSamples": 7863,
+      "usesLakes": true,
+      "usesRivers": false,
+      "baselineGcpRmsPx": 15.735728603909601,
+      "baselineChamferPx": 4.371366024017334,
+      "probeGcpRmsPx": 20.03237113684363,
+      "alignedChamferPx": 3.2914280891418457,
+      "coastDisplacementPx": 13.946925303945003,
+      "inlierFraction": 0.13658908813429987,
+      "correspondences": 1074,
+      "alignedGcpRmsPx": 21.677815177635086
+    },
     "controlPoints": [
       {
+        "source": "sift",
         "pixel": {
           "x": 374.8336620801942,
           "y": 14.17494782131477
@@ -14,11 +94,10 @@
         "geo": {
           "lon": -63.60271574527353,
           "lat": 59.17213333354301
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 252.8632055595318,
           "y": 38.19229640260351
@@ -26,11 +105,10 @@
         "geo": {
           "lon": -78.22899206452246,
           "lat": 58.367281188565265
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 339.98496021714783,
           "y": 208.66837848939804
@@ -38,11 +116,10 @@
         "geo": {
           "lon": -72.91985974333464,
           "lat": 46.073156966033636
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 433.69971252452933,
           "y": 197.83702520764038
@@ -50,11 +127,10 @@
         "geo": {
           "lon": -62.977701716893755,
           "lat": 45.85224829247392
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 294.77583347589837,
           "y": 345.3786062907294
@@ -62,11 +138,10 @@
         "geo": {
           "lon": -77.26988614404915,
           "lat": 38.796719547544186
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 520.9767739170549,
           "y": 139.58289393733378
@@ -74,11 +149,10 @@
         "geo": {
           "lon": -53.76569600617004,
           "lat": 47.23721878276338
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 443.2735873305325,
           "y": 108.9725477062795
@@ -86,11 +160,10 @@
         "geo": {
           "lon": -59.150159223464804,
           "lat": 51.01048555816394
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 414.9333326316773,
           "y": 47.85877482891401
@@ -98,11 +171,10 @@
         "geo": {
           "lon": -59.367153660204615,
           "lat": 55.04087920024656
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 426.26039456958466,
           "y": 139.58576660059546
@@ -110,63 +182,33 @@
         "geo": {
           "lon": -62.08540293677995,
           "lat": 49.52874532680308
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       }
     ],
     "controlPointCount": 9,
-    "frameBounds": {
-      "west": -101.95030462814913,
-      "south": 37.00606124525699,
-      "east": -49.57715271219007,
-      "north": 60.49186798375776
+    "controlPointsBySource": {
+      "sift": 9,
+      "city": 0
     },
     "referenceLatitude": 48.74896461450737,
-    "snapToCoastline": true,
-    "snapToleranceMeters": 69423.30394730721,
+    "snapToCoastline": false,
+    "snapToleranceMeters": null,
     "clipToLandMask": true
   },
   "models": {
-    "stage2_affine": {
-      "name": "affine",
-      "dof": 6,
-      "matrix": [
-        [
-          10848.358495659428,
-          -2140.347225895355,
-          -11215573.0169101
-        ],
-        [
-          -3726.4368472891915,
-          -11081.549759573401,
-          9515025.527212156
-        ],
-        [
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
-      "nPoints": 9,
-      "redundancy": 12,
-      "rmse3857": 171503.47160811024,
-      "metersPerPixel": 11378.446371719963,
-      "determinant": -128192493.24791054
-    },
     "chosen": {
       "name": "affine",
       "dof": 6,
       "matrix": [
         [
-          10848.358495659428,
-          -2140.347225895355,
-          -11215573.0169101
+          11158.989141821661,
+          -3323.0276091629157,
+          -11279397.965341419
         ],
         [
-          -3726.4368472891915,
-          -11081.549759573401,
-          9515025.527212156
+          -2811.2330676949764,
+          -11521.09124073238,
+          9159725.030063415
         ],
         [
           0.0,
@@ -176,55 +218,207 @@
       ],
       "nPoints": 9,
       "redundancy": 12,
-      "rmse3857": 171503.47160811024,
-      "metersPerPixel": 11378.446371719963,
-      "determinant": -128192493.24791054
+      "rmse3857": 257925.03709100926,
+      "metersPerPixel": 11749.200717089887,
+      "determinant": -137905537.15701145
+    },
+    "stage2_affine": {
+      "name": "affine",
+      "dof": 6,
+      "matrix": [
+        [
+          11158.989141821661,
+          -3323.0276091629157,
+          -11279397.965341419
+        ],
+        [
+          -2811.2330676949764,
+          -11521.09124073238,
+          9159725.030063415
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "nPoints": 9,
+      "redundancy": 12,
+      "rmse3857": 257925.03709100926,
+      "metersPerPixel": 11749.200717089887,
+      "determinant": -137905537.15701145
     }
   },
-  "gates": [],
+  "gates": [
+    {
+      "name": "probe_gcp_disagreement",
+      "value": 20.03237113684363,
+      "threshold": 15735.728603909602,
+      "applicable": true,
+      "passed": true,
+      "detail": "curve-only fit misses held-out GCPs by 20.0px (150.3km); GCP-only baseline 15.7px"
+    },
+    {
+      "name": "water_mask_iou",
+      "value": 0.45883885284256737,
+      "threshold": 0.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "user water vs reference ocean + lakes"
+    },
+    {
+      "name": "transform_determinant",
+      "value": -137905537.15701145,
+      "threshold": 0.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "a sign flip is a mirror or a fold"
+    },
+    {
+      "name": "scale_drift",
+      "value": 0.03719294721311717,
+      "threshold": 1000.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "scale moved 3.7% from the GCP-only affine"
+    },
+    {
+      "name": "rotation_drift",
+      "value": 4.817692360684191,
+      "threshold": 360.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "rotated 4.8 degrees from the GCP-only affine"
+    },
+    {
+      "name": "curve_fit_engaged",
+      "value": 0.2470481604473408,
+      "threshold": 0.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "trimmed chamfer 4.4px -> 3.3px (+24.7%); below the threshold means the curve term never engaged, not that the fit is wrong"
+    },
+    {
+      "name": "optimizer_converged",
+      "value": 1.0,
+      "threshold": 1.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "50 function evaluations"
+    },
+    {
+      "name": "inlier_fraction",
+      "value": 0.13658908813429987,
+      "threshold": 0.0,
+      "applicable": true,
+      "passed": true,
+      "detail": "a collapse here means the fit rests on a handful of samples, or that orientation filtering matched almost nothing -- wrong-feature lock caught in the act"
+    }
+  ],
   "errors": {
+    "textFill": {
+      "method": "inpaint",
+      "algo": "palette",
+      "boxesConsidered": 49,
+      "boxesFilled": 49,
+      "pixelsFilled": 26417
+    },
+    "zoneGaps": {
+      "maxGapPx": 5.67,
+      "pixelsFilled": 1618
+    },
     "gcpResiduals3857": [
-      275103.70257454924,
-      186392.4849298884,
-      203030.30982435172,
-      91538.03181328283,
-      186573.8001933174,
-      130917.56458539737,
-      64257.74788059872,
-      218979.44975731024,
-      25806.862735903254
+      282254.64642897417,
+      128931.08625898765,
+      62008.63950314668,
+      128869.7563882838,
+      635159.0438335484,
+      119751.92541019832,
+      115862.50313642557,
+      212093.3180919019,
+      76218.74501094826
     ],
-    "gcpRmse3857": 171503.47160811024,
-    "gcpRmseKm": 113.0824263781916,
+    "gcpRmse3857": 257925.03709100926,
+    "gcpRmseKm": 170.06529806337238,
     "gcpRmseStatus": "ok",
-    "snapTotalBoundaryPoints": 1202,
-    "snapSnappedPoints": 271,
+    "gcpRmseKmBySource": {
+      "sift": 170.06529806337238,
+      "city": null
+    },
+    "gcpPredictedLonLat": [
+      [
+        -64.17328081777042,
+        57.88247385207192
+      ],
+      [
+        -77.11690194021523,
+        58.197166892763285
+      ],
+      [
+        -73.4724908503564,
+        46.12162163815074
+      ],
+      [
+        -63.754922240243594,
+        45.2514579049364
+      ],
+      [
+        -82.08535827387097,
+        36.37180871841436
+      ],
+      [
+        -53.2670565605807,
+        47.88046005975502
+      ],
+      [
+        -60.14249215858797,
+        51.207593010045684
+      ],
+      [
+        -61.159078194716564,
+        55.41008455238634
+      ],
+      [
+        -62.76178733143216,
+        49.45970847489528
+      ]
+    ],
+    "snapTotalBoundaryPoints": 0,
+    "snapSnappedPoints": 0,
     "zonesDroppedOffLand": 0
   },
   "timingMs": {
-    "color_extraction": 138.856,
-    "fit": 0.342,
-    "load_coastline": 281.057,
-    "load_land_mask": 325.998,
-    "subtract_lakes": 239.718,
-    "apply": 513.862
+    "reference_layers": 3071.251,
+    "user_evidence": 260.156,
+    "probe_fit": 1376.984,
+    "align_rung0": 1837.934,
+    "alignment": 3368.568,
+    "load_land_mask": 333.992,
+    "subtract_lakes": 210.312,
+    "apply": 117.68
   },
   "config": {
-    "version": "12",
-    "snap_to_coastline": true,
-    "coastline_snap_ratio_of_diagonal": 0.01,
+    "version": "13",
+    "gcp_sources": [
+      "sift",
+      "city"
+    ],
+    "gcp_sigma_px_sift": 6.0,
+    "gcp_sigma_px_city": 6.0,
+    "snap_to_coastline": false,
+    "coastline_snap_ratio_of_diagonal": 0.015,
     "clip_to_land_mask": true,
     "land_coverage_threshold": 0.01,
     "text_aware_zone_fill": true,
     "text_fill_min_context": 0.25,
     "text_fill_max_distance_px": 8.0,
-    "text_fill_method": "label",
+    "text_fill_method": "inpaint",
     "text_inpaint_dilation_px": 1,
     "text_inpaint_radius_px": 3.0,
-    "text_inpaint_max_ink_ratio": 0.6,
+    "text_inpaint_max_ink_ratio": 1.0,
     "text_inpaint_algo": "palette",
     "text_inpaint_ink_deltaE": 12.0,
-    "zone_gap_fill": false,
+    "zone_gap_fill": true,
     "zone_gap_max_ratio_of_diagonal": 0.008,
     "transform_model": "affine",
     "piecewise_anchor_margin": 0.25,
@@ -245,7 +439,7 @@
     "edge_water_filter": true,
     "edge_water_margin_px": 3,
     "edge_water_min_fraction": 0.01,
-    "enable_curve_alignment": false,
+    "enable_curve_alignment": true,
     "curve_sample_spacing_px": 2.0,
     "curve_max_samples": 8000,
     "use_rivers_for_alignment": false,
@@ -281,29 +475,31 @@
     "enable_icp": true,
     "icp_iterations": 8,
     "icp_search_radius_px": [
-      40.0,
+      100.0,
+      80.0,
+      50.0,
       30.0,
       22.0,
-      16.0,
-      12.0,
-      9.0,
-      7.0,
+      15.0,
+      10.0,
       5.0
     ],
-    "icp_orientation_tolerance_deg": 30.0,
-    "icp_cutoff_px": 20.0,
+    "icp_orientation_tolerance_deg": 60.0,
+    "icp_cutoff_px": 100.0,
     "icp_min_correspondences": 50,
-    "gate_probe_gcp_ratio": 2.0,
-    "gate_probe_gcp_max_km": 150.0,
-    "gate_water_iou_min": 0.7,
-    "gate_max_scale_drift": 0.25,
-    "gate_max_rotation_deg": 15.0,
-    "gate_min_inlier_fraction": 0.2,
-    "gate_min_chamfer_improvement": 0.02,
+    "gate_probe_gcp_ratio": 1000.0,
+    "gate_probe_gcp_max_km": 1000.0,
+    "gate_water_iou_min": 0.0,
+    "gate_max_scale_drift": 1000.0,
+    "gate_max_rotation_deg": 360.0,
+    "gate_min_inlier_fraction": 0.0,
+    "gate_min_chamfer_improvement": 0.0,
     "recovery_multistart_translation_px": 40.0,
     "recovery_multistart_rotation_deg": 4.0,
     "recovery_multistart_scale": 0.06,
     "recovery_gcp_weight_boost": 8.0
   },
-  "notes": []
+  "notes": [
+    "probe case: no expected zones, run not scored"
+  ]
 }

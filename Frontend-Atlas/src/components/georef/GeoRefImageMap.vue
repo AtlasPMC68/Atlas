@@ -51,11 +51,24 @@
       />
 
       <svg
-        v-if="baseStage && matchedPoints.length"
+        v-if="baseStage && (matchedPoints.length || contextPoints.length)"
         class="absolute inset-0"
         :viewBox="`0 0 ${baseStage.naturalW} ${baseStage.naturalH}`"
         preserveAspectRatio="none"
       >
+        <!-- Points from another step, greyed and not clickable -->
+        <circle
+          v-for="(c, i) in contextPoints"
+          :key="`context-${i}`"
+          :cx="c.x"
+          :cy="c.y"
+          :r="markerSize() * 0.6"
+          fill="#9ca3af"
+          stroke="#4b5563"
+          :stroke-width="markerSize() * 0.15"
+          opacity="0.8"
+          style="pointer-events: none;"
+        />
         <polygon
           v-for="m in matchedPoints"
           :key="`matched-${m.index}`"
@@ -83,13 +96,16 @@ const props = withDefaults(
   defineProps<{
     point: PointTuple | null;
     imageUrl: string;
-    // Matched control points passed from parent (for SIFT modal)
+    // Matched control points passed from parent
     // [{ index, x, y, color }]
     matchedPoints: MatchedPoint[];
+    // Points placed in another step, shown greyed for context
+    contextPoints?: { x: number; y: number }[];
   }>(),
   {
     point: null,
     matchedPoints: () => [],
+    contextPoints: () => [],
   },
 );
 
@@ -201,6 +217,12 @@ function onTriangleClick(index: number): void {
   emit("select-match", index);
 }
 
+// A marker size in image pixels that stays roughly constant on screen.
+function markerSize(): number {
+  const desiredScreenSize = 6; // px
+  return desiredScreenSize / (stagePxPerImagePx.value * Math.max(1, zoom.value));
+}
+
 function trianglePoints(m: MatchedPoint): string {
   // Build an upright triangle centered on the image point.
   // Keep its apparent size roughly constant on screen by
@@ -208,8 +230,7 @@ function trianglePoints(m: MatchedPoint): string {
   // and the interactive zoom (scale).
   // Desired triangle height in on-screen pixels.
   // svg is scaled by (baseStage fit) * zoom, so compensate by both.
-  const desiredScreenSize = 6; // px
-  const size = desiredScreenSize / (stagePxPerImagePx.value * Math.max(1, zoom.value));
+  const size = markerSize();
   const x = m.x;
   const y = m.y;
 

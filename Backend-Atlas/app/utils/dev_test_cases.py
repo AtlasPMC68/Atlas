@@ -30,8 +30,15 @@ from typing import Any, Dict, List, Optional
 
 from app.utils.dev_test_assets import TEST_CASES_DIR, ZONES_DIR
 from app.utils.dev_test_derived import DerivedState, inspect_text_regions
-from app.utils.georeferencing import DEFAULT_GEOREF_CONFIG, GeorefConfig
+from app.utils.georeferencing import (
+    DEFAULT_GEOREF_CONFIG,
+    SOURCE_CITY,
+    SOURCE_SIFT,
+    GeorefConfig,
+    count_by_source,
+)
 from app.utils.georeferencing.requirements import (
+    MIN_CONTROL_POINTS,
     REQUIREMENTS_VERSION,
     RequirementsReport,
     check_requirements,
@@ -110,6 +117,9 @@ class CaseState:
     requirements: RequirementsReport
     derived: List[DerivedState]
     has_expected_zones: bool
+    #: What the case holds, whatever the run selects -- the result page uses it
+    #: to offer only the source checkboxes that have points behind them.
+    control_points_by_source: Dict[str, int]
 
     @property
     def scored(self) -> bool:
@@ -117,8 +127,26 @@ class CaseState:
         return self.kind == KIND_REGRESSION and self.has_expected_zones
 
     @property
+    def run_blockers(self) -> tuple:
+        """Missing inputs that stop this case from running.
+
+        A scored case stops on any of them: its number would not be comparable.
+        A probe only stops on those the pipeline cannot execute without, and
+        replays without the rest (see ``warnings``).
+        """
+        if self.kind == KIND_PROBE:
+            return self.requirements.blocks_execution
+        return self.requirements.blocked
+
+    @property
+    def warnings(self) -> tuple:
+        """Missing inputs a probe replays without, and should say so."""
+        blockers = {s.key for s in self.run_blockers}
+        return tuple(s for s in self.requirements.blocked if s.key not in blockers)
+
+    @property
     def runnable(self) -> bool:
-        return self.requirements.runnable
+        return not self.run_blockers
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -127,6 +155,9 @@ class CaseState:
             "kind": self.kind,
             "scored": self.scored,
             "hasExpectedZones": self.has_expected_zones,
+            "controlPointsBySource": self.control_points_by_source,
+            "runnable": self.runnable,
+            "warnings": [s.key for s in self.warnings],
             "checkedAt": datetime.now(timezone.utc).isoformat(),
             "requirements": self.requirements.to_dict(),
             "derived": [d.to_dict() for d in self.derived],
@@ -155,7 +186,14 @@ class CaseState:
             f"{self.kind} case, requirements v{REQUIREMENTS_VERSION}, "
             + ("scored" if self.scored else "not scored")
         )
-        return [head] + ["  " + line for line in self.requirements.lines()]
+        lines = [head] + ["  " + line for line in self.requirements.lines()]
+        if self.warnings:
+            lines.append(
+                "  WARNING: replaying without "
+                + ", ".join(s.key for s in self.warnings)
+                + " -- the result differs from a run with it"
+            )
+        return lines
 
 
 def build_case_state(
@@ -180,10 +218,21 @@ def build_case_state(
     )
 
     derived: List[DerivedState] = []
+    by_source = count_by_source(inputs.control_points)
+    usable = sum(by_source[source] for source in cfg.gcp_sources)
     presence: Dict[str, Any] = {
-        "controlPoints": bool(inputs.pixel_points and inputs.geo_points_lonlat),
+        # Counted over the sources this run uses: a case with 7 SIFT points and
+        # 2 cities can run "SIFT only" but not "cities only".
+        "controlPoints": (
+            usable >= MIN_CONTROL_POINTS,
+            f"{usable} point(s) from {', '.join(cfg.gcp_sources)}"
+            f" (sift={by_source[SOURCE_SIFT]}, city={by_source[SOURCE_CITY]})",
+        ),
+        "cityControlPoints": by_source[SOURCE_CITY] > 0,
         "frameBounds": bool(inputs.frame_bounds),
         "zonePicks": bool(inputs.imposed_click_positions),
+        # An answer, not a rectangle: "no legend" satisfies it.
+        "legend": bool(inputs.legend_answered),
         "waterPicks": bool(inputs.water_click_positions),
     }
 
@@ -199,6 +248,7 @@ def build_case_state(
         requirements=check_requirements(presence, cfg),
         derived=derived,
         has_expected_zones=has_expected_zones(test_id),
+        control_points_by_source=by_source,
     )
 
 

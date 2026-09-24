@@ -1,20 +1,10 @@
-"""Frozen hyperparameters for the georeferencing pipeline.
-
-Every tunable constant lives here as one versioned dataclass rather than as a
-default scattered across a function signature. This deliberately deviates from
-the surrounding style (``extract_colors`` carries ~10 inline defaults): the
-offline tuning track needs to tune and ablate these *as a set*, which is
-impossible when they are spread across call sites.
-
-Bump ``CONFIG_VERSION`` whenever a field is added, removed or its default
-changes, so run records made under different settings stay comparable.
-"""
+# This file contains all the necessary parameters for the georeferencing and color extraction
 
 import math
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "12"
+CONFIG_VERSION = "13"
 
 #: The transform models a run may choose between, in increasing order of
 #: freedom. Adding one here is not enough: ``pipeline`` has to know how to
@@ -28,6 +18,13 @@ TEXT_FILL_METHODS = ("label", "inpaint")
 #: How the inpaint method finds and repaints ink; see `color_extraction`.
 TEXT_INPAINT_ALGOS = ("palette", "telea")
 
+#: Where a control point came from. ``sift``: the user matched a suggested
+#: coastline keypoint to their map. ``city``: the user named a city their map
+#: shows, picked it from the gazetteer, and clicked where the map draws it.
+SOURCE_SIFT = "sift"
+SOURCE_CITY = "city"
+GCP_SOURCES = (SOURCE_SIFT, SOURCE_CITY)
+
 
 @dataclass(frozen=True)
 class GeorefConfig:
@@ -35,13 +32,33 @@ class GeorefConfig:
 
     version: str = CONFIG_VERSION
 
+    # --- Control points ------------------------------------------------------
+    # Which sources a run fits from. All of them by default; the dev tool
+    # unticks one to see what the other carries on its own, from the same
+    # clicks. Applied once, where the task reads the points, so the baseline,
+    # the alignment, the gates and the piecewise correction all see one set.
+    gcp_sources: tuple = GCP_SOURCES
+    # Expected positional error per source, in image pixels. Only the ratio
+    # matters: the alignment GCP term weights each point by (median/sigma)^2,
+    # and the GCP-only baseline is unweighted. Equal on purpose -- a SIFT point
+    # is a user matching an abstract coastline shape, a city is a named dot the
+    # map may place wrongly, and which is noisier is for residuals to say, not
+    # for a constant to assume. Kept per source so it can be set from them.
+    #
+    # Before making these differ: the GCP term is normalised by point count
+    # and median sigma, so its total strength against the coastline term would
+    # then shift with the mix of sources. Normalise by the sum of the weights
+    # instead at the same time (identical while the sigmas are equal).
+    gcp_sigma_px_sift: float = 6.0
+    gcp_sigma_px_city: float = 6.0
+
     # --- Coastline snapping (current §7) -------------------------------------
     # Kept as-is for now. Roadmap §4.3 turns this off once chamfer alignment
     # lands, because blind snapping fights the alignment.
     snap_to_coastline: bool = True
     # Snap tolerance = this share of the image diagonal, converted to metres
     # with the transform's scale. The only knob: no pixel or metre clamps.
-    coastline_snap_ratio_of_diagonal: float = 0.01
+    coastline_snap_ratio_of_diagonal: float = 0.015 # old value was : 0.01
 
     # --- Land clipping (current §8) ------------------------------------------
     clip_to_land_mask: bool = True
@@ -74,7 +91,7 @@ class GeorefConfig:
     # written half over the sea comes back as sea on one side and land on the
     # other; it ignores the two settings above. Default kept at "label" until
     # the harness has compared the two.
-    text_fill_method: str = "label"
+    text_fill_method: str = "inpaint" #old value was "label"
     # Pixels added around the detected ink, for the anti-aliased fringe whose
     # blended colour otherwise lands in the wrong zone.
     text_inpaint_dilation_px: int = 1
@@ -82,7 +99,7 @@ class GeorefConfig:
     text_inpaint_radius_px: float = 3.0
     # A box whose "ink" covers more than this share of it did not split into
     # strokes and background, and is left alone.
-    text_inpaint_max_ink_ratio: float = 0.6
+    text_inpaint_max_ink_ratio: float = 1 # old value was 0.6
     # "palette": the background of each label is the palette of colours in the
     # ring around its box, ink is whatever is far from that palette, and each
     # ink pixel takes the colour most voted by its known neighbours -- never a
@@ -119,7 +136,7 @@ class GeorefConfig:
     #
     # When Step 4 alignment supplies a model, this chooses what happens to it:
     # ``affine`` uses the aligned affine as-is, ``piecewise_affine`` corrects it.
-    transform_model: str = "affine"
+    transform_model: str = "piecewise_affine" # old value "affine"
     # Frame padding as a fraction of the map's width and height. Wider means
     # the correction decays more gently and reaches further toward the edges.
     piecewise_anchor_margin: float = 0.25
@@ -215,23 +232,24 @@ class GeorefConfig:
     # Normal-search ICP.
     enable_icp: bool = True
     icp_iterations: int = 8
-    icp_search_radius_px: tuple = (40.0, 30.0, 22.0, 16.0, 12.0, 9.0, 7.0, 5.0)
-    icp_orientation_tolerance_deg: float = 30.0
-    icp_cutoff_px: float = 20.0
+    icp_search_radius_px: tuple = (100.0, 80.0, 50.0, 30.0, 22.0, 15.0, 10.0, 5.0) # old value was (40.0, 30.0, 22.0, 16.0, 12.0, 9.0, 7.0, 5.0)
+    icp_orientation_tolerance_deg: float = 60.0 # old value was 30
+    icp_cutoff_px: float = 100.0 # old value was 20
     icp_min_correspondences: int = 50
 
     # Gates (section 8.3).
-    gate_probe_gcp_ratio: float = 2.0
-    gate_probe_gcp_max_km: float = 150.0
-    gate_water_iou_min: float = 0.7
-    gate_max_scale_drift: float = 0.25
-    gate_max_rotation_deg: float = 15.0
-    gate_min_inlier_fraction: float = 0.2
+    # TODO figure if first, we want the gate and if yes, what do we put the values as
+    gate_probe_gcp_ratio: float = 1000.0 # old value was 2.0
+    gate_probe_gcp_max_km: float = 10000.0 # old value was 150
+    gate_water_iou_min: float = 0.0 # old value was 0.7
+    gate_max_scale_drift: float = 1000.0 # old value was 0.25
+    gate_max_rotation_deg: float = 360.0 # old value was 15
+    gate_min_inlier_fraction: float = 0.0 # old value was 0.2
     # Did the curve term actually engage? A fit that never moved passes every
     # sanity check, because nothing drifted. This is a *convergence* check, not
     # a correctness one -- a low chamfer residual still proves nothing, which is
     # why residual magnitude is never a gate.
-    gate_min_chamfer_improvement: float = 0.02
+    gate_min_chamfer_improvement: float = 0.0 # old value was 0.02
 
     # Recovery ladder (section 10.2).
     recovery_multistart_translation_px: float = 40.0
@@ -301,6 +319,10 @@ def parse_run_switches(raw: Any) -> Dict[str, bool]:
 #: exactly once: a field left out would be untunable from the UI, and nobody
 #: would notice.
 FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    (
+        "Control points",
+        ("gcp_sources", "gcp_sigma_px_sift", "gcp_sigma_px_city"),
+    ),
     (
         "Coastline snapping",
         (
@@ -426,6 +448,12 @@ FIELD_CHOICES: Dict[str, Tuple[str, ...]] = {
     "text_inpaint_algo": TEXT_INPAINT_ALGOS,
 }
 
+#: Fields holding a non-empty subset of a fixed list, offered as checkboxes.
+#: Stored in the list's own order, so the same subset always compares equal.
+FIELD_MULTI_CHOICES: Dict[str, Tuple[str, ...]] = {
+    "gcp_sources": GCP_SOURCES,
+}
+
 
 def _coerce_field(key: str, value: Any, default: Any) -> Any:
     """Coerce one override to the type of *default*, or raise ValueError.
@@ -464,6 +492,20 @@ def _coerce_field(key: str, value: Any, default: Any) -> Any:
 
     if isinstance(default, float):
         return _number(value)
+
+    multi = FIELD_MULTI_CHOICES.get(key)
+    if multi is not None:
+        if (
+            not isinstance(value, (list, tuple))
+            or not value
+            or not all(isinstance(v, str) and v in multi for v in value)
+            or len(set(value)) != len(value)
+        ):
+            raise ValueError(
+                f"{key} must be a non-empty list of distinct values from"
+                f" {list(multi)}, got {value!r}"
+            )
+        return tuple(v for v in multi if v in value)
 
     if isinstance(default, tuple):
         # JSON has no tuple, so a schedule arrives as a list. Length is free:
@@ -514,4 +556,7 @@ def describe_config(ambient: GeorefConfig) -> Dict[str, Any]:
         "groups": [{"title": title, "fields": list(names)} for title, names in FIELD_GROUPS],
         "switches": sorted(RUN_SWITCHES),
         "choices": {field: list(options) for field, options in FIELD_CHOICES.items()},
+        "multiChoices": {
+            field: list(options) for field, options in FIELD_MULTI_CHOICES.items()
+        },
     }

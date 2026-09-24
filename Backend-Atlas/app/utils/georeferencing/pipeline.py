@@ -24,7 +24,12 @@ from app.utils.coastline_land_mask import (
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import FrameBounds
-from .models import AffineModel, ControlPoint, fit_affine_from_control_points
+from .models import (
+    AffineModel,
+    ControlPoint,
+    count_by_source,
+    fit_affine_from_control_points,
+)
 from .piecewise import PiecewiseAffineModel, fit_piecewise_from_control_points
 from .projection import (
     lonlat_arrays_to_webmercator,
@@ -79,7 +84,7 @@ def georeference_features(
 
     Args:
         pixel_feature_collections: GeoJSON FeatureCollections in pixel space.
-        control_points: pixel <-> geo pairs, with source and sigma.
+        control_points: pixel <-> geo pairs, with their source.
         frame_bounds: the world area the user framed, used for the latitude at
             which reported distances are corrected. Optional.
         config: hyperparameters; see ``config.GeorefConfig``.
@@ -144,6 +149,7 @@ def georeference_features(
     record.set_inputs(
         controlPoints=[cp.to_dict() for cp in control_points],
         controlPointCount=len(control_points),
+        controlPointsBySource=count_by_source(control_points),
         frameBounds=frame_bounds,
         referenceLatitude=ref_lat,
     )
@@ -160,6 +166,13 @@ def georeference_features(
         gcpRmse3857=rmse_3857,
         gcpRmseKm=rmse_km,
         gcpRmseStatus=rmse_status,
+        # Which source is noisier is an empirical question (config.py, sigma),
+        # and this is the number that answers it, one run at a time.
+        gcpRmseKmBySource=_rmse_km_by_source(model, control_points, ref_lat),
+        # Where the model puts each clicked pixel, in lon/lat, in the order of
+        # inputs.controlPoints: the dev tool draws each residual on the map as
+        # a line from the point's true position to this one.
+        gcpPredictedLonLat=_predicted_lonlat(model, control_points),
     )
 
     # --- reference layers for snapping and clipping -------------------------
@@ -353,7 +366,6 @@ def _apply_piecewise_correction(
     corrections = model.corrections_3857
     record.set_errors(
         piecewiseApplied=True,
-        piecewiseLocalPoints=int(model.n_local_points),
         # How far the correction pulls the affine, in EPSG:3857 metres. A large
         # value is either real local distortion or a bad control point, and
         # this number alone cannot tell them apart.
@@ -362,6 +374,54 @@ def _apply_piecewise_correction(
         piecewiseLooRmse3857=model.rmse_3857,
     )
     return model
+
+
+def _rmse_km_by_source(
+    model: TransformModel,
+    control_points: Sequence[ControlPoint],
+    ref_lat: Optional[float],
+) -> Dict[str, Optional[float]]:
+    """RMS control-point error per source, in ground kilometres.
+
+    Uses the model's own residuals -- leave-one-out for the piecewise model,
+    whose in-sample residuals are 0 by construction. A source with no points,
+    or whose residuals are unknown, reports None rather than 0 -- and so does
+    every source when the fit has no redundancy (exactly 3 points), for the
+    same reason ``rmse_3857`` does: an exact fit is no evidence, not 0 km.
+    """
+    residuals = np.asarray(model.residuals_3857, dtype=float)
+    no_evidence = model.rmse_3857 is None
+    out: Dict[str, Optional[float]] = {}
+    for source, count in count_by_source(control_points).items():
+        if (
+            count == 0
+            or no_evidence
+            or residuals.size != len(control_points)
+            or ref_lat is None
+        ):
+            out[source] = None
+            continue
+        mask = np.array([cp.source == source for cp in control_points])
+        r = residuals[mask]
+        r = r[np.isfinite(r)]
+        out[source] = (
+            webmercator_meters_to_km(float(np.sqrt(np.mean(r**2))), ref_lat)
+            if r.size
+            else None
+        )
+    return out
+
+
+def _predicted_lonlat(
+    model: TransformModel, control_points: Sequence[ControlPoint]
+) -> List[List[float]]:
+    """``[lon, lat]`` the model maps each control point's pixel to."""
+    if not control_points:
+        return []
+    pixels = np.array([cp.pixel for cp in control_points], dtype=float)
+    X, Y = model(pixels[:, 0], pixels[:, 1])
+    lon, lat = webmercator_arrays_to_lonlat(X, Y)
+    return [[float(a), float(b)] for a, b in zip(np.ravel(lon), np.ravel(lat))]
 
 
 def _resolve_snap_tolerance_m(

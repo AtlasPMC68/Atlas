@@ -143,6 +143,8 @@ def dump_alignment_debug(
         _write("02_edge_weight.png", (evidence.edge_weight * 255).astype(np.uint8))
         if evidence.text_mask is not None and evidence.text_mask.any():
             _write("03_text_mask.png", evidence.text_mask.astype(np.uint8) * 255)
+        if evidence.legend_mask.any():
+            _write("03_legend_mask.png", evidence.legend_mask.astype(np.uint8) * 255)
 
         kept = evidence.edges & (evidence.edge_weight >= 1.0)
         suppressed = evidence.edges & (evidence.edge_weight < 1.0)
@@ -177,10 +179,18 @@ def dump_alignment_debug(
         _write("08_reference_before_red_after_green.png", both)
 
         # --- control points ---------------------------------------------------
+        # Yellow circle = SIFT point, magenta circle + name = city.
         gcp = _dim(image_bgr, 0.6)
         for cp in control_points:
             px, py = int(cp.pixel[0]), int(cp.pixel[1])
-            cv2.circle(gcp, (px, py), 12, (0, 255, 255), 2)
+            if cp.city is not None:
+                cv2.circle(gcp, (px, py), 12, (255, 0, 255), 2)
+                cv2.putText(
+                    gcp, cp.city.name, (px + 14, py - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1, cv2.LINE_AA,
+                )
+            else:
+                cv2.circle(gcp, (px, py), 12, (0, 255, 255), 2)
             X, Y = lonlat_to_webmercator(*cp.geo)
             for model, color in ((baseline, (0, 0, 255)), (aligned, (0, 255, 0))):
                 qx, qy = model.inverse()(np.array([X]), np.array([Y]))
@@ -243,7 +253,9 @@ def dump_alignment_debug(
             lines.append(
                 f"    [{i}] pixel=({cp.pixel[0]:.0f},{cp.pixel[1]:.0f}) "
                 f"geo=({cp.geo[0]:.3f},{cp.geo[1]:.3f}) "
-                f"source={cp.source} sigma={cp.sigma_px} residual={err:.1f}px"
+                f"source={cp.source}"
+                + (f" city={cp.city.name}" if cp.city is not None else "")
+                + f" residual={err:.1f}px"
             )
         lines.append("")
         lines.append("EVIDENCE (the user's map)")

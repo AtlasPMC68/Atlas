@@ -4,11 +4,21 @@
   "kind": "probe",
   "scored": false,
   "hasExpectedZones": false,
-  "checkedAt": "2026-09-23T21:44:20.945731+00:00",
+  "controlPointsBySource": {
+    "sift": 6,
+    "city": 0
+  },
+  "runnable": true,
+  "warnings": [
+    "legend"
+  ],
+  "checkedAt": "2026-09-24T00:09:56.640301+00:00",
   "requirements": {
-    "version": "2",
-    "runnable": true,
-    "blocked": [],
+    "version": "4",
+    "runnable": false,
+    "blocked": [
+      "legend"
+    ],
     "refreshable": [],
     "requirements": [
       {
@@ -16,10 +26,23 @@
         "kind": "user_input",
         "level": "required",
         "sinceStep": "0",
-        "summary": "Pixel <-> lon/lat pairs clicked by the user.",
-        "remedy": "Recreate the case: the control points come from a human matching keypoints to the map and cannot be recovered from anything on disk.",
+        "summary": "Pixel <-> lon/lat pairs clicked by the user, at least 3 among the sources this run uses.",
+        "remedy": "If the case has enough points from another source, select it. Otherwise recreate the case: the control points come from a human matching keypoints and cities to the map and cannot be recovered from disk.",
         "producer": null,
+        "blocksExecution": true,
         "status": "satisfied",
+        "detail": "6 point(s) from sift, city (sift=6, city=0)"
+      },
+      {
+        "key": "cityControlPoints",
+        "kind": "user_input",
+        "level": "optional",
+        "sinceStep": "5",
+        "summary": "Cities the user named and located on the map.",
+        "remedy": "Optional: a map may show no city the gazetteer knows. Recreate the case and name the cities on the map to compare SIFT, cities and both.",
+        "producer": null,
+        "blocksExecution": true,
+        "status": "absent",
         "detail": null
       },
       {
@@ -30,6 +53,7 @@
         "summary": "The world area the user framed; the extent for every reference layer.",
         "remedy": "Recreate the case and draw the world area. The framing box is the extent of every reference raster, so it decides which geography the alignment can match against at all. Deriving one from the control points is not a substitute: that box is systematically too tight, because the points sit inside the mapped area. Your drawn expected zones are per-map and are not lost -- only this case's clicks are.",
         "producer": null,
+        "blocksExecution": true,
         "status": "satisfied",
         "detail": null
       },
@@ -41,7 +65,20 @@
         "summary": "Pipette picks of kind 'zone'; without them nothing is extracted.",
         "remedy": "Recreate the case. A case predating the pipette has no colours in its config and there is nothing to georeference.",
         "producer": null,
+        "blocksExecution": true,
         "status": "satisfied",
+        "detail": null
+      },
+      {
+        "key": "legend",
+        "kind": "user_input",
+        "level": "required",
+        "sinceStep": "6",
+        "summary": "The legend rectangle, or an explicit 'no legend'. Masked out of the colour masks and the alignment evidence, so it changes the zones.",
+        "remedy": "Recreate the case and answer the legend step: draw the rectangle, or choose 'Pas de légende sur la carte'. A probe case replays without it and reports it missing; a scored case cannot, because its number would not be comparable to one taken with the legend masked.",
+        "producer": null,
+        "blocksExecution": false,
+        "status": "blocked",
         "detail": null
       }
     ]

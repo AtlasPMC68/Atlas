@@ -10,18 +10,23 @@ import numpy as np
 import pytest
 
 from app.utils.georeferencing import (
+    DEFAULT_GEOREF_CONFIG,
     AffineModel,
+    CityRef,
     ControlPoint,
     GateCheck,
     RunRecord,
     build_georef_inputs,
     control_point_weights,
+    count_by_source,
     mercator_scale_factor,
+    parse_control_points,
+    parse_control_points_field,
     parse_georef_inputs,
     parse_frame_bounds,
     parse_frame_bounds_entry,
     reference_latitude,
-    sigma_px_for_source,
+    select_control_points,
     webmercator_meters_to_km,
 )
 from app.utils.imposed_colors import (
@@ -92,37 +97,134 @@ class TestAffineModel:
         assert np.allclose(restored.matrix, model.matrix)
 
 
+def _sift(x=1.0, y=2.0, lon=-70.0, lat=45.0):
+    return ControlPoint.sift((x, y), (lon, lat))
+
+
+def _city(x=10.0, y=20.0, lon=-71.2, lat=46.8, geonameid=6325494, name="Québec"):
+    return ControlPoint.from_city((x, y), (lon, lat), geonameid, name)
+
+
 class TestControlPoint:
-    def test_from_pairs_assigns_a_source_sigma(self):
-        points = ControlPoint.from_pairs(
-            [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)],
-            [(-70.0, 45.0), (-71.0, 46.0), (-72.0, 47.0)],
-            source="sift",
-        )
-        assert [p.source for p in points] == ["sift"] * 3
-        assert all(p.sigma_px == sigma_px_for_source("sift") for p in points)
+    """A discriminated union on ``source``, enforced at construction."""
 
-    def test_city_sigma_is_much_larger_than_keypoint_sigma(self):
-        """Old maps place cities sloppily; a coastline keypoint is click-precise.
-        The two must not share a weight."""
-        assert sigma_px_for_source("city") > 3 * sigma_px_for_source("sift")
+    def test_a_city_point_carries_its_city(self):
+        point = _city()
+        assert point.source == "city"
+        assert point.city == CityRef(geonameid=6325494, name="Québec")
 
-    def test_rejects_dicts(self):
-        with pytest.raises(TypeError):
-            ControlPoint.from_pairs([{"x": 1, "y": 2}], [{"lon": 1, "lat": 2}])
+    def test_a_sift_point_carries_none(self):
+        assert _sift().city is None
 
-    def test_rejects_mismatched_lengths(self):
+    def test_a_city_point_without_its_city_is_refused(self):
+        with pytest.raises(ValueError, match="needs the city"):
+            ControlPoint(pixel=(1.0, 2.0), geo=(-70.0, 45.0), source="city")
+
+    def test_a_sift_point_with_a_city_is_refused(self):
+        with pytest.raises(ValueError, match="cannot carry a city"):
+            ControlPoint(
+                pixel=(1.0, 2.0),
+                geo=(-70.0, 45.0),
+                source="sift",
+                city=CityRef(geonameid=1, name="X"),
+            )
+
+    @pytest.mark.parametrize("source", ["manual", "", None, "SIFT"])
+    def test_unknown_sources_are_refused(self, source):
+        with pytest.raises(ValueError, match="Unknown control point source"):
+            ControlPoint(pixel=(1.0, 2.0), geo=(-70.0, 45.0), source=source)
+
+    @pytest.mark.parametrize(
+        "geonameid, name",
+        [(0, "X"), (-3, "X"), (True, "X"), ("12", "X"), (12, ""), (12, "  ")],
+    )
+    def test_a_city_needs_a_real_id_and_name(self, geonameid, name):
         with pytest.raises(ValueError):
-            ControlPoint.from_pairs([(1.0, 2.0)], [(1.0, 2.0), (3.0, 4.0)])
+            CityRef(geonameid=geonameid, name=name)
 
-    def test_weights_are_inverse_variance(self):
-        points = ControlPoint.from_pairs(
-            [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
-            [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
-            source="sift",
+    @pytest.mark.parametrize(
+        "pixel, geo",
+        [
+            ((1.0, float("nan")), (-70.0, 45.0)),
+            ((1.0, 2.0), (-200.0, 45.0)),
+            ((1.0, 2.0), (-70.0, 95.0)),
+            ((1.0,), (-70.0, 45.0)),
+            ((True, 2.0), (-70.0, 45.0)),
+        ],
+    )
+    def test_bad_coordinates_are_refused(self, pixel, geo):
+        with pytest.raises(ValueError):
+            ControlPoint(pixel=pixel, geo=geo, source="sift")
+
+    def test_coordinates_are_normalised_to_float_tuples(self):
+        point = ControlPoint.sift([1, 2], [-70, 45])
+        assert point.pixel == (1.0, 2.0) and isinstance(point.pixel[0], float)
+        assert point.geo == (-70.0, 45.0)
+
+    @pytest.mark.parametrize("point", [_sift(), _city()])
+    def test_dict_round_trip(self, point):
+        assert ControlPoint.from_dict(point.to_dict()) == point
+
+    def test_the_wire_format_has_no_sigma(self):
+        """Sigma is a model setting looked up by source, not an observation."""
+        assert "sigmaPx" not in _sift().to_dict()
+        assert set(_city().to_dict()) == {"source", "pixel", "geo", "city"}
+
+    def test_parse_names_the_bad_entry(self):
+        good = _sift().to_dict()
+        with pytest.raises(ValueError, match="control point 1"):
+            parse_control_points([good, {**good, "source": "city"}])
+
+    def test_parse_requires_a_list(self):
+        with pytest.raises(ValueError):
+            parse_control_points({"source": "sift"})
+
+    def test_weights_are_inverse_variance_by_source(self):
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(
+            gcp_sigma_px_sift=5.0, gcp_sigma_px_city=20.0
         )
-        expected = 1.0 / (sigma_px_for_source("sift") ** 2)
-        assert np.allclose(control_point_weights(points), expected)
+        weights = control_point_weights([_sift(), _city()], config)
+        assert np.allclose(weights, [1 / 25.0, 1 / 400.0])
+
+    def test_sources_are_weighted_alike_by_default(self):
+        weights = control_point_weights([_sift(), _city()])
+        assert weights[0] == weights[1]
+
+
+class TestSourceSelection:
+    def test_selects_by_source_and_keeps_order(self):
+        points = [_sift(1), _city(2), _sift(3)]
+        assert [p.pixel[0] for p in select_control_points(points, ["sift"])] == [1, 3]
+        assert [p.pixel[0] for p in select_control_points(points, ["city"])] == [2]
+        assert select_control_points(points, ["sift", "city"]) == points
+
+    def test_counts_include_zeros(self):
+        assert count_by_source([_sift(), _sift()]) == {"sift": 2, "city": 0}
+
+
+class TestControlPointsField:
+    """The ``control_points`` form field, shared by both upload routes."""
+
+    def test_absent_means_no_points(self):
+        assert parse_control_points_field(None) == []
+        assert parse_control_points_field("") == []
+
+    def test_mixed_sources_parse(self):
+        import json
+
+        raw = json.dumps([_sift(1).to_dict(), _sift(2).to_dict(), _city().to_dict()])
+        points = parse_control_points_field(raw)
+        assert [p.source for p in points] == ["sift", "sift", "city"]
+
+    def test_fewer_than_three_points_are_refused(self):
+        import json
+
+        with pytest.raises(ValueError, match="at least 3"):
+            parse_control_points_field(json.dumps([_sift().to_dict()] * 2))
+
+    def test_invalid_json_is_refused(self):
+        with pytest.raises(ValueError, match="not valid JSON"):
+            parse_control_points_field("[{")
 
 
 class TestHonestUnits:
@@ -224,11 +326,11 @@ class TestGeorefInputs:
 
     @staticmethod
     def _control_points():
-        return ControlPoint.from_pairs(
-            [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)],
-            [(-70.0, 45.0), (-71.0, 46.0), (-72.0, 47.0)],
-            source="sift",
-        )
+        return [
+            ControlPoint.sift((1.0, 2.0), (-70.0, 45.0)),
+            ControlPoint.sift((3.0, 4.0), (-71.0, 46.0)),
+            ControlPoint.from_city((5.0, 6.0), (-72.0, 47.0), 6325494, "Québec"),
+        ]
 
     def test_round_trips_every_input(self):
         frame = {"west": -80.0, "south": 44.0, "east": -56.0, "north": 62.0}
@@ -237,9 +339,8 @@ class TestGeorefInputs:
         payload = build_georef_inputs(self._control_points(), frame, colors)
         points, bounds, imposed = parse_georef_inputs(payload)
 
-        assert [p.pixel for p in points] == [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)]
-        assert [p.source for p in points] == ["sift"] * 3
-        assert [p.sigma_px for p in points] == [sigma_px_for_source("sift")] * 3
+        assert points == self._control_points()
+        assert points[2].city.name == "Québec"
         assert bounds == frame
         assert imposed == colors
 
@@ -371,6 +472,6 @@ def test_affine_matches_the_previous_hand_rolled_fit():
     from app.utils.georeferencing import fit_affine_from_control_points
 
     model = fit_affine_from_control_points(
-        ControlPoint.from_pairs(pixel, geo, source="sift")
+        [ControlPoint.sift(p, g) for p, g in zip(pixel, geo)]
     )
     assert np.allclose(model.matrix, expected, rtol=0, atol=0)

@@ -5,6 +5,8 @@ Three products, all in the user's image pixel space:
     edge_weight   Canny edges, text masked out, long straight lines down-weighted
     water         the water pipette's colour, split into ocean and lakes
     text_mask     dilated OCR regions, so labels do not become edges
+    legend_mask   the legend rectangle: its frame, swatches and labels are a
+                  key, not geography, so it gives neither edges nor water
 
 **Straight-line suppression is the cheapest anti-failure measure in the plan**
 (section 10.1). Graticules, neatlines, inset frames and legend boxes are
@@ -34,7 +36,8 @@ import cv2
 import numpy as np
 from skimage.color import deltaE_ciede2000, rgb2lab
 
-from app.utils.color_in_legends_extraction import sample_color_at
+from app.utils.color_sampling import sample_color_at
+from app.utils.legend import LegendBounds, legend_mask as build_legend_mask
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 
@@ -329,6 +332,7 @@ class UserEvidence:
     edge_weight: np.ndarray
     straight_lines: List[Tuple[int, int, int, int]]
     text_mask: np.ndarray
+    legend_mask: np.ndarray
     water: np.ndarray
     ocean: np.ndarray
     lakes: np.ndarray
@@ -349,6 +353,7 @@ def build_user_evidence(
     water_click_positions: Optional[Sequence[Sequence[float]]] = None,
     water_sampling_radii: Optional[Sequence[int]] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
+    legend_bounds: Optional[LegendBounds] = None,
 ) -> UserEvidence:
     """Build the edge map, the straight-line weighting and the water mask.
 
@@ -358,12 +363,15 @@ def build_user_evidence(
             dev-test path skips text extraction entirely.
         water_click_positions: normalised (x, y) water pipette picks.
         water_sampling_radii: per-pick sampling radius in pixels.
+        legend_bounds: the legend rectangle in image pixels, or None when the
+            map has none. Excluded from the edges and the water mask.
     """
     height, width = image_bgr.shape[:2]
 
     text_mask = build_text_mask(
         (height, width), text_regions, config.text_mask_dilation_px
     )
+    legend = build_legend_mask((height, width), legend_bounds)
     image_rgb = (
         cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         if image_bgr.ndim == 3
@@ -371,10 +379,10 @@ def build_user_evidence(
     )
     water = build_water_mask(
         image_rgb, water_click_positions, water_sampling_radii, config
-    )
+    ) & ~legend
     ocean, lakes = split_ocean_and_lakes(water, config)
 
-    edges = build_edge_map(image_bgr, text_mask, config)
+    edges = build_edge_map(image_bgr, text_mask | legend, config)
     raw_edge_pixels = int(edges.sum())
     # Filtered before straight-line detection, so Hough only sees what the
     # alignment will actually use.
@@ -394,6 +402,7 @@ def build_user_evidence(
             float(edges.sum()) / raw_edge_pixels if raw_edge_pixels else 0.0
         ),
         "textMaskFraction": float(text_mask.sum()) / pixels,
+        "legendMaskFraction": float(legend.sum()) / pixels,
         "straightLineCount": len(lines),
         "suppressedEdgePixels": suppressed,
         "suppressedEdgeFraction": (
@@ -412,6 +421,7 @@ def build_user_evidence(
         edge_weight=edge_weight,
         straight_lines=lines,
         text_mask=text_mask,
+        legend_mask=legend,
         water=water,
         ocean=ocean,
         lakes=lakes,
@@ -448,6 +458,8 @@ def dump_evidence_debug_pngs(
     # mask, roughly half the edge pixels on a labelled map are place names.
     if evidence.text_mask.any():
         _write("text_mask", (evidence.text_mask.astype(np.uint8) * 255))
+    if evidence.legend_mask.any():
+        _write("legend_mask", (evidence.legend_mask.astype(np.uint8) * 255))
 
     # Edges over the map: kept edges green, suppressed straight ones red, so a
     # graticule that survived suppression is visible at a glance.

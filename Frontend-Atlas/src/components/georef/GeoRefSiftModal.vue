@@ -31,14 +31,14 @@
           <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
             Carte du monde (points SIFT)
           </h3>
-          <GeoRefSiftWorldMap
+          <GeoRefWorldMap
             class="h-80 md:h-[28rem]"
             :world-bounds="worldBounds"
-            :keypoints="keypoints"
+            :points="worldPoints"
             :active-index="activeIndex"
             :matched-points="matchedWorldPoints"
             :used-lakes="usedLakes"
-            @select-keypoint="onSelectWorldKeypoint"
+            @select-point="onSelectWorldKeypoint"
           />
         </div>
 
@@ -79,16 +79,17 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import GeoRefSiftWorldMap from "./GeoRefSiftWorldMap.vue";
+import GeoRefWorldMap from "./GeoRefWorldMap.vue";
 import GeoRefImageMap from "./GeoRefImageMap.vue";
 import type {
   WorldBounds,
-  LatLngTuple,
   XYTuple,
   CoastlineKeypoint,
+  ControlPointInput,
   GeorefMatch,
   MatchedWorldPointSummary,
   MatchedImagePoint,
+  WorldMapPoint,
 } from "../../typescript/georef";
 
 const props = withDefaults(
@@ -99,6 +100,8 @@ const props = withDefaults(
     keypoints: CoastlineKeypoint[];
     usedLakes?: boolean;
     minPairs?: number;
+    // Pairs confirmed earlier, restored when the user comes back to this step
+    initialPoints?: ControlPointInput[];
   }>(),
   {
     isOpen: false,
@@ -106,12 +109,13 @@ const props = withDefaults(
     keypoints: () => [],
     usedLakes: false,
     minPairs: 4,
+    initialPoints: () => [],
   },
 );
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "confirmed", payload: { worldPoints: LatLngTuple[]; imagePoints: XYTuple[] }): void;
+  (e: "confirmed", points: ControlPointInput[]): void;
 }>();
 
 const imageMapRef = ref<InstanceType<typeof GeoRefImageMap> | null>(null);
@@ -135,6 +139,35 @@ const PAIR_COLORS = [
   "#6366f1",
 ];
 
+// A stored point carries its keypoint's coordinates, not its index: find the
+// keypoint again by position. One the keypoints no longer offer is dropped.
+function matchesFromPoints(points: ControlPointInput[]): GeorefMatch[] {
+  const restored: GeorefMatch[] = [];
+  for (const point of points) {
+    if (point.source !== "sift") continue;
+    const index = props.keypoints.findIndex(
+      (kp) =>
+        Math.abs(kp.geo.lat - point.geo.lat) < 1e-9 &&
+        Math.abs(kp.geo.lng - point.geo.lon) < 1e-9,
+    );
+    if (index < 0 || restored.some((m) => m.index === index)) continue;
+    restored.push({
+      index,
+      world: [point.geo.lat, point.geo.lon],
+      image: [point.pixel.x, point.pixel.y],
+      color: PAIR_COLORS[index % PAIR_COLORS.length],
+    });
+  }
+  return restored;
+}
+
+matches.value = matchesFromPoints(props.initialPoints);
+// Start on a free keypoint, so the first click does not replace a restored pair.
+activeIndex.value = Math.max(
+  0,
+  props.keypoints.findIndex((_, i) => !matches.value.some((m) => m.index === i)),
+);
+
 const totalPoints = computed<number>(() => props.keypoints?.length || 0);
 const matchedCount = computed<number>(() => matches.value.length);
 
@@ -147,6 +180,10 @@ const currentWorldKeypoint = computed<CoastlineKeypoint | null>(() => {
   if (activeIndex.value < 0 || activeIndex.value >= props.keypoints.length) return null;
   return props.keypoints[activeIndex.value];
 });
+
+const worldPoints = computed<WorldMapPoint[]>(() =>
+  props.keypoints.map((kp) => ({ lat: kp.geo.lat, lng: kp.geo.lng })),
+);
 
 const matchedWorldPoints = computed<MatchedWorldPointSummary[]>(() =>
   matches.value.map((m) => ({ index: m.index, color: m.color })),
@@ -203,10 +240,13 @@ function onSelectImageMatch(index: number): void {
 function onConfirm(): void {
   if (!canConfirm.value || matches.value.length === 0) return;
 
-  const worldPoints = matches.value.map((m) => m.world);
-  const imagePoints = matches.value.map((m) => m.image);
+  const points: ControlPointInput[] = matches.value.map((m) => ({
+    source: "sift",
+    pixel: { x: m.image[0], y: m.image[1] },
+    geo: { lon: m.world[1], lat: m.world[0] },
+  }));
 
-  emit("confirmed", { worldPoints, imagePoints });
+  emit("confirmed", points);
 }
 
 // Whenever the user clicks on the image, record a match

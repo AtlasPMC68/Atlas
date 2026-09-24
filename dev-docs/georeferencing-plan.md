@@ -968,6 +968,11 @@ that nothing can exercise. They stay recorded rather than written.
 
 ## 9. Step 5 — cities as GCPs (post-PoC, well-specified)
 
+> **Landed** — see [`city-gcps.md`](city-gcps.md). It departs from this section in three
+> places, by decision: the gazetteer does **reject** unknown names (no fallback to a manual
+> click on the reference map), city σ is **equal** to SIFT σ rather than an order of
+> magnitude larger, and cities **do** pin the piecewise correction.
+
 Coastline keypoints are positionally sharp but semantically hard to match — the user is
 matching an abstract shape. Cities are the opposite, and most maps have them.
 

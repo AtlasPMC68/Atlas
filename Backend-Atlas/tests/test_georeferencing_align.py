@@ -103,7 +103,7 @@ def _control_points_from(model: AffineModel, pixels) -> list:
     for px, py in pixels:
         X, Y = model(np.array([px]), np.array([py]))
         lon, lat = webmercator_to_lonlat(float(X[0]), float(Y[0]))
-        points.append(ControlPoint.make((px, py), (lon, lat), source="sift"))
+        points.append(ControlPoint.sift((px, py), (lon, lat)))
     return points
 
 

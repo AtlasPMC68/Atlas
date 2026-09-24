@@ -57,6 +57,7 @@
               :is-geo-border-mode="false"
               :undo-create-key="0"
               :sub-geometries="[]"
+              :control-point-markers="showControlPoints ? controlPointMarkers : []"
             />
           </div>
         </div>
@@ -135,6 +136,42 @@
                 </span>
               </span>
             </label>
+
+            <!-- Which control points the run fits from. Exploration cases only:
+                 the same clicks run as SIFT only, cities only, or both, which is
+                 how each source is judged on its own. -->
+            <div v-if="isProbe && sourceChoices.length > 0" class="space-y-1">
+              <span class="text-xs font-semibold">Points de contrôle utilisés</span>
+              <div class="flex flex-wrap gap-x-4 gap-y-1">
+                <label
+                  v-for="source in sourceChoices"
+                  :key="source"
+                  class="flex items-center gap-2 cursor-pointer text-xs"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-sm"
+                    :checked="isSourceSelected(source)"
+                    :disabled="isRerunning || !canToggleSource(source)"
+                    @change="toggleSource(source, ($event.target as HTMLInputElement).checked)"
+                  />
+                  {{ SOURCE_LABELS[source] ?? source }}
+                  <span class="text-base-content/60">({{ pointCount(source) ?? "?" }})</span>
+                </label>
+              </div>
+              <span
+                v-if="selectedPointCount !== null && selectedPointCount < MIN_CONTROL_POINTS"
+                class="block text-[11px] text-error"
+              >
+                {{ selectedPointCount }} point{{ selectedPointCount > 1 ? "s" : "" }}
+                sélectionné{{ selectedPointCount > 1 ? "s" : "" }} : il en faut au
+                moins {{ MIN_CONTROL_POINTS }}.
+              </span>
+              <span v-else class="block text-[11px] text-base-content/60">
+                Un run qui n'utilise pas toutes les sources n'est jamais promu en
+                «&nbsp;best&nbsp;».
+              </span>
+            </div>
 
             <!-- Which model places the map. First-class rather than buried in
                  the panel below: it decides what the run *is*, and with
@@ -592,6 +629,46 @@
               Ce cas ne peut plus être rejoué tel quel : recréez-le pour fournir
               {{ blockedRequirements.map((r) => r.key).join(", ") }}.
             </div>
+
+            <!-- A probe replays without inputs the pipeline can run without
+                 (the legend), but its result differs from a run with them. -->
+            <div
+              v-if="warningRequirements.length > 0"
+              class="alert alert-warning text-xs py-2"
+            >
+              Ce cas d'exploration est rejoué sans
+              {{ warningRequirements.map((r) => r.key).join(", ") }} : le résultat
+              diffère d'un run avec. Recréez-le pour le fournir.
+            </div>
+          </div>
+
+          <!-- Where each control point landed under the last run's transform:
+               a dot at its true position, a dashed line to where the transform
+               put the clicked pixel. SIFT in amber, cities in magenta. -->
+          <div
+            v-if="controlPointMarkers.length > 0"
+            class="bg-base-100 rounded-box border border-base-300 p-3 space-y-2"
+          >
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-semibold">Points de contrôle (dernier run)</h2>
+              <label class="flex items-center gap-2 cursor-pointer text-xs">
+                <input v-model="showControlPoints" type="checkbox" class="checkbox checkbox-xs" />
+                Afficher
+              </label>
+            </div>
+            <div
+              v-for="(km, source) in lastRunRmseBySource"
+              :key="source"
+              class="flex items-center justify-between text-sm"
+            >
+              <span class="text-base-content/70">
+                {{ SOURCE_LABELS[source] ?? source }} ({{ lastRunCounts[source] ?? 0 }})
+              </span>
+              <span class="font-mono">{{ km == null ? "—" : `${km.toFixed(1)} km` }}</span>
+            </div>
+            <p class="text-[11px] text-base-content/60">
+              Erreur RMS par source (leave-one-out avec <code>piecewise_affine</code>).
+            </p>
           </div>
 
           <div v-if="isScored" class="bg-base-100 rounded-box border border-base-300 p-3">
@@ -735,6 +812,8 @@ type RequirementState = {
   sinceStep: string;
   summary: string;
   remedy: string;
+  // Whether the pipeline cannot run at all without it (false: the legend).
+  blocksExecution: boolean;
   status:
     | "satisfied"
     | "stale"
@@ -748,6 +827,10 @@ type CaseState = {
   kind?: "regression" | "probe";
   scored?: boolean | null;
   hasExpectedZones?: boolean;
+  controlPointsBySource?: Record<string, number>;
+  // Resolved for the case's kind: a probe runs without non-blocking inputs.
+  runnable?: boolean;
+  warnings?: string[];
   requirements?: {
     version?: string;
     runnable?: boolean;
@@ -807,6 +890,24 @@ type GeorefConfigDescription = {
   groups: { title: string; fields: string[] }[];
   switches: string[];
   choices?: Record<string, string[]>;
+  multiChoices?: Record<string, string[]>;
+};
+
+// The parts of run_record.json the control-point overlay reads.
+type RunRecordControlPoint = {
+  source: string;
+  geo: { lon: number; lat: number };
+  city?: { id: number; name: string };
+};
+type RunRecord = {
+  inputs?: {
+    controlPoints?: RunRecordControlPoint[];
+    controlPointsBySource?: Record<string, number>;
+  };
+  errors?: {
+    gcpPredictedLonLat?: [number, number][];
+    gcpRmseKmBySource?: Record<string, number | null>;
+  };
 };
 type ParamKind = "bool" | "number" | "list" | "choice";
 type ParamDraft = string | boolean;
@@ -817,6 +918,8 @@ const QUERY_SWITCH_FIELDS = new Set([
   "snap_to_coastline",
   "enable_curve_alignment",
   "clip_to_land_mask",
+  "transform_model",
+  "gcp_sources",
 ]);
 
 // Fields with a dedicated control above. Hidden from the generic list only --
@@ -1075,6 +1178,81 @@ const modelChoices = computed<string[]>(
   () => configDesc.value?.choices?.transform_model ?? [],
 );
 
+// --- Control point sources ---------------------------------------------------
+// Which sources a re-run fits from. Per run, like the switches above; never
+// persisted, since "cities only" is an experiment, not a setting to forget on.
+
+const MIN_CONTROL_POINTS = 3;
+const SOURCE_LABELS: Record<string, string> = { sift: "SIFT", city: "Villes" };
+
+const sourceChoices = computed<string[]>(
+  () => configDesc.value?.multiChoices?.gcp_sources ?? [],
+);
+const ambientSources = computed<string[]>(() => {
+  const value = configDesc.value?.values.gcp_sources;
+  return Array.isArray(value) ? (value as string[]) : sourceChoices.value;
+});
+const runSources = ref<string[] | null>(null);
+const selectedSources = computed<string[]>(() => runSources.value ?? ambientSources.value);
+
+function pointCount(source: string): number | null {
+  const counts = caseState.value?.controlPointsBySource;
+  return counts ? (counts[source] ?? 0) : null;
+}
+
+// A source without points cannot contribute, so it reads as unticked.
+function isSourceSelected(source: string): boolean {
+  return selectedSources.value.includes(source) && pointCount(source) !== 0;
+}
+
+// Never let the last source that has points be unticked: a run needs some.
+function canToggleSource(source: string): boolean {
+  if (pointCount(source) === 0) return false;
+  if (!isSourceSelected(source)) return true;
+  return sourceChoices.value.some((other) => other !== source && isSourceSelected(other));
+}
+
+function toggleSource(source: string, checked: boolean) {
+  const next = new Set(selectedSources.value);
+  if (checked) next.add(source);
+  else next.delete(source);
+  runSources.value = sourceChoices.value.filter((s) => next.has(s));
+}
+
+const selectedPointCount = computed<number | null>(() => {
+  if (!caseState.value?.controlPointsBySource) return null;
+  return selectedSources.value.reduce((sum, s) => sum + (pointCount(s) ?? 0), 0);
+});
+
+const sourcesOverride = computed<string[] | null>(() =>
+  sameParam(selectedSources.value, ambientSources.value) ? null : selectedSources.value,
+);
+
+// --- Last run's control points, for the map overlay ---------------------------
+
+const runRecord = ref<RunRecord | null>(null);
+const showControlPoints = ref(true);
+
+const controlPointMarkers = computed(() => {
+  const points = runRecord.value?.inputs?.controlPoints ?? [];
+  const predicted = runRecord.value?.errors?.gcpPredictedLonLat ?? [];
+  return points.map((p, i) => ({
+    lat: p.geo.lat,
+    lng: p.geo.lon,
+    predictedLat: predicted[i]?.[1],
+    predictedLng: predicted[i]?.[0],
+    source: p.source,
+    label: p.city ? p.city.name : `${SOURCE_LABELS[p.source] ?? p.source} #${i + 1}`,
+  }));
+});
+
+const lastRunRmseBySource = computed<Record<string, number | null>>(
+  () => runRecord.value?.errors?.gcpRmseKmBySource ?? {},
+);
+const lastRunCounts = computed<Record<string, number>>(
+  () => runRecord.value?.inputs?.controlPointsBySource ?? {},
+);
+
 function formatParam(value: unknown): string {
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
@@ -1249,8 +1427,17 @@ const requirementGaps = computed<RequirementState[]>(() => {
   return all.filter((r) => r.status !== "satisfied");
 });
 
+// What stops a re-run: every missing user input for a scored case, only those
+// the pipeline cannot run without for a probe.
 const blockedRequirements = computed<RequirementState[]>(() =>
-  requirementGaps.value.filter((r) => r.status === "blocked"),
+  requirementGaps.value.filter(
+    (r) => r.status === "blocked" && (!isProbe.value || r.blocksExecution),
+  ),
+);
+
+// Missing, but a probe replays without them.
+const warningRequirements = computed<RequirementState[]>(() =>
+  requirementGaps.value.filter((r) => (caseState.value?.warnings ?? []).includes(r.key)),
 );
 
 function requirementBadgeClass(status: RequirementState["status"]): string {
@@ -1377,17 +1564,34 @@ const expectedBestSummary = computed<any>(() => {
 
 // A case missing a user input cannot be re-run at all -- no amount of
 // re-running recovers a click that never happened.
-const canRerun = computed<boolean>(
-  () => (caseState.value?.requirements?.runnable ?? true) === true,
+//
+// controlPoints is judged here, against the sources ticked for *this* run: the
+// stored state was resolved against whatever the last run selected.
+const otherBlockedRequirements = computed<RequirementState[]>(() =>
+  blockedRequirements.value.filter((r) => r.key !== "controlPoints"),
 );
 
-const rerunBlockedReason = computed<string>(() =>
-  blockedRequirements.value.length
-    ? `Entrées manquantes : ${blockedRequirements.value
-        .map((r) => r.key)
-        .join(", ")}. Recréez le cas.`
-    : "",
-);
+const canRerun = computed<boolean>(() => {
+  if (selectedPointCount.value === null) {
+    return (caseState.value?.runnable ?? true) === true;
+  }
+  return (
+    otherBlockedRequirements.value.length === 0 &&
+    selectedPointCount.value >= MIN_CONTROL_POINTS
+  );
+});
+
+const rerunBlockedReason = computed<string>(() => {
+  if (otherBlockedRequirements.value.length) {
+    return `Entrées manquantes : ${otherBlockedRequirements.value
+      .map((r) => r.key)
+      .join(", ")}. Recréez le cas.`;
+  }
+  if (selectedPointCount.value !== null && selectedPointCount.value < MIN_CONTROL_POINTS) {
+    return `Au moins ${MIN_CONTROL_POINTS} points de contrôle sont nécessaires.`;
+  }
+  return "";
+});
 
 async function rerunCase() {
   if (!testId.value || !testCaseId.value || isRerunning.value) return;
@@ -1410,10 +1614,16 @@ async function rerunCase() {
     enable_curve_alignment: String(runAlign.value),
     clip_to_land_mask: String(runClip.value),
   });
+
   for (const index of [...excludedPoints.value].sort((a, b) => a - b)) {
     params.append("exclude_gcp", String(index));
   }
-  const overrides = parsedParams.value.overrides;
+
+  const overrides: Record<string, unknown> = { ...parsedParams.value.overrides };
+  if (isProbe.value && sourcesOverride.value) {
+    overrides.gcp_sources = sourcesOverride.value;
+  }
+
   const overrideCount = Object.keys(overrides).length;
 
   try {
@@ -1640,6 +1850,15 @@ async function loadCaseState() {
   caseState.value = await res.json();
 }
 
+// Static file, like the zones: the last run's record, whatever its settings.
+async function loadRunRecord() {
+  if (!testId.value || !testCaseId.value) return;
+  const res = await fetch(
+    `${import.meta.env.VITE_API_URL}/dev-test/test_cases/${testId.value}/${testCaseId.value}/run_record.json?v=${cacheBuster.value}`,
+  );
+  runRecord.value = res.ok ? ((await res.json()) as RunRecord) : null;
+}
+
 async function loadBestReport() {
   if (!testId.value || !testCaseId.value) return;
   const res = await fetch(
@@ -1679,6 +1898,7 @@ async function reloadAll() {
       loadControlPoints(),
       loadPixelZones(),
     ]);
+    
     rebuildVisibility();
   } catch (e: any) { 
     loadError.value = e?.message ? String(e.message) : "Erreur lors du chargement";

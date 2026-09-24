@@ -11,8 +11,7 @@ from shapely.geometry import Polygon
  
 from . import preprocessing
 from .color_extraction import get_nearest_css4_color_name
-
-LegendBounds = Dict[str, float]
+from .legend import LegendBounds, point_in_legend
 
 logger = logging.getLogger(__name__)
  
@@ -281,24 +280,6 @@ def classify_shape(
 
     return "Shape unknown"
 
-def _is_inside_legend_bounds(
-    cx: float,
-    cy: float,
-    legend_bounds: Optional[LegendBounds],
-) -> bool:
-    if not legend_bounds:
-        return False
-
-    x = legend_bounds.get("x", 0.0)
-    y = legend_bounds.get("y", 0.0)
-    w = legend_bounds.get("width", 0.0)
-    h = legend_bounds.get("height", 0.0)
-
-    if w <= 0 or h <= 0:
-        return False
-
-    return x <= cx <= (x + w) and y <= cy <= (y + h)
-
 def _contour_to_polygon(contour: np.ndarray) -> Optional[Polygon]:
     if contour is None or len(contour) < 3:
         return None
@@ -378,7 +359,7 @@ def post_filter_shapes(
             center = shape.get("center", {})
             cx = float(center.get("x", -1.0))
             cy = float(center.get("y", -1.0))
-            if _is_inside_legend_bounds(cx, cy, legend_bounds):
+            if point_in_legend(cx, cy, legend_bounds):
                 legend_coverage = area / legend_area
                 if legend_coverage >= legend_coverage_threshold:
                     continue
@@ -903,7 +884,7 @@ def extract_shapes(
         center = shape.get("center", {})
         cx = float(center.get("x", -1.0))
         cy = float(center.get("y", -1.0))
-        shape["isLegend"] = _is_inside_legend_bounds(cx, cy, legend_bounds)
+        shape["isLegend"] = point_in_legend(cx, cy, legend_bounds)
 
     legend_shapes_with_contours = [
         (shape, contour)

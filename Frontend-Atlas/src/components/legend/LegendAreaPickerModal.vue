@@ -13,8 +13,9 @@
       <h2 class="text-xl font-semibold">Délimiter la légende</h2>
 
       <p class="text-sm text-base-content/70">
-        Tracez un rectangle sur l'image pour indiquer la zone de légende. Vous
-        pouvez sauter cette étape si la carte n'a pas de légende.
+        Tracez un rectangle sur l'image autour de la légende. Cette zone sera
+        ignorée par l'extraction des couleurs, des formes et du texte. Si la
+        carte n'a pas de légende, indiquez-le.
       </p>
 
       <div class="border rounded-md overflow-hidden">
@@ -51,7 +52,9 @@
         <button class="btn btn-ghost" type="button" @click="requestClose">
           Annuler
         </button>
-        <button class="btn btn-outline" @click="onSkip">Sauter l'étape</button>
+        <button class="btn btn-outline" @click="onNoLegend">
+          Pas de légende sur la carte
+        </button>
         <button
           class="btn btn-primary"
           @click="onConfirm"
@@ -67,6 +70,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import type { LegendBounds } from "../../typescript/legend";
+import { containRect } from "../../utils/imageFit";
 
 const props = withDefaults(
   defineProps<{
@@ -82,7 +86,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "skip"): void;
+  (e: "no-legend"): void;
   (e: "confirmed", payload: LegendBounds): void;
 }>();
 
@@ -153,24 +157,20 @@ const displayRect = computed(() => {
   }
 
   const rect = container.value.getBoundingClientRect();
-  const cw = rect.width;
-  const ch = rect.height;
-
-  const baseScale = Math.min(
-    cw / imageNaturalWidth.value,
-    ch / imageNaturalHeight.value,
+  const fit = containRect(
+    rect.width,
+    rect.height,
+    imageNaturalWidth.value,
+    imageNaturalHeight.value,
   );
-  const displayW = imageNaturalWidth.value * baseScale;
-  const displayH = imageNaturalHeight.value * baseScale;
-  const offsetX = (cw - displayW) / 2;
-  const offsetY = (ch - displayH) / 2;
+  if (!fit) return null;
 
   return {
-    offsetX,
-    offsetY,
-    displayW,
-    displayH,
-    baseScale,
+    offsetX: fit.offsetX,
+    offsetY: fit.offsetY,
+    displayW: fit.width,
+    displayH: fit.height,
+    baseScale: fit.scale,
   };
 });
 
@@ -270,10 +270,10 @@ function onDialogClose() {
   }
 }
 
-function onSkip(): void {
+function onNoLegend(): void {
   legendBounds.value = null;
   closeDialog("success");
-  emit("skip");
+  emit("no-legend");
 }
 
 function onConfirm(): void {

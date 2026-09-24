@@ -1,12 +1,17 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/test-5-sift-points-peut-etre",
-  "startedAt": "2026-09-23T21:43:40.525726+00:00",
+  "startedAt": "2026-09-24T00:08:45.350270+00:00",
   "inputs": {
     "caseKind": "probe",
     "frameBoundsSource": "config",
+    "controlPointSources": [
+      "sift",
+      "city"
+    ],
     "controlPoints": [
       {
+        "source": "sift",
         "pixel": {
           "x": 248.61668709885964,
           "y": 104.47395917076652
@@ -14,11 +19,10 @@
         "geo": {
           "lon": -79.27928320323124,
           "lat": 53.98554512028851
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 499.78499575709424,
           "y": 108.59342982191613
@@ -26,11 +30,10 @@
         "geo": {
           "lon": -54.484431756497635,
           "lat": 49.73259819812631
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 464.93629389404776,
           "y": 181.116403969337
@@ -38,11 +41,10 @@
         "geo": {
           "lon": -60.089209205295866,
           "lat": 46.320200773143455
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 377.81453923643176,
           "y": 242.33709643144556
@@ -50,11 +52,10 @@
         "geo": {
           "lon": -68.67813448749294,
           "lat": 44.15959551623714
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 317.0647751778779,
           "y": 13.70401941776009
@@ -62,11 +63,10 @@
         "geo": {
           "lon": -69.67816940287233,
           "lat": 59.037844625268384
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       },
       {
+        "source": "sift",
         "pixel": {
           "x": 396.1807469750643,
           "y": 41.95972363104096
@@ -74,12 +74,14 @@
         "geo": {
           "lon": -61.564566508910616,
           "lat": 56.10241851852014
-        },
-        "source": "sift",
-        "sigmaPx": 6.0
+        }
       }
     ],
     "controlPointCount": 6,
+    "controlPointsBySource": {
+      "sift": 6,
+      "city": 0
+    },
     "frameBounds": {
       "west": -103.88506542857019,
       "south": 38.67178632444846,
@@ -88,7 +90,7 @@
     },
     "referenceLatitude": 49.45143526514314,
     "snapToCoastline": true,
-    "snapToleranceMeters": 68812.96092431723,
+    "snapToleranceMeters": 71228.64520842268,
     "clipToLandMask": true
   },
   "models": {
@@ -158,20 +160,56 @@
     "gcpRmse3857": 116114.51022820537,
     "gcpRmseKm": 75.4851543699496,
     "gcpRmseStatus": "ok",
-    "snapTotalBoundaryPoints": 1199,
-    "snapSnappedPoints": 253,
+    "gcpRmseKmBySource": {
+      "sift": 75.4851543699496,
+      "city": null
+    },
+    "gcpPredictedLonLat": [
+      [
+        -78.62909988545492,
+        54.676928124017536
+      ],
+      [
+        -54.11190104236283,
+        50.33479163779183
+      ],
+      [
+        -59.38096839592899,
+        46.230702077515716
+      ],
+      [
+        -69.48570214581858,
+        43.63883597362314
+      ],
+      [
+        -69.60006236348298,
+        58.55675257546596
+      ],
+      [
+        -62.56606073125277,
+        55.91097947357089
+      ]
+    ],
+    "snapTotalBoundaryPoints": 622,
+    "snapSnappedPoints": 204,
     "zonesDroppedOffLand": 0
   },
   "timingMs": {
-    "color_extraction": 28.469,
-    "fit": 0.784,
-    "load_coastline": 428.492,
-    "load_land_mask": 780.125,
-    "subtract_lakes": 362.26,
-    "apply": 419.553
+    "color_extraction": 2352.337,
+    "fit": 0.909,
+    "load_coastline": 1420.739,
+    "load_land_mask": 1245.435,
+    "subtract_lakes": 1133.571,
+    "apply": 318.225
   },
   "config": {
-    "version": "12",
+    "version": "13",
+    "gcp_sources": [
+      "sift",
+      "city"
+    ],
+    "gcp_sigma_px_sift": 6.0,
+    "gcp_sigma_px_city": 6.0,
     "snap_to_coastline": true,
     "coastline_snap_ratio_of_diagonal": 0.01,
     "clip_to_land_mask": true,
