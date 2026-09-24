@@ -64,7 +64,6 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
     """Return ASCII-normalized words stripping punctuation and accents while preserving word count."""
     res = []
     for word in text:
-        # Normalize newlines to spaces so multi-line expected texts match single-line OCR
         cleaned = (
             word.replace("\n", " ")
             .replace("'", "")
@@ -112,7 +111,6 @@ def check_for_match(
     used_ocr_indices = set()
     result: list[tuple[str, tuple[str, float]]] = []
 
-    # Pass 1: Fast O(1) Exact Matches
     for exp_idx, exp_word in enumerate(expected_ascii):
         if exp_word in actual_dict:
             available_ocr_indices = [idx for idx in actual_dict[exp_word] if idx not in used_ocr_indices]
@@ -120,11 +118,9 @@ def check_for_match(
                 ocr_idx = available_ocr_indices[0]
                 used_exp_indices.add(exp_idx)
                 used_ocr_indices.add(ocr_idx)
-                # If original words match exactly, distance is 0.0, else 0.1 (case/accent diff)
                 dist = 0.0 if actual[ocr_idx] == expected[exp_idx] else 0.1
                 result.append((actual[ocr_idx], (expected[exp_idx], dist)))
 
-    # Pass 2: Global Best Match for the remaining words
     all_pairs = []
     for exp_idx, exp_word in enumerate(expected_ascii):
         if exp_idx in used_exp_indices:
@@ -136,7 +132,6 @@ def check_for_match(
 
             dist = float(levenshtein_distance(ocr_word, exp_word))
 
-            # Suffix/substring bonus
             base_expected = re.sub(r"\b(1[5-9]\d\d|20\d\d)\b", "", exp_word).strip()
             base_expected = " ".join(base_expected.split())
             if base_expected and len(base_expected) >= 4 and base_expected != exp_word:
@@ -162,7 +157,6 @@ def check_for_match(
                 used_ocr_indices.add(ocr_idx)
                 result.append((actual[ocr_idx], (expected[exp_idx], dist)))
 
-    # Pass 3: Not Found
     for exp_idx in range(len(expected)):
         if exp_idx not in used_exp_indices:
             result.append(("", (expected[exp_idx], 1000.0)))
@@ -213,8 +207,6 @@ def test_check_for_match_drops_extra_ocr_words() -> None:
 
 def test_paddleocr_output_format_conversion() -> None:
     """Verify that PaddleOCR's output is correctly transformed into the generic schema."""
-    # Raw PaddleOCR output format:
-    # [[ [ [x1,y1], [x2,y2], [x3,y3], [x4,y4] ], ('Text', confidence) ]]
     paddle_raw = [
         [
             [
@@ -243,15 +235,15 @@ def test_paddleocr_output_format_conversion() -> None:
 
 
 CARD_THRESHOLDS = {
-    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 95.0, "max_dist": 0.15},
-    "Quebec_1791.png": {"min_hit_rate": 85.0, "max_dist": 0.55},
-    "Sahel_Afrique.png": {"min_hit_rate": 85.0, "max_dist": 0.20},
-    "Nouvelle-France1750.png": {"min_hit_rate": 50.0, "max_dist": 1.20},
-    "genocide_Monde.png": {"min_hit_rate": 80.0, "max_dist": 1.40},
-    "Quebec_1800.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
-    "1775_Quebec_NordUSA.png": {"min_hit_rate": 65.0, "max_dist": 2.10},
-    "Quebec_Traite1783.png": {"min_hit_rate": 70.0, "max_dist": 1.15},
-    "Degrade_Afrique.png": {"min_hit_rate": 65.0, "max_dist": 1.25},
+    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 100.0, "max_dist": 0.19},
+    "Quebec_1791.png": {"min_hit_rate": 92.6, "max_dist": 0.72},
+    "Sahel_Afrique.png": {"min_hit_rate": 90.9, "max_dist": 0.59},
+    "Nouvelle-France1750.png": {"min_hit_rate": 76.0, "max_dist": 1.04},
+    "genocide_Monde.png": {"min_hit_rate": 100.0, "max_dist": 0.26},
+    "Quebec_1800.png": {"min_hit_rate": 74.0, "max_dist": 0.58},
+    "1775_Quebec_NordUSA.png": {"min_hit_rate": 75.0, "max_dist": 0.18},
+    "Quebec_Traite1783.png": {"min_hit_rate": 89.0, "max_dist": 0.59},
+    "Degrade_Afrique.png": {"min_hit_rate": 65.2, "max_dist": 1.38},
 }
 
 
@@ -313,7 +305,6 @@ def test_text_extraction(
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
-    # Determine pass/fail against thresholds
     thresholds = CARD_THRESHOLDS.get(image_path.name, {"min_hit_rate": 40.0, "max_dist": 15.0})
     min_hit_rate = thresholds["min_hit_rate"]
     max_dist = thresholds["max_dist"]
@@ -328,7 +319,7 @@ def test_text_extraction(
         status_text = "PASS"
     elif hit_rate_passed or dist_passed:
         status_color = YELLOW
-        status_icon = "\u26a0\ufe0f"  # Warning icon
+        status_icon = "\u26a0\ufe0f"
         status_text = "WARNING"
     else:
         status_color = RED
@@ -345,7 +336,7 @@ def test_text_extraction(
         f"{status_icon}  {BOLD}SUMMARY for {card_name_fmt} : {status_color}{BOLD}{status_text}{RESET}\n"
         f"    \u2022 Hit Rate   : {hit_color}{BOLD}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)\n"
         f"    \u2022 Avg Dist   : {dist_color}{BOLD}{average_dist:.2f}{RESET} (max: {max_dist})\n"
-        f"    \u2022 Detections : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} OCR words extracted\n"
+        f"    \u2022 Mots       : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} obtenu vs {BOLD}{len(unpaired_expected_words)}{RESET} désiré\n"
         f"{status_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n\n"
     )
 
@@ -357,7 +348,6 @@ def test_text_extraction(
         logger.error(summary)
 
     if not is_passed:
-        # Show detailed failure info
         logger.error(f"{status_color}{BOLD}\U0001f50d DETAILS OF THE FAILURE FOR {card_name_fmt}:{RESET}\n" f"Expected Words that the OCR missed or matched poorly:\n")
         for expected_word, ocr_word, distance in mismatches:
             logger.error(f"  \u2022 Expected: {YELLOW}'{expected_word}'{RESET} --> Found: '{ocr_word}' (dist: {distance:.1f})")
@@ -371,5 +361,4 @@ def test_text_extraction(
         },
     )
 
-    # Formatting the assertion message so it reads clearly in the pytest short summary
-    assert is_passed, f"{image_path.name} -> RESULTAT: [Hit={box_find_rate:.1f}%, Dist={average_dist:.2f}] vs ATTENDU: [Hit>={min_hit_rate}%, Dist<={max_dist}]"
+    assert is_passed, f"{image_path.name} -> RESULTAT: [Hit={box_find_rate:.1f}%, Dist={average_dist:.2f}] \n ATTENDU: [Hit>={min_hit_rate}%, Dist<={max_dist}]"

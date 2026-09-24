@@ -23,8 +23,6 @@ MODEL_ID = "microsoft/Florence-2-base"
 INPUT_DIR = os.environ.get("INPUT_DIR", "/data/input")
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 MAX_NEW_TOKENS = 4096
-
-# Florence-2 uses task tokens instead of instruction
 OCR_TASK = "<OCR_WITH_REGION>"
 CONTEXT_TASK = "<MORE_DETAILED_CAPTION>"
 
@@ -157,14 +155,12 @@ def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
     h_orig, w_orig = img.shape[:2]
     longest_side = max(h_orig, w_orig)
 
-    # Dynamic upscale target: 1.75x but capped [1000, 2000]
     target_dim = max(1000, min(2000, int(longest_side * 1.75)))
     img = preprocess.upscale_for_ocr(img, min_dimension=target_dim)
 
     h_new, w_new = img.shape[:2]
     scale_factor = h_new / float(h_orig) if h_orig > 0 else 1.0
 
-    # Always apply full pipeline: denoise removes background noise, contrast sharpens text
     img = preprocess.bilateral_denoise(img, sigma_color=0.04, sigma_spatial=3.0)
     img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
 
@@ -193,7 +189,6 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     """Remove duplicate detections where one box overlaps >60% of another (IoA dedup)."""
     import shapely.geometry
 
-    # Import dictionary for smart deduplication
     try:
         from app.utils.map_dictionary import MAP_DICTIONARY_LOWER
     except ImportError:
@@ -214,13 +209,11 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
                 p = p.buffer(0)
             if p.area > 0:
                 text_clean = d.get("text", "").lower().strip()
-                # Score: +10 if in dictionary, to prioritize keeping accurate historical words over giant hallucinated squares
                 dict_score = 10 if text_clean in MAP_DICTIONARY_LOWER else 0
                 polys.append({"det": d, "poly": p, "area": p.area, "score": dict_score})
         except Exception:
             pass
 
-    # Sort by Dictionary Score first, then Area (descending)
     polys.sort(key=lambda x: (x["score"], x["area"]), reverse=True)
     unique_dets = []
     unique_polys = []
@@ -236,7 +229,6 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
                 inter_area = pA.intersection(upoly).area
                 ioa_small = inter_area / areaA
                 ioa_large = inter_area / uarea
-                # Only merge if the smaller box is mostly inside
                 if ioa_small > 0.6 and ioa_large > 0.2:
                     is_dup = True
                     break
@@ -271,7 +263,6 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     all_detections = []
 
-    # Pass 1: Full image (always)
     result = run_inference(model, processor, preprocessed, OCR_TASK, config)
     ocr_data = result.get(OCR_TASK, {})
     for quad, text in zip(ocr_data.get("quad_boxes", []), ocr_data.get("labels", [])):
@@ -280,17 +271,13 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     first_pass_count = len(all_detections)
     logger.debug(f"First pass: {first_pass_count} detections on full image ({longest_side}px)")
 
-    # Pass 2: Adaptive tiling based on image size and detection density
     if longest_side <= 800:
-        # Small image: no tiling needed, single pass is enough
         logger.debug("Small image. Skipping tiling.")
         tile_grid = 0
     elif longest_side > 1200 or first_pass_count >= 15:
-        # Large or dense image: use 3x3 tiling for maximum coverage
         logger.debug(f"Dense map detected ({first_pass_count} detections, {longest_side}px). Using 3x3 tiling.")
         tile_grid = 3
     else:
-        # Medium image: standard 2x2 tiling
         logger.debug(f"Medium image ({first_pass_count} detections, {longest_side}px). Using 2x2 tiling.")
         tile_grid = 2
 
@@ -305,15 +292,12 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
             for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
                 shifted_quad = []
-                # Fix IndexError by ensuring we don't read out of bounds if len(quad) is odd
                 for i in range(0, len(quad) - 1, 2):
                     shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
 
                 if len(shifted_quad) >= 4:
                     all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
 
-    # Pass 3: Multi-angle passes for diagonal/vertical text (Rivers, Lakes)
-    # Rotating the image transforms vertical/diagonal text into horizontal text, which Florence can read.
     import math
 
     def _map_quad_back(quad, orig_w, orig_h, new_w, new_h, angle_deg):
@@ -327,18 +311,16 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         for i in range(0, len(quad) - 1, 2):
             x, y = quad[i], quad[i + 1]
             x_sh, y_sh = x - cx_new, y - cy_new
-            # Apply CLOCKWISE rotation to map back from the COUNTER-CLOCKWISE rotated image
             x_orig_sh = x_sh * cos_a + y_sh * sin_a
             y_orig_sh = -x_sh * sin_a + y_sh * cos_a
             mapped_quad.extend([x_orig_sh + cx_orig, y_orig_sh + cy_orig])
         return mapped_quad
 
-    angles = [90, -45]  # 90 catches vertical text, -45 catches diagonal rivers (like St-Laurent)
+    angles = [90, -45]
     image_area = preprocessed.width * preprocessed.height
 
     for angle in angles:
         logger.debug(f"Running multi-angle pass: {angle} degrees")
-        # Pad with white to prevent Florence-2 hallucinating coordinate tokens > 999 (IndexError) on large black regions
         rot_img = preprocessed.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC, fillcolor=(255, 255, 255))
         rot_result = run_inference(model, processor, rot_img, OCR_TASK, config)
         r_data = rot_result.get(OCR_TASK, {})
@@ -347,7 +329,6 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
             if len(quad) >= 4:
                 mapped_quad = _map_quad_back(quad, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
 
-                # Use exact polygon area to reject massive hallucinations (e.g., ocean/map boundaries)
                 import shapely.geometry
 
                 try:
@@ -361,7 +342,6 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
                 all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad), "quad": mapped_quad})
 
-    # Remove duplicates from overlapping tiles
     unique_dets = _remove_duplicate_detections(all_detections)
     all_detections = out.merge_related_detections(unique_dets)
 
@@ -370,7 +350,6 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
             det["quad"] = [v / scale_factor for v in det["quad"]]
             det["bbox_xyxy"] = out.quad_to_bbox_xyxy(det["quad"])
 
-    # Return original dimensions
     orig_width = int(preprocessed.width / scale_factor)
     orig_height = int(preprocessed.height / scale_factor)
 
@@ -382,6 +361,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
 
 def main() -> None:
+    """Run Florence-2 OCR pipeline over all images in the input directory."""
     start = time.time()
     config = get_runtime_config()
     model, processor = load_model_and_processor(config)

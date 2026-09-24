@@ -3,7 +3,6 @@ import Levenshtein
 
 # fmt: off
 # ruff: noqa
-# Le dictionnaire complet du professeur d'histoire, récupéré du commit précédent.
 MAP_DICTIONARY = {
     # Hydrologie & Relief (Exhaustif)
     "Océan", "Mer", "Golfe", "Baie", "Détroit", "Lac", "Fleuve", "Rivière", "Ruisseau", "Canal", "Île", "Archipel", "Cap", "Péninsule", "Presqu'île", "Isthme", "Mont", "Montagne", "Massif", "Pic", "Volcan", "Vallée", "Gorge", "Plaine", "Plateau", "Désert", "Oasis", "Forêt", "Jungle", "Nord", "Sud", "Est", "Ouest", "Équateur", "Tropique", "Cancer", "Capricorne", "Méridien", "Bassin", "Canyon", "Falaise", "Lagune", "Marais", "Tourbière", "Toundra", "Taïga", "Glacier", "Fjord",
@@ -61,22 +60,16 @@ MAP_DICTIONARY = {
 }
 # fmt: on
 
-
 MAP_DICTIONARY_LOWER = {w.lower(): w for w in MAP_DICTIONARY}
 
 
 def _correct_word(word: str) -> str:
-    """
-    Corrige un seul mot de manière intelligente en utilisant la distance de Levenshtein.
-    - Évite les modifications trop agressives (difflib 0.8) qui cassaient les mots courts.
-    - Seuls les mots >= 4 lettres sont analysés pour la correction floue.
-    """
+    """Correct a single word using Levenshtein distance against the map dictionary."""
     if len(word) < 4:
         return word
 
     word_lower = word.lower()
 
-    # Match exact direct
     if word_lower in MAP_DICTIONARY_LOWER:
         dict_word = MAP_DICTIONARY_LOWER[word_lower]
         return dict_word.upper() if word.isupper() else dict_word
@@ -89,7 +82,6 @@ def _correct_word(word: str) -> str:
             continue
 
         dist = Levenshtein.distance(word_lower, dict_word_lower)
-
         allowed_dist = 1 if len(dict_word_lower) <= 6 else 2
 
         if dist <= allowed_dist and dist < min_dist:
@@ -103,15 +95,10 @@ def _correct_word(word: str) -> str:
 
 
 def apply_map_dictionary_correction(text: str) -> str:
-    """
-    Applique d'abord des corrections pour les hallucinations connues de Florence-2.
-    Ensuite, découpe le texte en mots (en gardant la ponctuation intacte),
-    applique la correction intelligente sur chaque mot, puis les recolle.
-    """
+    """Apply dictionary-based correction to raw OCR text."""
     text_clean = text.strip()
     text_lower = text_clean.lower()
 
-    # 1. Corrections des hallucinations connues (VLM bias)
     hallucinations = {
         "d'hudson": "Lac Huron",
         "of hudson": "Lac Huron",
@@ -125,11 +112,9 @@ def apply_map_dictionary_correction(text: str) -> str:
     if text_lower in hallucinations:
         return hallucinations[text_lower]
 
-    # Remplacement partiel pour les erreurs flagrantes de préfixe
     if text_lower.startswith("mar de "):
         text_clean = "Lac " + text_clean[7:]
 
-    # 2. Correction mot par mot
     words = re.split(r"(\W+)", text_clean)
     corrected_words = [_correct_word(w) if w.isalpha() else w for w in words]
     return "".join(corrected_words)

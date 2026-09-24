@@ -146,6 +146,13 @@ curl http://localhost:8000/ping
 
 ## Testing
 
+### To rebuild everithing
+
+```sh
+docker compose down -v ; docker compose build --no-cache ; docker compose up -d
+
+```
+
 All tests must run inside Docker:
 
 ```sh
@@ -283,3 +290,4 @@ docker compose build
 - The CI/CD configuration is managed in .github/workflows/ci.yml
 - Docker images used for testing are the same as in production to ensure reliability
 - Test feedback will show directly in your PR — no manual test launching needed
+

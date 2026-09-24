@@ -35,7 +35,6 @@ else:
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
         logger.addHandler(handler)
 
-# OCR pipeline folders configuration
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
 OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/ocr_intermediate")
 OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
@@ -231,7 +230,6 @@ def _build_extracted_text_from_detections(
 
         quad = detection.get("quad")
         if not isinstance(quad, list) or len(quad) != 4:
-            # Fallback for older worker versions without valid quad
             bbox_xyxy = detection.get("bbox_xyxy")
             if not isinstance(bbox_xyxy, list) or len(bbox_xyxy) != 4:
                 continue
@@ -319,7 +317,6 @@ def _run_ocr_pipeline(
         except Exception as e:
             logger.debug(f"Failed to chmod {ocr_input_path}: {e}")
 
-    # We use Florence-2 for text detection and extraction
     task_chain = celery_app.signature(
         "florence.run_pipeline",
         args=[ocr_input_path, ocr_output_json_path],
@@ -352,7 +349,6 @@ def _run_ocr_pipeline(
 
             logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!")
 
-            # Load the final Florence result
             with open(ocr_output_json_path, "r", encoding="utf-8") as florence_result_file:
                 florence_result = json.load(florence_result_file)
 
@@ -389,11 +385,11 @@ def extract_text(
     file_content: bytes,
     celery_app=None,
 ):
-    """Extract text using the PaddleOCR Celery pipeline."""
+    """Extract text using the Florence-2 Celery OCR pipeline."""
     if celery_app is None:
         raise ValueError("celery_app must be provided")
 
-    MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
+    MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
     if len(file_content) > MAX_FILE_SIZE_BYTES:
         logger.warning(f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). " f"Rejetée pour éviter un crash OOM (limite à 25 MB).")
         return [], []
