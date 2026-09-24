@@ -46,6 +46,7 @@
               :reset-create-key="resetCreateKey"
               :is-frontier-mode="isFrontierMode"
               :is-geo-border-mode="isGeoBorderMode"
+              :selected-geo-borders="selectedGeoBorders"
               :undo-create-key="undoCreateKey"
               :sub-geometries="subGeometries"
               @create-updated="handleCreateUpdated"
@@ -61,12 +62,18 @@
         :pending-create-geometry="pendingCreateGeometry"
         :is-frontier-mode="isFrontierMode"
         :is-geo-border-mode="isGeoBorderMode"
+        :geo-border-groups="geoBorderGroups"
+        :geo-border-options="geoBorderOptions"
+        :selected-geo-borders="selectedGeoBorders"
         :subzone-count="subGeometries.length"
         @start-create="startCreateMode"
         @cancel-create="cancelCreateMode"
         @undo-last-stroke="undoLastStroke"
         @toggle-frontier="toggleFrontierMode"
         @toggle-geo-border="toggleGeoBorderMode"
+        @toggle-geo-border-selection="toggleGeoBorderSelection"
+        @toggle-all-geo-borders="toggleAllGeoBorders"
+        @toggle-geo-border-group="toggleGeoBorderGroup"
         @save-zone="saveCreatedZone"
         @add-subzone="addSubzone"
       />
@@ -148,6 +155,29 @@ const newZoneName = ref("");
 const undoCreateKey = ref(0);
 const isFrontierMode = ref(false);
 const isGeoBorderMode = ref(false);
+const geoBorderGroups = [
+  {
+    id: "CA",
+    label: "Canada",
+    borders: [
+      { id: "CA-NL", label: "Terre-Neuve-et-Labrador" },
+      { id: "CA-PE", label: "Île-du-Prince-Édouard" },
+      { id: "CA-NS", label: "Nouvelle-Écosse" },
+      { id: "CA-NB", label: "Nouveau-Brunswick" },
+      { id: "CA-QB", label: "Québec" },
+      { id: "CA-ON", label: "Ontario" },
+      { id: "CA-MB", label: "Manitoba" },
+      { id: "CA-SK", label: "Saskatchewan" },
+      { id: "CA-AB", label: "Alberta" },
+      { id: "CA-BC", label: "Colombie-Britannique" },
+      { id: "CA-YT", label: "Yukon" },
+      { id: "CA-NT", label: "Territoires du Nord-Ouest" },
+      { id: "CA-NU", label: "Nunavut" },
+    ],
+  },
+];
+const geoBorderOptions = geoBorderGroups.flatMap((group) => group.borders);
+const selectedGeoBorders = ref(geoBorderOptions.map((border) => border.id));
 const subGeometries = ref<any[]>([]);
 
 const testCases = ref<string[]>([]);
@@ -337,6 +367,7 @@ function clearCreateDrawing() {
   resetCreateKey.value += 1;
   isFrontierMode.value = false;
   isGeoBorderMode.value = false;
+  selectedGeoBorders.value = geoBorderOptions.map((border) => border.id);
 }
 
 function startCreateMode() {
@@ -380,6 +411,35 @@ function toggleGeoBorderMode() {
   if (isGeoBorderMode.value) {
     isFrontierMode.value = false;
   }
+}
+
+function toggleGeoBorderSelection(borderId: string) {
+  if (selectedGeoBorders.value.includes(borderId)) {
+    selectedGeoBorders.value = selectedGeoBorders.value.filter((id) => id !== borderId);
+  } else {
+    selectedGeoBorders.value = [...selectedGeoBorders.value, borderId];
+  }
+}
+
+function toggleAllGeoBorders() {
+  selectedGeoBorders.value =
+    selectedGeoBorders.value.length === geoBorderOptions.length
+      ? []
+      : geoBorderOptions.map((border) => border.id);
+}
+
+function toggleGeoBorderGroup(borderIds: string[]) {
+  const allSelected = borderIds.every((id) => selectedGeoBorders.value.includes(id));
+  if (allSelected) {
+    selectedGeoBorders.value = selectedGeoBorders.value.filter(
+      (id) => !borderIds.includes(id),
+    );
+    return;
+  }
+
+  selectedGeoBorders.value = Array.from(
+    new Set([...selectedGeoBorders.value, ...borderIds]),
+  );
 }
 
 async function saveCreatedZone() {

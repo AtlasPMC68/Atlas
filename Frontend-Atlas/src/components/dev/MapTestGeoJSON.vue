@@ -37,6 +37,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  selectedGeoBorders: {
+    type: Array,
+    default: () => [],
+  },
   undoCreateKey: {
     type: Number,
     default: 0,
@@ -464,18 +468,27 @@ async function loadGeoBorders() {
       geoRegionsLayer = null;
     }
 
-    // Draw geopolitical regions as outlines
-    geoRegionsLayer = L.geoJSON(data, {
+    const selectedIds = new Set(props.selectedGeoBorders);
+    const visibleFeatures = (data.features || []).filter((feature) => {
+      if (selectedIds.size === 0) return false;
+      return selectedIds.has(feature?.properties?.shapeISO);
+    });
+
+    // Draw only the selected geopolitical regions as outlines
+    geoRegionsLayer = L.geoJSON(
+      { ...data, features: visibleFeatures },
+      {
       style: {
         color: "#666",
         weight: 2,
         fill: false,
       },
-    }).addTo(map);
+      },
+    ).addTo(map);
 
     // Build border lines from polygon rings
     geoBorderLines = [];
-    const feats = Array.isArray(data.features) ? data.features : [];
+    const feats = visibleFeatures;
     feats.forEach((f) => {
       const geom = f && f.geometry;
       if (!geom || !geom.type || !geom.coordinates) return;
@@ -642,6 +655,16 @@ watch(
     }
     await loadGeoBorders();
   },
+);
+
+watch(
+  () => props.selectedGeoBorders,
+  async () => {
+    if (props.isGeoBorderMode) {
+      await loadGeoBorders();
+    }
+  },
+  { deep: true },
 );
 
 watch(
