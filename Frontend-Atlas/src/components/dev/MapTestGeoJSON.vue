@@ -37,6 +37,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  selectedGeoBorders: {
+    type: Array,
+    default: () => [],
+  },
   undoCreateKey: {
     type: Number,
     default: 0,
@@ -273,7 +277,8 @@ function rebuildCreateLayers() {
 
   const first = pts[0];
   const last = pts[pts.length - 1];
-  const isClosed = latLngDistance(first, last) <= SNAP_EPS_METERS && pts.length >= 3;
+  const isClosed =
+    latLngDistance(first, last) <= SNAP_EPS_METERS && pts.length >= 3;
 
   if (!isClosed) {
     emit("create-updated", null);
@@ -350,7 +355,8 @@ function undoLastStroke() {
 }
 
 function handleMouseDown(e) {
-  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode) return;
+  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode)
+    return;
   if (e.originalEvent && e.originalEvent.button !== 0) return;
 
   // Decide which end of the existing chain we want to continue from.
@@ -385,7 +391,13 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
-  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode || !isDrawing) return;
+  if (
+    !props.isCreateMode ||
+    props.isFrontierMode ||
+    props.isGeoBorderMode ||
+    !isDrawing
+  )
+    return;
   currentStroke.push(e.latlng);
   rebuildCreateLayers();
 }
@@ -398,7 +410,9 @@ function handleMouseUp(e) {
   }
 
   if (currentStroke.length > 1) {
-    const endPoint = snapToExistingEndpoints(currentStroke[currentStroke.length - 1]);
+    const endPoint = snapToExistingEndpoints(
+      currentStroke[currentStroke.length - 1],
+    );
     currentStroke[currentStroke.length - 1] = endPoint;
     strokes.push(currentStroke);
   }
@@ -407,7 +421,8 @@ function handleMouseUp(e) {
 }
 
 function handleMapClick(e) {
-  if (!props.isCreateMode || (!props.isFrontierMode && !props.isGeoBorderMode)) return;
+  if (!props.isCreateMode || (!props.isFrontierMode && !props.isGeoBorderMode))
+    return;
   if (!map) return;
 
   const nearest = findNearestCoastVertex(e.latlng);
@@ -423,7 +438,9 @@ function handleMapClick(e) {
 
   if (start.lineIdx !== nearest.lineIdx) {
     // For now, require both points on the same coastline line
-    console.warn("Frontier points are on different coastline segments; ignoring.");
+    console.warn(
+      "Frontier points are on different coastline segments; ignoring.",
+    );
     return;
   }
 
@@ -452,30 +469,54 @@ function handleMapClick(e) {
 }
 async function loadGeoBorders() {
   if (!map) return;
-  const filename = "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson";
+  const filenames = [
+    "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-JPN-ADM1_simplified.geojson",
+  ];
 
   try {
-    const res = await fetch(filename);
-    if (!res.ok) throw new Error(`File not found: ${filename}`);
-    const data = await res.json();
+    const responses = await Promise.all(
+      filenames.map((filename) => fetch(filename)),
+    );
+    const failedResponse = responses.find((response) => !response.ok);
+    if (failedResponse) {
+      throw new Error(`File not found: ${failedResponse.url}`);
+    }
+
+    const datasets = await Promise.all(
+      responses.map((response) => response.json()),
+    );
+    const data = {
+      ...datasets[0],
+      features: datasets.flatMap((dataset) => dataset.features || []),
+    };
 
     if (geoRegionsLayer) {
       map.removeLayer(geoRegionsLayer);
       geoRegionsLayer = null;
     }
 
-    // Draw geopolitical regions as outlines
-    geoRegionsLayer = L.geoJSON(data, {
-      style: {
-        color: "#666",
-        weight: 2,
-        fill: false,
+    const selectedIds = new Set(props.selectedGeoBorders);
+    const visibleFeatures = (data.features || []).filter((feature) => {
+      if (selectedIds.size === 0) return false;
+      return selectedIds.has(feature?.properties?.shapeISO);
+    });
+
+    // Draw only the selected geopolitical regions as outlines
+    geoRegionsLayer = L.geoJSON(
+      { ...data, features: visibleFeatures },
+      {
+        style: {
+          color: "#666",
+          weight: 2,
+          fill: false,
+        },
       },
-    }).addTo(map);
+    ).addTo(map);
 
     // Build border lines from polygon rings
     geoBorderLines = [];
-    const feats = Array.isArray(data.features) ? data.features : [];
+    const feats = visibleFeatures;
     feats.forEach((f) => {
       const geom = f && f.geometry;
       if (!geom || !geom.type || !geom.coordinates) return;
@@ -549,7 +590,9 @@ onMounted(() => {
           if (!geom || !geom.type || !geom.coordinates) return;
 
           if (geom.type === "LineString") {
-            const line = geom.coordinates.map(([lng, lat]) => L.latLng(lat, lng));
+            const line = geom.coordinates.map(([lng, lat]) =>
+              L.latLng(lat, lng),
+            );
             coastlineLines.push(line);
           } else if (geom.type === "MultiLineString") {
             geom.coordinates.forEach((coords) => {
@@ -642,6 +685,16 @@ watch(
     }
     await loadGeoBorders();
   },
+);
+
+watch(
+  () => props.selectedGeoBorders,
+  async () => {
+    if (props.isGeoBorderMode) {
+      await loadGeoBorders();
+    }
+  },
+  { deep: true },
 );
 
 watch(

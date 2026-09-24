@@ -5,10 +5,12 @@ import pytest
 
 from app.utils.dev_test import build_extraction_task_args_for_case
 from app.utils.dev_test_evaluator import build_test_case_paths
+from app.utils.georef_baseline import baseline_from_report, compare_report_to_baseline
 
 from app.tasks import process_dev_test_extraction
 
 MIN_IOU = 0.7
+METRIC_TOLERANCE = 1e-6
 
 
 def _assets_root() -> str:
@@ -100,10 +102,24 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
 
     with open(paths.report_path, "r", encoding="utf-8") as f:
         report = json.load(f)
+    if not os.path.exists(paths.best_report_path):
+        pytest.skip(f"Missing best report baseline: {paths.best_report_path}")
+    with open(paths.best_report_path, "r", encoding="utf-8") as f:
+        baseline_report = json.load(f)
 
     # Basic sanity invariants
     assert report["testId"] == test_id
     assert report["testCaseId"] == test_case_id
+    expected_zones_file = report.get("expectedZonesFile")
+    assert isinstance(expected_zones_file, str)
+    assert expected_zones_file.replace("\\", "/").startswith("georef_zones/")
+    expected_zones_path = os.path.join(assets_root, *expected_zones_file.split("/"))
+    with open(expected_zones_path, "r", encoding="utf-8") as f:
+        expected_zones = json.load(f)
+    assert isinstance(expected_zones, dict)
+    assert expected_zones.get("type") == "FeatureCollection"
+    assert isinstance(expected_zones.get("features"), list)
+    assert expected_zones["features"]
 
     metrics = report["metrics"]
     first = (metrics.get("expected") or [None])[0]
@@ -119,3 +135,11 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
 
     if MIN_IOU is not None:
         assert score_used >= MIN_IOU
+
+    assert baseline_report["testId"] == test_id
+    assert baseline_report["testCaseId"] == test_case_id
+    baseline = baseline_from_report(baseline_report)
+    not_worse, _strictly_better, problems = compare_report_to_baseline(
+        report, baseline, tolerance=METRIC_TOLERANCE
+    )
+    assert not_worse, "Regression detected: " + "; ".join(problems)
