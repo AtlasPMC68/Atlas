@@ -159,7 +159,6 @@ services:
     env_file:
       - ./Backend-Atlas/.env.dev
     depends_on:
-      - backend
       - db
       - redis
       - florence-worker

@@ -27,13 +27,13 @@ def pytest_report_teststatus(report: Any, config: Any) -> tuple[str, str, str] |
             return (
                 "passed",
                 ".",
-                f"PASSED (hit_rate={hit_rate:.0f}%, d_average={d_average:.2f})",
+                f"PASSED (hit_rate={hit_rate:3.0f}%, d_average={d_average:4.2f})",
             )
         elif report.failed:
             return (
                 "failed",
                 "F",
-                f"FAILED (hit_rate={hit_rate:.0f}%, d_average={d_average:.2f})",
+                f"FAILED (hit_rate={hit_rate:3.0f}%, d_average={d_average:4.2f})",
             )
 
     return None
