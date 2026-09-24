@@ -27,10 +27,10 @@ La reponse reçu devrait être {"db_status":"connected","result":[1]}
 
 ## Baseline de non-régression georef
 
-Après avoir exécuté un cas de test, une baseline peut être promue uniquement si
-le nouveau rapport est globalement meilleur : aucune métrique ne régresse et au
-moins une métrique s'améliore. La promotion remplace toutes les métriques de la
-baseline, y compris les erreurs individuelles des checkpoints.
+Après avoir exécuté un cas de test, `best_report.json` sert de référence complète
+pour les métriques de couverture des zones. Un nouveau rapport peut le remplacer
+uniquement si aucune métrique ne régresse et qu'au moins une métrique s'améliore.
+La promotion remplace aussi les GeoJSON associés.
 
 ```bash
 python scripts/promote_georef_baseline.py \

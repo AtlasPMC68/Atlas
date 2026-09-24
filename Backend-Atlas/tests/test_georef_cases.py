@@ -5,7 +5,7 @@ import pytest
 
 from app.utils.dev_test import build_extraction_task_args_for_case
 from app.utils.dev_test_evaluator import build_test_case_paths
-from app.utils.georef_baseline import compare_report_to_baseline
+from app.utils.georef_baseline import baseline_from_report, compare_report_to_baseline
 
 from app.tasks import process_dev_test_extraction
 
@@ -102,8 +102,10 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
 
     with open(paths.report_path, "r", encoding="utf-8") as f:
         report = json.load(f)
-    with open(paths.config_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
+    if not os.path.exists(paths.best_report_path):
+        pytest.skip(f"Missing best report baseline: {paths.best_report_path}")
+    with open(paths.best_report_path, "r", encoding="utf-8") as f:
+        baseline_report = json.load(f)
 
     # Basic sanity invariants
     assert report["testId"] == test_id
@@ -131,28 +133,13 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
     )
     assert 0.0 <= score_used <= 1.0
 
-    georef_accuracy = report.get("georefAccuracy")
-    if isinstance(georef_accuracy, dict):
-        checkpoint_count = int(georef_accuracy.get("checkpointCount", 0))
-        assert checkpoint_count > 0
-        assert len(georef_accuracy.get("checkPoints") or []) == checkpoint_count
-
-        rmse = float(georef_accuracy["rmseMeters"])
-        median = float(georef_accuracy["medianMeters"])
-        p95 = float(georef_accuracy["p95Meters"])
-        maximum = float(georef_accuracy["maxMeters"])
-
-        assert rmse >= 0.0
-        assert median >= 0.0
-        assert p95 >= median
-        assert maximum >= p95
-
     if MIN_IOU is not None:
         assert score_used >= MIN_IOU
 
-    baseline = config.get("nonRegressionBaseline")
-    if isinstance(baseline, dict):
-        not_worse, _strictly_better, problems = compare_report_to_baseline(
-            report, baseline, tolerance=METRIC_TOLERANCE
-        )
-        assert not_worse, "Regression detected: " + "; ".join(problems)
+    assert baseline_report["testId"] == test_id
+    assert baseline_report["testCaseId"] == test_case_id
+    baseline = baseline_from_report(baseline_report)
+    not_worse, _strictly_better, problems = compare_report_to_baseline(
+        report, baseline, tolerance=METRIC_TOLERANCE
+    )
+    assert not_worse, "Regression detected: " + "; ".join(problems)

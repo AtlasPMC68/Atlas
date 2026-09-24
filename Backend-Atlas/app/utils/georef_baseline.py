@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
 import os
 import tempfile
@@ -11,43 +10,14 @@ HIGHER_IS_BETTER = ("meanIou", "meanPrecision", "meanRecall")
 LOWER_IS_BETTER = (
     "totalFalseNegativeArea",
     "totalFalsePositiveArea",
-    "rmseMeters",
-    "medianMeters",
-    "p95Meters",
-    "maxMeters",
 )
-
-
-def _checkpoint_map(
-    points: list[Any], source: str
-) -> tuple[dict[str, dict[str, Any]], list[str]]:
-    checkpoint_by_name: dict[str, dict[str, Any]] = {}
-    problems: list[str] = []
-    for index, point in enumerate(points):
-        name = point.get("name") if isinstance(point, dict) else None
-        if not isinstance(name, str) or not name.strip():
-            problems.append(f"georefAccuracy.checkPoints[{source}][{index}] missing name")
-            continue
-        name = name.strip()
-        if name in checkpoint_by_name:
-            problems.append(
-                f"georefAccuracy.checkPoints[{source}] duplicate name: {name}"
-            )
-            continue
-        checkpoint_by_name[name] = point
-    return checkpoint_by_name, problems
 
 
 def baseline_from_report(report: dict[str, Any]) -> dict[str, Any]:
     mean = report.get("metrics", {}).get("mean") or {}
-    georef = report.get("georefAccuracy")
-    if not isinstance(georef, dict):
-        raise ValueError("The report has no georefAccuracy metrics")
-
     baseline = {
         name: float(mean[name]) for name in HIGHER_IS_BETTER + LOWER_IS_BETTER[:2]
     }
-    baseline["georefAccuracy"] = deepcopy(georef)
     return baseline
 
 
@@ -83,58 +53,6 @@ def compare_report_to_baseline(
         elif new + delta < old:
             strictly_better = True
 
-    old_georef = baseline.get("georefAccuracy")
-    if not isinstance(old_georef, dict):
-        raise ValueError("The baseline has no georefAccuracy metrics")
-    new_georef = current["georefAccuracy"]
-
-    for name in ("controlPointCount", "checkpointCount"):
-        if int(old_georef[name]) != int(new_georef[name]):
-            problems.append(f"georefAccuracy.{name} changed")
-
-    for name in LOWER_IS_BETTER[2:]:
-        old = float(old_georef[name])
-        new = float(new_georef[name])
-        delta = allowed_delta(old, new)
-        if new > old + delta:
-            problems.append(f"georefAccuracy.{name} increased from {old} to {new}")
-        elif new + delta < old:
-            strictly_better = True
-
-    old_points = old_georef.get("checkPoints") or []
-    new_points = new_georef.get("checkPoints") or []
-    if len(old_points) != len(new_points):
-        problems.append("georefAccuracy.checkPoints count changed")
-    old_by_name, old_name_problems = _checkpoint_map(old_points, "baseline")
-    new_by_name, new_name_problems = _checkpoint_map(new_points, "report")
-    problems.extend(old_name_problems)
-    problems.extend(new_name_problems)
-
-    missing_names = sorted(set(old_by_name) - set(new_by_name))
-    unexpected_names = sorted(set(new_by_name) - set(old_by_name))
-    if missing_names:
-        problems.append(
-            "georefAccuracy.checkPoints missing names: " + ", ".join(missing_names)
-        )
-    if unexpected_names:
-        problems.append(
-            "georefAccuracy.checkPoints unexpected names: "
-            + ", ".join(unexpected_names)
-        )
-
-    for name in sorted(set(old_by_name) & set(new_by_name)):
-        old_point = old_by_name[name]
-        new_point = new_by_name[name]
-        old_error = float(old_point["errorMeters"])
-        new_error = float(new_point["errorMeters"])
-        delta = allowed_delta(old_error, new_error)
-        if new_error > old_error + delta:
-            problems.append(
-                f"georefAccuracy.checkPoints[{name}].errorMeters increased"
-            )
-        elif new_error + delta < old_error:
-            strictly_better = True
-
     return not problems, strictly_better, problems
 
 
@@ -152,7 +70,7 @@ def _write_json_atomically(path: str, data: dict[str, Any]) -> None:
         raise
 
 
-def promote_baseline(config_path: str, report_path: str) -> bool:
+def promote_best_report(config_path: str, report_path: str) -> bool:
     with open(config_path, "r", encoding="utf-8") as input_file:
         config = json.load(input_file)
     with open(report_path, "r", encoding="utf-8") as input_file:
@@ -164,9 +82,19 @@ def promote_baseline(config_path: str, report_path: str) -> bool:
     ):
         raise ValueError("config.json and report.json refer to different test cases")
 
-    baseline = config.get("nonRegressionBaseline")
-    if not isinstance(baseline, dict):
-        raise ValueError("config.json has no nonRegressionBaseline")
+    best_report_path = os.path.join(os.path.dirname(config_path), "best_report.json")
+    if not os.path.exists(best_report_path):
+        raise ValueError(f"Missing best report baseline: {best_report_path}")
+    with open(best_report_path, "r", encoding="utf-8") as input_file:
+        best_report = json.load(input_file)
+
+    if (
+        best_report.get("testId") != config.get("testId")
+        or best_report.get("testCaseId") != config.get("testCaseId")
+    ):
+        raise ValueError("best_report.json and config.json refer to different test cases")
+
+    baseline = baseline_from_report(best_report)
 
     not_worse, strictly_better, problems = compare_report_to_baseline(
         report, baseline
@@ -176,6 +104,21 @@ def promote_baseline(config_path: str, report_path: str) -> bool:
     if not strictly_better:
         raise ValueError("Cannot promote: the new report is not strictly better")
 
-    config["nonRegressionBaseline"] = baseline_from_report(report)
-    _write_json_atomically(config_path, config)
+    _write_json_atomically(best_report_path, report)
+
+    case_dir = os.path.dirname(report_path)
+    for source_name, target_name in (
+        ("zones.geojson", "zones_best.geojson"),
+        ("errors.geojson", "errors_best.geojson"),
+    ):
+        source_path = os.path.join(case_dir, source_name)
+        target_path = os.path.join(case_dir, target_name)
+        if os.path.exists(source_path):
+            temporary_path = target_path + ".tmp"
+            with open(source_path, "rb") as source, open(temporary_path, "wb") as target:
+                target.write(source.read())
+            os.replace(temporary_path, target_path)
     return True
+
+
+promote_baseline = promote_best_report

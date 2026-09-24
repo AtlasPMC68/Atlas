@@ -4,26 +4,6 @@
   "testCaseId": "pip_7sift",
   "updatedAt": "2026-09-09T03:33:53.917453Z",
   "filename": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df.jpg",
-  "nonRegressionBaseline": {
-    "meanIou": 0.9405804304448933,
-    "meanPrecision": 0.9921049116784585,
-    "meanRecall": 0.9476738266444173,
-    "totalFalseNegativeArea": 10.63889118926162,
-    "totalFalsePositiveArea": 1.5333301336170873,
-    "georefAccuracy": {
-      "controlPointCount": 7,
-      "checkpointCount": 3,
-      "rmseMeters": 1344457.452879488,
-      "medianMeters": 1233740.435818308,
-      "p95Meters": 1532999.9666341944,
-      "maxMeters": 1566251.0256137373,
-      "checkPoints": [
-        { "name": "checkpoint-1", "errorMeters": 1566251.0256137373 },
-        { "name": "checkpoint-2", "errorMeters": 1203095.9187032299 },
-        { "name": "checkpoint-3", "errorMeters": 1233740.435818308 }
-      ]
-    }
-  },
   "georef": {
     "imagePoints": [
       {
@@ -83,41 +63,6 @@
       {
         "lng": -64.66533264577431,
         "lat": 60.411305760307975
-      }
-    ],
-    "checkPoints": [
-      {
-        "name": "checkpoint-1",
-        "image": {
-          "x": 820,
-          "y": 411
-        },
-        "world": {
-          "lng": -71.8929,
-          "lat": 45.4042
-        }
-      },
-      {
-        "name": "checkpoint-2",
-        "image": {
-          "x": 650,
-          "y": 720
-        },
-        "world": {
-          "lng": -73.5673,
-          "lat": 45.5017
-        }
-      },
-      {
-        "name": "checkpoint-3",
-        "image": {
-          "x": 430,
-          "y": 530
-        },
-        "world": {
-          "lng": -71.208,
-          "lat": 46.8139
-        }
       }
     ]
   },

@@ -1,40 +1,11 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "pip_7sift",
-  "evaluatedAt": "2026-09-23T21:30:22.440836Z",
+  "evaluatedAt": "2026-09-24T00:57:15.231289Z",
   "expectedZonesFile": "georef_zones/52a1aedc-98d0-4bd7-8b78-d4fd184f91df_zones.geojson",
   "thresholds": {
     "minIou": null,
-    "scoreKey": "metrics.mean.meanIou",
-    "nonRegressionBaseline": {
-      "meanIou": 0.9405804304448933,
-      "meanPrecision": 0.9921049116784585,
-      "meanRecall": 0.9476738266444173,
-      "totalFalseNegativeArea": 10.63889118926162,
-      "totalFalsePositiveArea": 1.5333301336170873,
-      "georefAccuracy": {
-        "controlPointCount": 7,
-        "checkpointCount": 3,
-        "rmseMeters": 1344457.452879488,
-        "medianMeters": 1233740.435818308,
-        "p95Meters": 1532999.9666341944,
-        "maxMeters": 1566251.0256137373,
-        "checkPoints": [
-          {
-            "name": "checkpoint-1",
-            "errorMeters": 1566251.0256137373
-          },
-          {
-            "name": "checkpoint-2",
-            "errorMeters": 1203095.9187032299
-          },
-          {
-            "name": "checkpoint-3",
-            "errorMeters": 1233740.435818308
-          }
-        ]
-      }
-    }
+    "scoreKey": "metrics.mean.meanIou"
   },
   "metrics": {
     "expected": [
@@ -46,93 +17,35 @@
           "area": 203.3187314685591
         },
         "bestMatch": {
-          "iou": 0.9408240405690721,
-          "intersectionArea": 192.7198488391293,
-          "unionArea": 204.84154372007723,
-          "precision": 0.9921602584984828,
-          "recall": 0.9478706041845004,
-          "falseNegativeArea": 10.59888262943007,
-          "falsePositiveArea": 1.5228122515177678,
+          "iou": 0.9405804304448933,
+          "intersectionArea": 192.6798402792981,
+          "unionArea": 204.85206160217558,
+          "precision": 0.9921049116784585,
+          "recall": 0.9476738266444173,
+          "falseNegativeArea": 10.63889118926162,
+          "falsePositiveArea": 1.5333301336170873,
           "extracted": {
             "index": 0,
             "id": null,
             "name": "Quebec",
-            "area": 194.24266109064678
+            "area": 194.21317041291465
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.9408240405690721,
-      "meanPrecision": 0.9921602584984828,
-      "meanRecall": 0.9478706041845004,
-      "totalFalseNegativeArea": 10.59888262943007,
-      "totalFalsePositiveArea": 1.5228122515177678
+      "meanIou": 0.9405804304448933,
+      "meanPrecision": 0.9921049116784585,
+      "meanRecall": 0.9476738266444173,
+      "totalFalseNegativeArea": 10.63889118926162,
+      "totalFalsePositiveArea": 1.5333301336170873
     },
-    "scoreUsed": 0.9408240405690721,
+    "scoreUsed": 0.9405804304448933,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
     "expectedWithoutNameMatch": [],
     "extractedNeverMatchedByName": []
-  },
-  "georefAccuracy": {
-    "controlPointCount": 7,
-    "checkpointCount": 3,
-    "rmseMeters": 1344457.452879488,
-    "medianMeters": 1233740.435818308,
-    "p95Meters": 1532999.9666341944,
-    "maxMeters": 1566251.0256137373,
-    "checkPoints": [
-      {
-        "name": "checkpoint-1",
-        "image": {
-          "x": 820.0,
-          "y": 411.0
-        },
-        "expected": {
-          "lng": -71.8929,
-          "lat": 45.4042
-        },
-        "predicted": {
-          "lng": -65.95397643485093,
-          "lat": 59.013379137744145
-        },
-        "errorMeters": 1566251.0256137373
-      },
-      {
-        "name": "checkpoint-2",
-        "image": {
-          "x": 650.0,
-          "y": 720.0
-        },
-        "expected": {
-          "lng": -73.5673,
-          "lat": 45.5017
-        },
-        "predicted": {
-          "lng": -69.13778393525554,
-          "lat": 55.95081379454471
-        },
-        "errorMeters": 1203095.9187032299
-      },
-      {
-        "name": "checkpoint-3",
-        "image": {
-          "x": 430.0,
-          "y": 530.0
-        },
-        "expected": {
-          "lng": -71.208,
-          "lat": 46.8139
-        },
-        "predicted": {
-          "lng": -73.20117433283401,
-          "lat": 57.83524434486932
-        },
-        "errorMeters": 1233740.435818308
-      }
-    ]
   }
 }

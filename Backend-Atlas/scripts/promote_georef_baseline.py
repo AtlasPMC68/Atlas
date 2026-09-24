@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.utils.georef_baseline import promote_baseline
+from app.utils.georef_baseline import promote_best_report
 
 
 def main() -> int:
@@ -15,10 +15,10 @@ def main() -> int:
     parser.add_argument("report")
     args = parser.parse_args()
     try:
-        promote_baseline(args.config, args.report)
+        promote_best_report(args.config, args.report)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
-    print(f"Baseline promoted in {args.config}")
+    print(f"Best report promoted for {args.config}")
     return 0
 
 

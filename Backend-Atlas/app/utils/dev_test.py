@@ -246,45 +246,16 @@ def evaluate_and_persist_case(
 
     write_geojson(errors_geojson, paths.errors_geojson_path)
 
-    best_report_path = paths.best_report_path
-    best_zones_path = paths.best_zones_path
-    best_errors_path = paths.best_errors_geojson_path
-
-    latest_score: float | None
-    try:
-        metrics = report.get("metrics") or {}
-        latest_score = float(
-            metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou"))
-        )
-    except Exception:
-        latest_score = None
-
-    def _read_best_score() -> float | None:
-        if not os.path.exists(best_report_path):
-            return None
-        try:
-            with open(best_report_path, "r", encoding="utf-8") as f:
-                best = json.load(f)
-            metrics = best.get("metrics") or {}
-            return float(
-                metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou"))
-            )
-        except Exception:
-            return None
-
-    best_score = _read_best_score()
-    if latest_score is not None and (best_score is None or latest_score > best_score):
-        try:
-            if os.path.exists(paths.extracted_zones_path):
-                shutil.copyfile(paths.extracted_zones_path, best_zones_path)
-            if os.path.exists(paths.errors_geojson_path):
-                shutil.copyfile(paths.errors_geojson_path, best_errors_path)
-            with open(best_report_path, "w", encoding="utf-8") as f:
-                json.dump(report, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
-
     write_report(report, paths.report_path)
+
+    # Initialize the per-case reference once. Later updates must go through the
+    # explicit promotion command so CI never changes its own baseline.
+    if not os.path.exists(paths.best_report_path):
+        shutil.copyfile(paths.report_path, paths.best_report_path)
+        if os.path.exists(paths.extracted_zones_path):
+            shutil.copyfile(paths.extracted_zones_path, paths.best_zones_path)
+        shutil.copyfile(paths.errors_geojson_path, paths.best_errors_geojson_path)
+
     return report
 
 
