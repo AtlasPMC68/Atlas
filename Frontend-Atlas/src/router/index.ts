@@ -3,9 +3,13 @@ import Map from "../views/Map.vue";
 import Home from "../views/Home.vue";
 import ImportView from "../views/import/ImportView.vue";
 import Dashboard from "../views/Dashboard.vue";
+import About from "../views/About.vue";
 import Profile from "../views/Profile.vue";
-import Settings from "../views/Settings.vue";
 import Discover from "../views/Discover.vue";
+import TestEditor from "../views/dev/TestEditor.vue";
+import TestCreation from "../views/dev/TestCreation.vue";
+import TestBrowser from "../views/dev/TestBrowser.vue";
+import TestCaseResult from "../views/dev/TestCaseResult.vue";
 import keycloak from "../keycloak";
 import { useCurrentUser } from "../composables/useCurrentUser";
 
@@ -14,6 +18,16 @@ const routes = [
   {
     path: "/televersement/:mapId",
     component: ImportView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/upload-test/:mapId",
+    component: ImportView,
+    meta: { requiresAuth: true, importMode: "dev-test" },
+  },
+  {
+    path: "/tests",
+    component: TestBrowser,
     meta: { requiresAuth: true },
   },
   {
@@ -26,11 +40,26 @@ const routes = [
     component: Discover,
     meta: { requiresAuth: true },
   },
+  {
+    path: "/test-editor/:mapId",
+    component: TestEditor,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-editor/:mapId/case/:caseId",
+    component: TestCaseResult,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-creation",
+    component: TestCreation,
+    meta: { requiresAuth: true },
+  },
   { path: "/profil", component: Profile, meta: { requiresAuth: true } },
-  { path: "/parametres", component: Settings, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
   { path: "/inscription", component: Home }, // Dummy route
   { path: "/projet/:projectId", component: Map, meta: { requiresAuth: true } },
+  { path: "/a-propos", component: About },
 ];
 
 export const router = createRouter({
@@ -92,4 +121,3 @@ router.beforeEach(async (to) => {
 });
 
 export default router;
-

@@ -1,0 +1,50 @@
+{
+  "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
+  "testCaseId": "pip_7sift",
+  "evaluatedAt": "2026-09-23T17:25:33.867206Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1772842734708",
+          "name": "Quebec",
+          "area": 203.3187314685591
+        },
+        "bestMatch": {
+          "iou": 0.9408188097058561,
+          "intersectionArea": 192.71875023323747,
+          "unionArea": 204.841514907095,
+          "precision": 0.9921603613308132,
+          "recall": 0.9478652008166755,
+          "falseNegativeArea": 10.599981235322176,
+          "falsePositiveArea": 1.522783438536096,
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "Quebec",
+            "area": 194.24153367177286
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.9408188097058561,
+      "meanPrecision": 0.9921603613308132,
+      "meanRecall": 0.9478652008166755,
+      "totalFalseNegativeArea": 10.599981235322176,
+      "totalFalsePositiveArea": 1.522783438536096
+    },
+    "scoreUsed": 0.9408188097058561,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  }
+}

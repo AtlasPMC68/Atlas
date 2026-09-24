@@ -45,6 +45,7 @@ import {
   enablePixelSpaceDrag,
 } from "../utils/mapDragUtils";
 import { toArray, toImageSrc } from "../utils/utils";
+import { createCartoTileLayer } from "../utils/basemap";
 import type {
   Feature,
   FeatureId,
@@ -753,15 +754,7 @@ onMounted(() => {
   // it to capture all mouse events and breaking hover/click on our features.
   (map.options as Record<string, unknown>).renderer = vectorRenderer;
 
-  L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-    {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-      noWrap: true,
-    },
-  ).addTo(map);
+  createCartoTileLayer({ noWrap: true }).addTo(map);
 
   // Put image overlays in a pane above the canvas (overlayPane z-index 400)
   // so they natively receive pointer events without the canvas intercepting them.

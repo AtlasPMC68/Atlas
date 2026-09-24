@@ -72,31 +72,33 @@
 
     <div class="px-3 py-1.5 flex flex-col gap-1.5">
       <div class="divider m-0"></div>
-      <div class="flex gap-2 items-center">
-        <button
-          class="btn btn-primary btn-sm flex-1 font-bold"
-          @click="$emit('add-map')"
-        >
-          <PlusIcon class="w-5 h-5" />
-          Ajouter une carte
-        </button>
-      </div>
-      <div class="flex gap-2 items-center">
-        <button
-          class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
-          @click="$emit('open-add-image-feature-dialog')"
-        >
-          <PlusIcon class="w-5 h-5" />
-          Image
-        </button>
-        <button
-          class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
-          @click="$emit('save-map')"
-        >
-          <FolderArrowDownIcon class="w-5 h-5" />
-          Enregistrer
-        </button>
-      </div>
+      <template v-if="!props.isDevTestCreation">
+        <div class="flex gap-2 items-center">
+          <button
+            class="btn btn-primary btn-sm flex-1 font-bold"
+            @click="$emit('add-map')"
+          >
+            <PlusIcon class="w-5 h-5" />
+            Ajouter une carte
+          </button>
+        </div>
+        <div class="flex gap-2 items-center">
+          <button
+            class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
+            @click="$emit('open-add-image-feature-dialog')"
+          >
+            <PlusIcon class="w-5 h-5" />
+            Image
+          </button>
+          <button
+            class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
+            @click="$emit('save-map')"
+          >
+            <FolderArrowDownIcon class="w-5 h-5" />
+            Enregistrer
+          </button>
+        </div>
+      </template>
       <div class="flex gap-2 items-center">
         <button
           @click="toggleAll(true)"
@@ -191,7 +193,7 @@
           </div>
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.strokeColor !== undefined"
+            v-if="featureToEdit.properties.strokeColor !== undefined && featureToEdit.properties.mapElementType !== 'label'"
           >
             <label class="label">Couleur du contour :</label>
             <input
@@ -254,6 +256,7 @@ import { hexToRgb, rgbToHex } from "../utils/utils";
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  isDevTestCreation?: boolean;
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
@@ -366,18 +369,23 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
-  featureToEdit.value.properties.name = featureToEditName.value;
-  featureToEdit.value.properties.labelText = featureToEditLabelText.value;
-  featureToEdit.value.properties.colorRgb = hexToRgb(featureToEditColor.value);
-  featureToEdit.value.properties.strokeColor = hexToRgb(
-    featureToEditStrokeColor.value,
-  );
-  featureToEdit.value.properties.fillOpacity = featureToEditOpacity.value;
-  featureToEdit.value.properties.strokeOpacity =
-    featureToEditStrokeOpacity.value;
-  featureToEdit.value.properties.strokeWidth = featureToEditStrokeWidth.value;
+  const updatedFeature: Feature = {
+    ...featureToEdit.value,
+    properties: {
+      ...featureToEdit.value.properties,
+      name: featureToEditName.value,
+      labelText: featureToEditLabelText.value,
+      colorRgb: hexToRgb(featureToEditColor.value),
+      strokeColor: hexToRgb(featureToEditStrokeColor.value),
+      fillOpacity: featureToEditOpacity.value,
+      strokeOpacity: featureToEditStrokeOpacity.value,
+      strokeWidth: featureToEditStrokeWidth.value,
+    },
+  };
 
-  emit("update-feature", {
+  featureToEdit.value = updatedFeature;
+
+  emit("update-feature", updatedFeature, {
     onSuccess: () => {
       showAlert("success", "Élément mis à jour !");
     },
