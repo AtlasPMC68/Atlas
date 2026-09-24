@@ -493,23 +493,40 @@ LAB_STRICT_THRESH: float = 15.0
 LAB_RELAX_THRESH: float = 45.0
 
 
+# Type alias for the mask cache shared across clicks.
+# Each entry: (median_lab: np.ndarray, relax_mask: np.ndarray, strict_mask: np.ndarray)
+_MaskCacheEntry = Tuple[np.ndarray, np.ndarray, np.ndarray]
+
+# Distance threshold for cache hits. Expressed in OpenCV uint8 LAB units:
+# a/b channels are not rescaled by OpenCV (only offset +128), so differences
+# are on the same scale as CIE a/b. L is scaled by 255/100 ≈ 2.55, so a
+# value of 3.0 here corresponds to a near-imperceptible CIE76 ΔE ≈ 1.2.
+_CACHE_LAB_THRESH: float = 3.0
+
+
 def _perceptual_distance_mask(
     lab_image: np.ndarray,
     seed_x: int,
     seed_y: int,
     strict_thresh: float = LAB_STRICT_THRESH,
     relax_thresh: float = LAB_RELAX_THRESH,
+    mask_cache: Optional[List["_MaskCacheEntry"]] = None,
 ) -> np.ndarray:
     """Return a binary mask (H×W, uint8 255/0) using LAB perceptual distance
     (Delta E) with hysteresis thresholding.
 
     Strategy:
     1. Sample the median LAB value from a 5×5 patch around the seed pixel.
-    2. Compute per-pixel Delta E (Euclidean distance in LAB).
+    2. Compute per-pixel Delta E (Euclidean distance in LAB) – or reuse a
+       cached mask when the seed colour is virtually identical to one already
+       processed (OpenCV LAB dist < 3.0).
     3. Build a strict mask (dist < strict_thresh) and a relaxed mask
        (dist < relax_thresh).
     4. Select the connected component in the relaxed mask that contains the
        seed pixel, but only keep it if it overlaps the strict core region.
+
+    ``mask_cache`` is mutated in place: new entries are appended after each
+    cache miss. Pass the same list for all clicks within a single image.
     """
     height, width = lab_image.shape[:2]
 
@@ -522,15 +539,30 @@ def _perceptual_distance_mask(
     patch_lab = lab_image[y_start:y_end, x_start:x_end]
     median_lab = np.median(patch_lab, axis=(0, 1))
 
-    # 2. Delta E (Euclidean distance in LAB space)
-    diff = lab_image - median_lab
-    dist = np.sqrt(np.sum(diff ** 2, axis=2))
+    # 2. Check the cache for a virtually identical seed colour to avoid
+    #    re-running the expensive full-image distance computation.
+    strict_mask: Optional[np.ndarray] = None
+    relax_mask: Optional[np.ndarray] = None
+    if mask_cache is not None:
+        for cached_lab, cached_relax, cached_strict in mask_cache:
+            if float(np.linalg.norm(cached_lab - median_lab)) < _CACHE_LAB_THRESH:
+                relax_mask = cached_relax
+                strict_mask = cached_strict
+                break
 
-    # 3. Hysteresis masks
-    strict_mask = (dist < strict_thresh).astype(np.uint8) * 255
-    relax_mask  = (dist < relax_thresh).astype(np.uint8)  * 255
+    if relax_mask is None:
+        # 3. Delta E (Euclidean distance in LAB space)
+        diff = lab_image - median_lab
+        dist = np.sqrt(np.sum(diff ** 2, axis=2))
 
-    # 4. Connected-component analysis on the relaxed mask
+        # 4. Hysteresis masks
+        strict_mask = (dist < strict_thresh).astype(np.uint8) * 255
+        relax_mask  = (dist < relax_thresh).astype(np.uint8)  * 255
+
+        if mask_cache is not None:
+            mask_cache.append((median_lab, relax_mask, strict_mask))
+
+    # 5. Connected-component analysis on the relaxed mask
     _, labels_relax = cv2.connectedComponents(relax_mask, connectivity=8)
 
     relax_label = int(labels_relax[seed_y, seed_x])
@@ -589,6 +621,11 @@ def extract_shapes_from_clicks(
 
     shapes_with_contours: List[Tuple[Dict, np.ndarray]] = []
 
+    # Shared cache for full-image distance masks. Clicks on virtually the
+    # same colour (OpenCV LAB dist < 3.0) skip the expensive full-image
+    # float pass and reuse existing hysteresis masks directly.
+    mask_cache: List["_MaskCacheEntry"] = []
+
     for idx, (nx, ny) in enumerate(click_positions):
         # Convert normalised → pixel coordinates
         px = int(np.clip(nx * width,  0, width  - 1))
@@ -599,6 +636,7 @@ def extract_shapes_from_clicks(
             lab_image, px, py,
             strict_thresh=strict_thresh,
             relax_thresh=relax_thresh,
+            mask_cache=mask_cache,
         )
 
         if not np.any(final_mask):
