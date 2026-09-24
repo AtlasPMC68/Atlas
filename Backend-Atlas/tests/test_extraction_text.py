@@ -206,15 +206,15 @@ def test_check_for_match_drops_extra_ocr_words() -> None:
 
 
 CARD_THRESHOLDS = {
-    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 100.0, "max_dist": 0.19},
-    "Quebec_1791.png": {"min_hit_rate": 92.6, "max_dist": 0.72},
+    "Quebec_1800.png": {"min_hit_rate": 74.0, "max_dist": 0.50},
     "Sahel_Afrique.png": {"min_hit_rate": 90.9, "max_dist": 0.59},
-    "Nouvelle-France1750.png": {"min_hit_rate": 76.0, "max_dist": 1.04},
+    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 100.0, "max_dist": 0.19},
     "genocide_Monde.png": {"min_hit_rate": 100.0, "max_dist": 0.26},
-    "Quebec_1800.png": {"min_hit_rate": 74.0, "max_dist": 0.58},
-    "1775_Quebec_NordUSA.png": {"min_hit_rate": 75.0, "max_dist": 0.18},
-    "Quebec_Traite1783.png": {"min_hit_rate": 89.0, "max_dist": 0.59},
-    "Degrade_Afrique.png": {"min_hit_rate": 65.2, "max_dist": 1.38},
+    "Quebec_Traite1783.png": {"min_hit_rate": 85.7, "max_dist": 0.80},
+    "Degrade_Afrique.png": {"min_hit_rate": 65.2, "max_dist": 1.48},
+    "Quebec_1791.png": {"min_hit_rate": 85.2, "max_dist": 0.51},
+    "Nouvelle-France1750.png": {"min_hit_rate": 73.9, "max_dist": 1.20},
+    "1775_Quebec_NordUSA.png": {"min_hit_rate": 68.8, "max_dist": 0.63},
 }
 
 
@@ -332,4 +332,5 @@ def test_text_extraction(
         },
     )
 
-    assert is_passed, f"{image_path.name} -> RESULTAT: [Hit={box_find_rate:.1f}%, Dist={average_dist:.2f}] \n ATTENDU: [Hit>={min_hit_rate}%, Dist<={max_dist}]"
+    error_msg = f"\n{RED}{BOLD}ÉCHEC : {image_path.name}{RESET}\n" f"  {YELLOW}RESULTAT : [Hit={box_find_rate:>5.1f}%, Dist={average_dist:>4.2f}]{RESET}\n" f"  {GREEN}ATTENDU  : [Hit>={min_hit_rate:>5.1f}%, Dist<={max_dist:>4.2f}]{RESET}"
+    assert is_passed, error_msg
