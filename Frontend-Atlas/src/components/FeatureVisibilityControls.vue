@@ -19,13 +19,26 @@
 
     <!-- Liste des éléments avec contrôle de visibilité -->
 
-    <div class="px-3 py-0 flex flex-1 flex-col min-h-0">
+    <div class="px-3 flex flex-1 flex-col min-h-0">
       <div
         class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
       >
-        <div class="text-sm font-bold">
-          {{ activeGroup.label }}
+        <div class="flex items-center justify-between">
+          <label
+            class="label cursor-pointer justify-start gap-2 flex-1 min-w-0"
+          >
+            <input
+              type="checkbox"
+              :checked="isAnyVisible"
+              @change="toggleActiveGroup(!isAnyVisible)"
+              class="checkbox checkbox-sm checkbox-primary"
+            />
+            <span class="text-sm font-bold text-gray-900 truncate">
+              {{ activeGroup.label }}
+            </span>
+          </label>
         </div>
+        <div class="divider m-0 h-0"></div>
         <div class="flex flex-col gap-2">
           <div
             v-if="activeGroup.features.length > 0"
@@ -328,6 +341,21 @@ const activeGroup = computed(() => {
     undefined
   );
 });
+
+const isAnyVisible = computed(() => {
+  if (!activeGroup.value || activeGroup.value.features.length === 0)
+    return false;
+  return activeGroup.value.features.some(
+    (feature) => props.featureVisibility.get(feature.id) !== false,
+  );
+});
+
+function toggleActiveGroup(visible: boolean) {
+  if (!activeGroup.value) return;
+  activeGroup.value.features.forEach((feature) => {
+    emit("toggle-feature", feature.id, visible);
+  });
+}
 
 watch(
   featureGroups,
