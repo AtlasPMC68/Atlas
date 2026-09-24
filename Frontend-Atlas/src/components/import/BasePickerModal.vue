@@ -99,14 +99,14 @@ watch(
     }
     if (modalRef.value?.open) {
       closeReason = "programmatic";
-      modalRef.value.close();
+      modalRef.value.close("programmatic");
     }
   },
 );
 
 function onDialogClose() {
   const returnValue = modalRef.value?.returnValue;
-  const isProgrammaticClose = returnValue === "programmatic";
+  const isProgrammaticClose = returnValue === "programmatic" || closeReason === "programmatic";
   const isSuccessClose = closeReason === "success" || returnValue === "success";
 
   if (!isProgrammaticClose && !isSuccessClose) {

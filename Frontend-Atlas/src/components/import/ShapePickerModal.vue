@@ -126,6 +126,7 @@ import ZoomableImageContainer from "./ZoomableImageContainer.vue";
 import { useZoomableStage } from "../../composables/useZoomableStage";
 
 const MARKER_SIZE_PX = 22;
+const MAX_SHAPE_CLICKS = 50;
 
 interface PickedShape {
   stageX: number;
@@ -135,7 +136,7 @@ interface PickedShape {
   name: string;
 }
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     isOpen: boolean;
     imageUrl: string;
@@ -255,6 +256,7 @@ function onPointerLeave() {
 }
 
 function placeMarkerAtEvent(event: MouseEvent) {
+  if (pickedShapes.value.length >= MAX_SHAPE_CLICKS) return;
   const pos = getStagePositionFromEvent(event);
   if (!pos) return;
   pickedShapes.value.push({

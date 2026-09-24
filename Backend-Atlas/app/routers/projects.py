@@ -343,11 +343,14 @@ async def upload_and_process_map(
     # Parse optional shape click positions [{"x": 0.5, "y": 0.3, "name": "..."}]
     imposed_shape_click_positions_list: list | None = None
     imposed_shape_names_list: list | None = None
+    MAX_SHAPE_CLICKS = 50
     if imposed_shape_clicks:
         try:
             raw_shapes = json.loads(imposed_shape_clicks)
             if not isinstance(raw_shapes, list):
                 raise ValueError("imposed_shape_clicks must be a JSON array")
+            if len(raw_shapes) > MAX_SHAPE_CLICKS:
+                raise ValueError(f"Too many shape clicks. Maximum allowed is {MAX_SHAPE_CLICKS}.")
             parsed_shapes = []
             for i, shape in enumerate(raw_shapes):
                 if not isinstance(shape, dict):
