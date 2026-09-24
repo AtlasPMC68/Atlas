@@ -452,7 +452,7 @@ function handleMapClick(e) {
 }
 async function loadGeoBorders() {
   if (!map) return;
-  const filename = "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson";
+  const filename = "/geojson/geoBoundaries-ITA-ADM0_simplified.geojson";
 
   try {
     const res = await fetch(filename);
