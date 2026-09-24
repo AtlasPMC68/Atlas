@@ -688,11 +688,6 @@ def extract_shapes_from_clicks(
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,
         "shapes": [shape for shape, _ in shapes_with_contours],
-        "total_shapes": len(pixel_features),
+        "total_shapes": len(shapes_with_contours),
     }
-
-
-# ---------------------------------------------------------------------------
-# Main pipeline (OpenCV global contour extraction — kept for legend shapes)
-# ---------------------------------------------------------------------------
 

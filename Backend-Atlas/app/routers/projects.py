@@ -348,12 +348,18 @@ async def upload_and_process_map(
             raw_shapes = json.loads(imposed_shape_clicks)
             if not isinstance(raw_shapes, list):
                 raise ValueError("imposed_shape_clicks must be a JSON array")
-            imposed_shape_click_positions_list = [
-                (float(s["x"]), float(s["y"])) for s in raw_shapes
-            ]
+            parsed_shapes = []
+            for i, shape in enumerate(raw_shapes):
+                if not isinstance(shape, dict):
+                    raise ValueError("Each shape entry must be an object")
+                x, y = float(shape["x"]), float(shape["y"])
+                if not (math.isfinite(x) and math.isfinite(y) and 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+                    raise ValueError("shape click x and y must be finite normalized floats in [0, 1]")
+                parsed_shapes.append((x, y))
+            imposed_shape_click_positions_list = parsed_shapes
             imposed_shape_names_list = [
-                str(s.get("name", f"Shape {i + 1}"))
-                for i, s in enumerate(raw_shapes)
+                str(shape.get("name", f"Shape {i + 1}"))
+                for i, shape in enumerate(raw_shapes)
             ]
         except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
             raise HTTPException(

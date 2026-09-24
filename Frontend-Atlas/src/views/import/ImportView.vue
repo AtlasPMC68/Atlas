@@ -355,39 +355,13 @@ async function startImportProcess() {
     enableTextExtraction.value = false;
   }
   
-  // If georeferencing is disabled, skip world area selection and go straight to upload
+  // If georeferencing is disabled, skip world area selection and go straight to legend picker
   // Note: dev-test mode always forces georef on, so this path is production-only.
   if (!enableGeoreferencing.value) {
     pendingGeorefPayload.value = null;
     legendReturnStep.value = 2;
     currentStep.value = 5;
     showLegendPickerModal.value = true;
-
-    const importProjectId =
-      routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
-    if (!importProjectId) {
-      console.error("Impossible de resoudre le project_id pour cette importation");
-      currentStep.value = 2;
-      return;
-    }
-
-    const result = await prodImport.startImport(
-      selectedFile.value,
-      importProjectId,
-      routeMapId,
-      undefined,
-      undefined,
-      {
-        enableGeoreferencing: false,
-        enableColorExtraction: enableColorExtraction.value,
-        enableTextExtraction: enableTextExtraction.value,
-      },
-    );
-    if (result.success) {
-      currentStep.value = 5;
-    } else {
-      console.error("Erreur importation:", result.error);
-    }
     return;
   }
 
@@ -597,6 +571,10 @@ async function handleColorPickerConfirmed(
   showColorPickerModal.value = false;
   pickedColors.value = colors;
   // After colors, open the shape picker step
+  if (isDevTest.value) {
+    await submitImportWithGeoref(null);
+    return;
+  }
   currentStep.value = 7;
   showShapePickerModal.value = true;
 }
@@ -604,8 +582,13 @@ async function handleColorPickerConfirmed(
 function handleShapePickerClose() {
   showShapePickerModal.value = false;
   // Go back to color picker step
-  showColorPickerModal.value = true;
-  currentStep.value = 6;
+  if (enableColorExtraction.value) {
+    showColorPickerModal.value = true;
+    currentStep.value = 6;
+    return;
+  }
+  showLegendPickerModal.value = true;
+  currentStep.value = 5;
 }
 
 async function handleShapePickerSkip() {
