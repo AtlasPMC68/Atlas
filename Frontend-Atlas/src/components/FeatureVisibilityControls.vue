@@ -193,7 +193,7 @@
           </div>
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.strokeColor !== undefined"
+            v-if="featureToEdit.properties.strokeColor !== undefined && featureToEdit.properties.mapElementType !== 'label'"
           >
             <label class="label">Couleur du contour :</label>
             <input
