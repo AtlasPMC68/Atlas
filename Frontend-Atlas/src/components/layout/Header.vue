@@ -79,16 +79,10 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import {
-  MapIcon,
-  UserCircleIcon,
-  ChevronDownIcon,
-} from "@heroicons/vue/24/outline";
-import { useRouter } from "vue-router";
+import { MapIcon, UserCircleIcon } from "@heroicons/vue/24/outline";
 import keycloak from "../../keycloak";
 
 const isDropdownOpen = ref(false);
-const router = useRouter();
 
 let closeTimeout: ReturnType<typeof setTimeout> | null = null;
 

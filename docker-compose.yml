@@ -120,7 +120,7 @@ services:
       KC_LOG_LEVEL: WARN # Reduce log noise
     volumes:
       - ./keycloak:/var/tmp
-      - ./keycloak/themes:/opt/keycloak/themes
+      - ./keycloak/themes/atlas:/opt/keycloak/themes/atlas
     entrypoint: sh -c "/var/tmp/init.sh"
     depends_on:
       keycloak-db:

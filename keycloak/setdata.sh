@@ -31,9 +31,7 @@ echo "Updating realm settings..."
   -s sslRequired=None \
   -s accessTokenLifespan=3600 \
   -s ssoSessionMaxLifespan=86400 \
-  -s ssoSessionIdleTimeout=3600
-  -s loginTheme=atlas
-  
+  -s ssoSessionIdleTimeout=3600 
 
 # Function to check if client exists
 client_exists() {
