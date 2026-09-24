@@ -13,6 +13,7 @@ sqlalchemy
 geoalchemy2
 numpy
 shapely==2.1.2
+pyproj==3.7.2
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 pytest-asyncio==0.21.0

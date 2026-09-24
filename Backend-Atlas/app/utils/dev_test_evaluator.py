@@ -2,9 +2,10 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
+import numpy as np
 from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
@@ -453,7 +454,11 @@ def evaluate_georef_zones_from_paths(
     report: dict[str, Any] = {
         "testId": test_id,
         "testCaseId": test_case_id,
-        "evaluatedAt": datetime.utcnow().isoformat() + "Z",
+        "evaluatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "expectedZonesFile": os.path.relpath(
+            expected_zones_path,
+            start=os.path.dirname(os.path.dirname(expected_zones_path)),
+        ).replace(os.sep, "/"),
         "thresholds": {
             "minIou": min_iou,
             "scoreKey": "metrics.mean.meanIou",
@@ -496,13 +501,15 @@ def evaluate_georef_test_case(
     """
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
-    return evaluate_georef_zones_from_paths(
+    report, errors_geojson = evaluate_georef_zones_from_paths(
         test_id=test_id,
         test_case_id=test_case_id,
         expected_zones_path=paths.expected_zones_path,
         extracted_zones_path=paths.extracted_zones_path,
         min_iou=min_iou,
     )
+
+    return report, errors_geojson
 
 
 def write_report(report: dict[str, Any], report_path: str) -> None:
