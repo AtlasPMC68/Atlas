@@ -2,6 +2,7 @@ import { ref } from "vue";
 import L from "leaflet";
 import { getRadiusForZoom } from "../utils/map.ts";
 import { toArray } from "../utils/utils";
+import { createCartoTileLayer } from "../utils/basemap";
 import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
 import type { Feature } from "../typescript/feature";
 import { FeatureLayerManager } from "./FeatureLayerManagerService.ts";
@@ -254,14 +255,7 @@ export class MapLayersService {
   initializeBaseLayers(map: L.Map) {
     this.featureLayerManager.setMap(map);
 
-    L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-      {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-        subdomains: "abcd",
-        maxZoom: 19,
-      },
-    ).addTo(map);
+    createCartoTileLayer().addTo(map);
 
     this.drawnItems.value = new L.FeatureGroup();
     map.addLayer(this.drawnItems.value as unknown as L.Layer);

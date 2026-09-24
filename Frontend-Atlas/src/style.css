@@ -285,15 +285,7 @@
   display: block;
 }
 
-.city-label-text {
-  font-size: 12px;
-  font-weight: bold;
-  color: black;
-  background: transparent;
-  padding: 2px 4px;
-  border-radius: 3px;
-  border: transparent;
-}
+
 
 .arrow-head {
   font-size: 20px;

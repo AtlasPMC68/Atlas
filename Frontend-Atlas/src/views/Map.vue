@@ -14,7 +14,7 @@
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @add-map="openAddMapDialog"
-          @update-feature="onSaveMap"
+          @update-feature="onUpdateFeature"
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
@@ -89,11 +89,11 @@
   />
 
   <CreateProjectDialog
-      ref="createProjectDialogRef"
-      @created="onProjectCreated"
-      @error="onCreateProjectError"
-      @closed="onCreateProjectDialogClosed"
-    />
+    ref="createProjectDialogRef"
+    @created="onProjectCreated"
+    @error="onCreateProjectError"
+    @closed="onCreateProjectDialogClosed"
+  />
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
@@ -122,6 +122,7 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
+import { upsertFeature } from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -259,9 +260,7 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
     reconcileVisibility(next);
 
     const currentUuidIds = new Set(
-      next
-        .map((feature) => String(feature.id))
-        .filter((id) => isUuid(id)),
+      next.map((feature) => String(feature.id)).filter((id) => isUuid(id)),
     );
 
     pendingDeletions.value = [...persistedFeatureIds.value].filter(
@@ -297,7 +296,9 @@ function onRedo() {
   applyFeatureSnapshot(featureHistoryService.redo(features.value), false);
 }
 
-function getImageNaturalSize(file: File): Promise<{ width: number; height: number }> {
+function getImageNaturalSize(
+  file: File,
+): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -390,18 +391,23 @@ async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
 
-  const removedLayers: L.Layer[] = [];
+  const mapToCapture = leafletMap.value as LeafletMap;
+  const originalEachLayer = mapToCapture.eachLayer;
 
-  leafletMap.value.eachLayer((layer) => {
-    if (layer instanceof L.Marker && layer.options.icon instanceof L.DivIcon) {
-      removedLayers.push(layer);
-    }
-  });
-
-  removedLayers.forEach((layer) => leafletMap.value?.removeLayer(layer));
+  // Temporarily override eachLayer to hide DivIcon markers from leafletImage
+  // This avoids mutating Leaflet's internal layer states which causes zoom crashes 
+  // when combined with asynchronous Vue state updates and layer re-rendering.
+  mapToCapture.eachLayer = function (this: LeafletMap, fn: (layer: L.Layer) => void, context?: any) {
+    return originalEachLayer.call(this, (layer: L.Layer) => {
+      if (layer instanceof L.Marker && layer.options.icon instanceof L.DivIcon) {
+        return;
+      }
+      fn.call(context, layer);
+    }, context);
+  } as any;
 
   return await new Promise<boolean>((resolve) => {
-    leafletImage(leafletMap.value as LeafletMap, async (err, canvas) => {
+    leafletImage(mapToCapture, async (err, canvas) => {
       try {
         if (err || !canvas) return resolve(false);
 
@@ -422,9 +428,8 @@ async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
           console.error("Project thumbnail upload failed:", res.status);
         }
         resolve(res.ok);
-        resolve(res.ok);
       } finally {
-        removedLayers.forEach((layer) => leafletMap.value?.addLayer(layer));
+        mapToCapture.eachLayer = originalEachLayer;
       }
     });
   });
@@ -492,6 +497,26 @@ async function onDeleteFeature(
   } catch (error) {
     console.error("Failed to delete feature:", error);
     callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
+  }
+}
+
+async function onUpdateFeature(
+  updatedFeature: Feature,
+  callbacks?: {
+    onSuccess?: () => void;
+    onError?: (message?: string) => void;
+  },
+) {
+  try {
+    const nextFeatures = upsertFeature(features.value, updatedFeature);
+    features.value = nextFeatures;
+    reconcileVisibility(nextFeatures);
+
+    await onSaveMap(nextFeatures);
+    callbacks?.onSuccess?.();
+  } catch (error) {
+    console.error("Failed to update feature:", error);
+    callbacks?.onError?.("Erreur lors de la mise à jour de l'élément.");
   }
 }
 
@@ -658,20 +683,22 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-async function isProjectOwner(targetProjectId: string): Promise<boolean | null> {
+async function isProjectOwner(
+  targetProjectId: string,
+): Promise<boolean | null> {
   if (!targetProjectId) {
     showAlert(
-        "error",
-        "Impossible de vérifier la propriété, l'identifiant du projet est invalide.",
-      );
+      "error",
+      "Impossible de vérifier la propriété, l'identifiant du projet est invalide.",
+    );
     return null;
   }
 
   if (!keycloak.token) {
     showAlert(
-        "error",
-        "Impossible de vérifier la propriété du projet, le jeton d'authentification est invalide.",
-      );
+      "error",
+      "Impossible de vérifier la propriété du projet, le jeton d'authentification est invalide.",
+    );
     return null;
   }
 
@@ -804,7 +831,7 @@ onMounted(async () => {
   if (projectId.value) {
     await uploadMapThumbnail();
   }
-  
+
   window.addEventListener("keydown", handleKeyboardShortcuts);
 });
 
@@ -912,7 +939,7 @@ async function saveFeaturesToProject(
   }
 }
 
-async function onSaveMap() {
+async function onSaveMap(featuresOverride?: Feature[]) {
   if (isSaving.value) return;
   isSaving.value = true;
   mapGeoJsonRef.value?.resetSelection();
@@ -923,8 +950,10 @@ async function onSaveMap() {
       return;
     }
 
-    const syncedFeatures = mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
-    const featuresToSave = syncedFeatures ?? features.value;
+    const syncedFeatures = featuresOverride
+      ? undefined
+      : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
+    const featuresToSave = featuresOverride ?? syncedFeatures ?? features.value;
 
     if (syncedFeatures) {
       features.value = syncedFeatures;
