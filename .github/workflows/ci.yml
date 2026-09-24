@@ -2,9 +2,8 @@ name: CI - Atlas Project Tests
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches:
+      - "*"
 
 jobs:
   tests:
