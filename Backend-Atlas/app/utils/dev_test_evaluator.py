@@ -128,8 +128,8 @@ def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, An
     For each expected feature, we find its best-match extracted feature (already
     computed in `matches`). FP/FN are then computed *only on that pair*:
 
-    - false negative: expected \ extracted_best
-    - false positive: extracted_best \ expected
+    - false negative: expected \\ extracted_best
+    - false positive: extracted_best \\ expected
     """
 
     features: list[dict[str, Any]] = []
