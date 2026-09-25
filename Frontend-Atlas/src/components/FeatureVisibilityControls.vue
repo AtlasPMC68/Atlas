@@ -19,50 +19,94 @@
 
     <!-- Liste des éléments avec contrôle de visibilité -->
 
-    <div class="px-3 py-0 flex flex-1 flex-col min-h-0">
+    <div class="px-3 flex flex-1 flex-col min-h-0">
       <div
         class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
       >
-        <div class="text-sm font-bold">
-          {{ activeGroup.label }}
-        </div>
-        <div class="flex flex-col gap-2">
-          <div
-            v-if="activeGroup.features.length > 0"
-            v-for="feature in activeGroup.features"
-            :key="feature.id"
-            class="flex w-full flex-row items-center justify-between gap-2"
+        <div class="flex items-center justify-between">
+          <label
+            class="label cursor-pointer justify-start gap-2 flex-1 min-w-0"
           >
-            <label
-              class="label cursor-pointer justify-start gap-2 flex-1 min-w-0"
+            <input
+              type="checkbox"
+              :checked="isAnyVisible"
+              @change="toggleActiveGroup(!isAnyVisible)"
+              class="checkbox checkbox-sm checkbox-primary"
+            />
+            <span class="text-sm font-bold text-gray-900 truncate">
+              {{ activeGroup.label }}
+            </span>
+          </label>
+        </div>
+        <div class="divider m-0 h-0"></div>
+        <div class="flex flex-col gap-2">
+          <template v-if="featuresByMap.length > 0">
+            <div
+              v-for="mapGroup in featuresByMap"
+              :key="mapGroup.id || 'general'"
+              class="flex flex-col gap-2"
             >
-              <input
-                type="checkbox"
-                :checked="featureVisibility.get(feature.id) !== false"
-                @change="
-                  $emit(
-                    'toggle-feature',
-                    feature.id,
-                    ($event.target as HTMLInputElement).checked,
-                  )
-                "
-                class="checkbox checkbox-sm checkbox-primary"
-              />
-              <span class="label-text text-sm truncate">
-                {{ feature.properties?.name || "Élément sans nom" }}
-              </span>
-            </label>
-            <div class="flex h-8 w-8 items-center gap-1 mr-1">
-              <button @click="showEditFeatureDialog(feature)">
-                <PencilSquareIcon
-                  class="w-5 h-5 text-gray-500 hover:text-gray-800"
-                />
-              </button>
-              <button @click="emit('delete-feature', feature.id)">
-                <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
-              </button>
+              <div class="flex items-center justify-between rounded">
+                <label
+                  class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 p-0"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="isMapGroupAnyVisible(mapGroup.id)"
+                    @change="
+                      toggleMapGroup(
+                        mapGroup.id,
+                        !isMapGroupAnyVisible(mapGroup.id),
+                      )
+                    "
+                    class="checkbox checkbox-sm checkbox-primary"
+                  />
+                  <span class="text-sm font-semibold text-gray-700 truncate">
+                    {{ mapGroup.title }}
+                  </span>
+                </label>
+              </div>
+              <div class="flex flex-col gap-2 pl-2">
+                <div
+                  v-for="feature in mapGroup.features"
+                  :key="feature.id"
+                  class="flex w-full flex-row items-center justify-between gap-2"
+                >
+                  <label
+                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="featureVisibility.get(feature.id) !== false"
+                      @change="
+                        $emit(
+                          'toggle-feature',
+                          feature.id,
+                          ($event.target as HTMLInputElement).checked,
+                        )
+                      "
+                      class="checkbox checkbox-xs checkbox-primary"
+                    />
+                    <span class="label-text text-sm truncate">
+                      {{ feature.properties?.name || "Élément sans nom" }}
+                    </span>
+                  </label>
+                  <div class="flex h-8 w-8 items-center gap-1 mr-1">
+                    <button @click="showEditFeatureDialog(feature)">
+                      <PencilSquareIcon
+                        class="w-5 h-5 text-gray-500 hover:text-gray-800"
+                      />
+                    </button>
+                    <button @click="emit('delete-feature', feature.id)">
+                      <TrashIcon
+                        class="w-5 h-5 text-red-500 hover:text-red-800"
+                      />
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          </template>
           <div v-else class="flex text-sm opacity-60">
             Aucun élément à afficher
           </div>
@@ -248,6 +292,7 @@ import type {
   FeatureVisibilityGroup,
   FeatureVisibilityGroupType,
 } from "../typescript/feature";
+import type { MapPeriod } from "../typescript/map";
 import { getMapElementType } from "../utils/featureHelpers";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
@@ -256,6 +301,7 @@ import { hexToRgb, rgbToHex } from "../utils/utils";
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
+  mapPeriods?: MapPeriod[];
   isDevTestCreation?: boolean;
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
@@ -328,6 +374,89 @@ const activeGroup = computed(() => {
     undefined
   );
 });
+
+const isAnyVisible = computed(() => {
+  if (!activeGroup.value || activeGroup.value.features.length === 0)
+    return false;
+  return activeGroup.value.features.some(
+    (feature) => props.featureVisibility.get(feature.id) !== false,
+  );
+});
+
+const featuresByMap = computed(() => {
+  if (!activeGroup.value) return [];
+
+  const mapGroups = new Map<
+    string | null,
+    { id: string | null; title: string; startDate?: string | null; features: Feature[] }
+  >();
+
+  activeGroup.value.features.forEach((feature) => {
+    const mapId = feature.mapId || null;
+    if (!mapGroups.has(mapId)) {
+      let title = "Éléments généraux";
+      let startDate: string | null = null;
+      if (mapId && props.mapPeriods) {
+        const period = props.mapPeriods.find((p) => p.id === mapId);
+        if (period) {
+          title = period.title;
+          startDate = period.startDate;
+        }
+      }
+      mapGroups.set(mapId, { id: mapId, title, startDate, features: [] });
+    }
+    mapGroups.get(mapId)!.features.push(feature);
+  });
+
+  return Array.from(mapGroups.values())
+    .map((group) => {
+      group.features.sort((a, b) => {
+        const nameA = a.properties?.name || "Élément sans nom";
+        const nameB = b.properties?.name || "Élément sans nom";
+        return nameA.localeCompare(nameB);
+      });
+      return group;
+    })
+    .sort((a, b) => {
+      if (a.id === null) return -1;
+      if (b.id === null) return 1;
+
+      if (a.startDate && b.startDate) {
+        if (a.startDate < b.startDate) return -1;
+        if (a.startDate > b.startDate) return 1;
+      } else if (a.startDate) {
+        return -1;
+      } else if (b.startDate) {
+        return 1;
+      }
+
+      return a.title.localeCompare(b.title);
+    });
+});
+
+function toggleMapGroup(mapId: string | null, visible: boolean) {
+  const mapGroup = featuresByMap.value.find((g) => g.id === mapId);
+  if (mapGroup) {
+    mapGroup.features.forEach((feature) => {
+      emit("toggle-feature", feature.id, visible);
+    });
+  }
+}
+
+function isMapGroupAnyVisible(mapId: string | null) {
+  const mapGroup = featuresByMap.value.find((g) => g.id === mapId);
+  if (!mapGroup || mapGroup.features.length === 0) return false;
+  return mapGroup.features.some(
+    (feature) => props.featureVisibility.get(feature.id) !== false,
+  );
+}
+
+function toggleActiveGroup(visible: boolean) {
+  if (!activeGroup.value) return;
+  activeGroup.value.features.forEach((feature) => {
+    emit("toggle-feature", feature.id, visible);
+  });
+}
 
 watch(
   featureGroups,
