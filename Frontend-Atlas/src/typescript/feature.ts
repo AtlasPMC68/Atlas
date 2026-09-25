@@ -20,10 +20,18 @@ export type MapElementType =
   | "arrow"
   | "shape"
   | "label"
-  | "image";
+  | "image"
+  | "rejet"
+  | "region"
+  | string;
 
 export type FeatureVisibilityGroupType =
-  | Exclude<MapElementType, "label" | "polyline" | "arrow">
+  | "point"
+  | "zone"
+  | "polyline"
+  | "arrow"
+  | "shape"
+  | "image"
   | "other";
 
 export type FeatureVisibilityGroup = {
@@ -48,6 +56,13 @@ export interface FeatureProperties {
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
+  boxHeight?: number;
+  rotationAngle?: number;
+  show?: boolean;
+  isOriginalMapImage?: boolean;
+  opacity?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;

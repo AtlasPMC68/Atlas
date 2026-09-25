@@ -1,35 +1,78 @@
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5">
-      <button
-        v-for="group in featureGroups"
-        :key="group.type"
-        type="button"
-        role="tab"
-        class="tab flex-1 p-0"
-        :title="`${group.label}`"
-        @click="activeGroupType = group.type"
-      >
-        <component
-          :is="getGroupIcon(group.type)"
-          class="h-5 w-5 text-primary-500"
-        />
-      </button>
+    <!-- Boutons des catégories principales -->
+    <div class="p-2 border-b border-base-200 bg-base-100">
+      <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 px-0.5">
+        Catégories
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <button
+          v-for="group in mainFeatureGroups"
+          :key="group.type"
+          type="button"
+          class="btn btn-xs rounded-md transition-all gap-1.5 px-2.5 py-1.5 h-auto min-h-[1.75rem]"
+          :class="[
+            activeGroupType === group.type
+              ? 'btn-primary text-white shadow-sm font-bold'
+              : 'btn-ghost bg-base-200 hover:bg-base-300 font-medium text-gray-700'
+          ]"
+          @click="activeGroupType = group.type"
+        >
+          <component
+            :is="getGroupIcon(group.type)"
+            class="h-3.5 w-3.5"
+            :class="activeGroupType === group.type ? 'text-white' : 'text-primary'"
+          />
+          <span>{{ group.label }}</span>
+          <span
+            class="badge badge-xs px-1 text-[10px]"
+            :class="activeGroupType === group.type ? 'bg-primary-focus text-white border-0' : 'badge-ghost'"
+          >
+            {{ group.features.length }}
+          </span>
+        </button>
+      </div>
     </div>
 
     <!-- Liste des éléments avec contrôle de visibilité -->
 
-    <div class="px-3 py-0 flex flex-1 flex-col min-h-0">
+    <div class="px-3 py-2 flex flex-1 flex-col min-h-0">
       <div
-        class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
+        class="card flex flex-1 flex-col gap-3 min-h-0 overflow-y-auto scroll-stable"
       >
-        <div class="text-sm font-bold">
-          {{ activeGroup.label }}
+        <!-- Titre standard OU menu déroulant des sous-catégories de texte -->
+        <div class="flex items-center justify-between min-h-[2rem]">
+          <template v-if="activeGroupType === 'other'">
+            <div class="w-full">
+              <select
+                v-model="selectedTextCategory"
+                class="select select-bordered select-xs w-full text-xs font-bold bg-base-100"
+              >
+                <option value="all">
+                  Tous les textes ({{ activeGroup.features.length }})
+                </option>
+                <option
+                  v-for="sub in textSubCategories"
+                  :key="sub.type"
+                  :value="sub.type"
+                >
+                  {{ sub.label }} ({{ sub.count }})
+                </option>
+              </select>
+            </div>
+          </template>
+          <template v-else>
+            <span class="text-sm font-bold">{{ activeGroup.label }}</span>
+            <span class="text-xs text-gray-500 font-normal">
+              {{ displayedFeatures.length }} élément(s)
+            </span>
+          </template>
         </div>
+
         <div class="flex flex-col gap-2">
           <div
-            v-if="activeGroup.features.length > 0"
-            v-for="feature in activeGroup.features"
+            v-if="displayedFeatures.length > 0"
+            v-for="feature in displayedFeatures"
             :key="feature.id"
             class="flex w-full flex-row items-center justify-between gap-2"
           >
@@ -73,6 +116,20 @@
     <div class="px-3 py-1.5 flex flex-col gap-1.5">
       <div class="divider m-0"></div>
       <template v-if="!props.isDevTestCreation">
+        <div class="flex gap-2 items-center">
+          <button
+            class="btn btn-outline btn-secondary btn-sm flex-1 font-bold gap-2"
+            :disabled="isRetryingOcr"
+            @click="emit('retry-ocr')"
+            title="Relancer l'extraction de texte (OCR)"
+          >
+            <ArrowPathIcon
+              class="w-4 h-4"
+              :class="{ 'animate-spin': isRetryingOcr }"
+            />
+            <span>Recommencer l'OCR</span>
+          </button>
+        </div>
         <div class="flex gap-2 items-center">
           <button
             class="btn btn-primary btn-sm flex-1 font-bold"
@@ -138,6 +195,31 @@
         >
           <label class="label">Texte</label>
           <input v-model="featureToEditLabelText" type="text" class="input" />
+        </div>
+        <div class="flex flex-col gap-2" v-if="isTextOrPointFeature(featureToEdit)">
+          <label class="label font-medium text-xs">Catégorie / Zone de destination</label>
+          <select
+            v-model="featureToEditCategory"
+            class="select select-bordered select-sm w-full text-xs"
+          >
+            <option value="region">Région / Territoire</option>
+            <option value="point">Ville (Point)</option>
+            <option value="hydrologie_relief_exhaustif">Hydrologie / Relief</option>
+            <option value="label">Texte général</option>
+            <option value="rejet">Rejet</option>
+            <option value="ignored">🚫 Ignorer définitivement</option>
+          </select>
+
+          <label class="flex items-center gap-2 mt-1 p-2 bg-base-200 rounded cursor-pointer">
+            <input
+              v-model="rememberRule"
+              type="checkbox"
+              class="checkbox checkbox-xs checkbox-primary"
+            />
+            <span class="text-xs text-base-content select-none leading-tight">
+              Mémoriser ce choix pour les prochaines cartes et futures ré-extractions OCR
+            </span>
+          </label>
         </div>
         <div
           class="flex gap-2"
@@ -235,6 +317,8 @@
 import { computed, nextTick, ref, watch } from "vue";
 import type { Component } from "vue";
 import {
+  ArrowPathIcon,
+  DocumentTextIcon,
   EllipsisHorizontalIcon,
   MapIcon,
   MapPinIcon,
@@ -252,21 +336,39 @@ import { getMapElementType } from "../utils/featureHelpers";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
 import { hexToRgb, rgbToHex } from "../utils/utils";
+import { apiFetch } from "../utils/api";
 
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
   isDevTestCreation?: boolean;
+  isRetryingOcr?: boolean;
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
 const featureToEditName = ref<string>("");
 const featureToEditLabelText = ref<string | undefined>(undefined);
+const featureToEditCategory = ref<string>("label");
+const featureToEditRawText = ref<string>("");
+const rememberRule = ref<boolean>(false);
 const featureToEditColor = ref<string | undefined>(undefined);
 const featureToEditStrokeColor = ref<string | undefined>(undefined);
 const featureToEditOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+
+function isTextOrPointFeature(f?: Feature): boolean {
+  if (!f) return false;
+  const type = f.properties?.mapElementType;
+  return (
+    f.geometry?.type === "Point" ||
+    type === "label" ||
+    type === "rejet" ||
+    type === "region" ||
+    type === "point" ||
+    (typeof type === "string" && type.startsWith("hydrologie"))
+  );
+}
 
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
 
@@ -279,58 +381,90 @@ const emit = defineEmits([
   "delete-feature",
   "add-map",
   "update-feature",
+  "retry-ocr",
 ]);
 
-const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
+const groupIcons: Record<string, Component> = {
   point: MapPinIcon,
   zone: MapIcon,
   shape: Square2StackIcon,
-  other: EllipsisHorizontalIcon,
   image: PhotoIcon,
+  other: DocumentTextIcon,
 };
 
-const featureGroups = computed(() => {
+const mainFeatureGroups = computed(() => {
   const groups: FeatureVisibilityGroup[] = [
     { type: "point", label: "Ville(s)", features: [] as Feature[] },
     { type: "zone", label: "Zone(s)", features: [] as Feature[] },
     { type: "shape", label: "Forme(s)", features: [] as Feature[] },
     { type: "image", label: "Image(s)", features: [] as Feature[] },
-    { type: "other", label: "Autre(s)", features: [] as Feature[] },
+    { type: "other", label: "Texte(s)", features: [] as Feature[] },
   ];
 
   props.features.forEach((feature: Feature) => {
     const featureType = getMapElementType(feature);
     if (!featureType) return;
 
-    const targetGroup = groups.find((currentGroup) => {
-      if (
-        featureType === "label" ||
-        featureType === "polyline" ||
-        featureType === "arrow"
-      ) {
-        return currentGroup.type === "other";
-      }
-      return currentGroup.type === featureType;
-    });
-
-    if (targetGroup) targetGroup.features.push(feature);
+    if (featureType === "point") {
+      groups[0].features.push(feature);
+    } else if (featureType === "zone") {
+      groups[1].features.push(feature);
+    } else if (featureType === "shape") {
+      groups[2].features.push(feature);
+    } else if (featureType === "image") {
+      groups[3].features.push(feature);
+    } else {
+      // Tous les textes (label, rejet, hydrologie, region, forts, etc.) vont dans Texte(s)
+      groups[4].features.push(feature);
+    }
   });
 
-  return groups;
+  return groups.filter((g) => g.type !== "image" || g.features.length > 0);
 });
 
 const activeGroup = computed(() => {
-  if (!activeGroupType.value) return featureGroups.value[0] ?? undefined;
+  if (!activeGroupType.value) return mainFeatureGroups.value[0] ?? undefined;
 
   return (
-    featureGroups.value.find((group) => group.type === activeGroupType.value) ??
-    featureGroups.value[0] ??
+    mainFeatureGroups.value.find((group) => group.type === activeGroupType.value) ??
+    mainFeatureGroups.value[0] ??
     undefined
   );
 });
 
+const selectedTextCategory = ref<string>("all");
+
+const textSubCategories = computed(() => {
+  const textGroup = mainFeatureGroups.value.find((g) => g.type === "other");
+  if (!textGroup) return [];
+
+  const counts = new Map<string, number>();
+  textGroup.features.forEach((f) => {
+    const cat = f.properties?.mapElementType || "other";
+    counts.set(cat, (counts.get(cat) || 0) + 1);
+  });
+
+  return Array.from(counts.entries()).map(([cat, count]) => {
+    let label = cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, " ");
+    if (cat === "rejet") label = "Rejet(s)";
+    else if (cat === "other" || cat === "label") label = "Non catégorisé(s)";
+    else label = `${label}(s)`;
+    return { type: cat, label, count };
+  });
+});
+
+const displayedFeatures = computed(() => {
+  if (!activeGroup.value) return [];
+  if (activeGroup.value.type !== "other") return activeGroup.value.features;
+  if (selectedTextCategory.value === "all") return activeGroup.value.features;
+  return activeGroup.value.features.filter((f) => {
+    const cat = f.properties?.mapElementType || "other";
+    return cat === selectedTextCategory.value;
+  });
+});
+
 watch(
-  featureGroups,
+  mainFeatureGroups,
   (groups) => {
     if (groups.length === 0) {
       activeGroupType.value = undefined;
@@ -349,13 +483,16 @@ watch(
 );
 
 function getGroupIcon(type: FeatureVisibilityGroupType): Component {
-  return groupIcons[type];
+  return groupIcons[type] || EllipsisHorizontalIcon;
 }
 
 async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
-  featureToEditName.value = feature.properties.name;
+  featureToEditName.value = feature.properties.name || "";
   featureToEditLabelText.value = feature.properties.labelText;
+  featureToEditCategory.value = feature.properties.mapElementType || "label";
+  featureToEditRawText.value = feature.properties.labelText || feature.properties.name || "";
+  rememberRule.value = false;
   featureToEditColor.value = rgbToHex(feature.properties.colorRgb);
   featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
   featureToEditOpacity.value = feature.properties.fillOpacity;
@@ -369,33 +506,60 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
-  const updatedFeature: Feature = {
-    ...featureToEdit.value,
-    properties: {
-      ...featureToEdit.value.properties,
-      name: featureToEditName.value,
-      labelText: featureToEditLabelText.value,
-      colorRgb: hexToRgb(featureToEditColor.value),
-      strokeColor: hexToRgb(featureToEditStrokeColor.value),
-      fillOpacity: featureToEditOpacity.value,
-      strokeOpacity: featureToEditStrokeOpacity.value,
-      strokeWidth: featureToEditStrokeWidth.value,
-    },
-  };
 
-  featureToEdit.value = updatedFeature;
+  try {
+    if (rememberRule.value && featureToEditRawText.value) {
+      await apiFetch("/dictionary/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          raw_text: featureToEditRawText.value,
+          corrected_text: featureToEditName.value,
+          category: featureToEditCategory.value,
+          action: featureToEditCategory.value === "ignored" ? "ignore" : "keep",
+        }),
+      });
+    }
 
-  emit("update-feature", updatedFeature, {
-    onSuccess: () => {
-      showAlert("success", "Élément mis à jour !");
-    },
-    onError: (message: string) => {
-      showAlert("error", message);
-    },
-  });
+    if (featureToEditCategory.value === "ignored") {
+      emit("delete-feature", featureToEdit.value.id);
+      showAlert("info", "Élément ignoré et supprimé.");
+      editFeatureDialogRef.value?.close();
+      return;
+    }
 
-  isEditing.value = false;
-  editFeatureDialogRef.value?.close();
+    const updatedFeature: Feature = {
+      ...featureToEdit.value,
+      properties: {
+        ...featureToEdit.value.properties,
+        name: featureToEditName.value,
+        labelText: featureToEditLabelText.value || featureToEditName.value,
+        mapElementType: featureToEditCategory.value,
+        show: featureToEditCategory.value === "rejet" ? (featureToEdit.value.properties.show ?? false) : true,
+        colorRgb: hexToRgb(featureToEditColor.value),
+        strokeColor: hexToRgb(featureToEditStrokeColor.value),
+        fillOpacity: featureToEditOpacity.value,
+        strokeOpacity: featureToEditStrokeOpacity.value,
+        strokeWidth: featureToEditStrokeWidth.value,
+      },
+    };
+
+    featureToEdit.value = updatedFeature;
+
+    emit("update-feature", updatedFeature, {
+      onSuccess: () => {
+        showAlert("success", "Élément mis à jour !");
+      },
+      onError: (message: string) => {
+        showAlert("error", message);
+      },
+    });
+  } catch (err: any) {
+    showAlert("error", err?.message || "Erreur lors de la modification de l'élément.");
+  } finally {
+    isEditing.value = false;
+    editFeatureDialogRef.value?.close();
+  }
 }
 
 function toggleAll(visible: boolean) {

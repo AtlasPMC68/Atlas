@@ -1,10 +1,12 @@
 import { ref } from "vue";
 
-const alert = ref<{ type: "success" | "error"; message: string } | null>(null);
+export type AlertType = "success" | "error" | "info";
+
+const alert = ref<{ type: AlertType; message: string } | null>(null);
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 export function showAlert(
-  type: "success" | "error",
+  type: AlertType,
   message: string,
   duration = 4000,
 ) {
