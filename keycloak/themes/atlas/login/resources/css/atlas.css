@@ -1,0 +1,272 @@
+:root {
+  --atlas-primary: #2563eb;
+  --atlas-primary-hover: #1d4ed8;
+  --atlas-text: #111827;
+  --atlas-muted: #6b7280;
+  --atlas-border: #e5e7eb;
+  --atlas-background: #f9fafb;
+  --atlas-card: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background: var(--atlas-background);
+  color: var(--atlas-text);
+}
+
+/* Main page */
+
+.login-pf-page {
+  min-height: 100vh;
+  background: var(--atlas-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* Remove Keycloak branding */
+
+#kc-header {
+  display: none;
+}
+
+#kc-header-wrapper {
+  display: none;
+}
+
+/* Login card */
+
+.card-pf {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px;
+  margin: 0;
+  background: var(--atlas-card);
+  border: 1px solid var(--atlas-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Atlas logo / title */
+
+.atlas-brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.atlas-logo {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--atlas-primary);
+}
+
+.atlas-subtitle {
+  margin-top: 6px;
+  color: var(--atlas-muted);
+  font-size: 14px;
+}
+
+/* Page title */
+
+#kc-page-title {
+  margin: 0 0 24px;
+  color: var(--atlas-text);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-align: center;
+}
+
+/* Fields */
+
+.atlas-field {
+  margin-bottom: 18px;
+}
+
+.atlas-field label {
+  display: block;
+  margin-bottom: 7px;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.atlas-field input {
+  display: block;
+  width: 100%;
+  height: 42px;
+  padding: 8px 12px;
+
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+
+  color: var(--atlas-text);
+  font-size: 14px;
+
+  outline: none;
+
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.atlas-field input:hover {
+  border-color: #9ca3af;
+}
+
+.atlas-field input:focus {
+  border-color: var(--atlas-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* Primary button */
+
+#kc-login {
+  display: block;
+  width: 100%;
+  height: 42px;
+
+  margin-top: 6px;
+
+  border: 1px solid var(--atlas-primary);
+  border-radius: 8px;
+
+  background: var(--atlas-primary);
+  color: white;
+
+  font-size: 14px;
+  font-weight: 500;
+
+  cursor: pointer;
+
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+#kc-login:hover {
+  background: var(--atlas-primary-hover);
+  border-color: var(--atlas-primary-hover);
+}
+
+/* Forgot password */
+
+.atlas-forgot {
+  margin-top: -4px;
+  margin-bottom: 20px;
+  text-align: right;
+}
+
+.atlas-forgot a {
+  color: var(--atlas-primary);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.atlas-forgot a:hover {
+  text-decoration: underline;
+}
+
+/* Back links */
+
+.atlas-back {
+  display: block;
+
+  margin-top: 22px;
+  padding-top: 18px;
+
+  border-top: 1px solid var(--atlas-border);
+
+  color: var(--atlas-muted);
+  font-size: 14px;
+  text-align: center;
+
+  text-decoration: none;
+}
+
+.atlas-back:hover {
+  color: var(--atlas-primary);
+  text-decoration: none;
+}
+
+/* Description */
+
+.atlas-description {
+  margin: 0 0 22px;
+
+  color: var(--atlas-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* Alerts */
+
+.alert {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+
+  border-radius: 8px;
+
+  font-size: 14px;
+}
+
+/* Registration */
+
+#kc-registration {
+  margin-top: 22px;
+  color: var(--atlas-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+#kc-registration a {
+  color: var(--atlas-primary);
+  text-decoration: none;
+}
+
+#kc-registration a:hover {
+  text-decoration: underline;
+}
+
+/* Remove Keycloak footer */
+
+#kc-info {
+  display: none;
+}
+
+#kc-info-wrapper {
+  display: none;
+}
+
+/* Responsive */
+
+@media (max-width: 480px) {
+  .login-pf-page {
+    padding: 16px;
+  }
+
+  .card-pf {
+    padding: 26px 22px;
+    border-radius: 10px;
+  }
+}

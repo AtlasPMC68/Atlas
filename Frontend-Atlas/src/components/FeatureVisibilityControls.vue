@@ -237,7 +237,7 @@
           </div>
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.strokeColor !== undefined"
+            v-if="featureToEdit.properties.strokeColor !== undefined && featureToEdit.properties.mapElementType !== 'label'"
           >
             <label class="label">Couleur du contour :</label>
             <input
@@ -498,18 +498,23 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
-  featureToEdit.value.properties.name = featureToEditName.value;
-  featureToEdit.value.properties.labelText = featureToEditLabelText.value;
-  featureToEdit.value.properties.colorRgb = hexToRgb(featureToEditColor.value);
-  featureToEdit.value.properties.strokeColor = hexToRgb(
-    featureToEditStrokeColor.value,
-  );
-  featureToEdit.value.properties.fillOpacity = featureToEditOpacity.value;
-  featureToEdit.value.properties.strokeOpacity =
-    featureToEditStrokeOpacity.value;
-  featureToEdit.value.properties.strokeWidth = featureToEditStrokeWidth.value;
+  const updatedFeature: Feature = {
+    ...featureToEdit.value,
+    properties: {
+      ...featureToEdit.value.properties,
+      name: featureToEditName.value,
+      labelText: featureToEditLabelText.value,
+      colorRgb: hexToRgb(featureToEditColor.value),
+      strokeColor: hexToRgb(featureToEditStrokeColor.value),
+      fillOpacity: featureToEditOpacity.value,
+      strokeOpacity: featureToEditStrokeOpacity.value,
+      strokeWidth: featureToEditStrokeWidth.value,
+    },
+  };
 
-  emit("update-feature", {
+  featureToEdit.value = updatedFeature;
+
+  emit("update-feature", updatedFeature, {
     onSuccess: () => {
       showAlert("success", "Élément mis à jour !");
     },

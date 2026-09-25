@@ -54,23 +54,9 @@ def get_dominant_color_in_contour(
     r_bin, g_bin, b_bin = dominant_bin // 64, (dominant_bin % 64) // 8, dominant_bin % 8
     return (r_bin * 32 + 16, g_bin * 32 + 16, b_bin * 32 + 16)
  
- 
- 
- 
- 
- 
 # ---------------------------------------------------------------------------
 # Contour filtering & property extraction
 # ---------------------------------------------------------------------------
- 
- 
- 
- 
- 
- 
- 
- 
- 
  
 def extract_contour_properties(
     contour: np.ndarray,
