@@ -14,7 +14,11 @@
       </div>
 
       <div class="flex-none">
-        <button class="btn btn-secondary btn-sm" type="button" @click="goToTestImport">
+        <button
+          class="btn btn-secondary btn-sm"
+          type="button"
+          @click="goToTestImport"
+        >
           Ajouter un test case
         </button>
       </div>
@@ -46,6 +50,7 @@
               :reset-create-key="resetCreateKey"
               :is-frontier-mode="isFrontierMode"
               :is-geo-border-mode="isGeoBorderMode"
+              :selected-geo-borders="selectedGeoBorders"
               :undo-create-key="undoCreateKey"
               :sub-geometries="subGeometries"
               @create-updated="handleCreateUpdated"
@@ -53,74 +58,88 @@
           </div>
         </div>
 
-    <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
-      <!-- Create zone -->
-      <CreateZonePanel
-        :is-create-mode="isCreateMode"
-        v-model:zone-name="newZoneName"
-        :pending-create-geometry="pendingCreateGeometry"
-        :is-frontier-mode="isFrontierMode"
-        :is-geo-border-mode="isGeoBorderMode"
-        :subzone-count="subGeometries.length"
-        @start-create="startCreateMode"
-        @cancel-create="cancelCreateMode"
-        @undo-last-stroke="undoLastStroke"
-        @toggle-frontier="toggleFrontierMode"
-        @toggle-geo-border="toggleGeoBorderMode"
-        @save-zone="saveCreatedZone"
-        @add-subzone="addSubzone"
-      />
+        <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
+          <!-- Create zone -->
+          <CreateZonePanel
+            :is-create-mode="isCreateMode"
+            v-model:zone-name="newZoneName"
+            :pending-create-geometry="pendingCreateGeometry"
+            :is-frontier-mode="isFrontierMode"
+            :is-geo-border-mode="isGeoBorderMode"
+            :geo-border-groups="geoBorderGroups"
+            :geo-border-options="geoBorderOptions"
+            :selected-geo-borders="selectedGeoBorders"
+            :subzone-count="subGeometries.length"
+            @start-create="startCreateMode"
+            @cancel-create="cancelCreateMode"
+            @undo-last-stroke="undoLastStroke"
+            @toggle-frontier="toggleFrontierMode"
+            @toggle-geo-border="toggleGeoBorderMode"
+            @toggle-geo-border-selection="toggleGeoBorderSelection"
+            @toggle-all-geo-borders="toggleAllGeoBorders"
+            @toggle-geo-border-group="toggleGeoBorderGroup"
+            @save-zone="saveCreatedZone"
+            @add-subzone="addSubzone"
+          />
 
-      <!-- Test cases list -->
-      <div class="bg-base-100 rounded-box border border-base-300 p-3">
-        <div class="flex items-center justify-between gap-2">
-          <h2 class="text-sm font-semibold">Test cases</h2>
-          <span class="text-xs text-base-content/60">{{ testCases.length }}</span>
-        </div>
+          <!-- Test cases list -->
+          <div class="bg-base-100 rounded-box border border-base-300 p-3">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-sm font-semibold">Test cases</h2>
+              <span class="text-xs text-base-content/60">{{
+                testCases.length
+              }}</span>
+            </div>
 
-        <div v-if="isLoadingTestCases" class="text-sm text-base-content/60 mt-2">
-          Chargement…
-        </div>
-
-        <div
-          v-else-if="testCases.length === 0"
-          class="text-sm text-base-content/60 mt-2"
-        >
-          Aucun test case pour ce test.
-        </div>
-
-        <div v-else class="mt-2 space-y-2">
-          <div v-for="tc in testCases" :key="tc" class="flex items-center gap-1">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline flex-1 justify-start min-w-0"
-              @click="openTestCaseResult(tc)"
+            <div
+              v-if="isLoadingTestCases"
+              class="text-sm text-base-content/60 mt-2"
             >
-              <span class="truncate">{{ tc }}</span>
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm btn-ghost btn-square text-error"
-              :disabled="deletingTestCase === tc"
-              :title="`Supprimer le test case ${tc}`"
-              :aria-label="`Supprimer le test case ${tc}`"
-              @click="deleteTestCase(tc)"
+              Chargement…
+            </div>
+
+            <div
+              v-else-if="testCases.length === 0"
+              class="text-sm text-base-content/60 mt-2"
             >
-              <span
-                v-if="deletingTestCase === tc"
-                class="loading loading-spinner loading-xs"
-              />
-              <span v-else>✕</span>
-            </button>
+              Aucun test case pour ce test.
+            </div>
+
+            <div v-else class="mt-2 space-y-2">
+              <div
+                v-for="tc in testCases"
+                :key="tc"
+                class="flex items-center gap-1"
+              >
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline flex-1 justify-start min-w-0"
+                  @click="openTestCaseResult(tc)"
+                >
+                  <span class="truncate">{{ tc }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-ghost btn-square text-error"
+                  :disabled="deletingTestCase === tc"
+                  :title="`Supprimer le test case ${tc}`"
+                  :aria-label="`Supprimer le test case ${tc}`"
+                  @click="deleteTestCase(tc)"
+                >
+                  <span
+                    v-if="deletingTestCase === tc"
+                    class="loading loading-spinner loading-xs"
+                  />
+                  <span v-else>✕</span>
+                </button>
+              </div>
+            </div>
+
+            <p v-if="testCaseError" class="text-xs text-error mt-2">
+              {{ testCaseError }}
+            </p>
           </div>
         </div>
-
-        <p v-if="testCaseError" class="text-xs text-error mt-2">
-          {{ testCaseError }}
-        </p>
-      </div>
-
-      </div>
       </div>
     </div>
   </div>
@@ -148,6 +167,97 @@ const newZoneName = ref("");
 const undoCreateKey = ref(0);
 const isFrontierMode = ref(false);
 const isGeoBorderMode = ref(false);
+const geoBorderGroups = [
+  {
+    id: "CA",
+    label: "Canada",
+    borders: [
+      { id: "CA-NL", label: "Terre-Neuve-et-Labrador" },
+      { id: "CA-PE", label: "Île-du-Prince-Édouard" },
+      { id: "CA-NS", label: "Nouvelle-Écosse" },
+      { id: "CA-NB", label: "Nouveau-Brunswick" },
+      { id: "CA-QB", label: "Québec" },
+      { id: "CA-ON", label: "Ontario" },
+      { id: "CA-MB", label: "Manitoba" },
+      { id: "CA-SK", label: "Saskatchewan" },
+      { id: "CA-AB", label: "Alberta" },
+      { id: "CA-BC", label: "Colombie-Britannique" },
+      { id: "CA-YT", label: "Yukon" },
+      { id: "CA-NT", label: "Territoires du Nord-Ouest" },
+      { id: "CA-NU", label: "Nunavut" },
+    ],
+  },
+  {
+    id: "JP",
+    label: "Japon",
+    borders: [
+      { id: "JP-01", label: "Hokkaido" },
+      { id: "JP-02", label: "Aomori" },
+      { id: "JP-03", label: "Iwate" },
+      { id: "JP-04", label: "Miyagi" },
+      { id: "JP-05", label: "Akita" },
+      { id: "JP-06", label: "Yamagata" },
+      { id: "JP-07", label: "Fukushima" },
+      { id: "JP-08", label: "Ibaraki" },
+      { id: "JP-09", label: "Tochigi" },
+      { id: "JP-10", label: "Gunma" },
+      { id: "JP-11", label: "Saitama" },
+      { id: "JP-12", label: "Chiba" },
+      { id: "JP-13", label: "Tokyo" },
+      { id: "JP-14", label: "Kanagawa" },
+      { id: "JP-15", label: "Niigata" },
+      { id: "JP-16", label: "Toyama" },
+      { id: "JP-17", label: "Ishikawa" },
+      { id: "JP-18", label: "Fukui" },
+      { id: "JP-19", label: "Yamanashi" },
+      { id: "JP-20", label: "Nagano" },
+      { id: "JP-21", label: "Gifu" },
+      { id: "JP-22", label: "Shizuoka" },
+      { id: "JP-23", label: "Aichi" },
+      { id: "JP-24", label: "Mie" },
+      { id: "JP-25", label: "Shiga" },
+      { id: "JP-26", label: "Kyoto" },
+      { id: "JP-27", label: "Osaka" },
+      { id: "JP-28", label: "Hyogo" },
+      { id: "JP-29", label: "Nara" },
+      { id: "JP-30", label: "Wakayama" },
+      { id: "JP-31", label: "Tottori" },
+      { id: "JP-32", label: "Shimane" },
+      { id: "JP-33", label: "Okayama" },
+      { id: "JP-34", label: "Hiroshima" },
+      { id: "JP-35", label: "Yamaguchi" },
+      { id: "JP-36", label: "Tokushima" },
+      { id: "JP-37", label: "Kagawa" },
+      { id: "JP-38", label: "Ehime" },
+      { id: "JP-39", label: "Kochi" },
+      { id: "JP-40", label: "Fukuoka" },
+      { id: "JP-41", label: "Saga" },
+      { id: "JP-42", label: "Nagasaki" },
+      { id: "JP-43", label: "Kumamoto" },
+      { id: "JP-44", label: "Oita" },
+      { id: "JP-45", label: "Miyazaki" },
+      { id: "JP-46", label: "Kagoshima" },
+      { id: "JP-47", label: "Okinawa" },
+    ],
+  },
+  {
+    id: "ITA",
+    label: "Italie",
+    borders: [{ id: "ITA", label: "Italie" }],
+  },
+  {
+    id: "MNG",
+    label: "Mongolie",
+    borders: [{ id: "MNG", label: "Mongolie" }],
+  },
+  {
+    id: "NOR",
+    label: "Norvège",
+    borders: [{ id: "NOR", label: "Norvège" }],
+  },
+];
+const geoBorderOptions = geoBorderGroups.flatMap((group) => group.borders);
+const selectedGeoBorders = ref(geoBorderOptions.map((border) => border.id));
 const subGeometries = ref<any[]>([]);
 
 const testCases = ref<string[]>([]);
@@ -180,7 +290,11 @@ async function loadTestCases(currentMapId: string) {
 
 async function deleteTestCase(testCase: string) {
   if (!mapId.value) return;
-  if (!confirm(`Supprimer le test case "${testCase}" ? Les resultats et la configuration seront perdus.`))
+  if (
+    !confirm(
+      `Supprimer le test case "${testCase}" ? Les resultats et la configuration seront perdus.`,
+    )
+  )
     return;
 
   deletingTestCase.value = testCase;
@@ -202,7 +316,9 @@ async function deleteTestCase(testCase: string) {
   } catch (err) {
     console.error("Error deleting test case", err);
     testCaseError.value =
-      err instanceof Error ? err.message : "Erreur inattendue lors de la suppression";
+      err instanceof Error
+        ? err.message
+        : "Erreur inattendue lors de la suppression";
   } finally {
     deletingTestCase.value = null;
   }
@@ -227,7 +343,9 @@ async function loadTestZones(currentMapId: string) {
     }
 
     const data = await res.json();
-    const rawFeatures: any[] = Array.isArray(data.features) ? data.features : [];
+    const rawFeatures: any[] = Array.isArray(data.features)
+      ? data.features
+      : [];
 
     const withIds: Feature[] = rawFeatures.map((f, idx) => ({
       ...f,
@@ -337,6 +455,7 @@ function clearCreateDrawing() {
   resetCreateKey.value += 1;
   isFrontierMode.value = false;
   isGeoBorderMode.value = false;
+  selectedGeoBorders.value = geoBorderOptions.map((border) => border.id);
 }
 
 function startCreateMode() {
@@ -380,6 +499,39 @@ function toggleGeoBorderMode() {
   if (isGeoBorderMode.value) {
     isFrontierMode.value = false;
   }
+}
+
+function toggleGeoBorderSelection(borderId: string) {
+  if (selectedGeoBorders.value.includes(borderId)) {
+    selectedGeoBorders.value = selectedGeoBorders.value.filter(
+      (id) => id !== borderId,
+    );
+  } else {
+    selectedGeoBorders.value = [...selectedGeoBorders.value, borderId];
+  }
+}
+
+function toggleAllGeoBorders() {
+  selectedGeoBorders.value =
+    selectedGeoBorders.value.length === geoBorderOptions.length
+      ? []
+      : geoBorderOptions.map((border) => border.id);
+}
+
+function toggleGeoBorderGroup(borderIds: string[]) {
+  const allSelected = borderIds.every((id) =>
+    selectedGeoBorders.value.includes(id),
+  );
+  if (allSelected) {
+    selectedGeoBorders.value = selectedGeoBorders.value.filter(
+      (id) => !borderIds.includes(id),
+    );
+    return;
+  }
+
+  selectedGeoBorders.value = Array.from(
+    new Set([...selectedGeoBorders.value, ...borderIds]),
+  );
 }
 
 async function saveCreatedZone() {
