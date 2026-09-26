@@ -1,7 +1,7 @@
 {
   "testId": "c858266f-56d1-489c-8e40-20dc0906fcaf",
   "testCaseId": "italie",
-  "evaluatedAt": "2026-09-26T17:15:39.898390Z",
+  "evaluatedAt": "2026-09-26T20:45:44.949516Z",
   "expectedZonesFile": "georef_zones/c858266f-56d1-489c-8e40-20dc0906fcaf_zones.geojson",
   "thresholds": {
     "minIou": null,
