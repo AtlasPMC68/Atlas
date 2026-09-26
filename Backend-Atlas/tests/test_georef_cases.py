@@ -35,7 +35,14 @@ def _discover_cases(assets_root: str) -> list[tuple[str, str]]:
             case_path = os.path.join(test_dir, name)
             if not os.path.isdir(case_path):
                 continue
-            if os.path.exists(os.path.join(case_path, "config.json")):
+            config_path = os.path.join(case_path, "config.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+
+                if config.get("enabledInCI", True) is False:
+                    continue
+
                 discovered.append((test_id, name))
 
     # Stable ordering

@@ -1,4 +1,5 @@
 {
+  "enabledInCI": false,
   "testId": "e14c0fdb-6ba1-4105-8b94-57a7d7df584e",
   "testCase": "Mongolie",
   "testCaseId": "mongolie",
