@@ -1,0 +1,51 @@
+{
+  "testId": "c858266f-56d1-489c-8e40-20dc0906fcaf",
+  "testCaseId": "italie",
+  "evaluatedAt": "2026-09-26T17:15:39.898390Z",
+  "expectedZonesFile": "georef_zones/c858266f-56d1-489c-8e40-20dc0906fcaf_zones.geojson",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1790371366486",
+          "name": "Italie",
+          "area": 33.15427410896287
+        },
+        "bestMatch": {
+          "iou": 0.8850599692256986,
+          "intersectionArea": 29.946744995250484,
+          "unionArea": 33.83583715965554,
+          "precision": 0.977747283667434,
+          "recall": 0.9032544309921938,
+          "falseNegativeArea": 3.2075291137123045,
+          "falsePositiveArea": 0.6815630506927014,
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "Italie",
+            "area": 30.628308045943307
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.8850599692256986,
+      "meanPrecision": 0.977747283667434,
+      "meanRecall": 0.9032544309921938,
+      "totalFalseNegativeArea": 3.2075291137123045,
+      "totalFalsePositiveArea": 0.6815630506927014
+    },
+    "scoreUsed": 0.8850599692256986,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  }
+}

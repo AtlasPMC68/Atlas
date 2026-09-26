@@ -1,0 +1,50 @@
+{
+  "testId": "c858266f-56d1-489c-8e40-20dc0906fcaf",
+  "testCaseId": "talie",
+  "evaluatedAt": "2026-09-25T21:29:40.295471Z",
+  "expectedZonesFile": "georef_zones/c858266f-56d1-489c-8e40-20dc0906fcaf_zones.geojson",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1790371366486",
+          "name": "Italie",
+          "area": 33.15427410896287
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 33.15427410896287,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 33.15427410896287,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.0,
+      "meanPrecision": 0.0,
+      "meanRecall": 0.0,
+      "totalFalseNegativeArea": 33.15427410896287,
+      "totalFalsePositiveArea": 0.0
+    },
+    "scoreUsed": 0.0,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [
+      "Italie"
+    ],
+    "extractedNeverMatchedByName": [
+      "olivedrab"
+    ]
+  }
+}

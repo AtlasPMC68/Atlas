@@ -473,6 +473,8 @@ async function loadGeoBorders() {
     "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson",
     "/geojson/geoBoundaries-JPN-ADM1_simplified.geojson",
     "/geojson/geoBoundaries-ITA-ADM0_simplified.geojson",
+    "/geojson/geoBoundaries-MNG-ADM0_simplified.geojson",
+    "/geojson/geoBoundaries-NOR-ADM0_simplified.geojson",
   ];
 
   try {
@@ -500,7 +502,12 @@ async function loadGeoBorders() {
     const selectedIds = new Set(props.selectedGeoBorders);
     const visibleFeatures = (data.features || []).filter((feature) => {
       if (selectedIds.size === 0) return false;
-      return selectedIds.has(feature?.properties?.shapeISO);
+      const properties = feature?.properties;
+      // ADM0 datasets can identify the country only through shapeGroup.
+      const borderId =
+        properties?.shapeISO ||
+        (properties?.shapeType === "ADM0" ? properties.shapeGroup : undefined);
+      return selectedIds.has(borderId);
     });
 
     // Draw only the selected geopolitical regions as outlines

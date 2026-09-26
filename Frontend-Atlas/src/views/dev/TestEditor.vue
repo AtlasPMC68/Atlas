@@ -240,6 +240,21 @@ const geoBorderGroups = [
       { id: "JP-47", label: "Okinawa" },
     ],
   },
+  {
+    id: "ITA",
+    label: "Italie",
+    borders: [{ id: "ITA", label: "Italie" }],
+  },
+  {
+    id: "MNG",
+    label: "Mongolie",
+    borders: [{ id: "MNG", label: "Mongolie" }],
+  },
+  {
+    id: "NOR",
+    label: "Norvège",
+    borders: [{ id: "NOR", label: "Norvège" }],
+  },
 ];
 const geoBorderOptions = geoBorderGroups.flatMap((group) => group.borders);
 const selectedGeoBorders = ref(geoBorderOptions.map((border) => border.id));
