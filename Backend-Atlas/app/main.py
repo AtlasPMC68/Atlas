@@ -1,13 +1,29 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .routers import celery_router
-from .routers import auth
-from .routers import dev_test
-from .routers import projects
-from .routers import user
+from .routers import (
+    auth,
+    celery_router,
+    dev_test,
+    dictionary,
+    maps_ocr_retry,
+    projects,
+    user,
+)
 from .utils.dev_test_assets import GEOREF_ASSETS_DIR, ensure_georef_assets_dir
+
+
+# Silence repetitive status polling in uvicorn access logs
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "/status/" not in msg
+
+
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 app = FastAPI(
     title="Maps Processing API",
@@ -16,6 +32,8 @@ app = FastAPI(
 )
 app.include_router(celery_router.router)
 app.include_router(projects.router)
+app.include_router(maps_ocr_retry.router)
+app.include_router(dictionary.router)
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(dev_test.router)
