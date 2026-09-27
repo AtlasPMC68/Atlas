@@ -30,6 +30,7 @@ const logout = async () => {
     </div>
 
     <div
+      v-if="currentUser"
       class="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden"
     >
       <div class="p-6">

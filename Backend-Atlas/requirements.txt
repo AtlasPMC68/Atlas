@@ -33,3 +33,5 @@ pytest-xdist
 coloredlogs
 transformers
 
+rapidfuzz
+greenlet
