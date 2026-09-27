@@ -60,6 +60,12 @@ export interface FeatureProperties {
   rotationAngle?: number;
   show?: boolean;
   isOriginalMapImage?: boolean;
+  isLegendImage?: boolean;
+  isTitleImage?: boolean;
+  isScaleImage?: boolean;
+  isCompassImage?: boolean;
+  importConfig?: any;
+  pixelBounds?: { x: number; y: number; width: number; height: number };
   opacity?: number;
   startDate?: string;
   endDate?: string;

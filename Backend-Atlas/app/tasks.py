@@ -112,13 +112,45 @@ def process_map_extraction(
             "isCompassImage": {"bounds": compass_bounds, "title": "Boussole de la carte"},
         }
 
+        # Helper for computing geographic bounds from GCPs
+        def compute_geo_bounds(px_pts, geo_pts, x_pos, y_pos, w_val, h_val):
+            if not px_pts or not geo_pts or len(px_pts) < 3:
+                return None
+            try:
+                import numpy as np
+                src = np.array([(p["x"] if isinstance(p, dict) else p[0], p["y"] if isinstance(p, dict) else p[1]) for p in px_pts], dtype=float)
+                dst = np.array([(p["lng"] if isinstance(p, dict) else p[0], p["lat"] if isinstance(p, dict) else p[1]) for p in geo_pts], dtype=float)
+                
+                A = np.column_stack([src, np.ones(len(src))])
+                M, _, _, _ = np.linalg.lstsq(A, dst, rcond=None)
+                
+                corners = np.array([
+                    [x_pos, y_pos, 1],
+                    [x_pos + w_val, y_pos, 1],
+                    [x_pos, y_pos + h_val, 1],
+                    [x_pos + w_val, y_pos + h_val, 1]
+                ])
+                
+                geo_corners = corners @ M
+                lats = geo_corners[:, 1]
+                lons = geo_corners[:, 0]
+                
+                return [[float(lats.min()), float(lons.min())], [float(lats.max()), float(lons.max())]]
+            except Exception as err:
+                logger.error(f"Error computing geo bounds for box: {err}")
+                return None
+
         # Save original map image for OCR retry capability
         try:
+            img_h, img_w = image.shape[:2]
+            orig_geo_bounds = compute_geo_bounds(pixel_points, geo_points_lonlat, 0, 0, img_w, img_h)
+            
             original_map_config = {
                 "type": "Feature",
                 "properties": {
                     "isOriginalMapImage": True,
                     "title": "Original Map Image",
+                    "bounds": orig_geo_bounds,
                     "importConfig": {
                         "legend_bounds": legend_bounds,
                         "title_bounds": title_bounds,
@@ -152,9 +184,15 @@ def process_map_extraction(
                         crop = image[y : y + h, x : x + w]
                         success, encoded_crop = cv2.imencode(".png", crop)
                         if success:
+                            crop_geo_bounds = compute_geo_bounds(pixel_points, geo_points_lonlat, x, y, w, h)
                             feature_data = {
                                 "type": "Feature",
-                                "properties": {feature_key: True, "title": info["title"]},
+                                "properties": {
+                                    feature_key: True,
+                                    "title": info["title"],
+                                    "bounds": crop_geo_bounds,
+                                    "pixelBounds": {"x": x, "y": y, "width": w, "height": h},
+                                },
                                 "geometry": None,
                             }
                             asyncio.run(

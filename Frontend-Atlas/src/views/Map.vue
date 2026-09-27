@@ -10,6 +10,7 @@
           :features="features"
           :feature-visibility="featureVisibility"
           :is-retrying-ocr="isRetryingOcr"
+          :show-original-map="showOriginalMap"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -17,6 +18,7 @@
           @add-map="openAddMapDialog"
           @update-feature="onUpdateFeature"
           @retry-ocr="onRetryOcr"
+          @toggle-original-map="onToggleOriginalMap"
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
@@ -42,6 +44,8 @@
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
+              :legend-feature="legendFeature"
+              @toggle-legend-visibility="onToggleLegendVisibility"
             />
           </div>
         </div>
@@ -156,6 +160,7 @@ const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
 const isRetryingOcr = ref(false);
+const showOriginalMap = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
@@ -165,6 +170,35 @@ const mapPeriods = ref<MapPeriod[]>([]);
 const zoneFeatures = computed(() =>
   filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
 );
+
+const originalMapFeature = computed(() =>
+  features.value.find((f) => f.properties?.isOriginalMapImage === true),
+);
+
+const legendFeature = computed(() =>
+  features.value.find((f) => f.properties?.isLegendImage === true),
+);
+
+function onToggleOriginalMap() {
+  showOriginalMap.value = !showOriginalMap.value;
+  if (originalMapFeature.value?.id != null) {
+    const idStr = String(originalMapFeature.value.id);
+    const nextMap = new Map(featureVisibility.value);
+    nextMap.set(idStr, showOriginalMap.value);
+    featureVisibility.value = nextMap;
+  } else {
+    showAlert("info", "Aucune carte originale associée trouvée.");
+  }
+}
+
+function onToggleLegendVisibility(visible: boolean) {
+  if (legendFeature.value?.id != null) {
+    const idStr = String(legendFeature.value.id);
+    const nextMap = new Map(featureVisibility.value);
+    nextMap.set(idStr, visible);
+    featureVisibility.value = nextMap;
+  }
+}
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
@@ -592,9 +626,11 @@ function reconcileVisibility(list: Feature[]) {
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
+      const isOriginal = f.properties?.isOriginalMapImage === true;
       const isHiddenByDefault =
         f.properties?.mapElementType === "rejet" ||
-        f.properties?.show === false;
+        f.properties?.show === false ||
+        (isOriginal && !showOriginalMap.value);
       next.set(id, !isHiddenByDefault);
     }
   }

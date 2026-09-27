@@ -28,6 +28,8 @@ import { useMapDrawing } from "../composables/useMapDrawing";
 import { useAddCityMode } from "../composables/useAddCityMode";
 import { useImageOverlay } from "../composables/useImageOverlay";
 import { colorRgbToCss, getMapElementType, upsertFeature } from "../utils/featureHelpers";
+import { createMaskedMapImage } from "../utils/imageMasking";
+import { computeGeoBoundsFromBox } from "../utils/georefUtils";
 import {
   extractFeatureFromLayer,
   syncFeaturesFromLayerMap,
@@ -657,23 +659,56 @@ function renderShapes(features: Feature[]) {
 function renderImages(features: Feature[]) {
   const safeFeatures = toArray(features);
 
-  safeFeatures.forEach((feature) => {
+  safeFeatures.forEach(async (feature) => {
     if (!map || !feature.image) return;
 
-    const bounds = feature.properties?.bounds as [[number, number], [number, number]] | undefined;
+    let bounds = feature.properties?.bounds as [[number, number], [number, number]] | undefined;
+
+    // Fallback: If bounds is missing, compute bounds dynamically from GCPs if available
+    if (!bounds && feature.properties?.importConfig) {
+      const config = feature.properties.importConfig;
+      if (config.pixel_points && config.geo_points_lonlat) {
+        const pxPts = config.pixel_points.map((p: any) =>
+          Array.isArray(p) ? { x: p[0], y: p[1] } : p,
+        );
+        const geoPts = config.geo_points_lonlat.map((p: any) =>
+          Array.isArray(p)
+            ? { lng: p[0], lat: p[1] }
+            : { lng: p.lng ?? p.lon, lat: p.lat },
+        );
+        let pixelBox = feature.properties?.pixelBounds;
+        if (!pixelBox && feature.properties?.isOriginalMapImage) {
+          const img = new Image();
+          img.src = toImageSrc(feature.image);
+          await new Promise((r) => (img.onload = r));
+          pixelBox = { x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight };
+        }
+        if (pixelBox) {
+          bounds = computeGeoBoundsFromBox(pixelBox, pxPts, geoPts) || undefined;
+        }
+      }
+    }
 
     if (!bounds) return;
 
-    const src = toImageSrc(feature.image);
+    let src = toImageSrc(feature.image);
+    const isOriginal = feature.properties?.isOriginalMapImage === true;
+
+    if (isOriginal && feature.properties?.importConfig) {
+      src = await createMaskedMapImage(src, feature.properties.importConfig);
+    }
+
+    const defaultOpacity = isOriginal ? 0.45 : (feature.properties?.fillOpacity ?? 1);
+
     const overlay = L.imageOverlay(src, bounds, {
-      opacity: feature.properties.fillOpacity ?? 1,
-      interactive: true,
-      pane: 'imagePane',
+      opacity: defaultOpacity,
+      interactive: !isOriginal,
+      pane: "imagePane",
     });
 
     attachFeatureToLayer(overlay, feature);
     featureLayerManager.addFeatureLayer(feature.id, overlay);
-    overlay.getElement()?.setAttribute('draggable', 'false');
+    overlay.getElement()?.setAttribute("draggable", "false");
   });
 }
 

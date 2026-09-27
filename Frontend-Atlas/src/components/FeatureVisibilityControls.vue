@@ -127,7 +127,21 @@
               class="w-4 h-4"
               :class="{ 'animate-spin': isRetryingOcr }"
             />
-            <span>Recommencer l'OCR</span>
+          </button>
+        </div>
+        <div class="flex gap-2 items-center">
+          <button
+            class="btn btn-sm flex-1 font-bold gap-2 transition-all"
+            :class="
+              showOriginalMap
+                ? 'btn-accent text-white shadow-sm'
+                : 'btn-outline btn-accent'
+            "
+            @click="emit('toggle-original-map')"
+            title="Afficher/Masquer la carte originale superposée (sans la légende, titre, boussole et échelle)"
+          >
+            <MapIcon class="w-4 h-4" />
+            <span>Carte originale</span>
           </button>
         </div>
         <div class="flex gap-2 items-center">
@@ -343,7 +357,20 @@ const props = defineProps<{
   featureVisibility: Map<string, boolean>;
   isDevTestCreation?: boolean;
   isRetryingOcr?: boolean;
+  showOriginalMap?: boolean;
 }>();
+
+const emit = defineEmits([
+  "toggle-feature",
+  "open-add-image-feature-dialog",
+  "save-map",
+  "delete-feature",
+  "add-map",
+  "update-feature",
+  "retry-ocr",
+  "toggle-original-map",
+]);
+
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
 const featureToEditName = ref<string>("");
@@ -371,18 +398,7 @@ function isTextOrPointFeature(f?: Feature): boolean {
 }
 
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
-
 const isEditing = ref(false);
-
-const emit = defineEmits([
-  "toggle-feature",
-  "open-add-image-feature-dialog",
-  "save-map",
-  "delete-feature",
-  "add-map",
-  "update-feature",
-  "retry-ocr",
-]);
 
 const groupIcons: Record<string, Component> = {
   point: MapPinIcon,
@@ -414,19 +430,18 @@ const mainFeatureGroups = computed(() => {
     } else if (featureType === "image") {
       groups[3].features.push(feature);
     } else {
-      // Tous les textes (label, rejet, hydrologie, region, forts, etc.) vont dans Texte(s)
       groups[4].features.push(feature);
     }
   });
 
-  return groups.filter((g) => g.type !== "image" || g.features.length > 0);
+  return groups.filter((g: FeatureVisibilityGroup) => g.type !== "image" || g.features.length > 0);
 });
 
 const activeGroup = computed(() => {
   if (!activeGroupType.value) return mainFeatureGroups.value[0] ?? undefined;
 
   return (
-    mainFeatureGroups.value.find((group) => group.type === activeGroupType.value) ??
+    mainFeatureGroups.value.find((group: FeatureVisibilityGroup) => group.type === activeGroupType.value) ??
     mainFeatureGroups.value[0] ??
     undefined
   );
@@ -435,11 +450,11 @@ const activeGroup = computed(() => {
 const selectedTextCategory = ref<string>("all");
 
 const textSubCategories = computed(() => {
-  const textGroup = mainFeatureGroups.value.find((g) => g.type === "other");
+  const textGroup = mainFeatureGroups.value.find((g: FeatureVisibilityGroup) => g.type === "other");
   if (!textGroup) return [];
 
   const counts = new Map<string, number>();
-  textGroup.features.forEach((f) => {
+  textGroup.features.forEach((f: Feature) => {
     const cat = f.properties?.mapElementType || "other";
     counts.set(cat, (counts.get(cat) || 0) + 1);
   });
@@ -457,7 +472,7 @@ const displayedFeatures = computed(() => {
   if (!activeGroup.value) return [];
   if (activeGroup.value.type !== "other") return activeGroup.value.features;
   if (selectedTextCategory.value === "all") return activeGroup.value.features;
-  return activeGroup.value.features.filter((f) => {
+  return activeGroup.value.features.filter((f: Feature) => {
     const cat = f.properties?.mapElementType || "other";
     return cat === selectedTextCategory.value;
   });
@@ -465,14 +480,14 @@ const displayedFeatures = computed(() => {
 
 watch(
   mainFeatureGroups,
-  (groups) => {
+  (groups: FeatureVisibilityGroup[]) => {
     if (groups.length === 0) {
       activeGroupType.value = undefined;
       return;
     }
 
     const hasActiveGroup = groups.some(
-      (group) => group.type === activeGroupType.value,
+      (group: FeatureVisibilityGroup) => group.type === activeGroupType.value,
     );
 
     if (!hasActiveGroup) {
@@ -506,7 +521,6 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
-
   try {
     if (rememberRule.value && featureToEditRawText.value) {
       await apiFetch("/dictionary/override", {
@@ -535,7 +549,10 @@ async function onEditFeature() {
         name: featureToEditName.value,
         labelText: featureToEditLabelText.value || featureToEditName.value,
         mapElementType: featureToEditCategory.value,
-        show: featureToEditCategory.value === "rejet" ? (featureToEdit.value.properties.show ?? false) : true,
+        show:
+          featureToEditCategory.value === "rejet"
+            ? (featureToEdit.value.properties.show ?? false)
+            : true,
         colorRgb: hexToRgb(featureToEditColor.value),
         strokeColor: hexToRgb(featureToEditStrokeColor.value),
         fillOpacity: featureToEditOpacity.value,
@@ -563,7 +580,7 @@ async function onEditFeature() {
 }
 
 function toggleAll(visible: boolean) {
-  props.features.forEach((feature) => {
+  props.features.forEach((feature: Feature) => {
     emit("toggle-feature", feature.id, visible);
   });
 }
