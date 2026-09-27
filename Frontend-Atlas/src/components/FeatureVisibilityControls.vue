@@ -216,10 +216,20 @@
             v-model="featureToEditCategory"
             class="select select-bordered select-sm w-full text-xs"
           >
-            <option value="region">Région / Territoire</option>
-            <option value="point">Ville (Point)</option>
-            <option value="hydrologie_relief_exhaustif">Hydrologie / Relief</option>
-            <option value="label">Texte général</option>
+            <option value="ville">Ville</option>
+            <option value="pays">Pays</option>
+            <option value="continent">Continent</option>
+            <option value="province">Province / Région</option>
+            <option value="lac">Lac</option>
+            <option value="riviere">Rivière / Fleuve</option>
+            <option value="ocean_mer">Océan / Mer</option>
+            <option value="baie_golfe">Baie / Golfe</option>
+            <option value="ile">Île</option>
+            <option value="fort">Fort</option>
+            <option value="peuple">Peuple</option>
+            <option value="direction">Direction</option>
+            <option value="relief">Relief</option>
+            <option value="autre">Autre texte général</option>
             <option value="rejet">Rejet</option>
             <option value="ignored">🚫 Ignorer définitivement</option>
           </select>
@@ -386,15 +396,7 @@ const featureToEditStrokeWidth = ref<number | undefined>(undefined);
 
 function isTextOrPointFeature(f?: Feature): boolean {
   if (!f) return false;
-  const type = f.properties?.mapElementType;
-  return (
-    f.geometry?.type === "Point" ||
-    type === "label" ||
-    type === "rejet" ||
-    type === "region" ||
-    type === "point" ||
-    (typeof type === "string" && type.startsWith("hydrologie"))
-  );
+  return f.geometry?.type === "Point";
 }
 
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
@@ -410,7 +412,6 @@ const groupIcons: Record<string, Component> = {
 
 const mainFeatureGroups = computed(() => {
   const groups: FeatureVisibilityGroup[] = [
-    { type: "point", label: "Ville(s)", features: [] as Feature[] },
     { type: "zone", label: "Zone(s)", features: [] as Feature[] },
     { type: "shape", label: "Forme(s)", features: [] as Feature[] },
     { type: "image", label: "Image(s)", features: [] as Feature[] },
@@ -421,16 +422,14 @@ const mainFeatureGroups = computed(() => {
     const featureType = getMapElementType(feature);
     if (!featureType) return;
 
-    if (featureType === "point") {
+    if (featureType === "zone") {
       groups[0].features.push(feature);
-    } else if (featureType === "zone") {
-      groups[1].features.push(feature);
     } else if (featureType === "shape") {
-      groups[2].features.push(feature);
+      groups[1].features.push(feature);
     } else if (featureType === "image") {
-      groups[3].features.push(feature);
+      groups[2].features.push(feature);
     } else {
-      groups[4].features.push(feature);
+      groups[3].features.push(feature);
     }
   });
 

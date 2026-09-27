@@ -432,17 +432,9 @@ def _build_extracted_text_from_detections(
                 is_duplicate = True
                 break
 
-            # Condition 2: Même texte et centres proches (distance < 2x la hauteur de la boîte)
-            # Utile pour les doublons générés par les rotations de l'image
+            # Condition 2: Même texte. On élimine tout mot dupliqué, peu importe sa position.
+            # "afin quil y ai pas de répétition possible des mots."
             if c_text and c_text == k_text:
-                dist = math.hypot(c_center_x - k_center_x, c_center_y - k_center_y)
-                max_allowed_dist = max(current["boxHeight"], kept["boxHeight"]) * 3
-                if dist < max_allowed_dist:
-                    is_duplicate = True
-                    break
-
-            # Condition 3: Pour les REJETS, éliminer TOUT mot dupliqué (même s'ils sont à des endroits différents)
-            if current.get("mapElementType") == "rejet" and c_text and c_text == k_text:
                 is_duplicate = True
                 break
 

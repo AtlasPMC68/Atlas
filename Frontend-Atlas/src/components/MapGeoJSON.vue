@@ -441,7 +441,7 @@ function renderCities(features: Feature[]) {
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: `<div style="font-size: ${fontSize}px; ${rotationStyle}">${nameText}</div>`,
+        html: `<div style="white-space: pre-wrap; text-align: center; font-size: ${fontSize}px; ${rotationStyle}">${nameText}</div>`,
         iconSize: [100, 20],
         iconAnchor: [-8, 15],
       }),
@@ -505,7 +505,7 @@ function renderLabels(features: Feature[]) {
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text geoman-text-label",
-        html: `<div style="display: inline-block; white-space: nowrap; transform: translate(-50%, -50%) rotate(${rotationAngle}deg); transform-origin: center center; font-size: ${fontSize}px;">${labelText}</div>`,
+        html: `<div style="display: inline-block; white-space: pre-wrap; text-align: center; transform: translate(-50%, -50%) rotate(${rotationAngle}deg); transform-origin: center center; font-size: ${fontSize}px;">${labelText}</div>`,
         iconSize: [0, 0],
         iconAnchor: [0, 0],
       }),
