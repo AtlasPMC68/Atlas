@@ -11,7 +11,7 @@ from app.celery_app import celery_app
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
-from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS
+from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_TEST_BOUNDS
 
 logger = logging.getLogger(__name__)
 
@@ -244,14 +244,24 @@ def test_text_extraction(
 
     with open(image_path, "rb") as input_file:
         file_content = input_file.read()
+
+    bounds = MAP_TEST_BOUNDS.get(image_path.stem, {})
     extracted_text, _ = extract_text(
         map_id=uuid4(),
         filename=image_path.name,
         file_content=file_content,
         celery_app=celery_app,
+        legend_bounds=bounds.get("legend_bounds"),
+        title_bounds=bounds.get("title_bounds"),
+        scale_bounds=bounds.get("scale_bounds"),
+        compass_bounds=bounds.get("compass_bounds"),
     )
 
-    unpaired_ocr_words: list[str] = [str(block.get("text", "")) for block in extracted_text]
+    unpaired_ocr_words: list[str] = []
+    for block in extracted_text:
+        text = str(block.get("text", ""))
+        unpaired_ocr_words.extend(text.split("\n"))
+
     unpaired_expected_words: list[str] = deepcopy(expected_text)
 
     results = check_for_match(

@@ -194,18 +194,60 @@
       :is-open="showProcessingModal"
       :current-step="processingStep"
       :progress="processingProgress"
+      :message="processingMessage"
       @cancel="cancelImport"
     />
 
     <!-- Legend area selection modal -->
-    <LegendAreaPickerModal
+    <AreaPickerModal
       v-if="showLegendPickerModal && previewUrl"
       :is-open="showLegendPickerModal"
       :image-url="previewUrl"
       :initial-bounds="legendBounds"
+      title="Délimiter la légende"
+      description="Tracez un rectangle pour indiquer la légende."
       @close="handleLegendClose"
       @skip="handleLegendSkip"
       @confirmed="handleLegendConfirmed"
+    />
+
+    <!-- Title area selection modal -->
+    <AreaPickerModal
+      v-if="showTitlePickerModal && previewUrl"
+      :is-open="showTitlePickerModal"
+      :image-url="previewUrl"
+      :initial-bounds="titleBounds"
+      title="Délimiter le titre"
+      description="Tracez un rectangle pour indiquer le titre."
+      @close="handleTitleClose"
+      @skip="handleTitleSkip"
+      @confirmed="handleTitleConfirmed"
+    />
+
+    <!-- Scale area selection modal -->
+    <AreaPickerModal
+      v-if="showScalePickerModal && previewUrl"
+      :is-open="showScalePickerModal"
+      :image-url="previewUrl"
+      :initial-bounds="scaleBounds"
+      title="Délimiter l'échelle"
+      description="Tracez un rectangle pour indiquer l'échelle."
+      @close="handleScaleClose"
+      @skip="handleScaleSkip"
+      @confirmed="handleScaleConfirmed"
+    />
+
+    <!-- Compass area selection modal -->
+    <AreaPickerModal
+      v-if="showCompassPickerModal && previewUrl"
+      :is-open="showCompassPickerModal"
+      :image-url="previewUrl"
+      :initial-bounds="compassBounds"
+      title="Délimiter la boussole/rose des vents"
+      description="Tracez un rectangle pour indiquer la boussole."
+      @close="handleCompassClose"
+      @skip="handleCompassSkip"
+      @confirmed="handleCompassConfirmed"
     />
 
     <!-- Color picker modal -->
@@ -246,7 +288,7 @@ import ImportControls from "../../components/import/ImportControls.vue";
 import ProcessingModal from "../../components/import/ProcessingModal.vue";
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
-import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal.vue";
+import AreaPickerModal from "../../components/import/AreaPickerModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 
 const router = useRouter();
@@ -282,6 +324,7 @@ const {
   isProcessing,
   processingStep,
   processingProgress,
+  processingMessage,
   showProcessingModal,
   cancelImport,
   resultData,
@@ -302,14 +345,23 @@ const currentStep = ref<number>(1);
 const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
 const showLegendPickerModal = ref<boolean>(false);
+const showTitlePickerModal = ref<boolean>(false);
+const showScalePickerModal = ref<boolean>(false);
+const showCompassPickerModal = ref<boolean>(false);
 const showColorPickerModal = ref<boolean>(false);
-const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
+const worldAreaBounds = ref<WorldBounds | null>(null);
 const worldAreaZoom = ref<number | null>(null);
-const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
+const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null);
 const legendBounds = ref<LegendBounds | null>(null);
+const titleBounds = ref<LegendBounds | null>(null);
+const scaleBounds = ref<LegendBounds | null>(null);
+const compassBounds = ref<LegendBounds | null>(null);
 type ImposedColor = { x: number; y: number; name: string; radius: number };
 const pickedColors = ref<ImposedColor[]>([]);
 const pendingLegendBounds = ref<LegendBounds | null>(null);
+const pendingTitleBounds = ref<LegendBounds | null>(null);
+const pendingScaleBounds = ref<LegendBounds | null>(null);
+const pendingCompassBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const legendReturnStep = ref<number>(2);
 const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
@@ -450,7 +502,7 @@ async function handleGeorefConfirmed(payload: GeorefPayload) {
   showLegendPickerModal.value = true;
 }
 
-async function submitImportWithGeoref(legend: LegendBounds | null) {
+async function submitImportWithGeoref() {
   if (!selectedFile.value) return;
 
   const payload = pendingGeorefPayload.value;
@@ -475,6 +527,10 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       imagePoints,
       worldPoints,
       pickedColors.value.length > 0 ? pickedColors.value : undefined,
+      pendingLegendBounds.value,
+      pendingTitleBounds.value,
+      pendingScaleBounds.value,
+      pendingCompassBounds.value,
     );
     if (result.success) {
       currentStep.value = 6;
@@ -485,6 +541,9 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
     pendingGeorefPayload.value = null;
     pickedColors.value = [];
     pendingLegendBounds.value = null;
+    pendingTitleBounds.value = null;
+    pendingScaleBounds.value = null;
+    pendingCompassBounds.value = null;
     return;
   }
 
@@ -510,7 +569,10 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       enableTextExtraction: enableTextExtraction.value,
       imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
     },
-    legend,
+    pendingLegendBounds.value,
+    pendingTitleBounds.value,
+    pendingScaleBounds.value,
+    pendingCompassBounds.value,
   );
   if (result.success) {
     currentStep.value = 7;
@@ -522,6 +584,9 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
   pendingGeorefPayload.value = null;
   pickedColors.value = [];
   pendingLegendBounds.value = null;
+  pendingTitleBounds.value = null;
+  pendingScaleBounds.value = null;
+  pendingCompassBounds.value = null;
 }
 
 function handleLegendClose() {
@@ -531,7 +596,6 @@ function handleLegendClose() {
     currentStep.value = 4;
     return;
   }
-
   currentStep.value = 2;
 }
 
@@ -539,22 +603,89 @@ async function handleLegendSkip() {
   showLegendPickerModal.value = false;
   legendBounds.value = null;
   pendingLegendBounds.value = null;
-  if (enableColorExtraction.value) {
-    currentStep.value = 6;
-    showColorPickerModal.value = true;
-    return;
-  }
-  await submitImportWithGeoref(null);
+  showTitlePickerModal.value = true;
 }
 
 async function handleLegendConfirmed(bounds: LegendBounds) {
   showLegendPickerModal.value = false;
   legendBounds.value = bounds;
-  // If the user provided a legend area, we use that as the imposed source and
-  // skip the color picker step.
-  pickedColors.value = [];
   pendingLegendBounds.value = bounds;
-  await submitImportWithGeoref(bounds);
+  showTitlePickerModal.value = true;
+}
+
+function handleTitleClose() {
+  showTitlePickerModal.value = false;
+  showLegendPickerModal.value = true;
+}
+
+async function handleTitleSkip() {
+  showTitlePickerModal.value = false;
+  titleBounds.value = null;
+  pendingTitleBounds.value = null;
+  showScalePickerModal.value = true;
+}
+
+async function handleTitleConfirmed(bounds: LegendBounds) {
+  showTitlePickerModal.value = false;
+  titleBounds.value = bounds;
+  pendingTitleBounds.value = bounds;
+  showScalePickerModal.value = true;
+}
+
+function handleScaleClose() {
+  showScalePickerModal.value = false;
+  showTitlePickerModal.value = true;
+}
+
+async function handleScaleSkip() {
+  showScalePickerModal.value = false;
+  scaleBounds.value = null;
+  pendingScaleBounds.value = null;
+  showCompassPickerModal.value = true;
+}
+
+async function handleScaleConfirmed(bounds: LegendBounds) {
+  showScalePickerModal.value = false;
+  scaleBounds.value = bounds;
+  pendingScaleBounds.value = bounds;
+  showCompassPickerModal.value = true;
+}
+
+function handleCompassClose() {
+  showCompassPickerModal.value = false;
+  showScalePickerModal.value = true;
+}
+
+async function handleCompassSkip() {
+  showCompassPickerModal.value = false;
+  compassBounds.value = null;
+  pendingCompassBounds.value = null;
+  
+  if (pendingLegendBounds.value) {
+    pickedColors.value = [];
+    await submitImportWithGeoref();
+  } else if (enableColorExtraction.value) {
+    currentStep.value = 6;
+    showColorPickerModal.value = true;
+  } else {
+    await submitImportWithGeoref();
+  }
+}
+
+async function handleCompassConfirmed(bounds: LegendBounds) {
+  showCompassPickerModal.value = false;
+  compassBounds.value = bounds;
+  pendingCompassBounds.value = bounds;
+  
+  if (pendingLegendBounds.value) {
+    pickedColors.value = [];
+    await submitImportWithGeoref();
+  } else if (enableColorExtraction.value) {
+    currentStep.value = 6;
+    showColorPickerModal.value = true;
+  } else {
+    await submitImportWithGeoref();
+  }
 }
 
 async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
@@ -591,7 +722,7 @@ async function handleColorPickerConfirmed(
 ) {
   showColorPickerModal.value = false;
   pickedColors.value = colors;
-  await submitImportWithGeoref(pendingLegendBounds.value);
+  await submitImportWithGeoref();
 }
 
 // Redirect when extraction is finished

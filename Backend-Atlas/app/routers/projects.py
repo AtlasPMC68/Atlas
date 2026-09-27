@@ -231,6 +231,9 @@ async def upload_and_process_map(
     image_points: str | None = Form(None),
     world_points: str | None = Form(None),
     legend_bounds: str | None = Form(None),
+    title_bounds: str | None = Form(None),
+    scale_bounds: str | None = Form(None),
+    compass_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
     enable_georeferencing: bool = Form(True),
     enable_color_extraction: bool = Form(True),
@@ -273,11 +276,34 @@ async def upload_and_process_map(
 
     pixel_points_list = None
     geo_points_list = None
-    legend_bounds_dict = None
 
-    # When called directly in tests, FastAPI parameter defaults can arrive as Form objects.
-    if isinstance(legend_bounds, FormParam):
-        legend_bounds = None
+    def parse_bounds(bounds_str: str | None, name: str) -> dict | None:
+        if isinstance(bounds_str, FormParam) or not bounds_str:
+            return None
+        try:
+            parsed = json.loads(bounds_str)
+            required_keys = {"x", "y", "width", "height"}
+            if not isinstance(parsed, dict) or not required_keys.issubset(parsed.keys()):
+                raise ValueError(f"{name} must be a JSON object with x, y, width, height")
+            bounds_dict = {
+                "x": float(parsed["x"]),
+                "y": float(parsed["y"]),
+                "width": float(parsed["width"]),
+                "height": float(parsed["height"]),
+            }
+            if not all(math.isfinite(value) for value in bounds_dict.values()):
+                raise ValueError(f"{name} values must be finite numbers")
+            if bounds_dict["width"] <= 0 or bounds_dict["height"] <= 0:
+                raise ValueError(f"{name} width and height must be > 0")
+            return bounds_dict
+        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid {name} payload: {e}")
+
+    legend_bounds_dict = parse_bounds(legend_bounds, "legend_bounds")
+    title_bounds_dict = parse_bounds(title_bounds, "title_bounds")
+    scale_bounds_dict = parse_bounds(scale_bounds, "scale_bounds")
+    compass_bounds_dict = parse_bounds(compass_bounds, "compass_bounds")
+
     if isinstance(imposed_colors, FormParam):
         imposed_colors = None
 
@@ -302,36 +328,6 @@ async def upload_and_process_map(
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid georeferencing payload: {e}",
-            )
-
-    # Parse optional legend rectangle (pixel-space bounds)
-    if legend_bounds:
-        try:
-            parsed = json.loads(legend_bounds)
-            required_keys = {"x", "y", "width", "height"}
-            if not isinstance(parsed, dict) or not required_keys.issubset(
-                parsed.keys()
-            ):
-                raise ValueError(
-                    "legend_bounds must be a JSON object with x, y, width, height"
-                )
-
-            legend_bounds_dict = {
-                "x": float(parsed["x"]),
-                "y": float(parsed["y"]),
-                "width": float(parsed["width"]),
-                "height": float(parsed["height"]),
-            }
-
-            if not all(math.isfinite(value) for value in legend_bounds_dict.values()):
-                raise ValueError("legend_bounds values must be finite numbers")
-
-            if legend_bounds_dict["width"] <= 0 or legend_bounds_dict["height"] <= 0:
-                raise ValueError("legend_bounds width and height must be > 0")
-        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid legend bounds payload: {e}",
             )
 
     # Parse optional user-picked click positions as [{"x": 0.5, "y": 0.3, "name": "..."}, ...]
@@ -370,6 +366,9 @@ async def upload_and_process_map(
             "enable_shapes_extraction": enable_shapes_extraction,
             "enable_text_extraction": enable_text_extraction,
             "legend_bounds": legend_bounds_dict,
+            "title_bounds": title_bounds_dict,
+            "scale_bounds": scale_bounds_dict,
+            "compass_bounds": compass_bounds_dict,
             "imposed_click_positions": imposed_click_positions,
             "imposed_colors_names": imposed_colors_names,
             "imposed_sampling_radii": imposed_sampling_radii,

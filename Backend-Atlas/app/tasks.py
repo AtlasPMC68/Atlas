@@ -1,6 +1,5 @@
 import asyncio
 import json
-import json
 import logging
 import os
 import tempfile
@@ -15,11 +14,11 @@ from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
 from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
+from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text, geolocate_cities_and_leftover_text
-from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 
 from .celery_app import celery_app
 
@@ -62,6 +61,9 @@ def process_map_extraction(
     pixel_points: list | None = None,
     geo_points_lonlat: list | None = None,
     legend_bounds: dict | None = None,
+    title_bounds: dict | None = None,
+    scale_bounds: dict | None = None,
+    compass_bounds: dict | None = None,
     enable_color_extraction: bool = True,
     enable_shapes_extraction: bool = False,
     enable_text_extraction: bool = False,
@@ -78,7 +80,9 @@ def process_map_extraction(
         )
         time.sleep(2)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=os.path.splitext(filename)[1]
+        ) as tmp_file:
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
 
@@ -93,10 +97,79 @@ def process_map_extraction(
         )
 
         image = cv2.imread(tmp_file_path)
-        image.flags.writeable = False  # Makes image immutable
+        if image is None:
+            raise ValueError(f"Failed to decode image from {tmp_file_path}")
+        image.flags.writeable = False  # type: ignore # Makes image immutable
         if not validate_file_extension(tmp_file_path):
             ext = os.path.splitext(tmp_file_path)[1].lower()
             raise ValueError(f"Extension {ext} is not allowed.")
+
+        # --- Step 2b: Save the feature bounds (legend, title, scale, compass) ---
+        bounds_to_process = {
+            "isLegendImage": {"bounds": legend_bounds, "title": "Légende de la carte"},
+            "isTitleImage": {"bounds": title_bounds, "title": "Titre de la carte"},
+            "isScaleImage": {"bounds": scale_bounds, "title": "Échelle de la carte"},
+            "isCompassImage": {"bounds": compass_bounds, "title": "Boussole de la carte"},
+        }
+
+        # Save original map image for OCR retry capability
+        try:
+            original_map_config = {
+                "type": "Feature",
+                "properties": {
+                    "isOriginalMapImage": True,
+                    "title": "Original Map Image",
+                    "importConfig": {
+                        "legend_bounds": legend_bounds,
+                        "title_bounds": title_bounds,
+                        "scale_bounds": scale_bounds,
+                        "compass_bounds": compass_bounds,
+                        "pixel_points": pixel_points,
+                        "geo_points_lonlat": geo_points_lonlat,
+                    },
+                },
+                "geometry": None,
+            }
+            asyncio.run(
+                persist_legend_feature(
+                    project_id=project_id,
+                    map_id=map_id,
+                    feature=original_map_config,
+                    image_bytes=file_content,
+                )
+            )
+            logger.info("Original map image successfully saved for future OCR retries.")
+        except Exception as e:
+            logger.error(f"Error persisting original map image: {e}")
+
+        for feature_key, info in bounds_to_process.items():
+            b = info["bounds"]
+            if b:
+                try:
+                    x, y = int(b.get("x", 0)), int(b.get("y", 0))
+                    w, h = int(b.get("width", 0)), int(b.get("height", 0))
+                    if w > 0 and h > 0:
+                        crop = image[y : y + h, x : x + w]
+                        success, encoded_crop = cv2.imencode(".png", crop)
+                        if success:
+                            feature_data = {
+                                "type": "Feature",
+                                "properties": {feature_key: True, "title": info["title"]},
+                                "geometry": None,
+                            }
+                            asyncio.run(
+                                persist_legend_feature(
+                                    project_id=project_id,
+                                    map_id=map_id,
+                                    feature=feature_data,
+                                    image_bytes=encoded_crop.tobytes(),
+                                )
+                            )
+                            logger.info(
+                                f"{info['title']} successfully cropped and saved as a feature."
+                            )
+                except Exception as e:
+                    logger.error(f"Error extracting and persisting {info['title']}: {e}")
 
         # Step 3: Extraction OCR
         self.update_state(
@@ -114,6 +187,10 @@ def process_map_extraction(
                 filename=filename,
                 file_content=file_content,
                 celery_app=celery_app,
+                legend_bounds=legend_bounds,
+                title_bounds=title_bounds,
+                scale_bounds=scale_bounds,
+                compass_bounds=compass_bounds,
             )
 
             try:
@@ -157,7 +234,9 @@ def process_map_extraction(
             # Georeference pixel-space shape features if SIFT point pairs are provided
             if pixel_points and geo_points_lonlat:
                 try:
-                    georef_shape_features = georeference_features_with_sift_points(shape_pixel_features, pixel_points, geo_points_lonlat)
+                    georef_shape_features = georeference_features_with_sift_points(
+                        shape_pixel_features, pixel_points, geo_points_lonlat
+                    )
                     asyncio.run(persist_features(project_id, map_id, georef_shape_features))
                 except Exception as e:
                     logger.error(
@@ -181,22 +260,36 @@ def process_map_extraction(
                 },
             )
 
-            legends_shapes = [s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)]
+            legends_shapes = [
+                s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)
+            ]
 
-            imposed_click_positions_tuples = [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
+            imposed_click_positions_tuples = (
+                [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
+            )
 
-            imposed_sampling_radii_ints = [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
+            imposed_sampling_radii_ints = (
+                [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
+            )
 
             # If the frontend provided a legend box but shapes extraction was disabled,
             # we still need legend shapes to perform legend-based color extraction.
-            if not imposed_click_positions_tuples and not legends_shapes and legend_bounds is not None:
+            if (
+                not imposed_click_positions_tuples
+                and not legends_shapes
+                and legend_bounds is not None
+            ):
                 try:
                     legend_shapes_result = extract_shapes(
                         tmp_file_path,
                         text_regions=text_regions,
                         legend_bounds=legend_bounds,
                     )
-                    legends_shapes = [s for s in legend_shapes_result.get("shapes", []) if s.get("isLegend", False)]
+                    legends_shapes = [
+                        s
+                        for s in legend_shapes_result.get("shapes", [])
+                        if s.get("isLegend", False)
+                    ]
                 except Exception as e:
                     logger.error(
                         f"Legend-only shapes extraction failed for map {map_id}: {e}",
@@ -367,6 +460,22 @@ async def persist_city_feature(project_id: UUID, map_id: UUID, feature: dict[str
             logger.error(f"Failed to persist city feature for map {map_id}: {str(e)}")
 
 
+async def persist_legend_feature(
+    project_id: UUID, map_id: UUID, feature: dict[str, Any], image_bytes: bytes
+):
+    async with AsyncSessionLocal() as db:
+        try:
+            await insert_feature_in_db(
+                db=db,
+                map_id=map_id,
+                data=feature,
+                project_id=project_id,
+                image_bytes=image_bytes,
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist legend feature for map {map_id}: {str(e)}")
+
+
 @celery_app.task(bind=True)
 def process_dev_test_extraction(
     self,
@@ -390,7 +499,9 @@ def process_dev_test_extraction(
         )
         time.sleep(2)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=os.path.splitext(filename)[1]
+        ) as tmp_file:
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
 
@@ -443,11 +554,18 @@ def process_dev_test_extraction(
         )
         # Colors are always imposed (pipette): without click positions the
         # extraction returns nothing and there is no zone left to georeference.
-        imposed_click_positions_tuples = [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
-        imposed_sampling_radii_ints = [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
+        imposed_click_positions_tuples = (
+            [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
+        )
+        imposed_sampling_radii_ints = (
+            [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
+        )
 
         if not imposed_click_positions_tuples:
-            logger.warning(f"[DEV-TEST] No imposed colors for test {test_id}/{test_case}; " "color extraction will return no zones")
+            logger.warning(
+                f"[DEV-TEST] No imposed colors for test {test_id}/{test_case}; "
+                "color extraction will return no zones"
+            )
 
         color_result = extract_colors(
             tmp_file_path,
@@ -530,7 +648,9 @@ def process_dev_test_extraction(
             image_url = f"/dev-test/maps/{test_id}{ext}"
             zones_url = f"/dev-test/test_cases/{test_id}/{test_case}/zones.geojson"
 
-            logger.info(f"[DEV-TEST] Saved image to {image_output_path} and zones to {zones_output_path}")
+            logger.info(
+                f"[DEV-TEST] Saved image to {image_output_path} and zones to {zones_output_path}"
+            )
         except Exception as e:
             logger.error(f"[DEV-TEST] Failed to save test assets for {filename}: {e}")
 
@@ -565,7 +685,9 @@ def process_dev_test_extraction(
             },
         }
 
-        logger.info(f"[DEV-TEST] Extraction completed for {filename} (test_id={test_id}, case={test_case})")
+        logger.info(
+            f"[DEV-TEST] Extraction completed for {filename} (test_id={test_id}, case={test_case})"
+        )
         return result
 
     except Exception as e:

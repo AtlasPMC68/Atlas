@@ -34,6 +34,7 @@ interface StatusResponse {
 const isProcessing: Ref<boolean> = ref(false);
 const processingStep: Ref<ProcessingStep> = ref("upload");
 const processingProgress: Ref<number> = ref(0);
+const processingMessage: Ref<string> = ref("");
 const showProcessingModal: Ref<boolean> = ref(false);
 const taskId: Ref<string | null> = ref(null);
 const resultData: Ref<unknown | null> = ref(null);
@@ -48,6 +49,9 @@ export function useImportProcess() {
     worldPoints?: WorldPoint[],
     options?: ExtractionOptions,
     legendBounds?: LegendBounds | null,
+    titleBounds?: LegendBounds | null,
+    scaleBounds?: LegendBounds | null,
+    compassBounds?: LegendBounds | null,
   ): Promise<StartImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
     if (
@@ -122,9 +126,11 @@ export function useImportProcess() {
       }
     }
 
-    if (legendBounds) {
-      formData.append("legend_bounds", JSON.stringify(legendBounds));
-    }
+    if (legendBounds) formData.append("legend_bounds", JSON.stringify(legendBounds));
+    if (titleBounds) formData.append("title_bounds", JSON.stringify(titleBounds));
+    if (scaleBounds) formData.append("scale_bounds", JSON.stringify(scaleBounds));
+    if (compassBounds) formData.append("compass_bounds", JSON.stringify(compassBounds));
+    
     formData.append("file", file);
 
     try {
@@ -174,6 +180,7 @@ export function useImportProcess() {
 
         processingProgress.value = data.progress_percentage || 0;
         processingStep.value = mapStatusToStep(data.status || "");
+        processingMessage.value = data.status || "";
 
         if (data.state === "SUCCESS") {
           clearInterval(interval);
@@ -202,6 +209,7 @@ export function useImportProcess() {
     showProcessingModal.value = false;
     processingStep.value = "upload";
     processingProgress.value = 0;
+    processingMessage.value = "";
     taskId.value = null;
     resultData.value = null;
   };
@@ -210,6 +218,7 @@ export function useImportProcess() {
     isProcessing,
     processingStep,
     processingProgress,
+    processingMessage,
     showProcessingModal,
     resultData,
     startImport,

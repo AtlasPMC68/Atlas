@@ -27,6 +27,7 @@ interface StatusResponse {
 const isProcessing: Ref<boolean> = ref(false);
 const processingStep: Ref<ProcessingStep> = ref("upload");
 const processingProgress: Ref<number> = ref(0);
+const processingMessage: Ref<string> = ref("");
 const showProcessingModal: Ref<boolean> = ref(false);
 const taskId: Ref<string | null> = ref(null);
 const resultData: Ref<unknown | null> = ref(null);
@@ -40,6 +41,10 @@ export function useDevTestImportProcess() {
     imagePoints?: ImagePoint[],
     worldPoints?: WorldPoint[],
     imposedColors?: ImposedColor[],
+    legendBounds?: { x: number; y: number; width: number; height: number } | null,
+    titleBounds?: { x: number; y: number; width: number; height: number } | null,
+    scaleBounds?: { x: number; y: number; width: number; height: number } | null,
+    compassBounds?: { x: number; y: number; width: number; height: number } | null,
   ): Promise<StartDevTestImportResult> => {
     if (!file) return { success: false, error: "Aucun fichier sélectionné" };
     if (!testId) return { success: false, error: "Identifiant de test manquant" };
@@ -75,6 +80,12 @@ export function useDevTestImportProcess() {
         ),
       );
     }
+    
+    if (legendBounds) formData.append("legend_bounds", JSON.stringify(legendBounds));
+    if (titleBounds) formData.append("title_bounds", JSON.stringify(titleBounds));
+    if (scaleBounds) formData.append("scale_bounds", JSON.stringify(scaleBounds));
+    if (compassBounds) formData.append("compass_bounds", JSON.stringify(compassBounds));
+    
     formData.append("file", file);
 
     try {
@@ -129,6 +140,7 @@ export function useDevTestImportProcess() {
 
         processingProgress.value = data.progress_percentage || 0;
         processingStep.value = mapStatusToStep(data.status || "");
+        processingMessage.value = data.status || "";
 
         if (data.state === "SUCCESS") {
           clearInterval(interval);
@@ -157,6 +169,7 @@ export function useDevTestImportProcess() {
     showProcessingModal.value = false;
     processingStep.value = "upload";
     processingProgress.value = 0;
+    processingMessage.value = "";
     taskId.value = null;
     resultData.value = null;
   };
@@ -165,6 +178,7 @@ export function useDevTestImportProcess() {
     isProcessing,
     processingStep,
     processingProgress,
+    processingMessage,
     showProcessingModal,
     resultData,
     startImport,

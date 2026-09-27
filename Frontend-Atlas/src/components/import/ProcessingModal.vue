@@ -14,7 +14,7 @@
 
         <div class="w-full">
           <div class="flex justify-between text-sm text-base-content/70 mb-2">
-            <span>Progression globale</span>
+            <span>{{ translatedMessage }}</span>
             <span>{{ Math.round(progress) }}%</span>
           </div>
           <progress
@@ -35,9 +35,10 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
 import ProcessingSteps from "./ProcessingSteps.vue";
 
-defineProps({
+const props = defineProps({
   isOpen: {
     type: Boolean,
     default: false,
@@ -50,7 +51,28 @@ defineProps({
     type: Number,
     default: 0,
   },
+  message: {
+    type: String,
+    default: "",
+  },
 });
 
 defineEmits(["cancel"]);
+
+const translatedMessage = computed(() => {
+  if (!props.message) return 'Progression globale';
+  const translations = {
+    "Processing step 1": "Traitement de l'étape 1",
+    "Saving uploaded file": "Sauvegarde du fichier",
+    "Loading and validating image": "Chargement et validation de l'image",
+    "Extracting text with OCR pipeline": "Extraction du texte (OCR)",
+    "Extracting shapes from image": "Extraction des formes",
+    "Skipping text extraction (dev-test mode)": "Saut de l'extraction de texte (mode dev-test)",
+    "Skipping shapes extraction (dev-test mode)": "Saut de l'extraction des formes (mode dev-test)",
+    "Extracting colors from image": "Extraction des couleurs",
+    "Cleaning up and finalizing": "Nettoyage et finalisation",
+    "Saving test assets": "Sauvegarde des données de test"
+  };
+  return translations[props.message] || props.message;
+});
 </script>
