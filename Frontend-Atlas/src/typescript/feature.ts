@@ -32,6 +32,7 @@ export type FeatureVisibilityGroupType =
   | "arrow"
   | "shape"
   | "image"
+  | "text"
   | "other";
 
 export type FeatureVisibilityGroup = {

@@ -42,7 +42,7 @@
       >
         <!-- Titre standard OU menu déroulant des sous-catégories de texte -->
         <div class="flex items-center justify-between min-h-[2rem]">
-          <template v-if="activeGroupType === 'other'">
+          <template v-if="activeGroupType === 'text'">
             <div class="w-full">
               <select
                 v-model="selectedTextCategory"
@@ -407,6 +407,7 @@ const groupIcons: Record<string, Component> = {
   zone: MapIcon,
   shape: Square2StackIcon,
   image: PhotoIcon,
+  text: DocumentTextIcon,
   other: DocumentTextIcon,
 };
 
@@ -415,7 +416,7 @@ const mainFeatureGroups = computed(() => {
     { type: "zone", label: "Zone(s)", features: [] as Feature[] },
     { type: "shape", label: "Forme(s)", features: [] as Feature[] },
     { type: "image", label: "Image(s)", features: [] as Feature[] },
-    { type: "other", label: "Texte(s)", features: [] as Feature[] },
+    { type: "text", label: "Texte(s)", features: [] as Feature[] },
   ];
 
   props.features.forEach((feature: Feature) => {
@@ -449,7 +450,7 @@ const activeGroup = computed(() => {
 const selectedTextCategory = ref<string>("all");
 
 const textSubCategories = computed(() => {
-  const textGroup = mainFeatureGroups.value.find((g: FeatureVisibilityGroup) => g.type === "other");
+  const textGroup = mainFeatureGroups.value.find((g: FeatureVisibilityGroup) => g.type === "text");
   if (!textGroup) return [];
 
   const counts = new Map<string, number>();
@@ -469,7 +470,7 @@ const textSubCategories = computed(() => {
 
 const displayedFeatures = computed(() => {
   if (!activeGroup.value) return [];
-  if (activeGroup.value.type !== "other") return activeGroup.value.features;
+  if (activeGroup.value.type !== "text") return activeGroup.value.features;
   if (selectedTextCategory.value === "all") return activeGroup.value.features;
   return activeGroup.value.features.filter((f: Feature) => {
     const cat = f.properties?.mapElementType || "other";

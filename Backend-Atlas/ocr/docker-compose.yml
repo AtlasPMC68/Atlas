@@ -20,6 +20,9 @@ services:
     volumes:
       - ocr-data:/data
       - ./florence:/app/florence
+      - ../app:/app/app
+      - ../scripts:/app/scripts
+      - ../ocr:/app/ocr
     depends_on:
       - redis
       - ocr-base
