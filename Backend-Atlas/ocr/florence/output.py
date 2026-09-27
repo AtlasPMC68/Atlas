@@ -260,10 +260,13 @@ def _apply_merge(det_a: dict, det_b: dict, direction: str) -> dict:
         first.get("source_h", first["bbox_xyxy"][3] - first["bbox_xyxy"][1]),
         second.get("source_h", second["bbox_xyxy"][3] - second["bbox_xyxy"][1]),
     )
+    merged_center = [sum(merged_quad[0::2]) / 4.0, sum(merged_quad[1::2]) / 4.0]
     return {
         "text": merged_text,
         "bbox_xyxy": merged_bbox,
         "quad": merged_quad,
+        "center": merged_center,
+        "angle": first.get("angle", 0.0),
         "source_w": source_w,
         "source_h": source_h,
     }
@@ -298,6 +301,15 @@ def _sanitize_detections(detections: list[dict]) -> list[dict]:
         source_w, source_h, _ = _quad_metrics(clean_quad)
         clean_det["quad"] = clean_quad
         clean_det["bbox_xyxy"] = quad_to_bbox_xyxy(clean_quad)
+        center = det.get("center")
+        if isinstance(center, list) and len(center) == 2:
+            try:
+                clean_det["center"] = [float(center[0]), float(center[1])]
+            except (TypeError, ValueError):
+                clean_det["center"] = [sum(clean_quad[0::2]) / 4.0, sum(clean_quad[1::2]) / 4.0]
+        else:
+            clean_det["center"] = [sum(clean_quad[0::2]) / 4.0, sum(clean_quad[1::2]) / 4.0]
+        clean_det["angle"] = float(det.get("angle", 0.0))
         clean_det["source_w"] = source_w
         clean_det["source_h"] = source_h
 
@@ -335,6 +347,8 @@ def merge_related_detections(detections: list[dict]) -> list[dict]:
     # Removing temporary params, and adding bbox_xyxy because they are easier to work with.
     for det in merged:
         det["bbox_xyxy"] = quad_to_bbox_xyxy(det["quad"])
+        if "center" not in det:
+            det["center"] = [sum(det["quad"][0::2]) / 4.0, sum(det["quad"][1::2]) / 4.0]
         det.pop("source_w", None)
         det.pop("source_h", None)
 

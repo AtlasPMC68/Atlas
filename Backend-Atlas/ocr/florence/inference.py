@@ -141,7 +141,7 @@ def get_context_config() -> dict:
     }
 
 
-def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
+def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, float, int, int, int]:
     """
     Apply preprocessing to improve OCR quality before Florence inference.
 
@@ -149,7 +149,7 @@ def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
     The bilateral_denoise removes background color noise on ALL images without
     blurring text edges (data showed skipping it causes regressions on Quebec maps).
 
-    Returns: (preprocessed PIL Image, scale_factor, longest_side of original)
+    Returns: (preprocessed PIL Image, scale_factor_x, scale_factor_y, orig_w, orig_h, longest_side)
     """
     img = preprocess.read_image(image_path)
     h_orig, w_orig = img.shape[:2]
@@ -159,12 +159,13 @@ def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
     img = preprocess.upscale_for_ocr(img, min_dimension=target_dim)
 
     h_new, w_new = img.shape[:2]
-    scale_factor = h_new / float(h_orig) if h_orig > 0 else 1.0
+    scale_factor_x = w_new / float(w_orig) if w_orig > 0 else 1.0
+    scale_factor_y = h_new / float(h_orig) if h_orig > 0 else 1.0
 
     img = preprocess.bilateral_denoise(img, sigma_color=0.04, sigma_spatial=3.0)
     img = preprocess.enhance_contrast_and_sharpen(img, intensity=1.8)
 
-    return Image.fromarray(img), scale_factor, longest_side
+    return Image.fromarray(img), scale_factor_x, scale_factor_y, w_orig, h_orig, longest_side
 
 
 def _generate_tiles(w: int, h: int, grid: int, overlap_pct: float = 0.10) -> list[tuple[int, int, int, int]]:
@@ -210,7 +211,8 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
             if p.area > 0:
                 text_clean = d.get("text", "").lower().strip()
                 dict_score = 10 if text_clean in MAP_DICTIONARY_LOWER else 0
-                polys.append({"det": d, "poly": p, "area": p.area, "score": dict_score})
+                angle_priority = 1 if d.get("angle", 0.0) == 0.0 else 0
+                polys.append({"det": d, "poly": p, "area": p.area, "score": dict_score + angle_priority})
         except Exception:
             pass
 
@@ -249,7 +251,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     3. Large/dense images (>1200px): 2x2 tiling, then check density.
        If first pass detects many labels, switch to 3x3 tiling for better coverage.
     """
-    preprocessed, scale_factor, longest_side = _adaptive_preprocess(image_path)
+    preprocessed, scale_factor_x, scale_factor_y, orig_w, orig_h, longest_side = _adaptive_preprocess(image_path)
 
     if os.environ.get("SAVE_PREPROCESSED_IMAGES", "false").lower() == "true":
         img_dir = os.path.dirname(image_path)
@@ -266,7 +268,16 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     result = run_inference(model, processor, preprocessed, OCR_TASK, config)
     ocr_data = result.get(OCR_TASK, {})
     for quad, text in zip(ocr_data.get("quad_boxes", []), ocr_data.get("labels", [])):
-        all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(quad), "quad": quad})
+        if len(quad) >= 8:
+            cx = sum(quad[0::2]) / 4.0
+            cy = sum(quad[1::2]) / 4.0
+            all_detections.append({
+                "text": text,
+                "bbox_xyxy": out.quad_to_bbox_xyxy(quad),
+                "quad": quad,
+                "center": [cx, cy],
+                "angle": 0.0,
+            })
 
     first_pass_count = len(all_detections)
     logger.debug(f"First pass: {first_pass_count} detections on full image ({longest_side}px)")
@@ -291,29 +302,47 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
             t_data = tile_result.get(OCR_TASK, {})
 
             for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
-                shifted_quad = []
-                for i in range(0, len(quad) - 1, 2):
-                    shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
-
-                if len(shifted_quad) >= 4:
-                    all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
+                if len(quad) >= 8:
+                    shifted_quad = []
+                    for i in range(0, len(quad) - 1, 2):
+                        shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
+                    cx = sum(shifted_quad[0::2]) / 4.0
+                    cy = sum(shifted_quad[1::2]) / 4.0
+                    all_detections.append({
+                        "text": text,
+                        "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad),
+                        "quad": shifted_quad,
+                        "center": [cx, cy],
+                        "angle": 0.0,
+                    })
 
     import math
 
-    def _map_quad_back(quad, orig_w, orig_h, new_w, new_h, angle_deg):
+    def _map_point_back(x: float, y: float, orig_w: float, orig_h: float, new_w: float, new_h: float, angle_deg: float) -> tuple[float, float]:
+        """
+        Inverse affine transform corresponding to PIL's image.rotate(angle_deg, expand=True).
+        In image coordinates (Y pointing downwards), counter-clockwise rotation by angle_deg has:
+            rot_x = (x - cx_orig) * cos(a) + (y - cy_orig) * sin(a) + cx_new
+            rot_y = -(x - cx_orig) * sin(a) + (y - cy_orig) * cos(a) + cy_new
+        The exact mathematical inverse to recover original coordinates is:
+            orig_x = (rot_x - cx_new) * cos(a) - (rot_y - cy_new) * sin(a) + cx_orig
+            orig_y = (rot_x - cx_new) * sin(a) + (rot_y - cy_new) * cos(a) + cy_orig
+        """
         rad = math.radians(angle_deg)
         cos_a = math.cos(rad)
         sin_a = math.sin(rad)
         cx_orig, cy_orig = orig_w / 2.0, orig_h / 2.0
         cx_new, cy_new = new_w / 2.0, new_h / 2.0
+        x_sh, y_sh = x - cx_new, y - cy_new
+        x_orig_sh = x_sh * cos_a - y_sh * sin_a
+        y_orig_sh = x_sh * sin_a + y_sh * cos_a
+        return x_orig_sh + cx_orig, y_orig_sh + cy_orig
 
+    def _map_quad_back(quad: list[float], orig_w: float, orig_h: float, new_w: float, new_h: float, angle_deg: float) -> list[float]:
         mapped_quad = []
         for i in range(0, len(quad) - 1, 2):
-            x, y = quad[i], quad[i + 1]
-            x_sh, y_sh = x - cx_new, y - cy_new
-            x_orig_sh = x_sh * cos_a + y_sh * sin_a
-            y_orig_sh = -x_sh * sin_a + y_sh * cos_a
-            mapped_quad.extend([x_orig_sh + cx_orig, y_orig_sh + cy_orig])
+            mx, my = _map_point_back(quad[i], quad[i + 1], orig_w, orig_h, new_w, new_h, angle_deg)
+            mapped_quad.extend([mx, my])
         return mapped_quad
 
     angles = [90, -45]
@@ -326,13 +355,21 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         r_data = rot_result.get(OCR_TASK, {})
 
         for quad, text in zip(r_data.get("quad_boxes", []), r_data.get("labels", [])):
-            if len(quad) >= 4:
+            if len(quad) >= 8:
+                local_cx = sum(quad[0::2]) / 4.0
+                local_cy = sum(quad[1::2]) / 4.0
                 mapped_quad = _map_quad_back(quad, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
+                mapped_cx, mapped_cy = _map_point_back(local_cx, local_cy, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
 
                 import shapely.geometry
 
                 try:
-                    poly = shapely.geometry.Polygon([(mapped_quad[0], mapped_quad[1]), (mapped_quad[2], mapped_quad[3]), (mapped_quad[4], mapped_quad[5]), (mapped_quad[6], mapped_quad[7])])
+                    poly = shapely.geometry.Polygon([
+                        (mapped_quad[0], mapped_quad[1]),
+                        (mapped_quad[2], mapped_quad[3]),
+                        (mapped_quad[4], mapped_quad[5]),
+                        (mapped_quad[6], mapped_quad[7])
+                    ])
                     if not poly.is_valid:
                         poly = poly.buffer(0)
                     if poly.area > 0.1 * image_area:
@@ -340,21 +377,36 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
                 except Exception:
                     pass
 
-                all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad), "quad": mapped_quad})
+                all_detections.append({
+                    "text": text,
+                    "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad),
+                    "quad": mapped_quad,
+                    "center": [mapped_cx, mapped_cy],
+                    "angle": float(angle),
+                })
 
     unique_dets = _remove_duplicate_detections(all_detections)
     all_detections = out.merge_related_detections(unique_dets)
 
-    if scale_factor != 1.0:
-        for det in all_detections:
-            det["quad"] = [v / scale_factor for v in det["quad"]]
-            det["bbox_xyxy"] = out.quad_to_bbox_xyxy(det["quad"])
-
-    orig_width = int(preprocessed.width / scale_factor)
-    orig_height = int(preprocessed.height / scale_factor)
+    for det in all_detections:
+        det["quad"] = [
+            v / scale_factor_x if i % 2 == 0 else v / scale_factor_y
+            for i, v in enumerate(det["quad"])
+        ]
+        det["bbox_xyxy"] = out.quad_to_bbox_xyxy(det["quad"])
+        if "center" in det:
+            det["center"] = [
+                det["center"][0] / scale_factor_x,
+                det["center"][1] / scale_factor_y,
+            ]
+        else:
+            det["center"] = [
+                sum(det["quad"][0::2]) / 4.0,
+                sum(det["quad"][1::2]) / 4.0,
+            ]
 
     return {
-        "image_size": {"width": orig_width, "height": orig_height},
+        "image_size": {"width": orig_w, "height": orig_h},
         "context": context,
         "detections": all_detections,
     }

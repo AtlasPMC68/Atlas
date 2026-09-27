@@ -200,11 +200,17 @@ export function featureToLayer(feature: Feature): L.Layer | null {
 
       if (feature.properties.mapElementType === "label") {
         const labelText = feature.properties.labelText || "";
+        const boxHeight = feature.properties.boxHeight;
+        const rotationAngle = feature.properties.rotationAngle || 0;
+        
+        // Calculate font size relative to bounding box height, clamped to sane limits
+        const fontSize = boxHeight ? Math.max(14, Math.min(boxHeight * 0.35, 28)) : 16;
+        const rotationStyle = rotationAngle ? `transform: rotate(${rotationAngle}deg); transform-origin: center center;` : "";
 
         layer = L.marker([lat, lng], {
           icon: L.divIcon({
             className: "city-label-text geoman-text-label",
-            html: labelText,
+            html: `<div style="font-size: ${fontSize}px; ${rotationStyle}">${labelText}</div>`,
             iconSize: [120, 20],
             iconAnchor: [0, 10],
           }),

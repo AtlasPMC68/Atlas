@@ -429,10 +429,17 @@ function renderCities(features: Feature[]) {
     });
 
     const featureProperties = feature.properties;
+    
+    const boxHeight = featureProperties.boxHeight;
+    const rotationAngle = featureProperties.rotationAngle || 0;
+    const fontSize = boxHeight ? Math.max(14, Math.min(boxHeight * 0.35, 28)) : 16;
+    const rotationStyle = rotationAngle ? `transform: rotate(${rotationAngle}deg); transform-origin: left center;` : "";
+    const nameText = featureProperties.name || feature.name || "";
+
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: featureProperties.name || feature.name || "",
+        html: `<div style="font-size: ${fontSize}px; ${rotationStyle}">${nameText}</div>`,
         iconSize: [100, 20],
         iconAnchor: [-8, 15],
       }),
@@ -487,12 +494,18 @@ function renderLabels(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
+    const boxHeight = feature.properties.boxHeight;
+    const rotationAngle = feature.properties.rotationAngle || 0;
+    const fontSize = boxHeight ? Math.max(14, Math.min(boxHeight * 0.35, 28)) : 16;
+    const labelText =
+      feature.properties.labelText || feature.properties.name || "";
+
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text geoman-text-label",
-        html: feature.properties.labelText || "",
-        iconSize: [120, 20],
-        iconAnchor: [0, 10],
+        html: `<div style="display: inline-block; white-space: nowrap; transform: translate(-50%, -50%) rotate(${rotationAngle}deg); transform-origin: center center; font-size: ${fontSize}px;">${labelText}</div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
       }),
     });
 
@@ -704,7 +717,16 @@ function renderAllFeatures() {
     point: currentFeatures.filter((f) => getMapElementType(f) === "point"),
     zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
     shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
-    label: currentFeatures.filter((f) => getMapElementType(f) === "label"),
+    label: currentFeatures.filter((f) => {
+      const type = getMapElementType(f);
+      return (
+        type === "label" ||
+        (!["point", "zone", "shape", "polyline", "arrow", "image"].includes(
+          type || "",
+        ) &&
+          f.geometry?.type === "Point")
+      );
+    }),
     polyline: currentFeatures.filter(
       (f) => getMapElementType(f) === "polyline",
     ),
@@ -1062,6 +1084,9 @@ watch(
   padding: 2px 4px;
   border-radius: 3px;
   border: transparent;
+  white-space: pre-wrap;
+  text-align: center;
+  line-height: 1.1;
 }
 
 .city-selection-ring {
