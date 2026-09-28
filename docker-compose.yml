@@ -63,8 +63,8 @@ services:
       - db
     command: >
       sh -c "
-        celery -A app.celery_app worker --loglevel=warning -E -Q default,maps -n maps@%h &
-        celery -A app.celery_app worker --loglevel=warning -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
+        celery -A app.celery_app worker --loglevel=error -q -E -Q default,maps -n maps@%h &
+        celery -A app.celery_app worker --loglevel=error -q -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
         wait
       "
 
@@ -83,7 +83,7 @@ services:
       - ./Backend-Atlas/ocr:/app/ocr
     depends_on:
       - redis
-    command: celery -A app.celery_app flower --loglevel=warning --port=5555
+    command: celery -A app.celery_app flower --loglevel=error --port=5555
 
   db:
     image: postgis/postgis:latest
@@ -127,7 +127,7 @@ services:
       KC_METRICS_ENABLED: false
 
       # Logging
-      KC_LOG_LEVEL: WARN # Reduce log noise
+      KC_LOG_LEVEL: ERROR # Silence tout sauf les erreurs graves
     volumes:
       - ./keycloak:/var/tmp
       - ./keycloak/themes/atlas:/opt/keycloak/themes/atlas
