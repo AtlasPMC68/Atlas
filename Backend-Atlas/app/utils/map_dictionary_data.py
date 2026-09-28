@@ -238,106 +238,120 @@ MAP_DICTIONARY_CATEGORIZED = {
     "ville": [
         "Montréal", "Québec", "Trois-Rivières", "Paris", "Londres", "Boston", "Philadelphie", "Athènes", "Rome", "Alexandrie",
         "Constantinople", "Jérusalem", "Dakar", "Alger", "Tadoussac", "Port-Royal", "Louisbourg", "New-York", "Baltimore",
+        "Berlin", "Moscou", "Washington", "Tokyo", "Pékin", "Abidjan", "Douala", "Lomé", "Kinshasa", "Rabat",
+        "Tunis", "Le-Caire", "Damas", "Bagdad", "Téhéran", "Kaboul", "New-Delhi", "Islamabad", "Hanoï", "Bangkok",
+        "Jakarta", "Manille", "Séoul", "Pyongyang", "Ottawa", "Mexico", "Brasilia", "Buenos-Aires", "Bogota", "Lima",
+        "Santiago", "Caracas", "La-Havane", "Pretoria", "Nairobi", "Abuja", "Addis-Abeba", "Lutèce", "La-Nouvelle-Orléans"
     ],
     "province": [
         "Province de Québec", "Province du Canada", "Nouvelle-France", "Acadie", "Haut-Canada", "Bas-Canada", "Nouvelle-Écosse", "Nouveau-Brunswick", "Terre-Neuve", "Ontario",
         "Saskatchewan", "Alberta", "Colombie-Britannique", "Manitoba", "Yukon", "Nunavut", "Bretagne", "Normandie", "Bourgogne", "Aquitaine",
-        "Flandre", "Gaspésie", "Abitibi", "Mauricie",
+        "Flandre", "Gaspésie", "Abitibi", "Mauricie", "Île-du-Prince-Édouard", "Territoires-du-Nord-Ouest"
     ],
     "pays": [
         "Canada", "États-Unis", "Mexique", "France", "Royaume-Uni", "Grande-Bretagne", "Espagne", "Portugal", "Pays-Bas", "Provinces-Unies",
         "Allemagne", "Italie", "Russie", "URSS", "Union Soviétique", "Chine", "Japon", "Inde", "Australie", "Grèce",
-        "Égypte", "Turquie",
+        "Égypte", "Turquie", "Brésil", "Argentine", "Colombie", "Chili", "Pérou", "Sénégal", "Cameroun", "Burkina", "Faso", 
+        "Éthiopie", "Érythrée", "Somalie", "Kenya", "Tanzanie", "Rwanda", "Angola", "Namibie", "Afrique-du-Sud", "Algérie", "Maroc", 
+        "Tunisie", "Irak", "Iran", "Syrie", "Israël", "Palestine", "Afghanistan", "Pakistan", "Vietnam", "Cambodge", "Laos", 
+        "Thaïlande", "Indonésie", "Philippines", "Corée", "Tchad", "Malawi", "Arménie"
     ],
     "continent": [
         "Afrique", "Amérique", "Asie", "Europe", "Océanie", "Antarctique", "Eurasie",
     ],
     "lac": [
         "Lac", "Supérieur", "Huron", "Michigan", "Érié", "Champlain", "Mistassini", "Winnipeg", "Athabasca", "Victoria",
-        "Baïkal", "Léman", "Saint-Jean",
+        "Baïkal", "Léman", "Saint-Jean", "Lac Huron", "Lac Supérieur", "Lac Michigan", "Lac Érié", "Lac Ontario", "Lac Champlain",
+        "Lac Mistassini", "Lac Winnipeg", "Lac Athabasca", "Lac Victoria", "Lac Tchad", "Lac Tanganyika", "Lac Malawi", "Lac Baïkal", "Lac Léman", 
+        "Grand-Lac-de-l'Ours", "Grand-Lac-des-Esclaves", "Aral"
     ],
     "riviere": [
         "Fleuve", "Rivière", "Saint-Laurent", "Mississippi", "Missouri", "Nil", "Amazone", "Rhin", "Danube", "Tamise",
         "Seine", "Loire", "Garonne", "Rhône", "Richelieu", "Chaudière", "Saguenay", "Outaouais", "Hudson", "Ohio",
+        "Saint-Maurice", "Manicouagan", "Koksoak", "La-Grande", "Nottaway", "Harricana", "Kennebec", "Gange", "Yangtsé", 
+        "Mékong", "Volga", "Euphrate", "Tigre", "Elbe", "Oder", "Vistule", "Dniepr", "Don", "Oural", "Ob", "Ienisseï", 
+        "Léna", "Amour", "Brahmapoutre", "Indus", "Colorado", "Columbia", "Mackenzie", "Rio-Grande", "Orénoque", "Paraná", 
+        "Congo", "Niger", "Zambèze", "Orange"
     ],
     "ocean_mer": [
         "Océan", "Mer", "Atlantique", "Pacifique", "Arctique", "Indien", "Méditerranée", "Noire", "Rouge", "Morte",
-        "Caspienne", "Baltique", "Adriatique", "Égée", "Manche", "Caraïbes",
+        "Caspienne", "Baltique", "Adriatique", "Égée", "Manche", "Caraïbes", "Ionienne", "Tyrrhénienne", "Béring", "Corail", 
+        "Tasman", "Celtique", "Iroise", "Marmara", "Azov", "Barents", "Kara", "Laptev", "Tchouktches", "Okhotsk", "Arabie", 
+        "Oman", "Beaufort", "Labrador", "Célèbes", "Sulu", "Java", "Bismarck", "Salomon", "Océan Atlantique", "Océan Pacifique", "Océan Arctique"
     ],
     "baie_golfe": [
-        "Baie", "Golfe", "Détroit", "Baffin", "Sargasses",
+        "Baie", "Golfe", "Détroit", "Baffin", "Sargasses", "Golfe du Mexique"
     ],
     "ile": [
         "Île", "Îles", "Archipel", "Anticosti", "Miquelon", "Cuba", "Jamaïque", "Hawaï", "Porto-Rico", "Saint-Domingue",
-        "Groenland",
+        "Groenland", "Hispaniola", "Iles-de-la-Madeleine", "Isle-Royale", "Isle"
     ],
     "fort": [
         "Fort", "Chambly", "Frontenac", "Niagara", "Michilimakinac", "Duquesne", "Beauharnois", "Carillon", "Ticonderoga", "Sainte-Marie",
     ],
     "peuple": [
         "Autochtones", "Inuits", "Iroquois", "Hurons", "Wendats", "Mohawks", "Abénaquis", "Cris", "Innus", "Montagnais",
-        "Algonquins", "Sioux", "Apaches", "Aztèques", "Incas", "Mayas",
+        "Algonquins", "Sioux", "Apaches", "Aztèques", "Incas", "Mayas", "Amérindiens", "Premières-Nations", "Métis", "Attikameks", 
+        "Micmacs", "Malécites", "Naskapis", "Béothuks", "Comanches", "Navajos", "Cherokees", "Aztecs", "Olmèques", "Toltèques", 
+        "Mapuches", "Guaranis", "Caribes", "Arawaks", "Celtes", "Francs", "Mérovingiens", "Carolingiens"
     ],
     "direction": [
         "Nord", "Sud", "Est", "Ouest",
     ],
     "relief": [
-        "Ruisseau", "Canal", "Cap", "Péninsule", "Presqu'île", "Isthme", "Mont", "Montagne", "Massif", "Pic",
-        "Volcan", "Vallée", "Gorge", "Plaine", "Plateau", "Désert", "Oasis", "Forêt", "Jungle", "Équateur",
-        "Tropique", "Cancer", "Capricorne", "Méridien", "Bassin", "Canyon", "Falaise", "Lagune", "Marais", "Tourbière",
-        "Toundra", "Taïga", "Glacier", "Fjord",
+        "Mont", "Montagne", "Massif", "Pic", "Volcan", "Vallée", "Gorge", "Plaine", "Plateau", "Désert", "Oasis", "Forêt", 
+        "Jungle", "Équateur", "Tropique", "Cancer", "Capricorne", "Méridien", "Bassin", "Canyon", "Falaise", "Lagune", 
+        "Marais", "Tourbière", "Toundra", "Taïga", "Glacier", "Fjord", "Monts", "Val", "Bois", "Parc", "Réserve", 
+        "Montagnes", "Col", "Isthme", "Péninsule", "Presqu'île", "Cap"
     ],
-    "autre": [
-        "Moyen-Orient", "Proche-Orient", "Extrême-Orient", "Occident", "Orient", "Balkans", "Scandinavie", "Caucase", "Mésopotamie", "Levant",
-        "Maghreb", "Sahel", "Sibérie", "Patagonie", "Amazonie", "Polynésie", "Mélanésie", "Micronésie", "Ibérique", "Arabique",
-        "Anatolie", "Mandchourie", "Tibet", "Aral", "Ionienne", "Tyrrhénienne", "Béring", "Corail", "Tasman", "Celtique",
-        "Iroise", "Marmara", "Azov", "Barents", "Kara", "Laptev", "Tchouktches", "Okhotsk", "Arabie", "Oman",
-        "Beaufort", "Labrador", "Célèbes", "Sulu", "Java", "Bismarck", "Salomon", "Océan Atlantique", "Océan Pacifique", "Océan Arctique",
-        "Golfe du Mexique", "Terre de Rupert", "Témiscamingue", "Lac-Saint-Jean", "Laurentides", "Lanaudière", "Montérégie", "Estrie", "Chaudière-Appalaches", "Bas-Saint-Laurent",
-        "Côte-Nord", "Nord-du-Québec", "Nunavik", "Jamésie", "Iles-de-la-Madeleine", "Île-du-Prince-Édouard", "Territoires-du-Nord-Ouest", "Terre-de-Rupert", "Plaisance", "Hochelaga",
-        "Stadaconé", "Rupert", "Saint-Louis", "De-Chartres", "Orléans", "Rouillé", "William-Henry", "Oswego", "Louisiane", "Pays-d'en-Haut",
-        "Illinois", "Pontchartrain", "Albany", "Eastmain", "Severn", "Cumberland", "Saint-Pierre", "Cartier", "Montcalm", "Wolfe",
-        "Laval", "Maisonneuve", "Mance", "Talon", "La-Salle", "Jolliet", "Marquette", "Vérendrye", "Radisson", "Groseilliers",
-        "Bourgchemin", "Sorel", "Lévis", "Vaudreuil", "Lac Huron", "Lac Supérieur", "Lac Michigan", "Lac Érié", "Lac Ontario", "Lac Champlain",
-        "Lac Mistassini", "Lac Winnipeg", "Lac Athabasca", "Lac Victoria", "Lac Tchad", "Lac Tanganyika", "Lac Malawi", "Lac Baïkal", "Lac Léman", "Saint-Maurice",
-        "Manicouagan", "Koksoak", "La-Grande", "Nottaway", "Harricana", "Grand-Lac-de-l'Ours", "Grand-Lac-des-Esclaves", "Kennebec", "Gange", "Yangtsé",
-        "Mékong", "Volga", "Euphrate", "Tigre", "Elbe", "Oder", "Vistule", "Dniepr", "Don", "Oural",
-        "Ob", "Ienisseï", "Léna", "Amour", "Brahmapoutre", "Indus", "Colorado", "Columbia", "Mackenzie", "Rio-Grande",
-        "Orénoque", "Paraná", "Congo", "Niger", "Zambèze", "Orange", "Tchad", "Tanganyika", "Malawi", "Amérindiens",
-        "Premières-Nations", "Métis", "Attikameks", "Micmacs", "Malécites", "Naskapis", "Béothuks", "Comanches", "Navajos", "Cherokees",
-        "Aztecs", "Olmèques", "Toltèques", "Mapuches", "Guaranis", "Caribes", "Arawaks", "Empire", "Romain", "Gaule",
-        "Lutèce", "Sparte", "Macédoine", "Babylone", "Sumer", "Akkad", "Assyrie", "Perse", "Carthage", "Phénicie",
-        "Celtes", "Maurya", "Han", "Qin", "Nubie", "Koush", "Sassanides", "Francs", "Mérovingiens", "Carolingiens",
-        "Saint-Empire", "Germanique", "Byzance", "Francie", "Angleterre", "Wessex", "Mercie", "Écosse", "Irlande", "Castille",
-        "Aragon", "Al-Andalus", "Omeyyades", "Abbassides", "Fatimides", "États", "Pontificaux", "Pologne", "Hongrie", "Kiev",
-        "Mongol", "Mali", "Songhaï", "Treize-Colonies", "Britannique", "Autriche", "Habsbourg", "Prusse", "Ottoman", "Suède",
-        "Danemark", "Pologne-Lituanie", "Venise", "Gênes", "Bourbon", "Tudor", "Ming", "Qing", "Moghol", "Safavide",
-        "Brésil", "Argentine", "Colombie", "Chili", "Pérou", "Union", "Soviétique", "Yougoslavie", "Tchécoslovaquie", "Autriche-Hongrie",
-        "Sénégal", "Cameroun", "Burkina", "Faso", "Éthiopie", "Érythrée", "Somalie", "Kenya", "Tanzanie", "Rwanda",
-        "Angola", "Namibie", "Afrique-du-Sud", "Algérie", "Maroc", "Tunisie", "Irak", "Iran", "Syrie", "Israël",
-        "Palestine", "Afghanistan", "Pakistan", "Vietnam", "Cambodge", "Laos", "Thaïlande", "Indonésie", "Philippines", "Corée",
-        "Berlin", "Moscou", "Washington", "Tokyo", "Pékin", "Abidjan", "Douala", "Lomé", "Kinshasa", "Rabat",
-        "Tunis", "Le-Caire", "Damas", "Bagdad", "Téhéran", "Kaboul", "New-Delhi", "Islamabad", "Hanoï", "Bangkok",
-        "Jakarta", "Manille", "Séoul", "Pyongyang", "Ottawa", "Mexico", "Brasilia", "Buenos-Aires", "Bogota", "Lima",
-        "Santiago", "Caracas", "La-Havane", "Pretoria", "Nairobi", "Abuja", "Addis-Abeba", "Bohême", "Wehrmacht", "Alliés",
-        "Axe", "Nazie", "Fasciste", "Goulag", "Holocauste", "Shoah", "Génocide", "Massacre", "Armistice", "Traité",
-        "Versailles", "Yalta", "Potsdam", "OTAN", "Pacte", "Varsovie", "Srebrenica", "Arménie", "Holodomor", "Tranchée",
-        "Verdun", "Somme", "Marne", "Stalingrad", "Pearl-Harbor", "Hiroshima", "Nagasaki", "Rideau-de-fer", "Mur", "Indochine",
-        "Royaume", "République", "Principauté", "Duché", "Comté", "Fédération", "Confédération", "État", "Province", "Territoire",
-        "Colonie", "Protectorat", "Mandat", "Dominion", "Guerre", "Bataille", "Paix", "Révolution", "Siège", "Campagne",
-        "Constitution", "Charte", "Acte", "Canton", "Gouvernement", "Parlement", "Sénat", "Assemblée", "Couronne", "Régence",
-        "Indépendance", "Sécession", "Annexion", "Massachusetts", "New-Hampshire", "Rhode-Island", "Connecticut", "Pennsylvanie", "New-Jersey", "Delaware",
-        "Maryland", "Virginie", "Caroline-du-Nord", "Caroline-du-Sud", "Géorgie", "Appalaches", "La-Nouvelle-Orléans", "Isle-Royale", "Nouvelle-Espagne", "Nouvelle-Néerlande",
-        "Nouvelle-Suède", "Nouvelle-Angleterre", "Floride", "Texas", "Californie", "Alaska", "Hispaniola", "Alsace", "Lorraine", "Franche-Comté",
-        "Picardie", "Artois", "Champagne", "Île-de-France", "Centre", "Val-de-Loire", "Poitou", "Charentes", "Limousin", "Auvergne",
-        "Rhône-Alpes", "Provence", "Alpes", "Côte-d'Azur", "Corse", "Languedoc", "Roussillon", "Midi-Pyrénées", "Gascogne", "Béarn",
-        "Navarre", "Savoie", "Dauphiné", "Grand", "Grandes", "Petit", "Petites", "Nouveau", "Nouvelle", "Ancien",
-        "Ancienne", "Haut", "Haute", "Bas", "Basse", "Central", "Centrale", "Moyen", "Moyenne", "Septentrional",
-        "Septentrionale", "Méridional", "Méridionale", "Oriental", "Orientale", "Occidental", "Occidentale", "Majeur", "Mineur", "Saint",
-        "Sainte", "Isle", "Monts", "Lacs", "Rivières", "Val", "Bois", "Parc", "Réserve", "Montagnes",
-        "Col", "Atoll", "Récif", "Banc", "Haut-fond", "Chenal", "Passe", "Bras", "Embouchure", "Estuaire",
-        "Delta", "Source", "Confluent", "Rapides", "Chute", "Chutes", "Cascade", "Cataracte",
+    "hydrographie": [
+        "Ruisseau", "Canal", "Lacs", "Rivières", "Atoll", "Récif", "Banc", "Haut-fond", "Chenal", "Passe", "Bras", 
+        "Embouchure", "Estuaire", "Delta", "Source", "Confluent", "Rapides", "Chute", "Chutes", "Cascade", "Cataracte"
     ],
+    "region": [
+        "Moyen-Orient", "Proche-Orient", "Extrême-Orient", "Occident", "Orient", "Balkans", "Scandinavie", "Caucase", "Mésopotamie", 
+        "Levant", "Maghreb", "Sahel", "Sibérie", "Patagonie", "Amazonie", "Polynésie", "Mélanésie", "Micronésie", "Anatolie", 
+        "Mandchourie", "Tibet", "Terre de Rupert", "Témiscamingue", "Lac-Saint-Jean", "Laurentides", "Lanaudière", "Montérégie", 
+        "Estrie", "Chaudière-Appalaches", "Bas-Saint-Laurent", "Côte-Nord", "Nord-du-Québec", "Nunavik", "Jamésie", "Terre-de-Rupert", 
+        "Plaisance", "Hochelaga", "Stadaconé", "Rupert", "Saint-Louis", "De-Chartres", "Orléans", "Rouillé", "William-Henry", "Oswego", 
+        "Louisiane", "Pays-d'en-Haut", "Illinois", "Pontchartrain", "Albany", "Eastmain", "Severn", "Cumberland", "Saint-Pierre", 
+        "Appalaches", "Nouvelle-Espagne", "Nouvelle-Néerlande", "Nouvelle-Suède", "Nouvelle-Angleterre", "Alsace", "Lorraine", 
+        "Franche-Comté", "Picardie", "Artois", "Champagne", "Île-de-France", "Centre", "Val-de-Loire", "Poitou", "Charentes", 
+        "Limousin", "Auvergne", "Rhône-Alpes", "Provence", "Alpes", "Côte-d'Azur", "Corse", "Languedoc", "Roussillon", "Midi-Pyrénées", 
+        "Gascogne", "Béarn", "Navarre", "Savoie", "Dauphiné", "Bohême"
+    ],
+    "etat_americain": [
+        "Massachusetts", "New-Hampshire", "Rhode-Island", "Connecticut", "Pennsylvanie", "New-Jersey", "Delaware", "Maryland", 
+        "Virginie", "Caroline-du-Nord", "Caroline-du-Sud", "Géorgie", "Floride", "Texas", "Californie", "Alaska"
+    ],
+    "personnage_historique": [
+        "Cartier", "Montcalm", "Wolfe", "Laval", "Maisonneuve", "Mance", "Talon", "La-Salle", "Jolliet", "Marquette", "Vérendrye", 
+        "Radisson", "Groseilliers", "Bourgchemin", "Sorel", "Lévis", "Vaudreuil"
+    ],
+    "empire_civilisation": [
+        "Empire", "Romain", "Gaule", "Sparte", "Macédoine", "Babylone", "Sumer", "Akkad", "Assyrie", "Perse", "Carthage", "Phénicie", 
+        "Maurya", "Han", "Qin", "Nubie", "Koush", "Sassanides", "Saint-Empire", "Germanique", "Byzance", "Francie", "Angleterre", 
+        "Wessex", "Mercie", "Écosse", "Irlande", "Castille", "Aragon", "Al-Andalus", "Omeyyades", "Abbassides", "Fatimides", 
+        "Pontificaux", "Pologne", "Hongrie", "Kiev", "Mongol", "Mali", "Songhaï", "Treize-Colonies", "Britannique", "Autriche", 
+        "Habsbourg", "Prusse", "Ottoman", "Suède", "Danemark", "Pologne-Lituanie", "Venise", "Gênes", "Bourbon", "Tudor", "Ming", 
+        "Qing", "Moghol", "Safavide", "Union", "Soviétique", "Yougoslavie", "Tchécoslovaquie", "Autriche-Hongrie"
+    ],
+    "histoire_conflits": [
+        "Wehrmacht", "Alliés", "Axe", "Nazie", "Fasciste", "Goulag", "Holocauste", "Shoah", "Génocide", "Massacre", "Armistice", 
+        "Versailles", "Yalta", "Potsdam", "OTAN", "Pacte", "Varsovie", "Srebrenica", "Holodomor", "Tranchée", "Verdun", "Somme", 
+        "Marne", "Stalingrad", "Pearl-Harbor", "Hiroshima", "Nagasaki", "Rideau-de-fer", "Mur", "Indochine", "Guerre", "Bataille", 
+        "Paix", "Révolution", "Siège", "Campagne"
+    ],
+    "terme_politique_administratif": [
+        "Royaume", "République", "Principauté", "Duché", "Comté", "Fédération", "Confédération", "État", "États", "Province", 
+        "Territoire", "Colonie", "Protectorat", "Mandat", "Dominion", "Traité", "Constitution", "Charte", "Acte", "Canton", 
+        "Gouvernement", "Parlement", "Sénat", "Assemblée", "Couronne", "Régence", "Indépendance", "Sécession", "Annexion"
+    ],
+    "adjectif_geographique": [
+        "Grand", "Grandes", "Petit", "Petites", "Nouveau", "Nouvelle", "Ancien", "Ancienne", "Haut", "Haute", "Bas", "Basse", 
+        "Central", "Centrale", "Moyen", "Moyenne", "Septentrional", "Septentrionale", "Méridional", "Méridionale", "Oriental", 
+        "Orientale", "Occidental", "Occidentale", "Majeur", "Mineur", "Saint", "Sainte", "Ibérique", "Arabique"
+    ]
 }
 
 # fmt: on

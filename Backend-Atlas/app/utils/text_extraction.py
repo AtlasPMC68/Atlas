@@ -432,12 +432,6 @@ def _build_extracted_text_from_detections(
                 is_duplicate = True
                 break
 
-            # Condition 2: Même texte. On élimine tout mot dupliqué, peu importe sa position.
-            # "afin quil y ai pas de répétition possible des mots."
-            if c_text and c_text == k_text:
-                is_duplicate = True
-                break
-
         if not is_duplicate:
             filtered_text.append(current)
 
@@ -583,29 +577,39 @@ def extract_text(
     has_any_mask = any(b for b in bounds_to_mask.values() if b)
     if has_any_mask:
         try:
-            import cv2
-            import numpy as np
+            from PIL import Image, ImageDraw
+            import io
 
-            nparr = np.frombuffer(file_content, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-            if img is not None:
+            with Image.open(io.BytesIO(file_content)) as img:
+                # Convert to RGB if needed to draw colored rectangles
+                if img.mode not in ('RGB', 'RGBA'):
+                    img = img.convert('RGB')
+                    
+                draw = ImageDraw.Draw(img)
                 masked_something = False
+                
                 for name, bounds in bounds_to_mask.items():
                     if bounds:
                         x, y = int(bounds.get("x", 0)), int(bounds.get("y", 0))
                         w, h = int(bounds.get("width", 0)), int(bounds.get("height", 0))
                         if w > 0 and h > 0:
-                            cv2.rectangle(img, (x, y), (x + w, y + h), (255, 255, 255), -1)  # type: ignore
+                            # Utiliser un beige/gris très clair au lieu du blanc pur pour ne pas 
+                            # créer un contraste artificiel tranchant qui distrait l'OCR
+                            draw.rectangle([x, y, x + w, y + h], fill=(240, 240, 230))
                             masked_something = True
                             logger.info(f"Masked {name} area ({x},{y},{w},{h}) for OCR.")
 
                 if masked_something:
-                    success, encoded_img = cv2.imencode(".png", img)  # type: ignore
-                    if success:
-                        file_content = encoded_img.tobytes()
-            else:
-                logger.error("Could not decode image to apply mask.")
+                    out_io = io.BytesIO()
+                    img_format = img.format if img.format else "PNG"
+                    
+                    # Conserver le DPI s'il existe
+                    save_kwargs = {}
+                    if "dpi" in img.info:
+                        save_kwargs["dpi"] = img.info["dpi"]
+                        
+                    img.save(out_io, format=img_format, **save_kwargs)
+                    file_content = out_io.getvalue()
         except Exception as e:
             logger.error(f"Failed to mask areas for OCR: {e}")
 

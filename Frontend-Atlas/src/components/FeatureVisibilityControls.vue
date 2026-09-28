@@ -49,14 +49,14 @@
                 class="select select-bordered select-xs w-full text-xs font-bold bg-base-100"
               >
                 <option value="all">
-                  Tous les textes ({{ activeGroup.features.length }})
+                  Tous (Toutes les catégories) ({{ uniqueTextCount }})
                 </option>
                 <option
                   v-for="sub in textSubCategories"
                   :key="sub.type"
                   :value="sub.type"
                 >
-                  {{ sub.label }} ({{ sub.count }})
+                  {{ sub.label }}
                 </option>
               </select>
             </div>
@@ -216,10 +216,11 @@
             v-model="featureToEditCategory"
             class="select select-bordered select-sm w-full text-xs"
           >
+            <option value="all">Tous (Toutes les catégories)</option>
             <option value="ville">Ville</option>
+            <option value="province">Province / Région</option>
             <option value="pays">Pays</option>
             <option value="continent">Continent</option>
-            <option value="province">Province / Région</option>
             <option value="lac">Lac</option>
             <option value="riviere">Rivière / Fleuve</option>
             <option value="ocean_mer">Océan / Mer</option>
@@ -229,7 +230,14 @@
             <option value="peuple">Peuple</option>
             <option value="direction">Direction</option>
             <option value="relief">Relief</option>
-            <option value="autre">Autre texte général</option>
+            <option value="hydrographie">Hydrographie</option>
+            <option value="region">Région (Autre / Historique)</option>
+            <option value="etat_americain">État Américain</option>
+            <option value="personnage_historique">Personnage Historique</option>
+            <option value="empire_civilisation">Empire / Civilisation</option>
+            <option value="histoire_conflits">Histoire / Conflits</option>
+            <option value="terme_politique_administratif">Terme Politique / Administratif</option>
+            <option value="adjectif_geographique">Adjectif Géographique</option>
             <option value="rejet">Rejet</option>
             <option value="ignored">🚫 Ignorer définitivement</option>
           </select>
@@ -449,33 +457,93 @@ const activeGroup = computed(() => {
 
 const selectedTextCategory = ref<string>("all");
 
+const uniqueTextCount = computed(() => {
+  const textGroup = mainFeatureGroups.value.find((g: FeatureVisibilityGroup) => g.type === "text");
+  if (!textGroup) return 0;
+  const seenKeys = new Set<string>();
+  textGroup.features.forEach((f: Feature) => {
+    const key = (f.properties?.name || f.properties?.labelText || f.id).trim().toLowerCase();
+    seenKeys.add(key);
+  });
+  return seenKeys.size;
+});
+
 const textSubCategories = computed(() => {
   const textGroup = mainFeatureGroups.value.find((g: FeatureVisibilityGroup) => g.type === "text");
   if (!textGroup) return [];
 
-  const counts = new Map<string, number>();
+  // Déduplication des features texte (évite les doublons dus aux rotations / extractions multiples)
+  const uniqueFeaturesMap = new Map<string, Feature>();
   textGroup.features.forEach((f: Feature) => {
+    const key = (f.properties?.name || f.properties?.labelText || f.id).trim().toLowerCase();
+    if (!uniqueFeaturesMap.has(key)) {
+      uniqueFeaturesMap.set(key, f);
+    }
+  });
+
+  const counts = new Map<string, number>();
+  uniqueFeaturesMap.forEach((f: Feature) => {
     const cat = f.properties?.mapElementType || "other";
     counts.set(cat, (counts.get(cat) || 0) + 1);
   });
 
+  const categoryLabels: Record<string, string> = {
+    ville: "Ville",
+    province: "Province / Région",
+    pays: "Pays",
+    continent: "Continent",
+    lac: "Lac",
+    riviere: "Rivière / Fleuve",
+    ocean_mer: "Océan / Mer",
+    baie_golfe: "Baie / Golfe",
+    ile: "Île",
+    fort: "Fort",
+    peuple: "Peuple",
+    direction: "Direction",
+    relief: "Relief",
+    hydrographie: "Hydrographie",
+    region: "Région (Autre / Historique)",
+    etat_americain: "État Américain",
+    personnage_historique: "Personnage Historique",
+    empire_civilisation: "Empire / Civilisation",
+    histoire_conflits: "Histoire / Conflits",
+    terme_politique_administratif: "Terme Politique / Administratif",
+    adjectif_geographique: "Adjectif Géographique",
+    rejet: "Rejet",
+    label: "Non catégorisé",
+    other: "Non catégorisé",
+  };
+
   return Array.from(counts.entries()).map(([cat, count]) => {
-    let label = cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, " ");
-    if (cat === "rejet") label = "Rejet(s)";
-    else if (cat === "other" || cat === "label") label = "Non catégorisé(s)";
-    else label = `${label}(s)`;
-    return { type: cat, label, count };
+    const labelName = categoryLabels[cat] || (cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, " "));
+    return { type: cat, label: `${labelName} (${count})`, count };
   });
 });
 
 const displayedFeatures = computed(() => {
   if (!activeGroup.value) return [];
-  if (activeGroup.value.type !== "text") return activeGroup.value.features;
-  if (selectedTextCategory.value === "all") return activeGroup.value.features;
-  return activeGroup.value.features.filter((f: Feature) => {
-    const cat = f.properties?.mapElementType || "other";
-    return cat === selectedTextCategory.value;
-  });
+  
+  let features = activeGroup.value.features;
+  
+  if (activeGroup.value.type === "text") {
+    // Déduplication des éléments textuels
+    const seenKeys = new Set<string>();
+    features = features.filter((f: Feature) => {
+      const key = (f.properties?.name || f.properties?.labelText || f.id).trim().toLowerCase();
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+
+    if (selectedTextCategory.value !== "all") {
+      features = features.filter((f: Feature) => {
+        const cat = f.properties?.mapElementType || "other";
+        return cat === selectedTextCategory.value;
+      });
+    }
+  }
+
+  return features;
 });
 
 watch(

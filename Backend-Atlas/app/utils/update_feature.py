@@ -1,5 +1,6 @@
 import base64
 from copy import deepcopy
+
 from app.models.features import Feature
 
 
@@ -39,11 +40,16 @@ def serialize_db_feature(row: Feature) -> dict | None:
     if not row.data or not isinstance(row.data, dict):
         return None
 
-    feature_data = row.data.get("features", [])
-    if not isinstance(feature_data, list) or not feature_data:
-        return None
+    # Handle FeatureCollection (wrapped)
+    if "features" in row.data:
+        feature_data = row.data.get("features", [])
+        if not isinstance(feature_data, list) or not feature_data:
+            return None
+        raw_feature = feature_data[0]
+    else:
+        # Handle plain Feature (unwrapped)
+        raw_feature = row.data
 
-    raw_feature = feature_data[0]
     if not isinstance(raw_feature, dict):
         return None
 
