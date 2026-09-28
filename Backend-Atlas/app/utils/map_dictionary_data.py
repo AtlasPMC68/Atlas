@@ -219,7 +219,19 @@ ENGLISH_FLORENCE_TO_FRENCH_TRANSLATIONS = {
     "ka boul": "Kaboul",
     "orlba ns": "Orléans",
     "pa bat": "Rabat",
-    "de lta": "Delta"
+    "de lta": "Delta",
+    "riviere masquill": "Rivière Missouri",
+    "migueston": "Kingston",
+    "todos": "Toronto",
+    "fort d'avenee": "Fort Détroit",
+    "fort sé-avene": "Fort St-Pierre",
+    "neuur": "New York",
+    "fort chag": "Fort Chambly",
+    "fort sounsue": "Fort Toulouse",
+    "fort duplin": "Fort Dauphin",
+    "fort l4 raine": "Fort La Reine",
+    "fort baaharnois": "Fort Beauharnois",
+    "ockas": "Boston"
 }
 
 MAP_DICTIONARY_CATEGORIZED = {
