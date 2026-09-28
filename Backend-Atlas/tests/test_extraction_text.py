@@ -83,8 +83,10 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
             .replace("/", " ")
             .replace("\\", " ")
         )
-        cleaned = re.sub(r"[\d]", "", cleaned) # Strip numbers/dates
-        cleaned = unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode("ascii").lower()
+        cleaned = re.sub(r"[\d]", "", cleaned)  # Strip numbers/dates
+        cleaned = (
+            unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode("ascii").lower()
+        )
         cleaned = " ".join(cleaned.split())
         res.append(cleaned)
     return res
@@ -114,7 +116,9 @@ def check_for_match(
 
     for exp_idx, exp_word in enumerate(expected_ascii):
         if exp_word in actual_dict:
-            available_ocr_indices = [idx for idx in actual_dict[exp_word] if idx not in used_ocr_indices]
+            available_ocr_indices = [
+                idx for idx in actual_dict[exp_word] if idx not in used_ocr_indices
+            ]
             if available_ocr_indices:
                 ocr_idx = available_ocr_indices[0]
                 used_exp_indices.add(exp_idx)
@@ -176,7 +180,11 @@ def calculate_match_metrics(
     valid_distances = [distance for _, (_, distance) in matches if distance < 500.0]
     total_distance = sum(valid_distances)
 
-    matched_expected_words = {expected_word for _, (expected_word, distance) in matches if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))}
+    matched_expected_words = {
+        expected_word
+        for _, (expected_word, distance) in matches
+        if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))
+    }
     box_find_rate = (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
 
     average_dist = total_distance / len(valid_distances) if valid_distances else 0.0
@@ -281,9 +289,13 @@ def test_text_extraction(
         for expected_word, ocr_word, distance in mismatches:
             d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
             if distance > 500:
-                logger.info(f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
+                logger.info(
+                    f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}"
+                )
             else:
-                logger.info(f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
+                logger.info(
+                    f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}"
+                )
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
@@ -330,9 +342,14 @@ def test_text_extraction(
         logger.error(summary)
 
     if not is_passed:
-        logger.error(f"{status_color}{BOLD}\U0001f50d DETAILS OF THE FAILURE FOR {card_name_fmt}:{RESET}\n" f"Expected Words that the OCR missed or matched poorly:\n")
+        logger.error(
+            f"{status_color}{BOLD}\U0001f50d DETAILS OF THE FAILURE FOR {card_name_fmt}:{RESET}\n"
+            f"Expected Words that the OCR missed or matched poorly:\n"
+        )
         for expected_word, ocr_word, distance in mismatches:
-            logger.error(f"  \u2022 Expected: {YELLOW}'{expected_word}'{RESET} --> Found: '{ocr_word}' (dist: {distance:.1f})")
+            logger.error(
+                f"  \u2022 Expected: {YELLOW}'{expected_word}'{RESET} --> Found: '{ocr_word}' (dist: {distance:.1f})"
+            )
 
     setattr(
         request.node,
@@ -343,5 +360,9 @@ def test_text_extraction(
         },
     )
 
-    error_msg = f"\n{RED}{BOLD}ÉCHEC : {image_path.name}{RESET}\n" f"  {YELLOW}RESULTAT : [Hit={box_find_rate:>5.1f}%, Dist={average_dist:>4.2f}]{RESET}\n" f"  {GREEN}ATTENDU  : [Hit>={min_hit_rate:>5.1f}%, Dist<={max_dist:>4.2f}]{RESET}"
+    error_msg = (
+        f"\n{RED}{BOLD}ÉCHEC : {image_path.name}{RESET}\n"
+        f"  {YELLOW}RESULTAT : [Hit={box_find_rate:>5.1f}%, Dist={average_dist:>4.2f}]{RESET}\n"
+        f"  {GREEN}ATTENDU  : [Hit>={min_hit_rate:>5.1f}%, Dist<={max_dist:>4.2f}]{RESET}"
+    )
     assert is_passed, error_msg

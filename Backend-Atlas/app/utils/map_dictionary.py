@@ -88,7 +88,7 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
 
     # Remove digits and parentheses for dictionary matching so "Montréal (1642)" matches "Montréal"
     text_clean_for_match = re.sub(r"[\d\(\)]", "", text_clean).strip()
-    
+
     text_no_accents = remove_accents(text_clean_for_match.lower())
     text_hyphenated = re.sub(r"[\s\n]+", "-", text_no_accents)
 
