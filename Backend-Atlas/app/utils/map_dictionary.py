@@ -1,8 +1,6 @@
 import re
 import unicodedata
 
-from rapidfuzz import fuzz, process
-
 from .map_dictionary_data import (
     ENGLISH_FLORENCE_TO_FRENCH_TRANSLATIONS,
     MAP_DICTIONARY_CATEGORIZED,
@@ -94,21 +92,16 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
     text_no_accents = remove_accents(text_clean_for_match.lower())
     text_hyphenated = re.sub(r"[\s\n]+", "-", text_no_accents)
 
-    choices = {remove_accents(k): k for k in MAP_DICTIONARY_FLAT.keys()}
+    # 2. EXACT MATCH OU REPLACE-MATCH DANS LE DICTIONNAIRE
+    matched_word = None
+    for dict_word, (original_cased, category) in MAP_DICTIONARY_FLAT.items():
+        dict_no_accents = remove_accents(dict_word)
+        if text_no_accents == dict_no_accents or text_hyphenated == dict_no_accents:
+            matched_word = (original_cased, category)
+            break
 
-    # RapidFuzz match
-    match1 = process.extractOne(text_no_accents, choices.keys(), scorer=fuzz.ratio)
-    match2 = process.extractOne(text_hyphenated, choices.keys(), scorer=fuzz.ratio)
-
-    best_match = match1
-    if match2 and (not match1 or match2[1] > match1[1]):
-        best_match = match2
-
-    if best_match and best_match[1] >= 80:  # Strict threshold to avoid hallucinations
-        matched_dict_word_no_accents = best_match[0]
-        original_lower = choices[matched_dict_word_no_accents]
-        original_cased, category = MAP_DICTIONARY_FLAT[original_lower]
-
+    if matched_word:
+        original_cased, category = matched_word
         corrected_text = original_cased
         if text.isupper():
             corrected_text = original_cased.upper()

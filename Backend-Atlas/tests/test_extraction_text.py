@@ -83,6 +83,7 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
             .replace("/", " ")
             .replace("\\", " ")
         )
+        cleaned = re.sub(r"[\d]", "", cleaned) # Strip numbers/dates
         cleaned = unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode("ascii").lower()
         cleaned = " ".join(cleaned.split())
         res.append(cleaned)
