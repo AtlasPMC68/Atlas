@@ -1,0 +1,40 @@
+name: Generate Florence Translations
+
+on:
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions UI
+  push:
+    paths:
+      - 'Backend-Atlas/scripts/generate_florence_translations.py'
+
+jobs:
+  run-florence-script:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache Docker images
+        uses: ScribeMD/docker-cache@0.5.0
+        with:
+          key: docker-${{ runner.os }}-${{ hashFiles('Backend-Atlas/ocr/Dockerfile') }}
+
+      - name: Build and Run Florence Worker
+        run: |
+          cd Backend-Atlas/ocr
+          docker compose build florence-worker
+          docker compose run --rm florence-worker python /app/scripts/generate_florence_translations.py
+
+      - name: Display JSON Output
+        run: |
+          echo "====================================="
+          echo "=== FLORENCE TRANSLATIONS RESULTS ==="
+          echo "====================================="
+          cat Backend-Atlas/scripts/florence_translations_result.json || echo "Aucune erreur trouvée ou le fichier est introuvable."
+          echo "====================================="
+          
+      - name: Upload JSON as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: florence_translations_result
+          path: Backend-Atlas/scripts/florence_translations_result.json
