@@ -19,6 +19,9 @@ jobs:
         with:
           key: docker-${{ runner.os }}-${{ hashFiles('Backend-Atlas/ocr/Dockerfile') }}
 
+      - name: Create dummy .env.dev
+        run: touch Backend-Atlas/.env.dev
+
       - name: Build and Run Florence Worker
         run: |
           docker compose build florence-worker
