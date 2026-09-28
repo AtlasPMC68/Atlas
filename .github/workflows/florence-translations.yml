@@ -21,7 +21,6 @@ jobs:
 
       - name: Build and Run Florence Worker
         run: |
-          cd Backend-Atlas/ocr
           docker compose build florence-worker
           docker compose run --rm florence-worker python /app/scripts/generate_florence_translations.py
 
