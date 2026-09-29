@@ -7,7 +7,12 @@
         <button type="button" class="btn btn-ghost btn-sm" @click="close('cancel')">
           {{ cancelLabel }}
         </button>
-        <button type="button" class="btn btn-warning btn-sm" @click="close('confirm')">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="danger ? 'btn-error' : 'btn-warning'"
+          @click="close('confirm')"
+        >
           {{ confirmLabel }}
         </button>
       </div>
@@ -24,8 +29,10 @@ withDefaults(
     message: string;
     confirmLabel?: string;
     cancelLabel?: string;
+    // Irreversible: the confirm button is red rather than amber.
+    danger?: boolean;
   }>(),
-  { confirmLabel: "Continuer", cancelLabel: "Annuler" },
+  { confirmLabel: "Continuer", cancelLabel: "Annuler", danger: false },
 );
 
 const emit = defineEmits<{

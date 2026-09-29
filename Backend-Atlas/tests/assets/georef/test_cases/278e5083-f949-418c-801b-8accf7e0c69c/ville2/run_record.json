@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/ville2",
-  "startedAt": "2026-09-23T18:19:55.413689+00:00",
+  "startedAt": "2026-09-24T15:17:54.177163+00:00",
   "inputs": {
     "caseKind": "probe",
     "frameBoundsSource": "config",
@@ -259,11 +259,11 @@
     "zonesDroppedOffLand": 0
   },
   "timingMs": {
-    "color_extraction": 1864.538,
-    "fit": 0.304,
-    "load_coastline": 181.749,
-    "load_land_mask": 279.119,
-    "apply": 265.829
+    "color_extraction": 80.169,
+    "fit": 0.294,
+    "load_coastline": 264.981,
+    "load_land_mask": 328.582,
+    "apply": 306.97
   },
   "config": {
     "version": "8",

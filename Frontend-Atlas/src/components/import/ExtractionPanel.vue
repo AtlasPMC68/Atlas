@@ -39,6 +39,10 @@
       >
         {{ state === "cancelling" ? "Annulation…" : "Annuler" }}
       </button>
+      <p class="-mt-4 text-[11px] text-gray-400">
+        Retour aux paramètres pour les modifier : vos étapes et l'analyse du texte
+        sont conservées.
+      </p>
     </template>
   </div>
 </template>

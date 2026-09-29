@@ -71,6 +71,7 @@
           @open="openStep"
           @update:options="(value) => save({ options: value })"
           @start="startExtraction"
+          @abandon="askAbandon"
         />
       </div>
     </div>
@@ -149,6 +150,7 @@
       :title="pendingConfirm.title"
       :message="pendingConfirm.message"
       :confirm-label="pendingConfirm.confirmLabel"
+      :danger="pendingConfirm.danger"
       @confirm="onConfirmAccepted"
       @cancel="pendingConfirm = null"
     />
@@ -206,6 +208,7 @@ interface PendingConfirm {
   title: string;
   message: string;
   confirmLabel: string;
+  danger?: boolean;
   action: () => void | Promise<void>;
 }
 const pendingConfirm = ref<PendingConfirm | null>(null);
@@ -232,8 +235,30 @@ function askChangeMap() {
     confirmLabel: "Changer de carte",
     action: async () => {
       if (!(await store.abandon())) {
-        showAlert("error", store.error ?? "Impossible d'abandonner l'import");
+        showAlert("error", store.error ?? "Impossible d'abandonner l'importation");
       }
+    },
+  };
+}
+
+// Leaves the import for good: the text analysis is stopped, the uploaded map
+// and every step are deleted, and the user goes back to where they came from.
+function askAbandon() {
+  pendingConfirm.value = {
+    title: "Abandonner l'importation ?",
+    message:
+      "L'analyse du texte sera arrêtée, et la carte importée ainsi que toutes les étapes déjà complétées (zone, légende, points de contrôle, couleurs) seront supprimées. Cette action est irréversible.",
+    confirmLabel: "Abandonner l'importation",
+    danger: true,
+    action: async () => {
+      const projectId = store.projectId ?? route.query.projectId;
+      if (!(await store.abandon())) {
+        showAlert("error", store.error ?? "Impossible d'abandonner l'importation");
+        return;
+      }
+      if (isDevTest) await router.push(`/test-editor/${mapId}`);
+      else if (typeof projectId === "string") await router.push(`/projet/${projectId}`);
+      else await router.push("/tableau-de-bord");
     },
   };
 }
