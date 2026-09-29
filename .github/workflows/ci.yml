@@ -32,9 +32,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      - name: Clean stale volumes and containers
-        run: docker compose down -v --remove-orphans || true
-
       - name: Build testing AI services
         run: |
           docker compose build -q \
