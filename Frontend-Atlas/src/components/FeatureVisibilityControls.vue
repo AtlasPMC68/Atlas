@@ -458,7 +458,7 @@ const textSubCategories = computed(() => {
   const textGroup = mainFeatureGroups.value.find((g: FeatureVisibilityGroup) => g.type === "text");
   if (!textGroup) return [];
 
-  // Déduplication des features texte (évite les doublons dus aux rotations / extractions multiples)
+  // Deduplicate text features (prevents duplicates from multi-rotation OCR extractions)
   const uniqueFeaturesMap = new Map<string, Feature>();
   textGroup.features.forEach((f: Feature) => {
     const key = (f.properties?.name || f.properties?.labelText || f.id).trim().toLowerCase();
@@ -512,7 +512,7 @@ const displayedFeatures = computed(() => {
   let features = activeGroup.value.features;
   
   if (activeGroup.value.type === "text") {
-    // Déduplication des éléments textuels
+    // Deduplicate text elements
     const seenKeys = new Set<string>();
     features = features.filter((f: Feature) => {
       const key = (f.properties?.name || f.properties?.labelText || f.id).trim().toLowerCase();

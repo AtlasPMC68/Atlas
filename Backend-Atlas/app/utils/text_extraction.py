@@ -369,7 +369,7 @@ def _build_extracted_text_from_detections(
 
         from app.utils.map_dictionary import apply_map_dictionary_correction
 
-        # Vérifie si le bloc entier doit être ignoré
+        # Check if the entire block should be ignored
         if should_ignore(raw_text):
             continue
 
@@ -378,7 +378,7 @@ def _build_extracted_text_from_detections(
             continue
 
         clean_word = corrected_text.strip(" .,;:!?()[]{}'\"-–—_«»/\\")
-        # Si c'est un rejet : supprimer les tirets, la ponctuation et les bruits isolés de 1 caractère
+        # If rejected: ignore 1-character noises
         if category == "rejet":
             if not clean_word or len(clean_word) <= 1:
                 continue
@@ -394,10 +394,10 @@ def _build_extracted_text_from_detections(
             }
         )
 
-    # Non-Maximum Suppression (NMS) pour éliminer les doublons et chevauchements
+    # Non-Maximum Suppression (NMS) to eliminate duplicates and overlaps
     extracted_text.sort(
         key=lambda x: (abs(x.get("rotationAngle", 0)), -len(x["text"]))
-    )  # Garder l'angle 0 en priorité, puis les mots les plus longs
+    )  # Keep 0-angle as priority, then longest words
     filtered_text = []
 
     import math
@@ -427,7 +427,7 @@ def _build_extracted_text_from_detections(
             interArea = max(0, xB - xA) * max(0, yB - yA)
             k_area = max(1, (k_max_x - k_min_x) * (k_max_y - k_min_y))
 
-            # Condition 1: Fort chevauchement spatial
+            # Condition 1: High spatial overlap
             if interArea / min(c_area, k_area) > 0.3:
                 is_duplicate = True
                 break
@@ -577,24 +577,25 @@ def extract_text(
     has_any_mask = any(b for b in bounds_to_mask.values() if b)
     if has_any_mask:
         try:
-            from PIL import Image, ImageDraw
             import io
+
+            from PIL import Image, ImageDraw
 
             with Image.open(io.BytesIO(file_content)) as img:
                 # Convert to RGB if needed to draw colored rectangles
-                if img.mode not in ('RGB', 'RGBA'):
-                    img = img.convert('RGB')
-                    
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGB")
+
                 draw = ImageDraw.Draw(img)
                 masked_something = False
-                
+
                 for name, bounds in bounds_to_mask.items():
                     if bounds:
                         x, y = int(bounds.get("x", 0)), int(bounds.get("y", 0))
                         w, h = int(bounds.get("width", 0)), int(bounds.get("height", 0))
                         if w > 0 and h > 0:
-                            # Utiliser un beige/gris très clair au lieu du blanc pur pour ne pas 
-                            # créer un contraste artificiel tranchant qui distrait l'OCR
+                            # Use a very light beige/gray instead of pure white to avoid
+                            # creating a sharp artificial contrast that distracts the OCR
                             draw.rectangle([x, y, x + w, y + h], fill=(240, 240, 230))
                             masked_something = True
                             logger.info(f"Masked {name} area ({x},{y},{w},{h}) for OCR.")
@@ -602,12 +603,12 @@ def extract_text(
                 if masked_something:
                     out_io = io.BytesIO()
                     img_format = img.format if img.format else "PNG"
-                    
-                    # Conserver le DPI s'il existe
+
+                    # Preserve DPI if it exists
                     save_kwargs = {}
                     if "dpi" in img.info:
                         save_kwargs["dpi"] = img.info["dpi"]
-                        
+
                     img.save(out_io, format=img_format, **save_kwargs)
                     file_content = out_io.getvalue()
         except Exception as e:

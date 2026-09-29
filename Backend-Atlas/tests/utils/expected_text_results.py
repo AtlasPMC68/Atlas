@@ -51,9 +51,9 @@ MAP_EXPECTED_TEXTS = {
 
 }
 
-# Dictionnaire pour stocker les coordonnées des zones à masquer lors des tests
-# Note: Si les images d'origine peuvent être agrandies ou tournées,
-# ces coordonnées DOIVENT correspondre aux pixels de l'image *originale* exacte (telle qu'elle est testée).
+# Dictionary to store the coordinates of the zones to mask during tests
+# Note: If the original images can be enlarged or rotated,
+# these coordinates MUST match the pixels of the exact *original* image (as it is tested).
 MAP_TEST_BOUNDS = {
     "1775_Quebec_NordUSA": {
         "title_bounds": {"x": 0, "y": 770, "width": 598, "height": 29},

@@ -71,7 +71,6 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
 
     text_lower = text_clean.lower()
 
-    # 0. VÉRIFICATION DU DICTIONNAIRE PERSONNALISÉ DE L'UTILISATEUR
     custom_dict = load_custom_dictionary()
     if text_lower in custom_dict:
         entry = custom_dict[text_lower]
@@ -81,12 +80,10 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
         chosen_text = entry.get("corrected_text", text_clean)
         return chosen_text, chosen_cat
 
-    # 1. TRADUCTION DES EXPRESSIONS (Pre-processing)
     for eng_phrase, fr_phrase in ENGLISH_FLORENCE_TO_FRENCH_TRANSLATIONS.items():
         if " " in eng_phrase and eng_phrase in text_lower:
             text_clean = re.sub(re.escape(eng_phrase), fr_phrase, text_clean, flags=re.IGNORECASE)
 
-    # Remove digits and parentheses for dictionary matching so "Montréal (1642)" matches "Montréal"
     text_clean_for_match = re.sub(r"[\d\(\)]", "", text_clean).strip()
 
     text_no_accents = remove_accents(text_clean_for_match.lower())
@@ -94,23 +91,18 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
 
     import difflib
 
-    # 2. RECHERCHE DANS LE DICTIONNAIRE (Exacte puis similaire)
     matched_word = None
 
-    # Construire un dictionnaire de clés simplifiées pour la recherche
     dict_keys_no_accents = {}
     for dict_word, (original_cased, category) in MAP_DICTIONARY_FLAT.items():
         dict_no_accents = remove_accents(dict_word)
         dict_keys_no_accents[dict_no_accents] = (original_cased, category)
 
-    # A) Tentative de correspondance exacte (très rapide)
     if text_no_accents in dict_keys_no_accents:
         matched_word = dict_keys_no_accents[text_no_accents]
     elif text_hyphenated in dict_keys_no_accents:
         matched_word = dict_keys_no_accents[text_hyphenated]
     else:
-        # B) Si échoue, utiliser difflib (intégré à Python, pas besoin de rapidfuzz)
-        # On baisse le seuil à 75% (0.75) pour tolérer les fautes de frappe de Florence
         close_matches = difflib.get_close_matches(
             text_no_accents, dict_keys_no_accents.keys(), n=1, cutoff=0.75
         )
@@ -123,7 +115,7 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
         alpha_count = sum(1 for c in text_clean if c.isalpha())
         upper_count = sum(1 for c in text_clean if c.isupper())
 
-        # Si le texte extrait est à 80% ou plus en majuscules (ex: MAURITAnNE), on force la correction en MAJUSCULES
+        # Force uppercase if the extracted text is >= 80% uppercase (e.g. MAURITAnNE)
         if alpha_count > 0 and (upper_count / alpha_count) >= 0.8:
             corrected_text = original_cased.upper()
         else:
@@ -143,7 +135,6 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
                         res.append(c_w)
                 corrected_text = "".join(res)
             else:
-                # Fallback: if there is exactly 1 newline and 1 space
                 if text_clean.count("\n") == 1 and corrected_text.count(" ") == 1:
                     corrected_text = corrected_text.replace(" ", "\n")
 

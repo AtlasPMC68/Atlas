@@ -12,10 +12,10 @@ export async function apiFetch(
   const headers = new Headers(options.headers);
   if (keycloak.token) {
     try {
-      // Rafraîchir le token s'il expire dans moins de 30 secondes
+      // Refresh token if it expires in less than 30 seconds
       await keycloak.updateToken(30);
     } catch (e) {
-      console.warn("Impossible de rafraîchir le token", e);
+      console.warn("Failed to refresh Keycloak token", e);
     }
     headers.set("Authorization", `Bearer ${keycloak.token}`);
   }
