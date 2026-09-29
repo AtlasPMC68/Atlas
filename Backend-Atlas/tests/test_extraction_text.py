@@ -332,5 +332,9 @@ def test_text_extraction(
         },
     )
 
-    error_msg = f"\n{RED}{BOLD}ÉCHEC : {image_path.name}{RESET}\n" f"  {YELLOW}RESULTAT : [Hit={box_find_rate:>5.1f}%, Dist={average_dist:>4.2f}]{RESET}\n" f"  {GREEN}ATTENDU  : [Hit>={min_hit_rate:>5.1f}%, Dist<={max_dist:>4.2f}]{RESET}"
+    error_msg = (
+        f"\n{RED}{BOLD}ÉCHEC : {image_path.name}{RESET}\n"
+        f"  {YELLOW}RESULTAT : [Hit={box_find_rate:>5.1f}%, Dist={average_dist:>4.2f}]{RESET}\n"
+        f"  {GREEN}ATTENDU  : [Hit>={min_hit_rate:>5.1f}%, Dist<={max_dist:>4.2f}]{RESET}"
+    )
     assert is_passed, error_msg

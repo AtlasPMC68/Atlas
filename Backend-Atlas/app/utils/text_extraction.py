@@ -175,8 +175,6 @@ def geolocate_cities_and_leftover_text(
         if bool(candidate.get("found")):
             city_feature_collection = _build_city_feature_collection(text, candidate)
             city_persist_coroutines.append(persist_city_feature_fn(project_id, map_id, city_feature_collection))
-        elif anchor_x is not None and anchor_y is not None:
-            pixel_text_feature_collections.append(_build_pixel_text_feature_collection(text, anchor_x, anchor_y))
 
     async def _run_all():
         if city_persist_coroutines:
@@ -185,20 +183,7 @@ def geolocate_cities_and_leftover_text(
                 if isinstance(res, Exception):
                     logger.error(f"Failed to persist city text: {res}")
 
-        if pixel_text_feature_collections and pixel_points and geo_points_lonlat:
-            georef_text_features = georeference_features_with_sift_points(
-                pixel_text_feature_collections,
-                pixel_points,
-                geo_points_lonlat,
-                snap_to_coastline=False,
-                clip_to_land_mask=False,
-            )
-            try:
-                await persist_features_fn(project_id, map_id, georef_text_features)
-            except Exception as exc:
-                logger.error(f"Failed to persist georeferenced features: {exc}")
-
-    if city_persist_coroutines or pixel_text_feature_collections:
+    if city_persist_coroutines:
         try:
             asyncio.run(_run_all())
         except RuntimeError:
@@ -263,20 +248,28 @@ def _build_extracted_text_from_detections(
 
             return False
 
-        from app.utils.map_dictionary import apply_map_dictionary_correction
+        from app.utils.cities_validation import find_first_city
+
+        def process_candidate_text(text_val: str):
+            if should_ignore(text_val):
+                return
+            city_res = find_first_city(text_val, confidence_threshold=0.80)
+            if city_res.get("found"):
+                city_name = city_res.get("name") or text_val
+                extracted_text.append(
+                    {
+                        "text": city_name,
+                        "bbox": quad,
+                        "mapElementType": "ville",
+                    }
+                )
 
         if "\n" in raw_text:
             lines = raw_text.split("\n")
             for line in lines:
-                if should_ignore(line):
-                    continue
-                corrected_line = apply_map_dictionary_correction(line)
-                extracted_text.append({"text": corrected_line, "bbox": quad})
+                process_candidate_text(line)
         else:
-            if should_ignore(raw_text):
-                continue
-            corrected_text = apply_map_dictionary_correction(raw_text)
-            extracted_text.append({"text": corrected_text, "bbox": quad})
+            process_candidate_text(raw_text)
 
     return extracted_text
 

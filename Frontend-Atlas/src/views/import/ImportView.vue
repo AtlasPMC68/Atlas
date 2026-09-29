@@ -38,12 +38,6 @@
           Géoréférencement
         </div>
         <div class="step" :class="{ 'step-primary': currentStep >= 5 }">
-          Légende
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 6 }">
-          Couleurs
-        </div>
-        <div class="step" :class="{ 'step-primary': currentStep >= 7 }">
           Extraction
         </div>
       </div>
@@ -139,11 +133,10 @@
                 />
                 <div class="flex-1">
                   <div class="font-medium text-sm">
-                    Extraction de texte (OCR)
+                    Extraction des villes (OCR)
                   </div>
                   <div class="text-xs text-base-content/60">
-                    Détecter et extraire le texte de la carte (noms de lieux,
-                    légendes)
+                    Détecter et extraire les villes sur la carte (geonamescache)
                   </div>
                 </div>
               </label>
@@ -197,17 +190,6 @@
       @cancel="cancelImport"
     />
 
-    <!-- Legend area selection modal -->
-    <LegendAreaPickerModal
-      v-if="showLegendPickerModal && previewUrl"
-      :is-open="showLegendPickerModal"
-      :image-url="previewUrl"
-      :initial-bounds="legendBounds"
-      @close="handleLegendClose"
-      @skip="handleLegendSkip"
-      @confirmed="handleLegendConfirmed"
-    />
-
     <!-- Color picker modal -->
     <ColorPickerModal
       v-if="showColorPickerModal && previewUrl && selectedFile"
@@ -237,7 +219,6 @@ import type {
   CoastlineKeypoint,
   WorldAreaSelection,
 } from "../../typescript/georef";
-import type { LegendBounds } from "../../typescript/legend";
 
 // Components
 import FileDropZone from "../../components/import/FileDropZone.vue";
@@ -246,7 +227,6 @@ import ImportControls from "../../components/import/ImportControls.vue";
 import ProcessingModal from "../../components/import/ProcessingModal.vue";
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
-import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 
 const router = useRouter();
@@ -301,17 +281,13 @@ interface GeorefPayload {
 const currentStep = ref<number>(1);
 const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
-const showLegendPickerModal = ref<boolean>(false);
 const showColorPickerModal = ref<boolean>(false);
 const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
-const legendBounds = ref<LegendBounds | null>(null);
 type ImposedColor = { x: number; y: number; name: string; radius: number };
 const pickedColors = ref<ImposedColor[]>([]);
-const pendingLegendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
-const legendReturnStep = ref<number>(2);
 const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
 
 // Dev-test: stable identifier to store assets/config under backend tests/assets
@@ -361,9 +337,6 @@ async function startImportProcess() {
   // Note: dev-test mode always forces georef on, so this path is production-only.
   if (!enableGeoreferencing.value) {
     pendingGeorefPayload.value = null;
-    legendReturnStep.value = 2;
-    currentStep.value = 5;
-    showLegendPickerModal.value = true;
 
     const importProjectId =
       routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
@@ -433,24 +406,17 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
 async function handleGeorefConfirmed(payload: GeorefPayload) {
   // payload: { worldPoints: [ [lat,lng], ... ], imagePoints: [ [x,y], ... ] }
   showSiftGeorefModal.value = false;
-
   pendingGeorefPayload.value = payload;
 
-  // Dev-test extraction ignores legend-derived colors, so the pipette is the only
-  // color source there: skip the legend step and go straight to the color picker.
-  if (isDevTest.value) {
-    pendingLegendBounds.value = null;
-    currentStep.value = 6;
+  if (enableColorExtraction.value) {
+    currentStep.value = 5;
     showColorPickerModal.value = true;
-    return;
+  } else {
+    await submitImportWithGeoref();
   }
-
-  legendReturnStep.value = 4;
-  currentStep.value = 5;
-  showLegendPickerModal.value = true;
 }
 
-async function submitImportWithGeoref(legend: LegendBounds | null) {
+async function submitImportWithGeoref() {
   if (!selectedFile.value) return;
 
   const payload = pendingGeorefPayload.value;
@@ -477,14 +443,13 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       pickedColors.value.length > 0 ? pickedColors.value : undefined,
     );
     if (result.success) {
-      currentStep.value = 6;
+      currentStep.value = 5;
     } else {
       console.error("Erreur importation:", result.error);
       currentStep.value = 2;
     }
     pendingGeorefPayload.value = null;
     pickedColors.value = [];
-    pendingLegendBounds.value = null;
     return;
   }
 
@@ -510,10 +475,9 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
       enableTextExtraction: enableTextExtraction.value,
       imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
     },
-    legend,
   );
   if (result.success) {
-    currentStep.value = 7;
+    currentStep.value = 5;
   } else {
     console.error("Erreur importation:", result.error);
     currentStep.value = 2;
@@ -521,40 +485,6 @@ async function submitImportWithGeoref(legend: LegendBounds | null) {
 
   pendingGeorefPayload.value = null;
   pickedColors.value = [];
-  pendingLegendBounds.value = null;
-}
-
-function handleLegendClose() {
-  showLegendPickerModal.value = false;
-  if (legendReturnStep.value === 4) {
-    showSiftGeorefModal.value = true;
-    currentStep.value = 4;
-    return;
-  }
-
-  currentStep.value = 2;
-}
-
-async function handleLegendSkip() {
-  showLegendPickerModal.value = false;
-  legendBounds.value = null;
-  pendingLegendBounds.value = null;
-  if (enableColorExtraction.value) {
-    currentStep.value = 6;
-    showColorPickerModal.value = true;
-    return;
-  }
-  await submitImportWithGeoref(null);
-}
-
-async function handleLegendConfirmed(bounds: LegendBounds) {
-  showLegendPickerModal.value = false;
-  legendBounds.value = bounds;
-  // If the user provided a legend area, we use that as the imposed source and
-  // skip the color picker step.
-  pickedColors.value = [];
-  pendingLegendBounds.value = bounds;
-  await submitImportWithGeoref(bounds);
 }
 
 async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
@@ -575,15 +505,8 @@ async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
 
 function handleColorPickerClose() {
   showColorPickerModal.value = false;
-  if (isDevTest.value) {
-    // No legend step in dev-test: go back to the georeferencing step.
-    showSiftGeorefModal.value = true;
-    currentStep.value = 4;
-    return;
-  }
-  // Go back to legend step
-  showLegendPickerModal.value = true;
-  currentStep.value = 5;
+  showSiftGeorefModal.value = true;
+  currentStep.value = 4;
 }
 
 async function handleColorPickerConfirmed(
@@ -591,7 +514,7 @@ async function handleColorPickerConfirmed(
 ) {
   showColorPickerModal.value = false;
   pickedColors.value = colors;
-  await submitImportWithGeoref(pendingLegendBounds.value);
+  await submitImportWithGeoref();
 }
 
 // Redirect when extraction is finished
@@ -623,13 +546,10 @@ const resetImport = () => {
   currentStep.value = 1;
   showWorldAreaPickerModal.value = false;
   showSiftGeorefModal.value = false;
-  showLegendPickerModal.value = false;
   showColorPickerModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
-  legendBounds.value = null;
   pickedColors.value = [];
-  pendingLegendBounds.value = null;
   pendingGeorefPayload.value = null;
   coastlineKeypoints.value = null;
   usedLakes.value = false;
