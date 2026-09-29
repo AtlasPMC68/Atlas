@@ -1,3 +1,6 @@
+include:
+  - ./Backend-Atlas/ocr/docker-compose.yml
+
 services:
   backend:
     build:
@@ -53,10 +56,16 @@ services:
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ocr-data:/data
     depends_on:
       - redis
       - db
-    command: celery -A app.celery_app worker --loglevel=info -E -Q default
+    command: >
+      sh -c "
+        celery -A app.celery_app worker --loglevel=info -E -Q default,maps -n maps@%h &
+        celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
+        wait
+      "
 
   flower:
     build:
@@ -145,16 +154,19 @@ services:
   test-backend:
     build:
       context: ./Backend-Atlas
-    command: pytest tests/ -v --color=yes --tb=short
+    command: pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true
     depends_on:
       - backend
       - db
       - redis
+      - florence-worker
+      - qwen-worker
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ocr-data:/data
 
   test-frontend:
     build:
@@ -168,3 +180,4 @@ volumes:
   postgres-data:
   redis-data:
   keycloak-data:
+  ocr-data:
