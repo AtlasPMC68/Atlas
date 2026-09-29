@@ -245,6 +245,53 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     return unique_dets
 
 
+import math
+
+
+def _map_point_back(
+    x: float,
+    y: float,
+    orig_w: float,
+    orig_h: float,
+    new_w: float,
+    new_h: float,
+    angle_deg: float,
+) -> tuple[float, float]:
+    """
+    Inverse affine transform corresponding to PIL's image.rotate(angle_deg, expand=True).
+    In image coordinates (Y pointing downwards), counter-clockwise rotation by angle_deg has:
+        rot_x = (x - cx_orig) * cos(a) + (y - cy_orig) * sin(a) + cx_new
+        rot_y = -(x - cx_orig) * sin(a) + (y - cy_orig) * cos(a) + cy_new
+    The exact mathematical inverse to recover original coordinates is:
+        orig_x = (rot_x - cx_new) * cos(a) - (rot_y - cy_new) * sin(a) + cx_orig
+        orig_y = (rot_x - cx_new) * sin(a) + (rot_y - cy_new) * cos(a) + cy_orig
+    """
+    rad = math.radians(angle_deg)
+    cos_a = math.cos(rad)
+    sin_a = math.sin(rad)
+    cx_orig, cy_orig = orig_w / 2.0, orig_h / 2.0
+    cx_new, cy_new = new_w / 2.0, new_h / 2.0
+    x_sh, y_sh = x - cx_new, y - cy_new
+    x_orig_sh = x_sh * cos_a - y_sh * sin_a
+    y_orig_sh = x_sh * sin_a + y_sh * cos_a
+    return x_orig_sh + cx_orig, y_orig_sh + cy_orig
+
+
+def _map_quad_back(
+    quad: list[float],
+    orig_w: float,
+    orig_h: float,
+    new_w: float,
+    new_h: float,
+    angle_deg: float,
+) -> list[float]:
+    mapped_quad = []
+    for i in range(0, len(quad) - 1, 2):
+        mx, my = _map_point_back(quad[i], quad[i + 1], orig_w, orig_h, new_w, new_h, angle_deg)
+        mapped_quad.extend([mx, my])
+    return mapped_quad
+
+
 def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> dict:
     """
     Run the Florence OCR pipeline on one image with adaptive preprocessing and tiling.
@@ -323,50 +370,6 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
                             "angle": 0.0,
                         }
                     )
-
-    import math
-
-    def _map_point_back(
-        x: float,
-        y: float,
-        orig_w: float,
-        orig_h: float,
-        new_w: float,
-        new_h: float,
-        angle_deg: float,
-    ) -> tuple[float, float]:
-        """
-        Inverse affine transform corresponding to PIL's image.rotate(angle_deg, expand=True).
-        In image coordinates (Y pointing downwards), counter-clockwise rotation by angle_deg has:
-            rot_x = (x - cx_orig) * cos(a) + (y - cy_orig) * sin(a) + cx_new
-            rot_y = -(x - cx_orig) * sin(a) + (y - cy_orig) * cos(a) + cy_new
-        The exact mathematical inverse to recover original coordinates is:
-            orig_x = (rot_x - cx_new) * cos(a) - (rot_y - cy_new) * sin(a) + cx_orig
-            orig_y = (rot_x - cx_new) * sin(a) + (rot_y - cy_new) * cos(a) + cy_orig
-        """
-        rad = math.radians(angle_deg)
-        cos_a = math.cos(rad)
-        sin_a = math.sin(rad)
-        cx_orig, cy_orig = orig_w / 2.0, orig_h / 2.0
-        cx_new, cy_new = new_w / 2.0, new_h / 2.0
-        x_sh, y_sh = x - cx_new, y - cy_new
-        x_orig_sh = x_sh * cos_a - y_sh * sin_a
-        y_orig_sh = x_sh * sin_a + y_sh * cos_a
-        return x_orig_sh + cx_orig, y_orig_sh + cy_orig
-
-    def _map_quad_back(
-        quad: list[float],
-        orig_w: float,
-        orig_h: float,
-        new_w: float,
-        new_h: float,
-        angle_deg: float,
-    ) -> list[float]:
-        mapped_quad = []
-        for i in range(0, len(quad) - 1, 2):
-            mx, my = _map_point_back(quad[i], quad[i + 1], orig_w, orig_h, new_w, new_h, angle_deg)
-            mapped_quad.extend([mx, my])
-        return mapped_quad
 
     angles = [90, -45]
     image_area = preprocessed.width * preprocessed.height
