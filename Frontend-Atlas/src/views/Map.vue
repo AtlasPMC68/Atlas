@@ -18,7 +18,7 @@
           @add-map="openAddMapDialog"
           @update-feature="onUpdateFeature"
           @retry-ocr="onRetryOcr"
-          @toggle-original-map="onToggleOriginalMap"
+
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">

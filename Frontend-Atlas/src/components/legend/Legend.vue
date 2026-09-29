@@ -15,14 +15,7 @@
         </button>
       </h2>
       <template v-if="isLegendVisible">
-        <div v-if="legendImageSrc" class="my-2 max-w-[250px]">
-          <img
-            :src="legendImageSrc"
-            class="max-h-36 w-full rounded border border-base-300 object-contain bg-white p-1"
-            alt="Zone de légende originale"
-            title="Légende extraite de la carte originale"
-          />
-        </div>
+
         <p v-if="visibleZoneFeatures.length === 0 && !legendImageSrc" class="text-xs text-gray-500">
           Aucune zone
         </p>

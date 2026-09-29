@@ -284,7 +284,7 @@ MAP_DICTIONARY_CATEGORIZED = {
         "Oman", "Beaufort", "Labrador", "Célèbes", "Sulu", "Java", "Bismarck", "Salomon", "Océan Atlantique", "Océan Pacifique", "Océan Arctique"
     ],
     "baie_golfe": [
-        "Baie", "Golfe", "Détroit", "Baffin", "Sargasses", "Golfe du Mexique"
+        "Baie", "Golfe", "Détroit", "Baffin", "Sargasses", "Golfe du Mexique", "Baie d'Hudson"
     ],
     "ile": [
         "Île", "Îles", "Archipel", "Anticosti", "Miquelon", "Cuba", "Jamaïque", "Hawaï", "Porto-Rico", "Saint-Domingue",

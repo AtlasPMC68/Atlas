@@ -129,21 +129,7 @@
             />
           </button>
         </div>
-        <div class="flex gap-2 items-center">
-          <button
-            class="btn btn-sm flex-1 font-bold gap-2 transition-all"
-            :class="
-              showOriginalMap
-                ? 'btn-accent text-white shadow-sm'
-                : 'btn-outline btn-accent'
-            "
-            @click="emit('toggle-original-map')"
-            title="Afficher/Masquer la carte originale superposée (sans la légende, titre, boussole et échelle)"
-          >
-            <MapIcon class="w-4 h-4" />
-            <span>Carte originale</span>
-          </button>
-        </div>
+
         <div class="flex gap-2 items-center">
           <button
             class="btn btn-primary btn-sm flex-1 font-bold"
