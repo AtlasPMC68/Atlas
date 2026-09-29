@@ -116,19 +116,6 @@
     <div class="px-3 py-1.5 flex flex-col gap-1.5">
       <div class="divider m-0"></div>
       <template v-if="!props.isDevTestCreation">
-        <div class="flex gap-2 items-center">
-          <button
-            class="btn btn-outline btn-secondary btn-sm flex-1 font-bold gap-2"
-            :disabled="isRetryingOcr"
-            @click="emit('retry-ocr')"
-            title="Relancer l'extraction de texte (OCR)"
-          >
-            <ArrowPathIcon
-              class="w-4 h-4"
-              :class="{ 'animate-spin': isRetryingOcr }"
-            />
-          </button>
-        </div>
 
         <div class="flex gap-2 items-center">
           <button
@@ -350,7 +337,6 @@ const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
   isDevTestCreation?: boolean;
-  isRetryingOcr?: boolean;
   showOriginalMap?: boolean;
 }>();
 
@@ -361,7 +347,6 @@ const emit = defineEmits([
   "delete-feature",
   "add-map",
   "update-feature",
-  "retry-ocr",
   "toggle-original-map",
 ]);
 
