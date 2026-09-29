@@ -91,6 +91,7 @@ def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: s
                 max_new_tokens=config["max_new_tokens"],
                 do_sample=False,
                 num_beams=1,
+                early_stopping=False,
             )
         generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
         generated_text = generated_text.replace("</s>", "").replace("<s>", "")
@@ -123,6 +124,7 @@ def get_image_context(model: Any, processor: Any, image: Image.Image, config: di
             max_new_tokens=256,
             do_sample=False,
             num_beams=1,
+            early_stopping=False,
         )
     generated_ids = generated_ids[:, inputs["input_ids"].shape[1] :]
     context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
