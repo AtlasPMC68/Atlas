@@ -258,7 +258,7 @@ MAP_DICTIONARY_CATEGORIZED = {
         "Égypte", "Turquie", "Brésil", "Argentine", "Colombie", "Chili", "Pérou", "Sénégal", "Cameroun", "Burkina", "Faso", 
         "Éthiopie", "Érythrée", "Somalie", "Kenya", "Tanzanie", "Rwanda", "Angola", "Namibie", "Afrique-du-Sud", "Algérie", "Maroc", 
         "Tunisie", "Irak", "Iran", "Syrie", "Israël", "Palestine", "Afghanistan", "Pakistan", "Vietnam", "Cambodge", "Laos", 
-        "Thaïlande", "Indonésie", "Philippines", "Corée", "Tchad", "Malawi", "Arménie"
+        "Thaïlande", "Indonésie", "Philippines", "Corée", "Tchad", "Malawi", "Arménie", "Soudan", "Mauritanie", "Gambie"
     ],
     "continent": [
         "Afrique", "Amérique", "Asie", "Europe", "Océanie", "Antarctique", "Eurasie",
@@ -307,7 +307,7 @@ MAP_DICTIONARY_CATEGORIZED = {
         "Mont", "Montagne", "Massif", "Pic", "Volcan", "Vallée", "Gorge", "Plaine", "Plateau", "Désert", "Oasis", "Forêt", 
         "Jungle", "Équateur", "Tropique", "Cancer", "Capricorne", "Méridien", "Bassin", "Canyon", "Falaise", "Lagune", 
         "Marais", "Tourbière", "Toundra", "Taïga", "Glacier", "Fjord", "Monts", "Val", "Bois", "Parc", "Réserve", 
-        "Montagnes", "Col", "Isthme", "Péninsule", "Presqu'île", "Cap"
+        "Montagnes", "Col", "Isthme", "Péninsule", "Presqu'île", "Cap", "Sahara", "Désert du Sahara", "Tropique du Cancer", "Tropique du Capricorne"
     ],
     "hydrographie": [
         "Ruisseau", "Canal", "Lacs", "Rivières", "Atoll", "Récif", "Banc", "Haut-fond", "Chenal", "Passe", "Bras", 

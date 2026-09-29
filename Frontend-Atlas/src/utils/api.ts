@@ -11,6 +11,12 @@ export async function apiFetch(
 ): Promise<Response> {
   const headers = new Headers(options.headers);
   if (keycloak.token) {
+    try {
+      // Rafraîchir le token s'il expire dans moins de 30 secondes
+      await keycloak.updateToken(30);
+    } catch (e) {
+      console.warn("Impossible de rafraîchir le token", e);
+    }
     headers.set("Authorization", `Bearer ${keycloak.token}`);
   }
   return fetch(`${import.meta.env.VITE_API_URL}${path}`, {

@@ -119,9 +119,15 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
 
     if matched_word:
         original_cased, category = matched_word
-        corrected_text = original_cased
-        if text.isupper():
+
+        alpha_count = sum(1 for c in text_clean if c.isalpha())
+        upper_count = sum(1 for c in text_clean if c.isupper())
+
+        # Si le texte extrait est à 80% ou plus en majuscules (ex: MAURITAnNE), on force la correction en MAJUSCULES
+        if alpha_count > 0 and (upper_count / alpha_count) >= 0.8:
             corrected_text = original_cased.upper()
+        else:
+            corrected_text = original_cased
 
         if "\n" in text_clean:
             # Preserve original whitespace if word counts match
