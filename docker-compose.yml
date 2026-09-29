@@ -63,8 +63,8 @@ services:
       - db
     command: >
       sh -c "
-        celery -A app.celery_app worker --loglevel=error -q -E -Q default,maps -n maps@%h &
-        celery -A app.celery_app worker --loglevel=error -q -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
+        celery -A app.celery_app worker --loglevel=error -E -Q default,maps -n maps@%h &
+        celery -A app.celery_app worker --loglevel=error -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
         wait
       "
 

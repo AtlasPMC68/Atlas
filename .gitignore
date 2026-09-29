@@ -73,3 +73,6 @@ Backend-Atlas/app/extracted_texts
 errors.geojson
 *errors*.geojson
 Backend-Atlas/tests/assets/georef/test_cases/
+Backend-Atlas/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/pip_7sift/errors.geojson
+Backend-Atlas/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/pip_7sift/report.json
+Backend-Atlas/tests/assets/georef/test_cases/52a1aedc-98d0-4bd7-8b78-d4fd184f91df/pip_7sift/zones.geojson
