@@ -30,7 +30,8 @@ services:
       - "3000:5173" # localhost:3000 → Vite (5173 dans le conteneur)
     restart: unless-stopped
     env_file:
-      - ./Frontend-Atlas/.env
+      - path: ./Frontend-Atlas/.env
+        required: false
     volumes:
       - ./Frontend-Atlas:/app # bind mount pour hot reload
       - /app/node_modules # éviter conflit node_modules
