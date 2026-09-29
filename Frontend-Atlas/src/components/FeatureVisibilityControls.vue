@@ -228,16 +228,6 @@
             <option value="ignored">🚫 Ignorer définitivement</option>
           </select>
 
-          <label class="flex items-center gap-2 mt-1 p-2 bg-base-200 rounded cursor-pointer">
-            <input
-              v-model="rememberRule"
-              type="checkbox"
-              class="checkbox checkbox-xs checkbox-primary"
-            />
-            <span class="text-xs text-base-content select-none leading-tight">
-              Mémoriser ce choix pour les prochaines cartes et futures ré-extractions OCR
-            </span>
-          </label>
         </div>
         <div
           class="flex gap-2"
@@ -381,7 +371,6 @@ const featureToEditName = ref<string>("");
 const featureToEditLabelText = ref<string | undefined>(undefined);
 const featureToEditCategory = ref<string>("label");
 const featureToEditRawText = ref<string>("");
-const rememberRule = ref<boolean>(false);
 const featureToEditColor = ref<string | undefined>(undefined);
 const featureToEditStrokeColor = ref<string | undefined>(undefined);
 const featureToEditOpacity = ref<number | undefined>(undefined);
@@ -561,7 +550,6 @@ async function showEditFeatureDialog(feature: Feature) {
   featureToEditLabelText.value = feature.properties.labelText;
   featureToEditCategory.value = feature.properties.mapElementType || "label";
   featureToEditRawText.value = feature.properties.labelText || feature.properties.name || "";
-  rememberRule.value = false;
   featureToEditColor.value = rgbToHex(feature.properties.colorRgb);
   featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
   featureToEditOpacity.value = feature.properties.fillOpacity;
@@ -576,19 +564,6 @@ async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
   try {
-    if (rememberRule.value && featureToEditRawText.value) {
-      await apiFetch("/dictionary/override", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          raw_text: featureToEditRawText.value,
-          corrected_text: featureToEditName.value,
-          category: featureToEditCategory.value,
-          action: featureToEditCategory.value === "ignored" ? "ignore" : "keep",
-        }),
-      });
-    }
-
     if (featureToEditCategory.value === "ignored") {
       emit("delete-feature", featureToEdit.value.id);
       showAlert("info", "Élément ignoré et supprimé.");

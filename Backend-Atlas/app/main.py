@@ -8,7 +8,6 @@ from .routers import (
     auth,
     celery_router,
     dev_test,
-    dictionary,
     maps_ocr_retry,
     projects,
     user,
@@ -33,7 +32,6 @@ app = FastAPI(
 app.include_router(celery_router.router)
 app.include_router(projects.router)
 app.include_router(maps_ocr_retry.router)
-app.include_router(dictionary.router)
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(dev_test.router)

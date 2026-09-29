@@ -11,53 +11,6 @@ for category, words in MAP_DICTIONARY_CATEGORIZED.items():
     for w in words:
         MAP_DICTIONARY_FLAT[w.lower()] = (w, category)
 
-import json
-import logging
-import os
-
-logger = logging.getLogger(__name__)
-
-CUSTOM_DICTIONARY_FILE = os.getenv("CUSTOM_DICTIONARY_FILE", "/data/user_dictionary_overrides.json")
-
-
-def load_custom_dictionary() -> dict[str, dict]:
-    """Load persistent custom dictionary overrides defined by users."""
-    if os.path.exists(CUSTOM_DICTIONARY_FILE):
-        try:
-            with open(CUSTOM_DICTIONARY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.warning(f"Could not load custom dictionary overrides: {e}")
-            return {}
-    return {}
-
-
-def save_custom_dictionary_entry(
-    raw_text: str, corrected_text: str, category: str, action: str = "keep"
-) -> dict:
-    """Save or update a learned user dictionary rule."""
-    raw_key = raw_text.strip().lower()
-    if not raw_key:
-        return {}
-
-    data = load_custom_dictionary()
-    entry = {
-        "raw_text": raw_text.strip(),
-        "corrected_text": corrected_text.strip(),
-        "category": category.strip(),
-        "action": action.strip(),
-    }
-    data[raw_key] = entry
-
-    try:
-        os.makedirs(os.path.dirname(CUSTOM_DICTIONARY_FILE), exist_ok=True)
-        with open(CUSTOM_DICTIONARY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"Failed to save custom dictionary entry to {CUSTOM_DICTIONARY_FILE}: {e}")
-
-    return entry
-
 
 def remove_accents(input_str: str) -> str:
     nfkd_form = unicodedata.normalize("NFKD", input_str)
@@ -70,15 +23,6 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
         return "", "other"
 
     text_lower = text_clean.lower()
-
-    custom_dict = load_custom_dictionary()
-    if text_lower in custom_dict:
-        entry = custom_dict[text_lower]
-        if entry.get("action") == "ignore":
-            return "", "ignored"
-        chosen_cat = entry.get("category", "rejet")
-        chosen_text = entry.get("corrected_text", text_clean)
-        return chosen_text, chosen_cat
 
     for eng_phrase, fr_phrase in ENGLISH_FLORENCE_TO_FRENCH_TRANSLATIONS.items():
         if " " in eng_phrase and eng_phrase in text_lower:
