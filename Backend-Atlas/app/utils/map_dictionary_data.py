@@ -1,6 +1,7 @@
 # fmt: off
 
 ENGLISH_FLORENCE_TO_FRENCH_TRANSLATIONS = {
+    "LAC SUPERIEN": "Lac Supérieur",
     "principa uta": "Principauté",
     "cate-d": "Côte-d'Azur",
     "lac loman": "Lac Léman",
@@ -243,6 +244,9 @@ MAP_DICTIONARY_CATEGORIZED = {
         "Jakarta", "Manille", "Séoul", "Pyongyang", "Ottawa", "Mexico", "Brasilia", "Buenos-Aires", "Bogota", "Lima",
         "Santiago", "Caracas", "La-Havane", "Pretoria", "Nairobi", "Abuja", "Addis-Abeba", "Lutèce", "La-Nouvelle-Orléans"
     ],
+    "municipalité": [
+        "Montréal", "Québec", "Trois-Rivières", "Paris", "Londres", "Boston", "Philadelphie", "Athènes", "Rome", "Alexandrie"
+    ],
     "province": [
         "Province de Québec", "Province du Canada", "Nouvelle-France", "Acadie", "Haut-Canada", "Bas-Canada", "Nouvelle-Écosse", "Nouveau-Brunswick", "Terre-Neuve", "Ontario",
         "Saskatchewan", "Alberta", "Colombie-Britannique", "Manitoba", "Yukon", "Nunavut", "Bretagne", "Normandie", "Bourgogne", "Aquitaine",
@@ -288,6 +292,7 @@ MAP_DICTIONARY_CATEGORIZED = {
     ],
     "fort": [
         "Fort", "Chambly", "Frontenac", "Niagara", "Michilimakinac", "Duquesne", "Beauharnois", "Carillon", "Ticonderoga", "Sainte-Marie",
+        "Détroit", "St-Pierre", "Dauphin", "La Reine", "Louisbourg", "Port-Royal", "Toulouse"
     ],
     "peuple": [
         "Autochtones", "Inuits", "Iroquois", "Hurons", "Wendats", "Mohawks", "Abénaquis", "Cris", "Innus", "Montagnais",
