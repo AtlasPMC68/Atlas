@@ -32,9 +32,7 @@ else:
     logger.setLevel(getattr(logging, log_level, logging.INFO))
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
         logger.addHandler(handler)
 
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
@@ -45,9 +43,7 @@ CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
 CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
 
-def _extract_bbox_center_anchor(
-    bbox_quad: object, center: object = None
-) -> tuple[float | None, float | None]:
+def _extract_bbox_center_anchor(bbox_quad: object, center: object = None) -> tuple[float | None, float | None]:
     """Return bbox center anchor (x, y) from explicit center or quad list, or (None, None) if invalid."""
     if isinstance(center, (list, tuple)) and len(center) == 2:
         try:
@@ -183,17 +179,13 @@ def geolocate_cities_and_leftover_text(
         if not text:
             continue
 
-        anchor_x, anchor_y = _extract_bbox_center_anchor(
-            block.get("bbox"), center=block.get("center")
-        )
+        anchor_x, anchor_y = _extract_bbox_center_anchor(block.get("bbox"), center=block.get("center"))
 
         box_height = block.get("boxHeight", 12)
         rotation_angle = block.get("rotationAngle", 0)
         map_element_type = block.get("mapElementType", "label")
 
-        if map_element_type == "rejet":
-            candidate = {"found": False}
-        else:
+        if map_element_type in ["ville", "municipalité", "fort"]:
             try:
                 candidate = find_first_city(text, geo_bounds=geo_bounds)
             except Exception as exc:
@@ -205,18 +197,14 @@ def geolocate_cities_and_leftover_text(
                     "lat": 0.0,
                     "lon": 0.0,
                 }
+        else:
+            candidate = {"found": False}
 
         if bool(candidate.get("found")) and anchor_x is not None and anchor_y is not None:
-            city_feature_collection = _build_city_feature_collection(
-                text, candidate, box_height, rotation_angle, anchor_x, anchor_y
-            )
+            city_feature_collection = _build_city_feature_collection(text, candidate, box_height, rotation_angle, anchor_x, anchor_y)
             cities_to_georef.append(city_feature_collection)
         elif anchor_x is not None and anchor_y is not None:
-            pixel_text_feature_collections.append(
-                _build_pixel_text_feature_collection(
-                    text, anchor_x, anchor_y, box_height, rotation_angle, map_element_type
-                )
-            )
+            pixel_text_feature_collections.append(_build_pixel_text_feature_collection(text, anchor_x, anchor_y, box_height, rotation_angle, map_element_type))
 
     async def _run_all():
         city_persist_coroutines = []
@@ -233,14 +221,10 @@ def geolocate_cities_and_leftover_text(
                 clip_to_land_mask=False,
             )
             for city_feat in georef_cities:
-                city_persist_coroutines.append(
-                    persist_city_feature_fn(project_id, map_id, city_feat)
-                )
+                city_persist_coroutines.append(persist_city_feature_fn(project_id, map_id, city_feat))
         elif cities_to_georef:
             for city_feat in cities_to_georef:
-                city_persist_coroutines.append(
-                    persist_city_feature_fn(project_id, map_id, city_feat)
-                )
+                city_persist_coroutines.append(persist_city_feature_fn(project_id, map_id, city_feat))
 
         if city_persist_coroutines:
             results = await asyncio.gather(*city_persist_coroutines, return_exceptions=True)
@@ -307,9 +291,7 @@ def _build_extracted_text_from_detections(
                     ]
                 except (TypeError, ValueError, IndexError):
                     quad_points = None
-            elif len(quad_raw) == 4 and all(
-                isinstance(pt, (list, tuple)) and len(pt) == 2 for pt in quad_raw
-            ):
+            elif len(quad_raw) == 4 and all(isinstance(pt, (list, tuple)) and len(pt) == 2 for pt in quad_raw):
                 try:
                     quad_points = [[float(pt[0]), float(pt[1])] for pt in quad_raw]
                 except (TypeError, ValueError):
@@ -395,9 +377,7 @@ def _build_extracted_text_from_detections(
         )
 
     # Non-Maximum Suppression (NMS) to eliminate duplicates and overlaps
-    extracted_text.sort(
-        key=lambda x: (abs(x.get("rotationAngle", 0)), -len(x["text"]))
-    )  # Keep 0-angle as priority, then longest words
+    extracted_text.sort(key=lambda x: (abs(x.get("rotationAngle", 0)), -len(x["text"])))  # Keep 0-angle as priority, then longest words
     filtered_text = []
 
     import math
@@ -534,13 +514,7 @@ def _extract_text_via_pipeline(
     celery_app,
 ) -> tuple[list[dict[str, Any]], list[list[list[float]]]]:
     extracted_text = _run_ocr_pipeline(map_id, filename, file_content, celery_app)
-    text_regions = [
-        block["bbox"]
-        for block in extracted_text
-        if isinstance(block, dict)
-        and isinstance(block.get("bbox"), list)
-        and len(block["bbox"]) == 4
-    ]
+    text_regions = [block["bbox"] for block in extracted_text if isinstance(block, dict) and isinstance(block.get("bbox"), list) and len(block["bbox"]) == 4]
     return extracted_text, text_regions
 
 
@@ -560,10 +534,7 @@ def extract_text(
 
     MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
     if len(file_content) > MAX_FILE_SIZE_BYTES:
-        logger.warning(
-            f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). "
-            f"Rejetée pour éviter un crash OOM (limite à 25 MB)."
-        )
+        logger.warning(f"Image {filename} is too large ({len(file_content) / (1024*1024):.2f} MB). " f"Rejected to prevent an OOM crash (25 MB limit).")
         return [], []
 
     # Mask the specified areas with white pixels if provided
@@ -622,7 +593,5 @@ def extract_text(
         file_content=file_content,
         celery_app=celery_app,
     )
-    logger.info(
-        f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}"
-    )
+    logger.info(f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}")
     return extracted_text, text_regions

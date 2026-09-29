@@ -45,7 +45,7 @@ import {
   disablePerFeatureDrag,
   enablePixelSpaceDrag,
 } from "../utils/mapDragUtils";
-import { toArray, toImageSrc } from "../utils/utils";
+import { toArray, toImageSrc, escapeHtml } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
 import type {
   Feature,
@@ -435,7 +435,7 @@ function renderCities(features: Feature[]) {
     const rotationAngle = featureProperties.rotationAngle || 0;
     const fontSize = boxHeight ? Math.max(14, Math.min(boxHeight * 0.35, 28)) : 16;
     const rotationStyle = rotationAngle ? `transform: rotate(${rotationAngle}deg); transform-origin: left center;` : "";
-    const nameText = featureProperties.name || feature.name || "";
+    const nameText = escapeHtml(featureProperties.name || feature.name || "");
 
     const label = L.marker(coord, {
       icon: L.divIcon({
@@ -498,8 +498,9 @@ function renderLabels(features: Feature[]) {
     const boxHeight = feature.properties.boxHeight;
     const rotationAngle = feature.properties.rotationAngle || 0;
     const fontSize = boxHeight ? Math.max(14, Math.min(boxHeight * 0.35, 28)) : 16;
-    const labelText =
-      feature.properties.labelText || feature.properties.name || "";
+    const labelText = escapeHtml(
+      feature.properties.labelText || feature.properties.name || ""
+    );
 
     const label = L.marker(coord, {
       icon: L.divIcon({
@@ -655,11 +656,11 @@ function renderShapes(features: Feature[]) {
   });
 }
 
-function renderImages(features: Feature[]) {
+async function renderImages(features: Feature[]) {
   const safeFeatures = toArray(features);
 
-  safeFeatures.forEach(async (feature) => {
-    if (!map || !feature.image) return;
+  for (const feature of safeFeatures) {
+    if (!map || !feature.image) continue;
 
     let bounds = feature.properties?.bounds as [[number, number], [number, number]] | undefined;
 
@@ -676,35 +677,27 @@ function renderImages(features: Feature[]) {
             : { lng: p.lng ?? p.lon, lat: p.lat },
         );
         let pixelBox = feature.properties?.pixelBounds;
-        if (!pixelBox && feature.properties?.isOriginalMapImage) {
-          const img = new Image();
-          img.src = toImageSrc(feature.image);
-          await new Promise((r) => (img.onload = r));
-          pixelBox = { x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight };
-        }
         if (pixelBox) {
           bounds = computeGeoBoundsFromBox(pixelBox, pxPts, geoPts) || undefined;
         }
       }
     }
 
-    if (!bounds) return;
+    if (!bounds) continue;
 
     let src = toImageSrc(feature.image);
-    const isOriginal = feature.properties?.isOriginalMapImage === true;
-
-    const defaultOpacity = isOriginal ? 0.45 : (feature.properties?.fillOpacity ?? 1);
+    const defaultOpacity = feature.properties?.fillOpacity ?? 1;
 
     const overlay = L.imageOverlay(src, bounds, {
       opacity: defaultOpacity,
-      interactive: !isOriginal,
+      interactive: true,
       pane: "imagePane",
     });
 
     attachFeatureToLayer(overlay, feature);
     featureLayerManager.addFeatureLayer(feature.id, overlay);
     overlay.getElement()?.setAttribute("draggable", "false");
-  });
+  }
 }
 
 function renderAllFeaturesSafely() {

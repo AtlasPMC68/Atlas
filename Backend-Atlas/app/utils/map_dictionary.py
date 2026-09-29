@@ -6,6 +6,8 @@ from .map_dictionary_data import (
     MAP_DICTIONARY_CATEGORIZED,
 )
 
+import difflib
+
 MAP_DICTIONARY_FLAT = {}
 for category, words in MAP_DICTIONARY_CATEGORIZED.items():
     for w in words:
@@ -15,6 +17,12 @@ for category, words in MAP_DICTIONARY_CATEGORIZED.items():
 def remove_accents(input_str: str) -> str:
     nfkd_form = unicodedata.normalize("NFKD", input_str)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
+
+DICT_KEYS_NO_ACCENTS = {}
+for dict_word, (original_cased, category) in MAP_DICTIONARY_FLAT.items():
+    dict_no_accents = remove_accents(dict_word)
+    DICT_KEYS_NO_ACCENTS[dict_no_accents] = (original_cased, category)
 
 
 def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
@@ -33,25 +41,16 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
     text_no_accents = remove_accents(text_clean_for_match.lower())
     text_hyphenated = re.sub(r"[\s\n]+", "-", text_no_accents)
 
-    import difflib
-
     matched_word = None
 
-    dict_keys_no_accents = {}
-    for dict_word, (original_cased, category) in MAP_DICTIONARY_FLAT.items():
-        dict_no_accents = remove_accents(dict_word)
-        dict_keys_no_accents[dict_no_accents] = (original_cased, category)
-
-    if text_no_accents in dict_keys_no_accents:
-        matched_word = dict_keys_no_accents[text_no_accents]
-    elif text_hyphenated in dict_keys_no_accents:
-        matched_word = dict_keys_no_accents[text_hyphenated]
+    if text_no_accents in DICT_KEYS_NO_ACCENTS:
+        matched_word = DICT_KEYS_NO_ACCENTS[text_no_accents]
+    elif text_hyphenated in DICT_KEYS_NO_ACCENTS:
+        matched_word = DICT_KEYS_NO_ACCENTS[text_hyphenated]
     else:
-        close_matches = difflib.get_close_matches(
-            text_no_accents, dict_keys_no_accents.keys(), n=1, cutoff=0.75
-        )
+        close_matches = difflib.get_close_matches(text_no_accents, DICT_KEYS_NO_ACCENTS.keys(), n=1, cutoff=0.75)
         if close_matches:
-            matched_word = dict_keys_no_accents[close_matches[0]]
+            matched_word = DICT_KEYS_NO_ACCENTS[close_matches[0]]
 
     if matched_word:
         original_cased, category = matched_word

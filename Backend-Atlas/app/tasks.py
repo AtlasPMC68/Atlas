@@ -102,84 +102,6 @@ def process_map_extraction(
             ext = os.path.splitext(tmp_file_path)[1].lower()
             raise ValueError(f"Extension {ext} is not allowed.")
 
-        # Helper for computing geographic bounds from GCPs
-        def compute_geo_bounds(px_pts, geo_pts, x_pos, y_pos, w_val, h_val):
-            if not px_pts or not geo_pts or len(px_pts) < 3:
-                return None
-            try:
-                import numpy as np
-
-                src = np.array(
-                    [
-                        (
-                            p["x"] if isinstance(p, dict) else p[0],
-                            p["y"] if isinstance(p, dict) else p[1],
-                        )
-                        for p in px_pts
-                    ],
-                    dtype=float,
-                )
-                dst = np.array(
-                    [
-                        (
-                            p["lng"] if isinstance(p, dict) else p[0],
-                            p["lat"] if isinstance(p, dict) else p[1],
-                        )
-                        for p in geo_pts
-                    ],
-                    dtype=float,
-                )
-
-                A = np.column_stack([src, np.ones(len(src))])
-                M, _, _, _ = np.linalg.lstsq(A, dst, rcond=None)
-
-                corners = np.array(
-                    [
-                        [x_pos, y_pos, 1],
-                        [x_pos + w_val, y_pos, 1],
-                        [x_pos, y_pos + h_val, 1],
-                        [x_pos + w_val, y_pos + h_val, 1],
-                    ]
-                )
-
-                geo_corners = corners @ M
-                lats = geo_corners[:, 1]
-                lons = geo_corners[:, 0]
-
-                return [
-                    [float(lats.min()), float(lons.min())],
-                    [float(lats.max()), float(lons.max())],
-                ]
-            except Exception as err:
-                logger.error(f"Error computing geo bounds for box: {err}")
-                return None
-
-        # Save original map image
-        try:
-            img_h, img_w = image.shape[:2]
-            orig_geo_bounds = compute_geo_bounds(pixel_points, geo_points_lonlat, 0, 0, img_w, img_h)
-
-            original_map_config = {
-                "type": "Feature",
-                "properties": {
-                    "isOriginalMapImage": True,
-                    "title": "Original Map Image",
-                    "bounds": orig_geo_bounds,
-                },
-                "geometry": None,
-            }
-            asyncio.run(
-                persist_original_map_feature(
-                    project_id=project_id,
-                    map_id=map_id,
-                    feature=original_map_config,
-                    image_bytes=file_content,
-                )
-            )
-            logger.info("Original map image successfully saved.")
-        except Exception as e:
-            logger.error(f"Error persisting original map image: {e}")
-
         # Step 3: Extraction OCR
         self.update_state(
             state="PROGRESS",
@@ -451,20 +373,6 @@ async def persist_city_feature(project_id: UUID, map_id: UUID, feature: dict[str
             )
         except Exception as e:
             logger.error(f"Failed to persist city feature for map {map_id}: {str(e)}")
-
-
-async def persist_original_map_feature(project_id: UUID, map_id: UUID, feature: dict[str, Any], image_bytes: bytes):
-    async with AsyncSessionLocal() as db:
-        try:
-            await insert_feature_in_db(
-                db=db,
-                map_id=map_id,
-                data=feature,
-                project_id=project_id,
-                image_bytes=image_bytes,
-            )
-        except Exception as e:
-            logger.error(f"Failed to persist legend feature for map {map_id}: {str(e)}")
 
 
 @celery_app.task(bind=True)

@@ -337,7 +337,6 @@ const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
   isDevTestCreation?: boolean;
-  showOriginalMap?: boolean;
 }>();
 
 const emit = defineEmits([

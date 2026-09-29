@@ -78,9 +78,7 @@ def load_model_and_processor(config: dict) -> tuple:
     return model, processor
 
 
-def run_inference(
-    model: Any, processor: Any, image: Image.Image, task_prompt: str, config: dict
-) -> dict:
+def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: str, config: dict) -> dict:
     """Run Florence inference for one task prompt and return structured output."""
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
@@ -98,9 +96,7 @@ def run_inference(
         generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
         generated_text = generated_text.replace("</s>", "").replace("<s>", "")
     except IndexError as e:
-        logger.warning(
-            f"Florence-2 generation failed with IndexError (likely coordinate hallucination): {e}"
-        )
+        logger.warning(f"Florence-2 generation failed with IndexError (likely coordinate hallucination): {e}")
         return {}
     except Exception as e:
         logger.warning(f"Florence-2 generation failed: {e}")
@@ -174,9 +170,7 @@ def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, float, in
     return Image.fromarray(img), scale_factor_x, scale_factor_y, w_orig, h_orig, longest_side
 
 
-def _generate_tiles(
-    w: int, h: int, grid: int, overlap_pct: float = 0.10
-) -> list[tuple[int, int, int, int]]:
+def _generate_tiles(w: int, h: int, grid: int, overlap_pct: float = 0.10) -> list[tuple[int, int, int, int]]:
     """Generate tile coordinates for a given grid size (2 for 2x2, 3 for 3x3) with overlap."""
     tiles = []
     overlap_x = int(w * overlap_pct)
@@ -199,16 +193,16 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     import shapely.geometry
 
     try:
-        from app.utils.map_dictionary import MAP_DICTIONARY_LOWER
+        from app.utils.map_dictionary import MAP_DICTIONARY_FLAT
+
+        dict_keys = set(MAP_DICTIONARY_FLAT.keys())
     except ImportError:
-        MAP_DICTIONARY_LOWER = set()
+        dict_keys = set()
 
     def get_poly(d):
         quad = d.get("quad")
         if quad and len(quad) >= 8:
-            return shapely.geometry.Polygon(
-                [(quad[0], quad[1]), (quad[2], quad[3]), (quad[4], quad[5]), (quad[6], quad[7])]
-            )
+            return shapely.geometry.Polygon([(quad[0], quad[1]), (quad[2], quad[3]), (quad[4], quad[5]), (quad[6], quad[7])])
         b = d.get("bbox_xyxy", [0, 0, 0, 0])
         return shapely.geometry.Polygon([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])])
 
@@ -220,11 +214,9 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
                 p = p.buffer(0)
             if p.area > 0:
                 text_clean = d.get("text", "").lower().strip()
-                dict_score = 10 if text_clean in MAP_DICTIONARY_LOWER else 0
+                dict_score = 10 if text_clean in dict_keys else 0
                 angle_priority = 1 if d.get("angle", 0.0) == 0.0 else 0
-                polys.append(
-                    {"det": d, "poly": p, "area": p.area, "score": dict_score + angle_priority}
-                )
+                polys.append({"det": d, "poly": p, "area": p.area, "score": dict_score + angle_priority})
         except Exception:
             pass
 
@@ -263,9 +255,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     3. Large/dense images (>1200px): 2x2 tiling, then check density.
        If first pass detects many labels, switch to 3x3 tiling for better coverage.
     """
-    preprocessed, scale_factor_x, scale_factor_y, orig_w, orig_h, longest_side = (
-        _adaptive_preprocess(image_path)
-    )
+    preprocessed, scale_factor_x, scale_factor_y, orig_w, orig_h, longest_side = _adaptive_preprocess(image_path)
 
     if os.environ.get("SAVE_PREPROCESSED_IMAGES", "false").lower() == "true":
         img_dir = os.path.dirname(image_path)
@@ -275,11 +265,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         preprocessed.save(prep_path)
 
     enable_context = os.environ.get("ENABLE_IMAGE_CONTEXT", "false").lower() == "true"
-    context = (
-        get_image_context(model, processor, preprocessed, get_context_config())
-        if enable_context
-        else ""
-    )
+    context = get_image_context(model, processor, preprocessed, get_context_config()) if enable_context else ""
 
     all_detections = []
 
@@ -306,14 +292,10 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         logger.debug("Small image. Skipping tiling.")
         tile_grid = 0
     elif longest_side > 1200 or first_pass_count >= 15:
-        logger.debug(
-            f"Dense map detected ({first_pass_count} detections, {longest_side}px). Using 3x3 tiling."
-        )
+        logger.debug(f"Dense map detected ({first_pass_count} detections, {longest_side}px). Using 3x3 tiling.")
         tile_grid = 3
     else:
-        logger.debug(
-            f"Medium image ({first_pass_count} detections, {longest_side}px). Using 2x2 tiling."
-        )
+        logger.debug(f"Medium image ({first_pass_count} detections, {longest_side}px). Using 2x2 tiling.")
         tile_grid = 2
 
     if tile_grid > 0:
@@ -391,9 +373,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     for angle in angles:
         logger.debug(f"Running multi-angle pass: {angle} degrees")
-        rot_img = preprocessed.rotate(
-            angle, expand=True, resample=Image.Resampling.BICUBIC, fillcolor=(255, 255, 255)
-        )
+        rot_img = preprocessed.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC, fillcolor=(255, 255, 255))
         rot_result = run_inference(model, processor, rot_img, OCR_TASK, config)
         r_data = rot_result.get(OCR_TASK, {})
 
@@ -451,10 +431,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
     all_detections = out.merge_related_detections(unique_dets)
 
     for det in all_detections:
-        det["quad"] = [
-            v / scale_factor_x if i % 2 == 0 else v / scale_factor_y
-            for i, v in enumerate(det["quad"])
-        ]
+        det["quad"] = [v / scale_factor_x if i % 2 == 0 else v / scale_factor_y for i, v in enumerate(det["quad"])]
         det["bbox_xyxy"] = out.quad_to_bbox_xyxy(det["quad"])
         if "center" in det:
             det["center"] = [

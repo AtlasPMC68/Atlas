@@ -9,7 +9,6 @@
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
-          :show-original-map="showOriginalMap"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -154,7 +153,6 @@ const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
-const showOriginalMap = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
@@ -164,22 +162,6 @@ const mapPeriods = ref<MapPeriod[]>([]);
 const zoneFeatures = computed(() =>
   filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
 );
-
-const originalMapFeature = computed(() =>
-  features.value.find((f) => f.properties?.isOriginalMapImage === true),
-);
-
-function onToggleOriginalMap() {
-  showOriginalMap.value = !showOriginalMap.value;
-  if (originalMapFeature.value?.id != null) {
-    const idStr = String(originalMapFeature.value.id);
-    const nextMap = new Map(featureVisibility.value);
-    nextMap.set(idStr, showOriginalMap.value);
-    featureVisibility.value = nextMap;
-  } else {
-    showAlert("info", "Aucune carte originale associée trouvée.");
-  }
-}
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
@@ -607,11 +589,9 @@ function reconcileVisibility(list: Feature[]) {
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
-      const isOriginal = f.properties?.isOriginalMapImage === true;
       const isHiddenByDefault =
         f.properties?.mapElementType === "rejet" ||
-        f.properties?.show === false ||
-        (isOriginal && !showOriginalMap.value);
+        f.properties?.show === false;
       next.set(id, !isHiddenByDefault);
     }
   }

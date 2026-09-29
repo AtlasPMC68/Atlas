@@ -22,8 +22,29 @@ export type MapElementType =
   | "label"
   | "image"
   | "rejet"
+  | "ville"
+  | "municipalité"
+  | "province"
+  | "pays"
+  | "continent"
+  | "lac"
+  | "riviere"
+  | "ocean_mer"
+  | "baie_golfe"
+  | "ile"
+  | "fort"
+  | "peuple"
+  | "direction"
+  | "relief"
+  | "hydrographie"
   | "region"
-  | string;
+  | "etat_americain"
+  | "personnage_historique"
+  | "empire_civilisation"
+  | "histoire_conflits"
+  | "terme_politique_administratif"
+  | "adjectif_geographique"
+  | "other";
 
 export type FeatureVisibilityGroupType =
   | "point"
@@ -60,7 +81,6 @@ export interface FeatureProperties {
   boxHeight?: number;
   rotationAngle?: number;
   show?: boolean;
-  isOriginalMapImage?: boolean;
   pixelBounds?: { x: number; y: number; width: number; height: number };
   opacity?: number;
   startDate?: string;

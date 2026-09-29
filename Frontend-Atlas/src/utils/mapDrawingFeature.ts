@@ -1,5 +1,6 @@
 import L from "leaflet";
 import { colorRgbToCss } from "./featureHelpers";
+import { escapeHtml } from "./utils";
 import type {
   Coordinate,
   Feature,
@@ -199,7 +200,7 @@ export function featureToLayer(feature: Feature): L.Layer | null {
       const [lng, lat] = geom.coordinates;
 
       if (feature.properties.mapElementType === "label") {
-        const labelText = feature.properties.labelText || "";
+        const labelText = escapeHtml(feature.properties.labelText || "");
         const boxHeight = feature.properties.boxHeight;
         const rotationAngle = feature.properties.rotationAngle || 0;
         

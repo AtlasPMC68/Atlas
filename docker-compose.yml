@@ -61,12 +61,23 @@ services:
     depends_on:
       - redis
       - db
-    command: >
-      sh -c "
-        celery -A app.celery_app worker --loglevel=error -E -Q default,maps -n maps@%h &
-        celery -A app.celery_app worker --loglevel=error -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
-        wait
-      "
+    command: celery -A app.celery_app worker --loglevel=error -E -Q default,maps -n maps@%h
+
+  celery_worker_ocr:
+    build:
+      context: ./Backend-Atlas
+    container_name: atlas-celery-worker-ocr
+    restart: unless-stopped
+    env_file:
+      - ./Backend-Atlas/.env.dev
+    volumes:
+      - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./Backend-Atlas/ocr:/app/ocr
+    depends_on:
+      - redis
+      - db
+    command: celery -A app.celery_app worker --loglevel=error -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h
 
   flower:
     build:
