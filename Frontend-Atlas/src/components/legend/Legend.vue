@@ -16,7 +16,7 @@
       </h2>
       <template v-if="isLegendVisible">
 
-        <p v-if="visibleZoneFeatures.length === 0 && !legendImageSrc" class="text-xs text-gray-500">
+        <p v-if="visibleZoneFeatures.length === 0" class="text-xs text-gray-500">
           Aucune zone
         </p>
         <ul
@@ -59,35 +59,23 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Feature } from "../../typescript/feature";
-import { rgbToRgba, toImageSrc } from "../../utils/utils";
+import { rgbToRgba } from "../../utils/utils";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/vue/24/outline";
 
 const props = withDefaults(
   defineProps<{
     zoneFeatures: Feature[];
     featureVisibility: Map<string, boolean>;
-    legendFeature?: Feature | null;
   }>(),
   {
     zoneFeatures: () => [],
-    legendFeature: null,
   },
 );
 
-const emit = defineEmits<{
-  (e: "toggle-legend-visibility", visible: boolean): void;
-}>();
-
 const isLegendVisible = ref(true);
-
-const legendImageSrc = computed(() => {
-  if (!props.legendFeature?.image) return null;
-  return toImageSrc(props.legendFeature.image);
-});
 
 function toggleLegend() {
   isLegendVisible.value = !isLegendVisible.value;
-  emit("toggle-legend-visibility", isLegendVisible.value);
 }
 
 const visibleZoneFeatures = computed(() =>

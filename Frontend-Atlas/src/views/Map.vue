@@ -41,8 +41,6 @@
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
-              :legend-feature="legendFeature"
-              @toggle-legend-visibility="onToggleLegendVisibility"
             />
           </div>
         </div>
@@ -171,10 +169,6 @@ const originalMapFeature = computed(() =>
   features.value.find((f) => f.properties?.isOriginalMapImage === true),
 );
 
-const legendFeature = computed(() =>
-  features.value.find((f) => f.properties?.isLegendImage === true),
-);
-
 function onToggleOriginalMap() {
   showOriginalMap.value = !showOriginalMap.value;
   if (originalMapFeature.value?.id != null) {
@@ -184,15 +178,6 @@ function onToggleOriginalMap() {
     featureVisibility.value = nextMap;
   } else {
     showAlert("info", "Aucune carte originale associée trouvée.");
-  }
-}
-
-function onToggleLegendVisibility(visible: boolean) {
-  if (legendFeature.value?.id != null) {
-    const idStr = String(legendFeature.value.id);
-    const nextMap = new Map(featureVisibility.value);
-    nextMap.set(idStr, visible);
-    featureVisibility.value = nextMap;
   }
 }
 

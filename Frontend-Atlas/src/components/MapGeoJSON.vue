@@ -28,7 +28,6 @@ import { useMapDrawing } from "../composables/useMapDrawing";
 import { useAddCityMode } from "../composables/useAddCityMode";
 import { useImageOverlay } from "../composables/useImageOverlay";
 import { colorRgbToCss, getMapElementType, upsertFeature } from "../utils/featureHelpers";
-import { createMaskedMapImage } from "../utils/imageMasking";
 import { computeGeoBoundsFromBox } from "../utils/georefUtils";
 import {
   extractFeatureFromLayer,
@@ -693,10 +692,6 @@ function renderImages(features: Feature[]) {
 
     let src = toImageSrc(feature.image);
     const isOriginal = feature.properties?.isOriginalMapImage === true;
-
-    if (isOriginal && feature.properties?.importConfig) {
-      src = await createMaskedMapImage(src, feature.properties.importConfig);
-    }
 
     const defaultOpacity = isOriginal ? 0.45 : (feature.properties?.fillOpacity ?? 1);
 
