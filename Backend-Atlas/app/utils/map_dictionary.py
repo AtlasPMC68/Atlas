@@ -92,13 +92,30 @@ def apply_map_dictionary_correction(text: str) -> tuple[str, str]:
     text_no_accents = remove_accents(text_clean_for_match.lower())
     text_hyphenated = re.sub(r"[\s\n]+", "-", text_no_accents)
 
-    # 2. EXACT MATCH OU REPLACE-MATCH DANS LE DICTIONNAIRE
+    import difflib
+
+    # 2. RECHERCHE DANS LE DICTIONNAIRE (Exacte puis similaire)
     matched_word = None
+
+    # Construire un dictionnaire de clés simplifiées pour la recherche
+    dict_keys_no_accents = {}
     for dict_word, (original_cased, category) in MAP_DICTIONARY_FLAT.items():
         dict_no_accents = remove_accents(dict_word)
-        if text_no_accents == dict_no_accents or text_hyphenated == dict_no_accents:
-            matched_word = (original_cased, category)
-            break
+        dict_keys_no_accents[dict_no_accents] = (original_cased, category)
+
+    # A) Tentative de correspondance exacte (très rapide)
+    if text_no_accents in dict_keys_no_accents:
+        matched_word = dict_keys_no_accents[text_no_accents]
+    elif text_hyphenated in dict_keys_no_accents:
+        matched_word = dict_keys_no_accents[text_hyphenated]
+    else:
+        # B) Si échoue, utiliser difflib (intégré à Python, pas besoin de rapidfuzz)
+        # On baisse le seuil à 75% (0.75) pour tolérer les fautes de frappe de Florence
+        close_matches = difflib.get_close_matches(
+            text_no_accents, dict_keys_no_accents.keys(), n=1, cutoff=0.75
+        )
+        if close_matches:
+            matched_word = dict_keys_no_accents[close_matches[0]]
 
     if matched_word:
         original_cased, category = matched_word
