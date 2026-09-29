@@ -8,9 +8,7 @@ import urllib.request
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ocr", "florence"))
-)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ocr", "florence")))
 
 from app.utils.map_dictionary_data import MAP_DICTIONARY_CATEGORIZED
 from inference import run_inference
@@ -85,9 +83,7 @@ def main():
         except Exception as e:
             logger.error(f"Error on {word}: {e}")
 
-    out_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "florence_translations_result.json")
-    )
+    out_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "florence_translations_result.json"))
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(florence_translations, f, indent=4, ensure_ascii=False)
 
@@ -99,5 +95,3 @@ if __name__ == "__main__":
     main()
 
 # Trigger github actions
-
-# Trigger github actions again

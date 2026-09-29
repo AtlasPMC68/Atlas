@@ -2,9 +2,9 @@ name: Generate Florence Translations
 
 on:
   workflow_dispatch: # Allows manual trigger from the GitHub Actions UI
-  # push:
-  #   paths:
-  #     - 'Backend-Atlas/scripts/generate_florence_translations.py'
+  push:
+    paths:
+      - 'Backend-Atlas/scripts/generate_florence_translations.py'
 
 jobs:
   run-florence-script:
