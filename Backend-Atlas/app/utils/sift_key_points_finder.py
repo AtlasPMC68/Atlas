@@ -3,7 +3,7 @@ import numpy as np
 import os
 import json
 
-NUMBER_OF_KEYPOINTS = 10
+NUMBER_OF_KEYPOINTS = 15
 
 # Ratios of the image diagonal, not pixels: this module rasterizes the framing
 # box at whatever size the caller asks for (the endpoint takes width/height),
@@ -158,10 +158,14 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
         output_dir = os.path.join(os.path.dirname(__file__), "extracted_texts")
         os.makedirs(output_dir, exist_ok=True)
         cv2.imwrite(os.path.join(output_dir, "coastline_only_raster.png"), coastline_image)
+
+    # TODO this is a testing modificaiton where I want to include lake
+    draw_geojson_features(coastline_image, lakes_path, bounds, width, height)
+    used_lakes = True
     
     # Detect keypoints on coastline only
     spaced = detect_sift_keypoints_on_image(coastline_image, apply_edge_detection=True)
-    used_lakes = False
+    #used_lakes = False
     
     # Step 2: If we don't have enough keypoints, add lakes
     if len(spaced) < NUMBER_OF_KEYPOINTS:

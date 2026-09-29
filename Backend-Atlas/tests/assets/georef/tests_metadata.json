@@ -12,5 +12,15 @@
     "name": "test carte difficile exploration",
     "kind": "probe",
     "createdAt": "2026-09-22T18:43:39.820650Z"
+  },
+  "92518248-ca5e-48f1-a761-4aac9845464e": {
+    "name": "test_on_uk_map",
+    "kind": "probe",
+    "createdAt": "2026-09-23T22:06:26.564831Z"
+  },
+  "0152677a-6da4-49e5-b424-701d1a4be857": {
+    "name": "Italy_test",
+    "kind": "probe",
+    "createdAt": "2026-09-23T22:18:41.674881Z"
   }
 }

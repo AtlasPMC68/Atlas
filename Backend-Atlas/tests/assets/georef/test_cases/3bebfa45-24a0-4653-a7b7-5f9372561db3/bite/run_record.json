@@ -68,7 +68,7 @@
     },
     "referenceLatitude": 43.921015334026876,
     "snapToCoastline": true,
-    "snapToleranceMeters": 50000.0,
+    "snapToleranceMeters": 80986.1559805511,
     "clipToLandMask": true
   },
   "models": {
@@ -158,19 +158,20 @@
         39.110461254204715
       ]
     ],
-    "snapTotalBoundaryPoints": 1333,
-    "snapSnappedPoints": 148,
+    "snapTotalBoundaryPoints": 744,
+    "snapSnappedPoints": 200,
     "zonesDroppedOffLand": 0
   },
   "timingMs": {
-    "color_extraction": 405.577,
-    "fit": 0.442,
-    "load_coastline": 350.063,
-    "load_land_mask": 973.828,
-    "apply": 392.732
+    "color_extraction": 1365.516,
+    "fit": 0.274,
+    "load_coastline": 217.678,
+    "load_land_mask": 572.494,
+    "subtract_lakes": 219.515,
+    "apply": 341.603
   },
   "config": {
-    "version": "8",
+    "version": "13",
     "gcp_sources": [
       "sift",
       "city"
@@ -179,13 +180,19 @@
     "gcp_sigma_px_city": 6.0,
     "snap_to_coastline": true,
     "coastline_snap_ratio_of_diagonal": 0.01,
-    "coastline_snap_fallback_px": 8.0,
-    "coastline_snap_min_px": 3.0,
-    "coastline_snap_max_px": 40.0,
-    "coastline_snap_min_m": 200.0,
-    "coastline_snap_max_m": 50000.0,
     "clip_to_land_mask": true,
     "land_coverage_threshold": 0.01,
+    "text_aware_zone_fill": true,
+    "text_fill_min_context": 0.25,
+    "text_fill_max_distance_px": 8.0,
+    "text_fill_method": "label",
+    "text_inpaint_dilation_px": 1,
+    "text_inpaint_radius_px": 3.0,
+    "text_inpaint_max_ink_ratio": 0.6,
+    "text_inpaint_algo": "palette",
+    "text_inpaint_ink_deltaE": 12.0,
+    "zone_gap_fill": false,
+    "zone_gap_max_ratio_of_diagonal": 0.008,
     "transform_model": "affine",
     "piecewise_anchor_margin": 0.25,
     "reference_raster_width": 1024,
