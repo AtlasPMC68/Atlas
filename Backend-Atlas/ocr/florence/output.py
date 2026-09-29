@@ -1,18 +1,18 @@
+import copy
+import json
 import math
 import os
-import json
-import copy
+
 import cv2
 import numpy as np
 
-
 # Pixel tolerance for merge rules
-ALIGN_TOLERANCE = 5
+ALIGN_TOLERANCE = 10
 ANGLE_TOLERANCE = 20.0
 HEIGHT_DELTA_TOLERANCE = 5
-H_MERGE_GAP_RATIO = 0.5
+H_MERGE_GAP_RATIO = 0.2
 H_MERGE_GAP_MIN_PX = 5
-V_MERGE_GAP_RATIO = 0.25
+V_MERGE_GAP_RATIO = 0.5
 V_MERGE_GAP_MIN_PX = 5
 H_ROW_ALIGN_RATIO = 0.4
 
@@ -30,10 +30,14 @@ def _bbox_xyxy_to_quad(bbox: list[int]) -> list[float]:
     """Convert an axis-aligned bbox_xyxy into a rectangular quad."""
     x1, y1, x2, y2 = bbox
     return [
-        float(x1), float(y1),
-        float(x2), float(y1),
-        float(x2), float(y2),
-        float(x1), float(y2),
+        float(x1),
+        float(y1),
+        float(x2),
+        float(y1),
+        float(x2),
+        float(y2),
+        float(x1),
+        float(y2),
     ]
 
 
@@ -97,7 +101,11 @@ def _quad_center(quad: list[float]) -> tuple[float, float]:
     )
 
 
-def _project_points(points: list[tuple[float, float]], axis_u: tuple[float, float], axis_v: tuple[float, float]) -> tuple[float, float, float, float]:
+def _project_points(
+    points: list[tuple[float, float]],
+    axis_u: tuple[float, float],
+    axis_v: tuple[float, float],
+) -> tuple[float, float, float, float]:
     projected_u = [x * axis_u[0] + y * axis_u[1] for x, y in points]
     projected_v = [x * axis_v[0] + y * axis_v[1] for x, y in points]
     return min(projected_u), max(projected_u), min(projected_v), max(projected_v)
@@ -167,6 +175,7 @@ def _merge_quads(det_a: dict, det_b: dict, direction: str) -> list[float]:
 
 def _quad_angle(quad: list) -> float:
     """Return average inclination (deg) of the two longer sides of a rectangle."""
+
     def _inclination_deg(dx: float, dy: float) -> float:
         # Inclination in [0, 90], invariant to edge direction.
         angle = abs(math.degrees(math.atan2(dy, dx)))
@@ -176,7 +185,6 @@ def _quad_angle(quad: list) -> float:
     a1 = _inclination_deg(axis[0], axis[1])
     a2 = a1
     return (a1 + a2) / 2.0
-
 
 
 def _get_merge_direction(det_a: dict, det_b: dict) -> str | None:
@@ -230,7 +238,7 @@ def _get_merge_direction(det_a: dict, det_b: dict) -> str | None:
 
 def _apply_merge(det_a: dict, det_b: dict, direction: str) -> dict:
     """Merge two detections into one combined text box using the given direction."""
-    
+
     ax1, ay1, ax2, ay2 = det_a["bbox_xyxy"]
     bx1, by1, bx2, by2 = det_b["bbox_xyxy"]
 
@@ -313,7 +321,6 @@ def merge_related_detections(detections: list[dict]) -> list[dict]:
             if changed:
                 break
             for j in range(i + 1, len(merged)):
-
                 # Check if the two boxes should be merged. If so, find the direction.
                 direction = _get_merge_direction(merged[i], merged[j])
                 if direction is None:
@@ -381,5 +388,6 @@ def save_result(image_path: str, intermediate_path: str, parsed: dict) -> None:
     json_detections = copy.deepcopy(parsed.get("detections", []))
 
     parsed_for_json = {**parsed, "detections": json_detections}
+    os.makedirs(os.path.dirname(intermediate_path), exist_ok=True)
     with open(intermediate_path, "w", encoding="utf-8") as f:
         json.dump(parsed_for_json, f, ensure_ascii=False, indent=2)

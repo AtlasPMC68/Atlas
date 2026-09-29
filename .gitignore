@@ -67,3 +67,4 @@ yarn-error.log*
 # Process folders
 Backend-Atlas/app/extracted_color
 Backend-Atlas/app/extracted_texts
+.ocr_case_output.txt
