@@ -9,7 +9,6 @@
         <FeatureVisibilityControls
           :features="features"
           :feature-visibility="featureVisibility"
-          :is-retrying-ocr="isRetryingOcr"
           :show-original-map="showOriginalMap"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
@@ -17,8 +16,6 @@
           @delete-feature="onDeleteFeature"
           @add-map="openAddMapDialog"
           @update-feature="onUpdateFeature"
-          @retry-ocr="onRetryOcr"
-
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
@@ -159,7 +156,6 @@ const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
-const isRetryingOcr = ref(false);
 const showOriginalMap = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
@@ -671,72 +667,6 @@ async function loadInitialFeatures() {
   }
 }
 
-async function onRetryOcr() {
-  if (!keycloak.token || !projectId.value) return;
-
-  const originalFeature = features.value.find(
-    (f) => f.properties?.isOriginalMapImage === true && f.mapId,
-  );
-
-  const targetMapId = originalFeature?.mapId || mapPeriods.value[0]?.id;
-
-  if (!targetMapId) {
-    showAlert("error", "Aucune carte associée trouvée pour relancer l'OCR.");
-    return;
-  }
-
-  isRetryingOcr.value = true;
-  showAlert("info", "Extraction de texte en cours...");
-
-  try {
-    const res = await apiFetch(
-      `/projects/${projectId.value}/maps/${targetMapId}/retry-ocr`,
-      {
-        method: "POST",
-      },
-    );
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Erreur lors de la relance de l'OCR");
-    }
-
-    const data = (await res.json()) as { task_id?: string };
-    const taskId = data.task_id;
-
-    if (taskId) {
-      // Poll Celery status
-      const interval = setInterval(async () => {
-        try {
-          const statusRes = await apiFetch(`/projects/status/${taskId}`);
-          if (!statusRes.ok) return;
-          const statusData = (await statusRes.json()) as { state?: string };
-
-          if (statusData.state === "SUCCESS") {
-            clearInterval(interval);
-            isRetryingOcr.value = false;
-            showAlert("success", "Extraction de texte terminée avec succès !");
-            await loadInitialFeatures();
-          } else if (statusData.state === "FAILURE") {
-            clearInterval(interval);
-            isRetryingOcr.value = false;
-            showAlert("error", "Échec du traitement de l'OCR.");
-          }
-        } catch {
-          clearInterval(interval);
-          isRetryingOcr.value = false;
-        }
-      }, 1500);
-    } else {
-      isRetryingOcr.value = false;
-      await loadInitialFeatures();
-    }
-  } catch (err: any) {
-    isRetryingOcr.value = false;
-    console.error("Erreur lors de la relance de l'OCR:", err);
-    showAlert("error", err.message || "Erreur lors de la relance de l'OCR");
-  }
-}
 
 async function loadCurrentMapInfo(): Promise<void> {
   try {
