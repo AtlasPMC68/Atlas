@@ -247,13 +247,17 @@ def geolocate_cities_and_leftover_text(
 
     if cities_to_georef or pixel_text_feature_collections:
         try:
-            asyncio.run(_run_all())
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            import threading
+            loop = None
 
-            thread = threading.Thread(target=lambda: asyncio.run(_run_all()))
-            thread.start()
-            thread.join()
+        if loop and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                executor.submit(lambda: asyncio.run(_run_all())).result()
+        else:
+            asyncio.run(_run_all())
 
 
 def _bbox_xyxy_to_quad_points(bbox_xyxy: list[Any]) -> list[list[float]]:

@@ -11,7 +11,7 @@ echo "Waiting for Keycloak to be ready..."
 # Boucle simple pour tester le port 8080
 while ! (echo > /dev/tcp/localhost/8080) 2>/dev/null; do
   echo "Keycloak not ready yet..."
-  sleep 120
+  sleep 10
 done
 
 echo "Keycloak ready!"

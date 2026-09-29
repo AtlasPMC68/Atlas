@@ -2,7 +2,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from shapely.geometry import mapping, shape
@@ -52,9 +52,7 @@ def _feature_collection_geoms_with_meta(fc: dict[str, Any]) -> list[dict[str, An
         if not isinstance(geom, dict):
             continue
 
-        props = (
-            feat.get("properties") if isinstance(feat.get("properties"), dict) else {}
-        )
+        props = feat.get("properties") if isinstance(feat.get("properties"), dict) else {}
         name = None
         if isinstance(props, dict):
             name = props.get("name")
@@ -123,7 +121,7 @@ def _safe_make_valid(g: BaseGeometry) -> BaseGeometry:
 
 
 def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, Any]:
-    """Build a GeoJSON FeatureCollection for FP/FN areas per expected feature.
+    r"""Build a GeoJSON FeatureCollection for FP/FN areas per expected feature.
 
     For each expected feature, we find its best-match extracted feature (already
     computed in `matches`). FP/FN are then computed *only on that pair*:
@@ -145,24 +143,14 @@ def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, An
             continue
 
         expected_name = exp.get("name") if isinstance(exp, dict) else None
-        expected_label = (
-            expected_name.strip()
-            if isinstance(expected_name, str) and expected_name.strip()
-            else f"expected_{exp.get('index')}"
-        )
+        expected_label = expected_name.strip() if isinstance(expected_name, str) and expected_name.strip() else f"expected_{exp.get('index')}"
 
         expected_index = exp.get("index") if isinstance(exp, dict) else None
 
         extracted_meta = bm.get("extracted") if isinstance(bm, dict) else None
-        extracted_index = (
-            extracted_meta.get("index") if isinstance(extracted_meta, dict) else None
-        )
-        extracted_id = (
-            extracted_meta.get("id") if isinstance(extracted_meta, dict) else None
-        )
-        extracted_name = (
-            extracted_meta.get("name") if isinstance(extracted_meta, dict) else None
-        )
+        extracted_index = extracted_meta.get("index") if isinstance(extracted_meta, dict) else None
+        extracted_id = extracted_meta.get("id") if isinstance(extracted_meta, dict) else None
+        extracted_name = extracted_meta.get("name") if isinstance(extracted_meta, dict) else None
 
         # If there is no extracted match, FN is the whole expected geom and FP is empty.
         if not isinstance(ext_geom, BaseGeometry):
@@ -278,12 +266,8 @@ def _match_metrics(exp_geom: BaseGeometry, exp_area: float, ext: dict[str, Any])
     }
 
 
-def build_test_case_paths(
-    assets_root: str, test_id: str, test_case_id: str
-) -> DevTestPaths:
-    expected_zones_path = os.path.join(
-        assets_root, "georef_zones", f"{test_id}_zones.geojson"
-    )
+def build_test_case_paths(assets_root: str, test_id: str, test_case_id: str) -> DevTestPaths:
+    expected_zones_path = os.path.join(assets_root, "georef_zones", f"{test_id}_zones.geojson")
     case_dir = os.path.join(assets_root, "test_cases", test_id, test_case_id)
 
     # New nested layout
@@ -391,14 +375,8 @@ def evaluate_georef_zones_from_paths(
 
     # Surface naming mismatches: an unmatched zone scores 0, and the cause is almost
     # always a typo in the pipette name or in the drawn zone name.
-    expected_without_name_match = [
-        (m["expected"].get("name") or f"expected_{m['expected'].get('index')}")
-        for m in matches
-        if m["bestMatch"].get("matchedBy") != "name"
-    ]
-    extracted_never_matched = sorted(
-        {key for key in extracted_by_name if key not in matched_names}
-    )
+    expected_without_name_match = [(m["expected"].get("name") or f"expected_{m['expected'].get('index')}") for m in matches if m["bestMatch"].get("matchedBy") != "name"]
+    extracted_never_matched = sorted({key for key in extracted_by_name if key not in matched_names})
 
     errors_geojson = _errors_feature_collection(matches=matches)
 
@@ -443,9 +421,7 @@ def evaluate_georef_zones_from_paths(
             fp_areas.append(0.0)
 
     mean_iou = _safe_ratio(sum(ious), float(len(ious))) if ious else 0.0
-    mean_precision = (
-        _safe_ratio(sum(precisions), float(len(precisions))) if precisions else 0.0
-    )
+    mean_precision = _safe_ratio(sum(precisions), float(len(precisions))) if precisions else 0.0
     mean_recall = _safe_ratio(sum(recalls), float(len(recalls))) if recalls else 0.0
     total_fn_area = float(sum(fn_areas)) if fn_areas else 0.0
     total_fp_area = float(sum(fp_areas)) if fp_areas else 0.0
@@ -453,7 +429,7 @@ def evaluate_georef_zones_from_paths(
     report: dict[str, Any] = {
         "testId": test_id,
         "testCaseId": test_case_id,
-        "evaluatedAt": datetime.utcnow().isoformat() + "Z",
+        "evaluatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "thresholds": {
             "minIou": min_iou,
             "scoreKey": "metrics.mean.meanIou",
