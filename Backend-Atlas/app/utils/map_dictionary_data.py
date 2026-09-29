@@ -232,7 +232,17 @@ ENGLISH_FLORENCE_TO_FRENCH_TRANSLATIONS = {
     "fort duplin": "Fort Dauphin",
     "fort l4 raine": "Fort La Reine",
     "fort baaharnois": "Fort Beauharnois",
-    "ockas": "Boston"
+    "ockas": "Boston",
+    "barochefe": "Larochette",
+    "fort se-nevine": "Fort St-Pierre",
+    "fort corvalley": "Fort Chambly",
+    "fort branca": "Fort Frontenac",
+    "fort duyf": "Fort Dauphin",
+    "fort dreyf": "Fort Détroit",
+    "rivivre aissouil": "Rivière Missouri",
+    "riviere massoul": "Rivière Missouri",
+    "maeondon": "Miquelon",
+    "pays d'an huts": "Pays d'en Hauts",
 }
 
 MAP_DICTIONARY_CATEGORIZED = {
@@ -242,7 +252,8 @@ MAP_DICTIONARY_CATEGORIZED = {
         "Berlin", "Moscou", "Washington", "Tokyo", "Pékin", "Abidjan", "Douala", "Lomé", "Kinshasa", "Rabat",
         "Tunis", "Le-Caire", "Damas", "Bagdad", "Téhéran", "Kaboul", "New-Delhi", "Islamabad", "Hanoï", "Bangkok",
         "Jakarta", "Manille", "Séoul", "Pyongyang", "Ottawa", "Mexico", "Brasilia", "Buenos-Aires", "Bogota", "Lima",
-        "Santiago", "Caracas", "La-Havane", "Pretoria", "Nairobi", "Abuja", "Addis-Abeba", "Lutèce", "La-Nouvelle-Orléans"
+        "Santiago", "Caracas", "La-Havane", "Pretoria", "Nairobi", "Abuja", "Addis-Abeba", "Lutèce", "La-Nouvelle-Orléans",
+        "Toronto", "Kingston", "Biloxi", "Larochette", "Ettelbrück", "Vianden", "Echternach", "Mersch",
     ],
     "municipalité": [
         "Montréal", "Québec", "Trois-Rivières", "Paris", "Londres", "Boston", "Philadelphie", "Athènes", "Rome", "Alexandrie"
@@ -319,7 +330,7 @@ MAP_DICTIONARY_CATEGORIZED = {
         "Mandchourie", "Tibet", "Terre de Rupert", "Témiscamingue", "Lac-Saint-Jean", "Laurentides", "Lanaudière", "Montérégie", 
         "Estrie", "Chaudière-Appalaches", "Bas-Saint-Laurent", "Côte-Nord", "Nord-du-Québec", "Nunavik", "Jamésie", "Terre-de-Rupert", 
         "Plaisance", "Hochelaga", "Stadaconé", "Rupert", "Saint-Louis", "De-Chartres", "Orléans", "Rouillé", "William-Henry", "Oswego", 
-        "Louisiane", "Pays-d'en-Haut", "Illinois", "Pontchartrain", "Albany", "Eastmain", "Severn", "Cumberland", "Saint-Pierre", 
+        "Louisiane", "Pays-d'en-Haut", "Pays d'en Hauts", "Illinois", "Pontchartrain", "Albany", "Eastmain", "Severn", "Cumberland", "Saint-Pierre", 
         "Appalaches", "Nouvelle-Espagne", "Nouvelle-Néerlande", "Nouvelle-Suède", "Nouvelle-Angleterre", "Alsace", "Lorraine", 
         "Franche-Comté", "Picardie", "Artois", "Champagne", "Île-de-France", "Centre", "Val-de-Loire", "Poitou", "Charentes", 
         "Limousin", "Auvergne", "Rhône-Alpes", "Provence", "Alpes", "Côte-d'Azur", "Corse", "Languedoc", "Roussillon", "Midi-Pyrénées", 
