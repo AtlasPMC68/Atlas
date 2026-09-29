@@ -9,7 +9,8 @@ from uuid import UUID
 from celery import chain
 
 from app.utils.cities_validation import find_first_city
-from app.utils.georeferencingSift import georeference_features_with_sift_points
+
+# from app.utils.georeferencingSift import georeference_features_with_sift_points
 
 try:
     import coloredlogs
@@ -84,30 +85,31 @@ def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict
     }
 
 
-def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[str, Any]:
-    """Build text zones for OCR detections that could not be geolocated as cities."""
-    return {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "properties": {
-                    "name": text,
-                    "labelText": text,
-                    "show": True,
-                    "mapElementType": "label",
-                    "color_name": "black",
-                    "color_rgb": [0, 0, 0],
-                    "source": "ocr_bbox_anchor",
-                    "is_pixel_space": True,
-                },
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [x, y],
-                },
-            }
-        ],
-    }
+# POUR LA PROCHAINE MR
+# def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[str, Any]:
+#     """Build text zones for OCR detections that could not be geolocated as cities."""
+#     return {
+#         "type": "FeatureCollection",
+#         "features": [
+#             {
+#                 "type": "Feature",
+#                 "properties": {
+#                     "name": text,
+#                     "labelText": text,
+#                     "show": True,
+#                     "mapElementType": "label",
+#                     "color_name": "black",
+#                     "color_rgb": [0, 0, 0],
+#                     "source": "ocr_bbox_anchor",
+#                     "is_pixel_space": True,
+#                 },
+#                 "geometry": {
+#                     "type": "Point",
+#                     "coordinates": [x, y],
+#                 },
+#             }
+#         ],
+#     }
 
 
 def _compute_geo_bounds(geo_points_lonlat: list) -> dict[str, float] | None:

@@ -121,7 +121,7 @@ def _safe_make_valid(g: BaseGeometry) -> BaseGeometry:
 
 
 def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, Any]:
-    r"""Build a GeoJSON FeatureCollection for FP/FN areas per expected feature.
+    """Build a GeoJSON FeatureCollection for FP/FN areas per expected feature.
 
     For each expected feature, we find its best-match extracted feature (already
     computed in `matches`). FP/FN are then computed *only on that pair*:

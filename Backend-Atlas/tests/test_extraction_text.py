@@ -61,7 +61,10 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
 
 
 def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
-    """Return ASCII-normalized words stripping punctuation and accents while preserving word count."""
+    # Text normalization:
+    # - Replaces with space: \n, -, (), :, ;, ?, !, ", «, », /, \
+    # - Removes completely: ' (straight apostrophe), \u2019 (typographic apostrophe), ., ,
+
     res = []
     for word in text:
         cleaned = (

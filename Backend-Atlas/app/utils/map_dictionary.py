@@ -59,67 +59,68 @@ MAP_DICTIONARY = {
     "Grand", "Grandes", "Petit", "Petites", "Nouveau", "Nouvelle", "Ancien", "Ancienne", "Haut", "Haute", "Bas", "Basse", "Central", "Centrale", "Moyen", "Moyenne", "Septentrional", "Septentrionale", "Méridional", "Méridionale", "Oriental", "Orientale", "Occidental", "Occidentale", "Majeur", "Mineur", "Saint", "Sainte", "Isle", "Mont", "Monts", "Lac", "Lacs", "Rivière", "Rivières", "Île", "Îles", "Cap", "Baie", "Golfe", "Mer", "Océan", "Détroit", "Canal", "Val", "Vallée", "Bassin", "Plaine", "Plateau", "Désert", "Forêt", "Bois", "Parc", "Réserve", "Montagne", "Montagnes", "Massif", "Col", "Pic", "Glacier", "Fjord", "Presqu'île", "Péninsule", "Archipel", "Atoll", "Récif", "Banc", "Haut-fond", "Chenal", "Passe", "Bras", "Embouchure", "Estuaire", "Delta", "Source", "Confluent", "Rapides", "Chute", "Chutes", "Cascade", "Cataracte"
 }
 # fmt: on
-
-MAP_DICTIONARY_LOWER = {w.lower(): w for w in MAP_DICTIONARY}
-
-
-def _correct_word(word: str) -> str:
-    """Correct a single word using Levenshtein distance against the map dictionary."""
-    if len(word) < 4:
-        return word
-
-    word_lower = word.lower()
-
-    if word_lower in MAP_DICTIONARY_LOWER:
-        dict_word = MAP_DICTIONARY_LOWER[word_lower]
-        return dict_word.upper() if word.isupper() else dict_word
-
-    best_match = None
-    min_dist = 999
-
-    for dict_word_lower, original_dict_word in MAP_DICTIONARY_LOWER.items():
-        if abs(len(word_lower) - len(dict_word_lower)) > 2:
-            continue
-
-        dist = Levenshtein.distance(word_lower, dict_word_lower)
-        if len(dict_word_lower) <= 5:
-            allowed_dist = 1
-        elif len(dict_word_lower) <= 8:
-            allowed_dist = 2
-        else:
-            allowed_dist = 3
-
-        if dist <= allowed_dist and dist < min_dist:
-            min_dist = dist
-            best_match = original_dict_word
-
-    if best_match:
-        return best_match.upper() if word.isupper() else best_match
-
-    return word
-
-
-def apply_map_dictionary_correction(text: str) -> str:
-    """Apply dictionary-based correction to raw OCR text."""
-    text_clean = text.strip()
-    text_lower = text_clean.lower()
-
-    hallucinations = {
-        "d'hudson": "Lac Huron",
-        "of hudson": "Lac Huron",
-        "maeondion": "Lac Huron",
-        "antard": "Lac Ontario",
-        "mar de michigan": "Lac Michigan",
-        "port-oceane": "Fort Duquesne",
-        "mar": "Lac",
-    }
-
-    if text_lower in hallucinations:
-        return hallucinations[text_lower]
-
-    if text_lower.startswith("mar de "):
-        text_clean = "Lac " + text_clean[7:]
-
-    words = re.split(r"(\W+)", text_clean)
-    corrected_words = [_correct_word(w) if w.isalpha() else w for w in words]
-    return "".join(corrected_words)
+# POUR LA PROCHAINE MR
+# --- Non utilisé dans le flow actuel (conservé en réserve) ---
+# MAP_DICTIONARY_LOWER = {w.lower(): w for w in MAP_DICTIONARY}
+#
+#
+# def _correct_word(word: str) -> str:
+#     """Correct a single word using Levenshtein distance against the map dictionary."""
+#     if len(word) < 4:
+#         return word
+#
+#     word_lower = word.lower()
+#
+#     if word_lower in MAP_DICTIONARY_LOWER:
+#         dict_word = MAP_DICTIONARY_LOWER[word_lower]
+#         return dict_word.upper() if word.isupper() else dict_word
+#
+#     best_match = None
+#     min_dist = 999
+#
+#     for dict_word_lower, original_dict_word in MAP_DICTIONARY_LOWER.items():
+#         if abs(len(word_lower) - len(dict_word_lower)) > 2:
+#             continue
+#
+#         dist = Levenshtein.distance(word_lower, dict_word_lower)
+#         if len(dict_word_lower) <= 5:
+#             allowed_dist = 1
+#         elif len(dict_word_lower) <= 8:
+#             allowed_dist = 2
+#         else:
+#             allowed_dist = 3
+#
+#         if dist <= allowed_dist and dist < min_dist:
+#             min_dist = dist
+#             best_match = original_dict_word
+#
+#     if best_match:
+#         return best_match.upper() if word.isupper() else best_match
+#
+#     return word
+#
+#
+# def apply_map_dictionary_correction(text: str) -> str:
+#     """Apply dictionary-based correction to raw OCR text."""
+#     text_clean = text.strip()
+#     text_lower = text_clean.lower()
+#
+#     hallucinations = {
+#         "d'hudson": "Lac Huron",
+#         "of hudson": "Lac Huron",
+#         "maeondion": "Lac Huron",
+#         "antard": "Lac Ontario",
+#         "mar de michigan": "Lac Michigan",
+#         "port-oceane": "Fort Duquesne",
+#         "mar": "Lac",
+#     }
+#
+#     if text_lower in hallucinations:
+#         return hallucinations[text_lower]
+#
+#     if text_lower.startswith("mar de "):
+#         text_clean = "Lac " + text_clean[7:]
+#
+#     words = re.split(r"(\W+)", text_clean)
+#     corrected_words = [_correct_word(w) if w.isalpha() else w for w in words]
+#     return "".join(corrected_words)
