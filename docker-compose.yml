@@ -74,6 +74,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/ocr:/app/ocr
+      - ocr-data:/data
     depends_on:
       - redis
       - db

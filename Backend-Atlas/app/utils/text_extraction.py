@@ -6,7 +6,7 @@ import sys
 from typing import Any
 from uuid import UUID
 
-from celery import chain
+from difflib import SequenceMatcher
 
 from app.utils.cities_validation import find_first_city
 from app.utils.georeferencingSift import georeference_features_with_sift_points
@@ -384,25 +384,19 @@ def _build_extracted_text_from_detections(
     extracted_text.sort(key=lambda x: (abs(x.get("rotationAngle", 0)), -len(x["text"])))  # Keep 0-angle as priority, then longest words
     filtered_text = []
 
-    import math
-
     for current in extracted_text:
         is_duplicate = False
         c_box = current["bbox"]
         c_min_x, c_max_x = min(p[0] for p in c_box), max(p[0] for p in c_box)
         c_min_y, c_max_y = min(p[1] for p in c_box), max(p[1] for p in c_box)
         c_area = max(1, (c_max_x - c_min_x) * (c_max_y - c_min_y))
-        c_center_x = current["center"][0] if "center" in current else (c_min_x + c_max_x) / 2
-        c_center_y = current["center"][1] if "center" in current else (c_min_y + c_max_y) / 2
-        c_text = current["text"].lower().strip()
+        c_text = " ".join(current["text"].lower().split())
 
         for kept in filtered_text:
             k_box = kept["bbox"]
             k_min_x, k_max_x = min(p[0] for p in k_box), max(p[0] for p in k_box)
             k_min_y, k_max_y = min(p[1] for p in k_box), max(p[1] for p in k_box)
-            k_center_x = kept["center"][0] if "center" in kept else (k_min_x + k_max_x) / 2
-            k_center_y = kept["center"][1] if "center" in kept else (k_min_y + k_max_y) / 2
-            k_text = kept["text"].lower().strip()
+            k_text = " ".join(kept["text"].lower().split())
 
             xA = max(c_min_x, k_min_x)
             yA = max(c_min_y, k_min_y)
@@ -411,8 +405,10 @@ def _build_extracted_text_from_detections(
             interArea = max(0, xB - xA) * max(0, yB - yA)
             k_area = max(1, (k_max_x - k_min_x) * (k_max_y - k_min_y))
 
-            # Condition 1: High spatial overlap
-            if interArea / min(c_area, k_area) > 0.3:
+            overlap_ratio = interArea / min(c_area, k_area)
+            text_similarity = SequenceMatcher(None, c_text, k_text).ratio()
+
+            if overlap_ratio > 0.85 or (overlap_ratio > 0.3 and text_similarity > 0.6):
                 is_duplicate = True
                 break
 
