@@ -66,64 +66,6 @@ for info in _gc.get_cities().values():
     if query_key != key:
         _city_map.setdefault(query_key, []).append(city_entry)
 
-# POUR LA PROCHAINE MR
-# def detect_cities_from_text(text: str, max_ngram: int = 4, use_search: bool = False, search_limit: int = 10) -> List[Dict[str, Any]]:
-#     """Scan text for city names using the local gazetteer."""
-#     tokens = _WORD_RE.findall(text)
-#     matches: List[Dict[str, Any]] = []
-#     i = 0
-#     length = len(tokens)
-#     while i < length:
-#         found = False
-#         for n in range(min(max_ngram, length - i), 0, -1):
-#             phrase = " ".join(tokens[i : i + n])
-#             key = _normalize(phrase)
-#             candidates: List[Dict[str, Any]] = []
-#             if key in _city_map:
-#                 candidates = _city_map.get(key, [])
-#             elif use_search:
-#                 try:
-#                     raw = _gc.search_cities(phrase, case_sensitive=False, contains_search=True)
-#                 except Exception:
-#                     raw = None
-#                 if raw:
-#                     items = raw.values() if isinstance(raw, dict) else raw
-#                     for info in items:
-#                         try:
-#                             name = info.get("name") or info.get("toponymName") or ""
-#                             lat = float(info.get("latitude") or info.get("lat") or 0)
-#                             lon = float(info.get("longitude") or info.get("lng") or 0)
-#                             country = info.get("countrycode") or info.get("countryCode") or ""
-#                         except Exception:
-#                             continue
-#                         candidates.append(
-#                             {
-#                                 "name": name,
-#                                 "lat": lat,
-#                                 "lon": lon,
-#                                 "country": country,
-#                                 "population": info.get("population"),
-#                             }
-#                         )
-#                     if search_limit and len(candidates) > search_limit:
-#                         candidates = candidates[:search_limit]
-#             if candidates:
-#                 matches.append(
-#                     {
-#                         "text": phrase,
-#                         "start_token": i,
-#                         "end_token": i + n - 1,
-#                         "candidates": candidates,
-#                     }
-#                 )
-#                 i += n
-#                 found = True
-#                 break
-#         if not found:
-#             i += 1
-#     return matches
-
-
 import difflib
 
 _all_ = ["_city_map", "find_first_city"]

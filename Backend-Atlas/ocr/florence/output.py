@@ -343,41 +343,6 @@ def quad_to_bbox_xyxy(quad: list[float]) -> list[int]:
     ys = quad[1::2]
     return [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
 
-
-# POUR LA PROCHAINE MR
-# def _save_bbox_preview_image(image_path: str, intermediate_path: str, parsed: dict) -> None:
-#     """Render a preview image showing parsed Florence detections and their boxes."""
-#     ext = os.path.splitext(os.path.basename(image_path))[1]
-#     img = cv2.imread(image_path)
-#     for det in parsed.get("detections", []):
-#         quad = det.get("quad", [])
-#         bbox = det.get("bbox_xyxy", [])
-#         if len(quad) == 8:
-#             pts = np.array(
-#                 [[int(quad[i]), int(quad[i + 1])] for i in range(0, 8, 2)],
-#                 dtype=np.int32,
-#             )
-#             cv2.polylines(img, [pts], isClosed=True, color=(0, 0, 255), thickness=1)
-#             label_x, label_y = int(quad[0]), max(int(quad[1]) - 4, 0)
-#         elif len(bbox) == 4:
-#             x1, y1, x2, y2 = bbox
-#             cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 1)
-#             label_x, label_y = x1, max(y1 - 4, 0)
-#         else:
-#             continue
-#         cv2.putText(
-#             img,
-#             det["text"],
-#             (label_x, label_y),
-#             cv2.FONT_HERSHEY_SIMPLEX,
-#             0.35,
-#             (0, 0, 255),
-#             1,
-#         )
-#     bbx_path = os.path.splitext(intermediate_path)[0] + f"-bbx{ext}"
-#     cv2.imwrite(bbx_path, img)
-
-
 def save_result(image_path: str, intermediate_path: str, parsed: dict) -> None:
     """Save the Florence parsed result as JSON."""
 
