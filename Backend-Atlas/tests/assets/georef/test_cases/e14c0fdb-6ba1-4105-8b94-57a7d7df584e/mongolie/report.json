@@ -1,0 +1,51 @@
+{
+  "testId": "e14c0fdb-6ba1-4105-8b94-57a7d7df584e",
+  "testCaseId": "mongolie",
+  "evaluatedAt": "2026-09-26T17:16:02.882143Z",
+  "expectedZonesFile": "georef_zones/e14c0fdb-6ba1-4105-8b94-57a7d7df584e_zones.geojson",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1790439123767",
+          "name": "Mongolie",
+          "area": 184.6993158612229
+        },
+        "bestMatch": {
+          "iou": 0.12352471607821122,
+          "intersectionArea": 32.17056951380574,
+          "unionArea": 260.4383198374367,
+          "precision": 0.2981252587082195,
+          "recall": 0.17417806538047853,
+          "falseNegativeArea": 152.5287463474169,
+          "falsePositiveArea": 75.73900397621402,
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "Mongolie",
+            "area": 107.90957349001968
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.12352471607821122,
+      "meanPrecision": 0.2981252587082195,
+      "meanRecall": 0.17417806538047853,
+      "totalFalseNegativeArea": 152.5287463474169,
+      "totalFalsePositiveArea": 75.73900397621402
+    },
+    "scoreUsed": 0.12352471607821122,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  }
+}

@@ -7,6 +7,7 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import L from "leaflet";
+import { createCartoTileLayer } from "../../utils/basemap";
 
 const mapEl = ref(null);
 
@@ -475,6 +476,9 @@ async function loadGeoBorders() {
     "/geojson/geoBoundaries-FRA-ADM1_simplified.geojson",
     "/geojson/geoBoundaries-MDG-ADM1_simplified.geojson",
     "/geojson/geoBoundaries-AUS-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-ITA-ADM0_simplified.geojson",
+    "/geojson/geoBoundaries-MNG-ADM0_simplified.geojson",
+    "/geojson/geoBoundaries-NOR-ADM0_simplified.geojson",
   ];
 
   try {
@@ -503,7 +507,7 @@ async function loadGeoBorders() {
     const visibleFeatures = (data.features || []).filter((feature) => {
       if (selectedIds.size === 0) return false;
       const borderId =
-        feature?.properties?.shapeISO || feature?.properties?.shapeID;
+        feature?.properties?.shapeISO || feature?.properties?.shapeID || (feature?.properties?.shapeType === "ADM0" ? feature?.properties?.shapeGroup : undefined);
       return selectedIds.has(borderId);
     });
 
@@ -562,16 +566,17 @@ async function loadGeoBorders() {
 }
 
 onMounted(() => {
-  map = L.map(mapEl.value).setView([52.9399, -73.5491], 5);
+  // Same basemap and world bounds as the project map (MapGeoJSON.vue), so zones
+  // drawn here sit on the geography the user sees there.
+  map = L.map(mapEl.value, {
+    maxBounds: [
+      [-90, -180],
+      [90, 180],
+    ],
+    maxBoundsViscosity: 1.0,
+  }).setView([52.9399, -73.5491], 5);
 
-  baseTileLayer = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-    {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-    },
-  ).addTo(map);
+  baseTileLayer = createCartoTileLayer({ noWrap: true }).addTo(map);
 
   subzoneLayerGroup = L.layerGroup().addTo(map);
 

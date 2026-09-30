@@ -272,7 +272,7 @@ async function fetchMapsAndRender() {
           @click="openCreateProjectDialog"
         >
           <PlusIcon class="h-5 w-5" />
-          Nouveau Projet
+          Nouveau projet
         </button>
       </div>
     </div>
@@ -334,8 +334,8 @@ async function fetchMapsAndRender() {
         <h3 class="text-lg font-bold">Supprimer le projet</h3>
         <p class="py-4">
           Êtes-vous sûr de vouloir supprimer
-          <span class="font-semibold">{{ projectToDelete?.title }}</span> ? Cette
-          action est irréversible.
+          <span class="font-semibold">{{ projectToDelete?.title }}</span> ?
+          Cette action est irréversible.
         </p>
         <div class="modal-action">
           <button
@@ -401,8 +401,9 @@ async function fetchMapsAndRender() {
                     type="checkbox"
                     :checked="!editProjectIsPrivate"
                     @change="
-                      editProjectIsPrivate = !($event.target as HTMLInputElement)
-                        .checked
+                      editProjectIsPrivate = !(
+                        $event.target as HTMLInputElement
+                      ).checked
                     "
                     class="toggle toggle-primary"
                   />

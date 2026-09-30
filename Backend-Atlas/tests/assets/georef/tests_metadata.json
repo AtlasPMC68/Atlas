@@ -26,5 +26,21 @@
   "6e94b70d-982c-42d1-b09b-dd92f563951b": {
     "name": "Madagascar",
     "createdAt": "2026-09-30T18:45:03.958161Z"
+  },
+  "c858266f-56d1-489c-8e40-20dc0906fcaf": {
+    "name": "Italie",
+    "createdAt": "2026-09-25T18:02:43.629574Z"
+  },
+  "e14c0fdb-6ba1-4105-8b94-57a7d7df584e": {
+    "name": "Mongolie",
+    "createdAt": "2026-09-26T16:10:08.099786Z"
+  },
+  "ac74f9cf-77e3-4bfe-8f94-ec75f632f57b": {
+    "name": "Norvège",
+    "createdAt": "2026-09-26T17:09:56.107970Z"
+  },
+  "bd008f06-137d-4d52-8996-1da08224494f": {
+    "name": "Norvège",
+    "createdAt": "2026-09-26T17:18:06.667972Z"
   }
 }

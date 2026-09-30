@@ -302,6 +302,21 @@ const geoBorderGroups = [
       { id: "82085004B12086860067424", label: "Other Territories" },
     ],
   },
+  {
+    id: "ITA",
+    label: "Italie",
+    borders: [{ id: "ITA", label: "Italie" }],
+  },
+  {
+    id: "MNG",
+    label: "Mongolie",
+    borders: [{ id: "MNG", label: "Mongolie" }],
+  },
+  {
+    id: "NOR",
+    label: "Norvège",
+    borders: [{ id: "NOR", label: "Norvège" }],
+  },
 ];
 const geoBorderOptions = geoBorderGroups.flatMap((group) => group.borders);
 const selectedGeoBorders = ref<string[]>([]);
