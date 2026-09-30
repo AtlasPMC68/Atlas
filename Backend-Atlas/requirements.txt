@@ -32,4 +32,5 @@ python-Levenshtein
 pytest-xdist
 coloredlogs
 transformers
+greenlet
 
