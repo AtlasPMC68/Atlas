@@ -9,9 +9,9 @@ type WorldPoint = { lat: number; lng: number };
 type ExtractionOptions = {
   enableGeoreferencing?: boolean;
   enableColorExtraction?: boolean;
-  enableShapesExtraction?: boolean;
   enableTextExtraction?: boolean;
   imposedColors?: { x: number; y: number; name: string; radius: number }[];
+  imposedShapes?: { x: number; y: number; name: string }[];
 };
 
 type ProcessingStep = "upload" | "analysis" | "extraction" | "processing";
@@ -94,10 +94,6 @@ export function useImportProcess() {
         String(options.enableColorExtraction ?? true),
       );
       formData.append(
-        "enable_shapes_extraction",
-        String(options.enableShapesExtraction ?? false),
-      );
-      formData.append(
         "enable_text_extraction",
         String(options.enableTextExtraction ?? false),
       );
@@ -117,6 +113,14 @@ export function useImportProcess() {
                 radius,
               };
             }),
+          ),
+        );
+      }
+      if (options.imposedShapes && options.imposedShapes.length > 0) {
+        formData.append(
+          "imposed_shape_clicks",
+          JSON.stringify(
+            options.imposedShapes.map((s) => ({ x: s.x, y: s.y, name: s.name })),
           ),
         );
       }
