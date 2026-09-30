@@ -240,9 +240,71 @@ const geoBorderGroups = [
       { id: "JP-47", label: "Okinawa" },
     ],
   },
+  {
+    id: "FR",
+    label: "France",
+    borders: [
+      { id: "FR-IDF", label: "Île-de-France" },
+      { id: "FR-CVL", label: "Centre-Val de Loire" },
+      { id: "FR-BFC", label: "Bourgogne-Franche-Comté" },
+      { id: "FR-NOR", label: "Normandie" },
+      { id: "FR-HDF", label: "Hauts-de-France" },
+      { id: "FR-GES", label: "Grand Est" },
+      { id: "FR-PDL", label: "Pays de la Loire" },
+      { id: "FR-BRE", label: "Bretagne" },
+      { id: "FR-NAQ", label: "Nouvelle-Aquitaine" },
+      { id: "FR-OCC", label: "Occitanie" },
+      { id: "FR-ARA", label: "Auvergne-Rhône-Alpes" },
+      { id: "FR-PAC", label: "Provence-Alpes-Côte d'Azur" },
+      { id: "FR-20R", label: "Corse" },
+    ],
+  },
+  {
+    id: "MG",
+    label: "Madagascar",
+    borders: [
+      { id: "27540722B39676432794686", label: "Diana" },
+      { id: "27540722B96967449701393", label: "Sava" },
+      { id: "27540722B29762949035073", label: "Analanjirofo" },
+      { id: "27540722B26835460634378", label: "Amoron'i Mania" },
+      { id: "27540722B59079602855311", label: "Ihorombe" },
+      { id: "27540722B85261442939952", label: "Melaky" },
+      { id: "27540722B66660932242608", label: "Menabe" },
+      { id: "27540722B16458597550107", label: "Vakinankaratra" },
+      { id: "27540722B68428456346892", label: "Atsinanana" },
+      { id: "27540722B20631024421355", label: "Alaotra-Mangoro" },
+      { id: "27540722B38694577181717", label: "Sofia" },
+      { id: "27540722B69979521515872", label: "Anosy" },
+      { id: "27540722B20664439648320", label: "Boeny" },
+      { id: "27540722B63964985004787", label: "Betsiboka" },
+      { id: "27540722B10144800929043", label: "Analamanga" },
+      { id: "27540722B68546220644411", label: "Bongolava" },
+      { id: "27540722B8147071737362", label: "Itasy" },
+      { id: "27540722B7206368911185", label: "Atsimo-Andrefana" },
+      { id: "27540722B38453733722382", label: "Androy" },
+      { id: "27540722B82031840289091", label: "Atsimo-Atsinanana" },
+      { id: "27540722B35082115892485", label: "Matsiatra Ambony" },
+      { id: "27540722B59950383788875", label: "Vatovavy-Fitovinany" },
+    ],
+  },
+  {
+    id: "AU",
+    label: "Australie",
+    borders: [
+      { id: "AU-NSW", label: "New South Wales" },
+      { id: "AU-VIC", label: "Victoria" },
+      { id: "AU-QLD", label: "Queensland" },
+      { id: "AU-SA", label: "South Australia" },
+      { id: "AU-WA", label: "Western Australia" },
+      { id: "AU-TAS", label: "Tasmania" },
+      { id: "AU-NT", label: "Northern Territory" },
+      { id: "AU-ACT", label: "Australian Capital Territory" },
+      { id: "82085004B12086860067424", label: "Other Territories" },
+    ],
+  },
 ];
 const geoBorderOptions = geoBorderGroups.flatMap((group) => group.borders);
-const selectedGeoBorders = ref(geoBorderOptions.map((border) => border.id));
+const selectedGeoBorders = ref<string[]>([]);
 const subGeometries = ref<any[]>([]);
 
 const testCases = ref<string[]>([]);
@@ -440,7 +502,7 @@ function clearCreateDrawing() {
   resetCreateKey.value += 1;
   isFrontierMode.value = false;
   isGeoBorderMode.value = false;
-  selectedGeoBorders.value = geoBorderOptions.map((border) => border.id);
+  selectedGeoBorders.value = [];
 }
 
 function startCreateMode() {

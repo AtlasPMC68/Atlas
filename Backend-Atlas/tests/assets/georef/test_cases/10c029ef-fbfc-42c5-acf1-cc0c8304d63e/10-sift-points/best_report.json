@@ -1,0 +1,217 @@
+{
+  "testId": "10c029ef-fbfc-42c5-acf1-cc0c8304d63e",
+  "testCaseId": "10-sift-points",
+  "evaluatedAt": "2026-09-30T14:27:46.106347Z",
+  "expectedZonesFile": "georef_zones/10c029ef-fbfc-42c5-acf1-cc0c8304d63e_zones.geojson",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1790262831589",
+          "name": "Hokkaido",
+          "area": 8.713819914686752
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 8.713819914686752,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 8.713819914686752,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 1,
+          "id": "dev-zone-1790262831669",
+          "name": "Hokkaido",
+          "area": 8.713819914686752
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 8.713819914686752,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 8.713819914686752,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 2,
+          "id": "dev-zone-1790263610292",
+          "name": "Tohoku",
+          "area": 6.965605354110718
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 6.965605354110718,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 6.965605354110718,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 3,
+          "id": "dev-zone-1790553622126",
+          "name": "Kanto",
+          "area": 3.206473010487011
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 3.206473010487011,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 3.206473010487011,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 4,
+          "id": "dev-zone-1790555830248",
+          "name": "Chubu",
+          "area": 6.690028518879757
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 6.690028518879757,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 6.690028518879757,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 5,
+          "id": "dev-zone-1790731401964",
+          "name": "Kansai",
+          "area": 2.8911913783532506
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 2.8911913783532506,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 2.8911913783532506,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 6,
+          "id": "dev-zone-1790732840099",
+          "name": "Chugoku",
+          "area": 3.104842231462306
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 3.104842231462306,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 3.104842231462306,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 7,
+          "id": "dev-zone-1790735146703",
+          "name": "Shikoku",
+          "area": 1.8244437274225827
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 1.8244437274225827,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 1.8244437274225827,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      },
+      {
+        "expected": {
+          "index": 8,
+          "id": "dev-zone-1790774550336",
+          "name": "Kyushu & Okinawa",
+          "area": 3.664913939433246
+        },
+        "bestMatch": {
+          "iou": 0.0,
+          "intersectionArea": 0.0,
+          "unionArea": 3.664913939433246,
+          "precision": 0.0,
+          "recall": 0.0,
+          "falseNegativeArea": 3.664913939433246,
+          "falsePositiveArea": 0.0,
+          "extracted": null,
+          "matchedBy": "none"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.0,
+      "meanPrecision": 0.0,
+      "meanRecall": 0.0,
+      "totalFalseNegativeArea": 45.77513798952238,
+      "totalFalsePositiveArea": 0.0
+    },
+    "scoreUsed": 0.0,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [
+      "Hokkaido",
+      "Hokkaido",
+      "Tohoku",
+      "Kanto",
+      "Chubu",
+      "Kansai",
+      "Chugoku",
+      "Shikoku",
+      "Kyushu & Okinawa"
+    ],
+    "extractedNeverMatchedByName": [
+      "aquamarine",
+      "coral",
+      "khaki",
+      "lightcoral",
+      "lightgreen",
+      "mediumslateblue",
+      "silver",
+      "violet"
+    ]
+  }
+}

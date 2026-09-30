@@ -472,6 +472,9 @@ async function loadGeoBorders() {
   const filenames = [
     "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson",
     "/geojson/geoBoundaries-JPN-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-FRA-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-MDG-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-AUS-ADM1_simplified.geojson",
   ];
 
   try {
@@ -499,7 +502,9 @@ async function loadGeoBorders() {
     const selectedIds = new Set(props.selectedGeoBorders);
     const visibleFeatures = (data.features || []).filter((feature) => {
       if (selectedIds.size === 0) return false;
-      return selectedIds.has(feature?.properties?.shapeISO);
+      const borderId =
+        feature?.properties?.shapeISO || feature?.properties?.shapeID;
+      return selectedIds.has(borderId);
     });
 
     // Draw only the selected geopolitical regions as outlines

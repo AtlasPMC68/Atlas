@@ -18,6 +18,7 @@ onMounted(async () => {
 <template>
   <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
     <div
+      v-if="currentUser"
       class="bg-white shadow rounded-lg p-6 flex flex-col md:flex-row gap-6 items-start"
     >
       <div
@@ -55,6 +56,10 @@ onMounted(async () => {
           </button>
         </div>
       </div>
+    </div>
+    <div v-else-if="isLoading" class="text-gray-500">Chargement du profil...</div>
+    <div v-else class="text-red-600">
+      Impossible de charger le profil. Vérifiez que le serveur est disponible.
     </div>
   </div>
 </template>
