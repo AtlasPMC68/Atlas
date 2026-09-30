@@ -38,6 +38,15 @@
           Géoréférencement
         </div>
         <div class="step" :class="{ 'step-primary': currentStep >= 5 }">
+          Légende
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 6 }">
+          Couleurs
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 7 }">
+          Formes
+        </div>
+        <div class="step" :class="{ 'step-primary': currentStep >= 8 }">
           Extraction
         </div>
       </div>
@@ -101,23 +110,6 @@
                   <div class="text-xs text-base-content/60">
                     Détecter et extraire les régions par couleur (pays,
                     territoires, etc.)
-                  </div>
-                </div>
-              </label>
-
-              <!-- Shapes Extraction -->
-              <label
-                class="flex items-center gap-3 cursor-pointer hover:bg-base-300 p-2 rounded"
-              >
-                <input
-                  type="checkbox"
-                  v-model="enableShapesExtraction"
-                  class="checkbox checkbox-sm checkbox-primary"
-                />
-                <div class="flex-1">
-                  <div class="font-medium text-sm">Extraction des formes</div>
-                  <div class="text-xs text-base-content/60">
-                    Détecter les formes géométriques (cercles, rectangles, etc.)
                   </div>
                 </div>
               </label>
@@ -199,6 +191,16 @@
       @close="handleColorPickerClose"
       @confirmed="handleColorPickerConfirmed"
     />
+
+    <!-- Shape picker modal -->
+    <ShapePickerModal
+      v-if="showShapePickerModal && previewUrl"
+      :is-open="showShapePickerModal"
+      :image-url="previewUrl"
+      @close="handleShapePickerClose"
+      @skip="handleShapePickerSkip"
+      @confirmed="handleShapePickerConfirmed"
+    />
   </div>
 </template>
 
@@ -228,6 +230,7 @@ import ProcessingModal from "../../components/import/ProcessingModal.vue";
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
+import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -282,11 +285,15 @@ const currentStep = ref<number>(1);
 const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
 const showColorPickerModal = ref<boolean>(false);
+const showShapePickerModal = ref<boolean>(false);
 const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
 type ImposedColor = { x: number; y: number; name: string; radius: number };
 const pickedColors = ref<ImposedColor[]>([]);
+type ImposedShape = { x: number; y: number; name: string };
+const pickedShapes = ref<ImposedShape[]>([]);
+const pendingLegendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
 const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
 
@@ -297,7 +304,6 @@ const isRedirecting = ref<boolean>(false);
 // Extraction options (all enabled by default)
 const enableGeoreferencing = ref<boolean>(true);
 const enableColorExtraction = ref<boolean>(true);
-const enableShapesExtraction = ref<boolean>(false);
 const enableTextExtraction = ref<boolean>(false);
 
 // Event handlers
@@ -329,41 +335,16 @@ async function startImportProcess() {
     // and disable other extraction options.
     enableGeoreferencing.value = true;
     enableColorExtraction.value = true;
-    enableShapesExtraction.value = false;
     enableTextExtraction.value = false;
   }
   
-  // If georeferencing is disabled, skip world area selection and go straight to upload
+  // If georeferencing is disabled, skip world area selection and go straight to legend picker
   // Note: dev-test mode always forces georef on, so this path is production-only.
   if (!enableGeoreferencing.value) {
     pendingGeorefPayload.value = null;
-
-    const importProjectId =
-      routeProjectId ?? (await resolveProjectIdFromMapId(routeMapId));
-    if (!importProjectId) {
-      console.error("Impossible de resoudre le project_id pour cette importation");
-      currentStep.value = 2;
-      return;
-    }
-
-    const result = await prodImport.startImport(
-      selectedFile.value,
-      importProjectId,
-      routeMapId,
-      undefined,
-      undefined,
-      {
-        enableGeoreferencing: false,
-        enableColorExtraction: enableColorExtraction.value,
-        enableShapesExtraction: enableShapesExtraction.value,
-        enableTextExtraction: enableTextExtraction.value,
-      },
-    );
-    if (result.success) {
-      currentStep.value = 5;
-    } else {
-      console.error("Erreur importation:", result.error);
-    }
+    legendReturnStep.value = 2;
+    currentStep.value = 5;
+    showLegendPickerModal.value = true;
     return;
   }
 
@@ -471,13 +452,13 @@ async function submitImportWithGeoref() {
     {
       enableGeoreferencing: Boolean(payload),
       enableColorExtraction: enableColorExtraction.value,
-      enableShapesExtraction: enableShapesExtraction.value,
       enableTextExtraction: enableTextExtraction.value,
       imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
+      imposedShapes: pickedShapes.value.length > 0 ? pickedShapes.value : undefined,
     },
   );
   if (result.success) {
-    currentStep.value = 5;
+    currentStep.value = 8;
   } else {
     console.error("Erreur importation:", result.error);
     currentStep.value = 2;
@@ -485,6 +466,48 @@ async function submitImportWithGeoref() {
 
   pendingGeorefPayload.value = null;
   pickedColors.value = [];
+  pickedShapes.value = [];
+  pendingLegendBounds.value = null;
+}
+
+function handleLegendClose() {
+  showLegendPickerModal.value = false;
+  if (legendReturnStep.value === 4) {
+    showSiftGeorefModal.value = true;
+    currentStep.value = 4;
+    return;
+  }
+
+  currentStep.value = 2;
+}
+
+async function handleLegendSkip() {
+  showLegendPickerModal.value = false;
+  legendBounds.value = null;
+  pendingLegendBounds.value = null;
+  if (enableColorExtraction.value) {
+    currentStep.value = 6;
+    showColorPickerModal.value = true;
+    return;
+  }
+  // No color extraction — go straight to shape picker
+  currentStep.value = 7;
+  showShapePickerModal.value = true;
+}
+
+async function handleLegendConfirmed(bounds: LegendBounds) {
+  showLegendPickerModal.value = false;
+  legendBounds.value = bounds;
+  pendingLegendBounds.value = bounds;
+
+  if (enableColorExtraction.value) {
+    currentStep.value = 6;
+    showColorPickerModal.value = true;
+    return;
+  }
+  // No color extraction — go straight to shape picker
+  currentStep.value = 7;
+  showShapePickerModal.value = true;
 }
 
 async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
@@ -514,7 +537,39 @@ async function handleColorPickerConfirmed(
 ) {
   showColorPickerModal.value = false;
   pickedColors.value = colors;
-  await submitImportWithGeoref();
+  // After colors, open the shape picker step
+  if (isDevTest.value) {
+    await submitImportWithGeoref(null);
+    return;
+  }
+  currentStep.value = 7;
+  showShapePickerModal.value = true;
+}
+
+function handleShapePickerClose() {
+  showShapePickerModal.value = false;
+  // Go back to color picker step
+  if (enableColorExtraction.value) {
+    showColorPickerModal.value = true;
+    currentStep.value = 6;
+    return;
+  }
+  showLegendPickerModal.value = true;
+  currentStep.value = 5;
+}
+
+async function handleShapePickerSkip() {
+  showShapePickerModal.value = false;
+  pickedShapes.value = [];
+  await submitImportWithGeoref(pendingLegendBounds.value);
+}
+
+async function handleShapePickerConfirmed(
+  shapes: { x: number; y: number; name: string }[],
+) {
+  showShapePickerModal.value = false;
+  pickedShapes.value = shapes;
+  await submitImportWithGeoref(pendingLegendBounds.value);
 }
 
 // Redirect when extraction is finished
@@ -547,9 +602,12 @@ const resetImport = () => {
   showWorldAreaPickerModal.value = false;
   showSiftGeorefModal.value = false;
   showColorPickerModal.value = false;
+  showShapePickerModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
   pickedColors.value = [];
+  pickedShapes.value = [];
+  pendingLegendBounds.value = null;
   pendingGeorefPayload.value = null;
   coastlineKeypoints.value = null;
   usedLakes.value = false;
