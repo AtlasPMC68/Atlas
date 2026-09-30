@@ -276,10 +276,16 @@ async def upload_and_process_map(
     legend_bounds_dict = None
 
     # When called directly in tests, FastAPI parameter defaults can arrive as Form objects.
+    if isinstance(image_points, FormParam):
+        image_points = None
+    if isinstance(world_points, FormParam):
+        world_points = None
     if isinstance(legend_bounds, FormParam):
         legend_bounds = None
     if isinstance(imposed_colors, FormParam):
         imposed_colors = None
+    if isinstance(imposed_shape_clicks, FormParam):
+        imposed_shape_clicks = None
 
     # Parse matched point pairs for SIFT georeferencing
     if enable_georeferencing and image_points and world_points:
