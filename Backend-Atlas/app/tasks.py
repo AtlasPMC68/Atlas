@@ -1,5 +1,6 @@
 import asyncio
 import json
+import json
 import logging
 import os
 import tempfile
@@ -197,39 +198,19 @@ def process_map_extraction(
                 },
             )
 
-            legends_shapes = [
-                s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)
-            ]
+            imposed_click_positions_tuples = (
+                [tuple(c) for c in imposed_click_positions]
+                if imposed_click_positions
+                else None
+            )
 
-            imposed_click_positions_tuples = [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
+            imposed_sampling_radii_ints = (
+                [int(r) for r in imposed_sampling_radii]
+                if imposed_sampling_radii
+                else None
+            )
 
-            imposed_sampling_radii_ints = [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
-
-            # If the frontend provided a legend box but shapes extraction was disabled,
-            # we still need legend shapes to perform legend-based color extraction.
-            if (
-                not imposed_click_positions_tuples
-                and not legends_shapes
-                and legend_bounds is not None
-            ):
-                try:
-                    legend_shapes_result = extract_shapes(
-                        tmp_file_path,
-                        text_regions=text_regions,
-                        legend_bounds=legend_bounds,
-                    )
-                    legends_shapes = [
-                        s
-                        for s in legend_shapes_result.get("shapes", [])
-                        if s.get("isLegend", False)
-                    ]
-                except Exception as e:
-                    logger.error(
-                        f"Legend-only shapes extraction failed for map {map_id}: {e}",
-                        exc_info=True,
-                    )
-
-            if not imposed_click_positions_tuples and not legends_shapes:
+            if not imposed_click_positions_tuples:
                 logger.info(
                     "[DEBUG] Color extraction skipped - no imposed colors provided"
                 )
@@ -329,7 +310,7 @@ def process_map_extraction(
         result = {
             "filename": filename,
             "output_path": output_path if enable_text_extraction else "",
-            "shapes_result": shapes_result if enable_shapes_extraction else {},
+            "shapes_result": shapes_result,
             "color_result": color_result
             if enable_color_extraction
             else {"colors_detected": 0},
