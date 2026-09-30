@@ -276,10 +276,16 @@ async def upload_and_process_map(
     legend_bounds_dict = None
 
     # When called directly in tests, FastAPI parameter defaults can arrive as Form objects.
+    if isinstance(image_points, FormParam):
+        image_points = None
+    if isinstance(world_points, FormParam):
+        world_points = None
     if isinstance(legend_bounds, FormParam):
         legend_bounds = None
     if isinstance(imposed_colors, FormParam):
         imposed_colors = None
+    if isinstance(imposed_shape_clicks, FormParam):
+        imposed_shape_clicks = None
 
     # Parse matched point pairs for SIFT georeferencing
     if enable_georeferencing and image_points and world_points:
@@ -389,7 +395,6 @@ async def upload_and_process_map(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-<<<<<<< HEAD
         task_kwargs = {
             "filename": file.filename,
             "file_content": file_content,
@@ -398,12 +403,13 @@ async def upload_and_process_map(
             "pixel_points": pixel_points_list,
             "geo_points_lonlat": geo_points_list,
             "enable_color_extraction": enable_color_extraction,
-            "enable_shapes_extraction": enable_shapes_extraction,
             "enable_text_extraction": enable_text_extraction,
             "legend_bounds": legend_bounds_dict,
             "imposed_click_positions": imposed_click_positions,
             "imposed_colors_names": imposed_colors_names,
             "imposed_sampling_radii": imposed_sampling_radii,
+            "imposed_shape_click_positions": imposed_shape_click_positions_list,
+            "imposed_shape_names": imposed_shape_names_list,
         }
 
         # Text-enabled jobs are funneled to a dedicated serial queue as to not
@@ -420,24 +426,6 @@ async def upload_and_process_map(
                 kwargs=task_kwargs,
                 queue="maps",
             )
-=======
-        task = process_map_extraction.delay(
-            filename=file.filename,
-            file_content=file_content,
-            project_id=map_obj.project_id,
-            map_id=map_id,
-            pixel_points=pixel_points_list,
-            geo_points_lonlat=geo_points_list,
-            enable_color_extraction=enable_color_extraction,
-            enable_text_extraction=enable_text_extraction,
-            legend_bounds=legend_bounds_dict,
-            imposed_click_positions=imposed_click_positions,
-            imposed_colors_names=imposed_colors_names,
-            imposed_sampling_radii=imposed_sampling_radii,
-            imposed_shape_click_positions=imposed_shape_click_positions_list,
-            imposed_shape_names=imposed_shape_names_list,
-        )
->>>>>>> origin/main
         # TODO: either delete the created map if task fails or create cleanup mechanism
 
         logger.info(f"Map processing task started: {task.id} for file {file.filename}")

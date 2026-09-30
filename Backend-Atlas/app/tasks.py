@@ -17,13 +17,8 @@ from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
-<<<<<<< HEAD
-from app.utils.shapes_extraction import extract_shapes
-from app.utils.text_extraction import extract_text, geolocate_cities_and_leftover_text
-=======
 from app.utils.shapes_extraction import extract_shapes_from_clicks
-from app.utils.text_extraction import extract_text
->>>>>>> origin/main
+from app.utils.text_extraction import extract_text, geolocate_cities_and_leftover_text
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 
 from .celery_app import celery_app
@@ -154,29 +149,6 @@ def process_map_extraction(
                     "status": "Extracting shapes from click positions",
                 },
             )
-<<<<<<< HEAD
-            time.sleep(2)
-            shapes_result = extract_shapes(
-                tmp_file_path,
-                text_regions=text_regions,
-                legend_bounds=legend_bounds,
-            )
-            shape_normalized_features = shapes_result["normalized_features"]
-            shape_pixel_features = shapes_result.get("pixel_features", [])
-
-            # Georeference pixel-space shape features if SIFT point pairs are provided
-            if pixel_points and geo_points_lonlat:
-                try:
-                    georef_shape_features = georeference_features_with_sift_points(shape_pixel_features, pixel_points, geo_points_lonlat)
-                    asyncio.run(persist_features(project_id, map_id, georef_shape_features))
-                except Exception as e:
-                    logger.error(
-                        f"SIFT georeferencing step failed for shapes {map_id}: {e}",
-                        exc_info=True,
-                    )
-            elif shape_normalized_features:
-                asyncio.run(persist_features(project_id, map_id, shape_normalized_features))
-=======
             try:
                 click_tuples = [tuple(c) for c in imposed_shape_click_positions]
                 ff_result = extract_shapes_from_clicks(
@@ -184,14 +156,14 @@ def process_map_extraction(
                     click_positions=click_tuples,
                     click_names=imposed_shape_names,
                 )
-                ff_pixel   = ff_result.get("pixel_features", [])
-                ff_norm    = ff_result.get("normalized_features", [])
+                ff_pixel = ff_result.get("pixel_features", [])
+                ff_norm = ff_result.get("normalized_features", [])
 
                 if pixel_points and geo_points_lonlat:
                     try:
                         georef_ff = georeference_features_with_sift_points(
-                            ff_pixel, 
-                            pixel_points, 
+                            ff_pixel,
+                            pixel_points,
                             geo_points_lonlat,
                             snap_to_coastline=False,
                             clip_to_land_mask=False,
@@ -211,8 +183,6 @@ def process_map_extraction(
                     f"Flood-fill shape extraction failed for map {map_id}: {e}",
                     exc_info=True,
                 )
-
->>>>>>> origin/main
         else:
             logger.info("[DEBUG] No shape click positions — skipping shapes extraction")
 
@@ -228,45 +198,22 @@ def process_map_extraction(
                 },
             )
 
-<<<<<<< HEAD
-            legends_shapes = [s for s in shapes_result.get("shapes", []) if s.get("isLegend", False)]
-
-            imposed_click_positions_tuples = [tuple(c) for c in imposed_click_positions] if imposed_click_positions else None
-=======
             imposed_click_positions_tuples = (
                 [tuple(c) for c in imposed_click_positions]
                 if imposed_click_positions
                 else None
             )
->>>>>>> origin/main
 
-            imposed_sampling_radii_ints = [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
+            imposed_sampling_radii_ints = (
+                [int(r) for r in imposed_sampling_radii]
+                if imposed_sampling_radii
+                else None
+            )
 
-<<<<<<< HEAD
-            # If the frontend provided a legend box but shapes extraction was disabled,
-            # we still need legend shapes to perform legend-based color extraction.
-            if not imposed_click_positions_tuples and not legends_shapes and legend_bounds is not None:
-                try:
-                    legend_shapes_result = extract_shapes(
-                        tmp_file_path,
-                        text_regions=text_regions,
-                        legend_bounds=legend_bounds,
-                    )
-                    legends_shapes = [s for s in legend_shapes_result.get("shapes", []) if s.get("isLegend", False)]
-                except Exception as e:
-                    logger.error(
-                        f"Legend-only shapes extraction failed for map {map_id}: {e}",
-                        exc_info=True,
-                    )
-
-            if not imposed_click_positions_tuples and not legends_shapes:
-                logger.info("[DEBUG] Color extraction skipped - no imposed colors provided")
-=======
             if not imposed_click_positions_tuples:
                 logger.info(
                     "[DEBUG] Color extraction skipped - no imposed colors provided"
                 )
->>>>>>> origin/main
                 color_result = {
                     "normalized_features": [],
                     "pixel_features": [],
