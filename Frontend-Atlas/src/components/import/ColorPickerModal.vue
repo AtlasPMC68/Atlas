@@ -89,7 +89,10 @@
               :style="{ backgroundColor: color.hex }"
             />
             <!-- Hex label -->
-            <span class="text-xs font-mono text-base-content/50 w-16 shrink-0">{{ color.hex }}</span>
+            <span
+              class="text-xs font-mono text-base-content/50 w-16 shrink-0"
+              >{{ color.hex }}</span
+            >
             <!-- Editable name -->
             <input
               v-model="color.name"
@@ -110,7 +113,8 @@
       </div>
 
       <p v-else class="text-sm text-base-content/50 italic">
-        Aucune couleur sélectionnée — sélectionnez au moins une couleur pour continuer.
+        Aucune couleur sélectionnée — sélectionnez au moins une couleur pour
+        continuer.
       </p>
     </template>
 
@@ -144,7 +148,10 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "confirmed", colors: { x: number; y: number; name: string; radius: number }[]): void;
+  (
+    e: "confirmed",
+    colors: { x: number; y: number; name: string; radius: number }[],
+  ): void;
 }>();
 
 const container = ref<HTMLDivElement | null>(null);
@@ -189,7 +196,8 @@ const sampleRadiusPx = computed(() =>
 function markerDiameterFromRadius(radiusImagePx: number) {
   const r = Number(radiusImagePx);
   if (!Number.isFinite(r)) return 6;
-  const diameterStagePx = 2 * Math.max(1, Math.min(200, r)) * stagePxPerImagePx.value;
+  const diameterStagePx =
+    2 * Math.max(1, Math.min(200, r)) * stagePxPerImagePx.value;
   return Math.max(6, Math.round(diameterStagePx));
 }
 
@@ -210,9 +218,6 @@ const panStart = ref({ x: 0, y: 0 });
 
 const containerCursorClass = computed(() => {
   if (isLoading.value) return "cursor-wait";
-  if (zoom.value > 1) {
-    return isPointerDown.value ? "cursor-grabbing" : "cursor-grab";
-  }
   return "cursor-crosshair";
 });
 
