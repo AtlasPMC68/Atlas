@@ -18,7 +18,7 @@ from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points
 from app.utils.shapes_extraction import extract_shapes_from_clicks
-from app.utils.text_extraction import extract_text, geolocate_cities_and_leftover_text
+from app.utils.text_extraction import extract_text, geolocate_cities
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
 
 from .celery_app import celery_app
@@ -118,14 +118,12 @@ def process_map_extraction(
             )
 
             try:
-                geolocate_cities_and_leftover_text(
+                geolocate_cities(
                     extracted_text=extracted_text,
                     project_id=project_id,
                     map_id=map_id,
-                    pixel_points=pixel_points,
                     geo_points_lonlat=geo_points_lonlat,
                     persist_city_feature_fn=persist_city_feature,
-                    persist_features_fn=persist_features,
                 )
 
             except Exception as e:

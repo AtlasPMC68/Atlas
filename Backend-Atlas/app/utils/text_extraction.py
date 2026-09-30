@@ -6,11 +6,7 @@ import sys
 from typing import Any
 from uuid import UUID
 
-from celery import chain
-
 from app.utils.cities_validation import find_first_city
-
-# from app.utils.georeferencingSift import georeference_features_with_sift_points
 
 try:
     import coloredlogs
@@ -85,32 +81,6 @@ def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict
     }
 
 
-# POUR LA PROCHAINE MR
-# def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[str, Any]:
-#     """Build text zones for OCR detections that could not be geolocated as cities."""
-#     return {
-#         "type": "FeatureCollection",
-#         "features": [
-#             {
-#                 "type": "Feature",
-#                 "properties": {
-#                     "name": text,
-#                     "labelText": text,
-#                     "show": True,
-#                     "mapElementType": "label",
-#                     "color_name": "black",
-#                     "color_rgb": [0, 0, 0],
-#                     "source": "ocr_bbox_anchor",
-#                     "is_pixel_space": True,
-#                 },
-#                 "geometry": {
-#                     "type": "Point",
-#                     "coordinates": [x, y],
-#                 },
-#             }
-#         ],
-#     }
-
 
 def _compute_geo_bounds(geo_points_lonlat: list) -> dict[str, float] | None:
     """Return {min_lon, max_lon, min_lat, max_lat} from a list of (lon, lat) points, or None."""
@@ -137,17 +107,14 @@ def _compute_geo_bounds(geo_points_lonlat: list) -> dict[str, float] | None:
         return None
 
 
-def geolocate_cities_and_leftover_text(
+def geolocate_cities(
     extracted_text: list[dict[str, Any]],
     project_id: UUID,
     map_id: UUID,
-    pixel_points: list | None,
     geo_points_lonlat: list | None,
     persist_city_feature_fn,
-    persist_features_fn,
 ) -> None:
-    """Persist city-matched text points and georeference unmatched OCR text anchors."""
-    pixel_text_feature_collections = []
+    """Persist city-matched text points."""
     geo_bounds = _compute_geo_bounds(geo_points_lonlat) if geo_points_lonlat else None
 
     city_persist_coroutines = []
@@ -159,8 +126,6 @@ def geolocate_cities_and_leftover_text(
         text = str(block.get("text", "")).strip()
         if not text:
             continue
-
-        anchor_x, anchor_y = _extract_bbox_center_anchor(block.get("bbox"))
 
         try:
             candidate = find_first_city(text, geo_bounds=geo_bounds)
