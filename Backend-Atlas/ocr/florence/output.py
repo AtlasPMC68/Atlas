@@ -3,9 +3,6 @@ import json
 import math
 import os
 
-import cv2
-import numpy as np
-
 # Pixel tolerance for merge rules
 ALIGN_TOLERANCE = 10
 ANGLE_TOLERANCE = 20.0

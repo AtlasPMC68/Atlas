@@ -40,20 +40,6 @@ CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
 CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
 
-def _extract_bbox_center_anchor(bbox_quad: object) -> tuple[float | None, float | None]:
-    """Return bbox center anchor (x, y) from a quad list, or (None, None) if invalid."""
-    if not isinstance(bbox_quad, list) or len(bbox_quad) != 4:
-        return None, None
-
-    try:
-        xs = [float(pt[0]) for pt in bbox_quad if isinstance(pt, list) and len(pt) == 2]
-        ys = [float(pt[1]) for pt in bbox_quad if isinstance(pt, list) and len(pt) == 2]
-        if len(xs) != 4 or len(ys) != 4:
-            return None, None
-        return sum(xs) / 4.0, sum(ys) / 4.0
-    except (TypeError, ValueError):
-        return None, None
-
 
 def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
     """Build one city point feature for each geolocated city candidate."""
@@ -214,8 +200,6 @@ def _build_extracted_text_from_detections(
                 return True
 
             return False
-
-        from app.utils.cities_validation import find_first_city
 
         def process_candidate_text(text_val: str):
             if should_ignore(text_val):

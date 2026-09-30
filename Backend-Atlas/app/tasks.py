@@ -13,7 +13,6 @@ import cv2
 
 from app.database.session import AsyncSessionLocal
 from app.services.features import insert_feature_in_db
-from app.utils.cities_validation import find_first_city
 from app.utils.color_extraction import extract_colors
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencingSift import georeference_features_with_sift_points

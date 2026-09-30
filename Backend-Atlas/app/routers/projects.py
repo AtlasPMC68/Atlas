@@ -4,7 +4,6 @@ from uuid import UUID
 import json
 import math
 from json import JSONDecodeError
-from uuid import UUID
 import base64
 import cv2
 import numpy as np
