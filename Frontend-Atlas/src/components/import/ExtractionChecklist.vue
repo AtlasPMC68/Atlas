@@ -166,6 +166,15 @@
         {{ ocrLabel.text }}
       </p>
     </div>
+
+    <button
+      type="button"
+      class="self-center text-xs text-gray-400 hover:text-red-600 hover:underline underline-offset-2 disabled:opacity-50"
+      :disabled="disabled"
+      @click="emit('abandon')"
+    >
+      Abandonner l'importation
+    </button>
   </div>
 </template>
 
@@ -204,6 +213,7 @@ const emit = defineEmits<{
   (e: "open", step: StepId): void;
   (e: "update:options", options: ImportOptions): void;
   (e: "start"): void;
+  (e: "abandon"): void;
 }>();
 
 const OPTION_ROWS: { key: keyof ImportOptions; title: string; description: string }[] = [

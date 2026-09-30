@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/test-5-sift-points-peut-etre",
-  "startedAt": "2026-09-24T00:08:45.350270+00:00",
+  "startedAt": "2026-09-24T15:17:50.595582+00:00",
   "inputs": {
     "caseKind": "probe",
     "frameBoundsSource": "config",
@@ -195,12 +195,11 @@
     "zonesDroppedOffLand": 0
   },
   "timingMs": {
-    "color_extraction": 2352.337,
-    "fit": 0.909,
-    "load_coastline": 1420.739,
-    "load_land_mask": 1245.435,
-    "subtract_lakes": 1133.571,
-    "apply": 318.225
+    "color_extraction": 157.143,
+    "fit": 15.544,
+    "load_coastline": 657.117,
+    "load_land_mask": 973.708,
+    "apply": 343.566
   },
   "config": {
     "version": "13",

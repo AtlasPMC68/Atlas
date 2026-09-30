@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/ville2",
-  "startedAt": "2026-09-24T00:08:59.159657+00:00",
+  "startedAt": "2026-09-24T15:17:54.177163+00:00",
   "inputs": {
     "caseKind": "probe",
     "frameBoundsSource": "config",

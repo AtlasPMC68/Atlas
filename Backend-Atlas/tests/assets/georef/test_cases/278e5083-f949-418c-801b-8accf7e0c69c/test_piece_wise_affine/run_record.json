@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/test_piece_wise_affine",
-  "startedAt": "2026-09-24T00:14:26.176265+00:00",
+  "startedAt": "2026-09-24T15:17:52.951656+00:00",
   "inputs": {
     "waterPickCount": 2,
     "legendBounds": null,
