@@ -1,158 +1,406 @@
-import os
-import easyocr
-import cv2
-import copy
+import asyncio
+import json
 import logging
-import numpy as np
+import os
+import sys
+from typing import Any
+from uuid import UUID
+
+from celery import chain
+
+from app.utils.cities_validation import find_first_city
+from app.utils.georeferencingSift import georeference_features_with_sift_points
+
+try:
+    import coloredlogs
+
+    HAS_COLOREDLOGS = True
+except ImportError:
+    HAS_COLOREDLOGS = False
 
 logger = logging.getLogger(__name__)
+log_level = os.getenv("OCR_LOG_LEVEL", "INFO").upper()
 
-def extract_text(image: np.ndarray, languages: list[str], gpu_acc: bool = False) -> tuple[list, np.ndarray]:
-    """
-    Wrapper method handling the text extraction logic. This is mainly to reduce
-    the memory overhead as this method is very much resource intensive, and it is
-    possible that multiple of these run in parallel.
+if HAS_COLOREDLOGS:
+    coloredlogs.install(
+        level=log_level,
+        logger=logger,
+        fmt="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+else:
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
+        logger.addHandler(handler)
 
-    :param image: Numpy image array of bytes.
-    :param image_name: Name of the image file.
-    :param languages: List of language codes to use for text extraction.
-    :param gpu_acc: Whether a GPU is available to accelerate image analysis.
-    :return: values, clean_image: Returns a tuple of the text information and the pixel
-        array of the image, devoid of text.
-    """
-    logger.debug("Initiating text extraction")
-    extractor = TextExtraction(img=image,lang=languages, gpu_acc=gpu_acc)
-    extractor.check_language_code_validity()
+OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
+OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/ocr_intermediate")
+OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
+OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "900"))
+CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
+CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
-    text_info =  extractor.read_text_from_image()
-    #TODO : image cleaning, just send a copy for now
-    #clean_image = extractor.remove_text_from_image(image, text_info)
-    clean_image = copy.deepcopy(image)
 
-    logger.debug("Completed text extraction")
-    return text_info, clean_image
+def _extract_bbox_center_anchor(bbox_quad: object) -> tuple[float | None, float | None]:
+    """Return bbox center anchor (x, y) from a quad list, or (None, None) if invalid."""
+    if not isinstance(bbox_quad, list) or len(bbox_quad) != 4:
+        return None, None
 
-class TextExtraction:
+    try:
+        xs = [float(pt[0]) for pt in bbox_quad if isinstance(pt, list) and len(pt) == 2]
+        ys = [float(pt[1]) for pt in bbox_quad if isinstance(pt, list) and len(pt) == 2]
+        if len(xs) != 4 or len(ys) != 4:
+            return None, None
+        return sum(xs) / 4.0, sum(ys) / 4.0
+    except (TypeError, ValueError):
+        return None, None
 
-    # Static class variables
-    LANGUAGE_CODES_HASHMAP = {
-        "Abaza": "abq", "Adyghe": "ady", "Afrikaans": "af", "Angika": "ang", "Arabic": "ar", "Assamese": "as",
-        "Avar": "ava", "Azerbaijani": "az", "Belarusian": "be", "Bulgarian": "bg", "Bihari": "bh",
-        "Bhojpuri": "bho",
-        "Bengali": "bn", "Bosnian": "bs", "Simplified Chinese": "ch_sim", "Traditional Chinese": "ch_tra",
-        "Chechen": "che",
-        "Czech": "cs", "Welsh": "cy", "Danish": "da", "Dargwa": "dar", "German": "de", "English": "en",
-        "Spanish": "es",
-        "Estonian": "et", "Persian (Farsi)": "fa", "French": "fr", "Irish": "ga", "Goan Konkani": "gom",
-        "Hindi": "hi",
-        "Croatian": "hr", "Hungarian": "hu", "Indonesian": "id", "Ingush": "inh", "Icelandic": "is",
-        "Italian": "it",
-        "Japanese": "ja", "Kabardian": "kbd", "Kannada": "kn", "Korean": "ko", "Kurdish": "ku", "Latin": "la",
-        "Lak": "lbe", "Lezghian": "lez", "Lithuanian": "lt", "Latvian": "lv", "Magahi": "mah", "Maithili": "mai",
-        "Maori": "mi", "Mongolian": "mn", "Marathi": "mr", "Malay": "ms", "Maltese": "mt", "Nepali": "ne",
-        "Newari": "new",
-        "Dutch": "nl", "Norwegian": "no", "Occitan": "oc", "Pali": "pi", "Polish": "pl", "Portuguese": "pt",
-        "Romanian": "ro", "Russian": "ru", "Serbian (cyrillic)": "rs_cyrillic", "Serbian (latin)": "rs_latin",
-        "Nagpuri": "sck", "Slovak": "sk", "Slovenian": "sl", "Albanian": "sq", "Swedish": "sv", "Swahili": "sw",
-        "Tamil": "ta", "Tabassaran": "tab", "Telugu": "te", "Thai": "th", "Tajik": "tjk", "Tagalog": "tl",
-        "Turkish": "tr",
-        "Uyghur": "ug", "Ukranian": "uk", "Urdu": "ur", "Uzbek": "uz", "Vietnamese": "vi"
+
+def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
+    """Build one city point feature for each geolocated city candidate."""
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": candidate.get("name") or text,
+                    "show": True,
+                    "mapElementType": "point",
+                    "color_name": "black",
+                    "color_rgb": [0, 0, 0],
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [
+                        candidate.get("lon") or 0.0,
+                        candidate.get("lat") or 0.0,
+                    ],
+                },
+            }
+        ],
     }
-    LANGUAGE_CODES = [
-        "abq", "ady", "af", "ang", "ar", "as", "ava", "az", "be", "bg", "bh", "bho",
-        "bn", "bs", "ch_sim", "ch_tra", "che", "cs", "cy", "da", "dar", "de", "en", "es",
-        "et", "fa", "fr", "ga", "gom", "hi", "hr", "hu", "id", "inh", "is", "it", "ja",
-        "kbd", "kn", "ko", "ku", "la", "lbe", "lez", "lt", "lv", "mah", "mai", "mi", "mn",
-        "mr", "ms", "mt", "ne", "new", "nl", "no", "oc", "pi", "pl", "pt", "ro", "ru",
-        "rs_cyrillic", "rs_latin", "sck", "sk", "sl", "sq", "sv", "sw", "ta", "tab",
-        "te", "th", "tjk", "tl", "tr", "ug", "uk", "ur", "uz", "vi"
-    ]
-    image: np.ndarray
-
-    # Class members
-    def __init__(self, img, lang: list[str] = ['en', 'fr'], gpu_acc: bool = False):
-        self.image      : np.ndarray    = img
-        self.lang       : list[str]     = list(lang)
-        self.gpu_acc    : bool          = gpu_acc
-
-    # Class methods
-    def read_text_from_image(self, scale_xy: tuple[float, float] = (2.0,2.0)):
-
-        reader = easyocr.Reader(
-            lang_list=list(self.lang),
-            gpu=self.gpu_acc,
-            verbose=False
-        )
-
-        shading = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-
-        # NOTE: resizing MUST implies scaling the resulting text or the proportion won't match the original image
-        upscaling = cv2.resize(shading, None, fx=scale_xy[0], fy=scale_xy[1], interpolation=cv2.INTER_LANCZOS4)
-
-        extracted_text = reader.readtext(upscaling,
-                                  text_threshold=0.7,  # Slightly higher threshold
-                                  low_text=0.4,  # low res text detection
-                                  link_threshold=0.4,  # character linking tolerance
-                                  width_ths=0.7,  # character  spacing tolerance
-                                  height_ths=0.7)
-
-        scaled_extracted_text = []
-        for (coords, text, prob) in extracted_text:
-            #  coords : [top_left, top_right, bottom_right, bottom_left]
-            rescaled_coords = []
-            for [x, y] in coords:
-                rescaled_x = int(x / scale_xy[0])
-                rescaled_y = int(y / scale_xy[1])
-                rescaled_coords.append([rescaled_x, rescaled_y])
-
-            scaled_extracted_text.append((rescaled_coords, text, prob))
-
-        logger.debug(f"Extracted text: \n{extracted_text}")
-
-        return scaled_extracted_text
 
 
-    def remove_text_from_image(self, text_info: list):
+def _build_pixel_text_feature_collection(text: str, x: float, y: float) -> dict[str, Any]:
+    """Build text zones for OCR detections that could not be geolocated as cities."""
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": text,
+                    "labelText": text,
+                    "show": True,
+                    "mapElementType": "label",
+                    "color_name": "black",
+                    "color_rgb": [0, 0, 0],
+                    "source": "ocr_bbox_anchor",
+                    "is_pixel_space": True,
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [x, y],
+                },
+            }
+        ],
+    }
 
-        image_no_text: np.ndarray = copy.deepcopy(self.image)
-        return image_no_text
 
-    def draw_bounding_box(self, scaled_extracted_text) -> np.ndarray:
+def _compute_geo_bounds(geo_points_lonlat: list) -> dict[str, float] | None:
+    """Return {min_lon, max_lon, min_lat, max_lat} from a list of (lon, lat) points, or None."""
+    if not geo_points_lonlat or len(geo_points_lonlat) < 2:
+        return None
+    try:
+        lons = [float(p[0]) for p in geo_points_lonlat]
+        lats = [float(p[1]) for p in geo_points_lonlat]
+        min_lon, max_lon = min(lons), max(lons)
+        min_lat, max_lat = min(lats), max(lats)
 
-        image_with_boxes: np.ndarray = copy.deepcopy(self.image)
+        lon_span = max_lon - min_lon
+        lat_span = max_lat - min_lat
+        lon_pad = max(lon_span * CITY_BOUNDS_PAD_RATIO, CITY_BOUNDS_PAD_MIN_DEG)
+        lat_pad = max(lat_span * CITY_BOUNDS_PAD_RATIO, CITY_BOUNDS_PAD_MIN_DEG)
 
-        # Results and drawing bounding boxes
-        for bbox, text, conf in scaled_extracted_text:
+        return {
+            "min_lon": min_lon - lon_pad,
+            "max_lon": max_lon + lon_pad,
+            "min_lat": min_lat - lat_pad,
+            "max_lat": max_lat + lat_pad,
+        }
+    except (TypeError, ValueError, IndexError):
+        return None
 
-            # Convert to numpy array for cv2.polylines
-            boxes = np.array(image_with_boxes, dtype=np.int32)
 
-            # Draw red bounding box (thickness=2, red color in BGR format)
-            cv2.polylines(image_with_boxes, [boxes], isClosed=True, color=(0, 0, 255), thickness=2)
+def geolocate_cities_and_leftover_text(
+    extracted_text: list[dict[str, Any]],
+    project_id: UUID,
+    map_id: UUID,
+    pixel_points: list | None,
+    geo_points_lonlat: list | None,
+    persist_city_feature_fn,
+    persist_features_fn,
+) -> None:
+    """Persist city-matched text points and georeference unmatched OCR text anchors."""
+    pixel_text_feature_collections = []
+    geo_bounds = _compute_geo_bounds(geo_points_lonlat) if geo_points_lonlat else None
 
-            # Optional: Add text label above the bounding box
-            # Get the top-left corner for text placement
-            text_x = bbox[0][0]
-            text_y = bbox[0][1] - 10 if bbox[0][1] - 10 > 10 else bbox[0][1] + 20
+    city_persist_coroutines = []
 
-            # Add confidence score to the label
-            label = f"{text} ({conf:.2f})"
-            cv2.putText(image_with_boxes, label, (text_x, text_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    for block in extracted_text:
+        if not isinstance(block, dict):
+            continue
 
-        # TODO: tester cette partie dans une tache future
-        # Save the image with bounding boxes
-        #filename = os.path.basename(image_path)
-        #output_path = os.path.join(os.path.dirname(image_path), f"bbox_{filename}")
-        #cv2.imwrite(output_path, image_with_boxes)
-        #print(f"Saved image with bounding boxes: {output_path}")
+        text = str(block.get("text", "")).strip()
+        if not text:
+            continue
 
-        return results
+        anchor_x, anchor_y = _extract_bbox_center_anchor(block.get("bbox"))
 
-    def check_language_code_validity(self) -> None:
-        """
-        :raises ValueError: If at least one language code is not supported.
-        """
-        for code in self.lang:
-            if code not in self.LANGUAGE_CODES:
-                raise ValueError(f"Invalid language code: {code}")
+        try:
+            candidate = find_first_city(text, geo_bounds=geo_bounds)
+        except Exception as exc:
+            logger.debug(f"find_first_city error for text '{text}': {exc}")
+            candidate = {
+                "found": False,
+                "query": text,
+                "name": text,
+                "lat": 0.0,
+                "lon": 0.0,
+            }
+
+        if bool(candidate.get("found")):
+            city_feature_collection = _build_city_feature_collection(text, candidate)
+            city_persist_coroutines.append(persist_city_feature_fn(project_id, map_id, city_feature_collection))
+        elif anchor_x is not None and anchor_y is not None:
+            pixel_text_feature_collections.append(_build_pixel_text_feature_collection(text, anchor_x, anchor_y))
+
+    async def _run_all():
+        if city_persist_coroutines:
+            results = await asyncio.gather(*city_persist_coroutines, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.error(f"Failed to persist city text: {res}")
+
+        if pixel_text_feature_collections and pixel_points and geo_points_lonlat:
+            georef_text_features = georeference_features_with_sift_points(
+                pixel_text_feature_collections,
+                pixel_points,
+                geo_points_lonlat,
+                snap_to_coastline=False,
+                clip_to_land_mask=False,
+            )
+            try:
+                await persist_features_fn(project_id, map_id, georef_text_features)
+            except Exception as exc:
+                logger.error(f"Failed to persist georeferenced features: {exc}")
+
+    if city_persist_coroutines or pixel_text_feature_collections:
+        try:
+            asyncio.run(_run_all())
+        except RuntimeError:
+            import threading
+
+            thread = threading.Thread(target=lambda: asyncio.run(_run_all()))
+            thread.start()
+            thread.join()
+
+
+def _bbox_xyxy_to_quad_points(bbox_xyxy: list[Any]) -> list[list[float]]:
+    """Convert [x1, y1, x2, y2] bbox to quad [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]."""
+    x1, y1, x2, y2 = [float(v) for v in bbox_xyxy]
+    return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+
+
+def _build_extracted_text_from_detections(
+    detections: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Convert raw OCR detections to the expected text/bbox structure used by the tests."""
+    extracted_text: list[dict[str, Any]] = []
+    for detection in detections:
+        if not isinstance(detection, dict):
+            continue
+
+        raw_text = str(detection.get("text", "")).strip()
+        if not raw_text:
+            continue
+
+        quad = detection.get("quad")
+        if not isinstance(quad, list) or len(quad) != 4:
+            bbox_xyxy = detection.get("bbox_xyxy")
+            if not isinstance(bbox_xyxy, list) or len(bbox_xyxy) != 4:
+                continue
+            try:
+                normalized_bbox = [int(v) for v in bbox_xyxy]
+                quad = _bbox_xyxy_to_quad_points(normalized_bbox)
+            except (TypeError, ValueError):
+                continue
+        else:
+            try:
+                quad = [[int(pt[0]), int(pt[1])] for pt in quad]
+            except (TypeError, ValueError, IndexError):
+                continue
+
+        MAP_IGNORED_WORDS = {"n", "s", "e", "w", "o", "ne", "nw", "no", "se", "sw", "so", "nord", "sud", "est", "ouest", "n.-e.", "n.-o.", "s.-e.", "s.-o."}
+
+        def should_ignore(text_val: str) -> bool:
+            clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
+
+            if clean in MAP_IGNORED_WORDS:
+                return True
+
+            if all(c.isdigit() or c.isspace() or c in ".," for c in clean):
+                return True
+            for keyword in ["légende", "legende", "échelle", "echelle", "scale", "kilomètre", "kilometre", "miles"]:
+                if keyword in clean:
+                    return True
+
+            if len(clean.split()) > 5:
+                return True
+
+            return False
+
+        from app.utils.map_dictionary import apply_map_dictionary_correction
+
+        if "\n" in raw_text:
+            lines = raw_text.split("\n")
+            for line in lines:
+                if should_ignore(line):
+                    continue
+                corrected_line = apply_map_dictionary_correction(line)
+                extracted_text.append({"text": corrected_line, "bbox": quad})
+        else:
+            if should_ignore(raw_text):
+                continue
+            corrected_text = apply_map_dictionary_correction(raw_text)
+            extracted_text.append({"text": corrected_text, "bbox": quad})
+
+    return extracted_text
+
+
+def _run_ocr_pipeline(
+    map_id: UUID,
+    filename: str,
+    file_content: bytes,
+    celery_app,
+) -> list[dict[str, Any]]:
+    """
+    Execute Florence-2 OCR pipeline on file_content.
+    Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
+    """
+    is_development = os.environ.get("ENV", "development").lower() not in (
+        "production",
+        "prod",
+    )
+    for d in (OCR_INPUT_DIR, OCR_INTERMEDIATE_DIR, OCR_OUTPUT_DIR):
+        os.makedirs(d, exist_ok=True)
+        if is_development:
+            try:
+                os.chmod(d, 0o777)
+            except Exception as e:
+                logger.debug(f"Failed to chmod {d}: {e}")
+
+    input_basename = f"{map_id}_{os.path.basename(filename)}"
+    input_stem = os.path.splitext(input_basename)[0]
+    ocr_input_path = f"{OCR_INPUT_DIR}/{input_basename}"
+    ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-florence.json"
+
+    with open(ocr_input_path, "wb") as input_file:
+        input_file.write(file_content)
+
+    if is_development:
+        try:
+            os.chmod(ocr_input_path, 0o666)
+        except Exception as e:
+            logger.debug(f"Failed to chmod {ocr_input_path}: {e}")
+
+    task_chain = celery_app.signature(
+        "florence.run_pipeline",
+        args=[ocr_input_path, ocr_output_json_path],
+    ).set(queue="florence")
+
+    try:
+        ocr_result = task_chain.apply_async()
+        logger.info(f"==> [OCR] Task launched for {filename} (ID: {map_id})")
+        logger.info("==> [OCR] Florence-2 processing text detection and extraction...")
+
+        try:
+            assert ocr_result is not None
+            elapsed = 0
+            poll_interval = 5
+            while elapsed < OCR_PIPELINE_TIMEOUT_SECONDS:
+                if ocr_result.ready():
+                    break
+                try:
+                    ocr_result.get(timeout=poll_interval, disable_sync_subtasks=False)
+                    break
+                except Exception as poll_err:
+                    if poll_err.__class__.__name__ in ("TimeoutError", "CeleryTimeoutError"):
+                        elapsed += poll_interval
+                        if elapsed % 60 == 0:
+                            logger.info(f"    ... Still running OCR pipeline - elapsed: {elapsed}s")
+                    else:
+                        raise poll_err
+            else:
+                raise TimeoutError(f"OCR pipeline timed out after {OCR_PIPELINE_TIMEOUT_SECONDS}s")
+
+            logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!")
+
+            with open(ocr_output_json_path, "r", encoding="utf-8") as florence_result_file:
+                florence_result = json.load(florence_result_file)
+
+            detections = florence_result.get("detections", [])
+            return _build_extracted_text_from_detections(detections)
+
+        except Exception as exc:
+            logger.exception("OCR pipeline failed or timed out for map %s: %s", map_id, exc)
+            return []
+    finally:
+        for temp_path in (ocr_input_path, ocr_output_json_path):
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+            except Exception as exc:
+                logger.warning(f"Failed to clean OCR temp file {temp_path}: {exc}")
+
+
+def _extract_text_via_pipeline(
+    map_id: UUID,
+    filename: str,
+    file_content: bytes,
+    celery_app,
+) -> tuple[list[dict[str, Any]], list[list[list[float]]]]:
+    extracted_text = _run_ocr_pipeline(map_id, filename, file_content, celery_app)
+    text_regions = [block["bbox"] for block in extracted_text if isinstance(block, dict) and isinstance(block.get("bbox"), list) and len(block["bbox"]) == 4]
+    return extracted_text, text_regions
+
+
+def extract_text(
+    map_id: UUID,
+    filename: str,
+    file_content: bytes,
+    celery_app=None,
+):
+    """Extract text using the Florence-2 Celery OCR pipeline."""
+    if celery_app is None:
+        raise ValueError("celery_app must be provided")
+
+    MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+    if len(file_content) > MAX_FILE_SIZE_BYTES:
+        logger.warning(f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). " f"Rejetée pour éviter un crash OOM (limite à 25 MB).")
+        return [], []
+
+    logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
+
+    extracted_text, text_regions = _extract_text_via_pipeline(
+        map_id=map_id,
+        filename=filename,
+        file_content=file_content,
+        celery_app=celery_app,
+    )
+    logger.info(f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}")
+    return extracted_text, text_regions
