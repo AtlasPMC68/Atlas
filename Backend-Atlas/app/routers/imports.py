@@ -1,17 +1,4 @@
-"""The import of a map: upload, the user's entries, extraction, cancellation.
-
-    POST   /imports                      upload the image; OCR starts at once
-    GET    /imports/{map_id}             entries and task states, for a reload
-    GET    /imports/{map_id}/image       the uploaded image
-    PUT    /imports/{map_id}/inputs      save entries as each step is confirmed
-    POST   /imports/{map_id}/extract     start extraction, or queue it behind OCR
-    POST   /imports/{map_id}/cancel      stop an extraction; nothing is saved
-    DELETE /imports/{map_id}             abandon the import (another file)
-
-The row disappears when the extraction saves its features, so a 404 on a map
-whose extraction was running means it finished.
-"""
-
+# region Imports
 import logging
 import mimetypes
 from typing import Any, Dict
@@ -48,6 +35,7 @@ from app.services.imports import (
 from app.tasks import process_map_extraction, run_map_ocr
 from app.utils.auth import get_current_user_id
 from app.utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
+# endregion
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/imports", tags=["Map import"])
@@ -207,12 +195,7 @@ async def start_extraction(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Start the extraction now if the text is ready, else queue it behind OCR.
-
-    Takes no body: everything it needs was saved step by step. The row lock
-    pairs with the one the OCR task takes when it finishes, so exactly one of
-    the two dispatches the extraction.
-    """
+    """Start the extraction now if the text is ready, else queue it behind OCR."""
     map_obj = await _owned_map_or_404(session, map_id, user_id)
     row = await _import_or_404(session, map_id, for_update=True)
     if is_extraction_active(row):
@@ -266,13 +249,7 @@ async def cancel_extraction(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Stop the extraction. The user's entries and the OCR result are kept.
-
-    Waiting or queued: cancelled on the spot (a queued task is also revoked,
-    and would find the row cancelled anyway). Running: marked ``cancelling``;
-    the task stops at its next check and saves nothing. A 404 means the
-    extraction already finished and saved its features.
-    """
+    """Stop the extraction. The user's entries and the OCR result are kept."""
     map_obj = await _owned_map_or_404(session, map_id, user_id)
     row = await _import_or_404(session, map_id, for_update=True)
 
@@ -292,12 +269,7 @@ async def abandon_import(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Drop the import, to start over with another file.
-
-    OCR is terminated outright: it writes only at its end, under a lock, so
-    killing it cannot leave anything half-written. A running extraction is
-    only asked to stop -- its final transaction is atomic either way.
-    """
+    """Drop the import, to start over with another file."""
     await _owned_map_or_404(session, map_id, user_id)
     row = await _import_or_404(session, map_id, for_update=True)
     if row.ocr_task_id and row.ocr_state != OCR_DONE:

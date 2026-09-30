@@ -1,3 +1,4 @@
+# region Imports
 import logging
 from pathlib import Path
 from uuid import UUID
@@ -41,6 +42,7 @@ from ..utils.auth import get_current_user_id
 from ..utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
 from ..utils.color_sampling import sample_color_at
 from ..utils.color_extraction import get_nearest_css4_color_name
+# endregion
 
 router = APIRouter()
 
@@ -224,11 +226,7 @@ async def get_project(
 
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
-    """Get the status of a background task.
-
-    Every Celery state is reported as itself: REVOKED and RETRY used to fall
-    through to FAILURE, which made a cancelled task look like a crash.
-    """
+    """Get the status of a background task."""
     task = celery_app.AsyncResult(task_id)
     response = {"task_id": task_id, "state": task.state}
 
@@ -596,16 +594,7 @@ def get_city_candidates(
     north: float = Form(...),
     limit: int = Form(10),
 ):
-    """Gazetteer cities inside the framing box whose name matches *q*.
-
-    Only cities inside the box are returned: a city outside the world area the
-    user framed is not on their map. Accent-insensitive, matches alternate
-    names ("Kebek" finds Quebec) and near-misses, and returns an empty list --
-    never an error -- when nothing matches.
-
-    A plain ``def``: the search is CPU and disk work, so FastAPI runs it in its
-    thread pool instead of stalling every other request on the event loop.
-    """
+    """Gazetteer cities inside the framing box whose name matches."""
     try:
         bounds = parse_frame_bounds_entry(
             {"west": west, "south": south, "east": east, "north": north}
@@ -783,19 +772,7 @@ async def sample_color(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Stateless endpoint — no map or DB needed.
-
-    The frontend sends the image file it already has from the file picker,
-    along with normalised click coordinates [0,1].  The backend samples the
-    dominant colour in a neighbourhood around the click and returns the result
-    so the frontend can show a colour swatch.
-
-    The returned LAB values are consistent with what extract_colors() will
-    compute on the same file during /upload.
-
-    Returns: { rgb: [r,g,b], lab: [L,a,b], hex: "#rrggbb" }
-    """
+    """ Returns LAB, RGB and hex code of color of a click"""
     raw = await file.read()
     if len(raw) == 0:
         raise HTTPException(status_code=400, detail="Empty file")

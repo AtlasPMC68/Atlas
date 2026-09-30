@@ -1,6 +1,10 @@
+### ----------- IMPORTS ----------- ###
 import json
 import logging
 import os
+
+import numpy as np
+import cv2
 
 from fastapi import (
     APIRouter,
@@ -13,7 +17,6 @@ from fastapi import (
     Response,
     UploadFile,
 )
-
 from app.utils.auth import get_current_user_id
 from ..tasks import (
     GEOREF_CONFIG,
@@ -33,6 +36,15 @@ from app.utils.dev_test import (
     upload_dev_test,
     write_test_config,
 )
+from app.utils.dev_test_derived import text_regions_if_cached
+from app.utils.dev_test_pixel_zones import (
+    CLASSIFIED_IMAGE_FILENAME, 
+    OCR_BOX_COLOR,
+    load_pixel_zones,
+    pixel_zone_stats, 
+    text_box_coverage,
+    draw_pixel_zones,
+)
 from app.utils.dev_test_assets import GEOREF_ASSETS_DIR, ZONES_DIR
 from app.utils.dev_test_cases import (
     VALID_KINDS,
@@ -47,13 +59,23 @@ from app.utils.georeferencing import (
     parse_control_points_field,
     parse_frame_bounds,
 )
+
+from app.utils.georeferencing.projection import  (
+    lonlat_to_webmercator,
+)
 from app.utils.georeferencing.config import describe_config, parse_config_overrides
 from app.utils.georeferencing.diagnostics import (
     control_point_diagnostics,
     load_last_run_control_pixels,
     load_last_run_model,
+    leave_one_out_models
 )
 from app.utils.georeferencing.records import RUN_RECORD_FILENAME
+from app.utils.georeferencing.gcp_overlay import (
+    draw_control_point_overlay,
+    encode_png,
+    side_by_side,
+)
 from app.utils.imposed_colors import (
     KIND_WATER,
     KIND_ZONE,
@@ -63,6 +85,7 @@ from app.utils.imposed_colors import (
 )
 from app.utils.dev_test_evaluator import build_test_case_paths
 from app.utils.legend import legend_to_entry, parse_legend_entry
+### ----------- IMPORTS ----------- ###
 
 router = APIRouter(prefix="/dev-test-api", tags=["Dev Test"])
 
@@ -229,10 +252,7 @@ async def save_dev_test_zones(
     payload: dict = Body(...),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Save or overwrite the dev-test zones GeoJSON file for a given map.
-
-    This is used only by the internal test editor UI.
-    """
+    """Save or overwrite the dev-test zones GeoJSON file for a given map."""
     safe_map_id = _safe_id(map_id, "map_id")
 
     os.makedirs(ZONES_DIR, exist_ok=True)
@@ -249,11 +269,7 @@ async def get_dev_test_zones(
     map_id: str,
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Return the current dev-test zones GeoJSON for a given map.
-
-    This mirrors the static file under /dev-test/georef_zones but avoids any
-    browser caching issues by serving it via the API layer.
-    """
+    """Return the current dev-test zones GeoJSON for a given map."""
     safe_map_id = _safe_id(map_id, "map_id")
 
     zones_path = os.path.join(ZONES_DIR, f"{safe_map_id}_zones.geojson")
@@ -280,13 +296,7 @@ async def upload_test(
     kind: str = Form("regression"),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Create a dev test by saving the map image and metadata.
-
-    ``kind`` decides what every case on this map is for. A ``regression`` test
-    is scored against expected zones you draw and gates the backend suite; a
-    ``probe`` test carries no ground truth and exists to replay a map's stored
-    clicks quickly while georeferencing is being changed.
-    """
+    """Create a dev test by saving the map image and metadata."""
     if kind not in VALID_KINDS:
         raise HTTPException(
             status_code=400,
@@ -307,11 +317,7 @@ async def warm_text_regions(
     test_id: str,
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Start OCR for a test map in the background if it is not cached yet.
-
-    Called when the import view opens, so the first case's run finds the text
-    regions ready instead of paying ~135 s for them.
-    """
+    """Start OCR for a test map in the background if it is not cached yet."""
     safe_test_id = _safe_id(test_id, "test_id")
     if not GEOREF_CONFIG.enable_curve_alignment:
         return {"state": "disabled"}
@@ -376,22 +382,12 @@ async def delete_test_case(
 
 @router.get("/georef-config")
 async def get_georef_config(_user_id: str = Depends(get_current_user_id)):
-    """The georeferencing config a re-run uses when nothing is overridden.
-
-    Feeds the tuning panel. Values are the worker's ambient config -- the file
-    defaults with the environment applied -- since that is the baseline an
-    override is measured against. Read-only: overrides go with the run.
-    """
+    """The georeferencing config a re-run uses when nothing is overridden."""
     return describe_config(GEOREF_CONFIG)
 
 
 def _last_run(test_id: str, test_case_id: str):
-    """The transform this case's last run used, and the clicks it used it on.
-
-    Both come from the run record: a run made with points excluded was fitted
-    on a subset, and measuring its model against every stored point would
-    report an error that run never had.
-    """
+    """The transform this case's last run used, and the clicks it used it on."""
     paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
     record_path = os.path.join(paths.case_dir, RUN_RECORD_FILENAME)
     return (
@@ -406,13 +402,7 @@ async def get_dev_test_control_points(
     test_case_id: str,
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Per-control-point error for this case, without running anything.
-
-    Leave-one-out rather than the fit's own residuals: an affine spreads one
-    bad click over all of them, so an in-sample residual both hides the guilty
-    point and blames its neighbours. Costs n small fits, so it answers while
-    the page is still being read -- a re-run costs minutes.
-    """
+    """Per-control-point error for this case."""
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
 
@@ -452,17 +442,7 @@ async def get_dev_test_control_points_image(
     ),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """The control points drawn with an arrow per point.
-
-    Rendered on demand from the last run's stored model, not from a fresh fit:
-    the question is where *that* run put the points, so a piecewise run must
-    show its own placement.
-
-    Two views of one fact. On the map, the arrow runs from the click to where
-    the transform says that real place is. In the world, it runs from the
-    point's true position to where the click lands -- which is the one that
-    shows whether a point was matched to the wrong coastline feature.
-    """
+    """The control points drawn with an arrow per point."""
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
 
@@ -477,14 +457,6 @@ async def get_dev_test_control_points_image(
 
     if not inputs.pixel_points or not inputs.geo_points_lonlat:
         raise HTTPException(status_code=404, detail="This case has no control points")
-
-    import cv2
-
-    from app.utils.georeferencing.gcp_overlay import (
-        draw_control_point_overlay,
-        encode_png,
-        side_by_side,
-    )
 
     image = cv2.imread(image_path) if image_path else None
     if image is None:
@@ -557,13 +529,7 @@ async def get_dev_test_control_points_image(
 
 
 def _pixel_zones_context(test_id: str, test_case_id: str):
-    """The last run's pixel-space zones, the map, its cached OCR and text-fill stats.
-
-    OCR is read from the derived cache and never computed here: 135 s is not
-    something a diagnostic view should trigger.
-    """
-    from app.utils.dev_test_derived import text_regions_if_cached
-    from app.utils.dev_test_pixel_zones import load_pixel_zones
+    """The last run's pixel-space zones, the map, its cached OCR and text-fill stats."""
 
     paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case_id)
     features = load_pixel_zones(paths.case_dir)
@@ -600,7 +566,6 @@ async def get_dev_test_pixel_zones(
     _user_id: str = Depends(get_current_user_id),
 ):
     """Per-zone hole statistics for the last run, before any transform."""
-    from app.utils.dev_test_pixel_zones import pixel_zone_stats, text_box_coverage
 
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
@@ -624,10 +589,6 @@ async def get_dev_test_pixel_zones_image(
     _user_id: str = Depends(get_current_user_id),
 ):
     """The last run's zones on the scan, as extracted: no transform, no clip."""
-    import cv2
-
-    from app.utils.dev_test_pixel_zones import draw_pixel_zones
-    from app.utils.georeferencing.gcp_overlay import encode_png
 
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
@@ -669,17 +630,7 @@ async def get_dev_test_classified_image(
     ocr: bool = Query(True, description="Draw the cached OCR boxes"),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """The image the last run classified, labels erased by the inpaint step.
-
-    Preprocessed (denoised, normalised), so its colours are the ones the
-    nearest-colour assignment compared, not the scan's.
-    """
-    import cv2
-    import numpy as np
-
-    from app.utils.dev_test_derived import text_regions_if_cached
-    from app.utils.dev_test_pixel_zones import CLASSIFIED_IMAGE_FILENAME, OCR_BOX_COLOR
-    from app.utils.georeferencing.gcp_overlay import encode_png
+    """The image the last run classified, labels erased by the inpaint step."""
 
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
@@ -709,16 +660,7 @@ async def get_dev_test_classified_image(
 
 
 def _placements(control_points, model, leave_one_out: bool):
-    """Where each control point ends up, in both spaces.
-
-    ``placed_pixels`` is where the model says the point's real position sits on
-    the scan; ``placed_world`` is where the user's click lands on the Earth.
-    Same fact, told from each side, so the two panels stay consistent.
-    """
-    import numpy as np
-
-    from app.utils.georeferencing.diagnostics import leave_one_out_models
-    from app.utils.georeferencing.projection import lonlat_to_webmercator
+    """Where each control point ends up, in both spaces."""
 
     per_point = (
         leave_one_out_models(control_points)
@@ -751,11 +693,7 @@ def _placements(control_points, model, leave_one_out: bool):
 
 
 def _world_panel(frame_bounds, control_points, placed_world, errors_km, suspects):
-    """The reference-side panel, or None when the case has no framing box.
-
-    Never raises: the map-side panel is the one that must always render, and a
-    missing or unbuildable reference layer should not take it down with it.
-    """
+    
     if not frame_bounds:
         return None
     try:
@@ -786,9 +724,8 @@ async def run_evaluate_dev_test_case(
     snap_to_coastline: bool | None = Query(
         None,
         description=(
-            "Blind coastline snapping. Turn it OFF when judging alignment: it"
-            " corrects transform error after the fact, so it both flatters the"
-            " baseline and hides the improvement you are trying to see."
+            "Blind coastline snapping. Turn it OFF is you want to get true result."
+            "of the georef algorithm since the snapping helps after the fact"
         ),
     ),
     enable_curve_alignment: bool | None = Query(
@@ -814,14 +751,7 @@ async def run_evaluate_dev_test_case(
     ),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Re-run a test case from its saved inputs, and evaluate it if it is scored.
 
-    Blocks until the Celery task finishes. The switches apply to this run only;
-    omitting one leaves it at the worker's ambient setting. A run using any
-    non-ambient switch is written as the latest result but never promoted to
-    `zones_best`, because a snapped and an unsnapped run are not the same
-    measurement.
-    """
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
 
@@ -891,13 +821,6 @@ async def get_dev_test_case_state(
     test_case_id: str,
     _user_id: str = Depends(get_current_user_id),
 ):
-    """What this case is for, and whether its stored inputs still suffice.
-
-    Read from ``case_state.json``, written by the last run. When no run has
-    happened yet the kind is still resolvable from config and metadata, so a
-    minimal answer is returned rather than a 404 -- the UI needs to know whether
-    to expect a score before anything has been run.
-    """
     safe_test_id = _safe_id(test_id, "test_id")
     safe_case_id = _safe_id(test_case_id, "test_case_id")
 

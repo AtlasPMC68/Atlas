@@ -1,34 +1,6 @@
-"""The city gazetteer behind city control points.
-
-The user names the cities their map shows; this finds them. Only cities inside
-the framing box are ever returned -- a city outside the world area the user
-framed is not on their map, and offering it would invite a wrong pairing.
-
-**Why a SQLite file rather than geonamescache directly.** geonamescache loads
-its whole JSON (15 MB for ``cities15000``, 56 MB for ``cities1000``) into Python
-objects, for the world, in every process that imports it. Here only the frame
-is wanted. So the gazetteer is built once from the pinned geonamescache into a
-small SQLite file with a (lat, lon) index, and a search reads just the
-frame's rows. Those rows are then kept for the few most recent frames
-(``FRAME_CACHE_SIZE``): the user types a name one keystroke at a time inside
-one frame, and re-reading ~1k-7k cities from disk per keystroke was most of the
-wait. A frame's rows are a few MB at most, so a handful is a bounded cost.
-
-**Which cities.** ``cities15000``: every place of 15,000+ inhabitants, ~32k
-worldwide. The cities a map is georeferenced from are the big, stable ones.
-Alternate names are indexed too (Latin script only, which keeps the file ~8 MB
-instead of ~13 MB), so historical and foreign spellings match: "Kebek" finds
-Quebec.
-
-**The file is derived, never committed.** Built on first use into ``app/.cache``
-(gitignored, bind-mounted into every backend container), keyed on the
-geonamescache version and ``BUILDER_VERSION`` so a library upgrade or a change
-here rebuilds it rather than serving a stale one.
-
-**No fallback.** A name the gazetteer does not know returns no candidates, and
-that city simply is not used.
-"""
-
+"""The city gazetteer behind city control points. SQLite. 
+Returns most populated city by the same name that is in the frame box selected """
+# region Imports
 import difflib
 import logging
 import os
@@ -40,13 +12,11 @@ from dataclasses import dataclass
 from functools import lru_cache
 from importlib.metadata import version as package_version
 from typing import Any, Dict, List, Optional, Tuple
-
+# endregion
 logger = logging.getLogger(__name__)
 
-#: geonamescache's population threshold: 500, 1000, 5000 or 15000.
-MIN_POPULATION = 15000
-#: Bump when the schema or what gets indexed changes, to force a rebuild.
 BUILDER_VERSION = "1"
+MIN_POPULATION = 15000
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cache")
 
@@ -66,11 +36,7 @@ _build_lock = threading.Lock()
 
 
 def normalize_name(name: str) -> str:
-    """Accent-, case- and punctuation-insensitive form of a place name.
-
-    "Trois-Rivières", "trois rivieres" and "TROIS RIVIERES" all become
-    "trois rivieres".
-    """
+    """Accent-, case- and punctuation-insensitive form of a place name."""
     decomposed = unicodedata.normalize("NFKD", name or "")
     stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
     spaced = re.sub(r"[-'’.,]+", " ", stripped.casefold())
@@ -126,7 +92,7 @@ def gazetteer_path() -> str:
 
 def build_gazetteer(path: str) -> str:
     """Write the SQLite gazetteer to *path*. Atomic: readers never see half a file."""
-    import geonamescache
+    import geonamescache # import only in this function to not load geonamescache every time a function of this file is called
 
     cities = geonamescache.GeonamesCache(
         min_city_population=MIN_POPULATION
@@ -243,7 +209,6 @@ def _frame_key(bounds: Dict[str, float]) -> Tuple[float, float, float, float]:
 
 def _cities_in_frame(bounds: Dict[str, float]) -> Tuple[_FrameCity, ...]:
     """Every city inside *bounds* with all of its names."""
-    # Keyed on the file too, so a rebuilt gazetteer is never served stale.
     return _read_frame(ensure_gazetteer(), _frame_key(bounds))
 
 
@@ -295,12 +260,7 @@ def _read_frame(
 def _best_match(
     query: str, names: Tuple[Tuple[str, str], ...], matcher: difflib.SequenceMatcher
 ) -> Optional[tuple]:
-    """(kind, score, shown name) of the best-matching name, or None.
-
-    *matcher* has the query set as its second sequence, the one
-    SequenceMatcher precomputes, so that work is done once per search rather
-    than once per name.
-    """
+    """(kind, score, shown name) of the best-matching name, or None."""
     best: Optional[tuple] = None
     query_len = len(query)
     for norm, shown in names:
@@ -333,10 +293,7 @@ def _best_match(
 
 
 def warm_frame(bounds: Dict[str, float]) -> None:
-    """Load a frame's cities into the cache ahead of the first search.
-
-    Never raises: a cold cache only makes that first search slower.
-    """
+    """Load a frame's cities into the cache ahead of the first search."""
     try:
         _cities_in_frame(bounds)
     except Exception as e:
@@ -346,12 +303,7 @@ def warm_frame(bounds: Dict[str, float]) -> None:
 def search_cities(
     query: str, bounds: Dict[str, float], limit: int = 10
 ) -> List[CityCandidate]:
-    """Cities inside *bounds* whose name, or an alternate name, matches *query*.
-
-    Ranked exact before prefix before near match, then by how close the match
-    is, then by population, so "Kingston" offers the big one first. Never
-    raises on an unknown name: no match is an empty list.
-    """
+    """Cities inside *bounds* whose name, or an alternate name, matches *query*."""
     normalized = normalize_name(query)
     if not normalized:
         return []
@@ -390,12 +342,7 @@ def search_cities(
 
 @dataclass(frozen=True)
 class FrameCityIndex:
-    """Exact-name lookup of the cities inside one frame, for OCR text.
-
-    Exact only, on the normalised name or an alternate one: OCR output is
-    noisy, and a near match on every misread word would scatter false cities
-    across the map. Where two cities share a name, the more populous wins.
-    """
+    """Exact-name lookup of the cities inside one frame, for OCR text."""
 
     by_name: Dict[str, _FrameCity]
     #: Longest name in words, so a phrase scan knows when to stop growing.
@@ -429,12 +376,7 @@ _WORD_RE = re.compile(r"[\w\-']+")
 def find_cities_in_text(
     text: str, index: FrameCityIndex, max_words: int = 4
 ) -> List[Tuple[str, Optional[_FrameCity]]]:
-    """Split one OCR label into phrases, each matched to a city or not.
-
-    Greedy longest match, up to *max_words* words, so "New York" or "Trois
-    Rivieres" is read as one city rather than as two unknown words. Returns
-    ``(phrase, city or None)`` in reading order, unmatched words one by one.
-    """
+    """Split one OCR label into phrases, each matched to a city or not."""
     words = _WORD_RE.findall(text or "")
     limit = max(1, min(max_words, index.max_words))
     found: List[Tuple[str, Optional[_FrameCity]]] = []

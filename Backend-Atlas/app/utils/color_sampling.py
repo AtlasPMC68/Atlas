@@ -1,8 +1,4 @@
-"""The pipette: the dominant colour around a click.
-
-Shared by ``/projects/sample-color`` (the preview the user sees while picking),
-colour extraction and the water mask, so all three read a click the same way.
-"""
+"""The pipette: the dominant colour around a click."""
 
 from typing import Dict, Optional
 

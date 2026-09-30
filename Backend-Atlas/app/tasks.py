@@ -1,3 +1,4 @@
+# region Imports
 import asyncio
 import json
 import logging
@@ -42,6 +43,7 @@ from app.utils.georeferencing import (
     parse_control_points,
     select_control_points,
 )
+from app.utils.georeferencing.config import parse_config_overrides
 from app.utils.georeferencing.debug import debug_enabled, make_run_dir
 from app.utils.imposed_colors import (
     imposed_colors_to_config_entries,
@@ -50,44 +52,33 @@ from app.utils.imposed_colors import (
 from app.utils.legend import legend_to_entry, polygon_center_in_legend
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text, ocr_blocks_to_payload
-from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR
+from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR, GEOREF_ASSETS_DIR
 from app.utils.dev_test_pixel_zones import write_classified_image, write_pixel_zones
+from app.utils.dev_test import (
+    find_test_image_path,
+    inspect_case,
+)
+from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
+from app.utils.dev_test_derived import ensure_text_regions 
 
 from .celery_app import celery_app
+# endregion
 
 logger = logging.getLogger(__name__)
 
 nb_task = 6
 
-# TODO : maybe remove this debud parameter pour l'instant j'aimerais ca le garder tho
-# Roadmap section 4.3 says to turn this off once chamfer alignment begins, and
-# measurement now backs that up rather than just asserting it. Translating the
-# *same* transform by a few pixels and re-scoring gives, on the one test case:
-#
-#   snapping ON   IoU jumps around non-monotonically, spread 0.0125 over 8 px,
-#                 with a 0.012 spike down at 5 px
-#   snapping OFF  IoU falls smoothly and monotonically, spread 0.0063
-#
-# Blind vertex snapping corrects whatever the transform got wrong, so it both
-# flatters the baseline (0.941 vs 0.926 here) and hides any improvement an
-# aligned transform makes -- and it injects a step function into the very metric
-# used to judge alignment. Left ON by default so nothing changes silently; turn
-# it off when judging alignment quality.
+
 ENABLE_COASTLINE_SNAPPING = os.getenv(
     "GEOREF_ENABLE_COASTLINE_SNAPPING", "true"
 ).strip().lower() not in ("0", "false", "no", "off")
 
-# Step 4 curve alignment. Toggle without touching code:
-#   GEOREF_ENABLE_CURVE_ALIGNMENT=false docker compose up
-# It needs the OCR text mask (without one about half the edge map is place
-# names); imports get it from the OCR task that runs at upload.
+
 ENABLE_CURVE_ALIGNMENT = os.getenv(
     "GEOREF_ENABLE_CURVE_ALIGNMENT", "true"
 ).strip().lower() not in ("0", "false", "no", "off")
 
-# One config for every georeferencing call in this module, so the snapping flag
-# actually governs both producers. It previously only reached the colors path
-# (current section 9, limitation 7).
+
 GEOREF_CONFIG = DEFAULT_GEOREF_CONFIG.with_overrides(
     snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
     enable_curve_alignment=ENABLE_CURVE_ALIGNMENT,
@@ -95,13 +86,6 @@ GEOREF_CONFIG = DEFAULT_GEOREF_CONFIG.with_overrides(
 
 
 def _control_points(payload: list | None, config=None) -> list[ControlPoint]:
-    """The task's control points, restricted to the sources the run uses.
-
-    Filtered once, here, so the alignment, its gates, the baseline fit and the
-    piecewise correction all work from the same set. The payload was validated
-    by the route that dispatched the task, so a malformed one is a bug and
-    raises.
-    """
     points = parse_control_points(payload or [])
     return select_control_points(points, (config or GEOREF_CONFIG).gcp_sources)
 
@@ -118,16 +102,7 @@ def _align_if_enabled(
     config=None,
     legend_bounds: dict | None = None,
 ):
-    """Step 4 curve alignment, when it is switched on.
-
-    Returns the `AlignmentResult`, or None when alignment is switched off.
-    Never raises: `align_map` gates its own result and hands back the GCP-only
-    baseline on any failure, so the caller can always use it.
-
-    `config` defaults to the process-wide `GEOREF_CONFIG`; a dev-test re-run
-    passes its own so switches like snapping can be flipped per run rather than
-    per deployment.
-    """
+    """ Curve alignement. Returns the aligned result if turned on"""
     config = config or GEOREF_CONFIG
     if not config.enable_curve_alignment or image_bgr is None:
         return None
@@ -154,25 +129,11 @@ def _align_if_enabled(
 
 
 def _dev_test_text_regions(test_id: str, image_bgr, config=None) -> list | None:
-    """OCR regions for a dev-test map, from the derived store.
-
-    Two consumers now: the alignment's text mask, and the text-aware zone fill.
-    When alignment is on, OCR runs (~135 s, once per map) and both get it.
-    When it is off, the cache is *read but never filled*: the regression suite
-    runs with alignment off, and paying OCR per case there would take it from
-    about 90 seconds to over four minutes. A map whose cache is warm from an
-    earlier run still gets the text fill.
-
-    Never raises: a missing text mask degrades the zones and the evidence, it
-    does not fail the run.
-    """
+    """Returns the text boxes with OCR used text filling and tests"""
     resolved = config or GEOREF_CONFIG
     wants_ocr = resolved.enable_curve_alignment
     if not wants_ocr and not resolved.text_aware_zone_fill:
         return None
-
-    from app.utils.dev_test import find_test_image_path
-    from app.utils.dev_test_derived import ensure_text_regions
 
     image_path = find_test_image_path(test_id)
     if not image_path:
@@ -199,25 +160,12 @@ def _dev_test_text_regions(test_id: str, image_bgr, config=None) -> list | None:
 
 
 def _dev_test_debug_dir(test_id: str, test_case: str) -> str | None:
-    """Where this case's alignment diagnostics go, or None when off.
-
-    Into the case folder rather than the timestamped `debug_runs/` the
-    production import path uses: a harness case is re-run against the same map
-    over and over, so one folder per case that is overwritten beats an
-    ever-growing pile you have to date-match back to a run. It sits next to
-    `reference_debug/` and `evidence_debug/`, which already work this way.
-
-    Gated by `GEOREF_DEBUG`, which is already set on `celery-worker` and not on
-    `test-backend`, so a UI re-run gets diagnostics and the regression suite
-    stays fast without either needing its own switch.
-    """
+    """ Where the alignement diagnostics go """
     if not debug_enabled():
         return None
 
     path = os.path.join(TEST_CASES_DIR, test_id, test_case, "alignment_debug")
     try:
-        # Cleared, not merged: a run that writes fewer files than the last one
-        # would otherwise leave stale overlays that read as current.
         shutil.rmtree(path, ignore_errors=True)
         os.makedirs(path, exist_ok=True)
         return path
@@ -229,9 +177,6 @@ def _dev_test_debug_dir(test_id: str, test_case: str) -> str | None:
 def _write_dev_test_case_state(test_id: str, test_case: str, config=None) -> None:
     """Record which requirements this case satisfied. Never raises."""
     try:
-        from app.utils.dev_test import inspect_case
-        from app.utils.dev_test_assets import GEOREF_ASSETS_DIR
-
         state, _inputs = inspect_case(
             assets_root=GEOREF_ASSETS_DIR,
             test_id=test_id,
@@ -267,7 +212,7 @@ def _dump_zones_debug(debug_dir: str | None, collections: list) -> None:
 
 
 def _alignment_summary(result) -> dict[str, Any]:
-    """What the UI needs to tell the user what happened (plan section 8.4)."""
+    """What the UI needs to tell the user what happened. """
     if result is None:
         return {"enabled": False, "method": "gcp_only"}
     return {
@@ -300,11 +245,7 @@ def _georeference(
     config=None,
     image=None,
 ):
-    """Fit and apply the pixel -> EPSG:4326 transform for one feature producer.
-
-    `image` is only read for its size: the coastline snap tolerance is a share
-    of the scan's diagonal.
-    """
+    """Fit and apply the pixel -> EPSG:4326"""
     return georeference_features(
         pixel_feature_collections,
         control_points,
@@ -358,15 +299,6 @@ def _decode_image(content: bytes):
     if image is None:
         raise ValueError("Could not decode the map image")
     return image
-
-
-# --- import row transitions ---------------------------------------------------
-#
-# Every transition locks the row, so the OCR task, the extraction task and the
-# routes never interleave. Rows are matched on the task id as well as the map:
-# a task that was superseded (OCR re-dispatched, extraction relaunched after a
-# cancel) finds a different id and leaves the row alone.
-
 
 async def _claim_ocr(map_id: str, task_id: str) -> Optional[bytes]:
     async with WorkerSessionLocal() as session:
@@ -459,11 +391,7 @@ async def _save_extraction(
     georef_inputs: Optional[dict],
 ) -> int:
     """Save every feature, record the inputs on the map and close the import,
-    in one transaction: a cancel or a crash leaves no partial map behind.
-
-    The cancel check happens under the same lock as the writes, so a cancel
-    either lands before it (nothing saved) or finds the import already gone.
-    """
+    in one transaction: a cancel or a crash leaves no partial map behind. """
     map_uuid = UUID(map_id)
     async with WorkerSessionLocal() as session:
         async with session.begin():
@@ -502,15 +430,7 @@ def _raise_if_cancelled(map_id: str) -> None:
 def _city_features_from_text(
     blocks: list, legend_bounds: Optional[dict], frame_bounds: Optional[dict]
 ) -> List[dict[str, Any]]:
-    """One point feature per place name read off the map.
-
-    Each OCR label is matched against the gazetteer cities inside the framing
-    box only -- a city outside the world area the user framed is not on their
-    map, whatever its name -- exactly, longest phrase first, so "Trois
-    Rivieres" is one city. Words that match nothing are kept hidden at (0, 0)
-    so the user can still place them by hand. Legend text is skipped: its
-    labels name the key's entries, not places.
-    """
+    """One point feature per place name read off the map."""
     index = frame_city_index(frame_bounds) if frame_bounds else None
 
     collections: List[dict[str, Any]] = []
@@ -597,14 +517,7 @@ def _georeferenced_or_normalized(
 
 @celery_app.task(bind=True)
 def run_map_ocr(self, map_id: str):
-    """OCR for an import, started as soon as the map is uploaded.
-
-    The slowest step of an import (~135 s/map on CPU), so it runs while the user
-    is still framing, matching points and picking colours. It reads the whole
-    map: detection costs the same whatever is masked, and the legend is applied
-    to the result at extraction time instead, so the user can draw it in any
-    order. Writes nothing but ``ocr_result``.
-    """
+    """OCR for an import, started as soon as the map is uploaded."""
     task_id = self.request.id
     content = asyncio.run(_claim_ocr(map_id, task_id))
     if content is None:
@@ -643,16 +556,7 @@ def run_map_ocr(self, map_id: str):
 
 @celery_app.task(bind=True)
 def process_map_extraction(self, map_id: str):
-    """Extract, georeference and save a map's features from its import row.
-
-    Takes only the map id: the image, the user's inputs and the OCR result are
-    all on ``map_imports``, which also keeps Celery messages small and the task
-    signature stable as inputs are added.
-
-    Cancellation is cooperative: the route marks the row ``cancelling`` and the
-    task stops at its next check. Features are saved in one transaction at the
-    very end, so a cancelled or failed run leaves the map exactly as it was.
-    """
+    """Extract, georeference and save a map's features from its import row."""
     task_id = self.request.id
     claimed = asyncio.run(_claim_extraction(map_id, task_id))
     if claimed is None:
@@ -859,17 +763,9 @@ def _iou_summary_from_report(report: dict[str, Any] | None) -> dict[str, Any]:
 
 @celery_app.task(bind=True)
 def warm_dev_test_text_regions(self, test_id: str):
-    """Fill a dev-test map's OCR cache while the user is still clicking.
-
-    Started when the import view opens in dev-test mode, so the first case on a
-    new map does not wait ~135 s for OCR. A case run arriving meanwhile waits on
-    the same per-map lock and reuses the result instead of running it again.
-    """
+    """Fill a dev-test map's OCR cache while the user is still clicking."""
     if not GEOREF_CONFIG.enable_curve_alignment:
         return {"status": "skipped", "reason": "curve alignment is off"}
-
-    from app.utils.dev_test import find_test_image_path
-    from app.utils.dev_test_derived import ensure_text_regions
 
     image_path = find_test_image_path(test_id)
     image = cv2.imread(image_path) if image_path else None
@@ -883,7 +779,8 @@ def warm_dev_test_text_regions(self, test_id: str):
     )
     return {"status": "done", "regions": len(regions or [])}
 
-
+# TODO This function is really similar to the normal extraction one so maybe find a way to abstract those two
+# it seems like this one for the test just has more logic to it.
 @celery_app.task(bind=True)
 def process_dev_test_extraction(
     self,
@@ -903,49 +800,17 @@ def process_dev_test_extraction(
     legend_bounds: dict | None = None,
 ):
     """Dev-test-only extraction task: no DB persistence, results saved to files,
-    evaluation report written automatically at the end.
-
-    ``config_overrides`` sets any ``GeorefConfig`` field for this run only --
-    the per-run switches (``snap_to_coastline`` and friends) and the dev tool's
-    tuning panel both arrive here. It is one extensible dict rather than a flag
-    per setting on purpose: every kwarg added to a Celery task breaks in-flight
-    messages and any caller that has not restarted alongside the worker, so a
-    new setting should not change this signature at all. Unknown keys are
-    dropped; see ``parse_config_overrides``.
-
-    Whether the run is *scored* comes from the case's kind, which is resolved
-    here from disk rather than passed in. A ``probe`` case has no hand-drawn
-    expected zones and exists only to replay a map's stored clicks quickly, so
-    it writes zones and a run record but no report -- there is nothing to
-    compare against, and a fabricated one would be worse than none.
-
-    Resolved rather than passed because the worker mounts the test assets and
-    already re-reads this config below, so a kwarg would be a second source of
-    truth for the same fact -- and every kwarg added here breaks in-flight
-    tasks and any caller that has not restarted alongside the worker.
-    """
-    from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
-    from app.utils.georeferencing.config import parse_config_overrides
+    evaluation report written automatically at the end."""
 
     resolved_kind = resolve_case_kind(test_id, test_case)
-    # An "override" equal to the ambient value is not one. Dropping those keeps
-    # the record honest about what differed, and keeps a run the tuning panel
-    # sent back at defaults eligible for `zones_best`.
     switches = {
         key: value
         for key, value in parse_config_overrides(config_overrides).items()
         if getattr(GEOREF_CONFIG, key) != value
     }
     run_config = GEOREF_CONFIG.with_overrides(**switches)
-
-    # A run under non-ambient switches is not comparable to one under the
-    # defaults -- snapping alone moves this map's IoU 0.941 vs 0.926 (plan 8c).
-    # Letting such a run win `zones_best` would mean "best" silently mixing two
-    # different metrics, so it is written but never promoted.
     ambient_run = not switches
 
-    # The run's sources only: unticking "cities" in the dev tool means the
-    # cities play no part anywhere, not merely in the final fit.
     points = _control_points(control_points, run_config)
 
     georef_record = RunRecord(run_id=f"{test_id}/{test_case}")
@@ -1017,8 +882,7 @@ def process_dev_test_extraction(
                 "status": "Extracting colors from image",
             },
         )
-        # Colors are always imposed (pipette): without click positions the
-        # extraction returns nothing and there is no zone left to georeference.
+
         imposed_click_positions_tuples = (
             [tuple(c) for c in imposed_click_positions]
             if imposed_click_positions
@@ -1034,11 +898,6 @@ def process_dev_test_extraction(
                 "color extraction will return no zones"
             )
 
-        # Text regions are a property of the *map*, not of the case, and OCR
-        # costs ~135 s on CPU. Pulling them from the derived store means the
-        # second case on a map -- and every re-run of the first -- pays
-        # nothing, which is what makes this loop usable. Fetched before colour
-        # extraction because the zone fill needs them too, not only alignment.
         text_regions = _dev_test_text_regions(test_id, image, config=run_config)
 
         color_result = extract_colors(
@@ -1060,8 +919,7 @@ def process_dev_test_extraction(
             zone_gap_fill=run_config.zone_gap_fill,
             zone_gap_max_ratio_of_diagonal=run_config.zone_gap_max_ratio_of_diagonal,
         )
-        # Out of the dict before anything else: it is returned to Celery, which
-        # cannot serialise an array. Written beside the zones further down.
+
         classified_rgb = color_result.pop("classified_rgb", None)
         normalized_features = color_result.get("normalized_features", [])
         pixel_features = color_result.get("pixel_features", [])
@@ -1069,9 +927,7 @@ def process_dev_test_extraction(
             textFill=color_result.get("text_fill"),
             zoneGaps=color_result.get("zone_gaps"),
         )
-        # Copied now: georeferencing rewrites these features' properties in
-        # place, and the test tool shows the extraction on its own, before
-        # any transform touched it.
+
         pixel_zones_snapshot = json.loads(json.dumps(pixel_features))
 
         if points:
@@ -1179,10 +1035,6 @@ def process_dev_test_extraction(
         except Exception as e:
             logger.error(f"[DEV-TEST] Failed to save test assets for {filename}: {e}")
 
-        # Evaluate and persist reports automatically -- but only for a scored
-        # case. A probe has no expected zones by design, so there is nothing to
-        # evaluate and no report is written; the zones and the run record are
-        # the whole deliverable.
         if resolved_kind == KIND_PROBE:
             logger.info(
                 f"[DEV-TEST] {test_id}/{test_case} is a probe case: zones written,"
@@ -1210,12 +1062,8 @@ def process_dev_test_extraction(
                     f"[DEV-TEST] Evaluation skipped (expected zones may be missing): {e}"
                 )
 
-        # The resolved requirement state goes on disk next to the run record, so
-        # "why is this case's number odd" can be answered without re-deriving it.
         _write_dev_test_case_state(test_id, test_case, config=run_config)
 
-        # The run record goes next to report.json whether or not evaluation ran:
-        # an IoU number alone cannot tell you which stage moved it.
         record_dir = os.path.join(TEST_CASES_DIR, test_id, test_case)
         georef_record.write(record_dir)
 

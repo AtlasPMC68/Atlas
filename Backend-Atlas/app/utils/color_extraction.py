@@ -1,3 +1,4 @@
+# region Imports
 import logging
 import math
 import os
@@ -21,6 +22,7 @@ from app.utils.color_sampling import sample_color_at
 from app.utils.legend import LegendBounds, legend_mask
 
 from . import preprocessing
+# endregion
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +321,7 @@ def relabel_text_pixels(
             points = np.array(polygon, dtype=np.int32).reshape(-1, 2)
         except (TypeError, ValueError):
             continue
-        if points.shape[0] < 3:
+        if points.shape[0]       < 3:
             continue
 
         stats["boxesConsidered"] += 1
@@ -385,9 +387,7 @@ def inpaint_text_ink(
 
     height, width = rgb.shape[:2]
 
-    # Nearest zone colour for every pixel, and whether it is close enough to
-    # count as that zone. Computed once for the whole image rather than per
-    # box: boxes overlap, and ΔE2000 is the slow part.
+    # Nearest zone colour for every pixel, and whether it is close enough to count as that zone. 
     dists = np.stack(
         [deltaE_ciede2000(lab, c.reshape(1, 1, 3)) for c in centers_lab], axis=-1
     )
@@ -429,9 +429,7 @@ def inpaint_text_ink(
 
         # Only the zones actually around this label are protected. Labels are
         # often printed in a darker shade of their zone, which can sit within
-        # ΔE of a *neighbouring* zone: protected globally, "HAUT-CANADA" kept
-        # its letters and they were classified as Bas-Canada. The ring starts
-        # past the halo so it reads the background, not the letters' fringe.
+        # ΔE of a *neighbouring* zone: protected globally.
         grown = cv2.dilate(box, halo) if pad > 0 else box
         ring = cv2.dilate(grown, ring_kernel).astype(bool) & ~grown.astype(bool)
         near_local = near_zone[y0:y1, x0:x1]
@@ -526,28 +524,7 @@ def repaint_text_ink_palette(
     vote_window: int = 5,
     box_margin_px: int = 2,
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
-    """Erase each label's ink and repaint it with the colour that surrounds it.
-
-    Three steps per OCR box, each replacing a weaker rule of the Telea path:
-
-    * **Background palette** -- the ring around the box is clustered into at
-      most ``palette_max_colors`` colours, keeping those that cover at least
-      ``palette_min_share`` of it. Pixels inside *other* boxes are left out of
-      the ring, so the next line of the same label cannot pass for background.
-    * **Ink** -- a box pixel further than ``ink_deltaE`` from every palette
-      colour. Replaces the Otsu split, whose "minority side is ink" rule
-      picked Hudson Bay as the ink of "RUPERT" (82 % of that box is red
-      background plus letters, all on the dark side).
-    * **Fill by vote** -- from the outside in, one layer at a time, each ink
-      pixel takes the palette colour most represented among its already
-      known neighbours (a ``vote_window`` square). Replaces Telea's weighted
-      mean, which blended sea and land into a violet no zone matches. Local,
-      so a letter straddling a coast is split along the coast.
-
-    The ink is grown by ``dilation_px`` for the anti-aliased fringe but never
-    leaves the box (plus ``box_margin_px``): past it the fill would read
-    colours from somewhere else, as the legend did with the sea below it.
-    """
+    """Erase each label's ink and repaint it with the colour that surrounds it."""
     stats = {
         "method": "inpaint",
         "algo": "palette",
@@ -663,24 +640,7 @@ def repaint_text_ink_palette(
 def fill_gaps_between_zones(
     labels: np.ndarray, zone_count: int, max_gap_px: float
 ) -> Tuple[np.ndarray, int]:
-    """Close the thin unassigned band between two different zones.
-
-    A border drawn on the map (a solid or dashed line) belongs to no zone's
-    colour, so two neighbouring zones come out separated by a strip of
-    nothing. Every zone grows at the same rate into unassigned pixels, and a
-    pixel is taken only when it is *between two different zones in a narrow
-    gap*: ``d_A + d_B <= max_gap_px``, with A and B its two nearest zones.
-    ``d_A + d_B`` is the local width of the gap, so a drawn line qualifies and
-    a lake, the sea, or a real blank area between zones does not. A zone
-    facing the sea has no second zone within reach, so coastlines are left
-    alone. The pixel goes to the nearer zone: the two meet mid-line.
-
-    Args:
-        labels: (H, W) zone index per pixel, -1 where unassigned.
-
-    Returns:
-        ``(labels, pixels_filled)`` -- a copy with the gaps assigned.
-    """
+    """Close the thin unassigned band between two different zones."""
     if zone_count < 2 or max_gap_px <= 0:
         return labels, 0
     unassigned = labels < 0
@@ -706,13 +666,7 @@ def fill_gaps_between_zones(
 
 
 def resolve_zone_overlaps(masks: List[np.ndarray], labels: np.ndarray) -> np.ndarray:
-    """One zone per pixel after per-zone morphology.
-
-    Closing and hole filling run on each zone alone, so two zones can claim
-    the same pixel: hole filling makes an enclave of B inside A part of A.
-    A pixel claimed twice goes back to the zone it was classified as, and
-    otherwise to the first claimant.
-    """
+    """One zone per pixel after per-zone morphology."""
     height, width = labels.shape
     stack = np.stack(masks) if masks else np.zeros((0, height, width), dtype=bool)
     claims = stack.sum(axis=0)
@@ -733,14 +687,7 @@ def resolve_zone_overlaps(masks: List[np.ndarray], labels: np.ndarray) -> np.nda
 
 
 def mask_to_pixel_edge_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
-    """The mask as polygons that follow pixel *edges*, not pixel centres.
-
-    ``mask_to_geometry`` traces contours through pixel centres, so two zones
-    that touch in the raster end up a pixel apart as polygons -- a gap on
-    every shared border, however clean the raster. Built from each row's runs
-    of pixels, unioned, two neighbouring zones share exactly the same edges,
-    which is what `coverage_simplify` needs to keep them shared.
-    """
+    """The mask as polygons that follow pixel *edges*, not pixel centres."""
     if not mask.any():
         return None
     padded = np.zeros((mask.shape[0], mask.shape[1] + 2), dtype=np.int8)
@@ -814,10 +761,7 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
 
 
 def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
-    """From pixel-space polygons, build GeoJSON feature and write it to disk.
-
-    - Merges all pixel polygons into a single geometry (possibly MultiPolygon).
-    """
+    """From pixel-space polygons, build GeoJSON feature and write it to disk."""
     pixel_feature = {
         "type": "Feature",
         "properties": {

@@ -1,3 +1,4 @@
+# region Imports
 import json
 import logging
 import os
@@ -17,6 +18,8 @@ from app.utils.dev_test_assets import (
     TEST_CASES_DIR,
     ZONES_DIR,
 )
+from app.utils.dev_test_derived import delete_derived
+
 from app.utils.georeferencing import (
     ControlPoint,
     parse_control_points,
@@ -29,6 +32,7 @@ from app.utils.imposed_colors import (
     split_imposed_colors_by_kind,
 )
 from app.utils.legend import parse_legend_entry
+# endregion
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +59,12 @@ def write_test_config(
         "testCaseId": test_case_id,
         "updatedAt": datetime.utcnow().isoformat() + "Z",
         "filename": original_filename,
-        # Only written when this case departs from its map's kind; absent means
-        # "whatever the map says", which is what almost every case wants.
         "kind": kind,
         "georef": {
-            # SIFT and city points in one list, each tagged with its source,
-            # in the same shape as maps.georef_inputs (ControlPoint.to_dict).
             "controlPoints": [cp.to_dict() for cp in control_points],
-            # The world area the user framed; the working extent for every
-            # reference layer, so a case has to re-run with the same one.
             "frameBounds": frame_bounds,
-            # {"present": bool, "bounds": {...}}: a rectangle or an explicit
-            # "no legend". Absent on cases authored before the legend step.
             "legend": legend,
         },
-        # Pipette selections, kept so the case can be re-run identically later.
         "colors": {
             "imposed": imposed_colors,
         },
@@ -80,7 +75,6 @@ def write_test_config(
 
 
 def slugify_test_case(value: str) -> str:
-    # Keep this conservative: only allow simple filename-safe tokens.
     slug = value.strip().lower()
     slug = re.sub(r"\s+", "-", slug)
     slug = re.sub(r"[^a-z0-9_-]", "", slug)
@@ -229,8 +223,6 @@ def delete_dev_test(map_id: str) -> dict[str, Any]:
     # Derived artifacts are keyed on the map's image; with the image gone they
     # describe nothing, and leaving them would let a re-upload under the same id
     # inherit another map's OCR.
-    from app.utils.dev_test_derived import delete_derived
-
     delete_derived(map_id)
 
     metadata = _load_tests_metadata()
@@ -286,15 +278,8 @@ def evaluate_and_persist_case(
     min_iou: float | None,
     allow_best_promotion: bool = True,
 ) -> dict[str, Any]:
-    """Score a case and write its report.
-
-    ``allow_best_promotion`` is False for a run made under non-default
-    switches. ``zones_best`` means "the best run so far", and a run with
-    coastline snapping flipped is not measuring the same thing -- snapping
-    alone moves one map 0.941 vs 0.926 -- so promoting across settings would
-    make "best" a mixture of two metrics. Such a run is still written as the
-    latest result; it just cannot win.
-    """
+    """Score a case and write its report. """
+    
     from app.utils.dev_test_evaluator import (
         build_test_case_paths,
         evaluate_georef_test_case,
@@ -470,12 +455,7 @@ def inspect_case(
     test_case_id: str,
     config: Any = None,
 ) -> tuple[Any, CaseExtractionInputs]:
-    """Load a case and resolve it against the current algorithm's requirements.
-
-    The one place that answers "is this case still runnable, and is it scored"
-    so the task, the regression suite and the dev script cannot drift apart on
-    it. Returns ``(CaseState, CaseExtractionInputs)``.
-    """
+    """Load a case and resolve it against the current algorithm's requirements."""
     from app.utils.dev_test_cases import build_case_state
 
     case_config = load_case_config(assets_root, test_id, test_case_id)
@@ -500,12 +480,6 @@ def inspect_case(
 def build_extraction_task_kwargs_for_case(
     *, assets_root: str, test_id: str, test_case_id: str
 ) -> dict[str, Any]:
-    """Build kwargs for process_dev_test_extraction.
-
-    Keyword arguments rather than positional ones: the task keeps gaining
-    optional inputs (framing box, water picks), and a positional list silently
-    misaligns when one is inserted in the middle.
-    """
 
     config = load_case_config(assets_root, test_id, test_case_id)
     image_path = find_test_image_path(test_id)
@@ -540,17 +514,7 @@ def build_extraction_task_kwargs_for_case(
 
 
 def drop_control_points(kwargs: dict[str, Any], excluded: Sequence[int]) -> list[int]:
-    """Remove control points by index from task kwargs, in place.
-
-    Filtered here rather than passed to the task, because the exclusion belongs
-    to the *request*, not to the case: the stored inputs stay untouched, and
-    the task signature does not gain a kwarg (which would break in-flight
-    messages and any caller that has not restarted alongside the worker).
-
-    Returns the indices actually dropped. Out-of-range indices are ignored --
-    a stale UI holding indices from a case that has since been re-clicked
-    should not fail the run.
-    """
+    """Remove control points by index from task kwargs, in place."""
     pixels = kwargs.get("pixel_points")
     geos = kwargs.get("geo_points_lonlat")
     if not excluded or not pixels or not geos:
@@ -583,7 +547,7 @@ def _start_extraction_for_case(
 
     # Refuse up front what the task could only fail on: a case missing a user
     # input, or a source selection leaving fewer than 3 points ("cities only"
-    # on a case with two cities). A 400 names the reason; a worker log would not.
+    # on a case with two cities).
     run_config = GEOREF_CONFIG.with_overrides(**(config_overrides or {}))
     state, _inputs = inspect_case(
         assets_root=assets_root,
@@ -651,11 +615,7 @@ async def run_evaluate_case_blocking(
 
     kind = resolve_case_kind(test_id, test_case_id)
 
-    # A probe has no expected zones by design, so there is nothing to evaluate
-    # against. The task already wrote the zones; that is the whole deliverable.
-    # The task already evaluated and wrote the report; re-running it here
-    # would double the work and, worse, re-decide best-promotion without
-    # knowing which switches the run used.
+    # A probe has no expected zones by design, so there is nothing to evaluate against. 
     report = None
     if kind != KIND_PROBE:
         paths = build_test_case_paths(assets_root, test_id, test_case_id)
