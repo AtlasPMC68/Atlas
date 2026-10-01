@@ -15,7 +15,6 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/ocr-florence:/app/ocr-florence
       - ocr-data:/data
     depends_on:
       - keycloak
@@ -53,7 +52,6 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/ocr-florence:/app/ocr-florence
       - ocr-data:/data
     depends_on:
       - redis
@@ -93,7 +91,6 @@ services:
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/ocr-florence:/app/ocr-florence
     depends_on:
       - redis
     command: celery -A app.celery_app flower --port=5555
@@ -179,7 +176,6 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/ocr-florence:/app/ocr-florence
       - ocr-data:/data
 
   test-frontend:

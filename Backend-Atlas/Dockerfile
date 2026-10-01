@@ -26,7 +26,6 @@ ENV SAVE_PREPROCESSED_IMAGES=false
 
 COPY app ./app
 COPY tests ./tests
-COPY ocr-florence ./ocr-florence
 COPY .env.dev /app/app/.env.dev
 
 EXPOSE 8000
