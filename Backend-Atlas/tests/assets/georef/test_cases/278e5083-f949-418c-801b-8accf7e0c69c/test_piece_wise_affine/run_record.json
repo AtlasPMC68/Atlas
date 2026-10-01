@@ -1,89 +1,14 @@
 {
   "schemaVersion": "1",
   "runId": "278e5083-f949-418c-801b-8accf7e0c69c/test_piece_wise_affine",
-  "startedAt": "2026-09-24T15:17:52.951656+00:00",
+  "startedAt": "2026-10-01T02:07:11.615238+00:00",
   "inputs": {
-    "waterPickCount": 2,
-    "legendBounds": null,
     "caseKind": "probe",
-    "runSwitches": {
-      "gate_probe_gcp_ratio": 1000.0,
-      "gate_probe_gcp_max_km": 1000.0,
-      "gate_water_iou_min": 0.0,
-      "gate_max_scale_drift": 1000.0,
-      "gate_max_rotation_deg": 360.0,
-      "gate_min_inlier_fraction": 0.0,
-      "gate_min_chamfer_improvement": 0.0,
-      "icp_search_radius_px": [
-        100.0,
-        80.0,
-        50.0,
-        30.0,
-        22.0,
-        15.0,
-        10.0,
-        5.0
-      ],
-      "icp_cutoff_px": 100.0,
-      "icp_orientation_tolerance_deg": 60.0,
-      "text_fill_method": "inpaint",
-      "text_inpaint_max_ink_ratio": 1.0,
-      "coastline_snap_ratio_of_diagonal": 0.015,
-      "zone_gap_fill": true,
-      "snap_to_coastline": false
-    },
+    "frameBoundsSource": "config",
     "controlPointSources": [
       "sift",
       "city"
     ],
-    "referenceCoverage": {
-      "coastline": 0.00904,
-      "lakes": 0.00941,
-      "rivers": 0.00442,
-      "curves": 0.02265,
-      "land": 0.63617,
-      "lakeInterior": 0.03384,
-      "water": 0.39767
-    },
-    "userEvidence": {
-      "edgeFraction": 0.011707641196013288,
-      "rawEdgePixels": 7895,
-      "waterEdgeFilterApplied": true,
-      "waterEdgeFilterKept": 0.334768841038632,
-      "textMaskFraction": 0.24951495016611297,
-      "legendMaskFraction": 0.0,
-      "straightLineCount": 2,
-      "suppressedEdgePixels": 426,
-      "suppressedEdgeFraction": 0.1611804767309875,
-      "waterFraction": 0.26578959025470655,
-      "oceanFraction": 0.20322923588039868,
-      "lakeFraction": 0.05844518272425249,
-      "hasWater": true
-    },
-    "frameBounds": {
-      "west": -101.95030462814913,
-      "south": 37.00606124525699,
-      "east": -49.57715271219007,
-      "north": 60.49186798375776
-    },
-    "alignment": {
-      "method": "joint",
-      "rung": 0,
-      "failedChecks": [],
-      "probeAgreementPx": 20.03237113684363,
-      "coastlineSamples": 3900,
-      "fineSamples": 7863,
-      "usesLakes": true,
-      "usesRivers": false,
-      "baselineGcpRmsPx": 15.735728603909601,
-      "baselineChamferPx": 4.371366024017334,
-      "probeGcpRmsPx": 20.03237113684363,
-      "alignedChamferPx": 3.2914280891418457,
-      "coastDisplacementPx": 13.946925303945003,
-      "inlierFraction": 0.13658908813429987,
-      "correspondences": 1074,
-      "alignedGcpRmsPx": 21.677815177635086
-    },
     "controlPoints": [
       {
         "source": "sift",
@@ -190,212 +115,706 @@
       "sift": 9,
       "city": 0
     },
+    "frameBounds": {
+      "west": -101.95030462814913,
+      "south": 37.00606124525699,
+      "east": -49.57715271219007,
+      "north": 60.49186798375776
+    },
     "referenceLatitude": 48.74896461450737,
-    "snapToCoastline": false,
-    "snapToleranceMeters": null,
+    "snapToCoastline": true,
+    "snapToleranceMeters": 107787.83990511202,
     "clipToLandMask": true
   },
   "models": {
-    "chosen": {
-      "name": "affine",
-      "dof": 6,
-      "matrix": [
-        [
-          11158.989141821661,
-          -3323.0276091629157,
-          -11279397.965341419
-        ],
-        [
-          -2811.2330676949764,
-          -11521.09124073238,
-          9159725.030063415
-        ],
-        [
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
-      "nPoints": 9,
-      "redundancy": 12,
-      "rmse3857": 257925.03709100926,
-      "metersPerPixel": 11749.200717089887,
-      "determinant": -137905537.15701145
-    },
     "stage2_affine": {
-      "name": "affine",
-      "dof": 6,
-      "matrix": [
+      "name": "piecewise_affine",
+      "base": {
+        "name": "affine",
+        "dof": 6,
+        "matrix": [
+          [
+            10848.358495659428,
+            -2140.347225895355,
+            -11215573.0169101
+          ],
+          [
+            -3726.4368472891915,
+            -11081.549759573401,
+            9515025.527212156
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "nPoints": 9,
+        "redundancy": 12,
+        "rmse3857": 171503.47160811024,
+        "metersPerPixel": 11378.446371719963,
+        "determinant": -128192493.24791054
+      },
+      "vertsIn": [
         [
-          11158.989141821661,
-          -3323.0276091629157,
-          -11279397.965341419
+          374.8336620801942,
+          14.17494782131477
         ],
         [
-          -2811.2330676949764,
-          -11521.09124073238,
-          9159725.030063415
+          252.8632055595318,
+          38.19229640260351
         ],
         [
-          0.0,
-          0.0,
-          1.0
+          339.98496021714783,
+          208.66837848939804
+        ],
+        [
+          433.69971252452933,
+          197.83702520764038
+        ],
+        [
+          294.77583347589837,
+          345.3786062907294
+        ],
+        [
+          520.9767739170549,
+          139.58289393733378
+        ],
+        [
+          443.2735873305325,
+          108.9725477062795
+        ],
+        [
+          414.9333326316773,
+          47.85877482891401
+        ],
+        [
+          426.26039456958466,
+          139.58576660059546
+        ],
+        [
+          -131.75,
+          -87.0
+        ],
+        [
+          263.5,
+          -87.0
+        ],
+        [
+          658.75,
+          -87.0
+        ],
+        [
+          658.75,
+          174.0
+        ],
+        [
+          658.75,
+          435.0
+        ],
+        [
+          263.5,
+          435.0
+        ],
+        [
+          -131.75,
+          435.0
+        ],
+        [
+          -131.75,
+          174.0
+        ]
+      ],
+      "vertsOut": [
+        [
+          -7080221.929833172,
+          8217684.883104368
+        ],
+        [
+          -8708411.56189368,
+          8044870.853679093
+        ],
+        [
+          -8117401.655344941,
+          5792080.435725732
+        ],
+        [
+          -7010645.686455282,
+          5756703.436921187
+        ],
+        [
+          -8601644.379209775,
+          4692595.080067512
+        ],
+        [
+          -5985169.901552792,
+          5980880.538319665
+        ],
+        [
+          -6584565.605097156,
+          6623148.706202879
+        ],
+        [
+          -6608721.3153000055,
+          7369803.9777776385
+        ],
+        [
+          -6911315.440617555,
+          6365059.319109844
+        ],
+        [
+          -12458634.040060334,
+          10970078.410925392
+        ],
+        [
+          -8170820.344650945,
+          9497204.24703434
+        ],
+        [
+          -3883006.6492415564,
+          8024330.083143287
+        ],
+        [
+          -4441637.275200244,
+          5132045.595894629
+        ],
+        [
+          -5000267.901158932,
+          2239761.108645972
+        ],
+        [
+          -9288081.59656832,
+          3712635.2725370247
+        ],
+        [
+          -13575895.29197771,
+          5185509.4364280775
+        ],
+        [
+          -13017264.666019022,
+          8077793.923676735
+        ]
+      ],
+      "simplices": [
+        [
+          3,
+          12,
+          13
+        ],
+        [
+          10,
+          1,
+          9
+        ],
+        [
+          1,
+          16,
+          9
+        ],
+        [
+          3,
+          4,
+          2
+        ],
+        [
+          4,
+          1,
+          2
+        ],
+        [
+          1,
+          4,
+          16
+        ],
+        [
+          4,
+          14,
+          15
+        ],
+        [
+          16,
+          4,
+          15
+        ],
+        [
+          14,
+          4,
+          13
+        ],
+        [
+          4,
+          3,
+          13
+        ],
+        [
+          12,
+          5,
+          11
+        ],
+        [
+          3,
+          5,
+          12
+        ],
+        [
+          5,
+          7,
+          11
+        ],
+        [
+          6,
+          7,
+          5
+        ],
+        [
+          0,
+          1,
+          10
+        ],
+        [
+          0,
+          10,
+          11
+        ],
+        [
+          7,
+          0,
+          11
+        ],
+        [
+          8,
+          5,
+          3
+        ],
+        [
+          8,
+          6,
+          5
+        ],
+        [
+          8,
+          3,
+          2
+        ],
+        [
+          6,
+          8,
+          7
+        ],
+        [
+          8,
+          0,
+          7
+        ],
+        [
+          1,
+          8,
+          2
+        ],
+        [
+          0,
+          8,
+          1
         ]
       ],
       "nPoints": 9,
-      "redundancy": 12,
-      "rmse3857": 257925.03709100926,
-      "metersPerPixel": 11749.200717089887,
-      "determinant": -137905537.15701145
+      "rmse3857": 192010.41128413338,
+      "rmse3857Kind": "leave_one_out",
+      "residuals3857": [
+        312905.37647714204,
+        119052.72305675942,
+        215140.44758811337,
+        153142.08052054822,
+        263886.19841321174,
+        150927.74844971794,
+        23542.514604965378,
+        236815.87730431007,
+        30653.338496776345
+      ],
+      "metersPerPixel": 11378.446371719963,
+      "determinant": -128192493.24791054
+    },
+    "chosen": {
+      "name": "piecewise_affine",
+      "base": {
+        "name": "affine",
+        "dof": 6,
+        "matrix": [
+          [
+            10848.358495659428,
+            -2140.347225895355,
+            -11215573.0169101
+          ],
+          [
+            -3726.4368472891915,
+            -11081.549759573401,
+            9515025.527212156
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "nPoints": 9,
+        "redundancy": 12,
+        "rmse3857": 171503.47160811024,
+        "metersPerPixel": 11378.446371719963,
+        "determinant": -128192493.24791054
+      },
+      "vertsIn": [
+        [
+          374.8336620801942,
+          14.17494782131477
+        ],
+        [
+          252.8632055595318,
+          38.19229640260351
+        ],
+        [
+          339.98496021714783,
+          208.66837848939804
+        ],
+        [
+          433.69971252452933,
+          197.83702520764038
+        ],
+        [
+          294.77583347589837,
+          345.3786062907294
+        ],
+        [
+          520.9767739170549,
+          139.58289393733378
+        ],
+        [
+          443.2735873305325,
+          108.9725477062795
+        ],
+        [
+          414.9333326316773,
+          47.85877482891401
+        ],
+        [
+          426.26039456958466,
+          139.58576660059546
+        ],
+        [
+          -131.75,
+          -87.0
+        ],
+        [
+          263.5,
+          -87.0
+        ],
+        [
+          658.75,
+          -87.0
+        ],
+        [
+          658.75,
+          174.0
+        ],
+        [
+          658.75,
+          435.0
+        ],
+        [
+          263.5,
+          435.0
+        ],
+        [
+          -131.75,
+          435.0
+        ],
+        [
+          -131.75,
+          174.0
+        ]
+      ],
+      "vertsOut": [
+        [
+          -7080221.929833172,
+          8217684.883104368
+        ],
+        [
+          -8708411.56189368,
+          8044870.853679093
+        ],
+        [
+          -8117401.655344941,
+          5792080.435725732
+        ],
+        [
+          -7010645.686455282,
+          5756703.436921187
+        ],
+        [
+          -8601644.379209775,
+          4692595.080067512
+        ],
+        [
+          -5985169.901552792,
+          5980880.538319665
+        ],
+        [
+          -6584565.605097156,
+          6623148.706202879
+        ],
+        [
+          -6608721.3153000055,
+          7369803.9777776385
+        ],
+        [
+          -6911315.440617555,
+          6365059.319109844
+        ],
+        [
+          -12458634.040060334,
+          10970078.410925392
+        ],
+        [
+          -8170820.344650945,
+          9497204.24703434
+        ],
+        [
+          -3883006.6492415564,
+          8024330.083143287
+        ],
+        [
+          -4441637.275200244,
+          5132045.595894629
+        ],
+        [
+          -5000267.901158932,
+          2239761.108645972
+        ],
+        [
+          -9288081.59656832,
+          3712635.2725370247
+        ],
+        [
+          -13575895.29197771,
+          5185509.4364280775
+        ],
+        [
+          -13017264.666019022,
+          8077793.923676735
+        ]
+      ],
+      "simplices": [
+        [
+          3,
+          12,
+          13
+        ],
+        [
+          10,
+          1,
+          9
+        ],
+        [
+          1,
+          16,
+          9
+        ],
+        [
+          3,
+          4,
+          2
+        ],
+        [
+          4,
+          1,
+          2
+        ],
+        [
+          1,
+          4,
+          16
+        ],
+        [
+          4,
+          14,
+          15
+        ],
+        [
+          16,
+          4,
+          15
+        ],
+        [
+          14,
+          4,
+          13
+        ],
+        [
+          4,
+          3,
+          13
+        ],
+        [
+          12,
+          5,
+          11
+        ],
+        [
+          3,
+          5,
+          12
+        ],
+        [
+          5,
+          7,
+          11
+        ],
+        [
+          6,
+          7,
+          5
+        ],
+        [
+          0,
+          1,
+          10
+        ],
+        [
+          0,
+          10,
+          11
+        ],
+        [
+          7,
+          0,
+          11
+        ],
+        [
+          8,
+          5,
+          3
+        ],
+        [
+          8,
+          6,
+          5
+        ],
+        [
+          8,
+          3,
+          2
+        ],
+        [
+          6,
+          8,
+          7
+        ],
+        [
+          8,
+          0,
+          7
+        ],
+        [
+          1,
+          8,
+          2
+        ],
+        [
+          0,
+          8,
+          1
+        ]
+      ],
+      "nPoints": 9,
+      "rmse3857": 192010.41128413338,
+      "rmse3857Kind": "leave_one_out",
+      "residuals3857": [
+        312905.37647714204,
+        119052.72305675942,
+        215140.44758811337,
+        153142.08052054822,
+        263886.19841321174,
+        150927.74844971794,
+        23542.514604965378,
+        236815.87730431007,
+        30653.338496776345
+      ],
+      "metersPerPixel": 11378.446371719963,
+      "determinant": -128192493.24791054
     }
   },
-  "gates": [
-    {
-      "name": "probe_gcp_disagreement",
-      "value": 20.03237113684363,
-      "threshold": 15735.728603909602,
-      "applicable": true,
-      "passed": true,
-      "detail": "curve-only fit misses held-out GCPs by 20.0px (150.3km); GCP-only baseline 15.7px"
-    },
-    {
-      "name": "water_mask_iou",
-      "value": 0.45883885284256737,
-      "threshold": 0.0,
-      "applicable": true,
-      "passed": true,
-      "detail": "user water vs reference ocean + lakes"
-    },
-    {
-      "name": "transform_determinant",
-      "value": -137905537.15701145,
-      "threshold": 0.0,
-      "applicable": true,
-      "passed": true,
-      "detail": "a sign flip is a mirror or a fold"
-    },
-    {
-      "name": "scale_drift",
-      "value": 0.03719294721311717,
-      "threshold": 1000.0,
-      "applicable": true,
-      "passed": true,
-      "detail": "scale moved 3.7% from the GCP-only affine"
-    },
-    {
-      "name": "rotation_drift",
-      "value": 4.817692360684191,
-      "threshold": 360.0,
-      "applicable": true,
-      "passed": true,
-      "detail": "rotated 4.8 degrees from the GCP-only affine"
-    },
-    {
-      "name": "curve_fit_engaged",
-      "value": 0.2470481604473408,
-      "threshold": 0.0,
-      "applicable": true,
-      "passed": true,
-      "detail": "trimmed chamfer 4.4px -> 3.3px (+24.7%); below the threshold means the curve term never engaged, not that the fit is wrong"
-    },
-    {
-      "name": "optimizer_converged",
-      "value": 1.0,
-      "threshold": 1.0,
-      "applicable": true,
-      "passed": true,
-      "detail": "50 function evaluations"
-    },
-    {
-      "name": "inlier_fraction",
-      "value": 0.13658908813429987,
-      "threshold": 0.0,
-      "applicable": true,
-      "passed": true,
-      "detail": "a collapse here means the fit rests on a handful of samples, or that orientation filtering matched almost nothing -- wrong-feature lock caught in the act"
-    }
-  ],
+  "gates": [],
   "errors": {
-    "textFill": {
-      "method": "inpaint",
-      "algo": "palette",
-      "boxesConsidered": 49,
-      "boxesFilled": 49,
-      "pixelsFilled": 26417
-    },
-    "zoneGaps": {
-      "maxGapPx": 5.67,
-      "pixelsFilled": 1618
-    },
+    "piecewiseApplied": true,
+    "piecewiseMaxCorrection3857": 275103.70257454924,
+    "piecewiseLooRmse3857": 192010.41128413338,
     "gcpResiduals3857": [
-      282254.64642897417,
-      128931.08625898765,
-      62008.63950314668,
-      128869.7563882838,
-      635159.0438335484,
-      119751.92541019832,
-      115862.50313642557,
-      212093.3180919019,
-      76218.74501094826
+      312905.37647714204,
+      119052.72305675942,
+      215140.44758811337,
+      153142.08052054822,
+      263886.19841321174,
+      150927.74844971794,
+      23542.514604965378,
+      236815.87730431007,
+      30653.338496776345
     ],
-    "gcpRmse3857": 257925.03709100926,
-    "gcpRmseKm": 170.06529806337238,
+    "gcpRmse3857": 192010.41128413338,
+    "gcpRmseKm": 126.60386984759738,
     "gcpRmseStatus": "ok",
     "gcpRmseKmBySource": {
-      "sift": 170.06529806337238,
+      "sift": 126.60386984759738,
       "city": null
     },
     "gcpPredictedLonLat": [
       [
-        -64.17328081777042,
-        57.88247385207192
+        -63.602715745273514,
+        59.17213333354301
       ],
       [
-        -77.11690194021523,
-        58.197166892763285
+        -78.22899206452247,
+        58.36728118856526
       ],
       [
-        -73.4724908503564,
-        46.12162163815074
+        -72.91985974333463,
+        46.07315696603361
       ],
       [
-        -63.754922240243594,
-        45.2514579049364
+        -62.97770171689379,
+        45.852248292473945
       ],
       [
-        -82.08535827387097,
-        36.37180871841436
+        -77.26988614404917,
+        38.79671954754415
       ],
       [
-        -53.2670565605807,
-        47.88046005975502
+        -53.76569600616997,
+        47.237218782763314
       ],
       [
-        -60.14249215858797,
-        51.207593010045684
+        -59.15015922346488,
+        51.01048555816401
       ],
       [
-        -61.159078194716564,
-        55.41008455238634
+        -59.367153660204615,
+        55.04087920024655
       ],
       [
-        -62.76178733143216,
-        49.45970847489528
+        -62.08540293677991,
+        49.52874532680311
       ]
     ],
-    "snapTotalBoundaryPoints": 0,
-    "snapSnappedPoints": 0,
+    "snapTotalBoundaryPoints": 635,
+    "snapSnappedPoints": 278,
     "zonesDroppedOffLand": 0
   },
   "timingMs": {
-    "reference_layers": 3071.251,
-    "user_evidence": 260.156,
-    "probe_fit": 1376.984,
-    "align_rung0": 1837.934,
-    "alignment": 3368.568,
-    "load_land_mask": 333.992,
-    "subtract_lakes": 210.312,
-    "apply": 117.68
+    "color_extraction": 1294.04,
+    "fit": 5.638,
+    "piecewise_correction": 23.935,
+    "load_coastline": 1201.601,
+    "load_land_mask": 734.476,
+    "subtract_lakes": 264.114,
+    "apply": 434.955
   },
   "config": {
     "version": "13",
@@ -405,7 +824,7 @@
     ],
     "gcp_sigma_px_sift": 6.0,
     "gcp_sigma_px_city": 6.0,
-    "snap_to_coastline": false,
+    "snap_to_coastline": true,
     "coastline_snap_ratio_of_diagonal": 0.015,
     "clip_to_land_mask": true,
     "land_coverage_threshold": 0.01,
@@ -415,12 +834,12 @@
     "text_fill_method": "inpaint",
     "text_inpaint_dilation_px": 1,
     "text_inpaint_radius_px": 3.0,
-    "text_inpaint_max_ink_ratio": 1.0,
+    "text_inpaint_max_ink_ratio": 1,
     "text_inpaint_algo": "palette",
     "text_inpaint_ink_deltaE": 12.0,
-    "zone_gap_fill": true,
+    "zone_gap_fill": false,
     "zone_gap_max_ratio_of_diagonal": 0.008,
-    "transform_model": "affine",
+    "transform_model": "piecewise_affine",
     "piecewise_anchor_margin": 0.25,
     "reference_raster_width": 1024,
     "reference_raster_height": 768,
@@ -439,7 +858,7 @@
     "edge_water_filter": true,
     "edge_water_margin_px": 3,
     "edge_water_min_fraction": 0.01,
-    "enable_curve_alignment": true,
+    "enable_curve_alignment": false,
     "curve_sample_spacing_px": 2.0,
     "curve_max_samples": 8000,
     "use_rivers_for_alignment": false,
@@ -488,7 +907,7 @@
     "icp_cutoff_px": 100.0,
     "icp_min_correspondences": 50,
     "gate_probe_gcp_ratio": 1000.0,
-    "gate_probe_gcp_max_km": 1000.0,
+    "gate_probe_gcp_max_km": 10000.0,
     "gate_water_iou_min": 0.0,
     "gate_max_scale_drift": 1000.0,
     "gate_max_rotation_deg": 360.0,
@@ -499,7 +918,5 @@
     "recovery_multistart_scale": 0.06,
     "recovery_gcp_weight_boost": 8.0
   },
-  "notes": [
-    "probe case: no expected zones, run not scored"
-  ]
+  "notes": []
 }
