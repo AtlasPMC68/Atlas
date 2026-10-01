@@ -2,7 +2,7 @@ import sys
 import os
 import math
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "ocr", "florence"))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "ocr-florence"))
 from inference import _map_point_back
 
 
