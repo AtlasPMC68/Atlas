@@ -55,8 +55,9 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
     data: list[tuple[Path, list[str]]] = []
     for image in images:
         expected = MAP_EXPECTED_TEXTS.get(image.stem)
-        if expected:
-            data.append((image, expected))
+        if expected is None:
+            raise ValueError(f"Missing expected text for {image.name} in MAP_EXPECTED_TEXTS.")
+        data.append((image, expected))
     return data
 
 

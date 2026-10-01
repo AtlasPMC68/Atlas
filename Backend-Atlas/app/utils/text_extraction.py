@@ -114,7 +114,7 @@ def geolocate_cities(
             continue
 
         try:
-            candidate = get_city_with_max_population(text, geo_bounds=geo_bounds)
+            candidate = get_city_with_max_population(text, geo_bounds=geo_bounds, confidence_threshold=0.60)
         except Exception as exc:
             logger.debug(f"get_city_with_max_population error for text '{text}': {exc}")
             candidate = {
@@ -204,16 +204,13 @@ def _build_extracted_text_from_detections(
         def process_candidate_text(text_val: str):
             if should_ignore(text_val):
                 return
-            city_res = get_city_with_max_population(text_val, confidence_threshold=0.80)
-            if city_res.get("found"):
-                city_name = city_res.get("name") or text_val
-                extracted_text.append(
-                    {
-                        "text": city_name,
-                        "bbox": quad,
-                        "mapElementType": "ville",
-                    }
-                )
+            extracted_text.append(
+                {
+                    "text": text_val,
+                    "bbox": quad,
+                    "mapElementType": "ville",
+                }
+            )
 
         if "\n" in raw_text:
             lines = raw_text.split("\n")
