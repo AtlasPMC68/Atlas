@@ -126,6 +126,7 @@
             Ajouter une carte
           </button>
         </div>
+
         <div class="flex gap-2 items-center">
           <button
             class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
@@ -532,4 +533,8 @@ function toggleAll(visible: boolean) {
     emit("toggle-feature", feature.id, visible);
   });
 }
+
+defineExpose({
+  showEditFeatureDialog,
+});
 </script>

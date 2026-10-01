@@ -48,6 +48,7 @@ export interface FeatureProperties {
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
+  layer?: number;
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;

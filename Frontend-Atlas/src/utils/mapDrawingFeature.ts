@@ -1,5 +1,5 @@
 import L from "leaflet";
-import { colorRgbToCss } from "./featureHelpers";
+import { colorRgbToCss, getDefaultLayer } from "./featureHelpers";
 import type {
   Coordinate,
   Feature,
@@ -137,7 +137,7 @@ export function layerToFeature(
     if (layer instanceof L.Rectangle) {
       inferredType = "shape";
     } else if (layer instanceof L.Polygon) {
-      inferredType = "zone";
+      inferredType = "shape";
     }
   }
 
@@ -167,6 +167,7 @@ export function layerToFeature(
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
+      layer: baseFeature?.properties?.layer ?? getDefaultLayer(type),
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,

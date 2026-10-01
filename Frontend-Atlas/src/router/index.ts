@@ -38,7 +38,6 @@ const routes = [
   {
     path: "/projets-publiques",
     component: Discover,
-    meta: { requiresAuth: true },
   },
   {
     path: "/test-editor/:mapId",
@@ -58,7 +57,7 @@ const routes = [
   { path: "/profil", component: Profile, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
   { path: "/inscription", component: Home }, // Dummy route
-  { path: "/projet/:projectId", component: Map, meta: { requiresAuth: true } },
+  { path: "/projet/:projectId", component: Map },
   { path: "/a-propos", component: About },
 ];
 
