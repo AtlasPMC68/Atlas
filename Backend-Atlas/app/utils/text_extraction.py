@@ -6,7 +6,7 @@ import sys
 from typing import Any
 from uuid import UUID
 
-from app.utils.cities_validation import find_first_city
+from app.utils.cities_validation import get_city_with_max_population
 
 try:
     import coloredlogs
@@ -114,9 +114,9 @@ def geolocate_cities(
             continue
 
         try:
-            candidate = find_first_city(text, geo_bounds=geo_bounds)
+            candidate = get_city_with_max_population(text, geo_bounds=geo_bounds)
         except Exception as exc:
-            logger.debug(f"find_first_city error for text '{text}': {exc}")
+            logger.debug(f"get_city_with_max_population error for text '{text}': {exc}")
             candidate = {
                 "found": False,
                 "query": text,
@@ -204,7 +204,7 @@ def _build_extracted_text_from_detections(
         def process_candidate_text(text_val: str):
             if should_ignore(text_val):
                 return
-            city_res = find_first_city(text_val, confidence_threshold=0.80)
+            city_res = get_city_with_max_population(text_val, confidence_threshold=0.80)
             if city_res.get("found"):
                 city_name = city_res.get("name") or text_val
                 extracted_text.append(

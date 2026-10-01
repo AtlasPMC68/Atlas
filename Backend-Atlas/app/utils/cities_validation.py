@@ -74,10 +74,10 @@ for info in _gc.get_cities().values():
 
 import difflib
 
-__all__ = ["_city_map", "find_first_city"]
+__all__ = ["_city_map", "get_city_with_max_population"]
 
 
-def find_first_city(
+def get_city_with_max_population(
     text: str,
     geo_bounds: Optional[Dict[str, float]] = None,
     confidence_threshold: float = 0.60,
