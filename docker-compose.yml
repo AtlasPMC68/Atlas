@@ -75,7 +75,6 @@ services:
     volumes:
       - ocr-data:/data
       - ./Backend-Atlas/ocr-florence:/app/ocr-florence
-      - ./Backend-Atlas/app:/app/app
     depends_on:
       - redis
 

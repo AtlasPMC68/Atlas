@@ -44,8 +44,13 @@ RUN mkdir -p /app/models/hub /app/models /data && \
 # Everything on runtime is ran as a normal user
 USER appuser
 
-RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='microsoft/Florence-2-base', cache_dir='/app/models')"
+ENV FLORENCE_REPO_ID=microsoft/Florence-2-base \
+    FLORENCE_COMMIT_ID=5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac
+# ENV FLORENCE_REPO_ID=microsoft/Florence-2-large \
+#     FLORENCE_COMMIT_ID=21a599d414c4d928c9032694c424fb94458e3594
+
+RUN python -c "import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id=os.environ['FLORENCE_REPO_ID'], revision=os.environ['FLORENCE_COMMIT_ID'], cache_dir=os.environ['HF_HOME'])"
 COPY --chown=appuser:appuser . /app/ocr-florence/
 WORKDIR /app/ocr-florence
 
-CMD ["bash", "-c", "python3 -u -m celery -A worker worker --loglevel=warning --concurrency=1 --queues=florence -n florence@%h"]
+CMD ["bash", "-c", "python3 -u -m celery -A worker worker --loglevel=${LOG_LEVEL:-warning} --concurrency=1 --queues=florence --hostname=florence@%h"]
