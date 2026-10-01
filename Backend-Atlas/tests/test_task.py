@@ -94,7 +94,7 @@ def test_process_map_extraction(real_image_np: np.ndarray) -> None:
         patch("app.tasks.extract_shapes_from_clicks", return_value=mock_shapes),
         patch("app.tasks.asyncio.run", side_effect=lambda coro: coro.close() if hasattr(coro, "close") else None) as mock_asyncio_run,
         patch(
-            "app.tasks.find_first_city",
+            "app.utils.text_extraction.find_first_city",
             return_value={
                 "found": False,
                 "query": "test",
