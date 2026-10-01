@@ -325,14 +325,11 @@ def test_text_extraction(
         for expected_word, ocr_word, distance in mismatches:
             logger.error(f"  \u2022 Expected: {YELLOW}'{expected_word}'{RESET} --> Found: '{ocr_word}' (dist: {distance:.1f})")
 
-    setattr(
-        request.node,
-        "user_metadata",
-        {
-            "average_distance": average_dist,
-            "hit_rate": box_find_rate,
-        },
-    )
+    from tests.conftest import metadata_key
+    request.node.stash[metadata_key] = {
+        "average_distance": average_dist,
+        "hit_rate": box_find_rate,
+    }
 
     error_msg = (
         f"\n{RED}{BOLD}ÉCHEC : {image_path.name}{RESET}\n"

@@ -1,16 +1,17 @@
-from typing import Any, Generator
+from typing import Any, Generator, Dict
 import pytest
 
+metadata_key = pytest.StashKey[Dict[str, float]]()
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: Any, call: Any) -> Generator[None, None, None]:
     """
     Hook implementation to capture custom test item metadata.
-    Transfers user_metadata attribute from test items onto the test execution report.
+    Transfers metadata from test items onto the test execution report using pytest stash.
     """
     outcome = yield
     report = outcome.get_result()
-    metadata = getattr(item, "user_metadata", None)
+    metadata = item.stash.get(metadata_key, None)
     if metadata is not None:
         report.user_metadata = metadata
 

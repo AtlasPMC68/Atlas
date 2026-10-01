@@ -123,8 +123,11 @@ def get_city_with_max_population(
         return result
 
     if geo_bounds is not None:
-        bounded = [c for c in candidates if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"] and geo_bounds["min_lon"] <= c["lon"] <= geo_bounds["max_lon"]]
-        candidates = bounded if bounded else []
+        candidates = [
+            c for c in candidates 
+            if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"] 
+            and geo_bounds["min_lon"] <= c["lon"] <= geo_bounds["max_lon"]
+        ]
 
     if not candidates:
         return result
