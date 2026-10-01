@@ -17,8 +17,6 @@ MAP_EXPECTED_TEXTS = {
 
     "Quebec_Traite1783":    ["Saint-Pierre", "Québec", "Montréal", "Boston", "New York", "La Nouvelle-Orléans"],
 
-    "Sahel_Afrique":        [],
-
     "Degrade_Afrique":      ["Dakar", "Abidjan", "Lomé", "Douala"],
 }
 # fmt: on

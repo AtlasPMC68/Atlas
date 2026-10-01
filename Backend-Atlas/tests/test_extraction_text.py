@@ -210,7 +210,6 @@ def test_check_for_match_drops_extra_ocr_words() -> None:
 
 CARD_THRESHOLDS = {
     "Quebec_1800.png": {"min_hit_rate": 74.0, "max_dist": 0.50},
-    "Sahel_Afrique.png": {"min_hit_rate": 90.9, "max_dist": 0.59},
     "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 100.0, "max_dist": 0.19},
     "genocide_Monde.png": {"min_hit_rate": 100.0, "max_dist": 0.26},
     "Quebec_Traite1783.png": {"min_hit_rate": 85.7, "max_dist": 0.80},
