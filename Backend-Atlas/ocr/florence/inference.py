@@ -300,49 +300,7 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
                 if len(shifted_quad) >= 4:
                     all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
 
-    import math
 
-    def _map_quad_back(quad, orig_w, orig_h, new_w, new_h, angle_deg):
-        rad = math.radians(angle_deg)
-        cos_a = math.cos(rad)
-        sin_a = math.sin(rad)
-        cx_orig, cy_orig = orig_w / 2.0, orig_h / 2.0
-        cx_new, cy_new = new_w / 2.0, new_h / 2.0
-
-        mapped_quad = []
-        for i in range(0, len(quad) - 1, 2):
-            x, y = quad[i], quad[i + 1]
-            x_sh, y_sh = x - cx_new, y - cy_new
-            x_orig_sh = x_sh * cos_a + y_sh * sin_a
-            y_orig_sh = -x_sh * sin_a + y_sh * cos_a
-            mapped_quad.extend([x_orig_sh + cx_orig, y_orig_sh + cy_orig])
-        return mapped_quad
-
-    angles = [90, -45]
-    image_area = preprocessed.width * preprocessed.height
-
-    for angle in angles:
-        logger.debug(f"Running multi-angle pass: {angle} degrees")
-        rot_img = preprocessed.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC, fillcolor=(255, 255, 255))
-        rot_result = run_inference(model, processor, rot_img, OCR_TASK, config)
-        r_data = rot_result.get(OCR_TASK, {})
-
-        for quad, text in zip(r_data.get("quad_boxes", []), r_data.get("labels", [])):
-            if len(quad) >= 4:
-                mapped_quad = _map_quad_back(quad, preprocessed.width, preprocessed.height, rot_img.width, rot_img.height, angle)
-
-                import shapely.geometry
-
-                try:
-                    poly = shapely.geometry.Polygon([(mapped_quad[0], mapped_quad[1]), (mapped_quad[2], mapped_quad[3]), (mapped_quad[4], mapped_quad[5]), (mapped_quad[6], mapped_quad[7])])
-                    if not poly.is_valid:
-                        poly = poly.buffer(0)
-                    if poly.area > 0.1 * image_area:
-                        continue
-                except Exception:
-                    pass
-
-                all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(mapped_quad), "quad": mapped_quad})
 
     unique_dets = _remove_duplicate_detections(all_detections)
     all_detections = out.merge_related_detections(unique_dets)

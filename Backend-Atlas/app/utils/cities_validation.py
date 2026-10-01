@@ -74,7 +74,7 @@ _all_ = ["_city_map", "find_first_city"]
 def find_first_city(
     text: str,
     geo_bounds: Optional[Dict[str, float]] = None,
-    confidence_threshold: float = 0.80,
+    confidence_threshold: float = 0.60,
 ) -> Dict[str, Any]:
     """Return a standardized result for a city search.
 
