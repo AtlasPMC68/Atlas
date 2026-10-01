@@ -182,6 +182,17 @@
       @cancel="cancelImport"
     />
 
+    <!-- Legend area selection modal -->
+    <LegendAreaPickerModal
+      v-if="showLegendPickerModal && previewUrl"
+      :is-open="showLegendPickerModal"
+      :image-url="previewUrl"
+      :initial-bounds="legendBounds"
+      @close="handleLegendClose"
+      @skip="handleLegendSkip"
+      @confirmed="handleLegendConfirmed"
+    />
+
     <!-- Color picker modal -->
     <ColorPickerModal
       v-if="showColorPickerModal && previewUrl && selectedFile"
@@ -221,6 +232,7 @@ import type {
   CoastlineKeypoint,
   WorldAreaSelection,
 } from "../../typescript/georef";
+import type { LegendBounds } from "../../typescript/legend";
 
 // Components
 import FileDropZone from "../../components/import/FileDropZone.vue";
@@ -229,6 +241,7 @@ import ImportControls from "../../components/import/ImportControls.vue";
 import ProcessingModal from "../../components/import/ProcessingModal.vue";
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import WorldAreaPickerModal from "../../components/import/WorldAreaPickerModal.vue";
+import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 
@@ -284,17 +297,20 @@ interface GeorefPayload {
 const currentStep = ref<number>(1);
 const showWorldAreaPickerModal = ref<boolean>(false);
 const showSiftGeorefModal = ref<boolean>(false);
+const showLegendPickerModal = ref<boolean>(false);
 const showColorPickerModal = ref<boolean>(false);
 const showShapePickerModal = ref<boolean>(false);
 const worldAreaBounds = ref<WorldBounds | null>(null); // { west, south, east, north } or null
 const worldAreaZoom = ref<number | null>(null);
 const coastlineKeypoints = ref<CoastlineKeypoint[] | null>(null); // SIFT coastline keypoints from backend
+const legendBounds = ref<LegendBounds | null>(null);
 type ImposedColor = { x: number; y: number; name: string; radius: number };
 const pickedColors = ref<ImposedColor[]>([]);
 type ImposedShape = { x: number; y: number; name: string };
 const pickedShapes = ref<ImposedShape[]>([]);
 const pendingLegendBounds = ref<LegendBounds | null>(null);
 const pendingGeorefPayload = ref<GeorefPayload | null>(null);
+const legendReturnStep = ref<number>(2);
 const usedLakes = ref<boolean>(false); // Whether lakes were used to find keypoints
 
 // Dev-test: stable identifier to store assets/config under backend tests/assets
@@ -387,17 +403,24 @@ async function handleWorldAreaConfirmed(payload: WorldAreaSelection) {
 async function handleGeorefConfirmed(payload: GeorefPayload) {
   // payload: { worldPoints: [ [lat,lng], ... ], imagePoints: [ [x,y], ... ] }
   showSiftGeorefModal.value = false;
+
   pendingGeorefPayload.value = payload;
 
-  if (enableColorExtraction.value) {
-    currentStep.value = 5;
+  // Dev-test extraction ignores legend-derived colors, so the pipette is the only
+  // color source there: skip the legend step and go straight to the color picker.
+  if (isDevTest.value) {
+    pendingLegendBounds.value = null;
+    currentStep.value = 6;
     showColorPickerModal.value = true;
-  } else {
-    await submitImportWithGeoref();
+    return;
   }
+
+  legendReturnStep.value = 4;
+  currentStep.value = 5;
+  showLegendPickerModal.value = true;
 }
 
-async function submitImportWithGeoref() {
+async function submitImportWithGeoref(legend: LegendBounds | null) {
   if (!selectedFile.value) return;
 
   const payload = pendingGeorefPayload.value;
@@ -424,13 +447,14 @@ async function submitImportWithGeoref() {
       pickedColors.value.length > 0 ? pickedColors.value : undefined,
     );
     if (result.success) {
-      currentStep.value = 5;
+      currentStep.value = 6;
     } else {
       console.error("Erreur importation:", result.error);
       currentStep.value = 2;
     }
     pendingGeorefPayload.value = null;
     pickedColors.value = [];
+    pendingLegendBounds.value = null;
     return;
   }
 
@@ -456,6 +480,7 @@ async function submitImportWithGeoref() {
       imposedColors: pickedColors.value.length > 0 ? pickedColors.value : undefined,
       imposedShapes: pickedShapes.value.length > 0 ? pickedShapes.value : undefined,
     },
+    legend,
   );
   if (result.success) {
     currentStep.value = 8;
@@ -499,7 +524,7 @@ async function handleLegendConfirmed(bounds: LegendBounds) {
   showLegendPickerModal.value = false;
   legendBounds.value = bounds;
   pendingLegendBounds.value = bounds;
-
+  
   if (enableColorExtraction.value) {
     currentStep.value = 6;
     showColorPickerModal.value = true;
@@ -528,8 +553,15 @@ async function resolveProjectIdFromMapId(id: string): Promise<string | null> {
 
 function handleColorPickerClose() {
   showColorPickerModal.value = false;
-  showSiftGeorefModal.value = true;
-  currentStep.value = 4;
+  if (isDevTest.value) {
+    // No legend step in dev-test: go back to the georeferencing step.
+    showSiftGeorefModal.value = true;
+    currentStep.value = 4;
+    return;
+  }
+  // Go back to legend step
+  showLegendPickerModal.value = true;
+  currentStep.value = 5;
 }
 
 async function handleColorPickerConfirmed(
@@ -601,10 +633,12 @@ const resetImport = () => {
   currentStep.value = 1;
   showWorldAreaPickerModal.value = false;
   showSiftGeorefModal.value = false;
+  showLegendPickerModal.value = false;
   showColorPickerModal.value = false;
   showShapePickerModal.value = false;
   worldAreaBounds.value = null;
   worldAreaZoom.value = null;
+  legendBounds.value = null;
   pickedColors.value = [];
   pickedShapes.value = [];
   pendingLegendBounds.value = null;
