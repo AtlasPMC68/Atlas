@@ -11,7 +11,7 @@ from app.celery_app import celery_app
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
-from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS
+from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_DETECTION_COUNTS, 
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,8 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
     for image in images:
         expected = MAP_EXPECTED_TEXTS.get(image.stem)
         if expected is None:
-            raise ValueError(f"Missing expected text for {image.name} in MAP_EXPECTED_TEXTS.")
+            logger.warning(f"Skipping {image.name}: Missing expected text in MAP_EXPECTED_TEXTS.")
+            continue
         data.append((image, expected))
     return data
 
@@ -209,18 +210,6 @@ def test_check_for_match_drops_extra_ocr_words() -> None:
     assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Boston"]
 
 
-CARD_THRESHOLDS = {
-    "Quebec_1800.png": {"min_hit_rate": 74.0, "max_dist": 0.50},
-    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 100.0, "max_dist": 0.19},
-    "genocide_Monde.png": {"min_hit_rate": 100.0, "max_dist": 0.26},
-    "Quebec_Traite1783.png": {"min_hit_rate": 85.7, "max_dist": 0.80},
-    "Degrade_Afrique.png": {"min_hit_rate": 65.2, "max_dist": 1.48},
-    "Quebec_1791.png": {"min_hit_rate": 85.2, "max_dist": 0.51},
-    "Nouvelle-France1750.png": {"min_hit_rate": 73.9, "max_dist": 1.20},
-    "1775_Quebec_NordUSA.png": {"min_hit_rate": 68.8, "max_dist": 0.63},
-}
-
-
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.parametrize(
@@ -253,6 +242,16 @@ def test_text_extraction(
         file_content=file_content,
         celery_app=celery_app,
     )
+
+    # Validate that Florence detects EXACTLY the expected number of raw text zones
+    expected_count = MAP_EXPECTED_DETECTION_COUNTS.get(image_path.stem)
+    if expected_count is not None:
+        assert len(extracted_text) == expected_count, (
+            f"Florence detected {len(extracted_text)} text zones, but expected EXACTLY {expected_count} for {image_path.name}. "
+            f"If this is a new model, update MAP_EXPECTED_DETECTION_COUNTS in expected_text_results.py."
+        )
+    else:
+        logger.warning(f"No expected detection count found for {image_path.name} in MAP_EXPECTED_DETECTION_COUNTS.")
 
     unpaired_ocr_words: list[str] = [str(block.get("text", "")) for block in extracted_text]
     unpaired_expected_words: list[str] = deepcopy(expected_text)

@@ -1,4 +1,3 @@
-import gc
 import logging
 import os
 from typing import Any, Tuple
@@ -13,11 +12,11 @@ os.environ.setdefault("HF_HOME", "/app/models")
 app = Celery(
     "florence_worker",
     broker=os.environ.get("CELERY_BROKER_URL") or os.environ.get("REDIS_URL") or "redis://redis:6379/0",
+    backend=os.environ.get("CELERY_BROKER_URL") or os.environ.get("REDIS_URL") or "redis://redis:6379/0",
 )
 app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True
 
-# KEEP_MODEL_IN_MEMORY = os.environ.get("KEEP_MODEL_IN_MEMORY", "true").lower() == "true"
 _CACHED_MODEL: Any = None
 _CACHED_PROCESSOR: Any = None
 _CACHED_CONFIG: dict[str, Any] | None = None
