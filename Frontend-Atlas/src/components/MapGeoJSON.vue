@@ -27,7 +27,7 @@ import "leaflet-arrowheads";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { useAddCityMode } from "../composables/useAddCityMode";
 import { useImageOverlay } from "../composables/useImageOverlay";
-import { colorRgbToCss, getMapElementType, upsertFeature } from "../utils/featureHelpers";
+import { colorRgbToCss, getMapElementType, upsertFeature, getDefaultLayer } from "../utils/featureHelpers";
 import {
   extractFeatureFromLayer,
   syncFeaturesFromLayerMap,
@@ -69,6 +69,7 @@ const emit = defineEmits<{
   (e: "map-ready", map: L.Map): void;
   (e: "undo"): void;
   (e: "redo"): void;
+  (e: "edit-feature-request", feature: Feature): void;
 }>();
 
 const previousFeatureIds = ref(new Set<FeatureId>());
@@ -171,6 +172,15 @@ const featureLayerManager = {
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
       selectedFeatureId.value = id;
+    });
+
+    layer.on("dblclick", () => {
+      if (selectedFeatureId.value === id) {
+        const feature = props.features.find((f) => String(f.id) === id);
+        if (feature) {
+          emit("edit-feature-request", feature);
+        }
+      }
     });
 
     const isVisible = props.featureVisibility.get(id) ?? true;
@@ -700,25 +710,24 @@ function renderAllFeatures() {
     }
   });
 
-  const featuresByType = {
-    point: currentFeatures.filter((f) => getMapElementType(f) === "point"),
-    zone: currentFeatures.filter((f) => getMapElementType(f) === "zone"),
-    shape: currentFeatures.filter((f) => getMapElementType(f) === "shape"),
-    label: currentFeatures.filter((f) => getMapElementType(f) === "label"),
-    polyline: currentFeatures.filter(
-      (f) => getMapElementType(f) === "polyline",
-    ),
-    arrow: currentFeatures.filter((f) => getMapElementType(f) === "arrow"),
-    image: currentFeatures.filter((f) => getMapElementType(f) === "image"),
-  };
+  const sortedFeatures = [...currentFeatures].sort((a, b) => {
+    const layerA = a.properties.layer ?? getDefaultLayer(getMapElementType(a));
+    const layerB = b.properties.layer ?? getDefaultLayer(getMapElementType(b));
+    return layerA - layerB;
+  });
 
-  renderCities(featuresByType.point);
-  renderLabels(featuresByType.label);
-  renderZones(featuresByType.zone);
-  renderArrows(featuresByType.arrow);
-  renderPolylines(featuresByType.polyline);
-  renderShapes(featuresByType.shape);
-  renderImages(featuresByType.image);
+  sortedFeatures.forEach((feature) => {
+    const type = getMapElementType(feature);
+    switch (type) {
+      case "zone": renderZones([feature]); break;
+      case "shape": renderShapes([feature]); break;
+      case "polyline": renderPolylines([feature]); break;
+      case "arrow": renderArrows([feature]); break;
+      case "point": renderCities([feature]); break;
+      case "label": renderLabels([feature]); break;
+      case "image": renderImages([feature]); break;
+    }
+  });
 
   // Re-attach image interaction if the selected feature was re-rendered
   if (selectedFeatureId.value) {
