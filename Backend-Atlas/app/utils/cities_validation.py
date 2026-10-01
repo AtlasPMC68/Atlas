@@ -40,6 +40,12 @@ def _normalize_query(s: str) -> str:
     return s.casefold().strip()
 
 
+def _parse_population(pop_val: Any) -> int:
+    try:
+        return int(pop_val or 0)
+    except (TypeError, ValueError):
+        return 0
+
 # Load geonamescache cities into a mapping: normalized name -> list of candidate dicts
 _gc = geonamescache.GeonamesCache()
 _city_map: Dict[str, List[Dict[str, Any]]] = {}
@@ -56,7 +62,7 @@ for info in _gc.get_cities().values():
         "lat": lat,
         "lon": lon,
         "country": country,
-        "population": info.get("population"),
+        "population": _parse_population(info.get("population")),
     }
 
     key = _normalize(name)
@@ -68,7 +74,7 @@ for info in _gc.get_cities().values():
 
 import difflib
 
-_all_ = ["_city_map", "find_first_city"]
+__all__ = ["_city_map", "find_first_city"]
 
 
 def find_first_city(
@@ -123,13 +129,7 @@ def find_first_city(
     if not candidates:
         return result
 
-    def pop_key(c: Dict[str, Any]) -> int:
-        try:
-            return int(c.get("population") or 0)
-        except Exception:
-            return 0
-
-    best = max(candidates, key=pop_key)
+    best = max(candidates, key=lambda c: c.get("population", 0))
     result.update(
         {
             "found": True,
