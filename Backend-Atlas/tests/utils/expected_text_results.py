@@ -33,7 +33,7 @@ MAP_EXPECTED_ZONE_DETECTION_COUNTS = {
     "Quebec_1800": 37,
     "Quebec_Traite1783": 44,
     "Degrade_Afrique": 31,
-    "Quebec_Cities_Only": 9,
+    "Quebec_Cities_Only": 30,
 }
 
 CARD_THRESHOLDS = {
