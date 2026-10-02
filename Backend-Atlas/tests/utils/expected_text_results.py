@@ -20,17 +20,17 @@ MAP_EXPECTED_TEXTS = {
     "Degrade_Afrique":      ["Dakar", "Abidjan", "Lomé", "Douala"],
 }
 
-# Nombre total brut de zones de texte que Florence est censée détecter (avant rejet)
-# TODO: Mettre à jour ces valeurs avec les vrais nombres retournés par le test test_florence_raw_detection_count
-MAP_EXPECTED_DETECTION_COUNTS = {
-    "1775_Quebec_NordUSA": 14,
-    "genocide_Monde": 6,
-    "Nouvelle-France1750": 20,
-    "Progress_wehrmacht_lux_May_1940": 6,
-    "Quebec_1791": 16,
-    "Quebec_1800": 18,
-    "Quebec_Traite1783": 15,
-    "Degrade_Afrique": 9,
+# Total raw number of text zones that Florence is expected to detect (before rejection)
+# Updated with actual detection counts returned by test_florence_raw_detection_count
+MAP_EXPECTED_ZONE_DETECTION_COUNTS = {
+    "1775_Quebec_NordUSA": 19,
+    "genocide_Monde": 17,
+    "Nouvelle-France1750": 66,
+    "Progress_wehrmacht_lux_May_1940": 14,
+    "Quebec_1791": 35,
+    "Quebec_1800": 37,
+    "Quebec_Traite1783": 44,
+    "Degrade_Afrique": 31,
 }
 
 CARD_THRESHOLDS = {

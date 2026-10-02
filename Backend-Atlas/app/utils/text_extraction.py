@@ -343,5 +343,5 @@ def extract_text(
         file_content=file_content,
         celery_app=celery_app,
     )
-    logger.info(f"OCR pipeline completed: {len(extracted_text)} detections extracted from {filename}")
+    logger.info(f"==> [OCR] Florence-2 : {len(extracted_text)} zones de texte détectées sur {filename}")
     return extracted_text, text_regions

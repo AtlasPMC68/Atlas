@@ -5,10 +5,7 @@ metadata_key = pytest.StashKey[Dict[str, float]]()
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: Any, call: Any) -> Generator[None, None, None]:
-    """
-    Hook implementation to capture custom test item metadata.
-    Transfers metadata from test items onto the test execution report using pytest stash.
-    """
+    """Transfer test item metadata to test execution report."""
     outcome = yield
     report = outcome.get_result()
     metadata = item.stash.get(metadata_key, None)
@@ -17,10 +14,7 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Generator[None, None, Non
 
 
 def pytest_report_teststatus(report: Any, config: Any) -> tuple[str, str, str] | None:
-    """
-    Custom status reporting formatter for pytest execution.
-    Formats pass/fail test status messages with hit_rate and average_distance metadata metrics.
-    """
+    """Format test execution status with hit_rate and average_distance metrics."""
     if report.when == "call" and hasattr(report, "user_metadata"):
         hit_rate = report.user_metadata.get("hit_rate", 0.0)
         d_average = report.user_metadata.get("average_distance", 0.0)
@@ -41,10 +35,7 @@ def pytest_report_teststatus(report: Any, config: Any) -> tuple[str, str, str] |
 
 
 def pytest_collection_modifyitems(config: Any, items: list[Any]) -> None:
-    """
-    Modify collected test items prior to test execution.
-    Skips integration and slow tests when running with parallel pytest-xdist workers.
-    """
+    """Skip integration and slow tests when running with parallel xdist workers."""
     if config.getoption("numprocesses", default=None):
         skip_marker = pytest.mark.skip(
             reason="integration tests run sequentially, not with -n"
@@ -54,13 +45,20 @@ def pytest_collection_modifyitems(config: Any, items: list[Any]) -> None:
                 item.add_marker(skip_marker)
 
 
+def pytest_addoption(parser: Any) -> None:
+    """Register extraction_log_info ini option."""
+    parser.addini(
+        "extraction_log_info",
+        type="bool",
+        default=True,
+        help="Enable detailed logs for text extraction",
+    )
+
+
 def pytest_configure(config: Any) -> None:
-    """
-    Configure custom markers and warning filters for test session initialization.
-    Registers 'integration' and 'slow' markers and suppresses known deprecation warnings.
-    """
-    config.addinivalue_line("markers", "integration: marks tests as integration")
-    config.addinivalue_line("markers", "slow: marks tests as slow-running")
+    """Configure custom markers, warnings and custom summary reporter for pytest."""
+    config.addinivalue_line("markers", "integration: integration tests")
+    config.addinivalue_line("markers", "slow: slow running tests")
     config.addinivalue_line(
         "filterwarnings",
         "ignore:.*Please use `import python_multipart` instead.*:PendingDeprecationWarning",
@@ -69,3 +67,34 @@ def pytest_configure(config: Any) -> None:
         "filterwarnings",
         "ignore::PendingDeprecationWarning:starlette.formparsers",
     )
+
+    terminalreporter = config.pluginmanager.get_plugin("terminalreporter")
+    if terminalreporter is not None:
+        original_summary_failures = terminalreporter.summary_failures
+
+        def custom_summary_failures():
+            reports = terminalreporter.getreports("failed")
+            if not reports:
+                return
+
+            original_summary_failures()
+
+        original_build_summary_stats_line = getattr(terminalreporter, "_outrep_summary", None)
+        if original_build_summary_stats_line:
+            def custom_outrep_summary(rep):
+                if rep.failed and hasattr(rep, "user_metadata") and "card_name" in rep.user_metadata:
+                    m = rep.user_metadata
+                    card = m.get("card_name", "")
+                    hit = m.get("hit_rate", 0.0)
+                    min_hit = m.get("min_hit_rate", 0.0)
+                    dist = m.get("average_distance", 0.0)
+                    max_d = m.get("max_dist", 0.0)
+                    markup = {"red": True, "bold": True}
+                    terminalreporter._tw.line(
+                        f"FAILED (hit_rate={hit:.0f}% VS {min_hit:.0f}%, d_average={dist:.2f} vs {max_d:.2f}): {card}",
+                        **markup,
+                    )
+                    return
+                original_build_summary_stats_line(rep)
+
+            terminalreporter._outrep_summary = custom_outrep_summary

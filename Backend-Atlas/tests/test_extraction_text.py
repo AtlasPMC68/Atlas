@@ -12,7 +12,7 @@ from app.utils.cities_validation import get_city_with_max_population
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
-from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_DETECTION_COUNTS, CARD_THRESHOLDS
+from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_ZONE_DETECTION_COUNTS, CARD_THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,11 @@ RESET = "\033[0m"
 
 
 @pytest.fixture(autouse=True)
-def clean_log_format_for_extraction():
-    """Format logs as '%(levelname)-8s %(message)s' and enable INFO level specifically for text extraction tests."""
+def clean_log_format_for_extraction(request: pytest.FixtureRequest):
+    """Format logs without module prefixes and set log level configured in pytest.ini."""
+    show_info = request.config.getini("extraction_log_info")
+    target_level = logging.INFO if show_info else logging.WARNING
+
     clean_formatter = logging.Formatter("%(levelname)-8s %(message)s")
 
     captured_handlers = []
@@ -36,10 +39,10 @@ def clean_log_format_for_extraction():
         captured_handlers.append((handler, handler.formatter))
         old_levels.append((handler, handler.level))
         handler.setFormatter(clean_formatter)
-        handler.setLevel(logging.INFO)
+        handler.setLevel(target_level)
 
     old_root_level = logging.root.level
-    logging.root.setLevel(logging.INFO)
+    logging.root.setLevel(target_level)
 
     yield
 
@@ -51,7 +54,7 @@ def clean_log_format_for_extraction():
 
 
 def get_image_paths() -> list[Path]:
-    """Collect all valid image file paths from tests/assets directory with supported extensions."""
+    """Retrieve all test image paths from the tests/assets directory."""
     valid_extensions = (
         ".jpg",
         ".jpeg",
@@ -69,30 +72,27 @@ def get_image_paths() -> list[Path]:
     assets_dir = current_dir / "assets"
 
     if not assets_dir.exists():
-        pytest.fail(f"Searching for assets in non-existent directory: {assets_dir}")
+        pytest.fail(f"Directory not found: {assets_dir}")
         return []
 
     return [p for p in assets_dir.iterdir() if p.suffix.lower() in valid_extensions]
 
 
 def get_test_data() -> list[tuple[Path, list[str]]]:
-    """Load image paths and their corresponding expected ground truth text lists for testing."""
+    """Load map paths and their corresponding expected ground truth texts."""
     images = get_image_paths()
     data: list[tuple[Path, list[str]]] = []
     for image in images:
         expected = MAP_EXPECTED_TEXTS.get(image.stem)
         if expected is None:
-            logger.warning(f"Skipping {image.name}: Missing expected text in MAP_EXPECTED_TEXTS.")
+            logger.warning(f"Skipping {image.name}: expected text missing in MAP_EXPECTED_TEXTS.")
             continue
         data.append((image, expected))
     return data
 
 
 def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
-    # Text normalization:
-    # - Replaces with space: \n, -, (), :, ;, ?, !, ", «, », /, \
-    # - Removes completely: ' (straight apostrophe), \u2019 (typographic apostrophe), ., ,
-
+    """Normalize a list of strings into lowercase ASCII without punctuation."""
     res = []
     for word in text:
         cleaned = (
@@ -124,11 +124,7 @@ def check_for_match(
     actual: list[str],
     expected: list[str],
 ) -> list[tuple[str, tuple[str, float]]]:
-    """
-    Map each OCR word to the closest expected word and calculate Levenshtein distance.
-    Uses an O(1) exact match fast-path, followed by a global best-match approach
-    for fuzzy matches to prevent 'word stealing'.
-    """
+    """Match each OCR word with the closest expected word and compute Levenshtein distance."""
     actual_ascii = normalize_array_to_ascii_format(actual)
     expected_ascii = normalize_array_to_ascii_format(expected)
 
@@ -206,7 +202,11 @@ def calculate_match_metrics(
     valid_distances = [distance for _, (_, distance) in matches if distance < 500.0]
     total_distance = sum(valid_distances)
 
-    matched_expected_words = {expected_word for _, (expected_word, distance) in matches if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))}
+    matched_expected_words = {
+        expected_word
+        for _, (expected_word, distance) in matches
+        if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))
+    }
     box_find_rate = (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
 
     average_dist = total_distance / len(valid_distances) if valid_distances else 0.0
@@ -227,13 +227,31 @@ def test_match_metrics_count_expected_coverage_once() -> None:
 
 
 def test_check_for_match_drops_extra_ocr_words() -> None:
-    """Verify that check_for_match drops extra OCR words (like legends) that do not match expected words."""
+    """Verify that check_for_match drops extra OCR words that do not match expected words."""
     actual = ["Quebec", "Boston", "Légende: territoires"]
     expected = ["Québec", "Boston"]
 
     matches = check_for_match(actual, expected)
 
     assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Boston"]
+
+
+_OCR_RESULT_CACHE: dict[Path, list[dict[str, Any]]] = {}
+
+
+def get_extracted_text_cached(image_path: Path) -> list[dict[str, Any]]:
+    """Execute Florence-2 OCR pipeline once per image and cache result across tests."""
+    if image_path not in _OCR_RESULT_CACHE:
+        with open(image_path, "rb") as input_file:
+            file_content = input_file.read()
+        extracted_text, _ = extract_text(
+            map_id=uuid4(),
+            filename=image_path.name,
+            file_content=file_content,
+            celery_app=celery_app,
+        )
+        _OCR_RESULT_CACHE[image_path] = extracted_text
+    return _OCR_RESULT_CACHE[image_path]
 
 
 @pytest.mark.integration
@@ -243,36 +261,42 @@ def test_check_for_match_drops_extra_ocr_words() -> None:
     get_test_data(),
     ids=lambda val: val.name if isinstance(val, Path) else None,
 )
-def test_text_extraction(
+def test_florence_raw_detection_count(
+    image_path: Path,
+    expected_text: list[str],
+) -> None:
+    """Test raw count of text zones detected by Florence-2 without evaluating textual accuracy."""
+    assert image_path.exists()
+    expected_count = MAP_EXPECTED_ZONE_DETECTION_COUNTS.get(image_path.stem)
+    if expected_count is None:
+        pytest.skip(f"No expected detection count in MAP_EXPECTED_DETECTION_COUNTS for {image_path.name}")
+
+    extracted_text = get_extracted_text_cached(image_path)
+    actual_count = len(extracted_text)
+
+    assert actual_count == expected_count, (
+        f"Text zones (Florence-2): {actual_count} detected " f"vs {expected_count} expected in MAP_EXPECTED_DETECTION_COUNTS"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "image_path, expected_text",
+    get_test_data(),
+    ids=lambda val: val.name if isinstance(val, Path) else None,
+)
+def test_text_extraction_accuracy(
     image_path: Path,
     expected_text: list[str],
     request: pytest.FixtureRequest,
 ) -> None:
-    """Run full OCR pipeline integration test on test asset images and validate accuracy metrics."""
+    """Validate full text extraction accuracy (Hit Rate, Levenshtein distance, GeoNamesCache)."""
     assert image_path.exists()
 
-    logger.info(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Attendu: {len(expected_text)} mots)")
+    logger.info(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Expected: {len(expected_text)} words)")
 
-    with open(image_path, "rb") as input_file:
-        file_content = input_file.read()
-    extracted_text, _ = extract_text(
-        map_id=uuid4(),
-        filename=image_path.name,
-        file_content=file_content,
-        celery_app=celery_app,
-    )
-
-    # Check Florence raw text zones count without blocking the rest of the pipeline
-    expected_count = MAP_EXPECTED_DETECTION_COUNTS.get(image_path.stem)
-    count_passed = True
-    count_error_msg = ""
-    if expected_count is not None:
-        if len(extracted_text) != expected_count:
-            count_passed = False
-            count_error_msg = f"Zones: {len(extracted_text)} détectées vs {expected_count} attendues"
-            logger.warning(f"⚠️ [{image_path.name}] {count_error_msg}")
-    else:
-        logger.warning(f"No expected detection count found for {image_path.name} in MAP_EXPECTED_DETECTION_COUNTS.")
+    extracted_text = get_extracted_text_cached(image_path)
 
     unpaired_ocr_words: list[str] = [str(block.get("text", "")) for block in extracted_text]
     unpaired_expected_words: list[str] = deepcopy(expected_text)
@@ -282,11 +306,7 @@ def test_text_extraction(
         unpaired_expected_words,
     )
 
-    mismatches = [
-        (expected_word, ocr_word, distance)
-        for ocr_word, (expected_word, distance) in results
-        if distance > 0.1
-    ]
+    mismatches = [(expected_word, ocr_word, distance) for ocr_word, (expected_word, distance) in results if distance > 0.1]
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
@@ -296,11 +316,11 @@ def test_text_extraction(
 
     hit_rate_passed = round(box_find_rate, 2) >= min_hit_rate
     dist_passed = round(average_dist, 2) <= max_dist
-    is_passed = hit_rate_passed and dist_passed and count_passed
+    is_passed = hit_rate_passed and dist_passed
 
     if is_passed:
         status_color, status_icon, status_text = GREEN, "✅", "PASS"
-    elif (hit_rate_passed and dist_passed) or (hit_rate_passed and count_passed):
+    elif hit_rate_passed or dist_passed:
         status_color, status_icon, status_text = YELLOW, "⚠️", "WARNING"
     else:
         status_color, status_icon, status_text = RED, "❌", "FAIL"
@@ -322,31 +342,39 @@ def test_text_extraction(
         f"\n{status_icon} {status_color}{BOLD}[{status_text}] {card_name_fmt}{RESET}",
         f"   • Hit Rate : {hit_color}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)",
         f"   • Distance : {dist_color}{average_dist:.2f}{RESET} (max: {max_dist})",
-        f"   • Mots OCR : {BLUE}{len(unpaired_ocr_words)}{RESET} détectés / {len(unpaired_expected_words)} attendus",
-        f"   • Géocache : {GREEN}{len(geocache_accepted)} acceptés{RESET} vs {RED}{len(geocache_unrecognized)} non reconnus{RESET}",
+        f"   • OCR Words: {BLUE}{len(unpaired_ocr_words)}{RESET} detected / {len(unpaired_expected_words)} expected",
+        f"   • GeoNames : {GREEN}{len(geocache_accepted)} accepted{RESET} vs {RED}{len(geocache_unrecognized)} unrecognized{RESET}",
     ]
 
-    if not count_passed:
-        summary_lines.append(f"   • {YELLOW}Écart zones de texte :{RESET} {RED}{count_error_msg}{RESET}")
-    if geocache_unrecognized:
-        summary_lines.append(f"   • {YELLOW}Non reconnus géocache :{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}")
-    if mismatches:
-        mismatches.sort(key=lambda x: x[2], reverse=True)
-        summary_lines.append(f"   • {YELLOW}Écarts de détection (mots approximatifs ou manqués) :{RESET}")
-        for expected_word, ocr_word, distance in mismatches:
-            if distance > 500:
-                summary_lines.append(f"       - Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
-            else:
-                d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
-                summary_lines.append(f"       - Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
+    show_detailed_mismatches = request.config.getini("extraction_log_info")
+    if show_detailed_mismatches:
+        if geocache_unrecognized:
+            summary_lines.append(
+                f"   • {YELLOW}Unrecognized GeoNames:{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}"
+            )
+        if mismatches:
+            mismatches.sort(key=lambda x: x[2], reverse=True)
+            summary_lines.append(f"   • {YELLOW}Detection mismatches (approximate or missing words):{RESET}")
+            for expected_word, ocr_word, distance in mismatches:
+                if distance > 500:
+                    summary_lines.append(f"       - Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
+                else:
+                    d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
+                    summary_lines.append(
+                        f"       - Expected: '{BOLD}{expected_word}{RESET}' | Found: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})"
+                    )
 
     log_fn = logger.error if status_text == "FAIL" else logger.warning
     log_fn("\n".join(summary_lines))
 
     from tests.conftest import metadata_key
+
     request.node.stash[metadata_key] = {
+        "card_name": image_path.name,
         "average_distance": average_dist,
         "hit_rate": box_find_rate,
+        "min_hit_rate": min_hit_rate,
+        "max_dist": max_dist,
     }
 
     reasons = []
@@ -354,8 +382,6 @@ def test_text_extraction(
         reasons.append(f"Hit={box_find_rate:.1f}% (min {min_hit_rate}%)")
     if not dist_passed:
         reasons.append(f"Dist={average_dist:.2f} (max {max_dist})")
-    if not count_passed:
-        reasons.append(count_error_msg)
 
-    error_msg = f"ÉCHEC {image_path.name}: " + ", ".join(reasons)
+    error_msg = f"FAILED {image_path.name}: " + ", ".join(reasons)
     assert is_passed, error_msg
