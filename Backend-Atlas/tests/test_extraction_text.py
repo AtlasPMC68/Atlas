@@ -350,7 +350,8 @@ def test_text_extraction_accuracy(
     for word in unpaired_ocr_words:
         candidate = get_city_with_max_population(word, confidence_threshold=0.60)
         if candidate.get("found"):
-            geocache_accepted.append(word)
+            matched_name = candidate.get("name")
+            geocache_accepted.append(f"'{word}' -> '{matched_name}'")
         else:
             geocache_unrecognized.append(word)
 
@@ -364,6 +365,10 @@ def test_text_extraction_accuracy(
 
     show_detailed_mismatches = request.config.getini("extraction_log_info")
     if show_detailed_mismatches:
+        if geocache_accepted:
+            summary_lines.append(
+                f"   • {GREEN}Accepted GeoNames:{RESET} {', '.join(geocache_accepted)}"
+            )
         if geocache_unrecognized:
             summary_lines.append(
                 f"   • {YELLOW}Unrecognized GeoNames:{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}"
