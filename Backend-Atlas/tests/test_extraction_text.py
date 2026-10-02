@@ -279,6 +279,7 @@ def get_extracted_text_cached(image_path: Path) -> list[dict[str, Any]]:
 )
 def test_florence_raw_detection_count(
     image_path: Path,
+    expected_text: list[str],
 ) -> None:
     """Test raw count of text zones detected by Florence-2 without evaluating textual accuracy."""
     assert image_path.exists()

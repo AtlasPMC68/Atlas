@@ -33,10 +33,12 @@ def _normalize(s: str) -> str:
 
 def _normalize_query(s: str) -> str:
     """Like _normalize but also replaces punctuation and extra whitespace with single spaces."""
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
-    s = re.sub(r"\s+", " ", s)
+    clean_text = re.sub(r"[^a-zA-ZÀ-ÖØ-öø-ÿ\s'\-]", "", s)
+    clean_text = " ".join(clean_text.split())
+    clean_text = unicodedata.normalize("NFKD", s)
+    clean_text = "".join(c for c in s if not unicodedata.combining(c))
+    clean_text = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    clean_text = re.sub(r"\s+", " ", s)
     return s.casefold().strip()
 
 
@@ -45,6 +47,7 @@ def _parse_population(pop_val: Any) -> int:
         return int(pop_val or 0)
     except (TypeError, ValueError):
         return 0
+
 
 # Load geonamescache cities into a mapping: normalized name -> list of candidate dicts
 _gc = geonamescache.GeonamesCache()
@@ -105,10 +108,7 @@ def get_city_with_max_population(
         "matched_text": None,
     }
 
-    clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text)
-    clean_text = " ".join(clean_text.split()).strip(" .,;:!?()[]{}'\"")
-
-    key = _normalize_query(clean_text)
+    key = _normalize_query(text)
     if not key:
         return result
 
@@ -127,8 +127,9 @@ def get_city_with_max_population(
 
     if geo_bounds is not None:
         candidates = [
-            c for c in candidates 
-            if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"] 
+            c
+            for c in candidates
+            if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"]
             and geo_bounds["min_lon"] <= c["lon"] <= geo_bounds["max_lon"]
         ]
 
