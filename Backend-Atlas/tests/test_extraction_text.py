@@ -226,7 +226,7 @@ def test_text_extraction(
     """Run full OCR pipeline integration test on test asset images and validate accuracy metrics."""
     assert image_path.exists()
 
-    logger.info(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Attendu: {len(expected_text)} mots)")
+    logger.warning(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Attendu: {len(expected_text)} mots)")
 
     with open(image_path, "rb") as input_file:
         file_content = input_file.read()
@@ -301,33 +301,22 @@ def test_text_extraction(
         f"Géocache: {GREEN}{len(geocache_accepted)} acceptés{RESET} vs {RED}{len(geocache_unrecognized)} non reconnus{RESET}"
     )
 
-    if is_passed:
-        logger.info(summary)
-        if mismatches:
-            mismatches.sort(key=lambda x: x[2], reverse=True)
-            logger.info(f"  {YELLOW}Écarts de détection (mots approximatifs ou manqués) :{RESET}")
-            for expected_word, ocr_word, distance in mismatches:
-                if distance > 500:
-                    logger.info(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
-                else:
-                    d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
-                    logger.info(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
-    else:
-        log_fn = logger.warning if status_text == "WARNING" else logger.error
-        log_fn(summary)
-        if not count_passed:
-            log_fn(f"  {YELLOW}Écart de détection :{RESET} {RED}{count_error_msg}{RESET}")
-        if geocache_unrecognized:
-            log_fn(f"  {YELLOW}Mots non reconnus par la géocache :{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}")
-        if mismatches:
-            mismatches.sort(key=lambda x: x[2], reverse=True)
-            log_fn(f"  {YELLOW}Mots manquants ou mal reconnus :{RESET}")
-            for expected_word, ocr_word, distance in mismatches:
-                if distance > 500:
-                    log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
-                else:
-                    d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
-                    log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
+    log_fn = logger.error if status_text == "FAIL" else logger.warning
+    log_fn(summary)
+
+    if not count_passed:
+        log_fn(f"  {YELLOW}Écart de détection :{RESET} {RED}{count_error_msg}{RESET}")
+    if geocache_unrecognized:
+        log_fn(f"  {YELLOW}Mots non reconnus par la géocache :{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}")
+    if mismatches:
+        mismatches.sort(key=lambda x: x[2], reverse=True)
+        log_fn(f"  {YELLOW}Écarts de détection (mots approximatifs ou manqués) :{RESET}")
+        for expected_word, ocr_word, distance in mismatches:
+            if distance > 500:
+                log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
+            else:
+                d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
+                log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
 
     from tests.conftest import metadata_key
     request.node.stash[metadata_key] = {
