@@ -12,7 +12,7 @@ from app.utils.cities_validation import get_city_with_max_population
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
-from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_DETECTION_COUNTS
+from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_DETECTION_COUNTS, CARD_THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +260,7 @@ def test_text_extraction(
     mismatches = [
         (expected_word, ocr_word, distance)
         for ocr_word, (expected_word, distance) in results
-        if distance > 1.0
+        if distance > 0.1
     ]
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
@@ -303,6 +303,15 @@ def test_text_extraction(
 
     if is_passed:
         logger.info(summary)
+        if mismatches:
+            mismatches.sort(key=lambda x: x[2], reverse=True)
+            logger.info(f"  {YELLOW}Écarts de détection (mots approximatifs ou manqués) :{RESET}")
+            for expected_word, ocr_word, distance in mismatches:
+                if distance > 500:
+                    logger.info(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
+                else:
+                    d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
+                    logger.info(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
     else:
         log_fn = logger.warning if status_text == "WARNING" else logger.error
         log_fn(summary)
