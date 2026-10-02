@@ -25,6 +25,31 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 
+@pytest.fixture(autouse=True)
+def clean_log_format_for_extraction():
+    """Format logs as '%(levelname)-8s %(message)s' and enable INFO level specifically for text extraction tests."""
+    clean_formatter = logging.Formatter("%(levelname)-8s %(message)s")
+
+    captured_handlers = []
+    old_levels = []
+    for handler in logging.root.handlers:
+        captured_handlers.append((handler, handler.formatter))
+        old_levels.append((handler, handler.level))
+        handler.setFormatter(clean_formatter)
+        handler.setLevel(logging.INFO)
+
+    old_root_level = logging.root.level
+    logging.root.setLevel(logging.INFO)
+
+    yield
+
+    for handler, original_formatter in captured_handlers:
+        handler.setFormatter(original_formatter)
+    for handler, original_level in old_levels:
+        handler.setLevel(original_level)
+    logging.root.setLevel(old_root_level)
+
+
 def get_image_paths() -> list[Path]:
     """Collect all valid image file paths from tests/assets directory with supported extensions."""
     valid_extensions = (
@@ -226,7 +251,7 @@ def test_text_extraction(
     """Run full OCR pipeline integration test on test asset images and validate accuracy metrics."""
     assert image_path.exists()
 
-    logger.warning(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Attendu: {len(expected_text)} mots)")
+    logger.info(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Attendu: {len(expected_text)} mots)")
 
     with open(image_path, "rb") as input_file:
         file_content = input_file.read()
@@ -293,30 +318,30 @@ def test_text_extraction(
         else:
             geocache_unrecognized.append(word)
 
-    summary = (
-        f"{status_icon} {status_color}{BOLD}[{status_text}] {card_name_fmt}{RESET} | "
-        f"Hit: {hit_color}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%) | "
-        f"Dist: {dist_color}{average_dist:.2f}{RESET} (max: {max_dist}) | "
-        f"Mots détectés par florence/ Mots non-rejetés: {BLUE}{len(unpaired_ocr_words)}{RESET}/{len(unpaired_expected_words)} | "
-        f"Géocache: {GREEN}{len(geocache_accepted)} acceptés{RESET} vs {RED}{len(geocache_unrecognized)} non reconnus{RESET}"
-    )
-
-    log_fn = logger.error if status_text == "FAIL" else logger.warning
-    log_fn(summary)
+    summary_lines = [
+        f"\n{status_icon} {status_color}{BOLD}[{status_text}] {card_name_fmt}{RESET}",
+        f"   • Hit Rate : {hit_color}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)",
+        f"   • Distance : {dist_color}{average_dist:.2f}{RESET} (max: {max_dist})",
+        f"   • Mots OCR : {BLUE}{len(unpaired_ocr_words)}{RESET} détectés / {len(unpaired_expected_words)} attendus",
+        f"   • Géocache : {GREEN}{len(geocache_accepted)} acceptés{RESET} vs {RED}{len(geocache_unrecognized)} non reconnus{RESET}",
+    ]
 
     if not count_passed:
-        log_fn(f"  {YELLOW}Écart de détection :{RESET} {RED}{count_error_msg}{RESET}")
+        summary_lines.append(f"   • {YELLOW}Écart zones de texte :{RESET} {RED}{count_error_msg}{RESET}")
     if geocache_unrecognized:
-        log_fn(f"  {YELLOW}Mots non reconnus par la géocache :{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}")
+        summary_lines.append(f"   • {YELLOW}Non reconnus géocache :{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}")
     if mismatches:
         mismatches.sort(key=lambda x: x[2], reverse=True)
-        log_fn(f"  {YELLOW}Écarts de détection (mots approximatifs ou manqués) :{RESET}")
+        summary_lines.append(f"   • {YELLOW}Écarts de détection (mots approximatifs ou manqués) :{RESET}")
         for expected_word, ocr_word, distance in mismatches:
             if distance > 500:
-                log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
+                summary_lines.append(f"       - Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
             else:
                 d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
-                log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
+                summary_lines.append(f"       - Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
+
+    log_fn = logger.error if status_text == "FAIL" else logger.warning
+    log_fn("\n".join(summary_lines))
 
     from tests.conftest import metadata_key
     request.node.stash[metadata_key] = {
