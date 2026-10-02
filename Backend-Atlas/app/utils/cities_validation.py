@@ -105,7 +105,10 @@ def get_city_with_max_population(
         "matched_text": None,
     }
 
-    key = _normalize_query(text)
+    clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text)
+    clean_text = " ".join(clean_text.split()).strip(" .,;:!?()[]{}'\"")
+
+    key = _normalize_query(clean_text)
     if not key:
         return result
 

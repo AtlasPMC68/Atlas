@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from typing import Any
 from uuid import UUID
@@ -202,11 +203,13 @@ def _build_extracted_text_from_detections(
             return False
 
         def process_candidate_text(text_val: str):
-            if should_ignore(text_val):
+            clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text_val)
+            clean_text = " ".join(clean_text.split()).strip(" .,;:!?()[]{}'\"")
+            if not clean_text or should_ignore(clean_text):
                 return
             extracted_text.append(
                 {
-                    "text": text_val,
+                    "text": clean_text,
                     "bbox": quad,
                     "mapElementType": "ville",
                 }
