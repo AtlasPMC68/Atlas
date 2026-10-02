@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
+from collections.abc import Iterable
 from typing import Any
 
 
@@ -70,6 +72,54 @@ def _write_json_atomically(path: str, data: dict[str, Any]) -> None:
         raise
 
 
+def _replace_files_transactionally(entries: Iterable[tuple[str, str]]) -> None:
+    replacements = list(entries)
+    backups: dict[str, str] = {}
+    replaced: list[str] = []
+    try:
+        for target_path, _temporary_path in replacements:
+            if os.path.exists(target_path):
+                fd, backup_path = tempfile.mkstemp(
+                    dir=os.path.dirname(target_path), suffix=".baseline.bak"
+                )
+                os.close(fd)
+                shutil.copyfile(target_path, backup_path)
+                backups[target_path] = backup_path
+
+        for target_path, temporary_path in replacements:
+            os.replace(temporary_path, target_path)
+            replaced.append(target_path)
+    except Exception:
+        for target_path in replaced:
+            if target_path not in backups and os.path.exists(target_path):
+                os.unlink(target_path)
+        for target_path, backup_path in backups.items():
+            if os.path.exists(backup_path):
+                os.replace(backup_path, target_path)
+        raise
+    finally:
+        for _target_path, temporary_path in replacements:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
+        for backup_path in backups.values():
+            if os.path.exists(backup_path):
+                os.unlink(backup_path)
+
+
+def _copy_to_temporary(source_path: str, target_path: str) -> str:
+    directory = os.path.dirname(target_path)
+    fd, temporary_path = tempfile.mkstemp(
+        dir=directory, suffix=f".{os.path.basename(target_path)}.tmp"
+    )
+    os.close(fd)
+    try:
+        shutil.copyfile(source_path, temporary_path)
+    except Exception:
+        os.unlink(temporary_path)
+        raise
+    return temporary_path
+
+
 def promote_best_report(config_path: str, report_path: str) -> bool:
     with open(config_path, "r", encoding="utf-8") as input_file:
         config = json.load(input_file)
@@ -104,20 +154,34 @@ def promote_best_report(config_path: str, report_path: str) -> bool:
     if not strictly_better:
         raise ValueError("Cannot promote: the new report is not strictly better")
 
-    _write_json_atomically(best_report_path, report)
-
     case_dir = os.path.dirname(report_path)
-    for source_name, target_name in (
+    source_target_pairs = [
         ("zones.geojson", "zones_best.geojson"),
         ("errors.geojson", "errors_best.geojson"),
-    ):
+    ]
+    source_paths = []
+    for source_name, target_name in source_target_pairs:
         source_path = os.path.join(case_dir, source_name)
         target_path = os.path.join(case_dir, target_name)
-        if os.path.exists(source_path):
-            temporary_path = target_path + ".tmp"
-            with open(source_path, "rb") as source, open(temporary_path, "wb") as target:
-                target.write(source.read())
-            os.replace(temporary_path, target_path)
+        if not os.path.exists(source_path):
+            raise ValueError(f"Missing promotion artifact: {source_path}")
+        source_paths.append((source_path, target_path))
+
+    temporary_paths: list[tuple[str, str]] = []
+    try:
+        report_temporary_path = os.path.join(
+            case_dir, f".{os.path.basename(best_report_path)}.tmp"
+        )
+        _write_json_atomically(report_temporary_path, report)
+        temporary_paths.append((best_report_path, report_temporary_path))
+        for source_path, target_path in source_paths:
+            temporary_paths.append((target_path, _copy_to_temporary(source_path, target_path)))
+        _replace_files_transactionally(temporary_paths)
+    except Exception:
+        for _target_path, temporary_path in temporary_paths:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
+        raise
     return True
 
 

@@ -72,6 +72,9 @@ let frontierStartRef = null; // { lineIdx, ptIdx, latlng }
 let geoBorderLines = [];
 let geoRegionsLayer = null;
 let subzoneLayerGroup = null;
+let geoBordersData = null;
+let geoBordersLoadPromise = null;
+let geoBordersAbortController = null;
 
 const featureLayerManager = {
   layers: new Map(),
@@ -482,21 +485,37 @@ async function loadGeoBorders() {
   ];
 
   try {
-    const responses = await Promise.all(
-      filenames.map((filename) => fetch(filename)),
-    );
-    const failedResponse = responses.find((response) => !response.ok);
-    if (failedResponse) {
-      throw new Error(`File not found: ${failedResponse.url}`);
+    if (!geoBordersLoadPromise) {
+      geoBordersAbortController = new AbortController();
+      geoBordersLoadPromise = Promise.all(
+        filenames.map((filename) =>
+          fetch(filename, { signal: geoBordersAbortController.signal }),
+        ),
+      )
+        .then((responses) => {
+          const failedResponse = responses.find((response) => !response.ok);
+          if (failedResponse) {
+            throw new Error(`File not found: ${failedResponse.url}`);
+          }
+          return Promise.all(responses.map((response) => response.json()));
+        })
+        .then((datasets) => ({
+          ...datasets[0],
+          features: datasets.flatMap((dataset) => dataset.features || []),
+        }))
+        .then((data) => {
+          geoBordersData = data;
+          return data;
+        })
+        .catch((error) => {
+          geoBordersLoadPromise = null;
+          geoBordersAbortController = null;
+          throw error;
+        });
     }
 
-    const datasets = await Promise.all(
-      responses.map((response) => response.json()),
-    );
-    const data = {
-      ...datasets[0],
-      features: datasets.flatMap((dataset) => dataset.features || []),
-    };
+    const data = geoBordersData || (await geoBordersLoadPromise);
+    if (isUnmounted || !map) return;
 
     if (geoRegionsLayer) {
       map.removeLayer(geoRegionsLayer);
@@ -506,8 +525,11 @@ async function loadGeoBorders() {
     const selectedIds = new Set(props.selectedGeoBorders);
     const visibleFeatures = (data.features || []).filter((feature) => {
       if (selectedIds.size === 0) return false;
+      const properties = feature?.properties;
       const borderId =
-        feature?.properties?.shapeISO || feature?.properties?.shapeID || (feature?.properties?.shapeType === "ADM0" ? feature?.properties?.shapeGroup : undefined);
+        properties?.shapeType === "ADM0"
+          ? properties.shapeGroup
+          : properties?.shapeISO || properties?.shapeID;
       return selectedIds.has(borderId);
     });
 
@@ -622,6 +644,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   isUnmounted = true;
+  geoBordersAbortController?.abort();
+  geoBordersAbortController = null;
+  geoBordersLoadPromise = null;
+  geoBordersData = null;
   if (!map) return;
 
   try {

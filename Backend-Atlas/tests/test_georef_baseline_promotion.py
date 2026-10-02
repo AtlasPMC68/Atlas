@@ -5,6 +5,22 @@ import pytest
 from app.utils.georef_baseline import promote_best_report
 
 
+def test_promote_requires_existing_baseline(tmp_path):
+    config_path = tmp_path / "config.json"
+    report_path = tmp_path / "report.json"
+    config_path.write_text(
+        json.dumps({"testId": "test-a", "testCaseId": "case-a"}), encoding="utf-8"
+    )
+    report_path.write_text(
+        json.dumps({"testId": "test-a", "testCaseId": "case-a"}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="Missing best report baseline"):
+        promote_best_report(str(config_path), str(report_path))
+
+    assert not (tmp_path / "best_report.json").exists()
+
+
 def test_promote_rejects_report_from_another_case(tmp_path):
     config = {
         "testId": "test-a",

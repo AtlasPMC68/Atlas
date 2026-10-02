@@ -248,14 +248,6 @@ def evaluate_and_persist_case(
 
     write_report(report, paths.report_path)
 
-    # Initialize the per-case reference once. Later updates must go through the
-    # explicit promotion command so CI never changes its own baseline.
-    if not os.path.exists(paths.best_report_path):
-        shutil.copyfile(paths.report_path, paths.best_report_path)
-        if os.path.exists(paths.extracted_zones_path):
-            shutil.copyfile(paths.extracted_zones_path, paths.best_zones_path)
-        shutil.copyfile(paths.errors_geojson_path, paths.best_errors_geojson_path)
-
     return report
 
 
