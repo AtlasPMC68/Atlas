@@ -1,124 +1,58 @@
 import os
-import time
 import gc
 import logging
-from typing import Any, Tuple
 
 import torch
 import numpy as np
 import preprocessing as preprocess
 import output as out
 from PIL import Image
-from transformers import AutoProcessor, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoProcessor, PreTrainedModel, ProcessorMixin
 from transformers.utils import logging as hf_transformers_logging
 
 logger = logging.getLogger(__name__)
 hf_transformers_logging.disable_progress_bar()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if "HF_HOME" not in os.environ:
-    if os.path.isdir("/app/models"):
-        os.environ["HF_HOME"] = "/app/models"
-    else:
-        os.environ["HF_HOME"] = os.path.join(BASE_DIR, "models")
-
-MODEL_ID = "microsoft/Florence-2-base"
-INPUT_DIR = os.environ.get("INPUT_DIR", "/data/input")
-SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
-MAX_NEW_TOKENS = 4096
 OCR_TASK = "<OCR_WITH_REGION>"
-CONTEXT_TASK = "<MORE_DETAILED_CAPTION>"
 
-
-def _resolve_model_path(model_id: str, hf_cache: str) -> tuple[str, bool]:
-    """
-    Resolve local snapshot directory containing config.json if available.
-    Returns (path_to_load, is_local_only).
-    """
-    if os.path.isdir(model_id) and os.path.isfile(os.path.join(model_id, "config.json")):
-        return model_id, True
-
-    candidates = [
-        hf_cache,
-        os.path.join(hf_cache, "hub"),
-        "/app/models",
-        "/app/models/hub",
-        os.path.join(BASE_DIR, "models"),
-    ]
-    sanitized = f"models--{model_id.replace('/', '--')}"
-    for base in candidates:
-        if not os.path.isdir(base):
-            continue
-        snapshots_dir = os.path.join(base, sanitized, "snapshots")
-        if os.path.isdir(snapshots_dir):
-            try:
-                for snap in sorted(os.listdir(snapshots_dir), reverse=True):
-                    snap_path = os.path.join(snapshots_dir, snap)
-                    if os.path.isdir(snap_path) and os.path.isfile(os.path.join(snap_path, "config.json")):
-                        return snap_path, True
-            except Exception:
-                pass
-
-    return model_id, False
-
-
-def get_runtime_config() -> dict:
-    """Return Florence runtime settings used for OCR inference."""
+def initialize_model() -> tuple[PreTrainedModel, ProcessorMixin, dict]:
+    """Load the Florence runtime config, model and processor for OCR inference."""
+    hf_home = os.environ.get("HF_HOME", "/app/models")
+    logger.debug("Initializing Florence model from %s", hf_home)
+    
     device = "cpu"
-    return {
-        "model_id": MODEL_ID,
+    config = {
+        "model_id": os.environ["FLORENCE_REPO_ID"],
         "torch_dtype": torch.float32 if device == "cpu" else torch.bfloat16,
         "device": device,
-        "max_new_tokens": MAX_NEW_TOKENS,
+        "max_new_tokens": int(os.environ["FLORENCE_MAX_NEW_TOKENS"]),
     }
 
-
-def list_input_images(input_dir: str) -> list[str]:
-    """List supported input image files from the configured input directory."""
-    if not os.path.isdir(input_dir):
-        return []
-    files = []
-    for name in sorted(os.listdir(input_dir)):
-        if os.path.splitext(name)[1].lower() in SUPPORTED_EXTENSIONS:
-            files.append(os.path.join(input_dir, name))
-    return files
-
-
-def load_model_and_processor(config: dict) -> tuple:
-    """Load the Florence model and processor for OCR inference."""
-    hf_home = os.environ.get("HF_HOME", "/app/models")
-    target_path, is_local = _resolve_model_path(config["model_id"], hf_home)
-
-    logger.info(
-        "Loading Florence model from %s (local_only=%s, HF_HOME=%s)",
-        target_path,
-        is_local,
-        hf_home,
-    )
     model = AutoModelForCausalLM.from_pretrained(
-        target_path,
+        config["model_id"],
+        revision=os.environ["FLORENCE_COMMIT_ID"],
         torch_dtype=config["torch_dtype"],
         trust_remote_code=True,
         attn_implementation="eager",
         cache_dir=hf_home,
-        local_files_only=is_local,
+        local_files_only=True,
     ).to(config["device"])
+    
     processor = AutoProcessor.from_pretrained(
-        target_path,
+        config["model_id"],
+        revision=os.environ["FLORENCE_COMMIT_ID"],
         trust_remote_code=True,
         cache_dir=hf_home,
-        local_files_only=is_local,
+        local_files_only=True,
     )
 
-    if getattr(model, "generation_config", None) is not None:
-        model.generation_config.early_stopping = False
-
-    logger.debug("Florence model ready.")
-    return model, processor
+    logger.debug("Florence model initialized.")
+    return model, processor, config
 
 
-def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: str, config: dict) -> dict:
+def run_inference(model: PreTrainedModel, processor: ProcessorMixin, image: Image.Image, task_prompt: str, config: dict) -> dict:
     """Run Florence inference for one task prompt and return structured output."""
+
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
 
@@ -152,37 +86,7 @@ def run_inference(model: Any, processor: Any, image: Image.Image, task_prompt: s
     )
 
 
-def get_image_context(model: Any, processor: Any, image: Image.Image, config: dict) -> str:
-    """Generate a short geographic context summary for the map image."""
-    inputs = processor(text=CONTEXT_TASK, images=image, return_tensors="pt")
-    pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
-    with torch.inference_mode():
-        generated_ids = model.generate(
-            input_ids=inputs["input_ids"],
-            pixel_values=pixel_values,
-            max_new_tokens=256,
-            do_sample=False,
-            num_beams=1,
-            early_stopping=False,
-        )
-    generated_ids = generated_ids[:, inputs["input_ids"].shape[1] :]
-    context_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-    logger.debug(f"Generated context: {context_text}")
-    return context_text
-
-
-def get_context_config() -> dict:
-    """Return Florence runtime settings specialized for context generation."""
-    device = "cpu"
-    return {
-        "model_id": MODEL_ID,
-        "torch_dtype": torch.float32 if device == "cpu" else torch.bfloat16,
-        "device": device,
-        "max_new_tokens": 256,
-    }
-
-
-def _adaptive_preprocess(image_path: str) -> Tuple[Image.Image, float, int]:
+def _adaptive_preprocess(image_path: str) -> tuple[Image.Image, float, int]:
     """
     Apply preprocessing to improve OCR quality before Florence inference.
 
@@ -230,12 +134,9 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     """Remove duplicate detections where one box overlaps >60% of another (IoA dedup)."""
     import shapely.geometry
 
-    try:
-        from app.utils.map_dictionary import MAP_DICTIONARY_LOWER
-    except ImportError:
-        MAP_DICTIONARY_LOWER = set()
+    MAP_DICTIONARY_LOWER = set()
 
-    def get_poly(d):
+    def get_poly(d: dict) -> shapely.geometry.Polygon:
         quad = d.get("quad")
         if quad and len(quad) >= 8:
             return shapely.geometry.Polygon([(quad[0], quad[1]), (quad[2], quad[3]), (quad[4], quad[5]), (quad[6], quad[7])])
@@ -280,7 +181,7 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     return unique_dets
 
 
-def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> dict:
+def run_pipeline(model: PreTrainedModel, processor: ProcessorMixin, image_path: str, config: dict) -> dict:
     """
     Run the Florence OCR pipeline on one image with adaptive preprocessing and tiling.
 
@@ -298,9 +199,6 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
         os.makedirs(prep_dir, exist_ok=True)
         prep_path = os.path.join(prep_dir, f"prep_{os.path.basename(image_path)}")
         preprocessed.save(prep_path)
-
-    enable_context = os.environ.get("ENABLE_IMAGE_CONTEXT", "false").lower() == "true"
-    context = get_image_context(model, processor, preprocessed, get_context_config()) if enable_context else ""
 
     all_detections = []
 
@@ -354,30 +252,5 @@ def run_pipeline(model: Any, processor: Any, image_path: str, config: dict) -> d
 
     return {
         "image_size": {"width": orig_width, "height": orig_height},
-        "context": context,
         "detections": all_detections,
     }
-
-
-def main() -> None:
-    """Run Florence-2 OCR pipeline over all images in the input directory."""
-    start = time.time()
-    config = get_runtime_config()
-    model, processor = load_model_and_processor(config)
-
-    images = list_input_images(INPUT_DIR)
-    if not images:
-        logger.error(f"No input images found in {INPUT_DIR}.")
-        return
-
-    for image_path in images:
-        logger.debug(f"Processing: {image_path}")
-        parsed = run_pipeline(model, processor, image_path, config)
-        intermediate_path = os.path.splitext(image_path)[0] + ".json"
-        out.save_result(image_path, intermediate_path, parsed)
-
-    logger.debug(f"Total time: {time.time() - start:.2f}s")
-
-
-if __name__ == "__main__":
-    main()

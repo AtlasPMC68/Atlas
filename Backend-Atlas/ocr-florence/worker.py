@@ -1,16 +1,14 @@
 import logging
 import os
-
-os.environ.setdefault("HF_HOME", "/app/models")
-
-from typing import Any, Tuple
 from celery import Celery
+from transformers import PreTrainedModel, ProcessorMixin
 
-import inference as florence
-from output import save_result
+import inference
+import output
 
 logger = logging.getLogger(__name__)
 
+# Setting up the OCR task queue optimally
 app = Celery(
     "florence_worker",
     broker=os.environ.get("CELERY_BROKER_URL") or os.environ.get("REDIS_URL") or "redis://redis:6379/0",
@@ -19,44 +17,32 @@ app = Celery(
 app.conf.worker_prefetch_multiplier = 1
 app.conf.task_acks_late = True
 
-_CACHED_MODEL: Any = None
-_CACHED_PROCESSOR: Any = None
-_CACHED_CONFIG: dict[str, Any] | None = None
+# Keep the model loaded in memory between each uses
+_CACHED_MODEL: PreTrainedModel | None = None
+_CACHED_PROCESSOR: ProcessorMixin | None = None
+_CACHED_CONFIG: dict | None = None
 
+def get_florence_model() -> tuple[PreTrainedModel, ProcessorMixin, dict]:
+    """Florence2 data model singleton"""
 
-def get_florence_model() -> Tuple[Any, Any, dict[str, Any]]:
-    """Retrieve cached Florence model, processor, and runtime configuration or load them on first use."""
     global _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
-    if _CACHED_MODEL is None or _CACHED_PROCESSOR is None:
-        _CACHED_CONFIG = florence.get_runtime_config()
-        _CACHED_MODEL, _CACHED_PROCESSOR = florence.load_model_and_processor(_CACHED_CONFIG)
+    if _CACHED_MODEL is None:
+        _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG = inference.initialize_model()
     return _CACHED_MODEL, _CACHED_PROCESSOR, _CACHED_CONFIG
 
-
 @app.task(name="florence.run_pipeline", soft_time_limit=840, time_limit=900)
-def run_florence(image_path: str, intermediate_path: str) -> bool:
+def run_florence(image_path: str, output_path: str) -> None:
     """
     Run the Florence OCR extraction task and return result.
-    Executes Florence text-detection on input image_path.
+
+    Args:
+        image_path: Path of the map image to process, on the shared ocr-data volume.
+        output_path: Json path where the text and textbox combinations are output, on a shared volume
     """
-    logger.info(f"Received Florence OCR task to process image: {image_path}")
+    logger.debug(f"Received Florence OCR task to process image: {image_path}")
 
     model, processor, config = get_florence_model()
-    result = florence.run_pipeline(model, processor, image_path, config)
+    result = inference.run_pipeline(model, processor, image_path, config)
 
-    save_result(image_path, intermediate_path, result)
-    logger.debug(f"Florence result saved: {intermediate_path}")
-    return True
-
-
-if __name__ == "__main__":
-    app.worker_main(
-        [
-            "worker",
-            "--loglevel=debug",
-            "--concurrency=1",
-            "--queues=florence",
-            "-n",
-            "florence@%h",
-        ]
-    )
+    output.save_result(image_path, output_path, result)
+    logger.debug(f"Florence result saved: {output_path}")

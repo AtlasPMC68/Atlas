@@ -34,7 +34,6 @@ else:
         logger.addHandler(handler)
 
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
-OCR_INTERMEDIATE_DIR = os.getenv("OCR_INTERMEDIATE_DIR", "/data/ocr_intermediate")
 OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
 OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "900"))
 CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
@@ -238,7 +237,7 @@ def _run_ocr_pipeline(
         "production",
         "prod",
     )
-    for d in (OCR_INPUT_DIR, OCR_INTERMEDIATE_DIR, OCR_OUTPUT_DIR):
+    for d in (OCR_INPUT_DIR, OCR_OUTPUT_DIR):
         os.makedirs(d, exist_ok=True)
         if is_development:
             try:

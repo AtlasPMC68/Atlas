@@ -340,12 +340,12 @@ def quad_to_bbox_xyxy(quad: list[float]) -> list[int]:
     ys = quad[1::2]
     return [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
 
-def save_result(image_path: str, intermediate_path: str, parsed: dict) -> None:
+def save_result(image_path: str, output_path: str, parsed: dict) -> None:
     """Save the Florence parsed result as JSON."""
 
     json_detections = copy.deepcopy(parsed.get("detections", []))
 
     parsed_for_json = {**parsed, "detections": json_detections}
-    os.makedirs(os.path.dirname(intermediate_path), exist_ok=True)
-    with open(intermediate_path, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(parsed_for_json, f, ensure_ascii=False, indent=2)
