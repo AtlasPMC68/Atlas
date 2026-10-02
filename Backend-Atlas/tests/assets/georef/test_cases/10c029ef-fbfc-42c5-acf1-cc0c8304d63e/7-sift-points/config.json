@@ -71,49 +71,49 @@
       {
         "x": 0.22722949812682336,
         "y": 0.8535714149475098,
-        "name": "silver",
+        "name": "Kyushu & Okinawa",
         "radius": 20
       },
       {
         "x": 0.39211489858234305,
         "y": 0.8279354840219565,
-        "name": "violet",
+        "name": "Shikoku",
         "radius": 15
       },
       {
         "x": 0.326661619447893,
         "y": 0.7474374696396445,
-        "name": "coral",
+        "name": "Chugoku",
         "radius": 15
       },
       {
         "x": 0.4304840622128828,
         "y": 0.7273129660440666,
-        "name": "mediumslateblue",
+        "name": "Kansai",
         "radius": 15
       },
       {
         "x": 0.6200728707402555,
         "y": 0.6552001614932454,
-        "name": "aquamarine",
+        "name": "Chubu",
         "radius": 15
       },
       {
         "x": 0.678755120998728,
         "y": 0.640106783796562,
-        "name": "lightgreen",
+        "name": "Kanto",
         "radius": 15
       },
       {
         "x": 0.7058392365026385,
         "y": 0.6065659444705988,
-        "name": "khaki",
+        "name": "Tohoku",
         "radius": 15
       },
       {
         "x": 0.8232037370195834,
         "y": 0.29799022267173647,
-        "name": "lightcoral",
+        "name": "Hokkaido",
         "radius": 15
       }
     ]
