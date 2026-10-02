@@ -4,7 +4,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "silver",
+        "color_name": "Kyushu & Okinawa",
         "color_rgb": [
           196,
           196,
@@ -12,7 +12,7 @@
         ],
         "color_hex": "#c4c4c4",
         "mapElementType": "zone",
-        "name": "silver",
+        "name": "Kyushu & Okinawa",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [
@@ -2008,7 +2008,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "violet",
+        "color_name": "Shikoku",
         "color_rgb": [
           209,
           109,
@@ -2016,7 +2016,7 @@
         ],
         "color_hex": "#d16dff",
         "mapElementType": "zone",
-        "name": "violet",
+        "name": "Shikoku",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [
@@ -3248,7 +3248,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "coral",
+        "color_name": "Chugoku",
         "color_rgb": [
           255,
           144,
@@ -3256,7 +3256,7 @@
         ],
         "color_hex": "#ff9047",
         "mapElementType": "zone",
-        "name": "coral",
+        "name": "Chugoku",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [
@@ -4572,7 +4572,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "mediumslateblue",
+        "color_name": "Kansai",
         "color_rgb": [
           113,
           113,
@@ -4580,7 +4580,7 @@
         ],
         "color_hex": "#7171ff",
         "mapElementType": "zone",
-        "name": "mediumslateblue",
+        "name": "Kansai",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [
@@ -6020,7 +6020,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "aquamarine",
+        "color_name": "Chubu",
         "color_rgb": [
           138,
           255,
@@ -6028,7 +6028,7 @@
         ],
         "color_hex": "#8affe8",
         "mapElementType": "zone",
-        "name": "aquamarine",
+        "name": "Chubu",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [
@@ -8696,7 +8696,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "lightgreen",
+        "color_name": "Kanto",
         "color_rgb": [
           120,
           255,
@@ -8704,7 +8704,7 @@
         ],
         "color_hex": "#78ff75",
         "mapElementType": "zone",
-        "name": "lightgreen",
+        "name": "Kanto",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [
@@ -10028,7 +10028,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "khaki",
+        "color_name": "Tohoku",
         "color_rgb": [
           255,
           251,
@@ -10036,7 +10036,7 @@
         ],
         "color_hex": "#fffb90",
         "mapElementType": "zone",
-        "name": "khaki",
+        "name": "Tohoku",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [
@@ -12336,7 +12336,7 @@
     {
       "type": "Feature",
       "properties": {
-        "color_name": "lightcoral",
+        "color_name": "Hokkaido",
         "color_rgb": [
           255,
           132,
@@ -12344,7 +12344,7 @@
         ],
         "color_hex": "#ff8484",
         "mapElementType": "zone",
-        "name": "lightcoral",
+        "name": "Hokkaido",
         "is_pixel_space": false,
         "opacity": 0.5,
         "stroke_color": [

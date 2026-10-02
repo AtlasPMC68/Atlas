@@ -31,6 +31,20 @@
             "area": 7.032172763225509
           },
           "matchedBy": "name"
+          "iou": 0.7383483099253914,
+          "intersectionArea": 6.687973299397676,
+          "unionArea": 9.058019378514569,
+          "precision": 0.9510536109653319,
+          "recall": 0.7675133712742213,
+          "falseNegativeArea": 2.025846615289063,
+          "falsePositiveArea": 0.34419946382784206,
+          "extracted": {
+            "index": 7,
+            "id": null,
+            "name": "Hokkaido",
+            "area": 7.032172763225509
+          },
+          "matchedBy": "name"
         }
       },
       {
@@ -55,10 +69,25 @@
             "area": 6.956596909578593
           },
           "matchedBy": "name"
+          "iou": 0.9039356068133879,
+          "intersectionArea": 6.609873940258837,
+          "unionArea": 7.312328323430461,
+          "precision": 0.9501591117285594,
+          "recall": 0.9489302945304032,
+          "falseNegativeArea": 0.3557314138518769,
+          "falsePositiveArea": 0.34672296931974056,
+          "extracted": {
+            "index": 6,
+            "id": null,
+            "name": "Tohoku",
+            "area": 6.956596909578593
+          },
+          "matchedBy": "name"
         }
       },
       {
         "expected": {
+          "index": 2,
           "index": 2,
           "id": "dev-zone-1790553622126",
           "name": "Kanto",
@@ -79,10 +108,25 @@
             "area": 3.083398279535017
           },
           "matchedBy": "name"
+          "iou": 0.8060091869505583,
+          "intersectionArea": 2.807125279940838,
+          "unionArea": 3.4827460100811862,
+          "precision": 0.910399833382588,
+          "recall": 0.8754557642493556,
+          "falseNegativeArea": 0.39934773054616796,
+          "falsePositiveArea": 0.2762729995941807,
+          "extracted": {
+            "index": 5,
+            "id": null,
+            "name": "Kanto",
+            "area": 3.083398279535017
+          },
+          "matchedBy": "name"
         }
       },
       {
         "expected": {
+          "index": 3,
           "index": 3,
           "id": "dev-zone-1790555830248",
           "name": "Chubu",
@@ -103,10 +147,25 @@
             "area": 6.622460654084555
           },
           "matchedBy": "name"
+          "iou": 0.8842222854085322,
+          "intersectionArea": 6.2472457162572255,
+          "unionArea": 7.065243456707095,
+          "precision": 0.943342066125239,
+          "recall": 0.9338145119452084,
+          "falseNegativeArea": 0.4427828026225239,
+          "falsePositiveArea": 0.37521493782731885,
+          "extracted": {
+            "index": 4,
+            "id": null,
+            "name": "Chubu",
+            "area": 6.622460654084555
+          },
+          "matchedBy": "name"
         }
       },
       {
         "expected": {
+          "index": 4,
           "index": 4,
           "id": "dev-zone-1790731401964",
           "name": "Kansai",
@@ -127,10 +186,25 @@
             "area": 3.3000249680765488
           },
           "matchedBy": "name"
+          "iou": 0.7209465460972186,
+          "intersectionArea": 2.593651761713135,
+          "unionArea": 3.5975645847166384,
+          "precision": 0.7859491327500077,
+          "recall": 0.8970875401511517,
+          "falseNegativeArea": 0.29753961664010586,
+          "falsePositiveArea": 0.7063732063634105,
+          "extracted": {
+            "index": 3,
+            "id": null,
+            "name": "Kansai",
+            "area": 3.3000249680765488
+          },
+          "matchedBy": "name"
         }
       },
       {
         "expected": {
+          "index": 5,
           "index": 5,
           "id": "dev-zone-1790732840099",
           "name": "Chugoku",
@@ -151,10 +225,25 @@
             "area": 3.2989866536702523
           },
           "matchedBy": "name"
+          "iou": 0.8464344247517106,
+          "intersectionArea": 2.93561533837003,
+          "unionArea": 3.4682135467625277,
+          "precision": 0.8898536570628568,
+          "recall": 0.9454958157366424,
+          "falseNegativeArea": 0.16922689309227976,
+          "falsePositiveArea": 0.36337131530022376,
+          "extracted": {
+            "index": 2,
+            "id": null,
+            "name": "Chugoku",
+            "area": 3.2989866536702523
+          },
+          "matchedBy": "name"
         }
       },
       {
         "expected": {
+          "index": 6,
           "index": 6,
           "id": "dev-zone-1790735146703",
           "name": "Shikoku",
@@ -175,16 +264,45 @@
             "area": 1.770254893319293
           },
           "matchedBy": "name"
+          "iou": 0.9121014021729412,
+          "intersectionArea": 1.7147258239765981,
+          "unionArea": 1.8799727967652804,
+          "precision": 0.9686321616439225,
+          "recall": 0.9398622704570974,
+          "falseNegativeArea": 0.1097179034459846,
+          "falsePositiveArea": 0.05552906934269514,
+          "extracted": {
+            "index": 1,
+            "id": null,
+            "name": "Shikoku",
+            "area": 1.770254893319293
+          },
+          "matchedBy": "name"
         }
       },
       {
         "expected": {
+          "index": 7,
           "index": 7,
           "id": "dev-zone-1790774550336",
           "name": "Kyushu & Okinawa",
           "area": 3.664913939433246
         },
         "bestMatch": {
+          "iou": 0.8171409581930427,
+          "intersectionArea": 3.0671088681173058,
+          "unionArea": 3.7534636311703853,
+          "precision": 0.971939393930751,
+          "recall": 0.8368842812695386,
+          "falseNegativeArea": 0.5978050713159462,
+          "falsePositiveArea": 0.08854969173713258,
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "Kyushu & Okinawa",
+            "area": 3.1556585598544347
+          },
+          "matchedBy": "name"
           "iou": 0.8171409581930427,
           "intersectionArea": 3.0671088681173058,
           "unionArea": 3.7534636311703853,
@@ -208,11 +326,19 @@
       "meanRecall": 0.8931304812017024,
       "totalFalseNegativeArea": 4.397998046803948,
       "totalFalsePositiveArea": 2.5562336533125443
+      "meanIou": 0.8286423400390979,
+      "meanPrecision": 0.921416120948657,
+      "meanRecall": 0.8931304812017024,
+      "totalFalseNegativeArea": 4.397998046803948,
+      "totalFalsePositiveArea": 2.5562336533125443
     },
+    "scoreUsed": 0.8286423400390979,
     "scoreUsed": 0.8286423400390979,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
     "expectedWithoutNameMatch": [],
     "extractedNeverMatchedByName": []
   }
