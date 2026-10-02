@@ -17,7 +17,10 @@ hf_transformers_logging.disable_progress_bar()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if "HF_HOME" not in os.environ:
-    os.environ["HF_HOME"] = os.path.join(BASE_DIR, "models")
+    if os.path.isdir("/app/models"):
+        os.environ["HF_HOME"] = "/app/models"
+    else:
+        os.environ["HF_HOME"] = os.path.join(BASE_DIR, "models")
 
 MODEL_ID = "microsoft/Florence-2-base"
 INPUT_DIR = os.environ.get("INPUT_DIR", "/data/input")
@@ -25,6 +28,38 @@ SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 MAX_NEW_TOKENS = 4096
 OCR_TASK = "<OCR_WITH_REGION>"
 CONTEXT_TASK = "<MORE_DETAILED_CAPTION>"
+
+
+def _resolve_model_path(model_id: str, hf_cache: str) -> tuple[str, bool]:
+    """
+    Resolve local snapshot directory containing config.json if available.
+    Returns (path_to_load, is_local_only).
+    """
+    if os.path.isdir(model_id) and os.path.isfile(os.path.join(model_id, "config.json")):
+        return model_id, True
+
+    candidates = [
+        hf_cache,
+        os.path.join(hf_cache, "hub"),
+        "/app/models",
+        "/app/models/hub",
+        os.path.join(BASE_DIR, "models"),
+    ]
+    sanitized = f"models--{model_id.replace('/', '--')}"
+    for base in candidates:
+        if not os.path.isdir(base):
+            continue
+        snapshots_dir = os.path.join(base, sanitized, "snapshots")
+        if os.path.isdir(snapshots_dir):
+            try:
+                for snap in sorted(os.listdir(snapshots_dir), reverse=True):
+                    snap_path = os.path.join(snapshots_dir, snap)
+                    if os.path.isdir(snap_path) and os.path.isfile(os.path.join(snap_path, "config.json")):
+                        return snap_path, True
+            except Exception:
+                pass
+
+    return model_id, False
 
 
 def get_runtime_config() -> dict:
@@ -51,24 +86,28 @@ def list_input_images(input_dir: str) -> list[str]:
 
 def load_model_and_processor(config: dict) -> tuple:
     """Load the Florence model and processor for OCR inference."""
+    hf_home = os.environ.get("HF_HOME", "/app/models")
+    target_path, is_local = _resolve_model_path(config["model_id"], hf_home)
+
     logger.info(
-        "Loading Florence model %s from local cache under %s",
-        config["model_id"],
-        os.environ.get("HF_HOME", "/app/models"),
+        "Loading Florence model from %s (local_only=%s, HF_HOME=%s)",
+        target_path,
+        is_local,
+        hf_home,
     )
     model = AutoModelForCausalLM.from_pretrained(
-        config["model_id"],
+        target_path,
         torch_dtype=config["torch_dtype"],
         trust_remote_code=True,
         attn_implementation="eager",
-        cache_dir=os.environ.get("HF_HOME", "/app/models"),
-        local_files_only=True,
+        cache_dir=hf_home,
+        local_files_only=is_local,
     ).to(config["device"])
     processor = AutoProcessor.from_pretrained(
-        config["model_id"],
+        target_path,
         trust_remote_code=True,
-        cache_dir=os.environ.get("HF_HOME", "/app/models"),
-        local_files_only=True,
+        cache_dir=hf_home,
+        local_files_only=is_local,
     )
 
     if getattr(model, "generation_config", None) is not None:

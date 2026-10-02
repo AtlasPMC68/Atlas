@@ -1,5 +1,8 @@
 import logging
 import os
+
+os.environ.setdefault("HF_HOME", "/app/models")
+
 from typing import Any, Tuple
 from celery import Celery
 
@@ -7,7 +10,6 @@ import inference as florence
 from output import save_result
 
 logger = logging.getLogger(__name__)
-os.environ.setdefault("HF_HOME", "/app/models")
 
 app = Celery(
     "florence_worker",

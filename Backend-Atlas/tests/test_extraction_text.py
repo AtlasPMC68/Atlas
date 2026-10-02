@@ -237,13 +237,15 @@ def test_text_extraction(
         celery_app=celery_app,
     )
 
-    # Validate that Florence detects EXACTLY the expected number of raw text zones
+    # Check Florence raw text zones count without blocking the rest of the pipeline
     expected_count = MAP_EXPECTED_DETECTION_COUNTS.get(image_path.stem)
+    count_passed = True
+    count_error_msg = ""
     if expected_count is not None:
-        assert len(extracted_text) == expected_count, (
-            f"Florence detected {len(extracted_text)} text zones, but expected EXACTLY {expected_count} for {image_path.name}. "
-            f"If this is a new model, update MAP_EXPECTED_DETECTION_COUNTS in expected_text_results.py."
-        )
+        if len(extracted_text) != expected_count:
+            count_passed = False
+            count_error_msg = f"Zones: {len(extracted_text)} détectées vs {expected_count} attendues"
+            logger.warning(f"⚠️ [{image_path.name}] {count_error_msg}")
     else:
         logger.warning(f"No expected detection count found for {image_path.name} in MAP_EXPECTED_DETECTION_COUNTS.")
 
@@ -269,11 +271,11 @@ def test_text_extraction(
 
     hit_rate_passed = round(box_find_rate, 2) >= min_hit_rate
     dist_passed = round(average_dist, 2) <= max_dist
-    is_passed = hit_rate_passed and dist_passed
+    is_passed = hit_rate_passed and dist_passed and count_passed
 
     if is_passed:
         status_color, status_icon, status_text = GREEN, "✅", "PASS"
-    elif hit_rate_passed or dist_passed:
+    elif (hit_rate_passed and dist_passed) or (hit_rate_passed and count_passed):
         status_color, status_icon, status_text = YELLOW, "⚠️", "WARNING"
     else:
         status_color, status_icon, status_text = RED, "❌", "FAIL"
@@ -304,6 +306,8 @@ def test_text_extraction(
     else:
         log_fn = logger.warning if status_text == "WARNING" else logger.error
         log_fn(summary)
+        if not count_passed:
+            log_fn(f"  {YELLOW}Écart de détection :{RESET} {RED}{count_error_msg}{RESET}")
         if geocache_unrecognized:
             log_fn(f"  {YELLOW}Mots non reconnus par la géocache :{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}")
         if mismatches:
@@ -322,5 +326,13 @@ def test_text_extraction(
         "hit_rate": box_find_rate,
     }
 
-    error_msg = f"ÉCHEC {image_path.name}: Hit={box_find_rate:.1f}% (min {min_hit_rate}%), Dist={average_dist:.2f} (max {max_dist})"
+    reasons = []
+    if not hit_rate_passed:
+        reasons.append(f"Hit={box_find_rate:.1f}% (min {min_hit_rate}%)")
+    if not dist_passed:
+        reasons.append(f"Dist={average_dist:.2f} (max {max_dist})")
+    if not count_passed:
+        reasons.append(count_error_msg)
+
+    error_msg = f"ÉCHEC {image_path.name}: " + ", ".join(reasons)
     assert is_passed, error_msg
