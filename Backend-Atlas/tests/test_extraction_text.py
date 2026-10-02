@@ -78,8 +78,15 @@ def get_image_paths() -> list[Path]:
     return [p for p in assets_dir.iterdir() if p.suffix.lower() in valid_extensions]
 
 
+_TEST_DATA_CACHE: list[tuple[Path, list[str]]] | None = None
+
+
 def get_test_data() -> list[tuple[Path, list[str]]]:
     """Load map paths and their corresponding expected ground truth texts."""
+    global _TEST_DATA_CACHE
+    if _TEST_DATA_CACHE is not None:
+        return _TEST_DATA_CACHE
+
     images = get_image_paths()
     data: list[tuple[Path, list[str]]] = []
     for image in images:
@@ -88,7 +95,8 @@ def get_test_data() -> list[tuple[Path, list[str]]]:
             logger.warning(f"Skipping {image.name}: expected text missing in MAP_EXPECTED_TEXTS.")
             continue
         data.append((image, expected))
-    return data
+    _TEST_DATA_CACHE = data
+    return _TEST_DATA_CACHE
 
 
 def normalize_array_to_ascii_format(text: list[str]) -> list[str]:

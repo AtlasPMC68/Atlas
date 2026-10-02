@@ -70,31 +70,37 @@ def pytest_configure(config: Any) -> None:
 
     terminalreporter = config.pluginmanager.get_plugin("terminalreporter")
     if terminalreporter is not None:
-        original_summary_failures = terminalreporter.summary_failures
+        original_short_test_summary = terminalreporter.short_test_summary
 
-        def custom_summary_failures():
-            reports = terminalreporter.getreports("failed")
-            if not reports:
-                return
-
-            original_summary_failures()
-
-        original_build_summary_stats_line = getattr(terminalreporter, "_outrep_summary", None)
-        if original_build_summary_stats_line:
-            def custom_outrep_summary(rep):
-                if rep.failed and hasattr(rep, "user_metadata") and "card_name" in rep.user_metadata:
+        def custom_short_test_summary():
+            failed_reports = terminalreporter.stats.get("failed", [])
+            for rep in failed_reports:
+                if hasattr(rep, "user_metadata") and "card_name" in rep.user_metadata:
                     m = rep.user_metadata
                     card = m.get("card_name", "")
                     hit = m.get("hit_rate", 0.0)
                     min_hit = m.get("min_hit_rate", 0.0)
                     dist = m.get("average_distance", 0.0)
                     max_d = m.get("max_dist", 0.0)
-                    markup = {"red": True, "bold": True}
-                    terminalreporter._tw.line(
-                        f"FAILED (hit_rate={hit:.0f}% VS {min_hit:.0f}%, d_average={dist:.2f} vs {max_d:.2f}): {card}",
-                        **markup,
+                    rep.nodeid = card
+                    if hasattr(rep, "longrepr") and hasattr(rep.longrepr, "reprcrash"):
+                        rep.longrepr.reprcrash.message = ""
+                    rep._custom_display_line = (
+                        f"FAILED (hit_rate={hit:3.0f}% VS {min_hit:.0f}%, d_average={dist:4.2f} vs {max_d:4.2f}): {card}"
                     )
-                    return
-                original_build_summary_stats_line(rep)
 
-            terminalreporter._outrep_summary = custom_outrep_summary
+            import _pytest.terminal as pt
+            original_get_line = pt._get_line_with_reprcrash_message
+
+            def custom_get_line(cfg, rep, tw, word_markup):
+                if hasattr(rep, "_custom_display_line"):
+                    return tw.markup(rep._custom_display_line, red=True, bold=True)
+                return original_get_line(cfg, rep, tw, word_markup)
+
+            pt._get_line_with_reprcrash_message = custom_get_line
+            try:
+                original_short_test_summary()
+            finally:
+                pt._get_line_with_reprcrash_message = original_get_line
+
+        terminalreporter.short_test_summary = custom_short_test_summary
