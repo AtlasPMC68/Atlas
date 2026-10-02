@@ -11,7 +11,7 @@ from app.celery_app import celery_app
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
-from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_DETECTION_COUNTS, 
+from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_DETECTION_COUNTS
 
 logger = logging.getLogger(__name__)
 
