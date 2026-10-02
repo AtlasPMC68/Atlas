@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from app.celery_app import celery_app
+from app.utils.cities_validation import get_city_with_max_population
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
@@ -225,14 +226,7 @@ def test_text_extraction(
     """Run full OCR pipeline integration test on test asset images and validate accuracy metrics."""
     assert image_path.exists()
 
-    header = (
-        f"\n\n"
-        f"{CYAN}{BOLD}================================================================================{RESET}\n"
-        f"    {BOLD}TESTING IMAGE : {YELLOW}{image_path.name}{RESET}\n"
-        f"    Target Ground Truth : {BOLD}{len(expected_text)}{RESET} expected words\n"
-        f"{CYAN}{BOLD}================================================================================{RESET}\n"
-    )
-    logger.info(header)
+    logger.info(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Attendu: {len(expected_text)} mots)")
 
     with open(image_path, "rb") as input_file:
         file_content = input_file.read()
@@ -261,20 +255,11 @@ def test_text_extraction(
         unpaired_expected_words,
     )
 
-    mismatches = []
-    for ocr_word, (expected_word, distance) in results:
-        if distance > 1.0:
-            mismatches.append((expected_word, ocr_word, distance))
-
-    if mismatches:
-        mismatches.sort(key=lambda x: x[2], reverse=True)
-        logger.info(f"\n{YELLOW}{BOLD}--- Missing / Mismatched Words ---{RESET}")
-        for expected_word, ocr_word, distance in mismatches:
-            d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
-            if distance > 500:
-                logger.info(f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
-            else:
-                logger.info(f"   \u2022 Expected: '{BOLD}{expected_word}{RESET}' | OCR: '{RED}{ocr_word}{RESET}' | dist: {d_color}{distance:.1f}{RESET}")
+    mismatches = [
+        (expected_word, ocr_word, distance)
+        for ocr_word, (expected_word, distance) in results
+        if distance > 1.0
+    ]
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
@@ -286,44 +271,50 @@ def test_text_extraction(
     dist_passed = round(average_dist, 2) <= max_dist
     is_passed = hit_rate_passed and dist_passed
 
-    if hit_rate_passed and dist_passed:
-        status_color = GREEN
-        status_icon = "\u2705"
-        status_text = "PASS"
+    if is_passed:
+        status_color, status_icon, status_text = GREEN, "✅", "PASS"
     elif hit_rate_passed or dist_passed:
-        status_color = YELLOW
-        status_icon = "\u26a0\ufe0f"
-        status_text = "WARNING"
+        status_color, status_icon, status_text = YELLOW, "⚠️", "WARNING"
     else:
-        status_color = RED
-        status_icon = "\u274c"
-        status_text = "FAIL"
+        status_color, status_icon, status_text = RED, "❌", "FAIL"
 
     hit_color = GREEN if hit_rate_passed else RED
     dist_color = GREEN if dist_passed else RED
     card_name_fmt = f"{CYAN}{BOLD}{image_path.name}{RESET}"
 
+    geocache_accepted = []
+    geocache_unrecognized = []
+    for word in unpaired_ocr_words:
+        candidate = get_city_with_max_population(word, confidence_threshold=0.60)
+        if candidate.get("found"):
+            geocache_accepted.append(word)
+        else:
+            geocache_unrecognized.append(word)
+
     summary = (
-        f"\n"
-        f"{status_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n"
-        f"{status_icon}  {BOLD}SUMMARY for {card_name_fmt} : {status_color}{BOLD}{status_text}{RESET}\n"
-        f"    \u2022 Hit Rate   : {hit_color}{BOLD}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)\n"
-        f"    \u2022 Avg Dist   : {dist_color}{BOLD}{average_dist:.2f}{RESET} (max: {max_dist})\n"
-        f"    \u2022 Mots       : {BLUE}{BOLD}{len(unpaired_ocr_words)}{RESET} obtenu vs {BOLD}{len(unpaired_expected_words)}{RESET} désiré\n"
-        f"{status_color}{BOLD}--------------------------------------------------------------------------------{RESET}\n\n"
+        f"{status_icon} {status_color}{BOLD}[{status_text}] {card_name_fmt}{RESET} | "
+        f"Hit: {hit_color}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%) | "
+        f"Dist: {dist_color}{average_dist:.2f}{RESET} (max: {max_dist}) | "
+        f"Mots détectés par florence/ Mots non-rejetés: {BLUE}{len(unpaired_ocr_words)}{RESET}/{len(unpaired_expected_words)} | "
+        f"Géocache: {GREEN}{len(geocache_accepted)} acceptés{RESET} vs {RED}{len(geocache_unrecognized)} non reconnus{RESET}"
     )
 
-    if status_text == "PASS":
+    if is_passed:
         logger.info(summary)
-    elif status_text == "WARNING":
-        logger.warning(summary)
     else:
-        logger.error(summary)
-
-    if not is_passed:
-        logger.error(f"{status_color}{BOLD}\U0001f50d DETAILS OF THE FAILURE FOR {card_name_fmt}:{RESET}\n" f"Expected Words that the OCR missed or matched poorly:\n")
-        for expected_word, ocr_word, distance in mismatches:
-            logger.error(f"  \u2022 Expected: {YELLOW}'{expected_word}'{RESET} --> Found: '{ocr_word}' (dist: {distance:.1f})")
+        log_fn = logger.warning if status_text == "WARNING" else logger.error
+        log_fn(summary)
+        if geocache_unrecognized:
+            log_fn(f"  {YELLOW}Mots non reconnus par la géocache :{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}")
+        if mismatches:
+            mismatches.sort(key=lambda x: x[2], reverse=True)
+            log_fn(f"  {YELLOW}Mots manquants ou mal reconnus :{RESET}")
+            for expected_word, ocr_word, distance in mismatches:
+                if distance > 500:
+                    log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | {RED}NON TROUVÉ{RESET}")
+                else:
+                    d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
+                    log_fn(f"    \u2022 Attendu: '{BOLD}{expected_word}{RESET}' | Trouvé: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})")
 
     from tests.conftest import metadata_key
     request.node.stash[metadata_key] = {
@@ -331,9 +322,5 @@ def test_text_extraction(
         "hit_rate": box_find_rate,
     }
 
-    error_msg = (
-        f"\n{RED}{BOLD}ÉCHEC : {image_path.name}{RESET}\n"
-        f"  {YELLOW}RESULTAT : [Hit={box_find_rate:>5.1f}%, Dist={average_dist:>4.2f}]{RESET}\n"
-        f"  {GREEN}ATTENDU  : [Hit>={min_hit_rate:>5.1f}%, Dist<={max_dist:>4.2f}]{RESET}"
-    )
+    error_msg = f"ÉCHEC {image_path.name}: Hit={box_find_rate:.1f}% (min {min_hit_rate}%), Dist={average_dist:.2f} (max {max_dist})"
     assert is_passed, error_msg
