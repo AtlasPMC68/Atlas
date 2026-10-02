@@ -346,6 +346,53 @@ class AffineTransformation:
         return X.reshape(np.asarray(x).shape), Y.reshape(np.asarray(y).shape)
 
 
+def build_affine_transformation(
+    pixel_points: List[XY],
+    geo_points_lonlat: List[LonLat],
+) -> AffineTransformation:
+    """Build the pixel -> WebMercator affine transform used by georeferencing.
+
+    Keeping this construction in one public helper lets the dev-test evaluator
+    validate independent check points with the exact same transform as the
+    production georeferencing pipeline.
+    """
+    if len(pixel_points) < 3 or len(geo_points_lonlat) < 3:
+        raise ValueError("At least 3 point pairs are required for affine transformation")
+
+    if len(pixel_points) != len(geo_points_lonlat):
+        raise ValueError(
+            f"Mismatch in point counts: {len(pixel_points)} pixel points "
+            f"vs {len(geo_points_lonlat)} geo points"
+        )
+
+    if pixel_points and isinstance(pixel_points[0], dict):
+        raise TypeError(
+            f"pixel_points contains dicts, expected (x, y) tuples: {pixel_points[0]}"
+        )
+    if geo_points_lonlat and isinstance(geo_points_lonlat[0], dict):
+        raise TypeError(
+            "geo_points_lonlat contains dicts, expected (lon, lat) tuples: "
+            f"{geo_points_lonlat[0]}"
+        )
+
+    geo_xy_points = [
+        _lonlat_to_webmercator(lon, lat) for lon, lat in geo_points_lonlat
+    ]
+    src = np.array(pixel_points, dtype=float)
+    dst = np.array(geo_xy_points, dtype=float)
+    return AffineTransformation(src, dst)
+
+
+def transform_pixel_point_to_lonlat(
+    affine: AffineTransformation,
+    x: float,
+    y: float,
+) -> LonLat:
+    """Transform one image pixel into WGS84 longitude/latitude."""
+    X, Y = affine(np.array([x], dtype=float), np.array([y], dtype=float))
+    return _webmercator_to_lonlat(float(X[0]), float(Y[0]))
+
+
 def georeference_features_with_sift_points(
     pixel_feature_collections: List[JSONDict],
     pixel_points: List[XY],
@@ -383,29 +430,9 @@ def georeference_features_with_sift_points(
             logger.warning("No pixel feature collections provided")
             return []
 
-        # Validate input types
-        if pixel_points and isinstance(pixel_points[0], dict):
-            raise TypeError(f"pixel_points contains dicts, expected (x, y) tuples: {pixel_points[0]}")
-        if geo_points_lonlat and isinstance(geo_points_lonlat[0], dict):
-            raise TypeError(f"geo_points_lonlat contains dicts, expected (lon, lat) tuples: {geo_points_lonlat[0]}")
-
-        if len(pixel_points) < 3 or len(geo_points_lonlat) < 3:
-            raise ValueError("At least 3 point pairs are required for affine transformation")
-        
-        if len(pixel_points) != len(geo_points_lonlat):
-            raise ValueError(
-                f"Mismatch in point counts: {len(pixel_points)} pixel points "
-                f"vs {len(geo_points_lonlat)} geo points"
-            )
-        
-        # Convert geographic coordinates to WebMercator
-        geo_xy_points = [_lonlat_to_webmercator(lon, lat) for lon, lat in geo_points_lonlat]
-        
-        src = np.array(pixel_points, dtype=float)
-        dst = np.array(geo_xy_points, dtype=float)
-        
-        # Build affine transformation: pixel -> WebMercator
-        affine = AffineTransformation(src, dst)
+        # Build affine transformation: pixel -> WebMercator. The dev-test
+        # evaluator uses the same helper for independent check-point validation.
+        affine = build_affine_transformation(pixel_points, geo_points_lonlat)
         coastline_geom_3857 = None
         land_mask_3857 = None
         meters_per_pixel = None

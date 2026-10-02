@@ -7,7 +7,7 @@ import keycloak from "../keycloak";
 const router = useRouter();
 const goToTestBrowser = () => router.push("/tests");
 
-const { currentUser, fetchCurrentUser } = useCurrentUser();
+const { currentUser, isLoading, error, fetchCurrentUser } = useCurrentUser();
 
 onMounted(async () => {
   await fetchCurrentUser();
@@ -30,6 +30,7 @@ const logout = async () => {
     </div>
 
     <div
+      v-if="currentUser"
       class="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden"
     >
       <div class="p-6">
@@ -85,6 +86,10 @@ const logout = async () => {
           Déconnexion
         </button>
       </div>
+    </div>
+    <div v-else-if="isLoading" class="text-gray-500">Chargement du profil...</div>
+    <div v-else-if="error" class="text-red-600">
+      Impossible de charger le profil. Vérifiez que le serveur est disponible.
     </div>
   </div>
 </template>

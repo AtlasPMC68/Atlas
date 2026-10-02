@@ -1,10 +1,12 @@
 import json
 import os
 import re
+import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
+import numpy as np
 from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
@@ -27,8 +29,16 @@ class DevTestPaths:
 
 def write_geojson(feature_collection: dict[str, Any], geojson_path: str) -> None:
     os.makedirs(os.path.dirname(geojson_path), exist_ok=True)
-    with open(geojson_path, "w", encoding="utf-8") as f:
-        json.dump(feature_collection, f, indent=2, ensure_ascii=False)
+    directory = os.path.dirname(geojson_path)
+    fd, temporary_path = tempfile.mkstemp(dir=directory, suffix=".geojson.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(feature_collection, f, indent=2, ensure_ascii=False)
+        os.replace(temporary_path, geojson_path)
+    except Exception:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
 
 
 def _load_json(path: str) -> dict[str, Any]:
@@ -453,7 +463,11 @@ def evaluate_georef_zones_from_paths(
     report: dict[str, Any] = {
         "testId": test_id,
         "testCaseId": test_case_id,
-        "evaluatedAt": datetime.utcnow().isoformat() + "Z",
+        "evaluatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "expectedZonesFile": os.path.relpath(
+            expected_zones_path,
+            start=os.path.dirname(os.path.dirname(expected_zones_path)),
+        ).replace(os.sep, "/"),
         "thresholds": {
             "minIou": min_iou,
             "scoreKey": "metrics.mean.meanIou",
@@ -496,7 +510,7 @@ def evaluate_georef_test_case(
     """
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
-    return evaluate_georef_zones_from_paths(
+    report, errors_geojson = evaluate_georef_zones_from_paths(
         test_id=test_id,
         test_case_id=test_case_id,
         expected_zones_path=paths.expected_zones_path,
@@ -504,8 +518,18 @@ def evaluate_georef_test_case(
         min_iou=min_iou,
     )
 
+    return report, errors_geojson
+
 
 def write_report(report: dict[str, Any], report_path: str) -> None:
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
+    directory = os.path.dirname(report_path)
+    fd, temporary_path = tempfile.mkstemp(dir=directory, suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        os.replace(temporary_path, report_path)
+    except Exception:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise

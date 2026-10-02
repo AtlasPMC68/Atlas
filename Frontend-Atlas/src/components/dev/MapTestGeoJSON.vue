@@ -7,6 +7,7 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import L from "leaflet";
+import { createCartoTileLayer } from "../../utils/basemap";
 
 const mapEl = ref(null);
 
@@ -36,6 +37,10 @@ const props = defineProps({
   isGeoBorderMode: {
     type: Boolean,
     default: false,
+  },
+  selectedGeoBorders: {
+    type: Array,
+    default: () => [],
   },
   undoCreateKey: {
     type: Number,
@@ -67,6 +72,9 @@ let frontierStartRef = null; // { lineIdx, ptIdx, latlng }
 let geoBorderLines = [];
 let geoRegionsLayer = null;
 let subzoneLayerGroup = null;
+let geoBordersData = null;
+let geoBordersLoadPromise = null;
+let geoBordersAbortController = null;
 
 const featureLayerManager = {
   layers: new Map(),
@@ -273,7 +281,8 @@ function rebuildCreateLayers() {
 
   const first = pts[0];
   const last = pts[pts.length - 1];
-  const isClosed = latLngDistance(first, last) <= SNAP_EPS_METERS && pts.length >= 3;
+  const isClosed =
+    latLngDistance(first, last) <= SNAP_EPS_METERS && pts.length >= 3;
 
   if (!isClosed) {
     emit("create-updated", null);
@@ -350,7 +359,8 @@ function undoLastStroke() {
 }
 
 function handleMouseDown(e) {
-  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode) return;
+  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode)
+    return;
   if (e.originalEvent && e.originalEvent.button !== 0) return;
 
   // Decide which end of the existing chain we want to continue from.
@@ -385,7 +395,13 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
-  if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode || !isDrawing) return;
+  if (
+    !props.isCreateMode ||
+    props.isFrontierMode ||
+    props.isGeoBorderMode ||
+    !isDrawing
+  )
+    return;
   currentStroke.push(e.latlng);
   rebuildCreateLayers();
 }
@@ -398,7 +414,9 @@ function handleMouseUp(e) {
   }
 
   if (currentStroke.length > 1) {
-    const endPoint = snapToExistingEndpoints(currentStroke[currentStroke.length - 1]);
+    const endPoint = snapToExistingEndpoints(
+      currentStroke[currentStroke.length - 1],
+    );
     currentStroke[currentStroke.length - 1] = endPoint;
     strokes.push(currentStroke);
   }
@@ -407,7 +425,8 @@ function handleMouseUp(e) {
 }
 
 function handleMapClick(e) {
-  if (!props.isCreateMode || (!props.isFrontierMode && !props.isGeoBorderMode)) return;
+  if (!props.isCreateMode || (!props.isFrontierMode && !props.isGeoBorderMode))
+    return;
   if (!map) return;
 
   const nearest = findNearestCoastVertex(e.latlng);
@@ -423,7 +442,9 @@ function handleMapClick(e) {
 
   if (start.lineIdx !== nearest.lineIdx) {
     // For now, require both points on the same coastline line
-    console.warn("Frontier points are on different coastline segments; ignoring.");
+    console.warn(
+      "Frontier points are on different coastline segments; ignoring.",
+    );
     return;
   }
 
@@ -452,30 +473,81 @@ function handleMapClick(e) {
 }
 async function loadGeoBorders() {
   if (!map) return;
-  const filename = "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson";
+  const filenames = [
+    "/geojson/geoBoundaries-CAN-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-JPN-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-FRA-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-MDG-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-AUS-ADM1_simplified.geojson",
+    "/geojson/geoBoundaries-ITA-ADM0_simplified.geojson",
+    "/geojson/geoBoundaries-MNG-ADM0_simplified.geojson",
+    "/geojson/geoBoundaries-NOR-ADM0_simplified.geojson",
+  ];
 
   try {
-    const res = await fetch(filename);
-    if (!res.ok) throw new Error(`File not found: ${filename}`);
-    const data = await res.json();
+    if (!geoBordersLoadPromise) {
+      geoBordersAbortController = new AbortController();
+      geoBordersLoadPromise = Promise.all(
+        filenames.map((filename) =>
+          fetch(filename, { signal: geoBordersAbortController.signal }),
+        ),
+      )
+        .then((responses) => {
+          const failedResponse = responses.find((response) => !response.ok);
+          if (failedResponse) {
+            throw new Error(`File not found: ${failedResponse.url}`);
+          }
+          return Promise.all(responses.map((response) => response.json()));
+        })
+        .then((datasets) => ({
+          ...datasets[0],
+          features: datasets.flatMap((dataset) => dataset.features || []),
+        }))
+        .then((data) => {
+          geoBordersData = data;
+          return data;
+        })
+        .catch((error) => {
+          geoBordersLoadPromise = null;
+          geoBordersAbortController = null;
+          throw error;
+        });
+    }
+
+    const data = geoBordersData || (await geoBordersLoadPromise);
+    if (isUnmounted || !map) return;
 
     if (geoRegionsLayer) {
       map.removeLayer(geoRegionsLayer);
       geoRegionsLayer = null;
     }
 
-    // Draw geopolitical regions as outlines
-    geoRegionsLayer = L.geoJSON(data, {
-      style: {
-        color: "#666",
-        weight: 2,
-        fill: false,
+    const selectedIds = new Set(props.selectedGeoBorders);
+    const visibleFeatures = (data.features || []).filter((feature) => {
+      if (selectedIds.size === 0) return false;
+      const properties = feature?.properties;
+      const borderId =
+        properties?.shapeType === "ADM0"
+          ? properties.shapeGroup
+          : properties?.shapeISO || properties?.shapeID;
+      return selectedIds.has(borderId);
+    });
+
+    // Draw only the selected geopolitical regions as outlines
+    geoRegionsLayer = L.geoJSON(
+      { ...data, features: visibleFeatures },
+      {
+        style: {
+          color: "#666",
+          weight: 2,
+          fill: false,
+        },
       },
-    }).addTo(map);
+    ).addTo(map);
 
     // Build border lines from polygon rings
     geoBorderLines = [];
-    const feats = Array.isArray(data.features) ? data.features : [];
+    const feats = visibleFeatures;
     feats.forEach((f) => {
       const geom = f && f.geometry;
       if (!geom || !geom.type || !geom.coordinates) return;
@@ -516,16 +588,17 @@ async function loadGeoBorders() {
 }
 
 onMounted(() => {
-  map = L.map(mapEl.value).setView([52.9399, -73.5491], 5);
+  // Same basemap and world bounds as the project map (MapGeoJSON.vue), so zones
+  // drawn here sit on the geography the user sees there.
+  map = L.map(mapEl.value, {
+    maxBounds: [
+      [-90, -180],
+      [90, 180],
+    ],
+    maxBoundsViscosity: 1.0,
+  }).setView([52.9399, -73.5491], 5);
 
-  baseTileLayer = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-    {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
-    },
-  ).addTo(map);
+  baseTileLayer = createCartoTileLayer({ noWrap: true }).addTo(map);
 
   subzoneLayerGroup = L.layerGroup().addTo(map);
 
@@ -549,7 +622,9 @@ onMounted(() => {
           if (!geom || !geom.type || !geom.coordinates) return;
 
           if (geom.type === "LineString") {
-            const line = geom.coordinates.map(([lng, lat]) => L.latLng(lat, lng));
+            const line = geom.coordinates.map(([lng, lat]) =>
+              L.latLng(lat, lng),
+            );
             coastlineLines.push(line);
           } else if (geom.type === "MultiLineString") {
             geom.coordinates.forEach((coords) => {
@@ -569,6 +644,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   isUnmounted = true;
+  geoBordersAbortController?.abort();
+  geoBordersAbortController = null;
+  geoBordersLoadPromise = null;
+  geoBordersData = null;
   if (!map) return;
 
   try {
@@ -642,6 +721,16 @@ watch(
     }
     await loadGeoBorders();
   },
+);
+
+watch(
+  () => props.selectedGeoBorders,
+  async () => {
+    if (props.isGeoBorderMode) {
+      await loadGeoBorders();
+    }
+  },
+  { deep: true },
 );
 
 watch(
