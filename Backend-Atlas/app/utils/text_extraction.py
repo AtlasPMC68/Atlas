@@ -41,7 +41,6 @@ CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
 CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
 
-
 def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
     """Build one city point feature for each geolocated city candidate."""
     return {
@@ -66,7 +65,6 @@ def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict
             }
         ],
     }
-
 
 
 def _compute_geo_bounds(geo_points_lonlat: list) -> dict[str, float] | None:
@@ -183,8 +181,9 @@ def _build_extracted_text_from_detections(
             except (TypeError, ValueError, IndexError):
                 continue
 
-        MAP_IGNORED_WORDS = {"n", "s", "e", "w", "o", "ne", "nw", "no", "se", "sw", "so", "nord", "sud", "est", "ouest", "n.-e.", "n.-o.", "s.-e.", "s.-o."}
-
+        # fmt: off
+        MAP_IGNORED_WORDS = { "n", "s", "e", "w", "o", "ne", "nw", "no", "se", "sw", "so", "nord", "sud", "est", "ouest", "n.-e.", "n.-o.", "s.-e.", "s.-o.",}
+        # fmt: on
         def should_ignore(text_val: str) -> bool:
             clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
 
@@ -285,13 +284,13 @@ def _run_ocr_pipeline(
                     if poll_err.__class__.__name__ in ("TimeoutError", "CeleryTimeoutError"):
                         elapsed += poll_interval
                         if elapsed % 60 == 0:
-                            logger.info(f"    ... Still running OCR pipeline - elapsed: {elapsed}s")
+                            logger.info(f"    ... Still running OCR pipeline - elapsed: {elapsed/60:.1f}min")
                     else:
                         raise poll_err
             else:
                 raise TimeoutError(f"OCR pipeline timed out after {OCR_PIPELINE_TIMEOUT_SECONDS}s")
 
-            logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed}s!")
+            logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed/60:.1f}min!")
 
             with open(ocr_output_json_path, "r", encoding="utf-8") as florence_result_file:
                 florence_result = json.load(florence_result_file)
@@ -319,7 +318,11 @@ def _extract_text_via_pipeline(
     celery_app,
 ) -> tuple[list[dict[str, Any]], list[list[list[float]]]]:
     extracted_text = _run_ocr_pipeline(map_id, filename, file_content, celery_app)
-    text_regions = [block["bbox"] for block in extracted_text if isinstance(block, dict) and isinstance(block.get("bbox"), list) and len(block["bbox"]) == 4]
+    text_regions = [
+        block["bbox"]
+        for block in extracted_text
+        if isinstance(block, dict) and isinstance(block.get("bbox"), list) and len(block["bbox"]) == 4
+    ]
     return extracted_text, text_regions
 
 
@@ -335,7 +338,10 @@ def extract_text(
 
     MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
     if len(file_content) > MAX_FILE_SIZE_BYTES:
-        logger.warning(f"Image {filename} trop volumineuse ({len(file_content) / (1024*1024):.2f} MB). " f"Rejetée pour éviter un crash OOM (limite à 25 MB).")
+        logger.warning(
+            f"Image {filename} is too large ({len(file_content) / (1024 * 1024):.2f} MB). "
+            f"Rejected to prevent an OOM crash (25 MB limit)."
+        )
         return [], []
 
     logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")

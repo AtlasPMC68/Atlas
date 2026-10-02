@@ -49,4 +49,4 @@ jobs:
         run: |
           docker compose build -q florence-worker
           docker compose up -d florence-worker
-          docker compose run --rm -q test-backend pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true --log-cli-level=INFO -m "integration"
+          docker compose run --rm -q test-backend pytest tests/ -m "integration"

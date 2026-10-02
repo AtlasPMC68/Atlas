@@ -18,6 +18,8 @@ MAP_EXPECTED_TEXTS = {
     "Quebec_Traite1783":    ["Saint-Pierre", "Québec", "Montréal", "Boston", "New York", "La Nouvelle-Orléans"],
 
     "Degrade_Afrique":      ["Dakar", "Abidjan", "Lomé", "Douala"],
+
+    "Quebec_Cities_Only":    ["Montréal", "Québec", "Trois-Rivières", "Sherbrooke", "Saguenay", "Rimouski", "Sept-Îles", "Chibougamau", "Kuujjuaq"],
 }
 
 # Total raw number of text zones that Florence is expected to detect (before rejection)
@@ -31,6 +33,7 @@ MAP_EXPECTED_ZONE_DETECTION_COUNTS = {
     "Quebec_1800": 37,
     "Quebec_Traite1783": 44,
     "Degrade_Afrique": 31,
+    "Quebec_Cities_Only": 9,
 }
 
 CARD_THRESHOLDS = {
@@ -42,6 +45,5 @@ CARD_THRESHOLDS = {
     "Quebec_1791.png": {"min_hit_rate": 85.2, "max_dist": 0.51},
     "Nouvelle-France1750.png": {"min_hit_rate": 73.9, "max_dist": 1.20},
     "1775_Quebec_NordUSA.png": {"min_hit_rate": 68.8, "max_dist": 0.63},
+    "Quebec_Cities_Only": {"min_hit_rate": 100.0, "max_dist": 0.00},
 }
-
-# fmt: on

@@ -1,3 +1,8 @@
+import logging
+
+# to much spam in the logs from uvicorn.access, set to WARNING to reduce noise
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

@@ -164,7 +164,7 @@ services:
   test-backend:
     build:
       context: ./Backend-Atlas
-    command: pytest tests/ -v --color=yes --tb=short -rA -o log_cli=true
+    command: pytest tests/ -m "integration"
     env_file:
       - ./Backend-Atlas/.env.dev
     depends_on:
