@@ -1,7 +1,7 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "pip_7sift",
-  "evaluatedAt": "2026-10-02T19:21:18.938601Z",
+  "evaluatedAt": "2026-10-02T19:43:32.275006Z",
   "expectedZonesFile": "georef_zones/52a1aedc-98d0-4bd7-8b78-d4fd184f91df_zones.geojson",
   "thresholds": {
     "minIou": null,

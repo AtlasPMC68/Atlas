@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -28,8 +29,16 @@ class DevTestPaths:
 
 def write_geojson(feature_collection: dict[str, Any], geojson_path: str) -> None:
     os.makedirs(os.path.dirname(geojson_path), exist_ok=True)
-    with open(geojson_path, "w", encoding="utf-8") as f:
-        json.dump(feature_collection, f, indent=2, ensure_ascii=False)
+    directory = os.path.dirname(geojson_path)
+    fd, temporary_path = tempfile.mkstemp(dir=directory, suffix=".geojson.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(feature_collection, f, indent=2, ensure_ascii=False)
+        os.replace(temporary_path, geojson_path)
+    except Exception:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
 
 
 def _load_json(path: str) -> dict[str, Any]:
@@ -514,5 +523,13 @@ def evaluate_georef_test_case(
 
 def write_report(report: dict[str, Any], report_path: str) -> None:
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
+    directory = os.path.dirname(report_path)
+    fd, temporary_path = tempfile.mkstemp(dir=directory, suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        os.replace(temporary_path, report_path)
+    except Exception:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
