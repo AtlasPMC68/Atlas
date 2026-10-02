@@ -28,8 +28,11 @@ RESET = "\033[0m"
 @pytest.fixture(autouse=True)
 def clean_log_format_for_extraction(request: pytest.FixtureRequest):
     """Format logs without module prefixes and set log level configured in pytest.ini."""
-    show_info = request.config.getini("extraction_log_info")
-    target_level = logging.INFO if show_info else logging.WARNING
+    if request.node.name.startswith("test_florence_raw_detection_count"):
+        target_level = logging.WARNING
+    else:
+        show_info = request.config.getini("extraction_log_info")
+        target_level = logging.INFO if show_info else logging.WARNING
 
     clean_formatter = logging.Formatter("%(levelname)-8s %(message)s")
 
@@ -41,11 +44,16 @@ def clean_log_format_for_extraction(request: pytest.FixtureRequest):
         handler.setFormatter(clean_formatter)
         handler.setLevel(target_level)
 
+    ocr_logger = logging.getLogger("app.utils.text_extraction")
+    old_ocr_level = ocr_logger.level
+    ocr_logger.setLevel(target_level)
+
     old_root_level = logging.root.level
     logging.root.setLevel(target_level)
 
     yield
 
+    ocr_logger.setLevel(old_ocr_level)
     for handler, original_formatter in captured_handlers:
         handler.setFormatter(original_formatter)
     for handler, original_level in old_levels:
@@ -271,7 +279,6 @@ def get_extracted_text_cached(image_path: Path) -> list[dict[str, Any]]:
 )
 def test_florence_raw_detection_count(
     image_path: Path,
-    expected_text: list[str],
 ) -> None:
     """Test raw count of text zones detected by Florence-2 without evaluating textual accuracy."""
     assert image_path.exists()
