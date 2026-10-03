@@ -83,7 +83,7 @@ __all__ = ["_city_map", "get_city_with_max_population"]
 def get_city_with_max_population(
     text: str,
     geo_bounds: Optional[Dict[str, float]] = None,
-    confidence_threshold: float = 0.60,
+    confidence_threshold: float = 0.80,
 ) -> Dict[str, Any]:
     """Return a standardized result for a city search.
 
