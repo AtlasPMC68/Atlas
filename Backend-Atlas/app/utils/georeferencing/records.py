@@ -24,7 +24,11 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 RUN_RECORD_FILENAME = "run_record.json"
-RECORD_SCHEMA_VERSION = "1"
+#: 2: ``models`` holds ``gcp_affine`` (the GCP-only baseline, always),
+#: ``aligned_affine`` (when alignment used the curves) and ``applied`` (what
+#: the features were placed with). Version 1 wrote the applied model under
+#: ``stage2_affine`` and a ``chosen`` duplicate, and never the baseline.
+RECORD_SCHEMA_VERSION = "2"
 
 
 @dataclass

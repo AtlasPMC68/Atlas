@@ -352,6 +352,55 @@ def text_regions_if_cached(test_id: str, image_path: str) -> Optional[List[Any]]
     return regions
 
 
+def text_regions_for_run(
+    test_id: str,
+    image_path: Optional[str],
+    image_bgr: Any,
+    config: Any,
+    *,
+    allow_compute: Optional[bool] = None,
+    refresh: bool = False,
+) -> Optional[List[Any]]:
+    """The OCR regions a dev-test run uses, decided the same way everywhere.
+
+    Alignment needs them, and pays for OCR when they are missing; the
+    text-aware zone fill only uses them when already cached. The dev-test task
+    and the dev script both come through here, so the same case extracts the
+    same zones from either. ``allow_compute`` overrides whether a missing
+    artifact may be computed (the script's ``--ocr``); by default, only when
+    alignment is on. Never raises: no regions is a weaker run, not a failed one.
+    """
+    compute = config.enable_curve_alignment if allow_compute is None else allow_compute
+    if not compute and not config.text_aware_zone_fill:
+        return None
+    if not image_path:
+        return None
+
+    try:
+        regions, state = ensure_text_regions(
+            test_id,
+            image_path,
+            image_bgr,
+            refresh=refresh and compute,
+            allow_compute=compute,
+        )
+    except Exception as e:
+        logger.warning(f"[DEV-TEST] Could not obtain text regions for {test_id}: {e}")
+        return None
+
+    if regions is None:
+        logger.info(
+            f"[DEV-TEST] no cached text regions for {test_id};"
+            " skipping the text-aware zone fill (alignment is off)"
+        )
+        return None
+    logger.info(
+        f"[DEV-TEST] text regions for {test_id}: {len(regions)}"
+        f" ({state.detail or 'reused from cache'})"
+    )
+    return regions
+
+
 def delete_derived(test_id: str) -> None:
     """Drop every derived artifact for a map. Called when the map is deleted."""
     import shutil

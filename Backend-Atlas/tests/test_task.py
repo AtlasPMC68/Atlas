@@ -117,11 +117,11 @@ def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
         patch("app.tasks._extraction_state", mocks["state"]),
         patch("app.tasks._save_extraction", mocks["save"]),
         patch("app.tasks._end_extraction", mocks["end"]),
-        patch("app.tasks.extract_colors", mocks["colors"]),
+        patch("app.utils.extraction_steps.extract_colors", mocks["colors"]),
         patch("app.tasks.extract_shapes", mocks["shapes"]),
         patch("app.tasks.frame_city_index", mocks["city"]),
-        patch("app.tasks._align_if_enabled", mocks["align"]),
-        patch("app.tasks._georeference", mocks["georef"]),
+        patch("app.tasks.align_if_enabled", mocks["align"]),
+        patch("app.tasks.georeference_zones", mocks["georef"]),
         patch("app.tasks._write_ocr_text_file", MagicMock(return_value="out.txt")),
         patch("app.tasks.process_map_extraction.update_state"),
     ):
@@ -212,9 +212,9 @@ def test_alignment_receives_the_ocr_boxes_and_the_legend():
 
     if not mocks["align"].called:
         pytest.skip("curve alignment is switched off in this environment")
-    args, kwargs = mocks["align"].call_args
-    assert len(args[3]) == 2  # text_regions
-    assert args[4] == [(0.5, 0.5)]  # water picks
+    _args, kwargs = mocks["align"].call_args
+    assert len(kwargs["text_regions"]) == 2
+    assert kwargs["water_click_positions"] == [(0.5, 0.5)]
     assert kwargs["legend_bounds"] == LEGEND
 
 

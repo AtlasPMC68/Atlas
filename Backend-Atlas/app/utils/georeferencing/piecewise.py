@@ -16,6 +16,14 @@ _CHUNK = 20000
 #: -1e-16 on one side, which would leave the point in no triangle at all.
 _BARY_EPS = 1e-7
 
+#: What a model's residuals are. Only ``leave_one_out`` is an honest error for
+#: an interpolating model: in-sample residuals are 0 by construction, and with
+#: a fixed base the point being measured still shaped the affine underneath.
+RESIDUAL_LOO = "leave_one_out"
+RESIDUAL_LOO_FIXED_BASE = "leave_one_out_fixed_base"
+RESIDUAL_IN_SAMPLE = "in_sample"
+RESIDUAL_KINDS = (RESIDUAL_LOO, RESIDUAL_LOO_FIXED_BASE, RESIDUAL_IN_SAMPLE)
+
 Extent = Tuple[float, float, float, float]  # (x0, y0, x1, y1) in pixels
 
 
@@ -82,8 +90,8 @@ class PiecewiseAffineModel:
     n_points: int = 0
     #: Leave-one-out residuals (see ``fit``), NaN where a refit was impossible.
     residuals_3857: np.ndarray = field(default_factory=lambda: np.zeros(0))
-    #: Whether ``residuals_3857`` are honest (leave-one-out) or in-sample.
-    residuals_are_loo: bool = False
+    #: What ``residuals_3857`` are; one of ``RESIDUAL_KINDS``.
+    residuals_kind: str = RESIDUAL_IN_SAMPLE
 
     def __post_init__(self) -> None:
         self.verts_in = np.asarray(self.verts_in, dtype=float)
@@ -119,11 +127,15 @@ class PiecewiseAffineModel:
             regularizer: passed to the global affine fit.
             extent: (x0, y0, x1, y1) in pixels, where the frame anchors go.
             anchor_margin: frame padding, as a fraction of width and height.
-            base: an existing affine (Step 4's aligned model, say) to correct
+            base: an existing affine (Step 4's aligned model) to correct
                 instead of fitting one. It is then held fixed, including in the
-                leave-one-out passes.
-            leave_one_out: compute honest per-point error. Costs n refits, each
-                one small least-squares solve plus a triangulation.
+                leave-one-out passes, which therefore only leave the point out of
+                the local correction: the base was fitted with it. Such residuals
+                are labelled ``leave_one_out_fixed_base``. Never pass the affine
+                fitted to these same points here -- fit it with ``base=None`` so
+                every fold refits it and the error is a real leave-one-out.
+            leave_one_out: compute held-out per-point error. Costs n refits,
+                each one small least-squares solve plus a triangulation.
 
         Raises:
             ValueError: on mismatched inputs, duplicate control points, or a
@@ -154,10 +166,12 @@ class PiecewiseAffineModel:
                 anchor_margin,
                 base if base_fixed else None,
             )
-            model.residuals_are_loo = True
+            model.residuals_kind = (
+                RESIDUAL_LOO_FIXED_BASE if base_fixed else RESIDUAL_LOO
+            )
         else:
             model.residuals_3857 = model._residual_distances(src_xy, dst_xy)
-            model.residuals_are_loo = False
+            model.residuals_kind = RESIDUAL_IN_SAMPLE
         return model
 
     @classmethod
@@ -250,7 +264,7 @@ class PiecewiseAffineModel:
         )
         self.n_points = len(control_points)
         self.residuals_3857 = self._residual_distances(src, dst)
-        self.residuals_are_loo = False
+        self.residuals_kind = RESIDUAL_IN_SAMPLE
 
     def _residual_distances(self, src_xy: np.ndarray, dst_xy: np.ndarray) -> np.ndarray:
         X, Y = self(src_xy[:, 0], src_xy[:, 1])
@@ -365,9 +379,9 @@ class PiecewiseAffineModel:
             "nPoints": int(self.n_points),
             "rmse3857": self.rmse_3857,
             # Which number `rmse3857` is: an in-sample residual from an
-            # interpolating model is 0 by construction, so a reader has to be
-            # able to tell the two apart.
-            "rmse3857Kind": "leave_one_out" if self.residuals_are_loo else "in_sample",
+            # interpolating model is 0 by construction, and a fixed-base
+            # leave-one-out is optimistic, so a reader has to tell them apart.
+            "rmse3857Kind": self.residuals_kind,
             "residuals3857": [
                 None if not np.isfinite(r) else float(r) for r in self.residuals_3857
             ],
@@ -391,7 +405,10 @@ class PiecewiseAffineModel:
             model.residuals_3857 = np.array(
                 [np.nan if r is None else r for r in residuals], dtype=float
             )
-            model.residuals_are_loo = payload.get("rmse3857Kind") == "leave_one_out"
+            kind = payload.get("rmse3857Kind")
+            if kind not in RESIDUAL_KINDS:
+                raise ValueError(f"Unknown rmse3857Kind: {kind!r}")
+            model.residuals_kind = kind
         return model
 
 

@@ -58,7 +58,7 @@
           :sift-points="siftPts"
           :city-points="cityPts"
           :colors="store.inputs.colors ?? []"
-          can-change-map
+          :can-change-map="!store.editedCase"
           @change-map="askChangeMap"
         />
       </div>
@@ -166,7 +166,7 @@ import { usePolling } from "../../composables/usePolling";
 import { showAlert } from "../../composables/useAlert";
 import { slugifyTestCase } from "../../utils/devTestSlug";
 import { cityPoints, siftPoints, zoneRedoResetsPoints } from "../../utils/importSteps";
-import type { WorldAreaSelection } from "../../typescript/georef";
+import type { WorldAreaSelection, WorldBounds } from "../../typescript/georef";
 import type {
   ExtractionState,
   ImportInputsPatch,
@@ -194,6 +194,9 @@ const router = useRouter();
 const mode = (route.meta.importMode as ImportMode | undefined) ?? "user";
 const isDevTest = mode === "dev-test";
 const mapId = String(route.params.mapId);
+// Dev-test only: a stored case reopened to supply the inputs it predates.
+const caseToComplete =
+  isDevTest && typeof route.query.case === "string" ? route.query.case : null;
 
 const store = useImportSessionStore();
 store.reset(mode, mapId);
@@ -244,6 +247,19 @@ function askChangeMap() {
 // Leaves the import for good: the text analysis is stopped, the uploaded map
 // and every step are deleted, and the user goes back to where they came from.
 function askAbandon() {
+  if (store.editedCase) {
+    const caseId = store.editedCase.id;
+    pendingConfirm.value = {
+      title: "Quitter sans enregistrer ?",
+      message:
+        "Le test case reste tel qu'il est sur le disque : les entrées modifiées ici ne sont pas enregistrées.",
+      confirmLabel: "Quitter",
+      action: async () => {
+        await router.push(`/test-editor/${mapId}/case/${encodeURIComponent(caseId)}`);
+      },
+    };
+    return;
+  }
   pendingConfirm.value = {
     title: "Abandonner l'importation ?",
     message:
@@ -306,7 +322,29 @@ async function onZoneConfirmed(selection: WorldAreaSelection) {
   worldAreaZoom.value = selection.zoom;
   if (!(await store.confirmZone(selection.bounds))) {
     showAlert("error", store.error ?? "Impossible d'enregistrer la zone");
+    return;
   }
+  // Points kept from before the box existed may fall outside it. The box is
+  // the extent of every reference layer, so it should enclose them.
+  const bounds = store.inputs.frameBounds;
+  const outside = bounds
+    ? (store.inputs.controlPoints ?? []).filter((p) => !insideBounds(bounds, p.geo))
+    : [];
+  if (outside.length > 0) {
+    showAlert(
+      "error",
+      `${outside.length} point(s) de contrôle hors de la zone sur le monde : élargissez-la pour les inclure.`,
+      8000,
+    );
+  }
+}
+
+function insideBounds(bounds: WorldBounds, geo: { lon: number; lat: number }): boolean {
+  if (geo.lat < bounds.south || geo.lat > bounds.north) return false;
+  // A box across the date line has its west edge east of its east edge.
+  return bounds.west <= bounds.east
+    ? geo.lon >= bounds.west && geo.lon <= bounds.east
+    : geo.lon >= bounds.west || geo.lon <= bounds.east;
 }
 
 async function startExtraction() {
@@ -327,6 +365,12 @@ const devTestCaseName = ref<string | null>(null);
 
 async function startDevTestExtraction() {
   if (!store.file) return;
+  // A completed case is saved back under its own name, which slugifies to its
+  // id, so the run overwrites that case rather than creating another.
+  const edited = store.editedCase;
+  if (edited && !devTestCaseName.value) {
+    devTestCaseName.value = slugifyTestCase(edited.name) === edited.id ? edited.name : edited.id;
+  }
   if (!devTestCaseName.value) {
     const entered = window.prompt(
       `Nom du test-case pour le test ${mapId} (ex: '5 sift points')`,
@@ -341,6 +385,7 @@ async function startDevTestExtraction() {
     colors: store.inputs.colors ?? [],
     frameBounds: store.inputs.frameBounds ?? null,
     legend: store.inputs.legend ?? null,
+    kind: edited?.kind ?? null,
   });
   if (result.success) store.phase = "extraction";
   else showAlert("error", result.error);
@@ -425,7 +470,8 @@ watch(devImport.resultData, (result) => {
 });
 
 onMounted(async () => {
-  await store.restore();
+  if (caseToComplete) await store.openDevTestCase(caseToComplete);
+  else await store.restore();
   if (store.error) showAlert("error", store.error);
   // The first case on a new test map should not wait ~135 s for OCR.
   if (isDevTest) void devImport.warmTextRegions(mapId);

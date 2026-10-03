@@ -283,6 +283,24 @@ class TestNormalSearchICP:
         ) + 1e-6
 
 
+#: The thresholds the gates were designed with. The defaults are neutralised
+#: while the gates are evaluated from the run log (config.py), so tests that
+#: check what a gate catches pass these explicitly.
+DESIGNED_GATES = DEFAULT_GEOREF_CONFIG.with_overrides(
+    gate_probe_gcp_ratio=2.0,
+    gate_probe_gcp_max_km=150.0,
+    gate_water_iou_min=0.7,
+    gate_max_scale_drift=0.25,
+    gate_max_rotation_deg=15.0,
+    gate_min_inlier_fraction=0.2,
+    gate_min_chamfer_improvement=0.02,
+)
+
+
+def _gated(*args, **kwargs):
+    return evaluate_gates(*args, config=DESIGNED_GATES, **kwargs)
+
+
 class TestGates:
     def _phase(self, converged=True, inliers=0.8):
         from app.utils.georeferencing.align import PhaseResult
@@ -309,7 +327,7 @@ class TestGates:
 
     def test_all_checks_are_returned_even_when_inapplicable(self):
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase()
         )
         names = [c.name for c in checks]
@@ -322,7 +340,7 @@ class TestGates:
         truth, _s, evidence = _world()
         control_points = _control_points_from(truth, [(60.0, 100.0), (240.0, 110.0)])
         bad_probe = _perturb(truth, 500.0, 0.0, 0.0)
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, bad_probe, control_points, self._layers(), evidence,
             self._phase(),
         )
@@ -333,7 +351,7 @@ class TestGates:
         truth, _s, evidence = _world()
         blown = AffineModel(matrix=truth.matrix.copy())
         blown.matrix[:2, :2] *= 2.0
-        checks = evaluate_gates(
+        checks = _gated(
             blown, truth, None, [], self._layers(), evidence, self._phase()
         )
         assert "scale_drift" in failed_names(checks)
@@ -341,7 +359,7 @@ class TestGates:
     def test_rotation_drift_is_caught(self):
         truth, _s, evidence = _world()
         turned = _perturb(truth, 0.0, 0.0, 40.0)
-        checks = evaluate_gates(
+        checks = _gated(
             turned, truth, None, [], self._layers(), evidence, self._phase()
         )
         assert "rotation_drift" in failed_names(checks)
@@ -350,14 +368,14 @@ class TestGates:
         truth, _s, evidence = _world()
         mirrored = AffineModel(matrix=truth.matrix.copy())
         mirrored.matrix[0, 0] *= -1.0
-        checks = evaluate_gates(
+        checks = _gated(
             mirrored, truth, None, [], self._layers(), evidence, self._phase()
         )
         assert "transform_determinant" in failed_names(checks)
 
     def test_inlier_collapse_is_caught(self):
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence,
             self._phase(inliers=0.01),
         )
@@ -367,14 +385,14 @@ class TestGates:
         """A fit locked onto the wrong feature has a *low* residual, so the
         residual can only ever be a diagnostic."""
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase()
         )
         assert not any("residual" in c.name or "chamfer" in c.name for c in checks)
 
     def test_water_gate_is_inapplicable_without_water(self):
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase()
         )
         water = next(c for c in checks if c.name == "water_mask_iou")
@@ -493,7 +511,7 @@ class TestEngagementGate:
 
     def test_a_fit_that_did_not_move_fails(self):
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase(),
             baseline_chamfer_px=40.0, aligned_chamfer_px=40.0,
         )
@@ -501,7 +519,7 @@ class TestEngagementGate:
 
     def test_a_fit_that_improved_passes(self):
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase(),
             baseline_chamfer_px=40.0, aligned_chamfer_px=12.0,
         )
@@ -510,7 +528,7 @@ class TestEngagementGate:
 
     def test_a_fit_that_got_worse_fails(self):
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase(),
             baseline_chamfer_px=40.0, aligned_chamfer_px=55.0,
         )
@@ -518,7 +536,7 @@ class TestEngagementGate:
 
     def test_inapplicable_without_residuals(self):
         truth, _s, evidence = _world()
-        checks = evaluate_gates(
+        checks = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase()
         )
         check = next(c for c in checks if c.name == "curve_fit_engaged")
@@ -529,11 +547,11 @@ class TestEngagementGate:
         """A huge residual that improved is fine; a tiny one that did not is not.
         The gate is about engagement, not correctness."""
         truth, _s, evidence = _world()
-        huge_but_improved = evaluate_gates(
+        huge_but_improved = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase(),
             baseline_chamfer_px=900.0, aligned_chamfer_px=400.0,
         )
-        tiny_but_stuck = evaluate_gates(
+        tiny_but_stuck = _gated(
             truth, truth, None, [], self._layers(), evidence, self._phase(),
             baseline_chamfer_px=2.0, aligned_chamfer_px=2.0,
         )
@@ -546,3 +564,176 @@ class TestNonRegression:
         """Turning it on is the experiment, not the baseline. Step 4 must not
         change production output until the evidence says it should."""
         assert DEFAULT_GEOREF_CONFIG.enable_curve_alignment is False
+
+
+# --------------------------------------------------------------------------
+# The fixes of dev-docs/georeferencing-fixes.md, sections 1 and 2
+# --------------------------------------------------------------------------
+
+
+def _samples_at(model: AffineModel, pixels: np.ndarray) -> CurveSamples:
+    """Reference samples whose true position under *model* is *pixels*."""
+    X, Y = model(pixels[:, 0], pixels[:, 1])
+    tangent = np.gradient(pixels, axis=0)
+    norm = np.hypot(tangent[:, 0], tangent[:, 1])
+    nx, ny = -tangent[:, 1] / norm, tangent[:, 0] / norm
+    Xn, Yn = model(pixels[:, 0] + nx, pixels[:, 1] + ny)
+    return CurveSamples(xy=np.column_stack([X, Y]), xy_normal=np.column_stack([Xn, Yn]))
+
+
+def _drawn_curve(dy: float = 0.0, x_end: float = 269.0) -> SimpleNamespace:
+    """The `_world` curve drawn on the map, optionally displaced by *dy* px --
+    a map whose coast is drawn somewhere its control points disagree with."""
+    weight = np.zeros((HEIGHT, WIDTH), dtype=np.float32)
+    dense_x = np.arange(30.0, x_end, 0.2)
+    dense_y = 120.0 + dy + 40.0 * np.sin(dense_x / 26.0)
+    weight[
+        np.clip(dense_y.astype(int), 0, HEIGHT - 1),
+        np.clip(dense_x.astype(int), 0, WIDTH - 1),
+    ] = 1.0
+    return SimpleNamespace(
+        edge_weight=weight,
+        text_mask=np.zeros((HEIGHT, WIDTH), dtype=bool),
+        water=np.zeros((HEIGHT, WIDTH), dtype=bool),
+    )
+
+
+SPREAD = [(40.0, 30.0), (260.0, 40.0), (150.0, 210.0), (60.0, 200.0), (250.0, 190.0)]
+
+
+class TestControlPointsKeepPulling:
+    """One robust loss for both terms rejected any control point more than a
+    pixel or two off in the fine stages: the joint fit was curve-only."""
+
+    def test_tukey_residual_is_the_tukey_cost(self):
+        from app.utils.georeferencing.align import tukey_residual
+
+        r = np.array([0.0, 1.0, 5.0, 9.99, 10.0, 50.0])
+        c = 10.0
+        cost = 0.5 * tukey_residual(r, c) ** 2
+        expected = c**2 * tukey_loss((r / c) ** 2)[0]
+        assert np.allclose(cost, expected)
+        # Quadratic near zero, flat from the cutoff on.
+        assert tukey_residual(np.array([0.01]), c)[0] == pytest.approx(0.01, rel=1e-3)
+        assert tukey_residual(np.array([10.0]), c) == tukey_residual(np.array([500.0]), c)
+
+    def test_control_points_far_beyond_the_curve_cutoff_still_pull(self):
+        """No curve evidence at all, the start 40 px off: only the control
+        points can move the fit, and they must."""
+        truth = _truth_model()
+        control_points = _control_points_from(truth, SPREAD)
+        blind = SimpleNamespace(
+            edge_weight=np.zeros((HEIGHT, WIDTH), dtype=np.float32),
+            text_mask=None,
+            water=None,
+        )
+        samples = _samples_at(truth, _curve_pixels())
+        start = _perturb(truth, 40.0, -25.0, 0.0)
+
+        result = fit_chamfer(
+            start, control_points, samples, build_user_field(blind), DEFAULT_GEOREF_CONFIG
+        )
+
+        assert gcp_rms_px(start, control_points) > 40.0
+        assert gcp_rms_px(result.model, control_points) < 0.5
+
+    def test_the_joint_fit_is_not_the_curve_only_fit(self):
+        """A coast drawn 25 px from where the control points put it. The probe
+        (curve only) goes to the drawing; the joint fit must not simply follow
+        it, or the control points carry no information."""
+        truth = _truth_model()
+        control_points = _control_points_from(truth, SPREAD)
+        samples = _samples_at(truth, _curve_pixels())
+        field = build_user_field(_drawn_curve(dy=25.0))
+
+        probe = fit_chamfer(
+            truth, control_points, samples, field, DEFAULT_GEOREF_CONFIG, use_gcps=False
+        )
+        joint = fit_chamfer(truth, control_points, samples, field, DEFAULT_GEOREF_CONFIG)
+
+        probe_rms = gcp_rms_px(probe.model, control_points)
+        joint_rms = gcp_rms_px(joint.model, control_points)
+        assert probe_rms > 15.0
+        assert joint_rms < 0.5 * probe_rms
+
+    def test_raising_the_gcp_weight_pulls_harder_not_softer(self):
+        """Recovery rung 3. Under the shared loss, a larger weight shrank the
+        control points' effective cutoff and they dropped out sooner."""
+        truth = _truth_model()
+        control_points = _control_points_from(truth, SPREAD)
+        samples = _samples_at(truth, _curve_pixels())
+        field = build_user_field(_drawn_curve(dy=25.0))
+
+        plain = fit_chamfer(truth, control_points, samples, field, DEFAULT_GEOREF_CONFIG)
+        boosted = fit_chamfer(
+            truth, control_points, samples, field, DEFAULT_GEOREF_CONFIG,
+            gcp_weight_scale=8.0,
+        )
+        assert gcp_rms_px(boosted.model, control_points) <= gcp_rms_px(
+            plain.model, control_points
+        ) + 1e-6
+
+
+class TestOffImageSamples:
+    """The framing box puts reference coastline off the map. Those samples used
+    to read the distance field at the nearest border pixel."""
+
+    def test_validity_is_zero_on_the_image_border(self):
+        _truth, _samples, evidence = _world()
+        field = build_user_field(evidence)
+        assert np.all(field.validity[0, :] == 0.0)
+        assert np.all(field.validity[-1, :] == 0.0)
+        assert np.all(field.validity[:, 0] == 0.0)
+        assert np.all(field.validity[:, -1] == 0.0)
+        assert field.validity[HEIGHT // 2, WIDTH // 2] == pytest.approx(1.0)
+
+    def test_samples_off_the_image_cost_a_constant_and_pull_nowhere(self):
+        """Off the map a sample is an outlier: the saturated Tukey cost, the
+        same wherever the transform moves it. Not the distance at the border
+        pixel (an attractor), and not zero (which rewards hiding it there)."""
+        from app.utils.georeferencing.align import _residuals
+
+        truth, _samples, evidence = _world()
+        field = build_user_field(evidence)
+        off_map = np.column_stack(
+            [np.linspace(-400.0, -100.0, 50), np.linspace(-300.0, 600.0, 50)]
+        )
+        samples = _samples_at(truth, off_map)
+
+        def residuals(model):
+            return _residuals(
+                _params_from_model(model), None, None, None,
+                samples.xy, np.ones(len(samples)), field.distance_px,
+                field.validity, None, 20.0,
+            )
+
+        here = residuals(truth)
+        assert np.allclose(here, 20.0 / math.sqrt(3.0))
+        assert np.allclose(residuals(_perturb(truth, 7.0, -5.0, 1.0)), here)
+
+    def test_fractions_count_only_samples_in_view(self):
+        """A perfect fit whose reference curve runs off the map is all inliers
+        among what can be seen, not 'half the samples missed'."""
+        truth = _truth_model()
+        # Drawn to the image edge, so every sample in view has its coast.
+        field = build_user_field(_drawn_curve(x_end=float(WIDTH)))
+        x = np.arange(30.0, 570.0, 1.0)  # the image is 300 px wide
+        long_curve = np.column_stack([x, 120.0 + 40.0 * np.sin(x / 26.0)])
+        samples = _samples_at(truth, long_curve)
+
+        chamfer = fit_chamfer(truth, [], samples, field, DEFAULT_GEOREF_CONFIG, use_gcps=False)
+        icp = icp_refine(truth, [], samples, field, DEFAULT_GEOREF_CONFIG, use_gcps=False)
+
+        # The fit stays put: hiding the coast off the map gains nothing, and
+        # neither does squeezing off-map coast into view. Unfixed, the first
+        # pushed every sample out of view and the second drifted 11 px with a
+        # shear; what is left is a curve-only fit of a single raster curve,
+        # weakly constrained along its own length.
+        assert gcp_rms_px(chamfer.model, _control_points_from(truth, SPREAD)) < 3.0
+        in_view = chamfer.detail["samplesInView"]
+        assert 0.4 * len(samples) < in_view < 0.6 * len(samples)
+        assert chamfer.inlier_fraction > 0.9
+        # ICP over the samples that could match, not over every sample.
+        matched, in_view = icp.detail["correspondences"], icp.detail["samplesInView"]
+        assert icp.inlier_fraction == pytest.approx(matched / in_view)
+        assert matched / len(samples) < 0.5 < icp.inlier_fraction

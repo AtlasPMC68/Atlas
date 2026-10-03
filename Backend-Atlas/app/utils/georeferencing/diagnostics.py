@@ -17,8 +17,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import FrameBounds
-from .models import AffineModel, ControlPoint
+from .models import AffineModel, ControlPoint, gcp_sigma_px
 from .projection import (
     lonlat_to_webmercator,
     reference_latitude,
@@ -36,7 +37,7 @@ SUSPECT_RATIO = 2.0
 #: clicked map the median held-out error is near zero, and twice near-zero is
 #: still near zero. So a suspect must also miss by more than clicking can
 #: explain. In *image pixels*, because that is where the mistake was made --
-#: a sift point carries sigma 6 px (``models.DEFAULT_SIGMA_PX_BY_SOURCE``), so
+#: a point carries sigma 6 px by default (``GeorefConfig.gcp_sigma_px_*``), so
 #: this is about 2.5 sigma.
 SUSPECT_MIN_PX = 15.0
 
@@ -93,7 +94,7 @@ def load_last_run_control_pixels(record_path: str) -> Optional[List[Tuple[float,
 
 
 def _model_from_record(record: Dict[str, Any]) -> Optional[Any]:
-    payload = (record.get("models") or {}).get("stage2_affine")
+    payload = (record.get("models") or {}).get("applied")
     if not isinstance(payload, dict):
         return None
     try:
@@ -141,6 +142,7 @@ def control_point_diagnostics(
     frame_bounds: Optional[FrameBounds] = None,
     applied_model: Optional[Any] = None,
     applied_pixels: Optional[Sequence[Tuple[float, float]]] = None,
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> Dict[str, Any]:
     """Per-point in-sample and leave-one-out error for an affine fit.
 
@@ -268,7 +270,7 @@ def control_point_diagnostics(
                 # Reported as well as km: km says how wrong the map is, pixels
                 # say whether a human could have clicked that badly.
                 "looPx": None if loo_px is None else round(loo_px, 1),
-                "sigmaPx": cp.sigma_px,
+                "sigmaPx": gcp_sigma_px(cp.source, config),
                 "suspect": suspect,
             }
         )

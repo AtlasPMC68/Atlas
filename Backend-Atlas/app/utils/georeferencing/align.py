@@ -1,8 +1,10 @@
 """Coarse chamfer alignment, normal-search ICP, and the gates.
 
 Two phases (plan section 8.1). Both optimise the same six affine parameters, and
-both express every residual in **user image pixels**, so one robust cutoff means
-the same thing to the control-point term and to the curve term.
+both express every residual in **user image pixels**. The two terms do not share
+a loss: control points are plain least squares, and only the curve term is
+robust (Tukey, cutoff in pixels). A shared loss used to reject the control
+points in the fine stages -- see dev-docs/georeferencing-fixes.md.
 
     Phase A -- chamfer.  Reference curve samples are pushed into pixel space and
                          read a distance field built from the user's edge map.
@@ -121,6 +123,12 @@ def build_user_field(
         validity = np.clip(validity, 0.0, 1.0).astype(np.float32)
     else:
         validity = np.ones_like(distance, dtype=np.float32)
+    # Outside the image we cannot see either. Every lookup clamps to the
+    # nearest pixel, so the border row and column are set to 0 and ramp up
+    # inwards: a sample that leaves the image fades out smoothly instead of
+    # reading the distance field at the border -- which made the image frame
+    # an attractor for every reference point the framing box puts off-map.
+    validity *= _border_ramp(validity.shape, BORDER_RAMP_PX)
 
     return UserField(
         distance_px=distance,
@@ -130,6 +138,22 @@ def build_user_field(
         height=weight.shape[0],
         width=weight.shape[1],
     )
+
+
+#: Width, in pixels, of the ramp that takes validity from 0 on the image's
+#: outermost pixels to 1 inside.
+BORDER_RAMP_PX = 3.0
+
+
+def _border_ramp(shape_hw: Tuple[int, int], width_px: float) -> np.ndarray:
+    """0 on the outermost pixels, rising linearly to 1 at *width_px* inside."""
+    height, width = shape_hw
+    rows = np.arange(height, dtype=np.float32)
+    cols = np.arange(width, dtype=np.float32)
+    to_edge_y = np.minimum(rows, height - 1 - rows)
+    to_edge_x = np.minimum(cols, width - 1 - cols)
+    to_edge = np.minimum(to_edge_y[:, None], to_edge_x[None, :])
+    return np.clip(to_edge / max(float(width_px), 1e-6), 0.0, 1.0).astype(np.float32)
 
 
 def _sample_bilinear(field: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -145,9 +169,10 @@ def _sample_bilinear(field: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndar
 
 
 def tukey_loss(z: np.ndarray) -> np.ndarray:
-    """Tukey biweight for `scipy.optimize.least_squares`, normalised to c = 1.
+    """Tukey biweight, normalised to c = 1, in scipy's loss convention.
 
-    Pass the real cutoff as ``f_scale``; scipy evaluates this at ``(f/f_scale)**2``.
+    Evaluated at ``z = (r/c)**2``; returns ``[rho, rho', rho'']``. Used through
+    :func:`tukey_residual`, which applies it to the curve residuals only.
 
     Tukey rather than Huber because schematic maps carry huge outlier fractions:
     a large share of a drawn outline can be invented. Huber down-weights
@@ -165,6 +190,24 @@ def tukey_loss(z: np.ndarray) -> np.ndarray:
     rho[1] = np.where(inlier, 0.5 * (1.0 - u) ** 2, 0.0)
     rho[2] = np.where(inlier, -(1.0 - u), 0.0)
     return rho
+
+
+def tukey_residual(r: np.ndarray, cutoff_px: float) -> np.ndarray:
+    """A residual whose square is the Tukey cost of *r* at *cutoff_px*.
+
+    ``c * sqrt(2 * rho((r/c)**2))``: equal to ``|r|`` near zero, flat at
+    ``c / sqrt(3)`` from the cutoff on, so beyond it a sample pulls on nothing.
+
+    This is how the curve term gets its robust loss while the control-point
+    term stays plain least squares. scipy's ``loss`` argument applies one loss
+    with one ``f_scale`` to *every* residual; sized for thousands of curve
+    samples, that scale rejected any control point more than a pixel or two
+    off in the fine stages, so the "joint" fit was a curve-only fit in practice.
+    """
+    c = max(float(cutoff_px), 1e-9)
+    r = np.asarray(r, dtype=float)
+    rho = tukey_loss((r / c).ravel() ** 2)[0].reshape(r.shape)
+    return c * np.sqrt(2.0 * np.maximum(rho, 0.0))
 
 
 # --------------------------------------------------------------------------
@@ -259,6 +302,24 @@ def _gcp_arrays(
     return pixel, merc, sigma
 
 
+def _gcp_term(
+    control_points: Sequence[ControlPoint],
+    config: GeorefConfig,
+    gcp_weight_scale: float = 1.0,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Control-point pixels, targets and per-point weights for the objective.
+
+    Normalised by count so seven control points are not drowned by thousands
+    of curve samples, then weighted by 1/sigma**2 within the term. The term is
+    plain least squares (see `_residuals`), so these weights are what decides
+    how hard the points pull -- the robust cutoff never reaches them.
+    """
+    pixel, merc, sigma = _gcp_arrays(control_points, config)
+    rel = (np.median(sigma) / sigma) ** 2
+    weight = (config.weight_gcp * gcp_weight_scale / max(len(control_points), 1)) * rel
+    return pixel, merc, weight
+
+
 # --------------------------------------------------------------------------
 # Phase A -- chamfer
 # --------------------------------------------------------------------------
@@ -274,7 +335,18 @@ def _residuals(
     distance: Optional[np.ndarray],
     validity: Optional[np.ndarray],
     correspondences: Optional[np.ndarray] = None,
+    cutoff_px: float = 1.0,
 ) -> np.ndarray:
+    """Residuals for ``least_squares`` with ``loss="linear"``.
+
+    The control-point term is plain least squares: every point pulls in
+    proportion to its error, however large. Only the curve term is robust,
+    through :func:`tukey_residual` at *cutoff_px*. Its cost per sample is
+    ``weight * (v * rho(d) + (1 - v) * rho_max)``: where validity ``v`` is 0
+    (a label, off the image) the sample is treated as an outlier -- a flat
+    cost that exerts no pull, as plan section 7b asks, without making the
+    unseen regions a place the optimiser can hide samples for free.
+    """
     parts: List[np.ndarray] = []
 
     if gcp_pixel is not None and gcp_pixel.shape[0]:
@@ -285,20 +357,42 @@ def _residuals(
 
     if samples is not None and samples.shape[0]:
         sx, sy = _to_pixel(params, samples)
+        w = np.sqrt(sample_weight)
         if correspondences is not None:
-            # Phase B: explicit point-to-point correspondences.
-            w = np.sqrt(sample_weight)
-            parts.append(((sx - correspondences[:, 0]) * w).ravel())
-            parts.append(((sy - correspondences[:, 1]) * w).ravel())
+            # Phase B: point-to-point. Tukey applies to the distance, then the
+            # scaled vector keeps its direction for the solver.
+            dx = sx - correspondences[:, 0]
+            dy = sy - correspondences[:, 1]
+            r = np.hypot(dx, dy)
+            scale = np.where(
+                r > 1e-12, tukey_residual(r, cutoff_px) / np.maximum(r, 1e-12), 1.0
+            )
+            parts.append((dx * scale * w).ravel())
+            parts.append((dy * scale * w).ravel())
         else:
-            # Phase A: read the distance field, scaled by how much we can see.
+            # Phase A: read the distance field where we can see. Where we
+            # cannot (off the image, under a label) the sample costs what an
+            # outlier costs: a constant, so it neither pulls the fit (the old
+            # border clamp did) nor rewards it for hiding samples there (a
+            # zero cost would make "push the coast off the map" the optimum).
             d = _sample_bilinear(distance, sx, sy)
-            v = _sample_bilinear(validity, sx, sy)
-            parts.append((d * v * np.sqrt(sample_weight)).ravel())
+            v = np.clip(_sample_bilinear(validity, sx, sy), 0.0, 1.0)
+            seen = tukey_residual(d, cutoff_px)
+            unseen = float(cutoff_px) / math.sqrt(3.0)
+            parts.append((np.sqrt(v * seen**2 + (1.0 - v) * unseen**2) * w).ravel())
 
     if not parts:
         return np.zeros(1)
     return np.concatenate(parts)
+
+
+def _samples_in_view(
+    params: np.ndarray, samples: CurveSamples, user_field: "UserField"
+) -> np.ndarray:
+    """Which samples project somewhere we can see: inside the image, not
+    under a label. The denominator of every per-sample fraction."""
+    sx, sy = _to_pixel(params, samples.xy)
+    return _sample_bilinear(user_field.validity, sx, sy) > 0.5
 
 
 def chamfer_residual_px(
@@ -382,24 +476,29 @@ def fit_chamfer(
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, sigma = _gcp_arrays(control_points, config)
-        # Normalise by count so seven control points are not drowned by
-        # thousands of curve samples, then weight by 1/sigma**2 within the term.
-        rel = (np.median(sigma) / sigma) ** 2
-        gcp_w = (
-            config.weight_gcp * gcp_weight_scale / max(len(control_points), 1)
-        ) * rel
-
-    sample_w = np.full(n_samples, config.weight_curve / n_samples)
+        gcp_pixel, gcp_merc, gcp_w = _gcp_term(control_points, config, gcp_weight_scale)
 
     params = _params_from_model(initial)
     total_iterations = 0
     converged = False
     cost = float("inf")
     inlier_fraction = 0.0
+    in_view = 0
 
     for level, (sigma_px, cutoff) in enumerate(zip(blur, cutoffs)):
         distance = user_field.blurred_distance(sigma_px)
+        # The evidence for this level is the samples in view at its start,
+        # frozen for the solve -- the way ICP freezes its correspondences.
+        # Letting the set change mid-solve biases the fit whatever an unseen
+        # sample costs: at 0, pushing the coast off the map is free; at the
+        # outlier cost, squeezing off-map coast into view pays. Frozen, an
+        # active sample that leaves view costs the outlier constant and an
+        # inactive one costs nothing, so neither move is rewarded. The term is
+        # normalised by this count, so it does not weaken against the control
+        # points just because the framing box puts coast off the map.
+        active = _samples_in_view(params, samples, user_field)
+        n_active = int(active.sum())
+        sample_w = np.full(n_active, config.weight_curve / max(n_active, 1))
         try:
             solution = least_squares(
                 _residuals,
@@ -408,13 +507,14 @@ def fit_chamfer(
                     gcp_pixel,
                     gcp_merc,
                     gcp_w,
-                    samples.xy,
+                    samples.xy[active],
                     sample_w,
                     distance,
                     user_field.validity,
+                    None,
+                    float(cutoff),
                 ),
-                loss=tukey_loss,
-                f_scale=float(cutoff) * math.sqrt(config.weight_curve / n_samples),
+                loss="linear",
                 method="trf",
                 max_nfev=config.max_iterations_per_level * 7,
             )
@@ -427,10 +527,16 @@ def fit_chamfer(
         converged = bool(solution.success)
         cost = float(solution.cost)
 
-        scaled = np.abs(solution.fun) / max(
-            float(cutoff) * math.sqrt(config.weight_curve / n_samples), 1e-12
-        )
-        inlier_fraction = float((scaled <= 1.0).mean())
+        # Share of the samples we can see that sit within the cutoff. Samples
+        # off the image or under a label are neither inliers nor outliers.
+        sx, sy = _to_pixel(params, samples.xy)
+        seen = _samples_in_view(params, samples, user_field)
+        in_view = int(seen.sum())
+        if in_view:
+            d = _sample_bilinear(distance, sx[seen], sy[seen])
+            inlier_fraction = float((d <= float(cutoff)).mean())
+        else:
+            inlier_fraction = 0.0
 
     model = _model_from_params(params, n_points=len(control_points))
     return PhaseResult(
@@ -439,7 +545,7 @@ def fit_chamfer(
         inlier_fraction=inlier_fraction,
         cost=cost,
         iterations=total_iterations,
-        detail={"levels": len(blur)},
+        detail={"levels": len(blur), "samplesInView": in_view},
     )
 
 
@@ -552,11 +658,7 @@ def icp_refine(
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, sigma = _gcp_arrays(control_points, config)
-        rel = (np.median(sigma) / sigma) ** 2
-        gcp_w = (
-            config.weight_gcp * gcp_weight_scale / max(len(control_points), 1)
-        ) * rel
+        gcp_pixel, gcp_merc, gcp_w = _gcp_term(control_points, config, gcp_weight_scale)
 
     matched = 0
     converged = False
@@ -591,10 +693,9 @@ def icp_refine(
                     None,
                     None,
                     targets,
+                    float(config.icp_cutoff_px),
                 ),
-                loss=tukey_loss,
-                f_scale=float(config.icp_cutoff_px)
-                * math.sqrt(config.weight_curve / max(matched, 1)),
+                loss="linear",
                 method="trf",
                 max_nfev=config.max_iterations_per_level * 7,
             )
@@ -607,12 +708,16 @@ def icp_refine(
         cost = float(solution.cost)
         iterations += int(solution.nfev)
 
-    inlier_fraction = matched / max(len(samples), 1)
+    # Matched over the samples that could have matched: correspondences are
+    # only searched inside the image and off the labels, so counting the
+    # coastline the framing box puts off the map would read as a collapse.
+    in_view = int(_samples_in_view(params, samples, user_field).sum())
+    inlier_fraction = matched / max(in_view, 1)
     return PhaseResult(
         model=_model_from_params(params, n_points=len(control_points)),
         converged=converged,
-        inlier_fraction=inlier_fraction,
+        inlier_fraction=float(min(inlier_fraction, 1.0)),
         cost=cost,
         iterations=iterations,
-        detail={"correspondences": matched},
+        detail={"correspondences": matched, "samplesInView": in_view},
     )

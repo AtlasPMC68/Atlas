@@ -24,7 +24,9 @@ from app.utils.georeferencing import (
     ControlPoint,
     parse_control_points,
     parse_frame_bounds_entry,
+    select_control_points,
 )
+from app.utils.georeferencing.requirements import MIN_CONTROL_POINTS
 from app.utils.imposed_colors import (
     KIND_WATER,
     KIND_ZONE,
@@ -70,8 +72,51 @@ def write_test_config(
         },
     }
 
+    _drop_best_if_inputs_changed(case_dir, config_path, config_payload)
+
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config_payload, f, indent=2, ensure_ascii=False)
+
+
+#: A case's "best run" artifacts. Only comparable to runs on the same inputs.
+BEST_ARTIFACTS = ("best_report.json", "zones_best.geojson", "errors_best.geojson")
+
+
+def _drop_best_if_inputs_changed(
+    case_dir: str, config_path: str, new_config: dict[str, Any]
+) -> None:
+    """Forget a case's best run when its clicks change.
+
+    "Best" means the best score on these inputs. Once a case is edited (a water
+    pick added, a framing box drawn) the old best was measured on different
+    clicks, and keeping it would let it outrank every run on the new ones. A
+    re-save with identical inputs keeps it.
+    """
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            old_config = json.load(f)
+    except (OSError, ValueError):
+        return
+
+    def _inputs(config: dict[str, Any]) -> tuple:
+        georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
+        colors = config.get("colors") if isinstance(config.get("colors"), dict) else {}
+        return (
+            georef.get("controlPoints"),
+            georef.get("frameBounds"),
+            georef.get("legend"),
+            colors.get("imposed"),
+        )
+
+    if _inputs(old_config) == _inputs(new_config):
+        return
+    for name in BEST_ARTIFACTS:
+        try:
+            os.remove(os.path.join(case_dir, name))
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logger.warning(f"[DEV-TEST] Could not remove stale {name} in {case_dir}: {e}")
 
 
 def slugify_test_case(value: str) -> str:
@@ -448,6 +493,80 @@ def parse_extraction_inputs(
     )
 
 
+def case_inputs_for_editing(
+    assets_root: str, test_id: str, test_case_id: str
+) -> dict[str, Any]:
+    """A stored case's inputs, in the shape the import flow edits.
+
+    What the dev tool needs to reopen a case's "Saisie utilisateur" steps --
+    to supply an input the current algorithm requires and the case predates
+    (a framing box, a legend answer) while keeping every click it already has.
+    Each pipette pick carries ``hex``, sampled from the map like the import
+    flow does, so the colour step shows real swatches.
+
+    Raises:
+        FileNotFoundError: no such case, or its map image is gone.
+        ValueError: the stored config is malformed.
+    """
+    import cv2
+
+    from app.utils.color_sampling import sample_color_at
+
+    config = load_case_config(assets_root, test_id, test_case_id)
+    image_path = find_test_image_path(test_id)
+    if not image_path or not os.path.exists(image_path):
+        raise FileNotFoundError(
+            f"Test image not found for test_id={test_id} under {MAPS_DIR}"
+        )
+    inputs = parse_extraction_inputs(config, image_path)
+
+    image_bgr = cv2.imread(image_path)
+    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB) if image_bgr is not None else None
+    colors_section = config.get("colors") if isinstance(config.get("colors"), dict) else {}
+    positions, names, radii, kinds = parse_imposed_colors_entries(
+        colors_section.get("imposed")
+    )
+    colors = []
+    for (x, y), name, radius, kind in zip(positions or [], names or [], radii or [], kinds or []):
+        sampled = (
+            sample_color_at(image_rgb, x, y, radius_px=int(radius))
+            if image_rgb is not None
+            else None
+        )
+        colors.append(
+            {
+                "x": x,
+                "y": y,
+                "name": name or "",
+                "radius": int(radius),
+                "kind": kind,
+                "hex": (sampled or {}).get("hex") or "#888888",
+            }
+        )
+
+    editable: dict[str, Any] = {
+        "controlPoints": [cp.to_dict() for cp in inputs.control_points],
+        "colors": colors,
+    }
+    if inputs.frame_bounds:
+        editable["frameBounds"] = inputs.frame_bounds
+    if inputs.legend_answered:
+        editable["legend"] = {
+            "present": inputs.legend_bounds is not None,
+            "bounds": inputs.legend_bounds,
+        }
+
+    return {
+        "testId": test_id,
+        "testCaseId": test_case_id,
+        "testCase": config.get("testCase") or test_case_id,
+        "kind": config.get("kind") or None,
+        "imageUrl": f"/dev-test/maps/{os.path.basename(image_path)}",
+        "imageFilename": os.path.basename(image_path),
+        "inputs": editable,
+    }
+
+
 def inspect_case(
     *,
     assets_root: str,
@@ -513,26 +632,28 @@ def build_extraction_task_kwargs_for_case(
     }
 
 
-def drop_control_points(kwargs: dict[str, Any], excluded: Sequence[int]) -> list[int]:
-    """Remove control points by index from task kwargs, in place."""
-    pixels = kwargs.get("pixel_points")
-    geos = kwargs.get("geo_points_lonlat")
-    if not excluded or not pixels or not geos:
-        return []
+def drop_control_points(
+    control_points: Sequence[ControlPoint], excluded: Sequence[int]
+) -> tuple[list[ControlPoint], list[int]]:
+    """The points left once the *excluded* indices are removed, and those indices.
 
-    drop = {i for i in excluded if 0 <= i < len(pixels)}
-    if not drop:
-        return []
+    Indices are positions in the case's stored list (``georef.controlPoints``),
+    which is the order the dev tool lists the points in, whatever their source.
 
-    if len(pixels) - len(drop) < 3:
+    Raises:
+        ValueError: on an index that is not a stored point. Ignoring it would
+            run the case on points the caller did not ask for.
+    """
+    drop = sorted({int(i) for i in excluded or []})
+    bad = [i for i in drop if not 0 <= i < len(control_points)]
+    if bad:
         raise ValueError(
-            f"Excluding {len(drop)} of {len(pixels)} control points leaves fewer "
-            "than the 3 an affine needs"
+            f"Control point index out of range: {bad}"
+            f" (this case has {len(control_points)} points)"
         )
-
-    kwargs["pixel_points"] = [p for i, p in enumerate(pixels) if i not in drop]
-    kwargs["geo_points_lonlat"] = [g for i, g in enumerate(geos) if i not in drop]
-    return sorted(drop)
+    dropped = set(drop)
+    kept = [cp for i, cp in enumerate(control_points) if i not in dropped]
+    return kept, drop
 
 
 def _start_extraction_for_case(
@@ -549,7 +670,7 @@ def _start_extraction_for_case(
     # input, or a source selection leaving fewer than 3 points ("cities only"
     # on a case with two cities).
     run_config = GEOREF_CONFIG.with_overrides(**(config_overrides or {}))
-    state, _inputs = inspect_case(
+    state, inputs = inspect_case(
         assets_root=assets_root,
         test_id=test_id,
         test_case_id=test_case_id,
@@ -571,12 +692,26 @@ def _start_extraction_for_case(
             f" {warning.requirement.summary}"
         )
 
+    # Excluding points can leave too few among the selected sources, which the
+    # requirements above (checked on every stored point) cannot see.
+    kept, dropped = drop_control_points(
+        inputs.control_points, excluded_control_points or []
+    )
+    selected = select_control_points(kept, run_config.gcp_sources)
+    if dropped and len(selected) < MIN_CONTROL_POINTS:
+        raise ValueError(
+            f"Excluding points {dropped} leaves {len(selected)} control point(s)"
+            f" from {', '.join(run_config.gcp_sources)}; at least"
+            f" {MIN_CONTROL_POINTS} are needed"
+        )
+
     kwargs = build_extraction_task_kwargs_for_case(
         assets_root=assets_root,
         test_id=test_id,
         test_case_id=test_case_id,
     )
-    drop_control_points(kwargs, excluded_control_points or [])
+    if dropped:
+        kwargs["excluded_control_points"] = dropped
     if config_overrides:
         kwargs["config_overrides"] = config_overrides
 

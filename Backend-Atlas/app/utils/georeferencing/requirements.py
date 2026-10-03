@@ -81,7 +81,8 @@ class RequirementStatus(str, Enum):
     STALE = "stale"
     #: Missing, recoverable by re-running the producing step.
     REFRESHABLE = "refreshable"
-    #: Missing, and only a human can supply it. The case must be recreated.
+    #: Missing, and only a human can supply it: "Compléter les entrées" on the
+    #: case's result page reopens its steps with everything else kept.
     BLOCKED = "blocked"
     #: Missing, and genuinely optional. A capability is simply not exercised.
     ABSENT = "absent"
@@ -131,8 +132,9 @@ _CONTROL_POINTS = Requirement(
     ),
     remedy=(
         "If the case has enough points from another source, select it. Otherwise"
-        " recreate the case: the control points come from a human matching"
-        " keypoints and cities to the map and cannot be recovered from disk."
+        " complete the case ('Compléter les entrées' on its result page) and add"
+        " points: they come from a human matching keypoints and cities to the"
+        " map and cannot be recovered from disk."
     ),
 )
 
@@ -143,8 +145,9 @@ _CITY_CONTROL_POINTS = Requirement(
     since_step="5",
     summary="Cities the user named and located on the map.",
     remedy=(
-        "Optional: a map may show no city the gazetteer knows. Recreate the case"
-        " and name the cities on the map to compare SIFT, cities and both."
+        "Optional: a map may show no city the gazetteer knows. Complete the case"
+        " ('Compléter les entrées') and name the cities on the map to compare"
+        " SIFT, cities and both."
     ),
 )
 
@@ -155,12 +158,12 @@ _FRAME_BOUNDS = Requirement(
     since_step="1",
     summary="The world area the user framed; the extent for every reference layer.",
     remedy=(
-        "Recreate the case and draw the world area. The framing box is the"
-        " extent of every reference raster, so it decides which geography the"
-        " alignment can match against at all. Deriving one from the control"
+        "Complete the case ('Compléter les entrées' on its result page) and draw"
+        " the world area; its control points and picks are kept. The framing box"
+        " is the extent of every reference raster, so it decides which geography"
+        " the alignment can match against at all. Deriving one from the control"
         " points is not a substitute: that box is systematically too tight,"
-        " because the points sit inside the mapped area. Your drawn expected"
-        " zones are per-map and are not lost -- only this case's clicks are."
+        " because the points sit inside the mapped area."
     ),
 )
 
@@ -171,8 +174,9 @@ _ZONE_PICKS = Requirement(
     since_step="0",
     summary="Pipette picks of kind 'zone'; without them nothing is extracted.",
     remedy=(
-        "Recreate the case. A case predating the pipette has no colours in its"
-        " config and there is nothing to georeference."
+        "Complete the case ('Compléter les entrées' on its result page) and pick"
+        " the colours. A case predating the pipette has no colours in its config"
+        " and there is nothing to georeference."
     ),
 )
 
@@ -198,8 +202,9 @@ _LEGEND = Requirement(
         " colour masks and the alignment evidence, so it changes the zones."
     ),
     remedy=(
-        "Recreate the case and answer the legend step: draw the rectangle, or"
-        " choose 'Pas de légende sur la carte'. A probe case replays without it"
+        "Complete the case ('Compléter les entrées' on its result page) and"
+        " answer the legend step: draw the rectangle, or choose 'Pas de légende"
+        " sur la carte'. A probe case replays without it"
         " and reports it missing; a scored case cannot, because its number"
         " would not be comparable to one taken with the legend masked."
     ),

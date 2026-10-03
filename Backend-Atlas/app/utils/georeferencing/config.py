@@ -1,10 +1,11 @@
 # This file contains all the necessary parameters for the georeferencing and color extraction
 
 import math
+import os
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "13"
+CONFIG_VERSION = "14"
 
 #: The transform models a run may choose between, in increasing order of
 #: freedom. Adding one here is not enough: ``pipeline`` has to know how to
@@ -140,6 +141,10 @@ class GeorefConfig:
     # Frame padding as a fraction of the map's width and height. Wider means
     # the correction decays more gently and reaches further toward the edges.
     piecewise_anchor_margin: float = 0.25
+    # Longest segment kept before a piecewise warp, as a share of the image
+    # diagonal. Only vertices are warped, so a longer straight edge would stay
+    # straight across triangles the correction bends.
+    piecewise_densify_ratio_of_diagonal: float = 0.01
 
     # --- Reference rasters (Step 2) ------------------------------------------
     # Matches the existing find_coastline_keypoints defaults. At a ~2500 km
@@ -232,24 +237,38 @@ class GeorefConfig:
     # Normal-search ICP.
     enable_icp: bool = True
     icp_iterations: int = 8
-    icp_search_radius_px: tuple = (100.0, 80.0, 50.0, 30.0, 22.0, 15.0, 10.0, 5.0) # old value was (40.0, 30.0, 22.0, 16.0, 12.0, 9.0, 7.0, 5.0)
-    icp_orientation_tolerance_deg: float = 60.0 # old value was 30
-    icp_cutoff_px: float = 100.0 # old value was 20
+    # Back to the values from before the "tryhard" runs (v14). Those runs
+    # widened the search to 100 px, the cutoff to 100 px and the orientation
+    # tolerance to 60 degrees while the control points were being dropped by
+    # the shared robust loss and off-image samples still counted; the wider
+    # values were compensating for bugs. 60 degrees also lets most crossing
+    # lines through, which is what the orientation filter exists to stop.
+    # Test the wide values as a variant, not as the reference.
+    icp_search_radius_px: tuple = (40.0, 30.0, 22.0, 16.0, 12.0, 9.0, 7.0, 5.0)
+    icp_orientation_tolerance_deg: float = 30.0
+    icp_cutoff_px: float = 20.0
     icp_min_correspondences: int = 50
 
-    # Gates (section 8.3).
-    # TODO figure if first, we want the gate and if yes, what do we put the values as
-    gate_probe_gcp_ratio: float = 1000.0 # old value was 2.0
-    gate_probe_gcp_max_km: float = 10000.0 # old value was 150
-    gate_water_iou_min: float = 0.0 # old value was 0.7
-    gate_max_scale_drift: float = 1000.0 # old value was 0.25
-    gate_max_rotation_deg: float = 360.0 # old value was 15
-    gate_min_inlier_fraction: float = 0.0 # old value was 0.2
+    # Gates (section 8.3). **Mostly neutralised on purpose**: the thresholds
+    # below are set so these checks always pass. What can still reject an
+    # alignment: a mirrored transform (`transform_determinant`), an optimiser
+    # that did not converge, and `curve_fit_engaged` -- at 0.0 it fails only
+    # when the coastline chamfer got *worse*. Every gate is computed and logged
+    # with its value on every run. Whether to keep the gates is decided from
+    # that log -- do their values predict the runs where alignment made
+    # placement worse? -- not set by hand. The designed values are in the
+    # comments.
+    gate_probe_gcp_ratio: float = 1000.0  # designed: 2.0
+    gate_probe_gcp_max_km: float = 10000.0  # designed: 150
+    gate_water_iou_min: float = 0.0  # designed: 0.7
+    gate_max_scale_drift: float = 1000.0  # designed: 0.25
+    gate_max_rotation_deg: float = 360.0  # designed: 15
+    gate_min_inlier_fraction: float = 0.0  # designed: 0.2
     # Did the curve term actually engage? A fit that never moved passes every
     # sanity check, because nothing drifted. This is a *convergence* check, not
     # a correctness one -- a low chamfer residual still proves nothing, which is
     # why residual magnitude is never a gate.
-    gate_min_chamfer_improvement: float = 0.0 # old value was 0.02
+    gate_min_chamfer_improvement: float = 0.0  # designed: 0.02
 
     # Recovery ladder (section 10.2).
     recovery_multistart_translation_px: float = 40.0
@@ -267,6 +286,27 @@ class GeorefConfig:
 
 
 DEFAULT_GEOREF_CONFIG = GeorefConfig()
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off")
+
+
+def ambient_georef_config() -> GeorefConfig:
+    """What a run uses when nothing is overridden: the defaults above with the
+    deployment's environment applied.
+
+    One reader, so the Celery tasks and the dev script agree on what an
+    unswitched run is -- which is what decides whether a run may become a
+    dev-test case's best.
+    """
+    return DEFAULT_GEOREF_CONFIG.with_overrides(
+        snap_to_coastline=_env_flag("GEOREF_ENABLE_COASTLINE_SNAPPING", True),
+        enable_curve_alignment=_env_flag("GEOREF_ENABLE_CURVE_ALIGNMENT", True),
+    )
 
 
 #: The on/off switches the dev-test re-run button shows as checkboxes: settings
@@ -347,7 +387,14 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "text_inpaint_max_ink_ratio",
         ),
     ),
-    ("Transform model", ("transform_model", "piecewise_anchor_margin")),
+    (
+        "Transform model",
+        (
+            "transform_model",
+            "piecewise_anchor_margin",
+            "piecewise_densify_ratio_of_diagonal",
+        ),
+    ),
     ("Reference rasters", ("reference_raster_width", "reference_raster_height")),
     (
         "Edge detection",

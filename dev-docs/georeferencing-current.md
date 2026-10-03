@@ -1,5 +1,10 @@
 # Georeferencing — Current Implementation
 
+> **This describes `main` before the `georef-exp` branch.** For the branch: what was built is
+> in [`georeferencing-plan.md`](georeferencing-plan.md) (§5b onwards) and
+> [`georeferencing-experiments.md`](georeferencing-experiments.md); the bugs found afterwards
+> and the resulting current state are in [`georeferencing-fixes.md`](georeferencing-fixes.md).
+
 Reference description of how georeferencing works today, end to end. Written as of
 2026-09-19 (branch `main`). This document is descriptive, not aspirational: it describes
 what the code does, including its quirks. The planned replacement is in

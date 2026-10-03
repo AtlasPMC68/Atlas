@@ -203,8 +203,13 @@ clicking anything again. Control points are one list under `georef.controlPoints
 `city: {id, name}` (its GeoNames id). See [`city-gcps.md`](city-gcps.md).
 
 `run_record.json` sits next to `report.json` and holds what the georeferencing run knew and
-decided: control points with their source and sigma, the fitted model, every gate check
-(logged whether or not it passed), the errors and the per-phase timings. An IoU number alone
+decided: the control points with their source (and any excluded by hand), the models under
+`models` -- `gcp_affine` (the control-point baseline, always), `aligned_affine` (when
+alignment used the coastline) and `applied` (what the zones were placed with) -- every gate
+check (logged whether or not it passed), the errors and the per-phase timings.
+`errors.gcpRmseKind` says which error is reported: `in_sample` for an affine,
+`leave_one_out` for piecewise on the control-point affine, `leave_one_out_fixed_base` for
+piecewise on the aligned affine (optimistic: that affine was fitted with every point). An IoU number alone
 cannot tell you which stage moved it; this can. See
 [`georeferencing-plan.md`](georeferencing-plan.md) section 4.
 
@@ -280,7 +285,7 @@ map may show no city the gazetteer knows.
 
 | Kind | Example | Missing means |
 |---|---|---|
-| **User input** | control points, framing box, pipette picks | A human clicked it. Nothing can re-derive it — the case has to be recreated. |
+| **User input** | control points, framing box, pipette picks, legend | A human clicked it. Nothing can re-derive it — a human supplies it, with **Compléter les entrées** ([below](#completing-a-case)). |
 | **Derived** | OCR text regions | Extracted from the map by a step that is *not* georeferencing and does not change while georeferencing is tuned. Recomputed once, persisted, reused forever. An expense, never a blocker. |
 
 So the statuses you will see:
@@ -289,7 +294,7 @@ So the statuses you will see:
 |---|---|---|
 | `ok` | present | nothing |
 | `REFRESH` / `STALE` | derived artifact missing or produced from a different image | recomputed once (~135 s for OCR), then cached under `derived/` |
-| `BLOCKED` | a required user input is missing | the run stops and prints how to fix it: recreate the case — except the one exception below |
+| `BLOCKED` | a required user input is missing | the run stops and prints how to fix it: complete the case — except the one exception below |
 | `absent` | a genuinely optional user input is missing | runs; a capability is simply not exercised (no water picks ⇒ the water gate reports `applicable: false`) |
 
 **The one exception: inputs the pipeline can run without.** `legend` is required as an
@@ -319,8 +324,29 @@ measuring the GCP-only floor — never pays for OCR.
 a `case_state.json` written under an older version is re-checked rather than trusted. It is
 at **v4**: v1 had `frameBounds` as degraded, v2 promotes it to required, v3 counts control
 points per selected source and adds `cityControlPoints`, v4 adds `legend`. Every case
-recorded before v4 has no legend answer: scored cases need recreating, probes keep
+recorded before v4 has no legend answer: scored cases need completing, probes keep
 replaying with a warning.
+
+### Completing a case
+
+A case never needs recreating. On its result page, the "Cas de test" panel always has a
+button that reopens the **Saisie utilisateur** steps with everything the case already has --
+control points, pipette picks, framing box, legend -- so only the step you want needs doing:
+
+- **Compléter les entrées (…)** when a required input is missing; it names them.
+- **Modifier les entrées** otherwise, to add an optional input the case never got (the
+  panel lists them: `waterPicks`, `cityControlPoints`) or to change one.
+
+**Commencer l'extraction** then saves the case under its own name, overwriting its
+`config.json`, and re-runs it. If the inputs changed, the case's `best` run is deleted
+(`best_report.json`, `zones_best.geojson`, `errors_best.geojson`): it was scored on other
+clicks and would otherwise outrank every run on the new ones. Re-saving identical inputs
+keeps it.
+
+Framing a case for the first time **keeps its control points**. Only *changing* an existing
+box resets them, because SIFT keypoints and city candidates come from the box; no point was
+matched under a box that did not exist. If a kept point falls outside the new box, the page
+says so: the box is the extent of every reference layer, so widen it to include them.
 
 ---
 
@@ -336,21 +362,22 @@ replaying with a warning.
   is the expensive part and it is not needed to see where a transform put the zones. Draw it
   when you want to *pin* a behaviour, not to look at one.
 - A case created before the pipette existed has no colors in its `config.json` and can't be
-  replayed — the run now says so and names the fix rather than failing obscurely. Recreate it.
+  replayed — the run now says so and names the fix rather than failing obscurely. Complete it
+  ([§8](#completing-a-case)): pick the colours and keep the rest.
 - Older cases have no `kind` on their pipette picks: those are zones, which is the right
   default and needs no action.
-- Older cases also have no `frameBounds`, and that **does** block them. Recreating such a
-  case is a few minutes — world area, the control points, the pipette picks — because the
-  expensive part, the drawn expected zones, is per-map and is not lost.
+- Older cases also have no `frameBounds`, and that **does** block them. Complete them
+  ([§8](#completing-a-case)): draw the world area and keep the control points and picks.
 
 ---
 
 ## 10. The fast loop
 
-The pytest path boots a container, collects every test and runs a task with literal
-`time.sleep(2)` calls in it. When you are iterating on georeferencing itself, use the direct
-entry point instead — no broker, no database, no pytest collection, and colour extraction
-cached between runs:
+The pytest path boots a container and collects every test. When you are iterating on
+georeferencing itself, use the direct entry point instead — no broker, no database, no pytest
+collection, and colour extraction cached between runs. It runs the same steps as the dev-test
+task (`app/utils/extraction_steps.py`, `text_regions_for_run`), so under the same settings it
+writes byte-identical zones to a re-run from the UI:
 
 ```
 docker compose run --rm georef-dev
@@ -449,12 +476,26 @@ about 90 seconds to over four minutes.
 ### Re-running from the UI
 
 The case result page has a **Relancer** panel: it re-runs the case from its saved
-inputs and reloads the map in place, with two per-run switches.
+inputs and reloads the map in place. What it offers depends on the case's kind, and the
+panel says which kind it is.
+
+**Regression case.** It measures the pipeline as the worker runs it, so only the two
+post-processing switches are offered, **Snapping côtier** and **Découpe océan**, and both
+start at the worker's own values. Re-run without touching them and the result is a plain
+run, promotable to `best`; change one and it is written as latest only. No alignment
+switch, no model choice, no tuning panel, no point exclusion — to try those, make an
+exploration case on the same map. Tuning edits saved in the browser are never sent with a
+regression run.
+
+**Exploration case.** Everything below is available:
 
 - **Snapping côtier** defaults **off**, because a re-run button exists to judge
   alignment and that is the one setting you must turn off to do so.
+- **Découpe océan** defaults **on**, as the app does.
 - **Alignement** defaults **on**, because seeing what the current pipeline does is the
   point of re-running.
+- **Modèle de transformation**, the per-point exclusion checkboxes in **Points de
+  contrôle**, and the tuning panel described below.
 
 On an **exploration** case, **Points de contrôle utilisés** has one checkbox per source (SIFT,
 Villes) with the case's point count for each. Untick one to re-run from the other alone. The
@@ -465,7 +506,8 @@ so a run that does not use every source is never promoted to `best`.
 The **Points de contrôle (dernier run)** panel draws the last run's control points on the
 map: a dot at the point's true position (amber SIFT, magenta city, hover for the city name)
 and a dashed line to where the fitted transform put the pixel you clicked. It also shows the
-RMS error per source in km (leave-one-out with `piecewise_affine`).
+RMS error per source in km (leave-one-out with `piecewise_affine`; fixed-base, so
+optimistic, when alignment supplied the affine -- see `gcpRmseKind` above).
 
 The switches apply to that run only — they never touch the worker's own settings, so two
 people can re-run the same case differently at the same time. They reach the task as one
@@ -473,7 +515,8 @@ people can re-run the same case differently at the same time. They reach the tas
 the Celery signature (which breaks in-flight tasks and any caller that has not restarted
 alongside the worker).
 
-**Paramètres (ce run seulement)** is a collapsible tuning panel under the switches. It lists
+**Paramètres (ce run seulement)** (exploration cases only) is a collapsible tuning panel
+under the switches. It lists
 every `GeorefConfig` field, grouped by section and filterable by name, pre-filled with the
 worker's ambient values from `GET /dev-test-api/georef-config`. Edit a threshold and re-run:
 only fields that differ from the ambient value are sent, as the JSON body of `run-evaluate`,
@@ -495,9 +538,11 @@ Two things it deliberately will not do:
   written as the latest result.
 - **A case missing a required user input cannot be re-run at all.** The button is disabled
   and says which input, because no amount of re-running recovers a click that never happened.
+  **Compléter les entrées** is how to supply it ([§8](#completing-a-case)).
 
-The CLI is still the faster loop — it caches colour extraction, the task path does not, and
-the task carries a `time.sleep(2)`. Use the button when you are already looking at the map;
+The CLI is still the faster loop — it caches colour extraction, the task path does not. A CLI
+run whose flags differ from the deployment's ambient config is, like a UI run with switches,
+never promoted to `best`. Use the button when you are already looking at the map;
 use `--kind probe --align --no-snap` when you are iterating.
 
 **Pin your dependencies before trusting a number from this tool.** `numpy` and

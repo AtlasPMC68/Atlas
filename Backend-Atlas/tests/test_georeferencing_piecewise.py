@@ -177,7 +177,7 @@ class TestErrorReporting:
         )
         assert float(np.max(in_sample)) < 1e-6
 
-        assert model.residuals_are_loo
+        assert model.residuals_kind == "leave_one_out"
         assert model.rmse_3857 is not None and model.rmse_3857 > 0.0
 
     def test_serialization_round_trips_through_the_dispatcher(self):
@@ -250,9 +250,11 @@ class TestPipelineIntegration:
                 config=self._config(transform_model="ffd_8x8"),
             )
 
-    def test_off_by_default_keeps_the_affine(self):
+    def test_the_affine_choice_keeps_the_affine(self):
         result = georeference_features(
-            [self._zone()], _control_points({1: (15.0, 10.0)}), config=self._config()
+            [self._zone()],
+            _control_points({1: (15.0, 10.0)}),
+            config=self._config(transform_model="affine"),
         )
         assert result.model.name == "affine"
         feature = result.collections[0]["features"][0]
@@ -353,3 +355,133 @@ class TestPipelineIntegration:
         errors = result.record.to_dict()["errors"]
         assert errors["gcpRmseKm"] is None
         assert errors["gcpRmseKmBySource"] == {"sift": None, "city": None}
+
+
+class TestHonestErrorAndFrame:
+    """The fixes of dev-docs/georeferencing-fixes.md, section 3."""
+
+    @staticmethod
+    def _zone(ring):
+        return {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {},
+                    "geometry": {"type": "Polygon", "coordinates": [ring]},
+                }
+            ],
+        }
+
+    @staticmethod
+    def _config(**overrides):
+        return DEFAULT_GEOREF_CONFIG.with_overrides(
+            **{
+                "snap_to_coastline": False,
+                "clip_to_land_mask": False,
+                "transform_model": "piecewise_affine",
+                **overrides,
+            }
+        )
+
+    def test_leave_one_out_refits_the_affine_for_every_fold(self):
+        """The held-out point must not shape the affine it is measured against."""
+        cps = _control_points({1: (15.0, 10.0), 4: (-9.0, 12.0)})
+        zone = self._zone([[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]])
+        result = georeference_features([zone], cps, config=self._config())
+
+        from app.utils.georeferencing.pipeline import _piecewise_extent
+
+        src = np.array([cp.pixel for cp in cps], dtype=float)
+        dst = np.array([_expected_3857(cp) for cp in cps], dtype=float)
+        # No base handed in: every fold refits the affine without its point.
+        honest = PiecewiseAffineModel.fit(
+            src,
+            dst,
+            extent=_piecewise_extent(cps, [zone], None),
+            anchor_margin=DEFAULT_GEOREF_CONFIG.piecewise_anchor_margin,
+        )
+
+        assert result.model.residuals_kind == "leave_one_out"
+        assert np.allclose(result.model.residuals_3857, honest.residuals_3857)
+        errors = result.record.to_dict()["errors"]
+        assert errors["gcpRmseKind"] == "leave_one_out"
+
+    def test_an_aligned_base_is_labelled_as_a_fixed_base(self):
+        """Alignment's affine was fitted with every point and cannot be refitted
+        here, so its leave-one-out is optimistic -- and must say so."""
+        cps = _control_points({2: (16.0, -9.0)})
+        src = np.array([cp.pixel for cp in cps], dtype=float)
+        dst = np.array([_expected_3857(cp) for cp in cps], dtype=float)
+        aligned = AffineModel.fit(src, dst)
+        zone = self._zone([[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]])
+
+        result = georeference_features([zone], cps, config=self._config(), model=aligned)
+
+        assert result.model.residuals_kind == "leave_one_out_fixed_base"
+        assert result.record.to_dict()["errors"]["gcpRmseKind"] == "leave_one_out_fixed_base"
+        assert result.model.serialize()["rmse3857Kind"] == "leave_one_out_fixed_base"
+
+    def test_the_gcp_baseline_and_the_applied_model_are_both_recorded(self):
+        cps = _control_points({1: (15.0, 10.0)})
+        zone = self._zone([[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]])
+        result = georeference_features([zone], cps, config=self._config())
+
+        models = result.record.to_dict()["models"]
+        assert models["gcp_affine"]["name"] == "affine"
+        assert models["applied"]["name"] == "piecewise_affine"
+
+    def test_the_frame_encloses_points_beyond_the_zones(self):
+        """Zones in one corner, control points across the whole map: the frame
+        used to pad the zones only, leaving points outside it, and the model
+        jumped from corrected to plain affine at the triangulation's hull."""
+        cps = _control_points({1: (15.0, 10.0), 4: (12.0, -8.0)})
+        corner = self._zone([[100.0, 100.0], [160.0, 100.0], [160.0, 150.0], [100.0, 100.0]])
+
+        result = georeference_features(
+            [corner], cps, config=self._config(), image_size=(600, 400)
+        )
+
+        anchors = result.model.verts_in[-8:]
+        for cp in cps:
+            assert anchors[:, 0].min() < cp.pixel[0] < anchors[:, 0].max()
+            assert anchors[:, 1].min() < cp.pixel[1] < anchors[:, 1].max()
+        assert anchors[:, 0].min() < 0.0 and anchors[:, 0].max() > 600.0
+
+    def test_the_model_is_continuous_out_to_and_past_the_frame(self):
+        cps = _control_points({1: (15.0, 10.0), 4: (12.0, -8.0)})
+        corner = self._zone([[100.0, 100.0], [160.0, 100.0], [160.0, 150.0], [100.0, 100.0]])
+        model = georeference_features(
+            [corner], cps, config=self._config(), image_size=(600, 400)
+        ).model
+
+        # A ray from a corrected point out past the frame, 1 px steps.
+        x = np.linspace(500.0, 1100.0, 601)
+        y = np.full_like(x, 120.0)
+        X, Y = model(x, y)
+        step = np.hypot(np.diff(X), np.diff(Y))
+        # The affine alone moves ~1000 m per pixel here; a seam would show up
+        # as a step far above that.
+        assert step.max() < 1.5 * SCALE_M_PER_PX
+
+    def test_long_edges_are_densified_before_a_piecewise_warp(self):
+        cps = _control_points({2: (20.0, 15.0)})
+        triangle = self._zone([[60.0, 60.0], [560.0, 70.0], [300.0, 380.0], [60.0, 60.0]])
+
+        piecewise = georeference_features(
+            [triangle], cps, config=self._config(), image_size=(600, 400)
+        )
+        affine = georeference_features(
+            [triangle],
+            cps,
+            config=self._config(transform_model="affine"),
+            image_size=(600, 400),
+        )
+
+        def vertex_count(result):
+            geometry = result.collections[0]["features"][0]["geometry"]
+            return len(geometry["coordinates"][0])
+
+        assert vertex_count(affine) == 4
+        assert vertex_count(piecewise) > 100
+        assert piecewise.record.to_dict()["inputs"]["densifyStepPx"] > 0

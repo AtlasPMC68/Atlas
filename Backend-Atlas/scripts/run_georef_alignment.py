@@ -2,9 +2,12 @@
 """Run georeferencing on dev-test cases directly, without Celery or pytest.
 
 The existing loop is ``docker compose run --rm test-backend pytest``, which boots
-a container, collects every test, and runs a task containing literal
-``time.sleep(2)`` calls. Tuning an annealing schedule means re-running dozens of
-times a day, so seconds versus minutes compounds across the whole build.
+a container and collects every test. Tuning an annealing schedule means
+re-running dozens of times a day, so seconds versus minutes compounds across
+the whole build.
+
+It runs the dev-test task's own steps (``app/utils/extraction_steps.py``), so
+under the same settings its zones are byte-identical to a re-run from the UI.
 
 This script skips all of that: it loads a case config, runs colour extraction
 once (cached on disk afterwards), fits and applies the transform, evaluates, and
@@ -49,7 +52,8 @@ _BACKEND_ROOT = os.path.dirname(_SCRIPT_DIR)
 if _BACKEND_ROOT not in sys.path:
     sys.path.insert(0, _BACKEND_ROOT)
 
-from app.utils.color_extraction import extract_colors  # noqa: E402
+import cv2  # noqa: E402
+
 from app.utils.dev_test import (  # noqa: E402
     load_case_config,
     parse_extraction_inputs,
@@ -62,18 +66,27 @@ from app.utils.dev_test_cases import (  # noqa: E402
     build_case_state,
     resolve_case_kind,
 )
-from app.utils.dev_test_derived import ensure_text_regions  # noqa: E402
+from app.utils.dev_test_derived import text_regions_for_run  # noqa: E402
 from app.utils.dev_test_evaluator import build_test_case_paths  # noqa: E402
+from app.utils.dev_test_pixel_zones import (  # noqa: E402
+    write_classified_image,
+    write_pixel_zones,
+)
+from app.utils.extraction_steps import (  # noqa: E402
+    align_if_enabled,
+    extract_zone_colors,
+    georeference_zones,
+    zone_extraction_settings,
+)
 from app.utils.georeferencing import (  # noqa: E402
-    DEFAULT_GEOREF_CONFIG,
     GCP_SOURCES,
     RunRecord,
     count_by_source,
     select_control_points,
     build_reference_layers,
     dump_reference_debug_pngs,
-    georeference_features,
 )
+from app.utils.georeferencing.config import ambient_georef_config  # noqa: E402
 
 CACHE_DIR = os.path.join(_BACKEND_ROOT, ".georef_cache")
 
@@ -95,30 +108,6 @@ def discover_cases(assets_root: str) -> list[tuple[str, str]]:
     return found
 
 
-def extract_text_regions_cached(
-    test_id: str, image_path: str, image_bgr: Any, refresh: bool = False
-):
-    """OCR regions for the map, from the shared derived store.
-
-    EasyOCR takes ~135 s on CPU for a 1736x1350 scan, which is why the dev-test
-    task skips text extraction entirely. But without a text mask roughly half
-    the edge pixels on a labelled map are place names, so the edge map the dev
-    loop shows is not the one Step 4 should be tuned against.
-
-    These used to live in this script's private pickle cache, which meant the
-    Celery path could not see them and a second case on the same map paid the
-    135 s again. They are now a *derived artifact* of the map
-    (``app/utils/dev_test_derived.py``): produced once, persisted under the test
-    assets, shared by every case and by the task.
-    """
-    regions, state = ensure_text_regions(
-        test_id, image_path, image_bgr, refresh=refresh
-    )
-    if state.detail:
-        print(f"  ocr cache: {state.detail}")
-    return regions or []
-
-
 def _extraction_library_versions() -> dict:
     """Versions of the libraries colour extraction actually depends on.
 
@@ -127,14 +116,15 @@ def _extraction_library_versions() -> dict:
     disagree on zone geometry (IoU 0.9406 vs 0.9414). A measurement harness
     handing back a silently stale number is worse than having no cache.
     """
-    import cv2
     import skimage
 
     return {"cv2": cv2.__version__, "skimage": skimage.__version__}
 
 
-def _cache_key(image_path: str, inputs: Any) -> str:
-    """Identify a colour-extraction result by everything that could change it."""
+def _cache_key(image_path: str, inputs: Any, text_regions: Any, config: Any) -> str:
+    """Identify a colour-extraction result by everything that could change it:
+    the clicks, the OCR boxes the text fill uses, and every config setting
+    colour extraction reads."""
     payload = {
         "image": os.path.basename(image_path),
         "mtime": os.path.getmtime(image_path),
@@ -143,14 +133,19 @@ def _cache_key(image_path: str, inputs: Any) -> str:
         "names": inputs.imposed_colors_names,
         "radii": inputs.imposed_sampling_radii,
         "legend": inputs.legend_bounds,
+        "textRegions": text_regions if config.text_aware_zone_fill else None,
+        "settings": zone_extraction_settings(config),
         "libs": _extraction_library_versions(),
     }
     blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()[:32]
 
 
-def extract_colors_cached(image_path: str, inputs: Any, use_cache: bool) -> dict:
-    key = _cache_key(image_path, inputs)
+def extract_colors_cached(
+    image_path: str, inputs: Any, text_regions: Any, config: Any, use_cache: bool
+) -> dict:
+    """The task's colour extraction, cached on disk between runs."""
+    key = _cache_key(image_path, inputs, text_regions, config)
     cache_path = os.path.join(CACHE_DIR, f"{key}.pickle")
 
     if use_cache and os.path.exists(cache_path):
@@ -160,21 +155,14 @@ def extract_colors_cached(image_path: str, inputs: Any, use_cache: bool) -> dict
         except Exception:
             pass  # A stale or corrupt cache entry is never worth failing over.
 
-    result = extract_colors(
+    result = extract_zone_colors(
         image_path,
-        debug=False,
         legend_bounds=inputs.legend_bounds,
-        imposed_click_positions=(
-            [tuple(c) for c in inputs.imposed_click_positions]
-            if inputs.imposed_click_positions
-            else None
-        ),
-        imposed_colors_names=inputs.imposed_colors_names,
-        imposed_sampling_radii=(
-            [int(r) for r in inputs.imposed_sampling_radii]
-            if inputs.imposed_sampling_radii
-            else None
-        ),
+        click_positions=inputs.imposed_click_positions,
+        names=inputs.imposed_colors_names,
+        radii=inputs.imposed_sampling_radii,
+        text_regions=text_regions,
+        config=config,
     )
 
     if use_cache:
@@ -204,26 +192,47 @@ def run_case(
     debug: bool = False,
     sources: tuple = GCP_SOURCES,
 ) -> Optional[dict]:
+    """Run one case the way the dev-test task does, step for step.
+
+    Same text regions, same colour extraction, same alignment, same transform
+    (``app/utils/extraction_steps.py``), so a number printed here is the number
+    a re-run from the dev tool gives under the same settings.
+    """
     print(f"\n=== {test_id}/{case_id}")
 
     image_path = find_test_image_path(test_id)
     if not image_path or not os.path.exists(image_path):
         print("  SKIP: map image not found")
         return None
+    image_bgr = cv2.imread(image_path)
+    if image_bgr is None:
+        print("  SKIP: map image could not be read")
+        return None
 
     config = load_case_config(assets_root, test_id, case_id)
     inputs = parse_extraction_inputs(config, image_path)
+
+    # The deployment's ambient config with this run's flags on top, exactly
+    # as the task layers a re-run's switches on its own. A run that differs
+    # from ambient is written as latest, never promoted to best.
+    ambient = ambient_georef_config()
+    run_config = ambient.with_overrides(
+        enable_curve_alignment=align,
+        snap_to_coastline=snap,
+        gcp_sources=tuple(sources),
+    )
+    ambient_values = ambient.to_dict()
+    switches = {
+        key: value
+        for key, value in run_config.to_dict().items()
+        if ambient_values[key] != value
+    }
 
     # What this case is for, and whether its stored inputs still satisfy the
     # algorithm as it stands today. Printed every run: a case authored before a
     # requirement existed otherwise runs quietly with less evidence than the
     # pipeline expects, and reports a worse number for a reason that has nothing
     # to do with the change being measured.
-    run_config = DEFAULT_GEOREF_CONFIG.with_overrides(
-        enable_curve_alignment=True if align else None,
-        snap_to_coastline=snap,
-        gcp_sources=tuple(sources),
-    )
     case_state = build_case_state(
         test_id=test_id,
         test_case_id=case_id,
@@ -254,31 +263,25 @@ def run_case(
             + " recomputed, and --no-refresh was given"
         )
 
+    # The same inputs the task records, so two run records can be diffed.
     record = RunRecord(run_id=f"{test_id}/{case_id}")
-    record.set_inputs(caseKind=case_state.kind)
+    record.set_inputs(
+        waterPickCount=len(inputs.water_click_positions or []),
+        legendBounds=inputs.legend_bounds,
+        caseKind=case_state.kind,
+        runSwitches=switches or None,
+        controlPointSources=list(run_config.gcp_sources),
+    )
 
     # Always the drawn box: a case without one is blocked above, because a box
     # derived from the control points is systematically too tight (the points
     # sit inside the mapped area) and silently crops the reference layers.
     frame_bounds = inputs.frame_bounds
-    record.set_inputs(frameBoundsSource="config")
-
-    text_regions = None
+    paths = build_test_case_paths(assets_root, test_id, case_id)
 
     if reference:
         with record.phase("reference_layers"):
             layers = build_reference_layers(frame_bounds)
-        record.set_inputs(
-            referenceLayers={
-                "grid": {
-                    "width": layers.grid.width,
-                    "height": layers.grid.height,
-                    "kmPerPixel": round(layers.grid.km_per_pixel, 3),
-                },
-                "versions": layers.layer_versions,
-                "coverage": {k: round(v, 5) for k, v in layers.coverage().items()},
-            }
-        )
         coverage = layers.coverage()
         print(
             "  reference: %.2f km/px  coast %.2f%%  lakes %.2f%%  rivers %.2f%%  land %.1f%%"
@@ -291,160 +294,143 @@ def run_case(
             )
         )
         if write:
-            debug_dir = os.path.join(
-                build_test_case_paths(assets_root, test_id, case_id).case_dir,
-                "reference_debug",
-            )
+            debug_dir = os.path.join(paths.case_dir, "reference_debug")
             dump_reference_debug_pngs(layers, debug_dir)
             print(f"  reference debug PNGs -> {debug_dir}")
 
-    if evidence:
-        # Imported here, not at module scope: evidence.py is the only part of
-        # the package that needs cv2.
-        import cv2
+    # OCR boxes, decided the way the task decides: computed when alignment
+    # (or --ocr) wants them, otherwise reused from the cache for the text fill.
+    with record.phase("ocr"):
+        text_regions = text_regions_for_run(
+            test_id,
+            image_path,
+            image_bgr,
+            run_config,
+            allow_compute=ocr or run_config.enable_curve_alignment,
+            refresh=refresh_derived,
+        )
+    print(
+        "  ocr:       "
+        + (f"{len(text_regions)} text regions" if text_regions is not None else "none")
+    )
 
+    if evidence:
         from app.utils.georeferencing.evidence import (
             build_user_evidence,
             dump_evidence_debug_pngs,
         )
 
-        image_bgr = cv2.imread(image_path)
-        if image_bgr is None:
-            print("  evidence: could not read the map image")
-        else:
-            if ocr:
-                with record.phase("ocr"):
-                    text_regions = extract_text_regions_cached(
-                        test_id, image_path, image_bgr, refresh=refresh_derived
-                    )
-                print(f"  ocr:       {len(text_regions)} text regions")
-            with record.phase("user_evidence"):
-                user_evidence = build_user_evidence(
-                    image_bgr,
-                    text_regions=text_regions,
-                    water_click_positions=inputs.water_click_positions,
-                    water_sampling_radii=inputs.water_sampling_radii,
-                    legend_bounds=inputs.legend_bounds,
-                )
-            record.set_inputs(userEvidence=user_evidence.stats)
-            st = user_evidence.stats
-            print(
-                "  evidence:  edges %.2f%%  straight lines %d (%.1f%% of edge px"
-                " down-weighted)  water %.2f%%"
-                % (
-                    st["edgeFraction"] * 100,
-                    st["straightLineCount"],
-                    st["suppressedEdgeFraction"] * 100,
-                    st["waterFraction"] * 100,
-                )
+        with record.phase("user_evidence"):
+            user_evidence = build_user_evidence(
+                image_bgr,
+                text_regions=text_regions,
+                water_click_positions=inputs.water_click_positions,
+                water_sampling_radii=inputs.water_sampling_radii,
+                config=run_config,
+                legend_bounds=inputs.legend_bounds,
             )
-            if not st["hasWater"]:
-                print("             (no water picks in this case's config)")
-            if not ocr:
-                print(
-                    "             (no text mask: pass --ocr, or ~half these edge"
-                    " pixels are place names)"
-                )
-            if write:
-                debug_dir = os.path.join(
-                    build_test_case_paths(assets_root, test_id, case_id).case_dir,
-                    "evidence_debug",
-                )
-                dump_evidence_debug_pngs(user_evidence, image_bgr, debug_dir)
-                print(f"  evidence debug PNGs -> {debug_dir}")
+        st = user_evidence.stats
+        print(
+            "  evidence:  edges %.2f%%  straight lines %d (%.1f%% of edge px"
+            " down-weighted)  water %.2f%%"
+            % (
+                st["edgeFraction"] * 100,
+                st["straightLineCount"],
+                st["suppressedEdgeFraction"] * 100,
+                st["waterFraction"] * 100,
+            )
+        )
+        if not st["hasWater"]:
+            print("             (no water picks in this case's config)")
+        if text_regions is None:
+            print(
+                "             (no text mask: pass --ocr, or ~half these edge"
+                " pixels are place names)"
+            )
+        if write:
+            debug_dir = os.path.join(paths.case_dir, "evidence_debug")
+            dump_evidence_debug_pngs(user_evidence, image_bgr, debug_dir)
+            print(f"  evidence debug PNGs -> {debug_dir}")
 
     t0 = time.perf_counter()
     with record.phase("color_extraction"):
-        color_result = extract_colors_cached(image_path, inputs, use_cache)
+        color_result = dict(
+            extract_colors_cached(image_path, inputs, text_regions, run_config, use_cache)
+        )
     extract_ms = (time.perf_counter() - t0) * 1000.0
 
+    classified_rgb = color_result.pop("classified_rgb", None)
     pixel_features = color_result.get("pixel_features", [])
+    record.set_errors(
+        textFill=color_result.get("text_fill"),
+        zoneGaps=color_result.get("zone_gaps"),
+    )
+    pixel_zones_snapshot = json.loads(json.dumps(pixel_features))
 
     # Only the selected sources, for every stage below: the same filtering the
     # Celery task applies, so --sources city means the cities alone throughout.
     control_points = select_control_points(inputs.control_points, run_config.gcp_sources)
-    record.set_inputs(controlPointSources=list(run_config.gcp_sources))
 
-    aligned_model = None
-    alignment = None
-    if align:
-        import cv2
+    alignment_debug_dir = None
+    if debug and write and run_config.enable_curve_alignment:
+        import shutil
 
-        from app.utils.georeferencing.runner import align_map
-
-        image_bgr = cv2.imread(image_path)
-        if image_bgr is None:
-            print("  align: could not read the map image")
-        else:
-            if text_regions is None and ocr:
-                text_regions = extract_text_regions_cached(
-                    test_id, image_path, image_bgr, refresh=refresh_derived
-                )
-            # Cleared rather than merged, so a run writing fewer files than
-            # the last one cannot leave stale overlays reading as current.
-            alignment_debug_dir = None
-            if debug and write:
-                import shutil
-
-                alignment_debug_dir = os.path.join(
-                    build_test_case_paths(assets_root, test_id, case_id).case_dir,
-                    "alignment_debug",
-                )
-                shutil.rmtree(alignment_debug_dir, ignore_errors=True)
-                os.makedirs(alignment_debug_dir, exist_ok=True)
-
-            t0 = time.perf_counter()
-            alignment = align_map(
-                image_bgr,
-                control_points,
-                frame_bounds=frame_bounds,
-                text_regions=text_regions,
-                water_click_positions=inputs.water_click_positions,
-                water_sampling_radii=inputs.water_sampling_radii,
-                config=run_config.with_overrides(enable_curve_alignment=True),
-                record=record,
-                debug_dir=alignment_debug_dir,
-                legend_bounds=inputs.legend_bounds,
-            )
-            if alignment_debug_dir:
-                print(f"  alignment debug -> {alignment_debug_dir}")
-            print(
-                "  align:     %s (rung %d) in %.1fs  probe %.1f px  %s"
-                % (
-                    alignment.method,
-                    alignment.rung,
-                    time.perf_counter() - t0,
-                    alignment.probe_agreement_px or float("nan"),
-                    "gates passed"
-                    if not alignment.failed_checks
-                    else "FAILED: " + ", ".join(alignment.failed_checks),
-                )
-            )
-            for gate in alignment.gates:
-                print(
-                    "               %-26s %s  value=%s"
-                    % (
-                        gate.name,
-                        "n/a   " if not gate.applicable else ("pass  " if gate.passed else "FAIL  "),
-                        None if gate.value is None else round(gate.value, 3),
-                    )
-                )
-            if alignment.used_curve_evidence:
-                aligned_model = alignment.model
+        # Cleared rather than merged, so a run writing fewer files than the
+        # last one cannot leave stale overlays reading as current.
+        alignment_debug_dir = os.path.join(paths.case_dir, "alignment_debug")
+        shutil.rmtree(alignment_debug_dir, ignore_errors=True)
+        os.makedirs(alignment_debug_dir, exist_ok=True)
 
     t0 = time.perf_counter()
-    georef = georeference_features(
+    alignment = align_if_enabled(
+        image_bgr,
+        control_points,
+        frame_bounds=frame_bounds,
+        text_regions=text_regions,
+        water_click_positions=inputs.water_click_positions,
+        water_sampling_radii=inputs.water_sampling_radii,
+        legend_bounds=inputs.legend_bounds,
+        config=run_config,
+        record=record,
+        debug_dir=alignment_debug_dir,
+    )
+    if alignment is not None:
+        if alignment_debug_dir:
+            print(f"  alignment debug -> {alignment_debug_dir}")
+        print(
+            "  align:     %s (rung %d) in %.1fs  probe %.1f px  %s"
+            % (
+                alignment.method,
+                alignment.rung,
+                time.perf_counter() - t0,
+                alignment.probe_agreement_px or float("nan"),
+                "gates passed"
+                if not alignment.failed_checks
+                else "FAILED: " + ", ".join(alignment.failed_checks),
+            )
+        )
+        for gate in alignment.gates:
+            print(
+                "               %-26s %s  value=%s"
+                % (
+                    gate.name,
+                    "n/a   " if not gate.applicable else ("pass  " if gate.passed else "FAIL  "),
+                    None if gate.value is None else round(gate.value, 3),
+                )
+            )
+
+    t0 = time.perf_counter()
+    georef = georeference_zones(
         pixel_features,
         control_points,
         frame_bounds=frame_bounds,
+        image_bgr=image_bgr,
+        alignment=alignment,
         config=run_config,
         record=record,
-        model=aligned_model,
     )
     georef_ms = (time.perf_counter() - t0) * 1000.0
-    record.set_model("chosen", georef.transform_payload)
 
-    paths = build_test_case_paths(assets_root, test_id, case_id)
     report = None
 
     if write:
@@ -457,6 +443,8 @@ def run_case(
                 indent=2,
                 ensure_ascii=False,
             )
+        write_pixel_zones(paths.case_dir, pixel_zones_snapshot)
+        write_classified_image(paths.case_dir, classified_rgb)
 
         if case_state.kind == KIND_PROBE:
             # A probe has no ground truth by design. Scoring it would mean
@@ -470,6 +458,7 @@ def run_case(
                 test_id=test_id,
                 test_case_id=case_id,
                 min_iou=None,
+                allow_best_promotion=not switches,
             )
         else:
             print(
@@ -502,6 +491,8 @@ def run_case(
         metrics = report.get("metrics") or {}
         score = metrics.get("scoreUsed") or (metrics.get("mean") or {}).get("meanIou")
         print(f"  IoU: {score}")
+    if switches:
+        print(f"  (non-ambient run, not promoted to best: {sorted(switches)})")
     print(f"  timing: colours {extract_ms:.0f} ms, georef {georef_ms:.0f} ms")
 
     return report

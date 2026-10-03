@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { useImportSession } from "../composables/useImportSession";
 import { useSiftPoints } from "../composables/useSiftPoints";
+import { apiFetch } from "../utils/api";
 import { applyInputsPatch } from "../utils/importSteps";
 import type { CoastlineKeypoint, WorldBounds } from "../typescript/georef";
 import type {
@@ -13,6 +14,23 @@ import type {
 } from "../typescript/importSession";
 
 export type ImportMode = "user" | "dev-test";
+
+// A stored dev-test case reopened to supply inputs it predates. Saving writes
+// back to the same case, so its name and kind travel with it.
+export interface EditedDevTestCase {
+  id: string;
+  name: string;
+  kind: "regression" | "probe" | null;
+}
+
+interface DevTestCaseInputsResponse {
+  testCaseId: string;
+  testCase: string;
+  kind: "regression" | "probe" | null;
+  imageUrl: string;
+  imageFilename: string;
+  inputs: ImportInputs;
+}
 
 const IDLE_EXTRACTION: ExtractionStatus = {
   state: "idle",
@@ -38,6 +56,8 @@ export const useImportSessionStore = defineStore("importSession", {
     mapTitle: "",
     projectId: null as string | null,
     inputs: {} as ImportInputs,
+    // Dev-test mode only: the stored case being completed, or null for a new one.
+    editedCase: null as EditedDevTestCase | null,
     ocrState: null as OcrState | null,
     extraction: { ...IDLE_EXTRACTION } as ExtractionStatus,
     // The extraction finished and its features are saved.
@@ -97,6 +117,44 @@ export const useImportSessionStore = defineStore("importSession", {
         this.applySession(res.data);
         this.phase = this.isExtractionActive ? "extraction" : "saisie";
         if (this.inputs.frameBounds) await this.loadKeypoints(this.inputs.frameBounds);
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+    // Dev-test mode: reopens a stored case's steps, with every input it already
+    // has, so one can be supplied or changed (a framing box, a legend answer, a
+    // water pick) without re-clicking the rest.
+    async openDevTestCase(caseId: string): Promise<boolean> {
+      this.isLoading = true;
+      try {
+        const res = await apiFetch(
+          `/dev-test-api/test-cases/${encodeURIComponent(this.mapId)}/${encodeURIComponent(caseId)}/inputs`,
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          this.error = body?.detail || `Cas introuvable (${res.status})`;
+          return false;
+        }
+        const data: DevTestCaseInputsResponse = await res.json();
+
+        const image = await fetch(`${import.meta.env.VITE_API_URL}${data.imageUrl}`);
+        if (!image.ok) {
+          this.error = `Image du test introuvable (${image.status})`;
+          return false;
+        }
+        const blob = await image.blob();
+        this.setFile(new File([blob], data.imageFilename, { type: blob.type }));
+
+        this.inputs = data.inputs ?? {};
+        this.editedCase = { id: data.testCaseId, name: data.testCase, kind: data.kind };
+        this.mapTitle = `Test case « ${data.testCase} » — modifier les entrées`;
+        this.phase = "saisie";
+        if (this.inputs.frameBounds) await this.loadKeypoints(this.inputs.frameBounds);
+        return true;
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : "Impossible d'ouvrir le cas";
+        return false;
       } finally {
         this.isLoading = false;
       }

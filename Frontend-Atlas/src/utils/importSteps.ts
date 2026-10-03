@@ -71,14 +71,17 @@ export function canStartExtraction(inputs: ImportInputs): boolean {
   return missingRequiredSteps(inputs).length === 0;
 }
 
-// Redoing the framing drops the points matched inside the old one.
+// Redoing the framing drops the points matched inside the old one. Framing
+// for the first time drops nothing: no point was matched under a box that did
+// not exist (a dev-test case made before the box existed).
 export function zoneRedoResetsPoints(inputs: ImportInputs): boolean {
-  return (inputs.controlPoints ?? []).length > 0;
+  return !!inputs.frameBounds && (inputs.controlPoints ?? []).length > 0;
 }
 
 // Merge a patch the way the backend does (services/imports.py): null clears a
-// key, and a new framing box drops the control points unless the patch sets
-// them. Used where the inputs live only in the browser (dev-test mode).
+// key, and a *changed* framing box drops the control points unless the patch
+// sets them; a first one keeps them. Used where the inputs live only in the
+// browser (dev-test mode).
 export function applyInputsPatch(
   current: ImportInputs,
   patch: ImportInputsPatch,
@@ -90,8 +93,8 @@ export function applyInputsPatch(
   }
   const next = merged as ImportInputs;
   const frameChanged =
-    JSON.stringify(next.frameBounds ?? null) !==
-    JSON.stringify(current.frameBounds ?? null);
+    !!current.frameBounds &&
+    JSON.stringify(next.frameBounds ?? null) !== JSON.stringify(current.frameBounds);
   if (frameChanged && !("controlPoints" in patch)) delete next.controlPoints;
   return next;
 }

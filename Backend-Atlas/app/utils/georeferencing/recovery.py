@@ -145,7 +145,7 @@ def align(
 
     user_field = build_user_field(evidence, config)
 
-    phase_models: Dict[str, Any] = {"stage2_affine": baseline.serialize()}
+    phase_models: Dict[str, Any] = {"gcp_affine": baseline.serialize()}
     stats: Dict[str, Any] = {
         "coastlineSamples": len(coast_samples),
         "fineSamples": len(fine_samples),
@@ -302,7 +302,7 @@ def align(
             )
             for check in checks:
                 record.add_gate(check)
-            record.set_model("chosen", candidate.serialize())
+            record.set_model("aligned_affine", candidate.serialize())
             return AlignmentResult(
                 model=candidate,
                 method=method,

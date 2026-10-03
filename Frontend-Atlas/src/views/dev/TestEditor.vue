@@ -68,6 +68,14 @@
         rejouer la carte (points de contrôle, pipette, cadrage persistés) pour
         voir le résultat du géoréférencement rapidement.
       </div>
+      <!-- What "régression" commits a case to, since it is not obvious from
+           the badge alone. -->
+      <div v-else class="alert text-xs py-2">
+        Test de régression : chaque test case est noté contre les zones
+        attendues dessinées ici, et rejoué par la suite de tests backend
+        (<code>test_georef_cases</code>) avec la configuration du worker. Un cas
+        sous IoU 0,7, ou auquel il manque une entrée, fait échouer la suite.
+      </div>
 
       <!-- Create zone -->
       <CreateZonePanel

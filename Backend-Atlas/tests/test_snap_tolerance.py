@@ -30,7 +30,8 @@ def test_it_is_the_ratio_of_the_image_diagonal_with_no_cap():
     tolerance = _resolve_snap_tolerance_m(
         MODEL, _zones(0, 0, 10, 10), DEFAULT_GEOREF_CONFIG, None, (602, 375)
     )
-    expected = math.hypot(602, 375) * 0.01 * 7_500.0  # ~53 km: over the old 50 km cap
+    ratio = DEFAULT_GEOREF_CONFIG.coastline_snap_ratio_of_diagonal
+    expected = math.hypot(602, 375) * ratio * 7_500.0  # over the old 50 km cap
     assert math.isclose(tolerance, expected)
 
 
@@ -48,7 +49,8 @@ def test_without_the_image_size_the_zones_extent_stands_in():
     tolerance = _resolve_snap_tolerance_m(
         MODEL, _zones(0, 0, 300, 400), DEFAULT_GEOREF_CONFIG, None, None
     )
-    assert math.isclose(tolerance, 500 * 0.01 * 7_500.0)
+    ratio = DEFAULT_GEOREF_CONFIG.coastline_snap_ratio_of_diagonal
+    assert math.isclose(tolerance, 500 * ratio * 7_500.0)
 
 
 def test_nothing_to_measure_means_no_snapping():

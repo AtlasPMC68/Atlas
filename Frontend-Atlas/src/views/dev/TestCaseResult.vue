@@ -73,7 +73,7 @@
               <button
                 type="button"
                 class="btn btn-primary btn-sm"
-                :disabled="isRerunning || !canRerun || paramErrorCount > 0"
+                :disabled="isRerunning || !canRerun || (isProbe && paramErrorCount > 0)"
                 :title="canRerun ? '' : rerunBlockedReason"
                 @click="rerunCase"
               >
@@ -84,6 +84,25 @@
                 {{ isRerunning ? "En cours…" : "Relancer" }}
               </button>
             </div>
+
+            <!-- What a re-run is for depends on the case's kind, and so does
+                 what may be changed: a regression case measures the pipeline as
+                 the worker runs it, so only the post-processing can be toggled. -->
+            <p v-if="isProbe" class="text-[11px] text-base-content/70">
+              <span class="badge badge-info badge-xs align-middle">Exploration</span>
+              Pas de zones attendues, pas de score. Tous les réglages ci-dessous
+              sont disponibles pour essayer des variantes ; un run ainsi modifié
+              n'est jamais promu en «&nbsp;best&nbsp;».
+            </p>
+            <p v-else class="text-[11px] text-base-content/70">
+              <span class="badge badge-neutral badge-xs align-middle">Régression</span>
+              Noté contre les zones attendues, et rejoué par la suite de tests
+              backend (<code>test_georef_cases</code>, échec sous IoU 0,7) avec la
+              configuration du worker. Seuls le snapping et la découpe océan sont
+              réglables ici, et sont pré-réglés sur les valeurs du worker : les
+              changer donne un run non promu en «&nbsp;best&nbsp;». Pour essayer
+              d'autres paramètres, créez un cas d'exploration.
+            </p>
 
             <label class="flex items-start gap-2 cursor-pointer">
               <input
@@ -121,7 +140,7 @@
               </span>
             </label>
 
-            <label class="flex items-start gap-2 cursor-pointer">
+            <label v-if="isProbe" class="flex items-start gap-2 cursor-pointer">
               <input
                 v-model="runAlign"
                 type="checkbox"
@@ -177,7 +196,7 @@
                  the panel below: it decides what the run *is*, and with
                  alignment on it also decides what happens to the aligned
                  affine. -->
-            <label v-if="modelChoices.length > 0" class="block space-y-1">
+            <label v-if="isProbe && modelChoices.length > 0" class="block space-y-1">
               <span class="text-xs font-semibold">Modèle de transformation</span>
               <select
                 class="select select-bordered select-xs w-full font-mono"
@@ -222,7 +241,7 @@
                     </button>
                   </div>
                   <button
-                    v-if="excludedPoints.size > 0"
+                    v-if="isProbe && excludedPoints.size > 0"
                     type="button"
                     class="btn btn-ghost btn-xs"
                     @click="excludedPoints = new Set()"
@@ -260,6 +279,7 @@
                   class="flex items-center gap-2 text-[11px]"
                 >
                   <input
+                    v-if="isProbe"
                     type="checkbox"
                     class="checkbox checkbox-xs"
                     :checked="!excludedPoints.has(point.index)"
@@ -302,8 +322,10 @@
             </div>
 
             <!-- Tuning panel: any GeorefConfig field, for this run only. Edits
-                 are sent with the re-run and never written to config.py. -->
-            <div class="border-t border-base-300 pt-2 space-y-2">
+                 are sent with the re-run and never written to config.py.
+                 Exploration cases only: a regression case runs the worker's
+                 config, or its number would not be comparable. -->
+            <div v-if="isProbe" class="border-t border-base-300 pt-2 space-y-2">
               <div class="flex items-center justify-between gap-2">
                 <button
                   type="button"
@@ -626,7 +648,7 @@
               v-if="blockedRequirements.length > 0"
               class="alert alert-error text-xs py-2"
             >
-              Ce cas ne peut plus être rejoué tel quel : recréez-le pour fournir
+              Ce cas ne peut plus être rejoué tel quel : il lui manque
               {{ blockedRequirements.map((r) => r.key).join(", ") }}.
             </div>
 
@@ -638,7 +660,35 @@
             >
               Ce cas d'exploration est rejoué sans
               {{ warningRequirements.map((r) => r.key).join(", ") }} : le résultat
-              diffère d'un run avec. Recréez-le pour le fournir.
+              diffère d'un run avec.
+            </div>
+
+            <!-- Reopens the case's "Saisie utilisateur" steps with everything it
+                 already has, so an input is supplied or changed without
+                 re-clicking the rest -- a required one that blocks the run, or
+                 an optional one never given (water, cities). Saving rewrites
+                 this same case. -->
+            <div class="space-y-1 pt-1">
+              <button
+                type="button"
+                class="btn btn-sm w-full"
+                :class="missingUserInputs.length > 0 ? 'btn-primary' : 'btn-outline'"
+                @click="completeCase"
+              >
+                {{
+                  missingUserInputs.length > 0
+                    ? `Compléter les entrées (${missingUserInputs.map((r) => r.key).join(", ")})`
+                    : "Modifier les entrées"
+                }}
+              </button>
+              <p v-if="absentOptionalInputs.length > 0" class="text-[11px] text-base-content/60">
+                Optionnel, non fourni :
+                <span class="font-mono">{{ absentOptionalInputs.map((r) => r.key).join(", ") }}</span>.
+              </p>
+              <p v-if="isScored" class="text-[11px] text-base-content/60">
+                Enregistrer des entrées modifiées réécrit ce cas et efface son
+                «&nbsp;best&nbsp;», mesuré sur les anciennes entrées.
+              </p>
             </div>
           </div>
 
@@ -1585,7 +1635,7 @@ const rerunBlockedReason = computed<string>(() => {
   if (otherBlockedRequirements.value.length) {
     return `Entrées manquantes : ${otherBlockedRequirements.value
       .map((r) => r.key)
-      .join(", ")}. Recréez le cas.`;
+      .join(", ")}. Utilisez « Compléter les entrées ».`;
   }
   if (selectedPointCount.value !== null && selectedPointCount.value < MIN_CONTROL_POINTS) {
     return `Au moins ${MIN_CONTROL_POINTS} points de contrôle sont nécessaires.`;
@@ -1595,7 +1645,8 @@ const rerunBlockedReason = computed<string>(() => {
 
 async function rerunCase() {
   if (!testId.value || !testCaseId.value || isRerunning.value) return;
-  if (paramErrorCount.value > 0) return;
+  const probe = isProbe.value;
+  if (probe && paramErrorCount.value > 0) return;
 
   isRerunning.value = true;
   rerunError.value = null;
@@ -1604,23 +1655,28 @@ async function rerunCase() {
   // Re-read the config first: the panel is built from it, and a page open
   // across a backend change would otherwise send settings that no longer exist.
   await loadGeorefConfig();
-  if (paramErrorCount.value > 0) {
+  if (probe && paramErrorCount.value > 0) {
     isRerunning.value = false;
     return;
   }
 
+  // A regression case sends only the two post-processing switches: no
+  // alignment switch, no excluded points, and none of the tuning drafts --
+  // those persist in the browser across cases and would otherwise ride along
+  // from an exploration session into a scored run.
   const params = new URLSearchParams({
     snap_to_coastline: String(runSnap.value),
-    enable_curve_alignment: String(runAlign.value),
     clip_to_land_mask: String(runClip.value),
   });
-
-  for (const index of [...excludedPoints.value].sort((a, b) => a - b)) {
-    params.append("exclude_gcp", String(index));
+  if (probe) {
+    params.set("enable_curve_alignment", String(runAlign.value));
+    for (const index of [...excludedPoints.value].sort((a, b) => a - b)) {
+      params.append("exclude_gcp", String(index));
+    }
   }
 
-  const overrides: Record<string, unknown> = { ...parsedParams.value.overrides };
-  if (isProbe.value && sourcesOverride.value) {
+  const overrides: Record<string, unknown> = probe ? { ...parsedParams.value.overrides } : {};
+  if (probe && sourcesOverride.value) {
     overrides.gcp_sources = sourcesOverride.value;
   }
 
@@ -1656,7 +1712,7 @@ async function rerunCase() {
       (data?.kind === "probe"
         ? "Relancé. Zones réextraites, pas de score (cas d'exploration)."
         : "Relancé et réévalué.") +
-      (excludedPoints.value.size > 0
+      (probe && excludedPoints.value.size > 0
         ? ` ${excludedPoints.value.size} point(s) de contrôle exclu(s).`
         : "") +
       (overrideCount > 0
@@ -1671,6 +1727,42 @@ async function rerunCase() {
     isRerunning.value = false;
   }
 }
+
+// Missing inputs a human supplies -- reopening the case's steps is how.
+const missingUserInputs = computed<RequirementState[]>(() =>
+  requirementGaps.value.filter(
+    (r) => r.kind === "user_input" && r.status === "blocked",
+  ),
+);
+
+// Optional inputs this case never got (water picks, cities): the same button
+// adds them.
+const absentOptionalInputs = computed<RequirementState[]>(() =>
+  requirementGaps.value.filter(
+    (r) => r.kind === "user_input" && r.status === "absent",
+  ),
+);
+
+function completeCase() {
+  router.push({
+    path: `/upload-test/${testId.value}`,
+    query: { case: testCaseId.value },
+  });
+}
+
+// A regression run is promotable only at the worker's own settings, so its two
+// switches start there. A probe keeps the judging defaults set above.
+let switchesInitialised = false;
+watch(
+  [caseState, configDesc],
+  ([state, desc]) => {
+    if (switchesInitialised || !state || !desc) return;
+    switchesInitialised = true;
+    if (state.kind === "probe") return;
+    runSnap.value = Boolean(desc.values.snap_to_coastline);
+    runClip.value = Boolean(desc.values.clip_to_land_mask);
+  },
+);
 
 function goBack() {
   if (testId.value) {
@@ -1897,6 +1989,7 @@ async function reloadAll() {
       loadErrors(),
       loadControlPoints(),
       loadPixelZones(),
+      loadRunRecord(),
     ]);
     
     rebuildVisibility();

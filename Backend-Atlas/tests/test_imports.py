@@ -120,6 +120,15 @@ def test_a_new_frame_clears_the_control_points():
     assert len(same["controlPoints"]) == 4
 
 
+def test_a_first_frame_keeps_the_control_points():
+    """No point was matched under a box that did not exist: a case made before
+    the framing box gets one without losing its clicks."""
+    unframed = apply_inputs_patch({}, {"controlPoints": SIFT})
+    framed = apply_inputs_patch(unframed, {"frameBounds": FRAME})
+    assert framed["frameBounds"] == FRAME
+    assert len(framed["controlPoints"]) == 4
+
+
 def test_null_clears_an_input():
     inputs = apply_inputs_patch({}, {"legend": legend_to_entry(None)})
     assert inputs["legend"] == {"present": False, "bounds": None}

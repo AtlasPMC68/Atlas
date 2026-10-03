@@ -521,6 +521,12 @@ gate as `applicable: false` when neither side has any water, which is independen
   samples cross the mask boundary. Blur the validity so `v` lands in [0, 1] at the edges and
   the objective stays smooth for LM.
 
+  > **As implemented since 2026-09-30** ([fixes §2](georeferencing-fixes.md#2-reference-samples-off-the-image)):
+  > weight zero turned out to be the wrong cost for a sample nobody can see — it makes hiding
+  > samples under labels or off the map free, and the optimiser will. An unseen sample now
+  > costs what an outlier costs, `v·ρ(D) + (1−v)·ρ_max`, each annealing level fits a frozen
+  > set of samples in view, and the image border counts as unseen too.
+
   Optionally recoverable later: bridging a *small* gap between two confident coastline
   endpoints is interpolation between real observations, which is defensible — unlike
   preserving a merged glyph, which is fabrication. A refinement to reach for if 18% sample
@@ -629,6 +635,12 @@ E = w_gcp * Σ ρ(||T(p_j) - q_j||)  +  w_curve * Σ v(T(s_i)) · ρ( D_user(T(s
 
 with `w_gcp` from the per-GCP `sigma_px` of Step 1. The GCP-only affine of Stage 2 supplies the
 initialisation.
+
+> **As implemented since 2026-09-30** ([fixes §1](georeferencing-fixes.md#1-one-robust-loss-for-two-kinds-of-residuals)):
+> the GCP term is plain least squares, `w_gcp · Σ ||T(p_j) − q_j||²`; only the curve term is
+> robust. Until then both went through one scipy `loss` with one `f_scale` sized for the curve
+> samples, which rejected any GCP more than ~1–3 px off in the fine stages — the "joint" fit
+> was a curve-only fit.
 
 - **Robust loss: Tukey**, not Huber. Schematic maps carry huge outlier fractions — on a map
   like Leclerc a large share of the drawn outline is invented (the *Territoire non exploré*
@@ -820,6 +832,11 @@ The noise floor with snapping off is about 0.0001 over the first 4 px, so this d
 this case — still one case, still not a go/no-go, but for the first time it is a number rather
 than an artifact.
 
+> **Superseded too (2026-09-30).** This +0.0040 was measured with the bugs of
+> [`georeferencing-fixes.md`](georeferencing-fixes.md) active: the GCPs were rejected by the
+> shared robust loss, so "+ chamfer + ICP" was a curve-only fit, and off-map reference samples
+> pulled toward the image border. It measures neither the joint fit nor alignment as designed.
+
 `GEOREF_ENABLE_COASTLINE_SNAPPING` now switches it, defaulting to `true` so nothing changes
 silently. The dev script takes `--no-snap`. **Judge alignment with snapping off.**
 
@@ -870,8 +887,9 @@ deleted or hidden behind a proper debug flag before any of this is considered fi
 
 ### How it is switched, and where it is on
 
-`GeorefConfig.enable_curve_alignment` defaults to False, but `tasks.py` overrides it from the
-environment so the running application can be evaluated by hand:
+`GeorefConfig.enable_curve_alignment` defaults to False, but `ambient_georef_config()` in
+`config.py` (used by both Celery tasks and the dev script) overrides it from the environment so
+the running application can be evaluated by hand:
 
 ```
 GEOREF_ENABLE_CURVE_ALIGNMENT   default "true"   -> backend, celery-worker
@@ -912,8 +930,8 @@ georeferenced feature also carries `alignment_method` and `alignment_rung` in it
 
 | Decision | Why |
 |---|---|
-| Residuals in **image pixels** for both terms | One robust cutoff then means the same thing to the GCP term and the curve term. Each term is normalised by its own count first, so seven control points are not drowned by 4,481 curve samples. |
-| Tukey hand-written as a scipy `loss` callable | Confirmed `rho'` reaches exactly 0.0 at the cutoff — past it a sample contributes nothing. scipy's `cauchy` never reaches zero, which defeats the purpose. |
+| Residuals in **image pixels** for both terms | Each term is normalised by its own count first, so seven control points are not drowned by 4,481 curve samples. *Corrected 2026-09-30:* the original row said "one robust cutoff then means the same thing to the GCP term and the curve term". It did not — scaled by different weights, the shared cutoff rejected the GCPs. Only the curve term is robust now ([fixes §1](georeferencing-fixes.md#1-one-robust-loss-for-two-kinds-of-residuals)). |
+| Tukey hand-written | Confirmed `rho'` reaches exactly 0.0 at the cutoff — past it a sample contributes nothing. scipy's `cauchy` never reaches zero, which defeats the purpose. Originally a scipy `loss` callable; since 2026-09-30 applied to the curve residuals only, through `tukey_residual` with `loss="linear"`. |
 | Numeric Jacobian | 6 parameters, so a numeric Jacobian costs 6 extra evaluations per iteration of a cheap bilinear lookup. Analytic derivatives through an inverted affine are a correctness risk for no measurable speed. |
 | Validity blurred, not hard 0/1 | Samples crossing a text-mask boundary would otherwise make the energy discontinuous and LM would stall on it. |
 | `align.py`, `gates.py`, `recovery.py` need **no cv2** | They consume the arrays `evidence.py` built and do their own gradients with scipy, so 27 Step 4 tests run on a bare host in ~1.5 s. Only `evidence.py` and `runner.py` touch cv2. |
@@ -976,8 +994,9 @@ that nothing can exercise. They stay recorded rather than written.
 Coastline keypoints are positionally sharp but semantically hard to match — the user is
 matching an abstract shape. Cities are the opposite, and most maps have them.
 
-**The data already exists.**
-[`cities_validation.py`](../Backend-Atlas/app/utils/cities_validation.py) loads the full
+**The data already exists.** (Written before Step 5; `cities_validation.py` has since been
+replaced by [`city_gazetteer.py`](../Backend-Atlas/app/utils/city_gazetteer.py) — see
+[`city-gcps.md`](city-gcps.md).) `cities_validation.py` loaded the full
 `geonamescache` gazetteer at import into a normalised-name →
 `[{name, lat, lon, country, population}]` map. Filtering by the framing box is a list
 comprehension. No endpoint, no new dependency, no new file.

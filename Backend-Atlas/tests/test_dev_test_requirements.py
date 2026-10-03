@@ -76,7 +76,7 @@ def test_missing_required_user_input_blocks_the_run():
     with pytest.raises(MissingUserInputError) as exc:
         report.raise_if_blocked("some/case")
     # The remedy has to survive into the message, not just the key.
-    assert "Recreate the case" in str(exc.value)
+    assert "Compléter les entrées" in str(exc.value)
 
 
 def test_missing_derived_artifact_is_refreshable_not_blocking():
@@ -510,12 +510,13 @@ def test_config_overrides_apply_to_a_copy_only():
     from app.utils.georeferencing import DEFAULT_GEOREF_CONFIG
     from app.utils.georeferencing.config import parse_config_overrides
 
+    before = DEFAULT_GEOREF_CONFIG.gate_min_chamfer_improvement
     run = DEFAULT_GEOREF_CONFIG.with_overrides(
-        **parse_config_overrides({"gate_min_chamfer_improvement": 0.5})
+        **parse_config_overrides({"gate_min_chamfer_improvement": before + 0.5})
     )
 
-    assert run.gate_min_chamfer_improvement == 0.5
-    assert DEFAULT_GEOREF_CONFIG.gate_min_chamfer_improvement == 0.02
+    assert run.gate_min_chamfer_improvement == before + 0.5
+    assert DEFAULT_GEOREF_CONFIG.gate_min_chamfer_improvement == before
 
 
 def test_describe_config_reports_ambient_values():

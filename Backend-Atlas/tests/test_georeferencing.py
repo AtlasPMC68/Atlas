@@ -418,7 +418,7 @@ class TestRunRecord:
     def test_write_is_json_serializable(self, tmp_path):
         record = RunRecord(run_id="t/c")
         record.set_inputs(controlPointCount=7)
-        record.set_model("stage2_affine", AffineModel.fit(SRC, DST).serialize())
+        record.set_model("applied", AffineModel.fit(SRC, DST).serialize())
         record.set_errors(gcpRmseKm=None)
         path = record.write(str(tmp_path))
         assert path is not None
@@ -429,7 +429,7 @@ class TestRunRecord:
             payload = json.load(f)
         assert payload["runId"] == "t/c"
         assert payload["inputs"]["controlPointCount"] == 7
-        assert payload["models"]["stage2_affine"]["name"] == "affine"
+        assert payload["models"]["applied"]["name"] == "affine"
 
     def test_write_never_raises_on_a_bad_directory(self):
         record = RunRecord()

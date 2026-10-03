@@ -24,6 +24,7 @@ from ..tasks import (
     warm_dev_test_text_regions,
 )
 from app.utils.dev_test import (
+    case_inputs_for_editing,
     delete_dev_test,
     delete_dev_test_case,
     find_test_image_path,
@@ -53,7 +54,6 @@ from app.utils.dev_test_cases import (
     resolve_case_kind,
 )
 from app.utils.georeferencing import (
-    ControlPoint,
     fit_affine_from_control_points,
     frame_bounds_to_config_entry,
     parse_control_points_field,
@@ -396,6 +396,23 @@ def _last_run(test_id: str, test_case_id: str):
     )
 
 
+@router.get("/test-cases/{test_id}/{test_case_id}/inputs")
+async def get_dev_test_case_inputs(
+    test_id: str,
+    test_case_id: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """The case's stored inputs, for reopening its user steps in the import flow."""
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+    try:
+        return case_inputs_for_editing(GEOREF_ASSETS_DIR, safe_test_id, safe_case_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/test-cases/{test_id}/{test_case_id}/control-points")
 async def get_dev_test_control_points(
     test_id: str,
@@ -415,15 +432,17 @@ async def get_dev_test_control_points(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    if not inputs.pixel_points or not inputs.geo_points_lonlat:
+    control_points = inputs.control_points
+    if not control_points:
         return {"points": [], "summary": {"count": 0, "looAvailable": False}}
 
-    control_points = ControlPoint.from_pairs(
-        inputs.pixel_points, inputs.geo_points_lonlat, source="sift"
-    )
     model, pixels = _last_run(safe_test_id, safe_case_id)
     return control_point_diagnostics(
-        control_points, inputs.frame_bounds, applied_model=model, applied_pixels=pixels
+        control_points,
+        inputs.frame_bounds,
+        applied_model=model,
+        applied_pixels=pixels,
+        config=GEOREF_CONFIG,
     )
 
 
@@ -455,16 +474,14 @@ async def get_dev_test_control_points_image(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    if not inputs.pixel_points or not inputs.geo_points_lonlat:
+    control_points = inputs.control_points
+    if not control_points:
         raise HTTPException(status_code=404, detail="This case has no control points")
 
     image = cv2.imread(image_path) if image_path else None
     if image is None:
         raise HTTPException(status_code=404, detail="Test image could not be read")
 
-    control_points = ControlPoint.from_pairs(
-        inputs.pixel_points, inputs.geo_points_lonlat, source="sift"
-    )
     model, applied_pixels = _last_run(safe_test_id, safe_case_id)
     if model is None:  # noqa: SIM108 - the two branches carry different captions
         # No run recorded yet: draw the GCP-only affine, and say so, rather
@@ -479,6 +496,7 @@ async def get_dev_test_control_points_image(
         inputs.frame_bounds,
         applied_model=model,
         applied_pixels=applied_pixels,
+        config=GEOREF_CONFIG,
     )
     errors = [p["appliedKm"] for p in diagnostics["points"]]
 

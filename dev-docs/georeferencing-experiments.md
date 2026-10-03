@@ -10,7 +10,16 @@ roadmap's own rule (§5.3) is that two models are distinguishable only when the
 difference in held-out error exceeds its standard error, and n = 2 has no
 standard error to compare against.
 
-Last updated 2026-09-22.
+> **Every alignment number in §1 and §4 was measured with bugs active**, fixed
+> on 2026-09-30 and described in [`georeferencing-fixes.md`](georeferencing-fixes.md):
+> the control points were rejected by a robust loss shared with the curve
+> samples (so "joint" meant curve-only), and reference samples off the image
+> read the distance field at its border. Those numbers describe the bugs, not
+> alignment. §6's leave-one-out comparison was computed honestly and stands;
+> the per-run piecewise error the pipeline reported was optimistic. §5 and §3
+> are unaffected.
+
+Last updated 2026-09-30.
 
 ---
 
@@ -18,9 +27,17 @@ Last updated 2026-09-22.
 
 | Case | Map | Size | GCPs | Notes |
 |---|---|---|---|---|
-| `52a1aedc…/pip_7sift` | scanned map | — | 7 sift | Scored, IoU ~0.94. **Currently broken**: its `config.json` predates `frameBounds`, so the suite fails it. |
+| `52a1aedc…/pip_7sift` | scanned map | — | 7 sift | Scored, IoU ~0.94. **Currently broken**: its `config.json` predates `frameBounds`, so the suite fails it. Needs re-clicking. |
 | `278e5083…/test-5-sift-points-peut-etre` | `Quebec_1791.png` | 602×375 | 6 sift | Probe (no expected zones). Water pipetted. |
-| `278e5083…/test_piece_wise_affine` | same map | 602×375 | 6 sift | Probe, run with the gates neutralized. |
+| `278e5083…/test_piece_wise_affine` | same map | 602×375 | 9 sift | Probe, run with the gates neutralized. |
+| `278e5083…/ville2`, `vlle`, `test_with_lake` | same map | 602×375 | 5 sift + 4 city / 6 / 9 sift | Probes. `ville2`'s points fold the map, so piecewise is refused there. |
+| `3bebfa45…/1st`, `bite` | `quebec_traite1783` | — | 6 / 4 sift | Probes. |
+| `0152677a…/italy_test_tryhard` | Italy | — | 7 sift | Probe. |
+| `92518248…/test_on_uk_map_tryhard` | UK | — | 6 sift | Probe. |
+
+`italy_test_tryhard`, `test_on_uk_map_tryhard` and `test_with_lake` were stored
+in the pre-city `imagePoints`/`worldPoints` format and ran with **no control
+points** until migrated on 2026-09-30.
 
 ---
 
@@ -42,6 +59,10 @@ off. The deltas being compared were smaller than that artifact.
 error after the fact, so it flatters the baseline and hides improvements.
 
 Chamfer and ICP have still never been measured apart on a clean run.
+
+**These are pre-fix numbers.** The "+ chamfer + ICP" rows are a curve-only fit
+started from the GCP affine (fixes §1). They are not a measurement of the joint
+fit.
 
 ## 2. Coastline-first staging — plan §8d
 
@@ -77,6 +98,14 @@ Run with defaults, snapping off, alignment on:
 
 Rungs 0–3 all failed the same three gates; the run fell to rung 7, `gcp_only`.
 The curve term *did* engage (coastline chamfer 3.4 → 2.9 px, coast moved 6.4 px).
+
+**Pre-fix.** The probe disagreement was inflated by off-map samples dragging the
+probe toward the image border, and the inlier fraction divided by samples that
+were off the map. With the fixes, on the same case: probe 11.0 px (was 23.1),
+joint fit within 0.1 px of the GCP affine, coast moved 1.9 px. Per-case
+before/after numbers are in [fixes §5](georeferencing-fixes.md#5-what-changed-on-the-real-cases).
+The "constants do not fit a small map" hypothesis below predates the fixes and
+has not been re-examined.
 
 **First time `water_mask_iou` has ever had data** — it reported
 `applicable: false` on every earlier run. Whether 0.70 is the right threshold is
@@ -149,9 +178,18 @@ so it reproduces a bad click instead of smoothing it away — roadmap §5.4:
 Reported error is always leave-one-out: an interpolating model's in-sample
 residual is 0 by construction.
 
-Not done yet: geometries are not densified before warping, so a long straight
-edge crossing several triangles stays straight; and the gates judge only the
-base affine.
+**The table above stands; the per-run number did not.** The 156.9 km was a real
+leave-one-out. What the pipeline reported on every run (`rmse_km`, the run
+record, the dev tool's per-source error) held the base affine fixed, and that
+base had been fitted with the held-out point: 101.9 km on this case, and ~0 km
+with 3 points. Fixed on 2026-09-30 ([fixes §3a](georeferencing-fixes.md#a-the-reported-error-was-not-leave-one-out)).
+On other cases the honest comparison does not favour piecewise everywhere: on
+the Italy map it is 47.4 km against the affine's 43.6.
+
+Since 2026-09-30, geometries are densified before a piecewise warp, and the
+frame the correction decays to is padded around the image, the zones and the
+control points (it used to be the zones only, which broke continuity when a
+point lay beyond them). Still true: the gates judge only the base affine.
 
 ---
 
@@ -167,14 +205,18 @@ override is never promoted to `zones_best`.
 |---|---|---|
 | `enable_curve_alignment` | on in the app, off in the suite | The suite measures the GCP-only floor; the app is where it is judged by hand. |
 | `snap_to_coastline` | on (off in the re-run panel) | Hides alignment improvements — §1. |
-| `transform_model` | `affine` | More freedom is the experiment, not the baseline. |
+| `transform_model` | `piecewise_affine` | Set as the default in v13, during the "tryhard" runs; not yet justified by a measurement. |
+| Gates | neutralised (v13) | All logged; only a mirror, a non-converged optimiser or a chamfer that got worse can still reject. |
 
 Ambient values come from the environment (`GEOREF_ENABLE_CURVE_ALIGNMENT`,
 `GEOREF_ENABLE_COASTLINE_SNAPPING`). `GEOREF_DEBUG` writes a per-run diagnostic
 folder; for a dev-test case it lands in `<case>/alignment_debug/` and is
 **overwritten on every re-run**, so copy it before comparing two settings.
 
-Config versions: 5 → 6 (piecewise) → 7 (`transform_model` as a named choice).
+Config versions: 5 → 6 (piecewise) → 7 (`transform_model` as a named choice)
+→ … → 13 (the "tryhard" values: gates neutralised, piecewise and inpaint by
+default, ICP widened to 100 px / 60° / 100 px) → 14 (ICP back to 40→5 px / 30° /
+20 px, `piecewise_densify_ratio_of_diagonal`; [fixes §4](georeferencing-fixes.md#4-also-in-this-change)).
 
 ---
 
@@ -182,12 +224,16 @@ Config versions: 5 → 6 (piecewise) → 7 (`transform_model` as a named choice)
 
 1. **A second scored case.** The plan has called this the bottleneck since Step
    4 landed. Both current Quebec cases are probes, so neither produces an IoU.
-2. **Fix `pip_7sift`** or recreate it: its missing `frameBounds` is the suite's
+2. **Fix `pip_7sift`** with "Compléter les entrées" (draw the world area and answer the legend; its SIFT points are kept): its missing `frameBounds` is the suite's
    only failure.
 3. **Do the Tier 3 constants fit a small map?** §4's scaled schedule is the
    cheapest thing left to try.
 4. **Is `gate_water_iou_min = 0.70` right?** One measurement, 0.395, and no idea
    whether it is the map or the threshold.
-5. **Separate chamfer from ICP** on a clean run.
+5. **Separate chamfer from ICP** on a clean run. "Clean" now also means
+   post-fix: no alignment measurement before 2026-09-30 counts.
+5b. **The balance `weight_gcp` / `weight_curve`.** Post-fix, at 1:1 the joint
+   fit stays within ~1 px of the GCP affine on every case. How far the coast
+   should be allowed to move the map is now a real, untested dial.
 6. **Is the piecewise gain real?** It needs a case with ground truth, scored by
    IoU rather than by leave-one-out on six points.

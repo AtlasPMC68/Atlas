@@ -2,8 +2,9 @@
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCase": "pip_7sift",
   "testCaseId": "pip_7sift",
-  "updatedAt": "2026-09-09T03:33:53.917453Z",
+  "updatedAt": "2026-10-01T04:34:30.613551Z",
   "filename": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df.jpg",
+  "kind": null,
   "georef": {
     "controlPoints": [
       {
@@ -83,7 +84,17 @@
           "lat": 60.411305760307975
         }
       }
-    ]
+    ],
+    "frameBounds": {
+      "west": -81.64202317114281,
+      "south": 44.54872571914135,
+      "east": -56.84164355348006,
+      "north": 62.88854308328224
+    },
+    "legend": {
+      "present": false,
+      "bounds": null
+    }
   },
   "colors": {
     "imposed": [
@@ -91,7 +102,15 @@
         "x": 0.2971604354293258,
         "y": 0.27827378681727816,
         "name": "Quebec",
-        "radius": 20
+        "radius": 20,
+        "kind": "zone"
+      },
+      {
+        "x": 0.8827159033881293,
+        "y": 0.34375,
+        "name": "paleturquoise",
+        "radius": 20,
+        "kind": "water"
       }
     ]
   }

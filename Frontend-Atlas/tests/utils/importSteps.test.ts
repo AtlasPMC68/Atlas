@@ -95,6 +95,15 @@ describe("zone redo", () => {
     expect(colours.controlPoints).toHaveLength(4);
   });
 
+  it("keeps the points when a case is framed for the first time", () => {
+    const unframed = { ...complete, frameBounds: undefined };
+    expect(zoneRedoResetsPoints(unframed)).toBe(false);
+
+    const framed = applyInputsPatch(unframed, { frameBounds: FRAME });
+    expect(framed.frameBounds).toEqual(FRAME);
+    expect(framed.controlPoints).toHaveLength(4);
+  });
+
   it("clears a key on null", () => {
     expect(applyInputsPatch(complete, { legend: null }).legend).toBeUndefined();
   });

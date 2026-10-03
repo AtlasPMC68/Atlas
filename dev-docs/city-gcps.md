@@ -125,19 +125,21 @@ framing box. It has been blocked since requirements v2, so `test_georef_cases.py
 ## 5. What is left
 
 1. **A real case with cities.** Nothing has measured cities yet: every number above is
-   plumbing. Recreate a case on the `pip_7sift` map (zones are already drawn) with its SIFT
-   points plus the cities you can read. That fixes the missing framing box too, and gives
-   SIFT only / cities only / both from the same clicks. Do the same on the Leclerc map as an
+   plumbing. Complete `pip_7sift` ("Compléter les entrées" on its result page; its SIFT
+   points are kept) by drawing the world area, answering the legend and adding the cities
+   you can read. That fixes the missing framing box too, and gives SIFT only / cities only /
+   both from the same clicks. Do the same on the Leclerc map as an
    exploration case.
 2. **Set σ from data, and fix the normalisation first.** Once per-source residuals exist
    across a few cases, the two σ can differ. Before that, the alignment GCP term has to be
    normalised by the sum of the weights rather than by count and median σ. Otherwise its
    total pull against the coastline shifts with the mix of sources (see the comment in
    `config.py`).
-3. **GCPs versus the Tukey cutoff.** The GCP residuals share the curve term's robust loss.
-   By arithmetic, not yet measured, a GCP stops pulling beyond about 3 px in the fine
-   alignment stage. If that holds, neither SIFT points nor cities constrain fine alignment.
-   It is worth a per-stage "GCPs inside cutoff" count in the run record.
+3. ~~**GCPs versus the Tukey cutoff.**~~ Confirmed and fixed on 2026-09-30: the GCPs were
+   rejected well below 3 px in the fine stages (0.7 px at the last level on a typical case),
+   so neither SIFT points nor cities constrained fine alignment. The GCP term is now plain
+   least squares and only the curve term is robust. See
+   [`georeferencing-fixes.md`](georeferencing-fixes.md) section 1.
 4. **Gates weigh every point alike.** `probe_gcp_disagreement` averages over all points.
    Noisy points make it more lenient, not stricter. Its detail could break the value down by
    source.
@@ -147,8 +149,9 @@ framing box. It has been blocked since requirements v2, so `test_georef_cases.py
    (`PPLH`/`PPLQ`) if that is ever wanted, and the SQLite layout scales to it.
 6. **Suggestions from OCR.** City detection already reads place names off the map. They
    could pre-fill the city step instead of the user typing them.
-7. **`cities_validation.py` still loads geonamescache whole**, for OCR city detection. It
-   could read the same SQLite file. It is a separate feature, so it was left alone.
+7. ~~**`cities_validation.py` still loads geonamescache whole.**~~ Done since: the file is
+   gone, and OCR city detection reads the same SQLite gazetteer (`find_cities_in_text`,
+   `frame_city_index` in `city_gazetteer.py`).
 8. **Going back from the city step to SIFT restarts SIFT matching.** This is the existing
    behaviour of every modal in the flow. Cities are kept when coming back to their step.
 9. **Operational.** The Celery task signature changed (`control_points` replaced

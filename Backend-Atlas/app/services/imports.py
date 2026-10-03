@@ -89,9 +89,12 @@ def apply_inputs_patch(
 ) -> Dict[str, Any]:
     """Validate *patch* and merge it into *current*. ``None`` clears a key.
 
-    A new framing box clears the control points unless the patch sets them
-    too: the SIFT keypoints are drawn from the box, and the city search is
-    limited to it, so points matched under the old box no longer belong.
+    A *changed* framing box clears the control points unless the patch sets
+    them too: the SIFT keypoints are drawn from the box, and the city search is
+    limited to it, so points matched under the old box no longer belong. A
+    first box keeps them -- no point was matched under a box that did not
+    exist. That is how a dev-test case made before the box existed gets one
+    without losing its clicks.
 
     Raises:
         ValueError: on an unknown key or a malformed value.
@@ -118,7 +121,10 @@ def apply_inputs_patch(
         elif key == "options":
             merged[key] = _validate_options(value)
 
-    frame_changed = merged.get("frameBounds") != (current or {}).get("frameBounds")
+    previous_frame = (current or {}).get("frameBounds")
+    frame_changed = (
+        previous_frame is not None and merged.get("frameBounds") != previous_frame
+    )
     if frame_changed and "controlPoints" not in patch:
         merged.pop("controlPoints", None)
 

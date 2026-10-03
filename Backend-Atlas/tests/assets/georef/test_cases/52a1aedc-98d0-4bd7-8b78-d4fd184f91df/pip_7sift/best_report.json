@@ -1,7 +1,7 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "pip_7sift",
-  "evaluatedAt": "2026-09-20T06:29:48.911848Z",
+  "evaluatedAt": "2026-10-03T03:51:10.970016Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,31 +16,31 @@
           "area": 203.3187314685591
         },
         "bestMatch": {
-          "iou": 0.9448548738178153,
-          "intersectionArea": 192.278280387685,
-          "unionArea": 203.50033186658425,
-          "precision": 0.9990564246570057,
-          "recall": 0.9456988001000716,
-          "falseNegativeArea": 11.04045108087421,
-          "falsePositiveArea": 0.18160039802505779,
+          "iou": 0.9547780366135077,
+          "intersectionArea": 196.38751606547103,
+          "unionArea": 205.68918485183832,
+          "precision": 0.9880736687446863,
+          "recall": 0.965909607280036,
+          "falseNegativeArea": 6.931215403088019,
+          "falsePositiveArea": 2.3704533832793175,
           "extracted": {
             "index": 0,
             "id": null,
             "name": "Quebec",
-            "area": 192.45988078571
+            "area": 198.75796944875034
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.9448548738178153,
-      "meanPrecision": 0.9990564246570057,
-      "meanRecall": 0.9456988001000716,
-      "totalFalseNegativeArea": 11.04045108087421,
-      "totalFalsePositiveArea": 0.18160039802505779
+      "meanIou": 0.9547780366135077,
+      "meanPrecision": 0.9880736687446863,
+      "meanRecall": 0.965909607280036,
+      "totalFalseNegativeArea": 6.931215403088019,
+      "totalFalsePositiveArea": 2.3704533832793175
     },
-    "scoreUsed": 0.9448548738178153,
+    "scoreUsed": 0.9547780366135077,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {

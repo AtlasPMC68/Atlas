@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+import shapely
 from shapely.geometry import mapping, shape
 from shapely.ops import transform
 
@@ -30,7 +31,11 @@ from .models import (
     count_by_source,
     fit_affine_from_control_points,
 )
-from .piecewise import PiecewiseAffineModel, fit_piecewise_from_control_points
+from .piecewise import (
+    RESIDUAL_IN_SAMPLE,
+    PiecewiseAffineModel,
+    fit_piecewise_from_control_points,
+)
 from .projection import (
     lonlat_arrays_to_webmercator,
     reference_latitude,
@@ -113,9 +118,15 @@ def georeference_features(
         return GeorefResult(collections=[], model=None, record=record)
 
     # --- fit ----------------------------------------------------------------
+    # The GCP-only affine is always fitted and recorded: it is the baseline
+    # every other model is compared against, whichever one is applied.
+    with record.phase("fit"):
+        gcp_affine = fit_affine_from_control_points(control_points)
+    record.set_model("gcp_affine", gcp_affine.serialize())
+
+    base_is_gcp_affine = model is None
     if model is None:
-        with record.phase("fit"):
-            model = fit_affine_from_control_points(control_points)
+        model = gcp_affine
     elif model.residuals_3857.size == 0:
         # A model from Step 4's optimiser arrives without residuals; measure it
         # against the control points so its error is reported, not "unknown".
@@ -124,7 +135,13 @@ def georeference_features(
     if config.transform_model == "piecewise_affine":
         with record.phase("piecewise_correction"):
             model = _apply_piecewise_correction(
-                model, control_points, pixel_feature_collections, config, record
+                model,
+                control_points,
+                pixel_feature_collections,
+                config,
+                record,
+                image_size=image_size,
+                refit_base=base_is_gcp_affine,
             )
     elif config.transform_model != "affine":
         # A model named in the config that nothing here knows how to build
@@ -153,9 +170,9 @@ def georeference_features(
         frameBounds=frame_bounds,
         referenceLatitude=ref_lat,
     )
-    # Keyed "stage2_affine" for continuity with run records made before the
-    # model became a choice; `name` inside the payload says what it really is.
-    record.set_model("stage2_affine", model.serialize())
+    # The model the features were actually placed with: the GCP affine, the
+    # aligned affine, or either one under the piecewise correction.
+    record.set_model("applied", model.serialize())
     record.set_errors(
         # None rather than NaN for a residual that could not be computed: a
         # leave-one-out pass reports NaN when its refit was impossible, and
@@ -166,6 +183,9 @@ def georeference_features(
         gcpRmse3857=rmse_3857,
         gcpRmseKm=rmse_km,
         gcpRmseStatus=rmse_status,
+        # in_sample, leave_one_out, or leave_one_out_fixed_base (optimistic:
+        # the aligned affine underneath was fitted with every point).
+        gcpRmseKind=getattr(model, "residuals_kind", RESIDUAL_IN_SAMPLE),
         # Which source is noisier is an empirical question (config.py, sigma),
         # and this is the number that answers it, one run at a time.
         gcpRmseKmBySource=_rmse_km_by_source(model, control_points, ref_lat),
@@ -235,6 +255,16 @@ def georeference_features(
     # --- apply --------------------------------------------------------------
     to_3857 = model.as_shapely_transform()
 
+    # Only vertices are warped. A long straight edge crossing several of the
+    # piecewise model's triangles would stay straight and cut across the
+    # correction, so geometries are densified first. The affine maps straight
+    # lines to straight lines and needs none of this.
+    densify_px = (
+        _densify_step_px(pixel_feature_collections, image_size, config)
+        if isinstance(model, PiecewiseAffineModel)
+        else None
+    )
+
     total_boundary_points = 0
     total_snapped_points = 0
     dropped_off_land = 0
@@ -257,6 +287,9 @@ def georeference_features(
                     continue
 
                 props = dict(feat.get("properties", {}))
+
+                if densify_px:
+                    geom = shapely.segmentize(geom, max_segment_length=densify_px)
 
                 try:
                     geom_3857 = transform(to_3857, geom)
@@ -330,6 +363,7 @@ def georeference_features(
         snapToCoastline=snapping_enabled,
         snapToleranceMeters=snap_tolerance_m,
         clipToLandMask=bool(config.clip_to_land_mask and land_mask_3857 is not None),
+        densifyStepPx=densify_px,
     )
 
     return GeorefResult(collections=georef_collections, model=model, record=record)
@@ -341,8 +375,18 @@ def _apply_piecewise_correction(
     pixel_feature_collections: Sequence[JSONDict],
     config: GeorefConfig,
     record: RunRecord,
+    image_size: Optional[Tuple[int, int]] = None,
+    refit_base: bool = True,
 ) -> TransformModel:
     """Wrap *base* in a local correction, or return it unchanged.
+
+    ``refit_base``: *base* is the affine fitted to these same control points,
+    so the piecewise model refits it itself -- identically -- and every
+    leave-one-out fold refits it without the held-out point. Passing it as a
+    fixed base instead lets the held-out point shape the affine it is measured
+    against; with exactly 3 points that reported ~0 km. When *base* is the
+    aligned model it cannot be refitted without the image, so it stays fixed
+    and the error is labelled ``leave_one_out_fixed_base``.
 
     Never raises. The correction is refused for reasons that are properties of
     the user's clicks -- two points in the same place, or a set that folds the
@@ -350,12 +394,12 @@ def _apply_piecewise_correction(
     the import. The reason is recorded either way, because "piecewise was on
     and the output is identical" is otherwise indistinguishable from a bug.
     """
-    extent = estimate_pixel_extent_from_features(list(pixel_feature_collections))
+    extent = _piecewise_extent(control_points, pixel_feature_collections, image_size)
     try:
         model = fit_piecewise_from_control_points(
             control_points,
             extent=extent,
-            base=base,
+            base=None if refit_base else base,
             anchor_margin=config.piecewise_anchor_margin,
         )
     except (ValueError, np.linalg.LinAlgError) as e:
@@ -370,10 +414,63 @@ def _apply_piecewise_correction(
         # value is either real local distortion or a bad control point, and
         # this number alone cannot tell them apart.
         piecewiseMaxCorrection3857=float(corrections.max()) if corrections.size else 0.0,
-        # The honest error estimate: in-sample residuals are 0 by construction.
+        # Held-out error; `piecewiseResidualKind` says which kind.
         piecewiseLooRmse3857=model.rmse_3857,
+        piecewiseResidualKind=model.residuals_kind,
+        piecewiseExtentPx=list(extent) if extent else None,
     )
     return model
+
+
+def _piecewise_extent(
+    control_points: Sequence[ControlPoint],
+    pixel_feature_collections: Sequence[JSONDict],
+    image_size: Optional[Tuple[int, int]],
+) -> Optional[Tuple[float, float, float, float]]:
+    """The pixel box the piecewise frame anchors are padded around.
+
+    The correction only decays to zero on the frame if the frame encloses every
+    control point and everything that will be warped. The zones' extent alone
+    does not: a control point beyond it (zones covering part of the map, a
+    point on a far coast) left the triangulation reaching past the frame, and
+    the model jumped from corrected to plain affine at its hull. So: the union
+    of the image, the zones and the control points.
+    """
+    boxes: List[Tuple[float, float, float, float]] = []
+    if image_size is not None and min(image_size) > 0:
+        boxes.append((0.0, 0.0, float(image_size[0]), float(image_size[1])))
+    features = estimate_pixel_extent_from_features(list(pixel_feature_collections))
+    if features is not None:
+        boxes.append(features)
+    if control_points:
+        xy = np.array([cp.pixel for cp in control_points], dtype=float)
+        boxes.append((*xy.min(axis=0), *xy.max(axis=0)))
+    if not boxes:
+        return None
+    b = np.array(boxes, dtype=float)
+    return (
+        float(b[:, 0].min()),
+        float(b[:, 1].min()),
+        float(b[:, 2].max()),
+        float(b[:, 3].max()),
+    )
+
+
+def _densify_step_px(
+    pixel_feature_collections: Sequence[JSONDict],
+    image_size: Optional[Tuple[int, int]],
+    config: GeorefConfig,
+) -> Optional[float]:
+    """Longest segment allowed before a piecewise warp, in pixels."""
+    if image_size is not None and min(image_size) > 0:
+        diagonal = math.hypot(float(image_size[0]), float(image_size[1]))
+    else:
+        diagonal = estimate_pixel_diagonal_from_features(
+            list(pixel_feature_collections)
+        )
+    if not diagonal:
+        return None
+    return max(diagonal * config.piecewise_densify_ratio_of_diagonal, 1.0)
 
 
 def _rmse_km_by_source(

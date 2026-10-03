@@ -225,7 +225,7 @@ Each entry carries:
 
 | Candidate | Why it might matter | Why it is off |
 |---|---|---|
-| `similarity` (4 DOF) | fewer DOF for badly drawn maps; already used as recovery rung 3 (plan §10.2) | nested inside affine; admit if it wins the §5.3 test on schematic maps |
+| `similarity` (4 DOF) | fewer DOF for badly drawn maps; planned as recovery rung 4 (plan §10.2), not implemented | nested inside affine; admit if it wins the §5.3 test on schematic maps |
 | `homography` (8 DOF) | genuine perspective, if inputs turn out to be photographs of maps rather than digital renders | inputs are digitally rendered, so projective DOF would absorb drawing noise as a spurious global tilt |
 | `equirectangular`, `mercator`, `lcc` | the map really was drawn in a projection, and fitting it is the principled model | differences are below the expected floor on one map — needs §7 corpus evidence |
 | `FFD 16×16` and beyond | genuinely complex local warps | superseded by adaptive refinement, §6.2 |
@@ -363,7 +363,7 @@ questions — projection families (§5.3), which gate checks discriminate (§8),
 
 1. Collect thematic/atlas maps with colour-coded administrative zones.
 2. Identify which unit each zone is, **by name**: OCR labels and legend entries, matched
-   against a gazetteer, the same pattern `cities_validation.py` already uses for cities.
+   against a gazetteer, the same pattern `city_gazetteer.py` already uses for cities.
 3. Load the true border polygon for that name as the expected zone.
 4. Run the pipeline, score IoU as the harness already does.
 

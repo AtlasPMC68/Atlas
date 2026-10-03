@@ -32,6 +32,9 @@ export interface DevTestImportInputs {
   colors: ImposedColor[];
   frameBounds: WorldBounds | null;
   legend: LegendAnswer | null;
+  // A case's own kind, when it overrides its map's. Re-sent when a stored case
+  // is completed, since saving rewrites its whole config.
+  kind?: "regression" | "probe" | null;
 }
 
 // A dev-test run writes files, never the database, and cannot be stopped on
@@ -103,6 +106,9 @@ export function useDevTestImportProcess() {
     // A rectangle or an explicit "no legend": both are answers the case keeps.
     if (inputs.legend) {
       formData.append("legend", JSON.stringify(inputs.legend));
+    }
+    if (inputs.kind) {
+      formData.append("kind", inputs.kind);
     }
     // Pipette selections: without them the backend extracts no color zones at all.
     if (inputs.colors.length) {

@@ -32,18 +32,23 @@ from app.models.map_import import (
 )
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
 from app.utils.city_gazetteer import find_cities_in_text, frame_city_index
-from app.utils.color_extraction import extract_colors
+from app.utils.extraction_steps import (
+    align_if_enabled,
+    extract_zone_colors,
+    georeference_zones,
+)
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencing import (
     ControlPoint,
-    DEFAULT_GEOREF_CONFIG,
     RunRecord,
     build_georef_inputs,
-    georeference_features,
     parse_control_points,
     select_control_points,
 )
-from app.utils.georeferencing.config import parse_config_overrides
+from app.utils.georeferencing.config import (
+    ambient_georef_config,
+    parse_config_overrides,
+)
 from app.utils.georeferencing.debug import debug_enabled, make_run_dir
 from app.utils.imposed_colors import (
     imposed_colors_to_config_entries,
@@ -55,11 +60,12 @@ from app.utils.text_extraction import extract_text, ocr_blocks_to_payload
 from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR, GEOREF_ASSETS_DIR
 from app.utils.dev_test_pixel_zones import write_classified_image, write_pixel_zones
 from app.utils.dev_test import (
+    drop_control_points,
     find_test_image_path,
     inspect_case,
 )
 from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
-from app.utils.dev_test_derived import ensure_text_regions 
+from app.utils.dev_test_derived import ensure_text_regions, text_regions_for_run
 
 from .celery_app import celery_app
 # endregion
@@ -69,94 +75,7 @@ logger = logging.getLogger(__name__)
 nb_task = 6
 
 
-ENABLE_COASTLINE_SNAPPING = os.getenv(
-    "GEOREF_ENABLE_COASTLINE_SNAPPING", "true"
-).strip().lower() not in ("0", "false", "no", "off")
-
-
-ENABLE_CURVE_ALIGNMENT = os.getenv(
-    "GEOREF_ENABLE_CURVE_ALIGNMENT", "true"
-).strip().lower() not in ("0", "false", "no", "off")
-
-
-GEOREF_CONFIG = DEFAULT_GEOREF_CONFIG.with_overrides(
-    snap_to_coastline=ENABLE_COASTLINE_SNAPPING,
-    enable_curve_alignment=ENABLE_CURVE_ALIGNMENT,
-)
-
-
-def _control_points(payload: list | None, config=None) -> list[ControlPoint]:
-    points = parse_control_points(payload or [])
-    return select_control_points(points, (config or GEOREF_CONFIG).gcp_sources)
-
-
-def _align_if_enabled(
-    image_bgr,
-    control_points: list[ControlPoint],
-    frame_bounds: dict | None,
-    text_regions: list | None,
-    water_click_positions: list | None,
-    water_sampling_radii: list | None,
-    record: "RunRecord | None" = None,
-    debug_dir: str | None = None,
-    config=None,
-    legend_bounds: dict | None = None,
-):
-    """ Curve alignement. Returns the aligned result if turned on"""
-    config = config or GEOREF_CONFIG
-    if not config.enable_curve_alignment or image_bgr is None:
-        return None
-
-    from app.utils.georeferencing.runner import align_map
-
-    result = align_map(
-        image_bgr,
-        control_points,
-        frame_bounds=frame_bounds,
-        text_regions=text_regions,
-        water_click_positions=water_click_positions,
-        water_sampling_radii=water_sampling_radii,
-        config=config,
-        record=record,
-        debug_dir=debug_dir,
-        legend_bounds=legend_bounds,
-    )
-    logger.info(
-        f"[GEOREF] alignment method={result.method} rung={result.rung}"
-        + (f" failed={result.failed_checks}" if result.failed_checks else "")
-    )
-    return result
-
-
-def _dev_test_text_regions(test_id: str, image_bgr, config=None) -> list | None:
-    """Returns the text boxes with OCR used text filling and tests"""
-    resolved = config or GEOREF_CONFIG
-    wants_ocr = resolved.enable_curve_alignment
-    if not wants_ocr and not resolved.text_aware_zone_fill:
-        return None
-
-    image_path = find_test_image_path(test_id)
-    if not image_path:
-        return None
-
-    try:
-        regions, state = ensure_text_regions(
-            test_id, image_path, image_bgr, refresh=False, allow_compute=wants_ocr
-        )
-        if regions is None:
-            logger.info(
-                f"[DEV-TEST] no cached text regions for {test_id};"
-                " skipping the text-aware zone fill (alignment is off)"
-            )
-            return None
-        logger.info(
-            f"[DEV-TEST] text regions for {test_id}: {len(regions or [])}"
-            f" ({state.detail or 'reused from cache'})"
-        )
-        return regions
-    except Exception as e:
-        logger.warning(f"[DEV-TEST] Could not obtain text regions for {test_id}: {e}")
-        return None
+GEOREF_CONFIG = ambient_georef_config()
 
 
 def _dev_test_debug_dir(test_id: str, test_case: str) -> str | None:
@@ -233,29 +152,6 @@ def _alignment_summary(result) -> dict[str, Any]:
             for g in result.gates
         ],
     }
-
-
-def _georeference(
-    pixel_feature_collections: list,
-    control_points: list[ControlPoint],
-    frame_bounds: dict | None = None,
-    record: "RunRecord | None" = None,
-    model=None,
-    extra_properties: dict | None = None,
-    config=None,
-    image=None,
-):
-    """Fit and apply the pixel -> EPSG:4326"""
-    return georeference_features(
-        pixel_feature_collections,
-        control_points,
-        frame_bounds=frame_bounds,
-        config=config or GEOREF_CONFIG,
-        record=record,
-        model=model,
-        extra_properties=extra_properties,
-        image_size=(image.shape[1], image.shape[0]) if image is not None else None,
-    )
 
 
 @celery_app.task(bind=True)
@@ -496,19 +392,18 @@ def _georeferenced_or_normalized(
     normalized_features: list,
     points: list[ControlPoint],
     frame_bounds: dict | None,
-    aligned_model,
-    alignment_props: dict | None,
+    alignment,
     image=None,
 ) -> list:
     if not points:
         return normalized_features
-    return _georeference(
+    return georeference_zones(
         pixel_features,
         points,
         frame_bounds=frame_bounds,
-        model=aligned_model,
-        extra_properties=alignment_props,
-        image=image
+        image_bgr=image,
+        alignment=alignment,
+        config=GEOREF_CONFIG,
     ).collections
 
 
@@ -604,27 +499,20 @@ def process_map_extraction(self, map_id: str):
         points = select_control_points(inputs.control_points, GEOREF_CONFIG.gcp_sources)
         water_positions, _water_names, water_radii = inputs.water_picks
         alignment = None
-        aligned_model = None
         debug_dir = make_run_dir(f"map{map_id}") if debug_enabled() else None
         if points and GEOREF_CONFIG.enable_curve_alignment:
             progress(3, "Extracting reference geography and aligning the map")
-            alignment = _align_if_enabled(
+            alignment = align_if_enabled(
                 image,
                 points,
-                inputs.frame_bounds,
-                text_regions,
-                water_positions,
-                water_radii,
-                debug_dir=debug_dir,
+                frame_bounds=inputs.frame_bounds,
+                text_regions=text_regions,
+                water_click_positions=water_positions,
+                water_sampling_radii=water_radii,
                 legend_bounds=inputs.legend_bounds,
+                config=GEOREF_CONFIG,
+                debug_dir=debug_dir,
             )
-            if alignment is not None and alignment.used_curve_evidence:
-                aligned_model = alignment.model
-        alignment_props = (
-            {"alignment_method": alignment.method, "alignment_rung": alignment.rung}
-            if alignment is not None
-            else None
-        )
         _raise_if_cancelled(map_id)
 
         # Step 4: shapes
@@ -642,8 +530,7 @@ def process_map_extraction(self, map_id: str):
                     shapes_result.get("normalized_features", []),
                     points,
                     inputs.frame_bounds,
-                    aligned_model,
-                    alignment_props,
+                    alignment,
                     image=image,
                 )
             )
@@ -652,35 +539,24 @@ def process_map_extraction(self, map_id: str):
         # Step 5: colours, from the pipette alone
         progress(5, "Extracting colors from image")
         zone_positions, zone_names, zone_radii = inputs.zone_picks
-        color_result = extract_colors(
+        color_result = extract_zone_colors(
             tmp_file_path,
-            debug=False,
             legend_bounds=inputs.legend_bounds,
-            imposed_click_positions=[tuple(c) for c in zone_positions or []] or None,
-            imposed_colors_names=zone_names,
-            imposed_sampling_radii=[int(r) for r in zone_radii] if zone_radii else None,
-            text_regions=(text_regions if GEOREF_CONFIG.text_aware_zone_fill else None),
-            text_fill_min_context=GEOREF_CONFIG.text_fill_min_context,
-            text_fill_max_distance_px=GEOREF_CONFIG.text_fill_max_distance_px,
-            text_fill_method=GEOREF_CONFIG.text_fill_method,
-            text_inpaint_dilation_px=GEOREF_CONFIG.text_inpaint_dilation_px,
-            text_inpaint_radius_px=GEOREF_CONFIG.text_inpaint_radius_px,
-            text_inpaint_max_ink_ratio=GEOREF_CONFIG.text_inpaint_max_ink_ratio,
-            text_inpaint_algo=GEOREF_CONFIG.text_inpaint_algo,
-            text_inpaint_ink_deltaE=GEOREF_CONFIG.text_inpaint_ink_deltaE,
-            zone_gap_fill=GEOREF_CONFIG.zone_gap_fill,
-            zone_gap_max_ratio_of_diagonal=GEOREF_CONFIG.zone_gap_max_ratio_of_diagonal,
+            click_positions=zone_positions,
+            names=zone_names,
+            radii=zone_radii,
+            text_regions=text_regions,
+            config=GEOREF_CONFIG,
         )
 
         color_result.pop("classified_rgb", None)
-        
+
         color_collections = _georeferenced_or_normalized(
             color_result.get("pixel_features", []),
             color_result.get("normalized_features", []),
             points,
             inputs.frame_bounds,
-            aligned_model,
-            alignment_props,
+            alignment,
             image=image,
         )
         collections.extend(color_collections)
@@ -798,9 +674,15 @@ def process_dev_test_extraction(
     water_sampling_radii: list | None = None,
     config_overrides: dict | None = None,
     legend_bounds: dict | None = None,
+    excluded_control_points: list | None = None,
 ):
     """Dev-test-only extraction task: no DB persistence, results saved to files,
-    evaluation report written automatically at the end."""
+    evaluation report written automatically at the end.
+
+    ``excluded_control_points`` are indices into ``control_points`` left out of
+    this run -- the dev tool's hand-driven leave-one-out. Like any switch, a run
+    using them is never promoted to the case's best.
+    """
 
     resolved_kind = resolve_case_kind(test_id, test_case)
     switches = {
@@ -809,9 +691,12 @@ def process_dev_test_extraction(
         if getattr(GEOREF_CONFIG, key) != value
     }
     run_config = GEOREF_CONFIG.with_overrides(**switches)
-    ambient_run = not switches
 
-    points = _control_points(control_points, run_config)
+    kept_points, excluded = drop_control_points(
+        parse_control_points(control_points or []), excluded_control_points or []
+    )
+    points = select_control_points(kept_points, run_config.gcp_sources)
+    ambient_run = not switches and not excluded
 
     georef_record = RunRecord(run_id=f"{test_id}/{test_case}")
     georef_record.set_inputs(
@@ -820,6 +705,7 @@ def process_dev_test_extraction(
         caseKind=resolved_kind,
         runSwitches=switches or None,
         controlPointSources=list(run_config.gcp_sources),
+        excludedControlPoints=excluded or None,
     )
     try:
         # Step 1: temp save
@@ -827,7 +713,6 @@ def process_dev_test_extraction(
             state="PROGRESS",
             meta={"current": 1, "total": nb_task, "status": "Saving uploaded file"},
         )
-        time.sleep(2)
 
         with tempfile.NamedTemporaryFile(
             delete=False, suffix=os.path.splitext(filename)[1]
@@ -883,41 +768,24 @@ def process_dev_test_extraction(
             },
         )
 
-        imposed_click_positions_tuples = (
-            [tuple(c) for c in imposed_click_positions]
-            if imposed_click_positions
-            else None
-        )
-        imposed_sampling_radii_ints = (
-            [int(r) for r in imposed_sampling_radii] if imposed_sampling_radii else None
-        )
-
-        if not imposed_click_positions_tuples:
+        if not imposed_click_positions:
             logger.warning(
                 f"[DEV-TEST] No imposed colors for test {test_id}/{test_case}; "
                 "color extraction will return no zones"
             )
 
-        text_regions = _dev_test_text_regions(test_id, image, config=run_config)
+        text_regions = text_regions_for_run(
+            test_id, find_test_image_path(test_id), image, run_config
+        )
 
-        color_result = extract_colors(
+        color_result = extract_zone_colors(
             tmp_file_path,
-            debug=False,
             legend_bounds=legend_bounds,
-            imposed_click_positions=imposed_click_positions_tuples,
-            imposed_colors_names=imposed_colors_names,
-            imposed_sampling_radii=imposed_sampling_radii_ints,
-            text_regions=text_regions if run_config.text_aware_zone_fill else None,
-            text_fill_min_context=run_config.text_fill_min_context,
-            text_fill_max_distance_px=run_config.text_fill_max_distance_px,
-            text_fill_method=run_config.text_fill_method,
-            text_inpaint_dilation_px=run_config.text_inpaint_dilation_px,
-            text_inpaint_radius_px=run_config.text_inpaint_radius_px,
-            text_inpaint_max_ink_ratio=run_config.text_inpaint_max_ink_ratio,
-            text_inpaint_algo=run_config.text_inpaint_algo,
-            text_inpaint_ink_deltaE=run_config.text_inpaint_ink_deltaE,
-            zone_gap_fill=run_config.zone_gap_fill,
-            zone_gap_max_ratio_of_diagonal=run_config.zone_gap_max_ratio_of_diagonal,
+            click_positions=imposed_click_positions,
+            names=imposed_colors_names,
+            radii=imposed_sampling_radii,
+            text_regions=text_regions,
+            config=run_config,
         )
 
         classified_rgb = color_result.pop("classified_rgb", None)
@@ -933,34 +801,28 @@ def process_dev_test_extraction(
         if points:
             try:
                 debug_dir = _dev_test_debug_dir(test_id, test_case)
-                alignment = _align_if_enabled(
+                alignment = align_if_enabled(
                     image,
                     points,
-                    frame_bounds,
-                    text_regions,
-                    water_click_positions,
-                    water_sampling_radii,
-                    record=georef_record,
-                    config=run_config,
-                    debug_dir=debug_dir,
+                    frame_bounds=frame_bounds,
+                    text_regions=text_regions,
+                    water_click_positions=water_click_positions,
+                    water_sampling_radii=water_sampling_radii,
                     legend_bounds=legend_bounds,
+                    config=run_config,
+                    record=georef_record,
+                    debug_dir=debug_dir,
                 )
-                aligned_model = (
-                    alignment.model
-                    if alignment is not None and alignment.used_curve_evidence
-                    else None
-                )
-                georef = _georeference(
+                georef = georeference_zones(
                     pixel_features,
                     points,
                     frame_bounds=frame_bounds,
-                    record=georef_record,
-                    model=aligned_model,
+                    image_bgr=image,
+                    alignment=alignment,
                     config=run_config,
-                    image=image,
+                    record=georef_record,
                 )
                 all_extracted_features = georef.collections
-                georef_record.set_model("chosen", georef.transform_payload)
                 _dump_zones_debug(debug_dir, georef.collections)
                 if debug_dir:
                     logger.info(f"[DEV-TEST] alignment debug dump -> {debug_dir}")
