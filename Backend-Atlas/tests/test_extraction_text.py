@@ -347,13 +347,20 @@ def test_text_extraction_accuracy(
 
     geocache_accepted = []
     geocache_unrecognized = []
+    seen_accepted = set()
+    seen_unrecognized = set()
     for word in unpaired_ocr_words:
         candidate = get_city_with_max_population(word, confidence_threshold=0.60)
         if candidate.get("found"):
             matched_name = candidate.get("name")
-            geocache_accepted.append(f"'{word}' -> '{matched_name}'")
+            entry = f"'{word}' -> '{matched_name}'"
+            if entry not in seen_accepted:
+                seen_accepted.add(entry)
+                geocache_accepted.append(entry)
         else:
-            geocache_unrecognized.append(word)
+            if word not in seen_unrecognized:
+                seen_unrecognized.add(word)
+                geocache_unrecognized.append(word)
 
     summary_lines = [
         f"\n{status_icon} {status_color}{BOLD}[{status_text}] {card_name_fmt}{RESET}",
