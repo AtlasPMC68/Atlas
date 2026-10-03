@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest --config vite.config.ts"
+    "test": "vitest --config vite.config.ts",
+    "test:ci": "vitest run"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.19.2",
