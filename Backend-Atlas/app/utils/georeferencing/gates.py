@@ -1,6 +1,6 @@
 """The gates: named checks that decide whether an aligned model may ship.
 
-Plan section 8.2. Three available signals with distinct roles:
+See dev-docs/georeferencing.md section 5.2. Three available signals with distinct roles:
 
     chamfer residual      diagnostic only -- **never** a gate, because a fit
                           locked onto the wrong feature has a *low* residual by
@@ -14,7 +14,7 @@ Plan section 8.2. Three available signals with distinct roles:
 
 Every check is returned whether or not it applied, and all of them are logged
 every run. Which check actually discriminates real failures is a corpus-level
-question (roadmap section 5), and it can only be answered by aggregating runs
+question (georeferencing-testing.md, decision rules), and it can only be answered by aggregating runs
 where the check passed too.
 """
 

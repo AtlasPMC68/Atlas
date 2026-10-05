@@ -1,6 +1,6 @@
 """Georeferencing: fit a pixel -> Earth transform and apply it to features.
 
-Package layout (plan section 3), filled in as the steps land:
+Package layout (dev-docs/georeferencing.md section 11):
 
     config.py       frozen hyperparameters as one versioned dataclass
     requirements.py what inputs the current algorithm needs, and which of them
@@ -28,7 +28,6 @@ Package layout (plan section 3), filled in as the steps land:
 from .config import CONFIG_VERSION, DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import (
     FrameBounds,
-    frame_bounds_from_geo_points,
     frame_bounds_to_config_entry,
     parse_frame_bounds,
     parse_frame_bounds_entry,
@@ -109,7 +108,6 @@ __all__ = [
     "fit_affine_from_control_points",
     "fit_chamfer",
     "fit_piecewise_from_control_points",
-    "frame_bounds_from_geo_points",
     "frame_bounds_to_config_entry",
     "FrameBounds",
     "GateCheck",

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyInputsPatch,
   canStartExtraction,
+  casePartCount,
   deriveStepStates,
   missingRequiredSteps,
+  pickCaseInputs,
   zoneRedoResetsPoints,
 } from "../../src/utils/importSteps";
 import type { ControlPointInput, ImposedColor } from "../../src/typescript/georef";
@@ -95,6 +97,21 @@ describe("zone redo", () => {
     expect(colours.controlPoints).toHaveLength(4);
   });
 
+  it("treats check points like control points: locked until framed, dropped on a new frame", () => {
+    const check = { ...city };
+    expect(deriveStepStates({}).checks.status).toBe("locked");
+    expect(deriveStepStates({ frameBounds: FRAME }).checks.status).toBe("available");
+
+    const withChecks = { ...complete, checkPoints: [check] };
+    expect(deriveStepStates(withChecks).checks.status).toBe("done");
+    expect(deriveStepStates(withChecks).checks.required).toBe(false);
+    expect(zoneRedoResetsPoints({ frameBounds: FRAME, checkPoints: [check] })).toBe(true);
+
+    const moved = applyInputsPatch(withChecks, { frameBounds: { ...FRAME, west: -90 } });
+    expect(moved.checkPoints).toBeUndefined();
+    expect(applyInputsPatch(withChecks, { colors: [] }).checkPoints).toHaveLength(1);
+  });
+
   it("keeps the points when a case is framed for the first time", () => {
     const unframed = { ...complete, frameBounds: undefined };
     expect(zoneRedoResetsPoints(unframed)).toBe(false);
@@ -106,5 +123,48 @@ describe("zone redo", () => {
 
   it("clears a key on null", () => {
     expect(applyInputsPatch(complete, { legend: null }).legend).toBeUndefined();
+  });
+});
+
+describe("pickCaseInputs", () => {
+  const water: ImposedColor = { ...zone, name: "eau", kind: "water" };
+  const check: ControlPointInput = { ...city, pixel: { x: 9, y: 9 } };
+  const source: ImportInputs = {
+    ...complete,
+    controlPoints: [sift(0), sift(1), sift(2), sift(3), city],
+    checkPoints: [check],
+    colors: [zone, water],
+  };
+
+  it("counts each part of a case", () => {
+    expect(casePartCount(source, "sift")).toBe(4);
+    expect(casePartCount(source, "cities")).toBe(1);
+    expect(casePartCount(source, "checks")).toBe(1);
+    expect(casePartCount(source, "zoneColors")).toBe(1);
+    expect(casePartCount(source, "waterColors")).toBe(1);
+    expect(casePartCount({}, "frame")).toBe(0);
+  });
+
+  it("takes only the parts asked for", () => {
+    const picked = pickCaseInputs(source, ["frame", "sift", "waterColors"]);
+    expect(picked.frameBounds).toEqual(FRAME);
+    expect(picked.legend).toBeUndefined();
+    expect(picked.controlPoints).toEqual([sift(0), sift(1), sift(2), sift(3)]);
+    expect(picked.checkPoints).toBeUndefined();
+    expect(picked.colors).toEqual([water]);
+  });
+
+  it("takes no points without the frame they were matched in", () => {
+    const picked = pickCaseInputs(source, ["legend", "sift", "cities", "checks", "zoneColors"]);
+    expect(picked.frameBounds).toBeUndefined();
+    expect(picked.controlPoints).toBeUndefined();
+    expect(picked.checkPoints).toBeUndefined();
+    expect(picked.legend).toEqual(source.legend);
+    expect(picked.colors).toEqual([zone]);
+  });
+
+  it("omits keys that end up empty, so their step reads as not done", () => {
+    const picked = pickCaseInputs({ frameBounds: FRAME }, ["frame", "sift", "zoneColors"]);
+    expect(Object.keys(picked)).toEqual(["frameBounds"]);
   });
 });

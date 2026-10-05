@@ -42,6 +42,14 @@
             </div>
           </div>
         </div>
+        <!-- Dev-test only: a new case on a map that already has cases can take
+             some of another case's inputs, so the two differ only on purpose. -->
+        <StartFromCasePanel
+          v-if="isDevTest && !caseToComplete"
+          class="mt-6"
+          :test-id="mapId"
+          @start="startFromCase"
+        />
       </div>
     </div>
 
@@ -57,6 +65,7 @@
           :legend="store.inputs.legend"
           :sift-points="siftPts"
           :city-points="cityPts"
+          :check-points="checkPts"
           :colors="store.inputs.colors ?? []"
           :can-change-map="!store.editedCase"
           @change-map="askChangeMap"
@@ -66,6 +75,7 @@
         <ExtractionChecklist
           :inputs="store.inputs"
           :options="isDevTest ? null : options"
+          :show-checks="isDevTest"
           :ocr-state="store.ocrState"
           :disabled="store.isSaving || isStarting"
           @open="openStep"
@@ -119,8 +129,10 @@
       :keypoints="store.keypoints"
       :used-lakes="store.usedLakes"
       :initial-points="siftPts"
+      :allow-check-points="isDevTest"
+      :initial-check-points="siftCheckPts"
       @close="openModal = null"
-      @confirmed="(points) => save({ controlPoints: [...points, ...cityPts] })"
+      @confirmed="onSiftConfirmed"
     />
 
     <GeoRefCitiesModal
@@ -128,11 +140,25 @@
       :is-open="true"
       :image-url="store.previewUrl"
       :world-bounds="store.inputs.frameBounds"
-      :sift-points="siftPts"
+      :context-points="[...siftPts, ...checkPts]"
       :initial-cities="cityPts"
       :used-lakes="store.usedLakes"
       @close="openModal = null"
       @confirmed="(cities) => save({ controlPoints: [...siftPts, ...cities] })"
+    />
+
+    <!-- Dev-test only: held-out cities, never fitted. -->
+    <GeoRefCitiesModal
+      v-if="openModal === 'checks' && store.previewUrl && store.inputs.frameBounds"
+      :is-open="true"
+      purpose="check"
+      :image-url="store.previewUrl"
+      :world-bounds="store.inputs.frameBounds"
+      :context-points="[...(store.inputs.controlPoints ?? []), ...siftCheckPts]"
+      :initial-cities="cityCheckPts"
+      :used-lakes="store.usedLakes"
+      @close="openModal = null"
+      @confirmed="(cities) => save(devTest.cityChecksPatch(cities))"
     />
 
     <ColorPickerModal
@@ -161,12 +187,12 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useImportSessionStore, type ImportMode } from "../../stores/importSession";
-import { useDevTestImportProcess } from "../../composables/useDevTestImportProcess";
+import { useDevTestCaseFlow } from "../../composables/useDevTestCaseFlow";
 import { usePolling } from "../../composables/usePolling";
 import { showAlert } from "../../composables/useAlert";
-import { slugifyTestCase } from "../../utils/devTestSlug";
-import { cityPoints, siftPoints, zoneRedoResetsPoints } from "../../utils/importSteps";
-import type { WorldAreaSelection, WorldBounds } from "../../typescript/georef";
+import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../../utils/importSteps";
+import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
+import type { DevTestCaseInputsResponse } from "../../typescript/devTest";
 import type {
   ExtractionState,
   ImportInputsPatch,
@@ -187,6 +213,7 @@ import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import GeoRefCitiesModal from "../../components/georef/GeoRefCitiesModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
+import StartFromCasePanel from "../../components/dev/StartFromCasePanel.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -201,7 +228,9 @@ const caseToComplete =
 const store = useImportSessionStore();
 store.reset(mode, mapId);
 
-const devImport = useDevTestImportProcess();
+// What dev-test mode adds to the page; unused in user mode.
+const devTest = useDevTestCaseFlow(mapId);
+const { checkPts, siftCheckPts, cityCheckPts } = devTest;
 
 const openModal = ref<StepId | null>(null);
 const worldAreaZoom = ref<number | null>(null);
@@ -230,6 +259,13 @@ async function confirmMap() {
   }
 }
 
+async function startFromCase(source: DevTestCaseInputsResponse, parts: CasePart[]) {
+  const error = await devTest.startFromCase(source, parts);
+  if (error) {
+    showAlert("error", error);
+  }
+}
+
 function askChangeMap() {
   pendingConfirm.value = {
     title: "Changer de carte ?",
@@ -255,7 +291,7 @@ function askAbandon() {
         "Le test case reste tel qu'il est sur le disque : les entrées modifiées ici ne sont pas enregistrées.",
       confirmLabel: "Quitter",
       action: async () => {
-        await router.push(`/test-editor/${mapId}/case/${encodeURIComponent(caseId)}`);
+        await router.push(devTest.caseResultPath(caseId));
       },
     };
     return;
@@ -292,7 +328,7 @@ async function openStep(step: StepId) {
     pendingConfirm.value = {
       title: "Redéfinir la zone sur le monde ?",
       message:
-        "Les points SIFT et les villes déjà placés correspondent à la zone actuelle : ils seront réinitialisés.",
+        "Les points SIFT, les villes et les villes de vérification déjà placés correspondent à la zone actuelle : ils seront réinitialisés.",
       confirmLabel: "Redéfinir la zone",
       action: () => {
         openModal.value = "zone";
@@ -308,6 +344,14 @@ async function openStep(step: StepId) {
     }
   }
   openModal.value = step;
+}
+
+// SIFT pairs for the fit, and in dev-test mode the pairs ticked as check points.
+function onSiftConfirmed(points: ControlPointInput[], checks: ControlPointInput[]) {
+  save({
+    controlPoints: [...points, ...cityPts.value],
+    ...(isDevTest ? devTest.siftChecksPatch(checks) : {}),
+  });
 }
 
 async function save(patch: ImportInputsPatch) {
@@ -350,8 +394,10 @@ function insideBounds(bounds: WorldBounds, geo: { lon: number; lat: number }): b
 async function startExtraction() {
   isStarting.value = true;
   try {
-    if (isDevTest) await startDevTestExtraction();
-    else if (!(await store.startExtraction())) {
+    if (isDevTest) {
+      const error = await devTest.startExtraction();
+      if (error) showAlert("error", error);
+    } else if (!(await store.startExtraction())) {
       showAlert("error", store.error ?? "Erreur lors du lancement de l'extraction");
     }
   } finally {
@@ -361,66 +407,25 @@ async function startExtraction() {
 
 // --- 3. Extraction -----------------------------------------------------------
 
-const devTestCaseName = ref<string | null>(null);
-
-async function startDevTestExtraction() {
-  if (!store.file) return;
-  // A completed case is saved back under its own name, which slugifies to its
-  // id, so the run overwrites that case rather than creating another.
-  const edited = store.editedCase;
-  if (edited && !devTestCaseName.value) {
-    devTestCaseName.value = slugifyTestCase(edited.name) === edited.id ? edited.name : edited.id;
-  }
-  if (!devTestCaseName.value) {
-    const entered = window.prompt(
-      `Nom du test-case pour le test ${mapId} (ex: '5 sift points')`,
-      "",
-    );
-    const trimmed = (entered ?? "").trim();
-    if (!trimmed) return;
-    devTestCaseName.value = trimmed;
-  }
-  const result = await devImport.startImport(store.file, mapId, devTestCaseName.value, {
-    controlPoints: store.inputs.controlPoints ?? [],
-    colors: store.inputs.colors ?? [],
-    frameBounds: store.inputs.frameBounds ?? null,
-    legend: store.inputs.legend ?? null,
-    kind: edited?.kind ?? null,
-  });
-  if (result.success) store.phase = "extraction";
-  else showAlert("error", result.error);
-}
-
-// Dev-test runs are watched by their Celery task; imports by their row.
 const panel = computed<{
   state: ExtractionState;
   progress: number;
   status: string;
   error: string | null;
-}>(() => {
-  if (isDevTest) {
-    return {
-      state: devImport.error.value ? "failed" : "running",
-      progress: devImport.progress.value,
-      status: devImport.status.value,
-      error: devImport.error.value,
-    };
-  }
-  return {
-    state: store.extraction.state,
-    progress: store.extraction.progress,
-    status: store.extraction.status,
-    error: store.extraction.error,
-  };
-});
+}>(() =>
+  isDevTest
+    ? devTest.panel.value
+    : {
+        state: store.extraction.state,
+        progress: store.extraction.progress,
+        status: store.extraction.status,
+        error: store.extraction.error,
+      },
+);
 
 async function cancelExtraction() {
-  if (isDevTest) {
-    devImport.cancelImport();
-    store.phase = "saisie";
-    return;
-  }
-  await store.cancelExtraction();
+  if (isDevTest) devTest.cancelExtraction();
+  else await store.cancelExtraction();
 }
 
 // Polled while OCR runs in the background or an extraction is on its way.
@@ -456,24 +461,12 @@ watch(
   },
 );
 
-watch(devImport.resultData, (result) => {
-  if (!result) return;
-  const id = devImport.mapId.value || mapId;
-  const caseName = devTestCaseName.value;
-  // The slug, not the typed name: the case is stored under it, and its static
-  // artifacts are served off that directory.
-  router.push({
-    path: caseName
-      ? `/test-editor/${id}/case/${encodeURIComponent(slugifyTestCase(caseName))}`
-      : `/test-editor/${id}`,
-  });
-});
 
 onMounted(async () => {
   if (caseToComplete) await store.openDevTestCase(caseToComplete);
   else await store.restore();
   if (store.error) showAlert("error", store.error);
   // The first case on a new test map should not wait ~135 s for OCR.
-  if (isDevTest) void devImport.warmTextRegions(mapId);
+  if (isDevTest) void devTest.warmTextRegions();
 });
 </script>

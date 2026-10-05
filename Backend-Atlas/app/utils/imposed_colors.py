@@ -8,8 +8,7 @@ production upload route and the dev-test one so both stay in sync.
 `kind` separates zone fill from water. They are pipetted separately because they
 are routinely the same hue -- on the Leclerc map blue is Nouvelle-France while
 the Atlantic is white. Colour alone cannot disambiguate them, and the user can in
-one click. Entries without a `kind` are zones, which is what every payload
-written before this field existed meant.
+one click. Every entry carries its `kind`.
 """
 
 import json
@@ -25,6 +24,13 @@ ImposedColors = Tuple[
     Optional[List[Optional[str]]],  # user-provided names
     Optional[List[int]],  # sampling radii in pixels
     Optional[List[str]],  # kind: "zone" or "water"
+]
+
+#: The picks of one kind: positions, names, radii, each None when there are none.
+Picks = Tuple[
+    Optional[List[Tuple[float, float]]],
+    Optional[List[Optional[str]]],
+    Optional[List[int]],
 ]
 
 
@@ -83,8 +89,7 @@ def parse_imposed_colors_entries(entries: Any) -> ImposedColors:
         raw_name = entry.get("name")
         name = str(raw_name).strip() if raw_name is not None else ""
 
-        raw_kind = entry.get("kind")
-        kind = str(raw_kind).strip().lower() if raw_kind is not None else KIND_ZONE
+        kind = str(entry.get("kind") or "").strip().lower()
         if kind not in VALID_KINDS:
             raise ValueError(f"kind must be one of {VALID_KINDS}")
 
@@ -100,13 +105,9 @@ def split_imposed_colors_by_kind(
     click_positions: Optional[List[Tuple[float, float]]],
     names: Optional[List[Optional[str]]],
     radii: Optional[List[int]],
-    kinds: Optional[List[str]],
+    kinds: List[str],
     kind: str,
-) -> Tuple[
-    Optional[List[Tuple[float, float]]],
-    Optional[List[Optional[str]]],
-    Optional[List[int]],
-]:
+) -> Picks:
     """Keep only the picks of one `kind`, as three parallel lists.
 
     Returns (None, None, None) when nothing of that kind was picked, so the
@@ -118,7 +119,7 @@ def split_imposed_colors_by_kind(
     selected = [
         idx
         for idx in range(len(click_positions))
-        if (kinds[idx] if kinds and idx < len(kinds) else KIND_ZONE) == kind
+        if kinds[idx] == kind
     ]
     if not selected:
         return None, None, None
@@ -134,7 +135,7 @@ def imposed_colors_to_config_entries(
     click_positions: Optional[List[Tuple[float, float]]],
     names: Optional[List[Optional[str]]],
     radii: Optional[List[int]],
-    kinds: Optional[List[str]] = None,
+    kinds: List[str],
 ) -> Optional[List[dict]]:
     """Rebuild the serialisable entry list so a dev-test case can be re-run."""
     if not click_positions:
@@ -148,7 +149,7 @@ def imposed_colors_to_config_entries(
                 "y": float(y),
                 "name": (names[idx] if names and idx < len(names) else None),
                 "radius": int(radii[idx]) if radii and idx < len(radii) else 20,
-                "kind": (kinds[idx] if kinds and idx < len(kinds) else KIND_ZONE),
+                "kind": kinds[idx],
             }
         )
     return entries

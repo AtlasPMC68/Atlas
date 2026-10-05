@@ -29,6 +29,8 @@ interface StatusResponse {
 
 export interface DevTestImportInputs {
   controlPoints: ControlPointInput[];
+  // Held out of every fit; the evaluation measures the transform on them.
+  checkPoints: ControlPointInput[];
   colors: ImposedColor[];
   frameBounds: WorldBounds | null;
   legend: LegendAnswer | null;
@@ -74,13 +76,12 @@ export function useDevTestImportProcess() {
     }
   }, 1000);
 
+  // Saves the case's inputs and runs it on the test's stored map image.
   const startImport = async (
-    file: File,
     testId: string,
     testCase: string,
     inputs: DevTestImportInputs,
   ): Promise<StartDevTestImportResult> => {
-    if (!file) return { success: false, error: "Aucun fichier sélectionné" };
     if (!testId) return { success: false, error: "Identifiant de test manquant" };
     if (!testCase) return { success: false, error: "Nom du cas de test manquant" };
 
@@ -97,6 +98,9 @@ export function useDevTestImportProcess() {
     // SIFT and city control points, stored in the case config with their source
     if (inputs.controlPoints.length) {
       formData.append("control_points", JSON.stringify(inputs.controlPoints));
+    }
+    if (inputs.checkPoints.length) {
+      formData.append("check_points", JSON.stringify(inputs.checkPoints));
     }
     // The framing box is persisted into the case config, so a case re-runs with
     // the same working extent.
@@ -125,7 +129,6 @@ export function useDevTestImportProcess() {
         ),
       );
     }
-    formData.append("file", file);
 
     try {
       const response = await apiFetch("/dev-test-api/upload", {
@@ -135,7 +138,7 @@ export function useDevTestImportProcess() {
 
       if (!response.ok) {
         const body: Partial<{ detail: string }> = await response.json();
-        throw new Error(body.detail || "Erreur lors de l'envoi du fichier de test");
+        throw new Error(body.detail || "Erreur lors de l'enregistrement du test case");
       }
 
       const data: UploadResponse = snakeToCamel(await response.json());

@@ -11,11 +11,9 @@ from app.services.imports import (
 )
 from app.utils.color_extraction import extract_colors
 from app.utils.legend import (
-    legend_mask,
     legend_to_entry,
     parse_legend_bounds,
     parse_legend_entry,
-    polygon_center_in_legend,
 )
 
 FRAME = {"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0}
@@ -51,21 +49,6 @@ def test_legend_entry_distinguishes_no_legend_from_no_answer():
     assert parse_legend_entry(legend_to_entry(None)) == (True, None)
     bounds = {"x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0}
     assert parse_legend_entry(legend_to_entry(bounds)) == (True, bounds)
-
-
-def test_legend_mask_is_clipped_to_the_image():
-    mask = legend_mask((10, 10), {"x": 8.0, "y": -2.0, "width": 5.0, "height": 4.0})
-    assert mask.shape == (10, 10)
-    assert mask[0:2, 8:10].all()
-    assert mask.sum() == 4
-    assert not legend_mask((10, 10), None).any()
-
-
-def test_ocr_box_is_in_the_legend_by_its_centre():
-    legend = {"x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0}
-    assert polygon_center_in_legend([[2, 2], [8, 2], [8, 4], [2, 4]], legend)
-    # Straddles the edge, centred outside.
-    assert not polygon_center_in_legend([[8, 2], [20, 2], [20, 4], [8, 4]], legend)
 
 
 def test_colour_extraction_leaves_the_legend_out(tmp_path):

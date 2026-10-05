@@ -97,7 +97,10 @@ def _color_result():
 
 def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
     """Run the task with its database transitions stubbed. Returns the mocks."""
-    georef_result = MagicMock(collections=[{"type": "FeatureCollection", "features": []}])
+    placement = MagicMock(alignment=None)
+    placement.georeference.return_value = MagicMock(
+        collections=[{"type": "FeatureCollection", "features": []}]
+    )
     mocks = {
         "claim": AsyncMock(return_value=claimed),
         "state": AsyncMock(return_value=state),
@@ -108,8 +111,7 @@ def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
             return_value={"pixel_features": [], "normalized_features": [], "shapes": []}
         ),
         "city": MagicMock(side_effect=_index_for),
-        "align": MagicMock(return_value=None),
-        "georef": MagicMock(return_value=georef_result),
+        "place": MagicMock(return_value=placement),
     }
     mocks.update(patches)
     with (
@@ -120,8 +122,7 @@ def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
         patch("app.utils.extraction_steps.extract_colors", mocks["colors"]),
         patch("app.tasks.extract_shapes", mocks["shapes"]),
         patch("app.tasks.frame_city_index", mocks["city"]),
-        patch("app.tasks.align_if_enabled", mocks["align"]),
-        patch("app.tasks.georeference_zones", mocks["georef"]),
+        patch("app.tasks.place_map", mocks["place"]),
         patch("app.tasks._write_ocr_text_file", MagicMock(return_value="out.txt")),
         patch("app.tasks.process_map_extraction.update_state"),
     ):
@@ -206,16 +207,17 @@ def test_disabled_options_skip_text_and_shapes():
     mocks["colors"].assert_called_once()
 
 
-def test_alignment_receives_the_ocr_boxes_and_the_legend():
-    mocks = _run_extraction(_claimed())
+def test_the_map_is_placed_once_with_the_ocr_boxes_and_the_legend():
+    mocks = _run_extraction(_claimed(shapesExtraction=True))
     mocks["outcome"].get(timeout=20)
 
-    if not mocks["align"].called:
-        pytest.skip("curve alignment is switched off in this environment")
-    _args, kwargs = mocks["align"].call_args
+    mocks["place"].assert_called_once()
+    _args, kwargs = mocks["place"].call_args
     assert len(kwargs["text_regions"]) == 2
-    assert kwargs["water_click_positions"] == [(0.5, 0.5)]
+    assert kwargs["water_picks"][0] == [(0.5, 0.5)]
     assert kwargs["legend_bounds"] == LEGEND
+    # Shapes and colours share that one placement.
+    assert mocks["place"].return_value.georeference.call_count == 2
 
 
 def test_cancel_stops_before_anything_is_saved():

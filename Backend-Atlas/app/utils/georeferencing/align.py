@@ -1,10 +1,10 @@
 """Coarse chamfer alignment, normal-search ICP, and the gates.
 
-Two phases (plan section 8.1). Both optimise the same six affine parameters, and
+Two phases (dev-docs/georeferencing.md section 5.2). Both optimise the same six affine parameters, and
 both express every residual in **user image pixels**. The two terms do not share
 a loss: control points are plain least squares, and only the curve term is
 robust (Tukey, cutoff in pixels). A shared loss used to reject the control
-points in the fine stages -- see dev-docs/georeferencing-fixes.md.
+points in the fine stages -- see dev-docs/georeferencing-history.md, 2026-09-30.
 
     Phase A -- chamfer.  Reference curve samples are pushed into pixel space and
                          read a distance field built from the user's edge map.
@@ -25,7 +25,7 @@ stack.
 **The result is gated, never trusted.** A fit locked onto the wrong feature has
 *low* chamfer residual by construction, so the residual can never be the check.
 The primary gate is a probe fit that never sees the control points, measured
-against them afterwards (section 10.3).
+against them afterwards (georeferencing.md section 5.2, the probe).
 """
 
 import logging
@@ -39,8 +39,7 @@ from scipy.optimize import least_squares
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .models import AffineModel, ControlPoint, gcp_sigma_px
-from .projection import lonlat_to_webmercator, webmercator_meters_to_km
-from .records import GateCheck, RunRecord
+from .projection import lonlat_to_webmercator
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +80,8 @@ def build_user_field(
 
     Validity is the complement of the text mask, blurred. Where a label was
     removed we do not know what the geography does, and the honest answer is
-    "no data" rather than "the nearest edge is 60 px away" -- see plan section
-    7b. Blurred rather than hard, so the objective stays smooth as samples cross
+    "no data" rather than "the nearest edge is 60 px away" -- see
+    georeferencing-history.md, Steps 0-3. Blurred rather than hard, so the objective stays smooth as samples cross
     the boundary during optimisation.
     """
     weight = np.asarray(evidence.edge_weight, dtype=np.float32)
@@ -344,7 +343,7 @@ def _residuals(
     through :func:`tukey_residual` at *cutoff_px*. Its cost per sample is
     ``weight * (v * rho(d) + (1 - v) * rho_max)``: where validity ``v`` is 0
     (a label, off the image) the sample is treated as an outlier -- a flat
-    cost that exerts no pull, as plan section 7b asks, without making the
+    cost that exerts no pull, as masked text calls for, without making the
     unseen regions a place the optimiser can hide samples for free.
     """
     parts: List[np.ndarray] = []
@@ -460,7 +459,7 @@ def fit_chamfer(
 ) -> PhaseResult:
     """Phase A: annealed chamfer fit.
 
-    ``use_gcps=False`` gives the probe fit of section 10.3 -- curve evidence
+    ``use_gcps=False`` gives the probe fit (georeferencing.md section 5.2) -- curve evidence
     alone, control points held out entirely so they remain an independent check.
     """
     blur = list(blur_schedule if blur_schedule is not None else config.anneal_blur_px)

@@ -1,10 +1,14 @@
 import json
+import math
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import numpy as np
+import shapely
+from scipy.spatial import cKDTree
 from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
@@ -23,6 +27,13 @@ class DevTestPaths:
     best_report_path: str
     best_zones_path: str
     best_errors_geojson_path: str
+    #: The expected zones through the pipeline's ocean and lake cuts.
+    expected_cleaned_zones_path: str
+    #: The zones before snapping and the clip, and their error overlay.
+    raw_zones_path: str
+    raw_errors_geojson_path: str
+    best_raw_zones_path: str
+    best_raw_errors_geojson_path: str
 
 
 def write_geojson(feature_collection: dict[str, Any], geojson_path: str) -> None:
@@ -128,8 +139,8 @@ def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, An
     For each expected feature, we find its best-match extracted feature (already
     computed in `matches`). FP/FN are then computed *only on that pair*:
 
-    - false negative: expected \ extracted_best
-    - false positive: extracted_best \ expected
+    - false negative: expected minus extracted_best
+    - false positive: extracted_best minus expected
     """
 
     features: list[dict[str, Any]] = []
@@ -253,6 +264,97 @@ def _index_by_name(features: list[dict[str, Any]]) -> dict[str, list[dict[str, A
     return index
 
 
+#: Earth radius for boundary distances (km), and the boundary sampling step. A
+#: point-to-boundary distance is read off the nearest boundary *sample*, so it
+#: is overstated by at most half a step: 0.25 km, the metric's noise floor.
+EARTH_RADIUS_KM = 6371.0088
+BOUNDARY_STEP_KM = 0.5
+
+
+def _polygons(geom: BaseGeometry) -> list[BaseGeometry]:
+    """Every Polygon in *geom*, however nested. ``make_valid`` on a drawn zone
+    can return a GeometryCollection holding a MultiPolygon and stray lines."""
+    found: list[BaseGeometry] = []
+    stack = [_safe_make_valid(geom)]
+    while stack:
+        g = stack.pop()
+        if g.is_empty:
+            continue
+        if g.geom_type == "Polygon":
+            found.append(g)
+        elif hasattr(g, "geoms"):
+            stack.extend(g.geoms)
+    return found
+
+
+def _outline(geom: BaseGeometry) -> BaseGeometry | None:
+    """The zone with its holes filled: what the boundary distance measures.
+
+    Holes are left out on purpose.
+    """
+    parts = _polygons(geom)
+    if not parts:
+        return None
+    return shapely.union_all(shapely.polygons(shapely.get_exterior_ring(parts)))
+
+
+def _hole_count(geom: BaseGeometry) -> int:
+    return int(sum(len(p.interiors) for p in _polygons(geom)))
+
+
+def _boundary_samples_xyz(geom: BaseGeometry) -> np.ndarray:
+    """Points every <= BOUNDARY_STEP_KM along a zone's outline, in 3D km.
+
+    Outer rings only (see ``_outline``). 3D Earth-centred coordinates rather than a flat projection:
+    zones span many degrees of latitude, where any one projection's scale is
+    off by percents at the edges, while the straight-line (chord) distance
+    between two nearby points on the sphere is their ground distance.
+    """
+    outline = _outline(geom)
+    if outline is None or outline.is_empty:
+        return np.zeros((0, 3))
+    boundary = outline.boundary
+    # A degree of latitude is the longest a degree gets on the ground, so a
+    # step in degrees of latitude is at most that many km in any direction.
+    dense = shapely.segmentize(boundary, BOUNDARY_STEP_KM / 111.32)
+    lonlat = shapely.get_coordinates(dense)
+    if lonlat.size == 0:
+        return np.zeros((0, 3))
+    lon, lat = np.radians(lonlat[:, 0]), np.radians(lonlat[:, 1])
+    return EARTH_RADIUS_KM * np.column_stack(
+        [np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)]
+    )
+
+
+def boundary_distance_km(expected: BaseGeometry, extracted: BaseGeometry) -> dict[str, Any] | None:
+    """How far, in km, the extracted outline sits from the expected one.
+
+    Outlines: outer rings, holes filled (``_outline``). Symmetric: every expected boundary sample is measured to the extracted
+    boundary and every extracted sample to the expected one, so a zone that
+    is too big and a zone that is too small both count.
+    """
+    try:
+        a = _boundary_samples_xyz(expected)
+        b = _boundary_samples_xyz(extracted)
+    except Exception:
+        return None
+    if len(a) == 0 or len(b) == 0:
+        return None
+    a_to_b, _ = cKDTree(b).query(a)
+    b_to_a, _ = cKDTree(a).query(b)
+    both = np.concatenate([a_to_b, b_to_a])
+    return {
+        "meanKm": round(float((a_to_b.mean() + b_to_a.mean()) / 2.0), 3),
+        "p90Km": round(float(np.percentile(both, 90)), 3),
+        "maxKm": round(float(both.max()), 3),
+        "expectedToExtractedMeanKm": round(float(a_to_b.mean()), 3),
+        "extractedToExpectedMeanKm": round(float(b_to_a.mean()), 3),
+        # Not part of the distance: reported so a holed zone is still visible.
+        "expectedHoles": _hole_count(expected),
+        "extractedHoles": _hole_count(extracted),
+    }
+
+
 def _match_metrics(exp_geom: BaseGeometry, exp_area: float, ext: dict[str, Any]) -> dict[str, Any]:
     ext_geom: BaseGeometry = ext["geometry"]
     iou, inter_area, uni_area = _safe_iou(exp_geom, ext_geom)
@@ -267,6 +369,7 @@ def _match_metrics(exp_geom: BaseGeometry, exp_area: float, ext: dict[str, Any])
         "recall": _safe_ratio(inter_area, exp_area),
         "falseNegativeArea": float(fn.area) if not fn.is_empty else 0.0,
         "falsePositiveArea": float(fp.area) if not fp.is_empty else 0.0,
+        "boundary": boundary_distance_km(exp_geom, ext_geom),
         "extracted": {
             "index": ext.get("index"),
             "id": ext.get("id"),
@@ -295,6 +398,8 @@ def build_test_case_paths(
     best_zones_path = os.path.join(case_dir, "zones_best.geojson")
     best_errors_geojson_path = os.path.join(case_dir, "errors_best.geojson")
 
+    from app.utils.dev_test_expected import cleaned_zones_path
+
     return DevTestPaths(
         assets_root=assets_root,
         case_dir=case_dir,
@@ -306,6 +411,13 @@ def build_test_case_paths(
         best_report_path=best_report_path,
         best_zones_path=best_zones_path,
         best_errors_geojson_path=best_errors_geojson_path,
+        expected_cleaned_zones_path=cleaned_zones_path(
+            test_id, os.path.join(assets_root, "georef_zones")
+        ),
+        raw_zones_path=os.path.join(case_dir, "zones_raw.geojson"),
+        raw_errors_geojson_path=os.path.join(case_dir, "errors_raw.geojson"),
+        best_raw_zones_path=os.path.join(case_dir, "zones_raw_best.geojson"),
+        best_raw_errors_geojson_path=os.path.join(case_dir, "errors_raw_best.geojson"),
     )
 
 
@@ -328,9 +440,25 @@ def evaluate_georef_zones_from_paths(
     if not os.path.exists(extracted_zones_path):
         raise FileNotFoundError(f"Extracted zones not found: {extracted_zones_path}")
 
-    expected_fc = _load_json(expected_zones_path)
-    extracted_fc = _load_json(extracted_zones_path)
+    return evaluate_zones(
+        _load_json(expected_zones_path),
+        _load_json(extracted_zones_path),
+        test_id=test_id,
+        test_case_id=test_case_id,
+        min_iou=min_iou,
+    )
 
+
+def evaluate_zones(
+    expected_fc: dict[str, Any],
+    extracted_fc: dict[str, Any],
+    *,
+    test_id: str,
+    test_case_id: str,
+    min_iou: float | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Score extracted zones against expected ones, both FeatureCollections in
+    EPSG:4326. Returns ``(report, errors_geojson)``. Writes nothing."""
     expected_features = _feature_collection_geoms_with_meta(expected_fc)
     extracted_features = _feature_collection_geoms_with_meta(extracted_fc)
 
@@ -367,6 +495,7 @@ def evaluate_georef_zones_from_paths(
                 "recall": 0.0,
                 "falseNegativeArea": exp_area,
                 "falsePositiveArea": 0.0,
+                "boundary": None,
                 "extracted": None,
                 "geometry": None,
                 "matchedBy": "none",
@@ -442,6 +571,14 @@ def evaluate_georef_zones_from_paths(
         except Exception:
             fp_areas.append(0.0)
 
+    # Boundary distance over the matched zones only: an unmatched zone has no
+    # boundary to measure, and inventing a number for it would mix two failures.
+    boundaries = [
+        m["bestMatch"]["boundary"]
+        for m in matches
+        if isinstance(m.get("bestMatch"), dict) and m["bestMatch"].get("boundary")
+    ]
+
     mean_iou = _safe_ratio(sum(ious), float(len(ious))) if ious else 0.0
     mean_precision = (
         _safe_ratio(sum(precisions), float(len(precisions))) if precisions else 0.0
@@ -466,6 +603,13 @@ def evaluate_georef_zones_from_paths(
                 "meanRecall": mean_recall,
                 "totalFalseNegativeArea": total_fn_area,
                 "totalFalsePositiveArea": total_fp_area,
+                "meanBoundaryKm": _mean_of(boundaries, "meanKm"),
+                "meanBoundaryP90Km": _mean_of(boundaries, "p90Km"),
+                "maxBoundaryKm": (
+                    max(b["maxKm"] for b in boundaries) if boundaries else None
+                ),
+                "zonesWithBoundary": len(boundaries),
+                "zonesWithoutBoundary": len(matches) - len(boundaries),
             },
             "scoreUsed": mean_iou,
             "scoreUsedKey": "mean.meanIou",
@@ -482,25 +626,97 @@ def evaluate_georef_zones_from_paths(
     return report, errors_geojson
 
 
+def _mean_of(rows: list[dict[str, Any]], key: str) -> float | None:
+    values = [float(r[key]) for r in rows if r.get(key) is not None]
+    values = [v for v in values if math.isfinite(v)]
+    return round(sum(values) / len(values), 3) if values else None
+
+
+#: The definition of a report's score. 2: the shipped zones against the
+#: expected zones cleaned the same way (version 1 compared them with the zones
+#: as drawn). Recorded in every report.
+SCORE_VERSION = "2"
+
+#: What each comparison in a report is, written into every report so a reader
+#: never has to guess which zones were compared with which.
+COMPARISONS = {
+    "main": (
+        "The shipped zones (zones.geojson: after snapping, ocean clip and lake cut)"
+        " against the expected zones through the same ocean and lake cuts."
+    ),
+    "raw": (
+        "The zones as the transform placed them (zones_raw.geojson: before"
+        " snapping and the clip) against the expected zones as drawn. For"
+        " judging placement: cleaning corrects and hides transform error."
+    ),
+}
+
+
+def evaluate_case_zones(
+    *,
+    test_id: str,
+    test_case_id: str,
+    drawn_expected: dict[str, Any],
+    cleaned_expected: dict[str, Any],
+    zones: dict[str, Any],
+    raw_zones: dict[str, Any] | None,
+    min_iou: float | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    """Both comparisons of a run. Returns ``(report, errors, raw_errors)``.
+
+    The report's top level is the main comparison, which is what scores the
+    case (``scoreUsed``, PASS/FAIL, best). ``report["raw"]`` holds the raw one.
+    """
+    report, errors = evaluate_zones(
+        cleaned_expected, zones, test_id=test_id, test_case_id=test_case_id, min_iou=min_iou
+    )
+    raw_errors = None
+    report["scoreVersion"] = SCORE_VERSION
+    report["comparison"] = COMPARISONS
+    report["raw"] = None
+    if raw_zones is not None:
+        raw_report, raw_errors = evaluate_zones(
+            drawn_expected, raw_zones, test_id=test_id, test_case_id=test_case_id
+        )
+        report["raw"] = {
+            "metrics": raw_report["metrics"],
+            "nameMatching": raw_report["nameMatching"],
+        }
+    return report, errors, raw_errors
+
+
 def evaluate_georef_test_case(
     assets_root: str,
     test_id: str,
     test_case_id: str,
     *,
     min_iou: float | None = None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Compare expected zones vs extracted zones for a given test case.
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    """Score a case's last run from its files. See ``evaluate_case_zones``.
 
-    Coordinates are assumed to be in lon/lat, so areas are in degrees^2. We mostly
-    use area ratios (IoU / precision / recall) for scoring and debugging.
+    Coordinates are lon/lat, so areas are in degrees^2; scoring uses ratios
+    (IoU / precision / recall) and kilometres (outline distance).
     """
+    from app.utils.dev_test_expected import load_cleaned_zones, load_drawn_zones
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
-    return evaluate_georef_zones_from_paths(
+    zones_dir = os.path.join(assets_root, "georef_zones")
+    drawn = load_drawn_zones(test_id, zones_dir)
+    if drawn is None:
+        raise FileNotFoundError(f"Expected zones not found: {paths.expected_zones_path}")
+    if not os.path.exists(paths.extracted_zones_path):
+        raise FileNotFoundError(f"Extracted zones not found: {paths.extracted_zones_path}")
+
+    raw_zones = (
+        _load_json(paths.raw_zones_path) if os.path.exists(paths.raw_zones_path) else None
+    )
+    return evaluate_case_zones(
         test_id=test_id,
         test_case_id=test_case_id,
-        expected_zones_path=paths.expected_zones_path,
-        extracted_zones_path=paths.extracted_zones_path,
+        drawn_expected=drawn,
+        cleaned_expected=load_cleaned_zones(test_id, zones_dir),
+        zones=_load_json(paths.extracted_zones_path),
+        raw_zones=raw_zones,
         min_iou=min_iou,
     )
 

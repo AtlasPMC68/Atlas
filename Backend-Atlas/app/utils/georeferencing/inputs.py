@@ -7,7 +7,7 @@ differently was to re-import it and re-click every point by hand.
 
 Storing the *inputs* rather than the fitted transform is the useful direction:
 with the inputs you can refit anything, including a better model later; with a
-stored matrix you can only re-apply the same affine. Roadmap section 4.4's
+stored matrix you can only re-apply the same affine. The roadmap's (section 8)
 active GCP suggestion refits by construction, so it needs these, not a matrix.
 
 The shape deliberately mirrors the dev-test ``config.json`` (``georef`` +

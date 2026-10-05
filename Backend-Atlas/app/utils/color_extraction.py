@@ -14,7 +14,6 @@ from shapely.geometry import Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from skimage.color import deltaE_ciede2000, lab2rgb, rgb2lab
-from skimage.measure import find_contours
 from skimage.morphology import closing, disk, opening
 from skimage.util import img_as_float
 

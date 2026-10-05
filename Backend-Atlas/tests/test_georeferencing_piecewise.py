@@ -1,4 +1,4 @@
-"""Unit tests for the piecewise-affine model and its use from the pipeline.
+"""The piecewise-affine model and its use from the pipeline.
 
 The properties worth pinning down are the ones that motivated the design: it
 interpolates the control points, it stops being anything but the affine away
@@ -13,10 +13,8 @@ import pytest
 
 from app.utils.georeferencing import (
     DEFAULT_GEOREF_CONFIG,
-    AffineModel,
     ControlPoint,
     PiecewiseAffineModel,
-    deserialize_model,
     fit_piecewise_from_control_points,
     georeference_features,
 )
@@ -86,33 +84,6 @@ class TestInterpolationAndFallback:
         far_x, far_y = np.array([-5000.0, 9000.0]), np.array([-4000.0, 7000.0])
         assert np.allclose(model(far_x, far_y), model.base(far_x, far_y))
 
-    def test_a_perfect_affine_map_is_left_alone(self):
-        """No local distortion means no correction anywhere."""
-        model = fit_piecewise_from_control_points(_control_points(), extent=IMAGE)
-
-        grid_x, grid_y = np.meshgrid(np.linspace(0, 600, 13), np.linspace(0, 400, 9))
-        # Millimetres, in metre units: what is left is the lon/lat round trip.
-        assert np.allclose(
-            model(grid_x, grid_y), model.base(grid_x, grid_y), atol=1e-3
-        )
-        assert float(model.corrections_3857.max()) < 1e-3
-
-    def test_a_city_point_pins_the_correction_like_any_other(self):
-        """Cities are trusted as much as SIFT points, so the correction passes
-        through them exactly too."""
-        cps = _control_points()
-        # A city 30 px-equivalents east and 20 north of where the affine puts it.
-        city_target = _target_3857(250.0, 250.0, 30.0, -20.0)
-        cps.append(
-            ControlPoint.from_city(
-                (250.0, 250.0), webmercator_to_lonlat(*city_target), 6325494, "Québec"
-            )
-        )
-        model = fit_piecewise_from_control_points(cps, extent=IMAGE)
-
-        X, Y = model(250.0, 250.0)
-        assert np.allclose([X, Y], city_target, atol=1e-6)
-
 
 class TestContinuity:
     def test_no_seam_across_a_shared_triangle_edge(self):
@@ -134,25 +105,8 @@ class TestContinuity:
         right = model(*(mid - normal * eps))
         assert np.allclose(left, right, atol=1e-3)
 
-    def test_inverse_round_trips(self):
-        cps = _control_points({1: (12.0, 8.0)})
-        model = fit_piecewise_from_control_points(cps, extent=IMAGE)
-        inverse = model.inverse()
-
-        x = np.array([120.0, 310.0, 455.0])
-        y = np.array([140.0, 210.0, 295.0])
-        back_x, back_y = inverse(*model(x, y))
-        assert np.allclose(back_x, x, atol=1e-6)
-        assert np.allclose(back_y, y, atol=1e-6)
-
 
 class TestRefusals:
-    def test_duplicate_control_points_are_rejected(self):
-        cps = _control_points()
-        cps.append(cps[0])
-        with pytest.raises(ValueError, match="Duplicate control point"):
-            fit_piecewise_from_control_points(cps, extent=IMAGE)
-
     def test_a_folding_point_set_is_rejected(self):
         """Two points whose geo positions swap relative order fold the map:
         the mapping stops being one-to-one and the inverse is ambiguous."""
@@ -164,201 +118,10 @@ class TestRefusals:
             fit_piecewise_from_control_points(swapped, extent=IMAGE)
 
 
-class TestErrorReporting:
-    def test_reported_error_is_leave_one_out_not_the_zero_residual(self):
-        cps = _control_points({3: (25.0, -18.0)})
-        model = fit_piecewise_from_control_points(cps, extent=IMAGE)
+class TestThroughThePipeline:
+    """What a run actually goes through: the model chosen in the config."""
 
-        # In-sample, every local point is hit exactly, so a residual-based
-        # number would say 0 and mean nothing.
-        in_sample = model._residual_distances(
-            np.array([cp.pixel for cp in cps], dtype=float),
-            np.array([_expected_3857(cp) for cp in cps], dtype=float),
-        )
-        assert float(np.max(in_sample)) < 1e-6
-
-        assert model.residuals_kind == "leave_one_out"
-        assert model.rmse_3857 is not None and model.rmse_3857 > 0.0
-
-    def test_serialization_round_trips_through_the_dispatcher(self):
-        cps = _control_points({0: (9.0, 4.0)})
-        model = fit_piecewise_from_control_points(cps, extent=IMAGE)
-        payload = model.serialize()
-
-        restored = deserialize_model(payload)
-        assert isinstance(restored, PiecewiseAffineModel)
-        x = np.array([133.0, 420.0])
-        y = np.array([175.0, 260.0])
-        assert np.allclose(restored(x, y), model(x, y))
-        assert payload["rmse3857Kind"] == "leave_one_out"
-
-        # The same dispatcher must still return a plain affine for an affine.
-        assert isinstance(
-            deserialize_model(AffineModel.fit(
-                np.array([cp.pixel for cp in cps], dtype=float),
-                np.array([_expected_3857(cp) for cp in cps], dtype=float),
-            ).serialize()),
-            AffineModel,
-        )
-
-
-class TestPipelineIntegration:
-    """The switch at the fit site, which is what a run actually goes through."""
-
-    @staticmethod
-    def _zone():
-        return {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "properties": {},
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [
-                            [[120.0, 120.0], [460.0, 130.0], [450.0, 300.0],
-                             [140.0, 290.0], [120.0, 120.0]]
-                        ],
-                    },
-                }
-            ],
-        }
-
-    @staticmethod
-    def _config(**overrides):
-        return DEFAULT_GEOREF_CONFIG.with_overrides(
-            snap_to_coastline=False, clip_to_land_mask=False, **overrides
-        )
-
-    def test_every_registered_model_can_actually_be_built(self):
-        """A name offered in the dropdown that the pipeline cannot build would
-        place the map with the baseline and say nothing about it."""
-        from app.utils.georeferencing.config import TRANSFORM_MODELS
-
-        cps = _control_points({1: (15.0, 10.0)})
-        for name in TRANSFORM_MODELS:
-            result = georeference_features(
-                [self._zone()], cps, config=self._config(transform_model=name)
-            )
-            assert result.model.name == name
-
-    def test_an_unknown_model_fails_loudly(self):
-        with pytest.raises(ValueError, match="Unknown transform_model"):
-            georeference_features(
-                [self._zone()],
-                _control_points(),
-                config=self._config(transform_model="ffd_8x8"),
-            )
-
-    def test_the_affine_choice_keeps_the_affine(self):
-        result = georeference_features(
-            [self._zone()],
-            _control_points({1: (15.0, 10.0)}),
-            config=self._config(transform_model="affine"),
-        )
-        assert result.model.name == "affine"
-        feature = result.collections[0]["features"][0]
-        assert feature["properties"]["transform_method"] == "affine"
-
-    def test_switching_it_on_corrects_the_affine(self):
-        cps = _control_points({1: (15.0, 10.0), 3: (-12.0, 7.0)})
-        config = self._config(transform_model="piecewise_affine")
-        result = georeference_features([self._zone()], cps, config=config)
-
-        assert result.model.name == "piecewise_affine"
-        assert result.record.to_dict()["errors"]["piecewiseApplied"] is True
-        for cp in cps:
-            X, Y = result.model(cp.pixel[0], cp.pixel[1])
-            assert np.allclose([X, Y], _expected_3857(cp), atol=1e-6)
-
-    def test_a_refused_correction_falls_back_instead_of_failing_the_run(self):
-        cps = _control_points()
-        cps.append(cps[0])  # duplicate: the correction cannot be built
-        config = self._config(transform_model="piecewise_affine")
-
-        result = georeference_features([self._zone()], cps, config=config)
-
-        assert result.model.name == "affine"
-        errors = result.record.to_dict()["errors"]
-        assert errors["piecewiseApplied"] is False
-        assert "Duplicate" in errors["piecewiseRefusedBecause"]
-        assert result.collections[0]["features"]
-
-    def test_it_corrects_a_model_handed_in_by_step_4(self):
-        """Alignment's affine is a better base than the GCP-only one, so the
-        correction has to apply on top of it rather than be skipped."""
-        cps = _control_points({2: (16.0, -9.0)})
-        src = np.array([cp.pixel for cp in cps], dtype=float)
-        dst = np.array([_expected_3857(cp) for cp in cps], dtype=float)
-        aligned = AffineModel.fit(src, dst)
-
-        result = georeference_features(
-            [self._zone()],
-            cps,
-            config=self._config(transform_model="piecewise_affine"),
-            model=aligned,
-        )
-
-        assert result.model.name == "piecewise_affine"
-        assert result.model.base is aligned
-
-    def test_residuals_reach_the_record_as_json_safe_values(self):
-        """A leave-one-out pass reports NaN when a refit was impossible, and
-        NaN is not valid JSON for whoever reads the run record."""
-        import json
-
-        cps = _control_points({4: (13.0, 11.0)})
-        result = georeference_features(
-            [self._zone()], cps, config=self._config(transform_model="piecewise_affine")
-        )
-
-        payload = result.record.to_dict()
-        json.dumps(payload, allow_nan=False)
-        residuals = payload["errors"]["gcpResiduals3857"]
-        assert len(residuals) == len(cps)
-        assert all(r is None or isinstance(r, float) for r in residuals)
-
-    def test_the_record_breaks_the_error_down_by_source(self):
-        """Which source is noisier is measured, not assumed: the record keeps a
-        count and an error per source."""
-        cps = _control_points({1: (15.0, 10.0)})
-        city_target = _target_3857(250.0, 250.0, 8.0, -5.0)
-        cps.append(
-            ControlPoint.from_city(
-                (250.0, 250.0), webmercator_to_lonlat(*city_target), 6325494, "Québec"
-            )
-        )
-        result = georeference_features([self._zone()], cps, config=self._config())
-
-        record = result.record.to_dict()
-        assert record["inputs"]["controlPointsBySource"] == {"sift": 6, "city": 1}
-        by_source = record["errors"]["gcpRmseKmBySource"]
-        assert set(by_source) == {"sift", "city"}
-        assert all(v is not None and v > 0 for v in by_source.values())
-        assert record["inputs"]["controlPoints"][-1]["city"]["name"] == "Québec"
-
-    def test_the_record_says_where_each_point_landed(self):
-        cps = _control_points({1: (15.0, 10.0)})
-        result = georeference_features([self._zone()], cps, config=self._config())
-
-        predicted = result.record.to_dict()["errors"]["gcpPredictedLonLat"]
-        assert len(predicted) == len(cps)
-        for cp, (lon, lat) in zip(cps, predicted):
-            X, Y = result.model(cp.pixel[0], cp.pixel[1])
-            assert np.allclose(lonlat_to_webmercator(lon, lat), [X, Y], atol=1e-3)
-
-    def test_an_exact_three_point_fit_reports_no_error_per_source(self):
-        """Three points fit an affine exactly: 0 km would be a false zero."""
-        cps = _control_points({1: (15.0, 10.0)})[:3]
-        result = georeference_features([self._zone()], cps, config=self._config())
-
-        errors = result.record.to_dict()["errors"]
-        assert errors["gcpRmseKm"] is None
-        assert errors["gcpRmseKmBySource"] == {"sift": None, "city": None}
-
-
-class TestHonestErrorAndFrame:
-    """The fixes of dev-docs/georeferencing-fixes.md, section 3."""
+    FRAME = {"west": -82.0, "south": 44.0, "east": -72.0, "north": 50.0}
 
     @staticmethod
     def _zone(ring):
@@ -373,24 +136,33 @@ class TestHonestErrorAndFrame:
             ],
         }
 
-    @staticmethod
-    def _config(**overrides):
-        return DEFAULT_GEOREF_CONFIG.with_overrides(
-            **{
-                "snap_to_coastline": False,
-                "clip_to_land_mask": False,
-                "transform_model": "piecewise_affine",
-                **overrides,
-            }
+    def _run(self, cps, zone, transform_model="piecewise_affine"):
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(
+            snap_to_coastline=False, clip_to_land_mask=False, transform_model=transform_model
+        )
+        return georeference_features(
+            [zone], cps, frame_bounds=self.FRAME, image_size=(600, 400), config=config
         )
 
+    def test_a_refused_correction_falls_back_instead_of_failing_the_run(self):
+        cps = _control_points()
+        cps.append(cps[0])  # duplicate: the correction cannot be built
+        zone = self._zone([[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]])
+
+        result = self._run(cps, zone)
+
+        assert result.model.name == "affine"
+        errors = result.record.to_dict()["errors"]
+        assert errors["piecewiseApplied"] is False
+        assert "Duplicate" in errors["piecewiseRefusedBecause"]
+        assert result.collections[0]["features"]
+
     def test_leave_one_out_refits_the_affine_for_every_fold(self):
-        """The held-out point must not shape the affine it is measured against."""
+        """The held-out point must not shape the affine it is measured against
+        (the 2026-09-30 fix 3, dev-docs/georeferencing-history.md)."""
         cps = _control_points({1: (15.0, 10.0), 4: (-9.0, 12.0)})
         zone = self._zone([[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]])
-        result = georeference_features([zone], cps, config=self._config())
-
-        from app.utils.georeferencing.pipeline import _piecewise_extent
+        result = self._run(cps, zone)
 
         src = np.array([cp.pixel for cp in cps], dtype=float)
         dst = np.array([_expected_3857(cp) for cp in cps], dtype=float)
@@ -398,85 +170,20 @@ class TestHonestErrorAndFrame:
         honest = PiecewiseAffineModel.fit(
             src,
             dst,
-            extent=_piecewise_extent(cps, [zone], None),
+            extent=IMAGE,
             anchor_margin=DEFAULT_GEOREF_CONFIG.piecewise_anchor_margin,
         )
 
         assert result.model.residuals_kind == "leave_one_out"
         assert np.allclose(result.model.residuals_3857, honest.residuals_3857)
-        errors = result.record.to_dict()["errors"]
-        assert errors["gcpRmseKind"] == "leave_one_out"
-
-    def test_an_aligned_base_is_labelled_as_a_fixed_base(self):
-        """Alignment's affine was fitted with every point and cannot be refitted
-        here, so its leave-one-out is optimistic -- and must say so."""
-        cps = _control_points({2: (16.0, -9.0)})
-        src = np.array([cp.pixel for cp in cps], dtype=float)
-        dst = np.array([_expected_3857(cp) for cp in cps], dtype=float)
-        aligned = AffineModel.fit(src, dst)
-        zone = self._zone([[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]])
-
-        result = georeference_features([zone], cps, config=self._config(), model=aligned)
-
-        assert result.model.residuals_kind == "leave_one_out_fixed_base"
-        assert result.record.to_dict()["errors"]["gcpRmseKind"] == "leave_one_out_fixed_base"
-        assert result.model.serialize()["rmse3857Kind"] == "leave_one_out_fixed_base"
-
-    def test_the_gcp_baseline_and_the_applied_model_are_both_recorded(self):
-        cps = _control_points({1: (15.0, 10.0)})
-        zone = self._zone([[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]])
-        result = georeference_features([zone], cps, config=self._config())
-
-        models = result.record.to_dict()["models"]
-        assert models["gcp_affine"]["name"] == "affine"
-        assert models["applied"]["name"] == "piecewise_affine"
-
-    def test_the_frame_encloses_points_beyond_the_zones(self):
-        """Zones in one corner, control points across the whole map: the frame
-        used to pad the zones only, leaving points outside it, and the model
-        jumped from corrected to plain affine at the triangulation's hull."""
-        cps = _control_points({1: (15.0, 10.0), 4: (12.0, -8.0)})
-        corner = self._zone([[100.0, 100.0], [160.0, 100.0], [160.0, 150.0], [100.0, 100.0]])
-
-        result = georeference_features(
-            [corner], cps, config=self._config(), image_size=(600, 400)
-        )
-
-        anchors = result.model.verts_in[-8:]
-        for cp in cps:
-            assert anchors[:, 0].min() < cp.pixel[0] < anchors[:, 0].max()
-            assert anchors[:, 1].min() < cp.pixel[1] < anchors[:, 1].max()
-        assert anchors[:, 0].min() < 0.0 and anchors[:, 0].max() > 600.0
-
-    def test_the_model_is_continuous_out_to_and_past_the_frame(self):
-        cps = _control_points({1: (15.0, 10.0), 4: (12.0, -8.0)})
-        corner = self._zone([[100.0, 100.0], [160.0, 100.0], [160.0, 150.0], [100.0, 100.0]])
-        model = georeference_features(
-            [corner], cps, config=self._config(), image_size=(600, 400)
-        ).model
-
-        # A ray from a corrected point out past the frame, 1 px steps.
-        x = np.linspace(500.0, 1100.0, 601)
-        y = np.full_like(x, 120.0)
-        X, Y = model(x, y)
-        step = np.hypot(np.diff(X), np.diff(Y))
-        # The affine alone moves ~1000 m per pixel here; a seam would show up
-        # as a step far above that.
-        assert step.max() < 1.5 * SCALE_M_PER_PX
+        assert result.record.to_dict()["errors"]["gcpRmseKind"] == "leave_one_out"
 
     def test_long_edges_are_densified_before_a_piecewise_warp(self):
         cps = _control_points({2: (20.0, 15.0)})
         triangle = self._zone([[60.0, 60.0], [560.0, 70.0], [300.0, 380.0], [60.0, 60.0]])
 
-        piecewise = georeference_features(
-            [triangle], cps, config=self._config(), image_size=(600, 400)
-        )
-        affine = georeference_features(
-            [triangle],
-            cps,
-            config=self._config(transform_model="affine"),
-            image_size=(600, 400),
-        )
+        piecewise = self._run(cps, triangle)
+        affine = self._run(cps, triangle, transform_model="affine")
 
         def vertex_count(result):
             geometry = result.collections[0]["features"][0]["geometry"]

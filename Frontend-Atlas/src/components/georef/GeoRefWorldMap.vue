@@ -20,12 +20,14 @@ const props = withDefaults(
     worldBounds: WorldBounds | null;
     points: WorldMapPoint[];
     activeIndex: number;
-    // Matched control points coming from the modal
-    // [{ index, color }]
+    // The points already matched, by index into `points`.
     matchedPoints: MatchedWorldPointSummary[];
     // Points from another step, shown greyed for context and not clickable
     contextPoints?: WorldMapPoint[];
     usedLakes?: boolean;
+    // Each circle carries its number (index + 1), the number the image side
+    // shows for its match: SIFT keypoints. Cities are told apart by their name.
+    numbered?: boolean;
   }>(),
   {
     worldBounds: null,
@@ -34,6 +36,7 @@ const props = withDefaults(
     matchedPoints: () => [],
     contextPoints: () => [],
     usedLakes: false,
+    numbered: false,
   },
 );
 
@@ -53,25 +56,27 @@ function clearMarkers(): void {
   markers = [];
 }
 
-function styleForIndex(isActive: boolean): L.CircleMarkerOptions {
-  if (isActive) {
-    return {
-      radius: 7,
-      fillColor: "#dc2626",
-      color: "#b91c1c",
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 0.9,
-    };
-  }
-  return {
-    radius: 4,
-    fillColor: "#2563eb",
-    color: "#1d4ed8",
-    weight: 1,
-    opacity: 0.9,
-    fillOpacity: 0.8,
-  };
+// Every point is a circle: red while it is the one being placed, pale blue
+// until it is matched, blue once matched, green for a check point. The image
+// map draws the matches the same way. Numbered (SIFT) points carry their number,
+// the one the image side shows for their match; cities carry their name instead.
+function pointIcon(
+  isActive: boolean,
+  match: MatchedWorldPointSummary | undefined,
+  number: number | null,
+): L.DivIcon {
+  const size = number === null ? (isActive ? 16 : 12) : isActive ? 24 : 20;
+  let tone = "bg-blue-200 text-blue-800 ring-1 ring-blue-600";
+  if (isActive) tone = "bg-red-600 text-white ring-2 ring-white";
+  else if (match?.check) tone = "bg-green-600 text-white ring-2 ring-white";
+  else if (match) tone = "bg-blue-600 text-white ring-2 ring-white";
+  const text = isActive ? "text-[10px]" : "text-[9px]";
+  return L.divIcon({
+    className: "",
+    html: `<span class="flex items-center justify-center rounded-full font-bold shadow ${tone} ${text}" style="width:${size}px;height:${size}px">${number ?? ""}</span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
 }
 
 function renderPoints(): void {
@@ -100,27 +105,10 @@ function renderPoints(): void {
     const isActive = index === props.activeIndex;
 
     const match = props.matchedPoints.find((m) => m.index === index);
-    let marker: L.Marker | L.CircleMarker;
-
-    if (match) {
-      // Render matched points as triangles with a stable color using a divIcon
-      const size = isActive ? 18 : 14;
-      const half = size / 2;
-      const color = match.color || "#dc2626";
-      const html = `<div style="width:0;height:0;border-left:${half}px solid transparent;border-right:${half}px solid transparent;border-bottom:${size}px solid ${color};"></div>`;
-
-      marker = L.marker([lat, lng], {
-        icon: L.divIcon({
-          className: "",
-          html,
-          iconSize: [size, size],
-          iconAnchor: [half, size],
-        }),
-      });
-    } else {
-      // Unmatched points are plain circle markers
-      marker = L.circleMarker([lat, lng], styleForIndex(isActive));
-    }
+    const marker = L.marker([lat, lng], {
+      icon: pointIcon(isActive, match, props.numbered ? index + 1 : null),
+      zIndexOffset: isActive ? 1000 : 0,
+    });
 
     if (pt.label) {
       marker.bindTooltip(pt.label, {
@@ -142,8 +130,7 @@ function renderPoints(): void {
 }
 
 function updateActiveMarker(): void {
-  // Re-render everything so both matched triangles and circles
-  // reflect the current active index.
+  // Re-render everything so every circle reflects the current active index.
   renderPoints();
 }
 

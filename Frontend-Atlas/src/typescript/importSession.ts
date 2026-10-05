@@ -15,6 +15,9 @@ export interface ImportInputs {
   frameBounds?: WorldBounds;
   legend?: LegendAnswer;
   controlPoints?: ControlPointInput[];
+  // Dev-test only: held out of every fit, measured against the applied
+  // transform (dev-docs/georeferencing-testing.md section 3).
+  checkPoints?: ControlPointInput[];
   colors?: ImposedColor[];
   options?: ImportOptions;
 }
@@ -54,7 +57,8 @@ export interface ImportSessionResponse {
   extraction: ExtractionStatus;
 }
 
-export type StepId = "zone" | "legend" | "sift" | "cities" | "colors";
+// "checks" exists in dev-test mode only.
+export type StepId = "zone" | "legend" | "sift" | "cities" | "checks" | "colors";
 
 // locked: waiting on another step. available: can be done. done: can be redone.
 export type StepStatus = "locked" | "available" | "done";

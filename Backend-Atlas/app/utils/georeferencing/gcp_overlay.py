@@ -24,7 +24,7 @@ import cv2
 import numpy as np
 
 from .models import ControlPoint
-from .projection import lonlat_to_webmercator, webmercator_arrays_to_lonlat
+from .projection import webmercator_arrays_to_lonlat
 
 logger = logging.getLogger(__name__)
 

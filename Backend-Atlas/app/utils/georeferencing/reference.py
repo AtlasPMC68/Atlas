@@ -22,7 +22,7 @@ accuracy floor. Matching the `find_coastline_keypoints` defaults is deliberate;
 do not over-spend.
 
 **Two deliberate departures from `sift_key_points_finder.draw_coastline`**, which
-plan section 6 suggested promoting verbatim:
+the original plan suggested promoting verbatim:
 
 1. *It drops out-of-bounds vertices instead of clipping.* A line that leaves the
    framing box and re-enters it loses the crossing vertices, so `cv2.polylines`
@@ -457,7 +457,7 @@ class ReferenceLayers:
         Quebec + Gulf) and total where it does not (IoU 0.00 on an interior box,
         where lakes are the only water). Since a box without coastline is
         exactly where alignment is weakest and the water gate matters most, the
-        gate of section 8.2 compares against this, not against `ocean`.
+        gate (`water_mask_iou`) compares against this, not against `ocean`.
         """
         return self.ocean | self.lake_interior
 

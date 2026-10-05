@@ -185,6 +185,7 @@ services:
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/scripts:/app/scripts
       - ./Backend-Atlas/.georef_cache:/app/.georef_cache
+      - ./Backend-Atlas/ablations:/app/ablations
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
 

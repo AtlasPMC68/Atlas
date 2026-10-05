@@ -1,7 +1,7 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "pip_7sift",
-  "evaluatedAt": "2026-10-03T03:51:10.970016Z",
+  "evaluatedAt": "2026-10-03T18:16:07.303869Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -13,16 +13,25 @@
           "index": 0,
           "id": "dev-zone-1772842734708",
           "name": "Quebec",
-          "area": 203.3187314685591
+          "area": 199.9547564893504
         },
         "bestMatch": {
-          "iou": 0.9547780366135077,
-          "intersectionArea": 196.38751606547103,
-          "unionArea": 205.68918485183832,
-          "precision": 0.9880736687446863,
-          "recall": 0.965909607280036,
-          "falseNegativeArea": 6.931215403088019,
-          "falsePositiveArea": 2.3704533832793175,
+          "iou": 0.9706524672222937,
+          "intersectionArea": 196.3874897181895,
+          "unionArea": 202.3252362199105,
+          "precision": 0.9880735361850631,
+          "recall": 0.9821596303394219,
+          "falseNegativeArea": 3.5672667711603196,
+          "falsePositiveArea": 2.3704797305609513,
+          "boundary": {
+            "meanKm": 3.922,
+            "p90Km": 11.257,
+            "maxKm": 94.211,
+            "expectedToExtractedMeanKm": 3.81,
+            "extractedToExpectedMeanKm": 4.035,
+            "expectedHoles": 22,
+            "extractedHoles": 23
+          },
           "extracted": {
             "index": 0,
             "id": null,
@@ -34,17 +43,84 @@
       }
     ],
     "mean": {
-      "meanIou": 0.9547780366135077,
-      "meanPrecision": 0.9880736687446863,
-      "meanRecall": 0.965909607280036,
-      "totalFalseNegativeArea": 6.931215403088019,
-      "totalFalsePositiveArea": 2.3704533832793175
+      "meanIou": 0.9706524672222937,
+      "meanPrecision": 0.9880735361850631,
+      "meanRecall": 0.9821596303394219,
+      "totalFalseNegativeArea": 3.5672667711603196,
+      "totalFalsePositiveArea": 2.3704797305609513,
+      "meanBoundaryKm": 3.922,
+      "meanBoundaryP90Km": 11.257,
+      "maxBoundaryKm": 94.211,
+      "zonesWithBoundary": 1,
+      "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.9547780366135077,
+    "scoreUsed": 0.9706524672222937,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
     "expectedWithoutNameMatch": [],
     "extractedNeverMatchedByName": []
+  },
+  "scoreVersion": "2",
+  "comparison": {
+    "main": "The shipped zones (zones.geojson: after snapping, ocean clip and lake cut) against the expected zones through the same ocean and lake cuts.",
+    "raw": "The zones as the transform placed them (zones_raw.geojson: before snapping and the clip) against the expected zones as drawn. For judging placement: cleaning corrects and hides transform error."
+  },
+  "raw": {
+    "metrics": {
+      "expected": [
+        {
+          "expected": {
+            "index": 0,
+            "id": "dev-zone-1772842734708",
+            "name": "Quebec",
+            "area": 203.3187314685591
+          },
+          "bestMatch": {
+            "iou": 0.950844761959288,
+            "intersectionArea": 197.67143682192605,
+            "unionArea": 207.89033576270538,
+            "precision": 0.9773954927253962,
+            "recall": 0.9722244251385843,
+            "falseNegativeArea": 5.647294646633109,
+            "falsePositiveArea": 4.5716042941462405,
+            "boundary": {
+              "meanKm": 7.376,
+              "p90Km": 14.381,
+              "maxKm": 94.211,
+              "expectedToExtractedMeanKm": 7.212,
+              "extractedToExpectedMeanKm": 7.54,
+              "expectedHoles": 2,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 0,
+              "id": null,
+              "name": "Quebec",
+              "area": 202.2430411160723
+            },
+            "matchedBy": "name"
+          }
+        }
+      ],
+      "mean": {
+        "meanIou": 0.950844761959288,
+        "meanPrecision": 0.9773954927253962,
+        "meanRecall": 0.9722244251385843,
+        "totalFalseNegativeArea": 5.647294646633109,
+        "totalFalsePositiveArea": 4.5716042941462405,
+        "meanBoundaryKm": 7.376,
+        "meanBoundaryP90Km": 14.381,
+        "maxBoundaryKm": 94.211,
+        "zonesWithBoundary": 1,
+        "zonesWithoutBoundary": 0
+      },
+      "scoreUsed": 0.950844761959288,
+      "scoreUsedKey": "mean.meanIou"
+    },
+    "nameMatching": {
+      "expectedWithoutNameMatch": [],
+      "extractedNeverMatchedByName": []
+    }
   }
 }

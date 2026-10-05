@@ -652,17 +652,6 @@
               {{ blockedRequirements.map((r) => r.key).join(", ") }}.
             </div>
 
-            <!-- A probe replays without inputs the pipeline can run without
-                 (the legend), but its result differs from a run with them. -->
-            <div
-              v-if="warningRequirements.length > 0"
-              class="alert alert-warning text-xs py-2"
-            >
-              Ce cas d'exploration est rejoué sans
-              {{ warningRequirements.map((r) => r.key).join(", ") }} : le résultat
-              diffère d'un run avec.
-            </div>
-
             <!-- Reopens the case's "Saisie utilisateur" steps with everything it
                  already has, so an input is supplied or changed without
                  re-clicking the rest -- a required one that blocks the run, or
@@ -716,14 +705,79 @@
               </span>
               <span class="font-mono">{{ km == null ? "—" : `${km.toFixed(1)} km` }}</span>
             </div>
+            <p class="text-[11px] text-base-content/60">{{ rmseKindCaption }}</p>
+
+            <!-- Held-out check points: the placement error that is not measured
+                 on the points the model was fitted to. -->
+            <template v-if="lastRunChecks">
+              <div class="border-t border-base-300 pt-2 flex items-center justify-between text-sm">
+                <span class="text-base-content/70">
+                  <span class="status status-success mr-1 align-middle" aria-hidden="true" />
+                  Vérification ({{ lastRunChecks.count }})
+                </span>
+                <span class="font-mono">{{ fmtKm(lastRunChecks.rmseKm) }}</span>
+              </div>
+              <p class="text-[11px] text-base-content/60">
+                RMS sur les points de vérification, jamais utilisés pour le calage.
+                Médiane {{ fmtKm(lastRunChecks.medianKm) }}, max
+                {{ fmtKm(lastRunChecks.maxKm) }}. Affine des points de contrôle seule :
+                {{ fmtKm(lastRunChecks.byModel?.gcp_affine) }}.
+              </p>
+            </template>
+          </div>
+
+          <!-- Which output is on the map and in the report: the shipped zones
+               (after snapping, ocean clip and lake cut) against the expected
+               zones cut the same way -- the score -- or the zones straight out
+               of the transform against the zones as drawn. -->
+          <div class="bg-base-100 rounded-box border border-base-300 p-3 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-sm font-semibold">Zones affichées</h2>
+              <div class="join">
+                <button
+                  type="button"
+                  class="btn btn-xs join-item"
+                  :class="stage === 'cleaned' ? 'btn-primary' : 'btn-outline'"
+                  @click="stage = 'cleaned'"
+                >
+                  Après nettoyage
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-xs join-item"
+                  :class="stage === 'raw' ? 'btn-primary' : 'btn-outline'"
+                  @click="stage = 'raw'"
+                >
+                  Avant nettoyage
+                </button>
+              </div>
+            </div>
             <p class="text-[11px] text-base-content/60">
-              Erreur RMS par source (leave-one-out avec <code>piecewise_affine</code>).
+              <template v-if="stage === 'cleaned'">
+                La sortie livrée (snapping, découpe océan et lacs) comparée aux
+                zones attendues découpées de la même façon (océan, lacs).
+                <strong>C'est le score du test de régression.</strong>
+              </template>
+              <template v-else>
+                Les zones telles que la transformation les place, avant snapping
+                et découpe, comparées aux zones attendues telles que dessinées.
+                Pour juger le géoréférencement : le nettoyage corrige et masque
+                l'erreur de transformation.
+                <span v-if="isScored && !shownReport" class="text-warning">
+                  Ce run n'a pas de version « avant nettoyage » : relancez-le.
+                </span>
+              </template>
             </p>
           </div>
 
           <div v-if="isScored" class="bg-base-100 rounded-box border border-base-300 p-3">
             <div class="flex items-center justify-between">
-              <h2 class="text-sm font-semibold">Rapport</h2>
+              <h2 class="text-sm font-semibold">
+                Rapport
+                <span class="font-normal text-base-content/60">
+                  ({{ stage === "cleaned" ? "après nettoyage" : "avant nettoyage" }})
+                </span>
+              </h2>
               <div class="join">
                 <button
                   type="button"
@@ -801,6 +855,28 @@
                 <span class="font-mono">{{ fmtRatio(expectedBestSummary?.totalFalsePositiveArea) }}</span>
               </div>
 
+              <!-- In km, where IoU is an area ratio that barely moves on a
+                   large zone. Outlines only: holes are counted, not measured. -->
+              <template v-if="expectedBestSummary?.meanBoundaryKm != null">
+                <div class="divider my-1"></div>
+                <div class="flex items-center justify-between">
+                  <span class="text-base-content/70">Distance des contours (moy.)</span>
+                  <span class="font-mono">{{ fmtKm(expectedBestSummary.meanBoundaryKm) }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-base-content/70">Distance des contours (p90)</span>
+                  <span class="font-mono">{{ fmtKm(expectedBestSummary.meanBoundaryP90Km) }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-base-content/70">Distance des contours (max)</span>
+                  <span class="font-mono">{{ fmtKm(expectedBestSummary.maxBoundaryKm) }}</span>
+                </div>
+                <p class="text-[11px] text-base-content/60">
+                  Contours extérieurs seulement : les trous (lacs découpés, texte)
+                  sont exclus de la distance, l'IoU les compte déjà.
+                </p>
+              </template>
+
               <!-- Zones are paired strictly by name (pipette name vs drawn zone
                    name); anything unpaired scores 0, so make the cause visible. -->
               <div
@@ -815,12 +891,12 @@
                 </span>
               </div>
 
-              <div v-if="typeof activeReport?.pass === 'boolean'" class="mt-2">
+              <div v-if="typeof shownReport?.pass === 'boolean'" class="mt-2">
                 <div
                   class="badge"
-                  :class="activeReport.pass ? 'badge-success' : 'badge-error'"
+                  :class="shownReport.pass ? 'badge-success' : 'badge-error'"
                 >
-                  {{ activeReport.pass ? 'PASS' : 'FAIL' }}
+                  {{ shownReport.pass ? 'PASS' : 'FAIL' }}
                 </div>
               </div>
             </div>
@@ -863,7 +939,6 @@ type RequirementState = {
   summary: string;
   remedy: string;
   // Whether the pipeline cannot run at all without it (false: the legend).
-  blocksExecution: boolean;
   status:
     | "satisfied"
     | "stale"
@@ -878,9 +953,7 @@ type CaseState = {
   scored?: boolean | null;
   hasExpectedZones?: boolean;
   controlPointsBySource?: Record<string, number>;
-  // Resolved for the case's kind: a probe runs without non-blocking inputs.
   runnable?: boolean;
-  warnings?: string[];
   requirements?: {
     version?: string;
     runnable?: boolean;
@@ -890,15 +963,18 @@ type CaseState = {
   } | null;
 };
 
+type NameMatching = {
+  expectedWithoutNameMatch?: (string | null)[];
+  extractedNeverMatchedByName?: string[];
+};
 type DevTestReport = {
   testId?: string;
   testCaseId?: string;
   pass?: boolean;
   metrics?: any;
-  nameMatching?: {
-    expectedWithoutNameMatch?: (string | null)[];
-    extractedNeverMatchedByName?: string[];
-  };
+  nameMatching?: NameMatching;
+  // The comparison before cleaning: zones_raw against the zones as drawn.
+  raw?: { metrics?: any; nameMatching?: NameMatching } | null;
 };
 
 const route = useRoute();
@@ -957,7 +1033,24 @@ type RunRecord = {
   errors?: {
     gcpPredictedLonLat?: [number, number][];
     gcpRmseKmBySource?: Record<string, number | null>;
+    gcpRmseKind?: "in_sample" | "leave_one_out" | "leave_one_out_fixed_base";
+    checkPoints?: RunRecordChecks | null;
   };
+};
+// errors.checkPoints: the applied transform measured on held-out points.
+type RunRecordChecks = {
+  count: number;
+  rmseKm: number | null;
+  medianKm: number | null;
+  maxKm: number | null;
+  byModel?: Record<string, number | null>;
+  points: {
+    source: string;
+    name: string | null;
+    geo: { lon: number; lat: number };
+    predicted: { lon: number; lat: number };
+    errorKm: number;
+  }[];
 };
 type ParamKind = "bool" | "number" | "list" | "choice";
 type ParamDraft = string | boolean;
@@ -1286,15 +1379,46 @@ const showControlPoints = ref(true);
 const controlPointMarkers = computed(() => {
   const points = runRecord.value?.inputs?.controlPoints ?? [];
   const predicted = runRecord.value?.errors?.gcpPredictedLonLat ?? [];
-  return points.map((p, i) => ({
+  const control = points.map((p, i) => ({
     lat: p.geo.lat,
     lng: p.geo.lon,
     predictedLat: predicted[i]?.[1],
     predictedLng: predicted[i]?.[0],
     source: p.source,
+    role: "control",
     label: p.city ? p.city.name : `${SOURCE_LABELS[p.source] ?? p.source} #${i + 1}`,
   }));
+  const checks = (lastRunChecks.value?.points ?? []).map((p, i) => ({
+    lat: p.geo.lat,
+    lng: p.geo.lon,
+    predictedLat: p.predicted.lat,
+    predictedLng: p.predicted.lon,
+    source: p.source,
+    role: "check",
+    label: `Vérification : ${p.name ?? `#${i + 1}`} (${p.errorKm.toFixed(1)} km)`,
+  }));
+  return [...control, ...checks];
 });
+
+// What the per-source error is: it depends on the model the run applied.
+const rmseKindCaption = computed(() => {
+  switch (runRecord.value?.errors?.gcpRmseKind) {
+    case "leave_one_out":
+      return "Erreur RMS par source, chaque point exclu de son propre calage (leave-one-out).";
+    case "leave_one_out_fixed_base":
+      return "Erreur RMS par source, en leave-one-out sur l'affine alignée, ajustée avec tous les points : optimiste.";
+    default:
+      return "Erreur RMS par source, sur les points mêmes du calage : un diagnostic, pas une erreur de placement.";
+  }
+});
+
+const lastRunChecks = computed<RunRecordChecks | null>(
+  () => runRecord.value?.errors?.checkPoints ?? null,
+);
+
+function fmtKm(value: number | null | undefined): string {
+  return value == null || !Number.isFinite(value) ? "—" : `${value.toFixed(1)} km`;
+}
 
 const lastRunRmseBySource = computed<Record<string, number | null>>(
   () => runRecord.value?.errors?.gcpRmseKmBySource ?? {},
@@ -1450,6 +1574,8 @@ const isLoading = ref(false);
 const loadError = ref<string | null>(null);
 
 const mode = ref<"latest" | "best">("latest");
+// Which output is shown: after cleaning (the score) or before it.
+const stage = ref<"cleaned" | "raw">("cleaned");
 let suppressModeWatch = false;
 
 // Static files under /dev-test can be aggressively cached by the browser.
@@ -1477,17 +1603,9 @@ const requirementGaps = computed<RequirementState[]>(() => {
   return all.filter((r) => r.status !== "satisfied");
 });
 
-// What stops a re-run: every missing user input for a scored case, only those
-// the pipeline cannot run without for a probe.
+// What stops a re-run: a missing user input.
 const blockedRequirements = computed<RequirementState[]>(() =>
-  requirementGaps.value.filter(
-    (r) => r.status === "blocked" && (!isProbe.value || r.blocksExecution),
-  ),
-);
-
-// Missing, but a probe replays without them.
-const warningRequirements = computed<RequirementState[]>(() =>
-  requirementGaps.value.filter((r) => (caseState.value?.warnings ?? []).includes(r.key)),
+  requirementGaps.value.filter((r) => r.status === "blocked"),
 );
 
 function requirementBadgeClass(status: RequirementState["status"]): string {
@@ -1501,30 +1619,43 @@ const activeReport = computed<DevTestReport | null>(() => {
   return latestReport.value;
 });
 
-const extractedUrl = computed(() => {
-  if (!testId.value || !testCaseId.value) return "";
-  const filename = mode.value === "best" ? "zones_best.geojson" : "zones.geojson";
-  return `${import.meta.env.VITE_API_URL}/dev-test/test_cases/${testId.value}/${testCaseId.value}/${filename}?v=${cacheBuster.value}`;
+// The report of the stage on display: the top level is after cleaning (the
+// score); `raw` holds the comparison before it. No PASS/FAIL before cleaning:
+// the threshold applies to the shipped output.
+const shownReport = computed<DevTestReport | null>(() => {
+  const report = activeReport.value;
+  if (!report || stage.value === "cleaned") return report;
+  if (!report.raw) return null;
+  return {
+    testId: report.testId,
+    testCaseId: report.testCaseId,
+    metrics: report.raw.metrics,
+    nameMatching: report.raw.nameMatching,
+  };
 });
 
-const errorsUrl = computed(() => {
+function caseFile(cleaned: string, raw: string): string {
   if (!testId.value || !testCaseId.value) return "";
-  const filename = mode.value === "best" ? "errors_best.geojson" : "errors.geojson";
+  const stem = stage.value === "raw" ? raw : cleaned;
+  const filename = mode.value === "best" ? `${stem}_best.geojson` : `${stem}.geojson`;
   return `${import.meta.env.VITE_API_URL}/dev-test/test_cases/${testId.value}/${testCaseId.value}/${filename}?v=${cacheBuster.value}`;
-});
+}
+
+const extractedUrl = computed(() => caseFile("zones", "zones_raw"));
+const errorsUrl = computed(() => caseFile("errors", "errors_raw"));
 
 const allFeatures = computed(() => {
   return [...expectedFeatures.value, ...extractedFeatures.value, ...errorFeatures.value];
 });
 
 const primaryBestMatch = computed<any>(() => {
-  const m = activeReport.value?.metrics as any;
+  const m = shownReport.value?.metrics as any;
   const first = Array.isArray(m?.expected) ? (m.expected as any[])[0] : null;
   return first?.bestMatch ?? null;
 });
 
 const expected0Label = computed<string>(() => {
-  const m = activeReport.value?.metrics as any;
+  const m = shownReport.value?.metrics as any;
   const first = Array.isArray(m?.expected) ? (m.expected as any[])[0] : null;
   const exp = first?.expected;
   const idx = exp?.index;
@@ -1546,7 +1677,7 @@ const expected0Iou = computed<any>(() => {
 });
 
 const nameMatchWarnings = computed<string[]>(() => {
-  const nm = activeReport.value?.nameMatching;
+  const nm = shownReport.value?.nameMatching;
   if (!nm) return [];
 
   const warnings: string[] = [];
@@ -1571,7 +1702,7 @@ const nameMatchWarnings = computed<string[]>(() => {
 });
 
 const expectedBestSummary = computed<any>(() => {
-  const m = activeReport.value?.metrics as any;
+  const m = shownReport.value?.metrics as any;
   if (m?.mean) return m.mean;
 
   const ms = Array.isArray(m?.expected) ? (m.expected as any[]) : [];
@@ -1854,8 +1985,10 @@ function normalizeErrorFeatures(raw: any): any[] {
 async function loadExpected() {
   if (!testId.value) return;
 
+  // After cleaning, the expected zones cut like the output (ocean, lakes);
+  // before cleaning, the zones as drawn.
   const res = await fetch(
-    `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${testId.value}`,
+    `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${testId.value}?cleaned=${stage.value === "cleaned"}`,
     { headers: { Authorization: `Bearer ${keycloak.token}` } },
   );
 
@@ -1892,7 +2025,7 @@ async function loadExtracted() {
 
   // Only show extracted zones that were actually selected as best matches.
   const usedIdx = new Set<number>();
-  const m = activeReport.value?.metrics as any;
+  const m = shownReport.value?.metrics as any;
   const ms = Array.isArray(m?.expected) ? (m.expected as any[]) : [];
   ms.forEach((entry: any) => {
     const idx = entry?.bestMatch?.extracted?.index;
@@ -2017,6 +2150,11 @@ watch(mode, async () => {
     return;
   }
   await reloadAll();
+});
+
+watch(stage, async () => {
+  await Promise.all([loadExpected(), loadExtracted(), loadErrors()]);
+  rebuildVisibility();
 });
 
 watch(

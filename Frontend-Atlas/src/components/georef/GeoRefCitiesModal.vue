@@ -5,10 +5,18 @@
   >
     <div class="bg-base-100 rounded-lg shadow-xl max-w-6xl w-full mx-4 my-6 p-6 flex flex-col gap-4">
       <div class="flex justify-between items-center mb-2">
-        <h2 class="text-xl font-semibold">Villes de la carte (optionnel)</h2>
+        <h2 class="text-xl font-semibold">
+          {{ isCheck ? "Villes de vérification (test)" : "Villes de la carte (optionnel)" }}
+        </h2>
         <button class="btn btn-ghost btn-sm" @click="emit('close')">✕</button>
       </div>
 
+      <p v-if="isCheck" class="text-sm text-base-content/70">
+        Ces villes ne servent <strong>jamais</strong> au calage : après chaque
+        run, on mesure à quelle distance la transformation les place de leur
+        vraie position. Placez-en au moins 5, réparties sur toute la carte, et
+        différentes des villes de contrôle.
+      </p>
       <p class="text-sm text-base-content/70">
         Tapez le nom d'une ville que votre carte montre, choisissez-la dans la
         liste, puis cliquez à l'endroit où votre carte la place (à droite).
@@ -16,8 +24,8 @@
       </p>
       <p class="text-xs text-base-content/60">
         Pour reprendre une ville, recliquez sur son marqueur (sur la carte du
-        monde ou sur l'image) ou sur son nom dans la liste. Les points SIFT déjà
-        placés apparaissent en gris.
+        monde ou sur l'image) ou sur son nom dans la liste. Les points déjà
+        placés aux autres étapes apparaissent en gris.
       </p>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -75,7 +83,8 @@
             sur {{ entries.length }}
           </p>
           <p v-if="entries.length === 0" class="text-xs text-base-content/60">
-            Aucune ville pour l'instant. Cette étape est facultative.
+            Aucune ville pour l'instant.
+            {{ isCheck ? "" : "Cette étape est facultative." }}
           </p>
           <ul v-else class="max-h-48 overflow-y-auto space-y-1">
             <li
@@ -85,9 +94,11 @@
               :class="index === activeIndex ? 'bg-primary/15' : 'hover:bg-base-200'"
               @click="activate(index)"
             >
+              <!-- The same circle as on both maps: placed, or still to place. -->
               <span
-                class="inline-block w-3 h-3 rounded-full shrink-0"
-                :style="{ backgroundColor: colorFor(index) }"
+                class="status status-lg shrink-0"
+                :class="entry.image ? 'bg-blue-600' : 'bg-blue-200 ring-1 ring-blue-600'"
+                aria-hidden="true"
               />
               <span class="flex-1 min-w-0 truncate">{{ entry.city.name }}</span>
               <span
@@ -166,7 +177,9 @@
             {{
               placedCount > 0
                 ? `Confirmer ${placedCount} ville${placedCount > 1 ? "s" : ""}`
-                : "Continuer sans ville"
+                : isCheck
+                  ? "Continuer sans vérification"
+                  : "Continuer sans ville"
             }}
           </button>
         </div>
@@ -198,15 +211,19 @@ const props = withDefaults(
     isOpen: boolean;
     imageUrl: string;
     worldBounds: WorldBounds;
-    // SIFT points from the previous step, shown greyed for context
-    siftPoints?: ControlPointInput[];
+    // Points placed at the other steps, shown greyed for context. A city
+    // among them cannot be picked again here.
+    contextPoints?: ControlPointInput[];
+    // "check": held-out points for the dev-test evaluation.
+    purpose?: "control" | "check";
     // Cities confirmed earlier, restored when the user comes back to this step
     initialCities?: ControlPointInput[];
     usedLakes?: boolean;
   }>(),
   {
     isOpen: false,
-    siftPoints: () => [],
+    contextPoints: () => [],
+    purpose: "control",
     initialCities: () => [],
     usedLakes: false,
   },
@@ -216,19 +233,6 @@ const emit = defineEmits<{
   (e: "close"): void;
   (e: "confirmed", cities: ControlPointInput[]): void;
 }>();
-
-const PAIR_COLORS = [
-  "#a855f7",
-  "#e11d48",
-  "#0ea5e9",
-  "#f97316",
-  "#22c55e",
-  "#14b8a6",
-  "#6366f1",
-  "#facc15",
-  "#ef4444",
-  "#3b82f6",
-];
 
 const { candidates, isSearching, searchError, searchCities, clearCandidates } =
   useCityCandidates();
@@ -269,28 +273,30 @@ const activeEntry = computed<CityEntry | null>(
 const placedCount = computed(() => entries.value.filter((e) => e.image).length);
 const unplacedCount = computed(() => entries.value.length - placedCount.value);
 
-function colorFor(index: number): string {
-  return PAIR_COLORS[index % PAIR_COLORS.length];
-}
-
 const worldPoints = computed<WorldMapPoint[]>(() =>
   entries.value.map((e) => ({ lat: e.city.lat, lng: e.city.lon, label: e.city.name })),
 );
 
 const matchedWorldPoints = computed<MatchedWorldPointSummary[]>(() =>
-  entries.value.flatMap((e, index) => (e.image ? [{ index, color: colorFor(index) }] : [])),
+  entries.value.flatMap((e, index) => (e.image ? [{ index }] : [])),
 );
 
 const matchedImagePoints = computed<MatchedImagePoint[]>(() =>
   entries.value.flatMap((e, index) =>
-    e.image ? [{ index, x: e.image[0], y: e.image[1], color: colorFor(index) }] : [],
+    e.image ? [{ index, x: e.image[0], y: e.image[1] }] : [],
   ),
 );
 
+const isCheck = computed(() => props.purpose === "check");
+
 const contextWorldPoints = computed<WorldMapPoint[]>(() =>
-  props.siftPoints.map((p) => ({ lat: p.geo.lat, lng: p.geo.lon })),
+  props.contextPoints.map((p) => ({ lat: p.geo.lat, lng: p.geo.lon })),
 );
-const contextImagePoints = computed(() => props.siftPoints.map((p) => p.pixel));
+const contextImagePoints = computed(() => props.contextPoints.map((p) => p.pixel));
+// A city placed at another step: control and check points must never share one.
+const contextCityIds = computed(
+  () => new Set(props.contextPoints.flatMap((p) => (p.source === "city" ? [p.city.id] : []))),
+);
 
 function formatPopulation(population: number): string {
   return population > 0
@@ -326,6 +332,10 @@ function pickCandidate(candidate: CityCandidate): void {
   if (existing >= 0) {
     // Two spellings of one city ("Quebec", "Kebek") resolve to the same id.
     notice.value = `${candidate.name} est déjà dans la liste.`;
+  } else if (contextCityIds.value.has(candidate.id)) {
+    notice.value = isCheck.value
+      ? `${candidate.name} est déjà une ville de contrôle : une ville de vérification doit rester hors du calage.`
+      : `${candidate.name} est déjà une ville de vérification.`;
   } else {
     entries.value.push({ city: candidate, image: null });
     activeIndex.value = entries.value.length - 1;

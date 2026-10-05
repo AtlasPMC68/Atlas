@@ -127,26 +127,8 @@ class CaseState:
         return self.kind == KIND_REGRESSION and self.has_expected_zones
 
     @property
-    def run_blockers(self) -> tuple:
-        """Missing inputs that stop this case from running.
-
-        A scored case stops on any of them: its number would not be comparable.
-        A probe only stops on those the pipeline cannot execute without, and
-        replays without the rest (see ``warnings``).
-        """
-        if self.kind == KIND_PROBE:
-            return self.requirements.blocks_execution
-        return self.requirements.blocked
-
-    @property
-    def warnings(self) -> tuple:
-        """Missing inputs a probe replays without, and should say so."""
-        blockers = {s.key for s in self.run_blockers}
-        return tuple(s for s in self.requirements.blocked if s.key not in blockers)
-
-    @property
     def runnable(self) -> bool:
-        return not self.run_blockers
+        return not self.requirements.blocked
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -157,7 +139,6 @@ class CaseState:
             "hasExpectedZones": self.has_expected_zones,
             "controlPointsBySource": self.control_points_by_source,
             "runnable": self.runnable,
-            "warnings": [s.key for s in self.warnings],
             "checkedAt": datetime.now(timezone.utc).isoformat(),
             "requirements": self.requirements.to_dict(),
             "derived": [d.to_dict() for d in self.derived],
@@ -186,14 +167,7 @@ class CaseState:
             f"{self.kind} case, requirements v{REQUIREMENTS_VERSION}, "
             + ("scored" if self.scored else "not scored")
         )
-        lines = [head] + ["  " + line for line in self.requirements.lines()]
-        if self.warnings:
-            lines.append(
-                "  WARNING: replaying without "
-                + ", ".join(s.key for s in self.warnings)
-                + " -- the result differs from a run with it"
-            )
-        return lines
+        return [head] + ["  " + line for line in self.requirements.lines()]
 
 
 def build_case_state(
@@ -229,11 +203,15 @@ def build_case_state(
             f" (sift={by_source[SOURCE_SIFT]}, city={by_source[SOURCE_CITY]})",
         ),
         "cityControlPoints": by_source[SOURCE_CITY] > 0,
+        "checkPoints": (
+            len(inputs.check_points) > 0,
+            f"{len(inputs.check_points)} point(s)",
+        ),
         "frameBounds": bool(inputs.frame_bounds),
-        "zonePicks": bool(inputs.imposed_click_positions),
+        "zonePicks": bool(inputs.zone_picks[0]),
         # An answer, not a rectangle: "no legend" satisfies it.
         "legend": bool(inputs.legend_answered),
-        "waterPicks": bool(inputs.water_click_positions),
+        "waterPicks": bool(inputs.water_picks[0]),
     }
 
     if cfg.enable_curve_alignment:

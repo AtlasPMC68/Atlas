@@ -1,6 +1,6 @@
 """The alignment attempt, and the recovery ladder when its gates fail.
 
-Plan section 10.2. Falling back to the GCP-only affine means having coastline
+See dev-docs/georeferencing.md section 5.2. Falling back to the GCP-only affine means having coastline
 data and not using it, so failure is a **ladder of recoveries**, not a binary.
 Every rung except the last still uses the coastline; descending means
 progressively distrusting the *curve* evidence while the GCP evidence stays
@@ -27,9 +27,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .align import (
-    CurveSamples,
-    PhaseResult,
-    UserField,
     build_curve_samples,
     build_user_field,
     chamfer_residual_px,

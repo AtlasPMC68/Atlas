@@ -28,6 +28,7 @@ from app.utils.dev_test import (
     delete_dev_test,
     delete_dev_test_case,
     find_test_image_path,
+    inspect_case,
     list_dev_test_cases,
     list_dev_tests,
     load_case_config,
@@ -37,7 +38,18 @@ from app.utils.dev_test import (
     upload_dev_test,
     write_test_config,
 )
+from app.utils.borders import (
+    DEFAULT_SIMPLIFY_DEG,
+    border_zone,
+    list_countries as list_border_countries,
+    list_regions as list_border_regions,
+)
 from app.utils.dev_test_derived import text_regions_if_cached
+from app.utils.dev_test_expected import (
+    load_cleaned_zones,
+    load_drawn_zones,
+    save_expected_zones,
+)
 from app.utils.dev_test_pixel_zones import (
     CLASSIFIED_IMAGE_FILENAME, 
     OCR_BOX_COLOR,
@@ -46,7 +58,7 @@ from app.utils.dev_test_pixel_zones import (
     text_box_coverage,
     draw_pixel_zones,
 )
-from app.utils.dev_test_assets import GEOREF_ASSETS_DIR, ZONES_DIR
+from app.utils.dev_test_assets import GEOREF_ASSETS_DIR
 from app.utils.dev_test_cases import (
     VALID_KINDS,
     load_case_state,
@@ -63,6 +75,7 @@ from app.utils.georeferencing import (
 from app.utils.georeferencing.projection import  (
     lonlat_to_webmercator,
 )
+from app.utils.georeferencing.checkpoints import validate_check_points
 from app.utils.georeferencing.config import describe_config, parse_config_overrides
 from app.utils.georeferencing.diagnostics import (
     control_point_diagnostics,
@@ -77,11 +90,8 @@ from app.utils.georeferencing.gcp_overlay import (
     side_by_side,
 )
 from app.utils.imposed_colors import (
-    KIND_WATER,
-    KIND_ZONE,
     imposed_colors_to_config_entries,
     parse_imposed_colors,
-    split_imposed_colors_by_kind,
 )
 from app.utils.dev_test_evaluator import build_test_case_paths
 from app.utils.legend import legend_to_entry, parse_legend_entry
@@ -90,10 +100,6 @@ from app.utils.legend import legend_to_entry, parse_legend_entry
 router = APIRouter(prefix="/dev-test-api", tags=["Dev Test"])
 
 logger = logging.getLogger(__name__)
-
-_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
-_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-
 
 def _safe_id(value: str, label: str = "id") -> str:
     """Slugify *value* and reject it if the result is empty."""
@@ -107,34 +113,41 @@ def _safe_id(value: str, label: str = "id") -> str:
 
 
 @router.post("/upload")
-async def upload_dev_test_map(
+async def save_and_run_dev_test_case(
     test_id: str = Form(...),
     test_case: str = Form(...),
     control_points: str | None = Form(None),
+    check_points: str | None = Form(None),
     frame_bounds: str | None = Form(None),
     imposed_colors: str | None = Form(None),
     legend: str | None = Form(None),
     kind: str | None = Form(None),
-    file: UploadFile = File(...),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Upload a map image and start a dev-test extraction (file-only, no DB persistence)."""
+    """Save a dev-test case's inputs and run it on the test's stored map image.
+
+    The inputs are written to the case's ``config.json`` first, so the case can
+    be re-run from it even if the run fails; the task then reads them from
+    there, like every later re-run.
+    """
     safe_test_id = _safe_id(test_id, "test_id")
     safe_test_case = _safe_id(test_case, "test_case")
 
-    filename = (file.filename or "").lower()
-    if not any(filename.endswith(ext) for ext in _ALLOWED_EXTENSIONS):
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type not supported. Allowed: {', '.join(_ALLOWED_EXTENSIONS)}",
-        )
+    if not find_test_image_path(safe_test_id):
+        raise HTTPException(status_code=404, detail=f"No map image for test {safe_test_id}")
 
     try:
         points = parse_control_points_field(control_points)
     except ValueError as e:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid control_points payload: {e}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid control_points payload: {e}")
+
+    # Held out of every fit: a check point that is also a control point would
+    # report an in-sample residual as a held-out error.
+    try:
+        checks = parse_control_points_field(check_points)
+        validate_check_points(points, checks)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid check_points payload: {e}")
 
     try:
         frame_bounds_dict = parse_frame_bounds(frame_bounds)
@@ -150,64 +163,18 @@ async def upload_dev_test_map(
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid legend payload: {e}")
 
-    # Pipette colors picked by the user; without them nothing is extracted at all,
-    # so the georeferencing step would have no zones to transform.
     try:
-        (
-            all_click_positions,
-            all_colors_names,
-            all_sampling_radii,
-            all_color_kinds,
-        ) = parse_imposed_colors(imposed_colors)
+        picks = parse_imposed_colors(imposed_colors)
     except ValueError as e:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid imposed_colors payload: {e}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid imposed_colors payload: {e}")
 
-    (
-        imposed_click_positions,
-        imposed_colors_names,
-        imposed_sampling_radii,
-    ) = split_imposed_colors_by_kind(
-        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_ZONE
-    )
-    (
-        water_click_positions,
-        water_colors_names,
-        water_sampling_radii,
-    ) = split_imposed_colors_by_kind(
-        all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds, KIND_WATER
-    )
-
-    if not imposed_click_positions:
-        logger.warning(
-            f"[DEV-TEST] No imposed colors provided for test_id={safe_test_id} "
-            f"case={safe_test_case}; extraction will produce no zones"
-        )
-
-    file_content = await file.read()
-    if len(file_content) > _MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {_MAX_FILE_SIZE // (1024 * 1024)}MB",
-        )
-    if len(file_content) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-
-    # Persist anchor points immediately so the test case can be rerun from config
-    # even if the async task fails. We do this synchronously before dispatching.
     write_test_config(
         parent_test_id=safe_test_id,
         test_case_id=safe_test_case,
         test_case_name=test_case,
-        original_filename=file.filename,
         control_points=points,
-        imposed_colors=imposed_colors_to_config_entries(
-            all_click_positions,
-            all_colors_names,
-            all_sampling_radii,
-            all_color_kinds,
-        ),
+        check_points=checks,
+        imposed_colors=imposed_colors_to_config_entries(*picks),
         frame_bounds=frame_bounds_to_config_entry(frame_bounds_dict),
         # Only stored when this case overrides its map's kind, so the common
         # case carries no redundant flag.
@@ -216,34 +183,13 @@ async def upload_dev_test_map(
     )
 
     try:
-        task = process_dev_test_extraction.delay(
-            filename=file.filename,
-            file_content=file_content,
-            test_id=safe_test_id,
-            test_case=safe_test_case,
-            control_points=[cp.to_dict() for cp in points],
-            imposed_click_positions=imposed_click_positions,
-            imposed_colors_names=imposed_colors_names,
-            imposed_sampling_radii=imposed_sampling_radii,
-            frame_bounds=frame_bounds_dict,
-            water_click_positions=water_click_positions,
-            water_colors_names=water_colors_names,
-            water_sampling_radii=water_sampling_radii,
-            legend_bounds=legend_bounds,
-        )
-        logger.info(
-            f"[DEV-TEST] Started extraction task {task.id} for test_id={safe_test_id} case={safe_test_case}"
-        )
-        return {
-            "task_id": task.id,
-            "map_id": safe_test_id,
-            "status": "processing_started",
-        }
+        task = process_dev_test_extraction.delay(test_id=safe_test_id, test_case=safe_test_case)
     except Exception as e:
-        logger.error(f"[DEV-TEST] Error starting extraction: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to start dev-test processing"
-        )
+        logger.error(f"[DEV-TEST] Error starting extraction: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start dev-test processing")
+
+    logger.info(f"[DEV-TEST] Started {task.id} for {safe_test_id}/{safe_test_case}")
+    return {"task_id": task.id, "map_id": safe_test_id, "status": "processing_started"}
 
 
 @router.put("/georef_zones/{map_id}")
@@ -252,34 +198,84 @@ async def save_dev_test_zones(
     payload: dict = Body(...),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Save or overwrite the dev-test zones GeoJSON file for a given map."""
+    """Save the drawn expected zones, and their cleaned version.
+
+    The cleaned version goes through the pipeline's ocean and lake cuts, and is
+    what the shipped output is scored against (dev_test_expected.py).
+    """
     safe_map_id = _safe_id(map_id, "map_id")
-
-    os.makedirs(ZONES_DIR, exist_ok=True)
-    zones_output_path = os.path.join(ZONES_DIR, f"{safe_map_id}_zones.geojson")
-
-    with open(zones_output_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-
-    return {"status": "ok", "map_id": safe_map_id}
+    cleaned = save_expected_zones(safe_map_id, payload)
+    return {
+        "status": "ok",
+        "map_id": safe_map_id,
+        "cleanedZones": len(cleaned.get("features", [])),
+    }
 
 
 @router.get("/georef_zones/{map_id}")
 async def get_dev_test_zones(
     map_id: str,
+    cleaned: bool = Query(False, description="The ocean- and lake-cut version"),
     _user_id: str = Depends(get_current_user_id),
 ):
-    """Return the current dev-test zones GeoJSON for a given map."""
+    """The map's expected zones: as drawn (the editor), or cleaned.
+
+    ``cleaned=true`` returns them through the pipeline's ocean and lake cuts,
+    the version the shipped output is scored against.
+    """
     safe_map_id = _safe_id(map_id, "map_id")
-
-    zones_path = os.path.join(ZONES_DIR, f"{safe_map_id}_zones.geojson")
-    if not os.path.exists(zones_path):
+    data = load_cleaned_zones(safe_map_id) if cleaned else load_drawn_zones(safe_map_id)
+    if data is None:
         raise HTTPException(status_code=404, detail="Zones file not found")
-
-    with open(zones_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
     return data
+
+
+# --- Administrative borders, for drawing expected zones -----------------------
+
+
+@router.get("/borders")
+def get_border_countries(_user_id: str = Depends(get_current_user_id)):
+    """Countries found in the border files (app/geojson/borders/).
+
+    Sync on purpose: the first call indexes tens of MB of GeoJSON, so it runs in
+    the threadpool rather than blocking the event loop.
+    """
+    return list_border_countries()
+
+
+@router.get("/borders/{country_code}/regions")
+def get_border_regions(country_code: str, _user_id: str = Depends(get_current_user_id)):
+    try:
+        return {"code": country_code, "regions": list_border_regions(country_code)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown country {country_code}")
+
+
+@router.post("/borders/zone")
+def get_border_zone(
+    payload: dict = Body(...),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """One zone, ready to become an expected zone: ``{country, regions?, simplifyDeg?}``.
+
+    No regions means the whole country. Several regions are merged into one zone.
+    """
+    country = payload.get("country")
+    regions = payload.get("regions") or None
+    if not isinstance(country, str) or (
+        regions is not None
+        and (not isinstance(regions, list) or not all(isinstance(r, str) for r in regions))
+    ):
+        raise HTTPException(status_code=400, detail="Expected {country: str, regions?: [str]}")
+    simplify = payload.get("simplifyDeg", DEFAULT_SIMPLIFY_DEG)
+    if isinstance(simplify, bool) or not isinstance(simplify, (int, float)) or simplify < 0:
+        raise HTTPException(status_code=400, detail="simplifyDeg must be a number >= 0")
+    try:
+        return border_zone(country, regions, simplify_deg=float(simplify))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"Unknown country or region: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/tests")
@@ -425,8 +421,7 @@ async def get_dev_test_control_points(
 
     try:
         config = load_case_config(GEOREF_ASSETS_DIR, safe_test_id, safe_case_id)
-        image_path = find_test_image_path(safe_test_id)
-        inputs = parse_extraction_inputs(config, image_path or "")
+        inputs = parse_extraction_inputs(config)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -468,7 +463,7 @@ async def get_dev_test_control_points_image(
     try:
         config = load_case_config(GEOREF_ASSETS_DIR, safe_test_id, safe_case_id)
         image_path = find_test_image_path(safe_test_id)
-        inputs = parse_extraction_inputs(config, image_path or "")
+        inputs = parse_extraction_inputs(config)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -845,6 +840,21 @@ async def get_dev_test_case_state(
     state = load_case_state(safe_test_id, safe_case_id)
     if state is not None:
         return state
+
+    # case_state.json is a per-run record and not committed, so a fresh
+    # checkout has none: resolve the requirements from the stored inputs.
+    try:
+        fresh, _inputs = inspect_case(
+            assets_root=GEOREF_ASSETS_DIR,
+            test_id=safe_test_id,
+            test_case_id=safe_case_id,
+        )
+        fresh.write()
+        return fresh.to_dict()
+    except (FileNotFoundError, ValueError) as e:
+        logger.warning(
+            f"[DEV-TEST] No state for {safe_test_id}/{safe_case_id}: {e}"
+        )
 
     return {
         "testId": safe_test_id,

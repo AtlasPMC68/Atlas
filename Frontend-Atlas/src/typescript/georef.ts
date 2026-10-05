@@ -100,13 +100,15 @@ export interface GeorefMatch {
   index: number;
   world: LatLngTuple;
   image: XYTuple;
-  color: string;
+  // Dev-test only: a check point, held out of every fit.
+  check?: boolean;
 }
 
 // Minimal info needed to render matched points on the world map
 export interface MatchedWorldPointSummary {
   index: number;
-  color: string;
+  // Dev-test only: a check point, drawn apart from the fitted pairs.
+  check?: boolean;
 }
 
 // Minimal info needed to render matched points on the image map
@@ -114,7 +116,8 @@ export interface MatchedImagePoint {
   index: number;
   x: number;
   y: number;
-  color: string;
+  // Dev-test only: a check point, drawn apart from the fitted pairs.
+  check?: boolean;
 }
 
 // Result of selecting a world area (used by picker modal + import view)

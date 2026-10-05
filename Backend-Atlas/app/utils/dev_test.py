@@ -26,10 +26,12 @@ from app.utils.georeferencing import (
     parse_frame_bounds_entry,
     select_control_points,
 )
+from app.utils.georeferencing.checkpoints import validate_check_points
 from app.utils.georeferencing.requirements import MIN_CONTROL_POINTS
 from app.utils.imposed_colors import (
     KIND_WATER,
     KIND_ZONE,
+    Picks,
     parse_imposed_colors_entries,
     split_imposed_colors_by_kind,
 )
@@ -43,8 +45,8 @@ def write_test_config(
     parent_test_id: str,
     test_case_id: str,
     test_case_name: str | None,
-    original_filename: str | None,
     control_points: list[ControlPoint],
+    check_points: list[ControlPoint],
     imposed_colors: list | None = None,
     frame_bounds: dict | None = None,
     kind: str | None = None,
@@ -60,10 +62,11 @@ def write_test_config(
         "testCase": test_case_name or test_case_id,
         "testCaseId": test_case_id,
         "updatedAt": datetime.utcnow().isoformat() + "Z",
-        "filename": original_filename,
         "kind": kind,
         "georef": {
             "controlPoints": [cp.to_dict() for cp in control_points],
+            # Held out of every fit; only the evaluation reads them.
+            "checkPoints": [cp.to_dict() for cp in check_points],
             "frameBounds": frame_bounds,
             "legend": legend,
         },
@@ -79,7 +82,13 @@ def write_test_config(
 
 
 #: A case's "best run" artifacts. Only comparable to runs on the same inputs.
-BEST_ARTIFACTS = ("best_report.json", "zones_best.geojson", "errors_best.geojson")
+BEST_ARTIFACTS = (
+    "best_report.json",
+    "zones_best.geojson",
+    "errors_best.geojson",
+    "zones_raw_best.geojson",
+    "errors_raw_best.geojson",
+)
 
 
 def _drop_best_if_inputs_changed(
@@ -103,6 +112,7 @@ def _drop_best_if_inputs_changed(
         colors = config.get("colors") if isinstance(config.get("colors"), dict) else {}
         return (
             georef.get("controlPoints"),
+            georef.get("checkPoints") or [],
             georef.get("frameBounds"),
             georef.get("legend"),
             colors.get("imposed"),
@@ -117,6 +127,29 @@ def _drop_best_if_inputs_changed(
             pass
         except OSError as e:
             logger.warning(f"[DEV-TEST] Could not remove stale {name} in {case_dir}: {e}")
+
+
+RAW_ZONES_FILENAME = "zones_raw.geojson"
+
+
+def write_raw_zones(case_dir: str, collections: list | None) -> None:
+    """The run's zones before snapping and the clip, beside ``zones.geojson``.
+
+    ``None`` means the run produced none (no control points, or georeferencing
+    failed): any older file is removed, so a stale raw version is never scored
+    against a new cleaned one.
+    """
+    path = os.path.join(case_dir, RAW_ZONES_FILENAME)
+    if collections is None:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        return
+    features = [f for fc in collections for f in fc.get("features", [])]
+    os.makedirs(case_dir, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"type": "FeatureCollection", "features": features}, f, indent=2, ensure_ascii=False)
 
 
 def slugify_test_case(value: str) -> str:
@@ -251,12 +284,9 @@ def delete_dev_test(map_id: str) -> dict[str, Any]:
                     pass
                 break
 
-    zones_path = os.path.join(ZONES_DIR, f"{map_id}_zones.geojson")
-    if os.path.exists(zones_path):
-        try:
-            os.remove(zones_path)
-        except OSError:
-            pass
+    from app.utils.dev_test_expected import delete_expected_zones
+
+    delete_expected_zones(map_id)
 
     cases_dir = os.path.join(TEST_CASES_DIR, map_id)
     if os.path.isdir(cases_dir):
@@ -334,7 +364,7 @@ def evaluate_and_persist_case(
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
 
-    report, errors_geojson = evaluate_georef_test_case(
+    report, errors_geojson, raw_errors_geojson = evaluate_georef_test_case(
         assets_root,
         test_id,
         test_case_id,
@@ -342,6 +372,8 @@ def evaluate_and_persist_case(
     )
 
     write_geojson(errors_geojson, paths.errors_geojson_path)
+    if raw_errors_geojson is not None:
+        write_geojson(raw_errors_geojson, paths.raw_errors_geojson_path)
 
     best_report_path = paths.best_report_path
     best_zones_path = paths.best_zones_path
@@ -380,6 +412,13 @@ def evaluate_and_persist_case(
                 shutil.copyfile(paths.extracted_zones_path, best_zones_path)
             if os.path.exists(paths.errors_geojson_path):
                 shutil.copyfile(paths.errors_geojson_path, best_errors_path)
+            # The raw view of the same run, so Best can be looked at both ways.
+            for latest, best in (
+                (paths.raw_zones_path, paths.best_raw_zones_path),
+                (paths.raw_errors_geojson_path, paths.best_raw_errors_geojson_path),
+            ):
+                if os.path.exists(latest):
+                    shutil.copyfile(latest, best)
             with open(best_report_path, "w", encoding="utf-8") as f:
                 json.dump(report, f, indent=2, ensure_ascii=False)
         except Exception:
@@ -413,23 +452,18 @@ def load_case_config(
 class CaseExtractionInputs:
     """Everything a stored case needs to re-run identically."""
 
-    filename: str
     control_points: list[ControlPoint]
+    #: Held out of every fit, measured against the applied transform.
+    check_points: list[ControlPoint]
     frame_bounds: dict[str, float] | None
-    imposed_click_positions: list[tuple[float, float]] | None
-    imposed_colors_names: list[str | None] | None
-    imposed_sampling_radii: list[int] | None
-    water_click_positions: list[tuple[float, float]] | None
-    water_colors_names: list[str | None] | None
-    water_sampling_radii: list[int] | None
+    zone_picks: Picks
+    water_picks: Picks
     #: Whether the case answered the legend step, and the rectangle if any.
     legend_answered: bool = False
     legend_bounds: dict[str, float] | None = None
 
 
-def parse_extraction_inputs(
-    config: dict[str, Any], image_path: str
-) -> CaseExtractionInputs:
+def parse_extraction_inputs(config: dict[str, Any]) -> CaseExtractionInputs:
     georef = config.get("georef") if isinstance(config.get("georef"), dict) else {}
 
     try:
@@ -437,7 +471,13 @@ def parse_extraction_inputs(
     except ValueError as e:
         raise ValueError(f"Invalid control points in config: {e}")
 
-    # Cases written before the framing box was plumbed through simply have none.
+    try:
+        check_points = parse_control_points(georef.get("checkPoints") or [])
+        validate_check_points(control_points, check_points)
+    except ValueError as e:
+        raise ValueError(f"Invalid check points in config: {e}")
+
+    # Missing here is reported by the requirements, not refused while reading.
     try:
         frame_bounds = parse_frame_bounds_entry(georef.get("frameBounds"))
     except ValueError as e:
@@ -459,35 +499,13 @@ def parse_extraction_inputs(
     except ValueError as e:
         raise ValueError(f"Invalid imposed colors in config: {e}")
 
-    zone_picks = split_imposed_colors_by_kind(
-        all_click_positions,
-        all_colors_names,
-        all_sampling_radii,
-        all_color_kinds,
-        KIND_ZONE,
-    )
-    water_picks = split_imposed_colors_by_kind(
-        all_click_positions,
-        all_colors_names,
-        all_sampling_radii,
-        all_color_kinds,
-        KIND_WATER,
-    )
-
-    filename = config.get("filename")
-    if not isinstance(filename, str) or not filename.strip():
-        filename = os.path.basename(image_path)
-
+    picks = (all_click_positions, all_colors_names, all_sampling_radii, all_color_kinds)
     return CaseExtractionInputs(
-        filename=filename,
         control_points=control_points,
+        check_points=check_points,
         frame_bounds=frame_bounds,
-        imposed_click_positions=zone_picks[0],
-        imposed_colors_names=zone_picks[1],
-        imposed_sampling_radii=zone_picks[2],
-        water_click_positions=water_picks[0],
-        water_colors_names=water_picks[1],
-        water_sampling_radii=water_picks[2],
+        zone_picks=split_imposed_colors_by_kind(*picks, KIND_ZONE),
+        water_picks=split_imposed_colors_by_kind(*picks, KIND_WATER),
         legend_answered=legend_answered,
         legend_bounds=legend_bounds,
     )
@@ -518,7 +536,7 @@ def case_inputs_for_editing(
         raise FileNotFoundError(
             f"Test image not found for test_id={test_id} under {MAPS_DIR}"
         )
-    inputs = parse_extraction_inputs(config, image_path)
+    inputs = parse_extraction_inputs(config)
 
     image_bgr = cv2.imread(image_path)
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB) if image_bgr is not None else None
@@ -546,6 +564,7 @@ def case_inputs_for_editing(
 
     editable: dict[str, Any] = {
         "controlPoints": [cp.to_dict() for cp in inputs.control_points],
+        "checkPoints": [cp.to_dict() for cp in inputs.check_points],
         "colors": colors,
     }
     if inputs.frame_bounds:
@@ -584,7 +603,7 @@ def inspect_case(
             f"Test image not found for test_id={test_id} under {MAPS_DIR}"
         )
 
-    inputs = parse_extraction_inputs(case_config, image_path)
+    inputs = parse_extraction_inputs(case_config)
     state = build_case_state(
         test_id=test_id,
         test_case_id=test_case_id,
@@ -594,42 +613,6 @@ def inspect_case(
         case_config=case_config,
     )
     return state, inputs
-
-
-def build_extraction_task_kwargs_for_case(
-    *, assets_root: str, test_id: str, test_case_id: str
-) -> dict[str, Any]:
-
-    config = load_case_config(assets_root, test_id, test_case_id)
-    image_path = find_test_image_path(test_id)
-    if not image_path or not os.path.exists(image_path):
-        raise FileNotFoundError(
-            f"Test image not found for test_id={test_id} under {MAPS_DIR}"
-        )
-
-    inputs = parse_extraction_inputs(config, image_path)
-
-    try:
-        with open(image_path, "rb") as f:
-            file_content = f.read()
-    except Exception as e:
-        raise RuntimeError(f"Failed to read test image: {e}")
-
-    return {
-        "filename": inputs.filename,
-        "file_content": file_content,
-        "test_id": test_id,
-        "test_case": test_case_id,
-        "control_points": [cp.to_dict() for cp in inputs.control_points],
-        "imposed_click_positions": inputs.imposed_click_positions,
-        "imposed_colors_names": inputs.imposed_colors_names,
-        "imposed_sampling_radii": inputs.imposed_sampling_radii,
-        "frame_bounds": inputs.frame_bounds,
-        "water_click_positions": inputs.water_click_positions,
-        "water_colors_names": inputs.water_colors_names,
-        "water_sampling_radii": inputs.water_sampling_radii,
-        "legend_bounds": inputs.legend_bounds,
-    }
 
 
 def drop_control_points(
@@ -676,20 +659,13 @@ def _start_extraction_for_case(
         test_case_id=test_case_id,
         config=run_config,
     )
-    # A probe replays without inputs the pipeline can execute without (the
-    # legend); a scored case cannot, since its number would not be comparable.
-    if state.run_blockers:
+    if state.requirements.blocked:
         raise ValueError(
             "Cannot run this case: "
             + "; ".join(
                 f"{s.key}: {s.detail or s.requirement.summary}"
-                for s in state.run_blockers
+                for s in state.requirements.blocked
             )
-        )
-    for warning in state.warnings:
-        logger.warning(
-            f"[DEV-TEST] {test_id}/{test_case_id} replays without {warning.key}:"
-            f" {warning.requirement.summary}"
         )
 
     # Excluding points can leave too few among the selected sources, which the
@@ -705,19 +681,14 @@ def _start_extraction_for_case(
             f" {MIN_CONTROL_POINTS} are needed"
         )
 
-    kwargs = build_extraction_task_kwargs_for_case(
-        assets_root=assets_root,
-        test_id=test_id,
-        test_case_id=test_case_id,
-    )
-    if dropped:
-        kwargs["excluded_control_points"] = dropped
-    if config_overrides:
-        kwargs["config_overrides"] = config_overrides
-
     from app.tasks import process_dev_test_extraction
 
-    task = process_dev_test_extraction.delay(**kwargs)
+    task = process_dev_test_extraction.delay(
+        test_id=test_id,
+        test_case=test_case_id,
+        config_overrides=config_overrides or None,
+        excluded_control_points=dropped or None,
+    )
     return task.id
 
 

@@ -42,9 +42,9 @@ SUSPECT_RATIO = 2.0
 SUSPECT_MIN_PX = 15.0
 
 
-def _km(value: Optional[float], ref_lat: Optional[float]) -> Optional[float]:
-    """EPSG:3857 metres to ground km, or None when neither is knowable."""
-    if value is None or not np.isfinite(value) or ref_lat is None:
+def _km(value: Optional[float], ref_lat: float) -> Optional[float]:
+    """EPSG:3857 metres to ground km, or None for an unknown value."""
+    if value is None or not np.isfinite(value):
         return None
     return round(webmercator_meters_to_km(float(value), ref_lat), 1)
 
@@ -139,15 +139,15 @@ def leave_one_out_models(
 
 def control_point_diagnostics(
     control_points: Sequence[ControlPoint],
-    frame_bounds: Optional[FrameBounds] = None,
+    frame_bounds: FrameBounds,
     applied_model: Optional[Any] = None,
     applied_pixels: Optional[Sequence[Tuple[float, float]]] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> Dict[str, Any]:
     """Per-point in-sample and leave-one-out error for an affine fit.
 
-    Returns a JSON-ready dict. Distances are ground kilometres when a reference
-    latitude is available, and None otherwise -- reporting raw EPSG:3857 metres
+    Returns a JSON-ready dict. Distances are ground kilometres, corrected at the
+    framing box's centre latitude -- reporting raw EPSG:3857 metres
     as if they were ground distance is the inflation this package avoids
     everywhere else.
 
@@ -190,7 +190,7 @@ def control_point_diagnostics(
         ],
         dtype=float,
     )
-    ref_lat = reference_latitude(frame_bounds, [cp.geo for cp in control_points])
+    ref_lat = reference_latitude(frame_bounds)
     summary["referenceLatitude"] = ref_lat
 
     fitted = AffineModel.fit(src, dst)

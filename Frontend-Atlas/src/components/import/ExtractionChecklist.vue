@@ -82,6 +82,26 @@
       />
     </ChecklistGroup>
 
+    <!-- Points de vérification (dev-test only): held out of every fit, they
+         are what the test plan measures placement with. -->
+    <ChecklistGroup
+      v-if="showChecks"
+      title="Évaluation (test)"
+      :tone="pointsLocked ? 'locked' : steps.checks.status === 'done' ? 'done' : 'pending'"
+      :locked="pointsLocked"
+      :locked-hint="pointsLocked ? 'Disponible après la zone sur le monde' : ''"
+      :badge="pointsLocked ? '' : 'Optionnel'"
+    >
+      <ChecklistItem
+        title="Villes de vérification"
+        :description="checkDescription"
+        :status="steps.checks.status"
+        :required="false"
+        :disabled="disabled"
+        @open="emit('open', 'checks')"
+      />
+    </ChecklistGroup>
+
     <!-- Couleurs -->
     <ChecklistGroup
       title="Couleurs"
@@ -186,6 +206,7 @@ import ChecklistGroup from "./ChecklistGroup.vue";
 import ChecklistItem from "./ChecklistItem.vue";
 import {
   canStartExtraction,
+  checkPoints,
   cityPoints,
   deriveStepStates,
   siftPoints,
@@ -205,8 +226,10 @@ const props = withDefaults(
     // Null where no background OCR runs (dev-test).
     ocrState?: OcrState | null;
     disabled?: boolean;
+    // Dev-test only: the check-point step.
+    showChecks?: boolean;
   }>(),
-  { options: null, ocrState: null, disabled: false },
+  { options: null, ocrState: null, disabled: false, showChecks: false },
 );
 
 const emit = defineEmits<{
@@ -251,6 +274,19 @@ const pointsDone = computed(
 );
 const siftCount = computed(() => siftPoints(props.inputs).length);
 const cityCount = computed(() => cityPoints(props.inputs).length);
+// Check points from both steps: SIFT pairs ticked at the SIFT step, and cities.
+const checkDescription = computed(() => {
+  const all = checkPoints(props.inputs);
+  if (all.length === 0) {
+    return "Jamais utilisées pour le calage : mesurent l'erreur (5 ou plus, réparties). Des points SIFT se cochent à l'étape SIFT.";
+  }
+  const cities = all.filter((p) => p.source === "city").length;
+  const sift = all.length - cities;
+  const parts = [];
+  if (cities) parts.push(`${cities} ville${cities > 1 ? "s" : ""}`);
+  if (sift) parts.push(`${sift} point${sift > 1 ? "s" : ""} SIFT`);
+  return `${parts.join(" + ")} de vérification`;
+});
 const zoneColors = computed(() => (props.inputs.colors ?? []).filter((c) => c.kind === "zone"));
 
 const legendDescription = computed(() => {

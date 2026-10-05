@@ -53,15 +53,15 @@ class GeorefConfig:
     gcp_sigma_px_sift: float = 6.0
     gcp_sigma_px_city: float = 6.0
 
-    # --- Coastline snapping (current §7) -------------------------------------
-    # Kept as-is for now. Roadmap §4.3 turns this off once chamfer alignment
-    # lands, because blind snapping fights the alignment.
+    # --- Coastline snapping (georeferencing.md section 6) -------------------
+    # A cleaning step. It hides placement error, so placement is judged before
+    # it (the raw score); it improves the shipped zones, so it stays on.
     snap_to_coastline: bool = True
     # Snap tolerance = this share of the image diagonal, converted to metres
     # with the transform's scale. The only knob: no pixel or metre clamps.
     coastline_snap_ratio_of_diagonal: float = 0.015 # old value was : 0.01
 
-    # --- Land clipping (current §8) ------------------------------------------
+    # --- Land clipping (georeferencing.md section 6) -------------------------
     clip_to_land_mask: bool = True
     land_coverage_threshold: float = 0.01
 
@@ -90,8 +90,8 @@ class GeorefConfig:
     # "label" (the two settings above) repairs the zones after classification.
     # "inpaint" erases the labels' ink from the image before it, so a name
     # written half over the sea comes back as sea on one side and land on the
-    # other; it ignores the two settings above. Default kept at "label" until
-    # the harness has compared the two.
+    # other; it ignores the two settings above. Compared on the first corpus
+    # run: "label" was worse on every case (georeferencing-testing.md 8.3).
     text_fill_method: str = "inpaint" #old value was "label"
     # Pixels added around the detected ink, for the anti-aliased fringe whose
     # blended colour otherwise lands in the wrong zone.
@@ -122,11 +122,12 @@ class GeorefConfig:
     # 600 px scan, ~40 px on a 5000 px one): a drawn line, not a strait.
     zone_gap_max_ratio_of_diagonal: float = 0.008
 
-    # --- Transform model (roadmap §5.4) --------------------------------------
+    # --- Transform model (georeferencing.md section 5.3) ---------------------
     # Which model places the map. One named choice rather than a flag per
-    # model: the roadmap's candidate registry adds similarity, affine +
-    # latitude stretch and FFD later, and a pile of mutually exclusive booleans
-    # would let a caller ask for two at once.
+    # model, so later models (a smoothed warp, roadmap section 3) slot in and a
+    # caller cannot ask for two at once. The first corpus run did not support
+    # piecewise as the default; affine is expected to replace it, with
+    # piecewise chosen per map by leave-one-out (roadmap section 2).
     #
     # ``affine`` is the baseline. ``piecewise_affine`` keeps that affine and
     # adds a Delaunay correction pinned at each control point, decaying to zero
@@ -249,7 +250,7 @@ class GeorefConfig:
     icp_cutoff_px: float = 20.0
     icp_min_correspondences: int = 50
 
-    # Gates (section 8.3). **Mostly neutralised on purpose**: the thresholds
+    # Gates (georeferencing.md section 5.2). **Mostly neutralised on purpose**: the thresholds
     # below are set so these checks always pass. What can still reject an
     # alignment: a mirrored transform (`transform_determinant`), an optimiser
     # that did not converge, and `curve_fit_engaged` -- at 0.0 it fails only
@@ -270,7 +271,7 @@ class GeorefConfig:
     # why residual magnitude is never a gate.
     gate_min_chamfer_improvement: float = 0.0  # designed: 0.02
 
-    # Recovery ladder (section 10.2).
+    # Recovery ladder (georeferencing.md section 5.2).
     recovery_multistart_translation_px: float = 40.0
     recovery_multistart_rotation_deg: float = 4.0
     recovery_multistart_scale: float = 0.06

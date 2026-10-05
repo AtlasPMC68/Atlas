@@ -22,5 +22,25 @@
     "name": "Italy_test",
     "kind": "probe",
     "createdAt": "2026-09-23T22:18:41.674881Z"
+  },
+  "f12f2ea4-bfca-4e1f-a4d6-2c8f330be6b4": {
+    "name": "Maghreb",
+    "kind": "regression",
+    "createdAt": "2026-10-04T17:14:44.362962Z"
+  },
+  "c4e81e4d-c9e8-4222-b5b7-41a8689e144a": {
+    "name": "central africa",
+    "kind": "regression",
+    "createdAt": "2026-10-04T17:38:13.265174Z"
+  },
+  "c0d9544d-0c20-467d-a71a-23339e8ec3f7": {
+    "name": "south-america",
+    "kind": "regression",
+    "createdAt": "2026-10-04T18:08:06.715569Z"
+  },
+  "44992611-ede8-4c0f-9c01-d901a3641a62": {
+    "name": "east asia",
+    "kind": "regression",
+    "createdAt": "2026-10-04T18:27:37.581890Z"
   }
 }

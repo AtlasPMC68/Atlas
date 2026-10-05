@@ -59,6 +59,7 @@ from app.utils.dev_test import (  # noqa: E402
     parse_extraction_inputs,
     evaluate_and_persist_case,
     find_test_image_path,
+    write_raw_zones,
 )
 from app.utils.dev_test_assets import GEOREF_ASSETS_DIR  # noqa: E402
 from app.utils.dev_test_cases import (  # noqa: E402
@@ -73,16 +74,14 @@ from app.utils.dev_test_pixel_zones import (  # noqa: E402
     write_pixel_zones,
 )
 from app.utils.extraction_steps import (  # noqa: E402
-    align_if_enabled,
     extract_zone_colors,
-    georeference_zones,
+    place_map,
     zone_extraction_settings,
 )
 from app.utils.georeferencing import (  # noqa: E402
     GCP_SOURCES,
     RunRecord,
     count_by_source,
-    select_control_points,
     build_reference_layers,
     dump_reference_debug_pngs,
 )
@@ -129,9 +128,7 @@ def _cache_key(image_path: str, inputs: Any, text_regions: Any, config: Any) -> 
         "image": os.path.basename(image_path),
         "mtime": os.path.getmtime(image_path),
         "size": os.path.getsize(image_path),
-        "clicks": inputs.imposed_click_positions,
-        "names": inputs.imposed_colors_names,
-        "radii": inputs.imposed_sampling_radii,
+        "zonePicks": inputs.zone_picks,
         "legend": inputs.legend_bounds,
         "textRegions": text_regions if config.text_aware_zone_fill else None,
         "settings": zone_extraction_settings(config),
@@ -157,10 +154,8 @@ def extract_colors_cached(
 
     result = extract_zone_colors(
         image_path,
+        zone_picks=inputs.zone_picks,
         legend_bounds=inputs.legend_bounds,
-        click_positions=inputs.imposed_click_positions,
-        names=inputs.imposed_colors_names,
-        radii=inputs.imposed_sampling_radii,
         text_regions=text_regions,
         config=config,
     )
@@ -210,7 +205,7 @@ def run_case(
         return None
 
     config = load_case_config(assets_root, test_id, case_id)
-    inputs = parse_extraction_inputs(config, image_path)
+    inputs = parse_extraction_inputs(config)
 
     # The deployment's ambient config with this run's flags on top, exactly
     # as the task layers a re-run's switches on its own. A run that differs
@@ -248,7 +243,7 @@ def run_case(
         # Only a human can repair this, so say so once and move on rather than
         # producing a number nobody should read.
         print("  SKIP: missing user input that cannot be re-derived")
-        for blocked in case_state.run_blockers:
+        for blocked in case_state.requirements.blocked:
             print(f"    {blocked.requirement.remedy}")
         if write:
             case_state.write()
@@ -266,16 +261,14 @@ def run_case(
     # The same inputs the task records, so two run records can be diffed.
     record = RunRecord(run_id=f"{test_id}/{case_id}")
     record.set_inputs(
-        waterPickCount=len(inputs.water_click_positions or []),
+        waterPickCount=len(inputs.water_picks[0] or []),
         legendBounds=inputs.legend_bounds,
         caseKind=case_state.kind,
         runSwitches=switches or None,
         controlPointSources=list(run_config.gcp_sources),
     )
 
-    # Always the drawn box: a case without one is blocked above, because a box
-    # derived from the control points is systematically too tight (the points
-    # sit inside the mapped area) and silently crops the reference layers.
+    # A case without a framing box is blocked above.
     frame_bounds = inputs.frame_bounds
     paths = build_test_case_paths(assets_root, test_id, case_id)
 
@@ -324,8 +317,8 @@ def run_case(
             user_evidence = build_user_evidence(
                 image_bgr,
                 text_regions=text_regions,
-                water_click_positions=inputs.water_click_positions,
-                water_sampling_radii=inputs.water_sampling_radii,
+                water_click_positions=inputs.water_picks[0],
+                water_sampling_radii=inputs.water_picks[2],
                 config=run_config,
                 legend_bounds=inputs.legend_bounds,
             )
@@ -367,10 +360,6 @@ def run_case(
     )
     pixel_zones_snapshot = json.loads(json.dumps(pixel_features))
 
-    # Only the selected sources, for every stage below: the same filtering the
-    # Celery task applies, so --sources city means the cities alone throughout.
-    control_points = select_control_points(inputs.control_points, run_config.gcp_sources)
-
     alignment_debug_dir = None
     if debug and write and run_config.enable_curve_alignment:
         import shutil
@@ -381,19 +370,21 @@ def run_case(
         shutil.rmtree(alignment_debug_dir, ignore_errors=True)
         os.makedirs(alignment_debug_dir, exist_ok=True)
 
+    # The task's own step: only the selected sources, for every stage below,
+    # so --sources city means the cities alone throughout.
     t0 = time.perf_counter()
-    alignment = align_if_enabled(
+    placement = place_map(
         image_bgr,
-        control_points,
+        inputs.control_points,
         frame_bounds=frame_bounds,
-        text_regions=text_regions,
-        water_click_positions=inputs.water_click_positions,
-        water_sampling_radii=inputs.water_sampling_radii,
         legend_bounds=inputs.legend_bounds,
+        water_picks=inputs.water_picks,
+        text_regions=text_regions,
         config=run_config,
         record=record,
         debug_dir=alignment_debug_dir,
     )
+    alignment = placement.alignment
     if alignment is not None:
         if alignment_debug_dir:
             print(f"  alignment debug -> {alignment_debug_dir}")
@@ -420,15 +411,7 @@ def run_case(
             )
 
     t0 = time.perf_counter()
-    georef = georeference_zones(
-        pixel_features,
-        control_points,
-        frame_bounds=frame_bounds,
-        image_bgr=image_bgr,
-        alignment=alignment,
-        config=run_config,
-        record=record,
-    )
+    georef = placement.georeference(pixel_features, check_points=inputs.check_points)
     georef_ms = (time.perf_counter() - t0) * 1000.0
 
     report = None
@@ -443,6 +426,7 @@ def run_case(
                 indent=2,
                 ensure_ascii=False,
             )
+        write_raw_zones(paths.case_dir, georef.raw_collections)
         write_pixel_zones(paths.case_dir, pixel_zones_snapshot)
         write_classified_image(paths.case_dir, classified_rgb)
 
@@ -471,9 +455,9 @@ def run_case(
 
     errors = record.errors
     rmse_km = errors.get("gcpRmseKm")
-    by_source = count_by_source(control_points)
+    by_source = count_by_source(placement.control_points)
     print(
-        f"  control points: {len(control_points)} "
+        f"  control points: {len(placement.control_points)} "
         f"({', '.join(f'{k}={v}' for k, v in by_source.items())})   "
         f"zones out: {sum(len(fc.get('features', [])) for fc in georef.collections)}"
     )
@@ -487,6 +471,14 @@ def run_case(
             if value is not None
         )
     )
+    checks = errors.get("checkPoints")
+    if checks:
+        by_model = checks.get("byModel") or {}
+        print(
+            f"  check points: {checks['count']}  RMS {checks['rmseKm']} km"
+            f"  median {checks['medianKm']} km  max {checks['maxKm']} km"
+            f"  (GCP-only affine: {by_model.get('gcp_affine')} km)"
+        )
     if report:
         metrics = report.get("metrics") or {}
         score = metrics.get("scoreUsed") or (metrics.get("mean") or {}).get("meanIou")

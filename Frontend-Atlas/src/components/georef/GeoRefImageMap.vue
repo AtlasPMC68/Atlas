@@ -69,16 +69,37 @@
           opacity="0.8"
           style="pointer-events: none;"
         />
-        <polygon
+        <!-- Each match is a circle, blue for a fitted point and green for a
+             check point, as on the world map; numbered (SIFT) matches carry
+             the number of the world point they match. -->
+        <g
           v-for="m in matchedPoints"
           :key="`matched-${m.index}`"
-          :points="trianglePoints(m)"
-          :fill="m.color"
-          :stroke="m.color"
           style="cursor: pointer;"
-          @mousedown.stop.prevent="onTriangleClick(m.index)"
-          opacity="0.95"
-        />
+          @mousedown.stop.prevent="onMatchClick(m.index)"
+        >
+          <circle
+            :cx="m.x"
+            :cy="m.y"
+            :r="markerPx * (numbered ? 1.6 : 1.1)"
+            :fill="m.check ? '#16a34a' : '#2563eb'"
+            stroke="#ffffff"
+            :stroke-width="markerPx * 0.35"
+          />
+          <text
+            v-if="numbered"
+            :x="m.x"
+            :y="m.y"
+            text-anchor="middle"
+            dominant-baseline="central"
+            fill="#ffffff"
+            font-weight="700"
+            :font-size="markerPx * 1.5"
+            style="pointer-events: none;"
+          >
+            {{ m.index + 1 }}
+          </text>
+        </g>
       </svg>
     </div>
   </div>
@@ -96,16 +117,18 @@ const props = withDefaults(
   defineProps<{
     point: PointTuple | null;
     imageUrl: string;
-    // Matched control points passed from parent
-    // [{ index, x, y, color }]
+    // The points already placed, by index into the parent's list.
     matchedPoints: MatchedPoint[];
     // Points placed in another step, shown greyed for context
     contextPoints?: { x: number; y: number }[];
+    // Each circle carries its number (index + 1), as on the world side.
+    numbered?: boolean;
   }>(),
   {
     point: null,
     matchedPoints: () => [],
     contextPoints: () => [],
+    numbered: false,
   },
 );
 
@@ -212,7 +235,7 @@ function onPointerLeave(): void {
   isPointerDown.value = false;
 }
 
-function onTriangleClick(index: number): void {
+function onMatchClick(index: number): void {
   // Notify parent that an existing matched point was selected
   emit("select-match", index);
 }
@@ -223,26 +246,8 @@ function markerSize(): number {
   return desiredScreenSize / (stagePxPerImagePx.value * Math.max(1, zoom.value));
 }
 
-function trianglePoints(m: MatchedPoint): string {
-  // Build an upright triangle centered on the image point.
-  // Keep its apparent size roughly constant on screen by
-  // compensating for both the base image fit (baseScale)
-  // and the interactive zoom (scale).
-  // Desired triangle height in on-screen pixels.
-  // svg is scaled by (baseStage fit) * zoom, so compensate by both.
-  const size = markerSize();
-  const x = m.x;
-  const y = m.y;
-
-  const x1 = x;
-  const y1 = y - size; // top
-  const x2 = x - size * 0.8;
-  const y2 = y + size * 0.6;
-  const x3 = x + size * 0.8;
-  const y3 = y + size * 0.6;
-
-  return `${x1},${y1} ${x2},${y2} ${x3},${y3}`;
-}
+// The same size for the template, computed once per render.
+const markerPx = computed(markerSize);
 
 function setPointFromEvent(event: MouseEvent): void {
   if (!baseStage.value) return;

@@ -303,7 +303,7 @@ def dump_alignment_debug(
             if isinstance(moved, float):
                 lines.append(f"    coastline moved      {moved:.1f} px (median)")
             lines.append(
-                f"    evidence used        coastline"
+                "    evidence used        coastline"
                 + (" + lakes" if st.get("usesLakes") else "")
                 + (" + rivers" if st.get("usesRivers") else "")
             )

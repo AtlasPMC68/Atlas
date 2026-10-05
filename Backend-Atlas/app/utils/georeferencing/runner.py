@@ -13,7 +13,7 @@ import math
 from typing import Any, Optional, Sequence
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
-from .frame import FrameBounds, frame_bounds_from_geo_points
+from .frame import FrameBounds
 from .models import AffineModel, ControlPoint, fit_affine_from_control_points
 from .projection import reference_latitude
 from .records import RunRecord
@@ -23,21 +23,17 @@ from .reference import build_reference_layers
 logger = logging.getLogger(__name__)
 
 
-def ground_meters_per_pixel(
-    model: AffineModel, frame_bounds: Optional[FrameBounds], control_points
-) -> Optional[float]:
+def ground_meters_per_pixel(model: AffineModel, frame_bounds: FrameBounds) -> float:
     """Ground metres per image pixel, with the WebMercator inflation removed."""
-    latitude = reference_latitude(frame_bounds, [cp.geo for cp in control_points])
-    if latitude is None:
-        return None
+    latitude = reference_latitude(frame_bounds)
     return model.meters_per_pixel * math.cos(math.radians(latitude))
 
 
 def align_map(
     image_bgr: Any,
     control_points: Sequence[ControlPoint],
-    frame_bounds: Optional[FrameBounds] = None,
-    text_regions: Optional[Any] = None,
+    frame_bounds: FrameBounds,
+    text_regions: Sequence[Any],
     water_click_positions: Optional[Sequence[Sequence[float]]] = None,
     water_sampling_radii: Optional[Sequence[int]] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
@@ -47,16 +43,17 @@ def align_map(
 ) -> AlignmentResult:
     """Build the evidence and reference layers, then align and gate.
 
-    Falls back to the GCP-only affine -- never raises -- so a caller can use
-    ``result.model`` unconditionally. Every failure path is recorded.
+    A failure while building the layers or aligning falls back to the GCP-only
+    affine, so a caller can use ``result.model`` unconditionally; every such
+    path is recorded. Missing inputs are a caller error and raise.
 
     Args:
         image_bgr: the user's map as OpenCV reads it.
         control_points: the user's GCPs.
-        frame_bounds: the framing box. Derived from the control points when the
-            map predates the field.
-        text_regions: OCR polygons. Strongly recommended: without them roughly
-            half the edge pixels on a labelled map are place names.
+        frame_bounds: the framing box: the extent of every reference layer.
+        text_regions: OCR polygons; an empty list for a map without text.
+            Without them roughly half the edge pixels on a labelled map are
+            place names, so they are required.
         legend_bounds: the legend rectangle in image pixels, or None. Its
             edges and water are dropped from the evidence.
         debug_dir: when set, every diagnostic for this run is written there.
@@ -68,17 +65,11 @@ def align_map(
     record = record or RunRecord()
     baseline = fit_affine_from_control_points(control_points)
 
-    bounds = frame_bounds or frame_bounds_from_geo_points(
-        [cp.geo for cp in control_points]
-    )
-    if not bounds:
-        record.note("no framing box and too few control points; alignment skipped")
-        return AlignmentResult(model=baseline, method="gcp_only", rung=7)
-
+    if not frame_bounds:
+        raise ValueError("Alignment needs the framing box")
     if text_regions is None:
-        record.note(
-            "aligning without a text mask: about half the edge map may be labels"
-        )
+        raise ValueError("Alignment needs the OCR text regions (a list, empty if none)")
+    bounds = frame_bounds
 
     try:
         with record.phase("reference_layers"):
@@ -112,9 +103,7 @@ def align_map(
                 evidence,
                 config=config,
                 record=record,
-                ground_meters_per_pixel=ground_meters_per_pixel(
-                    baseline, bounds, control_points
-                ),
+                ground_meters_per_pixel=ground_meters_per_pixel(baseline, bounds),
             )
     except Exception as e:
         logger.error(f"Alignment failed: {e}", exc_info=True)

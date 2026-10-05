@@ -1,0 +1,126 @@
+{
+  "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
+  "testCaseId": "protocol",
+  "evaluatedAt": "2026-10-04T17:07:00.908161Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1772842734708",
+          "name": "Quebec",
+          "area": 199.9547564893504
+        },
+        "bestMatch": {
+          "iou": 0.972949629932017,
+          "intersectionArea": 195.79366031485296,
+          "unionArea": 201.2372010753873,
+          "precision": 0.9934926429224779,
+          "recall": 0.9791898114975872,
+          "falseNegativeArea": 4.161096174497182,
+          "falsePositiveArea": 1.2824445860376223,
+          "boundary": {
+            "meanKm": 3.907,
+            "p90Km": 10.668,
+            "maxKm": 101.421,
+            "expectedToExtractedMeanKm": 3.957,
+            "extractedToExpectedMeanKm": 3.858,
+            "expectedHoles": 22,
+            "extractedHoles": 22
+          },
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "Quebec",
+            "area": 197.07610490089027
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.972949629932017,
+      "meanPrecision": 0.9934926429224779,
+      "meanRecall": 0.9791898114975872,
+      "totalFalseNegativeArea": 4.161096174497182,
+      "totalFalsePositiveArea": 1.2824445860376223,
+      "meanBoundaryKm": 3.907,
+      "meanBoundaryP90Km": 10.668,
+      "maxBoundaryKm": 101.421,
+      "zonesWithBoundary": 1,
+      "zonesWithoutBoundary": 0
+    },
+    "scoreUsed": 0.972949629932017,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  },
+  "scoreVersion": "2",
+  "comparison": {
+    "main": "The shipped zones (zones.geojson: after snapping, ocean clip and lake cut) against the expected zones through the same ocean and lake cuts.",
+    "raw": "The zones as the transform placed them (zones_raw.geojson: before snapping and the clip) against the expected zones as drawn. For judging placement: cleaning corrects and hides transform error."
+  },
+  "raw": {
+    "metrics": {
+      "expected": [
+        {
+          "expected": {
+            "index": 0,
+            "id": "dev-zone-1772842734708",
+            "name": "Quebec",
+            "area": 203.3187314685591
+          },
+          "bestMatch": {
+            "iou": 0.9507328778205705,
+            "intersectionArea": 196.60569860366587,
+            "unionArea": 206.79383577683615,
+            "precision": 0.982631495587281,
+            "recall": 0.9669827132187704,
+            "falseNegativeArea": 6.713032864893497,
+            "falsePositiveArea": 3.475104308276759,
+            "boundary": {
+              "meanKm": 7.744,
+              "p90Km": 14.637,
+              "maxKm": 101.421,
+              "expectedToExtractedMeanKm": 7.973,
+              "extractedToExpectedMeanKm": 7.514,
+              "expectedHoles": 2,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 0,
+              "id": null,
+              "name": "Quebec",
+              "area": 200.0808029119423
+            },
+            "matchedBy": "name"
+          }
+        }
+      ],
+      "mean": {
+        "meanIou": 0.9507328778205705,
+        "meanPrecision": 0.982631495587281,
+        "meanRecall": 0.9669827132187704,
+        "totalFalseNegativeArea": 6.713032864893497,
+        "totalFalsePositiveArea": 3.475104308276759,
+        "meanBoundaryKm": 7.744,
+        "meanBoundaryP90Km": 14.637,
+        "maxBoundaryKm": 101.421,
+        "zonesWithBoundary": 1,
+        "zonesWithoutBoundary": 0
+      },
+      "scoreUsed": 0.9507328778205705,
+      "scoreUsedKey": "mean.meanIou"
+    },
+    "nameMatching": {
+      "expectedWithoutNameMatch": [],
+      "extractedNeverMatchedByName": []
+    }
+  }
+}

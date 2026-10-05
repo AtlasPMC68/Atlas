@@ -68,6 +68,17 @@
         >
           <MapPinIcon class="w-4 h-4 text-fuchsia-600 drop-shadow" />
         </div>
+
+        <!-- Check points (dev-test): held out of the fit -->
+        <div
+          v-for="(point, index) in checkPoints"
+          :key="`check-${index}`"
+          class="absolute flex flex-col items-center"
+          :style="markerStyle(point.pixel.x, point.pixel.y)"
+          :title="point.source === 'city' ? `Vérification : ${point.city.name}` : 'Vérification'"
+        >
+          <MapPinIcon class="w-4 h-4 text-success drop-shadow" />
+        </div>
       </div>
 
       <!-- SIFT badge -->
@@ -114,6 +125,7 @@ withDefaults(
     legend?: LegendAnswer | null;
     siftPoints?: ControlPointInput[];
     cityPoints?: ControlPointInput[];
+    checkPoints?: ControlPointInput[];
     colors?: ImposedColor[];
     canChangeMap?: boolean;
   }>(),
@@ -122,6 +134,7 @@ withDefaults(
     legend: null,
     siftPoints: () => [],
     cityPoints: () => [],
+    checkPoints: () => [],
     colors: () => [],
     canChangeMap: false,
   },

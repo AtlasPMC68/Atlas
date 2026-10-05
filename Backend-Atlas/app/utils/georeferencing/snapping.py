@@ -1,10 +1,10 @@
 """Post-hoc vertex snapping of zone boundaries onto the reference coastline.
 
-This is the crude version of an idea the roadmap replaces (roadmap section 4.3):
-it is nearest-point with no orientation test and no confidence weighting, and it
-runs *before* any alignment has happened. It stays untouched through Step 1 so
-that output does not move, and it is expected to be turned off as soon as
-chamfer alignment begins -- it will actively fight the alignment.
+Nearest-point, with no orientation test and no confidence weighting. It is a
+cleaning step: it corrects transform error after the fact, so placement is
+judged before it (the raw score), while the first corpus run showed it improves
+the shipped zones (georeferencing-testing.md section 8). A smarter version is
+roadmap section 7.
 """
 
 import json
@@ -103,7 +103,7 @@ def _snap_ring_coords_to_coastline(
 
     # Ensure ring closure remains valid. Note this *forces* closure rather than
     # fixing it: if the first vertex snapped and the last did not, the last is
-    # overwritten (current section 9, limitation 10). Left as-is on purpose --
+    # overwritten (georeferencing.md section 9). Left as-is on purpose --
     # changing it moves output, and the snapping stage is due for replacement.
     if snapped_coords and snapped_coords[0] != snapped_coords[-1]:
         snapped_coords[-1] = snapped_coords[0]
@@ -241,7 +241,7 @@ def estimate_pixel_diagonal_from_features(
 
     Note this keys off *feature* bounds rather than image size, so a map whose
     zones cluster in one corner gets a much smaller tolerance than the same map
-    with spread-out zones (current section 9, limitation 9). Once the framing
+    with spread-out zones (georeferencing-history.md, starting point). Once the framing
     box and image dimensions are both available end to end this should key off
     the image instead.
     """

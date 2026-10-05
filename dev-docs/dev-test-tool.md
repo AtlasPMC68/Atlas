@@ -70,6 +70,32 @@ This is your ground truth. In the right-hand **Créer une nouvelle zone** panel:
 5. When the contour comes back near its starting point it closes, and
    **Enregistrer la zone** becomes available.
 
+**Or load a real border instead of drawing.** For a map of countries, states or provinces,
+the ground truth already exists. In create mode, open **Charger une frontière (pays,
+région)**:
+
+1. Pick the country (type to filter). **Charger le pays entier** loads its outline.
+2. Or tick regions and **Charger N régions**: several regions are merged into one zone (the
+   Maritimes, say). Where the file groups its units, ticking the group selects them all:
+   Natural Earth's admin-1 is 110 provinces for Italy and 101 départements for France, and
+   the groups are the 20 Italian regions and 18 French ones.
+3. The zone appears in blue and its name is pre-filled (French where the file has it). Edit
+   the name if your pipette will use another one: zones are matched by name.
+4. **If the map only shows part of it, cut the rest off**: **Découper une partie**, then
+   click a polygon around what to remove and close it on its first point (Escape cancels).
+   Cut as many times as needed; ↶ undoes the last cut. Only the loaded zone can be cut,
+   never the zones already saved.
+5. **Enregistrer la zone**. **Ajouter une sous-zone** works here too: a loaded border becomes
+   one part, and the next can be loaded or traced.
+
+The border files live in `Backend-Atlas/app/geojson/borders/` (gitignored, ~54 MB).
+`python scripts/fetch_natural_earth_borders.py` downloads Natural Earth's countries and
+states/provinces at 10m; any other admin-0 or admin-1 file dropped there (Natural Earth or
+geoBoundaries) is recognised from its properties and listed too. Zones arrive simplified to
+~500 m, below Natural Earth's own accuracy at that scale. Lakes are not pre-cut: the cleaned
+version of each expected zone cuts them with the pipeline's own lake layer
+([§4](#4-reading-the-report)).
+
 Repeat for every zone you want to test. Draw only the zones you actually intend to extract.
 
 Zones are saved as you go and reloaded every time you open the editor — you never redraw them.
@@ -93,12 +119,41 @@ Steps can be done in any order, and redone with **Modifier**:
    candidates (only cities inside the world area are offered), then click where your map
    draws it. Add as many as you can read. A case with both SIFT points and cities can
    later be re-run with either alone (see [Re-running from the UI](#re-running-from-the-ui)).
-5. **Couleurs à extraire (pipette)** — click each colored area of the map you want
+5. **Villes de vérification (optional, "Évaluation (test)")** — cities placed exactly like
+   the ones above, but **never used to fit anything**: after every run, the transform that
+   placed the zones is measured on them, in km. That is the only placement error not
+   measured on the points the model was fitted to, and the primary metric of the test plan
+   ([`georeferencing-testing.md`](georeferencing-testing.md)). Place at least 5, spread over
+   the map; a city already used as a control point is refused, and vice versa. **SIFT pairs
+   can be check points too**: at the SIFT step, tick *vérification* under a matched pair. The
+   minimum pair count only counts the pairs left for the fit.
+6. **Couleurs à extraire (pipette)** — click each colored area of the map you want
    extracted. For every pick, **type the name of the corresponding expected zone**.
    Zoom in for small areas; the sampled radius adapts to the zoom.
 
 **Commencer l'extraction** asks for the test case name (ex: *5 sift points*) and starts
 the run. When it finishes you are redirected to the test case result page.
+
+#### Starting from an existing case
+
+When the map already has cases, the import page also shows **Partir d'un test case
+existant**. Pick a source case and tick what to take from it: zone sur le monde, légende,
+points SIFT, villes, points de vérification, couleurs des zones, pipette eau. Every part the
+source has is ticked by default. The map's stored image comes with them, and the checklist
+opens with those steps done. Each step is still editable: click a SIFT pair to retake it
+(confirm without re-placing it to drop it), remove cities, remove or re-pick colours. Saving
+asks for a new name; the source case is not touched.
+
+A stored SIFT pair whose keypoint the frame no longer offers is still shown in the SIFT
+step, as an extra point on the world map. This happens when the points were clicked before
+the case had its frame (`pip_7sift`), or before the keypoint finder changed. It is kept and
+can be retaken like any other. The same applies when editing a case's own inputs.
+
+Points travel only with the zone sur le monde, because they were matched inside it. Use
+this so that two cases of one map differ only in what the case is about. Above all, use it
+to keep the same check points across a map's cases, or their check-point errors cannot be
+compared. The case roles worth creating are listed in
+[`georeferencing-testing.md` §2](georeferencing-testing.md#2-the-plan).
 
 The text and shapes options of the production import are not offered here: dev-test runs
 extract colours only.
@@ -142,12 +197,38 @@ requirement gaps. That is the deliverable: you read it with your eyes.
 - **Recall** — how much of the expected zone was covered (low = the extraction missed parts).
 - **FN area** (false negative, red) — expected surface that was **not** extracted.
 - **FP area** (false positive, red) — extracted surface that should **not** be there.
+- **Distance des contours** (mean, p90, max) — how far, in km, the extracted zone's
+  outline sits from the expected one, measured both ways. IoU is an area ratio and barely
+  moves on a large zone; this is in the unit placement error is in. When the two directions
+  disagree a lot (`extractedToExpectedMeanKm` far above `expectedToExtractedMeanKm`), the
+  extracted zone has pieces far from where it should be, usually another region painted in
+  the same colour, not a placement error ([testing §4](georeferencing-testing.md#4-boundary-distance)). **Outlines only**: holes
+  (lakes cut out of zones, text) are counted in the report but not measured, since they are
+  not misplaced borders and IoU already charges them as area.
 - **Mean …** — the same metrics averaged over all your expected zones.
+
+The **Points de contrôle (dernier run)** panel also shows the **check-point** error
+(*Vérification*): RMS, median and max in km on the held-out cities, next to what the
+control-point affine alone scores on them. Check points are drawn on the map in teal, with a
+dashed line to where the transform placed them.
 - **PASS / FAIL** — shown when a minimum IoU threshold was applied.
 
 **Current / Best toggle** — *Current* is the latest run, *Best* is the best-scoring run ever
 recorded for this test case. The best one is kept automatically whenever a run beats it, so a
 regression never overwrites your reference result.
+
+**Après nettoyage / Avant nettoyage** — every run is scored twice, and this toggle switches
+the map and the report between the two:
+
+- **Après nettoyage** (default): the zones the app ships, after coastline snapping, the ocean
+  clip and the lake cut, against the expected zones put through the **same ocean and lake
+  cuts**. This is the regression score: PASS/FAIL, `scoreUsed`, best.
+- **Avant nettoyage**: the zones straight out of the transform, against the expected zones
+  **as drawn**. This is the one to judge georeferencing on, since cleaning corrects transform
+  error after the fact and so hides it.
+
+The test editor always shows and edits the zones as drawn; their cleaned version is derived
+from them when they are saved.
 
 ---
 
@@ -172,35 +253,56 @@ Everything lives on disk under `Backend-Atlas/tests/assets/georef/`, not in the 
 ```
 maps/<test_id>.jpg                      the map image
 georef_zones/<test_id>_zones.geojson    the expected zones you drew   ← the valuable part
+georef_zones/<test_id>_zones_cleaned.geojson
+                                        the same through the ocean and lake cuts: what the
+                                        shipped zones are scored against. Derived: written
+                                        on save, recomputed when stale (it carries a hash of
+                                        the drawn file and the cleaning version)
 tests_metadata.json                     test names / creation dates / kind
 derived/<test_id>/
     text_regions.json    OCR label boxes for this map, with provenance
 test_cases/<test_id>/<case_id>/
-    config.json          control points (SIFT and city, each with its source), framing
-                         box, pipette picks (position, name, radius, zone-or-water),
+    config.json          control points (SIFT and city, each with its source), check
+                         points (held out of every fit, same shape), framing box,
+                         pipette picks (position, name, radius, zone-or-water),
                          optional kind
+    best_report.json     metrics of the best run so far: the regression baseline
+    zones_best.geojson, zones_raw_best.geojson, errors_best.geojson,
+    errors_raw_best.geojson
+                         the zones and error overlays of that best run
+
+  The last run's files below are gitignored (see "What is committed"):
     case_state.json      which requirements this case satisfies, and its kind
-    zones.geojson        zones extracted by the last run
+    zones.geojson        zones extracted by the last run, as shipped (after cleaning)
+    zones_raw.geojson    the same zones before snapping and the clip
+    zones_pixel.geojson, classified_image.png
+                         the zones in image pixels, for the result page's overlays
     report.json          metrics of the last run  (regression cases only)
     run_record.json      structured record of the last georeferencing run
-    reference_debug/     PNG per reference layer (only with --reference; gitignored)
-    evidence_debug/      edge map and water overlays (only with --evidence; gitignored)
-    alignment_debug/     why the map placed where it did (gitignored)
-    errors.geojson       FP/FN overlay of the last run
-    zones_best.geojson   \
-    best_report.json      >  same three, for the best run so far
-    errors_best.geojson  /
+    errors.geojson       FP/FN overlay of the last run (after cleaning)
+    errors_raw.geojson   FP/FN overlay before cleaning
+    reference_debug/     PNG per reference layer (only with --reference)
+    evidence_debug/      edge map and water overlays (only with --evidence)
+    alignment_debug/     why the map placed where it did
 ```
 
-Because it's plain files in the repo, results are versioned in git — you can diff a report
-between branches, and a deleted test case can be restored with `git checkout` if it had been
-committed.
+### What is committed
+
+Everything needed to run a case and everything it is compared against: the map image, the
+expected zones (drawn and cleaned), `tests_metadata.json`, the OCR boxes in `derived/`, and
+per case its `config.json` and its best run (`best_report.json`, `*_best.geojson`). A deleted
+test case can be restored with `git checkout`.
+
+A case's last run is not committed: it is rewritten by every run and reproduced by running
+the case, so a fresh checkout shows each case's best run and no last run until you run it.
+`case_state.json` is computed on demand when it is missing. Variant runs (`ablations/`) are
+not committed either.
 
 `config.json` is what makes a test case reproducible: **the control points, the framing
 box and the pipette picks are all saved there**, so a case can be replayed without you
 clicking anything again. Control points are one list under `georef.controlPoints`, each
 `{source, pixel: {x, y}, geo: {lon, lat}}`, and a city point also carries
-`city: {id, name}` (its GeoNames id). See [`city-gcps.md`](city-gcps.md).
+`city: {id, name}` (its GeoNames id). See [`georeferencing.md` §3](georeferencing.md#3-inputs).
 
 `run_record.json` sits next to `report.json` and holds what the georeferencing run knew and
 decided: the control points with their source (and any excluded by hand), the models under
@@ -211,7 +313,7 @@ check (logged whether or not it passed), the errors and the per-phase timings.
 `leave_one_out` for piecewise on the control-point affine, `leave_one_out_fixed_base` for
 piecewise on the aligned affine (optimistic: that affine was fitted with every point). An IoU number alone
 cannot tell you which stage moved it; this can. See
-[`georeferencing-plan.md`](georeferencing-plan.md) section 4.
+[`georeferencing.md` §7](georeferencing.md#7-what-a-run-leaves-behind).
 
 `case_state.json` sits next to it and answers a different question: *is this case still
 enough for the algorithm as it stands today?* See [§8](#8-keeping-cases-current).
@@ -232,7 +334,8 @@ The `test-backend` service runs the backend test suite, which includes the dev-t
 1. checks the case still satisfies the current algorithm's requirements ([§8](#8-keeping-cases-current))
 2. re-runs the **current** extraction pipeline from that case's `config.json`
    (saved SIFT points + saved pipette picks)
-3. rewrites `zones.geojson`, `report.json`, `errors.geojson` and `case_state.json`
+3. rewrites `zones.geojson`, `zones_raw.geojson`, `report.json`, `errors.geojson`,
+   `errors_raw.geojson`, `run_record.json` and `case_state.json`
 4. asserts the score is at least `MIN_IOU` (currently **0.7**)
 
 So the cases you save become a regression suite: change something in extraction or
@@ -267,9 +370,10 @@ algorithm needs. Every run resolves it against the case and prints the result, s
 that has fallen behind says so instead of quietly scoring worse:
 
 ```
-regression case, requirements v4, scored
+regression case, requirements v6, scored
   ok        controlPoints      9 point(s) from sift, city (sift=6, city=3)
   ok        cityControlPoints  Cities the user named and located on the map.
+  absent    checkPoints        0 point(s)
   ok        frameBounds        The world area the user framed; the extent for every reference layer.
   ok        zonePicks          Pipette picks of kind 'zone'; without them nothing is extracted.
   ok        legend             The legend rectangle, or an explicit 'no legend'. ...
@@ -294,27 +398,15 @@ So the statuses you will see:
 |---|---|---|
 | `ok` | present | nothing |
 | `REFRESH` / `STALE` | derived artifact missing or produced from a different image | recomputed once (~135 s for OCR), then cached under `derived/` |
-| `BLOCKED` | a required user input is missing | the run stops and prints how to fix it: complete the case — except the one exception below |
+| `BLOCKED` | a required user input is missing | the run stops and prints how to fix it: complete the case |
 | `absent` | a genuinely optional user input is missing | runs; a capability is simply not exercised (no water picks ⇒ the water gate reports `applicable: false`) |
 
-**The one exception: inputs the pipeline can run without.** `legend` is required as an
-*answer* — a rectangle, or "no legend" — because it changes the zones, so a scored case
-without one is `BLOCKED` like any other: its number would not be comparable. But nothing
-stops the pipeline from executing without it, so an exploration case (`probe`) replays
-anyway and says so: the result page shows a warning, and the dev script prints
-`WARNING: replaying without legend`. This is `Requirement.blocks_execution = False`; every
-other requirement blocks execution. It is not a middle level: the requirement is still
-required, and only what a *probe* does about it differs.
-
-**There is deliberately no middle level.** An input the pipeline reads is either required or
-genuinely optional — there is no "runs, but through a fallback that makes it weaker". That
-level did exist, with `frameBounds` filed under it, and it was wrong: the framing box is the
-extent of every reference raster, so a box derived from the control points does not merely
-make the answer a bit worse, it changes which geography the alignment can match against.
-(And the derived box is *systematically* too tight, because the control points sit inside the
-mapped area — see [`georeferencing-plan.md`](georeferencing-plan.md) §6b.) A comfortable
-middle is exactly how a case ends up running under-specified and reporting a worse number for
-a reason unrelated to whatever you were measuring.
+**There is deliberately no middle level**, and no exception for exploration cases. An input
+the pipeline reads is either required or genuinely optional — there is no "runs, but through
+a fallback that makes it weaker". That is how a case ends up running under-specified and
+reporting a worse number for a reason unrelated to whatever you were measuring. The framing
+box, the legend answer and the OCR text regions (when alignment is on) are required; the code
+has no fallback for any of them.
 
 Requirements depend on the config, not just on the code: `textRegions` is required **only
 when curve alignment is on**, which is why the regression suite — alignment off, so it keeps
@@ -322,10 +414,10 @@ measuring the GCP-only floor — never pays for OCR.
 
 `REQUIREMENTS_VERSION` bumps whenever a requirement is added, removed, or changes level, so
 a `case_state.json` written under an older version is re-checked rather than trusted. It is
-at **v4**: v1 had `frameBounds` as degraded, v2 promotes it to required, v3 counts control
-points per selected source and adds `cityControlPoints`, v4 adds `legend`. Every case
-recorded before v4 has no legend answer: scored cases need completing, probes keep
-replaying with a warning.
+at **v6**: v1 had `frameBounds` as degraded, v2 promotes it to required, v3 counts control
+points per selected source and adds `cityControlPoints`, v4 adds `legend`, v5 adds the
+optional `checkPoints`, v6 stops exploration cases from replaying without a legend answer.
+The exploration cases recorded before v4 have none and need completing before they re-run.
 
 ### Completing a case
 
@@ -385,8 +477,10 @@ docker compose run --rm georef-dev python scripts/run_georef_alignment.py --case
 ```
 
 It prints the case's kind, its requirement state ([§8](#8-keeping-cases-current)), the
-control-point RMSE in kilometres, the IoU and the per-phase timings, and writes the same
-`zones.geojson`, `report.json`, `run_record.json` and `case_state.json` the task would. Pass
+control-point RMSE in kilometres, the check-point error when the case has check points,
+the IoU and the per-phase timings, and writes the same files the task would
+(`zones.geojson`, `zones_raw.geojson`, `report.json`, `run_record.json`, `case_state.json`,
+and the error overlays). Pass
 `--no-write` to leave the case untouched, or `--no-cache` when colour extraction itself is
 what changed.
 
@@ -417,8 +511,8 @@ to bring them up to date.
 
 Add `--align` (which implies `--ocr`) to run Step 4 curve alignment and georeference with the
 gated result. It prints the chosen method, the recovery rung, the probe's disagreement with the
-held-out control points, and every gate with its value. Alignment is off in the pipeline by
-default, so this flag is how you see what it would do.
+held-out control points, and every gate with its value. Alignment is off in `georef-dev`
+(it is on in the app), so this flag is how the CLI runs what the app runs.
 
 Add `--sources sift`, `--sources city` or `--sources sift,city` (the default) to fit from
 one source of control points only. Every stage uses the same subset, and the printout gives
@@ -430,6 +524,22 @@ alignment.** Snapping corrects transform error after the fact, which both flatte
 and hides the improvement you are trying to measure — with it on, translating the same transform
 5 px swings IoU by 0.012 non-monotonically; with it off the metric falls smoothly. Same switch
 in the app: `GEOREF_ENABLE_COASTLINE_SNAPPING`.
+
+### Comparing variants
+
+To compare settings across every case at once, use the variant runner instead of
+re-running cases one by one:
+
+```
+docker compose run --rm georef-dev python scripts/run_georef_variants.py --list
+docker compose run --rm georef-dev python scripts/run_georef_variants.py --stage 1
+docker compose run --rm georef-dev python scripts/run_georef_variants.py --variants A1,B2 --case-id pip_7sift
+```
+
+Variants are named config sets in `scripts/georef_variants.py`, on top of the file defaults.
+It never touches the cases' own files; results go to `Backend-Atlas/ablations/<run>/`
+(gitignored), with a `summary.md` comparing every variant to `A0`. See
+[`georeferencing-testing.md` §6](georeferencing-testing.md#6-variant-runner); its results are in §8.
 
 ### Why did this map place badly?
 
@@ -465,13 +575,20 @@ stays fast without needing its own switch.
 For app runs rather than harness runs, `GEOREF_DEBUG=true` (already set on `backend` and
 `celery-worker`) writes a folder per import to `Backend-Atlas/debug_runs/`: `summary.txt`,
 overlays of the reference coastline through the transform, control-point residuals, the edge
-map, ICP correspondences and the output zones. See plan §8e.
+map, ICP correspondences and the output zones. These dumps are throwaway and are to be removed
+before the pull request ([`georeferencing.md` §10](georeferencing.md#10-before-the-pull-request)).
 
 Note the split: curve alignment is **on** in `backend` and `celery-worker` (so the running app
 can be evaluated by hand) and **off** in `test-backend` and `georef-dev`, via
 `GEOREF_ENABLE_CURVE_ALIGNMENT`. The suite therefore keeps measuring the GCP-only floor, and
 stays fast — with alignment on, the dev-test task runs EasyOCR per case and the suite goes from
 about 90 seconds to over four minutes.
+
+**This split is temporary.** Both containers' runs count as default-setting runs, so a
+regression case's `best` can come from the suite (alignment off) or from a UI re-run
+(alignment on), and mix the two. Before the pull request, CI and the UI's regression re-run
+must both run the production configuration once it is settled
+([`georeferencing.md` §10](georeferencing.md#10-before-the-pull-request)).
 
 ### Re-running from the UI
 

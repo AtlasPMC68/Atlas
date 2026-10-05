@@ -1,9 +1,9 @@
 # region Imports
 import asyncio
+import copy
 import json
 import logging
 import os
-import re
 import shutil
 import tempfile
 import time
@@ -32,19 +32,9 @@ from app.models.map_import import (
 )
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
 from app.utils.city_gazetteer import find_cities_in_text, frame_city_index
-from app.utils.extraction_steps import (
-    align_if_enabled,
-    extract_zone_colors,
-    georeference_zones,
-)
+from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
-from app.utils.georeferencing import (
-    ControlPoint,
-    RunRecord,
-    build_georef_inputs,
-    parse_control_points,
-    select_control_points,
-)
+from app.utils.georeferencing import RunRecord, build_georef_inputs
 from app.utils.georeferencing.config import (
     ambient_georef_config,
     parse_config_overrides,
@@ -57,13 +47,18 @@ from app.utils.imposed_colors import (
 from app.utils.legend import legend_to_entry, polygon_center_in_legend
 from app.utils.shapes_extraction import extract_shapes
 from app.utils.text_extraction import extract_text, ocr_blocks_to_payload
-from app.utils.dev_test_assets import MAPS_DIR, TEST_CASES_DIR, GEOREF_ASSETS_DIR
+from app.utils.dev_test_assets import TEST_CASES_DIR, GEOREF_ASSETS_DIR
 from app.utils.dev_test_pixel_zones import write_classified_image, write_pixel_zones
 from app.utils.dev_test import (
     drop_control_points,
+    evaluate_and_persist_case,
     find_test_image_path,
     inspect_case,
+    load_case_config,
+    parse_extraction_inputs,
+    write_raw_zones,
 )
+from app.utils.dev_test_evaluator import build_test_case_paths
 from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
 from app.utils.dev_test_derived import ensure_text_regions, text_regions_for_run
 
@@ -73,6 +68,7 @@ from .celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 nb_task = 6
+DEV_TEST_STEPS = 5
 
 
 GEOREF_CONFIG = ambient_georef_config()
@@ -113,19 +109,24 @@ def _write_dev_test_case_state(test_id: str, test_case: str, config=None) -> Non
         logger.warning(f"[DEV-TEST] Could not record case state for {test_id}: {e}")
 
 
+def _write_feature_collection(path: str, collections: list) -> None:
+    """Every feature of *collections* as one FeatureCollection file."""
+    flat = [f for fc in collections for f in fc.get("features", [])]
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"type": "FeatureCollection", "features": flat},
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+
 def _dump_zones_debug(debug_dir: str | None, collections: list) -> None:
     """Write the georeferenced output beside the overlays. Never raises."""
     if not debug_dir:
         return
     try:
-        flat = [f for fc in collections for f in fc.get("features", [])]
-        with open(os.path.join(debug_dir, "zones.geojson"), "w", encoding="utf-8") as f:
-            json.dump(
-                {"type": "FeatureCollection", "features": flat},
-                f,
-                indent=2,
-                ensure_ascii=False,
-            )
+        _write_feature_collection(os.path.join(debug_dir, "zones.geojson"), collections)
     except Exception as e:
         logger.warning(f"Could not write debug zones: {e}")
 
@@ -327,18 +328,13 @@ def _city_features_from_text(
     blocks: list, legend_bounds: Optional[dict], frame_bounds: Optional[dict]
 ) -> List[dict[str, Any]]:
     """One point feature per place name read off the map."""
-    index = frame_city_index(frame_bounds) if frame_bounds else None
+    index = frame_city_index(frame_bounds)
 
     collections: List[dict[str, Any]] = []
     for coords, text, _prob in blocks:
         if polygon_center_in_legend(coords, legend_bounds):
             continue
-        phrases = (
-            find_cities_in_text(text, index)
-            if index is not None
-            else [(word, None) for word in re.findall(r"[\w\-']+", text)]
-        )
-        for phrase, city in phrases:
+        for phrase, city in find_cities_in_text(text, index):
             collections.append(
                 {
                     "type": "FeatureCollection",
@@ -385,26 +381,6 @@ def _write_ocr_text_file(filename: str, blocks: list) -> str:
     except Exception as e:
         logger.error(f"Failed to save text file: {e}")
         return f"ERROR: Could not save to {output_path}"
-
-
-def _georeferenced_or_normalized(
-    pixel_features: list,
-    normalized_features: list,
-    points: list[ControlPoint],
-    frame_bounds: dict | None,
-    alignment,
-    image=None,
-) -> list:
-    if not points:
-        return normalized_features
-    return georeference_zones(
-        pixel_features,
-        points,
-        frame_bounds=frame_bounds,
-        image_bgr=image,
-        alignment=alignment,
-        config=GEOREF_CONFIG,
-    ).collections
 
 
 # --- tasks --------------------------------------------------------------------
@@ -495,24 +471,19 @@ def process_map_extraction(self, map_id: str):
             )
         _raise_if_cancelled(map_id)
 
-        # Step 3: curve alignment, once, so shapes and colours share a transform
-        points = select_control_points(inputs.control_points, GEOREF_CONFIG.gcp_sources)
-        water_positions, _water_names, water_radii = inputs.water_picks
-        alignment = None
+        # Step 3: the transform, once, so shapes and colours share it
+        progress(3, "Extracting reference geography and aligning the map")
         debug_dir = make_run_dir(f"map{map_id}") if debug_enabled() else None
-        if points and GEOREF_CONFIG.enable_curve_alignment:
-            progress(3, "Extracting reference geography and aligning the map")
-            alignment = align_if_enabled(
-                image,
-                points,
-                frame_bounds=inputs.frame_bounds,
-                text_regions=text_regions,
-                water_click_positions=water_positions,
-                water_sampling_radii=water_radii,
-                legend_bounds=inputs.legend_bounds,
-                config=GEOREF_CONFIG,
-                debug_dir=debug_dir,
-            )
+        placement = place_map(
+            image,
+            inputs.control_points,
+            frame_bounds=inputs.frame_bounds,
+            legend_bounds=inputs.legend_bounds,
+            water_picks=inputs.water_picks,
+            text_regions=text_regions,
+            config=GEOREF_CONFIG,
+            debug_dir=debug_dir,
+        )
         _raise_if_cancelled(map_id)
 
         # Step 4: shapes
@@ -525,40 +496,23 @@ def process_map_extraction(self, map_id: str):
                 legend_bounds=inputs.legend_bounds,
             )
             collections.extend(
-                _georeferenced_or_normalized(
-                    shapes_result.get("pixel_features", []),
-                    shapes_result.get("normalized_features", []),
-                    points,
-                    inputs.frame_bounds,
-                    alignment,
-                    image=image,
-                )
+                placement.georeference(shapes_result.get("pixel_features", [])).collections
             )
         _raise_if_cancelled(map_id)
 
         # Step 5: colours, from the pipette alone
         progress(5, "Extracting colors from image")
-        zone_positions, zone_names, zone_radii = inputs.zone_picks
         color_result = extract_zone_colors(
             tmp_file_path,
+            zone_picks=inputs.zone_picks,
             legend_bounds=inputs.legend_bounds,
-            click_positions=zone_positions,
-            names=zone_names,
-            radii=zone_radii,
             text_regions=text_regions,
             config=GEOREF_CONFIG,
         )
-
         color_result.pop("classified_rgb", None)
-
-        color_collections = _georeferenced_or_normalized(
-            color_result.get("pixel_features", []),
-            color_result.get("normalized_features", []),
-            points,
-            inputs.frame_bounds,
-            alignment,
-            image=image,
-        )
+        color_collections = placement.georeference(
+            color_result.get("pixel_features", [])
+        ).collections
         collections.extend(color_collections)
         _dump_zones_debug(debug_dir, color_collections)
         _raise_if_cancelled(map_id)
@@ -611,12 +565,12 @@ def process_map_extraction(self, map_id: str):
             "colors_detected": len(color_result.get("normalized_features", []))
         },
         "extractions_performed": {
-            "georeferencing": bool(points),
+            "georeferencing": True,
             "color_extraction": True,
             "shapes_extraction": inputs.enable_shapes_extraction,
             "text_extraction": inputs.enable_text_extraction,
         },
-        "alignment": _alignment_summary(alignment),
+        "alignment": _alignment_summary(placement.alignment),
     }
 
 
@@ -655,35 +609,33 @@ def warm_dev_test_text_regions(self, test_id: str):
     )
     return {"status": "done", "regions": len(regions or [])}
 
-# TODO This function is really similar to the normal extraction one so maybe find a way to abstract those two
-# it seems like this one for the test just has more logic to it.
 @celery_app.task(bind=True)
 def process_dev_test_extraction(
     self,
-    filename: str,
-    file_content: bytes,
     test_id: str,
     test_case: str,
-    control_points: list | None = None,
-    imposed_click_positions: list | None = None,
-    imposed_colors_names: list | None = None,
-    imposed_sampling_radii: list | None = None,
-    frame_bounds: dict | None = None,
-    water_click_positions: list | None = None,
-    water_colors_names: list | None = None,
-    water_sampling_radii: list | None = None,
     config_overrides: dict | None = None,
-    legend_bounds: dict | None = None,
     excluded_control_points: list | None = None,
 ):
-    """Dev-test-only extraction task: no DB persistence, results saved to files,
-    evaluation report written automatically at the end.
+    """Run a stored dev-test case from its ``config.json``, write the results to
+    its folder and score it. No database.
 
-    ``excluded_control_points`` are indices into ``control_points`` left out of
-    this run -- the dev tool's hand-driven leave-one-out. Like any switch, a run
-    using them is never promoted to the case's best.
+    The pipeline is the production one (``extraction_steps``); what differs is
+    where the inputs come from (the case config and the test's stored image)
+    and where the results go (files, a report, the run record).
+
+    ``config_overrides`` are per-run switches; ``excluded_control_points`` are
+    indices into the stored control points left out of this run. A run using
+    either is never promoted to the case's best.
     """
 
+    def progress(step: int, status: str) -> None:
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": step, "total": DEV_TEST_STEPS, "status": status},
+        )
+
+    progress(1, "Loading the test case")
     resolved_kind = resolve_case_kind(test_id, test_case)
     switches = {
         key: value
@@ -692,269 +644,87 @@ def process_dev_test_extraction(
     }
     run_config = GEOREF_CONFIG.with_overrides(**switches)
 
-    kept_points, excluded = drop_control_points(
-        parse_control_points(control_points or []), excluded_control_points or []
+    image_path = find_test_image_path(test_id)
+    image = cv2.imread(image_path) if image_path else None
+    if image is None:
+        raise FileNotFoundError(f"No readable map image for test {test_id}")
+    inputs = parse_extraction_inputs(
+        load_case_config(GEOREF_ASSETS_DIR, test_id, test_case)
     )
-    points = select_control_points(kept_points, run_config.gcp_sources)
+    kept_points, excluded = drop_control_points(
+        inputs.control_points, excluded_control_points or []
+    )
     ambient_run = not switches and not excluded
 
-    georef_record = RunRecord(run_id=f"{test_id}/{test_case}")
-    georef_record.set_inputs(
-        waterPickCount=len(water_click_positions or []),
-        legendBounds=legend_bounds,
+    record = RunRecord(run_id=f"{test_id}/{test_case}")
+    record.set_inputs(
+        waterPickCount=len(inputs.water_picks[0] or []),
+        legendBounds=inputs.legend_bounds,
         caseKind=resolved_kind,
         runSwitches=switches or None,
         controlPointSources=list(run_config.gcp_sources),
         excludedControlPoints=excluded or None,
     )
-    try:
-        # Step 1: temp save
-        self.update_state(
-            state="PROGRESS",
-            meta={"current": 1, "total": nb_task, "status": "Saving uploaded file"},
+
+    progress(2, "Extracting colors from image")
+    text_regions = text_regions_for_run(test_id, image_path, image, run_config)
+    color_result = extract_zone_colors(
+        image_path,
+        zone_picks=inputs.zone_picks,
+        legend_bounds=inputs.legend_bounds,
+        text_regions=text_regions,
+        config=run_config,
+    )
+    classified_rgb = color_result.pop("classified_rgb", None)
+    pixel_features = color_result.get("pixel_features", [])
+    pixel_zones_snapshot = copy.deepcopy(pixel_features)
+    record.set_errors(
+        textFill=color_result.get("text_fill"),
+        zoneGaps=color_result.get("zone_gaps"),
+    )
+
+    progress(3, "Aligning and georeferencing")
+    debug_dir = _dev_test_debug_dir(test_id, test_case)
+    placement = place_map(
+        image,
+        kept_points,
+        frame_bounds=inputs.frame_bounds,
+        legend_bounds=inputs.legend_bounds,
+        water_picks=inputs.water_picks,
+        text_regions=text_regions,
+        config=run_config,
+        record=record,
+        debug_dir=debug_dir,
+    )
+    georef = placement.georeference(pixel_features, check_points=inputs.check_points)
+    _dump_zones_debug(debug_dir, georef.collections)
+
+    progress(4, "Saving test assets")
+    case_dir = os.path.join(TEST_CASES_DIR, test_id, test_case)
+    os.makedirs(case_dir, exist_ok=True)
+    _write_feature_collection(os.path.join(case_dir, "zones.geojson"), georef.collections)
+    write_raw_zones(case_dir, georef.raw_collections)
+    write_pixel_zones(case_dir, pixel_zones_snapshot)
+    write_classified_image(case_dir, classified_rgb)
+
+    progress(5, "Scoring")
+    paths = build_test_case_paths(GEOREF_ASSETS_DIR, test_id, test_case)
+    if resolved_kind == KIND_PROBE:
+        record.note("probe case: no expected zones, run not scored")
+    elif not os.path.exists(paths.expected_zones_path):
+        logger.warning(f"[DEV-TEST] {test_id}/{test_case} has no expected zones yet")
+        record.note("regression case without expected zones: run not scored")
+    else:
+        report = evaluate_and_persist_case(
+            assets_root=GEOREF_ASSETS_DIR,
+            test_id=test_id,
+            test_case_id=test_case,
+            min_iou=None,
+            allow_best_promotion=ambient_run,
         )
+        record.set_errors(iou=_iou_summary_from_report(report))
 
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=os.path.splitext(filename)[1]
-        ) as tmp_file:
-            tmp_file.write(file_content)
-            tmp_file_path = tmp_file.name
-
-        # Step 2: load and validate image
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 2,
-                "total": nb_task,
-                "status": "Loading and validating image",
-            },
-        )
-
-        image = cv2.imread(tmp_file_path)
-        if image is None:
-            raise ValueError(f"Could not read image file: {filename}")
-        if not validate_file_extension(tmp_file_path):
-            ext = os.path.splitext(tmp_file_path)[1].lower()
-            raise ValueError(f"Extension {ext} is not allowed.")
-
-        # Steps 3-4: skip text and shapes extraction for dev-test
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 3,
-                "total": nb_task,
-                "status": "Skipping text extraction (dev-test mode)",
-            },
-        )
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 4,
-                "total": nb_task,
-                "status": "Skipping shapes extraction (dev-test mode)",
-            },
-        )
-
-        # Step 5: color extraction + georeferencing (always enabled for dev-test)
-        all_extracted_features: list[dict[str, Any]] = []
-        color_result: dict[str, Any] = {"colors_detected": 0}
-
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": 5,
-                "total": nb_task,
-                "status": "Extracting colors from image",
-            },
-        )
-
-        if not imposed_click_positions:
-            logger.warning(
-                f"[DEV-TEST] No imposed colors for test {test_id}/{test_case}; "
-                "color extraction will return no zones"
-            )
-
-        text_regions = text_regions_for_run(
-            test_id, find_test_image_path(test_id), image, run_config
-        )
-
-        color_result = extract_zone_colors(
-            tmp_file_path,
-            legend_bounds=legend_bounds,
-            click_positions=imposed_click_positions,
-            names=imposed_colors_names,
-            radii=imposed_sampling_radii,
-            text_regions=text_regions,
-            config=run_config,
-        )
-
-        classified_rgb = color_result.pop("classified_rgb", None)
-        normalized_features = color_result.get("normalized_features", [])
-        pixel_features = color_result.get("pixel_features", [])
-        georef_record.set_errors(
-            textFill=color_result.get("text_fill"),
-            zoneGaps=color_result.get("zone_gaps"),
-        )
-
-        pixel_zones_snapshot = json.loads(json.dumps(pixel_features))
-
-        if points:
-            try:
-                debug_dir = _dev_test_debug_dir(test_id, test_case)
-                alignment = align_if_enabled(
-                    image,
-                    points,
-                    frame_bounds=frame_bounds,
-                    text_regions=text_regions,
-                    water_click_positions=water_click_positions,
-                    water_sampling_radii=water_sampling_radii,
-                    legend_bounds=legend_bounds,
-                    config=run_config,
-                    record=georef_record,
-                    debug_dir=debug_dir,
-                )
-                georef = georeference_zones(
-                    pixel_features,
-                    points,
-                    frame_bounds=frame_bounds,
-                    image_bgr=image,
-                    alignment=alignment,
-                    config=run_config,
-                    record=georef_record,
-                )
-                all_extracted_features = georef.collections
-                _dump_zones_debug(debug_dir, georef.collections)
-                if debug_dir:
-                    logger.info(f"[DEV-TEST] alignment debug dump -> {debug_dir}")
-            except Exception as e:
-                logger.error(
-                    f"[DEV-TEST] Georeferencing failed for test {test_id}: {e}",
-                    exc_info=True,
-                )
-                georef_record.note(f"georeferencing failed: {e}")
-                all_extracted_features = normalized_features
-        else:
-            georef_record.note("no control points; features stay in normalised space")
-            all_extracted_features = normalized_features
-
-        # Step 6: save assets to files
-        self.update_state(
-            state="PROGRESS",
-            meta={"current": 6, "total": nb_task, "status": "Saving test assets"},
-        )
-
-        os.unlink(tmp_file_path)
-
-        image_output_path = ""
-        zones_output_path = ""
-        image_url = ""
-        zones_url = ""
-
-        try:
-            os.makedirs(MAPS_DIR, exist_ok=True)
-            case_dir = os.path.join(TEST_CASES_DIR, test_id)
-            os.makedirs(case_dir, exist_ok=True)
-
-            # Reuse existing map image if already present to avoid rewriting bytes
-            existing_map_path: str | None = None
-            try:
-                for existing in os.listdir(MAPS_DIR):
-                    stem, _e = os.path.splitext(existing)
-                    if stem == test_id:
-                        existing_map_path = os.path.join(MAPS_DIR, existing)
-                        break
-            except OSError:
-                existing_map_path = None
-
-            if existing_map_path and os.path.exists(existing_map_path):
-                image_output_path = existing_map_path
-                ext = os.path.splitext(existing_map_path)[1] or ".png"
-            else:
-                ext = os.path.splitext(filename)[1] or ".png"
-                image_output_path = os.path.join(MAPS_DIR, f"{test_id}{ext}")
-                cv2.imwrite(image_output_path, image)
-
-            # Flatten all feature collections into one FeatureCollection
-            all_flat_features: list[dict[str, Any]] = []
-            for fc in all_extracted_features:
-                all_flat_features.extend(fc.get("features", []))
-
-            zones_geojson = {"type": "FeatureCollection", "features": all_flat_features}
-            nested_case_dir = os.path.join(case_dir, test_case)
-            os.makedirs(nested_case_dir, exist_ok=True)
-            zones_output_path = os.path.join(nested_case_dir, "zones.geojson")
-            with open(zones_output_path, "w", encoding="utf-8") as f:
-                json.dump(zones_geojson, f, indent=2, ensure_ascii=False)
-            write_pixel_zones(nested_case_dir, pixel_zones_snapshot)
-            write_classified_image(nested_case_dir, classified_rgb)
-
-            image_url = f"/dev-test/maps/{test_id}{ext}"
-            zones_url = f"/dev-test/test_cases/{test_id}/{test_case}/zones.geojson"
-
-            logger.info(
-                f"[DEV-TEST] Saved image to {image_output_path} and zones to {zones_output_path}"
-            )
-        except Exception as e:
-            logger.error(f"[DEV-TEST] Failed to save test assets for {filename}: {e}")
-
-        if resolved_kind == KIND_PROBE:
-            logger.info(
-                f"[DEV-TEST] {test_id}/{test_case} is a probe case: zones written,"
-                " no score computed"
-            )
-            georef_record.note("probe case: no expected zones, run not scored")
-        else:
-            try:
-                from app.utils.dev_test import evaluate_and_persist_case
-                from app.utils.dev_test_assets import GEOREF_ASSETS_DIR
-
-                report = evaluate_and_persist_case(
-                    assets_root=GEOREF_ASSETS_DIR,
-                    test_id=test_id,
-                    test_case_id=test_case,
-                    min_iou=None,
-                    allow_best_promotion=ambient_run,
-                )
-                georef_record.set_errors(iou=_iou_summary_from_report(report))
-                logger.info(
-                    f"[DEV-TEST] Evaluation report written for {test_id}/{test_case}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[DEV-TEST] Evaluation skipped (expected zones may be missing): {e}"
-                )
-
-        _write_dev_test_case_state(test_id, test_case, config=run_config)
-
-        record_dir = os.path.join(TEST_CASES_DIR, test_id, test_case)
-        georef_record.write(record_dir)
-
-        result = {
-            "filename": filename,
-            "status": "completed",
-            "color_result": color_result,
-            "extractions_performed": {
-                "georeferencing": bool(points),
-                "color_extraction": True,
-            },
-            "test_assets": {
-                "image_path": image_output_path,
-                "zones_path": zones_output_path,
-                "image_url": image_url,
-                "zones_url": zones_url,
-            },
-        }
-
-        logger.info(
-            f"[DEV-TEST] Extraction completed for {filename} (test_id={test_id}, case={test_case})"
-        )
-        return result
-
-    except Exception as e:
-        if "tmp_file_path" in locals():
-            try:
-                os.unlink(tmp_file_path)
-            except Exception:
-                pass
-        logger.error(f"[DEV-TEST] Error processing test map {filename}: {str(e)}")
-        raise e
+    _write_dev_test_case_state(test_id, test_case, config=run_config)
+    record.write(case_dir)
+    logger.info(f"[DEV-TEST] {test_id}/{test_case} done")
+    return {"status": "completed", "test_id": test_id, "test_case": test_case}

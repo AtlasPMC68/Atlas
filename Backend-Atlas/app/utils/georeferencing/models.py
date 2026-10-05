@@ -7,7 +7,7 @@ Three interface decisions look over-engineered for an affine fitted to seven
 points, and each is here because retrofitting it later would touch every call
 site:
 
-* **The model has an inverse.** Chamfer alignment (plan section 8) pushes
+* **The model has an inverse.** Chamfer alignment (georeferencing.md section 5.2) pushes
   reference samples *into* pixel space; the previous ``AffineTransformation``
   was pixel -> EPSG:3857 only.
 * **``fit()`` takes a per-point weight vector**, not a scalar. Uniform here.
@@ -366,8 +366,8 @@ class AffineModel:
 
         With exactly 3 control points the affine passes through every point
         exactly, so a residual of 0 means "no evidence", not "perfect fit". The
-        previous code reported that 0 as confidence (current section 9,
-        limitation 2); returning None instead forces callers to say "unknown".
+        previous code reported that 0 as confidence (georeferencing-history.md,
+        starting point); returning None instead forces callers to say "unknown".
         """
         if self.redundancy <= 0 or self.residuals_3857.size == 0:
             return None
@@ -421,7 +421,7 @@ class AffineModel:
 
     def serialize(self) -> Dict[str, Any]:
         """Persistable form, so a re-run or a later feature edit reuses the fit
-        instead of refitting (current section 9, limitation 4)."""
+        instead of refitting (the original code never kept it)."""
         return {
             "name": self.name,
             "dof": self.dof,

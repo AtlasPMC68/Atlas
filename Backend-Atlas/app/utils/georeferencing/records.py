@@ -6,7 +6,7 @@ on day one rather than being retrofitted:
 * You cannot debug an IoU regression from an IoU number. If 0.94 becomes 0.71,
   the record says which stage moved it.
 * A gate is only tunable if its inputs are logged **even when it passes**.
-* It is the dataset the offline tuning track consumes (roadmap section 8).
+* It is the dataset any offline tuning consumes (georeferencing-roadmap.md section 10).
 
 Nothing here is on the hot path: building a record must never be able to fail a
 run, so every accessor is defensive and ``write`` swallows its own errors.
@@ -36,7 +36,7 @@ class GateCheck:
     """One named check, logged whether or not it applied.
 
     Logging inapplicable and passing checks is the point: which check actually
-    discriminates real failures is a corpus-level question (roadmap section 5),
+    discriminates real failures is a corpus-level question (georeferencing-testing.md),
     and it can only be answered by aggregating runs where the check passed too.
     """
 

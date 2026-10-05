@@ -7,7 +7,10 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import L from "leaflet";
+import "@geoman-io/leaflet-geoman-free";
+import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 import { createCartoTileLayer } from "../../utils/basemap";
+import { themeColor } from "../../utils/themeColor";
 
 const mapEl = ref(null);
 
@@ -42,20 +45,41 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  // A zone loaded from the border files: shown as the pending zone, instead of
+  // traced strokes, and the only layer the cut tool may touch.
+  loadedGeometry: {
+    type: Object,
+    default: null,
+  },
+  // Incremented to start cutting a part out of the loaded zone.
+  cutKey: {
+    type: Number,
+    default: 0,
+  },
   subGeometries: {
     type: Array,
     default: () => [],
   },
   // Control points of the last run: [{ lat, lng, predictedLat, predictedLng,
-  // source, label }]. Drawn at their true position, with a line to where the
-  // fitted transform put the clicked pixel -- the residual, on the map.
+  // source, label, role? }]. Drawn at their true position, with a line to where
+  // the fitted transform put the clicked pixel -- the residual, on the map.
+  // role "check": a held-out check point, drawn in the theme's success colour
+  // whatever its source.
   controlPointMarkers: {
     type: Array,
     default: () => [],
   },
 });
 
-const emit = defineEmits(["features-loaded", "zone-click", "create-updated"]);
+const emit = defineEmits([
+  "features-loaded",
+  "zone-click",
+  "create-updated",
+  // The loaded zone after a cut (null when the cut removed all of it).
+  "loaded-cut",
+  // The cut tool closed, whether it cut anything or was cancelled.
+  "cut-finished",
+]);
 
 let map = null;
 let baseTileLayer = null;
@@ -75,6 +99,87 @@ let frontierStartRef = null; // { lineIdx, ptIdx, latlng }
 let geoBorderLines = [];
 let geoRegionsLayer = null;
 let subzoneLayerGroup = null;
+let loadedLayer = null;
+let isCutting = false;
+// Set by a cut, so redrawing its result does not re-frame the map.
+let keepViewOnNextRender = false;
+
+// Leaflet expects [lat, lng] nested to the geometry's depth.
+function geometryToLatLngs(geometry) {
+  if (geometry?.type === "Polygon") return L.GeoJSON.coordsToLatLngs(geometry.coordinates, 1);
+  if (geometry?.type === "MultiPolygon") return L.GeoJSON.coordsToLatLngs(geometry.coordinates, 2);
+  return null;
+}
+
+function renderLoaded(geometry) {
+  if (!map) return;
+  const wasEmpty = !loadedLayer;
+  if (loadedLayer) {
+    map.removeLayer(loadedLayer);
+    loadedLayer = null;
+  }
+  const latlngs = geometryToLatLngs(geometry);
+  if (!latlngs) return;
+  loadedLayer = L.polygon(latlngs, {
+    color: "#2563eb",
+    weight: 2,
+    fillOpacity: 0.2,
+    fillColor: "#3b82f6",
+  }).addTo(map);
+  // Frame a freshly loaded zone; keep the view after a cut.
+  if (wasEmpty && !keepViewOnNextRender) {
+    map.fitBounds(loadedLayer.getBounds(), { padding: [20, 20] });
+  }
+  keepViewOnNextRender = false;
+}
+
+// The geometry of whatever geoman's cut produced (a polygon, or a group).
+function polygonGeometryOf(layer) {
+  const geo = layer?.toGeoJSON?.();
+  const feats = geo?.type === "FeatureCollection" ? geo.features : geo ? [geo] : [];
+  const polygons = [];
+  feats.forEach((f) => {
+    const g = f?.geometry;
+    if (g?.type === "Polygon") polygons.push(g.coordinates);
+    if (g?.type === "MultiPolygon") polygons.push(...g.coordinates);
+  });
+  if (polygons.length === 0) return null;
+  return polygons.length === 1
+    ? { type: "Polygon", coordinates: polygons[0] }
+    : { type: "MultiPolygon", coordinates: polygons };
+}
+
+function startCut() {
+  if (!map?.pm || !loadedLayer || isCutting) return;
+  isCutting = true;
+  // layersToCut: only the loaded zone, never the saved zones or the overlays.
+  map.pm.enableDraw("Cut", { layersToCut: [loadedLayer], allowSelfIntersection: false });
+}
+
+function handleCut(e) {
+  if (!loadedLayer || e.originalLayer !== loadedLayer) return;
+  const geometry = polygonGeometryOf(e.layer);
+  // Geoman put its own result on the map; ours is redrawn from the geometry.
+  if (e.layer && map) map.removeLayer(e.layer);
+  loadedLayer = null;
+  keepViewOnNextRender = true;
+  emit("loaded-cut", geometry);
+}
+
+function handleDrawEnd(e) {
+  if (e.shape !== "Cut" || !isCutting) return;
+  // drawend fires before geoman has processed the cut itself; look after it.
+  setTimeout(() => {
+    isCutting = false;
+    // A cut enclosing the whole zone removes the layer silently: no pm:cut,
+    // no pm:remove (see MapGeoJSON.vue). The zone is gone.
+    if (loadedLayer && map && !map.hasLayer(loadedLayer)) {
+      loadedLayer = null;
+      emit("loaded-cut", null);
+    }
+    emit("cut-finished");
+  }, 0);
+}
 let controlPointLayerGroup = null;
 
 const CONTROL_POINT_COLORS = { sift: "#ca8a04", city: "#c026d3" };
@@ -84,7 +189,8 @@ function renderControlPoints(points) {
   controlPointLayerGroup.clearLayers();
 
   toArray(points).forEach((p) => {
-    const color = CONTROL_POINT_COLORS[p.source] || "#333";
+    const color =
+      p.role === "check" ? themeColor("success") : CONTROL_POINT_COLORS[p.source] || "#333";
     const hasPrediction =
       Number.isFinite(p.predictedLat) && Number.isFinite(p.predictedLng);
     if (hasPrediction) {
@@ -219,7 +325,8 @@ function renderSubzones(geoms) {
   const safe = Array.isArray(geoms) ? geoms : [];
 
   safe.forEach((g) => {
-    if (!g || g.type !== "Polygon" || !Array.isArray(g.coordinates)) return;
+    if (!g || (g.type !== "Polygon" && g.type !== "MultiPolygon")) return;
+    if (!Array.isArray(g.coordinates)) return;
 
     const layer = L.geoJSON(g, {
       style: {
@@ -410,6 +517,9 @@ function undoLastStroke() {
 
 function handleMouseDown(e) {
   if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode) return;
+  // A loaded zone is the zone; strokes would overwrite it. Clicks belong to
+  // the cut tool while it is active.
+  if (props.loadedGeometry || isCutting) return;
   if (e.originalEvent && e.originalEvent.button !== 0) return;
 
   // Decide which end of the existing chain we want to continue from.
@@ -445,6 +555,7 @@ function handleMouseDown(e) {
 
 function handleMouseMove(e) {
   if (!props.isCreateMode || props.isFrontierMode || props.isGeoBorderMode || !isDrawing) return;
+  if (props.loadedGeometry || isCutting) return;
   currentStroke.push(e.latlng);
   rebuildCreateLayers();
 }
@@ -590,6 +701,9 @@ onMounted(() => {
   map.on("mousemove", handleMouseMove);
   map.on("mouseup", handleMouseUp);
   map.on("click", handleMapClick);
+  map.on("pm:cut", handleCut);
+  map.on("pm:drawend", handleDrawEnd);
+  renderLoaded(props.loadedGeometry);
 
   // Load coastline data for frontier mode
   fetch("/geojson/ne_coastline.geojson")
@@ -643,6 +757,7 @@ onBeforeUnmount(() => {
 
   map = null;
   baseTileLayer = null;
+  loadedLayer = null;
   createStrokeLayer = null;
   createPolygonLayer = null;
   geoRegionsLayer = null;
@@ -658,6 +773,21 @@ watch(
       emit("create-updated", null);
     }
   },
+);
+
+watch(
+  () => props.loadedGeometry,
+  (geometry) => {
+    if (!geometry && isCutting && map?.pm) {
+      map.pm.disableDraw();
+    }
+    renderLoaded(geometry);
+  },
+);
+
+watch(
+  () => props.cutKey,
+  () => startCut(),
 );
 
 watch(

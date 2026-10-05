@@ -1,8 +1,9 @@
 import { defineStore } from "pinia";
 import { useImportSession } from "../composables/useImportSession";
 import { useSiftPoints } from "../composables/useSiftPoints";
-import { apiFetch } from "../utils/api";
-import { applyInputsPatch } from "../utils/importSteps";
+import { useDevTestCases } from "../composables/useDevTestCases";
+import { applyInputsPatch, pickCaseInputs, type CasePart } from "../utils/importSteps";
+import type { DevTestCaseInputsResponse, EditedDevTestCase } from "../typescript/devTest";
 import type { CoastlineKeypoint, WorldBounds } from "../typescript/georef";
 import type {
   ExtractionStatus,
@@ -14,23 +15,6 @@ import type {
 } from "../typescript/importSession";
 
 export type ImportMode = "user" | "dev-test";
-
-// A stored dev-test case reopened to supply inputs it predates. Saving writes
-// back to the same case, so its name and kind travel with it.
-export interface EditedDevTestCase {
-  id: string;
-  name: string;
-  kind: "regression" | "probe" | null;
-}
-
-interface DevTestCaseInputsResponse {
-  testCaseId: string;
-  testCase: string;
-  kind: "regression" | "probe" | null;
-  imageUrl: string;
-  imageFilename: string;
-  inputs: ImportInputs;
-}
 
 const IDLE_EXTRACTION: ExtractionStatus = {
   state: "idle",
@@ -124,31 +108,47 @@ export const useImportSessionStore = defineStore("importSession", {
 
     // Dev-test mode: reopens a stored case's steps, with every input it already
     // has, so one can be supplied or changed (a framing box, a legend answer, a
-    // water pick) without re-clicking the rest.
+    // water pick) without re-clicking the rest. Saving writes back to that case.
     async openDevTestCase(caseId: string): Promise<boolean> {
+      const res = await useDevTestCases().fetchCaseInputs(this.mapId, caseId);
+      if (!res.success) {
+        this.error = res.error;
+        return false;
+      }
+      const source = res.data;
+      return this.loadDevTestSource(source, source.inputs ?? {}, {
+        title: `Test case « ${source.testCase} » — modifier les entrées`,
+        editedCase: { id: source.testCaseId, name: source.testCase, kind: source.kind },
+      });
+    },
+
+    // Dev-test mode: a new case that starts from some of another case's inputs.
+    // Every step stays editable; saving asks for a new name.
+    async startFromDevTestCase(source: DevTestCaseInputsResponse, parts: CasePart[]) {
+      return this.loadDevTestSource(source, pickCaseInputs(source.inputs ?? {}, parts), {
+        title: `Nouveau test case — à partir de « ${source.testCase} »`,
+        editedCase: null,
+      });
+    },
+
+    // The two above: the test's stored map image, since the pixels are on it,
+    // and the given inputs, straight to the steps.
+    async loadDevTestSource(
+      source: DevTestCaseInputsResponse,
+      inputs: ImportInputs,
+      { title, editedCase }: { title: string; editedCase: EditedDevTestCase | null },
+    ): Promise<boolean> {
       this.isLoading = true;
       try {
-        const res = await apiFetch(
-          `/dev-test-api/test-cases/${encodeURIComponent(this.mapId)}/${encodeURIComponent(caseId)}/inputs`,
-        );
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          this.error = body?.detail || `Cas introuvable (${res.status})`;
+        const image = await useDevTestCases().fetchCaseImage(source);
+        if (!image.success) {
+          this.error = image.error;
           return false;
         }
-        const data: DevTestCaseInputsResponse = await res.json();
-
-        const image = await fetch(`${import.meta.env.VITE_API_URL}${data.imageUrl}`);
-        if (!image.ok) {
-          this.error = `Image du test introuvable (${image.status})`;
-          return false;
-        }
-        const blob = await image.blob();
-        this.setFile(new File([blob], data.imageFilename, { type: blob.type }));
-
-        this.inputs = data.inputs ?? {};
-        this.editedCase = { id: data.testCaseId, name: data.testCase, kind: data.kind };
-        this.mapTitle = `Test case « ${data.testCase} » — modifier les entrées`;
+        this.setFile(image.data);
+        this.inputs = inputs;
+        this.editedCase = editedCase;
+        this.mapTitle = title;
         this.phase = "saisie";
         if (this.inputs.frameBounds) await this.loadKeypoints(this.inputs.frameBounds);
         return true;

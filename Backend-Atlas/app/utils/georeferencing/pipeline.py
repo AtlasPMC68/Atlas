@@ -20,7 +20,6 @@ from shapely.ops import transform
 
 from app.utils.coastline_land_mask import (
     clip_zone_to_land_mask,
-    load_land_mask_from_coastline_and_ocean_points,
 )
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
@@ -42,14 +41,9 @@ from .projection import (
     webmercator_arrays_to_lonlat,
     webmercator_meters_to_km,
 )
+from .cleaning import land_mask_3857 as land_mask_3857_shared
 from .records import RunRecord
-from .reference import LAKES_FILE, load_reference_polygons
-from .snapping import (
-    estimate_pixel_diagonal_from_features,
-    estimate_pixel_extent_from_features,
-    load_coastline_geometry,
-    snap_geometry_to_coastline,
-)
+from .snapping import load_coastline_geometry, snap_geometry_to_coastline
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +61,10 @@ class GeorefResult:
     collections: List[JSONDict] = field(default_factory=list)
     model: Optional[TransformModel] = None
     record: Optional[RunRecord] = None
+    #: The GCP-only affine, whatever was applied: the floor to compare against.
+    baseline: Optional[AffineModel] = None
+    #: The zones as the transform placed them, before snapping and the clip.
+    raw_collections: List[JSONDict] = field(default_factory=list)
 
     @property
     def transform_payload(self) -> Optional[Dict[str, Any]]:
@@ -77,31 +75,30 @@ class GeorefResult:
 def georeference_features(
     pixel_feature_collections: Sequence[JSONDict],
     control_points: Sequence[ControlPoint],
-    frame_bounds: Optional[FrameBounds] = None,
+    *,
+    frame_bounds: FrameBounds,
+    image_size: Tuple[int, int],
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     record: Optional[RunRecord] = None,
-    coastline_snap_tolerance_px: Optional[float] = None,
     model: Optional[TransformModel] = None,
     extra_properties: Optional[Dict[str, Any]] = None,
-    image_size: Optional[Tuple[int, int]] = None,
 ) -> GeorefResult:
     """Georeference pixel-space features with an affine fitted to *control_points*.
 
     Args:
         pixel_feature_collections: GeoJSON FeatureCollections in pixel space.
         control_points: pixel <-> geo pairs, with their source.
-        frame_bounds: the world area the user framed, used for the latitude at
-            which reported distances are corrected. Optional.
+        frame_bounds: the world area the user framed; reported distances are
+            corrected at its centre latitude.
+        image_size: ``(width, height)`` of the scan, in pixels. The snap
+            tolerance and the piecewise densification are shares of its
+            diagonal, and the piecewise frame is padded around it.
         config: hyperparameters; see ``config.GeorefConfig``.
         record: optional run record, populated in place.
-        coastline_snap_tolerance_px: explicit pixel tolerance override.
         model: a transform to apply instead of fitting one. Step 4 passes the
             gated alignment here; leaving it None reproduces the GCP-only fit.
         extra_properties: merged into every output feature's properties, so a
             consumer can see how the feature was placed.
-        image_size: ``(width, height)`` of the scan, in pixels. The coastline
-            snap tolerance is a share of its diagonal; without it the zones'
-            extent stands in.
 
     Returns:
         A ``GeorefResult`` whose ``collections`` are FeatureCollections in
@@ -137,7 +134,6 @@ def georeference_features(
             model = _apply_piecewise_correction(
                 model,
                 control_points,
-                pixel_feature_collections,
                 config,
                 record,
                 image_size=image_size,
@@ -148,20 +144,13 @@ def georeference_features(
         # would otherwise place the map with the baseline and say nothing.
         raise ValueError(f"Unknown transform_model: {config.transform_model!r}")
 
-    geo_points = [cp.geo for cp in control_points]
-    ref_lat = reference_latitude(frame_bounds, geo_points)
+    ref_lat = reference_latitude(frame_bounds)
 
     rmse_3857 = model.rmse_3857
     rmse_km = (
-        webmercator_meters_to_km(rmse_3857, ref_lat)
-        if (rmse_3857 is not None and ref_lat is not None)
-        else None
+        webmercator_meters_to_km(rmse_3857, ref_lat) if rmse_3857 is not None else None
     )
     rmse_status = "ok" if rmse_3857 is not None else "no_redundancy"
-    if rmse_3857 is not None and ref_lat is None:
-        # Without a latitude we cannot honestly convert 3857 metres to ground
-        # kilometres, so we say so rather than reporting the inflated number.
-        rmse_status = "no_reference_latitude"
 
     record.set_inputs(
         controlPoints=[cp.to_dict() for cp in control_points],
@@ -210,47 +199,15 @@ def georeference_features(
     snapping_enabled = config.snap_to_coastline and coastline_geom_3857 is not None
 
     if config.clip_to_land_mask:
+        # Ocean and lakes, one mask, shared with the cleaning of expected zones
+        # so a test scores the output against truth cut the same way
+        # (cleaning.py; SUBTRACT_LAKES is the switch for both).
         with record.phase("load_land_mask"):
-            land_mask_wgs84 = load_land_mask_from_coastline_and_ocean_points()
-            if land_mask_wgs84 is not None:
-                land_mask_3857 = transform(
-                    lonlat_arrays_to_webmercator, land_mask_wgs84
-                )
-            else:
-                logger.warning(
-                    "Land/ocean mask unavailable; ocean clipping will be skipped."
-                )
+            land_mask_3857 = land_mask_3857_shared()
 
-        # --- lakes are water too -------------------------------------------
-        # Comment this block out to stop cutting lakes out of the zones; the
-        # ocean clip above keeps working on its own. The land mask is built
-        # from the coastline, so it counts an inland lake as land: a zone
-        # drawn around one keeps the lake, the same way it used to keep a bay.
-        # Natural Earth's 50m lakes are the same source the alignment matches
-        # against, so what is cut here is what the reference thinks is water.
-        if land_mask_3857 is not None:
-            with record.phase("subtract_lakes"):
-                lakes_wgs84 = load_reference_polygons(LAKES_FILE)
-                if lakes_wgs84 is not None:
-                    land_mask_3857 = land_mask_3857.difference(
-                        transform(lonlat_arrays_to_webmercator, lakes_wgs84)
-                    )
-                else:
-                    logger.warning("Lake polygons unavailable; keeping lakes in zones.")
-        # --- end lakes block -------------------------------------------------
-
-    snap_tolerance_m = None
-    if snapping_enabled:
-        snap_tolerance_m = _resolve_snap_tolerance_m(
-            model,
-            pixel_feature_collections,
-            config,
-            coastline_snap_tolerance_px,
-            image_size,
-        )
-        if snap_tolerance_m is None:
-            # Nothing to measure a diagonal on: no image size and no zone.
-            snapping_enabled = False
+    snap_tolerance_m = (
+        snap_tolerance_m_for(model, image_size, config) if snapping_enabled else None
+    )
 
     # --- apply --------------------------------------------------------------
     to_3857 = model.as_shapely_transform()
@@ -260,7 +217,7 @@ def georeference_features(
     # correction, so geometries are densified first. The affine maps straight
     # lines to straight lines and needs none of this.
     densify_px = (
-        _densify_step_px(pixel_feature_collections, image_size, config)
+        _densify_step_px(image_size, config)
         if isinstance(model, PiecewiseAffineModel)
         else None
     )
@@ -269,6 +226,10 @@ def georeference_features(
     total_snapped_points = 0
     dropped_off_land = 0
     georef_collections: List[JSONDict] = []
+    # The same zones straight out of the transform, before snapping and the
+    # clip: what placement experiments are judged on, since cleaning corrects
+    # and hides transform error.
+    raw_collections: List[JSONDict] = []
 
     with record.phase("apply"):
         for fc in pixel_feature_collections:
@@ -276,6 +237,7 @@ def georeference_features(
                 continue
 
             new_features: List[JSONDict] = []
+            raw_features: List[JSONDict] = []
 
             for feat_idx, feat in enumerate(fc.get("features", [])):
                 try:
@@ -287,6 +249,19 @@ def georeference_features(
                     continue
 
                 props = dict(feat.get("properties", {}))
+                props["is_pixel_space"] = False
+                props["is_georeferenced"] = True
+                props["crs"] = "EPSG:4326"
+                props["transform_method"] = model.name
+                # Ground kilometres, with the 1/cos(phi) WebMercator correction
+                # applied. None means "not measurable", which is what an exact
+                # 3-point fit actually tells you.
+                props["rmse_km"] = (
+                    float(round(rmse_km, 3)) if rmse_km is not None else None
+                )
+                props["rmse_status"] = rmse_status
+                if extra_properties:
+                    props.update(extra_properties)
 
                 if densify_px:
                     geom = shapely.segmentize(geom, max_segment_length=densify_px)
@@ -298,6 +273,19 @@ def georeference_features(
                         f"Failed to transform feature {feat_idx}: {e}", exc_info=True
                     )
                     continue
+
+                try:
+                    raw_features.append(
+                        {
+                            "type": "Feature",
+                            "properties": {**props, "cleaned": False},
+                            "geometry": mapping(
+                                transform(webmercator_arrays_to_lonlat, geom_3857)
+                            ),
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not keep raw zone {feat_idx}: {e}")
 
                 if snapping_enabled:
                     geom_3857, total_pts, snapped_pts = snap_geometry_to_coastline(
@@ -327,20 +315,6 @@ def georeference_features(
                     )
                     continue
 
-                props["is_pixel_space"] = False
-                props["is_georeferenced"] = True
-                props["crs"] = "EPSG:4326"
-                props["transform_method"] = model.name
-                # Ground kilometres, with the 1/cos(phi) WebMercator correction
-                # applied. None means "not measurable", which is what an exact
-                # 3-point fit actually tells you.
-                props["rmse_km"] = (
-                    float(round(rmse_km, 3)) if rmse_km is not None else None
-                )
-                props["rmse_status"] = rmse_status
-                if extra_properties:
-                    props.update(extra_properties)
-
                 new_features.append(
                     {
                         "type": "Feature",
@@ -352,6 +326,10 @@ def georeference_features(
             if new_features:
                 georef_collections.append(
                     {"type": "FeatureCollection", "features": new_features}
+                )
+            if raw_features:
+                raw_collections.append(
+                    {"type": "FeatureCollection", "features": raw_features}
                 )
 
     record.set_errors(
@@ -366,16 +344,21 @@ def georeference_features(
         densifyStepPx=densify_px,
     )
 
-    return GeorefResult(collections=georef_collections, model=model, record=record)
+    return GeorefResult(
+        collections=georef_collections,
+        model=model,
+        record=record,
+        baseline=gcp_affine,
+        raw_collections=raw_collections,
+    )
 
 
 def _apply_piecewise_correction(
     base: AffineModel,
     control_points: Sequence[ControlPoint],
-    pixel_feature_collections: Sequence[JSONDict],
     config: GeorefConfig,
     record: RunRecord,
-    image_size: Optional[Tuple[int, int]] = None,
+    image_size: Tuple[int, int],
     refit_base: bool = True,
 ) -> TransformModel:
     """Wrap *base* in a local correction, or return it unchanged.
@@ -394,7 +377,9 @@ def _apply_piecewise_correction(
     the import. The reason is recorded either way, because "piecewise was on
     and the output is identical" is otherwise indistinguishable from a bug.
     """
-    extent = _piecewise_extent(control_points, pixel_feature_collections, image_size)
+    # The frame the correction decays to zero on is padded around the image,
+    # which holds every zone and every clicked point.
+    extent = (0.0, 0.0, float(image_size[0]), float(image_size[1]))
     try:
         model = fit_piecewise_from_control_points(
             control_points,
@@ -417,66 +402,30 @@ def _apply_piecewise_correction(
         # Held-out error; `piecewiseResidualKind` says which kind.
         piecewiseLooRmse3857=model.rmse_3857,
         piecewiseResidualKind=model.residuals_kind,
-        piecewiseExtentPx=list(extent) if extent else None,
+        piecewiseExtentPx=list(extent),
     )
     return model
 
 
-def _piecewise_extent(
-    control_points: Sequence[ControlPoint],
-    pixel_feature_collections: Sequence[JSONDict],
-    image_size: Optional[Tuple[int, int]],
-) -> Optional[Tuple[float, float, float, float]]:
-    """The pixel box the piecewise frame anchors are padded around.
-
-    The correction only decays to zero on the frame if the frame encloses every
-    control point and everything that will be warped. The zones' extent alone
-    does not: a control point beyond it (zones covering part of the map, a
-    point on a far coast) left the triangulation reaching past the frame, and
-    the model jumped from corrected to plain affine at its hull. So: the union
-    of the image, the zones and the control points.
-    """
-    boxes: List[Tuple[float, float, float, float]] = []
-    if image_size is not None and min(image_size) > 0:
-        boxes.append((0.0, 0.0, float(image_size[0]), float(image_size[1])))
-    features = estimate_pixel_extent_from_features(list(pixel_feature_collections))
-    if features is not None:
-        boxes.append(features)
-    if control_points:
-        xy = np.array([cp.pixel for cp in control_points], dtype=float)
-        boxes.append((*xy.min(axis=0), *xy.max(axis=0)))
-    if not boxes:
-        return None
-    b = np.array(boxes, dtype=float)
-    return (
-        float(b[:, 0].min()),
-        float(b[:, 1].min()),
-        float(b[:, 2].max()),
-        float(b[:, 3].max()),
-    )
+def snap_tolerance_m_for(
+    model: TransformModel, image_size: Tuple[int, int], config: GeorefConfig
+) -> float:
+    """How far a zone vertex may be snapped, in EPSG:3857 metres: a share of
+    the image diagonal, through the transform's scale."""
+    diagonal_px = math.hypot(float(image_size[0]), float(image_size[1]))
+    return diagonal_px * config.coastline_snap_ratio_of_diagonal * model.meters_per_pixel
 
 
-def _densify_step_px(
-    pixel_feature_collections: Sequence[JSONDict],
-    image_size: Optional[Tuple[int, int]],
-    config: GeorefConfig,
-) -> Optional[float]:
+def _densify_step_px(image_size: Tuple[int, int], config: GeorefConfig) -> float:
     """Longest segment allowed before a piecewise warp, in pixels."""
-    if image_size is not None and min(image_size) > 0:
-        diagonal = math.hypot(float(image_size[0]), float(image_size[1]))
-    else:
-        diagonal = estimate_pixel_diagonal_from_features(
-            list(pixel_feature_collections)
-        )
-    if not diagonal:
-        return None
+    diagonal = math.hypot(float(image_size[0]), float(image_size[1]))
     return max(diagonal * config.piecewise_densify_ratio_of_diagonal, 1.0)
 
 
 def _rmse_km_by_source(
     model: TransformModel,
     control_points: Sequence[ControlPoint],
-    ref_lat: Optional[float],
+    ref_lat: float,
 ) -> Dict[str, Optional[float]]:
     """RMS control-point error per source, in ground kilometres.
 
@@ -494,7 +443,6 @@ def _rmse_km_by_source(
             count == 0
             or no_evidence
             or residuals.size != len(control_points)
-            or ref_lat is None
         ):
             out[source] = None
             continue
@@ -519,26 +467,3 @@ def _predicted_lonlat(
     X, Y = model(pixels[:, 0], pixels[:, 1])
     lon, lat = webmercator_arrays_to_lonlat(X, Y)
     return [[float(a), float(b)] for a, b in zip(np.ravel(lon), np.ravel(lat))]
-
-
-def _resolve_snap_tolerance_m(
-    model: TransformModel,
-    pixel_feature_collections: Sequence[JSONDict],
-    config: GeorefConfig,
-    coastline_snap_tolerance_px: Optional[float],
-    image_size: Optional[Tuple[int, int]] = None,
-) -> Optional[float]:
-    if coastline_snap_tolerance_px is not None:
-        tolerance_px = float(coastline_snap_tolerance_px)
-    else:
-        if image_size is not None and min(image_size) > 0:
-            diagonal_px = math.hypot(float(image_size[0]), float(image_size[1]))
-        else:
-            diagonal_px = estimate_pixel_diagonal_from_features(
-                list(pixel_feature_collections)
-            )
-        if diagonal_px is None:
-            return None
-        tolerance_px = diagonal_px * config.coastline_snap_ratio_of_diagonal
-
-    return tolerance_px * model.meters_per_pixel

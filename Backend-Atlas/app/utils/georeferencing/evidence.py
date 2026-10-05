@@ -8,8 +8,8 @@ Three products, all in the user's image pixel space:
     legend_mask   the legend rectangle: its frame, swatches and labels are a
                   key, not geography, so it gives neither edges nor water
 
-**Straight-line suppression is the cheapest anti-failure measure in the plan**
-(section 10.1). Graticules, neatlines, inset frames and legend boxes are
+**Straight-line suppression is the cheapest anti-failure measure we have**
+(georeferencing-history.md, Steps 0-3). Graticules, neatlines, inset frames and legend boxes are
 straight; coastlines are not. Those straight lines are the dominant attractors
 for wrong-feature lock, and a fit locked onto the wrong feature has *low* chamfer
 residual by construction, so nothing downstream will notice. They are separated
@@ -252,7 +252,7 @@ def split_ocean_and_lakes(
 
     Known limitation: a sea cut into two pieces by a peninsula at the frame edge
     contributes its smaller piece to `lakes`. Harmless for a gate that compares
-    total water, which is what section 8.2 does.
+    total water, which is what the water-mask gate does.
     """
     ocean = np.zeros_like(water, dtype=bool)
     lakes = np.zeros_like(water, dtype=bool)

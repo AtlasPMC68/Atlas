@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from app.utils.dev_test import build_extraction_task_kwargs_for_case, inspect_case
+from app.utils.dev_test import inspect_case
 from app.utils.dev_test_cases import KIND_PROBE
 from app.utils.dev_test_evaluator import build_test_case_paths
 from app.utils.georeferencing.requirements import MissingUserInputError
@@ -43,24 +43,16 @@ def _discover_cases(assets_root: str) -> list[tuple[str, str]]:
     return discovered
 
 
-def _rerun_extraction_from_config(
-    assets_root: str, test_id: str, test_case_id: str
-) -> None:
-    """Rerun the current extraction pipeline using saved anchors/options.
+def _rerun_extraction_from_config(test_id: str, test_case_id: str) -> None:
+    """Re-run the current pipeline from the case's stored inputs, so CI scores
+    the current algorithm, never a stale result left on disk.
 
-    This ensures CI/dev batch evaluation tests the *current* algorithm, not a stale
-    extracted GeoJSON left on disk.
+    Synchronously (no broker) via Task.apply; the task writes the zones and the
+    evaluation report itself.
     """
-
-    kwargs = build_extraction_task_kwargs_for_case(
-        assets_root=assets_root,
-        test_id=test_id,
-        test_case_id=test_case_id,
+    res = process_dev_test_extraction.apply(
+        kwargs={"test_id": test_id, "test_case": test_case_id}
     )
-
-    # Run the Celery task synchronously (no broker) via Task.apply.
-    # The task writes zones.geojson and the evaluation report itself.
-    res = process_dev_test_extraction.apply(kwargs=kwargs)
 
     if res.failed():
         raise AssertionError(
@@ -114,7 +106,7 @@ def test_dev_test_case_evaluation(test_id: str, test_case_id: str):
 
     # Rerun extraction from saved anchors/options so we test the current algorithm.
     # The task writes zones.geojson, evaluates, and persists the report itself.
-    _rerun_extraction_from_config(assets_root, test_id, test_case_id)
+    _rerun_extraction_from_config(test_id, test_case_id)
 
     # Report is written by the task; just read it back.
     if not os.path.exists(paths.report_path):
