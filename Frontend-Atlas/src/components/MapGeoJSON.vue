@@ -27,6 +27,7 @@ import "leaflet-arrowheads";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { useAddCityMode } from "../composables/useAddCityMode";
 import { useImageOverlay } from "../composables/useImageOverlay";
+import { useShapeScaling } from "../composables/useShapeScaling";
 import { colorRgbToCss, getMapElementType, upsertFeature } from "../utils/featureHelpers";
 import {
   extractFeatureFromLayer,
@@ -404,6 +405,16 @@ const imageOverlay = useImageOverlay({
   onUpdate: (next) => emit('draw-update', next),
   }
 );
+
+const shapeScaling = useShapeScaling({
+  getMap: () => map,
+  getLayerById: (id) => featureLayerManager.layers.get(id),
+  localFeaturesSnapshot,
+  getProjectId: () => props.projectId,
+  getSelectedYear: () => props.selectedYear,
+  onBeforeEmit: () => { suppressNextPropsRender = true; },
+  onUpdate: (next) => emit('draw-update', next),
+});
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -844,12 +855,29 @@ onMounted(() => {
       disablePerFeatureDrag(selectedLayer);
       pixelSpaceDragCleanup?.();
       pixelSpaceDragCleanup = null;
+      shapeScaling.detach();
     } else {
       enablePerFeatureDrag(selectedLayer);
       if (map) pixelSpaceDragCleanup = enablePixelSpaceDrag(map, selectedLayer);
+      const selectedFeature = localFeaturesSnapshot.value.find((f) => String(f.id) === selectedFeatureId.value);
+      if (selectedFeature && (getMapElementType(selectedFeature) === "shape" || getMapElementType(selectedFeature) === "zone" || getMapElementType(selectedFeature) === "polyline")) {
+        shapeScaling.attach(selectedFeatureId.value);
+      }
     }
   });
   map.on("pm:globalrotatemodetoggled", restorePmIgnore);
+  map.on("pm:globalrotatemodetoggled", (e) => {
+    if (!selectedFeatureId.value) return;
+    const isEnabled = (e as { enabled?: boolean }).enabled;
+    if (isEnabled) {
+      shapeScaling.detach();
+    } else {
+      const selectedFeature = localFeaturesSnapshot.value.find((f) => String(f.id) === selectedFeatureId.value);
+      if (selectedFeature && (getMapElementType(selectedFeature) === "shape" || getMapElementType(selectedFeature) === "zone" || getMapElementType(selectedFeature) === "polyline")) {
+        shapeScaling.attach(selectedFeatureId.value);
+      }
+    }
+  });
 
   map.on("click", (e) => {
     if (blockNextMapClick) {
@@ -912,6 +940,7 @@ onBeforeUnmount(() => {
   selectedCityRing?.remove();
   pixelSpaceDragCleanup?.();
   imageOverlay.detach();
+  shapeScaling.detach();
   if (map) {
     featureLayerManager.clearAllFeatures();
     map.remove();
@@ -1018,8 +1047,11 @@ watch(selectedFeatureId, (id, oldId) => {
 
     // Attach/detach image overlay move+resize interaction
     imageOverlay.detach();
+    shapeScaling.detach();
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(id);
+    } else if (selectedFeature && (getMapElementType(selectedFeature) === "shape" || getMapElementType(selectedFeature) === "zone" || getMapElementType(selectedFeature) === "polyline")) {
+      shapeScaling.attach(id);
     }
   } else {
     // Disable any active per-feature edit/rotate mode so geoman stops
@@ -1030,6 +1062,7 @@ watch(selectedFeatureId, (id, oldId) => {
     if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
     drawing.setToolbarMode("global");
     imageOverlay.detach();
+    shapeScaling.detach();
   }
 });
 
