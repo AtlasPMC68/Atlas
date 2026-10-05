@@ -42,5 +42,30 @@
     "name": "east asia",
     "kind": "regression",
     "createdAt": "2026-10-04T18:27:37.581890Z"
+  },
+  "10c029ef-fbfc-42c5-acf1-cc0c8304d63e": {
+    "name": "Japon",
+    "kind": "regression",
+    "createdAt": "2026-09-24T14:18:26.829419Z"
+  },
+  "19801be4-c748-4fdf-98a7-356ab31c6c25": {
+    "name": "France",
+    "kind": "regression",
+    "createdAt": "2026-09-30T15:50:08.800467Z"
+  },
+  "a14ba28e-8680-4bc6-97cd-6cc04ac10288": {
+    "name": "Madagascar",
+    "kind": "regression",
+    "createdAt": "2026-09-30T18:26:31.144791Z"
+  },
+  "c858266f-56d1-489c-8e40-20dc0906fcaf": {
+    "name": "Italie",
+    "kind": "regression",
+    "createdAt": "2026-09-25T18:02:43.629574Z"
+  },
+  "e14c0fdb-6ba1-4105-8b94-57a7d7df584e": {
+    "name": "Mongolie",
+    "kind": "probe",
+    "createdAt": "2026-09-26T16:10:08.099786Z"
   }
 }

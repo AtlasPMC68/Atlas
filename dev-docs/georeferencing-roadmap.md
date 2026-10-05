@@ -184,6 +184,16 @@ better transform leaves snapping less to fix.
   city step's names from OCR.
 - **Keypoint finder:** decide on the always-on lakes "testing modification".
 - **A lockfile** for transitive dependencies (numpy drift once moved IoU by 0.0008).
+- **CI fails on a score drop, not only below `MIN_IOU`.** Proposed in PR #95 (a gate comparing
+  each run to the case's `best_report.json`). Waiting on [§1](#1-before-the-pull-request): while
+  the suite runs alignment off and UI re-runs run it on, `best` can come from either pipeline,
+  so the comparison would fail for the wrong reason. When it is added: compare the `main`
+  score, and read `best` *before* the run, since the run promotes itself when it wins.
+- **Border tracing for every country.** The test editor's trace-along-border mode
+  (**Frontières géopolitiques**) still snaps only to `public/geojson/geoBoundaries-CAN-ADM1`.
+  PR #95 needed it for Japan, France, Madagascar and others and added static files per
+  country; the better source is the backend `borders/` files that **Charger une frontière**
+  already reads, so the mode follows whichever country is loaded.
 
 ---
 

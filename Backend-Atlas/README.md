@@ -24,3 +24,10 @@ La reponse recue devrait etre "pong"
 curl http://localhost:8000/db-test
 
 La reponse reçu devrait être {"db_status":"connected","result":[1]}
+
+# Tests de géoréférencement
+
+L'outil de tests (régression et exploration) est décrit dans
+[`dev-docs/dev-test-tool.md`](../dev-docs/dev-test-tool.md). Pour remplacer volontairement
+le meilleur résultat (`best`) d'un cas par son dernier run, même moins bon, voir la
+section 5 : `scripts/force_promote_georef_best.py`.

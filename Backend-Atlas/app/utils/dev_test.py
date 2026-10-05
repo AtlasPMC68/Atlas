@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 from datetime import datetime
 from asyncio import to_thread
@@ -36,6 +36,9 @@ from app.utils.imposed_colors import (
     split_imposed_colors_by_kind,
 )
 from app.utils.legend import parse_legend_entry
+
+if TYPE_CHECKING:
+    from app.utils.dev_test_evaluator import DevTestPaths
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -376,8 +379,6 @@ def evaluate_and_persist_case(
         write_geojson(raw_errors_geojson, paths.raw_errors_geojson_path)
 
     best_report_path = paths.best_report_path
-    best_zones_path = paths.best_zones_path
-    best_errors_path = paths.best_errors_geojson_path
 
     latest_score: float | None
     try:
@@ -408,24 +409,82 @@ def evaluate_and_persist_case(
         and (best_score is None or latest_score > best_score)
     ):
         try:
-            if os.path.exists(paths.extracted_zones_path):
-                shutil.copyfile(paths.extracted_zones_path, best_zones_path)
-            if os.path.exists(paths.errors_geojson_path):
-                shutil.copyfile(paths.errors_geojson_path, best_errors_path)
-            # The raw view of the same run, so Best can be looked at both ways.
-            for latest, best in (
-                (paths.raw_zones_path, paths.best_raw_zones_path),
-                (paths.raw_errors_geojson_path, paths.best_raw_errors_geojson_path),
-            ):
-                if os.path.exists(latest):
-                    shutil.copyfile(latest, best)
-            with open(best_report_path, "w", encoding="utf-8") as f:
-                json.dump(report, f, indent=2, ensure_ascii=False)
+            _copy_latest_to_best(paths, report)
         except Exception:
             pass
 
     write_report(report, paths.report_path)
     return report
+
+
+def _copy_latest_to_best(paths: "DevTestPaths", report: dict[str, Any]) -> None:
+    """Make the last run the case's best: its zones, overlays and report."""
+    for latest, best in (
+        (paths.extracted_zones_path, paths.best_zones_path),
+        (paths.errors_geojson_path, paths.best_errors_geojson_path),
+        # The raw view of the same run, so Best can be looked at both ways.
+        (paths.raw_zones_path, paths.best_raw_zones_path),
+        (paths.raw_errors_geojson_path, paths.best_raw_errors_geojson_path),
+    ):
+        if os.path.exists(latest):
+            shutil.copyfile(latest, best)
+    with open(paths.best_report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+
+def force_promote_latest_to_best(
+    assets_root: str, test_id: str, test_case_id: str
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Make a case's last run its best, whatever the two scores.
+
+    For after a deliberate change that moves a case's score down (a fix that
+    removes a lucky error, a redrawn expected zone): automatic promotion only
+    ever moves ``best`` up, so it would otherwise keep the old run forever.
+
+    Only a run on the default settings can become ``best``, as with automatic
+    promotion: a run with switches or excluded control points is refused.
+
+    Returns ``(previous best report or None, promoted report)``.
+
+    Raises:
+        ValueError: no scored last run, or one that cannot become ``best``.
+    """
+    from app.utils.dev_test_evaluator import build_test_case_paths
+    from app.utils.georeferencing.records import RUN_RECORD_FILENAME
+
+    label = f"{test_id}/{test_case_id}"
+    paths = build_test_case_paths(assets_root, test_id, test_case_id)
+
+    if not os.path.exists(paths.report_path):
+        raise ValueError(f"{label} has no scored last run ({paths.report_path}): run it first")
+    with open(paths.report_path, "r", encoding="utf-8") as f:
+        report = json.load(f)
+    if report.get("testId") != test_id or report.get("testCaseId") != test_case_id:
+        raise ValueError(
+            f"{paths.report_path} belongs to "
+            f"{report.get('testId')}/{report.get('testCaseId')}, not {label}"
+        )
+
+    record_path = os.path.join(paths.case_dir, RUN_RECORD_FILENAME)
+    if not os.path.exists(record_path):
+        raise ValueError(f"{label} has no {RUN_RECORD_FILENAME}: cannot tell which settings the run used")
+    with open(record_path, "r", encoding="utf-8") as f:
+        inputs = json.load(f).get("inputs") or {}
+    if inputs.get("runSwitches") or inputs.get("excludedControlPoints"):
+        raise ValueError(
+            f"{label}'s last run used non-default settings"
+            f" (runSwitches={inputs.get('runSwitches')},"
+            f" excludedControlPoints={inputs.get('excludedControlPoints')}):"
+            " re-run it on the default settings first"
+        )
+
+    previous = None
+    if os.path.exists(paths.best_report_path):
+        with open(paths.best_report_path, "r", encoding="utf-8") as f:
+            previous = json.load(f)
+
+    _copy_latest_to_best(paths, report)
+    return previous, report
 
 
 def load_case_config(

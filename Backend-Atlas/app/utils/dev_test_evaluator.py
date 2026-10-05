@@ -3,7 +3,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -590,7 +590,7 @@ def evaluate_zones(
     report: dict[str, Any] = {
         "testId": test_id,
         "testCaseId": test_case_id,
-        "evaluatedAt": datetime.utcnow().isoformat() + "Z",
+        "evaluatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "thresholds": {
             "minIou": min_iou,
             "scoreKey": "metrics.mean.meanIou",

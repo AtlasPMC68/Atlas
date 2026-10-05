@@ -215,7 +215,8 @@ dashed line to where the transform placed them.
 
 **Current / Best toggle** — *Current* is the latest run, *Best* is the best-scoring run ever
 recorded for this test case. The best one is kept automatically whenever a run beats it, so a
-regression never overwrites your reference result.
+regression never overwrites your reference result. When a lower score is the intended result,
+replace it by hand ([§5](#5-managing-tests-and-test-cases)).
 
 **Après nettoyage / Avant nettoyage** — every run is scored twice, and this toggle switches
 the map and the report between the two:
@@ -243,6 +244,17 @@ from them when they are saved.
   (`"regression"` or `"probe"`). A single case can override its map with a `kind` field in
   its own `config.json`, which is how a deliberate known-bad experiment lives on a map that
   otherwise carries real regressions, instead of being deleted to keep the suite green.
+- **Replace a case's best on purpose** — a run only becomes `best` by beating it, so after a
+  change that is meant to lower a score (a fix that removes a lucky error, a redrawn expected
+  zone) the old best would stay the reference forever. Run the case, check the result, then:
+
+  ```
+  docker compose run --rm georef-dev python scripts/force_promote_georef_best.py --case-id pip_7sift
+  ```
+
+  It makes the last run the best whatever the two scores, and prints both. Add `--test-id`
+  when several maps have a case of that name. A last run made with switches or excluded
+  control points is refused, as it is for automatic promotion.
 
 ---
 
