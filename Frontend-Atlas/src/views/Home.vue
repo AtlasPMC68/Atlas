@@ -65,7 +65,7 @@ function startRegistration() {
 
 const features = ref([
   {
-    title: "Upload de cartes",
+    title: "Téléversement de cartes",
     description:
       "Importez facilement vos cartes depuis votre ordinateur avec support de multiples formats.",
     icon: ArrowUpTrayIcon,
