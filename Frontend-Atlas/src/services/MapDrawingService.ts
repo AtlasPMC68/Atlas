@@ -55,7 +55,7 @@ export class MapDrawingService {
   constructor(
     private emit: EmitFn,
     private getProjectId: () => string,
-  ) {}
+  ) { }
 
   private finalizedTextLayers = new WeakSet<L.Layer>();
 
@@ -72,8 +72,8 @@ export class MapDrawingService {
 
     return Boolean(
       marker instanceof L.Marker &&
-        (marker.options?.textMarker === true ||
-          typeof marker.pm?.getText === "function"),
+      (marker.options?.textMarker === true ||
+        typeof marker.pm?.getText === "function"),
     );
   }
 
@@ -211,7 +211,7 @@ export class MapDrawingService {
       disableOtherButtons: true,
       disableByOtherButtons: true,
       actions: ["cancel"],
-      onClick: () => {},
+      onClick: () => { },
       afterClick: (
         _event: unknown,
         context: { button: { toggled: () => boolean } },
@@ -245,8 +245,8 @@ export class MapDrawingService {
       disableOtherButtons: true,
       disableByOtherButtons: true,
       actions: ["cancel"],
-      onClick: () => {},
-      afterClick: () => {},
+      onClick: () => { },
+      afterClick: () => { },
     });
 
     toolbar.changeControlOrder?.();
@@ -718,11 +718,12 @@ export class MapDrawingService {
     this.selectedYear = selectedYear;
   }
 
-  setToolbarMode(mode: "global" | "feature") {
+  setToolbarMode(mode: "global" | "feature" | "label") {
     if (!this.pmMapInstance?.pm) return;
 
     const pm = this.pmMapInstance.pm;
-    const isFeatureMode = mode === "feature";
+    const isFeatureMode = mode === "feature" || mode === "label";
+    const isLabelMode = mode === "label";
 
     pm.addControls({
       drawMarker: false,
@@ -732,7 +733,7 @@ export class MapDrawingService {
       drawRectangle: !isFeatureMode,
       drawCircleMarker: false,
       drawText: !isFeatureMode,
-      editMode: isFeatureMode,
+      editMode: isFeatureMode && !isLabelMode,
       dragMode: false,
       rotateMode: isFeatureMode,
       cutPolygon: !isFeatureMode,
@@ -747,7 +748,7 @@ export class MapDrawingService {
       }
       pm.disableDraw();
     }
-  } 
+  }
 
   getDrawnFeatures(): Feature[] {
     const features: Feature[] = [];

@@ -50,6 +50,7 @@ export interface FeatureProperties {
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
   layer?: number;
+  rotation?: number;
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;

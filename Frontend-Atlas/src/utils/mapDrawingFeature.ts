@@ -76,10 +76,12 @@ export function layerToFeature(
   let inferredType: MapElementType = "zone";
   let labelText = undefined;
   let sizePx = undefined;
+  let rotation = baseFeature?.properties?.rotation;
 
   if (isTextMarkerLayer(layer)) {
     labelText = (layer.pm?.getText?.() ?? layer.options.text ?? "").trim();
     sizePx = baseFeature?.properties?.sizePx ?? 12;
+    rotation = layer.pm?.getAngle?.() ?? (layer as any).options?.rotationAngle ?? rotation ?? 0;
 
     if (!labelText) {
       return null;
@@ -91,6 +93,17 @@ export function layerToFeature(
       coordinates: [latlng.lng, latlng.lat],
     };
     inferredType = "label";
+  } else if (layer instanceof L.Marker && existingType === "label") {
+    // Handle custom labels that don't have textMarker: true
+    const latlng = layer.getLatLng();
+    geometry = {
+      type: "Point",
+      coordinates: [latlng.lng, latlng.lat],
+    };
+    inferredType = "label";
+    rotation = baseFeature?.properties?.rotation ?? 0;
+    labelText = baseFeature?.properties?.labelText;
+    sizePx = baseFeature?.properties?.sizePx;
   } else if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
     const latlng = layer.getLatLng();
     geometry = {
@@ -168,6 +181,7 @@ export function layerToFeature(
       strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
       mapElementType: type,
       layer: baseFeature?.properties?.layer ?? getDefaultLayer(type),
+      rotation,
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,
@@ -204,14 +218,16 @@ export function featureToLayer(feature: Feature): L.Layer | null {
 
         layer = L.marker([lat, lng], {
           icon: L.divIcon({
-            className: "city-label-text geoman-text-label",
-            html: labelText,
-            iconSize: [120, 20],
-            iconAnchor: [0, 10],
+            className: "city-label-text",
+            html: `
+              <div class="label-wrapper">
+                <div class="label-content">${labelText}</div>
+                <div class="label-anchor rotate-handle"></div>
+              </div>
+            `,
+            iconSize: null as any,
           }),
-          textMarker: true,
-          text: labelText,
-        } as L.MarkerOptions & { text?: string; textMarker?: boolean });
+        } as L.MarkerOptions);
         break;
       }
 
