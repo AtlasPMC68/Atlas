@@ -1,4 +1,5 @@
 <template>
+  <MobileBlocker />
   <div class="flex h-full min-h-0 flex-col">
     <Header v-if="!noHeaderRoutes.includes(route.path)" />
     <main class="flex-1">
@@ -14,6 +15,7 @@
 </template>
 
 <script setup lang="ts">
+import MobileBlocker from "./components/MobileBlocker.vue";
 import Header from "./components/layout/Header.vue";
 import Footer from "./components/layout/Footer.vue";
 import { useRoute } from "vue-router";
