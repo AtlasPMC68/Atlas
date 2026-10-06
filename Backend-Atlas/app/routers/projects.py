@@ -39,7 +39,7 @@ from app.utils.imposed_colors import parse_imposed_colors
 from ..celery_app import celery_app
 from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
-from ..utils.auth import get_current_user_id
+from ..utils.auth import get_current_user_id, get_optional_user_id
 from ..utils.color_in_legends_extraction import sample_color_at
 from ..utils.color_extraction import get_nearest_css4_color_name
 
@@ -86,6 +86,32 @@ async def create_map_for_project(
     except Exception as e:
         logger.error(f"Error creating map for project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create map")
+
+@router.delete("/{project_id}/maps/{map_id}")
+async def delete_map(
+    project_id: UUID,
+    map_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    try:
+        from app.services.maps import delete_map_in_db
+        deleted = await delete_map_in_db(
+            db=db,
+            project_id=project_id,
+            map_id=map_id,
+            user_id=UUID(user_id),
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=404, detail="Map not found or access denied"
+            )
+        return {"detail": "Map deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting map: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete map")
 
 
 @router.post("/create")
@@ -184,19 +210,23 @@ async def is_project_owner(
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(
     project_id: UUID,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str | None = Depends(get_optional_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    try:
-        user_id = UUID(user_id)
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id:
+        try:
+            user_uuid = UUID(user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid user")
+        conditions = (Project.user_id == user_uuid) | (Project.is_private.is_(False))
+    else:
+        conditions = Project.is_private.is_(False)
 
     result = await session.execute(
         select(Project, User.username)
         .join(User, Project.user_id == User.id, isouter=True)
         .where(Project.id == project_id)
-        .where((Project.user_id == user_id) | (Project.is_private.is_(False)))
+        .where(conditions)
     )
 
     row = result.first()
@@ -606,19 +636,27 @@ async def delete_features_bulk(
 @router.get("/{project_id}/features")
 async def get_project_features(
     project_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str | None = Depends(get_optional_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        project_id = UUID(project_id)
-        user_id = UUID(user_id)
+        project_uuid = UUID(project_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+        raise HTTPException(status_code=400, detail="Invalid project_id")
+
+    if user_id:
+        try:
+            user_uuid = UUID(user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid user")
+        conditions = (Project.user_id == user_uuid) | (Project.is_private.is_(False))
+    else:
+        conditions = Project.is_private.is_(False)
 
     project_result = await session.execute(
         select(Project.id)
-        .where(Project.id == project_id)
-        .where((Project.user_id == user_id) | (Project.is_private.is_(False)))
+        .where(Project.id == project_uuid)
+        .where(conditions)
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:
@@ -638,19 +676,27 @@ async def get_project_features(
 @router.get("/{project_id}/maps")
 async def get_project_maps(
     project_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str | None = Depends(get_optional_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
         project_uuid = UUID(project_id)
-        user_uuid = UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+        raise HTTPException(status_code=400, detail="Invalid project_id")
+
+    if user_id:
+        try:
+            user_uuid = UUID(user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid user")
+        conditions = (Project.user_id == user_uuid) | (Project.is_private.is_(False))
+    else:
+        conditions = Project.is_private.is_(False)
 
     project_result = await session.execute(
         select(Project.id)
         .where(Project.id == project_uuid)
-        .where((Project.user_id == user_uuid) | (Project.is_private.is_(False)))
+        .where(conditions)
     )
     allowed_project = project_result.scalar_one_or_none()
     if not allowed_project:

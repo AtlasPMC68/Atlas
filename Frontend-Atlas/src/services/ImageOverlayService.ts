@@ -47,9 +47,34 @@ export class ImageOverlayService {
     this.onUpdate(next);
   }
 
+  private updateImageFeatureRotation(featureId: string, rotation: number) {
+    const idx = this.localFeaturesSnapshot.value.findIndex(
+      (f) => String(f.id) === featureId,
+    );
+    if (idx === -1) return;
+    const next = [...this.localFeaturesSnapshot.value];
+    next[idx] = {
+      ...next[idx],
+      properties: { ...next[idx].properties, rotation },
+    };
+    this.localFeaturesSnapshot.value = next;
+
+    const layer = this.getLayerById(featureId);
+    if (layer) {
+      const layerWithFeature = layer as L.Layer & { feature?: (typeof next)[0] };
+      if (layerWithFeature.feature) {
+        layerWithFeature.feature = next[idx];
+      }
+    }
+
+    this.onBeforeEmit();
+    this.onUpdate(next);
+  }
+
   detach() {
     if (!this.imageInteraction) return;
     this.imageInteraction.resizeMarker.remove();
+    this.imageInteraction.rotateMarker.remove();
     this.imageInteraction.cleanupDrag?.();
     this.imageInteraction = null;
   }
@@ -104,7 +129,71 @@ export class ImageOverlayService {
       );
     });
 
-    this.imageInteraction = { overlay: layer, featureId, resizeMarker, aspectRatio };
+    // Top-center rotate handle
+    const rotateMarker = L.marker(L.latLng(bounds.getNorth(), bounds.getCenter().lng), {
+      icon: L.divIcon({
+        className: "label-anchor rotate-handle image-rotate-handle label-selected",
+        iconSize: [10, 10],
+        iconAnchor: [5, 15],
+      }),
+      draggable: false,
+      zIndexOffset: 1000,
+    });
+    (rotateMarker.options as PmIgnoreOptions).pmIgnore = true;
+    rotateMarker.addTo(map);
+
+    const rotateEl = rotateMarker.getElement();
+    if (rotateEl) {
+      rotateEl.addEventListener("mousedown", (e: MouseEvent) => {
+        L.DomEvent.stopPropagation(e as any);
+        if (!this.imageInteraction) return;
+        map.dragging.disable();
+
+        const containerRect = map.getContainer().getBoundingClientRect();
+        const centerLatLng = this.imageInteraction.overlay.getBounds().getCenter();
+        const point = map.latLngToContainerPoint(centerLatLng);
+        const centerX = containerRect.left + point.x;
+        const centerY = containerRect.top + point.y;
+
+        let startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        const layerWithFeature = this.imageInteraction.overlay as L.Layer & { feature?: Feature };
+        let currentRotation = layerWithFeature.feature?.properties?.rotation ?? 0;
+
+        const onMouseMove = (moveEvent: MouseEvent) => {
+          if (!this.imageInteraction) return;
+          const angle = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX);
+          let delta = (angle - startAngle) * (180 / Math.PI);
+          let newRotation = currentRotation + delta;
+
+          const imgEl = this.imageInteraction.overlay.getElement();
+          if (imgEl) {
+             imgEl.style.transformOrigin = "center center";
+             const transform = imgEl.style.transform;
+             if (!transform.includes('rotate')) {
+               imgEl.style.transform += ` rotate(${newRotation}deg)`;
+             } else {
+               imgEl.style.transform = transform.replace(/rotate\([^)]+\)/, `rotate(${newRotation}deg)`);
+             }
+          }
+          (rotateEl as any).__currentRotation = newRotation;
+        };
+
+        const onMouseUp = () => {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          map.dragging.enable();
+
+          if ((rotateEl as any).__currentRotation !== undefined) {
+             this.updateImageFeatureRotation(featureId, (rotateEl as any).__currentRotation);
+          }
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+    }
+
+    this.imageInteraction = { overlay: layer, featureId, resizeMarker, rotateMarker, aspectRatio };
 
     // The image is in its own pane above the canvas so it receives native pointer
     // events — we can use overlay.on("mousedown") directly here.
@@ -135,6 +224,7 @@ export class ImageOverlayService {
       );
       this.imageInteraction.overlay.setBounds(newBounds);
       this.imageInteraction.resizeMarker.setLatLng(newBounds.getSouthEast());
+      this.imageInteraction.rotateMarker.setLatLng(L.latLng(newBounds.getNorth(), newBounds.getCenter().lng));
     };
 
     const onMapMouseUp = () => {

@@ -46,7 +46,7 @@
               :key="mapGroup.id || 'general'"
               class="flex flex-col gap-2"
             >
-              <div class="flex items-center justify-between rounded">
+              <div class="flex items-center justify-between rounded group">
                 <label
                   class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 p-0"
                 >
@@ -65,6 +65,11 @@
                     {{ mapGroup.title }}
                   </span>
                 </label>
+                <div class="flex h-8 w-8 items-center justify-center" v-if="mapGroup.id !== null">
+                  <button @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)" title="Supprimer la carte">
+                    <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
+                  </button>
+                </div>
               </div>
               <div class="flex flex-col gap-2 pl-2">
                 <div
@@ -97,7 +102,7 @@
                         class="w-5 h-5 text-gray-500 hover:text-gray-800"
                       />
                     </button>
-                    <button @click="emit('delete-feature', feature.id)">
+                    <button @click="showDeleteFeatureDialog(feature)">
                       <TrashIcon
                         class="w-5 h-5 text-red-500 hover:text-red-800"
                       />
@@ -126,6 +131,7 @@
             Ajouter une carte
           </button>
         </div>
+
         <div class="flex gap-2 items-center">
           <button
             class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
@@ -273,6 +279,76 @@
       <button :disabled="isEditing">close</button>
     </form>
   </dialog>
+
+  <!-- Delete map confirmation dialog -->
+  <dialog ref="deleteMapDialogRef" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Supprimer la carte</h3>
+      <p class="py-4">
+        Êtes-vous sûr de vouloir supprimer la carte
+        <span class="font-semibold">{{ mapToDeleteTitle }}</span> ainsi que tous ses éléments ?
+        Cette action est irréversible.
+      </p>
+      <div class="modal-action">
+        <button
+          class="btn"
+          :disabled="isDeletingMap"
+          @click="deleteMapDialogRef?.close()"
+        >
+          Annuler
+        </button>
+        <button
+          class="btn btn-error"
+          :disabled="isDeletingMap"
+          @click="onDeleteMap"
+        >
+          <span
+            v-if="isDeletingMap"
+            class="loading loading-spinner loading-xs"
+          ></span>
+          <span v-else class="text-white">Supprimer</span>
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isDeletingMap">close</button>
+    </form>
+  </dialog>
+
+  <!-- Delete feature confirmation dialog -->
+  <dialog ref="deleteFeatureDialogRef" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Supprimer l'élément</h3>
+      <p class="py-4">
+        Êtes-vous sûr de vouloir supprimer
+        <span class="font-semibold">{{ featureToDeleteName }}</span> ?
+        Cette action est irréversible.
+      </p>
+      <div class="modal-action">
+        <button
+          class="btn"
+          :disabled="isDeletingFeature"
+          @click="deleteFeatureDialogRef?.close()"
+        >
+          Annuler
+        </button>
+        <button
+          class="btn btn-error"
+          :disabled="isDeletingFeature"
+          @click="onDeleteFeature"
+        >
+          <span
+            v-if="isDeletingFeature"
+            class="loading loading-spinner loading-xs"
+          ></span>
+          <span v-else class="text-white">Supprimer</span>
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isDeletingFeature">close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
@@ -314,6 +390,16 @@ const featureToEditOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeWidth = ref<number | undefined>(undefined);
 
+const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+const mapToDeleteId = ref<string | null>(null);
+const mapToDeleteTitle = ref<string>("");
+const isDeletingMap = ref(false);
+
+const deleteFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+const featureToDeleteId = ref<string | null>(null);
+const featureToDeleteName = ref<string>("");
+const isDeletingFeature = ref(false);
+
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
 
 const isEditing = ref(false);
@@ -323,6 +409,7 @@ const emit = defineEmits([
   "open-add-image-feature-dialog",
   "save-map",
   "delete-feature",
+  "delete-map",
   "add-map",
   "update-feature",
 ]);
@@ -532,4 +619,52 @@ function toggleAll(visible: boolean) {
     emit("toggle-feature", feature.id, visible);
   });
 }
+
+function showDeleteMapDialog(mapId: string, mapTitle: string) {
+  mapToDeleteId.value = mapId;
+  mapToDeleteTitle.value = mapTitle;
+  deleteMapDialogRef.value?.showModal();
+}
+
+async function onDeleteMap() {
+  if (!mapToDeleteId.value) return;
+  isDeletingMap.value = true;
+  emit("delete-map", mapToDeleteId.value, {
+    onSuccess: () => {
+      showAlert("success", "Carte supprimée avec succès !");
+      isDeletingMap.value = false;
+      deleteMapDialogRef.value?.close();
+    },
+    onError: (message: string) => {
+      showAlert("error", message || "Erreur lors de la suppression de la carte.");
+      isDeletingMap.value = false;
+    },
+  });
+}
+
+function showDeleteFeatureDialog(feature: Feature) {
+  featureToDeleteId.value = feature.id as string;
+  featureToDeleteName.value = feature.properties?.name || "Élément sans nom";
+  deleteFeatureDialogRef.value?.showModal();
+}
+
+async function onDeleteFeature() {
+  if (!featureToDeleteId.value) return;
+  isDeletingFeature.value = true;
+  emit("delete-feature", featureToDeleteId.value, {
+    onSuccess: () => {
+      showAlert("success", "Élément supprimé avec succès !");
+      isDeletingFeature.value = false;
+      deleteFeatureDialogRef.value?.close();
+    },
+    onError: (message: string) => {
+      showAlert("error", message || "Erreur lors de la suppression de l'élément.");
+      isDeletingFeature.value = false;
+    },
+  });
+}
+
+defineExpose({
+  showEditFeatureDialog,
+});
 </script>

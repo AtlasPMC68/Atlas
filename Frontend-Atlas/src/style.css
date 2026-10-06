@@ -195,6 +195,27 @@
   width: auto;
 }
 
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar .button-container,
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar a {
+  border-top: none !important;
+  border-bottom: none !important;
+  border-right: 1px solid #ccc;
+  border-radius: 0 !important;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :first-child,
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :first-child a {
+  border-top-left-radius: 4px !important;
+  border-bottom-left-radius: 4px !important;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :last-child,
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :last-child a {
+  border-right: none !important;
+  border-top-right-radius: 4px !important;
+  border-bottom-right-radius: 4px !important;
+}
+
 .timeline-container {
   position: relative;
   z-index: 1000;
