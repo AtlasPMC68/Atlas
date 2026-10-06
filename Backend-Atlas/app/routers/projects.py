@@ -87,6 +87,32 @@ async def create_map_for_project(
         logger.error(f"Error creating map for project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create map")
 
+@router.delete("/{project_id}/maps/{map_id}")
+async def delete_map(
+    project_id: UUID,
+    map_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    try:
+        from app.services.maps import delete_map_in_db
+        deleted = await delete_map_in_db(
+            db=db,
+            project_id=project_id,
+            map_id=map_id,
+            user_id=UUID(user_id),
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=404, detail="Map not found or access denied"
+            )
+        return {"detail": "Map deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting map: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete map")
+
 
 @router.post("/create")
 async def create_project(

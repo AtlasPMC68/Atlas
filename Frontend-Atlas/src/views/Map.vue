@@ -15,6 +15,7 @@
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
+          @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
           @update-feature="onUpdateFeature"
         />
@@ -521,6 +522,46 @@ async function onDeleteFeature(
   } catch (error) {
     console.error("Failed to delete feature:", error);
     callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
+  }
+}
+
+async function onDeleteMap(
+  mapId: string,
+  callbacks?: {
+    onSuccess?: () => void;
+    onError?: (message?: string) => void;
+  },
+) {
+  try {
+    if (!projectId.value) {
+      throw new Error("Project ID is missing");
+    }
+
+    const res = await apiFetch(`/projects/${projectId.value}/maps/${mapId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${keycloak.token}` },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to delete map: ${res.status}`);
+    }
+
+    const nextFeatures = features.value.filter(
+      (feature) => feature.mapId !== mapId,
+    );
+
+    if (trackingEnabled.value) {
+      commitFeatureSnapshot(nextFeatures);
+    } else {
+      applyFeatureSnapshot(nextFeatures, false);
+    }
+
+    await loadProjectMapsForTimeline();
+
+    callbacks?.onSuccess?.();
+  } catch (error) {
+    console.error("Failed to delete map:", error);
+    callbacks?.onError?.("Erreur lors de la suppression de la carte.");
   }
 }
 
