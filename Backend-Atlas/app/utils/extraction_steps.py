@@ -18,7 +18,7 @@ longer matched a re-run from the dev tool).
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.utils.color_extraction import extract_colors
@@ -95,6 +95,7 @@ class MapPlacement:
         self,
         pixel_feature_collections: list,
         check_points: Sequence[ControlPoint] = (),
+        clean: bool = True,
     ) -> GeorefResult:
         """Pixel features -> EPSG:4326, through the aligned model when the
         alignment used the coastline.
@@ -102,6 +103,10 @@ class MapPlacement:
         ``check_points`` (dev-test cases only) are measured against the applied
         transform afterwards and recorded under ``errors.checkPoints``. They are
         never passed to anything that fits.
+
+        ``clean=False`` skips the coastline snap and the land clip, for features
+        that are not land zones (a shape drawn on the map can sit at sea). Such
+        a call stays out of the run record, which describes the zones.
         """
         alignment = self.alignment
         aligned_model = (
@@ -114,8 +119,12 @@ class MapPlacement:
             self.control_points,
             frame_bounds=self.frame_bounds,
             image_size=self.image_size,
-            config=self.config,
-            record=self.record,
+            config=(
+                self.config
+                if clean
+                else replace(self.config, snap_to_coastline=False, clip_to_land_mask=False)
+            ),
+            record=self.record if clean else None,
             model=aligned_model,
             extra_properties=(
                 {"alignment_method": alignment.method, "alignment_rung": alignment.rung}

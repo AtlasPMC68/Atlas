@@ -7,11 +7,13 @@ each step is confirmed so a reload finds them again:
     legend          {present, bounds}                   "Délimiter la légende"
     controlPoints   [ControlPoint.to_dict(), ...]       SIFT and city points
     colors          [{x, y, name, radius, kind, hex}]   the pipette picks
-    options         {textExtraction, shapesExtraction}
+    shapes          [{x, y, name}]                      "Formes": one click per shape
+    options         {textExtraction}
 
 ``hex`` is only for the UI's swatches; extraction re-samples every pick.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,9 +41,12 @@ from app.utils.imposed_colors import (
 )
 from app.utils.legend import LegendBounds, parse_legend_entry
 
-INPUT_KEYS = ("frameBounds", "legend", "controlPoints", "colors", "options")
+INPUT_KEYS = ("frameBounds", "legend", "controlPoints", "colors", "shapes", "options")
 
-DEFAULT_OPTIONS = {"textExtraction": False, "shapesExtraction": False}
+DEFAULT_OPTIONS = {"textExtraction": False}
+
+#: Shape clicks one import may carry; each one is a flood fill.
+MAX_SHAPE_CLICKS = 50
 
 #: An import untouched this long is abandoned; the next import sweeps it.
 STALE_IMPORT_AGE = timedelta(days=7)
@@ -70,6 +75,27 @@ def _validate_colors(entries: Any) -> List[Dict[str, Any]]:
             }
         )
     return colors
+
+
+def _validate_shapes(entries: Any) -> List[Dict[str, Any]]:
+    """Shape clicks: normalised ``(x, y)`` in [0, 1] and a name."""
+    if not isinstance(entries, list):
+        raise ValueError("shapes must be a list")
+    if len(entries) > MAX_SHAPE_CLICKS:
+        raise ValueError(f"at most {MAX_SHAPE_CLICKS} shapes")
+    shapes: List[Dict[str, Any]] = []
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError("each shape must be an object")
+        try:
+            x, y = float(entry["x"]), float(entry["y"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("each shape needs numeric x and y")
+        if not (math.isfinite(x) and math.isfinite(y) and 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+            raise ValueError("shape x and y must be normalised to [0, 1]")
+        name = str(entry.get("name") or "").strip() or f"Forme {i + 1}"
+        shapes.append({"x": x, "y": y, "name": name})
+    return shapes
 
 
 def _validate_options(entry: Any) -> Dict[str, bool]:
@@ -118,6 +144,8 @@ def apply_inputs_patch(
             merged[key] = [cp.to_dict() for cp in points]
         elif key == "colors":
             merged[key] = _validate_colors(value)
+        elif key == "shapes":
+            merged[key] = _validate_shapes(value)
         elif key == "options":
             merged[key] = _validate_options(value)
 
@@ -142,6 +170,7 @@ class ImportInputs:
     zone_picks: Tuple[Optional[list], Optional[list], Optional[list]]
     water_picks: Tuple[Optional[list], Optional[list], Optional[list]]
     all_colors: List[Dict[str, Any]] = field(default_factory=list)
+    shapes: List[Dict[str, Any]] = field(default_factory=list)
     options: Dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_OPTIONS))
 
     @property
@@ -149,8 +178,12 @@ class ImportInputs:
         return bool(self.options.get("textExtraction"))
 
     @property
-    def enable_shapes_extraction(self) -> bool:
-        return bool(self.options.get("shapesExtraction"))
+    def shape_clicks(self) -> List[Tuple[float, float]]:
+        return [(s["x"], s["y"]) for s in self.shapes]
+
+    @property
+    def shape_names(self) -> List[str]:
+        return [s["name"] for s in self.shapes]
 
 
 def parse_import_inputs(inputs: Optional[Dict[str, Any]]) -> ImportInputs:
@@ -161,7 +194,9 @@ def parse_import_inputs(inputs: Optional[Dict[str, Any]]) -> ImportInputs:
     colors = inputs.get("colors") or []
     positions, names, radii, kinds = parse_imposed_colors_entries(colors or None)
     options = dict(DEFAULT_OPTIONS)
-    options.update(inputs.get("options") or {})
+    options.update(
+        {k: v for k, v in (inputs.get("options") or {}).items() if k in DEFAULT_OPTIONS}
+    )
 
     return ImportInputs(
         frame_bounds=parse_frame_bounds_entry(inputs.get("frameBounds")),
@@ -175,6 +210,7 @@ def parse_import_inputs(inputs: Optional[Dict[str, Any]]) -> ImportInputs:
             positions, names, radii, kinds, KIND_WATER
         ),
         all_colors=colors,
+        shapes=inputs.get("shapes") or [],
         options=options,
     )
 

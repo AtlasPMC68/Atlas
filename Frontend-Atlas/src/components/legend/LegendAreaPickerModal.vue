@@ -1,74 +1,50 @@
 <template>
-  <dialog ref="modalRef" class="modal" @close="onDialogClose">
-    <div class="modal-box max-w-5xl w-full flex flex-col gap-4">
-      <form method="dialog">
-        <button
-          value="cancel"
-          class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-        >
-          ✕
-        </button>
-      </form>
-
-      <h2 class="text-xl font-semibold">Délimiter la légende</h2>
-
-      <p class="text-sm text-base-content/70">
-        Tracez un rectangle sur l'image autour de la légende. Cette zone sera
-        ignorée par l'extraction des couleurs, des formes et du texte. Si la
-        carte n'a pas de légende, indiquez-le.
-      </p>
-
-      <div class="border rounded-md overflow-hidden">
-        <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
-          Carte importée (sélection de la légende)
-        </h3>
+  <BasePickerModal
+    :is-open="isOpen"
+    title="Délimiter la légende"
+    description="Tracez un rectangle sur l'image autour de la légende. Cette zone sera ignorée par l'extraction des couleurs, des formes et du texte. Si la carte n'a pas de légende, indiquez-le."
+    confirm-label="Confirmer la légende"
+    :is-confirm-disabled="!legendBounds"
+    show-skip
+    skip-label="Pas de légende sur la carte"
+    @close="emit('close')"
+    @skip="onNoLegend"
+    @confirm="onConfirm"
+  >
+    <template #image-area>
+      <h3 class="px-3 py-2 text-sm font-medium bg-base-200 border-b">
+        Carte importée (sélection de la légende)
+      </h3>
+      <div
+        ref="container"
+        class="relative h-[28rem] bg-base-200 select-none"
+        @mousedown="onMouseDown"
+        @mousemove="onMouseMove"
+        @mouseup="onMouseUp"
+        @mouseleave="onMouseUp"
+      >
+        <img
+          v-if="imageUrl"
+          ref="imageEl"
+          :src="imageUrl"
+          class="w-full h-full object-contain pointer-events-none"
+          alt="Carte importée"
+          @load="onImageLoad"
+        />
 
         <div
-          ref="container"
-          class="relative h-[28rem] bg-base-200 select-none"
-          @mousedown="onMouseDown"
-          @mousemove="onMouseMove"
-          @mouseup="onMouseUp"
-          @mouseleave="onMouseUp"
-        >
-          <img
-            v-if="imageUrl"
-            ref="imageEl"
-            :src="imageUrl"
-            class="w-full h-full object-contain pointer-events-none"
-            alt="Carte importée"
-            @load="onImageLoad"
-          />
-
-          <div
-            v-if="selectionStyle"
-            class="absolute border-2 border-[#2563eb] bg-[#2563eb]/15 pointer-events-none"
-            :style="selectionStyle"
-          />
-        </div>
+          v-if="selectionStyle"
+          class="absolute border-2 border-[#2563eb] bg-[#2563eb]/15 pointer-events-none"
+          :style="selectionStyle"
+        />
       </div>
-
-      <div class="modal-action">
-        <button class="btn btn-ghost" type="button" @click="requestClose">
-          Annuler
-        </button>
-        <button class="btn btn-outline" @click="onNoLegend">
-          Pas de légende sur la carte
-        </button>
-        <button
-          class="btn btn-primary"
-          @click="onConfirm"
-          :disabled="!legendBounds"
-        >
-          Confirmer la légende
-        </button>
-      </div>
-    </div>
-  </dialog>
+    </template>
+  </BasePickerModal>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import BasePickerModal from "../import/BasePickerModal.vue";
 import type { LegendBounds } from "../../typescript/legend";
 import { containRect } from "../../utils/imageFit";
 
@@ -89,10 +65,6 @@ const emit = defineEmits<{
   (e: "no-legend"): void;
   (e: "confirmed", payload: LegendBounds): void;
 }>();
-
-const modalRef = ref<HTMLDialogElement | null>(null);
-
-type DialogCloseReason = "cancel" | "success" | "programmatic";
 
 const container = ref<HTMLDivElement | null>(null);
 const imageEl = ref<HTMLImageElement | null>(null);
@@ -116,36 +88,10 @@ watch(
   (opened) => {
     if (opened) {
       legendBounds.value = props.initialBounds;
-      if (modalRef.value && !modalRef.value.open) {
-        modalRef.value.showModal();
-      }
-      return;
-    }
-    if (modalRef.value?.open) {
-      closeDialog("programmatic");
     }
   },
   { immediate: true },
 );
-
-onMounted(() => {
-  if (props.isOpen && modalRef.value && !modalRef.value.open) {
-    modalRef.value.showModal();
-  }
-});
-
-function requestClose(): void {
-  if (modalRef.value?.open) {
-    closeDialog("cancel");
-    return;
-  }
-  emit("close");
-}
-
-function closeDialog(reason: DialogCloseReason): void {
-  if (!modalRef.value?.open) return;
-  modalRef.value.close(reason);
-}
 
 const displayRect = computed(() => {
   if (
@@ -259,26 +205,13 @@ function onMouseUp(): void {
   }
 }
 
-function onDialogClose() {
-  const reason = modalRef.value?.returnValue;
-  if (reason !== "success" && reason !== "programmatic") {
-    emit("close");
-  }
-
-  if (modalRef.value) {
-    modalRef.value.returnValue = "";
-  }
-}
-
 function onNoLegend(): void {
   legendBounds.value = null;
-  closeDialog("success");
   emit("no-legend");
 }
 
 function onConfirm(): void {
   if (!legendBounds.value) return;
-  closeDialog("success");
   emit("confirmed", legendBounds.value);
 }
 </script>

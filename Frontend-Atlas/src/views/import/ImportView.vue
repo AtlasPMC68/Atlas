@@ -76,6 +76,7 @@
           :inputs="store.inputs"
           :options="isDevTest ? null : options"
           :show-checks="isDevTest"
+          :show-shapes="!isDevTest"
           :ocr-state="store.ocrState"
           :disabled="store.isSaving || isStarting"
           @open="openStep"
@@ -171,6 +172,16 @@
       @confirmed="(colors) => save({ colors })"
     />
 
+    <ShapePickerModal
+      v-if="openModal === 'shapes' && store.previewUrl"
+      :is-open="true"
+      :image-url="store.previewUrl"
+      :initial-shapes="store.inputs.shapes ?? []"
+      @close="openModal = null"
+      @skip="save({ shapes: null })"
+      @confirmed="(shapes) => save({ shapes })"
+    />
+
     <ConfirmDialog
       v-if="pendingConfirm"
       :title="pendingConfirm.title"
@@ -213,6 +224,7 @@ import LegendAreaPickerModal from "../../components/legend/LegendAreaPickerModal
 import GeoRefSiftModal from "../../components/georef/GeoRefSiftModal.vue";
 import GeoRefCitiesModal from "../../components/georef/GeoRefCitiesModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
+import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 import StartFromCasePanel from "../../components/dev/StartFromCasePanel.vue";
 
 const route = useRoute();
@@ -248,7 +260,7 @@ const pendingConfirm = ref<PendingConfirm | null>(null);
 const siftPts = computed(() => siftPoints(store.inputs));
 const cityPts = computed(() => cityPoints(store.inputs));
 const options = computed<ImportOptions>(
-  () => store.inputs.options ?? { textExtraction: false, shapesExtraction: false },
+  () => store.inputs.options ?? { textExtraction: false },
 );
 
 // --- 1. Import --------------------------------------------------------------

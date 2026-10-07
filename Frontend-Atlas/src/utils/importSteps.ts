@@ -105,6 +105,8 @@ function isDone(id: StepId, inputs: ImportInputs): boolean {
       return checkPoints(inputs).length > 0;
     case "colors":
       return zoneColorCount(inputs) > 0;
+    case "shapes":
+      return (inputs.shapes ?? []).length > 0;
   }
 }
 
@@ -121,6 +123,7 @@ const STEPS: { id: StepId; required: boolean }[] = [
   { id: "cities", required: false },
   { id: "checks", required: false },
   { id: "colors", required: true },
+  { id: "shapes", required: false },
 ];
 
 export function deriveStepStates(inputs: ImportInputs): Record<StepId, StepState> {

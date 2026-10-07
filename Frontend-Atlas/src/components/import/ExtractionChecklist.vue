@@ -134,6 +134,27 @@
       </ChecklistItem>
     </ChecklistGroup>
 
+    <!-- Formes (not in dev-test, which extracts colours only) -->
+    <ChecklistGroup
+      v-if="showShapes"
+      title="Formes"
+      :tone="steps.shapes.status === 'done' ? 'done' : 'pending'"
+      badge="Optionnel"
+    >
+      <ChecklistItem
+        title="Formes à extraire"
+        :description="
+          steps.shapes.status === 'done'
+            ? `${shapeCount} forme${shapeCount > 1 ? 's' : ''} sélectionnée${shapeCount > 1 ? 's' : ''}`
+            : 'Un clic par forme ; sa couleur délimite la région'
+        "
+        :status="steps.shapes.status"
+        :required="false"
+        :disabled="disabled"
+        @open="emit('open', 'shapes')"
+      />
+    </ChecklistGroup>
+
     <!-- Options -->
     <ChecklistGroup v-if="options" title="Options d'extraction" tone="locked">
       <label
@@ -228,8 +249,10 @@ const props = withDefaults(
     disabled?: boolean;
     // Dev-test only: the check-point step.
     showChecks?: boolean;
+    // Not in dev-test, which extracts colours only.
+    showShapes?: boolean;
   }>(),
-  { options: null, ocrState: null, disabled: false, showChecks: false },
+  { options: null, ocrState: null, disabled: false, showChecks: false, showShapes: false },
 );
 
 const emit = defineEmits<{
@@ -244,11 +267,6 @@ const OPTION_ROWS: { key: keyof ImportOptions; title: string; description: strin
     key: "textExtraction",
     title: "Extraction de texte (OCR)",
     description: "Ajouter les noms de lieux détectés comme points sur la carte",
-  },
-  {
-    key: "shapesExtraction",
-    title: "Extraction des formes",
-    description: "Détecter les formes géométriques (cercles, rectangles, etc.)",
   },
 ];
 
@@ -274,6 +292,7 @@ const pointsDone = computed(
 );
 const siftCount = computed(() => siftPoints(props.inputs).length);
 const cityCount = computed(() => cityPoints(props.inputs).length);
+const shapeCount = computed(() => (props.inputs.shapes ?? []).length);
 // Check points from both steps: SIFT pairs ticked at the SIFT step, and cities.
 const checkDescription = computed(() => {
   const all = checkPoints(props.inputs);

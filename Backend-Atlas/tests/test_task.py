@@ -32,7 +32,10 @@ def _png_bytes() -> bytes:
     return encoded.tobytes()
 
 
-def _inputs(**options):
+SHAPES = [{"x": 0.4, "y": 0.6, "name": "Cercle"}]
+
+
+def _inputs(shapes=None, **options):
     return parse_import_inputs(
         {
             "frameBounds": {"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0},
@@ -49,17 +52,18 @@ def _inputs(**options):
                 {"x": 0.25, "y": 0.75, "name": "Forest", "radius": 7, "kind": "zone"},
                 {"x": 0.5, "y": 0.5, "name": "Sea", "radius": 21, "kind": "water"},
             ],
-            "options": {"textExtraction": False, "shapesExtraction": False, **options},
+            "shapes": shapes or [],
+            "options": {"textExtraction": False, **options},
         }
     )
 
 
-def _claimed(**options) -> _ClaimedImport:
+def _claimed(shapes=None, **options) -> _ClaimedImport:
     return _ClaimedImport(
         project_id=uuid.uuid4(),
         filename="map.png",
         image=_png_bytes(),
-        inputs=_inputs(**options),
+        inputs=_inputs(shapes, **options),
         ocr_blocks=[
             [[[10, 10], [40, 10], [40, 20], [10, 20]], "Quebec", 0.99],
             # Inside the legend: a key label, never a place.
@@ -120,7 +124,7 @@ def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
         patch("app.tasks._save_extraction", mocks["save"]),
         patch("app.tasks._end_extraction", mocks["end"]),
         patch("app.utils.extraction_steps.extract_colors", mocks["colors"]),
-        patch("app.tasks.extract_shapes", mocks["shapes"]),
+        patch("app.tasks.extract_shapes_from_clicks", mocks["shapes"]),
         patch("app.tasks.frame_city_index", mocks["city"]),
         patch("app.tasks.place_map", mocks["place"]),
         patch("app.tasks._write_ocr_text_file", MagicMock(return_value="out.txt")),
@@ -152,7 +156,7 @@ def test_unknown_words_are_kept_hidden():
 
 
 def test_extraction_uses_the_stored_inputs_and_saves_once():
-    mocks = _run_extraction(_claimed(textExtraction=True, shapesExtraction=True))
+    mocks = _run_extraction(_claimed(SHAPES, textExtraction=True))
     result = mocks["outcome"].get(timeout=20)
 
     assert result["status"] == "completed"
@@ -171,10 +175,12 @@ def test_extraction_uses_the_stored_inputs_and_saves_once():
     assert color_kwargs["imposed_sampling_radii"] == [7]
     assert color_kwargs["legend_bounds"] == LEGEND
 
-    # Shapes: the stored OCR boxes, the legend excluded.
+    # Shapes: one flood fill per stored click, placed without snap or clip.
     _, shape_kwargs = mocks["shapes"].call_args
-    assert shape_kwargs["legend_bounds"] == LEGEND
-    assert len(shape_kwargs["text_regions"]) == 2
+    assert shape_kwargs["click_positions"] == [(0.4, 0.6)]
+    assert shape_kwargs["click_names"] == ["Cercle"]
+    georeference = mocks["place"].return_value.georeference
+    assert [c.kwargs.get("clean", True) for c in georeference.call_args_list] == [False, True]
 
     # Text: looked up among the cities of the frame only.
     mocks["city"].assert_called_once_with(claimed_frame())
@@ -196,7 +202,7 @@ def test_extraction_uses_the_stored_inputs_and_saves_once():
     assert len(georef_inputs["colors"]["imposed"]) == 2
 
 
-def test_disabled_options_skip_text_and_shapes():
+def test_no_shape_clicks_and_no_text_option_skip_both():
     mocks = _run_extraction(_claimed())
     result = mocks["outcome"].get(timeout=20)
 
@@ -208,7 +214,7 @@ def test_disabled_options_skip_text_and_shapes():
 
 
 def test_the_map_is_placed_once_with_the_ocr_boxes_and_the_legend():
-    mocks = _run_extraction(_claimed(shapesExtraction=True))
+    mocks = _run_extraction(_claimed(SHAPES))
     mocks["outcome"].get(timeout=20)
 
     mocks["place"].assert_called_once()

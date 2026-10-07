@@ -62,7 +62,8 @@ The import is a server-side session (`map_imports` table, `app/routers/imports.p
 
 The checklist steps: **Zone sur le monde** (framing box), **Légende** (rectangle or "no
 legend"), **Points SIFT** (≥ 3 pairs), **Villes** (optional), **Couleurs** (zone picks, plus
-optional water picks). Control-point steps unlock once the framing box exists.
+optional water picks), **Formes** (optional shape clicks). Control-point steps unlock once
+the framing box exists.
 
 `process_map_extraction(map_id)` (`app/tasks.py`) then reads everything from the session:
 
@@ -72,7 +73,9 @@ optional water picks). Control-point steps unlock once the framing box exists.
 3. **Place the map once** (`place_map`): select the control points the config uses, and
    align against the coastline when alignment is on ([§5](#5-the-transform)). Shapes and
    colours share this one transform.
-4. Shapes extraction, if on, georeferenced (`MapPlacement.georeference`).
+4. Shapes, when the user clicked any (**Formes** step): one flood fill per click
+   (`extract_shapes_from_clicks`), georeferenced without the coastline snap or the land
+   clip (`MapPlacement.georeference(..., clean=False)`), since a shape may sit at sea.
 5. Colour extraction from the pipette picks ([§4](#4-pixel-zones)), georeferenced.
 6. Save the features and `maps.georef_inputs` (the control points, box, legend and picks the
    map was georeferenced from), and close the session.

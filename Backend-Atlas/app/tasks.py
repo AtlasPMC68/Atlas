@@ -45,7 +45,7 @@ from app.utils.imposed_colors import (
     parse_imposed_colors_entries,
 )
 from app.utils.legend import legend_to_entry, polygon_center_in_legend
-from app.utils.shapes_extraction import extract_shapes
+from app.utils.shapes_extraction import extract_shapes_from_clicks
 from app.utils.text_extraction import extract_text, ocr_blocks_to_payload
 from app.utils.dev_test_assets import TEST_CASES_DIR, GEOREF_ASSETS_DIR
 from app.utils.dev_test_pixel_zones import write_classified_image, write_pixel_zones
@@ -486,17 +486,20 @@ def process_map_extraction(self, map_id: str):
         )
         _raise_if_cancelled(map_id)
 
-        # Step 4: shapes
+        # Step 4: shapes, one flood fill per click. Not snapped or clipped: a
+        # shape is not a land zone and may sit at sea.
         shapes_result: dict[str, Any] = {}
-        if inputs.enable_shapes_extraction:
-            progress(4, "Extracting shapes from image")
-            shapes_result = extract_shapes(
+        if inputs.shapes:
+            progress(4, "Extracting shapes from click positions")
+            shapes_result = extract_shapes_from_clicks(
                 tmp_file_path,
-                text_regions=text_regions,
-                legend_bounds=inputs.legend_bounds,
+                click_positions=inputs.shape_clicks,
+                click_names=inputs.shape_names,
             )
             collections.extend(
-                placement.georeference(shapes_result.get("pixel_features", [])).collections
+                placement.georeference(
+                    shapes_result.get("pixel_features", []), clean=False
+                ).collections
             )
         _raise_if_cancelled(map_id)
 
@@ -567,7 +570,7 @@ def process_map_extraction(self, map_id: str):
         "extractions_performed": {
             "georeferencing": True,
             "color_extraction": True,
-            "shapes_extraction": inputs.enable_shapes_extraction,
+            "shapes_extraction": bool(inputs.shapes),
             "text_extraction": inputs.enable_text_extraction,
         },
         "alignment": _alignment_summary(placement.alignment),

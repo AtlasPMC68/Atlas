@@ -94,6 +94,20 @@ def test_patch_validates_and_merges():
         apply_inputs_patch(inputs, {"colors": [{"x": 2, "y": 0}]})
 
 
+def test_shape_clicks_are_validated_and_named():
+    inputs = apply_inputs_patch(
+        {}, {"shapes": [{"x": 0.4, "y": 0.6, "name": " Cercle "}, {"x": 0.1, "y": 0.2}]}
+    )
+    parsed = parse_import_inputs(inputs)
+    assert parsed.shape_clicks == [(0.4, 0.6), (0.1, 0.2)]
+    assert parsed.shape_names == ["Cercle", "Forme 2"]
+
+    with pytest.raises(ValueError, match="normalised"):
+        apply_inputs_patch({}, {"shapes": [{"x": 1.5, "y": 0.2}]})
+    with pytest.raises(ValueError, match="at most"):
+        apply_inputs_patch({}, {"shapes": [{"x": 0.1, "y": 0.1}] * 51})
+
+
 def test_a_new_frame_clears_the_control_points():
     inputs = apply_inputs_patch({}, {"frameBounds": FRAME, "controlPoints": SIFT})
     moved = apply_inputs_patch(inputs, {"frameBounds": {**FRAME, "west": -90.0}})

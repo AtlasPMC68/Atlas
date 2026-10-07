@@ -6,7 +6,13 @@ export type ImportPhase = "import" | "saisie" | "extraction";
 
 export interface ImportOptions {
   textExtraction: boolean;
-  shapesExtraction: boolean;
+}
+
+// One click per shape: normalised position on the map image, and a name.
+export interface ImposedShape {
+  x: number;
+  y: number;
+  name: string;
 }
 
 // What the user has entered so far, as the backend stores it
@@ -19,6 +25,7 @@ export interface ImportInputs {
   // transform (dev-docs/georeferencing-testing.md section 3).
   checkPoints?: ControlPointInput[];
   colors?: ImposedColor[];
+  shapes?: ImposedShape[];
   options?: ImportOptions;
 }
 
@@ -58,7 +65,7 @@ export interface ImportSessionResponse {
 }
 
 // "checks" exists in dev-test mode only.
-export type StepId = "zone" | "legend" | "sift" | "cities" | "checks" | "colors";
+export type StepId = "zone" | "legend" | "sift" | "cities" | "checks" | "colors" | "shapes";
 
 // locked: waiting on another step. available: can be done. done: can be redone.
 export type StepStatus = "locked" | "available" | "done";
