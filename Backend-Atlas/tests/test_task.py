@@ -1,10 +1,4 @@
-"""The import tasks, with the database transitions stubbed out.
-
-The row transitions (`_claim_*`, `_finish_ocr`, `_save_extraction`, ...) are
-the only database access in these tasks, so replacing them leaves the task
-bodies -- what runs, with which inputs, and what reaches the final save --
-under test without a database.
-"""
+"""The import tasks, with the database transitions stubbed out."""
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch

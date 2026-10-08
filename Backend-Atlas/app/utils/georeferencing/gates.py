@@ -1,32 +1,4 @@
-"""Alignment: fit the coastline, check the result, keep it or fall back.
-
-See dev-docs/georeferencing.md section 5.2.
-
-Alignment only ever runs on a coastline that has been identified on the map:
-``runner.align_map`` refuses to start without water picks and a water mask
-big enough to trust, because the water/land boundary is what tells the map's
-coast apart from its rivers, borders and frame lines. Matching the right
-curves is that precondition's job, not these checks'.
-
-Given that, one fit (``_fit``), four checks on what it produced
-(``evaluate_gates``), and either the aligned affine or the control-point
-affine. Every check is a sanity check on the result, set leniently: it is
-there to catch a fit that went somewhere absurd, not to second-guess one that
-moved a little.
-
-    transform_determinant  not mirrored or folded
-    curve_fit_engaged      the coastline fit did not get worse
-    water_agreement        the map's water and the real water overlap at least
-                           about as well as under the control-point affine
-    control_points_held    the fit did not drag the map far off the user's
-                           own clicks
-
-There is no retry. An earlier design climbed a "recovery ladder" (wider
-annealing, multi-start, a heavier control-point weight) behind eight gates and
-a probe fit; in every corpus run the first attempt passed, so the ladder never
-ran and the probe cost a second fit per import for a gate that could not fail.
-georeferencing-history.md (2026-10-07) has the reasoning.
-"""
+"""Alignment: fit the coastline, check the result, keep it or fall back."""
 
 import logging
 import math
@@ -84,17 +56,8 @@ def similarity_of(model: AffineModel) -> tuple:
 
 
 def water_mask_iou(model: AffineModel, layers: Any, evidence: Any) -> Optional[float]:
-    """Overlap of the user's water mask with the reference water, warped in.
+    """Overlap of the user's water mask with the reference water, warped in."""
 
-    Compared against ``layers.water`` -- ocean *and* lake surfaces -- never
-    against ocean alone. A blue pipette selects both, while the reference
-    ``land`` raster counts lake interiors as land, so comparing against ocean
-    alone scores a correct alignment as wrong: measured, harmless where the
-    framing box has coast (IoU 0.97) and total where it does not (0.00, lakes
-    being the only water there).
-
-    Returns None when the framing box holds no reference water at all.
-    """
     user_water = np.asarray(evidence.water)
     if not getattr(layers, "has_water", False) or not user_water.any():
         return None
@@ -314,11 +277,8 @@ def fit_stages(
     config: GeorefConfig,
     gcp_targets: Optional[np.ndarray] = None,
 ) -> Tuple[AffineModel, PhaseResult, AffineModel]:
-    """Coastline chamfer, then coastline + lakes, then ICP.
+    """Coastline chamfer, then coastline + lakes, then ICP."""
 
-    Returns (candidate, the phase that produced it, the coarse stage's model).
-    ``gcp_targets``: see ``align._gcp_term`` (``post_align`` fits in pixel space).
-    """
     if config.enable_chamfer:
         coarse = fit_chamfer(
             start,
@@ -377,20 +337,8 @@ def align(
     record: Optional[RunRecord] = None,
     ground_meters_per_pixel: Optional[float] = None,
 ) -> AlignmentResult:
-    """Fit the coastline from the control-point affine, check it, decide.
-
-    Args:
-        baseline: the control-point affine: the start, and the fallback.
-        control_points: the user's GCPs, with their source.
-        layers: `ReferenceLayers` for the framing box.
-        evidence: `UserEvidence` for the map image, its coastline identified
-            by the water picks (``runner.align_map`` checks that first).
-        record: optional run record, populated in place.
-
-    Returns:
-        An `AlignmentResult` whose `model` is safe to use: the aligned affine
-        when every check passed, the baseline otherwise.
-    """
+    """Fit the coastline from the control-point affine, check it, decide."""
+    
     record = record or RunRecord()
 
     # Coastline on its own for the coarse stage, then lakes too when on.

@@ -1,11 +1,4 @@
-"""Unit tests for Step 4: chamfer, ICP, and the checks on the result.
-
-None of this needs cv2 -- `align.py` and `gates.py` consume the
-arrays `evidence.py` produced, and do their own gradients with scipy. The tests
-therefore build small synthetic worlds instead of reading a map, which also
-makes the behaviour being pinned explicit: a known transform is perturbed, and
-alignment has to recover it.
-"""
+"""Unit tests for Step 4: chamfer, ICP, and the checks on the result."""
 
 import math
 from types import SimpleNamespace
@@ -384,11 +377,7 @@ class TestControlPointsKeepPulling:
     def test_the_joint_fit_is_not_the_curve_only_fit(self):
         """A coast drawn 25 px from where the control points put it. The probe
         (curve only) goes to the drawing; the joint fit must not simply follow
-        it, or the control points carry no information.
-
-        At equal weights, because what this pins is the loss structure (the
-        bug made the joint fit *identical* to the probe whatever the weights),
-        not the production weight: at x10 the coast is meant to pull harder."""
+        it, or the control points carry no information."""
         config = DEFAULT_GEOREF_CONFIG.with_overrides(weight_gcp=1.0, weight_curve=1.0)
         truth = _truth_model()
         control_points = _control_points_from(truth, SPREAD)

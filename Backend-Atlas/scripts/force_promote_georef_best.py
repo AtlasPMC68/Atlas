@@ -1,14 +1,5 @@
 #!/usr/bin/env python
 """Make a dev-test case's last run its best, whatever the two scores.
-
-A run only becomes ``best`` on its own when it beats it. After a deliberate
-change that moves a case's score down (a fix that removes a lucky error, a
-redrawn expected zone), the old best would otherwise stay the reference
-forever. Run the case first, look at it, then promote it with this.
-
-Only a run on the default settings can be promoted: a run with switches or
-excluded control points is refused, as automatic promotion refuses it.
-
 Usage, from Backend-Atlas:
 
     python scripts/force_promote_georef_best.py --case-id pip_7sift

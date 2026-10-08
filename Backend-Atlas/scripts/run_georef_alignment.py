@@ -1,41 +1,5 @@
 #!/usr/bin/env python
-"""Run georeferencing on dev-test cases directly, without Celery or pytest.
-
-The existing loop is ``docker compose run --rm test-backend pytest``, which boots
-a container and collects every test. Tuning an annealing schedule means
-re-running dozens of times a day, so seconds versus minutes compounds across
-the whole build.
-
-It runs the dev-test task's own steps (``app/utils/extraction_steps.py``), so
-under the same settings its zones are byte-identical to a re-run from the UI.
-
-This script skips all of that: it loads a case config, runs colour extraction
-once (cached on disk afterwards), fits and applies the transform, evaluates, and
-prints the numbers. Colour extraction is by far the slowest part and does not
-change while alignment is being tuned, hence the cache.
-
-Usage, from Backend-Atlas with the dependencies installed:
-
-    python scripts/run_georef_alignment.py                     # every case
-    python scripts/run_georef_alignment.py --test-id abc       # one map
-    python scripts/run_georef_alignment.py --case-id pip_7sift # one case
-    python scripts/run_georef_alignment.py --no-cache          # re-extract colours
-    python scripts/run_georef_alignment.py --no-write          # touch nothing on disk
-    python scripts/run_georef_alignment.py --reference         # + reference layer PNGs
-    python scripts/run_georef_alignment.py --evidence          # + user-side evidence PNGs
-    python scripts/run_georef_alignment.py --ocr               # + text mask (slow once, then cached)
-    python scripts/run_georef_alignment.py --no-align          # control points only, no Step 4 alignment
-    python scripts/run_georef_alignment.py --debug             # + alignment diagnostics
-    python scripts/run_georef_alignment.py --kind probe        # only replay-only cases
-    python scripts/run_georef_alignment.py --sources city      # fit from the cities alone
-    python scripts/run_georef_alignment.py --refresh-derived   # re-run OCR even if cached
-
-Or through the dedicated compose service, which depends on no broker, no
-database and no backend:
-
-    docker compose run --rm georef-dev
-    docker compose run --rm georef-dev python scripts/run_georef_alignment.py --case-id pip_7sift
-"""
+"""Run georeferencing on dev-test cases directly, without Celery or pytest."""
 
 import argparse
 import hashlib
@@ -108,13 +72,7 @@ def discover_cases(assets_root: str) -> list[tuple[str, str]]:
 
 
 def _extraction_library_versions() -> dict:
-    """Versions of the libraries colour extraction actually depends on.
-
-    Part of the cache key. Learned the hard way: a cached result computed under
-    OpenCV 5.0.0 was served after the image was rebuilt on 4.13, and the two
-    disagree on zone geometry (IoU 0.9406 vs 0.9414). A measurement harness
-    handing back a silently stale number is worse than having no cache.
-    """
+    """Versions of the libraries colour extraction actually depends on."""
     import skimage
 
     return {"cv2": cv2.__version__, "skimage": skimage.__version__}
@@ -187,12 +145,8 @@ def run_case(
     debug: bool = False,
     sources: tuple = GCP_SOURCES,
 ) -> Optional[dict]:
-    """Run one case the way the dev-test task does, step for step.
-
-    Same text regions, same colour extraction, same alignment, same transform
-    (``app/utils/extraction_steps.py``), so a number printed here is the number
-    a re-run from the dev tool gives under the same settings.
-    """
+    """Run one case the way the dev-test task does, step for step."""
+    
     print(f"\n=== {test_id}/{case_id}")
 
     image_path = find_test_image_path(test_id)

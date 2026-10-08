@@ -1,15 +1,4 @@
-"""Per-control-point error, for deciding which clicks to keep.
-
-A control point's *in-sample* residual is the wrong number to judge it by: an
-affine spreads one bad click across all of them, so a mis-matched point both
-hides itself and blames its neighbours. Leave-one-out asks the question that
-actually matters -- "with this point excluded, how far off does the fit place
-it?" -- and it is cheap here, because n is the number of clicks a human made.
-
-This runs no pipeline: no OCR, no colour extraction, no reference rasters. It
-is meant to answer "which of my points is wrong" in the time it takes to draw
-a list, rather than in the two minutes a re-run costs.
-"""
+"""Per-control-point error, for deciding which clicks to keep."""
 
 import json
 import logging
@@ -51,12 +40,8 @@ def _km(value: Optional[float], ref_lat: float) -> Optional[float]:
 
 
 def load_last_run_model(record_path: str) -> Optional[Any]:
-    """The transform a case's last run actually used, or None.
+    """The transform a case's last run actually used, or None."""
 
-    Read from the run record rather than refitted, so a piecewise run reports
-    the piecewise placement -- including the Step 4 alignment baked into it,
-    which cannot be reproduced here because it needs the image.
-    """
     try:
         with open(record_path, "r", encoding="utf-8") as f:
             record = json.load(f)
@@ -67,12 +52,8 @@ def load_last_run_model(record_path: str) -> Optional[Any]:
 
 
 def load_last_run_control_pixels(record_path: str) -> Optional[List[Tuple[float, float]]]:
-    """The pixel clicks the last run actually fitted on, or None.
+    """The pixel clicks the last run actually fitted on, or None."""
 
-    A run made with points excluded was fitted on a subset, so measuring its
-    model against every stored point would report an error the run never had
-    -- worse, precisely when the point picker is being used to improve it.
-    """
     try:
         with open(record_path, "r", encoding="utf-8") as f:
             record = json.load(f)
@@ -110,12 +91,8 @@ def _model_from_record(record: Dict[str, Any]) -> Optional[Any]:
 def leave_one_out_models(
     control_points: Sequence[ControlPoint],
 ) -> List[Optional[AffineModel]]:
-    """One affine per point, fitted without that point. None where impossible.
+    """One affine per point, fitted without that point. None where impossible."""
 
-    The honest counterpart to the applied model when that model interpolates
-    its own control points: a piecewise fit places every one of them exactly,
-    so an arrow drawn from it has zero length and says nothing.
-    """
     n = len(control_points)
     if n < 4:
         return [None] * n
@@ -145,28 +122,8 @@ def control_point_diagnostics(
     applied_pixels: Optional[Sequence[Tuple[float, float]]] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> Dict[str, Any]:
-    """Per-point in-sample and leave-one-out error for an affine fit.
-
-    Returns a JSON-ready dict. Distances are ground kilometres, corrected at the
-    framing box's centre latitude -- reporting raw EPSG:3857 metres
-    as if they were ground distance is the inflation this package avoids
-    everywhere else.
-
-    Fewer than 4 points means no leave-one-out is possible: dropping one leaves
-    the 3 an affine needs to fit exactly, so every held-out error would be
-    measured against a fit with no freedom left.
-
-    ``applied_model`` is the transform the case's last run used. When given,
-    ``appliedKm`` reports how far that model actually placed each point, which
-    is the number matching what the map shows. Leave-one-out stays an affine
-    refit either way: it answers "can the points predict each other", and a
-    model that interpolates them exactly cannot answer that about itself.
-
-    ``applied_pixels`` are the clicks that run was fitted on. Points absent
-    from it were excluded by hand, so they still get an ``appliedKm`` -- that
-    is the useful number for deciding whether to bring one back -- but they
-    are kept out of ``appliedRmseKm``, which reports what the run achieved.
-    """
+    """Per-point in-sample and leave-one-out error for an affine fit."""
+    
     points: List[Dict[str, Any]] = []
     summary: Dict[str, Any] = {
         "count": len(control_points),

@@ -1,31 +1,4 @@
-"""User-side evidence: what the scanned map itself offers to align against.
-
-Three products, all in the user's image pixel space:
-
-    edge_weight   Canny edges, text masked out, long straight lines down-weighted
-    water         the water pipette's colour, split into ocean and lakes
-    text_mask     dilated OCR regions, so labels do not become edges
-    legend_mask   the legend rectangle: its frame, swatches and labels are a
-                  key, not geography, so it gives neither edges nor water
-
-**Straight-line suppression is the cheapest anti-failure measure we have**
-(georeferencing-history.md, Steps 0-3). Graticules, neatlines, inset frames and legend boxes are
-straight; coastlines are not. Those straight lines are the dominant attractors
-for wrong-feature lock, and a fit locked onto the wrong feature has *low* chamfer
-residual by construction, so nothing downstream will notice. They are separated
-from real geography by straightness alone, which is why this belongs here rather
-than in a later, cleverer stage.
-
-They are **down-weighted, not deleted**. A real coastline can run straight for a
-while, and a neatline that happens to sit on a coast should not take the coast
-with it.
-
-**Not doing: toponym water cues.** Parsing labels for *Baie*, *Lac*, *Mer* to
-infer water where colour fails is cut from the plan entirely, not deferred. The
-consequence is accepted knowingly: on a map like Leclerc with an unpainted white
-Atlantic, the water pipette yields nothing, the coastline cannot be identified,
-and the map is placed by its control points alone (``runner.align_map``).
-"""
+"""User-side evidence: what the scanned map itself offers to align against."""
 
 import logging
 from dataclasses import dataclass, field
@@ -57,12 +30,8 @@ def build_text_mask(
     text_regions: Optional[TextRegions],
     dilation_px: int,
 ) -> np.ndarray:
-    """Mask of the OCR regions, dilated outwards.
+    """Mask of the OCR regions, dilated outwards."""
 
-    Dilated because Canny fires on the *outside* of a glyph as readily as the
-    inside, so a mask tight to the bounding box still leaves a rectangle of
-    edges around every label.
-    """
     mask = np.zeros(shape_hw, dtype=np.uint8)
     if not text_regions:
         return mask.astype(bool)
@@ -121,11 +90,8 @@ def detect_straight_lines(
     edges: np.ndarray,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> List[Tuple[int, int, int, int]]:
-    """Long straight segments in the edge map, as (x1, y1, x2, y2).
+    """Long straight segments in the edge map, as (x1, y1, x2, y2)."""
 
-    The length threshold is a fraction of the image diagonal, not an absolute
-    pixel count, so it means the same thing on a 900 px scan and a 6000 px one.
-    """
     height, width = edges.shape
     diagonal = float(np.hypot(width, height))
     min_length = max(int(diagonal * config.straight_line_min_length_ratio), 20)
@@ -142,13 +108,8 @@ def detect_straight_lines(
 
 
 def normalize_hough_output(found: Any) -> List[Tuple[int, int, int, int]]:
-    """Flatten whatever `HoughLinesP` returned into a list of 4-tuples.
+    """Flatten whatever `HoughLinesP` returned into a list of 4-tuples."""
 
-    The shape is not stable across OpenCV majors: 4.x returns `(N, 1, 4)` and
-    5.0 returns `(N, 4)`. `opencv-python-headless` is unpinned in
-    `requirements.txt`, so two images built weeks apart disagree -- which is
-    exactly how this was found. Reshaping to `(-1, 4)` accepts either.
-    """
     if found is None:
         return []
     array = np.asarray(found)
@@ -163,12 +124,8 @@ def suppress_straight_lines(
     lines: Sequence[Tuple[int, int, int, int]],
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> np.ndarray:
-    """Turn the binary edge map into a weight map, down-weighting straight runs.
+    """Turn the binary edge map into a weight map, down-weighting straight runs."""
 
-    Returns float32 in [0, 1]: 1.0 on an ordinary edge pixel,
-    `config.straight_line_weight` on one lying under a detected straight
-    segment, 0.0 where there is no edge at all.
-    """
     weight = edges.astype(np.float32)
     if not lines:
         return weight
@@ -194,11 +151,8 @@ def build_water_mask(
     water_sampling_radii: Optional[Sequence[int]] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> np.ndarray:
-    """Pixels close in colour to any water pick.
-
-    Same colour space and metric as zone extraction (CIELAB, CIEDE2000), so a
-    water pick behaves like a zone pick -- it simply never becomes a zone.
-    """
+    """Pixels close in colour to any water pick."""
+    
     height, width = image_rgb.shape[:2]
     water = np.zeros((height, width), dtype=bool)
     if not water_click_positions:
@@ -243,16 +197,8 @@ def split_ocean_and_lakes(
     water: np.ndarray,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Split a water mask into (ocean, lakes).
+    """Split a water mask into (ocean, lakes)."""
 
-    The ocean is the largest connected component touching the image border: the
-    sea runs off the edge of a map, a lake does not. Everything else above a
-    minimum area is a lake.
-
-    Known limitation: a sea cut into two pieces by a peninsula at the frame edge
-    contributes its smaller piece to `lakes`. Harmless for a gate that compares
-    total water, which is what the water agreement check does.
-    """
     ocean = np.zeros_like(water, dtype=bool)
     lakes = np.zeros_like(water, dtype=bool)
     if not water.any():
@@ -287,22 +233,8 @@ def filter_edges_near_water(
     water: np.ndarray,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> Tuple[np.ndarray, bool]:
-    """Keep only edges on the water/land boundary.
+    """Keep only edges on the water/land boundary."""
 
-    An edge survives when it lies within `edge_water_margin_px` of water *and*
-    within the same margin of non-water, i.e. inside a band straddling the
-    shoreline. Rivers, borders and the legend sit away from the water and go;
-    so do lines drawn across open water, which are surrounded by it.
-
-    `water` should already be cleaned of speckle (ocean | lakes, not the raw
-    colour mask), or every stray water-coloured pixel inland keeps the edges
-    around it.
-
-    Returns (edges, applied). Not applied -- edges unchanged -- only when the
-    filter is switched off, as an experiment. Alignment never runs without
-    water, or on a water mask too small to trust (``runner.align_map``), so
-    there is no "no water" case to fall back from here.
-    """
     if not config.edge_water_filter:
         return edges, False
 
@@ -353,17 +285,8 @@ def build_user_evidence(
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     legend_bounds: Optional[LegendBounds] = None,
 ) -> UserEvidence:
-    """Build the edge map, the straight-line weighting and the water mask.
-
-    Args:
-        image_bgr: the user's map as OpenCV reads it (BGR, uint8).
-        text_regions: OCR polygons, when text extraction ran.
-        water_click_positions: normalised (x, y) water pipette picks. They
-            identify the coastline; alignment does not run without them.
-        water_sampling_radii: per-pick sampling radius in pixels.
-        legend_bounds: the legend rectangle in image pixels, or None when the
-            map has none. Excluded from the edges and the water mask.
-    """
+    """Build the edge map, the straight-line weighting and the water mask."""
+    
     height, width = image_bgr.shape[:2]
 
     text_mask = build_text_mask(

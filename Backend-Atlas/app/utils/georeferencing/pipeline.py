@@ -1,11 +1,4 @@
-"""Fit a transform from control points and apply it to pixel-space features.
-
-This is the orchestration that used to live inline in ``georeferencingSift.py``:
-fit affine -> snap to coastline -> clip to land -> convert to EPSG:4326. The
-stages themselves are unchanged; what changed is that the model, the
-hyperparameters and the run record are now first-class objects the caller can
-inspect, persist and compare.
-"""
+"""Fit a transform from control points and apply it to pixel-space features."""
 
 import logging
 import math
@@ -80,34 +73,8 @@ def georeference_features(
     extra_properties: Optional[Dict[str, Any]] = None,
     refine_piecewise: Optional[Callable[[Any, RunRecord], Any]] = None,
 ) -> GeorefResult:
-    """Georeference pixel-space features with an affine fitted to *control_points*.
+    """Georeference pixel-space features with an affine fitted to *control_points*."""
 
-    Args:
-        pixel_feature_collections: GeoJSON FeatureCollections in pixel space.
-        control_points: pixel <-> geo pairs, with their source.
-        frame_bounds: the world area the user framed; reported distances are
-            corrected at its centre latitude.
-        image_size: ``(width, height)`` of the scan, in pixels. The snap
-            tolerance and the piecewise densification are shares of its
-            diagonal, and the piecewise frame is padded around it.
-        config: hyperparameters; see ``config.GeorefConfig``.
-        record: optional run record, populated in place.
-        model: a transform to apply instead of fitting one. Step 4 passes the
-            gated alignment here; leaving it None reproduces the GCP-only fit.
-        extra_properties: merged into every output feature's properties, so a
-            consumer can see how the feature was placed.
-        refine_piecewise: with ``config.align_after_piecewise``, called on the
-            piecewise model to align it again (``post_align``), or on the GCP
-            affine when there is no piecewise model. It needs the image's
-            evidence, which this module never sees, so the caller supplies it.
-
-    Returns:
-        A ``GeorefResult`` whose ``collections`` are FeatureCollections in
-        EPSG:4326.
-
-    Raises:
-        ValueError: If fewer than 3 control points are supplied.
-    """
     record = record or RunRecord()
     record.set_config(config)
 
@@ -386,14 +353,8 @@ def _affine_misfit_exceeds_threshold(
     config: GeorefConfig,
     record: RunRecord,
 ) -> bool:
-    """``auto``: should the piecewise correction be applied on top of *affine*?
+    """``auto``: should the piecewise correction be applied on top of *affine*?"""
 
-    Compares the affine's in-sample GCP RMS, in image pixels, against
-    ``auto_piecewise_rmse_ratio_of_diagonal`` of the image diagonal. In-sample
-    is what the affine can do with these points; the piecewise model reports
-    its own leave-one-out error once applied. No redundancy (3 points) keeps
-    the affine: an exact fit is no evidence of distortion.
-    """
     diagonal_px = math.hypot(float(image_size[0]), float(image_size[1]))
     threshold_px = diagonal_px * config.auto_piecewise_rmse_ratio_of_diagonal
     rmse_3857 = affine.rmse_3857
@@ -425,24 +386,8 @@ def _apply_piecewise_correction(
     image_size: Tuple[int, int],
     refit_base: bool = True,
 ) -> TransformModel:
-    """Wrap *base* in a local correction, or return it unchanged.
+    """Wrap *base* in a local correction, or return it unchanged."""
 
-    ``refit_base``: *base* is the affine fitted to these same control points,
-    so the piecewise model refits it itself -- identically -- and every
-    leave-one-out fold refits it without the held-out point. Passing it as a
-    fixed base instead lets the held-out point shape the affine it is measured
-    against; with exactly 3 points that reported ~0 km. When *base* is the
-    aligned model it cannot be refitted without the image, so it stays fixed
-    and the error is labelled ``leave_one_out_fixed_base``.
-
-    Raises only on a ``piecewise_regularization`` nothing here knows, like the
-    caller does on an unknown ``transform_model``; otherwise never. The
-    correction is refused for reasons that are properties of
-    the user's clicks -- two points in the same place, or a set that folds the
-    map -- and a refusal has to leave a working affine behind rather than fail
-    the import. The reason is recorded either way, because "piecewise was on
-    and the output is identical" is otherwise indistinguishable from a bug.
-    """
     # The frame the correction decays to zero on is padded around the image,
     # which holds every zone and every clicked point.
     extent = (0.0, 0.0, float(image_size[0]), float(image_size[1]))
@@ -508,14 +453,8 @@ def _rmse_km_by_source(
     control_points: Sequence[ControlPoint],
     ref_lat: float,
 ) -> Dict[str, Optional[float]]:
-    """RMS control-point error per source, in ground kilometres.
-
-    Uses the model's own residuals -- leave-one-out for the piecewise model,
-    whose in-sample residuals are 0 by construction. A source with no points,
-    or whose residuals are unknown, reports None rather than 0 -- and so does
-    every source when the fit has no redundancy (exactly 3 points), for the
-    same reason ``rmse_3857`` does: an exact fit is no evidence, not 0 km.
-    """
+    """RMS control-point error per source, in ground kilometres."""
+    
     residuals = np.asarray(model.residuals_3857, dtype=float)
     no_evidence = model.rmse_3857 is None
     out: Dict[str, Optional[float]] = {}

@@ -39,6 +39,11 @@ from app.utils.legend import parse_legend_entry
 
 if TYPE_CHECKING:
     from app.utils.dev_test_evaluator import DevTestPaths
+
+from app.utils.dev_test_evaluator import build_test_case_paths
+from app.utils.georeferencing.records import RUN_RECORD_FILENAME
+from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
+from app.tasks import GEOREF_CONFIG
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -95,13 +100,8 @@ BEST_ARTIFACTS = (
 def _drop_best_if_inputs_changed(
     case_dir: str, config_path: str, new_config: dict[str, Any]
 ) -> None:
-    """Forget a case's best run when its clicks change.
+    """Forget a case's best run when its clicks change."""
 
-    "Best" means the best score on these inputs. Once a case is edited (a water
-    pick added, a framing box drawn) the old best was measured on different
-    clicks, and keeping it would let it outrank every run on the new ones. A
-    re-save with identical inputs keeps it.
-    """
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             old_config = json.load(f)
@@ -134,12 +134,8 @@ RAW_ZONES_FILENAME = "zones_raw.geojson"
 
 
 def write_raw_zones(case_dir: str, collections: list | None) -> None:
-    """The run's zones before snapping and the clip, beside ``zones.geojson``.
+    """The run's zones before snapping and the clip, beside ``zones.geojson``."""
 
-    ``None`` means the run produced none (no control points, or georeferencing
-    failed): any older file is removed, so a stale raw version is never scored
-    against a new cleaned one.
-    """
     path = os.path.join(case_dir, RAW_ZONES_FILENAME)
     if collections is None:
         try:
@@ -427,22 +423,7 @@ def _copy_latest_to_best(paths: "DevTestPaths", report: dict[str, Any]) -> None:
 def force_promote_latest_to_best(
     assets_root: str, test_id: str, test_case_id: str
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """Make a case's last run its best, whatever the two scores.
-
-    For after a deliberate change that moves a case's score down (a fix that
-    removes a lucky error, a redrawn expected zone): automatic promotion only
-    ever moves ``best`` up, so it would otherwise keep the old run forever.
-
-    Only a run on the default settings can become ``best``, as with automatic
-    promotion: a run with switches or excluded control points is refused.
-
-    Returns ``(previous best report or None, promoted report)``.
-
-    Raises:
-        ValueError: no scored last run, or one that cannot become ``best``.
-    """
-    from app.utils.dev_test_evaluator import build_test_case_paths
-    from app.utils.georeferencing.records import RUN_RECORD_FILENAME
+    """Make a case's last run its best, whatever the two scores."""
 
     label = f"{test_id}/{test_case_id}"
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
@@ -698,8 +679,6 @@ def _start_extraction_for_case(
     config_overrides: dict | None = None,
     excluded_control_points: Sequence[int] | None = None,
 ) -> str:
-    from app.tasks import GEOREF_CONFIG
-
     # Refuse up front what the task could only fail on: a case missing a user
     # input, or a source selection leaving fewer than 3 points ("cities only"
     # on a case with two cities).
@@ -766,9 +745,6 @@ async def run_evaluate_case_blocking(
         await to_thread(async_result.get, timeout=None, propagate=True)
     except Exception as e:
         raise RuntimeError(f"Extraction task ended in state {async_result.state}: {e}")
-
-    from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
-    from app.utils.dev_test_evaluator import build_test_case_paths
 
     kind = resolve_case_kind(test_id, test_case_id)
 

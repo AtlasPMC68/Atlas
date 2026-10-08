@@ -1,12 +1,4 @@
-"""Turning a colour mask into polygons, holes included.
-
-The case that motivated these: on a map of Rupert's Land, Hudson Bay is a hole
-inside the zone, and the extraction used to fill it. Every contour came back
-from ``find_contours`` as an equal, unlabelled closed curve, so the bay's
-boundary became a polygon of its own and the union swallowed the bay. The
-zone then covered open water, and the ocean clip had to carve it back out --
-which made that clip look far more important than it is.
-"""
+"""Turning a colour mask into polygons, holes included."""
 
 import numpy as np
 from shapely.geometry import Point
@@ -40,43 +32,6 @@ class TestMaskToGeometry:
         mask[60:90, 60:90] = True
 
         assert mask_to_geometry(mask).geom_type == "MultiPolygon"
-
-
-class TestTextInpaint:
-    """The ink of a label is erased from the image before classification.
-
-    The case that motivated it: "TERRE-NEUVE" written across a small island,
-    mostly over the sea. Rebuilding the image lets each side of the coast come
-    back as what surrounds it, so the island is not left hollow.
-    """
-
-    LAND = (0.85, 0.25, 0.25)
-    SEA = (0.30, 0.65, 0.90)
-
-    def _scene(self):
-        """Land on the left, sea on the right, black strokes across the coast."""
-        from app.utils.color_extraction import compute_lab
-
-        rgb = np.zeros((120, 200, 3), dtype=np.float64)
-        rgb[:, :100] = self.LAND
-        rgb[:, 100:] = self.SEA
-        for x in (70, 85, 110, 125):  # two strokes on land, two at sea
-            rgb[50:70, x : x + 4] = 0.05
-        rgb[58:62, 70:129] = 0.05  # a bar joining them across the coast
-        box = [(62, 44), (136, 44), (136, 76), (62, 76)]
-        lab = compute_lab(rgb)
-        centers = compute_lab(np.array([[self.LAND]]))[0]
-        return rgb, lab, centers, box
-
-    def test_ink_on_land_becomes_land_and_ink_at_sea_becomes_sea(self):
-        from app.utils.color_extraction import inpaint_text_ink
-
-        rgb, lab, centers, box = self._scene()
-        out, _lab, stats = inpaint_text_ink(rgb, lab, centers, [box])
-
-        assert stats["boxesFilled"] == 1
-        assert np.allclose(out[60, 72], self.LAND, atol=0.08)
-        assert np.allclose(out[60, 112], self.SEA, atol=0.08)
 
 
 class TestTextRepaintPalette:

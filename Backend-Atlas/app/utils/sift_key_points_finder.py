@@ -40,27 +40,7 @@ def select_spread_keypoints(
     well_spaced_px: float,
     min_separation_px: float,
 ):
-    """Pick up to `count` keypoints spread as widely as possible, coastline first.
-
-    Farthest-point sampling: seed with the strongest coastline keypoint (the
-    strongest lake one when the box has no coast), then repeatedly take the
-    candidate farthest from everything already chosen. Spread is the objective
-    because clustered control points make the affine badly conditioned; a
-    single "at least D px apart" threshold could not both spread the points and
-    fill the request.
-
-    Lakes are always candidates but never preferred. A user's map may omit a
-    lake or draw it schematically, while it always draws the coast. So each
-    round takes the farthest *coastline* candidate that is still well spaced
-    (`well_spaced_px` from every chosen point), and a lake only when no
-    coastline candidate is. Once neither is, the same rule continues down to
-    `min_separation_px`, which is only a duplicate floor: SIFT reports several
-    keypoints at one spot, and two control points there constrain nothing.
-
-    Returns:
-        ``(keypoint, feature)`` pairs, feature being ``COASTLINE`` or ``LAKE``,
-        in the order chosen.
-    """
+    """Pick up to `count` keypoints spread as widely as possible, coastline first."""
     candidates = [
         (kp, feature)
         for feature, keypoints in ((COASTLINE, coastline_keypoints), (LAKE, lake_keypoints))
@@ -150,13 +130,8 @@ def draw_geojson_features(img: np.ndarray, geojson_path: str, bounds: dict, widt
 
 
 def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):
-    """Suggest SIFT keypoints for the user to match, inside geographic bounds.
-
-    The coastline and the lake shorelines are rendered separately, so each
-    keypoint knows which it came from, and `select_spread_keypoints` prefers
-    the coastline: lakes fill in only where the coast leaves the frame
-    uncovered.
-    """
+    """Suggest SIFT keypoints for the user to match, inside geographic bounds."""
+    
     geojson_dir = os.path.join(os.path.dirname(__file__), "..", "geojson")
     diagonal = float(np.hypot(width, height))
 

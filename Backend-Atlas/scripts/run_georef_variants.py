@@ -1,13 +1,5 @@
 #!/usr/bin/env python
 """Run named georeferencing variants over the dev-test cases and compare them.
-
-Phase 1.3 of dev-docs/georeferencing-testing.md. Variants live in
-``georef_variants.py``. For each case, colour extraction runs once (cached on
-disk, keyed on every setting it reads) and OCR comes from the per-map cache, so
-between georeferencing variants only the transform changes. Everything happens
-in memory: a case's own files (``zones.geojson``, ``report.json``, ``best``)
-are never touched.
-
     docker compose run --rm georef-dev python scripts/run_georef_variants.py --stage 1
     docker compose run --rm georef-dev python scripts/run_georef_variants.py --variants A1,B2 --case-id pip_7sift
     docker compose run --rm georef-dev python scripts/run_georef_variants.py --list

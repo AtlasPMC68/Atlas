@@ -1,28 +1,11 @@
 #!/usr/bin/env python
 """Write the georeferencing edge mask of one image to PNG, to eyeball it.
-
-Runs exactly the edge step the alignment uses (`build_edge_map` in
-`app/utils/georeferencing/evidence.py`), with the blur and Canny thresholds
-overridable from the command line, so settings can be compared before any of
-them becomes a default in `GeorefConfig`.
-
-Usage, through the compose service (the image must be under a mounted folder,
 e.g. Backend-Atlas/tests/ or Backend-Atlas/debug_runs/):
 
     docker compose run --rm georef-dev python scripts/edge_mask.py debug_runs/<run>/00_map.png
     docker compose run --rm georef-dev python scripts/edge_mask.py <image> --blur 3 --low 30 --high 90
     docker compose run --rm georef-dev python scripts/edge_mask.py <image> --sweep
     docker compose run --rm georef-dev python scripts/edge_mask.py <image> --ocr   # mask text too (slow once, cached)
-
-Canny keeps a pixel as an edge when its gradient is above --high, or above
---low and connected to one above --high. Lower thresholds = more edges; a
-smaller blur keeps thin, faint lines that a larger one smooths away.
-
-Output, in --out (default debug_runs/edges/<image name>/):
-
-    edges_<tag>.png      the mask, white edges on black
-    overlay_<tag>.png    the mask in red over the dimmed map
-    sweep.png            every preset side by side (--sweep only)
 """
 
 import argparse

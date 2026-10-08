@@ -1,11 +1,4 @@
-"""Post-hoc vertex snapping of zone boundaries onto the reference coastline.
-
-Nearest-point, with no orientation test and no confidence weighting. It is a
-cleaning step: it corrects transform error after the fact, so placement is
-judged before it (the raw score), while the first corpus run showed it improves
-the shipped zones (georeferencing-testing.md section 8). A smarter version is
-roadmap section 7.
-"""
+"""Post-hoc vertex snapping of zone boundaries onto the reference coastline."""
 
 import json
 import logging
@@ -197,12 +190,8 @@ def snap_geometry_to_coastline(
 def estimate_pixel_extent_from_features(
     pixel_feature_collections: List[dict],
 ) -> Optional[Tuple[float, float, float, float]]:
-    """Bounding box (x0, y0, x1, y1) of every pixel-space feature, or None.
+    """Bounding box (x0, y0, x1, y1) of every pixel-space feature, or None."""
 
-    Like ``estimate_pixel_diagonal_from_features``, this keys off *feature*
-    bounds rather than the image, and carries the same caveat: a map whose
-    zones sit in one corner reports a box much smaller than the map.
-    """
     minx = float("inf")
     miny = float("inf")
     maxx = float("-inf")
@@ -237,14 +226,8 @@ def estimate_pixel_extent_from_features(
 def estimate_pixel_diagonal_from_features(
     pixel_feature_collections: List[dict],
 ) -> Optional[float]:
-    """Estimate pixel-space diagonal from all feature bounds.
-
-    Note this keys off *feature* bounds rather than image size, so a map whose
-    zones cluster in one corner gets a much smaller tolerance than the same map
-    with spread-out zones (georeferencing-history.md, starting point). Once the framing
-    box and image dimensions are both available end to end this should key off
-    the image instead.
-    """
+    """Estimate pixel-space diagonal from all feature bounds."""
+    
     extent = estimate_pixel_extent_from_features(pixel_feature_collections)
     if extent is None:
         return None

@@ -1,23 +1,4 @@
-"""The legend: the part of a map that is a key, not geography.
-
-The user either draws a rectangle around it or says the map has none. Both are
-answers; a map nobody asked about has no answer at all, and that difference is
-what the dev-test requirements check reads.
-
-The rectangle is in the image's own pixel space (natural width/height), as the
-legend picker draws it. Every extractor ignores it:
-
-    colors      its pixels are removed from the masks before zones are built
-    shapes      shapes centred inside it are dropped
-    text        OCR boxes centred inside it never become city points
-    alignment   its edges and water are not evidence
-
-It no longer *drives* anything: colours come from the pipette alone. Deriving
-colours from legend swatches was removed with the import redesign.
-
-Shared by the production and dev-test paths so both read it the same way, like
-``imposed_colors.py`` and ``georeferencing/frame.py``.
-"""
+"""The legend: the part of a map that is a key, not geography."""
 
 import math
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -30,12 +11,8 @@ _REQUIRED_KEYS = ("x", "y", "width", "height")
 
 
 def parse_legend_bounds(entry: Any) -> LegendBounds:
-    """Validate a decoded ``{x, y, width, height}`` rectangle.
+    """Validate a decoded ``{x, y, width, height}`` rectangle."""
 
-    Raises:
-        ValueError: If it is not an object with four finite numbers and a
-            positive size.
-    """
     if not isinstance(entry, dict) or not set(_REQUIRED_KEYS).issubset(entry.keys()):
         raise ValueError("legend bounds must be an object with x, y, width, height")
 
@@ -59,13 +36,8 @@ def legend_to_entry(bounds: Optional[LegendBounds]) -> Dict[str, Any]:
 
 
 def parse_legend_entry(entry: Any) -> Tuple[bool, Optional[LegendBounds]]:
-    """Read a stored answer back. Returns ``(answered, bounds)``.
-
-    ``(False, None)``: never answered. ``(True, None)``: the map has no legend.
-
-    Raises:
-        ValueError: If the entry exists but is malformed.
-    """
+    """Read a stored answer back. Returns ``(answered, bounds)``."""
+    
     if entry is None:
         return False, None
     if not isinstance(entry, dict) or "present" not in entry:

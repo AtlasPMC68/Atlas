@@ -1,12 +1,4 @@
-"""The piecewise-affine model and its use from the pipeline.
-
-The properties worth pinning down are the ones that motivated the design: it
-interpolates the control points, it stops being anything but the affine away
-from them, it is continuous across triangle edges (the seam worry), and it
-refuses inputs that would fold the map.
-
-No cv2 and no Celery here, like the rest of the georeferencing unit tests.
-"""
+"""The piecewise-affine model and its use from the pipeline."""
 
 import numpy as np
 import pytest

@@ -135,14 +135,13 @@ control points but never given to anything that fits. See
 `color_extraction.py`, called through `extract_zone_colors`:
 
 - **Text first.** With OCR boxes available (`text_aware_zone_fill`), label ink is erased
-  from the image before classification. Two ways to find and repaint it
-  (`text_inpaint_algo`): **`palette`** (production) takes the background colours in a ring
-  around each box, calls ink whatever is far from them, and gives each ink pixel the colour
-  most voted by its known neighbours, so a name written over a zone comes back as that zone;
-  **`telea`** splits ink from background by brightness and fills it with OpenCV's Telea
-  inpainting, a weighted average that can blend two zone colours. An earlier `label` method,
-  which repaired the zones after classification instead, was removed after losing on every
-  corpus case.
+  from the image before classification. The background colours in a ring around each box
+  are taken as its palette, ink is whatever is far from them, and each ink pixel gets the
+  colour most voted by its known neighbours, so a name written over a zone comes back as that
+  zone. Two earlier methods were removed: `label`, which repaired the zones after
+  classification instead, lost on every corpus case; `telea`, which split ink by brightness
+  and filled it with OpenCV's Telea inpainting (a weighted average that can blend two zone
+  colours), lost to the palette consistently.
 - **Classification.** Every pixel is assigned to the nearest picked colour in CIELAB
   (ΔE2000), within a threshold; the legend rectangle is excluded. Zones are therefore an exact
   pixel partition.
@@ -254,23 +253,49 @@ replaced (a probe fit, eight neutralised gates and a recovery ladder):
 `transform_model` decides what places the map, given the affine from §5.1 or §5.2:
 
 - **`affine`**: that affine as-is.
-- **`piecewise_affine`** (`piecewise.py`): the affine plus a correction that passes exactly
-  through every control point. The control points and 8 anchors on a frame (padded 25% around
+- **`piecewise_affine`** (`piecewise.py`, the default): the affine plus a correction that
+  passes exactly through every control point. The control points and 8 anchors on a frame (padded 25% around
   image ∪ zones ∪ control points) are triangulated; inside each triangle the correction is
   linear; the anchors pin it to zero. Geometries are densified to 1% of the image diagonal
   first, so long edges bend with it. A triangulation that folds (two points swapped) is
   refused and the run uses the affine. Its reported error is leave-one-out, labelled
   `leave_one_out` (base refitted per fold) or `leave_one_out_fixed_base` (on the aligned
   affine, optimistic).
-- **`auto`** (the default): the affine's RMS residual on the control points it was fitted to,
+
+  With `piecewise_regularization: local` (the default), zero-correction anchors are also laid
+  on a grid wherever the nearest control point is more than
+  `piecewise_influence_radius_ratio_of_diagonal` (0.175) of the image diagonal away, so each
+  point's correction fades out within about that distance and regions far from every point
+  keep the affine. With `none`, a point's correction reaches across every triangle it is a
+  corner of, and an empty region is pulled by a blend of distant points.
+- **`auto`**: the affine's RMS residual on the control points it was fitted to,
   in image pixels, against `auto_piecewise_rmse_ratio_of_diagonal` (0.01) of the image
   diagonal. At or under it the affine is kept; over it, `piecewise_affine` is applied. With 3
   points the fit is exact and the affine is kept. The run record has `autoAffineRmsePx`,
   `autoThresholdPx` and `autoChoseModel`. The threshold is a first guess, not measured.
 
-`auto` is a first step toward letting piecewise earn its place per map. The roadmap's
-version compares leave-one-out errors instead of an in-sample threshold
+Piecewise is the default since the 2026-10-08 run, where local piecewise between two
+alignments (`B7b`, §5.4) had the best mean raw IoU of every variant
+([history](georeferencing-history.md#2026-10-08--local-piecewise-between-two-alignments)).
+`auto` stays as the switch for gating away its small losses on maps the affine already fits.
+The roadmap's version compares leave-one-out errors instead of an in-sample threshold
 ([roadmap](georeferencing-roadmap.md#2-transform-model-affine-by-default-piecewise-by-leave-one-out)).
+
+### 5.4 Alignment after the piecewise correction
+
+`align_after_piecewise` (on; `post_align.py`) runs the alignment stages again on the model §5.3
+produced. Alignment fits six affine parameters and cannot move a piecewise model, so it fits an
+affine `M` *in front of* it, in pixel space: the placement becomes `P(M(pixel))`. The reference
+curves and the control-point targets are pushed through `P`'s inverse once, the same staged fit
+(`gates.fit_stages`) runs from the identity, and `M` is folded back into an ordinary piecewise
+model on the same triangles. Without a piecewise model (refused, or `auto` kept the affine) the
+control-point affine is aligned instead; an already aligned affine is left as it is.
+
+It has no checks of its own: `M` is kept only when it keeps the map's orientation and the
+coastline chamfer does not get worse; otherwise `P` is used. The evidence is built once and
+shared with the first alignment. The run record has `postAlignment` (applied or why not, the
+chamfer before and after). With `enable_curve_alignment` also on, the pipeline is
+align → piecewise → align (`B7b`).
 
 ---
 
@@ -308,24 +333,12 @@ version compares leave-one-out errors instead of an in-sample threshold
 
 ## 8. Configuration and switches
 
-<<<<<<< HEAD
-Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 19), so a run
-records exactly what it used and a variant is a set of overrides. `ambient_georef_config()`
-applies the environment:
-
-| Variable | Default | `backend`, `celery-worker` | `test-backend`, `georef-dev` |
-|---|---|---|---|
-| `GEOREF_ENABLE_CURVE_ALIGNMENT` | true | on | **off** |
-| `GEOREF_ENABLE_COASTLINE_SNAPPING` | true | on | on |
-| `GEOREF_DEBUG` | off | on | off |
-=======
-Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 15), so a run
+Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 20), so a run
 records exactly what it used and a variant is a set of overrides. **The file defaults are the
 production configuration**, and every container runs them: the app, the regression suite, the
 dev-test UI and the CLI. `ambient_georef_config()` lets a deployment override two of them
 from the environment (`GEOREF_ENABLE_CURVE_ALIGNMENT`, `GEOREF_ENABLE_COASTLINE_SNAPPING`);
 none does. `GEOREF_DEBUG` (off by default, on for `celery-worker`) only writes diagnostics.
->>>>>>> d64ed9e18b630019801f49502b7300c181814c05
 
 Current defaults, and where each stands:
 
@@ -334,10 +347,11 @@ Current defaults, and where each stands:
 | Curve alignment | on | Supported by the first corpus run: lower check-point error on 11 of 12 cases, worse on none |
 | `weight_curve` / `weight_gcp` | 10 / 1 | The gain grows to ×30 and stops there, mostly at the coast ([testing §8](georeferencing-testing.md#8-results)). ×10 takes most of it (10 of 12 cases better, the 2 worse within 0.7 km) and leaves the control points more say inland |
 | `enable_icp` | on, 30° | Kept: removing it is worse at high weight |
-| `transform_model` | `auto` | Affine unless its GCP RMS exceeds 1% of the image diagonal; threshold not measured yet |
+| `transform_model` | `piecewise_affine`, `local` at 0.175 | Best mean raw IoU on the 2026-10-08 run (`B7b`: 14 cases better than `B2`, 3 worse); 0.175 the most even of 0.1 / 0.175 / 0.25 |
+| `align_after_piecewise` | on | A gain over the same piecewise without it (`B7` vs `B3Lb`, 2026-10-08) |
 | `snap_to_coastline` | on | Kept: improves the shipped zones on 9 of 12 cases, worse on none |
 | `clip_to_land_mask`, lake cut | on | Kept (production behaviour; expected zones are cut the same way when scored) |
-| Text fill | `palette` inpaint | Kept; `label` was worse on every case and was removed. `telea` kept, unmeasured |
+| Text fill | `palette` inpaint | Kept; `label` (worse on every case) and `telea` (consistently worse than `palette`) were removed |
 | `zone_gap_fill` | off | Off: worse in its current form |
 | Checks | 4, lenient, behind a water precondition | Redesigned 2026-10-07 ([§5.2](#52-curve-alignment)) |
 
@@ -377,7 +391,10 @@ removed; the debug dumps are off by default. Still to settle before `georef-exp`
 1. **The regression baselines.** Every case's `best` was recorded under the old defaults
    (alignment off in the suite, ×1). Run the suite once and promote each case's run
    (`scripts/force_promote_georef_best.py`), so `best` is the production number.
-2. **The transform model** default ([§5.3](#53-transform-model)).
+2. **The 2026-10-08 run** that chose the transform model and the second alignment
+   ([§5.3](#53-transform-model), [§5.4](#54-alignment-after-the-piecewise-correction)) is
+   not written up in [testing §8](georeferencing-testing.md#8-results) yet.
+3. **The `auto` threshold** is still a first guess.
 
 ---
 
@@ -390,13 +407,14 @@ removed; the debug dumps are off by default. Still to settle before `georef-exp`
 | `config.py` | `GeorefConfig`, `CONFIG_VERSION`, environment switches |
 | `control_points.py` | `ControlPoint`, `CityRef`, parsing, per-source selection and weights |
 | `affine.py` | `AffineModel` (fit, apply, inverse, serialize) |
-| `piecewise.py` | `PiecewiseAffineModel`, leave-one-out |
+| `piecewise.py` | `PiecewiseAffineModel`, leave-one-out, local anchors |
+| `post_align.py` | alignment after the piecewise correction (§5.4) |
 | `projection.py` | EPSG:3857 maths, km units |
 | `frame.py`, `inputs.py` | framing box; `maps.georef_inputs` |
 | `reference.py` | reference rasters and distance fields over the framing box |
 | `evidence.py` | map-side edges, straight-line weighting, water mask (cv2) |
 | `align.py` | chamfer, ICP, Tukey, the objective |
-| `gates.py` | the alignment attempt and its four checks |
+| `gates.py` | the alignment attempt (`fit_stages`) and its four checks |
 | `runner.py` | image → checked alignment (cv2); the water precondition |
 | `pipeline.py` | transform → snap → clip → EPSG:4326 |
 | `snapping.py`, `cleaning.py` | the snap; the shared ocean + lake mask |

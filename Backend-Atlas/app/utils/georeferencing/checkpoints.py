@@ -1,15 +1,4 @@
-"""Check points: held-out pixel <-> lon/lat pairs that judge the applied transform.
-
-A check point is clicked like a control point and never fitted. They travel as
-their own list, never inside ``control_points``, so no stage that fits -- the
-baseline affine, the alignment's GCP term, the gates, the piecewise pins, the
-source selection -- can see one by mistake. Only this module reads them, after
-the run, to measure the transform that actually placed the zones.
-
-That is the error the control-point residuals cannot give: those are measured
-on the points the model was fitted to, and an interpolating model passes
-through its points exactly. See dev-docs/georeferencing-testing.md section 3.
-"""
+"""Check points: held-out pixel <-> lon/lat pairs that judge the applied transform."""
 
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Sequence
@@ -35,14 +24,8 @@ SAME_CLICK_PX = 1.0
 def validate_check_points(
     control_points: Sequence[ControlPoint], check_points: Sequence[ControlPoint]
 ) -> None:
-    """Refuse a check point that is also a control point.
+    """Refuse a check point that is also a control point."""
 
-    Same city, or the same clicked pixel: either way it would be in the fit,
-    and its "held-out" error would be an in-sample residual.
-
-    Raises:
-        ValueError: naming the offending check point.
-    """
     fitted_cities = {cp.city.geonameid for cp in control_points if cp.city is not None}
     fitted_pixels = np.array([cp.pixel for cp in control_points], dtype=float).reshape(-1, 2)
 
@@ -96,13 +79,8 @@ def _placement(
     hull: Any,
     ref_lat: float,
 ) -> Dict[str, Any]:
-    """Where a check point sits relative to what the fit is built from.
+    """Where a check point sits relative to what the fit is built from."""
 
-    A transform's error depends on it: near a control point an interpolating
-    model is pinned, inside their hull it interpolates, outside it
-    extrapolates; near the coast, alignment has evidence, inland it has none.
-    Recorded per point so results can be read by placement afterwards.
-    """
     pixel = np.asarray(check.pixel, dtype=float)
     fitted = np.array([cp.pixel for cp in control_points], dtype=float).reshape(-1, 2)
     nearest_px = float(np.hypot(*(fitted - pixel).T).min()) if fitted.size else None
@@ -128,13 +106,8 @@ def measure_check_points(
     baseline_model: Any = None,
     control_points: Sequence[ControlPoint] = (),
 ) -> Optional[Dict[str, Any]]:
-    """Error of the applied transform at each check point, in ground km.
-
-    Returns the ``errors.checkPoints`` block of the run record, or None when
-    there is nothing to measure. ``baseline_model`` (the GCP-only affine) is
-    measured on the same points so every run says what it gained or lost
-    against the floor on held-out points.
-    """
+    """Error of the applied transform at each check point, in ground km."""
+    
     if not check_points or applied_model is None:
         return None
 

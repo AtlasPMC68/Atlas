@@ -620,16 +620,7 @@ def process_dev_test_extraction(
     excluded_control_points: list | None = None,
 ):
     """Run a stored dev-test case from its ``config.json``, write the results to
-    its folder and score it. No database.
-
-    The pipeline is the production one (``extraction_steps``); what differs is
-    where the inputs come from (the case config and the test's stored image)
-    and where the results go (files, a report, the run record).
-
-    ``config_overrides`` are per-run switches; ``excluded_control_points`` are
-    indices into the stored control points left out of this run. A run using
-    either is never promoted to the case's best.
-    """
+    its folder and score it. No database. """
 
     def progress(step: int, status: str) -> None:
         self.update_state(

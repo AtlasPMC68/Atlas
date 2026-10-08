@@ -1,21 +1,4 @@
-"""Draw where each control point *went*, on the map the user clicked.
-
-One picture answers what a table of kilometres cannot: whether a bad point is
-a mis-click (the arrow is short and the map is fine) or a mis-match (the arrow
-is long and points at a different feature entirely).
-
-Yellow dot   where the user clicked.
-Red dot      where the transform puts that point's real-world position.
-Arrow        from one to the other: its length is the error, in pixels, on the
-             map's own scale.
-
-Drawn with the model the run *actually used*, taken from its run record, so a
-piecewise run shows the piecewise placement and not a freshly fitted affine.
-
-This module needs cv2 and is therefore not re-exported from the package, for
-the reason given in ``__init__``: importing it should not drag the image stack
-into every consumer.
-"""
+"""Draw where each control point *went*, on the map the user clicked."""
 
 import logging
 from typing import Any, Optional, Sequence, Tuple
@@ -36,12 +19,8 @@ SUSPECT_COLOR = (255, 0, 255)  # BGR: magenta, for a point flagged as suspect
 
 
 def _scaled(image: np.ndarray, min_width: int = 1100) -> Tuple[np.ndarray, float]:
-    """Upscale a small scan so dots and labels stay legible.
+    """Upscale a small scan so dots and labels stay legible."""
 
-    A 602 px wide map cannot carry a readable label at every control point.
-    Scaling the canvas rather than shrinking the annotations keeps the arrows
-    proportional to the map, which is what the reader is judging.
-    """
     height, width = image.shape[:2]
     if width >= min_width:
         return image.copy(), 1.0
@@ -61,17 +40,8 @@ def draw_control_point_overlay(
     suspect_indices: Sequence[int] = (),
     caption: str = "",
 ) -> np.ndarray:
-    """Return a BGR image annotating every control point.
+    """Return a BGR image annotating every control point."""
 
-    Args:
-        image_bgr: the user's map, as OpenCV reads it.
-        control_points: the clicks and their real-world positions.
-        model: any fitted transform -- it only needs ``inverse()``, so affine
-            and piecewise both work.
-        errors_km: per-point ground error to label, when it is known.
-        suspect_indices: points to mark in magenta.
-        caption: one line drawn at the top, e.g. the model name and its RMS.
-    """
     canvas, scale = _scaled(image_bgr if image_bgr.ndim == 3 else
                             cv2.cvtColor(image_bgr, cv2.COLOR_GRAY2BGR))
 
@@ -122,17 +92,8 @@ def draw_world_overlay(
     suspect_indices: Sequence[int] = (),
     caption: str = "",
 ) -> np.ndarray:
-    """The same points, seen from the world instead of from the map.
-
-    The mirror image of ``draw_control_point_overlay``: there the arrow shows
-    where a real place lands on the drawing, here it shows where a click on
-    the drawing lands on the Earth. The second is the one to look at when
-    asking whether a point was matched to the wrong feature, because the
-    reference coastline is drawn underneath it.
-
-    Yellow dot   the control point's true position (the keypoint's lon/lat).
-    Red dot      where the transform sends the pixel the user clicked.
-    """
+    """The same points, seen from the world instead of from the map."""
+    
     grid = layers.grid
     canvas = np.full((grid.height, grid.width, 3), 245, dtype=np.uint8)
     canvas[layers.land] = (226, 232, 226)  # land, faint

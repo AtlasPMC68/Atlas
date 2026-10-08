@@ -1,31 +1,4 @@
-"""Coarse chamfer alignment and normal-search ICP: the optimiser.
-
-Two phases (dev-docs/georeferencing.md section 5.2). Both optimise the same six affine parameters, and
-both express every residual in **user image pixels**. The two terms do not share
-a loss: control points are plain least squares, and only the curve term is
-robust (Tukey, cutoff in pixels). A shared loss used to reject the control
-points in the fine stages -- see dev-docs/georeferencing-history.md, 2026-09-30.
-
-    Phase A -- chamfer.  Reference curve samples are pushed into pixel space and
-                         read a distance field built from the user's edge map.
-                         Annealed: the field starts heavily blurred for a wide
-                         basin of attraction and sharpens as it converges.
-
-    Phase B -- ICP.      Each reference sample searches along its own curve
-                         normal for a user edge whose local orientation agrees
-                         within a tolerance, producing explicit correspondences.
-                         This is the only thing here that can tell a coastline
-                         from a political border crossing it: to a chamfer
-                         distance both are just "nearby edge pixels".
-
-Nothing in this module needs cv2 -- it consumes the arrays `evidence.py` built,
-and does its own gradients with scipy. That keeps it testable without the image
-stack.
-
-**The result is checked, never trusted** (`gates.py`). A fit locked onto the
-wrong feature has *low* chamfer residual by construction, so the residual's
-size is never the check.
-"""
+"""Coarse chamfer alignment and normal-search ICP: the optimiser."""
 
 import logging
 import math
@@ -70,20 +43,8 @@ def build_user_field(
     evidence: Any,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> UserField:
-    """Build the distance field, orientation field and validity mask.
+    """Build the distance field, orientation field and validity mask."""
 
-    Two distance transforms, combined as ``min(D_strong, D_weak + penalty)``.
-    Straight-line suppression leaves edges at a reduced weight rather than
-    deleting them, and `distance_transform_edt` only takes a binary input;
-    thresholding would throw the suppression away, so a suppressed edge instead
-    behaves as though it were `penalty` pixels further off.
-
-    Validity is the complement of the text mask, blurred. Where a label was
-    removed we do not know what the geography does, and the honest answer is
-    "no data" rather than "the nearest edge is 60 px away" -- see
-    georeferencing-history.md, Steps 0-3. Blurred rather than hard, so the objective stays smooth as samples cross
-    the boundary during optimisation.
-    """
     weight = np.asarray(evidence.edge_weight, dtype=np.float32)
     edges = weight > 0
     strong = weight >= 1.0
@@ -168,18 +129,8 @@ def _sample_bilinear(field: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndar
 
 
 def tukey_loss(z: np.ndarray) -> np.ndarray:
-    """Tukey biweight, normalised to c = 1, in scipy's loss convention.
+    """Tukey biweight, normalised to c = 1, in scipy's loss convention."""
 
-    Evaluated at ``z = (r/c)**2``; returns ``[rho, rho', rho'']``. Used through
-    :func:`tukey_residual`, which applies it to the curve residuals only.
-
-    Tukey rather than Huber because schematic maps carry huge outlier fractions:
-    a large share of a drawn outline can be invented. Huber down-weights
-    outliers and still lets them pull; Tukey's derivative reaches exactly zero,
-    so beyond the cutoff a sample contributes nothing at all. scipy has no
-    built-in Tukey, and its `cauchy` is redescending but never reaches zero,
-    which defeats the point.
-    """
     z = np.asarray(z, dtype=float)
     inlier = z <= 1.0
     u = np.where(inlier, z, 1.0)
@@ -231,11 +182,8 @@ def build_curve_samples(
     use_coastline: bool = True,
     use_lakes: Optional[bool] = None,
 ) -> CurveSamples:
-    """Reference curve samples, projected to EPSG:3857.
+    """Reference curve samples, projected to EPSG:3857."""
 
-    Which layers count as evidence is a choice, not a given: alignment runs
-    coastline-first and admits lakes afterwards.
-    """
     if use_lakes is None:
         use_lakes = config.use_lakes_for_alignment
 
@@ -300,16 +248,8 @@ def _gcp_term(
     config: GeorefConfig,
     targets: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Control-point pixels, targets and per-point weights for the objective.
+    """Control-point pixels, targets and per-point weights for the objective."""
 
-    Normalised by count so seven control points are not drowned by thousands
-    of curve samples, then weighted by 1/sigma**2 within the term. The term is
-    plain least squares (see `_residuals`), so these weights are what decides
-    how hard the points pull -- the robust cutoff never reaches them.
-
-    ``targets`` replaces the points' EPSG:3857 positions, one row per point,
-    for a fit whose target space is not EPSG:3857 (``post_align``).
-    """
     pixel, merc, sigma = _gcp_arrays(control_points, config)
     if targets is not None:
         merc = np.asarray(targets, dtype=float)
@@ -399,14 +339,8 @@ def chamfer_residual_px(
     user_field: UserField,
     trim: float = 0.7,
 ) -> float:
-    """Mean distance from projected reference samples to the nearest user edge.
+    """Mean distance from projected reference samples to the nearest user edge."""
 
-    Trimmed, because a schematic map legitimately has a large outlier tail and
-    the untrimmed mean would be dominated by coastline the user simply never
-    drew. Used to answer "did the curve term engage at all" -- never to argue a
-    fit is *correct*, since a fit locked onto the wrong feature scores well here
-    by construction.
-    """
     if len(samples) == 0:
         return float("nan")
     sx, sy = _to_pixel(_params_from_model(model), samples.xy)
@@ -456,12 +390,8 @@ def fit_chamfer(
     cutoff_schedule: Optional[Sequence[float]] = None,
     gcp_targets: Optional[np.ndarray] = None,
 ) -> PhaseResult:
-    """Phase A: annealed chamfer fit.
+    """Phase A: annealed chamfer fit."""
 
-    ``use_gcps=False`` fits the curve evidence alone, control points held out.
-    The pipeline never does; tests use it to show the joint fit differs.
-    ``gcp_targets``: see ``_gcp_term``.
-    """
     blur = list(blur_schedule if blur_schedule is not None else config.anneal_blur_px)
     cutoffs = list(
         cutoff_schedule if cutoff_schedule is not None else config.anneal_cutoff_px
@@ -560,15 +490,8 @@ def find_correspondences(
     radius_px: float,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Search along each reference normal for an orientation-matching edge.
+    """Search along each reference normal for an orientation-matching edge."""
 
-    Returns ``(index, target_xy, weight)`` for the samples that matched.
-
-    The orientation test is the reason this phase exists. A chamfer distance
-    cannot tell a coastline from a political border crossing it -- both are just
-    nearby edge pixels. Requiring the matched edge's local orientation to agree
-    with the reference curve's rejects the crossing outright.
-    """
     n = len(samples)
     if n == 0:
         return np.zeros(0, dtype=int), np.zeros((0, 2)), np.zeros(0)
@@ -651,10 +574,8 @@ def icp_refine(
     use_gcps: bool = True,
     gcp_targets: Optional[np.ndarray] = None,
 ) -> PhaseResult:
-    """Phase B: iterate correspondence search and re-fit.
-
-    ``gcp_targets``: see ``_gcp_term``.
-    """
+    """Phase B: iterate correspondence search and re-fit."""
+    
     params = _params_from_model(initial)
     radii = list(config.icp_search_radius_px) or [20.0]
 

@@ -3,16 +3,6 @@
 
     python scripts/fetch_natural_earth_borders.py            # countries + states/provinces, 10m
     python scripts/fetch_natural_earth_borders.py --force    # re-download
-
-Into app/geojson/borders/, which app/utils/borders.py indexes. The files are
-gitignored: they are only needed while drawing expected zones, and the zones
-themselves are what gets committed. Any other admin-0 / admin-1 file (Natural
-Earth or geoBoundaries) dropped in the same folder is picked up too.
-
-The plain versions are used, not the "_lakes" ones: lakes are cut out of
-expected zones by the cleaning step, with the same lake layer as the pipeline
-(app/utils/georeferencing/cleaning.py). Pre-cut lakes from another layer would
-disagree with it at every lake shore.
 """
 
 import argparse

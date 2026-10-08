@@ -9,8 +9,6 @@ each step is confirmed so a reload finds them again:
     colors          [{x, y, name, radius, kind, hex}]   the pipette picks
     shapes          [{x, y, name}]                      "Formes": one click per shape
     options         {textExtraction}
-
-``hex`` is only for the UI's swatches; extraction re-samples every pick.
 """
 
 import math
@@ -113,18 +111,8 @@ def _validate_options(entry: Any) -> Dict[str, bool]:
 def apply_inputs_patch(
     current: Dict[str, Any], patch: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Validate *patch* and merge it into *current*. ``None`` clears a key.
-
-    A *changed* framing box clears the control points unless the patch sets
-    them too: the SIFT keypoints are drawn from the box, and the city search is
-    limited to it, so points matched under the old box no longer belong. A
-    first box keeps them -- no point was matched under a box that did not
-    exist. That is how a dev-test case made before the box existed gets one
-    without losing its clicks.
-
-    Raises:
-        ValueError: on an unknown key or a malformed value.
-    """
+    """Validate *patch* and merge it into *current*. ``None`` clears a key."""
+    
     unknown = set(patch) - set(INPUT_KEYS)
     if unknown:
         raise ValueError(f"unknown input(s): {', '.join(sorted(unknown))}")

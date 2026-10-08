@@ -1,28 +1,4 @@
-"""Derived artifacts for dev-test maps: extracted once, reused by every case.
-
-A derived artifact is something the georeferencing pipeline *consumes* but does
-not *produce*, and which does not change while georeferencing is tuned. Today
-that is exactly one thing -- the OCR text regions -- and it costs ~135 s per map
-on CPU, which is enough to make the difference between a dev loop you use and
-one you avoid.
-
-Stored per **map**, not per case: two cases on the same map differ in control
-points and pipette picks, never in where the labels are. Adding a second case to
-a map therefore costs no OCR at all.
-
-    tests/assets/georef/derived/<test_id>/
-        text_regions.json     the artifact, plus the provenance that made it
-
-Provenance is the point of the file format. ``requirements.py`` draws the line
-between "missing, recompute it" and "missing, a human has to fix it"; this
-module draws the line between "cached" and "cached from something else". An
-artifact produced from a different image is *stale*, and a stale artifact served
-silently is worse than no cache at all -- the harness would hand back a number
-computed against the wrong map. Producer library versions are recorded and
-reported but do **not** invalidate: the text mask is evidence for alignment, not
-the thing being measured, and paying 135 s for an easyocr patch bump is a bad
-trade. Pass ``refresh=True`` when that judgement is wrong.
-"""
+"""Derived artifacts for dev-test maps: extracted once, reused by every case."""
 
 import hashlib
 import json
@@ -61,12 +37,9 @@ def derived_path(test_id: str, key: str) -> str:
 
 
 def _image_fingerprint(image_path: str) -> str:
-    """Content hash of the map image.
-
-    Content rather than mtime: the assets live in git, and a checkout rewrites
-    mtimes without changing a pixel. Hashing a ~1 MB scan costs a few ms.
-    """
+    """Content hash of the map image."""
     digest = hashlib.sha256()
+
     with open(image_path, "rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
@@ -171,11 +144,8 @@ def inspect_derived(
     image_path: str,
     producer_versions: Optional[Dict[str, str]] = None,
 ) -> DerivedState:
-    """Resolve a stored artifact against the map it is supposed to describe.
+    """Resolve a stored artifact against the map it is supposed to describe."""
 
-    Never raises: an unreadable or unhashable artifact is simply not usable,
-    and recomputing is always a valid answer.
-    """
     artifact = _load_artifact(test_id, key)
     if artifact is None:
         return DerivedState(key=key, present=False, usable=False, detail=None)
@@ -238,11 +208,8 @@ def inspect_text_regions(test_id: str, image_path: str) -> DerivedState:
 
 
 def _regions_to_payload(regions: Any) -> List[List[List[float]]]:
-    """Normalise OCR regions to plain JSON-able nested lists.
+    """Normalise OCR regions to plain JSON-able nested lists."""
 
-    ``extract_text`` hands back numpy arrays of corner points; JSON cannot hold
-    those, and neither can a reader who opens the file to see what is in it.
-    """
     payload: List[List[List[float]]] = []
     for region in regions or []:
         try:
@@ -254,13 +221,8 @@ def _regions_to_payload(regions: Any) -> List[List[List[float]]]:
 
 @contextmanager
 def _compute_lock(test_id: str):
-    """Serialise OCR per map across worker processes.
+    """Serialise OCR per map across worker processes."""
 
-    The import view warms the cache in the background while the user clicks, so
-    a case run can arrive while that OCR is still going. Waiting for it and
-    reading its result beats running the same 135 s twice. ``fcntl`` is POSIX;
-    the worker is Linux, and elsewhere the lock is simply skipped.
-    """
     try:
         import fcntl
     except ImportError:
@@ -284,17 +246,8 @@ def ensure_text_regions(
     refresh: bool = True,
     allow_compute: bool = True,
 ) -> Tuple[Optional[List[Any]], DerivedState]:
-    """Return the map's OCR text regions, computing and persisting them if needed.
+    """Return the map's OCR text regions, computing and persisting them if needed."""
 
-    Args:
-        refresh: recompute even when a usable artifact exists. For when OCR
-            itself is what changed.
-        allow_compute: when False, a missing or stale artifact yields ``None``
-            rather than a 135 s OCR run. The caller decides what that means.
-
-    Returns the regions and the state they came from, so a caller can report
-    "refreshed" versus "reused" without guessing.
-    """
     state = inspect_text_regions(test_id, image_path)
 
     if state.usable and not refresh and state.artifact is not None:
@@ -317,7 +270,7 @@ def _compute_text_regions(
 ) -> Tuple[List[Any], DerivedState]:
     from app.utils.text_extraction import extract_text
 
-    blocks, _clean = extract_text(image=image_bgr, languages=["en", "fr"], gpu_acc=False)
+    blocks, _ = extract_text(image=image_bgr, languages=["en", "fr"], gpu_acc=False)
     regions = _regions_to_payload([block[0] for block in blocks])
 
     artifact = DerivedArtifact(
@@ -346,7 +299,7 @@ def _compute_text_regions(
 
 def text_regions_if_cached(test_id: str, image_path: str) -> Optional[List[Any]]:
     """The cached regions, or None. Never runs OCR."""
-    regions, _state = ensure_text_regions(
+    regions, _ = ensure_text_regions(
         test_id, image_path, None, refresh=False, allow_compute=False
     )
     return regions
@@ -361,15 +314,8 @@ def text_regions_for_run(
     allow_compute: Optional[bool] = None,
     refresh: bool = False,
 ) -> Optional[List[Any]]:
-    """The OCR regions a dev-test run uses, decided the same way everywhere.
-
-    Alignment needs them, and pays for OCR when they are missing; the
-    text-aware zone fill only uses them when already cached. The dev-test task
-    and the dev script both come through here, so the same case extracts the
-    same zones from either. ``allow_compute`` overrides whether a missing
-    artifact may be computed (the script's ``--ocr``); by default, only when
-    alignment is on. Never raises: no regions is a weaker run, not a failed one.
-    """
+    """The OCR regions a dev-test run uses, decided the same way everywhere."""
+    
     compute = config.enable_curve_alignment if allow_compute is None else allow_compute
     if not compute and not config.text_aware_zone_fill:
         return None

@@ -1,14 +1,4 @@
-"""The framing box: the world area the user drew before matching keypoints.
-
-``worldAreaBounds`` has always existed in ``ImportView.vue`` and has always been
-sent to ``/projects/coastline-keypoints``; it was simply never forwarded to
-``/upload`` (georeferencing-history.md, starting point). It is the working extent for
-every reference layer built in Step 2, so it now travels with the upload and is
-persisted into the dev-test ``config.json``.
-
-Shared by the production and dev-test routes so both stay in sync, in the same
-way ``imposed_colors.py`` is.
-"""
+"""The framing box: the world area the user drew before matching keypoints."""
 
 import json
 import math
@@ -22,9 +12,6 @@ _REQUIRED_KEYS = ("west", "south", "east", "north")
 
 def parse_frame_bounds(raw: Optional[str]) -> Optional[FrameBounds]:
     """Parse a raw ``frame_bounds`` JSON string. ``None`` when absent.
-
-    Raises:
-        ValueError: If the payload is present but not a valid bounds object.
     """
     if not raw:
         return None

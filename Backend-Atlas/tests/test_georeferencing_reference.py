@@ -1,9 +1,4 @@
-"""Unit tests for the reference layers (Step 2).
-
-These need numpy, scipy and shapely but not cv2, so they run without the image
-stack. The ones that build real layers read the Natural Earth files from
-``app/geojson`` and are skipped if a layer is missing.
-"""
+"""Unit tests for the reference layers."""
 
 import os
 
@@ -74,14 +69,7 @@ class TestRasterization:
 
 
     def test_clips_instead_of_dropping_out_of_bounds_vertices(self):
-        """The artifact that stopped `draw_coastline` being promoted verbatim.
-
-        This line leaves the box to the east and comes back. Dropping the
-        out-of-bounds vertex, as the old rasterizer does, would join (1, 1)
-        straight to (1, 9) and paint a vertical line along lon=1 that exists
-        nowhere on Earth. Clipping produces a V that never touches lon=1 at the
-        midpoint latitude.
-        """
+        """The artifact that stopped `draw_coastline` being promoted verbatim."""
         detour = LineString([(1.0, 1.0), (20.0, 5.0), (1.0, 9.0)])
         raster = rasterize_layer(self.grid, detour)
 
@@ -104,5 +92,3 @@ class TestBuildReferenceLayers:
         signed = self.layers.signed_distance_px
         assert signed.min() < 0.0 < signed.max()
         assert np.abs(signed[self.layers.coastline]).max() == 0.0
-
-

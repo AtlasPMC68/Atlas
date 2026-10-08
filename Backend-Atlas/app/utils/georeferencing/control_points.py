@@ -1,9 +1,4 @@
-"""Control points: one pixel <-> lon/lat pair each, and where it came from.
-
-The records every stage passes around (``ControlPoint``, ``CityRef``), their
-one wire format, and the per-source helpers: selecting a subset of sources,
-counting them, and the ``1/sigma^2`` weights a weighted fit uses.
-"""
+"""Control points: one pixel <-> lon/lat pair each, and where it came from."""
 
 import math
 from dataclasses import dataclass
@@ -23,13 +18,7 @@ from .projection import LonLat, XY
 
 @dataclass(frozen=True)
 class CityRef:
-    """The gazetteer city a control point was matched to.
-
-    ``geonameid`` is the GeoNames id, stable across GeoNames-derived datasets,
-    which is what tells two spellings of one city ("Quebec", "Kebek") apart
-    from two different cities. ``name`` is the gazetteer's name, so run records
-    and overlays say which city a residual belongs to.
-    """
+    """The gazetteer city a control point was matched to."""
 
     geonameid: int
     name: str
@@ -48,16 +37,7 @@ class CityRef:
 
 @dataclass(frozen=True)
 class ControlPoint:
-    """One pixel <-> geo pair, and where it came from.
-
-    A discriminated union on ``source``: a ``city`` point always carries its
-    ``CityRef`` and a ``sift`` point never has one. Enforced at construction,
-    so no consumer ever handles a city without a name or a keypoint with one.
-
-    Positional uncertainty is deliberately *not* stored here. It is a model
-    setting, looked up from ``GeorefConfig`` by source when fitting
-    (``gcp_sigma_px``), so it can change without rewriting stored clicks.
-    """
+    """One pixel <-> geo pair, and where it came from."""
 
     pixel: XY
     geo: LonLat
@@ -162,11 +142,8 @@ def _as_float(value: Any) -> float:
 
 
 def parse_control_points(entries: Any) -> List[ControlPoint]:
-    """A JSON list of control points, as ``ControlPoint.to_dict`` writes them.
-
-    Raises:
-        ValueError: naming the offending index, on anything malformed.
-    """
+    """A JSON list of control points, as ``ControlPoint.to_dict`` writes them."""
+    
     if not isinstance(entries, list):
         raise ValueError("control points must be a JSON array")
     points: List[ControlPoint] = []

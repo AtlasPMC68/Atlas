@@ -1,14 +1,4 @@
-"""The zones as colour extraction produced them, before any transform.
-
-A georeferenced zone mixes two errors: the extraction's (holes where labels
-sit, bleed across a border) and the transform's (the whole zone in the wrong
-place). The dev tool's map only shows the sum. This module shows the first
-term alone, on the scan the user clicked, with the OCR boxes drawn over it so
-a hole that is really a label reads as one.
-
-Snapshot written by the dev-test task next to ``zones.geojson``; rendered on
-demand by the router. Needs cv2, so it is imported lazily there.
-"""
+"""The zones as colour extraction produced them, before any transform."""
 
 import json
 import logging
@@ -48,12 +38,8 @@ def write_pixel_zones(case_dir: str, pixel_collections: Sequence[Dict]) -> Optio
 
 
 def write_classified_image(case_dir: str, rgb: Optional[np.ndarray]) -> None:
-    """Persist the image the zones were classified on, or drop a stale one.
+    """Persist the image the zones were classified on, or drop a stale one."""
 
-    Removed when this run did not inpaint, so the view can never show the
-    rebuild of an earlier run next to zones that did not come from it.
-    Never raises.
-    """
     path = os.path.join(case_dir, CLASSIFIED_IMAGE_FILENAME)
     try:
         if rgb is None:
@@ -100,13 +86,8 @@ def _ocr_union(text_regions: Optional[Sequence]):
 def pixel_zone_stats(
     features: Sequence[Dict], text_regions: Optional[Sequence] = None
 ) -> List[Dict[str, Any]]:
-    """Per zone: its area, its holes, and how much of the holes is text.
+    """Per zone: its area, its holes, and how much of the holes is text."""
 
-    ``holeAreaInTextRatio`` is the number to watch: the share of the hole area
-    that falls inside an OCR box. High means the holes are labels the text
-    fill did not recover; low means they are something else (a lake, a
-    different colour, noise).
-    """
     ocr = _ocr_union(text_regions)
     out = []
     for index, feature in enumerate(features):
@@ -153,15 +134,8 @@ def pixel_zone_stats(
 def text_box_coverage(
     features: Sequence[Dict], text_regions: Optional[Sequence] = None
 ) -> Optional[Dict[str, Any]]:
-    """How much of the OCR boxes' area some zone covers.
-
-    The hole count cannot see the text problem: a label's gap nearly always
-    reaches the zone's edge through a river or a border, so it is a notch in
-    the outline, not a hole. Coverage of the boxes can. Read it against the
-    image, though: a box over a lake or the sea *should* stay uncovered, so
-    100 % is not the target -- a fill that paints lakes scores higher and is
-    worse.
-    """
+    """How much of the OCR boxes' area some zone covers."""
+    
     ocr = _ocr_union(text_regions)
     if ocr is None or ocr.area <= 0:
         return None
@@ -192,11 +166,8 @@ def draw_pixel_zones(
     caption: str = "",
     min_width: int = 1100,
 ) -> np.ndarray:
-    """The zones filled in their own colour, holes outlined in red, OCR in magenta.
+    """The zones filled in their own colour, holes outlined in red, OCR in magenta."""
 
-    ``blank_background`` swaps the scan for white, where a hole is a white gap
-    rather than a patch of scan that looks like it belongs to the zone.
-    """
     height, width = image_bgr.shape[:2]
     scale = max(1.0, min_width / float(width))
     size = (int(round(width * scale)), int(round(height * scale)))

@@ -1,19 +1,11 @@
 """The cleaning stage: what happens to zones once the transform has placed them.
 
-Three steps, all part of what the app ships:
+Three steps :
 
     snapping     zone vertices near the reference coastline move onto it
                  (``snap_to_coastline``; corrects transform error after the fact)
     ocean clip   the part of a zone at sea is cut off (``clip_to_land_mask``)
     lakes        Natural Earth lakes are cut out of zones, as part of the clip
-
-The geographic cuts (ocean, lakes) are a *convention* about what a zone is, so
-they are applied identically to the expected zones a test is scored against:
-``clean_expected_zones`` runs the same mask over a drawn zone. Snapping is not,
-because it corrects the transform, and a drawn zone has none to correct.
-
-Bump ``CLEANING_VERSION`` whenever what the mask cuts changes: cleaned expected
-zones stamped with another version are recomputed.
 """
 
 import logging
@@ -79,16 +71,13 @@ def _land_mask_3857_cached(
 
 
 def land_mask_3857() -> Optional[BaseGeometry]:
-    """Land minus lakes, in EPSG:3857: what zones are clipped to.
+    """Land minus lakes, in EPSG:3857: what zones are clipped to."""
 
-    Cached, and rebuilt when any source file changes.
-    """
     return _land_mask_3857_cached(SUBTRACT_LAKES, tuple(mask_sources().values()))
 
 
 def clean_expected_zones(feature_collection: Dict[str, Any]) -> Dict[str, Any]:
-    """The expected zones with the pipeline's geographic cuts applied.
-    """
+    """The expected zones with the pipeline's geographic cuts applied."""
     mask = land_mask_3857()
     features = []
     for feature in feature_collection.get("features", []):

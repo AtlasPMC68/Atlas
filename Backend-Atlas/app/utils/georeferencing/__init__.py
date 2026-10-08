@@ -1,32 +1,3 @@
-"""Georeferencing: fit a pixel -> Earth transform and apply it to features.
-
-Package layout (dev-docs/georeferencing.md section 11):
-
-    config.py       frozen hyperparameters as one versioned dataclass
-    requirements.py what inputs the current algorithm needs, and which of them
-                    a re-run can recover versus which need a human
-    control_points.py  control-point records, their wire format, per-source helpers
-    affine.py       the affine model: fit / apply / inverse / serialize
-    projection.py   EPSG:3857 maths and honest distance units
-    frame.py        the user's framing box, parsed and persisted
-    inputs.py       what a map was georeferenced from, stored on the map row
-    snapping.py     post-hoc coastline vertex snap (due for replacement)
-    piecewise.py    affine + Delaunay local correction, same model interface
-    pipeline.py     fit -> snap -> clip -> EPSG:4326
-    records.py      structured per-run record
-    reference.py    framing box -> reference rasters + distance transform, cached
-    align.py        chamfer + normal-search ICP, the distance field, Tukey
-    gates.py        the alignment attempt and the checks that decide whether
-                    its result ships or the control-point affine does
-    evidence.py     user-side edge map, straight-line suppression, water mask
-    runner.py       image -> checked alignment, the shared entry point; holds
-                    the precondition (water picks identify the coastline)
-                    evidence.py and runner.py are NOT re-exported here: they are
-                    the only modules needing cv2, and importing them from the
-                    package would drag the image stack into every consumer.
-                    Import them directly.
-"""
-
 from .config import CONFIG_VERSION, DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import (
     FrameBounds,

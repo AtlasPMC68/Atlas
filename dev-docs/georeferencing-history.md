@@ -241,12 +241,33 @@ that reuse colours.
   user's clicks. Thresholds set far beyond anything measured (clicks: 5% of the diagonal
   against a measured +0.4–3.6 px), because the precondition does the real work.
 - **The chamfer stays.** With the coastline identified, its role is reach, and the ICP-only
-  variants (`B7`/`B8`, `enable_chamfer` off) showed it is needed: ICP alone was worse on 9 of
+  variants (`B7`/`B8` then, now `B9`/`B10`; `enable_chamfer` off) showed it is needed: ICP alone was worse on 9 of
   14 cases at ×10, most on clustered control points, where the coast away from the points
   starts beyond ICP's radius ([testing §8.9](georeferencing-testing.md#89-icp-only-2026-10-07)).
 - **Also removed:** the rivers layer (loaded, never used), the `label` text fill (worse on every
   case), unused switches. SIFT keypoint suggestions prefer the coastline and use lakes only to
   fill where the coast leaves the frame uncovered (a map may omit a lake, never its coast).
+
+## 2026-10-08 — Local piecewise between two alignments
+
+- **Local piecewise.** `piecewise_regularization: local` lays zero-correction anchors wherever
+  the nearest control point is far, so a point's correction fades out instead of reaching
+  across the map. It beat plain piecewise on top of alignment (`B3La/b/c` vs `B3`); reach
+  0.175 of the diagonal was the most even across maps, 0.25 about the same as `none`.
+- **Align again after the correction** (`align_after_piecewise`, `post_align.py`): an affine
+  fitted in front of the piecewise model. A gain over the same piecewise without it (`B7` vs
+  `B3Lb`), and the ×10 coastline weight helps it as it helped `B2` (`B7a/b`).
+- **New defaults (config v20):** `B7b`, align → local piecewise → align at ×10, the best mean
+  raw IoU of every variant: 14 cases better than `B2`, 3 worse, with the largest gains on the
+  maps placed worst. The losses (about 0.01 IoU) are on maps the affine already fits; `auto`
+  is the switch to try for gating them away.
+- **Merged with `main`.** The second alignment ran on the recovery ladder's staged fit, which
+  `main` had removed (2026-10-07); it now uses the same `gates.fit_stages` as the first
+  alignment, so it also follows `enable_chamfer`. The ICP-only variants were renamed `B9`/`B10`
+  to free `B7`/`B8` for the variants above.
+- **Telea text inpainting removed.** It split ink by brightness and filled it with
+  `cv2.inpaint`, a weighted average that can blend two zone colours; the palette repaint did
+  better consistently. With it went `text_inpaint_algo` and `text_inpaint_radius_px`.
 
 ## Considered and set aside
 

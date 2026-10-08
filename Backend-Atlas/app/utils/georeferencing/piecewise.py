@@ -53,13 +53,8 @@ def _signed_areas(verts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
 def _padded_frame(
     src_xy: np.ndarray, extent: Optional[Extent], margin: float
 ) -> Extent:
-    """The box the correction lives in: *extent* padded by *margin*.
+    """The box the correction lives in: *extent* padded by *margin*."""
 
-    Falling back to the control points' own bounding box is the weakest option
-    -- that box is systematically too tight, because the points sit inside the
-    mapped area -- so callers pass the image size, or at least the drawn
-    features' extent.
-    """
     if extent is not None:
         x0, y0, x1, y1 = (float(v) for v in extent)
     else:
@@ -76,11 +71,8 @@ def _padded_frame(
 def _frame_anchors(
     src_xy: np.ndarray, extent: Optional[Extent], margin: float
 ) -> np.ndarray:
-    """Corners and edge midpoints of a padded frame around the map.
+    """Corners and edge midpoints of a padded frame around the map."""
 
-    The anchors are where the local correction is pinned to zero, so the frame
-    has to enclose everything that will be warped.
-    """
     x0, y0, x1, y1 = _padded_frame(src_xy, extent, margin)
     xm, ym = (x0 + x1) / 2, (y0 + y1) / 2
     return np.array(
@@ -94,16 +86,8 @@ def _local_anchors(
     margin: float,
     radius_px: Optional[float],
 ) -> np.ndarray:
-    """Extra zero-correction anchors wherever no control point is near.
+    """Extra zero-correction anchors wherever no control point is near."""
 
-    Without them, a region with no point of its own sits in a triangle spanned
-    by points far away, and takes a blend of their corrections: it is pulled by
-    evidence about somewhere else. A grid of anchors, one per *radius_px* cell,
-    is kept where the nearest control point is at least *radius_px* away, so
-    each point's correction fades to zero within about that distance and
-    regions without a point keep the base transform. Cell centres, so no anchor
-    lands on the frame anchors on the frame's edges.
-    """
     if radius_px is None or radius_px <= 0:
         return np.zeros((0, 2))
     x0, y0, x1, y1 = _padded_frame(src_xy, extent, margin)
@@ -121,12 +105,7 @@ def _local_anchors(
 
 @dataclass
 class PiecewiseAffineModel:
-    """Pixel -> EPSG:3857 (or its inverse): affine plus per-triangle correction.
-
-    ``verts_in`` / ``verts_out`` are the triangulation vertices in input and
-    output space; ``simplices`` is shared by both, which is what makes
-    ``inverse()`` exact. Outside the triangulated frame, ``base`` applies.
-    """
+    """Pixel -> EPSG:3857 (or its inverse): affine plus per-triangle correction."""
 
     name = "piecewise_affine"
 
@@ -165,31 +144,8 @@ class PiecewiseAffineModel:
         leave_one_out: bool = True,
         influence_radius_px: Optional[float] = None,
     ) -> "PiecewiseAffineModel":
-        """Fit the global affine, then pin a local correction at each point.
+        """Fit the global affine, then pin a local correction at each point."""
 
-        Args:
-            src_xy: (n, 2) pixel coordinates.
-            dst_xy: (n, 2) EPSG:3857 coordinates.
-            weights: optional per-point weights for the global affine fit.
-            extent: (x0, y0, x1, y1) in pixels, where the frame anchors go.
-            anchor_margin: frame padding, as a fraction of width and height.
-            base: an existing affine (Step 4's aligned model) to correct
-                instead of fitting one. It is then held fixed, including in the
-                leave-one-out passes, which therefore only leave the point out of
-                the local correction: the base was fitted with it. Such residuals
-                are labelled ``leave_one_out_fixed_base``. Never pass the affine
-                fitted to these same points here -- fit it with ``base=None`` so
-                every fold refits it and the error is a real leave-one-out.
-            leave_one_out: compute held-out per-point error. Costs n refits,
-                each one small least-squares solve plus a triangulation.
-            influence_radius_px: how far a point's correction may reach, in
-                pixels (see ``_local_anchors``). None reaches as far as the
-                triangulation does: the unregularised model.
-
-        Raises:
-            ValueError: on mismatched inputs, duplicate control points, or a
-                triangulation that folds.
-        """
         src_xy = np.asarray(src_xy, dtype=float)
         dst_xy = np.asarray(dst_xy, dtype=float)
         if src_xy.shape != dst_xy.shape or src_xy.ndim != 2 or src_xy.shape[1] != 2:
@@ -286,14 +242,8 @@ class PiecewiseAffineModel:
         fixed_base,
         influence_radius_px=None,
     ) -> np.ndarray:
-        """Per-point error with that point excluded from the fit.
+        """Per-point error with that point excluded from the fit."""
 
-        NaN where the refit was impossible -- fewer than 3 points left, or
-        removing the point produced a fold. Callers report those as unknown
-        rather than as zero. The local anchors are placed again in every fold,
-        from the points that fold keeps, so the held-out point's neighbourhood
-        is judged the way a region without a point is placed.
-        """
         n = src_xy.shape[0]
         out = np.full(n, np.nan)
         for i in range(n):
@@ -319,11 +269,8 @@ class PiecewiseAffineModel:
         return out
 
     def measure_against(self, control_points: Sequence[ControlPoint]) -> None:
-        """In-sample residuals, for a model that was not fitted here.
+        """In-sample residuals, for a model that was not fitted here."""
 
-        Near zero at every point used as a vertex, so prefer the leave-one-out
-        residuals ``fit`` produces when reporting error.
-        """
         if not control_points:
             return
         src = np.array([cp.pixel for cp in control_points], dtype=float)
@@ -346,12 +293,7 @@ class PiecewiseAffineModel:
 
     @property
     def redundancy(self) -> int:
-        """Kept for interface parity with ``AffineModel``.
-
-        Leave-one-out error is defined for an interpolating model, unlike an
-        in-sample residual, so this does not gate ``rmse_3857`` the way the
-        affine's does.
-        """
+        """Kept for interface parity with ``AffineModel``."""
         return 2 * self.n_points - self.base.dof
 
     @property
@@ -364,11 +306,7 @@ class PiecewiseAffineModel:
 
     @property
     def corrections_3857(self) -> np.ndarray:
-        """Per-vertex size of the local correction on top of the affine.
-
-        Large values mark where the map is most locally distorted -- or where a
-        control point is wrong. The two look identical from here.
-        """
+        """Per-vertex size of the local correction on top of the affine."""
         bx, by = self.base(self.verts_in[:, 0], self.verts_in[:, 1])
         return np.hypot(self.verts_out[:, 0] - bx, self.verts_out[:, 1] - by)
 
@@ -413,12 +351,7 @@ class PiecewiseAffineModel:
         return X.reshape(shape), Y.reshape(shape)
 
     def as_shapely_transform(self):
-        """Callback for ``shapely.ops.transform``.
-
-        Densify geometries first (``shapely.segmentize``, in pixels): only
-        vertices are warped, so a long straight edge crossing several triangles
-        would otherwise stay straight and cut across the correction.
-        """
+        """Callback for ``shapely.ops.transform``."""
 
         def _transform(x, y, z=None):
             X, Y = self(x, y)
@@ -427,11 +360,7 @@ class PiecewiseAffineModel:
         return _transform
 
     def inverse(self) -> "PiecewiseAffineModel":
-        """Exact inverse: same triangles, input and output swapped.
-
-        Valid because ``_build`` rejects a folded triangulation, so the mapping
-        is one-to-one.
-        """
+        """Exact inverse: same triangles, input and output swapped."""
         return PiecewiseAffineModel(
             base=self.base.inverse(),
             verts_in=self.verts_out,

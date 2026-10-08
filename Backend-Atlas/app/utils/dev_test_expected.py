@@ -1,19 +1,4 @@
-"""A test map's expected zones, drawn and cleaned.
-
-Two versions of every drawn zone file, both under ``georef_zones/``:
-
-    <test_id>_zones.geojson          as drawn in the test editor; what the raw,
-                                     pre-cleaning output is scored against
-    <test_id>_zones_cleaned.geojson  the same zones through the pipeline's
-                                     geographic cuts (ocean, lakes); what the
-                                     shipped output is scored against
-
-The cleaned file is written whenever the drawn one is saved, and stamped with a
-hash of the drawn file and the cleaning version. A cleaned file whose stamp no
-longer matches -- the drawing changed outside the editor, the cleaning changed,
-or the file predates this -- is recomputed when it is next read: it is derived
-data, like the OCR cache, never a second source of truth.
-"""
+"""A test map's expected zones, drawn and cleaned."""
 
 import hashlib
 import json
@@ -22,6 +7,12 @@ import os
 from typing import Any, Dict, Optional
 
 from app.utils.dev_test_assets import ZONES_DIR
+from app.utils.georeferencing.cleaning import ( 
+    CLEANING_VERSION, 
+    SUBTRACT_LAKES,
+    clean_expected_zones,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +29,6 @@ def cleaned_zones_path(test_id: str, zones_dir: str = ZONES_DIR) -> str:
 
 
 def _stamp(drawn: Dict[str, Any]) -> Dict[str, Any]:
-    from app.utils.georeferencing.cleaning import CLEANING_VERSION, SUBTRACT_LAKES
 
     blob = json.dumps(drawn, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return {
@@ -55,8 +45,6 @@ def _write(path: str, payload: Dict[str, Any]) -> None:
 
 
 def _clean(drawn: Dict[str, Any]) -> Dict[str, Any]:
-    from app.utils.georeferencing.cleaning import clean_expected_zones
-
     return {**clean_expected_zones(drawn), "cleaning": _stamp(drawn)}
 
 
@@ -79,10 +67,8 @@ def load_drawn_zones(test_id: str, zones_dir: str = ZONES_DIR) -> Optional[Dict[
 
 
 def load_cleaned_zones(test_id: str, zones_dir: str = ZONES_DIR) -> Optional[Dict[str, Any]]:
-    """The cleaned expected zones, recomputed if missing or stale.
-
-    None when the map has no drawn zones at all.
-    """
+    """The cleaned expected zones, recomputed if missing or stale."""
+    
     drawn = load_drawn_zones(test_id, zones_dir)
     if drawn is None:
         return None

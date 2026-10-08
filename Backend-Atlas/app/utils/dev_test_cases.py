@@ -1,25 +1,4 @@
-"""Case kinds, and whether a stored case still satisfies the current algorithm.
-
-Two things live here, and they answer two different questions a dev has about a
-test case before running it.
-
-**What is this case for?** A *regression* case has hand-drawn expected zones and
-a score that gates the backend test suite. A *probe* case has neither: it exists
-only to persist the clicks -- control points, framing box, pipette picks -- so
-that a map can be re-extracted in seconds to look at where the zones landed.
-Probes are how you iterate on alignment on a map you have not spent an hour
-drawing ground truth for, which is most maps. They never fail CI, because there
-is nothing for them to be wrong about.
-
-The kind is *declared*, never inferred from a missing zones file. Inferring it
-would mean a regression case whose ground truth went missing silently demotes
-itself to a probe, and coverage disappears without anything going red.
-
-**Can this case still run?** ``georeferencing/requirements.py`` declares what
-the current algorithm needs; this module resolves that declaration against what
-one case actually has on disk, and writes the answer to ``case_state.json`` so
-it is visible without re-deriving it.
-"""
+"""Case kinds, and whether a stored case still satisfies the current algorithm. """
 
 import json
 import logging
@@ -82,13 +61,8 @@ def resolve_case_kind(
     test_metadata: Optional[Dict[str, Any]] = None,
     case_config: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """The kind in force for one case.
+    """The kind in force for one case."""
 
-    The map sets the default -- a map with no ground truth drawn on it hosts
-    probes -- and a case may override it. The override is what lets a deliberate
-    known-bad experiment sit on a map that otherwise carries real regressions,
-    instead of being deleted to keep the suite green.
-    """
     if case_config is None:
         case_config = _read_case_config(test_id, test_case_id)
 
@@ -180,12 +154,8 @@ def build_case_state(
     case_config: Optional[Dict[str, Any]] = None,
     kind: Optional[str] = None,
 ) -> CaseState:
-    """Resolve the current requirements against one case's stored inputs.
+    """Resolve the current requirements against one case's stored inputs."""
 
-    ``inputs`` is a ``CaseExtractionInputs``. Derived artifacts are *inspected*
-    here, never produced -- deciding whether a 135 s OCR run is warranted is the
-    caller's business, not a side effect of asking what state a case is in.
-    """
     cfg = config or DEFAULT_GEOREF_CONFIG
     resolved_kind = kind or resolve_case_kind(
         test_id, test_case_id, case_config=case_config
@@ -231,11 +201,8 @@ def build_case_state(
 
 
 def load_case_state(test_id: str, test_case_id: str) -> Optional[Dict[str, Any]]:
-    """The last written state for a case, or None.
-
-    Read-only convenience for the UI. It is a record of the last run, not an
-    authority: a checkout can change what a case has without anything re-running.
-    """
+    """The last written state for a case, or None."""
+    
     path = os.path.join(TEST_CASES_DIR, test_id, test_case_id, CASE_STATE_FILENAME)
     if not os.path.exists(path):
         return None

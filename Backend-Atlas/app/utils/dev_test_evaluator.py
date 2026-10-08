@@ -13,6 +13,8 @@ from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.validation import make_valid
+from app.utils.dev_test_expected import load_cleaned_zones, load_drawn_zones
+
 
 
 @dataclass(frozen=True)
@@ -130,14 +132,7 @@ def _safe_make_valid(g: BaseGeometry) -> BaseGeometry:
 
 
 def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, Any]:
-    """Build a GeoJSON FeatureCollection for FP/FN areas per expected feature.
-
-    For each expected feature, we find its best-match extracted feature (already
-    computed in `matches`). FP/FN are then computed *only on that pair*:
-
-    - false negative: expected minus extracted_best
-    - false positive: extracted_best minus expected
-    """
+    """Build a GeoJSON FeatureCollection for FP/FN areas per expected feature."""
 
     features: list[dict[str, Any]] = []
 
@@ -219,12 +214,8 @@ def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, An
 
 
 def _normalize_name(name: str | None) -> str | None:
-    """Normalize a zone name for matching (case/whitespace-insensitive).
+    """Normalize a zone name for matching (case/whitespace-insensitive)."""
 
-    Also drops the `_2`, `_3`... suffix that color extraction appends when two
-    picked colors share the same name, so `Forest` and `Forest_2` both match the
-    expected zone named `Forest`.
-    """
     if not isinstance(name, str):
         return None
     cleaned = re.sub(r"\s+", " ", name).strip().lower()
@@ -268,10 +259,8 @@ def _polygons(geom: BaseGeometry) -> list[BaseGeometry]:
 
 
 def _outline(geom: BaseGeometry) -> BaseGeometry | None:
-    """The zone with its holes filled: what the boundary distance measures.
+    """The zone with its holes filled: what the boundary distance measures."""
 
-    Holes are left out on purpose.
-    """
     parts = _polygons(geom)
     if not parts:
         return None
@@ -283,13 +272,8 @@ def _hole_count(geom: BaseGeometry) -> int:
 
 
 def _boundary_samples_xyz(geom: BaseGeometry) -> np.ndarray:
-    """Points every <= BOUNDARY_STEP_KM along a zone's outline, in 3D km.
+    """Points every <= BOUNDARY_STEP_KM along a zone's outline, in 3D km."""
 
-    Outer rings only (see ``_outline``). 3D Earth-centred coordinates rather than a flat projection:
-    zones span many degrees of latitude, where any one projection's scale is
-    off by percents at the edges, while the straight-line (chord) distance
-    between two nearby points on the sphere is their ground distance.
-    """
     outline = _outline(geom)
     if outline is None or outline.is_empty:
         return np.zeros((0, 3))
@@ -307,12 +291,8 @@ def _boundary_samples_xyz(geom: BaseGeometry) -> np.ndarray:
 
 
 def boundary_distance_km(expected: BaseGeometry, extracted: BaseGeometry) -> dict[str, Any] | None:
-    """How far, in km, the extracted outline sits from the expected one.
+    """How far, in km, the extracted outline sits from the expected one."""
 
-    Outlines: outer rings, holes filled (``_outline``). Symmetric: every expected boundary sample is measured to the extracted
-    boundary and every extracted sample to the expected one, so a zone that
-    is too big and a zone that is too small both count.
-    """
     try:
         a = _boundary_samples_xyz(expected)
         b = _boundary_samples_xyz(extracted)
@@ -608,11 +588,8 @@ def evaluate_case_zones(
     raw_zones: dict[str, Any] | None,
     min_iou: float | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
-    """Both comparisons of a run. Returns ``(report, errors, raw_errors)``.
+    """Both comparisons of a run. Returns ``(report, errors, raw_errors)``."""
 
-    The report's top level is the main comparison, which is what scores the
-    case (``scoreUsed``, PASS/FAIL, best). ``report["raw"]`` holds the raw one.
-    """
     report, errors = evaluate_zones(
         cleaned_expected, zones, test_id=test_id, test_case_id=test_case_id, min_iou=min_iou
     )
@@ -638,12 +615,7 @@ def evaluate_georef_test_case(
     *,
     min_iou: float | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
-    """Score a case's last run from its files. See ``evaluate_case_zones``.
-
-    Coordinates are lon/lat, so areas are in degrees^2; scoring uses ratios
-    (IoU / precision / recall) and kilometres (outline distance).
-    """
-    from app.utils.dev_test_expected import load_cleaned_zones, load_drawn_zones
+    """Score a case's last run from its files. See ``evaluate_case_zones``."""
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
     zones_dir = os.path.join(assets_root, "georef_zones")
@@ -681,16 +653,8 @@ def error_overlay(
     best: bool,
     raw: bool,
 ) -> dict[str, Any]:
-    """The FP/FN overlay of one of a case's runs, computed from its zones.
-
-    Derived, so never stored: the overlays of a case's best run were most of
-    the committed test assets' weight, and they follow from ``zones_best`` /
-    ``zones_raw_best`` and the expected zones. ``raw`` compares the zones
-    before cleaning with the zones as drawn, like the report's raw view.
-
-    Raises:
-        FileNotFoundError: when the run or the expected zones are missing.
-    """
+    """The FP/FN overlay of one of a case's runs, computed from its zones."""
+    
     from app.utils.dev_test_expected import load_cleaned_zones, load_drawn_zones
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)

@@ -1,10 +1,4 @@
-"""The requirement manifest, the derived store, and case kinds.
-
-The thing under test is the distinction that makes the harness trustworthy: a
-case missing a *user* input cannot be repaired by re-running anything, while a
-case missing a *derived* artifact can. Getting that backwards either blocks a
-runnable case or silently runs one with less evidence than the algorithm wants.
-"""
+"""The requirement manifest, the derived store, and case kinds."""
 
 import json
 import os

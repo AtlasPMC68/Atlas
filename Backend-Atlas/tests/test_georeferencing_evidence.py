@@ -1,11 +1,4 @@
-"""Unit tests for user-side evidence (Step 3).
-
-`evidence.py` is the one module in the georeferencing package that needs cv2, so
-these are skipped where the image stack is absent. They run on synthetic images
-rather than a real map: the behaviour being pinned is "a straight neatline gets
-down-weighted and a wiggly coast does not", which a drawn test image states far
-more clearly than a scan would.
-"""
+"""Unit tests for user-side evidence."""
 
 import numpy as np
 import pytest
@@ -62,12 +55,7 @@ class TestEdgeMap:
 
 
 class TestHoughOutputShapes:
-    """`HoughLinesP` returns (N, 1, 4) on OpenCV 4.x and (N, 4) on 5.0.
-
-    `opencv-python-headless` was unpinned, so two images built weeks apart
-    disagreed and the dev loop crashed while the test suite stayed green. The
-    dependency is pinned now; this keeps the parser tolerant regardless.
-    """
+    """`HoughLinesP` returns (N, 1, 4) on OpenCV 4.x and (N, 4) on 5.0."""
 
     EXPECTED = [(10, 20, 30, 40), (50, 60, 70, 80)]
 

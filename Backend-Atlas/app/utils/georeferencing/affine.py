@@ -1,19 +1,4 @@
-"""The affine model, pixel -> EPSG:3857: fit, apply, inverse, serialize.
-
-Two interface decisions look over-engineered for an affine fitted to seven
-points, and each is here because retrofitting it later would touch every call
-site:
-
-* **The model has an inverse.** Chamfer alignment (georeferencing.md section 5.2) pushes
-  reference samples *into* pixel space; the previous ``AffineTransformation``
-  was pixel -> EPSG:3857 only.
-* **``fit()`` takes a per-point weight vector**, not a scalar. Uniform by
-  default; the alignment weights control points by ``1/sigma^2``, and sigma is
-  set per source.
-
-``piecewise.py`` builds on this model; ``control_points.py`` holds the records
-it is fitted from.
-"""
+"""The affine model, pixel -> EPSG:3857: fit, apply, inverse, serialize."""
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -27,17 +12,7 @@ from .projection import lonlat_to_webmercator
 
 @dataclass
 class AffineModel:
-    """Pixel -> EPSG:3857 affine, with least-squares fit and an inverse.
-
-    Affine gives translation, non-uniform scale, rotation and shear -- the
-    degrees of freedom a scanned, slightly rotated, slightly stretched paper map
-    needs. It deliberately replaced a thin-plate spline: TPS interpolates every
-    control point exactly but extrapolates wildly outside their convex hull,
-    which distorted map corners badly.
-
-    Pixel Y grows downward while northing grows upward; nothing flips it
-    explicitly -- the fit simply learns a negative ``d``.
-    """
+    """Pixel -> EPSG:3857 affine, with least-squares fit and an inverse."""
 
     name = "affine"
     dof = 6
@@ -110,12 +85,8 @@ class AffineModel:
         return model
 
     def measure_against(self, control_points: Sequence["ControlPoint"]) -> None:
-        """Attach control-point residuals to a model that was not fitted here.
+        """Attach control-point residuals to a model that was not fitted here."""
 
-        Step 4 hands back a model produced by the chamfer/ICP optimiser rather
-        than by ``fit``, so it arrives with no residuals and would otherwise
-        report its error as unknown.
-        """
         if not control_points:
             return
         src = np.array([cp.pixel for cp in control_points], dtype=float)
@@ -144,14 +115,8 @@ class AffineModel:
 
     @property
     def rmse_3857(self) -> Optional[float]:
-        """RMS control-point residual in EPSG:3857 metres, or None when the fit
-        has no redundancy.
+        """RMS control-point residual in EPSG:3857 metres."""
 
-        With exactly 3 control points the affine passes through every point
-        exactly, so a residual of 0 means "no evidence", not "perfect fit". The
-        previous code reported that 0 as confidence (georeferencing-history.md,
-        starting point); returning None instead forces callers to say "unknown".
-        """
         if self.redundancy <= 0 or self.residuals_3857.size == 0:
             return None
         return float(np.sqrt(np.mean(self.residuals_3857**2)))
@@ -191,11 +156,8 @@ class AffineModel:
         return _transform
 
     def inverse(self) -> "AffineModel":
-        """The EPSG:3857 -> pixel model.
+        """The EPSG:3857 -> pixel model."""
 
-        Needed by chamfer alignment, which samples the reference coastline and
-        pushes it into pixel space to read the user-side distance transform.
-        """
         if abs(self.determinant) < 1e-12:
             raise ValueError("Affine is singular and cannot be inverted")
         return AffineModel(matrix=np.linalg.inv(self.matrix))
@@ -231,12 +193,8 @@ def fit_affine_from_control_points(
     use_sigma_weights: bool = False,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> AffineModel:
-    """Fit pixel -> EPSG:3857 from control-point records.
-
-    ``use_sigma_weights`` stays off by default: the baseline treats every
-    point alike, whatever its source. ``config`` supplies the per-source sigma
-    when it is turned on.
-    """
+    """Fit pixel -> EPSG:3857 from control-point records."""
+    
     if len(control_points) < 3:
         raise ValueError(
             "At least 3 point pairs are required for affine transformation"

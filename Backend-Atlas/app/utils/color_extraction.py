@@ -295,133 +295,6 @@ def save_mask_png(
     cv2.imwrite(out_path, bgra)
 
 
-def inpaint_text_ink(
-    rgb: np.ndarray,
-    lab: np.ndarray,
-    centers_lab: np.ndarray,
-    text_regions: List,
-    *,
-    protect_deltaE: float = 5.0,
-    dilation_px: int = 1,
-    inpaint_radius_px: float = 3.0,
-    max_ink_ratio: float = 0.6,
-    ring_px: int = 6,
-    ring_min_share: float = 0.05,
-) -> Tuple[np.ndarray, np.ndarray, Dict]:
-
-    stats = {
-        "method": "inpaint",
-        "algo": "telea",
-        "boxesConsidered": 0,
-        "boxesFilled": 0,
-        "pixelsFilled": 0,
-    }
-    if not text_regions:
-        return rgb, lab, stats
-
-    height, width = rgb.shape[:2]
-
-    # Nearest zone colour for every pixel, and whether it is close enough to count as that zone. 
-    dists = np.stack(
-        [deltaE_ciede2000(lab, c.reshape(1, 1, 3)) for c in centers_lab], axis=-1
-    )
-    nearest = np.argmin(dists, axis=-1)
-    near_zone = np.min(dists, axis=-1) <= protect_deltaE
-    del dists
-
-    lightness = np.clip(lab[:, :, 0] * 2.55, 0, 255).astype(np.uint8)
-    halo = np.ones((2 * max(int(dilation_px), 0) + 1,) * 2, np.uint8)
-    pad = max(int(dilation_px), 0)
-    ring_px = max(int(ring_px), 1)
-    ring_kernel = np.ones((2 * ring_px + 1,) * 2, np.uint8)
-    ink_mask = np.zeros((height, width), dtype=np.uint8)
-    stats["zonesDroppedFromProtection"] = 0
-
-    for polygon in text_regions:
-        try:
-            points = np.array(polygon, dtype=np.float64).reshape(-1, 2)
-        except (TypeError, ValueError):
-            continue
-        if points.shape[0] < 3:
-            continue
-
-        # Work in the box's bounding rectangle, padded for the halo and the
-        # ring around it.
-        margin = pad + ring_px
-        x0 = max(int(np.floor(points[:, 0].min())) - margin, 0)
-        y0 = max(int(np.floor(points[:, 1].min())) - margin, 0)
-        x1 = min(int(np.ceil(points[:, 0].max())) + margin + 1, width)
-        y1 = min(int(np.ceil(points[:, 1].max())) + margin + 1, height)
-        if x1 - x0 < 2 or y1 - y0 < 2:
-            continue
-        stats["boxesConsidered"] += 1
-
-        box = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
-        local = np.round(points - [x0, y0]).astype(np.int32)
-        cv2.fillPoly(box, [local], 1)
-        inside = box.astype(bool)
-
-        # Only the zones actually around this label are protected. Labels are
-        # often printed in a darker shade of their zone, which can sit within
-        # ΔE of a *neighbouring* zone: protected globally.
-        grown = cv2.dilate(box, halo) if pad > 0 else box
-        ring = cv2.dilate(grown, ring_kernel).astype(bool) & ~grown.astype(bool)
-        near_local = near_zone[y0:y1, x0:x1]
-        nearest_local = nearest[y0:y1, x0:x1]
-        ring_zone = ring & near_local
-        present = np.zeros(len(centers_lab), dtype=bool)
-        if ring.any():
-            counts = np.bincount(
-                nearest_local[ring_zone], minlength=len(centers_lab)
-            )
-            present = counts >= ring_min_share * ring.sum()
-        protected_local = near_local & present[nearest_local]
-        stats["zonesDroppedFromProtection"] += int(
-            (np.isin(nearest_local[inside & near_local], np.flatnonzero(~present))).any()
-        )
-        values = lightness[y0:y1, x0:x1][inside]
-        if values.size < 8 or values.min() == values.max():
-            continue
-
-        threshold, _ = cv2.threshold(
-            values.reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-        dark = lightness[y0:y1, x0:x1] <= threshold
-        dark_share = float(dark[inside].mean())
-        ink = (dark if dark_share <= 0.5 else ~dark) & inside
-
-        ink &= ~protected_local
-        if not ink.any() or ink[inside].mean() > max_ink_ratio:
-            continue
-
-        if pad > 0:
-            ink = cv2.dilate(ink.astype(np.uint8), halo).astype(bool)
-            ink &= ~protected_local
-
-        ink_mask[y0:y1, x0:x1] |= ink.astype(np.uint8)
-        stats["boxesFilled"] += 1
-
-    if not ink_mask.any():
-        return rgb, lab, stats
-
-    rgb_u8 = (np.clip(rgb, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
-    repaired = cv2.inpaint(rgb_u8, ink_mask, float(inpaint_radius_px), cv2.INPAINT_TELEA)
-
-    # Only the ink is replaced: the 8-bit round trip cv2 needs would otherwise
-    # shift every pixel of the map by up to half a level.
-    ink = ink_mask.astype(bool)
-    rebuilt = repaired[ink].astype(np.float64) / 255.0
-    rgb_out = rgb.copy()
-    rgb_out[ink] = rebuilt
-    lab_out = lab.copy()
-    lab_out[ink] = compute_lab(rebuilt.reshape(-1, 1, 3)).reshape(-1, 3)
-    stats["pixelsFilled"] = int(ink.sum())
-    return rgb_out, lab_out, stats
-
-
-TEXT_INPAINT_ALGOS = ("palette", "telea")
-
-
 def _ring_palette(
     ring_lab: np.ndarray, max_colors: int, min_share: float
 ) -> Optional[np.ndarray]:
@@ -807,10 +680,7 @@ def extract_colors(
     # Defaults match GeorefConfig's.
     text_regions: Optional[List] = None,
     text_inpaint_dilation_px: int = 1,
-    text_inpaint_radius_px: float = 3.0,
     text_inpaint_max_ink_ratio: float = 1.0,
-    # "palette" (ring palette + vote) or "telea" (Otsu + cv2.inpaint).
-    text_inpaint_algo: str = "palette",
     text_inpaint_ink_deltaE: float = 12.0,
     # -----------------------------
     # Shared borders between zones
@@ -834,18 +704,18 @@ def extract_colors(
       - masks (paths to debug PNGs of each mask, if debug=True) *For futurs tests*
     """
 
-    # 0) Prepare output directory
+    # Prepare output directory
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
 
     if debug:
         os.makedirs(image_output_dir, exist_ok=True)
 
-    # 1) Load raw image and alpha mask
+    # Load raw image and alpha mask
     rgb_u8, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
     original_rgb = img_as_float(rgb_u8)
 
-    # 2) Preprocess full image for color extraction (keeps/updates mask)
+    # Preprocess full image for color extraction (keeps/updates mask)
     rgb, opaque_mask = preprocess(
         rgb=original_rgb,
         alpha=alpha,
@@ -859,7 +729,7 @@ def extract_colors(
         debug_dir=image_output_dir,
     )
 
-    # 3) Convert preprocessed image to LAB
+    # Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
     # Removed from both the assignment and the final masks: hole filling would
@@ -907,20 +777,14 @@ def extract_colors(
             "masks": masks,
         }
 
-    # 6) Build exclusive masks by nearest LAB center
+    # Build exclusive masks by nearest LAB center
     centers_lab = np.array(
         [entry["lab_center"] for entry in dominants], dtype=np.float64
     )
-    # 5b) Inpaint mode: erase the labels' ink from the image before any pixel
-    # is classified. After the colours are sampled, since it needs them to
-    # know which pixels are already zone and must be kept.
-    if text_inpaint_algo not in TEXT_INPAINT_ALGOS:
-        raise ValueError(
-            f"text_inpaint_algo must be one of {TEXT_INPAINT_ALGOS}, got {text_inpaint_algo!r}"
-        )
-
+    # Erase the labels' ink from the image before any pixel is
+    # classified: each ink pixel takes the colour of the background around it.
     text_stats = None
-    if text_regions and text_inpaint_algo == "palette":
+    if text_regions:
         rgb, lab, text_stats = repaint_text_ink_palette(
             rgb,
             lab,
@@ -931,23 +795,6 @@ def extract_colors(
         )
         logger.info(
             f"[COLOR] text repaint (palette): {text_stats['pixelsFilled']} px in "
-            f"{text_stats['boxesFilled']}/{text_stats['boxesConsidered']} label boxes"
-        )
-    elif text_regions:
-        rgb, lab, text_stats = inpaint_text_ink(
-            rgb,
-            lab,
-            centers_lab,
-            text_regions,
-            # TODO this is a test for the protection to just put none
-            #protect_deltaE=mask_deltaE,
-            protect_deltaE=0,
-            dilation_px=text_inpaint_dilation_px,
-            inpaint_radius_px=text_inpaint_radius_px,
-            max_ink_ratio=text_inpaint_max_ink_ratio,
-        )
-        logger.info(
-            f"[COLOR] text inpaint: {text_stats['pixelsFilled']} px rebuilt in "
             f"{text_stats['boxesFilled']}/{text_stats['boxesConsidered']} label boxes"
         )
 
@@ -965,7 +812,7 @@ def extract_colors(
         # 3. Fill holes: Remove interior holes (text, small waters, etc.)
         return binary_fill_holes(mask) & ~legend_pixels
 
-    # 6c) Shared borders: close the line drawn between two zones, then settle
+    # Shared borders: close the line drawn between two zones, then settle
     # every pixel on one zone and vectorise all zones together, so that two
     # neighbours come out with the very same border instead of a strip.
     gap_stats = None
@@ -999,7 +846,7 @@ def extract_colors(
             f"[COLOR] zone gaps: {gap_pixels} px filled (max width {max_gap_px:.1f} px)"
         )
 
-    # 7) Build per-color masks and features
+    # Build per-color masks and features
     seen_names: Dict[str, int] = {}
     color_index = 1
     for k, entry in enumerate(dominants):

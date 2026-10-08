@@ -1,35 +1,4 @@
-"""What the *current* georeferencing algorithm needs from a stored test case.
-
-The georeferencing pipeline changes shape, not just constants: Step 1 added a
-framing box, Step 1/3 added a separate water pipette, Step 4 made an OCR text
-mask load-bearing. A case authored before any of those carries inputs that were
-sufficient then and are not sufficient now, and nothing on disk says so -- the
-case simply runs with less evidence than the algorithm expects and quietly
-reports a worse number.
-
-This module is the declaration that fixes that. Every input the pipeline
-consumes is listed once, with the thing that actually matters about it: whether
-a missing one can be *recovered*.
-
-Two kinds, and the distinction is the whole point:
-
-``USER_INPUT``
-    Came from a human clicking something. A case authored before the water
-    pipette existed cannot grow water picks by re-running anything; the only
-    repair is a person creating a new case. So a missing required user input is
-    an **error**, not a refresh.
-
-``DERIVED``
-    Extracted from the map by a step that is *not* part of georeferencing and
-    does not change while georeferencing is tuned -- OCR text regions being the
-    one that matters, at ~135 s per map on CPU. A missing derived artifact is
-    recomputed once, persisted beside the map, and reused forever after. It is
-    an expense, never a blocker.
-
-Requirements are a function of the config, not a constant: the text mask is
-required only when curve alignment is on, which is exactly why the regression
-suite (alignment off) does not pay for OCR.
-"""
+"""What the *current* georeferencing algorithm needs from a stored test case."""
 
 from dataclasses import dataclass
 from enum import Enum
@@ -58,17 +27,7 @@ class RequirementKind(str, Enum):
 
 
 class RequirementLevel(str, Enum):
-    """How badly the pipeline wants an input.
-
-    There is deliberately **no middle level** for "runs, but through a fallback
-    that makes the result weaker". That level existed and ``frameBounds`` was
-    filed under it, which was wrong: the framing box is the extent of every
-    reference raster, so deriving one silently changes which geography the
-    alignment can match against. An input the pipeline reads is either required
-    or genuinely optional. A comfortable middle is how a case ends up running
-    under-specified and reporting a worse number for a reason unrelated to
-    whatever was being measured.
-    """
+    """How badly the pipeline wants an input."""
 
     #: No run at all without it.
     REQUIRED = "required"
@@ -245,12 +204,8 @@ _TEXT_REGIONS = Requirement(
 def georef_requirements(
     config: Optional[GeorefConfig] = None,
 ) -> Tuple[Requirement, ...]:
-    """The requirements in force for *config*.
+    """The requirements in force for *config*."""
 
-    Config-dependent on purpose. The text mask is load-bearing only when curve
-    alignment runs, which is why the regression suite -- alignment off by
-    design, so it keeps measuring the GCP-only floor -- never pays for OCR.
-    """
     cfg = config or DEFAULT_GEOREF_CONFIG
 
     reqs: List[Requirement] = [
@@ -298,13 +253,7 @@ class RequirementState:
 
 
 class MissingUserInputError(RuntimeError):
-    """A case is missing a user input that only a human can supply.
-
-    Raised rather than worked around: silently running a case with less
-    evidence than the algorithm expects reports a worse number for a reason
-    that has nothing to do with the algorithm, which is precisely the failure
-    this module exists to prevent.
-    """
+    """A case is missing a user input that only a human can supply."""
 
     def __init__(self, states: Iterable["RequirementState"], case_label: str = ""):
         self.states = list(states)
@@ -404,14 +353,8 @@ def check_requirements(
     presence: Dict[str, Any],
     config: Optional[GeorefConfig] = None,
 ) -> RequirementsReport:
-    """Resolve the in-force requirements against what a case actually has.
-
-    ``presence`` maps a requirement key to either a bool, or a
-    ``(present, detail)`` pair when there is something worth saying about it --
-    a derived artifact that exists but was produced from a different image, for
-    instance. A detail starting with ``stale:`` marks a present-but-unusable
-    artifact.
-    """
+    """Resolve the in-force requirements against what a case actually has."""
+    
     states: List[RequirementState] = []
 
     for requirement in georef_requirements(config):

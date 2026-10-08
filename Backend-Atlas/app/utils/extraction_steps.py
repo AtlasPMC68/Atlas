@@ -1,21 +1,4 @@
-"""The georeferencing steps every entry point runs, in one place.
-
-Three callers -- the import task, the dev-test task and the dev scripts
-(``run_georef_alignment.py``, ``run_georef_variants.py``) -- run the same
-pipeline and differ only in where the inputs come from and where the results
-go:
-
-    extract_zone_colors   pixel zones from the pipette picks
-    place_map             the control points, aligned once: the transform
-                          every feature producer of the map shares
-    MapPlacement.georeference
-                          pixel features -> EPSG:4326, cleaned, with the raw
-                          (uncleaned) copy and the check-point errors
-
-They used to assemble these steps themselves and drifted apart (the script
-stopped passing the text-fill settings and the image size, so its numbers no
-longer matched a re-run from the dev tool).
-"""
+"""The georeferencing steps every entry point runs."""
 
 import logging
 from dataclasses import dataclass, replace
@@ -39,16 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 def zone_extraction_settings(config: GeorefConfig) -> Dict[str, Any]:
-    """The colour-extraction arguments that come from the config.
+    """The colour-extraction arguments that come from the config."""
 
-    Also part of the dev script's colour cache key, so a setting added here
-    invalidates cached zones by construction.
-    """
     return {
         "text_inpaint_dilation_px": config.text_inpaint_dilation_px,
-        "text_inpaint_radius_px": config.text_inpaint_radius_px,
         "text_inpaint_max_ink_ratio": config.text_inpaint_max_ink_ratio,
-        "text_inpaint_algo": config.text_inpaint_algo,
         "text_inpaint_ink_deltaE": config.text_inpaint_ink_deltaE,
         "zone_gap_fill": config.zone_gap_fill,
         "zone_gap_max_ratio_of_diagonal": config.zone_gap_max_ratio_of_diagonal,
@@ -167,12 +145,8 @@ def place_map(
     record: Optional[RunRecord] = None,
     debug_dir: Optional[str] = None,
 ) -> MapPlacement:
-    """Select the control points the config uses and align the map once.
-
-    Raises:
-        ValueError: without a framing box or enough control points, which every
-            entry point requires before getting here.
-    """
+    """Select the control points the config uses and align the map once."""
+    
     if not frame_bounds:
         raise ValueError("Georeferencing needs the framing box")
     points = select_control_points(control_points, config.gcp_sources)

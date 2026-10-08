@@ -1,15 +1,4 @@
-"""Parsing of the pipette (`imposed_colors`) payload sent by the frontend.
-
-The payload is a JSON array of
-`{"x": float, "y": float, "name": str, "radius": int, "kind": "zone" | "water"}`
-entries, where x/y are normalised image coordinates in [0, 1]. It is shared by the
-production upload route and the dev-test one so both stay in sync.
-
-`kind` separates zone fill from water. They are pipetted separately because they
-are routinely the same hue -- on the Leclerc map blue is Nouvelle-France while
-the Atlantic is white. Colour alone cannot disambiguate them, and the user can in
-one click. Every entry carries its `kind`.
-"""
+"""Parsing of the pipette (`imposed_colors`) payload sent by the frontend."""
 
 import json
 from json import JSONDecodeError
@@ -35,13 +24,8 @@ Picks = Tuple[
 
 
 def parse_imposed_colors(raw: str | None) -> ImposedColors:
-    """Parse a raw `imposed_colors` JSON string into positions, names, radii, kinds.
+    """Parse a raw `imposed_colors` JSON string into positions, names, radii, kinds."""
 
-    Returns (None, None, None, None) when nothing was provided.
-
-    Raises:
-        ValueError: If the payload is not a valid list of click entries.
-    """
     if not raw:
         return None, None, None, None
 
@@ -108,11 +92,8 @@ def split_imposed_colors_by_kind(
     kinds: List[str],
     kind: str,
 ) -> Picks:
-    """Keep only the picks of one `kind`, as three parallel lists.
-
-    Returns (None, None, None) when nothing of that kind was picked, so the
-    result drops straight into the `Optional[List]` arguments downstream.
-    """
+    """Keep only the picks of one `kind`, as three parallel lists."""
+    
     if not click_positions:
         return None, None, None
 

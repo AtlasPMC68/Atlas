@@ -1,10 +1,4 @@
-"""The cleaning stage, and scoring before and after it.
-
-Expected zones go through the same ocean and lake cuts as the pipeline's
-output, so the shipped zones are scored against truth cut the same way; the
-zones before cleaning are scored against the zones as drawn. Uses the real
-Natural Earth layers in app/geojson.
-"""
+"""The cleaning stage, and scoring before and after it."""
 
 import json
 

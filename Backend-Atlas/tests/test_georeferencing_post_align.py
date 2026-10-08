@@ -1,12 +1,4 @@
-"""Curve alignment after the piecewise correction (``post_align``).
-
-A synthetic map: a wavy coastline drawn in pixel space, and control points
-clicked 6 px to the left of where the truth puts them, so the piecewise model
-fitted to them sits 6 px off the coast. Aligning again in front of it should
-pull it back toward the coast.
-
-No cv2: the user field is built by hand from the drawn curve.
-"""
+"""Curve alignment after the piecewise correction (``post_align``)."""
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt

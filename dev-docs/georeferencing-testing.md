@@ -206,14 +206,9 @@ docker compose run --rm georef-dev python scripts/run_georef_variants.py \
 
 | Stage | Variants |
 |---|---|
-<<<<<<< HEAD
 | 1. Base transform | `A0` affine, no snapping, clipping on (the floor) · `A1` piecewise · `A1La/b/c` piecewise, local regularization at reach 0.1, 0.175, 0.25 of the diagonal · `A2` A0 + snapping · `A3` / `A4` SIFT / cities only |
-| 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B3La/b/c` B2 + local piecewise, same reaches · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 · `B7` B3Lb then align again (align → piecewise → align) · `B8` local piecewise at 0.175 then align (piecewise → align; the GCP affine is aligned when the correction is refused) · `B7a/b` B7 with coastline weight ×3, ×10 |
-=======
-| 1. Base transform | `A0` affine, no snapping, clipping on (the floor) · `A1` piecewise · `A2` A0 + snapping · `A3` / `A4` SIFT / cities only |
-| 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 · `B7` / `B8` ICP only at ×1 / ×10 |
->>>>>>> d64ed9e18b630019801f49502b7300c181814c05
-| 3. Production | `PROD`: file defaults with alignment on (= alignment + piecewise + snapping) |
+| 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B3La/b/c` B2 + local piecewise, same reaches · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 · `B7` B3Lb then align again (align → piecewise → align) · `B8` local piecewise at 0.175 then align (piecewise → align; the GCP affine is aligned when the correction is refused) · `B7a/b` B7 with coastline weight ×3, ×10 · `B9` / `B10` ICP only at ×1 / ×10 |
+| 3. Production | `PROD`: the file defaults, no overrides (= `B7b` + snapping) |
 | Extraction | `E2` zone gap fill on (`E1`, label text fill, was removed with the method) |
 | Noise | `N1` |
 
@@ -365,7 +360,7 @@ its check points improve. Chamfer without ICP gives 0.911 on `clustered`. Not lo
 
 Is the chamfer still needed once the water filter has identified the coastline? Run
 `icp-only-2026-10-07`: every regression case (17; 14 with check points), `B7` / `B8` (ICP only
-from the control-point affine, ×1 / ×10) against `B2` / `B5b` (chamfer + ICP at the same
+from the control-point affine, ×1 / ×10; now named `B9` / `B10`) against `B2` / `B5b` (chamfer + ICP at the same
 weights), same code (config v15, before the checks were redesigned; every aligned run passed).
 
 **Check-point error (km)**, the cases with check points:

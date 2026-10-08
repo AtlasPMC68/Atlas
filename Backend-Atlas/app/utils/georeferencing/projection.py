@@ -1,14 +1,4 @@
-"""Spherical WebMercator (EPSG:3857) helpers, and honest distance units.
-
-The affine is fitted in a planar space because pixels are planar. WebMercator is
-conformal, therefore locally isotropic: shape is already correct and only
-*absolute scale* is wrong, by a factor of ``1/cos(phi)``. Everything that
-reports a distance to a human must divide by that factor first --- see
-``webmercator_meters_to_km``.
-
-A local LAEA/TM projection is the principled version, but it needs ``pyproj``
-and buys nothing at proof-of-concept scale.
-"""
+"""Spherical WebMercator (EPSG:3857) helpers, and honest distance units."""
 
 import math
 from typing import Tuple
@@ -44,11 +34,7 @@ def lonlat_arrays_to_webmercator(x, y, z=None):
 
 
 def webmercator_arrays_to_lonlat(x, y, z=None):
-    """Vectorized transform callback for Shapely: EPSG:3857 -> EPSG:4326.
-
-    The per-point Python loop this replaces was the hot spot on dense
-    color-extraction polygons.
-    """
+    """Vectorized transform callback for Shapely: EPSG:3857 -> EPSG:4326."""
     x_arr = np.asarray(x, dtype=float)
     y_arr = np.asarray(y, dtype=float)
 
@@ -70,12 +56,7 @@ def mercator_scale_factor(latitude_deg: float) -> float:
 
 
 def webmercator_meters_to_km(distance_3857: float, latitude_deg: float) -> float:
-    """Convert a WebMercator distance to real kilometres on the ground.
-
-    A stated 1000 "metres" in EPSG:3857 is ~550 m on the ground at Quebec
-    latitudes; this is the correction that makes reported numbers honest
-    (georeferencing-history.md, starting point).
-    """
+    """Convert a WebMercator distance to real kilometres on the ground."""
     scale = mercator_scale_factor(latitude_deg)
     if not math.isfinite(scale) or scale <= 0:
         return float("nan")

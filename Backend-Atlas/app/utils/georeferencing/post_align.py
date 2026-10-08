@@ -1,23 +1,4 @@
-"""Curve alignment run again after the piecewise correction.
-
-Alignment fits six affine parameters, so it cannot move the piecewise model
-itself. It fits an affine ``M`` in *pixel* space in front of it instead: the
-placement becomes ``P(M(pixel))``. ``P`` is fixed during the fit, so the
-reference curves and the control-point targets go through ``P``'s inverse
-once, into the pixel frame ``P`` reads from, and the unchanged optimiser fits
-``M`` from there, starting at the identity. An affine in front of a
-piecewise-affine model is still piecewise affine on the same triangles, so
-``M`` is folded back in and the result is an ordinary ``PiecewiseAffineModel``.
-
-When there is no piecewise model (the correction was refused, or ``auto``
-kept the affine), the same runs in front of the GCP affine, so a run without
-an alignment before the correction is still aligned.
-
-Not gated like the first alignment (no gates): ``M`` is kept only
-when it keeps the map's orientation and does not make the coastline chamfer
-worse than ``P`` alone. Everything here is cv2-free; the evidence was built
-before (``runner.build_alignment_inputs``).
-"""
+"""Curve alignment run again after the piecewise correction."""
 
 import logging
 from dataclasses import dataclass
@@ -80,13 +61,8 @@ def _through(inverse: "Model", samples: CurveSamples) -> CurveSamples:
 
 
 def compose(model: Model, front: AffineModel) -> Model:
-    """``model(front(pixel))`` as one model of the same kind.
+    """``model(front(pixel))`` as one model of the same kind."""
 
-    For a piecewise model, ``front`` maps each triangle onto a triangle,
-    keeping barycentric coordinates, so the composite is the same
-    triangulation with its input vertices pulled back through ``front`` and
-    the base composed with it.
-    """
     if isinstance(model, AffineModel):
         return AffineModel(matrix=model.matrix @ front.matrix, n_points=model.n_points)
     back = front.inverse()
@@ -107,13 +83,8 @@ def align_after_piecewise(
     config: GeorefConfig,
     record: Optional[RunRecord] = None,
 ) -> Model:
-    """Run the alignment stages in front of *model*; *model* if it does not help.
-
-    *model* is the piecewise model, or the GCP affine when there is none; for
-    an affine this is a plain alignment from it, without the gates. The
-    returned model's GCP residuals are in-sample: a leave-one-out
-    would need one alignment per fold.
-    """
+    """Run the alignment stages in front of *model*; *model* if it does not help."""
+    
     record = record or RunRecord()
     stats: dict = {"applied": False, "onModel": model.name}
 

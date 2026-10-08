@@ -1,15 +1,4 @@
-"""Per-run debug dump: everything needed to see what alignment actually did.
-
-Throwaway diagnostics, switched on with `GEOREF_DEBUG=true`. Writes a folder per
-run instead of adding to already-crowded logs.
-
-The overlays are the point. A gate value tells you a fit passed; only seeing the
-reference coastline drawn through the transform, on top of the user's map, tells
-you *where it went* and whether it went there for a sensible reason.
-
-Needs cv2, so like `evidence.py` and `runner.py` this is not re-exported from the
-package.
-"""
+"""Per-run debug dump: everything needed to see what alignment actually did."""
 
 import json
 import logging
@@ -23,6 +12,9 @@ import numpy as np
 from .affine import AffineModel
 from .control_points import ControlPoint
 from .projection import lonlat_to_webmercator
+from .config import DEFAULT_GEOREF_CONFIG
+from .gates import gcp_rms_px, similarity_of, water_mask_iou
+
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +64,7 @@ def _dim(image: np.ndarray, factor: float = 0.45) -> np.ndarray:
 
 
 def _reference_pixels(layers: Any, model: AffineModel, stride: int = 2, config: Any = None):
-    """Reference curve points pushed through *model* into image pixels.
-
-    Draws only the layers alignment actually used. Drawing a layer the fit
-    never saw is misleading in exactly the picture you go to when a map placed
-    badly.
-    """
-    from .config import DEFAULT_GEOREF_CONFIG
+    """Reference curve points pushed through *model* into image pixels."""
 
     config = config or DEFAULT_GEOREF_CONFIG
     mask = layers.curve_mask(
@@ -232,7 +218,6 @@ def dump_alignment_debug(
             matched, total_samples = -1, -1
 
         # --- the numbers ------------------------------------------------------
-        from .gates import gcp_rms_px, similarity_of
 
         base_scale, base_rot, _ = similarity_of(baseline)
         new_scale, new_rot, _ = similarity_of(aligned)
@@ -321,8 +306,6 @@ def dump_alignment_debug(
             for key, value in (alignment.stats or {}).items():
                 lines.append(f"    {key:<20} {value}")
         try:
-            from .gates import water_mask_iou
-
             base_iou = water_mask_iou(baseline, layers, evidence)
             aligned_iou = water_mask_iou(aligned, layers, evidence)
             if base_iou is not None:

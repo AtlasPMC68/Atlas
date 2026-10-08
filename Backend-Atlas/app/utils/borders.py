@@ -5,12 +5,7 @@ Drop border files into ``app/geojson/borders/`` (see
 recognised from its properties, so Natural Earth admin-0 (countries) and
 admin-1 (states, provinces) and geoBoundaries ADM0 / ADM1 files all work, side
 by side. Everything is indexed as countries, each with an optional whole-country
-outline and a list of regions.
-
-The files are large (Natural Earth admin-1 at 10m is ~40 MB), so the browser
-never loads them: the editor asks for the list, then for the one zone it wants.
-Geometries are kept as WKB, which is a fraction of the memory of parsed JSON.
-"""
+outline and a list of regions. """
 
 import glob
 import json
