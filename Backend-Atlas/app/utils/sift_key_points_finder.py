@@ -14,6 +14,16 @@ BORDER_MARGIN_RATIO = 0.02  # ~25 px on the 1024x768 default
 # scales and orientations), and two control points in the same spot constrain
 # nothing.
 MIN_SEPARATION_RATIO = 0.01  # ~13 px on the 1024x768 default
+# What "well spaced" means when choosing between a coastline and a lake
+# keypoint: a lake point is only taken when no coastline point is at least this
+# far from every point already chosen. Measured on the test cases' framing
+# boxes: at 5% of the diagonal, 6 of 14 boxes gain 1-5 lake points and the
+# points' hull roughly doubles there (~0.25 -> ~0.45 of the frame); the others
+# stay all coastline.
+WELL_SPACED_RATIO = 0.05  # ~64 px on the 1024x768 default
+
+COASTLINE = "coastline"
+LAKE = "lake"
 
 # Sampling cost is candidates x points, so a cap keeps the worst case bounded
 # on a dense raster. Candidates are taken strongest-first, so what is dropped
@@ -23,65 +33,75 @@ MAX_CANDIDATES = 5000
 DEBUG = False
 
 
-def select_spread_keypoints(keypoints, count: int, min_separation_px: float):
-    """Pick `count` keypoints spread as widely as possible (farthest-point sampling).
+def select_spread_keypoints(
+    coastline_keypoints,
+    lake_keypoints,
+    count: int,
+    well_spaced_px: float,
+    min_separation_px: float,
+):
+    """Pick up to `count` keypoints spread as widely as possible, coastline first.
 
-    Seeds with the strongest response, then repeatedly takes the candidate
-    farthest from everything already chosen.
+    Farthest-point sampling: seed with the strongest coastline keypoint (the
+    strongest lake one when the box has no coast), then repeatedly take the
+    candidate farthest from everything already chosen. Spread is the objective
+    because clustered control points make the affine badly conditioned; a
+    single "at least D px apart" threshold could not both spread the points and
+    fill the request.
 
-    Chosen over the previous "keep anything at least D pixels from the ones
-    kept so far" for two reasons:
+    Lakes are always candidates but never preferred. A user's map may omit a
+    lake or draw it schematically, while it always draws the coast. So each
+    round takes the farthest *coastline* candidate that is still well spaced
+    (`well_spaced_px` from every chosen point), and a lake only when no
+    coastline candidate is. Once neither is, the same rule continues down to
+    `min_separation_px`, which is only a duplicate floor: SIFT reports several
+    keypoints at one spot, and two control points there constrain nothing.
 
-    - **D was doing two jobs and could only do one.** Small, it deduplicates but
-      leaves the points clustered on whichever stretch of coast SIFT likes;
-      large, it spreads them but exhausts the candidates and silently returns
-      fewer than asked. Measured on a Quebec framing box, D=10 px left a pool
-      of 19 while D=200 px left 6, so no single value both spreads and fills.
-      Here spread is the objective and the count is met whenever the candidates
-      allow it.
-    - **Spread is what the georeferencing actually needs.** Control points
-      bunched together make the affine badly conditioned, which is what the
-      `probe_gcp_disagreement` gate punishes. It should be maximised outright,
-      not fall out of a threshold.
-
-    `min_separation_px` only stops the selection once the best remaining
-    candidate is a near-duplicate of one already chosen, which happens when the
-    candidates run out before `count` is reached.
+    Returns:
+        ``(keypoint, feature)`` pairs, feature being ``COASTLINE`` or ``LAKE``,
+        in the order chosen.
     """
-    if count <= 0 or not keypoints:
+    candidates = [
+        (kp, feature)
+        for feature, keypoints in ((COASTLINE, coastline_keypoints), (LAKE, lake_keypoints))
+        for kp in sorted(keypoints, key=lambda kp: kp.response, reverse=True)[:MAX_CANDIDATES]
+    ]
+    if count <= 0 or not candidates:
         return []
 
-    ordered = sorted(keypoints, key=lambda kp: kp.response, reverse=True)
-    ordered = ordered[:MAX_CANDIDATES]
-    points = np.array([kp.pt for kp in ordered], dtype=float)
+    points = np.array([kp.pt for kp, _ in candidates], dtype=float)
+    is_coast = np.array([feature == COASTLINE for _, feature in candidates])
 
-    chosen = [0]  # the strongest response seeds it
+    # Candidates are strongest-first within each feature, coastline first.
+    chosen = [0]
     # Distance from every candidate to the nearest chosen point, kept as a
     # running minimum so each round costs one pass rather than one per pair.
     distance = np.hypot(points[:, 0] - points[0, 0], points[:, 1] - points[0, 1])
 
-    while len(chosen) < count:
-        farthest = int(np.argmax(distance))
-        if distance[farthest] < min_separation_px:
-            break  # everything left duplicates a point already chosen
-        chosen.append(farthest)
-        np.minimum(
-            distance,
-            np.hypot(
-                points[:, 0] - points[farthest, 0],
-                points[:, 1] - points[farthest, 1],
-            ),
-            out=distance,
-        )
+    for spacing in (well_spaced_px, min_separation_px):
+        while len(chosen) < count:
+            eligible = distance >= spacing
+            pool = eligible & is_coast
+            if not pool.any():
+                pool = eligible & ~is_coast
+            if not pool.any():
+                break
+            index = np.flatnonzero(pool)
+            pick = int(index[np.argmax(distance[index])])
+            chosen.append(pick)
+            np.minimum(
+                distance,
+                np.hypot(points[:, 0] - points[pick, 0], points[:, 1] - points[pick, 1]),
+                out=distance,
+            )
 
-    return [ordered[i] for i in chosen]
+    return [candidates[i] for i in chosen]
 
 
-def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection: bool = True):
-
+def detect_sift_candidates(gray_image: np.ndarray, apply_edge_detection: bool = True):
+    """Every SIFT keypoint on the render's edges, away from its borders."""
     height, width = gray_image.shape
-    diagonal = float(np.hypot(width, height))
-    border_margin = BORDER_MARGIN_RATIO * diagonal
+    border_margin = BORDER_MARGIN_RATIO * float(np.hypot(width, height))
 
     if apply_edge_detection:
         # Apply blur to reduce noise before edge detection
@@ -91,26 +111,15 @@ def detect_sift_keypoints_on_image(gray_image: np.ndarray, apply_edge_detection:
     else:
         edges = None
 
-    # Detect ALL keypoints on edges (no limit)
     sift = cv2.SIFT_create()
-    all_keypoints, _ = sift.detectAndCompute(gray_image, mask=edges)
+    keypoints, _ = sift.detectAndCompute(gray_image, mask=edges)
 
-    if len(all_keypoints) == 0:
-        return []
-
-    # Filter out keypoints too close to image borders
-    filtered_keypoints = []
-    for kp in all_keypoints:
-        x, y = kp.pt
-        if (border_margin < x < width - border_margin and
-            border_margin < y < height - border_margin):
-            filtered_keypoints.append(kp)
-
-    return select_spread_keypoints(
-        filtered_keypoints,
-        NUMBER_OF_KEYPOINTS,
-        MIN_SEPARATION_RATIO * diagonal,
-    )
+    return [
+        kp
+        for kp in keypoints
+        if border_margin < kp.pt[0] < width - border_margin
+        and border_margin < kp.pt[1] < height - border_margin
+    ]
 
 
 def draw_geojson_features(img: np.ndarray, geojson_path: str, bounds: dict, width: int, height: int):
@@ -140,75 +149,63 @@ def draw_geojson_features(img: np.ndarray, geojson_path: str, bounds: dict, widt
                     draw_coastline(img, polygon[0], bounds, width, height)
 
 
-def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):    
-    """
-    Find SIFT keypoints on coastlines within geographic bounds.
-    First tries with just coastlines. If fewer than 10 keypoints found,
-    adds lakes for more detail.
+def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):
+    """Suggest SIFT keypoints for the user to match, inside geographic bounds.
+
+    The coastline and the lake shorelines are rendered separately, so each
+    keypoint knows which it came from, and `select_spread_keypoints` prefers
+    the coastline: lakes fill in only where the coast leaves the frame
+    uncovered.
     """
     geojson_dir = os.path.join(os.path.dirname(__file__), "..", "geojson")
-    coastline_path = os.path.join(geojson_dir, "ne_coastline.geojson")
-    lakes_path = os.path.join(geojson_dir, "ne_50m_lakes.geojson")
-    
-    # Step 1: Try with just coastline
-    coastline_image = np.zeros((height, width), dtype=np.uint8)
-    draw_geojson_features(coastline_image, coastline_path, bounds, width, height)
-    
-    if DEBUG:
-        output_dir = os.path.join(os.path.dirname(__file__), "extracted_texts")
-        os.makedirs(output_dir, exist_ok=True)
-        cv2.imwrite(os.path.join(output_dir, "coastline_only_raster.png"), coastline_image)
+    diagonal = float(np.hypot(width, height))
 
-    # TODO this is a testing modificaiton where I want to include lake
-    draw_geojson_features(coastline_image, lakes_path, bounds, width, height)
-    used_lakes = True
-    
-    # Detect keypoints on coastline only
-    spaced = detect_sift_keypoints_on_image(coastline_image, apply_edge_detection=True)
-    #used_lakes = False
-    
-    # Step 2: If we don't have enough keypoints, add lakes
-    if len(spaced) < NUMBER_OF_KEYPOINTS:
-        # Add lakes to the existing coastline image
-        draw_geojson_features(coastline_image, lakes_path, bounds, width, height)
-        used_lakes = True
-        
-        if DEBUG:
-            cv2.imwrite(os.path.join(output_dir, "coastline_with_lakes_raster.png"), coastline_image)
-        
-        # Re-run SIFT detection with lakes included
-        spaced = detect_sift_keypoints_on_image(coastline_image, apply_edge_detection=True)
-    
-    if len(spaced) == 0:
-        return {"keypoints": [], "total": 0, "used_lakes": used_lakes}
-    
+    renders = {}
+    candidates = {}
+    for feature, filename in ((COASTLINE, "ne_coastline.geojson"), (LAKE, "ne_50m_lakes.geojson")):
+        render = np.zeros((height, width), dtype=np.uint8)
+        draw_geojson_features(render, os.path.join(geojson_dir, filename), bounds, width, height)
+        renders[feature] = render
+        candidates[feature] = detect_sift_candidates(render, apply_edge_detection=True)
+
+    selected = select_spread_keypoints(
+        candidates[COASTLINE],
+        candidates[LAKE],
+        NUMBER_OF_KEYPOINTS,
+        WELL_SPACED_RATIO * diagonal,
+        MIN_SEPARATION_RATIO * diagonal,
+    )
+    used_lakes = any(feature == LAKE for _, feature in selected)
+
     # Convert to lat/lon
     keypoints = []
-    for i, kp in enumerate(spaced):
+    for i, (kp, feature) in enumerate(selected):
         px, py = kp.pt
         lon = bounds['west'] + (px / width) * (bounds['east'] - bounds['west'])
         lat = bounds['north'] - (py / height) * (bounds['north'] - bounds['south'])
-        
+
         keypoints.append({
             "id": i + 1,
             "pixel": {"x": float(px), "y": float(py)},
             "geo": {"lat": lat, "lng": lon},
-            "response": float(kp.response)
+            "response": float(kp.response),
+            "feature": feature,
         })
-    
+
     if DEBUG:
-        img_vis = cv2.cvtColor(coastline_image, cv2.COLOR_GRAY2BGR)
-        for i, kp in enumerate(spaced):
+        output_dir = os.path.join(os.path.dirname(__file__), "extracted_texts")
+        os.makedirs(output_dir, exist_ok=True)
+        img_vis = cv2.cvtColor(np.maximum(renders[COASTLINE], renders[LAKE]), cv2.COLOR_GRAY2BGR)
+        for i, (kp, feature) in enumerate(selected):
             x, y = int(kp.pt[0]), int(kp.pt[1])
-            cv2.circle(img_vis, (x, y), 15, (0, 255, 0), 2)
+            colour = (0, 255, 0) if feature == COASTLINE else (255, 160, 0)
+            cv2.circle(img_vis, (x, y), 15, colour, 2)
             cv2.circle(img_vis, (x, y), 3, (0, 0, 255), -1)
             cv2.putText(img_vis, str(i + 1), (x + 20, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-        
-        debug_filename = "with_lakes_keypoints.png" if used_lakes else "coastline_only_keypoints.png"
-        keypoints_path = os.path.join(output_dir, debug_filename)
-        cv2.imwrite(keypoints_path, img_vis)
-    
+        cv2.imwrite(os.path.join(output_dir, "sift_keypoints.png"), img_vis)
+
     return {"keypoints": keypoints, "total": len(keypoints), "used_lakes": used_lakes}
+
 
 def draw_coastline(img, coords, bounds, width, height):
     points = []

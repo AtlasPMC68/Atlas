@@ -13,10 +13,10 @@ testing) is in git history; its still-valid ideas are folded in below.
 
 ## 1. Before the pull request
 
-Listed in [`georeferencing.md` §10](georeferencing.md#10-before-the-pull-request): settle the
-production defaults, make CI and the dev-test UI run that same configuration, remove the debug
-dumps, and remove what only served experiments. The two default changes expected from the
-first run are items 2 and the coastline weight (×30, pending item 3's test on historical maps).
+Listed in [`georeferencing.md` §10](georeferencing.md#10-before-the-pull-request): re-baseline
+the regression cases under the production configuration, and settle the gates and the
+transform model (item 2). The coastline weight is at ×10; ×30 stays the candidate pending item
+3's test on historical maps.
 
 ---
 
@@ -133,16 +133,14 @@ on Maghreb and east asia.
 
 ---
 
-## 6. The gates and the ladder
+## 6. The alignment checks
 
-**Why.** Neutralised since config v13; every corpus run settled at rung 0, and alignment made no
-case worse, so the gate values have nothing to predict. By the decision rule they do not earn
-their place yet.
+**Done (2026-10-07):** the probe, the neutralised gates and the recovery ladder were replaced
+by a water precondition and four lenient checks ([`georeferencing.md` §5.2](georeferencing.md#52-curve-alignment)).
 
-**What.** Decide before the PR: remove them (with ladder rungs 1–3), or keep them logged-only
-until historical maps give them failures to predict. If kept: compute the probe per rung
-(today it is computed once, so the main gate cannot change between rungs) and multi-start
-around the image centre, not pixel (0, 0).
+**Next.** Tighten the two new thresholds (`gate_water_iou_max_drop`,
+`gate_max_gcp_shift_ratio_of_diagonal`) once historical maps and the `bad-point` cases show
+where a bad alignment actually lands. Until then they only catch the absurd.
 
 ---
 
@@ -182,12 +180,11 @@ better transform leaves snapping less to fix.
 - **Separate the water filter's effect:** a variant with `edge_water_filter` off.
 - **Gazetteer reach:** historical and small places (GeoNames `PPLH`/`PPLQ`); suggesting the
   city step's names from OCR.
-- **Keypoint finder:** decide on the always-on lakes "testing modification".
 - **A lockfile** for transitive dependencies (numpy drift once moved IoU by 0.0008).
 - **CI fails on a score drop, not only below `MIN_IOU`.** Proposed in PR #95 (a gate comparing
-  each run to the case's `best_report.json`). Waiting on [§1](#1-before-the-pull-request): while
-  the suite runs alignment off and UI re-runs run it on, `best` can come from either pipeline,
-  so the comparison would fail for the wrong reason. When it is added: compare the `main`
+  each run to the case's `best_report.json`). Waiting on [§1](#1-before-the-pull-request): until
+  every case's `best` is re-baselined under the production configuration, the comparison would
+  fail for the wrong reason. When it is added: compare the `main`
   score, and read `best` *before* the run, since the run promotes itself when it wins.
 - **Border tracing for every country.** The test editor's trace-along-border mode
   (**Frontières géopolitiques**) still snaps only to `public/geojson/geoBoundaries-CAN-ADM1`.

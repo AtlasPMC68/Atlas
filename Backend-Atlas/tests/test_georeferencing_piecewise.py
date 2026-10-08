@@ -18,10 +18,8 @@ from app.utils.georeferencing import (
     fit_piecewise_from_control_points,
     georeference_features,
 )
-from app.utils.georeferencing.projection import (
-    lonlat_to_webmercator,
-    webmercator_to_lonlat,
-)
+from app.utils.georeferencing.projection import lonlat_to_webmercator
+from tests.georef_helpers import webmercator_to_lonlat
 
 IMAGE = (0.0, 0.0, 600.0, 400.0)
 

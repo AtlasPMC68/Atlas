@@ -1,16 +1,11 @@
 // composables/useImportSession.ts
 // The /imports API: one row per map while its import is in progress.
-import { apiFetch } from "../utils/api";
+import { apiErrorMessage, apiFetch } from "../utils/api";
 import type {
   ApiResult,
   ImportInputsPatch,
   ImportSessionResponse,
 } from "../typescript/importSession";
-
-async function errorMessage(response: Response, fallback: string): Promise<string> {
-  const body: Partial<{ detail: string }> = await response.json().catch(() => ({}));
-  return body.detail || fallback;
-}
 
 async function sessionRequest(
   path: string,
@@ -23,7 +18,7 @@ async function sessionRequest(
       return {
         success: false,
         status: response.status,
-        error: await errorMessage(response, fallback),
+        error: await apiErrorMessage(response, fallback),
       };
     }
     return { success: true, data: (await response.json()) as ImportSessionResponse };
@@ -63,7 +58,7 @@ export function useImportSession() {
         return {
           success: false,
           status: response.status,
-          error: await errorMessage(response, "Image introuvable"),
+          error: await apiErrorMessage(response, "Image introuvable"),
         };
       }
       const blob = await response.blob();
@@ -108,7 +103,7 @@ export function useImportSession() {
         return {
           success: false,
           status: response.status,
-          error: await errorMessage(response, "Erreur lors de l'abandon de l'import"),
+          error: await apiErrorMessage(response, "Erreur lors de l'abandon de l'import"),
         };
       }
       return { success: true, data: null };

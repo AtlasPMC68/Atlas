@@ -9,10 +9,11 @@ argue. Why the pipeline is shaped this way is in
 
 Keep this document true: when the code changes, change it here.
 
-**Status (2026-10-05).** Still experimental. The production defaults are the ones in
-[§8](#8-configuration-and-switches), and two of them are expected to change after the first
-corpus runs: the transform model (piecewise today, affine expected) and the coastline weight.
-[§10](#10-before-the-pull-request) lists what must be settled before `georef-exp` is merged.
+**Status (2026-10-07).** Still experimental. The production defaults are the ones in
+[§8](#8-configuration-and-switches): curve alignment is on everywhere at a coastline weight
+of ×10, only on maps whose coastline the water picks identify, behind four lenient checks.
+Still open: the transform model (piecewise today, affine expected);
+[§10](#10-before-the-pull-request) lists what remains.
 
 ---
 
@@ -95,16 +96,17 @@ they produce identical zones.
 ## 3. Inputs
 
 **Control points** are one list of `{source, pixel, geo}` records (`ControlPoint`,
-`models.py`); a city also carries `city: {id, name}` (its GeoNames id).
+`control_points.py`); a city also carries `city: {id, name}` (its GeoNames id).
 
-- **SIFT points.** `sift_key_points_finder.py` renders the Natural Earth coastline over the
-  framing box (1024×768), runs SIFT on the render, and returns up to 15 keypoints by
-  **farthest-point sampling** (strongest first, then always the candidate farthest from those
-  chosen; margins are ratios of the raster diagonal). Lakes are always drawn into the render
-  too: a line marked `TODO ... testing modification` adds them up front, which makes the
-  older "add lakes when the coast gives too few" fallback after it dead code. SIFT never runs
-  on the user's map: it only suggests distinctive
-  bits of real coastline, and the user clicks where their map draws each one.
+- **SIFT points.** `sift_key_points_finder.py` renders the Natural Earth coastline and the
+  lake shorelines over the framing box (1024×768), separately, runs SIFT on each render, and
+  returns up to 15 keypoints by **farthest-point sampling**: the strongest coastline keypoint
+  first, then always the candidate farthest from those chosen. **Coastline first:** a lake
+  keypoint is taken only when no coastline candidate is at least 5% of the diagonal from every
+  chosen point, because a map may omit or distort a lake but always draws its coast. Below
+  that spacing the same rule continues down to a 1% duplicate floor. Each keypoint says which
+  curve it lies on (`feature`). SIFT never runs on the user's map: it only suggests distinctive
+  bits of real coastline, and the user picks which ones to click on their map.
 - **Cities.** The user types a name; `city_gazetteer.py` searches GeoNames `cities15000`
   (a SQLite file built from the pinned `geonamescache`, under `app/.cache/`) inside the
   framing box, matching accents, prefixes and alternate names. The user picks a candidate and
@@ -132,10 +134,15 @@ control points but never given to anything that fits. See
 
 `color_extraction.py`, called through `extract_zone_colors`:
 
-- **Text first.** With OCR boxes available, label ink is erased from the image before
-  classification (`text_fill_method = "inpaint"`, palette mode): each ink pixel takes the
-  colour most voted by its known neighbours, so a name written over a zone comes back as that
-  zone.
+- **Text first.** With OCR boxes available (`text_aware_zone_fill`), label ink is erased
+  from the image before classification. Two ways to find and repaint it
+  (`text_inpaint_algo`): **`palette`** (production) takes the background colours in a ring
+  around each box, calls ink whatever is far from them, and gives each ink pixel the colour
+  most voted by its known neighbours, so a name written over a zone comes back as that zone;
+  **`telea`** splits ink from background by brightness and fills it with OpenCV's Telea
+  inpainting, a weighted average that can blend two zone colours. An earlier `label` method,
+  which repaired the zones after classification instead, was removed after losing on every
+  corpus case.
 - **Classification.** Every pixel is assigned to the nearest picked colour in CIELAB
   (ΔE2000), within a threshold; the legend rectangle is excluded. Zones are therefore an exact
   pixel partition.
@@ -153,70 +160,94 @@ control points but never given to anything that fits. See
 
 ### 5.1 Control-point affine
 
-`fit_affine_from_control_points` (`models.py`): least squares, pixel → EPSG:3857, six
+`fit_affine_from_control_points` (`affine.py`): least squares, pixel → EPSG:3857, six
 parameters, ≥ 3 points. Always fitted and always recorded (`models.gcp_affine` in the run
 record): it is the baseline every alignment is compared to. With exactly 3 points the fit is
 exact and its error is reported as unknown (`rmse_status = no_redundancy`), not 0.
 
 ### 5.2 Curve alignment
 
-On when `enable_curve_alignment` is true (on in the app, [§8](#8-configuration-and-switches)).
-Entry point `runner.align_map`, which needs the OCR boxes (labels must not become edges).
+On when `enable_curve_alignment` is true (the default, [§8](#8-configuration-and-switches)).
+Entry point `runner.align_map`; the fit and its checks are in `gates.py`, the optimiser in
+`align.py`.
 
-**Reference side** (`reference.py`), over the framing box at 1024×768, cached on the box and
-the source files: coastline, lakes, rivers (loaded, **not used**), land (= not ocean; lake
-interiors count as land), ocean, water, and distance fields.
+**How the coastlines are matched.** Alignment does not start from nothing: it starts from the
+control-point affine (§5.1), which already places the map roughly. Everything below refines
+that affine; nothing ever searches the world for where the map might be.
 
-**Map side** (`evidence.py`):
-
-- Canny edges, with OCR boxes (dilated 7 px) and the legend masked out;
-- long straight lines (neatlines, graticules, frames) found with Hough and down-weighted to
-  0.15, not deleted;
-- with water picks: a water mask split into ocean (largest border-touching component) and
-  lakes, and **only edges on a water/land boundary are kept** (`edge_water_filter`). Without
-  water picks every remaining edge is candidate coastline, and only the robust loss keeps
-  borders and rivers out of the fit.
-
-**The fit** (`align.py`) optimises the six affine parameters, starting from the control-point
-affine:
+1. **Reference side** (`reference.py`). The Natural Earth coastline and lake shorelines inside
+   the framing box are rasterised (1024×768, cached on the box) and sampled into points along
+   each curve, in EPSG:3857, each with the direction of its curve.
+2. **Map side** (`evidence.py`). Canny edges on the user's image, with the OCR boxes (dilated
+   7 px) and the legend masked out, and long straight lines (neatlines, graticules, frames,
+   found with Hough) down-weighted to 0.15. The water picks give a water mask, split into ocean
+   (the largest component touching the image border) and lakes, and **only edges on the
+   water/land boundary are kept**. That is what identifies the map's coastline: rivers, borders
+   and roads lie inside the land and are dropped.
+3. **The loop** (`align.py`). Push every reference point *into the image* through the current
+   affine; measure how far each lands from the map's coastline edges; nudge the affine's six
+   parameters to bring them closer, while keeping the control points close to where the user
+   clicked:
 
 ```
 E = w_gcp · Σ ||T(p_j) − q_j||²   +   w_curve · Σ ρ_tukey( D_map(T(s_i)) )
 ```
 
 - control points: plain least squares, so every point always pulls;
-- curve samples `s_i` (reference coastline points pushed into the image): Tukey-robust, so a
-  sample whose nearest map edge is far contributes nothing;
-- each term normalised by its own count, so `weight_gcp` / `weight_curve` are true relative
-  weights;
+- curve samples `s_i`: Tukey-robust, so a sample whose nearest map edge is far contributes
+  nothing (a stretch of coast the map does not draw, or draws elsewhere);
+- each term normalised by its own count, so `weight_gcp` / `weight_curve` (1 / 10) are true
+  relative weights;
 - samples under a label or off the image are *unseen*: each annealing level fits a frozen set
   of samples in view, and one that leaves view costs the outlier constant.
 
-Three stages, each initialising the next:
+Three stages, each starting from the previous one's result:
 
-| Stage | Evidence | Schedule |
+| Stage | Evidence | How it measures "distance to the map's coast" |
 |---|---|---|
-| A1 coarse chamfer | coastline only | blur 64 → 14 px, Tukey cutoff 400 → 110 px |
-| A2 fine chamfer | coastline + lakes | blur 8 → 0 px, cutoff 70 → 18 px |
-| B ICP | coastline + lakes | search along the curve normal, 40 → 5 px; matched edge must agree in orientation within 30°; cutoff 20 px |
+| A1 coarse chamfer | coastline only | Distance to the **nearest** coastline edge pixel, read from a distance map blurred 64 → 14 px, Tukey cutoff 400 → 110 px. No pairing: wide reach, a basin of attraction |
+| A2 fine chamfer | coastline + lakes | Same, blur 8 → 0 px, cutoff 70 → 18 px |
+| B ICP | coastline + lakes | Each reference point searches along its own curve's normal (40 → 5 px) for a map edge **with the same orientation (±30°)**, and is paired with it. Precise, and ignores lines crossing the coast, but blind beyond its search radius |
 
-**Probe.** The same fit with the control points left out. Its transform is discarded; only its
-distance to the held-out control points is kept, as the `probe_gcp_disagreement` gate.
+**Chamfer and ICP.** They answer the same question at different ranges. The chamfer gets the
+map into the right basin when the control-point affine leaves the coast tens of pixels off;
+ICP makes the final, orientation-aware lock. With the coastline identified by the water
+filter, the chamfer's job is reach, and it is needed: ICP alone (`enable_chamfer` off) is
+worse on 9 of 14 cases, most on maps whose control points cover one part of the map, where
+the coast elsewhere starts beyond ICP's radius
+([testing §8.9](georeferencing-testing.md#89-icp-only-2026-10-07)). Both stay.
 
-**Gates** (`gates.py`), all computed and logged on every run: `probe_gcp_disagreement`,
-`water_mask_iou`, `transform_determinant`, `scale_drift`, `rotation_drift`,
-`curve_fit_engaged`, `optimizer_converged`, `inlier_fraction`. **They are neutralised**
-(thresholds set to always pass, designed values in comments in `config.py`). What can still
-reject an alignment: a mirrored transform, a non-converged optimiser, or a coastline chamfer
-that got worse.
+**Precondition: an identified coastline** (`runner.align_map`). Alignment only runs when the
+map's coastline can be told apart from its other lines, which is what the water filter does.
+It is skipped, and the map placed by the control-point affine alone, when:
 
-**Recovery ladder** (`recovery.py`): on gate failure, rung 1 re-anneals wider, rung 2 tries
-multi-start perturbations, rung 3 boosts the control-point weight ×8, and rung 7 falls back to
-the control-point affine (`method: gcp_only`). Rungs 4–6 were designed and never built. Every
-corpus run so far settled at rung 0.
+| `skipped` | When |
+|---|---|
+| `no_water_picks` | the map has no water pick (unpainted sea, landlocked map) |
+| `water_mask_too_small` | the water mask covers less than 1% of the image (`edge_water_min_fraction`): more likely a stray pick on a legend swatch than the sea |
+| `no_coast_evidence` | the framing box has no coastline, or no edge survives the filter |
+| `alignment_inputs_failed`, `alignment_raised` | an error while building the layers or fitting; logged |
 
-The result carries `method` (`joint`, `joint_gcp_weighted`, `gcp_only`), `rung`, the failed
-checks and the gate values; features get `alignment_method` and `alignment_rung`.
+**The checks** (`gates.py`). One fit, then four sanity checks on its result. Any failure means
+the control-point affine is used (`method: gcp_only`, the failed checks recorded). They are set
+leniently on purpose: matching the right curves is the precondition's job, and these only catch
+a fit that went somewhere absurd.
+
+| Check | Fails when | Threshold |
+|---|---|---|
+| `transform_determinant` | the aligned transform is mirrored or folded | sign change |
+| `curve_fit_engaged` | the coastline matches *worse* than under the control points | improvement < 0 (`gate_min_chamfer_improvement`) |
+| `water_agreement` | the map's water, warped in, overlaps the real water clearly less than under the control points: a sea put on the wrong side of a coast | drop > 0.10 IoU (`gate_water_iou_max_drop`) |
+| `control_points_held` | the fit moved the map far off the user's own clicks | RMS rise > 5% of the image diagonal (`gate_max_gcp_shift_ratio_of_diagonal`); the corpus at ×10 rose 0.4–3.6 px |
+
+There is no retry: a failure goes straight to the control-point affine. Logged with every run
+but never checked: scale and rotation drift, optimiser convergence, inlier fraction, ICP
+correspondences, the chamfer residuals and how far the coast moved.
+
+The result carries `method` (`joint` or `gcp_only`), `skipped` (a precondition, or null) and
+`failedChecks`; features get `alignment_method`. Why the checks look like this, and what they
+replaced (a probe fit, eight neutralised gates and a recovery ladder):
+[history, 2026-10-07](georeferencing-history.md#2026-10-07--alignment-on-everywhere-and-the-checks-redesigned).
 
 ### 5.3 Transform model
 
@@ -264,38 +295,35 @@ comparison ([roadmap](georeferencing-roadmap.md#2-transform-model-affine-by-defa
   inputs, the models (`gcp_affine`, `aligned_affine`, `applied`), every gate, errors
   (`gcpRmseKm` with `gcpRmseKind`, per-source error, check points), per-phase timings, the
   config and any per-run switches.
-- **Debug dumps** (`debug.py`) when `GEOREF_DEBUG=true` (set on `backend` and
-  `celery-worker`): a folder of overlays and a `summary.txt` per import under
-  `Backend-Atlas/debug_runs/` (newest 20 kept), or per case under `alignment_debug/`.
-  Throwaway; to remove before the PR ([§10](#10-before-the-pull-request)).
+- **Debug dumps** (`debug.py`) when `GEOREF_DEBUG=true` (off by default; set on
+  `celery-worker` in `docker-compose.yml`): a folder of overlays and a `summary.txt` per
+  import under `Backend-Atlas/debug_runs/` (newest 20 kept), or per case under
+  `alignment_debug/`.
 
 ---
 
 ## 8. Configuration and switches
 
-Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 14), so a run
-records exactly what it used and a variant is a set of overrides. `ambient_georef_config()`
-applies the environment:
-
-| Variable | Default | `backend`, `celery-worker` | `test-backend`, `georef-dev` |
-|---|---|---|---|
-| `GEOREF_ENABLE_CURVE_ALIGNMENT` | true | on | **off** |
-| `GEOREF_ENABLE_COASTLINE_SNAPPING` | true | on | on |
-| `GEOREF_DEBUG` | off | on | off |
+Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 15), so a run
+records exactly what it used and a variant is a set of overrides. **The file defaults are the
+production configuration**, and every container runs them: the app, the regression suite, the
+dev-test UI and the CLI. `ambient_georef_config()` lets a deployment override two of them
+from the environment (`GEOREF_ENABLE_CURVE_ALIGNMENT`, `GEOREF_ENABLE_COASTLINE_SNAPPING`);
+none does. `GEOREF_DEBUG` (off by default, on for `celery-worker`) only writes diagnostics.
 
 Current defaults, and where each stands:
 
 | Setting | Value | Status |
 |---|---|---|
-| Curve alignment | on in the app | Supported by the first corpus run: lower check-point error on 11 of 12 cases, worse on none |
-| `weight_curve` / `weight_gcp` | 1 / 1 | The run favoured ×30 (gain stops there); not changed yet. The gain is mostly at the coast ([testing §10](georeferencing-testing.md#8-results)) |
+| Curve alignment | on | Supported by the first corpus run: lower check-point error on 11 of 12 cases, worse on none |
+| `weight_curve` / `weight_gcp` | 10 / 1 | The gain grows to ×30 and stops there, mostly at the coast ([testing §8](georeferencing-testing.md#8-results)). ×10 takes most of it (10 of 12 cases better, the 2 worse within 0.7 km) and leaves the control points more say inland |
 | `enable_icp` | on, 30° | Kept: removing it is worse at high weight |
 | `transform_model` | `piecewise_affine` | Not supported by the run; expected to become `affine` |
 | `snap_to_coastline` | on | Kept: improves the shipped zones on 9 of 12 cases, worse on none |
 | `clip_to_land_mask`, lake cut | on | Kept (production behaviour; expected zones are cut the same way when scored) |
-| `text_fill_method` | `inpaint` | Kept: `label` is worse on every case |
+| Text fill | `palette` inpaint | Kept; `label` was worse on every case and was removed. `telea` kept, unmeasured |
 | `zone_gap_fill` | off | Off: worse in its current form |
-| Gates | neutralised | To decide; no run has given them anything to predict |
+| Checks | 4, lenient, behind a water precondition | Redesigned 2026-10-07 ([§5.2](#52-curve-alignment)) |
 
 ---
 
@@ -316,33 +344,24 @@ Verified in the code. Ordered roughly by impact.
    `zone_gap_fill` addresses the first part but is off.
 5. **Snapping is blind:** nearest point, no orientation test, and the ring is closed by copying
    the first vertex over the last rather than snapping both consistently.
-6. **The ladder cannot recover from its main gate** (the probe is computed once, so
-   `probe_gcp_disagreement` is the same on every rung) and multi-start rotates around pixel
-   (0, 0), not the image centre. Unreachable while the gates are neutral.
-7. **The probe starts from the control-point affine**, so with weak coastline evidence it stays
-   near the clicks and "agrees" with them: it measures drift more than independent agreement.
-8. **Unequal σ would break the GCP normalisation.** The term is normalised by point count and
+6. **No water picks, no alignment.** A map with an unpainted sea cannot have its coastline
+   identified, so it is placed by its control points alone.
+7. **Unequal σ would break the GCP normalisation.** The term is normalised by point count and
    median σ; if SIFT and city σ ever differ, normalise by the sum of weights instead.
-9. **The gazetteer has no historical names** and only places of 15,000+ inhabitants.
+8. **The gazetteer has no historical names** and only places of 15,000+ inhabitants.
 
 ---
 
 ## 10. Before the pull request
 
-Agreed to be done before `georef-exp` is merged, once the production configuration is settled:
+Done: every container runs the production configuration (alignment on, ×10), so the
+regression suite measures what ships; rivers, the `label` text fill and unused switches are
+removed; the debug dumps are off by default. Still to settle before `georef-exp` is merged:
 
-1. **One pipeline everywhere.** The regression suite (CI, `test-backend`) currently runs with
-   alignment off and measures the control-point floor, while the app ships alignment + the
-   transform model + cleaning. The suite must run the production configuration, and so must a
-   regression re-run from the dev-test UI. Today a regression case's `best` can come from
-   either container, so it can mix alignment off and on.
-2. **Settle the defaults** of [§8](#8-configuration-and-switches): transform model, coastline
-   weight, gates kept or removed.
-3. **Remove the debug dumps** (`debug.py`, `GEOREF_DEBUG`), or put them behind a real
-   developer flag.
-4. Remove what only served experiments and lost: ladder rungs and gates if dropped, unused
-   switches, and the always-on lakes "testing modification" in `sift_key_points_finder.py`
-   (keep it or restore the fallback, deliberately).
+1. **The regression baselines.** Every case's `best` was recorded under the old defaults
+   (alignment off in the suite, ×1). Run the suite once and promote each case's run
+   (`scripts/force_promote_georef_best.py`), so `best` is the production number.
+2. **The transform model** default ([§5.3](#53-transform-model)).
 
 ---
 
@@ -353,15 +372,16 @@ Agreed to be done before `georef-exp` is merged, once the production configurati
 | Module | Role |
 |---|---|
 | `config.py` | `GeorefConfig`, `CONFIG_VERSION`, environment switches |
-| `models.py` | `ControlPoint`, `AffineModel` (fit, apply, inverse, serialize) |
+| `control_points.py` | `ControlPoint`, `CityRef`, parsing, per-source selection and weights |
+| `affine.py` | `AffineModel` (fit, apply, inverse, serialize) |
 | `piecewise.py` | `PiecewiseAffineModel`, leave-one-out |
 | `projection.py` | EPSG:3857 maths, km units |
 | `frame.py`, `inputs.py` | framing box; `maps.georef_inputs` |
 | `reference.py` | reference rasters and distance fields over the framing box |
 | `evidence.py` | map-side edges, straight-line weighting, water mask (cv2) |
 | `align.py` | chamfer, ICP, Tukey, the objective |
-| `gates.py`, `recovery.py` | named checks; the ladder |
-| `runner.py` | image → gated alignment (cv2) |
+| `gates.py` | the alignment attempt and its four checks |
+| `runner.py` | image → checked alignment (cv2); the water precondition |
 | `pipeline.py` | transform → snap → clip → EPSG:4326 |
 | `snapping.py`, `cleaning.py` | the snap; the shared ocean + lake mask |
 | `records.py`, `diagnostics.py`, `debug.py`, `gcp_overlay.py` | run record; dev-tool diagnostics; debug dumps; control-point overlay |
@@ -374,7 +394,7 @@ Elsewhere: `app/utils/extraction_steps.py` (`extract_zone_colors`, `place_map`,
 
 **Reference data** (`Backend-Atlas/app/geojson/`, all Natural Earth): `ne_coastline` (keypoints,
 alignment, snapping, land mask), `ne_50m_lakes` (keypoints, alignment, lake cut),
-`ne_ocean_points` (seeds for the land mask), `ne_50m_rivers_lake_centerlines` (loaded, unused).
+`ne_ocean_points` (seeds for the land mask).
 The land mask is built by polygonising the coastline together with the world boundary and
 marking every face that contains an ocean seed point as ocean. `borders/` (gitignored) holds
 admin-0/admin-1 files for the dev-test zone editor only.

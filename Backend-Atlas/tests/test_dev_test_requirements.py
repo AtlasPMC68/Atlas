@@ -126,8 +126,8 @@ def test_config_overrides_reject_wrong_types():
     for bad in (
         {"edge_canny_low": 35.5},
         {"edge_canny_low": "35"},
-        {"gate_max_rotation_deg": True},
-        {"gate_max_rotation_deg": float("nan")},
+        {"gate_water_iou_max_drop": True},
+        {"gate_water_iou_max_drop": float("nan")},
         {"edge_water_filter": "false"},
         {"coarse_blur_px": []},
         {"coarse_blur_px": [1.0, "x"]},

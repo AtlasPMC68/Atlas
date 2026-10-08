@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+from typing import Literal
 
 import numpy as np
 import cv2
@@ -93,7 +94,7 @@ from app.utils.imposed_colors import (
     imposed_colors_to_config_entries,
     parse_imposed_colors,
 )
-from app.utils.dev_test_evaluator import build_test_case_paths
+from app.utils.dev_test_evaluator import build_test_case_paths, error_overlay
 from app.utils.legend import legend_to_entry, parse_legend_entry
 ### ----------- IMPORTS ----------- ###
 
@@ -653,8 +654,8 @@ async def get_dev_test_classified_image(
         raise HTTPException(
             status_code=404,
             detail=(
-                "Aucune image nettoyée : le dernier run n'a pas utilisé"
-                " text_fill_method = inpaint."
+                "Aucune image nettoyée : le dernier run n'a effacé aucun"
+                " texte (pas de boîtes OCR, ou text_aware_zone_fill désactivé)."
             ),
         )
 
@@ -864,6 +865,34 @@ async def get_dev_test_case_state(
         "requirements": None,
         "derived": [],
     }
+
+
+@router.get("/test-cases/{test_id}/{test_case_id}/errors")
+def get_dev_test_case_errors(
+    test_id: str,
+    test_case_id: str,
+    run: Literal["latest", "best"] = Query("latest"),
+    stage: Literal["cleaned", "raw"] = Query("cleaned"),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """The FP/FN overlay of the latest or best run, before or after cleaning.
+
+    Computed from the run's zones and the expected zones on each request:
+    overlays are derived, so they are never stored. Sync on purpose, so the
+    geometry work runs in the threadpool.
+    """
+    safe_test_id = _safe_id(test_id, "test_id")
+    safe_case_id = _safe_id(test_case_id, "test_case_id")
+    try:
+        return error_overlay(
+            GEOREF_ASSETS_DIR,
+            safe_test_id,
+            safe_case_id,
+            best=run == "best",
+            raw=stage == "raw",
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/test-cases/{test_id}/{test_case_id}/best-report")

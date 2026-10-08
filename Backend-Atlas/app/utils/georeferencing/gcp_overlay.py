@@ -23,7 +23,7 @@ from typing import Any, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from .models import ControlPoint
+from .control_points import ControlPoint
 from .projection import webmercator_arrays_to_lonlat
 
 logger = logging.getLogger(__name__)

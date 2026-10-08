@@ -127,13 +127,12 @@ def _metrics(record: dict, report: Optional[dict], zones_out: int) -> Dict[str, 
         "gcpRmseKind": errors.get("gcpRmseKind"),
         "zonesOut": zones_out,
         "alignmentMethod": alignment.get("method"),
-        "alignmentRung": alignment.get("rung"),
+        "alignmentSkipped": alignment.get("skipped"),
         "failedChecks": ",".join(alignment.get("failedChecks") or []) or None,
         # In-sample, in image pixels: how far each fit sits from the clicks.
         # Diagnostics for the gate analysis, never a verdict.
         "baselineGcpRmsPx": alignment.get("baselineGcpRmsPx"),
         "alignedGcpRmsPx": alignment.get("alignedGcpRmsPx"),
-        "probeGcpRmsPx": alignment.get("probeGcpRmsPx"),
         "coastDisplacementPx": alignment.get("coastDisplacementPx"),
     }
     for gate in record.get("gates") or []:

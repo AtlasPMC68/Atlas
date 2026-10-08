@@ -23,9 +23,8 @@ with it.
 **Not doing: toponym water cues.** Parsing labels for *Baie*, *Lac*, *Mer* to
 infer water where colour fails is cut from the plan entirely, not deferred. The
 consequence is accepted knowingly: on a map like Leclerc with an unpainted white
-Atlantic, the water pipette yields nothing and there is no water evidence at all.
-That is exactly why the GCP-based gate is primary and the water gate secondary,
-and why the recovery ladder cannot depend on a water mask existing.
+Atlantic, the water pipette yields nothing, the coastline cannot be identified,
+and the map is placed by its control points alone (``runner.align_map``).
 """
 
 import logging
@@ -252,7 +251,7 @@ def split_ocean_and_lakes(
 
     Known limitation: a sea cut into two pieces by a peninsula at the frame edge
     contributes its smaller piece to `lakes`. Harmless for a gate that compares
-    total water, which is what the water-mask gate does.
+    total water, which is what the water agreement check does.
     """
     ocean = np.zeros_like(water, dtype=bool)
     lakes = np.zeros_like(water, dtype=bool)
@@ -299,13 +298,12 @@ def filter_edges_near_water(
     colour mask), or every stray water-coloured pixel inland keeps the edges
     around it.
 
-    Returns (edges, applied). Not applied -- edges unchanged -- when the filter
-    is off or the water mask covers less than `edge_water_min_fraction` of the
-    image, since a mask that small is more likely a bad pick than the sea.
+    Returns (edges, applied). Not applied -- edges unchanged -- only when the
+    filter is switched off, as an experiment. Alignment never runs without
+    water, or on a water mask too small to trust (``runner.align_map``), so
+    there is no "no water" case to fall back from here.
     """
-    if not config.edge_water_filter or not water.any():
-        return edges, False
-    if water.mean() < config.edge_water_min_fraction:
+    if not config.edge_water_filter:
         return edges, False
 
     margin = max(int(config.edge_water_margin_px), 0)
@@ -359,9 +357,9 @@ def build_user_evidence(
 
     Args:
         image_bgr: the user's map as OpenCV reads it (BGR, uint8).
-        text_regions: OCR polygons, when text extraction ran. Optional -- the
-            dev-test path skips text extraction entirely.
-        water_click_positions: normalised (x, y) water pipette picks.
+        text_regions: OCR polygons, when text extraction ran.
+        water_click_positions: normalised (x, y) water pipette picks. They
+            identify the coastline; alignment does not run without them.
         water_sampling_radii: per-pick sampling radius in pixels.
         legend_bounds: the legend rectangle in image pixels, or None when the
             map has none. Excluded from the edges and the water mask.

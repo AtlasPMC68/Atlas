@@ -219,13 +219,42 @@ that reuse colours.
 - **About 330 tests trimmed to about 85**, keeping those that pin stored-data contracts, bugs
   that happened, and the core geometry; the regression suite covers the pipeline end to end.
 
+## 2026-10-07 — Alignment on everywhere, and the checks redesigned
+
+- **Alignment on in every container, at ×10.** The suite, the dev-test UI and the CLI now run
+  the production configuration, so a regression `best` measures what ships. ×10 rather than the
+  ×30 the sweep favoured: it takes most of the gain (10 of 12 cases better, the 2 worse within
+  0.7 km) and leaves the control points more say inland, where ×30 helps least.
+- **Alignment needs an identified coastline.** The question that matters is whether the curves
+  being matched are the right ones. The water filter answers it (only edges on the water/land
+  boundary), so alignment now runs only with water picks and a water mask covering at least 1%
+  of the image. Before, a map without them aligned on every edge left, borders and rivers
+  included, with only the robust loss in the way. Every corpus case already had a water pick
+  (Mongolie, landlocked, is a probe), so no measured result depended on that path.
+- **The probe, eight gates and the recovery ladder removed; four lenient checks instead.**
+  They were designed when the shared-loss bug made alignment a coastline-only fit that could
+  wander off (2026-09-30); after the fix, every corpus run passed at the first attempt, the
+  gates were neutralised, and the probe cost a second full fit per import (0.4–2.8 s, as much
+  as the alignment) for a gate that could not fail. Kept: the mirror check and "the coast did
+  not get worse". Added: water agreement relative to the control-point affine (an absolute
+  0.7 would have been a coin flip on central africa at 0.73) and how far the fit moves the
+  user's clicks. Thresholds set far beyond anything measured (clicks: 5% of the diagonal
+  against a measured +0.4–3.6 px), because the precondition does the real work.
+- **The chamfer stays.** With the coastline identified, its role is reach, and the ICP-only
+  variants (`B7`/`B8`, `enable_chamfer` off) showed it is needed: ICP alone was worse on 9 of
+  14 cases at ×10, most on clustered control points, where the coast away from the points
+  starts beyond ICP's radius ([testing §8.9](georeferencing-testing.md#89-icp-only-2026-10-07)).
+- **Also removed:** the rivers layer (loaded, never used), the `label` text fill (worse on every
+  case), unused switches. SIFT keypoint suggestions prefer the coastline and use lakes only to
+  fill where the coast leaves the frame uncovered (a map may omit a lake, never its coast).
+
 ## Considered and set aside
 
 | Idea | Why not |
 |---|---|
 | Toponym water cues | Cut from the plan; accepted consequence: a map with an unpainted sea has no water evidence |
 | Keeping glyph components partly under a label | A letter touching the coast merges with it |
-| Rivers as alignment evidence | Thin, dense, often schematic; loaded but unused |
+| Rivers as alignment evidence | Thin, dense, often schematic; the layer was removed (2026-10-07) |
 | Persisting the fitted matrix | Refitting is cheap; the inputs were what got lost |
 | Homography (8 parameters) | Inputs are digital renders, not photographs: the extra freedom would absorb drawing noise |
 | A full planar arrangement for zones | Zones are already an exact pixel partition; shared borders can be made at vectorising time |

@@ -29,12 +29,6 @@ def lonlat_to_webmercator(lon: float, lat: float) -> XY:
     return x, y
 
 
-def webmercator_to_lonlat(x: float, y: float) -> LonLat:
-    lon = math.degrees(x / R_EARTH)
-    lat = math.degrees(2.0 * math.atan(math.exp(y / R_EARTH)) - math.pi / 2.0)
-    return lon, lat
-
-
 def lonlat_arrays_to_webmercator(x, y, z=None):
     """Vectorized transform callback for Shapely: EPSG:4326 -> EPSG:3857."""
     x_arr = np.asarray(x, dtype=float)

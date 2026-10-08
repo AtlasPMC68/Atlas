@@ -42,59 +42,12 @@ class TestMaskToGeometry:
         assert mask_to_geometry(mask).geom_type == "MultiPolygon"
 
 
-class TestTextAwareFill:
-    """Labels are drawn *over* a zone, so their pixels belong to that zone.
-
-    Without this, nearest-colour assignment drops every glyph and the zone
-    comes out full of gaps that hole filling cannot reach: on a real map the
-    letters touch the rivers and borders, so the gaps run to the image edge
-    and are not holes at all.
-    """
-
-    @staticmethod
-    def _scene():
-        """One zone with a label written across it, as index/valid arrays."""
-        best = np.zeros((120, 200), dtype=np.int64)
-        valid = np.zeros((120, 200), dtype=bool)
-        valid[20:100, 20:180] = True  # the zone
-        # Two glyph strokes, unassigned, in the middle of it.
-        valid[50:62, 70:74] = False
-        valid[50:62, 90:94] = False
-        box = [(60, 45), (110, 45), (110, 68), (60, 68)]
-        return best, valid, box
-
-    def test_glyphs_become_part_of_the_zone(self):
-        from app.utils.color_extraction import relabel_text_pixels
-
-        best, valid, box = self._scene()
-        _best, filled, stats = relabel_text_pixels(best, valid, [box])
-
-        assert stats["boxesFilled"] == 1
-        assert stats["pixelsFilled"] > 0
-        assert filled[50:62, 70:74].all()
-        assert filled[50:62, 90:94].all()
-
-    def test_a_label_over_open_water_is_left_alone(self):
-        """"OCEAN ATLANTIQUE" has no zone around it, and filling it would
-        invent land."""
-        from app.utils.color_extraction import relabel_text_pixels
-
-        best, valid, _box = self._scene()
-        offshore = [(10, 105), (60, 105), (60, 118), (10, 118)]
-
-        _best, filled, stats = relabel_text_pixels(best, valid, [offshore])
-
-        assert stats["boxesFilled"] == 0
-        assert not filled[105:118, 10:60].any()
-
-
 class TestTextInpaint:
     """The ink of a label is erased from the image before classification.
 
     The case that motivated it: "TERRE-NEUVE" written across a small island,
-    mostly over the sea. The label fill skips that box -- its ring is ocean,
-    which is not a zone -- so the island stays hollow. Rebuilding the image
-    lets each side of the coast come back as what surrounds it.
+    mostly over the sea. Rebuilding the image lets each side of the coast come
+    back as what surrounds it, so the island is not left hollow.
     """
 
     LAND = (0.85, 0.25, 0.25)

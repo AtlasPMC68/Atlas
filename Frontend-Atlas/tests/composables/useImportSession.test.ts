@@ -3,7 +3,9 @@ import { useImportSession } from "../../src/composables/useImportSession";
 import { usePolling } from "../../src/composables/usePolling";
 import { apiFetch } from "../../src/utils/api";
 
-vi.mock("../../src/utils/api", () => ({
+// Only the network call is faked; the error-message helper is the real one.
+vi.mock("../../src/utils/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/utils/api")>()),
   apiFetch: vi.fn(),
 }));
 

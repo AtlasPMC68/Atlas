@@ -5,7 +5,8 @@ Package layout (dev-docs/georeferencing.md section 11):
     config.py       frozen hyperparameters as one versioned dataclass
     requirements.py what inputs the current algorithm needs, and which of them
                     a re-run can recover versus which need a human
-    models.py       fit / apply / inverse / serialize -- one interface per model
+    control_points.py  control-point records, their wire format, per-source helpers
+    affine.py       the affine model: fit / apply / inverse / serialize
     projection.py   EPSG:3857 maths and honest distance units
     frame.py        the user's framing box, parsed and persisted
     inputs.py       what a map was georeferenced from, stored on the map row
@@ -15,10 +16,11 @@ Package layout (dev-docs/georeferencing.md section 11):
     records.py      structured per-run record
     reference.py    framing box -> reference rasters + distance transform, cached
     align.py        chamfer + normal-search ICP, the distance field, Tukey
-    gates.py        the named checks that decide whether alignment may ship
-    recovery.py     the attempt, and the ladder it climbs down on failure
+    gates.py        the alignment attempt and the checks that decide whether
+                    its result ships or the control-point affine does
     evidence.py     user-side edge map, straight-line suppression, water mask
-    runner.py       image -> gated alignment, the shared entry point
+    runner.py       image -> checked alignment, the shared entry point; holds
+                    the precondition (water picks identify the coastline)
                     evidence.py and runner.py are NOT re-exported here: they are
                     the only modules needing cv2, and importing them from the
                     package would drag the image stack into every consumer.
@@ -39,13 +41,12 @@ from .inputs import (
     parse_georef_inputs,
 )
 from .config import GCP_SOURCES, SOURCE_CITY, SOURCE_SIFT
-from .models import (
-    AffineModel,
+from .affine import AffineModel, fit_affine_from_control_points
+from .control_points import (
     CityRef,
     ControlPoint,
     control_point_weights,
     count_by_source,
-    fit_affine_from_control_points,
     gcp_sigma_px,
     parse_control_points,
     select_control_points,
@@ -65,13 +66,19 @@ from .align import (
     icp_refine,
     tukey_loss,
 )
-from .gates import evaluate_gates, failed_names, gates_passed, gcp_rms_px, water_mask_iou
+from .gates import (
+    AlignmentResult,
+    align,
+    evaluate_gates,
+    failed_names,
+    gates_passed,
+    gcp_rms_px,
+    water_mask_iou,
+)
 from .pipeline import GeorefResult, georeference_features
-from .recovery import AlignmentResult, align
 from .reference import (
     COASTLINE_FILE,
     LAKES_FILE,
-    RIVERS_FILE,
     ReferenceGrid,
     ReferenceLayers,
     build_reference_layers,
@@ -133,7 +140,6 @@ __all__ = [
     "reference_latitude",
     "ReferenceGrid",
     "ReferenceLayers",
-    "RIVERS_FILE",
     "RunRecord",
     "select_control_points",
     "SOURCE_CITY",

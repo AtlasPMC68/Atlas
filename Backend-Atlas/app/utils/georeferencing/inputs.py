@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from .frame import FrameBounds, frame_bounds_to_config_entry, parse_frame_bounds_entry
-from .models import ControlPoint, parse_control_points
+from .control_points import ControlPoint, parse_control_points
 from .requirements import MIN_CONTROL_POINTS
 
 # 2: control points carry a source and, for cities, the city; no sigma.

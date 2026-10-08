@@ -5,7 +5,8 @@ import numpy as np
 from scipy.spatial import Delaunay
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
-from .models import AffineModel, ControlPoint, Regularizer, control_point_weights
+from .affine import AffineModel
+from .control_points import ControlPoint, control_point_weights
 from .projection import lonlat_to_webmercator
 
 #: Points located per pass. Locating is (triangles x points), so this bounds
@@ -111,7 +112,6 @@ class PiecewiseAffineModel:
         src_xy: np.ndarray,
         dst_xy: np.ndarray,
         weights: Optional[np.ndarray] = None,
-        regularizer: Optional[Regularizer] = None,
         *,
         extent: Optional[Extent] = None,
         anchor_margin: float = 0.25,
@@ -124,7 +124,6 @@ class PiecewiseAffineModel:
             src_xy: (n, 2) pixel coordinates.
             dst_xy: (n, 2) EPSG:3857 coordinates.
             weights: optional per-point weights for the global affine fit.
-            regularizer: passed to the global affine fit.
             extent: (x0, y0, x1, y1) in pixels, where the frame anchors go.
             anchor_margin: frame padding, as a fraction of width and height.
             base: an existing affine (Step 4's aligned model) to correct
@@ -151,7 +150,7 @@ class PiecewiseAffineModel:
         base_fixed = base is not None
 
         if base is None:
-            base = AffineModel.fit(src_xy, dst_xy, weights=w, regularizer=regularizer)
+            base = AffineModel.fit(src_xy, dst_xy, weights=w)
 
         model = cls._build(base, src_xy, dst_xy, extent, anchor_margin)
         model.n_points = n
@@ -161,7 +160,6 @@ class PiecewiseAffineModel:
                 src_xy,
                 dst_xy,
                 w,
-                regularizer,
                 extent,
                 anchor_margin,
                 base if base_fixed else None,
@@ -220,7 +218,7 @@ class PiecewiseAffineModel:
 
     @classmethod
     def _leave_one_out(
-        cls, src_xy, dst_xy, w, regularizer, extent, anchor_margin, fixed_base
+        cls, src_xy, dst_xy, w, extent, anchor_margin, fixed_base
     ) -> np.ndarray:
         """Per-point error with that point excluded from the fit.
 
@@ -237,7 +235,6 @@ class PiecewiseAffineModel:
                     src_xy[keep],
                     dst_xy[keep],
                     weights=None if w is None else w[keep],
-                    regularizer=regularizer,
                 )
                 m = cls._build(b, src_xy[keep], dst_xy[keep], extent, anchor_margin)
             except (ValueError, np.linalg.LinAlgError):
@@ -416,7 +413,6 @@ def fit_piecewise_from_control_points(
     control_points: Sequence[ControlPoint],
     extent: Optional[Extent] = None,
     use_sigma_weights: bool = False,
-    regularizer: Optional[Regularizer] = None,
     base: Optional[AffineModel] = None,
     anchor_margin: float = 0.25,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
@@ -439,7 +435,6 @@ def fit_piecewise_from_control_points(
         src,
         dst,
         weights=weights,
-        regularizer=regularizer,
         extent=extent,
         anchor_margin=anchor_margin,
         base=base,

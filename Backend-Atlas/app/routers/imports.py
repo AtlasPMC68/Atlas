@@ -215,6 +215,12 @@ async def start_extraction(
         row.extraction_task_id = extraction_to_send
         row.extraction_state = EXTRACTION_QUEUED
     else:
+        # Known gap: an OCR task whose worker died leaves ocr_state at
+        # "running" for good. It is neither done nor failed, so it is not
+        # retried below: the extraction waits for text that never comes, and
+        # only cancelling, or abandoning the import, gets the user out. Fixing
+        # it needs a way to tell a dead OCR task from a slow one (a heartbeat
+        # or a started-at timeout).
         if row.ocr_state == OCR_FAILED:
             # A failed OCR is retried rather than leaving the import stuck.
             ocr_to_send = str(uuid4())
@@ -259,6 +265,16 @@ async def cancel_extraction(
         row.extraction_state = EXTRACTION_CANCELLED
     elif row.extraction_state == EXTRACTION_RUNNING:
         row.extraction_state = EXTRACTION_CANCELLING
+    elif row.extraction_state == EXTRACTION_CANCELLING:
+        # A second cancel. The running task normally moves the row from
+        # cancelling to cancelled at its next check; when the worker died
+        # mid-run nothing ever will, and an active row refuses new inputs and
+        # a new extraction. Close it here so the import is usable again. The
+        # task, if it is alive after all, finds the state changed and saves
+        # nothing.
+        if row.extraction_task_id:
+            celery_app.control.revoke(row.extraction_task_id)
+        row.extraction_state = EXTRACTION_CANCELLED
     await session.commit()
     return _import_out(row, map_obj)
 

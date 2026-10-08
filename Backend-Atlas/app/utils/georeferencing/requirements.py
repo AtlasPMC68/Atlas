@@ -197,10 +197,13 @@ _WATER_PICKS = Requirement(
     kind=RequirementKind.USER_INPUT,
     level=RequirementLevel.OPTIONAL,
     since_step="1",
-    summary="Pipette picks of kind 'water', used for the water-mask gate.",
+    summary=(
+        "Pipette picks of kind 'water'. They identify the map's coastline:"
+        " curve alignment runs only with them."
+    ),
     remedy=(
-        "Optional: a map with an unpainted ocean genuinely has none. Without"
-        " them the water gate reports applicable=false and is never exercised."
+        "Optional: a map with an unpainted ocean, or no coast, genuinely has"
+        " none. Without them the map is placed by its control points alone."
     ),
 )
 

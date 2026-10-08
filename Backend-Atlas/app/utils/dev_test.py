@@ -88,9 +88,7 @@ def write_test_config(
 BEST_ARTIFACTS = (
     "best_report.json",
     "zones_best.geojson",
-    "errors_best.geojson",
     "zones_raw_best.geojson",
-    "errors_raw_best.geojson",
 )
 
 
@@ -361,22 +359,18 @@ def evaluate_and_persist_case(
     from app.utils.dev_test_evaluator import (
         build_test_case_paths,
         evaluate_georef_test_case,
-        write_geojson,
         write_report,
     )
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
 
-    report, errors_geojson, raw_errors_geojson = evaluate_georef_test_case(
+    # The error overlays are derived on demand (``error_overlay``), not stored.
+    report, _errors, _raw_errors = evaluate_georef_test_case(
         assets_root,
         test_id,
         test_case_id,
         min_iou=min_iou,
     )
-
-    write_geojson(errors_geojson, paths.errors_geojson_path)
-    if raw_errors_geojson is not None:
-        write_geojson(raw_errors_geojson, paths.raw_errors_geojson_path)
 
     best_report_path = paths.best_report_path
 
@@ -418,13 +412,11 @@ def evaluate_and_persist_case(
 
 
 def _copy_latest_to_best(paths: "DevTestPaths", report: dict[str, Any]) -> None:
-    """Make the last run the case's best: its zones, overlays and report."""
+    """Make the last run the case's best: its zones and report."""
     for latest, best in (
         (paths.extracted_zones_path, paths.best_zones_path),
-        (paths.errors_geojson_path, paths.best_errors_geojson_path),
         # The raw view of the same run, so Best can be looked at both ways.
         (paths.raw_zones_path, paths.best_raw_zones_path),
-        (paths.raw_errors_geojson_path, paths.best_raw_errors_geojson_path),
     ):
         if os.path.exists(latest):
             shutil.copyfile(latest, best)

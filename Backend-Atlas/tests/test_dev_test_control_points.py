@@ -14,7 +14,7 @@ from app.utils.georeferencing import ControlPoint
 FRAME = {"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0}
 ZONE_PICK = [{"x": 0.5, "y": 0.5, "name": "Zone", "radius": 20, "kind": "zone"}]
 WATER_PICK = [{"x": 0.1, "y": 0.1, "name": "Mer", "radius": 20, "kind": "water"}]
-BEST_FILES = ("best_report.json", "zones_best.geojson", "errors_best.geojson")
+BEST_FILES = ("best_report.json", "zones_best.geojson", "zones_raw_best.geojson")
 
 
 def _points():

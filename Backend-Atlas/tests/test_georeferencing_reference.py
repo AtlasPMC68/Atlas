@@ -14,7 +14,6 @@ from shapely.geometry import LineString
 from app.utils.georeferencing.reference import (
     COASTLINE_FILE,
     LAKES_FILE,
-    RIVERS_FILE,
     ReferenceGrid,
     _layer_path,
     build_reference_layers,
@@ -26,7 +25,7 @@ QUEBEC = {"west": -80.0, "south": 44.0, "east": -56.0, "north": 62.0}
 
 _LAYERS_PRESENT = all(
     os.path.exists(_layer_path(name))
-    for name in (COASTLINE_FILE, LAKES_FILE, RIVERS_FILE)
+    for name in (COASTLINE_FILE, LAKES_FILE)
 )
 requires_layers = pytest.mark.skipif(
     not _LAYERS_PRESENT, reason="Natural Earth reference layers not present"

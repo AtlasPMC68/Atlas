@@ -10,10 +10,8 @@ import pytest
 from app.utils.extraction_steps import MapPlacement
 from app.utils.georeferencing import DEFAULT_GEOREF_CONFIG, ControlPoint
 from app.utils.georeferencing.checkpoints import validate_check_points
-from app.utils.georeferencing.projection import (
-    webmercator_meters_to_km,
-    webmercator_to_lonlat,
-)
+from app.utils.georeferencing.projection import webmercator_meters_to_km
+from tests.georef_helpers import webmercator_to_lonlat
 
 FRAME = {"west": -80.0, "south": 44.0, "east": -64.0, "north": 52.0}
 SCALE_M_PER_PX = 1000.0

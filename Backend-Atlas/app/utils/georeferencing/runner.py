@@ -1,8 +1,12 @@
-"""One entry point from a map image to a gated alignment.
+"""One entry point from a map image to a checked alignment.
 
 This is the only module besides `evidence.py` that needs cv2, because it reads
 the image. Everything it calls afterwards -- reference layers, the chamfer, ICP,
-the gates, the ladder -- is cv2-free.
+the checks -- is cv2-free.
+
+It also holds alignment's precondition: the map's coastline must have been
+identified, which is what the water picks do. Without them, or with a water
+mask too small to trust, the map is placed by its control points alone.
 
 The Celery task and the dev script both come through here, so the production
 path and the measurement path cannot drift apart.
@@ -14,10 +18,11 @@ from typing import Any, Optional, Sequence
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import FrameBounds
-from .models import AffineModel, ControlPoint, fit_affine_from_control_points
+from .affine import AffineModel, fit_affine_from_control_points
+from .control_points import ControlPoint
 from .projection import reference_latitude
 from .records import RunRecord
-from .recovery import AlignmentResult, align
+from .gates import AlignmentResult, align, skipped_alignment
 from .reference import build_reference_layers
 
 logger = logging.getLogger(__name__)
@@ -41,11 +46,14 @@ def align_map(
     debug_dir: Optional[str] = None,
     legend_bounds: Optional[dict] = None,
 ) -> AlignmentResult:
-    """Build the evidence and reference layers, then align and gate.
+    """Check the preconditions, build the evidence and reference layers, align.
 
-    A failure while building the layers or aligning falls back to the GCP-only
-    affine, so a caller can use ``result.model`` unconditionally; every such
-    path is recorded. Missing inputs are a caller error and raise.
+    Alignment runs only on an identified coastline: it is skipped (the
+    control-point affine is used, and the reason recorded) when the map has no
+    water picks or its water mask covers too little of the image to be the sea.
+    A failure while building the layers or aligning also falls back to the
+    control-point affine, so a caller can use ``result.model`` unconditionally.
+    Missing framing box or OCR boxes are a caller error and raise.
 
     Args:
         image_bgr: the user's map as OpenCV reads it.
@@ -54,6 +62,9 @@ def align_map(
         text_regions: OCR polygons; an empty list for a map without text.
             Without them roughly half the edge pixels on a labelled map are
             place names, so they are required.
+        water_click_positions: the water pipette picks. They identify the
+            coastline (only edges on the water/land boundary are kept), so
+            without them alignment does not run.
         legend_bounds: the legend rectangle in image pixels, or None. Its
             edges and water are dropped from the evidence.
         debug_dir: when set, every diagnostic for this run is written there.
@@ -71,6 +82,11 @@ def align_map(
         raise ValueError("Alignment needs the OCR text regions (a list, empty if none)")
     bounds = frame_bounds
 
+    if not water_click_positions:
+        result = skipped_alignment(baseline, "no_water_picks", record)
+        _record_result(record, result)
+        return result
+
     try:
         with record.phase("reference_layers"):
             layers = build_reference_layers(bounds, config)
@@ -86,13 +102,19 @@ def align_map(
     except Exception as e:
         logger.error(f"Could not build alignment inputs: {e}", exc_info=True)
         record.note(f"alignment inputs failed: {e}")
-        return AlignmentResult(model=baseline, method="gcp_only", rung=7)
+        return skipped_alignment(baseline, "alignment_inputs_failed", record)
 
     record.set_inputs(
         referenceCoverage={k: round(v, 5) for k, v in layers.coverage().items()},
         userEvidence=evidence.stats,
         frameBounds=bounds,
     )
+
+    water_share = float((evidence.ocean | evidence.lakes).mean())
+    if water_share < config.edge_water_min_fraction:
+        result = skipped_alignment(baseline, "water_mask_too_small", record)
+        _record_result(record, result)
+        return result
 
     try:
         with record.phase("alignment"):
@@ -108,17 +130,9 @@ def align_map(
     except Exception as e:
         logger.error(f"Alignment failed: {e}", exc_info=True)
         record.note(f"alignment raised: {e}")
-        return AlignmentResult(model=baseline, method="gcp_only", rung=7)
+        return skipped_alignment(baseline, "alignment_raised", record)
 
-    record.set_inputs(
-        alignment={
-            "method": result.method,
-            "rung": result.rung,
-            "failedChecks": result.failed_checks,
-            "probeAgreementPx": result.probe_agreement_px,
-            **result.stats,
-        }
-    )
+    _record_result(record, result)
 
     if debug_dir:
         from .debug import dump_alignment_debug
@@ -136,3 +150,14 @@ def align_map(
         logger.info(f"[GEOREF] debug dump: {len(written)} files in {debug_dir}")
 
     return result
+
+
+def _record_result(record: RunRecord, result: AlignmentResult) -> None:
+    record.set_inputs(
+        alignment={
+            "method": result.method,
+            "skipped": result.skipped,
+            "failedChecks": result.failed_checks,
+            **result.stats,
+        }
+    )
