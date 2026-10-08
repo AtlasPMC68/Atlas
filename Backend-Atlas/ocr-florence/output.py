@@ -150,8 +150,12 @@ def _merge_quads(det_a: dict, det_b: dict, direction: str) -> list[float]:
 
     center_a = _quad_center(quad_a)
     center_b = _quad_center(quad_b)
-    center_u = ((center_a[0] * axis_u[0] + center_a[1] * axis_u[1]) + (center_b[0] * axis_u[0] + center_b[1] * axis_u[1])) / 2.0
-    center_v = ((center_a[0] * axis_v[0] + center_a[1] * axis_v[1]) + (center_b[0] * axis_v[0] + center_b[1] * axis_v[1])) / 2.0
+    center_u = (
+        (center_a[0] * axis_u[0] + center_a[1] * axis_u[1]) + (center_b[0] * axis_u[0] + center_b[1] * axis_u[1])
+    ) / 2.0
+    center_v = (
+        (center_a[0] * axis_v[0] + center_a[1] * axis_v[1]) + (center_b[0] * axis_v[0] + center_b[1] * axis_v[1])
+    ) / 2.0
 
     source_w = max(det_a.get("source_w", 0.0), det_b.get("source_w", 0.0))
     source_h = max(det_a.get("source_h", 0.0), det_b.get("source_h", 0.0))
@@ -339,6 +343,7 @@ def quad_to_bbox_xyxy(quad: list[float]) -> list[int]:
     xs = quad[0::2]
     ys = quad[1::2]
     return [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+
 
 def save_result(image_path: str, output_path: str, parsed: dict) -> None:
     """Save the Florence parsed result as JSON."""

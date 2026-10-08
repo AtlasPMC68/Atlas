@@ -262,6 +262,7 @@ def _run_ocr_pipeline(
     task_chain = celery_app.signature(
         "florence.run_pipeline",
         args=[ocr_input_path, ocr_output_json_path],
+        immutable=True,
     ).set(queue="florence")
 
     try:

@@ -1,6 +1,5 @@
 import asyncio
 import json
-import json
 import logging
 import os
 import tempfile
@@ -260,7 +259,6 @@ def process_map_extraction(
                 "status": "Cleaning up and finalizing",
             },
         )
-        os.unlink(tmp_file_path)
 
         if enable_text_extraction:
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -329,14 +327,16 @@ def process_map_extraction(
         return result
 
     except Exception as e:
-        if "tmp_file_path" in locals():
-            try:
-                os.unlink(tmp_file_path)
-            except Exception:
-                pass
+
 
         logger.error(f"Error processing map {filename}: {str(e)}")
         raise e
+    finally:
+        if "tmp_file_path" in locals():
+            try:
+                os.unlink(tmp_file_path)
+            except OSError:
+                pass
 
 
 async def persist_features(
@@ -491,7 +491,6 @@ def process_dev_test_extraction(
             meta={"current": 6, "total": nb_task, "status": "Saving test assets"},
         )
 
-        os.unlink(tmp_file_path)
 
         image_output_path = ""
         zones_output_path = ""
@@ -576,10 +575,12 @@ def process_dev_test_extraction(
         return result
 
     except Exception as e:
+
+        logger.error(f"[DEV-TEST] Error processing test map {filename}: {str(e)}")
+        raise e
+    finally:
         if "tmp_file_path" in locals():
             try:
                 os.unlink(tmp_file_path)
-            except Exception:
+            except OSError:
                 pass
-        logger.error(f"[DEV-TEST] Error processing test map {filename}: {str(e)}")
-        raise e
