@@ -51,7 +51,7 @@ services:
     environment:
       # Per-run georeferencing diagnostics -> ./Backend-Atlas/debug_runs
       # One folder per import: overlays, edge maps, gates, summary.txt.
-      GEOREF_DEBUG: "true"
+      GEOREF_DEBUG: "false"
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
