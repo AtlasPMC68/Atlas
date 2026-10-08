@@ -5,16 +5,13 @@ side of alignment needs:
 
     coastline raster    ne_coastline.geojson
     lakes raster        ne_50m_lakes.geojson              (shorelines)
-    rivers raster       ne_50m_rivers_lake_centerlines.geojson
     land raster         the polygonize + ocean-seed flood fill, rasterized
     distance transform  distance in pixels to the nearest reference curve
     signed distance     the same, signed by land/water, plus its gradient
 
-**Why rivers.** Coastline constrains only the boundary of the landmass, so
-anywhere inland the warp is weakly determined. Rivers supply interior structure,
-and historical boundaries frequently *follow* them (St. Lawrence, Ottawa,
-Richelieu). They also add orientation diversity: a regional coast often runs in
-one dominant direction, leaving the perpendicular poorly constrained.
+**No rivers.** They were loaded as a third layer, for interior structure, and
+dropped: thin, dense and often drawn schematically or not at all, so on a real
+map most of them match nothing (georeferencing-history.md, Step 4).
 
 **Resolution is not a precision constraint here.** At a ~2500 km framing box a
 1024-px-wide raster is ~2.5 km/px, two orders of magnitude below the expected
@@ -67,7 +64,6 @@ GEOJSON_DIR = os.path.join(BASE_DIR, "..", "geojson")
 
 COASTLINE_FILE = "ne_coastline.geojson"
 LAKES_FILE = "ne_50m_lakes.geojson"
-RIVERS_FILE = "ne_50m_rivers_lake_centerlines.geojson"
 
 # Mean Earth radius, for turning degrees into a rough ground scale.
 R_EARTH_KM = 6371.0
@@ -427,7 +423,6 @@ class ReferenceLayers:
     grid: ReferenceGrid
     coastline: np.ndarray
     lakes: np.ndarray
-    rivers: np.ndarray
     land: np.ndarray
     lake_interior: np.ndarray
     curves: np.ndarray
@@ -455,9 +450,8 @@ class ReferenceLayers:
         against `ocean` alone therefore scores a correct alignment as wrong:
         measured, that is harmless where the framing box has coast (IoU 0.97 on
         Quebec + Gulf) and total where it does not (IoU 0.00 on an interior box,
-        where lakes are the only water). Since a box without coastline is
-        exactly where alignment is weakest and the water gate matters most, the
-        gate (`water_mask_iou`) compares against this, not against `ocean`.
+        where lakes are the only water). So the water agreement check
+        (`gates.water_mask_iou`) compares against this, not against `ocean`.
         """
         return self.ocean | self.lake_interior
 
@@ -472,7 +466,6 @@ class ReferenceLayers:
         return {
             "coastline": float(self.coastline.sum()) / total,
             "lakes": float(self.lakes.sum()) / total,
-            "rivers": float(self.rivers.sum()) / total,
             "curves": float(self.curves.sum()) / total,
             "land": float(self.land.sum()) / total,
             "lakeInterior": float(self.lake_interior.sum()) / total,
@@ -483,24 +476,19 @@ class ReferenceLayers:
         self,
         use_coastline: bool = True,
         use_lakes: bool = True,
-        use_rivers: bool = True,
     ) -> np.ndarray:
         """Union of the chosen curve layers.
 
         Selectable because the layers are not equally trustworthy as alignment
         evidence. Coastline is the most distinctive structure on any map and the
         one a user is most likely to have drawn faithfully; lake shorelines are
-        good interior anchors; rivers are dense, thin, and frequently drawn
-        schematically or not at all, so they can contribute far more lines than
-        a reader would recognise.
+        good interior anchors, admitted after the coast has set the transform.
         """
         mask = np.zeros_like(self.curves, dtype=bool)
         if use_coastline:
             mask |= self.coastline
         if use_lakes:
             mask |= self.lakes
-        if use_rivers:
-            mask |= self.rivers
         return mask
 
     def sample_curve_points(
@@ -596,7 +584,7 @@ def _derive_distance_fields(
     else:
         distance_px = np.full(curves.shape, np.inf, dtype=np.float32)
 
-    # Signed against the coastline specifically: lakes and rivers sit *inside*
+    # Signed against the coastline specifically: lakes sit *inside*
     # land, so signing against every curve would carve meaningless sign flips
     # through the interior.
     if coastline.any():
@@ -630,7 +618,6 @@ def _build_reference_layers_cached(
     height: int,
     coastline_mtime: Optional[float],
     lakes_mtime: Optional[float],
-    rivers_mtime: Optional[float],
 ) -> ReferenceLayers:
     # The mtimes are in the signature purely so editing a layer file invalidates
     # the cache, the same pattern the land mask and coastline loaders use.
@@ -640,11 +627,10 @@ def _build_reference_layers_cached(
 
     coastline = rasterize_layer(grid, load_reference_linework(COASTLINE_FILE))
     lakes = rasterize_layer(grid, load_reference_linework(LAKES_FILE))
-    rivers = rasterize_layer(grid, load_reference_linework(RIVERS_FILE))
     land = rasterize_land_mask(grid)
     lake_interior = rasterize_lake_interiors(grid)
 
-    curves = coastline | lakes | rivers
+    curves = coastline | lakes
     distance_px, signed, gradient_y, gradient_x = _derive_distance_fields(
         curves, coastline, land
     )
@@ -653,7 +639,6 @@ def _build_reference_layers_cached(
         grid=grid,
         coastline=coastline,
         lakes=lakes,
-        rivers=rivers,
         land=land,
         lake_interior=lake_interior,
         curves=curves,
@@ -664,7 +649,6 @@ def _build_reference_layers_cached(
         layer_versions={
             COASTLINE_FILE: coastline_mtime,
             LAKES_FILE: lakes_mtime,
-            RIVERS_FILE: rivers_mtime,
         },
     )
 
@@ -709,7 +693,6 @@ def build_reference_layers(
         grid_height,
         _mtime_or_none(_layer_path(COASTLINE_FILE)),
         _mtime_or_none(_layer_path(LAKES_FILE)),
-        _mtime_or_none(_layer_path(RIVERS_FILE)),
     )
 
 
@@ -739,7 +722,6 @@ def dump_reference_debug_pngs(layers: ReferenceLayers, out_dir: str) -> List[str
 
     _save("coastline", layers.coastline.astype(np.uint8), "gray")
     _save("lakes", layers.lakes.astype(np.uint8), "gray")
-    _save("rivers", layers.rivers.astype(np.uint8), "gray")
     _save("land", layers.land.astype(np.uint8), "gray")
     _save("water", layers.water.astype(np.uint8), "gray")
     _save("curves", layers.curves.astype(np.uint8), "gray")
@@ -751,7 +733,6 @@ def dump_reference_debug_pngs(layers: ReferenceLayers, out_dir: str) -> List[str
     rgb = np.zeros((layers.grid.height, layers.grid.width, 3), dtype=np.uint8)
     rgb[layers.land] = (40, 48, 40)
     rgb[layers.lake_interior] = (20, 60, 110)
-    rgb[layers.rivers] = (80, 140, 255)
     rgb[layers.lakes] = (120, 200, 255)
     rgb[layers.coastline] = (255, 240, 120)
     composite_path = os.path.join(out_dir, "composite.png")

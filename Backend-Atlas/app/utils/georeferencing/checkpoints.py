@@ -18,7 +18,7 @@ import numpy as np
 from shapely.geometry import MultiPoint, Point
 from shapely.ops import transform
 
-from .models import ControlPoint
+from .control_points import ControlPoint
 from .projection import (
     lonlat_arrays_to_webmercator,
     lonlat_to_webmercator,

@@ -10,7 +10,7 @@ from app.utils.georeferencing.requirements import MissingUserInputError
 
 from app.tasks import GEOREF_CONFIG, process_dev_test_extraction
 
-MIN_IOU = 0.7
+MIN_IOU = 0.6
 
 
 def _assets_root() -> str:

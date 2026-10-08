@@ -138,10 +138,9 @@ def _alignment_summary(result) -> dict[str, Any]:
     return {
         "enabled": True,
         "method": result.method,
-        "rung": result.rung,
+        "skipped": result.skipped,
         "used_curve_evidence": result.used_curve_evidence,
         "failed_checks": result.failed_checks,
-        "probe_agreement_px": result.probe_agreement_px,
         "gates": [
             {
                 "name": g.name,

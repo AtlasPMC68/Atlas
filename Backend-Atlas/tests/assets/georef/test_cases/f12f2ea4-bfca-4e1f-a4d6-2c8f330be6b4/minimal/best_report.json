@@ -1,7 +1,7 @@
 {
   "testId": "f12f2ea4-bfca-4e1f-a4d6-2c8f330be6b4",
   "testCaseId": "minimal",
-  "evaluatedAt": "2026-10-04T17:32:26.088367Z",
+  "evaluatedAt": "2026-10-08T16:47:11.308552Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,19 +16,19 @@
           "area": 212.59672115027567
         },
         "bestMatch": {
-          "iou": 0.8335069708783934,
-          "intersectionArea": 196.62884350409016,
-          "unionArea": 235.9054577514479,
-          "precision": 0.894021128221849,
-          "recall": 0.9248912327537804,
-          "falseNegativeArea": 15.967877646185393,
-          "falsePositiveArea": 23.30873660117225,
+          "iou": 0.8884138103317651,
+          "intersectionArea": 210.1568212568955,
+          "unionArea": 236.5528527504717,
+          "precision": 0.8976727630494689,
+          "recall": 0.988523341845637,
+          "falseNegativeArea": 2.439899893380035,
+          "falsePositiveArea": 23.956131600196148,
           "boundary": {
-            "meanKm": 211.333,
-            "p90Km": 1321.52,
-            "maxKm": 1685.997,
-            "expectedToExtractedMeanKm": 30.158,
-            "extractedToExpectedMeanKm": 392.507,
+            "meanKm": 212.534,
+            "p90Km": 1494.691,
+            "maxKm": 1883.148,
+            "expectedToExtractedMeanKm": 7.858,
+            "extractedToExpectedMeanKm": 417.21,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -36,7 +36,7 @@
             "index": 0,
             "id": null,
             "name": "Algérie",
-            "area": 219.9375801052626
+            "area": 234.11295285709167
           },
           "matchedBy": "name"
         }
@@ -49,19 +49,19 @@
           "area": 89.69663264264305
         },
         "bestMatch": {
-          "iou": 0.7604577300149941,
-          "intersectionArea": 73.96055062832629,
-          "unionArea": 97.25793783024336,
-          "precision": 0.9072481224584318,
-          "recall": 0.8245632912774965,
-          "falseNegativeArea": 15.736082014316713,
-          "falsePositiveArea": 7.561305187600217,
+          "iou": 0.9407275493475369,
+          "intersectionArea": 87.03849311452845,
+          "unionArea": 92.52253022131221,
+          "precision": 0.9685537557549695,
+          "recall": 0.9703652249833636,
+          "falseNegativeArea": 2.6581395281146176,
+          "falsePositiveArea": 2.8258975786692027,
           "boundary": {
-            "meanKm": 373.727,
-            "p90Km": 2928.273,
-            "maxKm": 3105.521,
-            "expectedToExtractedMeanKm": 58.244,
-            "extractedToExpectedMeanKm": 689.21,
+            "meanKm": 354.602,
+            "p90Km": 2990.908,
+            "maxKm": 3181.023,
+            "expectedToExtractedMeanKm": 10.183,
+            "extractedToExpectedMeanKm": 699.02,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -69,7 +69,7 @@
             "index": 1,
             "id": null,
             "name": "Mauritanie",
-            "area": 81.52185581592649
+            "area": 89.86439069319759
           },
           "matchedBy": "name"
         }
@@ -82,19 +82,19 @@
           "area": 147.8222613984916
         },
         "bestMatch": {
-          "iou": 0.9006131139002397,
-          "intersectionArea": 136.45256698518412,
-          "unionArea": 151.51074848805598,
-          "precision": 0.9736801816290244,
-          "recall": 0.9230853708653688,
-          "falseNegativeArea": 11.36969441330746,
-          "falsePositiveArea": 3.6884870895643735,
+          "iou": 0.9758485385712002,
+          "intersectionArea": 146.63558967252266,
+          "unionArea": 150.26470182270378,
+          "precision": 0.98361636236656,
+          "recall": 0.991972307048057,
+          "falseNegativeArea": 1.1866717259690065,
+          "falsePositiveArea": 2.4424404242120885,
           "boundary": {
-            "meanKm": 28.306,
-            "p90Km": 80.672,
-            "maxKm": 130.348,
-            "expectedToExtractedMeanKm": 29.706,
-            "extractedToExpectedMeanKm": 26.906,
+            "meanKm": 6.767,
+            "p90Km": 14.445,
+            "maxKm": 53.972,
+            "expectedToExtractedMeanKm": 6.979,
+            "extractedToExpectedMeanKm": 6.555,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -102,7 +102,7 @@
             "index": 3,
             "id": null,
             "name": "libye",
-            "area": 140.14105407474858
+            "area": 149.0780300967346
           },
           "matchedBy": "name"
         }
@@ -115,19 +115,19 @@
           "area": 15.223458170353958
         },
         "bestMatch": {
-          "iou": 0.5660130973010766,
-          "intersectionArea": 12.613708845500984,
-          "unionArea": 22.285188992351948,
-          "precision": 0.6410890459712071,
-          "recall": 0.8285705326838826,
-          "falseNegativeArea": 2.6097493248529537,
-          "falsePositiveArea": 7.061730821998033,
+          "iou": 0.5198382631257884,
+          "intersectionArea": 13.54282300018199,
+          "unionArea": 26.05199340031065,
+          "precision": 0.5556860176727587,
+          "recall": 0.8896022735855889,
+          "falseNegativeArea": 1.6806351701719504,
+          "falsePositiveArea": 10.82853522995673,
           "boundary": {
-            "meanKm": 578.62,
-            "p90Km": 2988.918,
-            "maxKm": 3219.488,
-            "expectedToExtractedMeanKm": 15.569,
-            "extractedToExpectedMeanKm": 1141.671,
+            "meanKm": 614.865,
+            "p90Km": 3017.81,
+            "maxKm": 3211.126,
+            "expectedToExtractedMeanKm": 10.152,
+            "extractedToExpectedMeanKm": 1219.579,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -135,7 +135,7 @@
             "index": 4,
             "id": null,
             "name": "tunisie",
-            "area": 19.67543966749901
+            "area": 24.371358230138707
           },
           "matchedBy": "name"
         }
@@ -148,19 +148,19 @@
           "area": 87.92016449446655
         },
         "bestMatch": {
-          "iou": 0.6846558636679233,
-          "intersectionArea": 69.21727614371834,
-          "unionArea": 101.09790891572733,
-          "precision": 0.8400662524154786,
-          "recall": 0.7872741883697759,
-          "falseNegativeArea": 18.7028883507482,
-          "falsePositiveArea": 13.177744421260796,
+          "iou": 0.925595895281262,
+          "intersectionArea": 84.64498379449935,
+          "unionArea": 91.44917801172636,
+          "precision": 0.9599767094058106,
+          "recall": 0.9627482418987816,
+          "falseNegativeArea": 3.275180699967191,
+          "falsePositiveArea": 3.5290135172598207,
           "boundary": {
-            "meanKm": 68.121,
-            "p90Km": 127.22,
-            "maxKm": 163.625,
-            "expectedToExtractedMeanKm": 70.79,
-            "extractedToExpectedMeanKm": 65.452,
+            "meanKm": 14.579,
+            "p90Km": 27.517,
+            "maxKm": 48.875,
+            "expectedToExtractedMeanKm": 15.032,
+            "extractedToExpectedMeanKm": 14.125,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -168,25 +168,25 @@
             "index": 2,
             "id": null,
             "name": "Mali",
-            "area": 82.39502056497916
+            "area": 88.17399731175917
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.7490493551525255,
-      "meanPrecision": 0.8512209461391981,
-      "meanRecall": 0.8576769231900607,
-      "totalFalseNegativeArea": 64.38629174941072,
-      "totalFalsePositiveArea": 54.79800412159567,
-      "meanBoundaryKm": 252.021,
-      "meanBoundaryP90Km": 1489.321,
-      "maxBoundaryKm": 3219.488,
+      "meanIou": 0.8500848113315105,
+      "meanPrecision": 0.8731011216499136,
+      "meanRecall": 0.9606422778722855,
+      "totalFalseNegativeArea": 11.240527017602801,
+      "totalFalsePositiveArea": 43.58201835029399,
+      "meanBoundaryKm": 240.669,
+      "meanBoundaryP90Km": 1509.074,
+      "maxBoundaryKm": 3211.126,
       "zonesWithBoundary": 5,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.7490493551525255,
+    "scoreUsed": 0.8500848113315105,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
@@ -209,19 +209,19 @@
             "area": 212.684397282627
           },
           "bestMatch": {
-            "iou": 0.8284782519343254,
-            "intersectionArea": 195.53536704354548,
-            "unionArea": 236.01750146972574,
-            "precision": 0.8933921178509512,
-            "recall": 0.9193686492371468,
-            "falseNegativeArea": 17.149030239081455,
-            "falsePositiveArea": 23.333104187098808,
+            "iou": 0.8863357294803222,
+            "intersectionArea": 209.89089065568245,
+            "unionArea": 236.8074350096955,
+            "precision": 0.8969162310389783,
+            "recall": 0.9868654839629238,
+            "falseNegativeArea": 2.7935066269445974,
+            "falsePositiveArea": 24.123037727068592,
             "boundary": {
-              "meanKm": 211.813,
-              "p90Km": 1319.623,
-              "maxKm": 1685.997,
-              "expectedToExtractedMeanKm": 31.795,
-              "extractedToExpectedMeanKm": 391.83,
+              "meanKm": 212.265,
+              "p90Km": 1493.396,
+              "maxKm": 1883.148,
+              "expectedToExtractedMeanKm": 8.151,
+              "extractedToExpectedMeanKm": 416.378,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -229,7 +229,7 @@
               "index": 0,
               "id": null,
               "name": "Algérie",
-              "area": 218.8684712306445
+              "area": 234.01392838275103
             },
             "matchedBy": "name"
           }
@@ -242,19 +242,19 @@
             "area": 89.7226095495535
           },
           "bestMatch": {
-            "iou": 0.7354296566594779,
-            "intersectionArea": 74.03049996201497,
-            "unionArea": 100.66292444376217,
-            "precision": 0.8712462047972533,
-            "recall": 0.825104177572189,
-            "falseNegativeArea": 15.69210958753852,
-            "falsePositiveArea": 10.940314894208703,
+            "iou": 0.9372199027782103,
+            "intersectionArea": 87.0726377781155,
+            "unionArea": 92.9052376288694,
+            "precision": 0.9647374804219933,
+            "recall": 0.9704648384087132,
+            "falseNegativeArea": 2.6499717714380298,
+            "falsePositiveArea": 3.1826280793158994,
             "boundary": {
-              "meanKm": 407.744,
-              "p90Km": 2948.177,
-              "maxKm": 3112.906,
-              "expectedToExtractedMeanKm": 64.343,
-              "extractedToExpectedMeanKm": 751.145,
+              "meanKm": 370.069,
+              "p90Km": 2997.076,
+              "maxKm": 3181.023,
+              "expectedToExtractedMeanKm": 10.86,
+              "extractedToExpectedMeanKm": 729.277,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -262,7 +262,7 @@
               "index": 1,
               "id": null,
               "name": "Mauritanie",
-              "area": 84.9708148562237
+              "area": 90.25526585743138
             },
             "matchedBy": "name"
           }
@@ -275,19 +275,19 @@
             "area": 147.87138086774704
           },
           "bestMatch": {
-            "iou": 0.8877631810466273,
-            "intersectionArea": 136.24219161235177,
-            "unionArea": 153.466819216054,
-            "precision": 0.9605503959008681,
-            "recall": 0.9213560515418724,
-            "falseNegativeArea": 11.629189255395142,
-            "falsePositiveArea": 5.59543834830709,
+            "iou": 0.9687713728684865,
+            "intersectionArea": 146.14161629526853,
+            "unionArea": 150.85253382596358,
+            "precision": 0.9800087339234624,
+            "recall": 0.9883022356163322,
+            "falseNegativeArea": 1.7297645724785997,
+            "falsePositiveArea": 2.9811529582166756,
             "boundary": {
-              "meanKm": 32.3,
-              "p90Km": 80.443,
-              "maxKm": 130.348,
-              "expectedToExtractedMeanKm": 33.745,
-              "extractedToExpectedMeanKm": 30.856,
+              "meanKm": 8.781,
+              "p90Km": 15.618,
+              "maxKm": 53.972,
+              "expectedToExtractedMeanKm": 8.899,
+              "extractedToExpectedMeanKm": 8.663,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -295,7 +295,7 @@
               "index": 3,
               "id": null,
               "name": "libye",
-              "area": 141.83762996065894
+              "area": 149.12276925348507
             },
             "matchedBy": "name"
           }
@@ -308,19 +308,19 @@
             "area": 15.313724010108992
           },
           "bestMatch": {
-            "iou": 0.4834423158691954,
-            "intersectionArea": 12.323327130101253,
-            "unionArea": 25.490791198004203,
-            "precision": 0.5476938295363433,
-            "recall": 0.8047243846086231,
-            "falseNegativeArea": 2.9903968800077547,
-            "falsePositiveArea": 10.177067187895203,
+            "iou": 0.5227376380802594,
+            "intersectionArea": 13.40212618588633,
+            "unionArea": 25.638341702551386,
+            "precision": 0.5648531570371705,
+            "recall": 0.8751709366734854,
+            "falseNegativeArea": 1.9115978242226743,
+            "falsePositiveArea": 10.324617692442388,
             "boundary": {
-              "meanKm": 638.098,
-              "p90Km": 3037.426,
-              "maxKm": 3257.745,
-              "expectedToExtractedMeanKm": 19.754,
-              "extractedToExpectedMeanKm": 1256.441,
+              "meanKm": 624.169,
+              "p90Km": 3003.117,
+              "maxKm": 3214.614,
+              "expectedToExtractedMeanKm": 12.907,
+              "extractedToExpectedMeanKm": 1235.431,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -328,7 +328,7 @@
               "index": 4,
               "id": null,
               "name": "tunisie",
-              "area": 22.50039431799645
+              "area": 23.726743878328705
             },
             "matchedBy": "name"
           }
@@ -341,19 +341,19 @@
             "area": 87.92016449446656
           },
           "bestMatch": {
-            "iou": 0.6846558636679226,
-            "intersectionArea": 69.21727614371828,
-            "unionArea": 101.09790891572734,
-            "precision": 0.8400662524154784,
-            "recall": 0.7872741883697751,
-            "falseNegativeArea": 18.702888350748214,
-            "falsePositiveArea": 13.177744421260849,
+            "iou": 0.9255958952812631,
+            "intersectionArea": 84.6449837944994,
+            "unionArea": 91.44917801172629,
+            "precision": 0.9599767094058109,
+            "recall": 0.9627482418987819,
+            "falseNegativeArea": 3.27518069996712,
+            "falsePositiveArea": 3.529013517259781,
             "boundary": {
-              "meanKm": 68.121,
-              "p90Km": 127.22,
-              "maxKm": 163.625,
-              "expectedToExtractedMeanKm": 70.79,
-              "extractedToExpectedMeanKm": 65.452,
+              "meanKm": 14.579,
+              "p90Km": 27.517,
+              "maxKm": 48.875,
+              "expectedToExtractedMeanKm": 15.032,
+              "extractedToExpectedMeanKm": 14.125,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -361,25 +361,25 @@
               "index": 2,
               "id": null,
               "name": "Mali",
-              "area": 82.39502056497912
+              "area": 88.17399731175918
             },
             "matchedBy": "name"
           }
         }
       ],
       "mean": {
-        "meanIou": 0.7239538538355097,
-        "meanPrecision": 0.8225897601001788,
-        "meanRecall": 0.8515654902659213,
-        "totalFalseNegativeArea": 66.16361431277109,
-        "totalFalsePositiveArea": 63.22366903877065,
-        "meanBoundaryKm": 271.615,
-        "meanBoundaryP90Km": 1502.578,
-        "maxBoundaryKm": 3257.745,
+        "meanIou": 0.8481321076977084,
+        "meanPrecision": 0.8732984623654831,
+        "meanRecall": 0.9567103473120474,
+        "totalFalseNegativeArea": 12.360021495051022,
+        "totalFalsePositiveArea": 44.14044997430334,
+        "meanBoundaryKm": 245.973,
+        "meanBoundaryP90Km": 1507.345,
+        "maxBoundaryKm": 3214.614,
         "zonesWithBoundary": 5,
         "zonesWithoutBoundary": 0
       },
-      "scoreUsed": 0.7239538538355097,
+      "scoreUsed": 0.8481321076977084,
       "scoreUsedKey": "mean.meanIou"
     },
     "nameMatching": {

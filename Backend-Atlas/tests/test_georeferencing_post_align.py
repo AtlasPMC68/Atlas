@@ -25,7 +25,7 @@ from app.utils.georeferencing.post_align import (
     align_after_piecewise,
     compose,
 )
-from app.utils.georeferencing.projection import webmercator_to_lonlat
+from tests.georef_helpers import webmercator_to_lonlat
 
 WIDTH, HEIGHT = 400, 300
 IMAGE = (0.0, 0.0, float(WIDTH), float(HEIGHT))

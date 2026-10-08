@@ -555,7 +555,7 @@
                 </span>
                 <span v-else>{{ pixelZones.ocrBoxes }} boîtes OCR.</span>
                 <span v-if="pixelZones.textFill">
-                  Remplissage texte ({{ pixelZones.textFill.method || "label" }}) :
+                  Remplissage texte ({{ pixelZones.textFill.algo || pixelZones.textFill.method || "inpaint" }}) :
                   {{ pixelZones.textFill.pixelsFilled }} px
                   dans {{ pixelZones.textFill.boxesFilled }}/{{
                     pixelZones.textFill.boxesConsidered
@@ -1195,6 +1195,7 @@ type PixelZonesResponse = {
   } | null;
   textFill: {
     method?: string;
+    algo?: string;
     boxesConsidered: number;
     boxesFilled: number;
     pixelsFilled: number;
@@ -1641,7 +1642,13 @@ function caseFile(cleaned: string, raw: string): string {
 }
 
 const extractedUrl = computed(() => caseFile("zones", "zones_raw"));
-const errorsUrl = computed(() => caseFile("errors", "errors_raw"));
+// Error overlays are derived, not stored: the API computes them from the run's
+// zones and the expected zones.
+const errorsUrl = computed(() => {
+  if (!testId.value || !testCaseId.value) return "";
+  const params = new URLSearchParams({ run: mode.value, stage: stage.value });
+  return `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/errors?${params}&v=${cacheBuster.value}`;
+});
 
 const allFeatures = computed(() => {
   return [...expectedFeatures.value, ...extractedFeatures.value, ...errorFeatures.value];
@@ -2039,7 +2046,9 @@ async function loadExtracted() {
 
 async function loadErrors() {
   if (!errorsUrl.value) return;
-  const res = await fetch(errorsUrl.value);
+  const res = await fetch(errorsUrl.value, {
+    headers: { Authorization: `Bearer ${keycloak.token}` },
+  });
   if (!res.ok) {
     errorFeatures.value = [];
     return;

@@ -31,13 +31,14 @@
         <progress v-else class="progress w-full" />
       </div>
 
+      <!-- Still enabled while cancelling: a second click forces the stop, for
+           when the worker died and nothing would ever finish the first one. -->
       <button
         type="button"
         class="btn btn-outline btn-sm self-center"
-        :disabled="state === 'cancelling'"
         @click="emit('cancel')"
       >
-        {{ state === "cancelling" ? "Annulation…" : "Annuler" }}
+        {{ state === "cancelling" ? "Forcer l'arrêt" : "Annuler" }}
       </button>
       <p class="-mt-4 text-[11px] text-gray-400">
         Retour aux paramètres pour les modifier : vos étapes et l'analyse du texte
@@ -86,7 +87,7 @@ const subheading = computed(() => {
     case "waiting_for_text":
       return "L'analyse du texte de la carte se termine ; l'extraction démarre juste après.";
     case "cancelling":
-      return "Arrêt en cours. Rien ne sera enregistré.";
+      return "Arrêt en cours. Rien ne sera enregistré. Si rien ne bouge, forcez l'arrêt.";
     case "failed":
       return "Vos paramètres sont conservés : vous pouvez les corriger et relancer.";
     default:

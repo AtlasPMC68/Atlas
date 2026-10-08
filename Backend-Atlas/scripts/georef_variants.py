@@ -31,7 +31,14 @@ _A0: Dict[str, Any] = {
     "weight_curve": 1.0,
 }
 
-_ALIGNED: Dict[str, Any] = {**_A0, "enable_curve_alignment": True}
+# Alignment at equal weights. The weight is pinned rather than inherited from
+# the file default (x10 since config v15), so B1-B6 keep the meaning their
+# recorded results have: each states its own weight.
+_ALIGNED: Dict[str, Any] = {
+    **_A0,
+    "enable_curve_alignment": True,
+    "weight_curve": 1.0,
+}
 
 
 @dataclass(frozen=True)
@@ -162,19 +169,21 @@ VARIANTS: Tuple[Variant, ...] = (
         "B7b", "2", "B7 with the coastline weighted x10 against the control points.",
         {**_ALIGNED, **_B3LB, "align_after_piecewise": True, "weight_curve": 10.0},
     ),
+    # Is the chamfer needed at all? ICP from the control-point affine, with no
+    # chamfer stage to bring the map within its search radius first.
+    Variant(
+        "B9", "2", "ICP only (no chamfer), equal weights.",
+        {**_ALIGNED, "enable_chamfer": False},
+    ),
+    Variant(
+        "B10", "2", "ICP only (no chamfer), coastline weighted x10.",
+        {**_ALIGNED, "enable_chamfer": False, "weight_curve": 10.0},
+    ),
     # --- Stage 3: what the app runs ------------------------------------------
-    # File defaults (B7b's transform, snapping, inpaint) with the app's
-    # environment: backend and celery-worker turn curve alignment on. Its raw
-    # (before cleaning) rows equal B7b's; only the cleaning differs.
-    Variant(
-        "PROD", "3", "Where we are: the config the app runs.",
-        {"enable_curve_alignment": True},
-    ),
+    # The file defaults are the production configuration (alignment on at
+    # x10, piecewise, snapping, inpaint), so PROD overrides nothing.
+    Variant("PROD", "3", "Where we are: the config the app runs.", {}),
     # --- Extraction, on the A0 transform -------------------------------------
-    Variant(
-        "E1", "E", "Label text fill instead of inpaint.",
-        {**_A0, "text_fill_method": "label"},
-    ),
     Variant("E2", "E", "Zone gap fill on.", {**_A0, "zone_gap_fill": True}),
     # --- Noise floor (Phase 4) -----------------------------------------------
     Variant(

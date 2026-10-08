@@ -20,7 +20,8 @@ from typing import Any, List, Optional, Sequence
 import cv2
 import numpy as np
 
-from .models import AffineModel, ControlPoint
+from .affine import AffineModel
+from .control_points import ControlPoint
 from .projection import lonlat_to_webmercator
 
 logger = logging.getLogger(__name__)
@@ -73,9 +74,9 @@ def _dim(image: np.ndarray, factor: float = 0.45) -> np.ndarray:
 def _reference_pixels(layers: Any, model: AffineModel, stride: int = 2, config: Any = None):
     """Reference curve points pushed through *model* into image pixels.
 
-    Draws only the layers alignment actually used. Drawing all of them would
-    put rivers on the overlay that the fit never saw, which is misleading in
-    exactly the picture you go to when a map placed badly.
+    Draws only the layers alignment actually used. Drawing a layer the fit
+    never saw is misleading in exactly the picture you go to when a map placed
+    badly.
     """
     from .config import DEFAULT_GEOREF_CONFIG
 
@@ -83,7 +84,6 @@ def _reference_pixels(layers: Any, model: AffineModel, stride: int = 2, config: 
     mask = layers.curve_mask(
         use_coastline=True,
         use_lakes=config.use_lakes_for_alignment,
-        use_rivers=config.use_rivers_for_alignment,
     )
     lon, lat = layers.sample_curve_points(
         spacing_px=float(stride), max_points=40000, mask=mask
@@ -276,13 +276,8 @@ def dump_alignment_debug(
             lines.append("  DISABLED (GEOREF_ENABLE_CURVE_ALIGNMENT is off)")
         else:
             lines.append(f"  method               {alignment.method}")
-            lines.append(f"  recovery rung        {alignment.rung}")
             lines.append(f"  used curve evidence  {alignment.used_curve_evidence}")
-            lines.append(
-                f"  probe disagreement   {alignment.probe_agreement_px:.2f} px"
-                if alignment.probe_agreement_px is not None
-                else "  probe disagreement   n/a"
-            )
+            lines.append(f"  skipped              {alignment.skipped or 'no'}")
             lines.append(f"  failed checks        {alignment.failed_checks or 'none'}")
             lines.append(f"  ICP correspondences  {matched} of {total_samples} samples")
             st = alignment.stats or {}
@@ -305,7 +300,6 @@ def dump_alignment_debug(
             lines.append(
                 "    evidence used        coastline"
                 + (" + lakes" if st.get("usesLakes") else "")
-                + (" + rivers" if st.get("usesRivers") else "")
             )
             lines.append(
                 f"    samples              coastline={st.get('coastlineSamples')} "
@@ -366,9 +360,8 @@ def dump_alignment_debug(
         if alignment is not None:
             payload = {
                 "method": alignment.method,
-                "rung": alignment.rung,
+                "skipped": alignment.skipped,
                 "failedChecks": alignment.failed_checks,
-                "probeAgreementPx": alignment.probe_agreement_px,
                 "stats": alignment.stats,
                 "phaseModels": alignment.phase_models,
                 "gates": [

@@ -23,17 +23,13 @@ class DevTestPaths:
     extracted_zones_path: str
     config_path: str
     report_path: str
-    errors_geojson_path: str
     best_report_path: str
     best_zones_path: str
-    best_errors_geojson_path: str
     #: The expected zones through the pipeline's ocean and lake cuts.
     expected_cleaned_zones_path: str
-    #: The zones before snapping and the clip, and their error overlay.
+    #: The zones before snapping and the clip.
     raw_zones_path: str
-    raw_errors_geojson_path: str
     best_raw_zones_path: str
-    best_raw_errors_geojson_path: str
 
 
 def write_geojson(feature_collection: dict[str, Any], geojson_path: str) -> None:
@@ -222,22 +218,6 @@ def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, An
     return {"type": "FeatureCollection", "features": features}
 
 
-def _union_or_empty(geoms: list[BaseGeometry]) -> BaseGeometry:
-    if not geoms:
-        return unary_union([])
-    try:
-        return unary_union(geoms)
-    except Exception:
-        # Fallback: union iteratively
-        u = geoms[0]
-        for g in geoms[1:]:
-            try:
-                u = u.union(g)
-            except Exception:
-                continue
-        return u
-
-
 def _normalize_name(name: str | None) -> str | None:
     """Normalize a zone name for matching (case/whitespace-insensitive).
 
@@ -393,10 +373,8 @@ def build_test_case_paths(
     extracted_zones_path = os.path.join(case_dir, "zones.geojson")
     config_path = os.path.join(case_dir, "config.json")
     report_path = os.path.join(case_dir, "report.json")
-    errors_geojson_path = os.path.join(case_dir, "errors.geojson")
     best_report_path = os.path.join(case_dir, "best_report.json")
     best_zones_path = os.path.join(case_dir, "zones_best.geojson")
-    best_errors_geojson_path = os.path.join(case_dir, "errors_best.geojson")
 
     from app.utils.dev_test_expected import cleaned_zones_path
 
@@ -407,45 +385,13 @@ def build_test_case_paths(
         extracted_zones_path=extracted_zones_path,
         config_path=config_path,
         report_path=report_path,
-        errors_geojson_path=errors_geojson_path,
         best_report_path=best_report_path,
         best_zones_path=best_zones_path,
-        best_errors_geojson_path=best_errors_geojson_path,
         expected_cleaned_zones_path=cleaned_zones_path(
             test_id, os.path.join(assets_root, "georef_zones")
         ),
         raw_zones_path=os.path.join(case_dir, "zones_raw.geojson"),
-        raw_errors_geojson_path=os.path.join(case_dir, "errors_raw.geojson"),
         best_raw_zones_path=os.path.join(case_dir, "zones_raw_best.geojson"),
-        best_raw_errors_geojson_path=os.path.join(case_dir, "errors_raw_best.geojson"),
-    )
-
-
-def evaluate_georef_zones_from_paths(
-    *,
-    test_id: str,
-    test_case_id: str,
-    expected_zones_path: str,
-    extracted_zones_path: str,
-    min_iou: float | None = None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Evaluate expected vs extracted zones given explicit file paths.
-
-    This is used for generating artifacts
-    without relying on the conventional on-disk naming.
-    """
-
-    if not os.path.exists(expected_zones_path):
-        raise FileNotFoundError(f"Expected zones not found: {expected_zones_path}")
-    if not os.path.exists(extracted_zones_path):
-        raise FileNotFoundError(f"Extracted zones not found: {extracted_zones_path}")
-
-    return evaluate_zones(
-        _load_json(expected_zones_path),
-        _load_json(extracted_zones_path),
-        test_id=test_id,
-        test_case_id=test_case_id,
-        min_iou=min_iou,
     )
 
 
@@ -725,3 +671,46 @@ def write_report(report: dict[str, Any], report_path: str) -> None:
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
+
+
+def error_overlay(
+    assets_root: str,
+    test_id: str,
+    test_case_id: str,
+    *,
+    best: bool,
+    raw: bool,
+) -> dict[str, Any]:
+    """The FP/FN overlay of one of a case's runs, computed from its zones.
+
+    Derived, so never stored: the overlays of a case's best run were most of
+    the committed test assets' weight, and they follow from ``zones_best`` /
+    ``zones_raw_best`` and the expected zones. ``raw`` compares the zones
+    before cleaning with the zones as drawn, like the report's raw view.
+
+    Raises:
+        FileNotFoundError: when the run or the expected zones are missing.
+    """
+    from app.utils.dev_test_expected import load_cleaned_zones, load_drawn_zones
+
+    paths = build_test_case_paths(assets_root, test_id, test_case_id)
+    if raw:
+        zones_path = paths.best_raw_zones_path if best else paths.raw_zones_path
+    else:
+        zones_path = paths.best_zones_path if best else paths.extracted_zones_path
+    if not os.path.exists(zones_path):
+        raise FileNotFoundError(f"Zones not found: {os.path.basename(zones_path)}")
+
+    zones_dir = os.path.join(assets_root, "georef_zones")
+    expected = (
+        load_drawn_zones(test_id, zones_dir)
+        if raw
+        else load_cleaned_zones(test_id, zones_dir)
+    )
+    if expected is None:
+        raise FileNotFoundError(f"Expected zones not found for {test_id}")
+
+    _report, errors = evaluate_zones(
+        expected, _load_json(zones_path), test_id=test_id, test_case_id=test_case_id
+    )
+    return errors

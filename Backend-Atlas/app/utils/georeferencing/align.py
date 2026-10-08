@@ -1,4 +1,4 @@
-"""Coarse chamfer alignment, normal-search ICP, and the gates.
+"""Coarse chamfer alignment and normal-search ICP: the optimiser.
 
 Two phases (dev-docs/georeferencing.md section 5.2). Both optimise the same six affine parameters, and
 both express every residual in **user image pixels**. The two terms do not share
@@ -22,10 +22,9 @@ Nothing in this module needs cv2 -- it consumes the arrays `evidence.py` built,
 and does its own gradients with scipy. That keeps it testable without the image
 stack.
 
-**The result is gated, never trusted.** A fit locked onto the wrong feature has
-*low* chamfer residual by construction, so the residual can never be the check.
-The primary gate is a probe fit that never sees the control points, measured
-against them afterwards (georeferencing.md section 5.2, the probe).
+**The result is checked, never trusted** (`gates.py`). A fit locked onto the
+wrong feature has *low* chamfer residual by construction, so the residual's
+size is never the check.
 """
 
 import logging
@@ -38,7 +37,8 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter, map_coordinat
 from scipy.optimize import least_squares
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
-from .models import AffineModel, ControlPoint, gcp_sigma_px
+from .affine import AffineModel
+from .control_points import ControlPoint, gcp_sigma_px
 from .projection import lonlat_to_webmercator
 
 logger = logging.getLogger(__name__)
@@ -230,22 +230,16 @@ def build_curve_samples(
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     use_coastline: bool = True,
     use_lakes: Optional[bool] = None,
-    use_rivers: Optional[bool] = None,
 ) -> CurveSamples:
     """Reference curve samples, projected to EPSG:3857.
 
     Which layers count as evidence is a choice, not a given: alignment runs
-    coastline-first and admits lakes afterwards, and rivers are off by default
-    (see `GeorefConfig.use_rivers_for_alignment`).
+    coastline-first and admits lakes afterwards.
     """
     if use_lakes is None:
         use_lakes = config.use_lakes_for_alignment
-    if use_rivers is None:
-        use_rivers = config.use_rivers_for_alignment
 
-    mask = layers.curve_mask(
-        use_coastline=use_coastline, use_lakes=use_lakes, use_rivers=use_rivers
-    )
+    mask = layers.curve_mask(use_coastline=use_coastline, use_lakes=use_lakes)
     lon, lat, dlon, dlat = layers.sample_curve_points_with_normals(
         spacing_px=config.curve_sample_spacing_px,
         max_points=config.curve_max_samples,
@@ -304,7 +298,6 @@ def _gcp_arrays(
 def _gcp_term(
     control_points: Sequence[ControlPoint],
     config: GeorefConfig,
-    gcp_weight_scale: float = 1.0,
     targets: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Control-point pixels, targets and per-point weights for the objective.
@@ -321,7 +314,7 @@ def _gcp_term(
     if targets is not None:
         merc = np.asarray(targets, dtype=float)
     rel = (np.median(sigma) / sigma) ** 2
-    weight = (config.weight_gcp * gcp_weight_scale / max(len(control_points), 1)) * rel
+    weight = (config.weight_gcp / max(len(control_points), 1)) * rel
     return pixel, merc, weight
 
 
@@ -459,15 +452,14 @@ def fit_chamfer(
     user_field: UserField,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     use_gcps: bool = True,
-    gcp_weight_scale: float = 1.0,
     blur_schedule: Optional[Sequence[float]] = None,
     cutoff_schedule: Optional[Sequence[float]] = None,
     gcp_targets: Optional[np.ndarray] = None,
 ) -> PhaseResult:
     """Phase A: annealed chamfer fit.
 
-    ``use_gcps=False`` gives the probe fit (georeferencing.md section 5.2) -- curve evidence
-    alone, control points held out entirely so they remain an independent check.
+    ``use_gcps=False`` fits the curve evidence alone, control points held out.
+    The pipeline never does; tests use it to show the joint fit differs.
     ``gcp_targets``: see ``_gcp_term``.
     """
     blur = list(blur_schedule if blur_schedule is not None else config.anneal_blur_px)
@@ -483,9 +475,7 @@ def fit_chamfer(
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, gcp_w = _gcp_term(
-            control_points, config, gcp_weight_scale, gcp_targets
-        )
+        gcp_pixel, gcp_merc, gcp_w = _gcp_term(control_points, config, gcp_targets)
 
     params = _params_from_model(initial)
     total_iterations = 0
@@ -659,7 +649,6 @@ def icp_refine(
     user_field: UserField,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     use_gcps: bool = True,
-    gcp_weight_scale: float = 1.0,
     gcp_targets: Optional[np.ndarray] = None,
 ) -> PhaseResult:
     """Phase B: iterate correspondence search and re-fit.
@@ -671,9 +660,7 @@ def icp_refine(
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, gcp_w = _gcp_term(
-            control_points, config, gcp_weight_scale, gcp_targets
-        )
+        gcp_pixel, gcp_merc, gcp_w = _gcp_term(control_points, config, gcp_targets)
 
     matched = 0
     converged = False

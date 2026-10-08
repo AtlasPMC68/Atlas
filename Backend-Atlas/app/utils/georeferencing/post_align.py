@@ -13,7 +13,7 @@ When there is no piecewise model (the correction was refused, or ``auto``
 kept the affine), the same runs in front of the GCP affine, so a run without
 an alignment before the correction is still aligned.
 
-Not gated like the first alignment (no probe, no ladder): ``M`` is kept only
+Not gated like the first alignment (no gates): ``M`` is kept only
 when it keeps the map's orientation and does not make the coastline chamfer
 worse than ``P`` alone. Everything here is cv2-free; the evidence was built
 before (``runner.build_alignment_inputs``).
@@ -34,11 +34,12 @@ from .align import (
     sample_displacement_px,
 )
 from .config import GeorefConfig
-from .models import AffineModel, ControlPoint
+from .affine import AffineModel
+from .control_points import ControlPoint
 from .piecewise import PiecewiseAffineModel
 from .projection import lonlat_to_webmercator
 from .records import RunRecord
-from .recovery import run_stages
+from .gates import fit_stages
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +60,10 @@ class AlignmentContext:
 def build_alignment_context(
     layers: Any, evidence: Any, config: GeorefConfig
 ) -> AlignmentContext:
-    """The same samples and field ``recovery.align`` builds."""
+    """The same samples and field ``gates.align`` builds."""
     return AlignmentContext(
         coast_samples=build_curve_samples(
-            layers, config, use_coastline=True, use_lakes=False, use_rivers=False
+            layers, config, use_coastline=True, use_lakes=False
         ),
         fine_samples=build_curve_samples(layers, config),
         user_field=build_user_field(evidence, config),
@@ -109,8 +110,8 @@ def align_after_piecewise(
     """Run the alignment stages in front of *model*; *model* if it does not help.
 
     *model* is the piecewise model, or the GCP affine when there is none; for
-    an affine this is a plain alignment from it, without the probe and the
-    ladder. The returned model's GCP residuals are in-sample: a leave-one-out
+    an affine this is a plain alignment from it, without the gates. The
+    returned model's GCP residuals are in-sample: a leave-one-out
     would need one alignment per fold.
     """
     record = record or RunRecord()
@@ -131,7 +132,7 @@ def align_after_piecewise(
     identity = AffineModel(matrix=np.eye(3), n_points=len(control_points))
     before = chamfer_residual_px(identity, coast, context.user_field)
     try:
-        front, phase, _coarse = run_stages(
+        front, phase, _coarse = fit_stages(
             identity,
             control_points,
             coast,

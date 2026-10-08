@@ -295,71 +295,6 @@ def save_mask_png(
     cv2.imwrite(out_path, bgra)
 
 
-def relabel_text_pixels(
-    best_idx: np.ndarray,
-    valid: np.ndarray,
-    text_regions: List,
-    *,
-    dilation_px: int = 2,
-    min_context: float = 0.25,
-    max_distance_px: float = 8.0,
-) -> Tuple[np.ndarray, np.ndarray, Dict]:
-    
-    stats = {"boxesConsidered": 0, "boxesFilled": 0, "pixelsFilled": 0}
-    if not text_regions or not valid.any():
-        return best_idx, valid, stats
-
-    height, width = valid.shape
-    ring_px = max(int(dilation_px) + 4, 5)
-    kernel_halo = np.ones((2 * max(int(dilation_px), 0) + 1,) * 2, np.uint8)
-    kernel_ring = np.ones((2 * ring_px + 1,) * 2, np.uint8)
-
-    fill_mask = np.zeros((height, width), dtype=bool)
-    for polygon in text_regions:
-        try:
-            points = np.array(polygon, dtype=np.int32).reshape(-1, 2)
-        except (TypeError, ValueError):
-            continue
-        if points.shape[0]       < 3:
-            continue
-
-        stats["boxesConsidered"] += 1
-        box = np.zeros((height, width), dtype=np.uint8)
-        cv2.fillPoly(box, [points], 1)
-        if dilation_px > 0:
-            # The halo many atlases print around a label is not the glyph, but
-            # it is just as far from the zone's colour.
-            box = cv2.dilate(box, kernel_halo)
-        box_mask = box.astype(bool)
-
-        ring = cv2.dilate(box, kernel_ring).astype(bool) & ~box_mask
-        if not ring.any() or (valid & ring).sum() / ring.sum() < min_context:
-            continue
-
-        stats["boxesFilled"] += 1
-        fill_mask |= box_mask & ~valid
-
-    if not fill_mask.any():
-        return best_idx, valid, stats
-
-    # One distance transform for the whole image: for every pixel, which
-    # assigned pixel is nearest, and how far away it is.
-    distance, (rows, cols) = distance_transform_edt(~valid, return_indices=True)
-    fill_mask &= distance <= max_distance_px
-    if not fill_mask.any():
-        return best_idx, valid, stats
-
-    best_idx = best_idx.copy()
-    valid = valid.copy()
-    best_idx[fill_mask] = best_idx[rows[fill_mask], cols[fill_mask]]
-    valid[fill_mask] = True
-    stats["pixelsFilled"] = int(fill_mask.sum())
-    return best_idx, valid, stats
-
-
-TEXT_FILL_METHODS = ("label", "inpaint")
-
-
 def inpaint_text_ink(
     rgb: np.ndarray,
     lab: np.ndarray,
@@ -867,18 +802,13 @@ def extract_colors(
     # Text-aware assignment
     # -----------------------------
     # OCR polygons, when the caller has them. A label is drawn *over* a zone,
-    # so without this its glyphs are holes the zone never recovers -- see
-    # `relabel_text_pixels`. Passing None keeps the previous behaviour.
+    # so without this its glyphs are holes the zone never recovers: the ink is
+    # erased from the image before classification. Passing None skips it.
+    # Defaults match GeorefConfig's.
     text_regions: Optional[List] = None,
-    text_dilation_px: int = 2,
-    text_fill_min_context: float = 0.25,
-    text_fill_max_distance_px: float = 8.0,
-    # "label" repairs the assignment after the fact (`relabel_text_pixels`);
-    # "inpaint" rebuilds the image under the ink before it (`inpaint_text_ink`).
-    text_fill_method: str = "label",
     text_inpaint_dilation_px: int = 1,
     text_inpaint_radius_px: float = 3.0,
-    text_inpaint_max_ink_ratio: float = 0.6,
+    text_inpaint_max_ink_ratio: float = 1.0,
     # "palette" (ring palette + vote) or "telea" (Otsu + cv2.inpaint).
     text_inpaint_algo: str = "palette",
     text_inpaint_ink_deltaE: float = 12.0,
@@ -981,11 +911,6 @@ def extract_colors(
     centers_lab = np.array(
         [entry["lab_center"] for entry in dominants], dtype=np.float64
     )
-    if text_fill_method not in TEXT_FILL_METHODS:
-        raise ValueError(
-            f"text_fill_method must be one of {TEXT_FILL_METHODS}, got {text_fill_method!r}"
-        )
-
     # 5b) Inpaint mode: erase the labels' ink from the image before any pixel
     # is classified. After the colours are sampled, since it needs them to
     # know which pixels are already zone and must be kept.
@@ -995,7 +920,7 @@ def extract_colors(
         )
 
     text_stats = None
-    if text_regions and text_fill_method == "inpaint" and text_inpaint_algo == "palette":
+    if text_regions and text_inpaint_algo == "palette":
         rgb, lab, text_stats = repaint_text_ink_palette(
             rgb,
             lab,
@@ -1008,7 +933,7 @@ def extract_colors(
             f"[COLOR] text repaint (palette): {text_stats['pixelsFilled']} px in "
             f"{text_stats['boxesFilled']}/{text_stats['boxesConsidered']} label boxes"
         )
-    elif text_regions and text_fill_method == "inpaint":
+    elif text_regions:
         rgb, lab, text_stats = inpaint_text_ink(
             rgb,
             lab,
@@ -1029,24 +954,6 @@ def extract_colors(
     best_idx, valid = build_exclusive_masks_by_nearest_center(
         lab, opaque_mask, centers_lab, mask_deltaE
     )
-
-    # 6b) Label mode: give label pixels back to the zone they are written on,
-    # before any mask is built from them: the morphology and hole filling
-    # below cannot reach glyphs that touch the map's linework.
-    if text_regions and text_fill_method == "label":
-        best_idx, valid, text_stats = relabel_text_pixels(
-            best_idx,
-            valid,
-            text_regions,
-            dilation_px=text_dilation_px,
-            min_context=text_fill_min_context,
-            max_distance_px=text_fill_max_distance_px,
-        )
-        text_stats["method"] = "label"
-        logger.info(
-            f"[COLOR] text-aware fill: {text_stats['pixelsFilled']} px recovered in "
-            f"{text_stats['boxesFilled']}/{text_stats['boxesConsidered']} label boxes"
-        )
 
     def _morphology(mask: np.ndarray) -> np.ndarray:
         # 1. Opening: Remove small noise/speckles

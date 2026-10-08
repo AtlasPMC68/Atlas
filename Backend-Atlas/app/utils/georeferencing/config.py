@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "19"
+CONFIG_VERSION = "20"
 
 #: The transform models a run may choose between, in increasing order of
 #: freedom, then ``auto``, which picks one of them per map. Adding one here is
@@ -16,11 +16,9 @@ TRANSFORM_MODELS = ("affine", "piecewise_affine", "auto")
 #: How far the piecewise correction may reach; see ``piecewise_regularization``.
 PIECEWISE_REGULARIZATIONS = ("none", "local")
 
-#: How labels are removed from the zones; see `color_extraction`. Kept in step
-#: with `color_extraction.TEXT_FILL_METHODS`, which is not imported here so the
-#: config stays free of the image stack.
-TEXT_FILL_METHODS = ("label", "inpaint")
-#: How the inpaint method finds and repaints ink; see `color_extraction`.
+#: How label ink is found and repainted before classification; see
+#: `color_extraction`. Not imported from there so the config stays free of the
+#: image stack.
 TEXT_INPAINT_ALGOS = ("palette", "telea")
 
 #: Where a control point came from. ``sift``: the user matched a suggested
@@ -80,23 +78,13 @@ class GeorefConfig:
     # gaps reach the image edge and are not holes at all. On by default: that
     # is a defect, not an experiment. Needs OCR boxes, so it does nothing when
     # none are available.
+    #
+    # The labels' ink is erased from the image before classification, so a
+    # name written half over the sea comes back as sea on one side and land on
+    # the other. A "label" method that repaired the zones after classification
+    # instead was worse on every case of the first corpus run
+    # (georeferencing-testing.md 8.3) and was removed.
     text_aware_zone_fill: bool = True
-    # Fraction of the ring around a label that must already belong to a zone.
-    # A name floating in open water has almost no assigned neighbours, and
-    # filling it would invent land.
-    text_fill_min_context: float = 0.25
-    # How far a label pixel may reach for a zone to belong to. A glyph stroke
-    # is a few pixels wide, so anything genuinely written on a zone is close to
-    # it. Measured on the 1791 map: at 12 px and beyond the fill starts
-    # painting the empty caption band under the map as a solid rectangle,
-    # because an OCR box covers its background as well as its letters.
-    text_fill_max_distance_px: float = 8.0
-    # "label" (the two settings above) repairs the zones after classification.
-    # "inpaint" erases the labels' ink from the image before it, so a name
-    # written half over the sea comes back as sea on one side and land on the
-    # other; it ignores the two settings above. Compared on the first corpus
-    # run: "label" was worse on every case (georeferencing-testing.md 8.3).
-    text_fill_method: str = "inpaint" #old value was "label"
     # Pixels added around the detected ink, for the anti-aliased fringe whose
     # blended colour otherwise lands in the wrong zone.
     text_inpaint_dilation_px: int = 1
@@ -214,20 +202,26 @@ class GeorefConfig:
     water_morph_radius_px: int = 2
     water_min_component_px: int = 200
 
-    # Keep only edges on the water/land boundary, when water was picked. An
-    # edge counts if it lies within `margin` px of water *and* of non-water:
-    # Canny can put the edge a pixel or two either side of the true boundary,
-    # and anti-aliasing leaves a band that matches neither colour. Requiring
-    # both sides also drops lines drawn across open water (graticules, routes).
-    # Skipped when the water mask is too small to be trusted -- a stray pick on
-    # a legend swatch would otherwise delete nearly every edge.
+    # Keep only edges on the water/land boundary: this is what identifies the
+    # map's coastline, and alignment never runs without it. An edge counts if
+    # it lies within `margin` px of water *and* of non-water: Canny can put the
+    # edge a pixel or two either side of the true boundary, and anti-aliasing
+    # leaves a band that matches neither colour. Requiring both sides also
+    # drops lines drawn across open water (graticules, routes). Off only as an
+    # experiment, to measure what the filter is worth.
     edge_water_filter: bool = True
     edge_water_margin_px: int = 3
+    # Alignment is skipped when the water mask covers less of the image than
+    # this: a mask that small is more likely a stray pick (a legend swatch)
+    # than the sea, and filtering on it would delete nearly every edge.
     edge_water_min_fraction: float = 0.01
 
     # --- Alignment (Step 4) --------------------------------------------------
-    # Off by default: turning it on is the experiment, not the baseline.
-    enable_curve_alignment: bool = False
+    # On: production extraction aligns the map to the coastline. It lowered
+    # check-point error on 11 of 12 corpus cases and worsened none
+    # (georeferencing-testing.md 8.3). The regression suite and the dev
+    # script run with it on too, so every number is the production one.
+    enable_curve_alignment: bool = True
     # Run the alignment stages (coastline, fine, ICP) again *after* the
     # piecewise correction, as an affine in front of it (post_align.py), kept
     # only if the coastline chamfer does not get worse. Independent of the
@@ -237,7 +231,7 @@ class GeorefConfig:
     # already aligned affine is left as it is. The second fit moves the map off
     # the clicks the piecewise model interpolates; on the corpus that was a
     # gain (B7 vs B3Lb, 2026-10-08), so it is on. With ``enable_curve_alignment``
-    # on as well, which the app's environment does, this is B7b.
+    # on as well, this is B7b.
     align_after_piecewise: bool = True
 
     # Reference curve sampling, per stage. Alignment runs coastline-first and
@@ -246,20 +240,17 @@ class GeorefConfig:
     # transform before anything finer is allowed to pull on it.
     curve_sample_spacing_px: float = 2.0
     curve_max_samples: int = 8000
-    # Rivers are loaded and rasterized but **not used as alignment evidence**.
-    # They contribute a lot of thin, dense linework that is often drawn
-    # schematically or omitted entirely, so on a real map most of it matches
-    # nothing a reader would recognise. Set true to put them back in.
-    use_rivers_for_alignment: bool = False
     use_lakes_for_alignment: bool = True
 
     # Term balance. Both terms are normalised by their own sample count first,
     # so these are true relative weights and not an artifact of there being
     # thousands of curve samples and seven control points.
+    # The corpus run's weight sweep: the gain grows from x1 to x30 and stops
+    # there, mostly at the coast (georeferencing-testing.md 8.1-8.2). x10 takes
+    # most of it while leaving the control points more say than x30 inland.
     weight_gcp: float = 1.0
-    # 10: the coastline outweighs the control points. The corpus gained from
-    # x1 to x3 to x10 with and without the piecewise step (B5a/b, B7a/b,
-    # 2026-10-08); x30 and x100 (B5c/d) are untested.
+    # The gain from x1 to x3 to x10 holds with the piecewise step and the
+    # second alignment too (B7a/b, 2026-10-08).
     weight_curve: float = 10.0
 
     # A suppressed edge should act as if it were further away, not vanish:
@@ -282,6 +273,10 @@ class GeorefConfig:
     anneal_cutoff_px: tuple = (70.0, 45.0, 28.0, 18.0)
     max_iterations_per_level: int = 60
 
+    # The two chamfer stages (coastline, then coastline + lakes). Off leaves
+    # ICP alone, starting from the control-point affine: the ICP-only variant.
+    enable_chamfer: bool = True
+
     # Normal-search ICP.
     enable_icp: bool = True
     icp_iterations: int = 8
@@ -297,32 +292,26 @@ class GeorefConfig:
     icp_cutoff_px: float = 20.0
     icp_min_correspondences: int = 50
 
-    # Gates (georeferencing.md section 5.2). **Mostly neutralised on purpose**: the thresholds
-    # below are set so these checks always pass. What can still reject an
-    # alignment: a mirrored transform (`transform_determinant`), an optimiser
-    # that did not converge, and `curve_fit_engaged` -- at 0.0 it fails only
-    # when the coastline chamfer got *worse*. Every gate is computed and logged
-    # with its value on every run. Whether to keep the gates is decided from
-    # that log -- do their values predict the runs where alignment made
-    # placement worse? -- not set by hand. The designed values are in the
-    # comments.
-    gate_probe_gcp_ratio: float = 1000.0  # designed: 2.0
-    gate_probe_gcp_max_km: float = 10000.0  # designed: 150
-    gate_water_iou_min: float = 0.0  # designed: 0.7
-    gate_max_scale_drift: float = 1000.0  # designed: 0.25
-    gate_max_rotation_deg: float = 360.0  # designed: 15
-    gate_min_inlier_fraction: float = 0.0  # designed: 0.2
-    # Did the curve term actually engage? A fit that never moved passes every
-    # sanity check, because nothing drifted. This is a *convergence* check, not
-    # a correctness one -- a low chamfer residual still proves nothing, which is
-    # why residual magnitude is never a gate.
-    gate_min_chamfer_improvement: float = 0.0  # designed: 0.02
-
-    # Recovery ladder (georeferencing.md section 5.2).
-    recovery_multistart_translation_px: float = 40.0
-    recovery_multistart_rotation_deg: float = 4.0
-    recovery_multistart_scale: float = 0.06
-    recovery_gcp_weight_boost: float = 8.0
+    # Gates (georeferencing.md section 5.2): sanity checks on the aligned
+    # affine; any failure falls back to the control-point affine. Lenient on
+    # purpose -- they catch a fit that went somewhere absurd, not one that
+    # moved a little. A mirrored transform always fails.
+    #
+    # The coastline chamfer must improve by at least this much. At 0 it fails
+    # only when the fit made the coastline match *worse*. Never a threshold on
+    # the residual's size: a fit locked onto the wrong feature scores well.
+    gate_min_chamfer_improvement: float = 0.0
+    # How far below the control-point affine's water IoU the aligned one may
+    # fall. Lenient: a sea put on the wrong side of the coast loses far more,
+    # while a legitimate correction of a few pixels can cost a narrow sea a few
+    # hundredths. Measured on the corpus at x10, aligned water IoU ran
+    # 0.72-0.89, rising with the coastline weight.
+    gate_water_iou_max_drop: float = 0.10
+    # How much the fit may raise the control-point RMS, as a share of the image
+    # diagonal (5% is 50 px on a 1000 px map). Measured on the corpus at x10:
+    # +0.4 to +3.6 px. Set far above that: only a fit that dragged the map off
+    # the user's clicks reaches it.
+    gate_max_gcp_shift_ratio_of_diagonal: float = 0.05
 
     def to_dict(self) -> Dict[str, Any]:
         return {f: getattr(self, f) for f in self.__dataclass_fields__}
@@ -350,10 +339,17 @@ def ambient_georef_config() -> GeorefConfig:
     One reader, so the Celery tasks and the dev script agree on what an
     unswitched run is -- which is what decides whether a run may become a
     dev-test case's best.
+
+    The file defaults are the production configuration; the environment can
+    only override them for one deployment, and none does by default.
     """
     return DEFAULT_GEOREF_CONFIG.with_overrides(
-        snap_to_coastline=_env_flag("GEOREF_ENABLE_COASTLINE_SNAPPING", True),
-        enable_curve_alignment=_env_flag("GEOREF_ENABLE_CURVE_ALIGNMENT", True),
+        snap_to_coastline=_env_flag(
+            "GEOREF_ENABLE_COASTLINE_SNAPPING", DEFAULT_GEOREF_CONFIG.snap_to_coastline
+        ),
+        enable_curve_alignment=_env_flag(
+            "GEOREF_ENABLE_CURVE_ALIGNMENT", DEFAULT_GEOREF_CONFIG.enable_curve_alignment
+        ),
     )
 
 
@@ -372,34 +368,6 @@ RUN_SWITCHES = frozenset(
         "clip_to_land_mask",
     }
 )
-
-
-def parse_run_switches(raw: Any) -> Dict[str, bool]:
-    """Coerce a caller-supplied switch map to known boolean fields.
-
-    Unknown keys are dropped rather than raising: these arrive from a URL query
-    and a stale frontend sending a retired switch should not fail the run. Only
-    real booleans are accepted -- a string "false" is a classic way to silently
-    turn a switch *on*, so it is rejected rather than guessed at.
-
-    Raises:
-        ValueError: if a known switch is given a non-boolean value, because
-            that is a caller bug and silently ignoring it would run the map
-            under settings the caller did not ask for.
-    """
-    if not isinstance(raw, dict):
-        return {}
-
-    switches: Dict[str, bool] = {}
-    for key, value in raw.items():
-        if key not in RUN_SWITCHES:
-            continue
-        if not isinstance(value, bool):
-            raise ValueError(
-                f"{key} must be a boolean, got {type(value).__name__}: {value!r}"
-            )
-        switches[key] = value
-    return switches
 
 
 #: The config's sections, in declaration order, so the dev tool can lay the
@@ -423,9 +391,6 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "Zone extraction",
         (
             "text_aware_zone_fill",
-            "text_fill_min_context",
-            "text_fill_max_distance_px",
-            "text_fill_method",
             "text_inpaint_algo",
             "text_inpaint_ink_deltaE",
             "zone_gap_fill",
@@ -484,7 +449,6 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "align_after_piecewise",
             "curve_sample_spacing_px",
             "curve_max_samples",
-            "use_rivers_for_alignment",
             "use_lakes_for_alignment",
             "weight_gcp",
             "weight_curve",
@@ -504,6 +468,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     (
         "ICP",
         (
+            "enable_chamfer",
             "enable_icp",
             "icp_iterations",
             "icp_search_radius_px",
@@ -515,22 +480,9 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     (
         "Gates",
         (
-            "gate_probe_gcp_ratio",
-            "gate_probe_gcp_max_km",
-            "gate_water_iou_min",
-            "gate_max_scale_drift",
-            "gate_max_rotation_deg",
-            "gate_min_inlier_fraction",
             "gate_min_chamfer_improvement",
-        ),
-    ),
-    (
-        "Recovery ladder",
-        (
-            "recovery_multistart_translation_px",
-            "recovery_multistart_rotation_deg",
-            "recovery_multistart_scale",
-            "recovery_gcp_weight_boost",
+            "gate_water_iou_max_drop",
+            "gate_max_gcp_shift_ratio_of_diagonal",
         ),
     ),
 )
@@ -544,7 +496,6 @@ _NOT_OVERRIDABLE = frozenset({"version"})
 FIELD_CHOICES: Dict[str, Tuple[str, ...]] = {
     "transform_model": TRANSFORM_MODELS,
     "piecewise_regularization": PIECEWISE_REGULARIZATIONS,
-    "text_fill_method": TEXT_FILL_METHODS,
     "text_inpaint_algo": TEXT_INPAINT_ALGOS,
 }
 
@@ -621,13 +572,12 @@ def _coerce_field(key: str, value: Any, default: Any) -> Any:
 def parse_config_overrides(raw: Any) -> Dict[str, Any]:
     """Coerce a caller-supplied override map to typed config fields.
 
-    The dev tool's tuning panel: unlike :func:`parse_run_switches`, this admits
-    *every* field, because its whole purpose is to try thresholds without
-    editing this file. Overrides live only in the run's config copy; nothing
+    The dev tool's tuning panel: it admits *every* field, because its whole
+    purpose is to try thresholds without editing this file. Overrides live only in the run's config copy; nothing
     here can reach the worker's ambient settings.
 
-    Unknown keys are dropped, for the same stale-frontend reason as the
-    switches. A known key with a value of the wrong type raises, because a
+    Unknown keys are dropped rather than raising, so a stale frontend sending
+    a retired field does not fail the run. A known key with a value of the wrong type raises, because a
     guessed conversion would run the map under settings nobody asked for.
     """
     if not isinstance(raw, dict):

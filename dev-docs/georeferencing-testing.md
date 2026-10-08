@@ -206,10 +206,15 @@ docker compose run --rm georef-dev python scripts/run_georef_variants.py \
 
 | Stage | Variants |
 |---|---|
+<<<<<<< HEAD
 | 1. Base transform | `A0` affine, no snapping, clipping on (the floor) · `A1` piecewise · `A1La/b/c` piecewise, local regularization at reach 0.1, 0.175, 0.25 of the diagonal · `A2` A0 + snapping · `A3` / `A4` SIFT / cities only |
 | 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B3La/b/c` B2 + local piecewise, same reaches · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 · `B7` B3Lb then align again (align → piecewise → align) · `B8` local piecewise at 0.175 then align (piecewise → align; the GCP affine is aligned when the correction is refused) · `B7a/b` B7 with coastline weight ×3, ×10 |
+=======
+| 1. Base transform | `A0` affine, no snapping, clipping on (the floor) · `A1` piecewise · `A2` A0 + snapping · `A3` / `A4` SIFT / cities only |
+| 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 · `B7` / `B8` ICP only at ×1 / ×10 |
+>>>>>>> d64ed9e18b630019801f49502b7300c181814c05
 | 3. Production | `PROD`: file defaults with alignment on (= alignment + piecewise + snapping) |
-| Extraction | `E1` label text fill instead of inpaint · `E2` zone gap fill on |
+| Extraction | `E2` zone gap fill on (`E1`, label text fill, was removed with the method) |
 | Noise | `N1` |
 
 ---
@@ -302,12 +307,13 @@ coast locally without dragging the interior ([roadmap §3](georeferencing-roadma
 | Does alignment ship? | **Yes** | `B2` lowers check-point error on 11 of 12 cases, worse on none; it improves the protocol case of all four maps |
 | How much coastline weight? | **×30 is the candidate**, not final | Gain grows ×1 → ×3 → ×10 → ×30, then stops (×100 ≈ ×30). The gain is mostly coastal (§8.2); confirm on historical maps with city check points first |
 | Chamfer only, or chamfer + ICP? | **Keep ICP** | At ×1 they are close (`B1` has the better city ratio); at ×10, without ICP is worse on 11 of 12 cases |
+| ICP only, without the chamfer? | **Keep the chamfer** | At ×10, ICP alone is worse on 9 of 14 cases, better on 3 by under 0.3 km; the losses are on the clustered cases (§8.9) |
 | ICP at 60°? | No | `B4` ≈ `B2` |
 | Piecewise as the default? | **No** | `A1` vs `A0`: 6 better, 5 worse, median ≈ 0. On top of alignment (`B3`) worse than `B2` on 8 of 12; this is what makes `PROD` worse than `B2`. Expected change: `affine` default, piecewise chosen per map by leave-one-out |
 | Does snapping stay? | **Yes** | `A2` improves the shipped outline distance on 9 of 12 cases and IoU on 8, worse on none. Check points cannot see it (it acts after the transform) |
 | SIFT or cities? | **Both** | Without cities (`A3`) 5 cases worse, 2 better (Maghreb clustered 108 → 228 km). On Maghreb, cities alone beat both together (18 vs 32 km): its SIFT points are the weaker source. Cities alone fail with 3 cities (Test 1, 160 km) |
 | Extraction options | **Keep `inpaint`, gap fill off** | `E1` worse on raw outline distance on all 12; `E2` much worse (up to +100 km), see §8.6 |
-| Do the gates stay? | **Nothing to judge yet** | Every run settled at rung 0 and alignment made no case worse, so the gate values have nothing to predict. By the rule they do not earn their place; the sample is small |
+| Do the gates stay? | **No; replaced** | Every run settled at rung 0 and alignment made no case worse, so the gate values had nothing to predict. Replaced (2026-10-07) by a water precondition and four lenient checks ([`georeferencing.md` §5.2](georeferencing.md#52-curve-alignment)) |
 
 ### 8.4 Why piecewise loses here
 
@@ -355,6 +361,35 @@ its check points improve. Chamfer without ICP gives 0.911 on `clustered`. Not lo
 - **Too few inland check points per map** to judge the interior map by map.
 - **No check-point noise floor.** The effects are tens of km, so no conclusion depends on it.
 
+### 8.9 ICP only (2026-10-07)
+
+Is the chamfer still needed once the water filter has identified the coastline? Run
+`icp-only-2026-10-07`: every regression case (17; 14 with check points), `B7` / `B8` (ICP only
+from the control-point affine, ×1 / ×10) against `B2` / `B5b` (chamfer + ICP at the same
+weights), same code (config v15, before the checks were redesigned; every aligned run passed).
+
+**Check-point error (km)**, the cases with check points:
+
+| Case | A0 | B2 ×1 | B7 ICP ×1 | B5b ×10 | B8 ICP ×10 |
+|---|---|---|---|---|---|
+| Test 1 protocol / minimal-4 / clustered / 7sift-5-checkpoints | 18.0 / 20.0 / 31.0 / 18.8 | 17.6 / 19.5 / 15.9 / 18.5 | 17.6 / 19.5 / **25.1** / 18.5 | 17.2 / 17.5 / 15.4 / 17.8 | 17.1 / 17.7 / **20.3** / 17.8 |
+| central africa protocol / minimal / clustered | 91.5 / 106.4 / 159.5 | 84.4 / 92.5 / 81.7 | 84.7 / 92.8 / 83.7 | 62.5 / 65.3 / 68.2 | 67.2 / 71.2 / 68.6 |
+| Maghreb protocol / minimal / clustered | 32.2 / 131.9 / 108.2 | 30.5 / 83.2 / 58.0 | 30.5 / **95.5** / 62.7 | 20.5 / 35.4 / 37.3 | 23.2 / 36.7 / **53.7** |
+| east asia protocol / minimal / clustered | 113.8 / 112.0 / 144.4 | 113.0 / 112.0 / 138.0 | 113.0 / 112.0 / 138.2 | 114.0 / 112.6 / 111.2 | 113.5 / 112.2 / **120.4** |
+| south-america protocol | 129.3 | 125.4 | 125.4 | 135.3 | 130.0 |
+
+`B7` vs `B2`: better 0, worse 7, median +0.07 km. `B8` vs `B5b`: better 3 (all under 0.3 km
+except south-america, whose extraction is broken), worse 9, median +0.9 km. Raw IoU: a wash
+(`B8` vs `B5b` 5 better, 5 worse). ICP alone is about 2.5 s faster per run (median 5.6 s
+against 8.1 s, colour extraction included).
+
+**Reading.** The losses concentrate on the `clustered` cases, whose control points cover one
+part of the map: the control-point affine extrapolates badly elsewhere, so the coast there
+starts beyond ICP's 40 px search radius and only the chamfer's wide basin brings it in. In-fit
+control-point error says nothing about this (it is 3–8 px on those cases): what matters is how
+far off the coast is *away* from the points. **The chamfer stays.** ICP-only could become a
+fast path for maps with well-spread points, but no measured case asks for it.
+
 ---
 
 ## 9. Where things stand
@@ -367,9 +402,10 @@ completed, edited, or started from another case's inputs. Scored maps: Test 1, M
 central africa, east asia (south-america excluded until its extraction works).
 
 **Decided so far (modern maps):** alignment on; keep ICP; keep snapping; keep `inpaint`; gap
-fill off. **Expected, not applied yet:** `affine` as the default model with piecewise chosen
-per map by leave-one-out; coastline weight ×30. The production defaults are unchanged until
-these are confirmed ([`georeferencing.md` §8](georeferencing.md#8-configuration-and-switches)).
+fill off. **Applied (config v15):** alignment on everywhere, CI included; coastline weight ×10.
+**Expected, not applied yet:** `affine` as the default model with piecewise chosen per map by
+leave-one-out; possibly ×30 once historical maps confirm it
+([`georeferencing.md` §8](georeferencing.md#8-configuration-and-switches)).
 
 **Next, in order:**
 

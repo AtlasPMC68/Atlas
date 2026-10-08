@@ -1,240 +1,28 @@
-"""Alignment models: fit / apply / inverse / serialize.
+"""The affine model, pixel -> EPSG:3857: fit, apply, inverse, serialize.
 
-One interface per model, so that later stages can swap affine for
-affine+stretch for FFD without rewriting every call site.
-
-Three interface decisions look over-engineered for an affine fitted to seven
+Two interface decisions look over-engineered for an affine fitted to seven
 points, and each is here because retrofitting it later would touch every call
 site:
 
 * **The model has an inverse.** Chamfer alignment (georeferencing.md section 5.2) pushes
   reference samples *into* pixel space; the previous ``AffineTransformation``
   was pixel -> EPSG:3857 only.
-* **``fit()`` takes a per-point weight vector**, not a scalar. Uniform here.
-  Stage 7 weights control points by ``1/sigma^2``, and sigma differs per source.
-* **``fit()`` takes a regularizer object**, not a scalar lambda. ``None`` here.
-  Stage 7 uses a spatially varying lambda(x) field, not a constant.
+* **``fit()`` takes a per-point weight vector**, not a scalar. Uniform by
+  default; the alignment weights control points by ``1/sigma^2``, and sigma is
+  set per source.
+
+``piecewise.py`` builds on this model; ``control_points.py`` holds the records
+it is fitted from.
 """
 
-import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .config import (
-    DEFAULT_GEOREF_CONFIG,
-    GCP_SOURCES,
-    SOURCE_CITY,
-    SOURCE_SIFT,
-    GeorefConfig,
-)
-from .projection import LonLat, XY, lonlat_to_webmercator
-
-
-@dataclass(frozen=True)
-class CityRef:
-    """The gazetteer city a control point was matched to.
-
-    ``geonameid`` is the GeoNames id, stable across GeoNames-derived datasets,
-    which is what tells two spellings of one city ("Quebec", "Kebek") apart
-    from two different cities. ``name`` is the gazetteer's name, so run records
-    and overlays say which city a residual belongs to.
-    """
-
-    geonameid: int
-    name: str
-
-    def __post_init__(self) -> None:
-        if isinstance(self.geonameid, bool) or not isinstance(self.geonameid, int):
-            raise ValueError(f"city id must be an integer, got {self.geonameid!r}")
-        if self.geonameid <= 0:
-            raise ValueError(f"city id must be positive, got {self.geonameid}")
-        if not isinstance(self.name, str) or not self.name.strip():
-            raise ValueError("city name must be a non-empty string")
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"id": self.geonameid, "name": self.name}
-
-
-@dataclass(frozen=True)
-class ControlPoint:
-    """One pixel <-> geo pair, and where it came from.
-
-    A discriminated union on ``source``: a ``city`` point always carries its
-    ``CityRef`` and a ``sift`` point never has one. Enforced at construction,
-    so no consumer ever handles a city without a name or a keypoint with one.
-
-    Positional uncertainty is deliberately *not* stored here. It is a model
-    setting, looked up from ``GeorefConfig`` by source when fitting
-    (``gcp_sigma_px``), so it can change without rewriting stored clicks.
-    """
-
-    pixel: XY
-    geo: LonLat
-    source: str
-    city: Optional[CityRef] = None
-
-    def __post_init__(self) -> None:
-        if self.source not in GCP_SOURCES:
-            raise ValueError(
-                f"Unknown control point source {self.source!r};"
-                f" expected one of {list(GCP_SOURCES)}"
-            )
-        if self.source == SOURCE_CITY and not isinstance(self.city, CityRef):
-            raise ValueError("A city control point needs the city it was matched to")
-        if self.source != SOURCE_CITY and self.city is not None:
-            raise ValueError(f"A {self.source} control point cannot carry a city")
-
-        pixel = _finite_pair(self.pixel, "pixel")
-        lon, lat = _finite_pair(self.geo, "geo")
-        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
-            raise ValueError(f"geo out of range: lon={lon}, lat={lat}")
-        # Frozen, so normalise to plain float tuples through object.__setattr__.
-        object.__setattr__(self, "pixel", pixel)
-        object.__setattr__(self, "geo", (lon, lat))
-
-    @classmethod
-    def sift(cls, pixel: Sequence[float], geo: Sequence[float]) -> "ControlPoint":
-        """A coastline keypoint the user matched on their map. ``geo`` is (lon, lat)."""
-        return cls(pixel=pixel, geo=geo, source=SOURCE_SIFT)
-
-    @classmethod
-    def from_city(
-        cls,
-        pixel: Sequence[float],
-        geo: Sequence[float],
-        geonameid: int,
-        name: str,
-    ) -> "ControlPoint":
-        """A gazetteer city the user located on their map. ``geo`` is (lon, lat)."""
-        return cls(
-            pixel=pixel,
-            geo=geo,
-            source=SOURCE_CITY,
-            city=CityRef(geonameid=geonameid, name=name),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
-            "source": self.source,
-            "pixel": {"x": self.pixel[0], "y": self.pixel[1]},
-            "geo": {"lon": self.geo[0], "lat": self.geo[1]},
-        }
-        if self.city is not None:
-            payload["city"] = self.city.to_dict()
-        return payload
-
-    @classmethod
-    def from_dict(cls, entry: Any) -> "ControlPoint":
-        """Inverse of ``to_dict``. Strict: raises ValueError on anything else.
-
-        The one wire format for control points: the upload routes, the Celery
-        task arguments, dev-test ``config.json`` and ``maps.georef_inputs``.
-        """
-        if not isinstance(entry, dict):
-            raise ValueError(f"control point must be an object, got {entry!r}")
-        pixel = entry.get("pixel")
-        geo = entry.get("geo")
-        if not isinstance(pixel, dict) or not isinstance(geo, dict):
-            raise ValueError("control point needs 'pixel' {x, y} and 'geo' {lon, lat}")
-        try:
-            xy = (pixel["x"], pixel["y"])
-            lonlat = (geo["lon"], geo["lat"])
-        except KeyError as e:
-            raise ValueError(f"control point is missing {e}")
-
-        city = entry.get("city")
-        city_ref = None
-        if city is not None:
-            if not isinstance(city, dict) or "id" not in city or "name" not in city:
-                raise ValueError("control point 'city' must be {id, name}")
-            city_ref = CityRef(geonameid=city["id"], name=city["name"])
-
-        return cls(pixel=xy, geo=lonlat, source=entry.get("source"), city=city_ref)
-
-
-def _finite_pair(value: Any, label: str) -> Tuple[float, float]:
-    try:
-        a, b = value
-        pair = (_as_float(a), _as_float(b))
-    except (TypeError, ValueError):
-        raise ValueError(f"{label} must be two numbers, got {value!r}")
-    if not all(math.isfinite(v) for v in pair):
-        raise ValueError(f"{label} must be finite, got {value!r}")
-    return pair
-
-
-def _as_float(value: Any) -> float:
-    # bool is an int subclass; a True coordinate is always a caller bug.
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"not a number: {value!r}")
-    return float(value)
-
-
-def parse_control_points(entries: Any) -> List[ControlPoint]:
-    """A JSON list of control points, as ``ControlPoint.to_dict`` writes them.
-
-    Raises:
-        ValueError: naming the offending index, on anything malformed.
-    """
-    if not isinstance(entries, list):
-        raise ValueError("control points must be a JSON array")
-    points: List[ControlPoint] = []
-    for i, entry in enumerate(entries):
-        try:
-            points.append(ControlPoint.from_dict(entry))
-        except ValueError as e:
-            raise ValueError(f"control point {i}: {e}")
-    return points
-
-
-def select_control_points(
-    control_points: Sequence[ControlPoint], sources: Sequence[str]
-) -> List[ControlPoint]:
-    """The points whose source is in *sources*, in their original order."""
-    wanted = set(sources)
-    return [cp for cp in control_points if cp.source in wanted]
-
-
-def count_by_source(control_points: Sequence[ControlPoint]) -> Dict[str, int]:
-    """Point count per known source, zeros included, for records and the UI."""
-    counts = {source: 0 for source in GCP_SOURCES}
-    for cp in control_points:
-        counts[cp.source] += 1
-    return counts
-
-
-def gcp_sigma_px(source: str, config: GeorefConfig = DEFAULT_GEOREF_CONFIG) -> float:
-    """Expected positional error, in image pixels, of a point from *source*."""
-    if source == SOURCE_CITY:
-        return float(config.gcp_sigma_px_city)
-    return float(config.gcp_sigma_px_sift)
-
-
-def control_point_weights(
-    control_points: Sequence[ControlPoint],
-    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
-) -> np.ndarray:
-    """``1/sigma^2`` weights, sigma looked up per source from *config*."""
-    sigmas = np.array(
-        [max(gcp_sigma_px(cp.source, config), 1e-6) for cp in control_points],
-        dtype=float,
-    )
-    return 1.0 / (sigmas**2)
-
-
-class Regularizer(Protocol):
-    """Penalty added to the least-squares system.
-
-    ``None`` throughout the proof of concept. Stage 7 replaces the scalar lambda
-    with a spatially varying field, hence an object rather than a float.
-    """
-
-    def augment(
-        self, design: np.ndarray, target: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:  # pragma: no cover - interface only
-        ...
+from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
+from .control_points import ControlPoint, control_point_weights
+from .projection import lonlat_to_webmercator
 
 
 @dataclass
@@ -266,7 +54,6 @@ class AffineModel:
         src_xy: np.ndarray,
         dst_xy: np.ndarray,
         weights: Optional[np.ndarray] = None,
-        regularizer: Optional[Regularizer] = None,
     ) -> "AffineModel":
         """Least-squares fit of ``dst = M @ src``.
 
@@ -274,7 +61,6 @@ class AffineModel:
             src_xy: (n, 2) source coordinates, pixel space.
             dst_xy: (n, 2) target coordinates, EPSG:3857.
             weights: optional (n,) per-point weights. Uniform when omitted.
-            regularizer: optional penalty; unused in the proof of concept.
         """
         src_xy = np.asarray(src_xy, dtype=float)
         dst_xy = np.asarray(dst_xy, dtype=float)
@@ -314,9 +100,6 @@ class AffineModel:
             row_scale = np.repeat(np.sqrt(w), 2)
             design = design * row_scale[:, None]
             target = target * row_scale
-
-        if regularizer is not None:
-            design, target = regularizer.augment(design, target)
 
         params, _, _, _ = np.linalg.lstsq(design, target, rcond=None)
         a, b, tx, c, d, ty = params
@@ -446,7 +229,6 @@ class AffineModel:
 def fit_affine_from_control_points(
     control_points: Sequence[ControlPoint],
     use_sigma_weights: bool = False,
-    regularizer: Optional[Regularizer] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> AffineModel:
     """Fit pixel -> EPSG:3857 from control-point records.
@@ -468,4 +250,4 @@ def fit_affine_from_control_points(
     weights = (
         control_point_weights(control_points, config) if use_sigma_weights else None
     )
-    return AffineModel.fit(src, dst, weights=weights, regularizer=regularizer)
+    return AffineModel.fit(src, dst, weights=weights)

@@ -19,7 +19,8 @@ import numpy as np
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import FrameBounds
-from .models import AffineModel, ControlPoint, gcp_sigma_px
+from .affine import AffineModel
+from .control_points import ControlPoint, gcp_sigma_px
 from .projection import (
     lonlat_to_webmercator,
     reference_latitude,

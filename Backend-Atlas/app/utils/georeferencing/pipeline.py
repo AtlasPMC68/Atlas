@@ -24,12 +24,8 @@ from app.utils.coastline_land_mask import (
 
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .frame import FrameBounds
-from .models import (
-    AffineModel,
-    ControlPoint,
-    count_by_source,
-    fit_affine_from_control_points,
-)
+from .affine import AffineModel, fit_affine_from_control_points
+from .control_points import ControlPoint, count_by_source
 from .piecewise import (
     RESIDUAL_IN_SAMPLE,
     PiecewiseAffineModel,

@@ -24,8 +24,8 @@ Usage, from Backend-Atlas with the dependencies installed:
     python scripts/run_georef_alignment.py --reference         # + reference layer PNGs
     python scripts/run_georef_alignment.py --evidence          # + user-side evidence PNGs
     python scripts/run_georef_alignment.py --ocr               # + text mask (slow once, then cached)
-    python scripts/run_georef_alignment.py --align             # Step 4 alignment (implies --ocr)
-    python scripts/run_georef_alignment.py --debug             # + alignment diagnostics (implies --align)
+    python scripts/run_georef_alignment.py --no-align          # control points only, no Step 4 alignment
+    python scripts/run_georef_alignment.py --debug             # + alignment diagnostics
     python scripts/run_georef_alignment.py --kind probe        # only replay-only cases
     python scripts/run_georef_alignment.py --sources city      # fit from the cities alone
     python scripts/run_georef_alignment.py --refresh-derived   # re-run OCR even if cached
@@ -277,12 +277,11 @@ def run_case(
             layers = build_reference_layers(frame_bounds)
         coverage = layers.coverage()
         print(
-            "  reference: %.2f km/px  coast %.2f%%  lakes %.2f%%  rivers %.2f%%  land %.1f%%"
+            "  reference: %.2f km/px  coast %.2f%%  lakes %.2f%%  land %.1f%%"
             % (
                 layers.grid.km_per_pixel,
                 coverage["coastline"] * 100,
                 coverage["lakes"] * 100,
-                coverage["rivers"] * 100,
                 coverage["land"] * 100,
             )
         )
@@ -334,7 +333,7 @@ def run_case(
             )
         )
         if not st["hasWater"]:
-            print("             (no water picks in this case's config)")
+            print("             (no water picks: alignment will be skipped)")
         if text_regions is None:
             print(
                 "             (no text mask: pass --ocr, or ~half these edge"
@@ -388,17 +387,15 @@ def run_case(
     if alignment is not None:
         if alignment_debug_dir:
             print(f"  alignment debug -> {alignment_debug_dir}")
+        if alignment.skipped:
+            outcome = "skipped: " + alignment.skipped
+        elif alignment.failed_checks:
+            outcome = "refused: " + ", ".join(alignment.failed_checks)
+        else:
+            outcome = "checks passed"
         print(
-            "  align:     %s (rung %d) in %.1fs  probe %.1f px  %s"
-            % (
-                alignment.method,
-                alignment.rung,
-                time.perf_counter() - t0,
-                alignment.probe_agreement_px or float("nan"),
-                "gates passed"
-                if not alignment.failed_checks
-                else "FAILED: " + ", ".join(alignment.failed_checks),
-            )
+            "  align:     %s in %.1fs  %s"
+            % (alignment.method, time.perf_counter() - t0, outcome)
         )
         for gate in alignment.gates:
             print(
@@ -525,9 +522,13 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "--align",
+        "--no-align",
         action="store_true",
-        help="Run Step 4 curve alignment and georeference with the gated result",
+        help=(
+            "Skip Step 4 curve alignment and place the map with the control-point"
+            " model alone: the floor alignment is measured against. Alignment"
+            " is on by default, as in production."
+        ),
     )
     parser.add_argument(
         "--ocr",
@@ -562,8 +563,8 @@ def main() -> int:
             "Write the per-run alignment diagnostics into the case's"
             " alignment_debug/ folder: the reference coastline drawn through"
             " the transform onto the map, per-control-point residuals, ICP"
-            " correspondences, every gate with its threshold. Implies --align,"
-            " since there is nothing to diagnose without it."
+            " correspondences, every gate with its threshold. Needs alignment,"
+            " so it cannot be combined with --no-align."
         ),
     )
     parser.add_argument(
@@ -585,6 +586,10 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+
+    if args.debug and args.no_align:
+        print("--debug diagnoses the alignment, so it cannot be combined with --no-align")
+        return 1
 
     sources = tuple(s.strip() for s in args.sources.split(",") if s.strip())
     unknown = [s for s in sources if s not in GCP_SOURCES]
@@ -615,9 +620,9 @@ def main() -> int:
                 use_cache=not args.no_cache,
                 write=not args.no_write,
                 reference=args.reference,
-                evidence=args.evidence or args.ocr or args.align or args.debug,
-                ocr=args.ocr or args.align or args.debug,
-                align=args.align or args.debug,
+                evidence=args.evidence or args.ocr or args.debug,
+                ocr=args.ocr,
+                align=not args.no_align,
                 snap=not args.no_snap,
                 refresh_derived=args.refresh_derived,
                 strict=args.no_refresh,

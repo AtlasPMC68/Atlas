@@ -45,9 +45,6 @@ def zone_extraction_settings(config: GeorefConfig) -> Dict[str, Any]:
     invalidates cached zones by construction.
     """
     return {
-        "text_fill_min_context": config.text_fill_min_context,
-        "text_fill_max_distance_px": config.text_fill_max_distance_px,
-        "text_fill_method": config.text_fill_method,
         "text_inpaint_dilation_px": config.text_inpaint_dilation_px,
         "text_inpaint_radius_px": config.text_inpaint_radius_px,
         "text_inpaint_max_ink_ratio": config.text_inpaint_max_ink_ratio,
@@ -139,7 +136,7 @@ class MapPlacement:
             record=self.record if clean else None,
             model=aligned_model,
             extra_properties=(
-                {"alignment_method": alignment.method, "alignment_rung": alignment.rung}
+                {"alignment_method": alignment.method}
                 if alignment is not None
                 else None
             ),
@@ -218,7 +215,8 @@ def place_map(
                 inputs=inputs,
             )
             logger.info(
-                f"[GEOREF] alignment method={alignment.method} rung={alignment.rung}"
+                f"[GEOREF] alignment method={alignment.method}"
+                + (f" skipped={alignment.skipped}" if alignment.skipped else "")
                 + (f" failed={alignment.failed_checks}" if alignment.failed_checks else "")
             )
         if config.align_after_piecewise and inputs is not None:

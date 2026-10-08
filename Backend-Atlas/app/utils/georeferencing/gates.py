@@ -1,36 +1,67 @@
-"""The gates: named checks that decide whether an aligned model may ship.
+"""Alignment: fit the coastline, check the result, keep it or fall back.
 
-See dev-docs/georeferencing.md section 5.2. Three available signals with distinct roles:
+See dev-docs/georeferencing.md section 5.2.
 
-    chamfer residual      diagnostic only -- **never** a gate, because a fit
-                          locked onto the wrong feature has a *low* residual by
-                          construction
-    probe GCP disagreement  primary gate, always available -- the probe fit never
-                          sees the control points, so measuring it against them
-                          is genuinely independent of the curve objective
-    water-mask IoU        secondary gate, when a water mask exists -- area
-                          overlap is a different measurement from curve
-                          distance, so it catches different failures
+Alignment only ever runs on a coastline that has been identified on the map:
+``runner.align_map`` refuses to start without water picks and a water mask
+big enough to trust, because the water/land boundary is what tells the map's
+coast apart from its rivers, borders and frame lines. Matching the right
+curves is that precondition's job, not these checks'.
 
-Every check is returned whether or not it applied, and all of them are logged
-every run. Which check actually discriminates real failures is a corpus-level
-question (georeferencing-testing.md, decision rules), and it can only be answered by aggregating runs
-where the check passed too.
+Given that, one fit (``_fit``), four checks on what it produced
+(``evaluate_gates``), and either the aligned affine or the control-point
+affine. Every check is a sanity check on the result, set leniently: it is
+there to catch a fit that went somewhere absurd, not to second-guess one that
+moved a little.
+
+    transform_determinant  not mirrored or folded
+    curve_fit_engaged      the coastline fit did not get worse
+    water_agreement        the map's water and the real water overlap at least
+                           about as well as under the control-point affine
+    control_points_held    the fit did not drag the map far off the user's
+                           own clicks
+
+There is no retry. An earlier design climbed a "recovery ladder" (wider
+annealing, multi-start, a heavier control-point weight) behind eight gates and
+a probe fit; in every corpus run the first attempt passed, so the ladder never
+ran and the probe cost a second fit per import for a gate that could not fail.
+georeferencing-history.md (2026-10-07) has the reasoning.
 """
 
 import logging
 import math
-from typing import Any, List, Optional, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .align import _gcp_arrays, _params_from_model, _to_pixel, PhaseResult
+from .affine import AffineModel
+from .align import (
+    PhaseResult,
+    _gcp_arrays,
+    _params_from_model,
+    _to_pixel,
+    build_curve_samples,
+    build_user_field,
+    chamfer_residual_px,
+    fit_chamfer,
+    icp_refine,
+    sample_displacement_px,
+)
 from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
-from .models import AffineModel, ControlPoint
+from .control_points import ControlPoint
 from .projection import R_EARTH
-from .records import GateCheck
+from .records import GateCheck, RunRecord
 
 logger = logging.getLogger(__name__)
+
+METHOD_JOINT = "joint"
+METHOD_GCP_ONLY = "gcp_only"
+
+
+# --------------------------------------------------------------------------
+# Measurements
+# --------------------------------------------------------------------------
 
 
 def gcp_rms_px(model: AffineModel, control_points: Sequence[ControlPoint]) -> float:
@@ -60,16 +91,12 @@ def water_mask_iou(model: AffineModel, layers: Any, evidence: Any) -> Optional[f
     ``land`` raster counts lake interiors as land, so comparing against ocean
     alone scores a correct alignment as wrong: measured, harmless where the
     framing box has coast (IoU 0.97) and total where it does not (0.00, lakes
-    being the only water there). A box without coastline is exactly where
-    alignment is weakest and this gate matters most.
+    being the only water there).
 
-    Returns None when either side has no water, which makes the gate
-    inapplicable rather than failed.
+    Returns None when the framing box holds no reference water at all.
     """
-    user_water = np.asarray(getattr(evidence, "water", None))
-    if user_water.ndim != 2 or not user_water.any():
-        return None
-    if not getattr(layers, "has_water", False):
+    user_water = np.asarray(evidence.water)
+    if not getattr(layers, "has_water", False) or not user_water.any():
         return None
 
     height, width = user_water.shape
@@ -98,77 +125,28 @@ def water_mask_iou(model: AffineModel, layers: Any, evidence: Any) -> Optional[f
     return float(int((user_water & reference).sum()) / union)
 
 
+# --------------------------------------------------------------------------
+# The checks
+# --------------------------------------------------------------------------
+
+
 def evaluate_gates(
     candidate: AffineModel,
     baseline: AffineModel,
-    probe: Optional[AffineModel],
     control_points: Sequence[ControlPoint],
     layers: Any,
     evidence: Any,
-    phase: PhaseResult,
-    ground_meters_per_pixel: Optional[float] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     baseline_chamfer_px: Optional[float] = None,
     aligned_chamfer_px: Optional[float] = None,
+    ground_meters_per_pixel: Optional[float] = None,
 ) -> List[GateCheck]:
-    """Run every check. Returns them all, applicable or not."""
+    """Run the four checks. Returns all of them, applicable or not."""
     checks: List[GateCheck] = []
-    baseline_rms = gcp_rms_px(baseline, control_points)
 
-    # --- primary -------------------------------------------------------------
-    if probe is not None and control_points:
-        probe_rms = gcp_rms_px(probe, control_points)
-        threshold = max(baseline_rms * config.gate_probe_gcp_ratio, 1e-6)
-        probe_km = None
-        absolute_ok = True
-        if ground_meters_per_pixel:
-            probe_km = probe_rms * ground_meters_per_pixel / 1000.0
-            absolute_ok = probe_km <= config.gate_probe_gcp_max_km
-        checks.append(
-            GateCheck(
-                name="probe_gcp_disagreement",
-                value=float(probe_rms),
-                threshold=float(threshold),
-                applicable=True,
-                passed=bool(probe_rms <= threshold and absolute_ok),
-                detail=(
-                    f"curve-only fit misses held-out GCPs by {probe_rms:.1f}px"
-                    + (f" ({probe_km:.1f}km)" if probe_km is not None else "")
-                    + f"; GCP-only baseline {baseline_rms:.1f}px"
-                ),
-            )
-        )
-    else:
-        checks.append(
-            GateCheck(
-                name="probe_gcp_disagreement",
-                applicable=False,
-                passed=True,
-                detail="no probe fit or no control points",
-            )
-        )
-
-    # --- secondary -----------------------------------------------------------
-    iou = water_mask_iou(candidate, layers, evidence)
-    checks.append(
-        GateCheck(
-            name="water_mask_iou",
-            value=None if iou is None else float(iou),
-            threshold=float(config.gate_water_iou_min),
-            applicable=iou is not None,
-            passed=True if iou is None else bool(iou >= config.gate_water_iou_min),
-            detail=(
-                "no water on one side or the other"
-                if iou is None
-                else "user water vs reference ocean + lakes"
-            ),
-        )
-    )
-
-    # --- transform sanity ----------------------------------------------------
-    base_scale, base_rotation, base_det = similarity_of(baseline)
-    scale, rotation, determinant = similarity_of(candidate)
-
+    # --- not mirrored --------------------------------------------------------
+    _s, _r, base_det = similarity_of(baseline)
+    _s, _r, determinant = similarity_of(candidate)
     checks.append(
         GateCheck(
             name="transform_determinant",
@@ -180,39 +158,10 @@ def evaluate_gates(
         )
     )
 
-    drift = abs(scale / base_scale - 1.0) if base_scale else float("inf")
-    checks.append(
-        GateCheck(
-            name="scale_drift",
-            value=float(drift),
-            threshold=float(config.gate_max_scale_drift),
-            applicable=True,
-            passed=bool(drift <= config.gate_max_scale_drift),
-            detail=f"scale moved {drift * 100:.1f}% from the GCP-only affine",
-        )
-    )
-
-    turn = abs((rotation - base_rotation + 180.0) % 360.0 - 180.0)
-    checks.append(
-        GateCheck(
-            name="rotation_drift",
-            value=float(turn),
-            threshold=float(config.gate_max_rotation_deg),
-            applicable=True,
-            passed=bool(turn <= config.gate_max_rotation_deg),
-            detail=f"rotated {turn:.1f} degrees from the GCP-only affine",
-        )
-    )
-
-    # --- did the curve term engage at all? -----------------------------------
-    # Note carefully what this is and is not. Residual *magnitude* is never a
-    # gate: a fit locked onto the wrong feature scores well by construction.
-    # This checks that the residual *improved*, which is a convergence question.
-    # It exists because a fit that never moved passes every other check here --
-    # scale drift zero, rotation zero, optimizer "converged" -- and so returns
-    # the baseline wearing a success label. Without it, a map whose starting
-    # transform was too far off for the chamfer to reach looks identical to one
-    # that aligned perfectly.
+    # --- the coastline fit did not get worse ---------------------------------
+    # Residual *magnitude* is never a check: a fit locked onto the wrong
+    # feature scores well by construction. This checks the residual did not
+    # rise, which only a fit that went somewhere it should not can do.
     if (
         baseline_chamfer_px is not None
         and aligned_chamfer_px is not None
@@ -230,9 +179,7 @@ def evaluate_gates(
                 passed=bool(improvement >= config.gate_min_chamfer_improvement),
                 detail=(
                     f"trimmed chamfer {baseline_chamfer_px:.1f}px -> "
-                    f"{aligned_chamfer_px:.1f}px ({improvement:+.1%}); below the "
-                    "threshold means the curve term never engaged, not that the "
-                    "fit is wrong"
+                    f"{aligned_chamfer_px:.1f}px ({improvement:+.1%})"
                 ),
             )
         )
@@ -246,39 +193,287 @@ def evaluate_gates(
             )
         )
 
-    # --- optimizer health ----------------------------------------------------
-    checks.append(
-        GateCheck(
-            name="optimizer_converged",
-            value=1.0 if phase.converged else 0.0,
-            threshold=1.0,
-            applicable=True,
-            passed=bool(phase.converged),
-            detail=f"{phase.iterations} function evaluations",
+    # --- the water still lines up --------------------------------------------
+    # Area overlap is a different measurement from curve distance, so it
+    # catches what the chamfer cannot: a fit that matched a coast-like line
+    # but put the sea on the wrong side of it.
+    base_iou = water_mask_iou(baseline, layers, evidence)
+    aligned_iou = water_mask_iou(candidate, layers, evidence)
+    if base_iou is not None and aligned_iou is not None:
+        floor = base_iou - config.gate_water_iou_max_drop
+        checks.append(
+            GateCheck(
+                name="water_agreement",
+                value=float(aligned_iou),
+                threshold=float(floor),
+                applicable=True,
+                passed=bool(aligned_iou >= floor),
+                detail=(
+                    f"water IoU {base_iou:.3f} with the control points alone,"
+                    f" {aligned_iou:.3f} aligned"
+                ),
+            )
         )
-    )
-    checks.append(
-        GateCheck(
-            name="inlier_fraction",
-            value=float(phase.inlier_fraction),
-            threshold=float(config.gate_min_inlier_fraction),
-            applicable=True,
-            passed=bool(phase.inlier_fraction >= config.gate_min_inlier_fraction),
-            detail=(
-                "a collapse here means the fit rests on a handful of samples, or "
-                "that orientation filtering matched almost nothing -- wrong-feature "
-                "lock caught in the act"
-            ),
+    else:
+        checks.append(
+            GateCheck(
+                name="water_agreement",
+                applicable=False,
+                passed=True,
+                detail="no reference water in the framing box",
+            )
         )
-    )
+
+    # --- the user's clicks still hold ----------------------------------------
+    # The fit trades the control points against the coastline, so it always
+    # moves them a little; this only refuses a fit that moved them a lot.
+    if control_points:
+        base_rms = gcp_rms_px(baseline, control_points)
+        aligned_rms = gcp_rms_px(candidate, control_points)
+        shift = aligned_rms - base_rms
+        limit = config.gate_max_gcp_shift_ratio_of_diagonal * math.hypot(
+            evidence.width, evidence.height
+        )
+        km = (
+            f" ({shift * ground_meters_per_pixel / 1000.0:.1f} km)"
+            if ground_meters_per_pixel
+            else ""
+        )
+        checks.append(
+            GateCheck(
+                name="control_points_held",
+                value=float(shift),
+                threshold=float(limit),
+                applicable=True,
+                passed=bool(shift <= limit),
+                detail=(
+                    f"control-point RMS {base_rms:.1f}px -> {aligned_rms:.1f}px,"
+                    f" {shift:+.1f}px{km}"
+                ),
+            )
+        )
+    else:
+        checks.append(
+            GateCheck(
+                name="control_points_held",
+                applicable=False,
+                passed=True,
+                detail="no control points",
+            )
+        )
 
     return checks
 
 
 def gates_passed(checks: Sequence[GateCheck]) -> bool:
-    """Both gates must pass, plus transform sanity and optimizer health."""
     return all(check.passed for check in checks if check.applicable)
 
 
 def failed_names(checks: Sequence[GateCheck]) -> List[str]:
     return [c.name for c in checks if c.applicable and not c.passed]
+
+
+# --------------------------------------------------------------------------
+# The attempt
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class AlignmentResult:
+    """What alignment decided, and everything needed to explain it."""
+
+    model: AffineModel
+    method: str  # METHOD_JOINT | METHOD_GCP_ONLY
+    gates: List[GateCheck] = field(default_factory=list)
+    failed_checks: List[str] = field(default_factory=list)
+    #: Why alignment never ran (a precondition), or None when it did.
+    skipped: Optional[str] = None
+    phase_models: Dict[str, Any] = field(default_factory=dict)
+    stats: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def used_curve_evidence(self) -> bool:
+        return self.method != METHOD_GCP_ONLY
+
+
+def skipped_alignment(
+    baseline: AffineModel, reason: str, record: Optional[RunRecord] = None
+) -> AlignmentResult:
+    """The control-point affine, with the precondition that stopped alignment."""
+    if record is not None:
+        record.note(f"alignment skipped: {reason}")
+    return AlignmentResult(model=baseline, method=METHOD_GCP_ONLY, skipped=reason)
+
+
+def fit_stages(
+    start: AffineModel,
+    control_points: Sequence[ControlPoint],
+    coast_samples: Any,
+    fine_samples: Any,
+    user_field: Any,
+    config: GeorefConfig,
+    gcp_targets: Optional[np.ndarray] = None,
+) -> Tuple[AffineModel, PhaseResult, AffineModel]:
+    """Coastline chamfer, then coastline + lakes, then ICP.
+
+    Returns (candidate, the phase that produced it, the coarse stage's model).
+    ``gcp_targets``: see ``align._gcp_term`` (``post_align`` fits in pixel space).
+    """
+    if config.enable_chamfer:
+        coarse = fit_chamfer(
+            start,
+            control_points,
+            coast_samples,
+            user_field,
+            config,
+            use_gcps=True,
+            blur_schedule=config.coarse_blur_px,
+            cutoff_schedule=config.coarse_cutoff_px,
+            gcp_targets=gcp_targets,
+        )
+        fine = fit_chamfer(
+            coarse.model,
+            control_points,
+            fine_samples,
+            user_field,
+            config,
+            use_gcps=True,
+            blur_schedule=config.anneal_blur_px,
+            cutoff_schedule=config.anneal_cutoff_px,
+            gcp_targets=gcp_targets,
+        )
+        coarse_model, candidate, phase = coarse.model, fine.model, fine
+    else:
+        # ICP alone, straight from the control-point affine: no basin of
+        # attraction, so it only works when the clicks already put the coast
+        # within ICP's search radius.
+        coarse_model, candidate = start, start
+        phase = PhaseResult(
+            model=start, converged=True, inlier_fraction=0.0, cost=float("nan"), iterations=0
+        )
+
+    if config.enable_icp:
+        refined = icp_refine(
+            candidate,
+            control_points,
+            fine_samples,
+            user_field,
+            config,
+            use_gcps=True,
+            gcp_targets=gcp_targets,
+        )
+        if refined.detail.get("correspondences", 0) >= config.icp_min_correspondences:
+            candidate, phase = refined.model, refined
+
+    return candidate, phase, coarse_model
+
+
+def align(
+    baseline: AffineModel,
+    control_points: Sequence[ControlPoint],
+    layers: Any,
+    evidence: Any,
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
+    record: Optional[RunRecord] = None,
+    ground_meters_per_pixel: Optional[float] = None,
+) -> AlignmentResult:
+    """Fit the coastline from the control-point affine, check it, decide.
+
+    Args:
+        baseline: the control-point affine: the start, and the fallback.
+        control_points: the user's GCPs, with their source.
+        layers: `ReferenceLayers` for the framing box.
+        evidence: `UserEvidence` for the map image, its coastline identified
+            by the water picks (``runner.align_map`` checks that first).
+        record: optional run record, populated in place.
+
+    Returns:
+        An `AlignmentResult` whose `model` is safe to use: the aligned affine
+        when every check passed, the baseline otherwise.
+    """
+    record = record or RunRecord()
+
+    # Coastline on its own for the coarse stage, then lakes too when on.
+    coast_samples = build_curve_samples(
+        layers, config, use_coastline=True, use_lakes=False
+    )
+    fine_samples = build_curve_samples(layers, config)
+    user_field = build_user_field(evidence, config)
+
+    phase_models: Dict[str, Any] = {"gcp_affine": baseline.serialize()}
+    stats: Dict[str, Any] = {
+        "coastlineSamples": len(coast_samples),
+        "fineSamples": len(fine_samples),
+        "usesLakes": config.use_lakes_for_alignment,
+        "usesChamfer": config.enable_chamfer,
+        "usesIcp": config.enable_icp,
+        "baselineGcpRmsPx": gcp_rms_px(baseline, control_points),
+    }
+
+    if len(coast_samples) == 0 or not user_field.edge.any():
+        result = skipped_alignment(baseline, "no_coast_evidence", record)
+        result.phase_models, result.stats = phase_models, stats
+        return result
+
+    baseline_chamfer = chamfer_residual_px(baseline, coast_samples, user_field)
+    stats["baselineChamferPx"] = baseline_chamfer
+
+    with record.phase("align_fit"):
+        candidate, phase, coarse_model = fit_stages(
+            baseline, control_points, coast_samples, fine_samples, user_field, config
+        )
+    phase_models["coarse"] = coarse_model.serialize()
+    phase_models["aligned"] = candidate.serialize()
+
+    residual = chamfer_residual_px(candidate, coast_samples, user_field)
+    checks = evaluate_gates(
+        candidate,
+        baseline,
+        control_points,
+        layers,
+        evidence,
+        config,
+        baseline_chamfer_px=baseline_chamfer,
+        aligned_chamfer_px=residual,
+        ground_meters_per_pixel=ground_meters_per_pixel,
+    )
+    for check in checks:
+        record.add_gate(check)
+
+    base_scale, base_rotation, _ = similarity_of(baseline)
+    scale, rotation, _ = similarity_of(candidate)
+    # Logged, not checked: how the fit got there and how far it moved.
+    stats.update(
+        {
+            "alignedChamferPx": residual,
+            "coastDisplacementPx": sample_displacement_px(baseline, candidate, coast_samples),
+            "alignedGcpRmsPx": gcp_rms_px(candidate, control_points),
+            "scaleDrift": abs(scale / base_scale - 1.0) if base_scale else None,
+            "rotationDriftDeg": abs((rotation - base_rotation + 180.0) % 360.0 - 180.0),
+            "optimizerConverged": bool(phase.converged),
+            "inlierFraction": phase.inlier_fraction,
+            "correspondences": phase.detail.get("correspondences"),
+        }
+    )
+
+    if gates_passed(checks):
+        record.set_model("aligned_affine", candidate.serialize())
+        return AlignmentResult(
+            model=candidate,
+            method=METHOD_JOINT,
+            gates=checks,
+            phase_models=phase_models,
+            stats=stats,
+        )
+
+    failed = failed_names(checks)
+    logger.info(f"Alignment refused ({', '.join(failed)}); using the control-point affine")
+    record.note("alignment refused, control-point affine used: " + ", ".join(failed))
+    return AlignmentResult(
+        model=baseline,
+        method=METHOD_GCP_ONLY,
+        gates=checks,
+        failed_checks=failed,
+        phase_models=phase_models,
+        stats=stats,
+    )

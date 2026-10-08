@@ -1,7 +1,7 @@
 {
   "testId": "c4e81e4d-c9e8-4222-b5b7-41a8689e144a",
   "testCaseId": "clustered",
-  "evaluatedAt": "2026-10-05T05:27:39.220087Z",
+  "evaluatedAt": "2026-10-08T16:46:45.505441Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,27 +16,27 @@
           "area": 106.74442629804906
         },
         "bestMatch": {
-          "iou": 0.8783890861136175,
-          "intersectionArea": 96.56808549307023,
-          "unionArea": 109.93771099812979,
-          "precision": 0.9679907694341178,
-          "recall": 0.904666302889064,
-          "falseNegativeArea": 10.176340804978777,
-          "falsePositiveArea": 3.1932847000808486,
+          "iou": 0.8797909481269262,
+          "intersectionArea": 98.28217935552723,
+          "unionArea": 111.71083262992177,
+          "precision": 0.951898553391237,
+          "recall": 0.9207242266786487,
+          "falseNegativeArea": 8.462246942521752,
+          "falsePositiveArea": 4.966406331872699,
           "boundary": {
-            "meanKm": 39.58,
-            "p90Km": 79.486,
-            "maxKm": 594.444,
-            "expectedToExtractedMeanKm": 30.504,
-            "extractedToExpectedMeanKm": 48.657,
+            "meanKm": 38.699,
+            "p90Km": 51.269,
+            "maxKm": 556.042,
+            "expectedToExtractedMeanKm": 30.823,
+            "extractedToExpectedMeanKm": 46.575,
             "expectedHoles": 0,
-            "extractedHoles": 1
+            "extractedHoles": 0
           },
           "extracted": {
             "index": 0,
             "id": null,
             "name": "chad",
-            "area": 99.76137019315114
+            "area": 103.2485856874
           },
           "matchedBy": "name"
         }
@@ -49,19 +49,19 @@
           "area": 51.355146989798584
         },
         "bestMatch": {
-          "iou": 0.8938507018623119,
-          "intersectionArea": 47.13766445130304,
-          "unionArea": 52.73550085388207,
-          "precision": 0.971549665216936,
-          "recall": 0.917876147071815,
-          "falseNegativeArea": 4.21748253849545,
-          "falsePositiveArea": 1.3803538640835722,
+          "iou": 0.8581278629070144,
+          "intersectionArea": 46.72181794214605,
+          "unionArea": 54.446219452506895,
+          "precision": 0.9379463340194542,
+          "recall": 0.9097786819970953,
+          "falseNegativeArea": 4.633329047652448,
+          "falsePositiveArea": 3.091072462708372,
           "boundary": {
-            "meanKm": 17.509,
-            "p90Km": 33.641,
-            "maxKm": 123.89,
-            "expectedToExtractedMeanKm": 20.603,
-            "extractedToExpectedMeanKm": 14.414,
+            "meanKm": 24.616,
+            "p90Km": 56.698,
+            "maxKm": 172.957,
+            "expectedToExtractedMeanKm": 28.255,
+            "extractedToExpectedMeanKm": 20.976,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -69,7 +69,7 @@
             "index": 3,
             "id": null,
             "name": "south sudan",
-            "area": 48.51801831538662
+            "area": 49.81289040485443
           },
           "matchedBy": "name"
         }
@@ -82,19 +82,19 @@
           "area": 50.54828971268156
         },
         "bestMatch": {
-          "iou": 0.8526118268224526,
-          "intersectionArea": 43.540254020819866,
-          "unionArea": 51.066913044224826,
-          "precision": 0.9882288573220871,
-          "recall": 0.8613595883917015,
-          "falseNegativeArea": 7.008035691861591,
-          "falsePositiveArea": 0.5186233315433122,
+          "iou": 0.8256480934187449,
+          "intersectionArea": 42.97553267736221,
+          "unionArea": 52.050665434730504,
+          "precision": 0.966221979042772,
+          "recall": 0.8501876704758322,
+          "falseNegativeArea": 7.57275703531932,
+          "falsePositiveArea": 1.5023757220490128,
           "boundary": {
-            "meanKm": 23.097,
-            "p90Km": 44.838,
-            "maxKm": 118.141,
-            "expectedToExtractedMeanKm": 25.625,
-            "extractedToExpectedMeanKm": 20.569,
+            "meanKm": 28.674,
+            "p90Km": 58.132,
+            "maxKm": 155.087,
+            "expectedToExtractedMeanKm": 32.706,
+            "extractedToExpectedMeanKm": 24.642,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -102,7 +102,7 @@
             "index": 2,
             "id": null,
             "name": "central african republic",
-            "area": 44.0588773523632
+            "area": 44.47790839941119
           },
           "matchedBy": "name"
         }
@@ -115,19 +115,19 @@
           "area": 37.862935708006184
         },
         "bestMatch": {
-          "iou": 0.8305694432406939,
-          "intersectionArea": 33.16799703866793,
-          "unionArea": 39.93404441807287,
-          "precision": 0.9412269787765253,
-          "recall": 0.8760017261856031,
-          "falseNegativeArea": 4.694938669338301,
-          "falsePositiveArea": 2.0711087100666585,
+          "iou": 0.827534060994228,
+          "intersectionArea": 33.50588814293482,
+          "unionArea": 40.488832692493276,
+          "precision": 0.9273244602992478,
+          "recall": 0.8849257860332775,
+          "falseNegativeArea": 4.357047565071426,
+          "falsePositiveArea": 2.6258969844870315,
           "boundary": {
-            "meanKm": 19.542,
-            "p90Km": 43.974,
-            "maxKm": 92.403,
-            "expectedToExtractedMeanKm": 22.073,
-            "extractedToExpectedMeanKm": 17.011,
+            "meanKm": 20.324,
+            "p90Km": 41.736,
+            "maxKm": 62.495,
+            "expectedToExtractedMeanKm": 22.098,
+            "extractedToExpectedMeanKm": 18.55,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -135,7 +135,7 @@
             "index": 1,
             "id": null,
             "name": "cameroon",
-            "area": 35.23910574873457
+            "area": 36.131785127421814
           },
           "matchedBy": "name"
         }
@@ -148,27 +148,27 @@
           "area": 187.8927709340047
         },
         "bestMatch": {
-          "iou": 0.9163798652664301,
-          "intersectionArea": 174.0332548151195,
-          "unionArea": 189.91387896166916,
-          "precision": 0.9885199776078867,
-          "recall": 0.9262370976275974,
-          "falseNegativeArea": 13.859516118885281,
-          "falsePositiveArea": 2.021108027664344,
+          "iou": 0.9272145227677164,
+          "intersectionArea": 175.6649363114606,
+          "unionArea": 189.45447034964934,
+          "precision": 0.9911881224329644,
+          "recall": 0.9349212076560466,
+          "falseNegativeArea": 12.227834622543861,
+          "falsePositiveArea": 1.5616994156445447,
           "boundary": {
-            "meanKm": 21.99,
-            "p90Km": 41.956,
-            "maxKm": 125.302,
-            "expectedToExtractedMeanKm": 24.643,
-            "extractedToExpectedMeanKm": 19.337,
+            "meanKm": 19.752,
+            "p90Km": 43.273,
+            "maxKm": 123.157,
+            "expectedToExtractedMeanKm": 22.174,
+            "extractedToExpectedMeanKm": 17.33,
             "expectedHoles": 1,
-            "extractedHoles": 0
+            "extractedHoles": 1
           },
           "extracted": {
             "index": 4,
             "id": null,
             "name": "democratic republic of the congo",
-            "area": 176.05436284278392
+            "area": 177.22663572710547
           },
           "matchedBy": "name"
         }
@@ -181,19 +181,19 @@
           "area": 28.035672949543375
         },
         "bestMatch": {
-          "iou": 0.7945744084909983,
-          "intersectionArea": 25.40423661233559,
-          "unionArea": 31.972130414546815,
-          "precision": 0.8658362527271053,
-          "recall": 0.9061397120039295,
-          "falseNegativeArea": 2.631436337207788,
-          "falsePositiveArea": 3.936457465003449,
+          "iou": 0.8449981928207335,
+          "intersectionArea": 26.455632881873118,
+          "unionArea": 31.308508239006002,
+          "precision": 0.8899090504562799,
+          "recall": 0.9436417998414413,
+          "falseNegativeArea": 1.5800400676702528,
+          "falsePositiveArea": 3.272835289462616,
           "boundary": {
-            "meanKm": 22.215,
-            "p90Km": 46.104,
+            "meanKm": 16.747,
+            "p90Km": 42.496,
             "maxKm": 114.686,
-            "expectedToExtractedMeanKm": 24.304,
-            "extractedToExpectedMeanKm": 20.126,
+            "expectedToExtractedMeanKm": 18.868,
+            "extractedToExpectedMeanKm": 14.627,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -201,7 +201,7 @@
             "index": 6,
             "id": null,
             "name": "congo",
-            "area": 29.340694077339023
+            "area": 29.72846817133573
           },
           "matchedBy": "name"
         }
@@ -214,19 +214,19 @@
           "area": 21.021072412657734
         },
         "bestMatch": {
-          "iou": 0.8135685786995174,
-          "intersectionArea": 17.99438288506126,
-          "unionArea": 22.11784397306141,
-          "precision": 0.9425507994533978,
-          "recall": 0.856016407337336,
-          "falseNegativeArea": 3.0266895275964547,
-          "falsePositiveArea": 1.0967715604036699,
+          "iou": 0.7891386303808214,
+          "intersectionArea": 19.016933890782376,
+          "unionArea": 24.098343635268762,
+          "precision": 0.8607204374713804,
+          "recall": 0.9046605005428469,
+          "falseNegativeArea": 2.004138521875352,
+          "falsePositiveArea": 3.077271222611037,
           "boundary": {
-            "meanKm": 19.626,
-            "p90Km": 42.694,
-            "maxKm": 103.826,
-            "expectedToExtractedMeanKm": 19.386,
-            "extractedToExpectedMeanKm": 19.866,
+            "meanKm": 21.004,
+            "p90Km": 49.275,
+            "maxKm": 171.785,
+            "expectedToExtractedMeanKm": 21.195,
+            "extractedToExpectedMeanKm": 20.813,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -234,7 +234,7 @@
             "index": 7,
             "id": null,
             "name": "gabon",
-            "area": 19.09115444546493
+            "area": 22.0942051133934
           },
           "matchedBy": "name"
         }
@@ -247,19 +247,19 @@
           "area": 103.50304709197134
         },
         "bestMatch": {
-          "iou": 0.9260752273907568,
-          "intersectionArea": 97.66595261984094,
-          "unionArea": 105.46222351181721,
-          "precision": 0.9803345156113639,
-          "recall": 0.9436046122686258,
-          "falseNegativeArea": 5.8370944721304845,
-          "falsePositiveArea": 1.9591764198458357,
+          "iou": 0.9564068880696809,
+          "intersectionArea": 100.77309670540137,
+          "unionArea": 105.36634351179971,
+          "precision": 0.9818456556871135,
+          "recall": 0.9736244442722138,
+          "falseNegativeArea": 2.729950386570005,
+          "falsePositiveArea": 1.8632964198282114,
           "boundary": {
-            "meanKm": 17.02,
-            "p90Km": 43.338,
-            "maxKm": 122.85,
-            "expectedToExtractedMeanKm": 19.506,
-            "extractedToExpectedMeanKm": 14.533,
+            "meanKm": 10.281,
+            "p90Km": 21.394,
+            "maxKm": 122.66,
+            "expectedToExtractedMeanKm": 12.771,
+            "extractedToExpectedMeanKm": 7.791,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -267,25 +267,25 @@
             "index": 5,
             "id": null,
             "name": "angola",
-            "area": 99.62512903968675
+            "area": 102.63639312522957
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.8632523922358473,
-      "meanPrecision": 0.9557797270186774,
-      "meanRecall": 0.898987699221959,
-      "totalFalseNegativeArea": 51.45153416049413,
-      "totalFalsePositiveArea": 16.17688407869169,
-      "meanBoundaryKm": 22.572,
-      "meanBoundaryP90Km": 47.004,
-      "maxBoundaryKm": 594.444,
+      "meanIou": 0.8636073999357332,
+      "meanPrecision": 0.9383818241000561,
+      "meanRecall": 0.9153080396871753,
+      "totalFalseNegativeArea": 43.567344189224414,
+      "totalFalsePositiveArea": 21.960853848663525,
+      "meanBoundaryKm": 22.512,
+      "meanBoundaryP90Km": 45.534,
+      "maxBoundaryKm": 556.042,
       "zonesWithBoundary": 8,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.8632523922358473,
+    "scoreUsed": 0.8636073999357332,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
@@ -308,19 +308,19 @@
             "area": 106.81751314617439
           },
           "bestMatch": {
-            "iou": 0.8781908151357312,
-            "intersectionArea": 96.64117234337454,
-            "unionArea": 110.04575620440518,
-            "precision": 0.9676753584142957,
-            "recall": 0.9047315322827817,
-            "falseNegativeArea": 10.176340802800016,
-            "falsePositiveArea": 3.228243058230756,
+            "iou": 0.8792157209591162,
+            "intersectionArea": 98.28217935552719,
+            "unionArea": 111.78391947804735,
+            "precision": 0.9518985533912367,
+            "recall": 0.9200942472891405,
+            "falseNegativeArea": 8.535333790647243,
+            "falsePositiveArea": 4.966406331872738,
             "boundary": {
-              "meanKm": 39.398,
-              "p90Km": 79.641,
-              "maxKm": 594.444,
-              "expectedToExtractedMeanKm": 30.142,
-              "extractedToExpectedMeanKm": 48.654,
+              "meanKm": 38.973,
+              "p90Km": 51.85,
+              "maxKm": 556.042,
+              "expectedToExtractedMeanKm": 30.865,
+              "extractedToExpectedMeanKm": 47.08,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -328,7 +328,7 @@
               "index": 0,
               "id": null,
               "name": "chad",
-              "area": 99.86941540160524
+              "area": 103.24858568739998
             },
             "matchedBy": "name"
           }
@@ -341,19 +341,19 @@
             "area": 51.35514698979853
           },
           "bestMatch": {
-            "iou": 0.8938507018623124,
-            "intersectionArea": 47.13766445130304,
-            "unionArea": 52.735500853882044,
-            "precision": 0.971549665216936,
-            "recall": 0.917876147071816,
-            "falseNegativeArea": 4.217482538495456,
-            "falsePositiveArea": 1.380353864083569,
+            "iou": 0.858127862907015,
+            "intersectionArea": 46.721817942146046,
+            "unionArea": 54.44621945250684,
+            "precision": 0.9379463340194542,
+            "recall": 0.9097786819970962,
+            "falseNegativeArea": 4.633329047652456,
+            "falsePositiveArea": 3.0910724627083725,
             "boundary": {
-              "meanKm": 17.509,
-              "p90Km": 33.641,
-              "maxKm": 123.89,
-              "expectedToExtractedMeanKm": 20.604,
-              "extractedToExpectedMeanKm": 14.414,
+              "meanKm": 24.616,
+              "p90Km": 56.698,
+              "maxKm": 172.957,
+              "expectedToExtractedMeanKm": 28.257,
+              "extractedToExpectedMeanKm": 20.976,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -361,7 +361,7 @@
               "index": 3,
               "id": null,
               "name": "south sudan",
-              "area": 48.51801831538662
+              "area": 49.81289040485442
             },
             "matchedBy": "name"
           }
@@ -374,19 +374,19 @@
             "area": 50.54828971268153
           },
           "bestMatch": {
-            "iou": 0.8526118268224532,
-            "intersectionArea": 43.54025402081987,
-            "unionArea": 51.066913044224805,
-            "precision": 0.9882288573220874,
-            "recall": 0.8613595883917021,
-            "falseNegativeArea": 7.008035691861618,
-            "falsePositiveArea": 0.5186233315433152,
+            "iou": 0.8256480934187446,
+            "intersectionArea": 42.9755326773622,
+            "unionArea": 52.05066543473052,
+            "precision": 0.9662219790427716,
+            "recall": 0.8501876704758325,
+            "falseNegativeArea": 7.57275703531932,
+            "falsePositiveArea": 1.5023757220490155,
             "boundary": {
-              "meanKm": 23.098,
-              "p90Km": 44.838,
-              "maxKm": 118.141,
-              "expectedToExtractedMeanKm": 25.625,
-              "extractedToExpectedMeanKm": 20.57,
+              "meanKm": 28.674,
+              "p90Km": 58.132,
+              "maxKm": 155.087,
+              "expectedToExtractedMeanKm": 32.706,
+              "extractedToExpectedMeanKm": 24.641,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -394,7 +394,7 @@
               "index": 2,
               "id": null,
               "name": "central african republic",
-              "area": 44.05887735236319
+              "area": 44.4779083994112
             },
             "matchedBy": "name"
           }
@@ -407,19 +407,19 @@
             "area": 37.932399001349005
           },
           "bestMatch": {
-            "iou": 0.8265882731239924,
-            "intersectionArea": 32.967486355285274,
-            "unionArea": 39.88380603403502,
-            "precision": 0.9441160116099724,
-            "recall": 0.8691115569598653,
-            "falseNegativeArea": 4.964912646063742,
-            "falsePositiveArea": 1.9514070326860253,
+            "iou": 0.8208877537131297,
+            "intersectionArea": 33.4003224009202,
+            "unionArea": 40.68805052802919,
+            "precision": 0.9237843369342459,
+            "recall": 0.8805222785865027,
+            "falseNegativeArea": 4.532076600428793,
+            "falsePositiveArea": 2.755651526680176,
             "boundary": {
-              "meanKm": 20.271,
-              "p90Km": 42.395,
-              "maxKm": 92.403,
-              "expectedToExtractedMeanKm": 23.063,
-              "extractedToExpectedMeanKm": 17.479,
+              "meanKm": 22.347,
+              "p90Km": 42.659,
+              "maxKm": 65.989,
+              "expectedToExtractedMeanKm": 25.287,
+              "extractedToExpectedMeanKm": 19.407,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -427,7 +427,7 @@
               "index": 1,
               "id": null,
               "name": "cameroon",
-              "area": 34.91889338797127
+              "area": 36.155973927600385
             },
             "matchedBy": "name"
           }
@@ -440,19 +440,19 @@
             "area": 189.68345962699863
           },
           "bestMatch": {
-            "iou": 0.9190336550984078,
-            "intersectionArea": 176.52560632555657,
-            "unionArea": 192.07741234096008,
-            "precision": 0.9866199496197465,
-            "recall": 0.9306325742512489,
-            "falseNegativeArea": 13.157853301442037,
-            "falsePositiveArea": 2.3939527139616485,
+            "iou": 0.9257228525636226,
+            "intersectionArea": 177.01237803016787,
+            "unionArea": 191.2153054663866,
+            "precision": 0.9914203562221793,
+            "recall": 0.9331988059383369,
+            "falseNegativeArea": 12.671081596830488,
+            "falsePositiveArea": 1.5318458393880385,
             "boundary": {
-              "meanKm": 22.414,
-              "p90Km": 40.643,
-              "maxKm": 74.544,
-              "expectedToExtractedMeanKm": 24.156,
-              "extractedToExpectedMeanKm": 20.672,
+              "meanKm": 20.569,
+              "p90Km": 48.642,
+              "maxKm": 79.749,
+              "expectedToExtractedMeanKm": 21.388,
+              "extractedToExpectedMeanKm": 19.749,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -460,7 +460,7 @@
               "index": 4,
               "id": null,
               "name": "democratic republic of the congo",
-              "area": 178.91955903951805
+              "area": 178.54422386955613
             },
             "matchedBy": "name"
           }
@@ -473,19 +473,19 @@
             "area": 28.044281060011027
           },
           "bestMatch": {
-            "iou": 0.8385863132926329,
-            "intersectionArea": 24.98648280707711,
-            "unionArea": 29.795958282421708,
-            "precision": 0.9344877425941471,
-            "recall": 0.8909653541700485,
-            "falseNegativeArea": 3.057798252933882,
-            "falsePositiveArea": 1.751677222410688,
+            "iou": 0.8952828783304478,
+            "intersectionArea": 26.101320468419374,
+            "unionArea": 29.154271906879256,
+            "precision": 0.9592084764307333,
+            "recall": 0.930718117271968,
+            "falseNegativeArea": 1.9429605915916468,
+            "falsePositiveArea": 1.1099908468682291,
             "boundary": {
-              "meanKm": 15.745,
-              "p90Km": 26.913,
-              "maxKm": 51.79,
-              "expectedToExtractedMeanKm": 17.036,
-              "extractedToExpectedMeanKm": 14.454,
+              "meanKm": 10.248,
+              "p90Km": 20.8,
+              "maxKm": 49.453,
+              "expectedToExtractedMeanKm": 11.731,
+              "extractedToExpectedMeanKm": 8.764,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -493,7 +493,7 @@
               "index": 6,
               "id": null,
               "name": "congo",
-              "area": 26.7381600294878
+              "area": 27.21131131528758
             },
             "matchedBy": "name"
           }
@@ -506,19 +506,19 @@
             "area": 21.127784198678004
           },
           "bestMatch": {
-            "iou": 0.8129427170624113,
-            "intersectionArea": 17.708079845070145,
-            "unionArea": 21.782690801461058,
-            "precision": 0.9643355069371279,
-            "recall": 0.8381418362924289,
-            "falseNegativeArea": 3.4197043536078446,
-            "falsePositiveArea": 0.6549066027830643,
+            "iou": 0.8600195883441009,
+            "intersectionArea": 18.674580447288115,
+            "unionArea": 21.71413384111928,
+            "precision": 0.9695575634349056,
+            "recall": 0.8838873150009081,
+            "falseNegativeArea": 2.453203751389896,
+            "falsePositiveArea": 0.5863496424413093,
             "boundary": {
-              "meanKm": 19.256,
-              "p90Km": 42.323,
-              "maxKm": 75.917,
-              "expectedToExtractedMeanKm": 22.401,
-              "extractedToExpectedMeanKm": 16.112,
+              "meanKm": 15.354,
+              "p90Km": 35.575,
+              "maxKm": 58.149,
+              "expectedToExtractedMeanKm": 19.523,
+              "extractedToExpectedMeanKm": 11.185,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -526,7 +526,7 @@
               "index": 7,
               "id": null,
               "name": "gabon",
-              "area": 18.36298644785322
+              "area": 19.26093008972942
             },
             "matchedBy": "name"
           }
@@ -539,19 +539,19 @@
             "area": 103.58850775027341
           },
           "bestMatch": {
-            "iou": 0.895716446402533,
-            "intersectionArea": 94.54482766098208,
-            "unionArea": 105.5521845565107,
-            "precision": 0.9796528107333364,
-            "recall": 0.9126961061057716,
-            "falseNegativeArea": 9.043680089291298,
-            "falsePositiveArea": 1.9636768062371166,
+            "iou": 0.933137658652956,
+            "intersectionArea": 98.36023718809545,
+            "unionArea": 105.40806736927193,
+            "precision": 0.9818370601958581,
+            "recall": 0.9495284691736072,
+            "falseNegativeArea": 5.228270562178052,
+            "falsePositiveArea": 1.8195596189984062,
             "boundary": {
-              "meanKm": 22.962,
-              "p90Km": 43.1,
-              "maxKm": 59.783,
-              "expectedToExtractedMeanKm": 24.641,
-              "extractedToExpectedMeanKm": 21.282,
+              "meanKm": 14.74,
+              "p90Km": 28.039,
+              "maxKm": 55.843,
+              "expectedToExtractedMeanKm": 16.255,
+              "extractedToExpectedMeanKm": 13.224,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -559,25 +559,25 @@
               "index": 5,
               "id": null,
               "name": "angola",
-              "area": 96.50850446721924
+              "area": 100.17979680709387
             },
             "matchedBy": "name"
           }
         }
       ],
       "mean": {
-        "meanIou": 0.8646900936000592,
-        "meanPrecision": 0.9670832378059562,
-        "meanRecall": 0.8906893369407078,
-        "totalFalseNegativeArea": 55.0458076764959,
-        "totalFalsePositiveArea": 13.842840631936184,
-        "meanBoundaryKm": 22.582,
-        "meanBoundaryP90Km": 44.187,
-        "maxBoundaryKm": 594.444,
+        "meanIou": 0.8747553011111416,
+        "meanPrecision": 0.9602343324589231,
+        "meanRecall": 0.907239448216674,
+        "totalFalseNegativeArea": 47.5690129760379,
+        "totalFalsePositiveArea": 17.363251991006287,
+        "meanBoundaryKm": 21.94,
+        "meanBoundaryP90Km": 42.799,
+        "maxBoundaryKm": 556.042,
         "zonesWithBoundary": 8,
         "zonesWithoutBoundary": 0
       },
-      "scoreUsed": 0.8646900936000592,
+      "scoreUsed": 0.8747553011111416,
       "scoreUsedKey": "mean.meanIou"
     },
     "nameMatching": {

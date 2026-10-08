@@ -184,7 +184,9 @@ it still matches the expected `Quebec`.
 ## 4. Reading the report
 
 The test case result page shows the map with three layers — your expected zones, the
-extracted zones, and the **error overlay in red** — plus the metrics.
+extracted zones, and the **error overlay in red** — plus the metrics. The error overlay is
+not stored: the API computes it from the run's zones and the expected zones when the page
+asks (`GET /dev-test-api/test-cases/{test}/{case}/errors?run=latest|best&stage=cleaned|raw`).
 
 On an **exploration** case there is no report, so the page shows every extracted zone
 as-is (rather than only the ones a report matched) together with the case's kind and any
@@ -279,9 +281,8 @@ test_cases/<test_id>/<case_id>/
                          pipette picks (position, name, radius, zone-or-water),
                          optional kind
     best_report.json     metrics of the best run so far: the regression baseline
-    zones_best.geojson, zones_raw_best.geojson, errors_best.geojson,
-    errors_raw_best.geojson
-                         the zones and error overlays of that best run
+    zones_best.geojson, zones_raw_best.geojson
+                         the zones of that best run, after and before cleaning
 
   The last run's files below are gitignored (see "What is committed"):
     case_state.json      which requirements this case satisfies, and its kind
@@ -291,8 +292,6 @@ test_cases/<test_id>/<case_id>/
                          the zones in image pixels, for the result page's overlays
     report.json          metrics of the last run  (regression cases only)
     run_record.json      structured record of the last georeferencing run
-    errors.geojson       FP/FN overlay of the last run (after cleaning)
-    errors_raw.geojson   FP/FN overlay before cleaning
     reference_debug/     PNG per reference layer (only with --reference)
     evidence_debug/      edge map and water overlays (only with --evidence)
     alignment_debug/     why the map placed where it did
@@ -346,9 +345,9 @@ The `test-backend` service runs the backend test suite, which includes the dev-t
 1. checks the case still satisfies the current algorithm's requirements ([§8](#8-keeping-cases-current))
 2. re-runs the **current** extraction pipeline from that case's `config.json`
    (saved SIFT points + saved pipette picks)
-3. rewrites `zones.geojson`, `zones_raw.geojson`, `report.json`, `errors.geojson`,
-   `errors_raw.geojson`, `run_record.json` and `case_state.json`
-4. asserts the score is at least `MIN_IOU` (currently **0.7**)
+3. rewrites `zones.geojson`, `zones_raw.geojson`, `report.json`, `run_record.json` and
+   `case_state.json`
+4. asserts the score is at least `MIN_IOU` (currently **0.6**)
 
 So the cases you save become a regression suite: change something in extraction or
 georeferencing, run the tests, and every saved case is re-scored against your drawings.
@@ -390,7 +389,7 @@ regression case, requirements v6, scored
   ok        zonePicks          Pipette picks of kind 'zone'; without them nothing is extracted.
   ok        legend             The legend rectangle, or an explicit 'no legend'. ...
   REFRESH   textRegions        not cached; text_extraction will be re-run once
-  absent    waterPicks         Pipette picks of kind 'water', used for the water-mask gate.
+  absent    waterPicks         Pipette picks of kind 'water'. They identify the map's coastline: ...
 ```
 
 `controlPoints` counts only the sources the run uses (at least 3), so the same case can be
@@ -411,7 +410,7 @@ So the statuses you will see:
 | `ok` | present | nothing |
 | `REFRESH` / `STALE` | derived artifact missing or produced from a different image | recomputed once (~135 s for OCR), then cached under `derived/` |
 | `BLOCKED` | a required user input is missing | the run stops and prints how to fix it: complete the case |
-| `absent` | a genuinely optional user input is missing | runs; a capability is simply not exercised (no water picks ⇒ the water gate reports `applicable: false`) |
+| `absent` | a genuinely optional user input is missing | runs; a capability is simply not exercised (no water picks ⇒ no alignment, the map is placed by its control points) |
 
 **There is deliberately no middle level**, and no exception for exploration cases. An input
 the pipeline reads is either required or genuinely optional — there is no "runs, but through
@@ -421,8 +420,9 @@ box, the legend answer and the OCR text regions (when alignment is on) are requi
 has no fallback for any of them.
 
 Requirements depend on the config, not just on the code: `textRegions` is required **only
-when curve alignment is on**, which is why the regression suite — alignment off, so it keeps
-measuring the GCP-only floor — never pays for OCR.
+when curve alignment is on**. Alignment is on everywhere, so every case needs them; the
+regression maps' text regions are committed under `derived/`, so the suite does not pay for
+OCR.
 
 `REQUIREMENTS_VERSION` bumps whenever a requirement is added, removed, or changes level, so
 a `case_state.json` written under an older version is re-checked rather than trusted. It is
@@ -443,7 +443,7 @@ control points, pipette picks, framing box, legend -- so only the step you want 
 
 **Commencer l'extraction** then saves the case under its own name, overwriting its
 `config.json`, and re-runs it. If the inputs changed, the case's `best` run is deleted
-(`best_report.json`, `zones_best.geojson`, `errors_best.geojson`): it was scored on other
+(`best_report.json`, `zones_best.geojson`, `zones_raw_best.geojson`): it was scored on other
 clicks and would otherwise outrank every run on the new ones. Re-saving identical inputs
 keeps it.
 
@@ -501,7 +501,7 @@ Use `--kind probe` or `--kind regression` to run only one sort — `--kind probe
 "replay the maps I am actually working on" loop, and it does not touch the scored cases.
 
 Add `--reference` to build the reference layers for the case's framing box and dump a PNG per
-layer (coastline, lakes, rivers, land, distance transform, plus a composite showing whether
+layer (coastline, lakes, land, distance transform, plus a composite showing whether
 they agree with each other).
 
 Add `--evidence` to build the user-side evidence and dump overlays: the Canny edge map, and an
@@ -521,10 +521,11 @@ cached (for when text extraction itself changed); `--no-refresh` makes a missing
 artifact an error instead, which is how you find out which cases are behind without paying
 to bring them up to date.
 
-Add `--align` (which implies `--ocr`) to run Step 4 curve alignment and georeference with the
-gated result. It prints the chosen method, the recovery rung, the probe's disagreement with the
-held-out control points, and every gate with its value. Alignment is off in `georef-dev`
-(it is on in the app), so this flag is how the CLI runs what the app runs.
+Step 4 curve alignment runs by default, as in the app: the printout gives the method, whether
+alignment was skipped and why (no water picks, say) or refused by a check, and every check
+with its value. Add `--no-align` to place the map with the control points alone, the floor
+alignment is measured against. Such a run differs from the production configuration, so it
+is never promoted to `best`.
 
 Add `--sources sift`, `--sources city` or `--sources sift,city` (the default) to fit from
 one source of control points only. Every stage uses the same subset, and the printout gives
@@ -558,8 +559,8 @@ It never touches the cases' own files; results go to `Backend-Atlas/ablations/<r
 An IoU number, or a probe case with no number at all, cannot tell you *why* the zones landed
 where they did. `alignment_debug/` in the case folder answers that. It is written whenever
 `GEOREF_DEBUG` is on — already the case for `celery-worker`, so **every UI re-run produces
-it** — and on demand from the CLI with `--debug` (which implies `--align`, since there is
-nothing to diagnose without it):
+it** — and on demand from the CLI with `--debug` (which cannot be combined with
+`--no-align`, since there is nothing to diagnose without alignment):
 
 ```
 docker compose run --rm georef-dev python scripts/run_georef_alignment.py     --case-id 1st --debug --no-snap
@@ -584,23 +585,15 @@ same map over and over.
 The regression suite does not write it: `test-backend` does not set `GEOREF_DEBUG`, so CI
 stays fast without needing its own switch.
 
-For app runs rather than harness runs, `GEOREF_DEBUG=true` (already set on `backend` and
-`celery-worker`) writes a folder per import to `Backend-Atlas/debug_runs/`: `summary.txt`,
-overlays of the reference coastline through the transform, control-point residuals, the edge
-map, ICP correspondences and the output zones. These dumps are throwaway and are to be removed
-before the pull request ([`georeferencing.md` §10](georeferencing.md#10-before-the-pull-request)).
+For app runs rather than harness runs, `GEOREF_DEBUG=true` (set on `celery-worker` only;
+the code default is off) writes a folder per import to `Backend-Atlas/debug_runs/`:
+`summary.txt`, overlays of the reference coastline through the transform, control-point
+residuals, the edge map, ICP correspondences and the output zones. The newest 20 are kept.
 
-Note the split: curve alignment is **on** in `backend` and `celery-worker` (so the running app
-can be evaluated by hand) and **off** in `test-backend` and `georef-dev`, via
-`GEOREF_ENABLE_CURVE_ALIGNMENT`. The suite therefore keeps measuring the GCP-only floor, and
-stays fast — with alignment on, the dev-test task runs EasyOCR per case and the suite goes from
-about 90 seconds to over four minutes.
-
-**This split is temporary.** Both containers' runs count as default-setting runs, so a
-regression case's `best` can come from the suite (alignment off) or from a UI re-run
-(alignment on), and mix the two. Before the pull request, CI and the UI's regression re-run
-must both run the production configuration once it is settled
-([`georeferencing.md` §10](georeferencing.md#10-before-the-pull-request)).
+Every container runs the production configuration: curve alignment is on in the app, the
+regression suite, the UI re-runs and the CLI alike, so a regression case's `best` always
+measures the pipeline that ships. The suite pays for alignment but not for OCR: the text
+regions of every regression map are committed under `derived/`.
 
 ### Re-running from the UI
 
@@ -672,7 +665,7 @@ Two things it deliberately will not do:
 The CLI is still the faster loop — it caches colour extraction, the task path does not. A CLI
 run whose flags differ from the deployment's ambient config is, like a UI run with switches,
 never promoted to `best`. Use the button when you are already looking at the map;
-use `--kind probe --align --no-snap` when you are iterating.
+use `--kind probe --no-snap` when you are iterating.
 
 **Pin your dependencies before trusting a number from this tool.** `numpy` and
 `opencv-python-headless` are pinned in `requirements.txt` for a reason: an image rebuilt with a

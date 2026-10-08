@@ -1,6 +1,6 @@
-"""Unit tests for Step 4: chamfer, ICP, gates and the recovery ladder.
+"""Unit tests for Step 4: chamfer, ICP, and the checks on the result.
 
-None of this needs cv2 -- `align.py`, `gates.py` and `recovery.py` consume the
+None of this needs cv2 -- `align.py` and `gates.py` consume the
 arrays `evidence.py` produced, and do their own gradients with scipy. The tests
 therefore build small synthetic worlds instead of reading a map, which also
 makes the behaviour being pinned explicit: a known transform is perturbed, and
@@ -29,14 +29,22 @@ from app.utils.georeferencing.align import (
     _params_from_model,
 )
 from app.utils.georeferencing.gates import (
+    align,
     evaluate_gates,
     failed_names,
     gates_passed,
     gcp_rms_px,
 )
-from app.utils.georeferencing.recovery import _perturb, align
 
 WIDTH, HEIGHT = 300, 240
+
+
+def _perturb(model: AffineModel, dx: float, dy: float, rotation_deg: float) -> AffineModel:
+    """Nudge a model in *pixel* space: a shift of (dx, dy) px and a rotation."""
+    theta = np.radians(rotation_deg)
+    cos_t, sin_t = np.cos(theta), np.sin(theta)
+    shift = np.array([[cos_t, -sin_t, dx], [sin_t, cos_t, dy], [0.0, 0.0, 1.0]], dtype=float)
+    return AffineModel(matrix=model.matrix @ shift, n_points=model.n_points)
 
 
 # --------------------------------------------------------------------------
@@ -93,7 +101,7 @@ def _world() -> tuple:
 
 
 def _control_points_from(model: AffineModel, pixels) -> list:
-    from app.utils.georeferencing.projection import webmercator_to_lonlat
+    from tests.georef_helpers import webmercator_to_lonlat
 
     points = []
     for px, py in pixels:
@@ -171,72 +179,101 @@ class TestNormalSearchICP:
         assert index.size < 0.25 * len(samples)
 
 
-#: The thresholds the gates were designed with. The defaults are neutralised
-#: while the gates are evaluated from the run log (config.py), so tests that
-#: check what a gate catches pass these explicitly.
-DESIGNED_GATES = DEFAULT_GEOREF_CONFIG.with_overrides(
-    gate_probe_gcp_ratio=2.0,
-    gate_probe_gcp_max_km=150.0,
-    gate_water_iou_min=0.7,
-    gate_max_scale_drift=0.25,
-    gate_max_rotation_deg=15.0,
-    gate_min_inlier_fraction=0.2,
-    gate_min_chamfer_improvement=0.02,
-)
-
-
-def _gated(*args, **kwargs):
-    return evaluate_gates(*args, config=DESIGNED_GATES, **kwargs)
-
-
 class TestGates:
-    def _phase(self, converged=True, inliers=0.8):
-        from app.utils.georeferencing.align import PhaseResult
+    """Four sanity checks on the aligned affine; any failure means the
+    control-point affine is used instead."""
 
-        return PhaseResult(
-            model=_truth_model(),
-            converged=converged,
-            inlier_fraction=inliers,
-            cost=1.0,
-            iterations=10,
-        )
-
-    def _layers(self, water=None):
+    def _layers(self, water):
         from app.utils.georeferencing.reference import ReferenceGrid
 
+        # 'EPSG:3857' of the truth model spans x -8.0e6..-7.7e6, y 7.0e6..6.76e6.
+        lon0, lat0 = -71.87, 52.97
+        lon1, lat1 = -69.17, 51.66
         grid = ReferenceGrid(
-            west=-80.0, south=40.0, east=-60.0, north=55.0, width=50, height=40
+            west=lon0, south=lat1, east=lon1, north=lat0, width=WIDTH, height=HEIGHT
         )
-        return SimpleNamespace(
-            grid=grid,
-            water=np.zeros((40, 50), dtype=bool) if water is None else water,
-            has_water=water is not None and water.any(),
+        return SimpleNamespace(grid=grid, water=water, has_water=bool(water.any()))
+
+    def _evidence(self, water):
+        return SimpleNamespace(water=water, width=WIDTH, height=HEIGHT)
+
+    @staticmethod
+    def _sea():
+        """The left third of the map is sea."""
+        water = np.zeros((HEIGHT, WIDTH), dtype=bool)
+        water[:, :100] = True
+        return water
+
+    def _checks(self, candidate, baseline, control_points=(), water=None, **kw):
+        water = self._sea() if water is None else water
+        return evaluate_gates(
+            candidate,
+            baseline,
+            list(control_points),
+            self._layers(water),
+            self._evidence(water),
+            DEFAULT_GEOREF_CONFIG,
+            **kw,
         )
 
-    def test_all_checks_are_returned_even_when_inapplicable(self):
-        truth, _s, evidence = _world()
-        checks = _gated(
-            truth, truth, None, [], self._layers(), evidence, self._phase()
+    def test_the_identity_passes_every_check(self):
+        truth = _truth_model()
+        control_points = _control_points_from(truth, SPREAD)
+        checks = self._checks(
+            truth, truth, control_points, baseline_chamfer_px=10.0, aligned_chamfer_px=8.0
         )
-        names = [c.name for c in checks]
-        assert "probe_gcp_disagreement" in names
-        assert "water_mask_iou" in names
-        assert any(not c.applicable for c in checks)
+        assert [c.name for c in checks] == [
+            "transform_determinant",
+            "curve_fit_engaged",
+            "water_agreement",
+            "control_points_held",
+        ]
+        assert all(c.applicable for c in checks)
         assert gates_passed(checks)
 
-
     def test_a_mirror_is_caught(self):
-        truth, _s, evidence = _world()
+        truth = _truth_model()
         mirrored = AffineModel(matrix=truth.matrix.copy())
         mirrored.matrix[0, 0] *= -1.0
-        checks = _gated(
-            mirrored, truth, None, [], self._layers(), evidence, self._phase()
+        assert "transform_determinant" in failed_names(self._checks(mirrored, truth))
+
+    def test_a_fit_that_made_the_coast_worse_fails(self):
+        truth = _truth_model()
+        checks = self._checks(truth, truth, baseline_chamfer_px=40.0, aligned_chamfer_px=55.0)
+        assert "curve_fit_engaged" in failed_names(checks)
+
+    def test_a_fit_that_moved_the_sea_away_fails(self):
+        """Shifted 100 px, the map's sea lands on the reference's land."""
+        truth = _truth_model()
+        assert "water_agreement" in failed_names(
+            self._checks(_perturb(truth, 100.0, 0.0, 0.0), truth)
         )
-        assert "transform_determinant" in failed_names(checks)
+
+    def test_a_small_move_keeps_the_water_check(self):
+        truth = _truth_model()
+        assert "water_agreement" not in failed_names(
+            self._checks(_perturb(truth, 3.0, 0.0, 0.0), truth)
+        )
+
+    def test_dragging_the_map_off_the_clicks_fails(self):
+        """5% of a 300 x 240 diagonal is ~19 px; 40 px is well past it."""
+        truth = _truth_model()
+        control_points = _control_points_from(truth, SPREAD)
+        moved = _perturb(truth, 40.0, 0.0, 0.0)
+        empty = np.zeros((HEIGHT, WIDTH), dtype=bool)
+        checks = self._checks(moved, truth, control_points, water=empty)
+        assert failed_names(checks) == ["control_points_held"]
+
+    def test_a_small_trade_off_against_the_clicks_passes(self):
+        truth = _truth_model()
+        control_points = _control_points_from(truth, SPREAD)
+        moved = _perturb(truth, 4.0, 0.0, 0.0)
+        empty = np.zeros((HEIGHT, WIDTH), dtype=bool)
+        assert gates_passed(self._checks(moved, truth, control_points, water=empty))
 
 
-class TestRecoveryLadder:
-    def test_falls_back_to_the_baseline_without_evidence(self):
+class TestFallback:
+    def test_no_coast_evidence_keeps_the_control_point_affine(self):
         truth, _s, _e = _world()
         empty_evidence = SimpleNamespace(
             edge_weight=np.zeros((HEIGHT, WIDTH), dtype=np.float32),
@@ -260,35 +297,28 @@ class TestRecoveryLadder:
         result = align(truth, [], layers, empty_evidence, record=record)
         assert result.model is truth
         assert result.method == "gcp_only"
-        assert result.rung == 7
+        assert result.skipped == "no_coast_evidence"
         assert not result.used_curve_evidence
 
+    def test_no_water_picks_means_no_alignment(self):
+        """The water picks identify the coastline; without them the runner
+        does not build anything, it places the map by its clicks."""
+        from app.utils.georeferencing.runner import align_map
 
-class TestEngagementGate:
-    """A fit that never moved passes every sanity check, because nothing
-    drifted. This gate is the only thing that notices."""
-
-    def _phase(self):
-        from app.utils.georeferencing.align import PhaseResult
-
-        return PhaseResult(
-            model=_truth_model(), converged=True, inlier_fraction=0.8,
-            cost=1.0, iterations=10,
+        truth = _truth_model()
+        control_points = _control_points_from(truth, SPREAD)
+        record = RunRecord()
+        result = align_map(
+            np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8),
+            control_points,
+            frame_bounds={"west": -72.0, "south": 51.0, "east": -69.0, "north": 53.0},
+            text_regions=[],
+            water_click_positions=None,
+            record=record,
         )
-
-    def _layers(self):
-        return SimpleNamespace(
-            grid=None, water=np.zeros((4, 4), dtype=bool), has_water=False
-        )
-
-
-    def test_a_fit_that_got_worse_fails(self):
-        truth, _s, evidence = _world()
-        checks = _gated(
-            truth, truth, None, [], self._layers(), evidence, self._phase(),
-            baseline_chamfer_px=40.0, aligned_chamfer_px=55.0,
-        )
-        assert "curve_fit_engaged" in failed_names(checks)
+        assert result.method == "gcp_only"
+        assert result.skipped == "no_water_picks"
+        assert record.inputs["alignment"]["skipped"] == "no_water_picks"
 
 
 # --------------------------------------------------------------------------
@@ -356,14 +386,14 @@ class TestControlPointsKeepPulling:
         (curve only) goes to the drawing; the joint fit must not simply follow
         it, or the control points carry no information.
 
-        At equal term weights: this is about the loss rejecting the points, not
-        about the balance. The default x10 coastline weight (config v19) moves
-        the joint fit ~80% of the way to the drawing, by design."""
+        At equal weights, because what this pins is the loss structure (the
+        bug made the joint fit *identical* to the probe whatever the weights),
+        not the production weight: at x10 the coast is meant to pull harder."""
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(weight_gcp=1.0, weight_curve=1.0)
         truth = _truth_model()
         control_points = _control_points_from(truth, SPREAD)
         samples = _samples_at(truth, _curve_pixels())
         field = build_user_field(_drawn_curve(dy=25.0))
-        config = DEFAULT_GEOREF_CONFIG.with_overrides(weight_curve=1.0)
 
         probe = fit_chamfer(truth, control_points, samples, field, config, use_gcps=False)
         joint = fit_chamfer(truth, control_points, samples, field, config)

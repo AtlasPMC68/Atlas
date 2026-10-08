@@ -1,7 +1,7 @@
 {
   "testId": "52a1aedc-98d0-4bd7-8b78-d4fd184f91df",
   "testCaseId": "clustered",
-  "evaluatedAt": "2026-10-04T17:13:45.113219Z",
+  "evaluatedAt": "2026-10-08T16:46:10.557492Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,19 +16,19 @@
           "area": 199.9547564893504
         },
         "bestMatch": {
-          "iou": 0.9668283957038886,
-          "intersectionArea": 195.17274895998807,
-          "unionArea": 201.86906986517988,
-          "precision": 0.9902869658051494,
-          "recall": 0.9760845522591156,
-          "falseNegativeArea": 4.782007529361592,
-          "falsePositiveArea": 1.9143133758301798,
+          "iou": 0.9809452130256887,
+          "intersectionArea": 197.18261693003353,
+          "unionArea": 201.0128744314182,
+          "precision": 0.9946624595457086,
+          "recall": 0.9861361659608008,
+          "falseNegativeArea": 2.772139559316286,
+          "falsePositiveArea": 1.0581179420684075,
           "boundary": {
-            "meanKm": 4.42,
-            "p90Km": 11.063,
-            "maxKm": 101.6,
-            "expectedToExtractedMeanKm": 4.662,
-            "extractedToExpectedMeanKm": 4.179,
+            "meanKm": 2.593,
+            "p90Km": 6.233,
+            "maxKm": 96.796,
+            "expectedToExtractedMeanKm": 2.456,
+            "extractedToExpectedMeanKm": 2.73,
             "expectedHoles": 22,
             "extractedHoles": 22
           },
@@ -36,25 +36,25 @@
             "index": 0,
             "id": null,
             "name": "Quebec",
-            "area": 197.08706233581853
+            "area": 198.24073487210183
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.9668283957038886,
-      "meanPrecision": 0.9902869658051494,
-      "meanRecall": 0.9760845522591156,
-      "totalFalseNegativeArea": 4.782007529361592,
-      "totalFalsePositiveArea": 1.9143133758301798,
-      "meanBoundaryKm": 4.42,
-      "meanBoundaryP90Km": 11.063,
-      "maxBoundaryKm": 101.6,
+      "meanIou": 0.9809452130256887,
+      "meanPrecision": 0.9946624595457086,
+      "meanRecall": 0.9861361659608008,
+      "totalFalseNegativeArea": 2.772139559316286,
+      "totalFalsePositiveArea": 1.0581179420684075,
+      "meanBoundaryKm": 2.593,
+      "meanBoundaryP90Km": 6.233,
+      "maxBoundaryKm": 96.796,
       "zonesWithBoundary": 1,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.9668283957038886,
+    "scoreUsed": 0.9809452130256887,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
@@ -77,19 +77,19 @@
             "area": 203.3187314685591
           },
           "bestMatch": {
-            "iou": 0.9434607280057873,
-            "intersectionArea": 195.73791804278358,
-            "unionArea": 207.46800818781182,
-            "precision": 0.979241908296364,
-            "recall": 0.9627146334672672,
-            "falseNegativeArea": 7.580813425775603,
-            "falsePositiveArea": 4.1492767192528515,
+            "iou": 0.9675621441860223,
+            "intersectionArea": 198.74887823751013,
+            "unionArea": 205.41200317909392,
+            "precision": 0.9895775278691459,
+            "recall": 0.9775236979001335,
+            "falseNegativeArea": 4.5698532310492395,
+            "falsePositiveArea": 2.0932717105344327,
             "boundary": {
-              "meanKm": 8.418,
-              "p90Km": 13.562,
-              "maxKm": 101.6,
-              "expectedToExtractedMeanKm": 8.439,
-              "extractedToExpectedMeanKm": 8.396,
+              "meanKm": 5.33,
+              "p90Km": 11.315,
+              "maxKm": 99.159,
+              "expectedToExtractedMeanKm": 5.38,
+              "extractedToExpectedMeanKm": 5.28,
               "expectedHoles": 2,
               "extractedHoles": 0
             },
@@ -97,25 +97,25 @@
               "index": 0,
               "id": null,
               "name": "Quebec",
-              "area": 199.88719476203647
+              "area": 200.84214994804444
             },
             "matchedBy": "name"
           }
         }
       ],
       "mean": {
-        "meanIou": 0.9434607280057873,
-        "meanPrecision": 0.979241908296364,
-        "meanRecall": 0.9627146334672672,
-        "totalFalseNegativeArea": 7.580813425775603,
-        "totalFalsePositiveArea": 4.1492767192528515,
-        "meanBoundaryKm": 8.418,
-        "meanBoundaryP90Km": 13.562,
-        "maxBoundaryKm": 101.6,
+        "meanIou": 0.9675621441860223,
+        "meanPrecision": 0.9895775278691459,
+        "meanRecall": 0.9775236979001335,
+        "totalFalseNegativeArea": 4.5698532310492395,
+        "totalFalsePositiveArea": 2.0932717105344327,
+        "meanBoundaryKm": 5.33,
+        "meanBoundaryP90Km": 11.315,
+        "maxBoundaryKm": 99.159,
         "zonesWithBoundary": 1,
         "zonesWithoutBoundary": 0
       },
-      "scoreUsed": 0.9434607280057873,
+      "scoreUsed": 0.9675621441860223,
       "scoreUsedKey": "mean.meanIou"
     },
     "nameMatching": {

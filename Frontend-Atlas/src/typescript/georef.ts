@@ -32,6 +32,9 @@ export interface CoastlineKeypoint {
   pixel: CoastlineKeypointPixel;
   geo: CoastlineKeypointGeo;
   response: number;
+  // Which reference curve the keypoint lies on. Lakes only fill in where the
+  // coastline leaves the frame uncovered; a map may not draw them.
+  feature?: "coastline" | "lake";
   // Allow any additional backend-provided fields
   [key: string]: unknown;
 }
@@ -132,5 +135,5 @@ export interface CoastlineKeypointsResponse {
   keypoints: CoastlineKeypoint[];
   total: number;
   bounds: WorldBounds;
-  used_lakes: boolean; // Whether lakes were added to find enough keypoints
+  used_lakes: boolean; // Whether any suggested keypoint lies on a lake
 }

@@ -13,9 +13,7 @@ CASE_ID = "c"
 #: (last run file, best file) for every artifact a best run keeps.
 RUN_TO_BEST = (
     ("zones.geojson", "zones_best.geojson"),
-    ("errors.geojson", "errors_best.geojson"),
     ("zones_raw.geojson", "zones_raw_best.geojson"),
-    ("errors_raw.geojson", "errors_raw_best.geojson"),
 )
 
 
@@ -107,8 +105,6 @@ def test_paths_match_the_evaluator(tmp_path):
     paths = build_test_case_paths(str(tmp_path), TEST_ID, CASE_ID)
     names = {
         (paths.extracted_zones_path, paths.best_zones_path),
-        (paths.errors_geojson_path, paths.best_errors_geojson_path),
         (paths.raw_zones_path, paths.best_raw_zones_path),
-        (paths.raw_errors_geojson_path, paths.best_raw_errors_geojson_path),
     }
     assert {(os.path.basename(a), os.path.basename(b)) for a, b in names} == set(RUN_TO_BEST)

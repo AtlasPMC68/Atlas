@@ -88,9 +88,10 @@ Backend-Atlas/tests/assets/georef/test_cases/**/case_state.json
 Backend-Atlas/tests/assets/georef/test_cases/**/zones.geojson
 Backend-Atlas/tests/assets/georef/test_cases/**/zones_raw.geojson
 Backend-Atlas/tests/assets/georef/test_cases/**/zones_pixel.geojson
-Backend-Atlas/tests/assets/georef/test_cases/**/errors.geojson
-Backend-Atlas/tests/assets/georef/test_cases/**/errors_raw.geojson
 Backend-Atlas/tests/assets/georef/test_cases/**/classified_image.png
+# Error overlays (FP/FN) are derived on demand by the API from a run's zones
+# and the expected zones, never stored. Ignored so stale local copies stay out.
+Backend-Atlas/tests/assets/georef/test_cases/**/errors*.geojson
 # Held while a map's OCR runs; its result (text_regions.json) is committed.
 Backend-Atlas/tests/assets/georef/derived/**/.ocr.lock
 
