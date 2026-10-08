@@ -8,9 +8,14 @@ from .config import DEFAULT_GEOREF_CONFIG, GeorefConfig
 from .models import AffineModel, ControlPoint, Regularizer, control_point_weights
 from .projection import lonlat_to_webmercator
 
-#: Points located per pass. Locating is (triangles x points), so this bounds
-#: peak memory on a dense geometry rather than the number of triangles.
-_CHUNK = 20000
+#: Triangle x point pairs located per pass. Locating is (triangles x points),
+#: so the points per pass shrink as the triangulation grows: the local anchors
+#: can multiply the triangle count, and peak memory has to stay bounded.
+_LOCATE_BUDGET = 1_500_000
+
+#: Most local anchors per axis. Each one adds triangles every located point is
+#: tested against, so a tiny radius must not turn into a dense grid.
+_MAX_LOCAL_ANCHORS_PER_AXIS = 12
 
 #: Barycentric coordinates of a point exactly on a shared edge come out at
 #: -1e-16 on one side, which would leave the point in no triangle at all.
@@ -44,16 +49,15 @@ def _signed_areas(verts: np.ndarray, simplices: np.ndarray) -> np.ndarray:
     )
 
 
-def _frame_anchors(
+def _padded_frame(
     src_xy: np.ndarray, extent: Optional[Extent], margin: float
-) -> np.ndarray:
-    """Corners and edge midpoints of a padded frame around the map.
+) -> Extent:
+    """The box the correction lives in: *extent* padded by *margin*.
 
-    The anchors are where the local correction is pinned to zero, so the frame
-    has to enclose everything that will be warped. Falling back to the control
-    points' own bounding box is the weakest option -- that box is systematically
-    too tight, because the points sit inside the mapped area -- so callers pass
-    the image size, or at least the drawn features' extent.
+    Falling back to the control points' own bounding box is the weakest option
+    -- that box is systematically too tight, because the points sit inside the
+    mapped area -- so callers pass the image size, or at least the drawn
+    features' extent.
     """
     if extent is not None:
         x0, y0, x1, y1 = (float(v) for v in extent)
@@ -65,11 +69,53 @@ def _frame_anchors(
     width = max(x1 - x0, 1.0)
     height = max(y1 - y0, 1.0)
     px, py = margin * width, margin * height
-    x0, x1, y0, y1 = x0 - px, x1 + px, y0 - py, y1 + py
+    return (x0 - px, y0 - py, x1 + px, y1 + py)
+
+
+def _frame_anchors(
+    src_xy: np.ndarray, extent: Optional[Extent], margin: float
+) -> np.ndarray:
+    """Corners and edge midpoints of a padded frame around the map.
+
+    The anchors are where the local correction is pinned to zero, so the frame
+    has to enclose everything that will be warped.
+    """
+    x0, y0, x1, y1 = _padded_frame(src_xy, extent, margin)
     xm, ym = (x0 + x1) / 2, (y0 + y1) / 2
     return np.array(
         [[x0, y0], [xm, y0], [x1, y0], [x1, ym], [x1, y1], [xm, y1], [x0, y1], [x0, ym]]
     )
+
+
+def _local_anchors(
+    src_xy: np.ndarray,
+    extent: Optional[Extent],
+    margin: float,
+    radius_px: Optional[float],
+) -> np.ndarray:
+    """Extra zero-correction anchors wherever no control point is near.
+
+    Without them, a region with no point of its own sits in a triangle spanned
+    by points far away, and takes a blend of their corrections: it is pulled by
+    evidence about somewhere else. A grid of anchors, one per *radius_px* cell,
+    is kept where the nearest control point is at least *radius_px* away, so
+    each point's correction fades to zero within about that distance and
+    regions without a point keep the base transform. Cell centres, so no anchor
+    lands on the frame anchors on the frame's edges.
+    """
+    if radius_px is None or radius_px <= 0:
+        return np.zeros((0, 2))
+    x0, y0, x1, y1 = _padded_frame(src_xy, extent, margin)
+    nx = min(max(int(np.ceil((x1 - x0) / radius_px)), 1), _MAX_LOCAL_ANCHORS_PER_AXIS)
+    ny = min(max(int(np.ceil((y1 - y0) / radius_px)), 1), _MAX_LOCAL_ANCHORS_PER_AXIS)
+    xs = x0 + (np.arange(nx) + 0.5) * (x1 - x0) / nx
+    ys = y0 + (np.arange(ny) + 0.5) * (y1 - y0) / ny
+    grid = np.array([(x, y) for y in ys for x in xs])
+    nearest = np.min(
+        np.hypot(grid[:, None, 0] - src_xy[None, :, 0], grid[:, None, 1] - src_xy[None, :, 1]),
+        axis=1,
+    )
+    return grid[nearest >= radius_px]
 
 
 @dataclass
@@ -117,6 +163,7 @@ class PiecewiseAffineModel:
         anchor_margin: float = 0.25,
         base: Optional[AffineModel] = None,
         leave_one_out: bool = True,
+        influence_radius_px: Optional[float] = None,
     ) -> "PiecewiseAffineModel":
         """Fit the global affine, then pin a local correction at each point.
 
@@ -136,6 +183,9 @@ class PiecewiseAffineModel:
                 every fold refits it and the error is a real leave-one-out.
             leave_one_out: compute held-out per-point error. Costs n refits,
                 each one small least-squares solve plus a triangulation.
+            influence_radius_px: how far a point's correction may reach, in
+                pixels (see ``_local_anchors``). None reaches as far as the
+                triangulation does: the unregularised model.
 
         Raises:
             ValueError: on mismatched inputs, duplicate control points, or a
@@ -153,7 +203,9 @@ class PiecewiseAffineModel:
         if base is None:
             base = AffineModel.fit(src_xy, dst_xy, weights=w, regularizer=regularizer)
 
-        model = cls._build(base, src_xy, dst_xy, extent, anchor_margin)
+        model = cls._build(
+            base, src_xy, dst_xy, extent, anchor_margin, influence_radius_px
+        )
         model.n_points = n
 
         if leave_one_out:
@@ -165,6 +217,7 @@ class PiecewiseAffineModel:
                 extent,
                 anchor_margin,
                 base if base_fixed else None,
+                influence_radius_px,
             )
             model.residuals_kind = (
                 RESIDUAL_LOO_FIXED_BASE if base_fixed else RESIDUAL_LOO
@@ -182,10 +235,16 @@ class PiecewiseAffineModel:
         dst_xy: np.ndarray,
         extent: Optional[Extent],
         anchor_margin: float,
+        influence_radius_px: Optional[float] = None,
     ) -> "PiecewiseAffineModel":
         # Every control point pins the correction, whatever its source: SIFT
         # points and cities are trusted alike (see config.gcp_sigma_px_*).
-        anchors = _frame_anchors(src_xy, extent, anchor_margin)
+        anchors = np.vstack(
+            [
+                _frame_anchors(src_xy, extent, anchor_margin),
+                _local_anchors(src_xy, extent, anchor_margin, influence_radius_px),
+            ]
+        )
         anchor_dst = np.column_stack(base(anchors[:, 0], anchors[:, 1]))
 
         verts_in = np.vstack([src_xy, anchors])
@@ -220,13 +279,23 @@ class PiecewiseAffineModel:
 
     @classmethod
     def _leave_one_out(
-        cls, src_xy, dst_xy, w, regularizer, extent, anchor_margin, fixed_base
+        cls,
+        src_xy,
+        dst_xy,
+        w,
+        regularizer,
+        extent,
+        anchor_margin,
+        fixed_base,
+        influence_radius_px=None,
     ) -> np.ndarray:
         """Per-point error with that point excluded from the fit.
 
         NaN where the refit was impossible -- fewer than 3 points left, or
         removing the point produced a fold. Callers report those as unknown
-        rather than as zero.
+        rather than as zero. The local anchors are placed again in every fold,
+        from the points that fold keeps, so the held-out point's neighbourhood
+        is judged the way a region without a point is placed.
         """
         n = src_xy.shape[0]
         out = np.full(n, np.nan)
@@ -239,7 +308,14 @@ class PiecewiseAffineModel:
                     weights=None if w is None else w[keep],
                     regularizer=regularizer,
                 )
-                m = cls._build(b, src_xy[keep], dst_xy[keep], extent, anchor_margin)
+                m = cls._build(
+                    b,
+                    src_xy[keep],
+                    dst_xy[keep],
+                    extent,
+                    anchor_margin,
+                    influence_radius_px,
+                )
             except (ValueError, np.linalg.LinAlgError):
                 continue
             X, Y = m(src_xy[i, 0], src_xy[i, 1])
@@ -313,8 +389,9 @@ class PiecewiseAffineModel:
     def _locate(self, pts: np.ndarray) -> np.ndarray:
         """Index of the triangle containing each point, or -1 outside the frame."""
         idx = np.full(pts.shape[0], -1, dtype=int)
-        for start in range(0, pts.shape[0], _CHUNK):
-            chunk = pts[start : start + _CHUNK]
+        step = max(_LOCATE_BUDGET // max(len(self.simplices), 1), 1)
+        for start in range(0, pts.shape[0], step):
+            chunk = pts[start : start + step]
             ph = np.vstack([chunk.T, np.ones(chunk.shape[0])])  # (3, m)
             bary = self._bary @ ph  # (t, 3, m)
             inside = np.all(bary >= -_BARY_EPS, axis=1)  # (t, m)
@@ -420,6 +497,7 @@ def fit_piecewise_from_control_points(
     base: Optional[AffineModel] = None,
     anchor_margin: float = 0.25,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
+    influence_radius_px: Optional[float] = None,
 ) -> PiecewiseAffineModel:
     """Drop-in counterpart of ``models.fit_affine_from_control_points``."""
     if len(control_points) < 3:
@@ -443,6 +521,7 @@ def fit_piecewise_from_control_points(
         extent=extent,
         anchor_margin=anchor_margin,
         base=base,
+        influence_radius_px=influence_radius_px,
     )
 
 

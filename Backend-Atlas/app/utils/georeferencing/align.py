@@ -305,6 +305,7 @@ def _gcp_term(
     control_points: Sequence[ControlPoint],
     config: GeorefConfig,
     gcp_weight_scale: float = 1.0,
+    targets: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Control-point pixels, targets and per-point weights for the objective.
 
@@ -312,8 +313,13 @@ def _gcp_term(
     of curve samples, then weighted by 1/sigma**2 within the term. The term is
     plain least squares (see `_residuals`), so these weights are what decides
     how hard the points pull -- the robust cutoff never reaches them.
+
+    ``targets`` replaces the points' EPSG:3857 positions, one row per point,
+    for a fit whose target space is not EPSG:3857 (``post_align``).
     """
     pixel, merc, sigma = _gcp_arrays(control_points, config)
+    if targets is not None:
+        merc = np.asarray(targets, dtype=float)
     rel = (np.median(sigma) / sigma) ** 2
     weight = (config.weight_gcp * gcp_weight_scale / max(len(control_points), 1)) * rel
     return pixel, merc, weight
@@ -456,11 +462,13 @@ def fit_chamfer(
     gcp_weight_scale: float = 1.0,
     blur_schedule: Optional[Sequence[float]] = None,
     cutoff_schedule: Optional[Sequence[float]] = None,
+    gcp_targets: Optional[np.ndarray] = None,
 ) -> PhaseResult:
     """Phase A: annealed chamfer fit.
 
     ``use_gcps=False`` gives the probe fit (georeferencing.md section 5.2) -- curve evidence
     alone, control points held out entirely so they remain an independent check.
+    ``gcp_targets``: see ``_gcp_term``.
     """
     blur = list(blur_schedule if blur_schedule is not None else config.anneal_blur_px)
     cutoffs = list(
@@ -475,7 +483,9 @@ def fit_chamfer(
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, gcp_w = _gcp_term(control_points, config, gcp_weight_scale)
+        gcp_pixel, gcp_merc, gcp_w = _gcp_term(
+            control_points, config, gcp_weight_scale, gcp_targets
+        )
 
     params = _params_from_model(initial)
     total_iterations = 0
@@ -650,14 +660,20 @@ def icp_refine(
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
     use_gcps: bool = True,
     gcp_weight_scale: float = 1.0,
+    gcp_targets: Optional[np.ndarray] = None,
 ) -> PhaseResult:
-    """Phase B: iterate correspondence search and re-fit."""
+    """Phase B: iterate correspondence search and re-fit.
+
+    ``gcp_targets``: see ``_gcp_term``.
+    """
     params = _params_from_model(initial)
     radii = list(config.icp_search_radius_px) or [20.0]
 
     gcp_pixel = gcp_merc = gcp_w = None
     if use_gcps and control_points:
-        gcp_pixel, gcp_merc, gcp_w = _gcp_term(control_points, config, gcp_weight_scale)
+        gcp_pixel, gcp_merc, gcp_w = _gcp_term(
+            control_points, config, gcp_weight_scale, gcp_targets
+        )
 
     matched = 0
     converged = False

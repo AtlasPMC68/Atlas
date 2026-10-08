@@ -90,6 +90,9 @@ class MapPlacement:
     image_size: tuple
     config: GeorefConfig
     record: Optional[RunRecord] = None
+    #: The alignment evidence, kept when ``config.align_after_piecewise`` asks
+    #: for a second alignment (``post_align.AlignmentContext``).
+    alignment_context: Optional[Any] = None
 
     def georeference(
         self,
@@ -114,6 +117,15 @@ class MapPlacement:
             if alignment is not None and alignment.used_curve_evidence
             else None
         )
+        refine = None
+        if self.alignment_context is not None:
+            from app.utils.georeferencing.post_align import align_after_piecewise
+
+            context, points, config = self.alignment_context, self.control_points, self.config
+
+            def refine(model, record):
+                return align_after_piecewise(model, points, context, config, record)
+
         result = georeference_features(
             pixel_feature_collections,
             self.control_points,
@@ -131,6 +143,7 @@ class MapPlacement:
                 if alignment is not None
                 else None
             ),
+            refine_piecewise=refine,
         )
         if check_points and result.record is not None:
             result.record.set_errors(
@@ -173,26 +186,45 @@ def place_map(
         )
 
     alignment = None
-    if config.enable_curve_alignment:
-        from app.utils.georeferencing.runner import align_map  # cv2 lives behind this
+    context = None
+    if config.enable_curve_alignment or config.align_after_piecewise:
+        # cv2 lives behind this import.
+        from app.utils.georeferencing.runner import align_map, build_alignment_inputs
 
         water_positions, _names, water_radii = water_picks
-        alignment = align_map(
+        # Built once: the second alignment reads the same evidence as the first.
+        inputs = build_alignment_inputs(
             image_bgr,
-            points,
-            frame_bounds=frame_bounds,
-            text_regions=text_regions,
+            frame_bounds,
+            text_regions,
             water_click_positions=water_positions,
             water_sampling_radii=water_radii,
             config=config,
             record=record,
-            debug_dir=debug_dir,
             legend_bounds=legend_bounds,
         )
-        logger.info(
-            f"[GEOREF] alignment method={alignment.method} rung={alignment.rung}"
-            + (f" failed={alignment.failed_checks}" if alignment.failed_checks else "")
-        )
+        if config.enable_curve_alignment:
+            alignment = align_map(
+                image_bgr,
+                points,
+                frame_bounds=frame_bounds,
+                text_regions=text_regions,
+                water_click_positions=water_positions,
+                water_sampling_radii=water_radii,
+                config=config,
+                record=record,
+                debug_dir=debug_dir,
+                legend_bounds=legend_bounds,
+                inputs=inputs,
+            )
+            logger.info(
+                f"[GEOREF] alignment method={alignment.method} rung={alignment.rung}"
+                + (f" failed={alignment.failed_checks}" if alignment.failed_checks else "")
+            )
+        if config.align_after_piecewise and inputs is not None:
+            from app.utils.georeferencing.post_align import build_alignment_context
+
+            context = build_alignment_context(*inputs, config)
 
     return MapPlacement(
         control_points=points,
@@ -201,4 +233,5 @@ def place_map(
         image_size=(int(image_bgr.shape[1]), int(image_bgr.shape[0])),
         config=config,
         record=record,
+        alignment_context=context,
     )

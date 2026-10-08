@@ -109,6 +109,66 @@ def _perturb(
     return AffineModel(matrix=model.matrix @ shift, n_points=model.n_points)
 
 
+def run_stages(
+    start: AffineModel,
+    control_points: Sequence[ControlPoint],
+    coast_samples: Any,
+    fine_samples: Any,
+    user_field: Any,
+    config: GeorefConfig,
+    widen: float = 1.0,
+    gcp_weight_scale: float = 1.0,
+    gcp_targets: Optional[np.ndarray] = None,
+):
+    """Coastline stage, then the fine stage, then ICP.
+
+    Returns ``(candidate, phase, coarse_model)``: the fitted affine, the phase
+    that produced it, and the coastline stage's model. ``gcp_targets``: see
+    ``align._gcp_term``.
+    """
+    coarse = fit_chamfer(
+        start,
+        control_points,
+        coast_samples,
+        user_field,
+        config,
+        use_gcps=True,
+        gcp_weight_scale=gcp_weight_scale,
+        blur_schedule=tuple(b * widen for b in config.coarse_blur_px),
+        cutoff_schedule=tuple(c * widen for c in config.coarse_cutoff_px),
+        gcp_targets=gcp_targets,
+    )
+
+    fine = fit_chamfer(
+        coarse.model,
+        control_points,
+        fine_samples,
+        user_field,
+        config,
+        use_gcps=True,
+        gcp_weight_scale=gcp_weight_scale,
+        blur_schedule=tuple(b * widen for b in config.anneal_blur_px),
+        cutoff_schedule=tuple(c * widen for c in config.anneal_cutoff_px),
+        gcp_targets=gcp_targets,
+    )
+
+    candidate, phase = fine.model, fine
+    if config.enable_icp:
+        refined = icp_refine(
+            fine.model,
+            control_points,
+            fine_samples,
+            user_field,
+            config,
+            use_gcps=True,
+            gcp_weight_scale=gcp_weight_scale,
+            gcp_targets=gcp_targets,
+        )
+        if refined.detail.get("correspondences", 0) >= config.icp_min_correspondences:
+            candidate, phase = refined.model, refined
+    return candidate, phase, coarse.model
+
+
 def align(
     baseline: AffineModel,
     control_points: Sequence[ControlPoint],
@@ -166,48 +226,16 @@ def align(
     stats["baselineChamferPx"] = baseline_chamfer
 
     def _run(start: AffineModel, widen: float, gcp_weight_scale: float):
-        """Coastline stage, then the fine stage, then ICP."""
-        coarse = fit_chamfer(
+        return run_stages(
             start,
             control_points,
             coast_samples,
-            user_field,
-            config,
-            use_gcps=True,
-            gcp_weight_scale=gcp_weight_scale,
-            blur_schedule=tuple(b * widen for b in config.coarse_blur_px),
-            cutoff_schedule=tuple(c * widen for c in config.coarse_cutoff_px),
-        )
-
-        fine = fit_chamfer(
-            coarse.model,
-            control_points,
             fine_samples,
             user_field,
             config,
-            use_gcps=True,
+            widen=widen,
             gcp_weight_scale=gcp_weight_scale,
-            blur_schedule=tuple(b * widen for b in config.anneal_blur_px),
-            cutoff_schedule=tuple(c * widen for c in config.anneal_cutoff_px),
         )
-
-        candidate, phase = fine.model, fine
-        if config.enable_icp:
-            refined = icp_refine(
-                fine.model,
-                control_points,
-                fine_samples,
-                user_field,
-                config,
-                use_gcps=True,
-                gcp_weight_scale=gcp_weight_scale,
-            )
-            if (
-                refined.detail.get("correspondences", 0)
-                >= config.icp_min_correspondences
-            ):
-                candidate, phase = refined.model, refined
-        return candidate, phase, coarse.model
 
     # --- the probe: curve evidence alone, GCPs held out ----------------------
     # Its transform is discarded. Only its disagreement with the held-out GCPs

@@ -18,6 +18,7 @@ from app.utils.georeferencing import (
     fit_piecewise_from_control_points,
     georeference_features,
 )
+from app.utils.georeferencing.config import TRANSFORM_MODELS
 from app.utils.georeferencing.projection import (
     lonlat_to_webmercator,
     webmercator_to_lonlat,
@@ -85,6 +86,92 @@ class TestInterpolationAndFallback:
         assert np.allclose(model(far_x, far_y), model.base(far_x, far_y))
 
 
+class TestLocalRegularization:
+    """``local``: a correction fades out within the radius of its point."""
+
+    RADIUS_PX = 100.0
+
+    @staticmethod
+    def _left_points():
+        # (100, 100), (300, 200), (150, 320), (320, 60): nothing on the right
+        # third of the image, and two of them nudged so there is a correction.
+        cps = _control_points({2: (20.0, -15.0), 3: (-18.0, 12.0)})
+        return [cps[i] for i in (0, 2, 3, 5)]
+
+    def test_still_hits_every_control_point_exactly(self):
+        cps = self._left_points()
+        model = fit_piecewise_from_control_points(
+            cps, extent=IMAGE, influence_radius_px=self.RADIUS_PX
+        )
+
+        for cp in cps:
+            X, Y = model(cp.pixel[0], cp.pixel[1])
+            assert np.allclose([X, Y], _expected_3857(cp), atol=1e-6)
+
+    def test_a_region_without_a_point_keeps_the_base(self):
+        cps = self._left_points()
+        far = (np.array([560.0]), np.array([250.0]))  # ~265 px from the nearest
+
+        plain = fit_piecewise_from_control_points(cps, extent=IMAGE)
+        local = fit_piecewise_from_control_points(
+            cps, extent=IMAGE, influence_radius_px=self.RADIUS_PX
+        )
+
+        # Without the regularization the corrections of the points on the left
+        # reach this far; with it, the region is placed by the affine alone.
+        assert not np.allclose(plain(*far), plain.base(*far))
+        assert np.allclose(local(*far), local.base(*far))
+
+    def test_no_anchor_lands_within_the_radius_of_a_point(self):
+        cps = self._left_points()
+        model = fit_piecewise_from_control_points(
+            cps, extent=IMAGE, influence_radius_px=self.RADIUS_PX
+        )
+
+        src = np.array([cp.pixel for cp in cps])
+        extra = model.verts_in[len(cps) + 8 :]  # after the points and the frame
+        assert len(extra) > 0
+        gaps = np.hypot(extra[:, None, 0] - src[:, 0], extra[:, None, 1] - src[:, 1])
+        assert gaps.min() >= self.RADIUS_PX
+
+    def test_none_adds_no_anchors(self):
+        cps = self._left_points()
+        model = fit_piecewise_from_control_points(cps, extent=IMAGE)
+        assert len(model.verts_in) == len(cps) + 8
+
+    def test_through_the_pipeline(self):
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(
+            snap_to_coastline=False,
+            clip_to_land_mask=False,
+            transform_model="piecewise_affine",
+            piecewise_regularization="local",
+        )
+        zone = TestThroughThePipeline._zone(
+            [[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]]
+        )
+        result = georeference_features(
+            [zone],
+            self._left_points(),
+            frame_bounds=TestThroughThePipeline.FRAME,
+            image_size=(600, 400),
+            config=config,
+        )
+
+        errors = result.record.to_dict()["errors"]
+        assert errors["piecewiseApplied"] is True
+        assert errors["piecewiseRegularization"] == "local"
+        assert errors["piecewiseInfluenceRadiusPx"] == pytest.approx(
+            DEFAULT_GEOREF_CONFIG.piecewise_influence_radius_ratio_of_diagonal
+            * np.hypot(600.0, 400.0)
+        )
+        assert result.model.residuals_kind == "leave_one_out"
+
+    def test_is_the_default(self):
+        """B7b's correction (config v19)."""
+        assert DEFAULT_GEOREF_CONFIG.piecewise_regularization == "local"
+        assert DEFAULT_GEOREF_CONFIG.piecewise_influence_radius_ratio_of_diagonal == 0.175
+
+
 class TestContinuity:
     def test_no_seam_across_a_shared_triangle_edge(self):
         """The whole point of sharing vertices: approaching an edge from either
@@ -137,8 +224,12 @@ class TestThroughThePipeline:
         }
 
     def _run(self, cps, zone, transform_model="piecewise_affine"):
+        # The unregularised model: these tests are about the correction itself.
         config = DEFAULT_GEOREF_CONFIG.with_overrides(
-            snap_to_coastline=False, clip_to_land_mask=False, transform_model=transform_model
+            snap_to_coastline=False,
+            clip_to_land_mask=False,
+            transform_model=transform_model,
+            piecewise_regularization="none",
         )
         return georeference_features(
             [zone], cps, frame_bounds=self.FRAME, image_size=(600, 400), config=config
@@ -192,3 +283,70 @@ class TestThroughThePipeline:
         assert vertex_count(affine) == 4
         assert vertex_count(piecewise) > 100
         assert piecewise.record.to_dict()["inputs"]["densifyStepPx"] > 0
+
+
+class TestAutoTransformModel:
+    """``auto``: the affine unless its GCP misfit is over the threshold."""
+
+    ZONE = TestThroughThePipeline._zone(
+        [[120.0, 120.0], [460.0, 130.0], [450.0, 300.0], [120.0, 120.0]]
+    )
+
+    def _run(self, cps, ratio=None):
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(
+            snap_to_coastline=False,
+            clip_to_land_mask=False,
+            transform_model="auto",
+            auto_piecewise_rmse_ratio_of_diagonal=ratio,
+        )
+        return georeference_features(
+            [self.ZONE],
+            cps,
+            frame_bounds=TestThroughThePipeline.FRAME,
+            image_size=(600, 400),
+            config=config,
+        )
+
+    def test_is_an_option_not_the_default(self):
+        """B7b applies the correction on every map; ``auto`` stays selectable."""
+        assert DEFAULT_GEOREF_CONFIG.transform_model == "piecewise_affine"
+        assert "auto" in TRANSFORM_MODELS
+
+    def test_keeps_the_affine_when_it_fits(self):
+        result = self._run(_control_points())
+
+        assert result.model.name == "affine"
+        errors = result.record.to_dict()["errors"]
+        assert errors["autoChoseModel"] == "affine"
+        assert errors["autoAffineRmsePx"] == pytest.approx(0.0, abs=1e-6)
+        assert "piecewiseApplied" not in errors
+
+    def test_switches_to_piecewise_over_the_threshold(self):
+        cps = _control_points({1: (15.0, 10.0), 4: (-9.0, 12.0)})
+        # ~0.7 px: well under the few pixels these offsets leave.
+        result = self._run(cps, ratio=0.001)
+
+        errors = result.record.to_dict()["errors"]
+        assert errors["autoAffineRmsePx"] > errors["autoThresholdPx"]
+        assert result.model.name == "piecewise_affine"
+        assert errors["autoChoseModel"] == "piecewise_affine"
+
+    def test_threshold_scales_with_the_image_diagonal(self):
+        result = self._run(_control_points(), ratio=0.02)
+        # 600 x 400 -> diagonal ~721 px.
+        assert result.record.to_dict()["errors"]["autoThresholdPx"] == pytest.approx(
+            0.02 * np.hypot(600.0, 400.0)
+        )
+
+    def test_a_raised_threshold_keeps_the_affine(self):
+        cps = _control_points({1: (15.0, 10.0), 4: (-9.0, 12.0)})
+        assert self._run(cps, ratio=1.0).model.name == "affine"
+
+    def test_three_points_keep_the_affine(self):
+        """An exact fit is no evidence of distortion, so it never switches."""
+        result = self._run(_control_points({1: (15.0, 10.0)})[:3], ratio=1e-9)
+
+        assert result.model.name == "affine"
+        errors = result.record.to_dict()["errors"]
+        assert errors["autoAffineRmsePx"] is None
+        assert errors["autoChoseModel"] == "affine"

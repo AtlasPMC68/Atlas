@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import shapely
 from shapely.geometry import mapping, shape
@@ -82,6 +82,7 @@ def georeference_features(
     record: Optional[RunRecord] = None,
     model: Optional[TransformModel] = None,
     extra_properties: Optional[Dict[str, Any]] = None,
+    refine_piecewise: Optional[Callable[[Any, RunRecord], Any]] = None,
 ) -> GeorefResult:
     """Georeference pixel-space features with an affine fitted to *control_points*.
 
@@ -99,6 +100,10 @@ def georeference_features(
             gated alignment here; leaving it None reproduces the GCP-only fit.
         extra_properties: merged into every output feature's properties, so a
             consumer can see how the feature was placed.
+        refine_piecewise: with ``config.align_after_piecewise``, called on the
+            piecewise model to align it again (``post_align``), or on the GCP
+            affine when there is no piecewise model. It needs the image's
+            evidence, which this module never sees, so the caller supplies it.
 
     Returns:
         A ``GeorefResult`` whose ``collections`` are FeatureCollections in
@@ -129,7 +134,13 @@ def georeference_features(
         # against the control points so its error is reported, not "unknown".
         model.measure_against(control_points)
 
-    if config.transform_model == "piecewise_affine":
+    use_piecewise = config.transform_model == "piecewise_affine"
+    if config.transform_model == "auto":
+        use_piecewise = _affine_misfit_exceeds_threshold(
+            model, image_size, config, record
+        )
+
+    if use_piecewise:
         with record.phase("piecewise_correction"):
             model = _apply_piecewise_correction(
                 model,
@@ -139,10 +150,30 @@ def georeference_features(
                 image_size=image_size,
                 refit_base=base_is_gcp_affine,
             )
-    elif config.transform_model != "affine":
+    elif config.transform_model not in ("affine", "auto"):
         # A model named in the config that nothing here knows how to build
         # would otherwise place the map with the baseline and say nothing.
         raise ValueError(f"Unknown transform_model: {config.transform_model!r}")
+
+    if config.align_after_piecewise:
+        # Without a piecewise model (refused, or ``auto`` kept the affine), the
+        # GCP affine is aligned instead: otherwise a run with no alignment
+        # before the correction would end up with no alignment at all. An
+        # affine that is already the aligned one is left as it is.
+        if not isinstance(model, PiecewiseAffineModel) and not base_is_gcp_affine:
+            record.set_errors(
+                postAlignment={
+                    "applied": False,
+                    "skippedBecause": "no piecewise model, already aligned",
+                }
+            )
+        elif refine_piecewise is None:
+            record.set_errors(
+                postAlignment={"applied": False, "skippedBecause": "no alignment inputs"}
+            )
+        else:
+            with record.phase("post_piecewise_alignment"):
+                model = refine_piecewise(model, record)
 
     ref_lat = reference_latitude(frame_bounds)
 
@@ -353,6 +384,43 @@ def georeference_features(
     )
 
 
+def _affine_misfit_exceeds_threshold(
+    affine: AffineModel,
+    image_size: Tuple[int, int],
+    config: GeorefConfig,
+    record: RunRecord,
+) -> bool:
+    """``auto``: should the piecewise correction be applied on top of *affine*?
+
+    Compares the affine's in-sample GCP RMS, in image pixels, against
+    ``auto_piecewise_rmse_ratio_of_diagonal`` of the image diagonal. In-sample
+    is what the affine can do with these points; the piecewise model reports
+    its own leave-one-out error once applied. No redundancy (3 points) keeps
+    the affine: an exact fit is no evidence of distortion.
+    """
+    diagonal_px = math.hypot(float(image_size[0]), float(image_size[1]))
+    threshold_px = diagonal_px * config.auto_piecewise_rmse_ratio_of_diagonal
+    rmse_3857 = affine.rmse_3857
+    rmse_px = (
+        rmse_3857 / affine.meters_per_pixel
+        if rmse_3857 is not None and affine.meters_per_pixel > 0
+        else None
+    )
+    use_piecewise = rmse_px is not None and rmse_px > threshold_px
+    record.set_errors(
+        autoAffineRmsePx=rmse_px,
+        autoThresholdPx=threshold_px,
+        autoChoseModel="piecewise_affine" if use_piecewise else "affine",
+    )
+    logger.info(
+        f"[GEOREF] auto transform: affine RMSE "
+        f"{'unknown' if rmse_px is None else f'{rmse_px:.2f} px'}"
+        f" vs threshold {threshold_px:.2f} px ->"
+        f" {'piecewise_affine' if use_piecewise else 'affine'}"
+    )
+    return use_piecewise
+
+
 def _apply_piecewise_correction(
     base: AffineModel,
     control_points: Sequence[ControlPoint],
@@ -371,7 +439,9 @@ def _apply_piecewise_correction(
     aligned model it cannot be refitted without the image, so it stays fixed
     and the error is labelled ``leave_one_out_fixed_base``.
 
-    Never raises. The correction is refused for reasons that are properties of
+    Raises only on a ``piecewise_regularization`` nothing here knows, like the
+    caller does on an unknown ``transform_model``; otherwise never. The
+    correction is refused for reasons that are properties of
     the user's clicks -- two points in the same place, or a set that folds the
     map -- and a refusal has to leave a working affine behind rather than fail
     the import. The reason is recorded either way, because "piecewise was on
@@ -380,12 +450,27 @@ def _apply_piecewise_correction(
     # The frame the correction decays to zero on is padded around the image,
     # which holds every zone and every clicked point.
     extent = (0.0, 0.0, float(image_size[0]), float(image_size[1]))
+    radius_px = None
+    if config.piecewise_regularization == "local":
+        radius_px = (
+            math.hypot(float(image_size[0]), float(image_size[1]))
+            * config.piecewise_influence_radius_ratio_of_diagonal
+        )
+    elif config.piecewise_regularization != "none":
+        raise ValueError(
+            f"Unknown piecewise_regularization: {config.piecewise_regularization!r}"
+        )
+    record.set_errors(
+        piecewiseRegularization=config.piecewise_regularization,
+        piecewiseInfluenceRadiusPx=radius_px,
+    )
     try:
         model = fit_piecewise_from_control_points(
             control_points,
             extent=extent,
             base=None if refit_base else base,
             anchor_margin=config.piecewise_anchor_margin,
+            influence_radius_px=radius_px,
         )
     except (ValueError, np.linalg.LinAlgError) as e:
         logger.warning(f"Piecewise correction refused, keeping the affine: {e}")

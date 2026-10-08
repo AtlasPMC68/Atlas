@@ -354,16 +354,19 @@ class TestControlPointsKeepPulling:
     def test_the_joint_fit_is_not_the_curve_only_fit(self):
         """A coast drawn 25 px from where the control points put it. The probe
         (curve only) goes to the drawing; the joint fit must not simply follow
-        it, or the control points carry no information."""
+        it, or the control points carry no information.
+
+        At equal term weights: this is about the loss rejecting the points, not
+        about the balance. The default x10 coastline weight (config v19) moves
+        the joint fit ~80% of the way to the drawing, by design."""
         truth = _truth_model()
         control_points = _control_points_from(truth, SPREAD)
         samples = _samples_at(truth, _curve_pixels())
         field = build_user_field(_drawn_curve(dy=25.0))
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(weight_curve=1.0)
 
-        probe = fit_chamfer(
-            truth, control_points, samples, field, DEFAULT_GEOREF_CONFIG, use_gcps=False
-        )
-        joint = fit_chamfer(truth, control_points, samples, field, DEFAULT_GEOREF_CONFIG)
+        probe = fit_chamfer(truth, control_points, samples, field, config, use_gcps=False)
+        joint = fit_chamfer(truth, control_points, samples, field, config)
 
         probe_rms = gcp_rms_px(probe.model, control_points)
         joint_rms = gcp_rms_px(joint.model, control_points)

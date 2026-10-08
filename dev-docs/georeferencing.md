@@ -231,11 +231,15 @@ checks and the gate values; features get `alignment_method` and `alignment_rung`
   refused and the run uses the affine. Its reported error is leave-one-out, labelled
   `leave_one_out` (base refitted per fold) or `leave_one_out_fixed_base` (on the aligned
   affine, optimistic).
+- **`auto`** (the default): the affine's RMS residual on the control points it was fitted to,
+  in image pixels, against `auto_piecewise_rmse_ratio_of_diagonal` (0.01) of the image
+  diagonal. At or under it the affine is kept; over it, `piecewise_affine` is applied. With 3
+  points the fit is exact and the affine is kept. The run record has `autoAffineRmsePx`,
+  `autoThresholdPx` and `autoChoseModel`. The threshold is a first guess, not measured.
 
-The default is `piecewise_affine` today. The first corpus run did not support it
-([testing §10](georeferencing-testing.md#8-results)), and the expected change is to make
-`affine` the default and let piecewise earn its place per map through a leave-one-out
-comparison ([roadmap](georeferencing-roadmap.md#2-transform-model-affine-by-default-piecewise-by-leave-one-out)).
+`auto` is a first step toward letting piecewise earn its place per map. The roadmap's
+version compares leave-one-out errors instead of an in-sample threshold
+([roadmap](georeferencing-roadmap.md#2-transform-model-affine-by-default-piecewise-by-leave-one-out)).
 
 ---
 
@@ -273,7 +277,7 @@ comparison ([roadmap](georeferencing-roadmap.md#2-transform-model-affine-by-defa
 
 ## 8. Configuration and switches
 
-Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 14), so a run
+Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 19), so a run
 records exactly what it used and a variant is a set of overrides. `ambient_georef_config()`
 applies the environment:
 
@@ -290,7 +294,7 @@ Current defaults, and where each stands:
 | Curve alignment | on in the app | Supported by the first corpus run: lower check-point error on 11 of 12 cases, worse on none |
 | `weight_curve` / `weight_gcp` | 1 / 1 | The run favoured ×30 (gain stops there); not changed yet. The gain is mostly at the coast ([testing §10](georeferencing-testing.md#8-results)) |
 | `enable_icp` | on, 30° | Kept: removing it is worse at high weight |
-| `transform_model` | `piecewise_affine` | Not supported by the run; expected to become `affine` |
+| `transform_model` | `auto` | Affine unless its GCP RMS exceeds 1% of the image diagonal; threshold not measured yet |
 | `snap_to_coastline` | on | Kept: improves the shipped zones on 9 of 12 cases, worse on none |
 | `clip_to_land_mask`, lake cut | on | Kept (production behaviour; expected zones are cut the same way when scored) |
 | `text_fill_method` | `inpaint` | Kept: `label` is worse on every case |

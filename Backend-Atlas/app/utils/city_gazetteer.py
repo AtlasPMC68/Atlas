@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 BUILDER_VERSION = "1"
-MIN_POPULATION = 15000
+MIN_POPULATION = 5000
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cache")
 

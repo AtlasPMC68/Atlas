@@ -5,12 +5,16 @@ import os
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "14"
+CONFIG_VERSION = "19"
 
 #: The transform models a run may choose between, in increasing order of
-#: freedom. Adding one here is not enough: ``pipeline`` has to know how to
-#: build it, and a test holds the two lists together.
-TRANSFORM_MODELS = ("affine", "piecewise_affine")
+#: freedom, then ``auto``, which picks one of them per map. Adding one here is
+#: not enough: ``pipeline`` has to know how to build it, and a test holds the
+#: two lists together.
+TRANSFORM_MODELS = ("affine", "piecewise_affine", "auto")
+
+#: How far the piecewise correction may reach; see ``piecewise_regularization``.
+PIECEWISE_REGULARIZATIONS = ("none", "local")
 
 #: How labels are removed from the zones; see `color_extraction`. Kept in step
 #: with `color_extraction.TEXT_FILL_METHODS`, which is not imported here so the
@@ -126,8 +130,11 @@ class GeorefConfig:
     # Which model places the map. One named choice rather than a flag per
     # model, so later models (a smoothed warp, roadmap section 3) slot in and a
     # caller cannot ask for two at once. The first corpus run did not support
-    # piecewise as the default; affine is expected to replace it, with
-    # piecewise chosen per map by leave-one-out (roadmap section 2).
+    # plain piecewise as the default. The local piecewise below, between two
+    # alignments at coastline weight 10 (variant B7b, 2026-10-08), did: best
+    # mean before-cleaning IoU of every variant, 14 cases better than B2 and 3
+    # worse, with its large gains on the maps placed worst. That is the
+    # default now.
     #
     # ``affine`` is the baseline. ``piecewise_affine`` keeps that affine and
     # adds a Delaunay correction pinned at each control point, decaying to zero
@@ -138,7 +145,21 @@ class GeorefConfig:
     #
     # When Step 4 alignment supplies a model, this chooses what happens to it:
     # ``affine`` uses the aligned affine as-is, ``piecewise_affine`` corrects it.
-    transform_model: str = "piecewise_affine" # old value "affine"
+    #
+    # ``auto`` measures the affine's RMS residual on the control points it was
+    # fitted to (or, after Step 4, the aligned affine's). At or under the
+    # threshold below, the affine is kept; over it, the piecewise correction is
+    # applied. With exactly 3 points the affine is exact and its residual says
+    # nothing, so ``auto`` keeps the affine. Not the default: B7b applies the
+    # correction on every map. Kept as the switch to try when the losses on
+    # maps the affine already fits (about 0.01 IoU, 2026-10-08) are worth
+    # gating away.
+    transform_model: str = "piecewise_affine"
+    # The ``auto`` threshold: affine GCP RMS in image pixels, as a share of the
+    # image diagonal, so one value means the same misfit on a small and a large
+    # scan (0.01 is ~6 px on 512x256, ~23 px on 2048x1048). A first guess, not
+    # measured: set it from corpus runs.
+    auto_piecewise_rmse_ratio_of_diagonal: float = 0.01
     # Frame padding as a fraction of the map's width and height. Wider means
     # the correction decays more gently and reaches further toward the edges.
     piecewise_anchor_margin: float = 0.25
@@ -146,6 +167,18 @@ class GeorefConfig:
     # diagonal. Only vertices are warped, so a longer straight edge would stay
     # straight across triangles the correction bends.
     piecewise_densify_ratio_of_diagonal: float = 0.01
+    # ``none``: a point's correction reaches across every triangle it is a
+    # corner of, so a region with no control point near it is pulled by a
+    # blend of the corrections of points far away. ``local``: zero-correction
+    # anchors fill the map wherever the nearest control point is at least the
+    # radius below away, so each correction fades out within about that
+    # distance and those regions keep the affine (or the aligned affine).
+    # ``local`` beat ``none`` on top of alignment (B3La/b/c vs B3, 2026-10-08).
+    piecewise_regularization: str = "local"
+    # The ``local`` reach, as a share of the image diagonal (0.175 is ~125 px
+    # on 600x400). Also the anchor grid's spacing. 0.175 was the most even of
+    # 0.1 / 0.175 / 0.25 across maps (2026-10-08); 0.25 is about ``none``.
+    piecewise_influence_radius_ratio_of_diagonal: float = 0.175
 
     # --- Reference rasters (Step 2) ------------------------------------------
     # Matches the existing find_coastline_keypoints defaults. At a ~2500 km
@@ -195,6 +228,17 @@ class GeorefConfig:
     # --- Alignment (Step 4) --------------------------------------------------
     # Off by default: turning it on is the experiment, not the baseline.
     enable_curve_alignment: bool = False
+    # Run the alignment stages (coastline, fine, ICP) again *after* the
+    # piecewise correction, as an affine in front of it (post_align.py), kept
+    # only if the coastline chamfer does not get worse. Independent of the
+    # switch above: with it, align -> piecewise -> align; without it,
+    # piecewise -> align. Without a piecewise model (``auto`` kept the affine,
+    # or the correction was refused) the GCP affine is aligned instead, and an
+    # already aligned affine is left as it is. The second fit moves the map off
+    # the clicks the piecewise model interpolates; on the corpus that was a
+    # gain (B7 vs B3Lb, 2026-10-08), so it is on. With ``enable_curve_alignment``
+    # on as well, which the app's environment does, this is B7b.
+    align_after_piecewise: bool = True
 
     # Reference curve sampling, per stage. Alignment runs coastline-first and
     # only then admits lakes: coastline is the most distinctive structure on a
@@ -213,7 +257,10 @@ class GeorefConfig:
     # so these are true relative weights and not an artifact of there being
     # thousands of curve samples and seven control points.
     weight_gcp: float = 1.0
-    weight_curve: float = 1.0
+    # 10: the coastline outweighs the control points. The corpus gained from
+    # x1 to x3 to x10 with and without the piecewise step (B5a/b, B7a/b,
+    # 2026-10-08); x30 and x100 (B5c/d) are untested.
+    weight_curve: float = 10.0
 
     # A suppressed edge should act as if it were further away, not vanish:
     # D = min(D_strong, D_weak + penalty).
@@ -392,8 +439,11 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "Transform model",
         (
             "transform_model",
+            "auto_piecewise_rmse_ratio_of_diagonal",
             "piecewise_anchor_margin",
             "piecewise_densify_ratio_of_diagonal",
+            "piecewise_regularization",
+            "piecewise_influence_radius_ratio_of_diagonal",
         ),
     ),
     ("Reference rasters", ("reference_raster_width", "reference_raster_height")),
@@ -431,6 +481,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "Alignment",
         (
             "enable_curve_alignment",
+            "align_after_piecewise",
             "curve_sample_spacing_px",
             "curve_max_samples",
             "use_rivers_for_alignment",
@@ -492,6 +543,7 @@ _NOT_OVERRIDABLE = frozenset({"version"})
 #: these are validated against the list and offered as a dropdown by the UI.
 FIELD_CHOICES: Dict[str, Tuple[str, ...]] = {
     "transform_model": TRANSFORM_MODELS,
+    "piecewise_regularization": PIECEWISE_REGULARIZATIONS,
     "text_fill_method": TEXT_FILL_METHODS,
     "text_inpaint_algo": TEXT_INPAINT_ALGOS,
 }

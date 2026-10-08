@@ -1061,7 +1061,6 @@ const QUERY_SWITCH_FIELDS = new Set([
   "snap_to_coastline",
   "enable_curve_alignment",
   "clip_to_land_mask",
-  "transform_model",
   "gcp_sources",
 ]);
 

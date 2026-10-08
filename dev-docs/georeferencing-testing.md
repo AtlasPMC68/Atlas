@@ -206,8 +206,8 @@ docker compose run --rm georef-dev python scripts/run_georef_variants.py \
 
 | Stage | Variants |
 |---|---|
-| 1. Base transform | `A0` affine, no snapping, clipping on (the floor) · `A1` piecewise · `A2` A0 + snapping · `A3` / `A4` SIFT / cities only |
-| 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 |
+| 1. Base transform | `A0` affine, no snapping, clipping on (the floor) · `A1` piecewise · `A1La/b/c` piecewise, local regularization at reach 0.1, 0.175, 0.25 of the diagonal · `A2` A0 + snapping · `A3` / `A4` SIFT / cities only |
+| 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B3La/b/c` B2 + local piecewise, same reaches · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 · `B7` B3Lb then align again (align → piecewise → align) · `B8` local piecewise at 0.175 then align (piecewise → align; the GCP affine is aligned when the correction is refused) · `B7a/b` B7 with coastline weight ×3, ×10 |
 | 3. Production | `PROD`: file defaults with alignment on (= alignment + piecewise + snapping) |
 | Extraction | `E1` label text fill instead of inpaint · `E2` zone gap fill on |
 | Noise | `N1` |
