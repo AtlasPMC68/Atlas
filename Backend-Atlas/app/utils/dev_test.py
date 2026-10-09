@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 from app.utils.dev_test_evaluator import build_test_case_paths
 from app.utils.georeferencing.records import RUN_RECORD_FILENAME
 from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
-from app.tasks import GEOREF_CONFIG
+from app.utils.georeferencing.config import ambient_georef_config
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -682,7 +682,7 @@ def _start_extraction_for_case(
     # Refuse up front what the task could only fail on: a case missing a user
     # input, or a source selection leaving fewer than 3 points ("cities only"
     # on a case with two cities).
-    run_config = GEOREF_CONFIG.with_overrides(**(config_overrides or {}))
+    run_config = ambient_georef_config().with_overrides(**(config_overrides or {}))
     state, inputs = inspect_case(
         assets_root=assets_root,
         test_id=test_id,
