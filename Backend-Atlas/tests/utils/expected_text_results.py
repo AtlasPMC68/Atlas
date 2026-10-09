@@ -37,13 +37,13 @@ MAP_EXPECTED_ZONE_DETECTION_COUNTS = {
 }
 
 CARD_THRESHOLDS = {
-    "Quebec_Traite1783.png": {"min_hit_rate": 85.7, "max_dist": 0.80},
-    "Quebec_1800.png": {"min_hit_rate": 74.0, "max_dist": 0.50},
-    "Degrade_Afrique.png": {"min_hit_rate": 25.0, "max_dist": 3.25},
-    "Quebec_1791.png": {"min_hit_rate": 85.2, "max_dist": 0.51},
-    "Progress_wehrmacht_lux_May_1940.jpg": {"min_hit_rate": 100.0, "max_dist": 0.20},
-    "Quebec_Cities_Only.png": {"min_hit_rate": 100.0, "max_dist": 0.15},
-    "Nouvelle-France1750.png": {"min_hit_rate": 69.2, "max_dist": 1.44},
-    "genocide_Monde.png": {"min_hit_rate": 100.0, "max_dist": 0.26},
-    "1775_Quebec_NordUSA.png": {"min_hit_rate": 68.8, "max_dist": 0.63},
+    "Quebec_Traite1783": {"min_hit_rate": 85.7, "max_dist": 0.80},
+    "Quebec_1800": {"min_hit_rate": 74.0, "max_dist": 0.50},
+    "Degrade_Afrique": {"min_hit_rate": 25.0, "max_dist": 3.25},
+    "Quebec_1791": {"min_hit_rate": 85.2, "max_dist": 0.51},
+    "Progress_wehrmacht_lux_May_1940": {"min_hit_rate": 100.0, "max_dist": 0.20},
+    "Quebec_Cities_Only": {"min_hit_rate": 100.0, "max_dist": 0.15},
+    "Nouvelle-France1750": {"min_hit_rate": 69.2, "max_dist": 1.44},
+    "genocide_Monde": {"min_hit_rate": 100.0, "max_dist": 0.26},
+    "1775_Quebec_NordUSA": {"min_hit_rate": 68.8, "max_dist": 0.63},
 }

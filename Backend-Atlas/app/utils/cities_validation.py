@@ -112,26 +112,32 @@ def get_city_with_max_population(
     if not key:
         return result
 
-    candidates: List[Dict[str, Any]] = list(_city_map.get(key, []))
-
-    # Fuzzy matching fallback if no exact match found
-    matched_key = key
-    if not candidates and confidence_threshold < 1.0:
-        close_matches = difflib.get_close_matches(key, _city_map.keys(), n=1, cutoff=confidence_threshold)
-        if close_matches:
-            matched_key = close_matches[0]
-            candidates = list(_city_map.get(matched_key, []))
-
-    if not candidates:
-        return result
-
-    if geo_bounds is not None:
-        candidates = [
+    def filter_by_bounds(cands: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if geo_bounds is None:
+            return cands
+        return [
             c
-            for c in candidates
+            for c in cands
             if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"]
             and geo_bounds["min_lon"] <= c["lon"] <= geo_bounds["max_lon"]
         ]
+
+    matched_key = key
+    candidates = filter_by_bounds(list(_city_map.get(key, [])))
+
+    # Fuzzy matching fallback if no valid exact match found
+    if not candidates and confidence_threshold < 1.0:
+        if geo_bounds is not None:
+            valid_keys = [k for k, v in _city_map.items() if filter_by_bounds(v)]
+        else:
+            valid_keys = list(_city_map.keys())
+
+        close_matches = difflib.get_close_matches(
+            key, valid_keys, n=1, cutoff=confidence_threshold
+        )
+        if close_matches:
+            matched_key = close_matches[0]
+            candidates = filter_by_bounds(list(_city_map.get(matched_key, [])))
 
     if not candidates:
         return result

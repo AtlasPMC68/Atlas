@@ -111,17 +111,30 @@ def geolocate_cities(
         if not text:
             continue
 
-        try:
-            candidate = get_city_with_max_population(text, geo_bounds=geo_bounds, confidence_threshold=0.60)
-        except Exception as exc:
-            logger.debug(f"get_city_with_max_population error for text '{text}': {exc}")
-            candidate = {
-                "found": False,
-                "query": text,
-                "name": text,
-                "lat": 0.0,
-                "lon": 0.0,
-            }
+        def _try_get_city(query_text: str):
+            try:
+                return get_city_with_max_population(query_text, geo_bounds=geo_bounds, confidence_threshold=0.60)
+            except Exception as exc:
+                logger.debug(f"get_city_with_max_population error for text '{query_text}': {exc}")
+                return {
+                    "found": False,
+                    "query": query_text,
+                    "name": query_text,
+                    "lat": 0.0,
+                    "lon": 0.0,
+                }
+
+        candidate = _try_get_city(text.replace("\n", " "))
+        
+        # Fallback to individual lines if full text matches nothing
+        if not candidate.get("found") and "\n" in text:
+            for line in text.split("\n"):
+                line = line.strip()
+                if line:
+                    line_candidate = _try_get_city(line)
+                    if line_candidate.get("found"):
+                        candidate = line_candidate
+                        break
 
         if bool(candidate.get("found")):
             city_feature_collection = _build_city_feature_collection(text, candidate)
@@ -202,7 +215,8 @@ def _build_extracted_text_from_detections(
 
         def process_candidate_text(text_val: str):
             clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text_val)
-            clean_text = " ".join(clean_text.split()).strip(" .,;:!?()[]{}'\"")
+            # Retain newlines, but collapse spaces within each line
+            clean_text = "\n".join(" ".join(line.split()) for line in clean_text.split("\n")).strip(" .,;:!?()[]{}'\"")
             if not clean_text or should_ignore(clean_text):
                 return
             extracted_text.append(
@@ -213,12 +227,7 @@ def _build_extracted_text_from_detections(
                 }
             )
 
-        if "\n" in raw_text:
-            lines = raw_text.split("\n")
-            for line in lines:
-                process_candidate_text(line)
-        else:
-            process_candidate_text(raw_text)
+        process_candidate_text(raw_text)
 
     return extracted_text
 
@@ -284,7 +293,7 @@ def _run_ocr_pipeline(
                     if poll_err.__class__.__name__ in ("TimeoutError", "CeleryTimeoutError"):
                         elapsed += poll_interval
                         if elapsed % 60 == 0:
-                            logger.info(f"    ... Still running OCR pipeline - elapsed: {elapsed/60:.1f}min")
+                            logger.info(f"    ... Still running OCR pipeline - elapsed: {elapsed/60:.1f} min")
                     else:
                         raise poll_err
             else:

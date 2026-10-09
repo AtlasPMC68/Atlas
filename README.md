@@ -197,7 +197,7 @@ curl http://localhost:8000/ping
 
 ## Testing
 
-### To rebuild everithing
+### To rebuild everything
 
 ```sh
 docker compose down -v ; docker compose build --no-cache ; docker compose up -d
@@ -208,13 +208,13 @@ All tests must run inside Docker:
 
 ```sh
 # Run all backend tests
-docker compose exec test-backend pytest -q
+docker compose run --rm test-backend pytest -q
 ```
 
 #### Run a specific test file
 
 ```sh
-docker compose exec test-backend pytest tests/test_extraction_text.py -q
+docker compose run --rm test-backend pytest tests/test_extraction_text.py -q
 ```
 
 #### Run a test with more details

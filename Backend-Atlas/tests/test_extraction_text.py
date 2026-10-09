@@ -326,7 +326,7 @@ def test_text_extraction_accuracy(
 
     box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
 
-    thresholds = CARD_THRESHOLDS.get(image_path.name, {"min_hit_rate": 40.0, "max_dist": 15.0})
+    thresholds = CARD_THRESHOLDS.get(image_path.stem, {"min_hit_rate": 40.0, "max_dist": 15.0})
     min_hit_rate = thresholds["min_hit_rate"]
     max_dist = thresholds["max_dist"]
 
