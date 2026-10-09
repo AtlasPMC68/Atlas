@@ -102,6 +102,7 @@ def geolocate_cities(
     geo_bounds = _compute_geo_bounds(geo_points_lonlat) if geo_points_lonlat else None
 
     city_persist_coroutines = []
+    seen_cities = set()
 
     for block in extracted_text:
         if not isinstance(block, dict):
@@ -137,6 +138,11 @@ def geolocate_cities(
                         break
 
         if bool(candidate.get("found")):
+            city_name = candidate.get("name")
+            if city_name in seen_cities:
+                continue
+            seen_cities.add(city_name)
+            
             city_feature_collection = _build_city_feature_collection(text, candidate)
             city_persist_coroutines.append(persist_city_feature_fn(project_id, map_id, city_feature_collection))
 
