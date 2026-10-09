@@ -412,4 +412,5 @@ def test_text_extraction_accuracy(
         reasons.append(f"Dist={average_dist:.2f} (max {max_dist})")
 
     error_msg = f"FAILED {image_path.name}: " + ", ".join(reasons)
-    assert is_passed, error_msg
+    if not is_passed:
+        pytest.fail(error_msg, pytrace=False)
