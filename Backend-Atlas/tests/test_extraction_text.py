@@ -332,8 +332,8 @@ def test_text_extraction_accuracy(
     min_hit_rate = thresholds["min_hit_rate"]
     max_dist = thresholds["max_dist"]
 
-    hit_rate_passed = round(box_find_rate, 2) >= min_hit_rate
-    dist_passed = round(average_dist, 2) <= max_dist
+    hit_rate_passed = (box_find_rate + 1e-4) >= min_hit_rate
+    dist_passed = (average_dist - 1e-4) <= max_dist
     is_passed = hit_rate_passed and dist_passed
 
     if is_passed:
