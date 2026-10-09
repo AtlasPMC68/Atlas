@@ -21,7 +21,6 @@ def test_celery_result_expires():
     assert celery_app.conf.result_expires == 3600
 
 def test_celery_task_routes():
+    # The worker consumes only "default" (docker-compose), so every task goes there.
     routes = celery_app.conf.task_routes
-    assert "app.tasks.process_map" in routes
-    assert routes["app.tasks.process_map"]["queue"] == "maps"
-    assert routes.get("app.tasks.something_else", {"queue": "default"})["queue"] == "default"
+    assert routes == {"app.tasks.*": {"queue": "default"}}

@@ -18,9 +18,8 @@ def extract_color_from_assets():
         file_path = os.path.join(ASSETS_DIR, filename)
         if os.path.isfile(file_path) and validate_file_extension(file_path):
             print(f"Extracting color from {filename}...")
-            # TODO: extract_colors no longer auto-detects colors.
-            # Update this script to provide imposed click positions OR run shapes extraction
-            # first and pass legend_shapes.
+            # TODO: extract_colors only extracts pipette colours; this script
+            # passes none, so it extracts nothing until it provides click positions.
             extract_colors(file_path, debug=True)
 
 

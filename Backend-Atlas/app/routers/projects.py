@@ -1,15 +1,14 @@
+# region Imports
 import logging
 from pathlib import Path
 from uuid import UUID
 import json
-import math
-from json import JSONDecodeError
 from uuid import UUID
 import base64
 import cv2
 import numpy as np
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, Body
 from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -34,22 +33,22 @@ from app.utils.update_feature import (
     serialize_feature_rows,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
-from app.utils.imposed_colors import parse_imposed_colors
+from app.utils.georeferencing import parse_frame_bounds_entry
+from app.utils.city_gazetteer import search_cities, warm_frame
 
 from ..celery_app import celery_app
-from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
 from ..utils.auth import get_current_user_id
-from ..utils.color_in_legends_extraction import sample_color_at
+from ..utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
+from ..utils.color_sampling import sample_color_at
 from ..utils.color_extraction import get_nearest_css4_color_name
+# endregion
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["Projects operations"])
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
 
@@ -225,232 +224,34 @@ async def get_project(
     )
 
 
-@router.post("/upload")
-async def upload_and_process_map(
-    image_points: str | None = Form(None),
-    world_points: str | None = Form(None),
-    legend_bounds: str | None = Form(None),
-    imposed_colors: str | None = Form(None),
-    imposed_shape_clicks: str | None = Form(None),
-    enable_georeferencing: bool = Form(True),
-    enable_color_extraction: bool = Form(True),
-    enable_text_extraction: bool = Form(False),
-    project_id: str = Form(...),
-    map_id: str = Form(...),
-    file: UploadFile = File(...),
-    user_id: str = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    try:
-        project_id = UUID(project_id)
-        map_id = UUID(map_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or map_id")
-
-    result = await session.execute(
-        select(Map)
-        .join(Project, Map.project_id == Project.id)
-        .where(
-            Map.id == map_id,
-            Map.project_id == project_id,
-            Project.user_id == UUID(user_id),
-        )
-    )
-    map_obj = result.scalar_one_or_none()
-    if not map_obj:
-        raise HTTPException(
-            status_code=404,
-            detail="Map not found for this project or access denied",
-        )
-
-    # Validate file extension
-    if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
-
-    pixel_points_list = None
-    geo_points_list = None
-    legend_bounds_dict = None
-
-    # Parse matched point pairs for SIFT georeferencing
-    if enable_georeferencing and image_points and world_points:
-        try:
-            img_pts = json.loads(image_points)  # list of {"x":..,"y":..}
-            world_pts = json.loads(world_points)  # list of {"lat":..,"lng":..}
-
-            # Basic structural validation
-            if not isinstance(img_pts, list) or not isinstance(world_pts, list):
-                raise ValueError("image_points and world_points must be JSON arrays")
-
-            if len(img_pts) != len(world_pts):
-                raise ValueError(
-                    "image_points and world_points must have the same length"
-                )
-
-            pixel_points_list = [(float(p["x"]), float(p["y"])) for p in img_pts]
-            geo_points_list = [(float(p["lng"]), float(p["lat"])) for p in world_pts]
-        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid georeferencing payload: {e}",
-            )
-
-    # Parse optional legend rectangle (pixel-space bounds)
-    if legend_bounds:
-        try:
-            parsed = json.loads(legend_bounds)
-            required_keys = {"x", "y", "width", "height"}
-            if not isinstance(parsed, dict) or not required_keys.issubset(
-                parsed.keys()
-            ):
-                raise ValueError(
-                    "legend_bounds must be a JSON object with x, y, width, height"
-                )
-
-            legend_bounds_dict = {
-                "x": float(parsed["x"]),
-                "y": float(parsed["y"]),
-                "width": float(parsed["width"]),
-                "height": float(parsed["height"]),
-            }
-
-            if not all(math.isfinite(value) for value in legend_bounds_dict.values()):
-                raise ValueError("legend_bounds values must be finite numbers")
-
-            if legend_bounds_dict["width"] <= 0 or legend_bounds_dict["height"] <= 0:
-                raise ValueError("legend_bounds width and height must be > 0")
-        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid legend bounds payload: {e}",
-            )
-
-    # Parse optional user-picked click positions as [{"x": 0.5, "y": 0.3, "name": "..."}, ...]
-    try:
-        (
-            imposed_click_positions,
-            imposed_colors_names,
-            imposed_sampling_radii,
-        ) = parse_imposed_colors(imposed_colors)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid imposed_colors payload: {e}",
-        )
-
-    # Parse optional shape click positions [{"x": 0.5, "y": 0.3, "name": "..."}]
-    imposed_shape_click_positions_list: list | None = None
-    imposed_shape_names_list: list | None = None
-    MAX_SHAPE_CLICKS = 50
-    if imposed_shape_clicks:
-        try:
-            raw_shapes = json.loads(imposed_shape_clicks)
-            if not isinstance(raw_shapes, list):
-                raise ValueError("imposed_shape_clicks must be a JSON array")
-            if len(raw_shapes) > MAX_SHAPE_CLICKS:
-                raise ValueError(f"Too many shape clicks. Maximum allowed is {MAX_SHAPE_CLICKS}.")
-            parsed_shapes = []
-            for i, shape in enumerate(raw_shapes):
-                if not isinstance(shape, dict):
-                    raise ValueError("Each shape entry must be an object")
-                x, y = float(shape["x"]), float(shape["y"])
-                if not (math.isfinite(x) and math.isfinite(y) and 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
-                    raise ValueError("shape click x and y must be finite normalized floats in [0, 1]")
-                parsed_shapes.append((x, y))
-            imposed_shape_click_positions_list = parsed_shapes
-            imposed_shape_names_list = [
-                str(shape.get("name", f"Shape {i + 1}"))
-                for i, shape in enumerate(raw_shapes)
-            ]
-        except (JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid imposed_shape_clicks payload: {e}",
-            )
-
-    file_content = await file.read()
-
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
-        )
-
-    if len(file_content) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-
-    try:
-        task = process_map_extraction.delay(
-            filename=file.filename,
-            file_content=file_content,
-            project_id=map_obj.project_id,
-            map_id=map_id,
-            pixel_points=pixel_points_list,
-            geo_points_lonlat=geo_points_list,
-            enable_color_extraction=enable_color_extraction,
-            enable_text_extraction=enable_text_extraction,
-            legend_bounds=legend_bounds_dict,
-            imposed_click_positions=imposed_click_positions,
-            imposed_colors_names=imposed_colors_names,
-            imposed_sampling_radii=imposed_sampling_radii,
-            imposed_shape_click_positions=imposed_shape_click_positions_list,
-            imposed_shape_names=imposed_shape_names_list,
-        )
-        # TODO: either delete the created map if task fails or create cleanup mechanism
-
-        logger.info(f"Map processing task started: {task.id} for file {file.filename}")
-
-        return {
-            "task_id": task.id,
-            "filename": file.filename,
-            "status": "processing_started",
-            "message": f"Map upload successful. Processing started for {file.filename}",
-            "map_id": str(map_id),
-        }
-
-    except Exception as e:
-        logger.error(f"Error starting map processing: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to start processing")
-
-
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
-    """Get the status of a map processing task"""
+    """Get the status of a background task."""
     task = celery_app.AsyncResult(task_id)
+    response = {"task_id": task_id, "state": task.state}
 
     if task.state == "PENDING":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "status": "Task is waiting to be processed",
-        }
+        response["status"] = "Task is waiting to be processed"
+        response["progress_percentage"] = 0
     elif task.state == "PROGRESS":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "current": task.info.get("current", 0),
-            "total": task.info.get("total", 1),
-            "status": task.info.get("status", ""),
-            "progress_percentage": round(
-                (task.info.get("current", 0) / task.info.get("total", 1)) * 100, 2
-            ),
-        }
+        info = task.info if isinstance(task.info, dict) else {}
+        current = info.get("current", 0)
+        total = info.get("total", 1) or 1
+        response.update(
+            current=current,
+            total=total,
+            status=info.get("status", ""),
+            progress_percentage=round(current / total * 100, 2),
+        )
     elif task.state == "SUCCESS":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "result": task.result,
-            "progress_percentage": 100,
-        }
-    else:  # FAILURE
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "error": str(task.info),
-            "progress_percentage": 0,
-        }
+        response["result"] = task.result
+        response["progress_percentage"] = 100
+    elif task.state == "FAILURE":
+        response["error"] = str(task.info)
+        response["progress_percentage"] = 0
+    else:  # STARTED, RETRY, REVOKED
+        response["status"] = task.state
+        response["progress_percentage"] = 0
 
     return response
 
@@ -755,6 +556,7 @@ async def get_projects(
 
 @router.post("/coastline-keypoints")
 async def get_coastline_keypoints(
+    background_tasks: BackgroundTasks,
     west: float = Form(...),
     south: float = Form(...),
     east: float = Form(...),
@@ -766,6 +568,9 @@ async def get_coastline_keypoints(
     try:
         bounds = {"west": west, "south": south, "east": east, "north": north}
         result = find_coastline_keypoints(bounds, width, height)
+        # The frame is fixed from here on; load its cities now, after the
+        # response, so the first city search does not pay for reading them.
+        background_tasks.add_task(warm_frame, bounds)
         used_lakes = bool(result.get("used_lakes", False))
 
         return {
@@ -778,6 +583,27 @@ async def get_coastline_keypoints(
     except Exception as e:
         logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/city-candidates")
+def get_city_candidates(
+    q: str = Form(...),
+    west: float = Form(...),
+    south: float = Form(...),
+    east: float = Form(...),
+    north: float = Form(...),
+    limit: int = Form(10),
+):
+    """Gazetteer cities inside the framing box whose name matches."""
+    try:
+        bounds = parse_frame_bounds_entry(
+            {"west": west, "south": south, "east": east, "north": north}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid bounds: {e}")
+
+    candidates = search_cities(q, bounds, limit=max(1, min(int(limit), 25)))
+    return {"candidates": [c.to_dict() for c in candidates]}
 
 
 @router.post("/{project_id}/thumbnail")
@@ -946,19 +772,7 @@ async def sample_color(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Stateless endpoint — no map or DB needed.
-
-    The frontend sends the image file it already has from the file picker,
-    along with normalised click coordinates [0,1].  The backend samples the
-    dominant colour in a neighbourhood around the click and returns the result
-    so the frontend can show a colour swatch.
-
-    The returned LAB values are consistent with what extract_colors() will
-    compute on the same file during /upload.
-
-    Returns: { rgb: [r,g,b], lab: [L,a,b], hex: "#rrggbb" }
-    """
+    """ Returns LAB, RGB and hex code of color of a click"""
     raw = await file.read()
     if len(raw) == 0:
         raise HTTPException(status_code=400, detail="Empty file")

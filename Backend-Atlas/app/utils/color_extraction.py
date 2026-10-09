@@ -1,23 +1,29 @@
+# region Imports
+import logging
 import math
 import os
 from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+import shapely
 from matplotlib import colors as mcolors
-from scipy.ndimage import binary_fill_holes
+from scipy.ndimage import binary_fill_holes, distance_transform_edt
 from shapely import affinity
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from skimage.color import deltaE_ciede2000, lab2rgb, rgb2lab
-from skimage.measure import find_contours
 from skimage.morphology import closing, disk, opening
 from skimage.util import img_as_float
 
-from app.utils.color_in_legends_extraction import sample_color_at
+from app.utils.color_sampling import sample_color_at
+from app.utils.legend import LegendBounds, legend_mask
 
 from . import preprocessing
+# endregion
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_color")
@@ -206,7 +212,6 @@ def prepare_imposed_dominants(
 
 
 def build_exclusive_masks_by_nearest_center(
-    # TODO: ignore pixels that are in the legend box
     lab: np.ndarray,
     opaque_mask: np.ndarray,
     centers_lab: np.ndarray,
@@ -290,33 +295,268 @@ def save_mask_png(
     cv2.imwrite(out_path, bgra)
 
 
+def _ring_palette(
+    ring_lab: np.ndarray, max_colors: int, min_share: float
+) -> Optional[np.ndarray]:
+    """The background colours around a label: k-means on the ring, small clusters dropped."""
+    if ring_lab.shape[0] < 20:
+        return None
+    data = ring_lab.astype(np.float32)
+    k = int(min(max_colors, data.shape[0]))
+    cv2.setRNGSeed(0)  # same palette on every run of the same map
+    _compactness, labels, centers = cv2.kmeans(
+        data,
+        k,
+        None,
+        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 0.5),
+        3,
+        cv2.KMEANS_PP_CENTERS,
+    )
+    shares = np.bincount(labels.ravel(), minlength=k) / float(labels.size)
+    keep = shares >= min_share
+    return centers[keep].astype(np.float64) if keep.any() else None
+
+
+def repaint_text_ink_palette(
+    rgb: np.ndarray,
+    lab: np.ndarray,
+    text_regions: List,
+    *,
+    ink_deltaE: float = 12.0,
+    dilation_px: int = 1,
+    max_ink_ratio: float = 0.6,
+    ring_px: int = 6,
+    palette_max_colors: int = 4,
+    palette_min_share: float = 0.08,
+    vote_window: int = 5,
+    box_margin_px: int = 2,
+) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    """Erase each label's ink and repaint it with the colour that surrounds it."""
+    stats = {
+        "method": "inpaint",
+        "algo": "palette",
+        "boxesConsidered": 0,
+        "boxesFilled": 0,
+        "pixelsFilled": 0,
+    }
+    if not text_regions:
+        return rgb, lab, stats
+
+    height, width = rgb.shape[:2]
+
+    polygons: List[np.ndarray] = []
+    all_boxes = np.zeros((height, width), dtype=np.uint8)
+    for polygon in text_regions:
+        try:
+            points = np.array(polygon, dtype=np.float64).reshape(-1, 2)
+        except (TypeError, ValueError):
+            continue
+        if points.shape[0] < 3:
+            continue
+        polygons.append(points)
+        cv2.fillPoly(all_boxes, [np.round(points).astype(np.int32)], 1)
+    other_text = all_boxes.astype(bool)
+
+    ring_kernel = np.ones((2 * max(int(ring_px), 1) + 1,) * 2, np.uint8)
+    margin_kernel = np.ones((2 * max(int(box_margin_px), 0) + 1,) * 2, np.uint8)
+    halo = np.ones((2 * max(int(dilation_px), 0) + 1,) * 2, np.uint8)
+    window = max(int(vote_window), 3) | 1  # odd
+    vote_kernel = np.ones((window, window), np.float32)
+
+    rgb_out = rgb.copy()
+    lab_out = lab.copy()
+    filled = np.zeros((height, width), dtype=bool)
+
+    for points in polygons:
+        margin = max(int(ring_px), 1) + window
+        x0 = max(int(np.floor(points[:, 0].min())) - margin, 0)
+        y0 = max(int(np.floor(points[:, 1].min())) - margin, 0)
+        x1 = min(int(np.ceil(points[:, 0].max())) + margin + 1, width)
+        y1 = min(int(np.ceil(points[:, 1].max())) + margin + 1, height)
+        if x1 - x0 < 3 or y1 - y0 < 3:
+            continue
+        stats["boxesConsidered"] += 1
+
+        box = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+        cv2.fillPoly(box, [np.round(points - [x0, y0]).astype(np.int32)], 1)
+        inside = box.astype(bool)
+        if not inside.any():
+            continue
+
+        crop_lab = lab[y0:y1, x0:x1]
+        ring = cv2.dilate(box, ring_kernel).astype(bool) & ~inside
+        ring &= ~other_text[y0:y1, x0:x1]
+        palette = _ring_palette(crop_lab[ring], palette_max_colors, palette_min_share)
+        if palette is None:
+            continue
+
+        # ΔE to each palette colour, for the whole crop: the box decides what
+        # is ink, the surroundings are the voters.
+        dists = np.stack(
+            [deltaE_ciede2000(crop_lab, c.reshape(1, 1, 3)) for c in palette], axis=-1
+        )
+        nearest = np.argmin(dists, axis=-1)
+        near_palette = np.min(dists, axis=-1) <= ink_deltaE
+
+        ink = inside & ~near_palette
+        if not ink.any() or ink[inside].mean() > max_ink_ratio:
+            continue
+        allowed = cv2.dilate(box, margin_kernel).astype(bool)
+        if dilation_px > 0:
+            ink = cv2.dilate(ink.astype(np.uint8), halo).astype(bool)
+        ink &= allowed
+
+        # Voters: known pixels that match a palette colour. Anything else --
+        # a border line, a neighbouring label -- neither votes nor is filled.
+        labels = np.where(near_palette & ~ink, nearest, -1)
+        todo = ink.copy()
+        while todo.any():
+            counts = np.stack(
+                [
+                    cv2.filter2D(
+                        (labels == k).astype(np.float32), -1, vote_kernel,
+                        borderType=cv2.BORDER_CONSTANT,
+                    )
+                    for k in range(len(palette))
+                ],
+                axis=-1,
+            )
+            frontier = todo & (counts.sum(axis=-1) > 0)
+            if not frontier.any():
+                break  # no voter reaches what is left
+            labels[frontier] = np.argmax(counts[frontier], axis=-1)
+            todo &= ~frontier
+
+        repainted = ink & (labels >= 0)
+        if not repainted.any():
+            continue
+        palette_rgb = np.clip(lab2rgb(palette.reshape(-1, 1, 3)).reshape(-1, 3), 0, 1)
+        ys, xs = np.nonzero(repainted)
+        chosen = labels[ys, xs]
+        rgb_out[ys + y0, xs + x0] = palette_rgb[chosen]
+        lab_out[ys + y0, xs + x0] = palette[chosen]
+        filled[ys + y0, xs + x0] = True
+        stats["boxesFilled"] += 1
+
+    if not filled.any():
+        return rgb, lab, stats
+    stats["pixelsFilled"] = int(filled.sum())
+    return rgb_out, lab_out, stats
+
+
+def fill_gaps_between_zones(
+    labels: np.ndarray, zone_count: int, max_gap_px: float
+) -> Tuple[np.ndarray, int]:
+    """Close the thin unassigned band between two different zones."""
+    if zone_count < 2 or max_gap_px <= 0:
+        return labels, 0
+    unassigned = labels < 0
+    if not unassigned.any():
+        return labels, 0
+
+    # Distance from every pixel to each zone; the stack is (K, H, W) floats,
+    # a few MB per zone on a large scan.
+    distances = np.stack(
+        [distance_transform_edt(labels != k) for k in range(zone_count)]
+    )
+    order = np.argsort(distances, axis=0)
+    nearest = order[0]
+    d1 = np.take_along_axis(distances, order[:1], axis=0)[0]
+    d2 = np.take_along_axis(distances, order[1:2], axis=0)[0]
+
+    fill = unassigned & (d1 + d2 <= max_gap_px)
+    if not fill.any():
+        return labels, 0
+    out = labels.copy()
+    out[fill] = nearest[fill]
+    return out, int(fill.sum())
+
+
+def resolve_zone_overlaps(masks: List[np.ndarray], labels: np.ndarray) -> np.ndarray:
+    """One zone per pixel after per-zone morphology."""
+    height, width = labels.shape
+    stack = np.stack(masks) if masks else np.zeros((0, height, width), dtype=bool)
+    claims = stack.sum(axis=0)
+    final = np.full((height, width), -1, dtype=np.int32)
+    if stack.shape[0] == 0:
+        return final
+    first = np.argmax(stack, axis=0)
+    final[claims >= 1] = first[claims >= 1]
+    contested = claims > 1
+    if contested.any():
+        own = labels[contested]
+        rows, cols = np.nonzero(contested)
+        valid_own = own >= 0
+        keeps = np.zeros(own.shape, dtype=bool)
+        keeps[valid_own] = stack[own[valid_own], rows[valid_own], cols[valid_own]]
+        final[rows[keeps], cols[keeps]] = own[keeps]
+    return final
+
+
+def mask_to_pixel_edge_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
+    """The mask as polygons that follow pixel *edges*, not pixel centres."""
+    if not mask.any():
+        return None
+    padded = np.zeros((mask.shape[0], mask.shape[1] + 2), dtype=np.int8)
+    padded[:, 1:-1] = mask
+    steps = np.diff(padded, axis=1)
+    start_rows, start_cols = np.nonzero(steps == 1)
+    _end_rows, end_cols = np.nonzero(steps == -1)
+    # np.nonzero is row-major, so the n-th start and the n-th end of a row pair up.
+    boxes = shapely.box(start_cols, start_rows, end_cols, start_rows + 1)
+    geometry = shapely.union_all(boxes)
+    if not geometry.is_valid:
+        geometry = geometry.buffer(0)
+    return None if geometry.is_empty else geometry
+
+
 def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
-    """
-    Convert a boolean numpy mask to a Shapely geometry (Polygon or MultiPolygon).
-    Uses skimage.measure.find_contours to extract contours from the mask.
-    """
+    
     if not np.any(mask):
         return None
 
-    contours = find_contours(mask.astype(float), 0.5)
-    if not contours:
+    contours, hierarchy = cv2.findContours(
+        mask.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE
+    )
+    if not contours or hierarchy is None:
         return None
 
-    polygons = []
-    for contour in contours:
-        coords = [
-            (float(point[1]), float(point[0])) for point in contour
-        ]  # (x=col, y=row)
-
+    def _ring(contour) -> Optional[List[Tuple[float, float]]]:
+        # (x=col, y=row), matching the previous convention.
+        coords = [(float(p[0][0]), float(p[0][1])) for p in contour]
         if len(coords) < 3:
-            continue
-
+            return None
         if coords[0] != coords[-1]:
             coords.append(coords[0])
+        return coords
+
+    # hierarchy is (1, n, 4): [next, previous, first_child, parent]. A contour
+    # with no parent is an outer boundary; its children are its holes.
+    hierarchy = hierarchy[0]
+    polygons: List[Polygon] = []
+    for index, contour in enumerate(contours):
+        if hierarchy[index][3] != -1:
+            continue  # a hole, handled with its parent
+
+        shell = _ring(contour)
+        if shell is None:
+            continue
+
+        holes = []
+        child = hierarchy[index][2]
+        while child != -1:
+            hole = _ring(contours[child])
+            if hole is not None:
+                holes.append(hole)
+            child = hierarchy[child][0]
 
         try:
-            poly = Polygon(coords)
-            if poly.is_valid and poly.area > 0:
+            poly = Polygon(shell, holes)
+            if not poly.is_valid:
+                # Self-touching rings are common on a pixel boundary; buffer(0)
+                # is the standard repair and keeps the holes.
+                poly = poly.buffer(0)
+            if not poly.is_empty and poly.area > 0:
                 polygons.append(poly)
         except Exception:
             continue
@@ -328,10 +568,7 @@ def mask_to_geometry(mask: np.ndarray) -> Optional[BaseGeometry]:
 
 
 def build_feature(color_name: str, rgb: tuple, merged_geometry: BaseGeometry):
-    """From pixel-space polygons, build GeoJSON feature and write it to disk.
-
-    - Merges all pixel polygons into a single geometry (possibly MultiPolygon).
-    """
+    """From pixel-space polygons, build GeoJSON feature and write it to disk."""
     pixel_feature = {
         "type": "Feature",
         "properties": {
@@ -416,14 +653,14 @@ def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
-    legend_bounds: Optional[Dict[str, float]] = None,
+    legend_bounds: Optional[LegendBounds] = None,
     imposed_click_positions: Optional[List[Tuple[float, float]]] = None,
     imposed_colors_names: Optional[List[Optional[str]]] = None,
     imposed_sampling_radii: Optional[List[int]] = None,
     # -----------------------------
     # Mask construction (pixel assignment)
     # -----------------------------
-    mask_deltaE: float = 5.0,
+    mask_deltaE: float = 10.0,
     # Maximum ΔE distance for a pixel to be assigned to a color layer.
     # Larger value → thicker, more inclusive masks.
     # Smaller value → tighter masks, may leave holes/unassigned pixels.
@@ -432,13 +669,34 @@ def extract_colors(
     # -----------------------------
     opening_radius: int = 1,  # Erosion then dilation to remove small noise/speckles
     closing_radius: int = 3,  # Dilation then erosion to fill small gaps
-    simplify_tolerance: float = 0.5,
+    simplify_tolerance: float = 1.0,
     sampling_radius: int = 20,  # Neighbourhood radius (px) used when sampling imposed click positions
+    # -----------------------------
+    # Text-aware assignment
+    # -----------------------------
+    # OCR polygons, when the caller has them. A label is drawn *over* a zone,
+    # so without this its glyphs are holes the zone never recovers: the ink is
+    # erased from the image before classification. Passing None skips it.
+    # Defaults match GeorefConfig's.
+    text_regions: Optional[List] = None,
+    text_inpaint_dilation_px: int = 1,
+    text_inpaint_max_ink_ratio: float = 1.0,
+    text_inpaint_ink_deltaE: float = 12.0,
+    # -----------------------------
+    # Shared borders between zones
+    # -----------------------------
+    # Close the drawn border line between two zones, keep one zone per pixel,
+    # and vectorise every zone together so neighbours share their edges. Off
+    # keeps the previous per-zone behaviour exactly.
+    zone_gap_fill: bool = False,
+    zone_gap_max_ratio_of_diagonal: float = 0.008,
 ) -> Dict:
     """
     Extract exclusive color layers using:
-    - Imposed colors (from click positions or legend-derived colors)
+    - Imposed colors (pipette click positions)
     - Exclusive assignment: each pixel belongs to exactly one selected color (nearest ΔE)
+    - The legend rectangle, when given, belongs to no color: its swatches are
+      a key, not territory
 
     Returns:
       - pixel_features (GeoJSON FeatureCollections with pixel-space geometries)
@@ -446,18 +704,18 @@ def extract_colors(
       - masks (paths to debug PNGs of each mask, if debug=True) *For futurs tests*
     """
 
-    # 0) Prepare output directory
+    # Prepare output directory
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     image_output_dir = os.path.join(output_dir, base_name)
 
     if debug:
         os.makedirs(image_output_dir, exist_ok=True)
 
-    # 1) Load raw image and alpha mask
+    # Load raw image and alpha mask
     rgb_u8, alpha, opaque_mask = load_image_rgb_alpha_mask(image_path)
     original_rgb = img_as_float(rgb_u8)
 
-    # 2) Preprocess full image for color extraction (keeps/updates mask)
+    # Preprocess full image for color extraction (keeps/updates mask)
     rgb, opaque_mask = preprocess(
         rgb=original_rgb,
         alpha=alpha,
@@ -471,26 +729,13 @@ def extract_colors(
         debug_dir=image_output_dir,
     )
 
-    if legend_bounds:
-        try:
-            lx = int(legend_bounds.get("x", 0))
-            ly = int(legend_bounds.get("y", 0))
-            lw = int(legend_bounds.get("width", 0))
-            lh = int(legend_bounds.get("height", 0))
-            
-            h, w = opaque_mask.shape
-            lx = max(0, min(w - 1, lx))
-            ly = max(0, min(h - 1, ly))
-            lw = max(0, min(w - lx, lw))
-            lh = max(0, min(h - ly, lh))
-            
-            if lw > 0 and lh > 0:
-                opaque_mask[ly:ly+lh, lx:lx+lw] = False
-        except (ValueError, TypeError):
-            pass
-
-    # 3) Convert preprocessed image to LAB
+    # Convert preprocessed image to LAB
     lab = compute_lab(rgb)
+
+    # Removed from both the assignment and the final masks: hole filling would
+    # otherwise hand a legend enclosed by a zone back to that zone.
+    legend_pixels = legend_mask(opaque_mask.shape, legend_bounds)
+    opaque_mask = opaque_mask & ~legend_pixels
 
     if imposed_click_positions:
         # Sample the dominant (mode) colour in a neighbourhood around each click,
@@ -517,7 +762,7 @@ def extract_colors(
     else:
         imposed_dominants = []
 
-    # Colors are always imposed (click positions or legend-derived colors).
+    # Colors are always imposed by the pipette.
     dominants = imposed_dominants
 
     masks: Dict[str, str] = {}
@@ -532,30 +777,83 @@ def extract_colors(
             "masks": masks,
         }
 
-    # 6) Build exclusive masks by nearest LAB center
+    # Build exclusive masks by nearest LAB center
     centers_lab = np.array(
         [entry["lab_center"] for entry in dominants], dtype=np.float64
     )
+    # Erase the labels' ink from the image before any pixel is
+    # classified: each ink pixel takes the colour of the background around it.
+    text_stats = None
+    if text_regions:
+        rgb, lab, text_stats = repaint_text_ink_palette(
+            rgb,
+            lab,
+            text_regions,
+            ink_deltaE=text_inpaint_ink_deltaE,
+            dilation_px=text_inpaint_dilation_px,
+            max_ink_ratio=text_inpaint_max_ink_ratio,
+        )
+        logger.info(
+            f"[COLOR] text repaint (palette): {text_stats['pixelsFilled']} px in "
+            f"{text_stats['boxesFilled']}/{text_stats['boxesConsidered']} label boxes"
+        )
+
     best_idx, valid = build_exclusive_masks_by_nearest_center(
         lab, opaque_mask, centers_lab, mask_deltaE
     )
 
-    # 7) Build per-color masks and features
-    seen_names: Dict[str, int] = {}
-    color_index = 1
-    for k, entry in enumerate(dominants):
-        mask = (best_idx == k) & valid
-
+    def _morphology(mask: np.ndarray) -> np.ndarray:
         # 1. Opening: Remove small noise/speckles
         if opening_radius > 0:
             mask = opening(mask, disk(opening_radius))
-
         # 2. Closing: Bridge small gaps (useful for connecting fragmented regions)
         if closing_radius > 0:
             mask = closing(mask, disk(closing_radius))
-
         # 3. Fill holes: Remove interior holes (text, small waters, etc.)
-        mask = binary_fill_holes(mask)
+        return binary_fill_holes(mask) & ~legend_pixels
+
+    # Shared borders: close the line drawn between two zones, then settle
+    # every pixel on one zone and vectorise all zones together, so that two
+    # neighbours come out with the very same border instead of a strip.
+    gap_stats = None
+    shared_masks: Optional[List[np.ndarray]] = None
+    shared_geometries: Dict[int, BaseGeometry] = {}
+    if zone_gap_fill:
+        labels = np.where(valid, best_idx, -1).astype(np.int32)
+        height, width = labels.shape
+        max_gap_px = zone_gap_max_ratio_of_diagonal * math.hypot(width, height)
+        labels, gap_pixels = fill_gaps_between_zones(labels, len(dominants), max_gap_px)
+        final = resolve_zone_overlaps(
+            [_morphology(labels == k) for k in range(len(dominants))], labels
+        )
+        shared_masks = [final == k for k in range(len(dominants))]
+
+        indexed = [
+            (k, mask_to_pixel_edge_geometry(m)) for k, m in enumerate(shared_masks)
+        ]
+        indexed = [(k, g) for k, g in indexed if g is not None]
+        if indexed:
+            geoms = np.array([g for _k, g in indexed], dtype=object)
+            if simplify_tolerance > 0:
+                # Simplified as one coverage: a vertex dropped on a shared
+                # border is dropped from both sides, so no sliver opens.
+                geoms = shapely.coverage_simplify(geoms, simplify_tolerance)
+            shared_geometries = {
+                k: g for (k, _old), g in zip(indexed, geoms) if not g.is_empty
+            }
+        gap_stats = {"maxGapPx": round(max_gap_px, 2), "pixelsFilled": gap_pixels}
+        logger.info(
+            f"[COLOR] zone gaps: {gap_pixels} px filled (max width {max_gap_px:.1f} px)"
+        )
+
+    # Build per-color masks and features
+    seen_names: Dict[str, int] = {}
+    color_index = 1
+    for k, entry in enumerate(dominants):
+        if shared_masks is not None:
+            mask = shared_masks[k]
+        else:
+            mask = _morphology((best_idx == k) & valid)
 
         if not np.any(mask):
             continue
@@ -586,9 +884,28 @@ def extract_colors(
             save_mask_png(mask, original_rgb, out_path)
             masks[unique_color_name] = out_path
 
-        geometry = mask_to_geometry(mask)
+        if shared_masks is not None:
+            geometry = shared_geometries.get(k)
+        else:
+            geometry = mask_to_geometry(mask)
+            if geometry:
+                geometry = simplify_geometry(geometry, simplify_tolerance)
+
+        if geometry and legend_bounds:
+            # Contours are unioned without their holes, so a legend enclosed by
+            # the zone comes back at this stage unless it is cut out again.
+            geometry = geometry.difference(
+                box(
+                    legend_bounds["x"],
+                    legend_bounds["y"],
+                    legend_bounds["x"] + legend_bounds["width"],
+                    legend_bounds["y"] + legend_bounds["height"],
+                )
+            )
+            if geometry.is_empty:
+                geometry = None
+                
         if geometry:
-            geometry = simplify_geometry(geometry, simplify_tolerance)
 
             # build_features expects a list of polygons, so wrap the geometry in a list
             pixel_feature = build_feature(
@@ -615,4 +932,16 @@ def extract_colors(
         "normalized_features": normalized_features,
         "pixel_features": pixel_features,
         "masks": masks,
+        # None when the caller passed no OCR boxes, so "was it applied at all"
+        # is answerable from the result rather than only from the logs.
+        "text_fill": text_stats,
+        # None when the shared-border step is off.
+        "zone_gaps": gap_stats,
+        # The image the pixels were classified on, when inpainting changed it:
+        # preprocessed, labels erased. None otherwise. For the dev tool, which
+        # shows it so a bad zone can be traced to a bad rebuild.
+        "classified_rgb": (
+            rgb if text_stats and text_stats.get("method") == "inpaint"
+            and text_stats.get("pixelsFilled") else None
+        ),
     }

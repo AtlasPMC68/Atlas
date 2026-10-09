@@ -1,0 +1,258 @@
+{
+  "testId": "c0d9544d-0c20-467d-a71a-23339e8ec3f7",
+  "testCaseId": "protocol",
+  "evaluatedAt": "2026-10-05T05:27:33.462462Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1791137316638",
+          "name": "Chile",
+          "area": 73.67807111092027
+        },
+        "bestMatch": {
+          "iou": 0.560396184245765,
+          "intersectionArea": 43.382286137328144,
+          "unionArea": 77.41360015810278,
+          "precision": 0.9207193917512004,
+          "recall": 0.5888086574907387,
+          "falseNegativeArea": 30.295784973592028,
+          "falsePositiveArea": 3.735529047182545,
+          "boundary": {
+            "meanKm": 25.756,
+            "p90Km": 71.907,
+            "maxKm": 3486.423,
+            "expectedToExtractedMeanKm": 39.008,
+            "extractedToExpectedMeanKm": 12.504,
+            "expectedHoles": 3,
+            "extractedHoles": 3
+          },
+          "extracted": {
+            "index": 1,
+            "id": null,
+            "name": "chile",
+            "area": 47.117815184510675
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 1,
+          "id": "dev-zone-1791137351629",
+          "name": "Argentina",
+          "area": 277.2762392746843
+        },
+        "bestMatch": {
+          "iou": 0.8701866777446787,
+          "intersectionArea": 259.09847952758076,
+          "unionArea": 297.75045533804735,
+          "precision": 0.9267660383640622,
+          "recall": 0.9344416968628325,
+          "falseNegativeArea": 18.177759747103853,
+          "falsePositiveArea": 20.474216063363038,
+          "boundary": {
+            "meanKm": 98.127,
+            "p90Km": 258.929,
+            "maxKm": 1236.023,
+            "expectedToExtractedMeanKm": 39.705,
+            "extractedToExpectedMeanKm": 156.549,
+            "expectedHoles": 3,
+            "extractedHoles": 2
+          },
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "argentina",
+            "area": 279.5726955909436
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 2,
+          "id": "dev-zone-1791137516243",
+          "name": "Bolivia",
+          "area": 63.20044551671413
+        },
+        "bestMatch": {
+          "iou": 0.6495030113788042,
+          "intersectionArea": 59.059853983616144,
+          "unionArea": 90.93083934782739,
+          "precision": 0.6804895189340952,
+          "recall": 0.934484773022637,
+          "falseNegativeArea": 4.140591533097979,
+          "falsePositiveArea": 27.730393831113304,
+          "boundary": {
+            "meanKm": 190.065,
+            "p90Km": 1077.48,
+            "maxKm": 1501.386,
+            "expectedToExtractedMeanKm": 63.717,
+            "extractedToExpectedMeanKm": 316.413,
+            "expectedHoles": 0,
+            "extractedHoles": 0
+          },
+          "extracted": {
+            "index": 2,
+            "id": null,
+            "name": "bolivia",
+            "area": 86.79024781472944
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.6933619577897493,
+      "meanPrecision": 0.8426583163497859,
+      "meanRecall": 0.8192450424587361,
+      "totalFalseNegativeArea": 52.61413625379386,
+      "totalFalsePositiveArea": 51.94013894165889,
+      "meanBoundaryKm": 104.649,
+      "meanBoundaryP90Km": 469.439,
+      "maxBoundaryKm": 3486.423,
+      "zonesWithBoundary": 3,
+      "zonesWithoutBoundary": 0
+    },
+    "scoreUsed": 0.6933619577897493,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  },
+  "scoreVersion": "2",
+  "comparison": {
+    "main": "The shipped zones (zones.geojson: after snapping, ocean clip and lake cut) against the expected zones through the same ocean and lake cuts.",
+    "raw": "The zones as the transform placed them (zones_raw.geojson: before snapping and the clip) against the expected zones as drawn. For judging placement: cleaning corrects and hides transform error."
+  },
+  "raw": {
+    "metrics": {
+      "expected": [
+        {
+          "expected": {
+            "index": 0,
+            "id": "dev-zone-1791137316638",
+            "name": "Chile",
+            "area": 76.69420917576099
+          },
+          "bestMatch": {
+            "iou": 0.5511712456189021,
+            "intersectionArea": 47.891508067067186,
+            "unionArea": 86.89043277881908,
+            "precision": 0.8244685528269279,
+            "recall": 0.6244475115104672,
+            "falseNegativeArea": 28.802701108693995,
+            "falsePositiveArea": 10.196223603058352,
+            "boundary": {
+              "meanKm": 30.319,
+              "p90Km": 74.628,
+              "maxKm": 3463.156,
+              "expectedToExtractedMeanKm": 41.43,
+              "extractedToExpectedMeanKm": 19.207,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 1,
+              "id": null,
+              "name": "chile",
+              "area": 58.087731670125386
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 1,
+            "id": "dev-zone-1791137351629",
+            "name": "Argentina",
+            "area": 278.5048249786484
+          },
+          "bestMatch": {
+            "iou": 0.8486461192832778,
+            "intersectionArea": 252.1296277074291,
+            "unionArea": 297.09630666827843,
+            "precision": 0.9313260730534253,
+            "recall": 0.9052971621829483,
+            "falseNegativeArea": 26.37519727121986,
+            "falsePositiveArea": 18.591481689628967,
+            "boundary": {
+              "meanKm": 105.188,
+              "p90Km": 300.949,
+              "maxKm": 1236.023,
+              "expectedToExtractedMeanKm": 43.272,
+              "extractedToExpectedMeanKm": 167.105,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 0,
+              "id": null,
+              "name": "argentina",
+              "area": 270.72110939705834
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 2,
+            "id": "dev-zone-1791137516243",
+            "name": "Bolivia",
+            "area": 63.45766835433101
+          },
+          "bestMatch": {
+            "iou": 0.6503415301455968,
+            "intersectionArea": 59.13125410428261,
+            "unionArea": 90.92338619531873,
+            "precision": 0.682832814773868,
+            "recall": 0.9318220419651911,
+            "falseNegativeArea": 4.326414250048381,
+            "falsePositiveArea": 27.465717840987693,
+            "boundary": {
+              "meanKm": 191.007,
+              "p90Km": 1071.035,
+              "maxKm": 1508.893,
+              "expectedToExtractedMeanKm": 65.783,
+              "extractedToExpectedMeanKm": 316.232,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 2,
+              "id": null,
+              "name": "bolivia",
+              "area": 86.59697194527031
+            },
+            "matchedBy": "name"
+          }
+        }
+      ],
+      "mean": {
+        "meanIou": 0.683386298349259,
+        "meanPrecision": 0.812875813551407,
+        "meanRecall": 0.8205222385528689,
+        "totalFalseNegativeArea": 59.504312629962236,
+        "totalFalsePositiveArea": 56.253423133675014,
+        "meanBoundaryKm": 108.838,
+        "meanBoundaryP90Km": 482.204,
+        "maxBoundaryKm": 3463.156,
+        "zonesWithBoundary": 3,
+        "zonesWithoutBoundary": 0
+      },
+      "scoreUsed": 0.683386298349259,
+      "scoreUsedKey": "mean.meanIou"
+    },
+    "nameMatching": {
+      "expectedWithoutNameMatch": [],
+      "extractedNeverMatchedByName": []
+    }
+  }
+}

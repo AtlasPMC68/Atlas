@@ -10,6 +10,12 @@
           >
             ({{ mapId }})
           </span>
+          <span
+            class="badge badge-sm ml-2 align-middle"
+            :class="isProbe ? 'badge-info' : 'badge-neutral'"
+          >
+            {{ isProbe ? "Exploration" : "Régression" }}
+          </span>
         </h1>
       </div>
 
@@ -48,12 +54,33 @@
               :is-geo-border-mode="isGeoBorderMode"
               :undo-create-key="undoCreateKey"
               :sub-geometries="subGeometries"
+              :loaded-geometry="loadedGeometry"
+              :cut-key="cutKey"
               @create-updated="handleCreateUpdated"
+              @loaded-cut="handleLoadedCut"
+              @cut-finished="isCutting = false"
             />
           </div>
         </div>
 
     <div class="w-80 border-l border-base-300 bg-base-200 p-4 space-y-6">
+      <!-- A probe test has no expected zones by design: it exists to replay a
+           map's persisted clicks quickly. Drawing still works if you want it,
+           but nothing scores against it. -->
+      <div v-if="isProbe" class="alert alert-info text-xs py-2">
+        Test d'exploration : aucun score n'est calculé. Les test cases servent à
+        rejouer la carte (points de contrôle, pipette, cadrage persistés) pour
+        voir le résultat du géoréférencement rapidement.
+      </div>
+      <!-- What "régression" commits a case to, since it is not obvious from
+           the badge alone. -->
+      <div v-else class="alert text-xs py-2">
+        Test de régression : chaque test case est noté contre les zones
+        attendues dessinées ici, et rejoué par la suite de tests backend
+        (<code>test_georef_cases</code>) avec la configuration du worker. Un cas
+        sous IoU 0,7, ou auquel il manque une entrée, fait échouer la suite.
+      </div>
+
       <!-- Create zone -->
       <CreateZonePanel
         :is-create-mode="isCreateMode"
@@ -62,6 +89,14 @@
         :is-frontier-mode="isFrontierMode"
         :is-geo-border-mode="isGeoBorderMode"
         :subzone-count="subGeometries.length"
+        :has-loaded-zone="loadedGeometry !== null"
+        :loaded-zone-label="loadedLabel"
+        :is-cutting="isCutting"
+        :can-undo-cut="loadedHistory.length > 0"
+        @border-loaded="loadBorderZone"
+        @start-cut="startCut"
+        @undo-cut="undoCut"
+        @clear-loaded="clearLoaded"
         @start-create="startCreateMode"
         @cancel-create="cancelCreateMode"
         @undo-last-stroke="undoLastStroke"
@@ -127,12 +162,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import CreateZonePanel from "../../components/dev/CreateZonePanel.vue";
+import type { Position } from "geojson";
 import type { Feature } from "../../typescript/feature";
+import type { LoadedBorderZone, ZoneGeometry } from "../../typescript/devTest";
+import { useDevTestCases } from "../../composables/useDevTestCases";
+import { showAlert } from "../../composables/useAlert";
 import keycloak from "../../keycloak";
 
 const route = useRoute();
@@ -150,27 +189,29 @@ const isFrontierMode = ref(false);
 const isGeoBorderMode = ref(false);
 const subGeometries = ref<any[]>([]);
 
+// A zone loaded from the border files (BorderPicker), then optionally cut. It
+// is the pending zone; the history is what "undo cut" steps back through.
+const loadedGeometry = ref<ZoneGeometry | null>(null);
+const loadedHistory = ref<(ZoneGeometry | null)[]>([]);
+const loadedLabel = ref("");
+const cutKey = ref(0);
+const isCutting = ref(false);
+
+const testKind = ref<"regression" | "probe">("regression");
+const isProbe = computed(() => testKind.value === "probe");
+
 const testCases = ref<string[]>([]);
 const isLoadingTestCases = ref(false);
 const deletingTestCase = ref<string | null>(null);
 const testCaseError = ref<string | null>(null);
 
+const devTestCases = useDevTestCases();
+
 async function loadTestCases(currentMapId: string) {
   isLoadingTestCases.value = true;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${currentMapId}`,
-      { headers: { Authorization: `Bearer ${keycloak.token}` } },
-    );
-    if (!res.ok) {
-      testCases.value = [];
-      return;
-    }
-
-    const data = await res.json();
-    testCases.value = Array.isArray(data)
-      ? data.filter((x) => typeof x === "string")
-      : [];
+    const res = await devTestCases.listCases(currentMapId);
+    testCases.value = res.success ? res.data : [];
   } catch {
     testCases.value = [];
   } finally {
@@ -205,6 +246,22 @@ async function deleteTestCase(testCase: string) {
       err instanceof Error ? err.message : "Erreur inattendue lors de la suppression";
   } finally {
     deletingTestCase.value = null;
+  }
+}
+
+async function loadTestKind(currentMapId: string) {
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`, {
+      headers: { Authorization: `Bearer ${keycloak.token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const entry = Array.isArray(data)
+      ? data.find((t: any) => t?.mapId === currentMapId)
+      : null;
+    testKind.value = entry?.kind === "probe" ? "probe" : "regression";
+  } catch {
+    // Falling back to "regression" only affects labelling here.
   }
 }
 
@@ -293,7 +350,55 @@ async function updateFeature(callbacks?: {
 }
 
 function handleCreateUpdated(geometry: any | null) {
+  // Traced strokes; a loaded zone owns the pending geometry while it is there.
+  if (loadedGeometry.value) return;
   pendingCreateGeometry.value = geometry;
+}
+
+function loadBorderZone(zone: LoadedBorderZone) {
+  loadedGeometry.value = zone.geometry;
+  loadedHistory.value = [];
+  loadedLabel.value = zone.name;
+  pendingCreateGeometry.value = zone.geometry;
+  // Pre-fill the name; it is what the pipette names will have to match, so it
+  // stays editable.
+  if (!newZoneName.value.trim()) newZoneName.value = zone.name;
+}
+
+function startCut() {
+  if (!loadedGeometry.value || isCutting.value) return;
+  isCutting.value = true;
+  cutKey.value += 1;
+}
+
+function handleLoadedCut(geometry: ZoneGeometry | null) {
+  loadedHistory.value = [...loadedHistory.value, loadedGeometry.value];
+  loadedGeometry.value = geometry;
+  pendingCreateGeometry.value = geometry;
+}
+
+function undoCut() {
+  const history = [...loadedHistory.value];
+  const previous = history.pop();
+  if (previous === undefined) return;
+  loadedHistory.value = history;
+  loadedGeometry.value = previous;
+  pendingCreateGeometry.value = previous;
+}
+
+function clearLoaded() {
+  loadedGeometry.value = null;
+  loadedHistory.value = [];
+  loadedLabel.value = "";
+  pendingCreateGeometry.value = null;
+  isCutting.value = false;
+}
+
+// Every polygon of a Polygon or MultiPolygon, holes included.
+function polygonsOf(geometry: ZoneGeometry | null): Position[][][] {
+  if (geometry?.type === "Polygon") return [geometry.coordinates];
+  if (geometry?.type === "MultiPolygon") return geometry.coordinates;
+  return [];
 }
 
 async function persistZonesToBackend() {
@@ -331,6 +436,7 @@ async function persistZonesToBackend() {
 }
 
 function clearCreateDrawing() {
+  clearLoaded();
   pendingCreateGeometry.value = null;
   subGeometries.value = [];
   newZoneName.value = "";
@@ -388,32 +494,21 @@ async function saveCreatedZone() {
     return;
   }
 
-  let geometry: any;
-
-  if (subGeometries.value.length === 0) {
-    geometry = pendingCreateGeometry.value;
-  } else {
-    const allPolygons = [
-      ...subGeometries.value,
-      ...(pendingCreateGeometry.value ? [pendingCreateGeometry.value] : []),
-    ];
-
-    const rings = allPolygons
-      .filter((g) => g && g.type === "Polygon" && Array.isArray(g.coordinates))
-      .map((g) => g.coordinates[0]);
-
-    if (rings.length === 1) {
-      geometry = {
-        type: "Polygon",
-        coordinates: [rings[0]],
-      };
-    } else {
-      geometry = {
-        type: "MultiPolygon",
-        coordinates: rings.map((ring) => [ring]),
-      };
-    }
+  // Whole polygons, holes and all parts kept: a loaded border is often a
+  // MultiPolygon with holes, and keeping only each first ring would drop
+  // islands and fill lakes.
+  const polygons = [
+    ...subGeometries.value,
+    ...(pendingCreateGeometry.value ? [pendingCreateGeometry.value] : []),
+  ].flatMap(polygonsOf);
+  if (polygons.length === 0) {
+    showAlert("error", "Aucun polygone à enregistrer pour cette zone.");
+    return;
   }
+  const geometry =
+    polygons.length === 1
+      ? { type: "Polygon", coordinates: polygons[0] }
+      : { type: "MultiPolygon", coordinates: polygons };
 
   const id = `dev-zone-${Date.now()}`;
   const feature: Feature = {
@@ -446,6 +541,11 @@ function addSubzone() {
 
   subGeometries.value = [...subGeometries.value, pendingCreateGeometry.value];
   pendingCreateGeometry.value = null;
+  // A loaded border becomes a sub-zone like a traced one; the next part can be
+  // traced or loaded.
+  loadedGeometry.value = null;
+  loadedHistory.value = [];
+  loadedLabel.value = "";
   resetCreateKey.value += 1;
 }
 
@@ -453,6 +553,7 @@ onMounted(() => {
   const idParam = route.params.mapId;
   if (typeof idParam === "string" && idParam.length > 0) {
     mapId.value = idParam;
+    loadTestKind(idParam);
     loadTestZones(idParam);
     loadTestCases(idParam);
   } else {

@@ -32,8 +32,70 @@ export interface CoastlineKeypoint {
   pixel: CoastlineKeypointPixel;
   geo: CoastlineKeypointGeo;
   response: number;
+  // Which reference curve the keypoint lies on. Lakes only fill in where the
+  // coastline leaves the frame uncovered; a map may not draw them.
+  feature?: "coastline" | "lake";
   // Allow any additional backend-provided fields
   [key: string]: unknown;
+}
+
+// A pipette pick. Zone fill and water are pipetted separately because they are
+// routinely the same hue -- colour alone cannot disambiguate them, and the user
+// can in one click.
+export type ImposedColorKind = "zone" | "water";
+
+// A confirmed pipette pick: normalised position, sampling radius, and the hex
+// the preview sampled (for swatches; extraction re-samples the pick).
+export interface ImposedColor {
+  x: number;
+  y: number;
+  name: string;
+  radius: number;
+  kind: ImposedColorKind;
+  hex: string;
+}
+
+// Where a control point came from. "sift": a suggested coastline keypoint the
+// user matched on their map. "city": a gazetteer city the user named and
+// located on their map.
+export type GcpSource = "sift" | "city";
+
+// The gazetteer city a city control point was matched to (GeoNames id + name).
+export interface CityRef {
+  id: number;
+  name: string;
+}
+
+interface ControlPointBase {
+  pixel: { x: number; y: number };
+  geo: { lon: number; lat: number };
+}
+
+// One control point, exactly as the backend reads it (ControlPoint.from_dict).
+// A discriminated union: a city point always carries its city, a SIFT point
+// never does.
+export type ControlPointInput =
+  | (ControlPointBase & { source: "sift" })
+  | (ControlPointBase & { source: "city"; city: CityRef });
+
+// Response entry from POST /projects/city-candidates
+export interface CityCandidate {
+  id: number;
+  name: string;
+  lat: number;
+  lon: number;
+  country: string;
+  population: number;
+  // The name that matched, possibly an alternate one ("Kebek" for Québec)
+  matchedName: string;
+  match: "exact" | "prefix" | "fuzzy";
+}
+
+// A point drawn on the reference world map, optionally labelled
+export interface WorldMapPoint {
+  lat: number;
+  lng: number;
+  label?: string;
 }
 
 // Full match between a world keypoint and an image point
@@ -41,13 +103,15 @@ export interface GeorefMatch {
   index: number;
   world: LatLngTuple;
   image: XYTuple;
-  color: string;
+  // Dev-test only: a check point, held out of every fit.
+  check?: boolean;
 }
 
 // Minimal info needed to render matched points on the world map
 export interface MatchedWorldPointSummary {
   index: number;
-  color: string;
+  // Dev-test only: a check point, drawn apart from the fitted pairs.
+  check?: boolean;
 }
 
 // Minimal info needed to render matched points on the image map
@@ -55,7 +119,8 @@ export interface MatchedImagePoint {
   index: number;
   x: number;
   y: number;
-  color: string;
+  // Dev-test only: a check point, drawn apart from the fitted pairs.
+  check?: boolean;
 }
 
 // Result of selecting a world area (used by picker modal + import view)
@@ -70,5 +135,5 @@ export interface CoastlineKeypointsResponse {
   keypoints: CoastlineKeypoint[];
   total: number;
   bounds: WorldBounds;
-  used_lakes: boolean; // Whether lakes were added to find enough keypoints
+  used_lakes: boolean; // Whether any suggested keypoint lies on a lake
 }

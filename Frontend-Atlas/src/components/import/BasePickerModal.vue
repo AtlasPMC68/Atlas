@@ -16,6 +16,8 @@
         {{ description }}
       </p>
 
+      <slot name="controls-area"></slot>
+
       <div class="border rounded-md overflow-hidden flex flex-col">
         <slot name="image-area"></slot>
       </div>
@@ -34,7 +36,7 @@
           type="button"
           @click="onSkip"
         >
-          Sauter l'étape
+          {{ skipLabel }}
         </button>
         <button
           class="btn btn-primary"
@@ -61,11 +63,13 @@ const props = withDefaults(
     confirmLabel: string;
     isConfirmDisabled?: boolean;
     showSkip?: boolean;
+    skipLabel?: string;
   }>(),
   {
     isOpen: false,
     isConfirmDisabled: false,
     showSkip: false,
+    skipLabel: "Sauter l'étape",
   },
 );
 

@@ -2,12 +2,13 @@
   <BasePickerModal
     :is-open="isOpen"
     title="Délimiter la légende"
-    description="Tracez un rectangle sur l'image pour indiquer la zone de légende. Vous pouvez sauter cette étape si la carte n'a pas de légende."
+    description="Tracez un rectangle sur l'image autour de la légende. Cette zone sera ignorée par l'extraction des couleurs, des formes et du texte. Si la carte n'a pas de légende, indiquez-le."
     confirm-label="Confirmer la légende"
     :is-confirm-disabled="!legendBounds"
     show-skip
+    skip-label="Pas de légende sur la carte"
     @close="emit('close')"
-    @skip="onSkip"
+    @skip="onNoLegend"
     @confirm="onConfirm"
   >
     <template #image-area>
@@ -45,6 +46,7 @@
 import { computed, ref, watch } from "vue";
 import BasePickerModal from "../import/BasePickerModal.vue";
 import type { LegendBounds } from "../../typescript/legend";
+import { containRect } from "../../utils/imageFit";
 
 const props = withDefaults(
   defineProps<{
@@ -60,7 +62,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "skip"): void;
+  (e: "no-legend"): void;
   (e: "confirmed", payload: LegendBounds): void;
 }>();
 
@@ -101,24 +103,20 @@ const displayRect = computed(() => {
   }
 
   const rect = container.value.getBoundingClientRect();
-  const cw = rect.width;
-  const ch = rect.height;
-
-  const baseScale = Math.min(
-    cw / imageNaturalWidth.value,
-    ch / imageNaturalHeight.value,
+  const fit = containRect(
+    rect.width,
+    rect.height,
+    imageNaturalWidth.value,
+    imageNaturalHeight.value,
   );
-  const displayW = imageNaturalWidth.value * baseScale;
-  const displayH = imageNaturalHeight.value * baseScale;
-  const offsetX = (cw - displayW) / 2;
-  const offsetY = (ch - displayH) / 2;
+  if (!fit) return null;
 
   return {
-    offsetX,
-    offsetY,
-    displayW,
-    displayH,
-    baseScale,
+    offsetX: fit.offsetX,
+    offsetY: fit.offsetY,
+    displayW: fit.width,
+    displayH: fit.height,
+    baseScale: fit.scale,
   };
 });
 
@@ -207,9 +205,9 @@ function onMouseUp(): void {
   }
 }
 
-function onSkip(): void {
+function onNoLegend(): void {
   legendBounds.value = null;
-  emit("skip");
+  emit("no-legend");
 }
 
 function onConfirm(): void {
