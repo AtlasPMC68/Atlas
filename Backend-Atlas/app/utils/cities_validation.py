@@ -26,19 +26,11 @@ _WORD_RE = re.compile(r"\b[\w\-']+\b", flags=re.UNICODE)
 
 
 def _normalize(s: str) -> str:
+    """Normalize text by removing accents, punctuation, and extra whitespace."""
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
-    return s.casefold().strip()
-
-
-def _normalize_query(s: str) -> str:
-    """Like _normalize but also replaces punctuation and extra whitespace with single spaces."""
-    clean_text = re.sub(r"[^a-zA-ZÀ-ÖØ-öø-ÿ\s'\-]", "", s)
-    clean_text = " ".join(clean_text.split())
-    clean_text = unicodedata.normalize("NFKD", s)
-    clean_text = "".join(c for c in s if not unicodedata.combining(c))
-    clean_text = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
-    clean_text = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    s = re.sub(r"\s+", " ", s)
     return s.casefold().strip()
 
 
@@ -70,10 +62,6 @@ for info in _gc.get_cities().values():
 
     key = _normalize(name)
     _city_map.setdefault(key, []).append(city_entry)
-
-    query_key = _normalize_query(name)
-    if query_key != key:
-        _city_map.setdefault(query_key, []).append(city_entry)
 
 import difflib
 
@@ -108,7 +96,7 @@ def get_city_with_max_population(
         "matched_text": None,
     }
 
-    key = _normalize_query(text)
+    key = _normalize(text)
     if not key:
         return result
 
@@ -132,9 +120,7 @@ def get_city_with_max_population(
         else:
             valid_keys = list(_city_map.keys())
 
-        close_matches = difflib.get_close_matches(
-            key, valid_keys, n=1, cutoff=confidence_threshold
-        )
+        close_matches = difflib.get_close_matches(key, valid_keys, n=1, cutoff=confidence_threshold)
         if close_matches:
             matched_key = close_matches[0]
             candidates = filter_by_bounds(list(_city_map.get(matched_key, [])))
