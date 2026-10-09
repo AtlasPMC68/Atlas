@@ -12,8 +12,9 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Generator[None, None, Non
     if metadata is not None:
         report.user_metadata = metadata
         
-    if report.when == "call" and report.failed and "test_text_extraction_accuracy" in item.name:
-        report.sections = []
+    if report.when == "call" and report.failed:
+        if "test_text_extraction_accuracy" in item.name or "test_florence_raw_detection_count" in item.name:
+            report.sections = []
 
 
 def pytest_report_teststatus(report: Any, config: Any) -> tuple[str, str, str] | None:
