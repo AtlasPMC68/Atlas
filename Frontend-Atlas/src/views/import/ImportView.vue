@@ -125,11 +125,10 @@
                 />
                 <div class="flex-1">
                   <div class="font-medium text-sm">
-                    Extraction de texte (OCR)
+                    Extraction des villes (OCR)
                   </div>
                   <div class="text-xs text-base-content/60">
-                    Détecter et extraire le texte de la carte (noms de lieux,
-                    légendes)
+                    Détecter et extraire les villes sur la carte (geonamescache)
                   </div>
                 </div>
               </label>

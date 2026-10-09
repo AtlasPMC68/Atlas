@@ -13,6 +13,7 @@ Usage:
             # no local match, fall back to Nominatim
             geocoded = geocode_fallback(m['text'])
 """
+
 from __future__ import annotations
 
 import re
@@ -21,14 +22,23 @@ from typing import List, Dict, Any, Optional
 
 import geonamescache
 
-
 _WORD_RE = re.compile(r"\b[\w\-']+\b", flags=re.UNICODE)
 
 
 def _normalize(s: str) -> str:
+    """Normalize text by removing accents, punctuation, and extra whitespace."""
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    s = re.sub(r"\s+", " ", s)
     return s.casefold().strip()
+
+
+def _parse_population(pop_val: Any) -> int:
+    try:
+        return int(pop_val or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # Load geonamescache cities into a mapping: normalized name -> list of candidate dicts
@@ -42,134 +52,90 @@ for info in _gc.get_cities().values():
         lon = float(info.get("longitude"))
     except Exception:
         continue
-    key = _normalize(name)
-    _city_map.setdefault(key, []).append({
+    city_entry = {
         "name": name,
         "lat": lat,
         "lon": lon,
         "country": country,
-        "population": info.get("population"),
-    })
-
-def detect_cities_from_text(
-    text: str, max_ngram: int = 4, use_search: bool = False, search_limit: int = 10
-) -> List[Dict[str, Any]]:
-    """Scan text for city names using the local gazetteer.
-
-    Returns a list of matches with the matched text span (as tokens), and local candidates.
-
-    Each match: {
-        'text': original_phrase,
-        'start_token': int,
-        'end_token': int,
-        'candidates': [ { 'name','lat','lon','country',... } ]
+        "population": _parse_population(info.get("population")),
     }
-    """
-    tokens = _WORD_RE.findall(text)
-    matches: List[Dict[str, Any]] = []
-    i = 0
-    length = len(tokens)
-    while i < length:
-        found = False
-        for n in range(min(max_ngram, length - i), 0, -1):
-            phrase = " ".join(tokens[i : i + n])
-            key = _normalize(phrase)
-            candidates: List[Dict[str, Any]] = []
 
-            # Exact lookup in prebuilt map (fast)
-            if key in _city_map:
-                candidates = _city_map.get(key, [])
+    key = _normalize(name)
+    _city_map.setdefault(key, []).append(city_entry)
 
-            # Optionally use geonamescache.search_cities for contains/fuzzy matching
-            elif use_search:
-                try:
-                    raw = _gc.search_cities(phrase, case_sensitive=False, contains_search=True)
-                except Exception:
-                    raw = None
+import difflib
 
-                if raw:
-                    items = raw.values() if isinstance(raw, dict) else raw
-                    for info in items:
-                        try:
-                            name = info.get("name") or info.get("toponymName") or ""
-                            lat = float(info.get("latitude") or info.get("lat") or 0)
-                            lon = float(info.get("longitude") or info.get("lng") or 0)
-                            country = info.get("countrycode") or info.get("countryCode") or ""
-                        except Exception:
-                            continue
-                        candidates.append({
-                            "name": name,
-                            "lat": lat,
-                            "lon": lon,
-                            "country": country,
-                            "population": info.get("population"),
-                        })
-                    # optionally trim to search_limit
-                    if search_limit and len(candidates) > search_limit:
-                        candidates = candidates[:search_limit]
-
-            if candidates:
-                matches.append(
-                    {
-                        "text": phrase,
-                        "start_token": i,
-                        "end_token": i + n - 1,
-                        "candidates": candidates,
-                    }
-                )
-                i += n
-                found = True
-                break
-        if not found:
-            i += 1
-    return matches
-
-_all_ = ["detect_cities_from_text", "_city_map", "find_first_city"]
+__all__ = ["_city_map", "get_city_with_max_population"]
 
 
-def find_first_city(text: str) -> Dict[str, Any]:
+def get_city_with_max_population(
+    text: str,
+    geo_bounds: Optional[Dict[str, float]] = None,
+    confidence_threshold: float = 0.80,
+) -> Dict[str, Any]:
     """Return a standardized result for a city search.
 
+    Performs a direct full-string match (accent/case insensitive, punctuation stripped)
+    against the city gazetteer, with a fallback to difflib.get_close_matches using
+    confidence_threshold (default 0.80) to recover minor OCR typos.
+    When geo_bounds is provided (``{'min_lon': ..., 'max_lon': ..., 'min_lat': ..., 'max_lat': ...}``),
+    only candidates whose coordinates fall inside that rectangle are considered.
+
     Always returns a dict with at least the keys:
-      - `found`: bool
-      - `query`: the original text passed in
-      - `name`, `lat`, `lon`: populated when `found` is True
-      - `matched_text`: phrase matched from the input when found, else None
-
-    This makes it easier for callers to persist a record even when no
-    local match is available (we can store coordinates as 0,0 in that case).
+      - ``found``: bool
+      - ``query``: the original text passed in
+      - ``name``, ``lat``, ``lon``: populated when ``found`` is True
+      - ``matched_text``: normalised query string when found, else None
     """
-    result: Dict[str, Any] = {"found": False, "query": text, "name": text, "lat": 0.0, "lon": 0.0, "matched_text": None}
+    result: Dict[str, Any] = {
+        "found": False,
+        "query": text,
+        "name": text,
+        "lat": 0.0,
+        "lon": 0.0,
+        "matched_text": None,
+    }
 
-    try:
-        matches = detect_cities_from_text(text)
-    except Exception:
-        # On error, return non-found with query preserved
+    key = _normalize(text)
+    if not key:
         return result
 
-    if not matches:
+    def filter_by_bounds(cands: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if geo_bounds is None:
+            return cands
+        return [
+            c
+            for c in cands
+            if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"]
+            and geo_bounds["min_lon"] <= c["lon"] <= geo_bounds["max_lon"]
+        ]
+
+    matched_key = key
+    candidates = filter_by_bounds(list(_city_map.get(key, [])))
+
+    # Fuzzy matching fallback if no valid exact match found
+    if not candidates and confidence_threshold < 1.0:
+        if geo_bounds is not None:
+            valid_keys = [k for k, v in _city_map.items() if filter_by_bounds(v)]
+        else:
+            valid_keys = list(_city_map.keys())
+
+        close_matches = difflib.get_close_matches(key, valid_keys, n=1, cutoff=confidence_threshold)
+        if close_matches:
+            matched_key = close_matches[0]
+            candidates = filter_by_bounds(list(_city_map.get(matched_key, [])))
+
+    if not candidates:
         return result
 
-    for m in matches:
-        candidates = m.get("candidates") or []
-        if not candidates:
-            continue
-
-        # pick candidate with largest population when available
-        def pop_key(c):
-            try:
-                return int(c.get("population") or 0)
-            except Exception:
-                return 0
-
-        best = max(candidates, key=pop_key)
-        result.update({
+    best = max(candidates, key=lambda c: c.get("population", 0))
+    result.update(
+        {
             "found": True,
             "name": best.get("name"),
             "lat": best.get("lat"),
             "lon": best.get("lon"),
-            "matched_text": m.get("text"),
-        })
-        return result
-
+            "matched_text": matched_key,
+        }
+    )
     return result
