@@ -731,13 +731,20 @@ function renderAllFeatures() {
   renderShapes(featuresByType.shape);
   renderImages(featuresByType.image);
 
-  // Re-attach image interaction if the selected feature was re-rendered
+  // Re-attach image / shape scaling interaction if the selected feature was re-rendered
   if (selectedFeatureId.value) {
     const selectedFeature = currentFeatures.find(
       (f) => String(f.id) === selectedFeatureId.value,
     );
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(selectedFeatureId.value);
+    } else if (
+      selectedFeature &&
+      (getMapElementType(selectedFeature) === "shape" ||
+        getMapElementType(selectedFeature) === "zone" ||
+        getMapElementType(selectedFeature) === "polyline")
+    ) {
+      shapeScaling.attach(selectedFeatureId.value);
     }
   }
 
@@ -882,6 +889,9 @@ onMounted(() => {
   map.on("click", (e) => {
     if (blockNextMapClick) {
       blockNextMapClick = false;
+      return;
+    }
+    if (shapeScaling.isTransforming?.()) {
       return;
     }
     if (addCityMode.value) {
