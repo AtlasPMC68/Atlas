@@ -91,12 +91,72 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235B5B5B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2v6h-6'/%3E%3Cpath d='M3 12a9 9 0 0 1 15-6.7L21 8'/%3E%3Cpath d='M3 22v-6h6'/%3E%3Cpath d='M21 12a9 9 0 0 1-15 6.7L3 16'/%3E%3C/svg%3E");
 }
 
+
+/* ── Shape scaling handles ─────────────────────────────────────────────────── */
+.shape-resize-handle {
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 2px solid #475569;
+  border-radius: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.6);
+  will-change: transform;
+  pointer-events: auto;
+}
+
+.shape-resize-handle:hover {
+  background: #f1f5f9;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.leaflet-zoom-anim .shape-resize-handle {
+  transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
+}
+
+.shape-resize-handle--corner {
+  width: 10px;
+  height: 10px;
+}
+
+.shape-resize-handle--edge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border-color: #64748b;
+  background: #e2e8f0;
+}
+
+.shape-resize-handle--nw,
+.shape-resize-handle--se {
+  cursor: nwse-resize;
+}
+
+.shape-resize-handle--ne,
+.shape-resize-handle--sw {
+  cursor: nesw-resize;
+}
+
+.shape-resize-handle--n,
+.shape-resize-handle--s {
+  cursor: ns-resize;
+}
+
+.shape-resize-handle--w,
+.shape-resize-handle--e {
+  cursor: ew-resize;
+}
+
+.shape-bounding-box {
+  pointer-events: none;
+}
+
+/* Legacy single-handle used by the image overlay resize */
 .image-resize-handle {
   background: white;
   border: 2px solid #333;
   border-radius: 2px;
   cursor: se-resize;
 }
+
 
 .leaflet-imagePane-pane img {
   cursor: pointer;

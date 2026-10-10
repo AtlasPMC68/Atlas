@@ -90,8 +90,9 @@
             </div>
             <!-- Coords -->
             <span class="text-xs font-mono text-base-content/50 w-32 shrink-0">
-              x={{ (shape.normalizedX * 100).toFixed(1) }}%
-              y={{ (shape.normalizedY * 100).toFixed(1) }}%
+              x={{ (shape.normalizedX * 100).toFixed(1) }}% y={{
+                (shape.normalizedY * 100).toFixed(1)
+              }}%
             </span>
             <!-- Editable name -->
             <input
@@ -113,7 +114,8 @@
       </div>
 
       <p v-else class="text-sm text-base-content/50 italic">
-        Aucune forme sélectionnée — cliquez sur la carte pour ajouter des formes.
+        Aucune forme sélectionnée — cliquez sur la carte pour ajouter des
+        formes.
       </p>
     </template>
   </BasePickerModal>
@@ -185,9 +187,6 @@ const pointerStart = ref({ x: 0, y: 0 });
 const panStart = ref({ x: 0, y: 0 });
 
 const containerCursorClass = computed(() => {
-  if (zoom.value > 1) {
-    return isPointerDown.value ? "cursor-grabbing" : "cursor-grab";
-  }
   return "cursor-crosshair";
 });
 
