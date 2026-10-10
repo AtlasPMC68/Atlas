@@ -416,6 +416,19 @@ const shapeScaling = useShapeScaling({
   onUpdate: (next) => emit('draw-update', next),
 });
 
+const isScalableFeature = (feature?: Feature | null): boolean => {
+  if (!feature) return false;
+  const type = getMapElementType(feature);
+  return type === "shape" || type === "zone" || type === "polyline";
+};
+
+const attachScalingIfEligible = (featureId: string) => {
+  const feature = localFeaturesSnapshot.value.find((f) => String(f.id) === featureId);
+  if (isScalableFeature(feature)) {
+    shapeScaling.attach(featureId);
+  }
+};
+
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -738,12 +751,7 @@ function renderAllFeatures() {
     );
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(selectedFeatureId.value);
-    } else if (
-      selectedFeature &&
-      (getMapElementType(selectedFeature) === "shape" ||
-        getMapElementType(selectedFeature) === "zone" ||
-        getMapElementType(selectedFeature) === "polyline")
-    ) {
+    } else if (isScalableFeature(selectedFeature)) {
       shapeScaling.attach(selectedFeatureId.value);
     }
   }
@@ -866,10 +874,7 @@ onMounted(() => {
     } else {
       enablePerFeatureDrag(selectedLayer);
       if (map) pixelSpaceDragCleanup = enablePixelSpaceDrag(map, selectedLayer);
-      const selectedFeature = localFeaturesSnapshot.value.find((f) => String(f.id) === selectedFeatureId.value);
-      if (selectedFeature && (getMapElementType(selectedFeature) === "shape" || getMapElementType(selectedFeature) === "zone" || getMapElementType(selectedFeature) === "polyline")) {
-        shapeScaling.attach(selectedFeatureId.value);
-      }
+      attachScalingIfEligible(selectedFeatureId.value);
     }
   });
   map.on("pm:globalrotatemodetoggled", restorePmIgnore);
@@ -879,10 +884,7 @@ onMounted(() => {
     if (isEnabled) {
       shapeScaling.detach();
     } else {
-      const selectedFeature = localFeaturesSnapshot.value.find((f) => String(f.id) === selectedFeatureId.value);
-      if (selectedFeature && (getMapElementType(selectedFeature) === "shape" || getMapElementType(selectedFeature) === "zone" || getMapElementType(selectedFeature) === "polyline")) {
-        shapeScaling.attach(selectedFeatureId.value);
-      }
+      attachScalingIfEligible(selectedFeatureId.value);
     }
   });
 
@@ -1060,7 +1062,7 @@ watch(selectedFeatureId, (id, oldId) => {
     shapeScaling.detach();
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(id);
-    } else if (selectedFeature && (getMapElementType(selectedFeature) === "shape" || getMapElementType(selectedFeature) === "zone" || getMapElementType(selectedFeature) === "polyline")) {
+    } else if (isScalableFeature(selectedFeature)) {
       shapeScaling.attach(id);
     }
   } else {

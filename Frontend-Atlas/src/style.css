@@ -92,55 +92,59 @@
 }
 
 
-/* ── Shape scaling: shared handle base ─────────────────────────────────────── */
-.shape-resize-handle,
-.shape-resize-handle--corner,
-.shape-resize-handle--edge {
+/* ── Shape scaling handles ─────────────────────────────────────────────────── */
+.shape-resize-handle {
   box-sizing: border-box;
   background: #ffffff;
-  border: 2px solid #475569; /* slate-600 */
+  border: 2px solid #475569;
   border-radius: 2px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.30), 0 0 0 1px rgba(255,255,255,0.6);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.6);
   will-change: transform;
-  pointer-events: auto !important;
-}
-
-/* Ensure handles smoothly animate alongside the map during zoom transitions */
-.leaflet-zoom-anim .shape-resize-handle {
-  -webkit-transition: -webkit-transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
-  -moz-transition: -moz-transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
-  transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
+  pointer-events: auto;
 }
 
 .shape-resize-handle:hover {
-  background: #f1f5f9; /* slate-100 */
-  box-shadow: 0 2px 6px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.8);
+  background: #f1f5f9;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.8);
 }
 
-/* ── Corner handles (10×10 square) ────────────────────────────────────────── */
+.leaflet-zoom-anim .shape-resize-handle {
+  transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
+}
+
 .shape-resize-handle--corner {
-  width: 10px !important;
-  height: 10px !important;
+  width: 10px;
+  height: 10px;
 }
-.shape-resize-handle--nw { cursor: nwse-resize !important; }
-.shape-resize-handle--ne { cursor: nesw-resize !important; }
-.shape-resize-handle--sw { cursor: nesw-resize !important; }
-.shape-resize-handle--se { cursor: nwse-resize !important; }
 
-/* ── Edge midpoint handles (8×8, rounded) ─────────────────────────────────── */
 .shape-resize-handle--edge {
-  width: 8px !important;
-  height: 8px !important;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  border-color: #64748b; /* slate-500 */
-  background: #e2e8f0;   /* slate-200 */
+  border-color: #64748b;
+  background: #e2e8f0;
 }
-.shape-resize-handle--n,
-.shape-resize-handle--s { cursor: ns-resize !important; }
-.shape-resize-handle--w,
-.shape-resize-handle--e { cursor: ew-resize !important; }
 
-/* ── Dashed bounding-box outline drawn by the ShapeScalingService ─────────── */
+.shape-resize-handle--nw,
+.shape-resize-handle--se {
+  cursor: nwse-resize;
+}
+
+.shape-resize-handle--ne,
+.shape-resize-handle--sw {
+  cursor: nesw-resize;
+}
+
+.shape-resize-handle--n,
+.shape-resize-handle--s {
+  cursor: ns-resize;
+}
+
+.shape-resize-handle--w,
+.shape-resize-handle--e {
+  cursor: ew-resize;
+}
+
 .shape-bounding-box {
   pointer-events: none;
 }
