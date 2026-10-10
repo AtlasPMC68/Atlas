@@ -29,6 +29,10 @@ interface HandleDef {
   scalesX: boolean;
   /** Whether this handle produces vertical scaling */
   scalesY: boolean;
+  /** Marker icon size [width, height] */
+  iconSize: [number, number];
+  /** Marker icon anchor [x, y] */
+  iconAnchor: [number, number];
 }
 
 interface HandleState {
@@ -48,7 +52,7 @@ interface ShapeInteractionState {
 // ─── Handle definitions ───────────────────────────────────────────────────────
 
 const HANDLES: HandleDef[] = [
-  // ── Corners ────────────────────────────────────────────────────────────────
+  // ── Corners (10×10 squares) ────────────────────────────────────────────────
   {
     id: "nw",
     cls: "shape-resize-handle shape-resize-handle--corner shape-resize-handle--nw",
@@ -57,6 +61,8 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point(r.maxX, r.maxY),
     scalesX: true,
     scalesY: true,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
   },
   {
     id: "ne",
@@ -66,6 +72,8 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point(r.minX, r.maxY),
     scalesX: true,
     scalesY: true,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
   },
   {
     id: "sw",
@@ -75,6 +83,8 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point(r.maxX, r.minY),
     scalesX: true,
     scalesY: true,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
   },
   {
     id: "se",
@@ -84,8 +94,10 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point(r.minX, r.minY),
     scalesX: true,
     scalesY: true,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
   },
-  // ── Edge midpoints ─────────────────────────────────────────────────────────
+  // ── Edge midpoints (8×8 rounded dots) ──────────────────────────────────────
   {
     id: "n",
     cls: "shape-resize-handle shape-resize-handle--edge shape-resize-handle--n",
@@ -94,6 +106,8 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point((r.minX + r.maxX) / 2, r.maxY),
     scalesX: false,
     scalesY: true,
+    iconSize: [8, 8],
+    iconAnchor: [4, 4],
   },
   {
     id: "s",
@@ -103,6 +117,8 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point((r.minX + r.maxX) / 2, r.minY),
     scalesX: false,
     scalesY: true,
+    iconSize: [8, 8],
+    iconAnchor: [4, 4],
   },
   {
     id: "w",
@@ -112,6 +128,8 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point(r.maxX, (r.minY + r.maxY) / 2),
     scalesX: true,
     scalesY: false,
+    iconSize: [8, 8],
+    iconAnchor: [4, 4],
   },
   {
     id: "e",
@@ -121,6 +139,8 @@ const HANDLES: HandleDef[] = [
     anchorPx: (r) => L.point(r.minX, (r.minY + r.maxY) / 2),
     scalesX: true,
     scalesY: false,
+    iconSize: [8, 8],
+    iconAnchor: [4, 4],
   },
 ];
 
@@ -197,8 +217,8 @@ export class ShapeScalingService {
       const marker = L.marker(map.containerPointToLatLng(pt), {
         icon: L.divIcon({
           className: def.cls,
-          iconSize: [10, 10],
-          iconAnchor: [5, 5],
+          iconSize: def.iconSize,
+          iconAnchor: def.iconAnchor,
         }),
         draggable: true,
         zIndexOffset: 1000,
@@ -325,6 +345,15 @@ export class ShapeScalingService {
       leaf.on("pm:dragend", onShapeDrag);
     });
 
+    // Re-align overlay when map finishes zooming or view resets
+    const onMapZoomOrReset = () => {
+      if (!isDraggingActive) {
+        refreshOverlay();
+      }
+    };
+    map.on("zoomend", onMapZoomOrReset);
+    map.on("viewreset", onMapZoomOrReset);
+
     // ── Drag state ───────────────────────────────────────────────────────────
     let activeHandleDef: HandleDef | null = null;
     let startAnchorPx: L.Point | null = null;
@@ -335,6 +364,8 @@ export class ShapeScalingService {
     let startHeight = 0;
     let leafStates: Map<L.Layer, any> | null = null;
     let isDraggingActive = false;
+    let reEnableScrollWheel = false;
+    let reEnableTouchZoom = false;
 
     // Shift-key tracking for aspect-ratio lock toggle
     let shiftHeld = false;
@@ -351,6 +382,14 @@ export class ShapeScalingService {
       if (!activeHandleDef) return;
 
       map.dragging.enable();
+      if (reEnableScrollWheel) {
+        map.scrollWheelZoom?.enable();
+        reEnableScrollWheel = false;
+      }
+      if (reEnableTouchZoom) {
+        map.touchZoom?.enable();
+        reEnableTouchZoom = false;
+      }
       window.removeEventListener("pointerup", onGlobalUp, true);
       window.removeEventListener("mouseup", onGlobalUp, true);
 
@@ -436,8 +475,16 @@ export class ShapeScalingService {
         window.addEventListener("pointerup", onGlobalUp, true);
         window.addEventListener("mouseup", onGlobalUp, true);
 
-        // Prevent map panning while dragging handle
+        // Prevent map panning and accidental zooming while dragging handle
         map.dragging.disable();
+        if (map.scrollWheelZoom?.enabled()) {
+          map.scrollWheelZoom.disable();
+          reEnableScrollWheel = true;
+        }
+        if (map.touchZoom?.enabled()) {
+          map.touchZoom.disable();
+          reEnableTouchZoom = true;
+        }
       });
 
       marker.on("drag", (e: L.LeafletEvent) => {
@@ -560,11 +607,21 @@ export class ShapeScalingService {
         leaf.off("pm:drag", onShapeDrag);
         leaf.off("pm:dragend", onShapeDrag);
       });
+      map.off("zoomend", onMapZoomOrReset);
+      map.off("viewreset", onMapZoomOrReset);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("pointerup", onGlobalUp, true);
       window.removeEventListener("mouseup", onGlobalUp, true);
       map.dragging.enable();
+      if (reEnableScrollWheel) {
+        map.scrollWheelZoom?.enable();
+        reEnableScrollWheel = false;
+      }
+      if (reEnableTouchZoom) {
+        map.touchZoom?.enable();
+        reEnableTouchZoom = false;
+      }
     };
   }
 
