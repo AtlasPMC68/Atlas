@@ -67,3 +67,33 @@ yarn-error.log*
 # Process folders
 Backend-Atlas/app/extracted_color
 Backend-Atlas/app/extracted_texts
+# Cached colour-extraction results for scripts/run_georef_alignment.py
+Backend-Atlas/.georef_cache/
+# Variant runs (scripts/run_georef_variants.py): copy a summary.md into the docs to keep it
+Backend-Atlas/ablations/
+# Administrative borders for the zone editor (scripts/fetch_natural_earth_borders.py)
+Backend-Atlas/app/geojson/borders/
+
+# Regenerable reference-layer debug dumps from the georef dev loop
+Backend-Atlas/tests/assets/georef/test_cases/**/reference_debug/
+Backend-Atlas/tests/assets/georef/test_cases/**/evidence_debug/
+Backend-Atlas/tests/assets/georef/test_cases/**/alignment_debug/
+
+# A dev-test case's latest run: rewritten by every run, reproduced by
+# re-running the case. Committed per case: config.json (the inputs) and the
+# best run (best_report.json, *_best.geojson), which is the regression baseline.
+Backend-Atlas/tests/assets/georef/test_cases/**/report.json
+Backend-Atlas/tests/assets/georef/test_cases/**/run_record.json
+Backend-Atlas/tests/assets/georef/test_cases/**/case_state.json
+Backend-Atlas/tests/assets/georef/test_cases/**/zones.geojson
+Backend-Atlas/tests/assets/georef/test_cases/**/zones_raw.geojson
+Backend-Atlas/tests/assets/georef/test_cases/**/zones_pixel.geojson
+Backend-Atlas/tests/assets/georef/test_cases/**/classified_image.png
+# Error overlays (FP/FN) are derived on demand by the API from a run's zones
+# and the expected zones, never stored. Ignored so stale local copies stay out.
+Backend-Atlas/tests/assets/georef/test_cases/**/errors*.geojson
+# Held while a map's OCR runs; its result (text_regions.json) is committed.
+Backend-Atlas/tests/assets/georef/derived/**/.ocr.lock
+
+# Per-run georeferencing debug dumps (GEOREF_DEBUG=true)
+Backend-Atlas/debug_runs/
