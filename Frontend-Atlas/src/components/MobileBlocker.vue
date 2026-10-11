@@ -10,7 +10,7 @@
       <p class="text-gray-600 mb-6 leading-relaxed">
         Atlas est une plateforme conçue pour les ordinateurs. L'écran de votre appareil est trop petit pour afficher les cartes et les données correctement.
       </p>
-      <div class="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm font-medium">
+      <div class="bg-primary-600 text-white p-4 rounded-xl text-sm font-medium">
         Veuillez vous connecter depuis un ordinateur pour une expérience optimale.
       </div>
     </div>
