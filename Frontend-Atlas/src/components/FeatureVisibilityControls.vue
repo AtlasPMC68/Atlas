@@ -65,20 +65,24 @@
                     {{ mapGroup.title }}
                   </span>
                 </label>
-                <div class="flex h-8 w-8 items-center justify-center" v-if="mapGroup.id !== null">
-                  <button @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)" title="Supprimer la carte">
+                <div class="flex items-center gap-1" v-if="mapGroup.id !== null">
+                  <button
+                    class="flex h-8 w-8 items-center justify-center"
+                    @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)"
+                    title="Supprimer la carte"
+                  >
                     <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
                   </button>
                 </div>
               </div>
-              <div class="flex flex-col gap-2 pl-2">
+              <div class="flex flex-col gap-2">
                 <div
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
                   class="flex w-full flex-row items-center justify-between gap-2"
                 >
                   <label
-                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0"
+                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0 pl-4"
                   >
                     <input
                       type="checkbox"
@@ -96,13 +100,21 @@
                       {{ feature.properties?.name || "Élément sans nom" }}
                     </span>
                   </label>
-                  <div class="flex h-8 w-8 items-center gap-1 mr-1">
-                    <button @click="showEditFeatureDialog(feature)">
+                  <div class="flex items-center gap-1">
+                    <button
+                      class="flex h-8 w-8 items-center justify-center"
+                      @click="showEditFeatureDialog(feature)"
+                      title="Modifier l'élément"
+                    >
                       <PencilSquareIcon
                         class="w-5 h-5 text-gray-500 hover:text-gray-800"
                       />
                     </button>
-                    <button @click="showDeleteFeatureDialog(feature)">
+                    <button
+                      class="flex h-8 w-8 items-center justify-center"
+                      @click="showDeleteFeatureDialog(feature)"
+                      title="Supprimer l'élément"
+                    >
                       <TrashIcon
                         class="w-5 h-5 text-red-500 hover:text-red-800"
                       />
@@ -192,8 +204,9 @@
         <div
           class="flex gap-2"
           v-if="
-            featureToEdit.properties.fillOpacity !== undefined ||
-            featureToEdit.properties.strokeOpacity !== undefined
+            !isEditingLabel &&
+            (featureToEdit.properties.fillOpacity !== undefined ||
+              featureToEdit.properties.strokeOpacity !== undefined)
           "
         >
           <div
@@ -217,7 +230,7 @@
         </div>
         <div
           class="flex flex-col gap-2 w-full"
-          v-if="featureToEdit.properties.strokeWidth !== undefined"
+          v-if="!isEditingLabel && featureToEdit.properties.strokeWidth !== undefined"
         >
           <label class="label">Épaisseur du contour</label>
           <input
@@ -232,7 +245,7 @@
         >
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.colorRgb !== undefined"
+            v-if="featureToEdit.properties.colorRgb !== undefined || isEditingLabel || getMapElementType(featureToEdit) === 'point'"
           >
             <label class="label">Couleur :</label>
             <input
@@ -243,7 +256,7 @@
           </div>
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.strokeColor !== undefined && featureToEdit.properties.mapElementType !== 'label'"
+            v-if="featureToEdit.properties.strokeColor !== undefined && !isEditingLabel"
           >
             <label class="label">Couleur du contour :</label>
             <input
@@ -389,6 +402,10 @@ const featureToEditStrokeColor = ref<string | undefined>(undefined);
 const featureToEditOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+const isEditingLabel = computed(() => {
+  if (!featureToEdit.value) return false;
+  return getMapElementType(featureToEdit.value) === "label";
+});
 
 const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const mapToDeleteId = ref<string | null>(null);
@@ -572,7 +589,9 @@ async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
   featureToEditName.value = feature.properties.name;
   featureToEditLabelText.value = feature.properties.labelText;
-  featureToEditColor.value = rgbToHex(feature.properties.colorRgb);
+  featureToEditColor.value =
+    rgbToHex(feature.properties.colorRgb) ??
+    (getMapElementType(feature) === "label" || getMapElementType(feature) === "point" ? "#000000" : undefined);
   featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
   featureToEditOpacity.value = feature.properties.fillOpacity;
   featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
@@ -585,6 +604,7 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
+  const isLabel = isEditingLabel.value;
   const updatedFeature: Feature = {
     ...featureToEdit.value,
     properties: {
@@ -592,10 +612,10 @@ async function onEditFeature() {
       name: featureToEditName.value,
       labelText: featureToEditLabelText.value,
       colorRgb: hexToRgb(featureToEditColor.value),
-      strokeColor: hexToRgb(featureToEditStrokeColor.value),
-      fillOpacity: featureToEditOpacity.value,
-      strokeOpacity: featureToEditStrokeOpacity.value,
-      strokeWidth: featureToEditStrokeWidth.value,
+      strokeColor: isLabel ? undefined : hexToRgb(featureToEditStrokeColor.value),
+      fillOpacity: isLabel ? undefined : featureToEditOpacity.value,
+      strokeOpacity: isLabel ? undefined : featureToEditStrokeOpacity.value,
+      strokeWidth: isLabel ? undefined : featureToEditStrokeWidth.value,
     },
   };
 

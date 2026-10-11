@@ -92,10 +92,14 @@
 }
 
 .image-resize-handle {
-  background: white;
-  border: 2px solid #333;
-  border-radius: 2px;
-  cursor: se-resize;
+  width: 12px !important;
+  height: 12px !important;
+  background: white !important;
+  border: 2px solid #3b82f6 !important;
+  border-radius: 2px !important;
+  cursor: nwse-resize !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+  z-index: 1000 !important;
 }
 
 .leaflet-imagePane-pane img {

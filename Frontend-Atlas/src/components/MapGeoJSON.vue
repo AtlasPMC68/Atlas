@@ -175,11 +175,16 @@ const featureLayerManager = {
     });
 
     layer.on("dblclick", () => {
-      if (selectedFeatureId.value === id) {
-        const feature = props.features.find((f) => String(f.id) === id);
-        if (feature) {
-          emit("edit-feature-request", feature);
-        }
+      const pm = (map as MapWithPm)?.pm;
+      // Don't steal clicks from active drawing tools
+      if (drawing.activeDrawingMode.value !== null) return;
+      if (pm?.globalRemovalModeEnabled?.()) return;
+      blockNextMapClick = true;
+      if (addCityMode.value) cityMode.cancel();
+      selectedFeatureId.value = id;
+      const feature = props.features.find((f) => String(f.id) === id);
+      if (feature) {
+        emit("edit-feature-request", feature);
       }
     });
 
@@ -456,11 +461,15 @@ function renderCities(features: Feature[]) {
     attachFeatureToLayer(point, feature);
     bindRenderedFeatureEvents(point, applyLayerUpdate);
 
-    // Forward clicks from the inner point to the layerGroup so that the
+    // Forward clicks and double-clicks from the inner point to the layerGroup so that the
     // standard featureLayerManager selection handler fires (same path as all
     // other feature types), keeping blockNextMapClick behaviour consistent.
     point.on("click", (e: L.LeafletEvent) => {
       layerGroup.fire("click", e);
+    });
+
+    point.on("dblclick", (e: L.LeafletEvent) => {
+      layerGroup.fire("dblclick", e);
     });
 
     point.on("pm:drag", () => {
@@ -477,11 +486,22 @@ function renderCities(features: Feature[]) {
       layerGroup.fire("click", e);
     });
 
+    label.on("dblclick", (e: L.LeafletEvent) => {
+      layerGroup.fire("dblclick", e);
+    });
+
     attachFeatureToLayer(label, feature);
 
     const layerGroup = L.layerGroup([point, label]);
     
     bindRotationHandle(label, feature, point, -8, 15);
+
+    label.on("add", () => {
+      applyLabelStyle(label, feature);
+    });
+    if (label.getElement()) {
+      applyLabelStyle(label, feature);
+    }
 
     attachFeatureToLayer(layerGroup, feature);
     featureLayerManager.addFeatureLayer(feature.id, layerGroup);
@@ -564,7 +584,10 @@ function applyLabelStyle(marker: L.Marker, feature: Feature) {
   const el = marker.getElement() as HTMLElement | null;
   if (!el) return;
 
-  const color = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+  const color =
+    colorRgbToCss(feature.properties.colorRgb) ||
+    (feature.properties as any).color ||
+    "#000000";
   const sizePx = feature.properties.sizePx ?? 12;
 
   el.style.setProperty("--label-color", color);
@@ -753,20 +776,36 @@ function renderImages(features: Feature[]) {
       pane: 'imagePane',
     });
 
+    const applyRotation = (layer: any) => {
+      const currentFeature = layer.feature || feature;
+      const rotation = currentFeature.properties?.rotation ?? 0;
+      if (layer._image) {
+        layer._image.style.transformOrigin = "center center";
+        const transform = layer._image.style.transform || "";
+        if (rotation) {
+          if (!transform.includes('rotate')) {
+            layer._image.style.transform = `${transform} rotate(${rotation}deg)`.trim();
+          } else {
+            layer._image.style.transform = transform.replace(/rotate\([^)]+\)/, `rotate(${rotation}deg)`);
+          }
+        } else if (transform.includes('rotate')) {
+          layer._image.style.transform = transform.replace(/rotate\([^)]+\)/, '').trim();
+        }
+      }
+    };
+
+    const originalAnimateZoom = (overlay as any)._animateZoom;
+    (overlay as any)._animateZoom = function(e: any) {
+      if (originalAnimateZoom) {
+        originalAnimateZoom.call(this, e);
+      }
+      applyRotation(this);
+    };
+
     const originalReset = (overlay as any)._reset;
     (overlay as any)._reset = function() {
       originalReset.call(this);
-      const currentFeature = (this as any).feature || feature;
-      const rotation = currentFeature.properties?.rotation ?? 0;
-      if (rotation && this._image) {
-        this._image.style.transformOrigin = "center center";
-        const transform = this._image.style.transform;
-        if (!transform.includes('rotate')) {
-          this._image.style.transform += ` rotate(${rotation}deg)`;
-        } else {
-          this._image.style.transform = transform.replace(/rotate\([^)]+\)/, `rotate(${rotation}deg)`);
-        }
-      }
+      applyRotation(this);
     };
 
     overlay.on('add', () => {
@@ -774,7 +813,7 @@ function renderImages(features: Feature[]) {
       if (el) {
         el.setAttribute('draggable', 'false');
       }
-      (overlay as any)._reset(); // Apply rotation immediately on load
+      applyRotation(overlay);
     });
 
     attachFeatureToLayer(overlay, feature);
@@ -1091,6 +1130,10 @@ watch(selectedFeatureId, (id, oldId) => {
 
   // Restore the original stroke color on the previously selected layer
   if (oldId != null) {
+    document.querySelectorAll('.label-selected').forEach(el => {
+      el.classList.remove('label-selected');
+      el.classList.remove('label-rotate-mode');
+    });
     const oldLayer = featureLayerManager.layers.get(String(oldId));
     if (oldLayer instanceof L.ImageOverlay) {
       oldLayer.getElement()?.classList.remove("image-overlay-selected");
@@ -1131,7 +1174,12 @@ watch(selectedFeatureId, (id, oldId) => {
       });
       
       if (cityLabel) {
-        (cityLabel as any).getElement()?.classList.add("label-selected");
+        const el = (cityLabel as any).getElement();
+        el?.classList.add("label-selected");
+        const pm = (map as MapWithPm)?.pm;
+        if (pm?.globalRotateModeEnabled?.()) {
+          el?.classList.add("label-rotate-mode");
+        }
       }
       
       if (cityLatLng && map) {
@@ -1149,7 +1197,12 @@ watch(selectedFeatureId, (id, oldId) => {
       drawing.setToolbarMode("label");
       enablePerFeatureDrag(layer);
       pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
-      (layer as any).getElement()?.classList.add("label-selected");
+      const el = (layer as any).getElement();
+      el?.classList.add("label-selected");
+      const pm = (map as MapWithPm)?.pm;
+      if (pm?.globalRotateModeEnabled?.()) {
+        el?.classList.add("label-rotate-mode");
+      }
     } else if (layer) {
       drawing.setToolbarMode("feature");
       enablePerFeatureDrag(layer);
@@ -1208,6 +1261,7 @@ watch(
   padding: 0;
   border-radius: 3px;
   border: transparent;
+  user-select: none;
 }
 
 .label-wrapper {
@@ -1248,16 +1302,25 @@ watch(
   margin-left: -5px; /* Offset to perfectly center the 10px handle */
 }
 
-/* For image rotate handle (which is a standalone L.Marker), undo the wrapper offsets */
+/* For image rotate handle (which is a standalone L.Marker) */
 .image-rotate-handle {
-  top: auto !important;
-  left: auto !important;
-  margin-left: 0 !important;
+  width: 14px !important;
+  height: 14px !important;
+  background-color: white !important;
+  border: 2px solid #3b82f6 !important;
+  border-radius: 50% !important;
+  cursor: grab !important;
   display: none !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+  z-index: 1000 !important;
 }
 
 .image-rotate-handle.label-rotate-mode {
   display: block !important;
+}
+
+.image-rotate-handle:active {
+  cursor: grabbing !important;
 }
 
 .label-anchor.rotate-handle::after {
