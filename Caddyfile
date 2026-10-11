@@ -1,16 +1,21 @@
 {
-    auto_https off
+    # Global options
+    # In production, Caddy uses this email for Let's Encrypt renewal notices (optional)
+    email {$ACME_EMAIL:admin@example.com}
 }
 
-:80 {
+{$CADDY_SITE:http://localhost} {
+    # Backend FastAPI
     handle_path /api* {
         reverse_proxy backend:8000
     }
 
+    # Keycloak Identity Provider
     handle /auth* {
         reverse_proxy keycloak:8080
     }
 
+    # Frontend Vite Dev / Web
     handle {
         reverse_proxy frontend:5173
     }

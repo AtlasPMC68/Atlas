@@ -15,16 +15,16 @@
   "redirectUris": [
     "http://localhost",
     "http://localhost/*",
+    "http://localhost",
+    "http://localhost/*",
     "https://localhost",
-    "https://localhost/*",
-    "http://localhost:3000",
-    "http://localhost:3000/*"
+    "https://localhost/*"
   ],
 
   "webOrigins": [
     "http://localhost",
+    "http://localhost",
     "https://localhost",
-    "http://localhost:3000",
     "+"
   ],
 

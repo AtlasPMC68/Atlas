@@ -4,28 +4,35 @@ services:
       context: ./Backend-Atlas
     container_name: atlas-backend
     env_file:
-      - ./Backend-Atlas/.env.dev
+      - .env
     environment:
-      KEYCLOAK_ISSUER: http://keycloak:8080/auth/realms/atlas
+      KEYCLOAK_URL: ${INTERNAL_KEYCLOAK_URL:-http://keycloak:8080/auth}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost/auth/realms/atlas}
       KEYCLOAK_AUDIENCE: atlas-backend
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,https://localhost}
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./.env:/app/.env.dev
     depends_on:
       - keycloak
+
   frontend:
     build:
       context: ./Frontend-Atlas
     container_name: atlas-frontend
     restart: unless-stopped
-    env_file:
-      - ./Frontend-Atlas/.env
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost/api}
+      VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL:-http://localhost/auth}
+      VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-atlas}
+      VITE_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_FRONT_END_CLIENT_ID:-atlas-frontend}
+      VITE_CARTO_API_KEY: ${VITE_CARTO_API_KEY:-cb1_32sr_1_94950efc253b5dcd21538d10}
     volumes:
-      - ./Frontend-Atlas:/app # bind mount for hot reload
-      - /app/node_modules # prevent node_modules conflict
+      - ./Frontend-Atlas:/app
+      - /app/node_modules
 
   redis:
     image: redis:7-alpine
@@ -43,12 +50,12 @@ services:
     container_name: atlas-celery-worker
     restart: unless-stopped
     env_file:
-      - ./Backend-Atlas/.env.dev
+      - .env
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./.env:/app/.env.dev
     depends_on:
       - redis
       - db
@@ -62,11 +69,11 @@ services:
     ports:
       - "5555:5555"
     env_file:
-      - ./Backend-Atlas/.env.dev
+      - .env
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./.env:/app/.env.dev
     depends_on:
       - redis
     command: celery -A app.celery_app flower --port=5555
@@ -78,10 +85,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: atlas
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    platform: linux/amd64
+      POSTGRES_DB: ${POSTGRES_DB:-atlas}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./Backend-Atlas/db:/docker-entrypoint-initdb.d
@@ -91,28 +97,21 @@ services:
     container_name: atlas-keycloak
     restart: unless-stopped
     environment:
-      # Admin credentials
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
-
-      # Database configuration
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak
-
-      # Simple development configuration
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
       KC_HOSTNAME_STRICT: false
       KC_HTTP_ENABLED: true
       KC_HTTP_RELATIVE_PATH: /auth
       KC_PROXY: edge
-
-      # Disable health checks and metrics to avoid connection issues
       KC_HEALTH_ENABLED: false
       KC_METRICS_ENABLED: false
-
-      # Logging
       KC_LOG_LEVEL: WARN
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
+      DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./keycloak:/var/tmp
       - ./keycloak/themes/atlas:/opt/keycloak/themes/atlas
@@ -126,13 +125,17 @@ services:
     container_name: atlas-keycloak-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: keycloak
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
     volumes:
       - keycloak-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${KEYCLOAK_DB_USER:-keycloak} -d ${KEYCLOAK_DB_NAME:-keycloak}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -144,6 +147,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      CADDY_SITE: ${CADDY_SITE:-${APP_BASE_URL:-http://localhost}}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy-data:/data
@@ -165,7 +171,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./.env:/app/.env.dev
 
   test-frontend:
     build:

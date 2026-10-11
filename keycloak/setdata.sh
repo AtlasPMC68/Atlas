@@ -39,10 +39,13 @@ client_exists() {
   /opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId="$client_id" --fields id | grep -q "id"
 }
 
-# Create frontend client if it doesn't exist
+# Create or update frontend client
 echo "Setting up frontend client..."
 if client_exists "atlas-frontend"; then
-  echo "Frontend client already exists"
+  echo "Frontend client already exists, updating configuration..."
+  FRONTEND_CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId=atlas-frontend --fields id | grep -oP '(?<="id" : ")[^"]*')
+  /opt/keycloak/bin/kcadm.sh update clients/"$FRONTEND_CLIENT_ID" -r atlas -f /var/tmp/atlas-frontend.json
+  echo "Frontend client updated"
 else
   /opt/keycloak/bin/kcadm.sh create clients -r atlas -f /var/tmp/atlas-frontend.json
   echo "Frontend client created"
