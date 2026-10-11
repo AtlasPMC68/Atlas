@@ -27,7 +27,7 @@ export function useCityCandidates() {
     searchError.value = null;
 
     const formData = new FormData();
-    formData.append("q", trimmed);
+    formData.append("name", trimmed);
     formData.append("west", String(bounds.west));
     formData.append("south", String(bounds.south));
     formData.append("east", String(bounds.east));

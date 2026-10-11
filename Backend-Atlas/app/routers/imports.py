@@ -77,7 +77,7 @@ def _import_out(row: MapImport, map_obj: Map) -> Dict[str, Any]:
     }
 
 
-async def _owned_map_or_404(
+async def _require_owned_map(
     session: AsyncSession, map_id: UUID, user_id: str
 ) -> Map:
     map_obj = await get_owned_map(session, map_id, UUID(user_id))
@@ -86,7 +86,7 @@ async def _owned_map_or_404(
     return map_obj
 
 
-async def _import_or_404(
+async def _require_import(
     session: AsyncSession, map_id: UUID, *, for_update: bool = False
 ) -> MapImport:
     row = await get_import(session, map_id, for_update=for_update)
@@ -103,13 +103,21 @@ async def create_import(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Store the image and start OCR right away."""
-    map_obj = await _owned_map_or_404(session, map_id, user_id)
+    map_obj = await _require_owned_map(session, map_id, user_id)
 
     filename = file.filename or ""
     if not any(filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400,
             detail=f"File type not supported. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+    # Checked before reading, so an oversized file is not loaded into memory.
+    # The upload itself has already arrived by now; capping that belongs to
+    # the reverse proxy in front of the API.
+    if file.size is not None and file.size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
     content = await file.read()
     if not content:
@@ -138,7 +146,16 @@ async def create_import(
     session.add(row)
     await session.commit()
 
-    run_map_ocr.apply_async(kwargs={"map_id": str(map_id)}, task_id=ocr_task_id)
+    try:
+        run_map_ocr.apply_async(kwargs={"map_id": str(map_id)}, task_id=ocr_task_id)
+    except Exception as e:
+        # Marked failed rather than left pending with no task behind it:
+        # starting the extraction retries a failed OCR.
+        logger.error(f"[IMPORT] Could not dispatch OCR for {map_id}: {e}")
+        row = await _require_import(session, map_id, for_update=True)
+        row.ocr_state = OCR_FAILED
+        await session.commit()
+        return _import_out(row, map_obj)
     logger.info(f"[IMPORT] import created for map {map_id}; OCR task {ocr_task_id}")
     return _import_out(row, map_obj)
 
@@ -149,8 +166,8 @@ async def get_import_state(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    map_obj = await _owned_map_or_404(session, map_id, user_id)
-    row = await _import_or_404(session, map_id)
+    map_obj = await _require_owned_map(session, map_id, user_id)
+    row = await _require_import(session, map_id)
     return _import_out(row, map_obj)
 
 
@@ -160,8 +177,8 @@ async def get_import_image(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    await _owned_map_or_404(session, map_id, user_id)
-    row = await _import_or_404(session, map_id)
+    await _require_owned_map(session, map_id, user_id)
+    row = await _require_import(session, map_id)
     media_type = mimetypes.guess_type(row.filename)[0] or "application/octet-stream"
     return Response(content=row.image, media_type=media_type)
 
@@ -174,8 +191,8 @@ async def update_import_inputs(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Merge the given entries into the saved ones. ``null`` clears one."""
-    map_obj = await _owned_map_or_404(session, map_id, user_id)
-    row = await _import_or_404(session, map_id, for_update=True)
+    map_obj = await _require_owned_map(session, map_id, user_id)
+    row = await _require_import(session, map_id, for_update=True)
     if is_extraction_active(row):
         raise HTTPException(
             status_code=409,
@@ -196,8 +213,8 @@ async def start_extraction(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Start the extraction now if the text is ready, else queue it behind OCR."""
-    map_obj = await _owned_map_or_404(session, map_id, user_id)
-    row = await _import_or_404(session, map_id, for_update=True)
+    map_obj = await _require_owned_map(session, map_id, user_id)
+    row = await _require_import(session, map_id, for_update=True)
     if is_extraction_active(row):
         raise HTTPException(status_code=409, detail="Extraction already in progress")
 
@@ -240,7 +257,7 @@ async def start_extraction(
             )
         except Exception as e:
             logger.error(f"[IMPORT] Could not dispatch extraction for {map_id}: {e}")
-            row = await _import_or_404(session, map_id, for_update=True)
+            row = await _require_import(session, map_id, for_update=True)
             row.extraction_state = EXTRACTION_FAILED
             row.extraction_error = "Impossible de lancer l'extraction"
             await session.commit()
@@ -256,8 +273,8 @@ async def cancel_extraction(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Stop the extraction. The user's entries and the OCR result are kept."""
-    map_obj = await _owned_map_or_404(session, map_id, user_id)
-    row = await _import_or_404(session, map_id, for_update=True)
+    map_obj = await _require_owned_map(session, map_id, user_id)
+    row = await _require_import(session, map_id, for_update=True)
 
     if row.extraction_state in (EXTRACTION_WAITING_FOR_TEXT, EXTRACTION_QUEUED):
         if row.extraction_task_id:
@@ -286,8 +303,8 @@ async def abandon_import(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Drop the import, to start over with another file."""
-    await _owned_map_or_404(session, map_id, user_id)
-    row = await _import_or_404(session, map_id, for_update=True)
+    await _require_owned_map(session, map_id, user_id)
+    row = await _require_import(session, map_id, for_update=True)
     if row.ocr_task_id and row.ocr_state != OCR_DONE:
         celery_app.control.revoke(row.ocr_task_id, terminate=True)
     if row.extraction_task_id and is_extraction_active(row):

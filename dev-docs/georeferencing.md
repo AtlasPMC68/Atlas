@@ -292,7 +292,13 @@ model on the same triangles. Without a piecewise model (refused, or `auto` kept 
 control-point affine is aligned instead; an already aligned affine is left as it is.
 
 It has no checks of its own: `M` is kept only when it keeps the map's orientation and the
-coastline chamfer does not get worse; otherwise `P` is used. The evidence is built once and
+coastline chamfer does not get worse; otherwise `P` is used. **It does not go through §5.2's
+precondition or its other checks.** It runs whenever the alignment evidence could be built,
+even when the first alignment was skipped or refused, and nothing checks the water agreement
+or how far it moves the clicks (the run record logs the latter as `postAlignment.gcpRmsPx`).
+With no water picks it finds no edges and skips itself; with a water mask under
+`edge_water_min_fraction` it runs on the edges around that small patch, which the first
+alignment refuses to trust ([§9](#9-known-limitations)). The evidence is built once and
 shared with the first alignment. The run record has `postAlignment` (applied or why not, the
 chamfer before and after). With `enable_curve_alignment` also on, the pipeline is
 align → piecewise → align (`B7b`).
@@ -379,6 +385,10 @@ Verified in the code. Ordered roughly by impact.
 7. **Unequal σ would break the GCP normalisation.** The term is normalised by point count and
    median σ; if SIFT and city σ ever differ, normalise by the sum of weights instead.
 8. **The gazetteer has no historical names** and only places of 15,000+ inhabitants.
+9. **The second alignment bypasses the first one's safeguards** ([§5.4](#54-alignment-after-the-piecewise-correction)):
+   it runs even when the first alignment was skipped (water mask too small) or refused by a
+   check, with only the mirror and chamfer-not-worse checks. Running it only when the first
+   alignment applied (`method: joint`), with the same four checks, would close it.
 
 ---
 

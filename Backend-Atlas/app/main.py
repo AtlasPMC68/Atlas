@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +12,17 @@ from .routers import projects
 from .routers import user
 from .utils.dev_test_assets import GEOREF_ASSETS_DIR, ensure_georef_assets_dir
 
+# The dev-test tool: its API routes (run, edit and delete test cases) and its
+# static files. On by default for now, for local development.
+# TODO: default this to "false" before deploying anywhere, so production does
+# not expose the dev-test routes; set ENABLE_DEV_TOOLS=true locally instead.
+ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 app = FastAPI(
     title="Maps Processing API",
     description="API pour traitement et analyse de cartes historiques",
@@ -20,8 +33,8 @@ app.include_router(projects.router)
 app.include_router(imports.router)
 app.include_router(auth.router)
 app.include_router(user.router)
-app.include_router(dev_test.router)
-# TODO: gate dev_test router and /dev-test static mount behind an ENABLE_DEV_TOOLS env var before any non-local deployment
+if ENABLE_DEV_TOOLS:
+    app.include_router(dev_test.router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
@@ -31,8 +44,9 @@ app.add_middleware(
 )
 
 # Serve georef dev-test assets (images, GeoJSON, etc.) as static files under /dev-test
-ensure_georef_assets_dir()
-app.mount("/dev-test", StaticFiles(directory=GEOREF_ASSETS_DIR), name="dev-test")
+if ENABLE_DEV_TOOLS:
+    ensure_georef_assets_dir()
+    app.mount("/dev-test", StaticFiles(directory=GEOREF_ASSETS_DIR), name="dev-test")
 
 
 @app.get("/")

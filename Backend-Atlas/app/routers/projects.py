@@ -587,7 +587,7 @@ async def get_coastline_keypoints(
 
 @router.post("/city-candidates")
 def get_city_candidates(
-    q: str = Form(...),
+    name: str = Form(...),
     west: float = Form(...),
     south: float = Form(...),
     east: float = Form(...),
@@ -602,7 +602,7 @@ def get_city_candidates(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid bounds: {e}")
 
-    candidates = search_cities(q, bounds, limit=max(1, min(int(limit), 25)))
+    candidates = search_cities(name, bounds, limit=max(1, min(int(limit), 25)))
     return {"candidates": [c.to_dict() for c in candidates]}
 
 

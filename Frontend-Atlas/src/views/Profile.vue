@@ -3,8 +3,10 @@ import { onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
+import { DEV_TOOLS_ENABLED } from "../utils/devTools";
 
 const router = useRouter();
+const showTests = DEV_TOOLS_ENABLED;
 const goToTestBrowser = () => router.push("/tests");
 
 const { currentUser, isLoading, error, fetchCurrentUser } = useCurrentUser();
@@ -78,11 +80,11 @@ const logout = async () => {
       <div
         class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row justify-between gap-3"
       >
-        <button class="btn btn-secondary" @click="goToTestBrowser">
+        <button v-if="showTests" class="btn btn-secondary" @click="goToTestBrowser">
           Voir les tests
         </button>
 
-        <button class="btn btn-error text-white" @click="logout">
+        <button class="btn btn-error text-white sm:ml-auto" @click="logout">
           Déconnexion
         </button>
       </div>

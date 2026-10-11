@@ -26,6 +26,10 @@ This guide covers **how to use it**, not how it works internally.
 
 - The stack is running: `docker compose up`
 - You are logged in (all dev-test pages require auth)
+- The dev tools are enabled: `ENABLE_DEV_TOOLS` on the backend and `VITE_ENABLE_DEV_TOOLS` on
+  the frontend (both on by default for now; see `app/main.py` and `src/utils/devTools.ts`).
+  Without them the backend serves none of the `/dev-test-api` routes or `/dev-test` files, and
+  the frontend has no test pages and no **Voir tests** button.
 
 ---
 
