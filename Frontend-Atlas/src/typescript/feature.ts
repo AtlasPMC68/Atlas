@@ -36,6 +36,7 @@ export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
 export interface FeatureProperties {
   name: string;
+  isVisible?: boolean;
   labelText?: string;
   sizePx?: number;
   colorName?: string;

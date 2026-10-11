@@ -64,12 +64,9 @@ def test_process_map_extraction(real_image_np):
 
     mock_ocr_result = [([0, 0], "Hello World", 0.99), ([1, 1], "World Map", 0.95)]
     mock_colors = get_mock_color_extraction()
-    # Include at least one legend shape so color extraction isn't skipped.
     mock_shapes = {
-        "circles": 1,
-        "lines": 5,
+        "shapes": [],
         "normalized_features": [],
-        "shapes": [{"isLegend": True}],
     }
 
     with (
@@ -77,7 +74,7 @@ def test_process_map_extraction(real_image_np):
         patch("app.tasks.cv2.imread", return_value=real_image_np),
         patch("app.tasks.extract_text", return_value=(mock_ocr_result, real_image_np)),
         patch("app.tasks.extract_colors", return_value=mock_colors),
-        patch("app.tasks.extract_shapes", return_value=mock_shapes),
+        patch("app.tasks.extract_shapes_from_clicks", return_value=mock_shapes),
         patch("app.tasks.asyncio.run") as mock_asyncio_run,
         patch(
             "app.tasks.find_first_city",
@@ -107,8 +104,9 @@ def test_process_map_extraction(real_image_np):
                 "pixel_points": None,
                 "geo_points_lonlat": None,
                 "enable_color_extraction": True,
-                "enable_shapes_extraction": True,
                 "enable_text_extraction": True,
+                "imposed_click_positions": [[0, 0]],
+                "imposed_shape_click_positions": [[0, 0]],
             },
         ).get(timeout=20)
 
@@ -145,7 +143,7 @@ def test_process_map_extraction_minimal(real_image_np):
         patch("app.tasks.cv2.imread", return_value=real_image_np),
         patch("app.tasks.extract_text") as mock_extract_text,
         patch("app.tasks.extract_colors") as mock_extract_colors,
-        patch("app.tasks.extract_shapes") as mock_extract_shapes,
+        patch("app.tasks.extract_shapes_from_clicks") as mock_extract_shapes_from_clicks,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("os.unlink"),
     ):
@@ -160,7 +158,6 @@ def test_process_map_extraction_minimal(real_image_np):
             args=[filename, file_bytes, project_id, map_id],
             kwargs={
                 "enable_color_extraction": False,
-                "enable_shapes_extraction": False,
                 "enable_text_extraction": False,
             },
         ).get(timeout=20)
@@ -173,7 +170,7 @@ def test_process_map_extraction_minimal(real_image_np):
     # Verify extraction functions were not called
     mock_extract_text.assert_not_called()
     mock_extract_colors.assert_not_called()
-    mock_extract_shapes.assert_not_called()
+    mock_extract_shapes_from_clicks.assert_not_called()
 
 
 def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
@@ -196,7 +193,7 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
             "app.tasks.extract_colors", return_value=mock_colors
         ) as mock_extract_colors,
         patch(
-            "app.tasks.extract_shapes",
+            "app.tasks.extract_shapes_from_clicks",
             return_value={"shapes": [], "normalized_features": []},
         ),
         patch("app.tasks.asyncio.run"),
@@ -213,7 +210,6 @@ def test_process_map_extraction_forwards_imposed_click_positions(real_image_np):
             args=[filename, file_bytes, project_id, map_id],
             kwargs={
                 "enable_color_extraction": True,
-                "enable_shapes_extraction": False,
                 "enable_text_extraction": False,
                 "imposed_click_positions": imposed_positions,
                 "imposed_colors_names": imposed_names,
@@ -247,7 +243,7 @@ def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
             "app.tasks.extract_colors", return_value=mock_colors
         ) as mock_extract_colors,
         patch(
-            "app.tasks.extract_shapes",
+            "app.tasks.extract_shapes_from_clicks",
             return_value={"shapes": [], "normalized_features": []},
         ),
         patch("app.tasks.asyncio.run"),
@@ -264,7 +260,6 @@ def test_process_map_extraction_forwards_imposed_sampling_radii(real_image_np):
             args=[filename, file_bytes, project_id, map_id],
             kwargs={
                 "enable_color_extraction": True,
-                "enable_shapes_extraction": False,
                 "enable_text_extraction": False,
                 "imposed_click_positions": imposed_positions,
                 "imposed_colors_names": imposed_names,
@@ -296,7 +291,7 @@ def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
             "app.tasks.extract_colors", return_value=mock_colors
         ) as mock_extract_colors,
         patch(
-            "app.tasks.extract_shapes",
+            "app.tasks.extract_shapes_from_clicks",
             return_value={"shapes": [], "normalized_features": []},
         ),
         patch("app.tasks.asyncio.run"),
@@ -313,7 +308,6 @@ def test_process_map_extraction_no_imposed_colors_forwards_none(real_image_np):
             args=[filename, file_bytes, project_id, map_id],
             kwargs={
                 "enable_color_extraction": True,
-                "enable_shapes_extraction": False,
                 "enable_text_extraction": False,
             },
         ).get(timeout=20)

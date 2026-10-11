@@ -15,10 +15,7 @@ from skimage.measure import find_contours
 from skimage.morphology import closing, disk, opening
 from skimage.util import img_as_float
 
-from app.utils.color_in_legends_extraction import (
-    extract_colors_from_legend_shapes,
-    sample_color_at,
-)
+from app.utils.color_in_legends_extraction import sample_color_at
 
 from . import preprocessing
 
@@ -419,7 +416,7 @@ def extract_colors(
     image_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     debug: bool = False,
-    legend_shapes: Optional[List[Dict]] = None,
+    legend_bounds: Optional[Dict[str, float]] = None,
     imposed_click_positions: Optional[List[Tuple[float, float]]] = None,
     imposed_colors_names: Optional[List[Optional[str]]] = None,
     imposed_sampling_radii: Optional[List[int]] = None,
@@ -474,6 +471,24 @@ def extract_colors(
         debug_dir=image_output_dir,
     )
 
+    if legend_bounds:
+        try:
+            lx = int(legend_bounds.get("x", 0))
+            ly = int(legend_bounds.get("y", 0))
+            lw = int(legend_bounds.get("width", 0))
+            lh = int(legend_bounds.get("height", 0))
+            
+            h, w = opaque_mask.shape
+            lx = max(0, min(w - 1, lx))
+            ly = max(0, min(h - 1, ly))
+            lw = max(0, min(w - lx, lw))
+            lh = max(0, min(h - ly, lh))
+            
+            if lw > 0 and lh > 0:
+                opaque_mask[ly:ly+lh, lx:lx+lw] = False
+        except (ValueError, TypeError):
+            pass
+
     # 3) Convert preprocessed image to LAB
     lab = compute_lab(rgb)
 
@@ -498,11 +513,6 @@ def extract_colors(
                 sampled_rgb.append((int(r), int(g), int(b)))
         imposed_dominants = prepare_imposed_dominants(
             sampled_rgb, names=imposed_colors_names
-        )
-    elif legend_shapes:
-        imposed_colors = extract_colors_from_legend_shapes(rgb, legend_shapes)
-        imposed_dominants = (
-            prepare_imposed_dominants(imposed_colors) if imposed_colors else []
         )
     else:
         imposed_dominants = []

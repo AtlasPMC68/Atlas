@@ -272,7 +272,7 @@ async function fetchMapsAndRender() {
           @click="openCreateProjectDialog"
         >
           <PlusIcon class="h-5 w-5" />
-          Nouveau Projet
+          Nouveau projet
         </button>
       </div>
     </div>

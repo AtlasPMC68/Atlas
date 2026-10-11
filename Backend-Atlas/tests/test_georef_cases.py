@@ -67,9 +67,12 @@ def _rerun_extraction_from_config(
     except Exception as e:
         pytest.skip(str(e))
 
+    from unittest.mock import patch
+
     # Run the Celery task synchronously (no broker) via Task.apply.
     # The task writes zones.geojson and the evaluation report itself.
-    res = process_dev_test_extraction.apply(args=args)
+    with patch('app.tasks.process_dev_test_extraction.update_state'):
+        res = process_dev_test_extraction.apply(args=args)
 
     if res.failed():
         raise AssertionError(

@@ -115,6 +115,7 @@ services:
       KC_LOG_LEVEL: WARN
     volumes:
       - ./keycloak:/var/tmp
+      - ./keycloak/themes/atlas:/opt/keycloak/themes/atlas
     entrypoint: sh -c "/var/tmp/init.sh"
     depends_on:
       keycloak-db:
