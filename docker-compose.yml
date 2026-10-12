@@ -41,7 +41,7 @@ services:
       - redis-data:/data
     command: redis-server --appendonly yes
 
-  celery-worker:
+  celery-worker: &celery-worker-base
     build:
       context: ./Backend-Atlas
     container_name: atlas-celery-worker
@@ -61,12 +61,12 @@ services:
     depends_on:
       - redis
       - db
-    command: >
-      sh -c "
-        celery -A app.celery_app worker --loglevel=info -E -Q default,maps -n maps@%h &
-        celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h &
-        wait
-      "
+    command: celery -A app.celery_app worker --loglevel=info -E -Q default,maps -n maps@%h
+
+  celery-worker-ocr:
+    <<: *celery-worker-base
+    container_name: atlas-celery-worker-ocr
+    command: celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h
 
   florence-worker:
     build:
@@ -77,6 +77,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./Backend-Atlas/.env.dev
+    environment:
+      SAVE_PREPROCESSED_IMAGES: "false"
     volumes:
       - ocr-data:/data
       - ./Backend-Atlas/ocr-florence:/app/ocr-florence

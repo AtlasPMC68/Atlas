@@ -27,26 +27,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build testing AI services
+      - name: Build testing services
+        id: build
         run: |
           docker compose build -q \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            test-backend florence-worker
+            test-backend florence-worker test-frontend
         env:
           DOCKER_BUILDKIT: 1
           COMPOSE_DOCKER_CLI_BUILD: 1
 
       - name: Run frontend unit tests 
+        if: steps.build.outcome == 'success'
         run: >
           docker compose run --rm -q test-frontend
           
       - name: Run backend unit tests in parallel
+        if: steps.build.outcome == 'success' && !cancelled()
         run: >
           docker compose run --rm -q test-backend
           pytest tests/ -n auto -v --color=yes --tb=short -rA
           -m "not integration and not slow"
 
       - name: Run OCR integration tests sequentially
+        if: steps.build.outcome == 'success' && !cancelled()
         run: |
           docker compose up -d florence-worker
           docker compose run --rm -q test-backend pytest tests/ -m "integration"

@@ -16,13 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PyTorch CPU in a dedicated layer for optimal Docker caching
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-ENV SAVE_PREPROCESSED_IMAGES=false
 
 COPY app ./app
 COPY tests ./tests

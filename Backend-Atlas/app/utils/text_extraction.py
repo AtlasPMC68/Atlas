@@ -39,6 +39,44 @@ OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "90
 CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
 CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
+# fmt: off
+MAP_IGNORED_WORDS = {
+    "n", "s", "e", "w", "o", "ne", "nw", "no", "se", "sw", "so",
+    "nord", "sud", "est", "ouest", "n.-e.", "n.-o.", "s.-e.", "s.-o.",
+}
+# fmt: on
+
+
+def should_ignore(text_val: str) -> bool:
+    clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
+
+    if clean in MAP_IGNORED_WORDS:
+        return True
+
+    if all(c.isdigit() or c.isspace() or c in ".," for c in clean):
+        return True
+    for keyword in ["légende", "legende", "échelle", "echelle", "scale", "kilomètre", "kilometre", "miles"]:
+        if keyword in clean:
+            return True
+
+    if len(clean.split()) > 5:
+        return True
+
+    return False
+
+
+def process_candidate_text(text_val: str, quad: list[list[int]]) -> dict[str, Any] | None:
+    clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text_val)
+    # Retain newlines, but collapse spaces within each line
+    clean_text = "\n".join(" ".join(line.split()) for line in clean_text.split("\n")).strip(" .,;:!?()[]{}'\"")
+    if not clean_text or should_ignore(clean_text):
+        return None
+    return {
+        "text": clean_text,
+        "bbox": quad,
+        "mapElementType": "ville",
+    }
+
 
 def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
     """Build one city point feature for each geolocated city candidate."""
@@ -199,41 +237,9 @@ def _build_extracted_text_from_detections(
             except (TypeError, ValueError, IndexError):
                 continue
 
-        # fmt: off
-        MAP_IGNORED_WORDS = { "n", "s", "e", "w", "o", "ne", "nw", "no", "se", "sw", "so", "nord", "sud", "est", "ouest", "n.-e.", "n.-o.", "s.-e.", "s.-o.",}
-        # fmt: on
-        def should_ignore(text_val: str) -> bool:
-            clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
-
-            if clean in MAP_IGNORED_WORDS:
-                return True
-
-            if all(c.isdigit() or c.isspace() or c in ".," for c in clean):
-                return True
-            for keyword in ["légende", "legende", "échelle", "echelle", "scale", "kilomètre", "kilometre", "miles"]:
-                if keyword in clean:
-                    return True
-
-            if len(clean.split()) > 5:
-                return True
-
-            return False
-
-        def process_candidate_text(text_val: str):
-            clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text_val)
-            # Retain newlines, but collapse spaces within each line
-            clean_text = "\n".join(" ".join(line.split()) for line in clean_text.split("\n")).strip(" .,;:!?()[]{}'\"")
-            if not clean_text or should_ignore(clean_text):
-                return
-            extracted_text.append(
-                {
-                    "text": clean_text,
-                    "bbox": quad,
-                    "mapElementType": "ville",
-                }
-            )
-
-        process_candidate_text(raw_text)
+        candidate_block = process_candidate_text(raw_text, quad)
+        if candidate_block is not None:
+            extracted_text.append(candidate_block)
 
     return extracted_text
 

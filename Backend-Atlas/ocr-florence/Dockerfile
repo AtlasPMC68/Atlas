@@ -21,8 +21,7 @@ RUN pip install --no-cache-dir \
     numpy \
     accelerate \
     celery \
-    redis \
-    scikit-image
+    redis
 
 # Florence-2 specific dependencies
 RUN pip install --no-cache-dir transformers==4.43.0 \
