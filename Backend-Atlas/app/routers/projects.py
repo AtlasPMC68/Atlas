@@ -338,6 +338,7 @@ async def upload_and_process_map(
             imposed_click_positions,
             imposed_colors_names,
             imposed_sampling_radii,
+            _imposed_kinds,
         ) = parse_imposed_colors(imposed_colors)
     except ValueError as e:
         raise HTTPException(
