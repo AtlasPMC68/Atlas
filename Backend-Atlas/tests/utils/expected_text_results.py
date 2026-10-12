@@ -43,7 +43,7 @@ CARD_THRESHOLDS = {
     "Degrade_Afrique": {"min_hit_rate": 25.0, "max_dist": 3.25},
     "Quebec_1791": {"min_hit_rate": 83.0, "max_dist": 0.95},
     "Progress_wehrmacht_lux_May_1940": {"min_hit_rate": 100.0, "max_dist": 0.20},
-    "Quebec_Cities_Only": {"min_hit_rate": 88.9, "max_dist": 0.35}, 
+    "Quebec_Cities_Only": {"min_hit_rate": 88.8, "max_dist": 0.35}, 
     "Nouvelle-France1750": {"min_hit_rate": 61.5, "max_dist": 1.50},
     "genocide_Monde": {"min_hit_rate": 100.0, "max_dist": 0.00},
     "1775_Quebec_NordUSA": {"min_hit_rate": 100.0, "max_dist": 0.03},

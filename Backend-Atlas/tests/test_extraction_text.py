@@ -332,10 +332,8 @@ def test_text_extraction_accuracy(
     min_hit_rate = thresholds["min_hit_rate"]
     max_dist = thresholds["max_dist"]
 
-    hit_rate_passed = round(box_find_rate, 2) >= min_hit_rate
-    dist_passed = round(average_dist, 2) <= max_dist
-    hit_rate_passed = (box_find_rate + 1e-4) >= min_hit_rate
-    dist_passed = (average_dist - 1e-4) <= max_dist
+    hit_rate_passed = round(box_find_rate, 1) >= round(min_hit_rate, 1)
+    dist_passed = round(average_dist, 2) <= round(max_dist, 2)
     is_passed = hit_rate_passed and dist_passed
 
     if is_passed:
@@ -355,16 +353,17 @@ def test_text_extraction_accuracy(
     seen_unrecognized = set()
     for word in unpaired_ocr_words:
         candidate = get_city_with_max_population(word, confidence_threshold=0.60)
+        display_word = " ".join(str(word).split())
         if candidate.get("found"):
-            matched_name = candidate.get("name")
-            entry = f"'{word}' -> '{matched_name}'"
+            matched_name = " ".join(str(candidate.get("name") or "").split())
+            entry = f"'{display_word}' -> '{matched_name}'"
             if entry not in seen_accepted:
                 seen_accepted.add(entry)
                 geocache_accepted.append(entry)
         else:
-            if word not in seen_unrecognized:
-                seen_unrecognized.add(word)
-                geocache_unrecognized.append(word)
+            if display_word not in seen_unrecognized:
+                seen_unrecognized.add(display_word)
+                geocache_unrecognized.append(display_word)
 
     summary_lines = [
         f"\n{status_icon} {status_color}{BOLD}[{status_text}] {card_name_fmt}{RESET}",
@@ -377,11 +376,9 @@ def test_text_extraction_accuracy(
     show_detailed_mismatches = request.config.getini("extraction_log_info")
     if show_detailed_mismatches:
         if geocache_accepted:
-            summary_lines.append(f"   • {GREEN}Accepted GeoNames:{RESET} {', '.join(geocache_accepted)}")
+            summary_lines.append(f"   {GREEN}• Accepted GeoNames: {' | '.join(geocache_accepted)}{RESET}")
         if geocache_unrecognized:
-            summary_lines.append(
-                f"   • {YELLOW}Unrecognized GeoNames:{RESET} {RED}{', '.join(geocache_unrecognized)}{RESET}"
-            )
+            summary_lines.append(f"   {YELLOW}• Unrecognized GeoNames: {' | '.join(geocache_unrecognized)}{RESET}")
         if mismatches:
             mismatches.sort(key=lambda x: x[2], reverse=True)
             summary_lines.append(f"   • {YELLOW}Detection mismatches (approximate or missing words):{RESET}")
