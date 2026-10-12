@@ -123,7 +123,7 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { upsertFeature } from "../utils/featureHelpers";
+import { getMapElementType, upsertFeature } from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -606,7 +606,8 @@ function reconcileVisibility(list: Feature[]) {
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
-      next.set(id, f.properties?.isVisible ?? true);
+      const initialVisible = f.properties?.show !== false && (f.properties?.isVisible ?? true);
+      next.set(id, initialVisible);
     }
   }
   const ids = new Set(list.map((f) => f.id));
@@ -631,7 +632,33 @@ async function loadInitialFeatures() {
     const res = await apiFetch(`/projects/${projectId.value}/features`);
     if (!res.ok) throw new Error("Failed to fetch features");
 
-    const allFeatures = snakeToCamel(await res.json()) as Feature[];
+    const rawFeatures = snakeToCamel(await res.json()) as Feature[];
+    const seenPointKeys = new Set<string>();
+    const allFeatures = rawFeatures.filter((feature) => {
+      const isPoint = getMapElementType(feature) === "point";
+      if (!isPoint) return true;
+
+      // Filter out points that did not pass or have null island coordinates
+      const coords = feature.geometry?.type === "Point" ? feature.geometry.coordinates : null;
+      if (
+        feature.properties?.show === false ||
+        (coords && coords[0] === 0 && coords[1] === 0)
+      ) {
+        return false;
+      }
+
+      // Deduplicate points per map by name or coordinates
+      const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
+      const mapId = feature.mapId || "";
+      const nameKey = name ? `${mapId}_name_${name}` : null;
+      const coordKey = coords ? `${mapId}_coords_${coords[0].toFixed(4)}_${coords[1].toFixed(4)}` : null;
+      if ((nameKey && seenPointKeys.has(nameKey)) || (coordKey && seenPointKeys.has(coordKey))) {
+        return false;
+      }
+      if (nameKey) seenPointKeys.add(nameKey);
+      if (coordKey) seenPointKeys.add(coordKey);
+      return true;
+    });
 
     persistedFeatureIds.value = new Set(
       allFeatures

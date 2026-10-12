@@ -407,11 +407,24 @@ const imageOverlay = useImageOverlay({
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
+  const seenCityKeys = new Set<string>();
 
   safeFeatures.forEach((feature) => {
     if (!map || feature.geometry.type !== "Point") return;
+    if (feature.properties?.show === false) return;
 
     const [lng, lat] = feature.geometry.coordinates;
+    if (lng === 0 && lat === 0) return;
+
+    const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
+    const mapId = feature.mapId ?? "";
+    const nameKey = name ? `${mapId}_name_${name}` : null;
+    const coordsKey = `${mapId}_coords_${lng.toFixed(4)}_${lat.toFixed(4)}`;
+
+    if ((nameKey && seenCityKeys.has(nameKey)) || seenCityKeys.has(coordsKey)) return;
+    if (nameKey) seenCityKeys.add(nameKey);
+    seenCityKeys.add(coordsKey);
+
     const coord: L.LatLngTuple = [lat, lng];
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";

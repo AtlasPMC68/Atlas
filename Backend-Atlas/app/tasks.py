@@ -298,6 +298,12 @@ async def _save_extraction(
             count = 0
             for collection in collections:
                 for feature in collection.get("features", []):
+                    props = feature.get("properties", {})
+                    if props.get("mapElementType") == "point" and (
+                        props.get("show") is False
+                        or feature.get("geometry", {}).get("coordinates") == [0.0, 0.0]
+                    ):
+                        continue
                     session.add(
                         Feature(
                             project_id=project_id,
@@ -330,10 +336,15 @@ def _city_features_from_text(
     index = frame_city_index(frame_bounds)
 
     collections: List[dict[str, Any]] = []
+    seen_city_ids = set()
     for coords, text, _prob in blocks:
         if polygon_center_in_legend(coords, legend_bounds):
             continue
         for phrase, city in find_cities_in_text(text, index):
+            if city is not None:
+                if city.geonameid in seen_city_ids:
+                    continue
+                seen_city_ids.add(city.geonameid)
             collections.append(
                 {
                     "type": "FeatureCollection",
