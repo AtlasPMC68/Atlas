@@ -1,15 +1,24 @@
+# region Imports
 import logging
 from pathlib import Path
 from uuid import UUID
 import json
+<<<<<<< HEAD
 import math
 from json import JSONDecodeError
+=======
+from uuid import UUID
+>>>>>>> origin/main
 import base64
 import cv2
 import numpy as np
 
+<<<<<<< HEAD
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
 from fastapi.params import Form as FormParam
+=======
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, Body
+>>>>>>> origin/main
 from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -34,22 +43,22 @@ from app.utils.update_feature import (
     serialize_feature_rows,
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
-from app.utils.imposed_colors import parse_imposed_colors
+from app.utils.georeferencing import parse_frame_bounds_entry
+from app.utils.city_gazetteer import search_cities, warm_frame
 
 from ..celery_app import celery_app
-from ..tasks import process_map_extraction
 from ..utils.maps import default_bounds_from_image
 from ..utils.auth import get_current_user_id
-from ..utils.color_in_legends_extraction import sample_color_at
+from ..utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
+from ..utils.color_sampling import sample_color_at
 from ..utils.color_extraction import get_nearest_css4_color_name
+# endregion
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["Projects operations"])
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
 
@@ -225,6 +234,7 @@ async def get_project(
     )
 
 
+<<<<<<< HEAD
 @router.post("/upload")
 async def upload_and_process_map(
     image_points: str | None = Form(None),
@@ -432,42 +442,36 @@ async def upload_and_process_map(
         raise HTTPException(status_code=500, detail="Failed to start processing")
 
 
+=======
+>>>>>>> origin/main
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
-    """Get the status of a map processing task"""
+    """Get the status of a background task."""
     task = celery_app.AsyncResult(task_id)
+    response = {"task_id": task_id, "state": task.state}
 
     if task.state == "PENDING":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "status": "Task is waiting to be processed",
-        }
+        response["status"] = "Task is waiting to be processed"
+        response["progress_percentage"] = 0
     elif task.state == "PROGRESS":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "current": task.info.get("current", 0),
-            "total": task.info.get("total", 1),
-            "status": task.info.get("status", ""),
-            "progress_percentage": round(
-                (task.info.get("current", 0) / task.info.get("total", 1)) * 100, 2
-            ),
-        }
+        info = task.info if isinstance(task.info, dict) else {}
+        current = info.get("current", 0)
+        total = info.get("total", 1) or 1
+        response.update(
+            current=current,
+            total=total,
+            status=info.get("status", ""),
+            progress_percentage=round(current / total * 100, 2),
+        )
     elif task.state == "SUCCESS":
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "result": task.result,
-            "progress_percentage": 100,
-        }
-    else:  # FAILURE
-        response = {
-            "task_id": task_id,
-            "state": task.state,
-            "error": str(task.info),
-            "progress_percentage": 0,
-        }
+        response["result"] = task.result
+        response["progress_percentage"] = 100
+    elif task.state == "FAILURE":
+        response["error"] = str(task.info)
+        response["progress_percentage"] = 0
+    else:  # STARTED, RETRY, REVOKED
+        response["status"] = task.state
+        response["progress_percentage"] = 0
 
     return response
 
@@ -772,6 +776,7 @@ async def get_projects(
 
 @router.post("/coastline-keypoints")
 async def get_coastline_keypoints(
+    background_tasks: BackgroundTasks,
     west: float = Form(...),
     south: float = Form(...),
     east: float = Form(...),
@@ -783,6 +788,9 @@ async def get_coastline_keypoints(
     try:
         bounds = {"west": west, "south": south, "east": east, "north": north}
         result = find_coastline_keypoints(bounds, width, height)
+        # The frame is fixed from here on; load its cities now, after the
+        # response, so the first city search does not pay for reading them.
+        background_tasks.add_task(warm_frame, bounds)
         used_lakes = bool(result.get("used_lakes", False))
 
         return {
@@ -795,6 +803,27 @@ async def get_coastline_keypoints(
     except Exception as e:
         logger.error(f"Error finding coastline keypoints: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/city-candidates")
+def get_city_candidates(
+    name: str = Form(...),
+    west: float = Form(...),
+    south: float = Form(...),
+    east: float = Form(...),
+    north: float = Form(...),
+    limit: int = Form(10),
+):
+    """Gazetteer cities inside the framing box whose name matches."""
+    try:
+        bounds = parse_frame_bounds_entry(
+            {"west": west, "south": south, "east": east, "north": north}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid bounds: {e}")
+
+    candidates = search_cities(name, bounds, limit=max(1, min(int(limit), 25)))
+    return {"candidates": [c.to_dict() for c in candidates]}
 
 
 @router.post("/{project_id}/thumbnail")
@@ -963,19 +992,7 @@ async def sample_color(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Stateless endpoint — no map or DB needed.
-
-    The frontend sends the image file it already has from the file picker,
-    along with normalised click coordinates [0,1].  The backend samples the
-    dominant colour in a neighbourhood around the click and returns the result
-    so the frontend can show a colour swatch.
-
-    The returned LAB values are consistent with what extract_colors() will
-    compute on the same file during /upload.
-
-    Returns: { rgb: [r,g,b], lab: [L,a,b], hex: "#rrggbb" }
-    """
+    """ Returns LAB, RGB and hex code of color of a click"""
     raw = await file.read()
     if len(raw) == 0:
         raise HTTPException(status_code=400, detail="Empty file")

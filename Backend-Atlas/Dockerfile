@@ -27,6 +27,8 @@ ENV SAVE_PREPROCESSED_IMAGES=false
 COPY app ./app
 COPY tests ./tests
 COPY pytest.ini ./pytest.ini
+COPY scripts ./scripts
+
 COPY .env.dev /app/app/.env.dev
 
 EXPOSE 8000

@@ -36,6 +36,46 @@
             />
           </div>
 
+          <!-- A probe test carries no ground truth on purpose: it exists to
+               persist the clicks so a map can be re-extracted in seconds while
+               georeferencing is being changed. Declared here rather than
+               inferred from a missing zones file, so a regression test whose
+               drawing goes missing fails loudly instead of demoting itself. -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text">Type de test</span>
+            </label>
+            <div class="join">
+              <button
+                type="button"
+                class="btn join-item"
+                :class="kind === 'regression' ? 'btn-primary' : 'btn-outline'"
+                @click="kind = 'regression'"
+              >
+                Régression
+              </button>
+              <button
+                type="button"
+                class="btn join-item"
+                :class="kind === 'probe' ? 'btn-primary' : 'btn-outline'"
+                @click="kind = 'probe'"
+              >
+                Exploration
+              </button>
+            </div>
+            <p class="text-xs text-base-content/60 mt-2">
+              <span v-if="kind === 'regression'">
+                Zones attendues dessinées à la main, score IoU vérifié par la
+                suite de tests backend.
+              </span>
+              <span v-else>
+                Aucune zone attendue : le test ne sert qu'à rejouer rapidement
+                une carte (points de contrôle + pipette persistés). Jamais
+                noté, jamais dans la suite de régression.
+              </span>
+            </p>
+          </div>
+
           <div class="flex justify-end gap-2">
             <button
               class="btn btn-primary"
@@ -75,6 +115,7 @@ const {
 } = useFileUpload();
 
 const testName = ref<string>("");
+const kind = ref<"regression" | "probe">("regression");
 const isSubmitting = ref(false);
 const submitError = ref<string | null>(null);
 
@@ -94,6 +135,7 @@ async function createTest() {
   const formData = new FormData();
   formData.append("file", selectedFile.value);
   formData.append("name", finalName);
+  formData.append("kind", kind.value);
 
   try {
     const res = await fetch(
