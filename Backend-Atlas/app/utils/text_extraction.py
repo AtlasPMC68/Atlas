@@ -5,7 +5,7 @@ import os
 import re
 import sys
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.utils.cities_validation import get_city_with_max_population
 
@@ -65,17 +65,61 @@ def should_ignore(text_val: str) -> bool:
     return False
 
 
+class OcrBlock(dict):
+    """Dictionary representing an OCR text block that also supports tuple-like indexing [0], [1], [2]."""
+
+    def __getitem__(self, item: Any) -> Any:
+        if item == 0:
+            return self.get("bbox")
+        if item == 1:
+            return self.get("text")
+        if item == 2:
+            return self.get("prob", self.get("confidence", 1.0))
+        return super().__getitem__(item)
+
+
+def ocr_blocks_to_payload(blocks: list) -> list[list]:
+    """Convert OCR blocks to plain JSON: [[[x, y], ...], text, prob].
+
+    Handles both tuple format (from mocks/EasyOCR) and dict format (from Florence-2 detections).
+    Coordinates are rounded to int and probabilities to float to ensure JSON/Celery serialization.
+    """
+    payload = []
+    for block in blocks:
+        if isinstance(block, dict):
+            coords = block.get("bbox", [])
+            text = block.get("text", "")
+            prob = block.get("prob", block.get("confidence", 1.0))
+        elif isinstance(block, (list, tuple)) and len(block) >= 3:
+            coords, text, prob = block[0], block[1], block[2]
+        elif isinstance(block, (list, tuple)) and len(block) == 2:
+            coords, text = block[0], block[1]
+            prob = 1.0
+        else:
+            continue
+        payload.append(
+            [
+                [[int(round(float(p[0]))), int(round(float(p[1])))] for p in coords],
+                str(text),
+                float(prob),
+            ]
+        )
+    return payload
+
+
 def process_candidate_text(text_val: str, quad: list[list[int]]) -> dict[str, Any] | None:
     clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text_val)
     # Retain newlines, but collapse spaces within each line
     clean_text = "\n".join(" ".join(line.split()) for line in clean_text.split("\n")).strip(" .,;:!?()[]{}'\"")
     if not clean_text or should_ignore(clean_text):
         return None
-    return {
-        "text": clean_text,
-        "bbox": quad,
-        "mapElementType": "ville",
-    }
+    return OcrBlock(
+        {
+            "text": clean_text,
+            "bbox": quad,
+            "mapElementType": "ville",
+        }
+    )
 
 
 def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
@@ -348,12 +392,45 @@ def _extract_text_via_pipeline(
 
 
 def extract_text(
-    map_id: UUID,
-    filename: str,
-    file_content: bytes,
+    map_id: UUID | str | None = None,
+    filename: str | None = None,
+    file_content: bytes | None = None,
     celery_app=None,
-):
+    *,
+    image: Any = None,
+    languages: list[str] | None = None,
+    gpu_acc: bool = False,
+    **kwargs: Any,
+) -> tuple[list[Any], Any]:
     """Extract text using the Florence-2 Celery OCR pipeline."""
+    if map_id is not None and not isinstance(map_id, (UUID, str)):
+        image = map_id
+        map_id = None
+        filename = None
+        file_content = None
+
+    if file_content is None and image is not None:
+        import cv2
+
+        ok, buf = cv2.imencode(".png", image)
+        if ok:
+            file_content = buf.tobytes()
+        if map_id is None:
+            map_id = uuid4()
+        if filename is None:
+            filename = "image.png"
+
+    if celery_app is None:
+        try:
+            from app.celery_app import celery_app as default_app
+
+            celery_app = default_app
+        except ImportError:
+            pass
+
+    if file_content is None:
+        return [], []
+
     if celery_app is None:
         raise ValueError("celery_app must be provided")
 
@@ -365,10 +442,17 @@ def extract_text(
         )
         return [], []
 
-    logger.info(f"Starting OCR pipeline for map {map_id}: {filename}")
+    if map_id is None:
+        map_id = uuid4()
+    if filename is None:
+        filename = "image.png"
+
+    resolved_map_id = map_id if isinstance(map_id, UUID) else UUID(str(map_id))
+
+    logger.info(f"Starting OCR pipeline for map {resolved_map_id}: {filename}")
 
     extracted_text, text_regions = _extract_text_via_pipeline(
-        map_id=map_id,
+        map_id=resolved_map_id,
         filename=filename,
         file_content=file_content,
         celery_app=celery_app,

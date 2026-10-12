@@ -3,22 +3,14 @@ import logging
 from pathlib import Path
 from uuid import UUID
 import json
-<<<<<<< HEAD
 import math
 from json import JSONDecodeError
-=======
-from uuid import UUID
->>>>>>> origin/main
 import base64
 import cv2
 import numpy as np
 
-<<<<<<< HEAD
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
-from fastapi.params import Form as FormParam
-=======
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, Body
->>>>>>> origin/main
+from fastapi.params import Form as FormParam
 from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -52,6 +44,8 @@ from ..utils.auth import get_current_user_id
 from ..utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
 from ..utils.color_sampling import sample_color_at
 from ..utils.color_extraction import get_nearest_css4_color_name
+from app.utils.imposed_colors import parse_imposed_colors
+from ..tasks import process_map_extraction
 # endregion
 
 router = APIRouter()
@@ -234,7 +228,6 @@ async def get_project(
     )
 
 
-<<<<<<< HEAD
 @router.post("/upload")
 async def upload_and_process_map(
     image_points: str | None = Form(None),
@@ -442,8 +435,6 @@ async def upload_and_process_map(
         raise HTTPException(status_code=500, detail="Failed to start processing")
 
 
-=======
->>>>>>> origin/main
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
     """Get the status of a background task."""
