@@ -3,6 +3,8 @@ import logging
 
 # to much spam in the logs from uvicorn.access, set to WARNING to reduce noise
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
