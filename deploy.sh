@@ -52,7 +52,7 @@ else
     echo "[INFO] Detected Public IP: $PUBLIC_IP"
 fi
 
-DOMAIN="${PUBLIC_IP}.sslip.io"
+DOMAIN="${PUBLIC_IP}.nip.io"
 PROTOCOL="https"
 APP_BASE_URL="${PROTOCOL}://${DOMAIN}"
 echo "[INFO] Target Domain: $DOMAIN"
