@@ -139,7 +139,7 @@ fi
 # ------------------------------------------------------------------------------
 echo "[INFO] Building and starting Docker containers..."
 docker compose down || true
-docker compose up -d --build
+docker compose up -d --build --renew-anon-volumes
 
 # ------------------------------------------------------------------------------
 # 7. Deployment Summary

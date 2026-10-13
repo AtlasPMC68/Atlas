@@ -128,7 +128,7 @@
   font-size: 12px;
   font-weight: bold;
   outline: none;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   min-width: 120px;
 }
 
@@ -284,8 +284,6 @@
 .timeline-day-range {
   display: block;
 }
-
-
 
 .arrow-head {
   font-size: 20px;
