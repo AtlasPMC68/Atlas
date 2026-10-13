@@ -6,8 +6,9 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    allowedHosts: true,
     hmr: {
-      clientPort: 80,
+      clientPort: process.env.HMR_PORT ? Number(process.env.HMR_PORT) : undefined,
     },
     watch: {
       usePolling: true,
