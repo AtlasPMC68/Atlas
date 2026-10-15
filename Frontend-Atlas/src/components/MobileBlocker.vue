@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-[10000] bg-gray-900/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center md:hidden">
+  <div class="fixed inset-0 z-[10000] bg-primary-700 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center md:hidden">
     <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full border border-gray-100 animate-slide-up">
       <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
         <svg class="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
