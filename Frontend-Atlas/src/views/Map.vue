@@ -7,6 +7,7 @@
         class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
       >
         <FeatureVisibilityControls
+          ref="featureVisibilityControlsRef"
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
@@ -14,6 +15,7 @@
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
+          @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
           @update-feature="onUpdateFeature"
         />
@@ -36,6 +38,7 @@
             @map-ready="onMapReady"
             @undo="onUndo"
             @redo="onRedo"
+            @edit-feature-request="onEditFeatureRequest"
           />
           <div class="absolute bottom-4 left-4 z-[1001]">
             <Legend
@@ -135,7 +138,7 @@ const router = useRouter();
 const projectRouteId = computed(
   () => (route.params.projectId as string | undefined) ?? null,
 );
-const projectId = ref<string | null>(null);
+const projectId = ref<string>();
 const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
@@ -149,6 +152,11 @@ const addFeatureImageDialogRef = ref<{
   open: () => void;
   close: () => void;
 } | null>(null);
+const featureVisibilityControlsRef = ref<InstanceType<typeof FeatureVisibilityControls> | null>(null);
+
+function onEditFeatureRequest(feature: Feature) {
+  featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
+}
 const features = ref<Feature[]>([]);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
@@ -459,7 +467,7 @@ async function loadProjectIdForMap(): Promise<boolean> {
 }
 
 async function loadProjectMapsForTimeline() {
-  if (!keycloak.token || !projectId.value) {
+  if (!projectId.value) {
     mapPeriods.value = [];
     return;
   }
@@ -514,6 +522,46 @@ async function onDeleteFeature(
   } catch (error) {
     console.error("Failed to delete feature:", error);
     callbacks?.onError?.("Erreur lors de la suppression de l'élément.");
+  }
+}
+
+async function onDeleteMap(
+  mapId: string,
+  callbacks?: {
+    onSuccess?: () => void;
+    onError?: (message?: string) => void;
+  },
+) {
+  try {
+    if (!projectId.value) {
+      throw new Error("Project ID is missing");
+    }
+
+    const res = await apiFetch(`/projects/${projectId.value}/maps/${mapId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${keycloak.token}` },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to delete map: ${res.status}`);
+    }
+
+    const nextFeatures = features.value.filter(
+      (feature) => feature.mapId !== mapId,
+    );
+
+    if (trackingEnabled.value) {
+      commitFeatureSnapshot(nextFeatures);
+    } else {
+      applyFeatureSnapshot(nextFeatures, false);
+    }
+
+    await loadProjectMapsForTimeline();
+
+    callbacks?.onSuccess?.();
+  } catch (error) {
+    console.error("Failed to delete map:", error);
+    callbacks?.onError?.("Erreur lors de la suppression de la carte.");
   }
 }
 
@@ -617,10 +665,6 @@ function reconcileVisibility(list: Feature[]) {
 }
 
 async function loadInitialFeatures() {
-  if (!keycloak.token) {
-    return;
-  }
-
   if (!projectId.value) {
     features.value = [];
     featureVisibility.value = new Map();
@@ -650,9 +694,6 @@ async function loadCurrentMapInfo(): Promise<void> {
   try {
     const res = await apiFetch(`/projects/${projectId.value}`, {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${keycloak.token}`,
-      },
     });
 
     if (!res.ok) {
@@ -846,6 +887,27 @@ onMounted(async () => {
   await loadInitialFeatures();
 
   if (projectId.value) {
+    const pendingEditsStr = localStorage.getItem(`pending_public_edits_${projectId.value}`);
+    if (pendingEditsStr) {
+      try {
+        const restoredFeatures = JSON.parse(pendingEditsStr);
+        features.value = restoredFeatures;
+        reconcileVisibility(restoredFeatures);
+        
+        if (currentUser.value && keycloak.token) {
+          pendingCopiedFeatures.value = [...restoredFeatures];
+          shouldSaveAfterCopy.value = true;
+          setTimeout(async () => {
+            await openCreateCopyDialog();
+          }, 500);
+          localStorage.removeItem(`pending_public_edits_${projectId.value}`);
+        }
+      } catch (e) {
+        console.error("Failed to restore pending edits:", e);
+        localStorage.removeItem(`pending_public_edits_${projectId.value}`);
+      }
+    }
+
     await uploadMapThumbnail();
   }
 
@@ -963,7 +1025,15 @@ async function onSaveMap(featuresOverride?: Feature[]) {
 
   try {
     if (!currentUser.value || !keycloak.token) {
-      showAlert("error", "Utilisateur non authentifié.");
+      const syncedFeatures = featuresOverride
+        ? undefined
+        : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
+      const featuresToSave = featuresOverride ?? syncedFeatures ?? features.value;
+      localStorage.setItem(`pending_public_edits_${projectId.value}`, JSON.stringify(featuresToSave));
+      showAlert("success", "Veuillez vous connecter pour sauvegarder vos modifications. Vous serez redirigé...");
+      setTimeout(() => {
+        keycloak.register({ redirectUri: window.location.href });
+      }, 1500);
       return;
     }
 

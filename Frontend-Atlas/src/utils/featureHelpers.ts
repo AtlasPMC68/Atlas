@@ -57,3 +57,18 @@ export function colorRgbToCss(rgb: unknown): string | null {
   if (!isValidRgbTuple(rgb)) return null;
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
+
+export function getDefaultLayer(type: MapElementType | string | null): number {
+  switch (type) {
+    case "zone": return 0;
+    case "shape": return 1;
+    case "polyline": return 2;
+    case "arrow": return 3;
+    case "point": return 4;
+    case "label": return 5;
+    // custom image isn't working with layer, it's working with z-index
+    // so it will always be on top of the canvas.
+    case "image": return 99;
+    default: return 6;
+  }
+}

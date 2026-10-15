@@ -38,9 +38,9 @@
             Découvrez la puissance de notre plateforme de gestion de cartes
           </p>
           <div class="flex flex-col sm:flex-row gap-4 justify-center">
-            <RouterLink to="/inscription" class="btn-primary px-8 py-3 text-lg">
+            <button @click="startRegistration" class="btn btn-primary px-8 py-3 text-lg">
               Commencer maintenant
-            </RouterLink>
+            </button>
           </div>
         </div>
       </section>
@@ -57,10 +57,15 @@ import {
   MapIcon,
   ClipboardDocumentListIcon,
 } from "@heroicons/vue/24/outline";
+import keycloak from "../keycloak";
+
+function startRegistration() {
+  void keycloak.register({ redirectUri: window.location.origin });
+}
 
 const features = ref([
   {
-    title: "Upload de cartes",
+    title: "Téléversement de cartes",
     description:
       "Importez facilement vos cartes depuis votre ordinateur avec support de multiples formats.",
     icon: ArrowUpTrayIcon,
