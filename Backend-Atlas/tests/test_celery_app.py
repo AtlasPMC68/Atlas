@@ -47,8 +47,13 @@ def test_celery_result_expires() -> None:
 
 
 def test_celery_task_routes() -> None:
-    """Verify that Celery task routing rules map process_map tasks to the maps queue."""
+    """Verify that Celery task routing rules map tasks to their respective queues."""
     routes = celery_app.conf.task_routes
-    assert "app.tasks.process_map" in routes
-    assert routes["app.tasks.process_map"]["queue"] == "maps"
+    assert routes == {
+        "app.tasks.run_map_ocr": {"queue": "maps_ocr"},
+        "florence.run_pipeline": {"queue": "florence"},
+        "app.tasks.*": {"queue": "default"},
+    }
+    assert routes["app.tasks.run_map_ocr"]["queue"] == "maps_ocr"
+    assert routes["florence.run_pipeline"]["queue"] == "florence"
     assert routes.get("app.tasks.something_else", {"queue": "default"})["queue"] == "default"

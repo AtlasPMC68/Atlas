@@ -4,7 +4,6 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -130,14 +129,7 @@ def _safe_make_valid(g: BaseGeometry) -> BaseGeometry:
 
 
 def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, Any]:
-    """Build a GeoJSON FeatureCollection for FP/FN areas per expected feature.
-
-    For each expected feature, we find its best-match extracted feature (already
-    computed in `matches`). FP/FN are then computed *only on that pair*:
-
-    - false negative: expected \\ extracted_best
-    - false positive: extracted_best \\ expected
-    """
+    """Build a GeoJSON FeatureCollection for FP/FN areas per expected feature."""
 
     features: list[dict[str, Any]] = []
 

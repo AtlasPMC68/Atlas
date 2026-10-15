@@ -53,6 +53,7 @@ for info in _gc.get_cities().values():
     except Exception:
         continue
     city_entry = {
+        "geonameid": info.get("geonameid"),
         "name": name,
         "lat": lat,
         "lon": lon,
@@ -65,25 +66,28 @@ for info in _gc.get_cities().values():
 
 import difflib
 
-__all__ = ["_city_map", "get_city_with_max_population"]
+__all__ = ["_city_map", "get_city_with_max_population", "match_ocr_label"]
 
 
 def get_city_with_max_population(
     text: str,
-    geo_bounds: Optional[Dict[str, float]] = None,
+    frame_bounds: Optional[Dict[str, float]] = None,
     confidence_threshold: float = 0.80,
+    geo_bounds: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """Return a standardized result for a city search.
 
     Performs a direct full-string match (accent/case insensitive, punctuation stripped)
     against the city gazetteer, with a fallback to difflib.get_close_matches using
     confidence_threshold (default 0.80) to recover minor OCR typos.
-    When geo_bounds is provided (``{'min_lon': ..., 'max_lon': ..., 'min_lat': ..., 'max_lat': ...}``),
-    only candidates whose coordinates fall inside that rectangle are considered.
+    When frame_bounds (or geo_bounds) is provided, only candidates whose coordinates fall
+    inside that rectangle are considered. Supports both {'west', 'south', 'east', 'north'}
+    and {'min_lon', 'max_lon', 'min_lat', 'max_lat'}.
 
     Always returns a dict with at least the keys:
       - ``found``: bool
       - ``query``: the original text passed in
+      - ``geonameid``: geoname identifier when found, else None
       - ``name``, ``lat``, ``lon``: populated when ``found`` is True
       - ``matched_text``: normalised query string when found, else None
     """
@@ -93,6 +97,7 @@ def get_city_with_max_population(
         "name": text,
         "lat": 0.0,
         "lon": 0.0,
+        "geonameid": None,
         "matched_text": None,
     }
 
@@ -100,14 +105,21 @@ def get_city_with_max_population(
     if not key:
         return result
 
+    bounds = frame_bounds if frame_bounds is not None else geo_bounds
+
     def filter_by_bounds(cands: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if geo_bounds is None:
+        if bounds is None:
+            return cands
+        min_lat = bounds.get("south", bounds.get("min_lat"))
+        max_lat = bounds.get("north", bounds.get("max_lat"))
+        min_lon = bounds.get("west", bounds.get("min_lon"))
+        max_lon = bounds.get("east", bounds.get("max_lon"))
+        if min_lat is None or max_lat is None or min_lon is None or max_lon is None:
             return cands
         return [
             c
             for c in cands
-            if geo_bounds["min_lat"] <= c["lat"] <= geo_bounds["max_lat"]
-            and geo_bounds["min_lon"] <= c["lon"] <= geo_bounds["max_lon"]
+            if min_lat <= c["lat"] <= max_lat and min_lon <= c["lon"] <= max_lon
         ]
 
     matched_key = key
@@ -115,7 +127,7 @@ def get_city_with_max_population(
 
     # Fuzzy matching fallback if no valid exact match found
     if not candidates and confidence_threshold < 1.0:
-        if geo_bounds is not None:
+        if bounds is not None:
             valid_keys = [k for k, v in _city_map.items() if filter_by_bounds(v)]
         else:
             valid_keys = list(_city_map.keys())
@@ -132,10 +144,53 @@ def get_city_with_max_population(
     result.update(
         {
             "found": True,
+            "geonameid": best.get("geonameid"),
             "name": best.get("name"),
             "lat": best.get("lat"),
             "lon": best.get("lon"),
+            "country": best.get("country"),
+            "population": best.get("population"),
             "matched_text": matched_key,
         }
     )
     return result
+
+
+def match_ocr_label(
+    text: str,
+    frame_bounds: Optional[Dict[str, float]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Match an OCR text label against the city gazetteer within frame_bounds.
+
+    Tries the whole text first, then falls back to matching line by line.
+    Returns the matched city dict (with 'geonameid', 'name', 'lat', 'lon', etc.)
+    or None if no match was found. Pure function: does not persist anything.
+    """
+    clean = str(text or "").strip()
+    if not clean:
+        return None
+
+    def _try_match(query: str) -> Optional[Dict[str, Any]]:
+        try:
+            cand = get_city_with_max_population(
+                query, frame_bounds=frame_bounds, confidence_threshold=0.60
+            )
+            if cand.get("found"):
+                return cand
+        except Exception:
+            pass
+        return None
+
+    matched = _try_match(clean.replace("\n", " "))
+    if matched is not None:
+        return matched
+
+    if "\n" in clean:
+        for line in clean.split("\n"):
+            line = line.strip()
+            if line:
+                matched_line = _try_match(line)
+                if matched_line is not None:
+                    return matched_line
+
+    return None

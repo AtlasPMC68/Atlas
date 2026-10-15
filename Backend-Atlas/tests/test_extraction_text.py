@@ -7,8 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from app.celery_app import celery_app
-from app.utils.cities_validation import get_city_with_max_population
+from app.utils.cities_validation import match_ocr_label
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
@@ -260,11 +259,9 @@ def get_extracted_text_cached(image_path: Path) -> list[dict[str, Any]]:
     if image_path not in _OCR_RESULT_CACHE:
         with open(image_path, "rb") as input_file:
             file_content = input_file.read()
-        extracted_text, _ = extract_text(
+        extracted_text = extract_text(
             map_id=uuid4(),
-            filename=image_path.name,
-            file_content=file_content,
-            celery_app=celery_app,
+            image_bytes=file_content,
         )
         _OCR_RESULT_CACHE[image_path] = extracted_text
     return _OCR_RESULT_CACHE[image_path]
@@ -352,9 +349,9 @@ def test_text_extraction_accuracy(
     seen_accepted = set()
     seen_unrecognized = set()
     for word in unpaired_ocr_words:
-        candidate = get_city_with_max_population(word, confidence_threshold=0.60)
+        candidate = match_ocr_label(word)
         display_word = " ".join(str(word).split())
-        if candidate.get("found"):
+        if candidate is not None:
             matched_name = " ".join(str(candidate.get("name") or "").split())
             entry = f"'{display_word}' -> '{matched_name}'"
             if entry not in seen_accepted:

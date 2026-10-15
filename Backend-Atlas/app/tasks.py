@@ -31,7 +31,7 @@ from app.models.map_import import (
     MapImport,
 )
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
-from app.utils.city_gazetteer import find_cities_in_text, frame_city_index
+from app.utils.cities_validation import match_ocr_label
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencing import RunRecord, build_georef_inputs
@@ -174,8 +174,6 @@ def test_task(self, name: str = "World"):
     logger.info(f"Test task completed: {result}")
     return result
 
-OCR_LANGUAGES = ["en", "fr"]
-
 
 class ImportCancelled(Exception):
     """The user cancelled the extraction. Nothing has been saved."""
@@ -298,12 +296,6 @@ async def _save_extraction(
             count = 0
             for collection in collections:
                 for feature in collection.get("features", []):
-                    props = feature.get("properties", {})
-                    if props.get("mapElementType") == "point" and (
-                        props.get("show") is False
-                        or feature.get("geometry", {}).get("coordinates") == [0.0, 0.0]
-                    ):
-                        continue
                     session.add(
                         Feature(
                             project_id=project_id,
@@ -333,42 +325,42 @@ def _city_features_from_text(
     blocks: list, legend_bounds: Optional[dict], frame_bounds: Optional[dict]
 ) -> List[dict[str, Any]]:
     """One point feature per place name read off the map."""
-    index = frame_city_index(frame_bounds)
-
     collections: List[dict[str, Any]] = []
     seen_city_ids = set()
     for coords, text, _prob in blocks:
         if polygon_center_in_legend(coords, legend_bounds):
             continue
-        for phrase, city in find_cities_in_text(text, index):
-            if city is not None:
-                if city.geonameid in seen_city_ids:
-                    continue
-                seen_city_ids.add(city.geonameid)
-            collections.append(
-                {
-                    "type": "FeatureCollection",
-                    "features": [
-                        {
-                            "type": "Feature",
-                            "properties": {
-                                "name": city.name if city else phrase,
-                                "show": city is not None,
-                                "mapElementType": "point",
-                                "color_name": "black",
-                                "color_rgb": [0, 0, 0],
-                            },
-                            "geometry": {
-                                "type": "Point",
-                                "coordinates": [
-                                    city.lon if city else 0.0,
-                                    city.lat if city else 0.0,
-                                ],
-                            },
-                        }
-                    ],
-                }
-            )
+        city = match_ocr_label(text, frame_bounds)
+        if city is None:
+            continue
+        city_id = city.get("geonameid") or city.get("name")
+        if city_id in seen_city_ids:
+            continue
+        seen_city_ids.add(city_id)
+        collections.append(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "name": city["name"],
+                            "show": True,
+                            "mapElementType": "point",
+                            "color_name": "black",
+                            "color_rgb": [0, 0, 0],
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [
+                                city["lon"],
+                                city["lat"],
+                            ],
+                        },
+                    }
+                ],
+            }
+        )
     return collections
 
 
@@ -406,8 +398,7 @@ def run_map_ocr(self, map_id: str):
         return {"status": "skipped"}
 
     try:
-        image = _decode_image(content)
-        blocks, _clean = extract_text(image=image, languages=OCR_LANGUAGES, gpu_acc=False)
+        blocks = extract_text(map_id=UUID(map_id) if isinstance(map_id, str) else map_id, image_bytes=content)
         payload = ocr_blocks_to_payload(blocks)
     except Exception as e:
         logger.error(f"[IMPORT] OCR failed for map {map_id}: {e}", exc_info=True)

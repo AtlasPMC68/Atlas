@@ -1,43 +1,17 @@
-import asyncio
 import json
 import logging
 import os
 import re
-import sys
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from app.utils.cities_validation import get_city_with_max_population
-
-try:
-    import coloredlogs
-
-    HAS_COLOREDLOGS = True
-except ImportError:
-    HAS_COLOREDLOGS = False
+from app.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
-log_level = os.getenv("OCR_LOG_LEVEL", "INFO").upper()
-
-if HAS_COLOREDLOGS:
-    coloredlogs.install(
-        level=log_level,
-        logger=logger,
-        fmt="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%H:%M:%S",
-    )
-else:
-    logger.setLevel(getattr(logging, log_level, logging.INFO))
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
-        logger.addHandler(handler)
 
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
 OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
 OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "900"))
-CITY_BOUNDS_PAD_RATIO = float(os.getenv("CITY_BOUNDS_PAD_RATIO", "0.08"))
-CITY_BOUNDS_PAD_MIN_DEG = float(os.getenv("CITY_BOUNDS_PAD_MIN_DEG", "0.25"))
 
 # fmt: off
 MAP_IGNORED_WORDS = {
@@ -65,43 +39,20 @@ def should_ignore(text_val: str) -> bool:
     return False
 
 
-class OcrBlock(dict):
-    """Dictionary representing an OCR text block that also supports tuple-like indexing [0], [1], [2]."""
-
-    def __getitem__(self, item: Any) -> Any:
-        if item == 0:
-            return self.get("bbox")
-        if item == 1:
-            return self.get("text")
-        if item == 2:
-            return self.get("prob", self.get("confidence", 1.0))
-        return super().__getitem__(item)
-
-
-def ocr_blocks_to_payload(blocks: list) -> list[list]:
-    """Convert OCR blocks to plain JSON: [[[x, y], ...], text, prob].
-
-    Handles both tuple format (from mocks/EasyOCR) and dict format (from Florence-2 detections).
-    Coordinates are rounded to int and probabilities to float to ensure JSON/Celery serialization.
-    """
+def ocr_blocks_to_payload(blocks: list[dict[str, Any]]) -> list[list]:
+    """Convert OCR blocks to plain JSON: [[[x, y], ...], text, prob]."""
     payload = []
     for block in blocks:
-        if isinstance(block, dict):
-            coords = block.get("bbox", [])
-            text = block.get("text", "")
-            prob = block.get("prob", block.get("confidence", 1.0))
-        elif isinstance(block, (list, tuple)) and len(block) >= 3:
-            coords, text, prob = block[0], block[1], block[2]
-        elif isinstance(block, (list, tuple)) and len(block) == 2:
-            coords, text = block[0], block[1]
-            prob = 1.0
-        else:
+        if not isinstance(block, dict):
             continue
+        coords = block.get("bbox", [])
+        text = block.get("text", "")
+        prob = float(block.get("prob", block.get("confidence", 1.0)))
         payload.append(
             [
                 [[int(round(float(p[0]))), int(round(float(p[1])))] for p in coords],
                 str(text),
-                float(prob),
+                prob,
             ]
         )
     return payload
@@ -113,137 +64,11 @@ def process_candidate_text(text_val: str, quad: list[list[int]]) -> dict[str, An
     clean_text = "\n".join(" ".join(line.split()) for line in clean_text.split("\n")).strip(" .,;:!?()[]{}'\"")
     if not clean_text or should_ignore(clean_text):
         return None
-    return OcrBlock(
-        {
-            "text": clean_text,
-            "bbox": quad,
-            "mapElementType": "ville",
-        }
-    )
-
-
-def _build_city_feature_collection(text: str, candidate: dict[str, Any]) -> dict[str, Any]:
-    """Build one city point feature for each geolocated city candidate."""
     return {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "properties": {
-                    "name": candidate.get("name") or text,
-                    "show": True,
-                    "mapElementType": "point",
-                    "color_name": "black",
-                    "color_rgb": [0, 0, 0],
-                },
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [
-                        candidate.get("lon") or 0.0,
-                        candidate.get("lat") or 0.0,
-                    ],
-                },
-            }
-        ],
+        "text": clean_text,
+        "bbox": quad,
+        "mapElementType": "ville",
     }
-
-
-def _compute_geo_bounds(geo_points_lonlat: list) -> dict[str, float] | None:
-    """Return {min_lon, max_lon, min_lat, max_lat} from a list of (lon, lat) points, or None."""
-    if not geo_points_lonlat or len(geo_points_lonlat) < 2:
-        return None
-    try:
-        lons = [float(p[0]) for p in geo_points_lonlat]
-        lats = [float(p[1]) for p in geo_points_lonlat]
-        min_lon, max_lon = min(lons), max(lons)
-        min_lat, max_lat = min(lats), max(lats)
-
-        lon_span = max_lon - min_lon
-        lat_span = max_lat - min_lat
-        lon_pad = max(lon_span * CITY_BOUNDS_PAD_RATIO, CITY_BOUNDS_PAD_MIN_DEG)
-        lat_pad = max(lat_span * CITY_BOUNDS_PAD_RATIO, CITY_BOUNDS_PAD_MIN_DEG)
-
-        return {
-            "min_lon": min_lon - lon_pad,
-            "max_lon": max_lon + lon_pad,
-            "min_lat": min_lat - lat_pad,
-            "max_lat": max_lat + lat_pad,
-        }
-    except (TypeError, ValueError, IndexError):
-        return None
-
-
-def geolocate_cities(
-    extracted_text: list[dict[str, Any]],
-    project_id: UUID,
-    map_id: UUID,
-    geo_points_lonlat: list | None,
-    persist_city_feature_fn,
-) -> None:
-    """Persist city-matched text points."""
-    geo_bounds = _compute_geo_bounds(geo_points_lonlat) if geo_points_lonlat else None
-
-    city_persist_coroutines = []
-    seen_cities = set()
-
-    for block in extracted_text:
-        if not isinstance(block, dict):
-            continue
-
-        text = str(block.get("text", "")).strip()
-        if not text:
-            continue
-
-        def _try_get_city(query_text: str):
-            try:
-                return get_city_with_max_population(query_text, geo_bounds=geo_bounds, confidence_threshold=0.60)
-            except Exception as exc:
-                logger.debug(f"get_city_with_max_population error for text '{query_text}': {exc}")
-                return {
-                    "found": False,
-                    "query": query_text,
-                    "name": query_text,
-                    "lat": 0.0,
-                    "lon": 0.0,
-                }
-
-        candidate = _try_get_city(text.replace("\n", " "))
-        
-        # Fallback to individual lines if full text matches nothing
-        if not candidate.get("found") and "\n" in text:
-            for line in text.split("\n"):
-                line = line.strip()
-                if line:
-                    line_candidate = _try_get_city(line)
-                    if line_candidate.get("found"):
-                        candidate = line_candidate
-                        break
-
-        if bool(candidate.get("found")):
-            city_name = candidate.get("name")
-            if city_name in seen_cities:
-                continue
-            seen_cities.add(city_name)
-            
-            city_feature_collection = _build_city_feature_collection(text, candidate)
-            city_persist_coroutines.append(persist_city_feature_fn(project_id, map_id, city_feature_collection))
-
-    async def _run_all():
-        if city_persist_coroutines:
-            results = await asyncio.gather(*city_persist_coroutines, return_exceptions=True)
-            for res in results:
-                if isinstance(res, Exception):
-                    logger.error(f"Failed to persist city text: {res}")
-
-    if city_persist_coroutines:
-        try:
-            asyncio.run(_run_all())
-        except RuntimeError:
-            import threading
-
-            thread = threading.Thread(target=lambda: asyncio.run(_run_all()))
-            thread.start()
-            thread.join()
 
 
 def _bbox_xyxy_to_quad_points(bbox_xyxy: list[Any]) -> list[list[float]]:
@@ -290,12 +115,10 @@ def _build_extracted_text_from_detections(
 
 def _run_ocr_pipeline(
     map_id: UUID,
-    filename: str,
-    file_content: bytes,
-    celery_app,
+    image_bytes: bytes,
 ) -> list[dict[str, Any]]:
     """
-    Execute Florence-2 OCR pipeline on file_content.
+    Execute Florence-2 OCR pipeline on image_bytes.
     Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
     """
     is_development = os.environ.get("ENV", "development").lower() not in (
@@ -310,13 +133,13 @@ def _run_ocr_pipeline(
             except Exception as e:
                 logger.debug(f"Failed to chmod {d}: {e}")
 
-    input_basename = f"{map_id}_{os.path.basename(filename)}"
-    input_stem = os.path.splitext(input_basename)[0]
+    input_basename = f"{map_id}.png"
+    input_stem = str(map_id)
     ocr_input_path = f"{OCR_INPUT_DIR}/{input_basename}"
     ocr_output_json_path = f"{OCR_OUTPUT_DIR}/{input_stem}-florence.json"
 
     with open(ocr_input_path, "wb") as input_file:
-        input_file.write(file_content)
+        input_file.write(image_bytes)
 
     if is_development:
         try:
@@ -332,7 +155,7 @@ def _run_ocr_pipeline(
 
     try:
         ocr_result = task_chain.apply_async()
-        logger.info(f"==> [OCR] Task launched for {filename} (ID: {map_id})")
+        logger.info(f"==> [OCR] Task launched for map {map_id}")
         logger.info("==> [OCR] Florence-2 processing text detection and extraction...")
 
         try:
@@ -355,7 +178,7 @@ def _run_ocr_pipeline(
             else:
                 raise TimeoutError(f"OCR pipeline timed out after {OCR_PIPELINE_TIMEOUT_SECONDS}s")
 
-            logger.info(f"==> [OCR] Pipeline successfully completed for {filename} in ~{elapsed/60:.1f}min!")
+            logger.info(f"==> [OCR] Pipeline successfully completed for map {map_id} in ~{elapsed/60:.1f}min!")
 
             with open(ocr_output_json_path, "r", encoding="utf-8") as florence_result_file:
                 florence_result = json.load(florence_result_file)
@@ -376,86 +199,27 @@ def _run_ocr_pipeline(
                 logger.warning(f"Failed to clean OCR temp file {temp_path}: {exc}")
 
 
-def _extract_text_via_pipeline(
-    map_id: UUID,
-    filename: str,
-    file_content: bytes,
-    celery_app,
-) -> tuple[list[dict[str, Any]], list[list[list[float]]]]:
-    extracted_text = _run_ocr_pipeline(map_id, filename, file_content, celery_app)
-    text_regions = [
-        block["bbox"]
-        for block in extracted_text
-        if isinstance(block, dict) and isinstance(block.get("bbox"), list) and len(block["bbox"]) == 4
-    ]
-    return extracted_text, text_regions
-
-
 def extract_text(
-    map_id: UUID | str | None = None,
-    filename: str | None = None,
-    file_content: bytes | None = None,
-    celery_app=None,
-    *,
-    image: Any = None,
-    languages: list[str] | None = None,
-    gpu_acc: bool = False,
-    **kwargs: Any,
-) -> tuple[list[Any], Any]:
+    map_id: UUID,
+    image_bytes: bytes,
+) -> list[dict[str, Any]]:
     """Extract text using the Florence-2 Celery OCR pipeline."""
-    if map_id is not None and not isinstance(map_id, (UUID, str)):
-        image = map_id
-        map_id = None
-        filename = None
-        file_content = None
-
-    if file_content is None and image is not None:
-        import cv2
-
-        ok, buf = cv2.imencode(".png", image)
-        if ok:
-            file_content = buf.tobytes()
-        if map_id is None:
-            map_id = uuid4()
-        if filename is None:
-            filename = "image.png"
-
-    if celery_app is None:
-        try:
-            from app.celery_app import celery_app as default_app
-
-            celery_app = default_app
-        except ImportError:
-            pass
-
-    if file_content is None:
-        return [], []
-
-    if celery_app is None:
-        raise ValueError("celery_app must be provided")
+    if not image_bytes:
+        return []
 
     MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
-    if len(file_content) > MAX_FILE_SIZE_BYTES:
+    if len(image_bytes) > MAX_FILE_SIZE_BYTES:
         logger.warning(
-            f"Image {filename} is too large ({len(file_content) / (1024 * 1024):.2f} MB). "
+            f"Image for map {map_id} is too large ({len(image_bytes) / (1024 * 1024):.2f} MB). "
             f"Rejected to prevent an OOM crash (25 MB limit)."
         )
-        return [], []
+        return []
 
-    if map_id is None:
-        map_id = uuid4()
-    if filename is None:
-        filename = "image.png"
+    logger.info(f"Starting OCR pipeline for map {map_id}")
 
-    resolved_map_id = map_id if isinstance(map_id, UUID) else UUID(str(map_id))
-
-    logger.info(f"Starting OCR pipeline for map {resolved_map_id}: {filename}")
-
-    extracted_text, text_regions = _extract_text_via_pipeline(
-        map_id=resolved_map_id,
-        filename=filename,
-        file_content=file_content,
-        celery_app=celery_app,
+    extracted_text = _run_ocr_pipeline(
+        map_id=map_id,
+        image_bytes=image_bytes,
     )
-    logger.info(f"==> [OCR] Florence-2 : {len(extracted_text)} zones de texte détectées sur {filename}")
-    return extracted_text, text_regions
+    logger.info(f"==> [OCR] Florence-2 : {len(extracted_text)} zones de texte détectées pour {map_id}")
+    return extracted_text

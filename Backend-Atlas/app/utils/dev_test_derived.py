@@ -266,12 +266,16 @@ def ensure_text_regions(
 
 
 def _compute_text_regions(
-    test_id: str, image_path: str, image_bgr: Any
+    test_id: str, image_path: str, image_bgr: Any = None
 ) -> Tuple[List[Any], DerivedState]:
+    from uuid import uuid4
     from app.utils.text_extraction import extract_text
 
-    blocks, _ = extract_text(image=image_bgr, languages=["en", "fr"], gpu_acc=False)
-    regions = _regions_to_payload([block[0] for block in blocks])
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+
+    blocks = extract_text(map_id=uuid4(), image_bytes=image_bytes)
+    regions = _regions_to_payload([block["bbox"] for block in blocks if "bbox" in block])
 
     artifact = DerivedArtifact(
         key=TEXT_REGIONS_KEY,

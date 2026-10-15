@@ -61,7 +61,7 @@ services:
     depends_on:
       - redis
       - db
-    command: celery -A app.celery_app worker --loglevel=info -E -Q default,maps -n maps@%h
+    command: celery -A app.celery_app worker --loglevel=info -E -Q default
 
   celery-worker-ocr:
     <<: *celery-worker-base

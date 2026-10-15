@@ -344,28 +344,9 @@ const featureGroups = computed(() => {
     { type: "other", label: "Autre(s)", features: [] as Feature[] },
   ];
 
-  const seenPointKeys = new Set<string>();
-
   props.features.forEach((feature: Feature) => {
     const featureType = getMapElementType(feature);
     if (!featureType) return;
-
-    if (featureType === "point") {
-      if (feature.properties?.show === false) return;
-      const coords = feature.geometry?.type === "Point" ? feature.geometry.coordinates : null;
-      if (Array.isArray(coords) && coords[0] === 0 && coords[1] === 0) return;
-
-      const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
-      const mapId = feature.mapId ?? "";
-      const nameKey = name ? `${mapId}_name_${name}` : null;
-      const coordsKey = Array.isArray(coords) ? `${mapId}_coords_${coords[0].toFixed(4)}_${coords[1].toFixed(4)}` : null;
-
-      if ((nameKey && seenPointKeys.has(nameKey)) || (coordsKey && seenPointKeys.has(coordsKey))) {
-        return;
-      }
-      if (nameKey) seenPointKeys.add(nameKey);
-      if (coordsKey) seenPointKeys.add(coordsKey);
-    }
 
     const targetGroup = groups.find((currentGroup) => {
       if (

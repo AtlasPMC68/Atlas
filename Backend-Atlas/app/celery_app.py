@@ -29,7 +29,7 @@ celery_app.conf.update(
     enable_utc=True,
     result_expires=3600,
     task_routes={
-        "app.tasks.process_map": {"queue": "maps"},
+        "app.tasks.run_map_ocr": {"queue": "maps_ocr"},
         "florence.run_pipeline": {"queue": "florence"},
         "app.tasks.*": {"queue": "default"},
     },

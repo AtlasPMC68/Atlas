@@ -3,7 +3,6 @@ import gc
 import logging
 
 import torch
-import numpy as np
 import preprocessing as preprocess
 import output as out
 from PIL import Image
@@ -15,11 +14,12 @@ hf_transformers_logging.disable_progress_bar()
 
 OCR_TASK = "<OCR_WITH_REGION>"
 
+
 def initialize_model() -> tuple[PreTrainedModel, ProcessorMixin, dict]:
     """Load the Florence runtime config, model and processor for OCR inference."""
     hf_home = os.environ.get("HF_HOME", "/app/models")
     logger.debug("Initializing Florence model from %s", hf_home)
-    
+
     device = "cpu"
     config = {
         "model_id": os.environ["FLORENCE_REPO_ID"],
@@ -37,7 +37,7 @@ def initialize_model() -> tuple[PreTrainedModel, ProcessorMixin, dict]:
         cache_dir=hf_home,
         local_files_only=True,
     ).to(config["device"])
-    
+
     processor = AutoProcessor.from_pretrained(
         config["model_id"],
         revision=os.environ["FLORENCE_COMMIT_ID"],
@@ -50,7 +50,9 @@ def initialize_model() -> tuple[PreTrainedModel, ProcessorMixin, dict]:
     return model, processor, config
 
 
-def run_inference(model: PreTrainedModel, processor: ProcessorMixin, image: Image.Image, task_prompt: str, config: dict) -> dict:
+def run_inference(
+    model: PreTrainedModel, processor: ProcessorMixin, image: Image.Image, task_prompt: str, config: dict
+) -> dict:
     """Run Florence inference for one task prompt and return structured output."""
 
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
@@ -134,8 +136,6 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
     """Remove duplicate detections where one box overlaps >60% of another (IoA dedup)."""
     import shapely.geometry
 
-    MAP_DICTIONARY_LOWER = set()
-
     def get_poly(d: dict) -> shapely.geometry.Polygon:
         quad = d.get("quad")
         if quad and len(quad) >= 8:
@@ -150,13 +150,11 @@ def _remove_duplicate_detections(all_detections: list[dict]) -> list[dict]:
             if not p.is_valid:
                 p = p.buffer(0)
             if p.area > 0:
-                text_clean = d.get("text", "").lower().strip()
-                dict_score = 10 if text_clean in MAP_DICTIONARY_LOWER else 0
-                polys.append({"det": d, "poly": p, "area": p.area, "score": dict_score})
+                polys.append({"det": d, "poly": p, "area": p.area})
         except Exception:
             pass
 
-    polys.sort(key=lambda x: (x["score"], x["area"]), reverse=True)
+    polys.sort(key=lambda x: x["area"], reverse=True)
     unique_dets = []
     unique_polys = []
 
@@ -235,9 +233,9 @@ def run_pipeline(model: PreTrainedModel, processor: ProcessorMixin, image_path: 
                     shifted_quad.extend([quad[i] + x1, quad[i + 1] + y1])
 
                 if len(shifted_quad) >= 4:
-                    all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad})
-
-
+                    all_detections.append(
+                        {"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(shifted_quad), "quad": shifted_quad}
+                    )
 
     unique_dets = _remove_duplicate_detections(all_detections)
     all_detections = out.merge_related_detections(unique_dets)
