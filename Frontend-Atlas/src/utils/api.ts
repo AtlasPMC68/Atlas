@@ -18,3 +18,10 @@ export async function apiFetch(
     headers,
   });
 }
+
+/** The message a failed response carries (FastAPI's `detail`), or the fallback. */
+export async function apiErrorMessage(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => ({}));
+  const detail = (body as { detail?: unknown })?.detail;
+  return typeof detail === "string" && detail ? detail : `${fallback} (${res.status})`;
+}

@@ -2,13 +2,45 @@
   <BasePickerModal
     :is-open="isOpen"
     title="Sélectionner les couleurs à extraire"
-    description="Cliquez sur les zones colorées de la carte pour sélectionner les couleurs à extraire. Vous devez sélectionner au moins une couleur pour continuer."
-    :confirm-label="`Confirmer les couleurs (${pickedColors.length})`"
-    :is-confirm-disabled="pickedColors.length === 0 || isLoading"
+    description="Cliquez sur les zones colorées de la carte pour sélectionner les couleurs à extraire. Vous devez sélectionner au moins une couleur de zone pour continuer."
+    :confirm-label="`Confirmer les couleurs (${zoneColorCount} zone(s), ${waterColorCount} eau)`"
+    :is-confirm-disabled="zoneColorCount === 0 || isLoading"
     @close="emit('close')"
     @confirm="onConfirm"
     @opened="onModalOpened"
   >
+    <template #controls-area>
+      <!-- Zone fill and water are routinely the same hue (blue land, white sea),
+           so the user tells us which is which rather than the colour doing it. -->
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="join">
+          <button
+            class="btn btn-sm join-item"
+            type="button"
+            :class="pickKind === 'zone' ? 'btn-primary' : 'btn-outline'"
+            @click="pickKind = 'zone'"
+          >
+            Zones
+          </button>
+          <button
+            class="btn btn-sm join-item"
+            type="button"
+            :class="pickKind === 'water' ? 'btn-primary' : 'btn-outline'"
+            @click="pickKind = 'water'"
+          >
+            Eau
+          </button>
+        </div>
+        <span class="text-xs text-base-content/60">
+          {{
+            pickKind === "zone"
+              ? "Les clics ajoutent une couleur de zone à extraire."
+              : "Les clics ajoutent une couleur d'eau (mer, lac) — elle ne devient pas une zone, elle sert au géoréférencement."
+          }}
+        </span>
+      </div>
+    </template>
+
     <template #image-area>
       <ZoomableImageContainer
         header-text="Carte importée — cliquez pour échantillonner une couleur"
@@ -90,12 +122,21 @@
             />
             <!-- Hex label -->
             <span class="text-xs font-mono text-base-content/50 w-16 shrink-0">{{ color.hex }}</span>
+            <!-- Zone or water -->
+            <span
+              class="badge badge-sm shrink-0"
+              :class="color.kind === 'water' ? 'badge-info' : 'badge-ghost'"
+            >
+              {{ color.kind === "water" ? "Eau" : "Zone" }}
+            </span>
             <!-- Editable name -->
             <input
               v-model="color.name"
               type="text"
               class="input input-sm input-bordered flex-1 min-w-0"
-              placeholder="Nom de la zone…"
+              :placeholder="
+                color.kind === 'water' ? 'Nom de la zone aquatique…' : 'Nom de la zone…'
+              "
             />
             <!-- Remove -->
             <button
@@ -110,7 +151,8 @@
       </div>
 
       <p v-else class="text-sm text-base-content/50 italic">
-        Aucune couleur sélectionnée — sélectionnez au moins une couleur pour continuer.
+        Aucune couleur sélectionnée — sélectionnez au moins une couleur de zone
+        pour continuer.
       </p>
     </template>
 
@@ -127,24 +169,28 @@ import ZoomableImageContainer from "./ZoomableImageContainer.vue";
 import { showAlert } from "../../composables/useAlert";
 import { useZoomableStage } from "../../composables/useZoomableStage";
 import { apiFetch } from "../../utils/api";
+import { hexToRgb } from "../../utils/utils";
 import type {
   PendingClick,
   PickedColor,
   SampleColorResponse,
 } from "../../typescript/colorPicker";
+import type { ImposedColor, ImposedColorKind } from "../../typescript/georef";
 
 const props = withDefaults(
   defineProps<{
     isOpen: boolean;
     imageUrl: string;
     imageFile: File;
+    // Picks confirmed earlier, restored when the user comes back to this step
+    initialColors?: ImposedColor[];
   }>(),
-  { isOpen: false },
+  { isOpen: false, initialColors: () => [] },
 );
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "confirmed", colors: { x: number; y: number; name: string; radius: number }[]): void;
+  (e: "confirmed", colors: ImposedColor[]): void;
 }>();
 
 const container = ref<HTMLDivElement | null>(null);
@@ -176,10 +222,36 @@ const {
 });
 
 const pickedColors = ref<PickedColor[]>([]);
+const pickKind = ref<ImposedColorKind>("zone");
+const zoneColorCount = computed(
+  () => pickedColors.value.filter((c) => c.kind === "zone").length,
+);
+const waterColorCount = computed(
+  () => pickedColors.value.filter((c) => c.kind === "water").length,
+);
 const pendingClicks = ref<PendingClick[]>([]);
 const isLoading = ref(false);
 const sampleError = ref<string | null>(null);
 let pendingIdCounter = 0;
+// Restored picks need the rendered image size to be placed, so they wait for it.
+let restorePending = true;
+
+function restoreInitialColors() {
+  const stage = baseStage.value;
+  if (!stage) return;
+  restorePending = false;
+  pickedColors.value = props.initialColors.map((c) => ({
+    kind: c.kind,
+    hex: c.hex,
+    rgb: hexToRgb(c.hex) ?? [0, 0, 0],
+    name: c.name,
+    stageX: c.x * stage.renderedW,
+    stageY: c.y * stage.renderedH,
+    normalizedX: c.x,
+    normalizedY: c.y,
+    sampleRadiusPx: c.radius,
+  }));
+}
 
 const BASE_SAMPLE_RADIUS_PX = 20;
 const sampleRadiusPx = computed(() =>
@@ -218,14 +290,20 @@ const containerCursorClass = computed(() => {
 
 function onModalOpened() {
   pickedColors.value = [];
+  restorePending = true;
+  pickKind.value = "zone";
   pendingClicks.value = [];
   sampleError.value = null;
   resetView();
-  nextTick(() => updateBaseStage());
+  nextTick(() => {
+    updateBaseStage();
+    if (restorePending) restoreInitialColors();
+  });
 }
 
 function onImageLoad() {
   updateBaseStage();
+  if (restorePending) restoreInitialColors();
 }
 
 function resetZoom() {
@@ -309,7 +387,10 @@ async function sampleAtEvent(event: MouseEvent) {
 
     const normalizedReturnedName = (data.name ?? "").trim().toLowerCase();
     const normalizedReturnedHex = (data.hex ?? "").trim().toLowerCase();
+    // Scoped to the current kind on purpose: water and a zone fill are
+    // routinely the same hue, which is the whole reason they are picked apart.
     const alreadyPicked = pickedColors.value.some((c) => {
+      if (c.kind !== pickKind.value) return false;
       const normalizedExistingName = (c.name ?? "").trim().toLowerCase();
       const normalizedExistingHex = (c.hex ?? "").trim().toLowerCase();
       return (
@@ -328,6 +409,7 @@ async function sampleAtEvent(event: MouseEvent) {
     }
 
     pickedColors.value.push({
+      kind: pickKind.value,
       hex: data.hex,
       rgb: data.rgb,
       name: data.name,
@@ -351,7 +433,8 @@ function removeColor(index: number) {
 }
 
 function onConfirm() {
-  if (pickedColors.value.length === 0) return;
+  // Water alone is not enough: without a zone colour nothing gets extracted.
+  if (zoneColorCount.value === 0) return;
   emit(
     "confirmed",
     pickedColors.value.map((c) => ({
@@ -359,6 +442,8 @@ function onConfirm() {
       y: c.normalizedY,
       name: c.name,
       radius: c.sampleRadiusPx,
+      kind: c.kind,
+      hex: c.hex,
     })),
   );
 }

@@ -1,0 +1,126 @@
+{
+  "testId": "c858266f-56d1-489c-8e40-20dc0906fcaf",
+  "testCaseId": "italie",
+  "evaluatedAt": "2026-10-05T16:49:24.551174Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1790371366486",
+          "name": "Italie",
+          "area": 32.858699932433254
+        },
+        "bestMatch": {
+          "iou": 0.909531969583163,
+          "intersectionArea": 30.478907923047085,
+          "unionArea": 33.51054052230349,
+          "precision": 0.979061197658009,
+          "recall": 0.9275749797076668,
+          "falseNegativeArea": 2.379792009386252,
+          "falsePositiveArea": 0.651840589870202,
+          "boundary": {
+            "meanKm": 57.063,
+            "p90Km": 308.476,
+            "maxKm": 525.171,
+            "expectedToExtractedMeanKm": 5.362,
+            "extractedToExpectedMeanKm": 108.764,
+            "expectedHoles": 0,
+            "extractedHoles": 0
+          },
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "Italie",
+            "area": 31.13074851291729
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.909531969583163,
+      "meanPrecision": 0.979061197658009,
+      "meanRecall": 0.9275749797076668,
+      "totalFalseNegativeArea": 2.379792009386252,
+      "totalFalsePositiveArea": 0.651840589870202,
+      "meanBoundaryKm": 57.063,
+      "meanBoundaryP90Km": 308.476,
+      "maxBoundaryKm": 525.171,
+      "zonesWithBoundary": 1,
+      "zonesWithoutBoundary": 0
+    },
+    "scoreUsed": 0.909531969583163,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  },
+  "scoreVersion": "2",
+  "comparison": {
+    "main": "The shipped zones (zones.geojson: after snapping, ocean clip and lake cut) against the expected zones through the same ocean and lake cuts.",
+    "raw": "The zones as the transform placed them (zones_raw.geojson: before snapping and the clip) against the expected zones as drawn. For judging placement: cleaning corrects and hides transform error."
+  },
+  "raw": {
+    "metrics": {
+      "expected": [
+        {
+          "expected": {
+            "index": 0,
+            "id": "dev-zone-1790371366486",
+            "name": "Italie",
+            "area": 33.179431680298855
+          },
+          "bestMatch": {
+            "iou": 0.8479722392400312,
+            "intersectionArea": 29.9100226137577,
+            "unionArea": 35.27240778608935,
+            "precision": 0.9346006252685264,
+            "recall": 0.9014627767574919,
+            "falseNegativeArea": 3.269409066541117,
+            "falsePositiveArea": 2.0929761057906173,
+            "boundary": {
+              "meanKm": 56.531,
+              "p90Km": 298.546,
+              "maxKm": 525.171,
+              "expectedToExtractedMeanKm": 8.036,
+              "extractedToExpectedMeanKm": 105.026,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 0,
+              "id": null,
+              "name": "Italie",
+              "area": 32.00299871954831
+            },
+            "matchedBy": "name"
+          }
+        }
+      ],
+      "mean": {
+        "meanIou": 0.8479722392400312,
+        "meanPrecision": 0.9346006252685264,
+        "meanRecall": 0.9014627767574919,
+        "totalFalseNegativeArea": 3.269409066541117,
+        "totalFalsePositiveArea": 2.0929761057906173,
+        "meanBoundaryKm": 56.531,
+        "meanBoundaryP90Km": 298.546,
+        "maxBoundaryKm": 525.171,
+        "zonesWithBoundary": 1,
+        "zonesWithoutBoundary": 0
+      },
+      "scoreUsed": 0.8479722392400312,
+      "scoreUsedKey": "mean.meanIou"
+    },
+    "nameMatching": {
+      "expectedWithoutNameMatch": [],
+      "extractedNeverMatchedByName": []
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# Kept out of the image: local outputs and caches, and large data only the
+# dev tools read. In docker compose, app/ and tests/ are mounted over the image
+# anyway, so none of this is needed at run time.
+
+# Administrative borders for the dev-test zone editor (~50 MB, gitignored)
+app/geojson/borders/
+
+# Outputs written at run time
+app/extracted_texts/
+app/extracted_color/
+debug_runs/
+ablations/
+.georef_cache/
+tests/assets/georef/test_cases/**/alignment_debug/
+tests/assets/georef/test_cases/**/evidence_debug/
+tests/assets/georef/test_cases/**/reference_debug/
+
+# Python and tooling caches
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Empty leftovers of volume mounts
+Backend-Atlas/
+app/tests/

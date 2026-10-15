@@ -6,20 +6,13 @@ import Dashboard from "../views/Dashboard.vue";
 import About from "../views/About.vue";
 import Profile from "../views/Profile.vue";
 import Discover from "../views/Discover.vue";
-import TestEditor from "../views/dev/TestEditor.vue";
-import TestCreation from "../views/dev/TestCreation.vue";
-import TestBrowser from "../views/dev/TestBrowser.vue";
-import TestCaseResult from "../views/dev/TestCaseResult.vue";
 import keycloak from "../keycloak";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { DEV_TOOLS_ENABLED } from "../utils/devTools";
 
-const routes = [
-  { path: "/", component: Home },
-  {
-    path: "/televersement/:mapId",
-    component: ImportView,
-    meta: { requiresAuth: true },
-  },
+// The dev-test tool's pages, registered only when the dev tools are enabled.
+// Loaded on demand, so they stay out of the main bundle.
+const devTestRoutes = [
   {
     path: "/upload-test/:mapId",
     component: ImportView,
@@ -27,7 +20,32 @@ const routes = [
   },
   {
     path: "/tests",
-    component: TestBrowser,
+    component: () => import("../views/dev/TestBrowser.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-editor/:mapId",
+    component: () => import("../views/dev/TestEditor.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-editor/:mapId/case/:caseId",
+    component: () => import("../views/dev/TestCaseResult.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/test-creation",
+    component: () => import("../views/dev/TestCreation.vue"),
+    meta: { requiresAuth: true },
+  },
+];
+
+const routes = [
+  ...(DEV_TOOLS_ENABLED ? devTestRoutes : []),
+  { path: "/", component: Home },
+  {
+    path: "/televersement/:mapId",
+    component: ImportView,
     meta: { requiresAuth: true },
   },
   {
@@ -38,21 +56,6 @@ const routes = [
   {
     path: "/projets-publiques",
     component: Discover,
-  },
-  {
-    path: "/test-editor/:mapId",
-    component: TestEditor,
-    meta: { requiresAuth: true },
-  },
-  {
-    path: "/test-editor/:mapId/case/:caseId",
-    component: TestCaseResult,
-    meta: { requiresAuth: true },
-  },
-  {
-    path: "/test-creation",
-    component: TestCreation,
-    meta: { requiresAuth: true },
   },
   { path: "/profil", component: Profile, meta: { requiresAuth: true } },
   { path: "/connexion", component: Home }, // Dummy route
