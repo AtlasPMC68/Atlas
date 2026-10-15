@@ -16,7 +16,6 @@ from shapely.validation import make_valid
 from app.utils.dev_test_expected import load_cleaned_zones, load_drawn_zones
 
 
-
 @dataclass(frozen=True)
 class DevTestPaths:
     assets_root: str
@@ -61,9 +60,7 @@ def _feature_collection_geoms_with_meta(fc: dict[str, Any]) -> list[dict[str, An
         if not isinstance(geom, dict):
             continue
 
-        props = (
-            feat.get("properties") if isinstance(feat.get("properties"), dict) else {}
-        )
+        props = feat.get("properties") if isinstance(feat.get("properties"), dict) else {}
         name = None
         if isinstance(props, dict):
             name = props.get("name")
@@ -156,15 +153,9 @@ def _errors_feature_collection(*, matches: list[dict[str, Any]]) -> dict[str, An
         expected_index = exp.get("index") if isinstance(exp, dict) else None
 
         extracted_meta = bm.get("extracted") if isinstance(bm, dict) else None
-        extracted_index = (
-            extracted_meta.get("index") if isinstance(extracted_meta, dict) else None
-        )
-        extracted_id = (
-            extracted_meta.get("id") if isinstance(extracted_meta, dict) else None
-        )
-        extracted_name = (
-            extracted_meta.get("name") if isinstance(extracted_meta, dict) else None
-        )
+        extracted_index = extracted_meta.get("index") if isinstance(extracted_meta, dict) else None
+        extracted_id = extracted_meta.get("id") if isinstance(extracted_meta, dict) else None
+        extracted_name = extracted_meta.get("name") if isinstance(extracted_meta, dict) else None
 
         # If there is no extracted match, FN is the whole expected geom and FP is empty.
         if not isinstance(ext_geom, BaseGeometry):
@@ -285,9 +276,7 @@ def _boundary_samples_xyz(geom: BaseGeometry) -> np.ndarray:
     if lonlat.size == 0:
         return np.zeros((0, 3))
     lon, lat = np.radians(lonlat[:, 0]), np.radians(lonlat[:, 1])
-    return EARTH_RADIUS_KM * np.column_stack(
-        [np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)]
-    )
+    return EARTH_RADIUS_KM * np.column_stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
 
 
 def boundary_distance_km(expected: BaseGeometry, extracted: BaseGeometry) -> dict[str, Any] | None:
@@ -341,12 +330,8 @@ def _match_metrics(exp_geom: BaseGeometry, exp_area: float, ext: dict[str, Any])
     }
 
 
-def build_test_case_paths(
-    assets_root: str, test_id: str, test_case_id: str
-) -> DevTestPaths:
-    expected_zones_path = os.path.join(
-        assets_root, "georef_zones", f"{test_id}_zones.geojson"
-    )
+def build_test_case_paths(assets_root: str, test_id: str, test_case_id: str) -> DevTestPaths:
+    expected_zones_path = os.path.join(assets_root, "georef_zones", f"{test_id}_zones.geojson")
     case_dir = os.path.join(assets_root, "test_cases", test_id, test_case_id)
 
     # New nested layout
@@ -367,9 +352,7 @@ def build_test_case_paths(
         report_path=report_path,
         best_report_path=best_report_path,
         best_zones_path=best_zones_path,
-        expected_cleaned_zones_path=cleaned_zones_path(
-            test_id, os.path.join(assets_root, "georef_zones")
-        ),
+        expected_cleaned_zones_path=cleaned_zones_path(test_id, os.path.join(assets_root, "georef_zones")),
         raw_zones_path=os.path.join(case_dir, "zones_raw.geojson"),
         best_raw_zones_path=os.path.join(case_dir, "zones_raw_best.geojson"),
     )
@@ -451,9 +434,7 @@ def evaluate_zones(
         for m in matches
         if m["bestMatch"].get("matchedBy") != "name"
     ]
-    extracted_never_matched = sorted(
-        {key for key in extracted_by_name if key not in matched_names}
-    )
+    extracted_never_matched = sorted({key for key in extracted_by_name if key not in matched_names})
 
     errors_geojson = _errors_feature_collection(matches=matches)
 
@@ -506,9 +487,7 @@ def evaluate_zones(
     ]
 
     mean_iou = _safe_ratio(sum(ious), float(len(ious))) if ious else 0.0
-    mean_precision = (
-        _safe_ratio(sum(precisions), float(len(precisions))) if precisions else 0.0
-    )
+    mean_precision = _safe_ratio(sum(precisions), float(len(precisions))) if precisions else 0.0
     mean_recall = _safe_ratio(sum(recalls), float(len(recalls))) if recalls else 0.0
     total_fn_area = float(sum(fn_areas)) if fn_areas else 0.0
     total_fp_area = float(sum(fp_areas)) if fp_areas else 0.0
@@ -531,9 +510,7 @@ def evaluate_zones(
                 "totalFalsePositiveArea": total_fp_area,
                 "meanBoundaryKm": _mean_of(boundaries, "meanKm"),
                 "meanBoundaryP90Km": _mean_of(boundaries, "p90Km"),
-                "maxBoundaryKm": (
-                    max(b["maxKm"] for b in boundaries) if boundaries else None
-                ),
+                "maxBoundaryKm": (max(b["maxKm"] for b in boundaries) if boundaries else None),
                 "zonesWithBoundary": len(boundaries),
                 "zonesWithoutBoundary": len(matches) - len(boundaries),
             },
@@ -590,17 +567,13 @@ def evaluate_case_zones(
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
     """Both comparisons of a run. Returns ``(report, errors, raw_errors)``."""
 
-    report, errors = evaluate_zones(
-        cleaned_expected, zones, test_id=test_id, test_case_id=test_case_id, min_iou=min_iou
-    )
+    report, errors = evaluate_zones(cleaned_expected, zones, test_id=test_id, test_case_id=test_case_id, min_iou=min_iou)
     raw_errors = None
     report["scoreVersion"] = SCORE_VERSION
     report["comparison"] = COMPARISONS
     report["raw"] = None
     if raw_zones is not None:
-        raw_report, raw_errors = evaluate_zones(
-            drawn_expected, raw_zones, test_id=test_id, test_case_id=test_case_id
-        )
+        raw_report, raw_errors = evaluate_zones(drawn_expected, raw_zones, test_id=test_id, test_case_id=test_case_id)
         report["raw"] = {
             "metrics": raw_report["metrics"],
             "nameMatching": raw_report["nameMatching"],
@@ -625,9 +598,7 @@ def evaluate_georef_test_case(
     if not os.path.exists(paths.extracted_zones_path):
         raise FileNotFoundError(f"Extracted zones not found: {paths.extracted_zones_path}")
 
-    raw_zones = (
-        _load_json(paths.raw_zones_path) if os.path.exists(paths.raw_zones_path) else None
-    )
+    raw_zones = _load_json(paths.raw_zones_path) if os.path.exists(paths.raw_zones_path) else None
     return evaluate_case_zones(
         test_id=test_id,
         test_case_id=test_case_id,
@@ -654,7 +625,7 @@ def error_overlay(
     raw: bool,
 ) -> dict[str, Any]:
     """The FP/FN overlay of one of a case's runs, computed from its zones."""
-    
+
     from app.utils.dev_test_expected import load_cleaned_zones, load_drawn_zones
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
@@ -666,15 +637,9 @@ def error_overlay(
         raise FileNotFoundError(f"Zones not found: {os.path.basename(zones_path)}")
 
     zones_dir = os.path.join(assets_root, "georef_zones")
-    expected = (
-        load_drawn_zones(test_id, zones_dir)
-        if raw
-        else load_cleaned_zones(test_id, zones_dir)
-    )
+    expected = load_drawn_zones(test_id, zones_dir) if raw else load_cleaned_zones(test_id, zones_dir)
     if expected is None:
         raise FileNotFoundError(f"Expected zones not found for {test_id}")
 
-    _report, errors = evaluate_zones(
-        expected, _load_json(zones_path), test_id=test_id, test_case_id=test_case_id
-    )
+    _report, errors = evaluate_zones(expected, _load_json(zones_path), test_id=test_id, test_case_id=test_case_id)
     return errors
