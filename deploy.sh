@@ -105,6 +105,16 @@ else
         echo "[WARN] VITE_CARTO_API_KEY is empty, basemap tiles may fail. Edit .env later."
     fi
 
+    # Let's Encrypt rejects example.com addresses, so ask for a real one
+    ACME_EMAIL="${ACME_EMAIL:-}"
+    if [ -z "$ACME_EMAIL" ] && [ -t 0 ]; then
+        read -rp "[INPUT] Email for Let's Encrypt certificate notices: " ACME_EMAIL
+    fi
+    if [ -z "$ACME_EMAIL" ]; then
+        echo "[ERROR] An email is required for HTTPS. Re-run with: ACME_EMAIL=you@mail.com ./deploy.sh"
+        exit 1
+    fi
+
     POSTGRES_PASSWORD=$(gen_secret)
     KEYCLOAK_DB_PASSWORD=$(gen_secret)
     KEYCLOAK_ADMIN_PASSWORD=$(gen_secret)
@@ -157,7 +167,7 @@ KEYCLOAK_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD}
 
 # Caddy Ingress Settings
 CADDY_SITE=${DOMAIN}
-ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+ACME_EMAIL=${ACME_EMAIL}
 EOF
     echo "[INFO] Secrets written to $ENV_FILE"
 fi

@@ -1,12 +1,23 @@
 #!/bin/bash
 
-# TODO Add real credentials for deployment
+# Credentials come from the container environment (see .env / docker-compose.yml)
 echo "Configuring Keycloak..."
-/opt/keycloak/bin/kcadm.sh config credentials \
-  --server http://localhost:8080/auth \
-  --realm master \
-  --user admin \
-  --password admin
+# The port opens before the admin user is bootstrapped, so retry the login
+for attempt in $(seq 1 30); do
+  if /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth \
+    --realm master \
+    --user "${KEYCLOAK_ADMIN:-admin}" \
+    --password "${KEYCLOAK_ADMIN_PASSWORD:-admin}"; then
+    break
+  fi
+  if [ "$attempt" -eq 30 ]; then
+    echo "ERROR: could not log in as Keycloak admin. Does KEYCLOAK_ADMIN_PASSWORD match the existing keycloak-data volume?"
+    exit 1
+  fi
+  echo "Admin login failed (attempt $attempt/30), retrying in 5s..."
+  sleep 5
+done
 
 # Create realm if it doesn't exist
 echo "Creating realm atlas..."
@@ -51,12 +62,14 @@ else
   echo "Frontend client created"
 fi
 
-# Create backend client if it doesn't exist
+# Create backend client if it doesn't exist, and keep its secret in sync with .env
 echo "Setting up backend client..."
 if client_exists "atlas-backend"; then
-  echo "Backend client already exists"
+  BACKEND_CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId=atlas-backend --fields id | grep -oP '(?<="id" : ")[^"]*')
+  /opt/keycloak/bin/kcadm.sh update clients/"$BACKEND_CLIENT_ID" -r atlas -s secret="${KEYCLOAK_CLIENT_SECRET:-secret}"
+  echo "Backend client already exists, secret updated"
 else
-  /opt/keycloak/bin/kcadm.sh create clients -r atlas -f /var/tmp/atlas-backend.json
+  /opt/keycloak/bin/kcadm.sh create clients -r atlas -f /var/tmp/atlas-backend.json -s secret="${KEYCLOAK_CLIENT_SECRET:-secret}"
   echo "Backend client created"
 fi
 
