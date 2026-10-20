@@ -33,13 +33,13 @@ echo "Setting Atlas login theme..."
   -s loginTheme=atlas
   
 # Update realm settings
-# TODO remove sslRequired=None for production
+# REALM_SSL_REQUIRED is "external" on the server, "none" for plain-HTTP local dev
 echo "Updating realm settings..."
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
   -s registrationAllowed=true \
   -s loginWithEmailAllowed=true \
   -s resetPasswordAllowed=true \
-  -s sslRequired=None \
+  -s sslRequired="${REALM_SSL_REQUIRED:-none}" \
   -s accessTokenLifespan=3600 \
   -s ssoSessionMaxLifespan=86400 \
   -s ssoSessionIdleTimeout=3600 

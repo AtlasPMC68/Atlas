@@ -174,6 +174,22 @@ fi
 
 chmod 600 "$ENV_FILE"
 
+# Production compose overrides: plain `docker compose ...` then uses both files
+if ! grep -q '^COMPOSE_FILE=' "$ENV_FILE"; then
+    echo "COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml" >> "$ENV_FILE"
+fi
+
+# IPs allowed on /auth/admin (space-separated). Defaults to the IP of this SSH session.
+if ! grep -q '^ADMIN_ALLOWED_IPS=' "$ENV_FILE"; then
+    ADMIN_IP="${ADMIN_ALLOWED_IPS:-${SSH_CLIENT%% *}}"
+    if [ -n "$ADMIN_IP" ]; then
+        echo "[INFO] Keycloak admin console restricted to: $ADMIN_IP (edit ADMIN_ALLOWED_IPS in .env)"
+        echo "ADMIN_ALLOWED_IPS=$ADMIN_IP" >> "$ENV_FILE"
+    else
+        echo "[WARN] No admin IP detected, /auth/admin will be blocked for everyone. Set ADMIN_ALLOWED_IPS in .env."
+    fi
+fi
+
 # Use the values actually stored in .env for the next steps
 APP_BASE_URL=$(grep -E '^APP_BASE_URL=' "$ENV_FILE" | cut -d= -f2-)
 DOMAIN=$(grep -E '^DOMAIN=' "$ENV_FILE" | cut -d= -f2-)

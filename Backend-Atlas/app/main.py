@@ -19,8 +19,11 @@ app.include_router(celery_router.router)
 app.include_router(projects.router)
 app.include_router(auth.router)
 app.include_router(user.router)
-app.include_router(dev_test.router)
-# TODO: gate dev_test router and /dev-test static mount behind an ENABLE_DEV_TOOLS env var before any non-local deployment
+
+# Georef dev-test harness: never expose it on a public deployment
+ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "false").lower() == "true"
+if ENABLE_DEV_TOOLS:
+    app.include_router(dev_test.router)
 
 cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost,https://localhost,http://localhost:3000,http://localhost:5173")
 allow_origins = [origin.strip() for origin in cors_origins_raw.split(",") if origin.strip()]
@@ -34,8 +37,9 @@ app.add_middleware(
 )
 
 # Serve georef dev-test assets (images, GeoJSON, etc.) as static files under /dev-test
-ensure_georef_assets_dir()
-app.mount("/dev-test", StaticFiles(directory=GEOREF_ASSETS_DIR), name="dev-test")
+if ENABLE_DEV_TOOLS:
+    ensure_georef_assets_dir()
+    app.mount("/dev-test", StaticFiles(directory=GEOREF_ASSETS_DIR), name="dev-test")
 
 
 @app.get("/")

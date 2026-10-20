@@ -10,6 +10,7 @@ services:
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost/auth/realms/atlas}
       KEYCLOAK_AUDIENCE: atlas-backend
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,https://localhost}
+      ENABLE_DEV_TOOLS: ${ENABLE_DEV_TOOLS:-true}
     restart: unless-stopped
     volumes:
       - ./Backend-Atlas/app:/app/app
@@ -22,6 +23,7 @@ services:
   frontend:
     build:
       context: ./Frontend-Atlas
+      target: development
     container_name: atlas-frontend
     restart: unless-stopped
     environment:
@@ -107,7 +109,7 @@ services:
       KC_HOSTNAME_STRICT: false
       KC_HTTP_ENABLED: true
       KC_HTTP_RELATIVE_PATH: /auth
-      KC_PROXY: edge
+      KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: false
       KC_METRICS_ENABLED: false
       KC_LOG_LEVEL: WARN
@@ -161,6 +163,7 @@ services:
       - keycloak
 
   test-backend:
+    profiles: [test]
     build:
       context: ./Backend-Atlas
     command: pytest tests/ -v --color=yes --tb=short
@@ -175,8 +178,10 @@ services:
       - ./.env:/app/.env.dev
 
   test-frontend:
+    profiles: [test]
     build:
       context: ./Frontend-Atlas
+      target: development
     command: npm test
     volumes:
       - ./Frontend-Atlas:/app

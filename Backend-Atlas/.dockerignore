@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+.pytest_cache
+.georef_cache
+.env*
+debug_runs
+ablations
