@@ -407,11 +407,24 @@ const imageOverlay = useImageOverlay({
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
+  const seenCityKeys = new Set<string>();
 
   safeFeatures.forEach((feature) => {
     if (!map || feature.geometry.type !== "Point") return;
+    if (feature.properties?.show === false) return;
 
     const [lng, lat] = feature.geometry.coordinates;
+    if (lng === 0 && lat === 0) return;
+
+    const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
+    const mapId = feature.mapId ?? "";
+    const nameKey = name ? `${mapId}_name_${name}` : null;
+    const coordsKey = `${mapId}_coords_${lng.toFixed(4)}_${lat.toFixed(4)}`;
+
+    if ((nameKey && seenCityKeys.has(nameKey)) || seenCityKeys.has(coordsKey)) return;
+    if (nameKey) seenCityKeys.add(nameKey);
+    seenCityKeys.add(coordsKey);
+
     const coord: L.LatLngTuple = [lat, lng];
 
     const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
@@ -432,8 +445,8 @@ function renderCities(features: Feature[]) {
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
-        html: featureProperties.name || feature.name || "",
-        iconSize: [100, 20],
+        html: String(featureProperties.name || feature.name || "").replace(/\n/g, " "),
+        iconSize: [100, 20], 
         iconAnchor: [-8, 15],
       }),
       interactive: false,
@@ -472,7 +485,7 @@ function applyLabelStyle(marker: L.Marker, feature: Feature) {
   if (!el) return;
 
   const color = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-  const sizePx = feature.properties.sizePx ?? 12;
+  const sizePx = Math.max(feature.properties.sizePx ?? 14, 14);
 
   el.style.setProperty("--label-color", color);
   el.style.setProperty("--label-size", `${sizePx}px`);
@@ -490,7 +503,7 @@ function renderLabels(features: Feature[]) {
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text geoman-text-label",
-        html: feature.properties.labelText || "",
+        html: String(feature.properties.labelText || "").replace(/\n/g, " "),
         iconSize: [120, 20],
         iconAnchor: [0, 10],
       }),
@@ -731,6 +744,76 @@ function renderAllFeatures() {
   }
 
   previousFeatureIds.value = currentIds;
+  
+  setTimeout(updateLabelVisibility, 10);
+}
+
+function updateLabelVisibility() {
+  if (!map) return;
+  const mapContainer = document.getElementById('map');
+  if (!mapContainer) return;
+  const mapRect = mapContainer.getBoundingClientRect();
+
+  const labels = Array.from(document.querySelectorAll('.city-label-text')) as HTMLElement[];
+  
+  labels.forEach(el => {
+    el.style.top = '0px';
+  });
+  
+  const boxes: DOMRect[] = [];
+  
+  for (const label of labels) {
+    if (label.style.display === 'none') continue;
+    
+    let rect = label.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+    
+    // Ignore off-screen labels to improve performance and avoid processing invisible collisions
+    if (
+      rect.right < mapRect.left ||
+      rect.left > mapRect.right ||
+      rect.bottom < mapRect.top ||
+      rect.top > mapRect.bottom
+    ) {
+      continue;
+    }
+
+    const checkCollision = (r: DOMRect) => {
+      for (const box of boxes) {
+        if (
+          r.left < box.right &&
+          r.right > box.left &&
+          r.top < box.bottom &&
+          r.bottom > box.top
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    let collision = checkCollision(rect);
+    
+    if (collision) {
+      const shiftStep = rect.height;
+      const attempts = [];
+      for (let i = 1; i <= 12; i++) {
+        attempts.push(shiftStep * i);
+        attempts.push(-shiftStep * i);
+      }
+      
+      for (const shiftY of attempts) {
+        label.style.top = `${shiftY}px`;
+        rect = label.getBoundingClientRect();
+        if (!checkCollision(rect)) {
+          break;
+        }
+      }
+    }
+    
+    // Always add to boxes
+    boxes.push(rect);
+  }
 }
 
 // --- per-feature drag ---
@@ -769,6 +852,8 @@ onMounted(() => {
   };
   map.whenReady(updateMinZoom);
   map.on('resize', updateMinZoom);
+  map.on('moveend', updateLabelVisibility);
+  map.on('zoomend', updateLabelVisibility);
 
   drawing.initializeDrawing(map);
   L.control.zoom({ position: "topleft" }).addTo(map);
@@ -1055,13 +1140,14 @@ watch(
 
 <style>
 .city-label-text {
-  font-size: var(--label-size, 12px);
+  font-size: var(--label-size, 14px);
   font-weight: bold;
   color: var(--label-color, #000);
   background: transparent;
   padding: 2px 4px;
   border-radius: 3px;
   border: transparent;
+  white-space: nowrap;
 }
 
 .city-selection-ring {

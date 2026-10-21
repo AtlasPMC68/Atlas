@@ -3,14 +3,17 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 from app.database.base import Base
+import logging
 import os 
 from dotenv import load_dotenv
+
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 load_dotenv(dotenv_path=".env.dev")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=False)
 
 AsyncSessionLocal = sessionmaker( 
     bind=engine,
