@@ -5,6 +5,7 @@ export type PmDraggableLayer = L.Layer & {
 };
 
 export function forEachLeafLayer(layer: L.Layer, fn: (l: L.Layer) => void) {
+  if (!layer) return;
   if (layer instanceof L.LayerGroup) {
     (layer as L.LayerGroup).eachLayer((child) => forEachLeafLayer(child, fn));
   } else {
@@ -15,13 +16,21 @@ export function forEachLeafLayer(layer: L.Layer, fn: (l: L.Layer) => void) {
 export function enablePerFeatureDrag(layer: L.Layer) {
   forEachLeafLayer(layer, (leaf) => {
     if ((leaf as { options?: { interactive?: boolean } }).options?.interactive === false) return;
-    (leaf as PmDraggableLayer).pm?.enableLayerDrag?.();
+    try {
+      (leaf as PmDraggableLayer).pm?.enableLayerDrag?.();
+    } catch (e) {
+      console.warn("Failed to enable drag on leaf layer:", e);
+    }
   });
 }
 
 export function disablePerFeatureDrag(layer: L.Layer) {
   forEachLeafLayer(layer, (leaf) => {
-    (leaf as PmDraggableLayer).pm?.disableLayerDrag?.();
+    try {
+      (leaf as PmDraggableLayer).pm?.disableLayerDrag?.();
+    } catch (e) {
+      // Ignore internal Geoman errors when disabling unsupported layers
+    }
   });
 }
 

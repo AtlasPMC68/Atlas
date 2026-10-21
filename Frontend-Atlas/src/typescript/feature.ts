@@ -23,8 +23,11 @@ export type MapElementType =
   | "image";
 
 export type FeatureVisibilityGroupType =
-  | Exclude<MapElementType, "label" | "polyline" | "arrow">
-  | "other";
+  | "point"
+  | "zone"
+  | "shape"
+  | "image"
+  | "drawing";
 
 export type FeatureVisibilityGroup = {
   type: FeatureVisibilityGroupType;
@@ -49,6 +52,8 @@ export interface FeatureProperties {
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
+  layer?: number;
+  rotation?: number;
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;

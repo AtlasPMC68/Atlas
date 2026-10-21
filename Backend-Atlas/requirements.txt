@@ -19,11 +19,6 @@ bcrypt==4.0.0
 pydantic==2.12.5
 email-validator==2.3.0
 matplotlib==3.10.8
---extra-index-url https://download.pytorch.org/whl/cpu
-# TODO OWASP A03:2025 [MOYENNE] - Évaluer le verrouillage des versions et l'intégrité des paquets ML provenant d'un index externe.
-torch
-torchvision
-easyocr
 opencv-python-headless==4.13.0.92
 scikit-image==0.26.0
 scipy==1.16.3
@@ -31,3 +26,6 @@ imageio==2.37.2
 geonamescache==3.0.1
 python-keycloak==4.0.0
 PyJWT[crypto]==2.8.0
+python-Levenshtein
+pytest-xdist
+greenlet

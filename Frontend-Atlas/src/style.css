@@ -10,6 +10,11 @@
 
 :root {
   --header-height: 64px;
+  --shape-handle-bg: #ffffff;
+  --shape-handle-bg-hover: #f1f5f9;
+  --shape-handle-border: #475569;
+  --shape-handle-edge-bg: #e2e8f0;
+  --shape-handle-edge-border: #64748b;
 }
 
 @layer utilities {
@@ -91,11 +96,47 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235B5B5B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2v6h-6'/%3E%3Cpath d='M3 12a9 9 0 0 1 15-6.7L21 8'/%3E%3Cpath d='M3 22v-6h6'/%3E%3Cpath d='M21 12a9 9 0 0 1-15 6.7L3 16'/%3E%3C/svg%3E");
 }
 
-.image-resize-handle {
-  background: white;
-  border: 2px solid #333;
+/* ── Shape scaling handles ─────────────────────────────────────────────────── */
+/* Size and cursor are set inline by ShapeScalingService (iconSize / el.style.cursor). */
+.shape-resize-handle {
+  box-sizing: border-box;
+  background: var(--shape-handle-bg);
+  border: 2px solid var(--shape-handle-border);
   border-radius: 2px;
-  cursor: se-resize;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.6);
+  will-change: transform;
+  pointer-events: auto;
+}
+
+.shape-resize-handle:hover {
+  background: var(--shape-handle-bg-hover);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.leaflet-zoom-anim .shape-resize-handle {
+  transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
+}
+
+.shape-resize-handle--edge {
+  border-radius: 50%;
+  border-color: var(--shape-handle-edge-border);
+  background: var(--shape-handle-edge-bg);
+}
+
+.shape-bounding-box {
+  pointer-events: none;
+}
+
+/* Legacy single-handle used by the image overlay resize */
+.image-resize-handle {
+  width: 12px !important;
+  height: 12px !important;
+  background: white !important;
+  border: 2px solid #3b82f6 !important;
+  border-radius: 2px !important;
+  cursor: nwse-resize !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+  z-index: 1000 !important;
 }
 
 .leaflet-imagePane-pane img {
@@ -193,6 +234,27 @@
   display: flex;
   flex-direction: row;
   width: auto;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar .button-container,
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar a {
+  border-top: none !important;
+  border-bottom: none !important;
+  border-right: 1px solid #ccc;
+  border-radius: 0 !important;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :first-child,
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :first-child a {
+  border-top-left-radius: 4px !important;
+  border-bottom-left-radius: 4px !important;
+}
+
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :last-child,
+#map .leaflet-top.leaflet-left .leaflet-pm-toolbar > :last-child a {
+  border-right: none !important;
+  border-top-right-radius: 4px !important;
+  border-bottom-right-radius: 4px !important;
 }
 
 .timeline-container {
