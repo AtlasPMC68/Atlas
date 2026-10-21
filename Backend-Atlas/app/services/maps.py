@@ -1,9 +1,9 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.models.features import Feature
 from app.models.map import Map
 from app.models.project import Project
 
@@ -55,9 +55,6 @@ async def delete_map_in_db(
     map_obj = map_result.scalar_one_or_none()
     if not map_obj:
         return False
-
-    from sqlalchemy import delete
-    from app.models.features import Feature
 
     await db.execute(delete(Feature).where(Feature.map_id == map_id))
     await db.execute(delete(Map).where(Map.id == map_id))
