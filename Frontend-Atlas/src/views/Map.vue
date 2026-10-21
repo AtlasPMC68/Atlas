@@ -126,7 +126,7 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { getMapElementType, upsertFeature } from "../utils/featureHelpers";
+import { upsertFeature } from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,

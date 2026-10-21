@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, nextTick, toRef } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -402,11 +402,11 @@ const drawing = useMapDrawing(
 const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
 const cityMode = useAddCityMode({
   getMap: () => map,
-  selectedYear: toRef(props, "selectedYear"),
   localFeaturesSnapshot,
   cityInput,
   onCreated: (next) => emit('draw-create', next),
   onAfterCreate: () => renderAllFeatures(),
+  getProjectId: () => props.projectId,
 });
 const { addCityMode, pendingCity, cityInputName } = cityMode;
 const cancelAddCity = cityMode.cancel;

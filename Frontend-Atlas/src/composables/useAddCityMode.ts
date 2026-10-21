@@ -6,26 +6,26 @@ export type { PendingCity } from "../typescript/addCityMode";
 
 export function useAddCityMode({
   getMap,
-  selectedYear,
   localFeaturesSnapshot,
   cityInput,
   onCreated,
   onAfterCreate,
+  getProjectId,
 }: {
   getMap: () => L.Map | null;
-  selectedYear: Ref<number>;
   localFeaturesSnapshot: Ref<Feature[]>;
   cityInput: Ref<HTMLInputElement | null>;
   onCreated: (features: Feature[]) => void;
   onAfterCreate: () => void;
+  getProjectId: () => string;
 }) {
   const service = new AddCityModeService(
     getMap,
-    selectedYear,
     localFeaturesSnapshot,
     cityInput,
     onCreated,
     onAfterCreate,
+    getProjectId,
   );
   return service.createTools();
 }

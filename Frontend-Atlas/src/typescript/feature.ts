@@ -40,6 +40,7 @@ export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 export interface FeatureProperties {
   name: string;
   isVisible?: boolean;
+  show?: boolean; // set by the backend extraction (tasks.py); false hides the feature initially
   labelText?: string;
   sizePx?: number;
   colorName?: string;

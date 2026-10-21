@@ -29,8 +29,8 @@ ARG VITE_KEYCLOAK_CLIENT_ID
 ARG VITE_CARTO_API_KEY
 ARG VITE_ENABLE_DEV_TOOLS=false
 
-# TODO: switch back to `npm run build` once `vue-tsc -b` passes (type errors to fix)
-RUN npx vite build
+# Type check + build: a type error fails the image build
+RUN npm run build
 
 # Production stage: static files only, no Node at runtime
 FROM caddy:2.11.4-alpine AS production

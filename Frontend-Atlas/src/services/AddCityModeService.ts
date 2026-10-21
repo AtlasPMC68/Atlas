@@ -13,11 +13,11 @@ export class AddCityModeService {
 
   constructor(
     private getMap: () => L.Map | null,
-    private selectedYear: Ref<number>,
     private localFeaturesSnapshot: Ref<Feature[]>,
     private cityInput: Ref<HTMLInputElement | null>,
     private onCreated: (features: Feature[]) => void,
     private onAfterCreate: () => void,
+    private getProjectId: () => string,
   ) {}
 
   private resetState() {
@@ -48,6 +48,7 @@ export class AddCityModeService {
     const feature: Feature = {
       id,
       type: "Feature",
+      projectId: this.getProjectId(),
       mapId: "",
       geometry: {
         type: "Point",
@@ -59,18 +60,13 @@ export class AddCityModeService {
         colorName: "black",
         colorRgb: [0, 0, 0] as [number, number, number],
         strokeColor: [0, 0, 0] as [number, number, number],
-        opacity: 1,
         strokeWidth: 1,
         strokeOpacity: 1,
         mapElementType: "point",
-        startDate: `${this.selectedYear.value}-01-01`,
-        endDate: `${this.selectedYear.value}-12-31`,
       },
       createdAt: now,
       updatedAt: now,
       name,
-      opacity: 1,
-      strokeWidth: 1,
     };
     const next = upsertFeature(this.localFeaturesSnapshot.value, feature);
     this.localFeaturesSnapshot.value = next;
