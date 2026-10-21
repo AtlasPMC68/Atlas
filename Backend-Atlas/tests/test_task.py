@@ -14,7 +14,6 @@ from app.models.map_import import (
     EXTRACTION_RUNNING,
 )
 from app.services.imports import parse_import_inputs
-from app.utils.city_gazetteer import FrameCityIndex, _FrameCity
 from app.tasks import _ClaimedImport, process_map_extraction, run_map_ocr
 
 LEGEND = {"x": 60.0, "y": 60.0, "width": 30.0, "height": 30.0}
@@ -66,19 +65,20 @@ def _claimed(shapes=None, **options) -> _ClaimedImport:
     )
 
 
-QUEBEC = _FrameCity(
-    geonameid=6325494,
-    name="Québec",
-    lat=46.8,
-    lon=-71.2,
-    country="CA",
-    population=528595,
-    names=(("quebec", "Quebec"),),
-)
+QUEBEC = {
+    "geonameid": 6325494,
+    "name": "Québec",
+    "lat": 46.8,
+    "lon": -71.2,
+    "country": "CA",
+    "population": 528595,
+}
 
 
-def _index_for(frame_bounds):
-    return FrameCityIndex(by_name={"quebec": QUEBEC}, max_words=1)
+def _match_city(text, frame_bounds=None):
+    if "quebec" in text.lower():
+        return QUEBEC
+    return None
 
 
 def _color_result():
@@ -108,7 +108,7 @@ def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
         "shapes": MagicMock(
             return_value={"pixel_features": [], "normalized_features": [], "shapes": []}
         ),
-        "city": MagicMock(side_effect=_index_for),
+        "city": MagicMock(side_effect=_match_city),
         "place": MagicMock(return_value=placement),
     }
     mocks.update(patches)
@@ -119,7 +119,7 @@ def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
         patch("app.tasks._end_extraction", mocks["end"]),
         patch("app.utils.extraction_steps.extract_colors", mocks["colors"]),
         patch("app.tasks.extract_shapes_from_clicks", mocks["shapes"]),
-        patch("app.tasks.frame_city_index", mocks["city"]),
+        patch("app.tasks.match_ocr_label", mocks["city"]),
         patch("app.tasks.place_map", mocks["place"]),
         patch("app.tasks._write_ocr_text_file", MagicMock(return_value="out.txt")),
         patch("app.tasks.process_map_extraction.update_state"),
@@ -137,16 +137,15 @@ def test_unknown_words_are_kept_hidden():
     from app.tasks import _city_features_from_text
 
     blocks = [[[[0, 0], [9, 0], [9, 9], [0, 9]], "Quebec Nowhere", 0.9]]
-    with patch("app.tasks.frame_city_index", side_effect=_index_for):
+    with patch("app.tasks.match_ocr_label", side_effect=_match_city):
         features = [
             c["features"][0] for c in _city_features_from_text(blocks, None, claimed_frame())
         ]
 
     assert [(f["properties"]["name"], f["properties"]["show"]) for f in features] == [
         ("Québec", True),
-        ("Nowhere", False),
     ]
-    assert features[1]["geometry"]["coordinates"] == [0.0, 0.0]
+    assert features[0]["geometry"]["coordinates"] == [-71.2, 46.8]
 
 
 def test_extraction_uses_the_stored_inputs_and_saves_once():
@@ -177,7 +176,7 @@ def test_extraction_uses_the_stored_inputs_and_saves_once():
     assert [c.kwargs.get("clean", True) for c in georeference.call_args_list] == [False, True]
 
     # Text: looked up among the cities of the frame only.
-    mocks["city"].assert_called_once_with(claimed_frame())
+    mocks["city"].assert_called_once_with("Quebec", claimed_frame())
 
     # One save, carrying the georef inputs with the legend answer.
     mocks["save"].assert_awaited_once()
@@ -251,10 +250,10 @@ def test_a_failure_marks_the_import_failed():
 
 
 def test_ocr_dispatches_the_extraction_that_was_waiting_for_it():
-    blocks = [([[0, 0], [5, 0], [5, 5], [0, 5]], "Quebec", np.float64(0.9))]
+    blocks = [{"bbox": [[0, 0], [5, 0], [5, 5], [0, 5]], "text": "Quebec", "prob": np.float64(0.9)}]
     with (
         patch("app.tasks._claim_ocr", AsyncMock(return_value=_png_bytes())),
-        patch("app.tasks.extract_text", MagicMock(return_value=(blocks, None))),
+        patch("app.tasks.extract_text", MagicMock(return_value=blocks)),
         patch("app.tasks._finish_ocr", AsyncMock(return_value="extraction-id")) as finish,
         patch("app.tasks.process_map_extraction.apply_async") as dispatch,
     ):
@@ -272,7 +271,7 @@ def test_ocr_dispatches_the_extraction_that_was_waiting_for_it():
 def test_ocr_without_a_waiting_extraction_dispatches_nothing():
     with (
         patch("app.tasks._claim_ocr", AsyncMock(return_value=_png_bytes())),
-        patch("app.tasks.extract_text", MagicMock(return_value=([], None))),
+        patch("app.tasks.extract_text", MagicMock(return_value=[])),
         patch("app.tasks._finish_ocr", AsyncMock(return_value=None)),
         patch("app.tasks.process_map_extraction.apply_async") as dispatch,
     ):

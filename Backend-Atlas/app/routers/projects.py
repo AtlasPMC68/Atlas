@@ -3,7 +3,6 @@ import logging
 from pathlib import Path
 from uuid import UUID
 import json
-from uuid import UUID
 import base64
 import cv2
 import numpy as np
