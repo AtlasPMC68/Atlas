@@ -22,7 +22,7 @@ DEFAULT_OUTPUT_DIR = os.path.join(BASE_DIR, "..", "extracted_shapes")
 
 SIMPLE_BINARY_UNIQUE_LEVELS = 3
 MAX_SHAPE_IMAGE_AREA_RATIO = 0.5
-CONTOUR_APPROX_EPSILON_RATIO = 0.001
+CONTOUR_APPROX_EPSILON_RATIO = 0.002
 CIRCLE_MIN_RADIUS_PX = 2
 CIRCLE_MIN_STEPS = 32
 CIRCLE_MAX_STEPS = 360
@@ -339,6 +339,7 @@ def _build_normalized_feature_properties(shape: Dict, idx: int) -> Dict:
         "color_name": shape.get("color_name"),
         "color_hex": shape.get("color_hex"),
         "opacity": 0.5,
+        "fill_opacity": 0.5,
         "stroke_color": shape.get("color_rgb"),
         "stroke_width": 2,
         "stroke_opacity": 1.0,
@@ -361,6 +362,7 @@ def _build_pixel_feature_properties(shape: Dict, idx: int) -> Dict:
         "color_name": shape.get("color_name"),
         "color_hex": shape.get("color_hex"),
         "opacity": 0.5,
+        "fill_opacity": 0.5,
         "stroke_color": shape.get("color_rgb"),
         "stroke_width": 2,
         "stroke_opacity": 1.0,

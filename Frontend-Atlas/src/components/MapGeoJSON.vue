@@ -27,6 +27,7 @@ import "leaflet-arrowheads";
 import { useMapDrawing } from "../composables/useMapDrawing";
 import { useAddCityMode } from "../composables/useAddCityMode";
 import { useImageOverlay } from "../composables/useImageOverlay";
+import { useShapeScaling } from "../composables/useShapeScaling";
 import { colorRgbToCss, getMapElementType, upsertFeature, getDefaultLayer } from "../utils/featureHelpers";
 import {
   extractFeatureFromLayer,
@@ -419,6 +420,29 @@ const imageOverlay = useImageOverlay({
   onUpdate: (next) => emit('draw-update', next),
   }
 );
+
+const shapeScaling = useShapeScaling({
+  getMap: () => map,
+  getLayerById: (id) => featureLayerManager.layers.get(id),
+  localFeaturesSnapshot,
+  getProjectId: () => props.projectId,
+  getSelectedYear: () => props.selectedYear,
+  onBeforeEmit: () => { suppressNextPropsRender = true; },
+  onUpdate: (next) => emit('draw-update', next),
+});
+
+const isScalableFeature = (feature?: Feature | null): boolean => {
+  if (!feature) return false;
+  const type = getMapElementType(feature);
+  return type === "shape" || type === "zone" || type === "polyline";
+};
+
+const attachScalingIfEligible = (featureId: string) => {
+  const feature = localFeaturesSnapshot.value.find((f) => String(f.id) === featureId);
+  if (isScalableFeature(feature)) {
+    shapeScaling.attach(featureId);
+  }
+};
 
 function renderCities(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -892,13 +916,15 @@ function renderAllFeatures() {
     }
   });
 
-  // Re-attach image interaction if the selected feature was re-rendered
+  // Re-attach image / shape scaling interaction if the selected feature was re-rendered
   if (selectedFeatureId.value) {
     const selectedFeature = currentFeatures.find(
       (f) => String(f.id) === selectedFeatureId.value,
     );
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(selectedFeatureId.value);
+    } else if (isScalableFeature(selectedFeature)) {
+      shapeScaling.attach(selectedFeatureId.value);
     }
   }
 
@@ -1088,25 +1114,32 @@ onMounted(() => {
       disablePerFeatureDrag(selectedLayer);
       pixelSpaceDragCleanup?.();
       pixelSpaceDragCleanup = null;
+      shapeScaling.detach();
     } else {
       enablePerFeatureDrag(selectedLayer);
       if (map) pixelSpaceDragCleanup = enablePixelSpaceDrag(map, selectedLayer);
+      attachScalingIfEligible(selectedFeatureId.value);
     }
   });
+  map.on("pm:globalrotatemodetoggled", restorePmIgnore);
   map.on("pm:globalrotatemodetoggled", () => {
-    restorePmIgnore();
     const pm = (map as MapWithPm).pm;
     const isEnabled = pm?.globalRotateModeEnabled?.();
     if (isEnabled) {
       document.querySelectorAll('.label-selected').forEach(el => el.classList.add('label-rotate-mode'));
+      if (selectedFeatureId.value) shapeScaling.detach();
     } else {
       document.querySelectorAll('.label-rotate-mode').forEach(el => el.classList.remove('label-rotate-mode'));
+      if (selectedFeatureId.value) attachScalingIfEligible(selectedFeatureId.value);
     }
   });
 
   map.on("click", (e) => {
     if (blockNextMapClick) {
       blockNextMapClick = false;
+      return;
+    }
+    if (shapeScaling.isTransforming?.()) {
       return;
     }
     if (addCityMode.value) {
@@ -1165,6 +1198,7 @@ onBeforeUnmount(() => {
   selectedCityRing?.remove();
   pixelSpaceDragCleanup?.();
   imageOverlay.detach();
+  shapeScaling.detach();
   if (map) {
     featureLayerManager.clearAllFeatures();
     map.remove();
@@ -1301,8 +1335,11 @@ watch(selectedFeatureId, (id, oldId) => {
 
     // Attach/detach image overlay move+resize interaction
     imageOverlay.detach();
+    shapeScaling.detach();
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(id);
+    } else if (isScalableFeature(selectedFeature)) {
+      shapeScaling.attach(id);
     }
   } else {
     // Disable any active per-feature edit/rotate mode so geoman stops
@@ -1313,6 +1350,7 @@ watch(selectedFeatureId, (id, oldId) => {
     if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
     drawing.setToolbarMode("global");
     imageOverlay.detach();
+    shapeScaling.detach();
     document.querySelectorAll('.label-selected').forEach(el => el.classList.remove('label-selected'));
   }
 });
