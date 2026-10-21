@@ -370,7 +370,6 @@ import type { Component } from "vue";
 import {
   ChatBubbleLeftEllipsisIcon,
   MapIcon,
-  PencilIcon,
   PencilSquareIcon,
   PhotoIcon,
   Square2StackIcon,
@@ -435,7 +434,7 @@ const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
   point: ChatBubbleLeftEllipsisIcon,
   zone: MapIcon,
   shape: Square2StackIcon,
-  drawing: PencilIcon,
+  drawing: PencilSquareIcon,
   image: PhotoIcon,
 };
 
