@@ -294,6 +294,7 @@ async def upload_test(
     _user_id: str = Depends(get_current_user_id),
 ):
     """Create a dev test by saving the map image and metadata."""
+    # TODO OWASP A01:2025 [ÉLEVÉE] - Vérifier que cette mutation d'artefacts de test est réservée à un administrateur ou à un service dédié.
     if kind not in VALID_KINDS:
         raise HTTPException(
             status_code=400,
@@ -338,6 +339,7 @@ async def delete_test(
     _user_id: str = Depends(get_current_user_id),
 ):
     """Delete a dev test: image file, zones GeoJSON, and metadata entry."""
+    # TODO OWASP A01:2025 [ÉLEVÉE] - Vérifier que la suppression d'artefacts de test partagés est autorisée pour cet utilisateur et cet environnement.
     safe_map_id = _safe_id(map_id, "map_id")
 
     return delete_dev_test(safe_map_id)
@@ -361,6 +363,7 @@ async def delete_test_case(
     _user_id: str = Depends(get_current_user_id),
 ):
     """Delete a single test case of a given test (map) id."""
+    # TODO OWASP A01:2025 [ÉLEVÉE] - Vérifier que la suppression de cas de test partagés est réservée à un rôle autorisé.
     safe_test_id = _safe_id(test_id, "test_id")
     safe_test_case_id = _safe_id(test_case_id, "test_case_id")
 

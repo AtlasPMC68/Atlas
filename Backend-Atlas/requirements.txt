@@ -20,6 +20,7 @@ pydantic==2.12.5
 email-validator==2.3.0
 matplotlib==3.10.8
 --extra-index-url https://download.pytorch.org/whl/cpu
+# TODO OWASP A03:2025 [MOYENNE] - Évaluer le verrouillage des versions et l'intégrité des paquets ML provenant d'un index externe.
 torch
 torchvision
 easyocr

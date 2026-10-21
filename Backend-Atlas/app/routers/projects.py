@@ -227,6 +227,7 @@ async def get_project(
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
     """Get the status of a background task."""
+    # TODO OWASP A01:2025 [MOYENNE] - Vérifier que la tâche est liée à un projet accessible par l'utilisateur avant de retourner son état et ses résultats intermédiaires.
     task = celery_app.AsyncResult(task_id)
     response = {"task_id": task_id, "state": task.state}
 
@@ -259,6 +260,7 @@ async def get_processing_status(task_id: str):
 @router.get("/results/{task_id}")
 async def get_extraction_results(task_id: str):
     """Get extraction results only if completed"""
+    # TODO OWASP A01:2025 [MOYENNE] - Vérifier l'authentification et la propriété du projet associé avant de retourner les résultats ou détails d'échec.
     task = celery_app.AsyncResult(task_id)
 
     if task.state == "SUCCESS":

@@ -31,5 +31,5 @@ COPY .env.dev /app/app/.env.dev
 # Expose the default FastAPI port
 EXPOSE 8000
 
-# Default command to run the FastAPI app in development mode
+# TODO OWASP A02:2025 [MOYENNE] - Vérifier qu'un serveur de production sans reload et avec une configuration dédiée est utilisé hors développement.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -29,6 +29,7 @@ def verify_token(token: str):
             token,
             key,
             algorithms=["RS256"],
+            # TODO OWASP A07:2025 [MOYENNE] - Évaluer si la validation directe de l'audience API est requise en plus du contrôle azp pour ce modèle de jeton.
             options={"verify_aud": False}
         )
         if payload.get("azp") != os.getenv("KEYCLOAK_FRONT_END_CLIENT_ID"):
