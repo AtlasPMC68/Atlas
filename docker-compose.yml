@@ -23,8 +23,8 @@ services:
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ocr-data:/data
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       keycloak:
@@ -97,8 +97,8 @@ services:
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ocr-data:/data
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
@@ -167,7 +167,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./Backend-Atlas/db:/docker-entrypoint-initdb.d
     healthcheck:
       test:
         [
@@ -177,6 +176,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Applies new SQL files from Backend-Atlas/db once each, then exits.
+  # Backend and workers wait for it, so the schema is up to date before they start.
+  migrate:
+    image: postgres:17.11-trixie
+    restart: "no"
+    command: ["sh", "/migrations/migrate.sh"]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-atlas}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - ./Backend-Atlas/db:/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0.6
@@ -272,9 +288,12 @@ services:
       - path: .env
         required: false
     depends_on:
-      - db
-      - redis
-      - florence-worker
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      florence-worker:
+        condition: service_started
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests

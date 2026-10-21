@@ -241,6 +241,23 @@ This avoids Python dependency issues and broken imports that are unrelated to th
 
 ---
 
+### Changing the database schema
+
+Schema changes are SQL files in `Backend-Atlas/db/`, applied automatically by the `migrate` service on every `docker compose up` (locally and on the server). Each file runs once, in filename order, and is recorded in the `schema_migrations` table. **Never drop the volume to change the schema.**
+
+To add a change:
+
+1. Create a new file with the next number, e.g. `Backend-Atlas/db/06_add_user_display_name.sql`
+2. Write the change, for example `ALTER TABLE users ADD COLUMN display_name TEXT;`
+3. Run `docker compose up -d` (or deploy): only the new file is applied
+
+Rules:
+
+- **Never edit a file that was already applied**: databases that ran it will not see the change (`migrate` prints a warning). Write a new file instead.
+- Each file runs in a transaction: if it fails, nothing from it is kept, the backend does not start, and `docker compose logs migrate` shows the error.
+
+---
+
 ### CI/CD Pipeline & Tests
 
 To ensure reliability and consistency across the project, a Continuous Integration (CI) pipeline is configured to automatically run tests on every pull request to main.

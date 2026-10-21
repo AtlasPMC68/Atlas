@@ -92,5 +92,8 @@ services:
   db:
     logging: *default-logging
 
+  migrate:
+    logging: *default-logging
+
   keycloak-db:
     logging: *default-logging
