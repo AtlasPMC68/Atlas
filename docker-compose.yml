@@ -23,7 +23,18 @@ services:
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ocr-data:/data
     depends_on:
-      - keycloak
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
@@ -37,12 +48,19 @@ services:
       VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-atlas}
       VITE_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_FRONT_END_CLIENT_ID:-atlas-frontend}
       VITE_CARTO_API_KEY: ${VITE_CARTO_API_KEY:-}
+      VITE_ENABLE_DEV_TOOLS: ${ENABLE_DEV_TOOLS:-true}
     volumes:
       - ./Frontend-Atlas:/app
       - /app/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine
     container_name: atlas-redis
     restart: unless-stopped
     ports:
@@ -50,6 +68,11 @@ services:
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   celery-worker: &celery-worker-base
     build:
@@ -74,8 +97,10 @@ services:
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ocr-data:/data
     depends_on:
-      - redis
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
 
   celery-worker-ocr:
@@ -123,11 +148,15 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     command: celery -A app.celery_app flower --port=5555
 
   db:
-    image: postgis/postgis:latest
+    # Built locally: postgis/postgis has no ARM64 image (see docker/postgis/Dockerfile)
+    build:
+      context: ./docker/postgis
+    image: atlas-postgis:17
     container_name: atlas-db
     restart: unless-stopped
     ports:
@@ -139,6 +168,15 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./Backend-Atlas/db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-atlas}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0.6
@@ -156,7 +194,7 @@ services:
       KC_HTTP_ENABLED: true
       KC_HTTP_RELATIVE_PATH: /auth
       KC_PROXY_HEADERS: xforwarded
-      KC_HEALTH_ENABLED: false
+      KC_HEALTH_ENABLED: true
       KC_METRICS_ENABLED: false
       KC_LOG_LEVEL: WARN
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
@@ -168,9 +206,20 @@ services:
     depends_on:
       keycloak-db:
         condition: service_healthy
+    healthcheck:
+      # No curl in the Keycloak image; health lives on the internal management port 9000
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
 
   keycloak-db:
-    image: postgres:16
+    image: postgres:16.15
     container_name: atlas-keycloak-db
     restart: unless-stopped
     environment:
@@ -190,7 +239,7 @@ services:
       retries: 5
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.4-alpine
     container_name: atlas-caddy
     restart: unless-stopped
     ports:

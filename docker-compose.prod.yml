@@ -13,6 +13,8 @@ x-logging: &default-logging
 services:
   backend:
     # Run the code baked into the image: no bind mounts, no --reload
+    user: app
+    security_opt: [no-new-privileges:true]
     volumes: !reset []
     command:
       [
@@ -26,10 +28,14 @@ services:
     logging: *default-logging
 
   celery-worker:
+    user: app
+    security_opt: [no-new-privileges:true]
     volumes: !reset []
     logging: *default-logging
 
   flower:
+    user: app
+    security_opt: [no-new-privileges:true]
     volumes: !reset []
     logging: *default-logging
 
@@ -44,6 +50,8 @@ services:
         VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-atlas}
         VITE_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_FRONT_END_CLIENT_ID:-atlas-frontend}
         VITE_CARTO_API_KEY: ${VITE_CARTO_API_KEY:-}
+        VITE_ENABLE_DEV_TOOLS: "false"
+    security_opt: [no-new-privileges:true]
     volumes: !reset []
     logging: *default-logging
 

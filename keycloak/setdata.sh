@@ -73,17 +73,32 @@ else
   echo "Backend client created"
 fi
 
-# Add 'sub' mapper to frontend client
-echo "Adding 'sub' claim mapper to atlas-frontend..."
+# Protocol mappers on the frontend client (skipped when they already exist)
 FRONTEND_CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId=atlas-frontend --fields id | grep -oP '(?<="id" : ")[^"]*')
+
+mapper_exists() {
+  /opt/keycloak/bin/kcadm.sh get clients/"$FRONTEND_CLIENT_ID"/protocol-mappers/models -r atlas --fields name | grep -q "\"$1\""
+}
 
 if [ -n "$FRONTEND_CLIENT_ID" ]; then
   echo "Frontend client UUID: $FRONTEND_CLIENT_ID"
-  
-  # Create a User Property mapper for 'sub' claim
-  /opt/keycloak/bin/kcadm.sh create clients/$FRONTEND_CLIENT_ID/protocol-mappers/models -r atlas -s name=user-id-mapper -s protocol=openid-connect -s protocolMapper=oidc-usermodel-property-mapper -s 'config."user.attribute"=id' -s 'config."claim.name"=sub' -s 'config."jsonType.label"=String' -s 'config."id.token.claim"=true' -s 'config."access.token.claim"=true' -s 'config."userinfo.token.claim"=true'
-  
-  echo "Mapper 'sub' added to frontend client"
+
+  echo "Adding 'sub' claim mapper to atlas-frontend..."
+  if mapper_exists "user-id-mapper"; then
+    echo "Mapper 'sub' already exists"
+  else
+    /opt/keycloak/bin/kcadm.sh create clients/$FRONTEND_CLIENT_ID/protocol-mappers/models -r atlas -s name=user-id-mapper -s protocol=openid-connect -s protocolMapper=oidc-usermodel-property-mapper -s 'config."user.attribute"=id' -s 'config."claim.name"=sub' -s 'config."jsonType.label"=String' -s 'config."id.token.claim"=true' -s 'config."access.token.claim"=true' -s 'config."userinfo.token.claim"=true'
+    echo "Mapper 'sub' added to frontend client"
+  fi
+
+  # The backend checks aud=atlas-backend, so frontend tokens must carry it
+  echo "Adding 'atlas-backend' audience mapper to atlas-frontend..."
+  if mapper_exists "atlas-backend-audience"; then
+    echo "Audience mapper already exists"
+  else
+    /opt/keycloak/bin/kcadm.sh create clients/$FRONTEND_CLIENT_ID/protocol-mappers/models -r atlas -s name=atlas-backend-audience -s protocol=openid-connect -s protocolMapper=oidc-audience-mapper -s 'config."included.client.audience"=atlas-backend' -s 'config."access.token.claim"=true' -s 'config."id.token.claim"=false'
+    echo "Audience mapper added to frontend client"
+  fi
 else
   echo "Error: Could not find frontend client UUID"
 fi

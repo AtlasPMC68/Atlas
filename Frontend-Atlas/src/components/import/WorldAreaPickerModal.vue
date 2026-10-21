@@ -146,7 +146,7 @@ async function initMap(): Promise<void> {
 
     // Combine features from both GeoJSON files
     const combinedGeoJSON = {
-      type: "FeatureCollection",
+      type: "FeatureCollection" as const,
       features: [
         ...(coastlineGeoJSON.features || []),
         ...(lakesGeoJSON.features || []),
