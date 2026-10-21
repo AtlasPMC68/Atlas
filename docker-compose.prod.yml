@@ -15,7 +15,8 @@ services:
     # Run the code baked into the image: no bind mounts, no --reload
     user: app
     security_opt: [no-new-privileges:true]
-    volumes: !reset []
+    volumes: !override
+      - ocr-data:/data
     command:
       [
         "uvicorn", "app.main:app",
@@ -30,7 +31,23 @@ services:
   celery-worker:
     user: app
     security_opt: [no-new-privileges:true]
-    volumes: !reset []
+    # Code from the image; keep only the OCR files shared with florence-worker
+    volumes: !override
+      - ocr-data:/data
+    logging: *default-logging
+
+  celery-worker-ocr:
+    user: app
+    security_opt: [no-new-privileges:true]
+    volumes: !override
+      - ocr-data:/data
+    logging: *default-logging
+
+  florence-worker:
+    # Already runs as appuser (uid 1000); code and model are baked into the image
+    security_opt: [no-new-privileges:true]
+    volumes: !override
+      - ocr-data:/data
     logging: *default-logging
 
   flower:
