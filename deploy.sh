@@ -209,13 +209,33 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# 6. Build and Launch Containers
+# 6. Back Up the Database (rollback point if the new version breaks something)
+# ------------------------------------------------------------------------------
+BACKUP_DIR="$PROJECT_DIR/backups"
+KEEP_BACKUPS=7
+
+if [ -n "$(docker compose ps -q --status running db 2>/dev/null)" ]; then
+    mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+    # The commit in the name tells which code version this data belongs to
+    BACKUP_FILE="$BACKUP_DIR/atlas-$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).sql.gz"
+    echo "[INFO] Backing up the database to $BACKUP_FILE..."
+    # Credentials come from the container's own environment; a failed dump stops the deploy
+    docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+        | gzip > "$BACKUP_FILE.tmp"
+    mv "$BACKUP_FILE.tmp" "$BACKUP_FILE"
+    ls -1t "$BACKUP_DIR"/atlas-*.sql.gz | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm --
+else
+    echo "[INFO] Database not running yet (first deploy), skipping backup."
+fi
+
+# ------------------------------------------------------------------------------
+# 7. Build and Launch Containers
 # ------------------------------------------------------------------------------
 echo "[INFO] Building and starting Docker containers..."
 docker compose up -d --build --remove-orphans
 
 # ------------------------------------------------------------------------------
-# 7. Deployment Summary
+# 8. Deployment Summary
 # ------------------------------------------------------------------------------
 echo "================================================================================"
 echo "[SUCCESS] Atlas deployment completed successfully."

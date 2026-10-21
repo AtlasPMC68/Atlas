@@ -256,6 +256,34 @@ Rules:
 - **Never edit a file that was already applied**: databases that ran it will not see the change (`migrate` prints a warning). Write a new file instead.
 - Each file runs in a transaction: if it fails, nothing from it is kept, the backend does not start, and `docker compose logs migrate` shows the error.
 
+### Rolling back a bad deploy
+
+Before starting the new version, `deploy.sh` dumps the database to `backups/atlas-<date>-<commit>.sql.gz` (the 7 latest are kept). The commit in the name is the code version that was running when the dump was taken.
+
+**The new code is broken but the data is fine** (most cases): go back to the previous commit and redeploy.
+
+```bash
+git log --oneline -5             # find the last good commit
+git checkout <good-commit>
+./deploy.sh
+# once fixed on the branch: git checkout <branch> && git pull && ./deploy.sh
+```
+
+**A migration failed**: nothing to restore, it was rolled back. Fix the SQL file and redeploy.
+
+**The new version damaged the data**: restore the dump taken just before it. Anything written since that dump is lost.
+
+```bash
+ls -1t backups/                  # newest first; pick the dump taken before the bad deploy
+docker compose stop backend celery-worker celery-worker-ocr
+git checkout <commit-from-the-dump-name>
+docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+gunzip -c backups/<dump>.sql.gz | docker compose exec -T db sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"'
+./deploy.sh
+```
+
+The dumps live on the same VM as the database: they protect against a bad deploy, not against losing the VM. Copy one elsewhere (`scp`) before risky changes.
+
 ---
 
 ### CI/CD Pipeline & Tests
