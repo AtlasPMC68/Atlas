@@ -4,7 +4,12 @@ services:
       context: ./Backend-Atlas
     container_name: atlas-backend
     env_file:
-      - .env
+      # Team convention (Backend-Atlas/.env.dev) first, root .env (deploy.sh) overrides it.
+      # Both optional so CI and fresh clones work with only one of them.
+      - path: ./Backend-Atlas/.env.dev
+        required: false
+      - path: .env
+        required: false
     environment:
       KEYCLOAK_URL: ${INTERNAL_KEYCLOAK_URL:-http://keycloak:8080/auth}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost/auth/realms/atlas}
@@ -16,7 +21,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./.env:/app/.env.dev
+      - ocr-data:/data
     depends_on:
       - keycloak
 
@@ -46,22 +51,59 @@ services:
       - redis-data:/data
     command: redis-server --appendonly yes
 
-  celery-worker:
+  celery-worker: &celery-worker-base
     build:
       context: ./Backend-Atlas
     container_name: atlas-celery-worker
     restart: unless-stopped
     env_file:
-      - .env
+      # Team convention (Backend-Atlas/.env.dev) first, root .env (deploy.sh) overrides it.
+      # Both optional so CI and fresh clones work with only one of them.
+      - path: ./Backend-Atlas/.env.dev
+        required: false
+      - path: .env
+        required: false
+    environment:
+      # Per-run georeferencing diagnostics -> ./Backend-Atlas/debug_runs
+      # One folder per import: overlays, edge maps, gates, summary.txt.
+      GEOREF_DEBUG: "false"
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/debug_runs:/app/debug_runs
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./.env:/app/.env.dev
+      - ocr-data:/data
     depends_on:
       - redis
       - db
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
+
+  celery-worker-ocr:
+    <<: *celery-worker-base
+    container_name: atlas-celery-worker-ocr
+    command: celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h
+
+  florence-worker:
+    build:
+      context: ./Backend-Atlas/ocr-florence
+      args:
+        UID: ${UID:-1000}
+    container_name: atlas-florence-worker
+    restart: unless-stopped
+    env_file:
+      # Team convention (Backend-Atlas/.env.dev) first, root .env (deploy.sh) overrides it.
+      # Both optional so CI and fresh clones work with only one of them.
+      - path: ./Backend-Atlas/.env.dev
+        required: false
+      - path: .env
+        required: false
+    environment:
+      SAVE_PREPROCESSED_IMAGES: "false"
+    volumes:
+      - ocr-data:/data
+      - ./Backend-Atlas/ocr-florence:/app/ocr-florence
+    depends_on:
+      - redis
 
   flower:
     build:
@@ -71,11 +113,15 @@ services:
     ports:
       - "127.0.0.1:5555:5555"
     env_file:
-      - .env
+      # Team convention (Backend-Atlas/.env.dev) first, root .env (deploy.sh) overrides it.
+      # Both optional so CI and fresh clones work with only one of them.
+      - path: ./Backend-Atlas/.env.dev
+        required: false
+      - path: .env
+        required: false
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./.env:/app/.env.dev
     depends_on:
       - redis
     command: celery -A app.celery_app flower --port=5555
@@ -166,23 +212,50 @@ services:
     profiles: [test]
     build:
       context: ./Backend-Atlas
-    command: pytest tests/ -v --color=yes --tb=short
+    command: pytest tests/ -m "integration"
+    environment:
+      ENABLE_DEV_TOOLS: "true"  # tests cover the dev-test API routes
+    env_file:
+      # Team convention (Backend-Atlas/.env.dev) first, root .env (deploy.sh) overrides it.
+      # Both optional so CI and fresh clones work with only one of them.
+      - path: ./Backend-Atlas/.env.dev
+        required: false
+      - path: .env
+        required: false
     depends_on:
-      - backend
       - db
       - redis
+      - florence-worker
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/pytest.ini:/app/pytest.ini
+      - ./Backend-Atlas/scripts:/app/scripts
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ./.env:/app/.env.dev
+      - ocr-data:/data
+
+  # Fast georeferencing loop: no broker, no database, no pytest collection, and
+  # colour extraction cached between runs. See scripts/run_georef_alignment.py.
+  georef-dev:
+    profiles: [tools]  # on demand only: docker compose run --rm georef-dev
+    build:
+      context: ./Backend-Atlas
+    command: python scripts/run_georef_alignment.py
+    volumes:
+      - ./Backend-Atlas/app:/app/app
+      - ./Backend-Atlas/tests:/app/tests
+      - ./Backend-Atlas/scripts:/app/scripts
+      - ./Backend-Atlas/.georef_cache:/app/.georef_cache
+      - ./Backend-Atlas/ablations:/app/ablations
+      - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ocr-data:/data
 
   test-frontend:
     profiles: [test]
     build:
       context: ./Frontend-Atlas
       target: development
-    command: npm test
+    command: npm run test:ci
     volumes:
       - ./Frontend-Atlas:/app
       - /app/node_modules
@@ -193,3 +266,4 @@ volumes:
   keycloak-data:
   caddy-data:
   caddy-config:
+  ocr-data:

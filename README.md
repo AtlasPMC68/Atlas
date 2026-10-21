@@ -172,6 +172,75 @@ How it works:
 
 ---
 
+### Testing the project
+
+For this project, tests must be run inside Docker. This is the supported and reliable way to validate the backend and frontend.
+
+#### Start the project
+
+```sh
+# Start all services (Backend, Frontend, Workers, PostgreSQL, Redis)
+docker compose up -d
+
+# Check service health (everything goes through Caddy on port 80)
+curl http://localhost/api/ping
+```
+
+### Services
+
+- **Frontend**: http://localhost
+- **Backend API**: http://localhost/api
+- **Keycloak**: http://localhost/auth
+- **Celery Monitoring (Flower)**: http://localhost:5555
+- **PostgreSQL**: localhost:5432
+- **Redis**: localhost:6379
+
+Flower, PostgreSQL and Redis only listen on `127.0.0.1`, so they are not reachable from other machines.
+
+---
+
+## Testing
+
+### To rebuild everything
+
+```sh
+docker compose down -v ; docker compose build --no-cache ; docker compose up -d
+
+```
+
+All tests must run inside Docker:
+
+```sh
+# Run all backend tests
+docker compose run --rm test-backend pytest -q
+```
+
+#### Run a specific test file
+
+```sh
+docker compose run --rm test-backend pytest tests/test_extraction_text.py -q
+```
+
+#### Run a test with more details
+
+```sh
+docker compose exec test-backend pytest tests/test_extraction_text.py -q -vv
+```
+
+#### Run the frontend tests
+
+```sh
+docker compose exec frontend npm run test -- --run
+```
+
+#### Important rule
+
+Do not run pytest directly on the local machine to validate this project. The correct workflow is to use Docker, where the project environment is configured correctly.
+
+This avoids Python dependency issues and broken imports that are unrelated to the code being tested.
+
+---
+
 ### CI/CD Pipeline & Tests
 
 To ensure reliability and consistency across the project, a Continuous Integration (CI) pipeline is configured to automatically run tests on every pull request to main.
@@ -244,3 +313,4 @@ docker compose build
 - The CI/CD configuration is managed in .github/workflows/ci.yml
 - Docker images used for testing are the same as in production to ensure reliability
 - Test feedback will show directly in your PR — no manual test launching needed
+

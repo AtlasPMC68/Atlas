@@ -18,8 +18,79 @@
     </div>
 
     <div v-else class="space-y-2 text-xs text-base-content/70">
-      <p>
-        Dessine un ou plusieurs traits sur la carte. Les extrémités des
+      <!-- A border loaded from the border files (Natural Earth, geoBoundaries)
+           is the zone: no tracing. It can then be cut, for a map that only
+           shows part of the country or region. -->
+      <fieldset
+        v-if="hasLoadedZone"
+        class="fieldset bg-base-100 border border-info rounded-box px-3 pb-3 space-y-1"
+      >
+        <legend class="fieldset-legend text-info">
+          Frontière chargée : {{ loadedZoneLabel }}
+        </legend>
+        <p v-if="isCutting" class="text-[11px] text-warning">
+          Dessine sur la carte le polygone à retirer (clic par clic, puis clic
+          sur le premier point pour fermer). Échap pour annuler.
+        </p>
+        <p v-else class="text-[11px]">
+          Si la carte ne montre qu'une partie de cette zone, découpe ce qui
+          dépasse de la carte.
+        </p>
+        <div class="flex gap-1">
+          <button
+            class="btn btn-xs btn-outline flex-1"
+            type="button"
+            :disabled="isCutting"
+            @click="$emit('start-cut')"
+          >
+            Découper une partie
+          </button>
+          <button
+            class="btn btn-xs btn-ghost"
+            type="button"
+            :disabled="!canUndoCut || isCutting"
+            title="Annuler la dernière découpe"
+            aria-label="Annuler la dernière découpe"
+            @click="$emit('undo-cut')"
+          >
+            <ArrowUturnLeftIcon class="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <button
+          class="btn btn-xs btn-ghost w-full"
+          type="button"
+          :disabled="isCutting"
+          @click="$emit('clear-loaded')"
+        >
+          Retirer la frontière chargée
+        </button>
+      </fieldset>
+
+      <!-- daisyUI collapse; overflow-visible so the country dropdown can float
+           past the bottom edge instead of being clipped by it. The collapse is
+           its own stacking context (isolation: isolate), so the dropdown's
+           z-index only counts inside it: z-20 lifts the whole collapse above
+           what follows, the zone name input included. -->
+      <div
+        v-else
+        class="collapse collapse-arrow bg-base-100 border border-base-300 overflow-visible relative z-20"
+        :class="borderPickerOpen ? 'collapse-open' : 'collapse-close'"
+      >
+        <div
+          class="collapse-title text-xs font-semibold min-h-0 py-2 cursor-pointer"
+          role="button"
+          :aria-expanded="borderPickerOpen"
+          @click="borderPickerOpen = !borderPickerOpen"
+        >
+          Charger une frontière (pays, région)
+        </div>
+        <div class="collapse-content px-2">
+          <BorderPicker @loaded="(zone) => $emit('border-loaded', zone)" />
+        </div>
+      </div>
+
+      <p v-if="!hasLoadedZone">
+        Ou dessine un ou plusieurs traits sur la carte. Les extrémités des
         traits se collent automatiquement si elles sont proches.
       </p>
 
@@ -36,6 +107,7 @@
       </label>
 
       <div class="space-y-2">
+        <template v-if="!hasLoadedZone">
         <button
           class="btn btn-xs btn-outline w-full"
           type="button"
@@ -67,6 +139,7 @@
             />
           </label>
         </div>
+        </template>
 
         <p v-if="subzoneCount > 0" class="text-[11px] text-info">
           Sous-zones ajoutées : {{ subzoneCount }}
@@ -105,7 +178,7 @@
       </div>
 
       <p v-if="pendingCreateGeometry" class="text-[11px] text-success">
-        Contour fermé — prêt à enregistrer.
+        {{ hasLoadedZone ? "Zone prête à enregistrer." : "Contour fermé — prêt à enregistrer." }}
       </p>
       <p v-else class="text-[11px] text-warning">
         Le contour doit revenir près de son point de départ pour pouvoir
@@ -116,16 +189,29 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { ArrowUturnLeftIcon } from "@heroicons/vue/24/outline";
+import type { LoadedBorderZone } from "../../typescript/devTest";
+import BorderPicker from "./BorderPicker.vue";
 
-const props = defineProps<{
-  isCreateMode: boolean;
-  zoneName: string;
-  pendingCreateGeometry: any | null;
-  isFrontierMode: boolean;
-  isGeoBorderMode: boolean;
-  subzoneCount: number;
-}>();
+const props = withDefaults(
+  defineProps<{
+    isCreateMode: boolean;
+    zoneName: string;
+    pendingCreateGeometry: any | null;
+    isFrontierMode: boolean;
+    isGeoBorderMode: boolean;
+    subzoneCount: number;
+    // A border loaded from the border files is the pending zone.
+    hasLoadedZone?: boolean;
+    loadedZoneLabel?: string;
+    isCutting?: boolean;
+    canUndoCut?: boolean;
+  }>(),
+  { hasLoadedZone: false, loadedZoneLabel: "", isCutting: false, canUndoCut: false },
+);
+
+const borderPickerOpen = ref(true);
 
 const emit = defineEmits<{
   (e: "update:zoneName", value: string): void;
@@ -136,6 +222,10 @@ const emit = defineEmits<{
   (e: "toggle-geo-border"): void;
   (e: "save-zone"): void;
   (e: "add-subzone"): void;
+  (e: "border-loaded", zone: LoadedBorderZone): void;
+  (e: "start-cut"): void;
+  (e: "undo-cut"): void;
+  (e: "clear-loaded"): void;
 }>();
 
 function onNameInput(event: Event) {
@@ -156,7 +246,7 @@ const canSaveZone = computed(
 
 const addSubzoneTitle = computed(() => {
   if (canAddSubzone.value) return "";
-  return "Dessine un contour fermé pour pouvoir ajouter une sous-zone";
+  return "Dessine un contour fermé ou charge une frontière pour pouvoir ajouter une sous-zone";
 });
 
 const saveZoneTitle = computed(() => {

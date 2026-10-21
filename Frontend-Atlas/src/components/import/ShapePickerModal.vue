@@ -6,6 +6,7 @@
     :confirm-label="`Confirmer les formes (${pickedShapes.length})`"
     :is-confirm-disabled="pickedShapes.length === 0"
     show-skip
+    skip-label="Aucune forme"
     @close="emit('close')"
     @skip="emit('skip')"
     @confirm="onConfirm"
@@ -90,8 +91,9 @@
             </div>
             <!-- Coords -->
             <span class="text-xs font-mono text-base-content/50 w-32 shrink-0">
-              x={{ (shape.normalizedX * 100).toFixed(1) }}%
-              y={{ (shape.normalizedY * 100).toFixed(1) }}%
+              x={{ (shape.normalizedX * 100).toFixed(1) }}% y={{
+                (shape.normalizedY * 100).toFixed(1)
+              }}%
             </span>
             <!-- Editable name -->
             <input
@@ -113,7 +115,8 @@
       </div>
 
       <p v-else class="text-sm text-base-content/50 italic">
-        Aucune forme sélectionnée — cliquez sur la carte pour ajouter des formes.
+        Aucune forme sélectionnée — cliquez sur la carte pour ajouter des
+        formes.
       </p>
     </template>
   </BasePickerModal>
@@ -124,6 +127,7 @@ import { ref, computed, nextTick } from "vue";
 import BasePickerModal from "./BasePickerModal.vue";
 import ZoomableImageContainer from "./ZoomableImageContainer.vue";
 import { useZoomableStage } from "../../composables/useZoomableStage";
+import type { ImposedShape } from "../../typescript/importSession";
 
 const MARKER_SIZE_PX = 22;
 const MAX_SHAPE_CLICKS = 50;
@@ -136,18 +140,20 @@ interface PickedShape {
   name: string;
 }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     isOpen: boolean;
     imageUrl: string;
+    // Clicks confirmed earlier, restored when the user comes back to this step
+    initialShapes?: ImposedShape[];
   }>(),
-  { isOpen: false },
+  { isOpen: false, initialShapes: () => [] },
 );
 
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "skip"): void;
-  (e: "confirmed", shapes: { x: number; y: number; name: string }[]): void;
+  (e: "confirmed", shapes: ImposedShape[]): void;
 }>();
 
 const container = ref<HTMLDivElement | null>(null);
@@ -178,6 +184,21 @@ const {
 });
 
 const pickedShapes = ref<PickedShape[]>([]);
+// Restored clicks need the rendered image size to be placed, so they wait for it.
+let restorePending = true;
+
+function restoreInitialShapes() {
+  const stage = baseStage.value;
+  if (!stage) return;
+  restorePending = false;
+  pickedShapes.value = props.initialShapes.map((s) => ({
+    stageX: s.x * stage.renderedW,
+    stageY: s.y * stage.renderedH,
+    normalizedX: s.x,
+    normalizedY: s.y,
+    name: s.name,
+  }));
+}
 
 const isPointerDown = ref(false);
 const hasDragged = ref(false);
@@ -185,9 +206,6 @@ const pointerStart = ref({ x: 0, y: 0 });
 const panStart = ref({ x: 0, y: 0 });
 
 const containerCursorClass = computed(() => {
-  if (zoom.value > 1) {
-    return isPointerDown.value ? "cursor-grabbing" : "cursor-grab";
-  }
   return "cursor-crosshair";
 });
 
@@ -203,12 +221,17 @@ function stageToContainerY(stageY: number) {
 
 function onModalOpened() {
   pickedShapes.value = [];
+  restorePending = true;
   resetView();
-  nextTick(() => updateBaseStage());
+  nextTick(() => {
+    updateBaseStage();
+    if (restorePending) restoreInitialShapes();
+  });
 }
 
 function onImageLoad() {
   updateBaseStage();
+  if (restorePending) restoreInitialShapes();
 }
 
 function resetZoom() {

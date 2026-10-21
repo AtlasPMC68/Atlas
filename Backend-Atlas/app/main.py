@@ -1,4 +1,9 @@
 import os
+import logging
+
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6,9 +11,20 @@ from fastapi.staticfiles import StaticFiles
 from .routers import celery_router
 from .routers import auth
 from .routers import dev_test
+from .routers import imports
 from .routers import projects
 from .routers import user
 from .utils.dev_test_assets import GEOREF_ASSETS_DIR, ensure_georef_assets_dir
+
+# The dev-test tool: its API routes (run, edit and delete test cases) and its
+# static files. Off unless enabled: docker-compose.yml sets ENABLE_DEV_TOOLS=true
+# for local development, docker-compose.prod.yml sets it to false.
+ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 app = FastAPI(
     title="Maps Processing API",
@@ -17,11 +33,9 @@ app = FastAPI(
 )
 app.include_router(celery_router.router)
 app.include_router(projects.router)
+app.include_router(imports.router)
 app.include_router(auth.router)
 app.include_router(user.router)
-
-# Georef dev-test harness: never expose it on a public deployment
-ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "false").lower() == "true"
 if ENABLE_DEV_TOOLS:
     app.include_router(dev_test.router)
 

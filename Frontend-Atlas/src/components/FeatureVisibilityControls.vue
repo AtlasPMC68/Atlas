@@ -46,7 +46,7 @@
               :key="mapGroup.id || 'general'"
               class="flex flex-col gap-2"
             >
-              <div class="flex items-center justify-between rounded">
+              <div class="flex items-center justify-between rounded group">
                 <label
                   class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 p-0"
                 >
@@ -65,15 +65,24 @@
                     {{ mapGroup.title }}
                   </span>
                 </label>
+                <div class="flex items-center gap-1" v-if="mapGroup.id !== null">
+                  <button
+                    class="flex h-8 w-8 items-center justify-center"
+                    @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)"
+                    title="Supprimer la carte"
+                  >
+                    <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
+                  </button>
+                </div>
               </div>
-              <div class="flex flex-col gap-2 pl-2">
+              <div class="flex flex-col gap-2">
                 <div
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
                   class="flex w-full flex-row items-center justify-between gap-2"
                 >
                   <label
-                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0"
+                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0 pl-4"
                   >
                     <input
                       type="checkbox"
@@ -91,13 +100,21 @@
                       {{ feature.properties?.name || "Élément sans nom" }}
                     </span>
                   </label>
-                  <div class="flex h-8 w-8 items-center gap-1 mr-1">
-                    <button @click="showEditFeatureDialog(feature)">
+                  <div class="flex items-center gap-1">
+                    <button
+                      class="flex h-8 w-8 items-center justify-center"
+                      @click="showEditFeatureDialog(feature)"
+                      title="Modifier l'élément"
+                    >
                       <PencilSquareIcon
                         class="w-5 h-5 text-gray-500 hover:text-gray-800"
                       />
                     </button>
-                    <button @click="emit('delete-feature', feature.id)">
+                    <button
+                      class="flex h-8 w-8 items-center justify-center"
+                      @click="showDeleteFeatureDialog(feature)"
+                      title="Supprimer l'élément"
+                    >
                       <TrashIcon
                         class="w-5 h-5 text-red-500 hover:text-red-800"
                       />
@@ -126,6 +143,7 @@
             Ajouter une carte
           </button>
         </div>
+
         <div class="flex gap-2 items-center">
           <button
             class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
@@ -186,8 +204,9 @@
         <div
           class="flex gap-2"
           v-if="
-            featureToEdit.properties.fillOpacity !== undefined ||
-            featureToEdit.properties.strokeOpacity !== undefined
+            !isEditingLabel &&
+            (featureToEdit.properties.fillOpacity !== undefined ||
+              featureToEdit.properties.strokeOpacity !== undefined)
           "
         >
           <div
@@ -211,7 +230,7 @@
         </div>
         <div
           class="flex flex-col gap-2 w-full"
-          v-if="featureToEdit.properties.strokeWidth !== undefined"
+          v-if="!isEditingLabel && featureToEdit.properties.strokeWidth !== undefined"
         >
           <label class="label">Épaisseur du contour</label>
           <input
@@ -226,7 +245,7 @@
         >
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.colorRgb !== undefined"
+            v-if="featureToEdit.properties.colorRgb !== undefined || isEditingLabel || getMapElementType(featureToEdit) === 'point'"
           >
             <label class="label">Couleur :</label>
             <input
@@ -237,7 +256,7 @@
           </div>
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.strokeColor !== undefined && featureToEdit.properties.mapElementType !== 'label'"
+            v-if="featureToEdit.properties.strokeColor !== undefined && !isEditingLabel"
           >
             <label class="label">Couleur du contour :</label>
             <input
@@ -273,15 +292,84 @@
       <button :disabled="isEditing">close</button>
     </form>
   </dialog>
+
+  <!-- Delete map confirmation dialog -->
+  <dialog ref="deleteMapDialogRef" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Supprimer la carte</h3>
+      <p class="py-4">
+        Êtes-vous sûr de vouloir supprimer la carte
+        <span class="font-semibold">{{ mapToDeleteTitle }}</span> ainsi que tous ses éléments ?
+        Cette action est irréversible.
+      </p>
+      <div class="modal-action">
+        <button
+          class="btn"
+          :disabled="isDeletingMap"
+          @click="deleteMapDialogRef?.close()"
+        >
+          Annuler
+        </button>
+        <button
+          class="btn btn-error"
+          :disabled="isDeletingMap"
+          @click="onDeleteMap"
+        >
+          <span
+            v-if="isDeletingMap"
+            class="loading loading-spinner loading-xs"
+          ></span>
+          <span v-else class="text-white">Supprimer</span>
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isDeletingMap">close</button>
+    </form>
+  </dialog>
+
+  <!-- Delete feature confirmation dialog -->
+  <dialog ref="deleteFeatureDialogRef" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Supprimer l'élément</h3>
+      <p class="py-4">
+        Êtes-vous sûr de vouloir supprimer
+        <span class="font-semibold">{{ featureToDeleteName }}</span> ?
+        Cette action est irréversible.
+      </p>
+      <div class="modal-action">
+        <button
+          class="btn"
+          :disabled="isDeletingFeature"
+          @click="deleteFeatureDialogRef?.close()"
+        >
+          Annuler
+        </button>
+        <button
+          class="btn btn-error"
+          :disabled="isDeletingFeature"
+          @click="onDeleteFeature"
+        >
+          <span
+            v-if="isDeletingFeature"
+            class="loading loading-spinner loading-xs"
+          ></span>
+          <span v-else class="text-white">Supprimer</span>
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button :disabled="isDeletingFeature">close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import type { Component } from "vue";
 import {
-  EllipsisHorizontalIcon,
+  ChatBubbleLeftEllipsisIcon,
   MapIcon,
-  MapPinIcon,
   PencilSquareIcon,
   PhotoIcon,
   Square2StackIcon,
@@ -313,6 +401,20 @@ const featureToEditStrokeColor = ref<string | undefined>(undefined);
 const featureToEditOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+const isEditingLabel = computed(() => {
+  if (!featureToEdit.value) return false;
+  return getMapElementType(featureToEdit.value) === "label";
+});
+
+const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+const mapToDeleteId = ref<string | null>(null);
+const mapToDeleteTitle = ref<string>("");
+const isDeletingMap = ref(false);
+
+const deleteFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+const featureToDeleteId = ref<string | null>(null);
+const featureToDeleteName = ref<string>("");
+const isDeletingFeature = ref(false);
 
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
 
@@ -323,25 +425,26 @@ const emit = defineEmits([
   "open-add-image-feature-dialog",
   "save-map",
   "delete-feature",
+  "delete-map",
   "add-map",
   "update-feature",
 ]);
 
 const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
-  point: MapPinIcon,
+  point: ChatBubbleLeftEllipsisIcon,
   zone: MapIcon,
   shape: Square2StackIcon,
-  other: EllipsisHorizontalIcon,
+  drawing: PencilSquareIcon,
   image: PhotoIcon,
 };
 
 const featureGroups = computed(() => {
   const groups: FeatureVisibilityGroup[] = [
-    { type: "point", label: "Ville(s)", features: [] as Feature[] },
+    { type: "point", label: "Texte", features: [] as Feature[] },
     { type: "zone", label: "Zone(s)", features: [] as Feature[] },
     { type: "shape", label: "Forme(s)", features: [] as Feature[] },
     { type: "image", label: "Image(s)", features: [] as Feature[] },
-    { type: "other", label: "Autre(s)", features: [] as Feature[] },
+    { type: "drawing", label: "Dessins", features: [] as Feature[] },
   ];
 
   props.features.forEach((feature: Feature) => {
@@ -349,15 +452,14 @@ const featureGroups = computed(() => {
     if (!featureType) return;
 
     const targetGroup = groups.find((currentGroup) => {
-      if (
-        featureType === "label" ||
-        featureType === "polyline" ||
-        featureType === "arrow"
-      ) {
-        return currentGroup.type === "other";
+      if (featureType === "label" || featureType === "point") {
+        return currentGroup.type === "point";
+      }
+      if (featureType === "polyline" || featureType === "arrow") {
+        return currentGroup.type === "drawing";
       }
       return currentGroup.type === featureType;
-    });
+    }) ?? groups.find((currentGroup) => currentGroup.type === "drawing");
 
     if (targetGroup) targetGroup.features.push(feature);
   });
@@ -485,7 +587,9 @@ async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
   featureToEditName.value = feature.properties.name;
   featureToEditLabelText.value = feature.properties.labelText;
-  featureToEditColor.value = rgbToHex(feature.properties.colorRgb);
+  featureToEditColor.value =
+    rgbToHex(feature.properties.colorRgb) ??
+    (getMapElementType(feature) === "label" || getMapElementType(feature) === "point" ? "#000000" : undefined);
   featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
   featureToEditOpacity.value = feature.properties.fillOpacity;
   featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
@@ -498,6 +602,7 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
+  const isLabel = isEditingLabel.value;
   const updatedFeature: Feature = {
     ...featureToEdit.value,
     properties: {
@@ -505,10 +610,10 @@ async function onEditFeature() {
       name: featureToEditName.value,
       labelText: featureToEditLabelText.value,
       colorRgb: hexToRgb(featureToEditColor.value),
-      strokeColor: hexToRgb(featureToEditStrokeColor.value),
-      fillOpacity: featureToEditOpacity.value,
-      strokeOpacity: featureToEditStrokeOpacity.value,
-      strokeWidth: featureToEditStrokeWidth.value,
+      strokeColor: isLabel ? undefined : hexToRgb(featureToEditStrokeColor.value),
+      fillOpacity: isLabel ? undefined : featureToEditOpacity.value,
+      strokeOpacity: isLabel ? undefined : featureToEditStrokeOpacity.value,
+      strokeWidth: isLabel ? undefined : featureToEditStrokeWidth.value,
     },
   };
 
@@ -532,4 +637,52 @@ function toggleAll(visible: boolean) {
     emit("toggle-feature", feature.id, visible);
   });
 }
+
+function showDeleteMapDialog(mapId: string, mapTitle: string) {
+  mapToDeleteId.value = mapId;
+  mapToDeleteTitle.value = mapTitle;
+  deleteMapDialogRef.value?.showModal();
+}
+
+async function onDeleteMap() {
+  if (!mapToDeleteId.value) return;
+  isDeletingMap.value = true;
+  emit("delete-map", mapToDeleteId.value, {
+    onSuccess: () => {
+      showAlert("success", "Carte supprimée avec succès !");
+      isDeletingMap.value = false;
+      deleteMapDialogRef.value?.close();
+    },
+    onError: (message: string) => {
+      showAlert("error", message || "Erreur lors de la suppression de la carte.");
+      isDeletingMap.value = false;
+    },
+  });
+}
+
+function showDeleteFeatureDialog(feature: Feature) {
+  featureToDeleteId.value = feature.id as string;
+  featureToDeleteName.value = feature.properties?.name || "Élément sans nom";
+  deleteFeatureDialogRef.value?.showModal();
+}
+
+async function onDeleteFeature() {
+  if (!featureToDeleteId.value) return;
+  isDeletingFeature.value = true;
+  emit("delete-feature", featureToDeleteId.value, {
+    onSuccess: () => {
+      showAlert("success", "Élément supprimé avec succès !");
+      isDeletingFeature.value = false;
+      deleteFeatureDialogRef.value?.close();
+    },
+    onError: (message: string) => {
+      showAlert("error", message || "Erreur lors de la suppression de l'élément.");
+      isDeletingFeature.value = false;
+    },
+  });
+}
+
+defineExpose({
+  showEditFeatureDialog,
+});
 </script>

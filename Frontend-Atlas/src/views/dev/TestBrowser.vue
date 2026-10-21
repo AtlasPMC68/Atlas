@@ -9,6 +9,8 @@ interface DevTestSummary {
   imageFilename: string;
   hasZones: boolean;
   createdAt?: string | null;
+  // "probe" tests carry no ground truth on purpose and never gate the suite.
+  kind?: "regression" | "probe";
 }
 
 const router = useRouter();
@@ -125,6 +127,12 @@ onMounted(() => {
                 <h2 class="card-title text-sm line-clamp-2">
                   {{ test.name }}
                 </h2>
+                <div
+                  class="badge badge-sm shrink-0"
+                  :class="test.kind === 'probe' ? 'badge-info' : 'badge-neutral'"
+                >
+                  {{ test.kind === "probe" ? "Exploration" : "Régression" }}
+                </div>
                 <button
                   class="btn btn-ghost btn-xs text-error"
                   @click.stop="deleteTest(test)"
@@ -144,7 +152,17 @@ onMounted(() => {
               <p class="text-xs text-base-content/60">
                 Fichier image : {{ test.imageFilename }}
               </p>
-              <p class="text-xs" :class="test.hasZones ? 'text-success' : 'text-warning'">
+              <p
+                v-if="test.kind === 'probe'"
+                class="text-xs text-base-content/60"
+              >
+                Rejoue les entrées persistées, sans score
+              </p>
+              <p
+                v-else
+                class="text-xs"
+                :class="test.hasZones ? 'text-success' : 'text-warning'"
+              >
                 {{ test.hasZones ? "Zones définies" : "Aucune zone encore définie" }}
               </p>
             </div>

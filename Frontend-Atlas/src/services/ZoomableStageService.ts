@@ -1,5 +1,9 @@
 import { computed, ref } from "vue";
-import type { BaseStage, StagePosition, ZoomableStageOptions } from "../typescript/zoomableStage";
+import type {
+  BaseStage,
+  StagePosition,
+  ZoomableStageOptions,
+} from "../typescript/zoomableStage";
 
 export class ZoomableStageService {
   public container;
@@ -17,7 +21,10 @@ export class ZoomableStageService {
 
   public stagePxPerImagePx = computed(() => {
     if (!this.baseStage.value) return 1;
-    return this.baseStage.value.renderedW / Math.max(1, this.baseStage.value.naturalW);
+    return (
+      this.baseStage.value.renderedW /
+      Math.max(1, this.baseStage.value.naturalW)
+    );
   });
 
   public stageStyle = computed(() => {
@@ -178,7 +185,10 @@ export class ZoomableStageService {
     const rect = this.container.value.getBoundingClientRect();
     const anchorX = rect.width / 2;
     const anchorY = rect.height / 2;
-    const next = Math.min(this.zoomMax, Number((this.zoom.value * this.zoomStepFactor).toFixed(4)));
+    const next = Math.min(
+      this.zoomMax,
+      Number((this.zoom.value * this.zoomStepFactor).toFixed(4)),
+    );
     this.applyZoom(next, anchorX, anchorY);
   }
 
@@ -187,7 +197,10 @@ export class ZoomableStageService {
     const rect = this.container.value.getBoundingClientRect();
     const anchorX = rect.width / 2;
     const anchorY = rect.height / 2;
-    const next = Math.max(this.zoomMin, Number((this.zoom.value / this.zoomStepFactor).toFixed(4)));
+    const next = Math.max(
+      this.zoomMin,
+      Number((this.zoom.value / this.zoomStepFactor).toFixed(4)),
+    );
     this.applyZoom(next, anchorX, anchorY);
   }
 
@@ -199,7 +212,10 @@ export class ZoomableStageService {
 
     const direction = event.deltaY < 0 ? 1 : -1;
     const factor = direction > 0 ? 1.1 : 1 / 1.1;
-    const next = Math.min(this.zoomMax, Math.max(this.zoomMin, this.zoom.value * factor));
+    const next = Math.min(
+      this.zoomMax,
+      Math.max(this.zoomMin, this.zoom.value * factor),
+    );
     this.applyZoom(Number(next.toFixed(4)), local.x, local.y);
   }
 

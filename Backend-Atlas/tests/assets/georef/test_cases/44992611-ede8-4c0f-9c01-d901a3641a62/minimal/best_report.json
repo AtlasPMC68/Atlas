@@ -1,0 +1,456 @@
+{
+  "testId": "44992611-ede8-4c0f-9c01-d901a3641a62",
+  "testCaseId": "minimal",
+  "evaluatedAt": "2026-10-04T18:54:25.345012Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1791138855412",
+          "name": "china",
+          "area": 479.4468376828046
+        },
+        "bestMatch": {
+          "iou": 0.9394728139656051,
+          "intersectionArea": 468.79673808975735,
+          "unionArea": 498.9997912881813,
+          "precision": 0.9599611632035513,
+          "recall": 0.9777866934225288,
+          "falseNegativeArea": 10.65009959304805,
+          "falsePositiveArea": 19.552953605378033,
+          "boundary": {
+            "meanKm": 18.996,
+            "p90Km": 69.277,
+            "maxKm": 104.78,
+            "expectedToExtractedMeanKm": 18.598,
+            "extractedToExpectedMeanKm": 19.395,
+            "expectedHoles": 18,
+            "extractedHoles": 18
+          },
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "china",
+            "area": 488.3496916951349
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 1,
+          "id": "dev-zone-1791138876236",
+          "name": "north korea",
+          "area": 12.827880636289205
+        },
+        "bestMatch": {
+          "iou": 0.7711473803276366,
+          "intersectionArea": 9.999427300274867,
+          "unionArea": 12.966947117198817,
+          "precision": 0.9862833194051259,
+          "recall": 0.7795073546277913,
+          "falseNegativeArea": 2.828453336014339,
+          "falsePositiveArea": 0.13906648090962073,
+          "boundary": {
+            "meanKm": 10.697,
+            "p90Km": 31.456,
+            "maxKm": 82.534,
+            "expectedToExtractedMeanKm": 11.379,
+            "extractedToExpectedMeanKm": 10.014,
+            "expectedHoles": 0,
+            "extractedHoles": 0
+          },
+          "extracted": {
+            "index": 4,
+            "id": null,
+            "name": "north korea",
+            "area": 10.138493781184492
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 2,
+          "id": "dev-zone-1791138893279",
+          "name": "south korea",
+          "area": 9.553829154748103
+        },
+        "bestMatch": {
+          "iou": 0.7573987013045211,
+          "intersectionArea": 8.672747404544182,
+          "unionArea": 11.450702766728407,
+          "precision": 0.8205353239236547,
+          "recall": 0.9077771084313313,
+          "falseNegativeArea": 0.8810817502039333,
+          "falsePositiveArea": 1.8968736119802907,
+          "boundary": {
+            "meanKm": 537.463,
+            "p90Km": 2069.773,
+            "maxKm": 2675.112,
+            "expectedToExtractedMeanKm": 20.984,
+            "extractedToExpectedMeanKm": 1053.943,
+            "expectedHoles": 0,
+            "extractedHoles": 0
+          },
+          "extracted": {
+            "index": 5,
+            "id": null,
+            "name": "south korea",
+            "area": 10.56962101652448
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 3,
+          "id": "dev-zone-1791138916343",
+          "name": "japan",
+          "area": 37.09995664376098
+        },
+        "bestMatch": {
+          "iou": 0.8576656905622497,
+          "intersectionArea": 32.12624629550916,
+          "unionArea": 37.45777247361794,
+          "precision": 0.9889848803860769,
+          "recall": 0.8659375697925987,
+          "falseNegativeArea": 4.97371034825181,
+          "falsePositiveArea": 0.3578158298569832,
+          "boundary": {
+            "meanKm": 43.927,
+            "p90Km": 69.031,
+            "maxKm": 1066.961,
+            "expectedToExtractedMeanKm": 63.457,
+            "extractedToExpectedMeanKm": 24.396,
+            "expectedHoles": 1,
+            "extractedHoles": 1
+          },
+          "extracted": {
+            "index": 3,
+            "id": null,
+            "name": "japan",
+            "area": 32.48406212536618
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 4,
+          "id": "dev-zone-1791139020516",
+          "name": "Mongolia",
+          "area": 104.7645045737478
+        },
+        "bestMatch": {
+          "iou": 0.9047387303320482,
+          "intersectionArea": 102.71594776075365,
+          "unionArea": 113.53106075502689,
+          "precision": 0.9213638385280851,
+          "recall": 0.9804460793154223,
+          "falseNegativeArea": 2.0485568129941294,
+          "falsePositiveArea": 8.766556181279096,
+          "boundary": {
+            "meanKm": 107.512,
+            "p90Km": 70.626,
+            "maxKm": 1914.97,
+            "expectedToExtractedMeanKm": 14.78,
+            "extractedToExpectedMeanKm": 200.243,
+            "expectedHoles": 0,
+            "extractedHoles": 0
+          },
+          "extracted": {
+            "index": 1,
+            "id": null,
+            "name": "mongolia",
+            "area": 111.48250394203272
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 5,
+          "id": "dev-zone-1791139208733",
+          "name": "Russia",
+          "area": 232.40502584434773
+        },
+        "bestMatch": {
+          "iou": 0.8954499994022943,
+          "intersectionArea": 210.98490481304097,
+          "unionArea": 235.61885638938153,
+          "precision": 0.9849960339884339,
+          "recall": 0.9078327977052751,
+          "falseNegativeArea": 21.420121031307364,
+          "falsePositiveArea": 3.213830545032568,
+          "boundary": {
+            "meanKm": 26.954,
+            "p90Km": 49.886,
+            "maxKm": 576.281,
+            "expectedToExtractedMeanKm": 40.895,
+            "extractedToExpectedMeanKm": 13.013,
+            "expectedHoles": 1,
+            "extractedHoles": 1
+          },
+          "extracted": {
+            "index": 2,
+            "id": null,
+            "name": "russia",
+            "area": 214.19873535807395
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.8543122193157259,
+      "meanPrecision": 0.943687426572488,
+      "meanRecall": 0.9032146005491578,
+      "totalFalseNegativeArea": 42.802022871819624,
+      "totalFalsePositiveArea": 33.92709625443659,
+      "meanBoundaryKm": 124.258,
+      "meanBoundaryP90Km": 393.341,
+      "maxBoundaryKm": 2675.112,
+      "zonesWithBoundary": 6,
+      "zonesWithoutBoundary": 0
+    },
+    "scoreUsed": 0.8543122193157259,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  },
+  "scoreVersion": "2",
+  "comparison": {
+    "main": "The shipped zones (zones.geojson: after snapping, ocean clip and lake cut) against the expected zones through the same ocean and lake cuts.",
+    "raw": "The zones as the transform placed them (zones_raw.geojson: before snapping and the clip) against the expected zones as drawn. For judging placement: cleaning corrects and hides transform error."
+  },
+  "raw": {
+    "metrics": {
+      "expected": [
+        {
+          "expected": {
+            "index": 0,
+            "id": "dev-zone-1791138855412",
+            "name": "china",
+            "area": 481.6669750917331
+          },
+          "bestMatch": {
+            "iou": 0.9315447439208304,
+            "intersectionArea": 465.85241956478865,
+            "unionArea": 500.08592996192164,
+            "precision": 0.9619656336456381,
+            "recall": 0.9671670337707239,
+            "falseNegativeArea": 15.814555526942767,
+            "falsePositiveArea": 18.41895487019034,
+            "boundary": {
+              "meanKm": 22.686,
+              "p90Km": 72.106,
+              "maxKm": 104.78,
+              "expectedToExtractedMeanKm": 24.218,
+              "extractedToExpectedMeanKm": 21.153,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 0,
+              "id": null,
+              "name": "china",
+              "area": 484.271374434979
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 1,
+            "id": "dev-zone-1791138876236",
+            "name": "north korea",
+            "area": 12.934155448693
+          },
+          "bestMatch": {
+            "iou": 0.7512167426258574,
+            "intersectionArea": 9.817691640405675,
+            "unionArea": 13.069053288253674,
+            "precision": 0.9864459556146445,
+            "recall": 0.7590516195162751,
+            "falseNegativeArea": 3.1164638082873237,
+            "falsePositiveArea": 0.13489783956068646,
+            "boundary": {
+              "meanKm": 14.909,
+              "p90Km": 29.164,
+              "maxKm": 82.719,
+              "expectedToExtractedMeanKm": 14.976,
+              "extractedToExpectedMeanKm": 14.842,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 4,
+              "id": null,
+              "name": "north korea",
+              "area": 9.952589479966361
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 2,
+            "id": "dev-zone-1791138893279",
+            "name": "south korea",
+            "area": 9.891719705859987
+          },
+          "bestMatch": {
+            "iou": 0.7162288441755941,
+            "intersectionArea": 8.17407283543872,
+            "unionArea": 11.412655189623619,
+            "precision": 0.8431217969404735,
+            "recall": 0.826355080663708,
+            "falseNegativeArea": 1.7176468704212629,
+            "falsePositiveArea": 1.5209354837636162,
+            "boundary": {
+              "meanKm": 521.887,
+              "p90Km": 1868.215,
+              "maxKm": 2572.027,
+              "expectedToExtractedMeanKm": 30.556,
+              "extractedToExpectedMeanKm": 1013.217,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 5,
+              "id": null,
+              "name": "south korea",
+              "area": 9.695008319202344
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 3,
+            "id": "dev-zone-1791138916343",
+            "name": "japan",
+            "area": 38.16358259450902
+          },
+          "bestMatch": {
+            "iou": 0.7181808233466174,
+            "intersectionArea": 27.907252221082338,
+            "unionArea": 38.8582531221575,
+            "precision": 0.9757124535384833,
+            "recall": 0.7312534705559229,
+            "falseNegativeArea": 10.256330373426657,
+            "falsePositiveArea": 0.6946705276484941,
+            "boundary": {
+              "meanKm": 64.243,
+              "p90Km": 151.544,
+              "maxKm": 1793.383,
+              "expectedToExtractedMeanKm": 86.709,
+              "extractedToExpectedMeanKm": 41.776,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 3,
+              "id": null,
+              "name": "japan",
+              "area": 28.60192274873085
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 4,
+            "id": "dev-zone-1791139020516",
+            "name": "Mongolia",
+            "area": 104.82314200469894
+          },
+          "bestMatch": {
+            "iou": 0.9010600890711807,
+            "intersectionArea": 102.74551185240291,
+            "unionArea": 114.02736964891402,
+            "precision": 0.9177825005613945,
+            "recall": 0.9801796615464656,
+            "falseNegativeArea": 2.0776301522959977,
+            "falsePositiveArea": 9.204227644215072,
+            "boundary": {
+              "meanKm": 141.062,
+              "p90Km": 73.971,
+              "maxKm": 1953.477,
+              "expectedToExtractedMeanKm": 14.947,
+              "extractedToExpectedMeanKm": 267.177,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 1,
+              "id": null,
+              "name": "mongolia",
+              "area": 111.94973949661814
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 5,
+            "id": "dev-zone-1791139208733",
+            "name": "Russia",
+            "area": 237.60254522750168
+          },
+          "bestMatch": {
+            "iou": 0.8754131190811085,
+            "intersectionArea": 211.00319417651642,
+            "unionArea": 241.03270738962573,
+            "precision": 0.9840035980376705,
+            "recall": 0.8880510685375164,
+            "falseNegativeArea": 26.599351050985636,
+            "falsePositiveArea": 3.4301621621241827,
+            "boundary": {
+              "meanKm": 35.426,
+              "p90Km": 51.597,
+              "maxKm": 599.051,
+              "expectedToExtractedMeanKm": 51.641,
+              "extractedToExpectedMeanKm": 19.211,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 2,
+              "id": null,
+              "name": "russia",
+              "area": 214.43335633864075
+            },
+            "matchedBy": "name"
+          }
+        }
+      ],
+      "mean": {
+        "meanIou": 0.8156073937035314,
+        "meanPrecision": 0.9448386563897174,
+        "meanRecall": 0.8586763224317687,
+        "totalFalseNegativeArea": 59.581977782359644,
+        "totalFalsePositiveArea": 33.40384852750239,
+        "meanBoundaryKm": 133.369,
+        "meanBoundaryP90Km": 374.433,
+        "maxBoundaryKm": 2572.027,
+        "zonesWithBoundary": 6,
+        "zonesWithoutBoundary": 0
+      },
+      "scoreUsed": 0.8156073937035314,
+      "scoreUsedKey": "mean.meanIou"
+    },
+    "nameMatching": {
+      "expectedWithoutNameMatch": [],
+      "extractedNeverMatchedByName": []
+    }
+  }
+}
