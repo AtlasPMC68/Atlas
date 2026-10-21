@@ -1,4 +1,7 @@
+import type { ImposedColorKind } from "./georef";
+
 export interface PickedColor {
+  kind: ImposedColorKind;
   hex: string;
   rgb: [number, number, number];
   name: string;

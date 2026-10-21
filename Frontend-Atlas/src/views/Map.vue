@@ -123,7 +123,7 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { upsertFeature } from "../utils/featureHelpers";
+import { getMapElementType, upsertFeature } from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -606,7 +606,8 @@ function reconcileVisibility(list: Feature[]) {
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
-      next.set(id, true);
+      const initialVisible = f.properties?.show !== false && (f.properties?.isVisible ?? true);
+      next.set(id, initialVisible);
     }
   }
   const ids = new Set(list.map((f) => f.id));
@@ -970,7 +971,18 @@ async function onSaveMap(featuresOverride?: Feature[]) {
     const syncedFeatures = featuresOverride
       ? undefined
       : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
-    const featuresToSave = featuresOverride ?? syncedFeatures ?? features.value;
+    const featuresToSave = (
+      featuresOverride ?? syncedFeatures ?? features.value
+    ).map((feature) => ({
+      ...feature,
+      properties: {
+        ...feature.properties,
+        isVisible:
+          featureVisibility.value.get(feature.id) ??
+          feature.properties?.isVisible ??
+          true,
+      },
+    }));
 
     if (syncedFeatures) {
       features.value = syncedFeatures;
