@@ -368,9 +368,9 @@
 import { computed, nextTick, ref, watch } from "vue";
 import type { Component } from "vue";
 import {
-  EllipsisHorizontalIcon,
+  ChatBubbleLeftEllipsisIcon,
   MapIcon,
-  MapPinIcon,
+  PencilIcon,
   PencilSquareIcon,
   PhotoIcon,
   Square2StackIcon,
@@ -432,20 +432,20 @@ const emit = defineEmits([
 ]);
 
 const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
-  point: MapPinIcon,
+  point: ChatBubbleLeftEllipsisIcon,
   zone: MapIcon,
   shape: Square2StackIcon,
-  other: EllipsisHorizontalIcon,
+  drawing: PencilIcon,
   image: PhotoIcon,
 };
 
 const featureGroups = computed(() => {
   const groups: FeatureVisibilityGroup[] = [
-    { type: "point", label: "Ville(s)", features: [] as Feature[] },
+    { type: "point", label: "Texte", features: [] as Feature[] },
     { type: "zone", label: "Zone(s)", features: [] as Feature[] },
     { type: "shape", label: "Forme(s)", features: [] as Feature[] },
     { type: "image", label: "Image(s)", features: [] as Feature[] },
-    { type: "other", label: "Autre(s)", features: [] as Feature[] },
+    { type: "drawing", label: "Dessins", features: [] as Feature[] },
   ];
 
   props.features.forEach((feature: Feature) => {
@@ -453,15 +453,14 @@ const featureGroups = computed(() => {
     if (!featureType) return;
 
     const targetGroup = groups.find((currentGroup) => {
-      if (
-        featureType === "label" ||
-        featureType === "polyline" ||
-        featureType === "arrow"
-      ) {
-        return currentGroup.type === "other";
+      if (featureType === "label" || featureType === "point") {
+        return currentGroup.type === "point";
+      }
+      if (featureType === "polyline" || featureType === "arrow") {
+        return currentGroup.type === "drawing";
       }
       return currentGroup.type === featureType;
-    });
+    }) ?? groups.find((currentGroup) => currentGroup.type === "drawing");
 
     if (targetGroup) targetGroup.features.push(feature);
   });
