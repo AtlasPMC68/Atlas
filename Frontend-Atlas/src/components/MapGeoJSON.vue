@@ -426,7 +426,6 @@ function renderCities(features: Feature[]) {
 
   safeFeatures.forEach((feature) => {
     if (!map || feature.geometry.type !== "Point") return;
-    if (feature.properties?.show === false) return;
 
     const [lng, lat] = feature.geometry.coordinates;
     if (lng === 0 && lat === 0) return;
