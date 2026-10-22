@@ -87,7 +87,7 @@ def main() -> int:
 
     text_mask = None
     if args.ocr:
-        # Imported lazily: it pulls in colour extraction and EasyOCR.
+        # Imported lazily: it pulls in colour extraction and PaddleOCR.
         from run_georef_alignment import extract_text_regions_cached
 
         regions = extract_text_regions_cached(args.image, image_bgr, use_cache=True)

@@ -32,7 +32,7 @@ jobs:
         run: |
           docker compose build -q \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            test-backend florence-worker test-frontend
+            test-backend test-frontend
         env:
           DOCKER_BUILDKIT: 1
           COMPOSE_DOCKER_CLI_BUILD: 1
@@ -52,5 +52,4 @@ jobs:
       - name: Run OCR integration tests sequentially
         if: steps.build.outcome == 'success' && !cancelled()
         run: |
-          docker compose up -d florence-worker
           docker compose run --rm -q test-backend pytest tests/ -m "integration"

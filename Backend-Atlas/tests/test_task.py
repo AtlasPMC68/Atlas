@@ -14,7 +14,7 @@ from app.models.map_import import (
     EXTRACTION_RUNNING,
 )
 from app.services.imports import parse_import_inputs
-from app.tasks import _ClaimedImport, process_map_extraction, run_map_ocr
+from app.tasks import _ClaimedImport, _parse_ocr_result, process_map_extraction, run_map_ocr
 
 LEGEND = {"x": 60.0, "y": 60.0, "width": 30.0, "height": 30.0}
 
@@ -61,6 +61,12 @@ def _claimed(shapes=None, **options) -> _ClaimedImport:
             [[[10, 10], [40, 10], [40, 20], [10, 20]], "Quebec", 0.99],
             # Inside the legend: a key label, never a place.
             [[[65, 65], [85, 65], [85, 70], [65, 70]], "Floride", 0.95],
+        ],
+        text_regions=[
+            [[10, 10], [40, 10], [40, 20], [10, 20]],
+            [[65, 65], [85, 65], [85, 70], [65, 70]],
+            # A year: filtered out of the place names, still text to erase.
+            [[50, 30], [70, 30], [70, 38], [50, 38]],
         ],
     )
 
@@ -212,7 +218,7 @@ def test_the_map_is_placed_once_with_the_ocr_boxes_and_the_legend():
 
     mocks["place"].assert_called_once()
     _args, kwargs = mocks["place"].call_args
-    assert len(kwargs["text_regions"]) == 2
+    assert len(kwargs["text_regions"]) == 3
     assert kwargs["water_picks"][0] == [(0.5, 0.5)]
     assert kwargs["legend_bounds"] == LEGEND
     # Shapes and colours share that one placement.
@@ -250,34 +256,47 @@ def test_a_failure_marks_the_import_failed():
 
 
 def test_ocr_dispatches_the_extraction_that_was_waiting_for_it():
-    blocks = [{"bbox": [[0, 0], [5, 0], [5, 5], [0, 5]], "text": "Quebec", "prob": np.float64(0.9)}]
+    blocks = [{"quad": [[0, 0], [5, 0], [5, 5], [0, 5]], "text": "Quebec", "prob": np.float64(0.9)}]
+    text_regions = [[[0, 0], [5, 0], [5, 5], [0, 5]], [[9, 9], [12, 9], [12, 11], [9, 11]]]
     with (
         patch("app.tasks._claim_ocr", AsyncMock(return_value=_png_bytes())),
-        patch("app.tasks.extract_text", MagicMock(return_value=blocks)),
+        patch("app.tasks.extract_text", MagicMock(return_value=(blocks, text_regions))),
         patch("app.tasks._finish_ocr", AsyncMock(return_value="extraction-id")) as finish,
         patch("app.tasks.process_map_extraction.apply_async") as dispatch,
     ):
         map_id = str(uuid.uuid4())
         result = run_map_ocr.apply(kwargs={"map_id": map_id}).get(timeout=20)
 
-    assert result == {"status": "done", "blocks": 1}
+    assert result == {"status": "done", "blocks": 1, "textRegions": 2}
     # Stored as plain JSON, numpy scalars included.
     stored = finish.await_args.args[2]
-    assert stored == [[[[0, 0], [5, 0], [5, 5], [0, 5]], "Quebec", 0.9]]
-    assert type(stored[0][2]) is float
+    assert stored == {
+        "blocks": [[[[0, 0], [5, 0], [5, 5], [0, 5]], "Quebec", 0.9]],
+        "textRegions": text_regions,
+    }
+    assert type(stored["blocks"][0][2]) is float
     dispatch.assert_called_once_with(kwargs={"map_id": map_id}, task_id="extraction-id")
 
 
 def test_ocr_without_a_waiting_extraction_dispatches_nothing():
     with (
         patch("app.tasks._claim_ocr", AsyncMock(return_value=_png_bytes())),
-        patch("app.tasks.extract_text", MagicMock(return_value=[])),
+        patch("app.tasks.extract_text", MagicMock(return_value=([], []))),
         patch("app.tasks._finish_ocr", AsyncMock(return_value=None)),
         patch("app.tasks.process_map_extraction.apply_async") as dispatch,
     ):
         run_map_ocr.apply(kwargs={"map_id": str(uuid.uuid4())}).get(timeout=20)
 
     dispatch.assert_not_called()
+
+
+def test_an_ocr_result_stored_before_the_text_regions_uses_its_block_quads():
+    quad = [[0, 0], [5, 0], [5, 5], [0, 5]]
+    blocks = [[quad, "Quebec", 0.9]]
+
+    assert _parse_ocr_result(blocks) == (blocks, [quad])
+    assert _parse_ocr_result({"blocks": blocks, "textRegions": [quad, quad]}) == (blocks, [quad, quad])
+    assert _parse_ocr_result(None) == ([], [])
 
 
 def test_failed_ocr_is_recorded():
