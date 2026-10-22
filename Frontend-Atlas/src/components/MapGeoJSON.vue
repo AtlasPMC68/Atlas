@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, nextTick, toRef } from "vue";
+import { onMounted, onBeforeUnmount, watch, ref, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -293,6 +293,28 @@ function syncFeaturesFromMapLayers(): Feature[] {
   return Array.from(mergedById.values());
 }
 
+// Frames the features currently drawn on the map (visibility and timeline
+// filters applied). Keeps the current view when nothing is drawn.
+function fitToVisibleFeatures() {
+  if (!map) return;
+  const bounds = L.latLngBounds([]);
+  featureLayerManager.layers.forEach((layer) => {
+    if (!map!.hasLayer(layer)) return;
+    const located = layer as Partial<{
+      getBounds: () => L.LatLngBounds;
+      getLatLng: () => L.LatLng;
+    }>;
+    if (typeof located.getBounds === "function") {
+      bounds.extend(located.getBounds());
+    } else if (typeof located.getLatLng === "function") {
+      bounds.extend(located.getLatLng());
+    }
+  });
+  if (!bounds.isValid()) return;
+  // maxZoom keeps a single city or label from zooming in to street level
+  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10, animate: false });
+}
+
 function clearDraftLayers() {
   drawing.clearDrawnItems();
 }
@@ -305,6 +327,7 @@ defineExpose({
   syncFeaturesFromMapLayers,
   clearDraftLayers,
   resetSelection,
+  fitToVisibleFeatures,
 });
 
 // Tracks feature IDs that got `feature-updated` during the current cut cycle.
@@ -313,13 +336,38 @@ defineExpose({
 // latter, so we must detect them by checking which layers disappeared from the
 // map but were NOT updated.
 let cuttingUpdatedIds: Set<string> | null = null;
+// Feature IDs that were drawn on the map when the cut started. Hidden features
+// (visibility controls or timeline) are off the map too, but geoman never saw
+// them, so cut-complete must not mistake them for enclosed zones.
+let cuttingVisibleIds: Set<string> | null = null;
 
+// Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
+// PM on the inner L.Polygon sublayers and removes those, NOT the outer
+// container. map.hasLayer(container) therefore still returns true even
+// after geoman removed the enclosed zone. We must check the children.
+function isLayerOffMap(layer: L.Layer): boolean {
+  if (!map!.hasLayer(layer)) return true;
+  const asGroup = layer as unknown as Partial<L.LayerGroup>;
+  if (typeof asGroup.getLayers === "function") {
+    const children = asGroup.getLayers();
+    // All children gone (removed from group entirely, or none left on map)
+    if (children.length === 0) return true;
+    return children.every((c) => !map!.hasLayer(c));
+  }
+  return false;
+}
 
 const drawing = useMapDrawing(
   (event, ...args) => {
     const current = localFeaturesSnapshot.value;
     if (event === "cut-started") {
       cuttingUpdatedIds = new Set<string>();
+      cuttingVisibleIds = new Set<string>();
+      if (map) {
+        featureLayerManager.layers.forEach((layer, id) => {
+          if (!isLayerOffMap(layer)) cuttingVisibleIds!.add(id);
+        });
+      }
       return;
     }
     if (event === "feature-created") {
@@ -354,28 +402,16 @@ const drawing = useMapDrawing(
       // Detect zones that geoman silently removed (fully enclosed by the cut
       // polygon). Geoman calls map.removeLayer() on them directly — pm:remove
       // never fires. They are identified as layers that are no longer on the map
-      // but were NOT processed by pm:cut (feature-updated).
-      //
-      // Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
-      // PM on the inner L.Polygon sublayers and removes those, NOT the outer
-      // container. map.hasLayer(container) therefore still returns true even
-      // after geoman removed the enclosed zone. We must check the children.
-      if (map && cuttingUpdatedIds !== null) {
-        const isRemovedFromMap = (layer: L.Layer): boolean => {
-          if (!map!.hasLayer(layer)) return true;
-          const asGroup = layer as unknown as Partial<L.LayerGroup>;
-          if (typeof asGroup.getLayers === "function") {
-            const children = asGroup.getLayers();
-            // All children gone (removed from group entirely, or none left on map)
-            if (children.length === 0) return true;
-            return children.every((c) => !map!.hasLayer(c));
-          }
-          return false;
-        };
-
+      // but were NOT processed by pm:cut (feature-updated). Only layers that
+      // were on the map when the cut started count: hidden ones were already off.
+      if (map && cuttingUpdatedIds !== null && cuttingVisibleIds !== null) {
         const removedIds: string[] = [];
         featureLayerManager.layers.forEach((layer, id) => {
-          if (isRemovedFromMap(layer) && !cuttingUpdatedIds!.has(id)) {
+          if (
+            cuttingVisibleIds!.has(id) &&
+            isLayerOffMap(layer) &&
+            !cuttingUpdatedIds!.has(id)
+          ) {
             removedIds.push(id);
           }
         });
@@ -390,6 +426,7 @@ const drawing = useMapDrawing(
         }
       }
       cuttingUpdatedIds = null;
+      cuttingVisibleIds = null;
       // Re-render so intersected zones get their updated geometry and the
       // enclosed zones (now removed from localFeaturesSnapshot) stay gone.
       renderAllFeatures();
@@ -402,11 +439,11 @@ const drawing = useMapDrawing(
 const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
 const cityMode = useAddCityMode({
   getMap: () => map,
-  selectedYear: toRef(props, "selectedYear"),
   localFeaturesSnapshot,
   cityInput,
   onCreated: (next) => emit('draw-create', next),
   onAfterCreate: () => renderAllFeatures(),
+  getProjectId: () => props.projectId,
 });
 const { addCityMode, pendingCity, cityInputName } = cityMode;
 const cancelAddCity = cityMode.cancel;

@@ -1,0 +1,99 @@
+# ==============================================================================
+# Production overrides, applied on top of docker-compose.yml on the server:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# deploy.sh sets COMPOSE_FILE in .env, so plain `docker compose ...` uses both.
+# ==============================================================================
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  backend:
+    # Run the code baked into the image: no bind mounts, no --reload
+    user: app
+    security_opt: [no-new-privileges:true]
+    volumes: !override
+      - ocr-data:/data
+    command:
+      [
+        "uvicorn", "app.main:app",
+        "--host", "0.0.0.0", "--port", "8000",
+        "--workers", "2",
+        "--proxy-headers", "--forwarded-allow-ips", "*",
+      ]
+    environment:
+      ENABLE_DEV_TOOLS: "false"
+    logging: *default-logging
+
+  celery-worker:
+    user: app
+    security_opt: [no-new-privileges:true]
+    # Code from the image; keep only the OCR files shared with florence-worker
+    volumes: !override
+      - ocr-data:/data
+    logging: *default-logging
+
+  celery-worker-ocr:
+    user: app
+    security_opt: [no-new-privileges:true]
+    volumes: !override
+      - ocr-data:/data
+    logging: *default-logging
+
+  florence-worker:
+    # Already runs as appuser (uid 1000); code and model are baked into the image
+    security_opt: [no-new-privileges:true]
+    volumes: !override
+      - ocr-data:/data
+    logging: *default-logging
+
+  flower:
+    user: app
+    security_opt: [no-new-privileges:true]
+    volumes: !reset []
+    logging: *default-logging
+
+  frontend:
+    # Static build served by Caddy instead of the Vite dev server
+    build:
+      context: ./Frontend-Atlas
+      target: production
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL}
+        VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-atlas}
+        VITE_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_FRONT_END_CLIENT_ID:-atlas-frontend}
+        VITE_CARTO_API_KEY: ${VITE_CARTO_API_KEY:-}
+        VITE_ENABLE_DEV_TOOLS: "false"
+    security_opt: [no-new-privileges:true]
+    volumes: !reset []
+    logging: *default-logging
+
+  keycloak:
+    environment:
+      KC_START_MODE: start
+      KC_HOSTNAME: ${APP_BASE_URL}/auth
+      KC_HOSTNAME_STRICT: "true"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      REALM_SSL_REQUIRED: external
+    logging: *default-logging
+
+  caddy:
+    environment:
+      ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-127.0.0.1/32}
+    logging: *default-logging
+
+  redis:
+    logging: *default-logging
+
+  db:
+    logging: *default-logging
+
+  migrate:
+    logging: *default-logging
+
+  keycloak-db:
+    logging: *default-logging

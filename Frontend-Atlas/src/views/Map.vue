@@ -100,7 +100,7 @@
   />
 </template>
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted, watch } from "vue";
+import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
@@ -126,7 +126,7 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { getMapElementType, upsertFeature } from "../utils/featureHelpers";
+import { upsertFeature } from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -143,6 +143,7 @@ const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
   resetSelection: () => void;
+  fitToVisibleFeatures: () => void;
 } | null>(null);
 const addMapDialogRef = ref<{
   open: () => void;
@@ -691,6 +692,14 @@ async function loadInitialFeatures() {
   }
 }
 
+// Opens the map on the project's elements instead of a fixed location. Only
+// called when a project or map is opened, so saving never moves the view.
+async function frameVisibleFeatures() {
+  // Let MapGeoJSON render the freshly loaded features first
+  await nextTick();
+  mapGeoJsonRef.value?.fitToVisibleFeatures();
+}
+
 async function loadCurrentMapInfo(): Promise<void> {
   try {
     const res = await apiFetch(`/projects/${projectId.value}`, {
@@ -886,6 +895,7 @@ onMounted(async () => {
   await loadProjectMapsForTimeline();
   await loadCurrentMapInfo();
   await loadInitialFeatures();
+  await frameVisibleFeatures();
 
   if (projectId.value) {
     const pendingEditsStr = localStorage.getItem(`pending_public_edits_${projectId.value}`);
@@ -919,6 +929,7 @@ watch([projectRouteId], async () => {
   await resolveRouteContext();
   await loadProjectMapsForTimeline();
   await loadInitialFeatures();
+  await frameVisibleFeatures();
 });
 
 watch([timelineMinYear, timelineMaxYear], () => {
@@ -954,6 +965,7 @@ watch(
     }
 
     await loadInitialFeatures();
+    await frameVisibleFeatures();
   },
 );
 

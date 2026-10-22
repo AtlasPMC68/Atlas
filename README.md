@@ -2,13 +2,13 @@
 
 This is our PMC for university : Atlas
 
-## 📚 Git & Jira Naming Conventions
+## Git & Jira Naming Conventions
 
 To ensure clarity and traceability across branches and commits, all contributors must follow the naming conventions outlined below.
 
 ---
 
-### 🔀 Branch Naming Convention
+### Branch Naming Convention
 
 All branches must follow the format:
 
@@ -20,12 +20,12 @@ Where:
 - `<issue-number>` is the **Jira ticket number** (e.g., `123`)
 - `<short-description>` is a **1–3 word summary** of the purpose (lowercase, hyphen-separated)
 
-✅ **Example**:
+**Example**:
 ATLAS-123-add-login-feature
 
 ---
 
-### ✅ Pull Request Message Convention
+### Pull Request Message Convention
 
 All pull request messages must follow this format:
 
@@ -39,11 +39,11 @@ Where:
   - `bugfix`
 - `<short-description>` is a concise, lowercase, hyphen-separated summary (1–3 words)
 
-✅ **Examples**:
+**Examples**:
 ATLAS-123: feature-add-login
 ATLAS-210: bugfix-fix-auth-error
 
-###  Additional Notes
+### Additional Notes
 
 - Use the "Create branch" button directly in Jira when possible — it helps auto-fill the correct format.
 - Always open Pull Requests into the `dev` branch unless otherwise instructed.
@@ -62,65 +62,59 @@ To run the project using Docker Compose, follow these steps:
    - Download and install Docker Desktop from [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/).
    - Start Docker Desktop and wait until it is fully running (the whale icon should appear in your system tray).
 
-2. **Build the Docker images (first time or after changes to dependencies):**
+2. **Environment variables (optional):**
+   - `Backend-Atlas/.env.dev` is read as before. A root `.env` is optional locally: if it exists, its values override `.env.dev`.
+   - To create one: `cp .env.example .env`, then ask a teammate for the `VITE_CARTO_API_KEY`.
+   - Without a root `.env`, `docker-compose.yml` falls back to local defaults (`postgres`/`postgres`, Keycloak `admin`/`admin`).
+
+3. **Build and start the services:**
 
    ```sh
-   docker-compose build
+   docker compose up -d --build
    ```
 
-3. **Start the services:**
-
-   ```sh
-   docker-compose up
-   ```
-
-   - This will start the backend service (http://localhost:8000) and the frontend (http://localhost:3000).
-   - Redis (localhost:6379)
-   - PostgreSQL : localhost:5432
-   - Flower (Celery Monitoring): http://localhost:5555
+   - The `migrate` service applies the database migrations first, then the backend and the workers start.
+   - Everything goes through Caddy on port 80:
+     - Frontend: http://localhost
+     - Backend API: http://localhost/api
+     - Keycloak: http://localhost/auth
+   - Flower (Celery Monitoring): http://localhost:5555, PostgreSQL: `localhost:5432`, Redis: `localhost:6379`. These only listen on `127.0.0.1`.
 
 4. **Test the backend:**
-   - In a new terminal, run:
-     ```sh
-     curl http://localhost:8000/ping
-     ```
+
+   ```sh
+   curl http://localhost/api/ping
+   ```
+
    - You should receive a response like `{ "message": "pong" }`.
 
 5. **Test the frontend:**
-   - Open your browser and go to [http://localhost:3000]
+   - Open your browser and go to [http://localhost](http://localhost)
    - You should see the Atlas web application.
 
-6. **Test db:**
-   - In a terminal, run:
+6. **Test Celery and Redis:**
 
    ```sh
-   curl http://localhost:8000/db-test
-   ```
-
-   - You should receive a response like `{"db_status":"connected","result":[1]}`
-
-7. **Test Celery and Redis:**
-   - In terminal, run:
-
-   ```sh
-      curl -X POST "http://localhost:8000/test/simple"
+   curl -X POST "http://localhost/api/test/simple"
    ```
 
    - You should receive: `{"task_id": random Id,"status":"Task started","message":"Task launched for World"}`
 
-8. **Live Reload (Development):**
+7. **Live Reload (Development):**
    - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
    - **Frontend:** The frontend uses the Vite dev server with hot reload. Any changes to files will instantly reload the app in your browser.
 
-9. **Stopping the services:**
-   - Press `Ctrl+C` in the terminal running Docker Compose, or run:
-     ```sh
-     docker-compose down
-     ```
+8. **Stopping the services:**
+
+   ```sh
+   docker compose down
+   ```
+
+   Do not add `-v`: it deletes the volumes, so the database and the Keycloak accounts.
 
 ---
 
-### 🧪 Run Georef Evaluation Manually
+### Run Georef Evaluation Manually
 
 If you changed the georeferencing/extraction algorithm and want to re-run the georef evaluation locally without restarting the whole stack, you can run the dedicated georef pytest directly.
 
@@ -165,6 +159,7 @@ docker compose exec backend pytest tests/test_georef_cases.py -v
 ```
 
 How it works:
+
 - The script simply runs `docker compose run --rm test-backend pytest tests/test_georef_cases.py -v`.
 - If you pass `--test-id/--case-id` (or `-k`), it appends `-k "..."` to select a subset of cases.
 - It runs in an ephemeral container (`--rm`) and uses the same bind-mounted code as the rest of the dev stack.
@@ -181,17 +176,20 @@ For this project, tests must be run inside Docker. This is the supported and rel
 # Start all services (Backend, Frontend, Workers, PostgreSQL, Redis)
 docker compose up -d
 
-# Check service health
-curl http://localhost:8000/ping
+# Check service health (everything goes through Caddy on port 80)
+curl http://localhost/api/ping
 ```
 
 ### Services
 
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:8000
+- **Frontend**: http://localhost
+- **Backend API**: http://localhost/api
+- **Keycloak**: http://localhost/auth
 - **Celery Monitoring (Flower)**: http://localhost:5555
 - **PostgreSQL**: localhost:5432
 - **Redis**: localhost:6379
+
+Flower, PostgreSQL and Redis only listen on `127.0.0.1`, so they are not reachable from other machines.
 
 ---
 
@@ -200,7 +198,7 @@ curl http://localhost:8000/ping
 ### To rebuild everything
 
 ```sh
-docker compose down -v ; docker compose build --no-cache ; docker compose up -d
+docker compose down ; docker compose build --no-cache ; docker compose up -d
 
 ```
 
@@ -220,7 +218,7 @@ docker compose run --rm test-backend pytest tests/test_extraction_text.py -q
 #### Run a test with more details
 
 ```sh
-docker compose exec test-backend pytest tests/test_extraction_text.py -q -vv
+docker compose run --rm test-backend pytest tests/test_extraction_text.py -q -vv
 ```
 
 #### Run the frontend tests
@@ -234,6 +232,64 @@ docker compose exec frontend npm run test -- --run
 Do not run pytest directly on the local machine to validate this project. The correct workflow is to use Docker, where the project environment is configured correctly.
 
 This avoids Python dependency issues and broken imports that are unrelated to the code being tested.
+
+---
+
+### Deploying to the server
+
+On the Ubuntu VM (ARM64, Docker installed):
+
+```sh
+git pull && ./deploy.sh
+```
+
+- The first run generates a root `.env` with random secrets (kept on the following runs, never committed), and asks for the Carto key and an email for the HTTPS certificate.
+- On the server, `.env` sets `COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml`, so every `docker compose` command uses the production settings.
+- The Keycloak admin console (`/auth/admin`) only answers the IPs in `ADMIN_ALLOWED_IPS` (in `.env`).
+- `deploy.sh` is for the server only: locally, use `docker compose up`.
+
+### Changing the database schema
+
+Schema changes are SQL files in `Backend-Atlas/db/`, applied automatically by the `migrate` service on every `docker compose up` (locally and on the server). Each file runs once, in filename order, and is recorded in the `schema_migrations` table. **Never drop the volume to change the schema.**
+
+To add a change:
+
+1. Create a new file with the next number, e.g. `Backend-Atlas/db/06_add_user_display_name.sql`
+2. Write the change, for example `ALTER TABLE users ADD COLUMN display_name TEXT;`
+3. Run `docker compose up -d` (or deploy): only the new file is applied
+
+Rules:
+
+- **Never edit a file that was already applied**: databases that ran it will not see the change (`migrate` prints a warning). Write a new file instead.
+- Each file runs in a transaction: if it fails, nothing from it is kept, the backend does not start, and `docker compose logs migrate` shows the error.
+
+### Rolling back a bad deploy
+
+Before starting the new version, `deploy.sh` dumps the database to `backups/atlas-<date>-<commit>.sql.gz` (the 7 latest are kept). The commit in the name is the code version that was running when the dump was taken.
+
+`deploy.sh` waits until every service is healthy. If one is not, it exits with an error, prints the service status and suggests `./rollback.sh`. Each successful deploy is recorded in `backups/last-good-commit`.
+
+**The new code is broken but the data is fine** (most cases): return to the last version that deployed successfully.
+
+```bash
+./rollback.sh
+# once fixed on the branch: git checkout <branch> && git pull && ./deploy.sh
+```
+
+**A migration failed**: nothing to restore, it was rolled back. Fix the SQL file and redeploy.
+
+**The new version damaged the data**: restore the dump taken just before it. Anything written since that dump is lost.
+
+```bash
+ls -1t backups/                  # newest first; pick the dump taken before the bad deploy
+docker compose stop backend celery-worker celery-worker-ocr
+git checkout <commit-from-the-dump-name>
+docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+gunzip -c backups/<dump>.sql.gz | docker compose exec -T db sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"'
+./deploy.sh
+```
+
+The dumps live on the same VM as the database: they protect against a bad deploy, not against losing the VM. Copy one elsewhere (`scp`) before risky changes.
 
 ---
 
@@ -262,9 +318,9 @@ To ensure reliability and consistency across the project, a Continuous Integrati
 ✅ If all tests pass, your PR can be reviewed and merged
 ❌ If a test fails, the PR is blocked until the issue is resolved
 
-### 🧰 How to Add New Tests
+### How to Add New Tests
 
-### ✅ Backend (Python – FastAPI)
+### Backend (Python – FastAPI)
 
 1. **Create a new test file in the Backend-Atlas/tests/ folder.**
    Example: Backend-Atlas/tests/test_example.py
@@ -304,7 +360,7 @@ To ensure reliability and consistency across the project, a Continuous Integrati
 **Then rebuild containers:**
 docker compose build
 
-###  Notes
+### Notes
 
 - The CI/CD configuration is managed in .github/workflows/ci.yml
 - Docker images used for testing are the same as in production to ensure reliability

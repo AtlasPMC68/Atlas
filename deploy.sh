@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# Atlas Project - Oracle Cloud Infrastructure (ARM64) Bootstrap Script
+# ==============================================================================
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$PROJECT_DIR"
+
+echo "[INFO] Starting Atlas deployment bootstrap..."
+
+# ------------------------------------------------------------------------------
+# 1. System Dependencies & Docker Verification
+# ------------------------------------------------------------------------------
+echo "[INFO] Checking required packages..."
+MISSING_PKGS=()
+for pkg in curl git gettext openssl iptables-persistent; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        MISSING_PKGS+=("$pkg")
+    fi
+done
+
+if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
+    echo "[INFO] Installing missing system packages: ${MISSING_PKGS[*]}..."
+    sudo apt-get update -y
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${MISSING_PKGS[@]}"
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "[ERROR] Docker is not installed. Please install Docker and docker-compose-v2."
+    exit 1
+fi
+
+sudo systemctl enable --now docker >/dev/null 2>&1 || true
+
+# ------------------------------------------------------------------------------
+# 2. Public IP Detection & Domain Setup
+# ------------------------------------------------------------------------------
+if [ -n "${1:-}" ]; then
+    PUBLIC_IP="$1"
+    echo "[INFO] Using user-provided Public IP: $PUBLIC_IP"
+else
+    echo "[INFO] Detecting public IPv4 address..."
+    PUBLIC_IP=$(curl -s --connect-timeout 5 https://ifconfig.me || curl -s --connect-timeout 5 https://api.ipify.org || true)
+
+    if [ -z "$PUBLIC_IP" ]; then
+        echo "[ERROR] Failed to auto-detect public IP. Please provide it manually:"
+        echo "        ./deploy.sh <YOUR_PUBLIC_IP>"
+        exit 1
+    fi
+    echo "[INFO] Detected Public IP: $PUBLIC_IP"
+fi
+
+DOMAIN="${PUBLIC_IP}.nip.io"
+PROTOCOL="https"
+APP_BASE_URL="${PROTOCOL}://${DOMAIN}"
+echo "[INFO] Target Domain: $DOMAIN"
+echo "[INFO] Base URL:      $APP_BASE_URL"
+
+# ------------------------------------------------------------------------------
+# 3. Configure OS Firewall (Ubuntu iptables on Oracle Cloud)
+# ------------------------------------------------------------------------------
+echo "[INFO] Opening ingress ports 80 and 443 in Ubuntu OS firewall..."
+for port in 80 443; do
+    # Remove every copy left by earlier runs, then add exactly one
+    while sudo iptables -D INPUT -m state --state NEW -p tcp --dport "$port" -j ACCEPT 2>/dev/null; do :; done
+    while sudo iptables -D INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; do :; done
+    sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport "$port" -j ACCEPT 2>/dev/null || \
+    sudo iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
+done
+
+sudo netfilter-persistent save >/dev/null 2>&1 || true
+
+# ------------------------------------------------------------------------------
+# 4. Generate Root .env File (only once, secrets are never overwritten)
+# ------------------------------------------------------------------------------
+ENV_FILE="$PROJECT_DIR/.env"
+
+gen_secret() {
+    # Hex output stays safe inside URLs such as DATABASE_URL
+    openssl rand -hex 32
+}
+
+if [ -f "$ENV_FILE" ]; then
+    echo "[INFO] Existing .env found, keeping its secrets."
+
+    if grep -Eq '^(POSTGRES_PASSWORD=postgres|KEYCLOAK_ADMIN_PASSWORD=admin|KEYCLOAK_DB_PASSWORD=keycloak)$' "$ENV_FILE"; then
+        echo "[ERROR] $ENV_FILE still contains default credentials (postgres/admin/keycloak)."
+        echo "        Move it away (mv .env .env.old) and rotate the existing databases before re-running."
+        exit 1
+    fi
+
+    OLD_DOMAIN=$(grep -E '^DOMAIN=' "$ENV_FILE" | cut -d= -f2-)
+    if [ -n "$OLD_DOMAIN" ] && [ "$OLD_DOMAIN" != "$DOMAIN" ]; then
+        echo "[INFO] Domain changed ($OLD_DOMAIN -> $DOMAIN), updating URLs in .env..."
+        sed -i "s/${OLD_DOMAIN//./\\.}/${DOMAIN}/g" "$ENV_FILE"
+    fi
+else
+    echo "[INFO] Generating root .env configuration with fresh secrets..."
+
+    CARTO_KEY="${VITE_CARTO_API_KEY:-}"
+    if [ -z "$CARTO_KEY" ] && [ -t 0 ]; then
+        read -rp "[INPUT] CARTO API key (leave empty to skip): " CARTO_KEY
+    fi
+    if [ -z "$CARTO_KEY" ]; then
+        echo "[WARN] VITE_CARTO_API_KEY is empty, basemap tiles may fail. Edit .env later."
+    fi
+
+    # Let's Encrypt rejects example.com addresses, so ask for a real one
+    ACME_EMAIL="${ACME_EMAIL:-}"
+    if [ -z "$ACME_EMAIL" ] && [ -t 0 ]; then
+        read -rp "[INPUT] Email for Let's Encrypt certificate notices: " ACME_EMAIL
+    fi
+    if [ -z "$ACME_EMAIL" ]; then
+        echo "[ERROR] An email is required for HTTPS. Re-run with: ACME_EMAIL=you@mail.com ./deploy.sh"
+        exit 1
+    fi
+
+    POSTGRES_PASSWORD=$(gen_secret)
+    KEYCLOAK_DB_PASSWORD=$(gen_secret)
+    KEYCLOAK_ADMIN_PASSWORD=$(gen_secret)
+    KEYCLOAK_CLIENT_SECRET=$(gen_secret)
+
+    # Create the file with restricted permissions before writing secrets
+    (umask 077 && : > "$ENV_FILE")
+
+    cat <<EOF > "$ENV_FILE"
+# ==============================================================================
+# Auto-generated by deploy.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Contains secrets: never commit this file. Back it up somewhere safe.
+# ==============================================================================
+DOMAIN=${DOMAIN}
+PROTOCOL=${PROTOCOL}
+HMR_PORT=443
+APP_BASE_URL=${APP_BASE_URL}
+
+# Application URLs
+VITE_API_URL=${APP_BASE_URL}/api
+VITE_KEYCLOAK_URL=${APP_BASE_URL}/auth
+VITE_KEYCLOAK_REALM=atlas
+VITE_KEYCLOAK_CLIENT_ID=atlas-frontend
+VITE_CARTO_API_KEY=${CARTO_KEY}
+
+KEYCLOAK_ISSUER=${APP_BASE_URL}/auth/realms/atlas
+CORS_ORIGINS=${APP_BASE_URL}
+
+# Internal Networking
+INTERNAL_KEYCLOAK_URL=http://keycloak:8080/auth
+REDIS_URL=redis://redis:6379
+DATABASE_URL=postgresql+psycopg://atlas:${POSTGRES_PASSWORD}@db:5432/atlas
+
+# Keycloak Administration
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+KEYCLOAK_REALM=atlas
+KEYCLOAK_CLIENT_ID=atlas-backend
+KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+KEYCLOAK_FRONT_END_CLIENT_ID=atlas-frontend
+
+# Database Configuration
+POSTGRES_DB=atlas
+POSTGRES_USER=atlas
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+KEYCLOAK_DB_NAME=keycloak
+KEYCLOAK_DB_USER=keycloak
+KEYCLOAK_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD}
+
+# Caddy Ingress Settings
+CADDY_SITE=${DOMAIN}
+ACME_EMAIL=${ACME_EMAIL}
+EOF
+    echo "[INFO] Secrets written to $ENV_FILE"
+fi
+
+chmod 600 "$ENV_FILE"
+
+# Production compose overrides: plain `docker compose ...` then uses both files
+if ! grep -q '^COMPOSE_FILE=' "$ENV_FILE"; then
+    echo "COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml" >> "$ENV_FILE"
+fi
+
+# IPs allowed on /auth/admin (space-separated). Defaults to the IP of this SSH session.
+if ! grep -q '^ADMIN_ALLOWED_IPS=' "$ENV_FILE"; then
+    ADMIN_IP="${ADMIN_ALLOWED_IPS:-${SSH_CLIENT%% *}}"
+    if [ -n "$ADMIN_IP" ]; then
+        echo "[INFO] Keycloak admin console restricted to: $ADMIN_IP (edit ADMIN_ALLOWED_IPS in .env)"
+        echo "ADMIN_ALLOWED_IPS=$ADMIN_IP" >> "$ENV_FILE"
+    else
+        echo "[WARN] No admin IP detected, /auth/admin will be blocked for everyone. Set ADMIN_ALLOWED_IPS in .env."
+    fi
+fi
+
+# Use the values actually stored in .env for the next steps
+APP_BASE_URL=$(grep -E '^APP_BASE_URL=' "$ENV_FILE" | cut -d= -f2-)
+DOMAIN=$(grep -E '^DOMAIN=' "$ENV_FILE" | cut -d= -f2-)
+
+# ------------------------------------------------------------------------------
+# 5. Template Keycloak Configuration
+# ------------------------------------------------------------------------------
+TEMPLATE_FILE="$PROJECT_DIR/keycloak/atlas-frontend.json.template"
+TARGET_FILE="$PROJECT_DIR/keycloak/atlas-frontend.json"
+
+if [ -f "$TEMPLATE_FILE" ]; then
+    echo "[INFO] Compiling $TARGET_FILE using envsubst..."
+    export APP_BASE_URL DOMAIN
+    envsubst < "$TEMPLATE_FILE" > "$TARGET_FILE"
+else
+    echo "[WARN] Template $TEMPLATE_FILE not found, skipping compile."
+fi
+
+# ------------------------------------------------------------------------------
+# 6. Back Up the Database (rollback point if the new version breaks something)
+# ------------------------------------------------------------------------------
+BACKUP_DIR="$PROJECT_DIR/backups"
+KEEP_BACKUPS=7
+LAST_GOOD_FILE="$BACKUP_DIR/last-good-commit"
+mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+
+if [ -n "$(docker compose ps -q --status running db 2>/dev/null)" ]; then
+    # The commit in the name tells which code version this data belongs to
+    BACKUP_FILE="$BACKUP_DIR/atlas-$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).sql.gz"
+    echo "[INFO] Backing up the database to $BACKUP_FILE..."
+    # Credentials come from the container's own environment; a failed dump stops the deploy
+    docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+        | gzip > "$BACKUP_FILE.tmp"
+    mv "$BACKUP_FILE.tmp" "$BACKUP_FILE"
+    ls -1t "$BACKUP_DIR"/atlas-*.sql.gz | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm --
+else
+    echo "[INFO] Database not running yet (first deploy), skipping backup."
+fi
+
+# ------------------------------------------------------------------------------
+# 7. Build and Launch Containers
+# ------------------------------------------------------------------------------
+echo "[INFO] Building and starting Docker containers (waiting until healthy)..."
+# --wait fails if a migration fails or a service never becomes healthy
+if ! docker compose up -d --build --remove-orphans --wait --wait-timeout 300; then
+    echo "================================================================================"
+    echo "[ERROR] Deployment failed. Service status:"
+    docker compose ps -a
+    echo "[ERROR] Logs:  docker compose logs --tail 50 <service>"
+    LAST_GOOD=$(cat "$LAST_GOOD_FILE" 2>/dev/null || true)
+    if [ -n "$LAST_GOOD" ] && [ "$LAST_GOOD" != "$(git rev-parse HEAD)" ]; then
+        echo "[ERROR] To go back to the last working version ($(git log -1 --format='%h %s' "$LAST_GOOD")):"
+        echo "        ./rollback.sh"
+    fi
+    echo "================================================================================"
+    exit 1
+fi
+
+# Remember this version as the one rollback.sh returns to
+git rev-parse HEAD > "$LAST_GOOD_FILE"
+
+# ------------------------------------------------------------------------------
+# 8. Deployment Summary
+# ------------------------------------------------------------------------------
+echo "================================================================================"
+echo "[SUCCESS] Atlas deployment completed successfully."
+echo "Application URL:     ${APP_BASE_URL}"
+echo "Keycloak Admin URL:  ${APP_BASE_URL}/auth"
+echo "API Ping Endpoint:   ${APP_BASE_URL}/api/ping"
+echo "Admin credentials:   stored in ${ENV_FILE} (KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD)"
+echo "================================================================================"
+echo "[NOTE] Ensure that Oracle Cloud VCN Security List has Ingress Rules for:"
+echo "       - TCP Port 80  (Source CIDR: 0.0.0.0/0)"
+echo "       - TCP Port 443 (Source CIDR: 0.0.0.0/0)"
+echo "================================================================================"

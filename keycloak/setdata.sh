@@ -1,12 +1,23 @@
 #!/bin/bash
 
-# TODO Add real credentials for deployment
+# Credentials come from the container environment (see .env / docker-compose.yml)
 echo "Configuring Keycloak..."
-/opt/keycloak/bin/kcadm.sh config credentials \
-  --server http://localhost:8080 \
-  --realm master \
-  --user admin \
-  --password admin
+# The port opens before the admin user is bootstrapped, so retry the login
+for attempt in $(seq 1 30); do
+  if /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth \
+    --realm master \
+    --user "${KEYCLOAK_ADMIN:-admin}" \
+    --password "${KEYCLOAK_ADMIN_PASSWORD:-admin}"; then
+    break
+  fi
+  if [ "$attempt" -eq 30 ]; then
+    echo "ERROR: could not log in as Keycloak admin. Does KEYCLOAK_ADMIN_PASSWORD match the existing keycloak-data volume?"
+    exit 1
+  fi
+  echo "Admin login failed (attempt $attempt/30), retrying in 5s..."
+  sleep 5
+done
 
 # Create realm if it doesn't exist
 echo "Creating realm atlas..."
@@ -22,13 +33,13 @@ echo "Setting Atlas login theme..."
   -s loginTheme=atlas
   
 # Update realm settings
-# TODO remove sslRequired=None for production
+# REALM_SSL_REQUIRED is "external" on the server, "none" for plain-HTTP local dev
 echo "Updating realm settings..."
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
   -s registrationAllowed=true \
   -s loginWithEmailAllowed=true \
   -s resetPasswordAllowed=true \
-  -s sslRequired=None \
+  -s sslRequired="${REALM_SSL_REQUIRED:-none}" \
   -s accessTokenLifespan=3600 \
   -s ssoSessionMaxLifespan=86400 \
   -s ssoSessionIdleTimeout=3600 
@@ -39,35 +50,55 @@ client_exists() {
   /opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId="$client_id" --fields id | grep -q "id"
 }
 
-# Create frontend client if it doesn't exist
+# Create or update frontend client
 echo "Setting up frontend client..."
 if client_exists "atlas-frontend"; then
-  echo "Frontend client already exists"
+  echo "Frontend client already exists, updating configuration..."
+  FRONTEND_CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId=atlas-frontend --fields id | grep -oP '(?<="id" : ")[^"]*')
+  /opt/keycloak/bin/kcadm.sh update clients/"$FRONTEND_CLIENT_ID" -r atlas -f /var/tmp/atlas-frontend.json
+  echo "Frontend client updated"
 else
   /opt/keycloak/bin/kcadm.sh create clients -r atlas -f /var/tmp/atlas-frontend.json
   echo "Frontend client created"
 fi
 
-# Create backend client if it doesn't exist
+# Create backend client if it doesn't exist, and keep its secret in sync with .env
 echo "Setting up backend client..."
 if client_exists "atlas-backend"; then
-  echo "Backend client already exists"
+  BACKEND_CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId=atlas-backend --fields id | grep -oP '(?<="id" : ")[^"]*')
+  /opt/keycloak/bin/kcadm.sh update clients/"$BACKEND_CLIENT_ID" -r atlas -s secret="${KEYCLOAK_CLIENT_SECRET:-secret}"
+  echo "Backend client already exists, secret updated"
 else
-  /opt/keycloak/bin/kcadm.sh create clients -r atlas -f /var/tmp/atlas-backend.json
+  /opt/keycloak/bin/kcadm.sh create clients -r atlas -f /var/tmp/atlas-backend.json -s secret="${KEYCLOAK_CLIENT_SECRET:-secret}"
   echo "Backend client created"
 fi
 
-# Add 'sub' mapper to frontend client
-echo "Adding 'sub' claim mapper to atlas-frontend..."
+# Protocol mappers on the frontend client (skipped when they already exist)
 FRONTEND_CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients -r atlas -q clientId=atlas-frontend --fields id | grep -oP '(?<="id" : ")[^"]*')
+
+mapper_exists() {
+  /opt/keycloak/bin/kcadm.sh get clients/"$FRONTEND_CLIENT_ID"/protocol-mappers/models -r atlas --fields name | grep -q "\"$1\""
+}
 
 if [ -n "$FRONTEND_CLIENT_ID" ]; then
   echo "Frontend client UUID: $FRONTEND_CLIENT_ID"
-  
-  # Create a User Property mapper for 'sub' claim
-  /opt/keycloak/bin/kcadm.sh create clients/$FRONTEND_CLIENT_ID/protocol-mappers/models -r atlas -s name=user-id-mapper -s protocol=openid-connect -s protocolMapper=oidc-usermodel-property-mapper -s 'config."user.attribute"=id' -s 'config."claim.name"=sub' -s 'config."jsonType.label"=String' -s 'config."id.token.claim"=true' -s 'config."access.token.claim"=true' -s 'config."userinfo.token.claim"=true'
-  
-  echo "Mapper 'sub' added to frontend client"
+
+  echo "Adding 'sub' claim mapper to atlas-frontend..."
+  if mapper_exists "user-id-mapper"; then
+    echo "Mapper 'sub' already exists"
+  else
+    /opt/keycloak/bin/kcadm.sh create clients/$FRONTEND_CLIENT_ID/protocol-mappers/models -r atlas -s name=user-id-mapper -s protocol=openid-connect -s protocolMapper=oidc-usermodel-property-mapper -s 'config."user.attribute"=id' -s 'config."claim.name"=sub' -s 'config."jsonType.label"=String' -s 'config."id.token.claim"=true' -s 'config."access.token.claim"=true' -s 'config."userinfo.token.claim"=true'
+    echo "Mapper 'sub' added to frontend client"
+  fi
+
+  # The backend checks aud=atlas-backend, so frontend tokens must carry it
+  echo "Adding 'atlas-backend' audience mapper to atlas-frontend..."
+  if mapper_exists "atlas-backend-audience"; then
+    echo "Audience mapper already exists"
+  else
+    /opt/keycloak/bin/kcadm.sh create clients/$FRONTEND_CLIENT_ID/protocol-mappers/models -r atlas -s name=atlas-backend-audience -s protocol=openid-connect -s protocolMapper=oidc-audience-mapper -s 'config."included.client.audience"=atlas-backend' -s 'config."access.token.claim"=true' -s 'config."id.token.claim"=false'
+    echo "Audience mapper added to frontend client"
+  fi
 else
   echo "Error: Could not find frontend client UUID"
 fi
