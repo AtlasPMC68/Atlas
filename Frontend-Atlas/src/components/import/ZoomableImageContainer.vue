@@ -1,6 +1,8 @@
 <template>
   <div class="flex flex-col h-full w-full">
-    <div class="px-3 py-2 text-xs font-medium bg-base-200 border-b flex items-center justify-between gap-3 shrink-0">
+    <div
+      class="px-3 py-2 text-xs font-medium bg-base-200 border-b flex items-center justify-between gap-3 shrink-0"
+    >
       <span class="text-xs text-base-content/80">
         {{ headerText }}
       </span>
