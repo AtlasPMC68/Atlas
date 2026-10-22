@@ -62,61 +62,55 @@ To run the project using Docker Compose, follow these steps:
    - Download and install Docker Desktop from [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/).
    - Start Docker Desktop and wait until it is fully running (the whale icon should appear in your system tray).
 
-2. **Build the Docker images (first time or after changes to dependencies):**
+2. **Environment variables (optional):**
+   - `Backend-Atlas/.env.dev` is read as before. A root `.env` is optional locally: if it exists, its values override `.env.dev`.
+   - To create one: `cp .env.example .env`, then ask a teammate for the `VITE_CARTO_API_KEY`.
+   - Without a root `.env`, `docker-compose.yml` falls back to local defaults (`postgres`/`postgres`, Keycloak `admin`/`admin`).
+
+3. **Build and start the services:**
 
    ```sh
-   docker-compose build
+   docker compose up -d --build
    ```
 
-3. **Start the services:**
-
-   ```sh
-   docker-compose up
-   ```
-
-   - This will start the backend service (http://localhost:8000) and the frontend (http://localhost:3000).
-   - Redis (localhost:6379)
-   - PostgreSQL : localhost:5432
-   - Flower (Celery Monitoring): http://localhost:5555
+   - The `migrate` service applies the database migrations first, then the backend and the workers start.
+   - Everything goes through Caddy on port 80:
+     - Frontend: http://localhost
+     - Backend API: http://localhost/api
+     - Keycloak: http://localhost/auth
+   - Flower (Celery Monitoring): http://localhost:5555, PostgreSQL: `localhost:5432`, Redis: `localhost:6379`. These only listen on `127.0.0.1`.
 
 4. **Test the backend:**
-   - In a new terminal, run:
-     ```sh
-     curl http://localhost:8000/ping
-     ```
+
+   ```sh
+   curl http://localhost/api/ping
+   ```
+
    - You should receive a response like `{ "message": "pong" }`.
 
 5. **Test the frontend:**
-   - Open your browser and go to [http://localhost:3000]
+   - Open your browser and go to [http://localhost](http://localhost)
    - You should see the Atlas web application.
 
-6. **Test db:**
-   - In a terminal, run:
+6. **Test Celery and Redis:**
 
    ```sh
-   curl http://localhost:8000/db-test
-   ```
-
-   - You should receive a response like `{"db_status":"connected","result":[1]}`
-
-7. **Test Celery and Redis:**
-   - In terminal, run:
-
-   ```sh
-      curl -X POST "http://localhost:8000/test/simple"
+   curl -X POST "http://localhost/api/test/simple"
    ```
 
    - You should receive: `{"task_id": random Id,"status":"Task started","message":"Task launched for World"}`
 
-8. **Live Reload (Development):**
+7. **Live Reload (Development):**
    - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
    - **Frontend:** The frontend uses the Vite dev server with hot reload. Any changes to files will instantly reload the app in your browser.
 
-9. **Stopping the services:**
-   - Press `Ctrl+C` in the terminal running Docker Compose, or run:
-     ```sh
-     docker-compose down
-     ```
+8. **Stopping the services:**
+
+   ```sh
+   docker compose down
+   ```
+
+   Do not add `-v`: it deletes the volumes, so the database and the Keycloak accounts.
 
 ---
 
@@ -204,7 +198,7 @@ Flower, PostgreSQL and Redis only listen on `127.0.0.1`, so they are not reachab
 ### To rebuild everything
 
 ```sh
-docker compose down -v ; docker compose build --no-cache ; docker compose up -d
+docker compose down ; docker compose build --no-cache ; docker compose up -d
 
 ```
 
@@ -224,7 +218,7 @@ docker compose run --rm test-backend pytest tests/test_extraction_text.py -q
 #### Run a test with more details
 
 ```sh
-docker compose exec test-backend pytest tests/test_extraction_text.py -q -vv
+docker compose run --rm test-backend pytest tests/test_extraction_text.py -q -vv
 ```
 
 #### Run the frontend tests
@@ -240,6 +234,19 @@ Do not run pytest directly on the local machine to validate this project. The co
 This avoids Python dependency issues and broken imports that are unrelated to the code being tested.
 
 ---
+
+### Deploying to the server
+
+On the Ubuntu VM (ARM64, Docker installed):
+
+```sh
+git pull && ./deploy.sh
+```
+
+- The first run generates a root `.env` with random secrets (kept on the following runs, never committed), and asks for the Carto key and an email for the HTTPS certificate.
+- On the server, `.env` sets `COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml`, so every `docker compose` command uses the production settings.
+- The Keycloak admin console (`/auth/admin`) only answers the IPs in `ADMIN_ALLOWED_IPS` (in `.env`).
+- `deploy.sh` is for the server only: locally, use `docker compose up`.
 
 ### Changing the database schema
 
