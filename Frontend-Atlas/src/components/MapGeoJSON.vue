@@ -293,6 +293,28 @@ function syncFeaturesFromMapLayers(): Feature[] {
   return Array.from(mergedById.values());
 }
 
+// Frames the features currently drawn on the map (visibility and timeline
+// filters applied). Keeps the current view when nothing is drawn.
+function fitToVisibleFeatures() {
+  if (!map) return;
+  const bounds = L.latLngBounds([]);
+  featureLayerManager.layers.forEach((layer) => {
+    if (!map!.hasLayer(layer)) return;
+    const located = layer as Partial<{
+      getBounds: () => L.LatLngBounds;
+      getLatLng: () => L.LatLng;
+    }>;
+    if (typeof located.getBounds === "function") {
+      bounds.extend(located.getBounds());
+    } else if (typeof located.getLatLng === "function") {
+      bounds.extend(located.getLatLng());
+    }
+  });
+  if (!bounds.isValid()) return;
+  // maxZoom keeps a single city or label from zooming in to street level
+  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10, animate: false });
+}
+
 function clearDraftLayers() {
   drawing.clearDrawnItems();
 }
@@ -305,6 +327,7 @@ defineExpose({
   syncFeaturesFromMapLayers,
   clearDraftLayers,
   resetSelection,
+  fitToVisibleFeatures,
 });
 
 // Tracks feature IDs that got `feature-updated` during the current cut cycle.
