@@ -260,12 +260,12 @@ Rules:
 
 Before starting the new version, `deploy.sh` dumps the database to `backups/atlas-<date>-<commit>.sql.gz` (the 7 latest are kept). The commit in the name is the code version that was running when the dump was taken.
 
-**The new code is broken but the data is fine** (most cases): go back to the previous commit and redeploy.
+`deploy.sh` waits until every service is healthy. If one is not, it exits with an error, prints the service status and suggests `./rollback.sh`. Each successful deploy is recorded in `backups/last-good-commit`.
+
+**The new code is broken but the data is fine** (most cases): return to the last version that deployed successfully.
 
 ```bash
-git log --oneline -5             # find the last good commit
-git checkout <good-commit>
-./deploy.sh
+./rollback.sh
 # once fixed on the branch: git checkout <branch> && git pull && ./deploy.sh
 ```
 

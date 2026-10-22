@@ -62,11 +62,13 @@ echo "[INFO] Base URL:      $APP_BASE_URL"
 # 3. Configure OS Firewall (Ubuntu iptables on Oracle Cloud)
 # ------------------------------------------------------------------------------
 echo "[INFO] Opening ingress ports 80 and 443 in Ubuntu OS firewall..."
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT 2>/dev/null || \
-sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
-
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT 2>/dev/null || \
-sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+for port in 80 443; do
+    # Remove every copy left by earlier runs, then add exactly one
+    while sudo iptables -D INPUT -m state --state NEW -p tcp --dport "$port" -j ACCEPT 2>/dev/null; do :; done
+    while sudo iptables -D INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; do :; done
+    sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport "$port" -j ACCEPT 2>/dev/null || \
+    sudo iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
+done
 
 sudo netfilter-persistent save >/dev/null 2>&1 || true
 
@@ -213,9 +215,10 @@ fi
 # ------------------------------------------------------------------------------
 BACKUP_DIR="$PROJECT_DIR/backups"
 KEEP_BACKUPS=7
+LAST_GOOD_FILE="$BACKUP_DIR/last-good-commit"
+mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
 
 if [ -n "$(docker compose ps -q --status running db 2>/dev/null)" ]; then
-    mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
     # The commit in the name tells which code version this data belongs to
     BACKUP_FILE="$BACKUP_DIR/atlas-$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD).sql.gz"
     echo "[INFO] Backing up the database to $BACKUP_FILE..."
@@ -231,8 +234,24 @@ fi
 # ------------------------------------------------------------------------------
 # 7. Build and Launch Containers
 # ------------------------------------------------------------------------------
-echo "[INFO] Building and starting Docker containers..."
-docker compose up -d --build --remove-orphans
+echo "[INFO] Building and starting Docker containers (waiting until healthy)..."
+# --wait fails if a migration fails or a service never becomes healthy
+if ! docker compose up -d --build --remove-orphans --wait --wait-timeout 300; then
+    echo "================================================================================"
+    echo "[ERROR] Deployment failed. Service status:"
+    docker compose ps -a
+    echo "[ERROR] Logs:  docker compose logs --tail 50 <service>"
+    LAST_GOOD=$(cat "$LAST_GOOD_FILE" 2>/dev/null || true)
+    if [ -n "$LAST_GOOD" ] && [ "$LAST_GOOD" != "$(git rev-parse HEAD)" ]; then
+        echo "[ERROR] To go back to the last working version ($(git log -1 --format='%h %s' "$LAST_GOOD")):"
+        echo "        ./rollback.sh"
+    fi
+    echo "================================================================================"
+    exit 1
+fi
+
+# Remember this version as the one rollback.sh returns to
+git rev-parse HEAD > "$LAST_GOOD_FILE"
 
 # ------------------------------------------------------------------------------
 # 8. Deployment Summary
