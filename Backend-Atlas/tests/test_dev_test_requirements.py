@@ -84,7 +84,7 @@ def test_derived_artifact_is_invalidated_by_a_different_image(tmp_path, monkeypa
         key=derived.TEXT_REGIONS_KEY,
         payload=[[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]],
         image_sha=derived._image_fingerprint(str(image)),
-        producer={"easyocr": "1.7.2"},
+        producer={"paddleocr": "3.3.0"},
         produced_at="2026-01-01T00:00:00+00:00",
     )
     derived._store_artifact("map1", artifact)

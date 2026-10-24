@@ -20,6 +20,8 @@ pydantic==2.12.5
 email-validator==2.3.0
 matplotlib==3.10.8
 opencv-python-headless==4.13.0.92
+paddlepaddle==3.2.0
+paddleocr==3.3.0
 scikit-image==0.26.0
 scipy==1.16.3
 imageio==2.37.2
