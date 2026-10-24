@@ -1,0 +1,330 @@
+"""Unit tests for app.utils.cities_validation.
+
+Tests:
+- String normalization and bounds checking helpers.
+- Offline geographic entity detection (countries, continents, lakes, oceans/seas).
+- In-bounds vs out-of-bounds geographic feature filtering.
+- Rejection of out-of-bounds countries without false fuzzy city matches.
+- City candidate resolution, population-based disambiguation, and frame bounds.
+- Last-resort fuzzy matching for OCR typos.
+- Line-by-line OCR label matching (match_ocr_label).
+"""
+
+import pytest
+from app.utils.cities_validation import (
+    _normalize,
+    get_city_with_max_population,
+    get_geographic_entity,
+    is_country_or_continent,
+    is_in_bounds,
+    match_ocr_label,
+)
+
+# Reference test bounding boxes
+EUROPE_BOUNDS = {"south": 35.0, "north": 70.0, "west": -10.0, "east": 40.0}
+CANADA_BOUNDS = {"south": 41.0, "north": 83.0, "west": -141.0, "east": -52.0}
+NORTH_AMERICA_BOUNDS = {"south": 10.0, "north": 85.0, "west": -170.0, "east": -50.0}
+
+
+# Normalization & Bounds Helper Tests
+
+
+def test_normalize():
+    assert _normalize("Montréal") == "montreal"
+    assert _normalize("  États-Unis  ") == "etats unis"
+    assert _normalize("Océan Atlantique!!!") == "ocean atlantique"
+    assert _normalize("") == ""
+
+
+def test_is_in_bounds():
+    # None bounds should always allow
+    assert is_in_bounds(45.0, 5.0, None) is True
+
+    # Inside Europe
+    assert is_in_bounds(48.8566, 2.3522, EUROPE_BOUNDS) is True  # Paris
+
+    # Outside Europe
+    assert is_in_bounds(45.5017, -73.5673, EUROPE_BOUNDS) is False  # Montreal
+
+    # Alternative coordinate naming: min_lat/max_lat/min_lon/max_lon
+    alt_bounds = {"min_lat": 40.0, "max_lat": 60.0, "min_lon": -10.0, "max_lon": 20.0}
+    assert is_in_bounds(48.8566, 2.3522, alt_bounds) is True
+    assert is_in_bounds(30.0, 2.3522, alt_bounds) is False
+
+
+# Offline Geographic Entities Lookup Tests
+
+
+def test_get_geographic_entity_countries():
+    france = get_geographic_entity("France")
+    assert france is not None
+    assert france["type"] == "country"
+    assert france["name"] == "France"
+
+    # French and English aliases
+    spain_fr = get_geographic_entity("Espagne")
+    spain_en = get_geographic_entity("Spain")
+    assert spain_fr is not None
+    assert spain_en is not None
+    assert spain_fr["name"] == spain_en["name"]
+
+    # Alias helper
+    assert is_country_or_continent("Canada") is not None
+
+
+def test_get_geographic_entity_continents():
+    africa_fr = get_geographic_entity("Afrique")
+    africa_en = get_geographic_entity("Africa")
+    assert africa_fr is not None
+    assert africa_en is not None
+    assert africa_fr["type"] == "continent"
+
+
+def test_get_geographic_entity_oceans_and_seas():
+    ocean = get_geographic_entity("Océan Atlantique")
+    assert ocean is not None
+    assert ocean["type"] == "ocean"
+
+    sea = get_geographic_entity("Mer Méditerranée")
+    assert sea is not None
+    assert sea["type"] == "sea"
+
+
+def test_get_geographic_entity_lakes():
+    lake = get_geographic_entity("Lac Supérieur")
+    assert lake is not None
+    assert lake["type"] == "lake"
+    assert "Lac" in lake["name_fr"]
+
+
+def test_get_geographic_entity_rivers_and_fleuves():
+    # Rivières
+    ohio = get_geographic_entity("Rivière Ohio")
+    assert ohio is not None
+    assert ohio["type"] == "river"
+    assert "Rivière Ohio" in ohio["name_fr"]
+
+    teslin = get_geographic_entity("Rivière Teslin")
+    assert teslin is not None
+    assert teslin["type"] == "river"
+
+    # Fleuves
+    st_laurent = get_geographic_entity("Fleuve Saint-Laurent")
+    assert st_laurent is not None
+    assert st_laurent["type"] == "fleuve"
+
+    mississippi = get_geographic_entity("Fleuve Mississippi")
+    assert mississippi is not None
+    assert mississippi["type"] == "fleuve"
+
+
+def test_get_geographic_entity_provinces_and_states():
+    # Florida
+    florida = get_geographic_entity("Floride")
+    assert florida is not None
+    assert florida["type"] == "state"
+
+    # Quebec
+    quebec = get_geographic_entity("Province de Québec")
+    assert quebec is not None
+    assert quebec["type"] == "province"
+
+    # Historical territory
+    rupert = get_geographic_entity("Terre de Rupert")
+    assert rupert is not None
+    assert rupert["type"] == "territory"
+
+
+def test_get_geographic_entity_non_entities():
+    # Cities or random strings must return None
+    assert get_geographic_entity("Montréal") is None
+    assert get_geographic_entity("Paris") is None
+    assert get_geographic_entity("NonExistentXYZ") is None
+
+
+# get_city_with_max_population with Geographic Entities
+
+
+def test_country_in_bounds_matched():
+    res = get_city_with_max_population("France", frame_bounds=EUROPE_BOUNDS)
+    assert res["found"] is True
+    assert res["name"] == "FRANCE"
+    assert res["type"] == "country"
+    assert res["lat"] != 0.0
+    assert res["lon"] != 0.0
+
+
+def test_country_out_of_bounds_blocked_without_fuzzy_match():
+    """Ensure countries out of bounds are blocked and NOT matched to random cities via fuzzy matching."""
+    # Canada on Europe map
+    res = get_city_with_max_population("Canada", frame_bounds=EUROPE_BOUNDS, confidence_threshold=0.60)
+    assert res["found"] is False
+    assert res["matched_text"] is None
+
+    # France on Canada map
+    res_fr = get_city_with_max_population("France", frame_bounds=CANADA_BOUNDS, confidence_threshold=0.60)
+    assert res_fr["found"] is False
+
+
+def test_lake_and_ocean_in_and_out_of_bounds():
+    # Lake Superior in Canada bounds
+    res_lake_ca = get_city_with_max_population("Lac Supérieur", frame_bounds=CANADA_BOUNDS)
+    assert res_lake_ca["found"] is True
+    assert res_lake_ca["type"] == "lake"
+
+    # Lake Superior in Europe bounds -> blocked
+    res_lake_eu = get_city_with_max_population("Lac Supérieur", frame_bounds=EUROPE_BOUNDS)
+    assert res_lake_eu["found"] is False
+
+    # Ocean without bounds -> found
+    res_ocean = get_city_with_max_population("Océan Atlantique")
+    assert res_ocean["found"] is True
+    assert res_ocean["type"] == "ocean"
+
+
+def test_fuzzy_match_geographic_entities():
+    """Ensure OCR typos on countries/lakes are recovered and match the country, not random cities."""
+    # "Canade" -> Canada
+    res_ca = get_city_with_max_population("Canade", frame_bounds=CANADA_BOUNDS, confidence_threshold=0.75)
+    assert res_ca["found"] is True
+    assert res_ca["name"] == "CANADA"
+    assert res_ca["type"] == "country"
+
+    # "Eats-Unis" -> États-Unis
+    res_us = get_city_with_max_population("Eats-Unis", frame_bounds=NORTH_AMERICA_BOUNDS, confidence_threshold=0.75)
+    assert res_us["found"] is True
+    assert res_us["name"] == "ÉTATS-UNIS"
+    assert res_us["type"] == "country"
+
+    # "Frannce" -> France in Europe
+    res_fr = get_city_with_max_population("Frannce", frame_bounds=EUROPE_BOUNDS, confidence_threshold=0.75)
+    assert res_fr["found"] is True
+    assert res_fr["name"] == "FRANCE"
+    assert res_fr["type"] == "country"
+
+    # "Canade" on Europe map must be rejected as out of bounds, NOT matched to a random city
+    res_ca_eu = get_city_with_max_population("Canade", frame_bounds=EUROPE_BOUNDS, confidence_threshold=0.75)
+    assert res_ca_eu["found"] is False
+
+    # "Lac Superinla" -> Lac Supérieur (water body: capitalized first letter, not all uppercase)
+    res_lake = get_city_with_max_population("Lac Superinla", frame_bounds=NORTH_AMERICA_BOUNDS, confidence_threshold=0.70)
+    assert res_lake["found"] is True
+    assert res_lake["name"] == "Lac Supérieur"
+    assert res_lake["type"] == "lake"
+
+    # "Florise" (typo for Floride) -> Floride (state: uppercase)
+    res_fl = get_city_with_max_population("Florise", frame_bounds=NORTH_AMERICA_BOUNDS, confidence_threshold=0.75)
+    assert res_fl["found"] is True
+    assert res_fl["name"] == "FLORIDE"
+    assert res_fl["type"] == "state"
+
+
+# get_city_with_max_population with Cities
+
+
+def test_exact_city_in_bounds():
+    res = get_city_with_max_population("Paris", frame_bounds=EUROPE_BOUNDS)
+    assert res["found"] is True
+    assert res["name"] == "Paris"
+    assert res["country"] == "FR"
+    assert res["geonameid"] is not None
+
+
+def test_city_out_of_bounds():
+    # Paris on Canada map -> not found
+    res = get_city_with_max_population("Paris", frame_bounds=CANADA_BOUNDS)
+    assert res["found"] is False
+
+
+def test_population_disambiguation():
+    """When a city name exists in multiple locations, highest population candidate in bounds wins."""
+    # London, UK (pop > 7M) vs London, Canada (pop ~ 350k)
+    res_uk = get_city_with_max_population("London", frame_bounds=EUROPE_BOUNDS)
+    assert res_uk["found"] is True
+    assert res_uk["country"] == "GB"
+
+    res_ca = get_city_with_max_population("London", frame_bounds=CANADA_BOUNDS)
+    assert res_ca["found"] is True
+    assert res_ca["country"] == "CA"
+
+
+# Fuzzy Matching Fallback (Last Resort)
+
+
+def test_fuzzy_match_recovers_ocr_typos():
+    # "Pariss" typo for Paris in Europe
+    res = get_city_with_max_population("Pariss", frame_bounds=EUROPE_BOUNDS, confidence_threshold=0.70)
+    assert res["found"] is True
+    assert res["name"] == "Paris"
+    assert res["country"] == "FR"
+
+
+def test_fuzzy_match_cutoff_respected():
+    # Complete gibberish should not match
+    res = get_city_with_max_population("Xqzjkwlf", frame_bounds=EUROPE_BOUNDS, confidence_threshold=0.80)
+    assert res["found"] is False
+
+
+def test_empty_or_whitespace_query():
+    assert get_city_with_max_population("")["found"] is False
+    assert get_city_with_max_population("   ")["found"] is False
+
+
+# match_ocr_label Function
+
+
+def test_match_ocr_label_single_and_multiline():
+    # Single label
+    matched = match_ocr_label("Paris", frame_bounds=EUROPE_BOUNDS)
+    assert matched is not None
+    assert matched["name"] == "Paris"
+
+    # Multi-line label where one line contains a place
+    multiline = match_ocr_label("Carte de l'Est\nParis\nÉchelle 1:50000", frame_bounds=EUROPE_BOUNDS)
+    assert multiline is not None
+    assert multiline["name"] == "Paris"
+
+    # Multi-line country (formatted uppercase)
+    country_multiline = match_ocr_label("Territoire\nFrance", frame_bounds=EUROPE_BOUNDS)
+    assert country_multiline is not None
+    assert country_multiline["name"] == "FRANCE"
+
+    # None / empty
+    assert match_ocr_label("") is None
+    assert match_ocr_label(None) is None
+
+
+# Casing Priority Tests (ALL-CAPS -> JSON entity, Title Case/lowercase -> City)
+
+
+def test_casing_priority_homonyms():
+    """Ensure ALL-CAPS text prioritizes JSON geographic entities (provinces/states),
+    while Title Case / lowercase text prioritizes geonamescache cities when present in both."""
+    # Québec: in JSON as province, in geonamescache as city
+    res_caps = get_city_with_max_population("QUÉBEC", frame_bounds=CANADA_BOUNDS)
+    assert res_caps["found"] is True
+    assert res_caps["type"] == "province"
+    assert res_caps["geonameid"] == "province:Québec"
+    assert res_caps["name"] == "QUÉBEC"
+
+    res_title = get_city_with_max_population("Québec", frame_bounds=CANADA_BOUNDS)
+    assert res_title["found"] is True
+    assert res_title.get("type") is None  # standard city
+    assert res_title["name"] == "Québec"
+    assert res_title["geonameid"] == 6325494
+
+    res_lower = get_city_with_max_population("quebec", frame_bounds=CANADA_BOUNDS)
+    assert res_lower["found"] is True
+    assert res_lower.get("type") is None
+    assert res_lower["name"] == "Québec"
+    assert res_lower["geonameid"] == 6325494
+
+    # New York: in JSON as state, in geonamescache as city
+    res_ny_caps = get_city_with_max_population("NEW YORK", frame_bounds=NORTH_AMERICA_BOUNDS)
+    assert res_ny_caps["found"] is True
+    assert res_ny_caps["type"] == "state"
+
+    res_ny_title = get_city_with_max_population("New York", frame_bounds=NORTH_AMERICA_BOUNDS)
+    assert res_ny_title["found"] is True
+    assert res_ny_title.get("type") is None  # city
+    assert res_ny_title["population"] > 8000000

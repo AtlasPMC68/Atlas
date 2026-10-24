@@ -94,7 +94,8 @@ export class MapDrawingService {
 
     const rawText =
       textLayer.pm?.getText?.() ?? textLayer.options?.text ?? "";
-    const labelText = rawText.trim();
+    const trimmed = rawText.trim();
+    const labelText = trimmed ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1) : "";
 
     if (!labelText) {
       return;
