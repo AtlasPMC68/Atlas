@@ -279,8 +279,8 @@ def _compute_text_regions(
     with open(image_path, "rb") as f:
         image_bytes = f.read()
 
-    _blocks, text_regions = extract_text(map_id=uuid4(), image_bytes=image_bytes)
-    regions = _regions_to_payload(text_regions)
+    blocks = extract_text(map_id=uuid4(), image_bytes=image_bytes)
+    regions = _regions_to_payload([block["bbox"] for block in blocks if "bbox" in block])
 
     artifact = DerivedArtifact(
         key=TEXT_REGIONS_KEY,

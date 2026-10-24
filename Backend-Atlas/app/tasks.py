@@ -186,7 +186,6 @@ class _ClaimedImport:
     image: bytes
     inputs: ImportInputs
     ocr_blocks: list
-    text_regions: list
 
 
 def _decode_image(content: bytes):
@@ -194,16 +193,6 @@ def _decode_image(content: bytes):
     if image is None:
         raise ValueError("Could not decode the map image")
     return image
-
-def _parse_ocr_result(ocr_result):
-    """(place name blocks, every text box quad) of a stored OCR result. A result
-    stored before the text boxes were kept on their own is the bare block list,
-    whose quads are then the only boxes known."""
-    if isinstance(ocr_result, dict):
-        return list(ocr_result.get("blocks") or []), list(ocr_result.get("textRegions") or [])
-    blocks = list(ocr_result or [])
-    return blocks, [block[0] for block in blocks]
-
 
 async def _claim_ocr(map_id: str, task_id: str) -> Optional[bytes]:
     async with WorkerSessionLocal() as session:
@@ -215,7 +204,7 @@ async def _claim_ocr(map_id: str, task_id: str) -> Optional[bytes]:
             return row.image
 
 
-async def _finish_ocr(map_id: str, task_id: str, payload) -> Optional[str]:
+async def _finish_ocr(map_id: str, task_id: str, payload: list) -> Optional[str]:
     """Store the OCR result. Returns an extraction task id to dispatch when an
     extraction was waiting on the text: whichever of OCR and the user finishes
     last starts the extraction."""
@@ -260,14 +249,12 @@ async def _claim_extraction(map_id: str, task_id: str) -> Optional[_ClaimedImpor
             ).scalar_one()
             row.extraction_state = EXTRACTION_RUNNING
             row.extraction_error = None
-            ocr_blocks, text_regions = _parse_ocr_result(row.ocr_result)
             return _ClaimedImport(
                 project_id=project_id,
                 filename=row.filename,
                 image=row.image,
                 inputs=parse_import_inputs(row.inputs),
-                ocr_blocks=ocr_blocks,
-                text_regions=text_regions,
+                ocr_blocks=list(row.ocr_result or []),
             )
 
 
@@ -411,10 +398,8 @@ def run_map_ocr(self, map_id: str):
         return {"status": "skipped"}
 
     try:
-        blocks, text_regions = extract_text(
-            map_id=UUID(map_id) if isinstance(map_id, str) else map_id, image_bytes=content
-        )
-        payload = {"blocks": ocr_blocks_to_payload(blocks), "textRegions": text_regions}
+        blocks = extract_text(map_id=UUID(map_id) if isinstance(map_id, str) else map_id, image_bytes=content)
+        payload = ocr_blocks_to_payload(blocks)
     except Exception as e:
         logger.error(f"[IMPORT] OCR failed for map {map_id}: {e}", exc_info=True)
         asyncio.run(_fail_ocr(map_id, task_id, str(e)))
@@ -437,10 +422,8 @@ def run_map_ocr(self, map_id: str):
                 )
             )
 
-    logger.info(
-        f"[IMPORT] OCR done for map {map_id}: {len(text_regions)} text boxes, {len(payload['blocks'])} text blocks"
-    )
-    return {"status": "done", "blocks": len(payload["blocks"]), "textRegions": len(text_regions)}
+    logger.info(f"[IMPORT] OCR done for map {map_id}: {len(payload)} text blocks")
+    return {"status": "done", "blocks": len(payload)}
 
 
 @celery_app.task(bind=True)
@@ -474,10 +457,9 @@ def process_map_extraction(self, map_id: str):
             tmp_file.write(claimed.image)
             tmp_file_path = tmp_file.name
 
-        # Every OCR box masks the alignment evidence and is erased before the
-        # colours, legend ones and text that is not a place name included; the
+        # Every OCR box masks the alignment evidence, legend ones included; the
         # legend is masked there anyway.
-        text_regions = claimed.text_regions
+        text_regions = [block[0] for block in claimed.ocr_blocks]
         collections: List[dict[str, Any]] = []
 
         # Step 2: text -> city points

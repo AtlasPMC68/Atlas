@@ -41,7 +41,7 @@ def ocr_blocks_to_payload(blocks: list[dict[str, Any]]) -> list[list]:
     for block in blocks:
         if not isinstance(block, dict):
             continue
-        coords = block.get("quad", [])
+        coords = block.get("bbox", [])
         text = block.get("text", "")
         prob = float(block.get("prob", block.get("confidence", 1.0)))
         payload.append(
@@ -62,7 +62,7 @@ def process_candidate_text(text_val: str, quad: list[list[int]]) -> dict[str, An
         return None
     return {
         "text": clean_text,
-        "quad": quad,
+        "bbox": quad,
         "mapElementType": "ville",
     }
 
@@ -80,40 +80,35 @@ def _detection_quad(detection):
 
 def _build_extracted_text_from_detections(
     detections: list[dict[str, Any]],
-) -> tuple:
-    """
-    Split raw OCR detections into the place name candidates (text + quad) and the
-    quad of every detected box, read, filtered out or not, for the text erasure.
-    """
+) -> list[dict[str, Any]]:
+    """Convert raw OCR detections to the expected text/bbox structure used by the tests."""
     extracted_text: list[dict[str, Any]] = []
-    text_regions = []
     for detection in detections:
         if not isinstance(detection, dict):
             continue
 
-        quad = _detection_quad(detection)
-        if quad is None:
-            continue
-        text_regions.append(quad)
-
         raw_text = str(detection.get("text", "")).strip()
         if not raw_text:
+            continue
+
+        quad = _detection_quad(detection)
+        if quad is None:
             continue
 
         candidate_block = process_candidate_text(raw_text, quad)
         if candidate_block is not None:
             extracted_text.append(candidate_block)
 
-    return extracted_text, text_regions
+    return extracted_text
 
 
 def _run_ocr_pipeline(
     map_id: UUID,
     image,
-) -> tuple:
+) -> list[dict[str, Any]]:
     """
     Execute the PaddleOCR pipeline on an RGB image.
-    Returns (place name candidates [{"text": str, "quad": [[x,y], ...]}, ...], every text box quad)
+    Returns detections in quad box format: [{"text": str, "bbox": [[x,y], ...]}, ...]
     """
     logger.info(f"==> [OCR] PaddleOCR processing text detection and extraction for map {map_id}...")
     started = time.monotonic()
@@ -125,7 +120,7 @@ def _run_ocr_pipeline(
         ocr_output = inference.run_pipeline(detector, recognizer, image)
     except Exception as exc:
         logger.exception("OCR pipeline failed for map %s: %s", map_id, exc)
-        return [], []
+        return []
 
     logger.info(f"==> [OCR] Pipeline successfully completed for map {map_id} in {time.monotonic() - started:.1f}s!")
     return _build_extracted_text_from_detections(ocr_output.get("detections", []))
@@ -134,16 +129,10 @@ def _run_ocr_pipeline(
 def extract_text(
     map_id: UUID,
     image_bytes: bytes,
-) -> tuple:
-    """
-    Extract text using the in-process PaddleOCR pipeline.
-
-    Returns:
-        (blocks, text_regions): the place name candidates, and the quad of every
-        text box detected, the ones filtered out of the blocks included.
-    """
+) -> list[dict[str, Any]]:
+    """Extract text using the in-process PaddleOCR pipeline."""
     if not image_bytes:
-        return [], []
+        return []
 
     MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
     if len(image_bytes) > MAX_FILE_SIZE_BYTES:
@@ -151,22 +140,19 @@ def extract_text(
             f"Image for map {map_id} is too large ({len(image_bytes) / (1024 * 1024):.2f} MB). "
             f"Rejected to prevent an OOM crash (25 MB limit)."
         )
-        return [], []
+        return []
 
     try:
         image = preprocessing.decode_image(image_bytes)
     except IOError as exc:
         logger.warning(f"Could not decode the image of map {map_id}: {exc}")
-        return [], []
+        return []
 
     logger.info(f"Starting OCR pipeline for map {map_id}")
 
-    extracted_text, text_regions = _run_ocr_pipeline(
+    extracted_text = _run_ocr_pipeline(
         map_id=map_id,
         image=image,
     )
-    logger.info(
-        f"==> [OCR] PaddleOCR : {len(text_regions)} zones de texte détectées, "
-        f"{len(extracted_text)} candidates pour {map_id}"
-    )
-    return extracted_text, text_regions
+    logger.info(f"==> [OCR] PaddleOCR : {len(extracted_text)} zones de texte détectées pour {map_id}")
+    return extracted_text

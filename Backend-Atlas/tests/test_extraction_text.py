@@ -259,7 +259,7 @@ def get_extracted_text_cached(image_path: Path) -> list[dict[str, Any]]:
     if image_path not in _OCR_RESULT_CACHE:
         with open(image_path, "rb") as input_file:
             file_content = input_file.read()
-        extracted_text, _text_regions = extract_text(
+        extracted_text = extract_text(
             map_id=uuid4(),
             image_bytes=file_content,
         )
