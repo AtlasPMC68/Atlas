@@ -11977,7 +11977,7 @@
     "type": "province",
     "country_code": "CAN",
     "name": "Québec",
-    "name_fr": "Québec",
+    "name_fr": "Province de Québec",
     "lat": 53.9949,
     "lon": -69.317,
     "aliases": [
@@ -22513,6 +22513,54 @@
       "territoire de la louisiane",
       "territoire de louisiane",
       "louisiana territory"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Lower Canada",
+    "name_fr": "Bas-Canada",
+    "lat": 47.5,
+    "lon": -71.0,
+    "aliases": [
+      "lower canada",
+      "bas canada",
+      "province du bas canada"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Upper Canada",
+    "name_fr": "Haut-Canada",
+    "lat": 44.5,
+    "lon": -79.0,
+    "aliases": [
+      "upper canada",
+      "haut canada",
+      "province du haut canada"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Northwest Territory",
+    "name_fr": "Territoire du Nord-Ouest",
+    "lat": 40.5,
+    "lon": -85.0,
+    "aliases": [
+      "northwest territory",
+      "territoire du nord ouest",
+      "old northwest"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Thirteen Colonies",
+    "name_fr": "Treize Colonies",
+    "lat": 38.0,
+    "lon": -77.5,
+    "aliases": [
+      "thirteen colonies",
+      "treize colonies",
+      "treize colonies britanniques"
     ]
   }
 ]

@@ -707,7 +707,7 @@ const LABEL_CATEGORY_RULES: Record<string, [number, number, string]> = {
   lake:      [20, 2.75, "lake"],
   city:      [30, 4.0,  "city"],
   point:     [30, 4.0,  "city"],
-  river:     [10, 4.0,  "river"],
+  river:     [10, 4.5,  "river"],
 };
 
 function resolveCategoryKey(rawType: string, sizePx: number, isUpper: boolean, isItalic: boolean): string {

@@ -1,15 +1,6 @@
 #!/usr/bin/env python
 """Generate an offline, lightweight JSON dataset of geographic entities with GPS coordinates.
 
-Contains:
-- Continents (7)
-- Countries (252) from geonamescache + pycountry + countryinfo
-- Oceans & Major Seas (~118) from Natural Earth Marine Polys
-- Major Lakes (~412) from Natural Earth Lakes
-- States & Provinces (Admin-1) from Natural Earth
-- Major Rivers & Fleuves (~348) from Natural Earth Rivers
-- Historical Territories (Terre de Rupert, Nouvelle-France)
-
 Output:
     Backend-Atlas/app/data/geographic_entities.json
 """
@@ -32,9 +23,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "app" / "data"
 OUTPUT_FILE = DATA_DIR / "geographic_entities.json"
 
+# Natural Earth Vector GeoJSON repository base URL
 NE_BASE_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/"
 
-# Fallback coordinates [lat, lon] for small territories not covered by countryinfo
+
+# DATA SOURCE: FALLBACK_COORDINATES (Curated reference table)
+# Provides: GPS coordinates [lat, lon] for micro-states, disputed territories, and island
+# entities not indexed by the countryinfo library.
+
 FALLBACK_COORDINATES = {
     "AQ": [-82.86, 135.00],  # Antarctica
     "AX": [60.18, 19.92],  # Aland Islands
@@ -51,7 +47,10 @@ FALLBACK_COORDINATES = {
     "VI": [18.34, -64.93],  # U.S. Virgin Islands
 }
 
-# The 7 Continents
+
+# DATA SOURCE: CONTINENTS (Curated reference table)
+# Provides: ISO 2-letter codes, English names, French names, and central [lat, lon]
+# coordinates for the 7 standard continents.
 CONTINENTS = {
     "AF": {"name": "Africa", "name_fr": "Afrique", "lat": 1.65, "lon": 17.30},
     "AN": {"name": "Antarctica", "name_fr": "Antarctique", "lat": -82.86, "lon": 135.00},
@@ -62,6 +61,97 @@ CONTINENTS = {
     "SA": {"name": "South America", "name_fr": "Amérique du Sud", "lat": -8.78, "lon": -55.49},
 }
 
+# ftm: off
+# DATA SOURCE: MAJOR_FLEUVES (Curated hydrological reference set)
+# Provides: Names of major world rivers that reach oceans/seas directly ("fleuve" in French),
+# distinguishing them from inland tributary streams ("rivière").
+MAJOR_FLEUVES = {
+    "saint-laurent",
+    "saint laurent",
+    "saint lawrence",
+    "st. lawrence",
+    "st lawrence",
+    "mississippi",
+    "amazon",
+    "amazone",
+    "amazonas",
+    "nile",
+    "nil",
+    "congo",
+    "yangtze",
+    "yangzi",
+    "chang jiang",
+    "fleuve bleu",
+    "yellow river",
+    "fleuve jaune",
+    "huang he",
+    "rhine",
+    "rhin",
+    "danube",
+    "seine",
+    "loire",
+    "rhone",
+    "garonne",
+    "volga",
+    "don",
+    "dnieper",
+    "dniepr",
+    "elbe",
+    "oder",
+    "vistula",
+    "vistule",
+    "thames",
+    "tamise",
+    "tagus",
+    "tage",
+    "ebro",
+    "ebre",
+    "douro",
+    "colorado",
+    "columbia",
+    "yukon",
+    "mackenzie",
+    "rio grande",
+    "rio bravo",
+    "parana",
+    "orinoco",
+    "orenoque",
+    "ganges",
+    "gange",
+    "indus",
+    "brahmaputra",
+    "brahmapoutre",
+    "mekong",
+    "amur",
+    "amour",
+    "lena",
+    "ob",
+    "yenisey",
+    "ienissei",
+    "murray",
+    "niger",
+    "zambezi",
+    "zambeze",
+    "senegal",
+    "orange",
+}
+
+
+# DATA SOURCE: HISTORICAL_TERRITORIES (Curated historical geopolitical dataset)
+# Why curated manually?
+# Modern GIS and administrative libraries (geonamescache, Natural Earth, pycountry) exclusively
+# represent contemporary 21st-century boundaries and sovereign nations. Historical entities
+# (Rupert's Land, New France, 18th-century French Louisiana in the Great Plains, 1763 Province
+# of Quebec, Upper/Lower Canada, etc.) have no modern ISO codes and are not included in modern
+# administrative vector layers.
+#
+# Provides:
+# - Historical entity type ("territory", "province")
+# - English name (`name`) and French name (`name_fr`)
+# - Historical territorial centroid coordinates `[lat, lon]` (e.g. historical Louisiana
+#   centered in the Great Plains at [39.5, -96.5], rather than the modern coastal US state)
+# - Historical aliases and variations in English and French for OCR map recognition
+
 HISTORICAL_TERRITORIES = [
     {
         "type": "territory",
@@ -69,7 +159,11 @@ HISTORICAL_TERRITORIES = [
         "name_fr": "Terre de Rupert",
         "lat": 55.0,
         "lon": -85.0,
-        "aliases": ["rupert s land", "ruperts land", "terre de rupert"],
+        "aliases": [
+            "rupert s land",
+            "ruperts land",
+            "terre de rupert",
+        ],
     },
     {
         "type": "territory",
@@ -77,7 +171,10 @@ HISTORICAL_TERRITORIES = [
         "name_fr": "Nouvelle-France",
         "lat": 48.0,
         "lon": -72.0,
-        "aliases": ["new france", "nouvelle france"],
+        "aliases": [
+            "new france",
+            "nouvelle france",
+        ],
     },
     {
         "type": "territory",
@@ -95,23 +192,55 @@ HISTORICAL_TERRITORIES = [
             "louisiana territory",
         ],
     },
+    {
+        "type": "territory",
+        "name": "Lower Canada",
+        "name_fr": "Bas-Canada",
+        "lat": 47.5,
+        "lon": -71.0,
+        "aliases": [
+            "lower canada",
+            "bas canada",
+            "province du bas canada",
+        ],
+    },
+    {
+        "type": "territory",
+        "name": "Upper Canada",
+        "name_fr": "Haut-Canada",
+        "lat": 44.5,
+        "lon": -79.0,
+        "aliases": [
+            "upper canada",
+            "haut canada",
+            "province du haut canada",
+        ],
+    },
+    {
+        "type": "territory",
+        "name": "Northwest Territory",
+        "name_fr": "Territoire du Nord-Ouest",
+        "lat": 40.5,
+        "lon": -85.0,
+        "aliases": [
+            "northwest territory",
+            "territoire du nord ouest",
+            "old northwest",
+        ],
+    },
+    {
+        "type": "territory",
+        "name": "Thirteen Colonies",
+        "name_fr": "Treize Colonies",
+        "lat": 38.0,
+        "lon": -77.5,
+        "aliases": [
+            "thirteen colonies",
+            "treize colonies",
+            "treize colonies britanniques",
+        ],
+    },
 ]
-
-# Major world fleuves (rivers flowing directly into seas/oceans)
-MAJOR_FLEUVES = {
-    "saint-laurent", "saint laurent", "saint lawrence", "st. lawrence", "st lawrence",
-    "mississippi", "amazon", "amazone", "amazonas", "nile", "nil",
-    "congo", "yangtze", "yangzi", "chang jiang", "fleuve bleu",
-    "yellow river", "fleuve jaune", "huang he",
-    "rhine", "rhin", "danube", "seine", "loire", "rhone", "garonne",
-    "volga", "don", "dnieper", "dniepr", "elbe", "oder", "vistula", "vistule",
-    "thames", "tamise", "tagus", "tage", "ebro", "ebre", "douro",
-    "colorado", "columbia", "yukon", "mackenzie", "rio grande", "rio bravo",
-    "parana", "orinoco", "orenoque",
-    "ganges", "gange", "indus", "brahmaputra", "brahmapoutre", "mekong",
-    "amur", "amour", "lena", "ob", "yenisey", "ienissei", "murray",
-    "niger", "zambezi", "zambeze", "senegal", "orange",
-}
 
 
 def normalize_key(s: str) -> str:
@@ -124,7 +253,8 @@ def normalize_key(s: str) -> str:
 
 
 def clean_french_name(name_fr: str) -> list[str]:
-    """Given an inverted name like 'Russie, Fédération de', return ['Russie', 'Fédération de Russie']."""
+    """Given an inverted name from pycountry/gettext (e.g. 'Russie, Fédération de'),
+    return direct natural variants: ['Russie', 'Fédération de Russie']."""
     variants = [name_fr]
     if "," in name_fr:
         parts = [p.strip() for p in name_fr.split(",", 1)]
@@ -141,7 +271,8 @@ def capitalize_first(s: str) -> str:
 
 
 def compute_polygon_centroid(geom: dict) -> tuple[float | None, float | None]:
-    """Calculate the average latitude/longitude centroid of Polygon or MultiPolygon coordinates."""
+    """Calculate the average latitude/longitude centroid of Polygon or MultiPolygon coordinates
+    extracted from Natural Earth GeoJSON features."""
     coords = []
     gtype = geom.get("type")
     raw_coords = geom.get("coordinates", [])
@@ -161,7 +292,7 @@ def compute_polygon_centroid(geom: dict) -> tuple[float | None, float | None]:
 
 
 def fetch_geojson(filename: str) -> dict | None:
-    """Fetch GeoJSON file from Natural Earth repo."""
+    """Fetch GeoJSON file from the Natural Earth Vector GitHub repository."""
     url = NE_BASE_URL + filename
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -175,19 +306,20 @@ def fetch_geojson(filename: str) -> dict | None:
 def main() -> int:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load French translator from pycountry
+    # STEP 1: INITIALIZE FRENCH LOCALIZATION
+    # Library: `pycountry` + standard library `gettext`
+    # Information: Loads the ISO 3166-1 French message catalog from pycountry's locale dir.
     try:
         trans_fr = gettext.translation("iso3166-1", pycountry.LOCALES_DIR, languages=["fr"])
     except Exception as e:
         print(f"Warning: could not load French locale for pycountry: {e}")
         trans_fr = None
 
-    gc = geonamescache.GeonamesCache()
-    gc_countries = gc.get_countries()
-
+    # STEP 2: LOAD CONTINENTS
+    # Source: Curated `CONTINENTS` table
+    # Information: English & French continent names, 2-letter codes, and centroid [lat, lon].
     dataset = []
 
-    # 2. Continents
     print("Processing continents...")
     for code, cont in CONTINENTS.items():
         aliases = {
@@ -206,7 +338,29 @@ def main() -> int:
             }
         )
 
-    # 3. Countries
+    # STEP 3: LOAD SOVEREIGN COUNTRIES & TERRITORIES
+    # Libraries / Sources:
+    # 1. `geonamescache`:
+    #    - `gc.get_countries()` provides:
+    #      * Country English Name (`name`)
+    #      * ISO 3166-1 Alpha-2 code (`iso`)
+    #      * ISO 3166-1 Alpha-3 code (`iso3`)
+    #      * Capital City (`capital`)
+    #      * Estimated Population (`population`)
+    # 2. `pycountry` + `gettext`:
+    #    - `pycountry.countries.get(alpha_2=iso)` translated via 'iso3166-1' catalog provides:
+    #      * French Localized Country Name (`name_fr`)
+    #      * French Common Name variants (`common_name`)
+    # 3. `countryinfo`:
+    #    - `CountryInfo(query)` provides:
+    #      * Centroid GPS coordinates `[lat, lon]` via `.latlng()`
+    #      * Alternate international names and spellings via `.alt_spellings()`
+    # 4. `FALLBACK_COORDINATES`:
+    #    - Provides manual GPS coordinates for micro-states and overseas territories
+    #      missing from `countryinfo` (e.g. Antarctica, Kosovo, Turks and Caicos, etc.)
+    gc = geonamescache.GeonamesCache()
+    gc_countries = gc.get_countries()
+
     print(f"Processing {len(gc_countries)} countries...")
     for iso, info in gc_countries.items():
         name_en = info.get("name") or ""
@@ -214,7 +368,7 @@ def main() -> int:
         capital = info.get("capital") or ""
         population = int(info.get("population") or 0)
 
-        # French translation
+        # French translation from pycountry gettext catalog
         name_fr = name_en
         french_variants = []
         if trans_fr:
@@ -227,7 +381,7 @@ def main() -> int:
                     raw_common_fr = trans_fr.gettext(py_country.common_name)
                     french_variants.extend(clean_french_name(raw_common_fr))
 
-        # Lat / Lon resolution
+        # Lat / Lon resolution from countryinfo (with fallback table)
         lat, lon = None, None
         alt_spellings = []
         for query in [name_en, iso, iso3]:
@@ -269,7 +423,15 @@ def main() -> int:
             }
         )
 
-    # 4. Oceans & Major Seas (from Natural Earth)
+    # STEP 4: LOAD OCEANS & MAJOR SEAS
+    # Source: Natural Earth Vector GeoJSON (`ne_50m_geography_marine_polys.geojson`)
+    # Information extracted:
+    # - `name` (English marine name, e.g. "North Atlantic Ocean", "Mediterranean Sea")
+    # - `name_fr` (French marine name, e.g. "Océan Atlantique Nord", "Mer Méditerranée")
+    # - `featureclass` / `featurecla` (Categorizes entity into "ocean" vs "sea")
+    # - `namealt`, `label` (Alternative names for alias search index)
+    # - Polygon / MultiPolygon coordinates -> centroid `[lat, lon]` computed via
+    #   `compute_polygon_centroid`
     print("Fetching oceans and major seas from Natural Earth...")
     marine_data = fetch_geojson("ne_50m_geography_marine_polys.geojson")
     if marine_data:
@@ -308,7 +470,15 @@ def main() -> int:
                 }
             )
 
-    # 5. Major Lakes (from Natural Earth)
+    # STEP 5: LOAD MAJOR LAKES
+    # Source: Natural Earth Vector GeoJSON (`ne_50m_lakes.geojson`)
+    # Information extracted:
+    # - `name` (English lake name, e.g. "Lake Superior", "Lake Victoria")
+    # - `name_fr` (French lake name, e.g. "Lac Supérieur", "Lac Victoria")
+    # - `name_alt`, `label` (Alternative spellings and historical names)
+    # - Polygon / MultiPolygon coordinates -> centroid `[lat, lon]` computed via
+    #   `compute_polygon_centroid`
+    # - Prefix normalization: generates search variants with and without "Lac" / "Lake"
     print("Fetching major lakes from Natural Earth...")
     lakes_data = fetch_geojson("ne_50m_lakes.geojson")
     if lakes_data:
@@ -357,7 +527,16 @@ def main() -> int:
                 }
             )
 
-    # 6. States & Provinces (Admin-1 from Natural Earth: US States, Canadian Provinces, etc.)
+    # STEP 6: LOAD STATES & PROVINCES (Admin-1 Level)
+    # Source: Natural Earth Vector GeoJSON (`ne_50m_admin_1_states_provinces.geojson`)
+    # Information extracted:
+    # - `name` (English name of state/province, e.g. "Quebec", "California")
+    # - `name_fr` (French name of state/province, e.g. "Québec", "Californie")
+    # - `adm0_a3` (Parent country ISO-3 code, e.g. "CAN", "USA", "MEX")
+    # - `type_en` (Administrative division type: "State" -> type "state", else "province")
+    # - `postal` (Official postal abbreviation code, e.g. "QC", "ON", "CA", "NY")
+    # - Polygon coordinates -> centroid `[lat, lon]` computed via `compute_polygon_centroid`
+    # - Synthetic aliases: auto-generates "province de <name>" and "etat de <name>"
     print("Fetching states and provinces from Natural Earth...")
     admin1_data = fetch_geojson("ne_50m_admin_1_states_provinces.geojson")
     if admin1_data:
@@ -402,7 +581,17 @@ def main() -> int:
                 }
             )
 
-    # 7. Major Rivers (from Natural Earth)
+    # STEP 7: LOAD MAJOR RIVERS & FLEUVES
+    # Sources:
+    # 1. Natural Earth Vector GeoJSON (`ne_50m_rivers_lake_centerlines_scale_rank.geojson`):
+    #    - `name` / `name_en` (English river name, e.g. "Saint Lawrence", "Mississippi")
+    #    - `name_fr` (French river name, e.g. "Saint-Laurent", "Mississippi")
+    #    - `name_alt`, `label` (Alternative river spellings)
+    #    - LineString / MultiLineString coordinates -> aggregated flow midpoints `[lat, lon]`
+    # 2. `MAJOR_FLEUVES` reference set:
+    #    - Cross-references river names to distinguish sea/ocean-reaching rivers (`fleuve`)
+    #      from inland tributary streams (`river`). Automatically prefixes French names
+    #      with "Fleuve " or "Rivière ".
     print("Fetching major rivers from Natural Earth...")
     rivers_data = fetch_geojson("ne_50m_rivers_lake_centerlines_scale_rank.geojson")
     if rivers_data:
@@ -494,18 +683,26 @@ def main() -> int:
                 }
             )
 
-    # 8. Historical Territories
+    # STEP 8: LOAD HISTORICAL TERRITORIES
+    # Source: Curated `HISTORICAL_TERRITORIES` dataset
+    # Information: Provides historical entities (Rupert's Land, New France, Historical Louisiana
+    # centered in the Great Plains, Province of Quebec 1763–1791, Upper/Lower Canada, etc.)
+    # that do not exist in modern GIS boundary datasets.
+    print("Processing historical territories...")
     for terr in HISTORICAL_TERRITORIES:
         dataset.append(terr)
 
-    # 9. Enforce that every name_fr and name begins with a capital letter
+    # STEP 9: STANDARDIZE CAPITALIZATION
+    # Enforces that all entity names begin with an uppercase letter while preserving
+    # interior casing.
     for entity in dataset:
         if "name_fr" in entity and entity["name_fr"]:
             entity["name_fr"] = capitalize_first(entity["name_fr"])
         if "name" in entity and entity["name"]:
             entity["name"] = capitalize_first(entity["name"])
 
-    # 10. Save combined dataset
+    # STEP 10: SERIALIZE TO JSON
+    # Writes the combined dataset to `OUTPUT_FILE` (app/data/geographic_entities.json).
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(dataset, f, indent=2, ensure_ascii=False)
 
