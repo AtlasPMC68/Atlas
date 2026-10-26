@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
+from app.models.map_import import MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
@@ -253,10 +254,40 @@ async def get_project(
     )
 
 
+async def _get_owned_import(
+    task_id: str,
+    user_id: str,
+    session: AsyncSession,
+) -> MapImport:
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await session.execute(
+        select(MapImport)
+        .join(Map, MapImport.map_id == Map.id)
+        .join(Project, Map.project_id == Project.id)
+        .where(
+            (MapImport.extraction_task_id == task_id)
+            | (MapImport.ocr_task_id == task_id),
+            Project.user_id == user_uuid,
+        )
+    )
+    import_row = result.scalar_one_or_none()
+    if import_row is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return import_row
+
+
 @router.get("/status/{task_id}")
-async def get_processing_status(task_id: str):
+async def get_processing_status(
+    task_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
     """Get the status of a background task."""
-    # TODO OWASP A01:2025 [MOYENNE] - Vérifier que la tâche est liée à un projet accessible par l'utilisateur avant de retourner son état et ses résultats intermédiaires.
+    await _get_owned_import(task_id, user_id, session)
     task = celery_app.AsyncResult(task_id)
     response = {"task_id": task_id, "state": task.state}
 
@@ -277,7 +308,7 @@ async def get_processing_status(task_id: str):
         response["result"] = task.result
         response["progress_percentage"] = 100
     elif task.state == "FAILURE":
-        response["error"] = str(task.info)
+        response["error"] = "Task failed"
         response["progress_percentage"] = 0
     else:  # STARTED, RETRY, REVOKED
         response["status"] = task.state
@@ -287,15 +318,19 @@ async def get_processing_status(task_id: str):
 
 
 @router.get("/results/{task_id}")
-async def get_extraction_results(task_id: str):
+async def get_extraction_results(
+    task_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
     """Get extraction results only if completed"""
-    # TODO OWASP A01:2025 [MOYENNE] - Vérifier l'authentification et la propriété du projet associé avant de retourner les résultats ou détails d'échec.
+    await _get_owned_import(task_id, user_id, session)
     task = celery_app.AsyncResult(task_id)
 
     if task.state == "SUCCESS":
         return {"task_id": task_id, "extracted_data": task.result}
     elif task.state == "FAILURE":
-        raise HTTPException(status_code=500, detail=f"Task failed: {task.info}")
+        raise HTTPException(status_code=500, detail="Task failed")
     else:
         raise HTTPException(
             status_code=202,

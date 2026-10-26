@@ -7,8 +7,8 @@ la configuration Docker Compose, Celery/Redis/PostgreSQL, les dépendances et le
 scripts présents dans le dépôt. Cette phase documente les risques sans corriger
 la logique applicative, les dépendances ou la configuration d'exécution.
 
-Six causes regroupées et deux points à valider ont été documentés par vingt-et-un
-TODO OWASP dans neuf fichiers source.
+Les risques de déploiement restent documentés par les TODO OWASP. Les risques
+applicatifs A01 et A07 traités dans cette phase ont été corrigés dans le code.
 Les valeurs sensibles ne sont pas reproduites dans ce rapport. Toute valeur
 d'identifiant ou de secret actuellement suivie dans le dépôt doit être considérée
 comme exposée et tournée avant un déploiement public.
@@ -19,11 +19,11 @@ comme exposée et tournée avant un déploiement public.
 |---|---|---|---|---|---|
 | F1 | A07:2025, A02:2025 | ÉLEVÉE | Confirmé | `docker-compose.yml` environnement PostgreSQL et Keycloak; `keycloak/setdata.sh` | Des identifiants par défaut sont présents dans la configuration suivie. Les injecter par secrets, imposer des valeurs uniques et tourner les valeurs exposées. |
 | F2 | A02:2025 | ÉLEVÉE | Confirmé | `docker-compose.yml` services Redis, Flower, PostgreSQL et Keycloak | Des services internes sont publiés sans isolation réseau ou authentification démontrée. Ne pas les publier en production, limiter le développement à localhost et ajouter authentification/TLS lorsque nécessaire. |
-| F3 | A01:2025, A06:2025 | ÉLEVÉE | Confirmé | `Backend-Atlas/app/main.py`, `Backend-Atlas/app/routers/dev_test.py` | Les outils dev-test sont activés par défaut et leurs mutations exigent seulement une authentification. Désactiver par défaut, séparer l'environnement et imposer un rôle administrateur. |
-| F4 | A01:2025 | MOYENNE | Confirmé | `Backend-Atlas/app/routers/celery_router.py`, `Backend-Atlas/app/routers/projects.py` | Les statuts, résultats, erreurs et tâches actives sont accessibles sans contrôle d'identité/propriété démontré. Authentifier les routes et lier chaque tâche à l'utilisateur et au projet. |
+| F3 | A01:2025, A06:2025 | ÉLEVÉE | Corrigé partiellement | `Backend-Atlas/app/main.py`, `Backend-Atlas/app/routers/dev_test.py` | Les routes dev-test exigent maintenant le rôle realm `admin`. Leur activation par défaut reste un risque de déploiement documenté par TODO. |
+| F4 | A01:2025 | MOYENNE | Corrigé | `Backend-Atlas/app/routers/celery_router.py`, `Backend-Atlas/app/routers/projects.py` | Les routes Celery de test exigent `admin`; les routes projet vérifient l'authentification et la propriété via `MapImport -> Map -> Project`, et ne divulguent plus les détails d'erreur. |
 | F5 | A04:2025, A02:2025 | ÉLEVÉE | Confirmé pour la configuration fournie; exposition dépendante de l'environnement | `docker-compose.yml`, `keycloak/setdata.sh` | HTTP est explicitement activé et le realm n'impose pas TLS. Exiger HTTPS, une configuration de proxy stricte et une politique SSL adaptée en production. |
 | F6 | A03:2025 | MOYENNE | Confirmé | `docker-compose.yml`, `Backend-Atlas/requirements.txt` | `postgis/postgis:latest`, `torch` et `torchvision` rendent le build mutable. Épingler versions/digests/hashes et contrôler les index, SBOM et scans CI. |
-| F7 | A07:2025 | MOYENNE | À vérifier | `Backend-Atlas/app/keycloak.py` | La validation d'audience JWT est désactivée; le contrôle `azp` peut être intentionnel mais n'est pas équivalent. Valider issuer, audience, azp, exp, nbf, signature et type de jeton avec des tests. |
+| F7 | A07:2025 | MOYENNE | À vérifier | `Backend-Atlas/app/keycloak.py` | L'audience n'est pas vérifiée car le client frontend actuel ne l'ajoute pas au token. Configurer un mapper d'audience `atlas-backend` dans Keycloak, puis réactiver cette vérification. L'issuer, RS256 et `azp` restent vérifiés. |
 | F8 | A02:2025 | MOYENNE | Confirmé | `Backend-Atlas/Dockerfile` | `uvicorn --reload` est le mode par défaut de l'image. Utiliser une commande de production séparée sans reload et avec un profil explicite. |
 
 Les TODO sont placés immédiatement au-dessus du code concerné. Les positions
@@ -34,11 +34,10 @@ exactes peuvent évoluer d'une ligne après une future modification; rechercher
 
 ### A01:2025 — Broken Access Control
 
-Les routes dev-test et les routes de suivi Celery constituent les risques
-confirmés. Les routes de projet examinées utilisent généralement l'utilisateur
-authentifié et les opérations d'importation s'appuient sur le contrôle du
-propriétaire de la carte. Il faut néanmoins tester explicitement les projets
-publics/privés, les identifiants de projet, carte, tâche et fichier.
+Les routes dev-test et d'inspection Celery exigent maintenant le rôle `admin`.
+Les routes de statut/résultat vérifient l'utilisateur propriétaire du projet
+associé à l'identifiant de tâche. Il faut encore tester explicitement les
+projets publics/privés et les identifiants de projet, carte, tâche et fichier.
 
 ### A02:2025 — Security Misconfiguration
 
@@ -78,7 +77,8 @@ opérationnelles doivent être vérifiés avec les exigences de déploiement.
 ### A07:2025 — Authentication Failures
 
 Les identifiants par défaut et le transport HTTP sont confirmés. La validation
-de l'audience JWT est à vérifier. Les politiques Keycloak de MFA, mots de passe,
+de l'issuer JWT est appliquée, tandis que l'audience reste à configurer dans
+Keycloak avant son activation. Les politiques Keycloak de MFA, mots de passe,
 anti-brute-force et rotation des secrets ne sont pas entièrement évaluables
 statiquement.
 

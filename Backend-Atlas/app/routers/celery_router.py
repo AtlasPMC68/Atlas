@@ -1,13 +1,17 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from ..tasks import test_task
 from ..celery_app import celery_app
+from ..utils.auth import require_admin_user
 
-router = APIRouter(prefix="/test", tags=["Test Celery"])
+router = APIRouter(
+    prefix="/test",
+    tags=["Test Celery"],
+    dependencies=[Depends(require_admin_user)],
+)
 
 @router.post("/simple")
 async def test_simple_task(name: str = "World"):
     """Lance une tâche simple pour tester Celery"""
-    # TODO OWASP A01:2025 [MOYENNE] - Vérifier que la création de tâches de test exige une authentification et une autorisation adaptées.
     task = test_task.delay(name)
     return {
         "task_id": task.id,
@@ -18,7 +22,6 @@ async def test_simple_task(name: str = "World"):
 @router.get("/status/{task_id}")
 async def get_task_status(task_id: str):
     """Récupère l'état d'une tâche"""
-    # TODO OWASP A01:2025 [MOYENNE] - Vérifier que l'utilisateur authentifié est propriétaire de cette tâche avant de retourner son état, ses métadonnées ou son erreur.
     task = celery_app.AsyncResult(task_id)
     
     if task.state == "PENDING":
@@ -45,7 +48,7 @@ async def get_task_status(task_id: str):
         response = {
             "task_id": task_id,
             "state": task.state,
-            "error": str(task.info)
+            "error": "Task failed"
         }
     
     return response
@@ -53,7 +56,6 @@ async def get_task_status(task_id: str):
 @router.get("/active")
 async def get_active_tasks():
     """Liste les tâches actives"""
-    # TODO OWASP A01:2025 [MOYENNE] - Vérifier que l'inspection globale des tâches est réservée à un rôle d'administration.
     inspect = celery_app.control.inspect()
     active_tasks = inspect.active()
     return {"active_tasks": active_tasks}

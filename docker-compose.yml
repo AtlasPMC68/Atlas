@@ -8,7 +8,8 @@ services:
     env_file:
       - ./Backend-Atlas/.env.dev
     environment:
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/atlas
+      # The browser receives tokens from localhost in the local development setup.
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/atlas
       KEYCLOAK_AUDIENCE: atlas-backend
     restart: unless-stopped
     volumes:

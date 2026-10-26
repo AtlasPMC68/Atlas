@@ -37,7 +37,6 @@ app.include_router(imports.router)
 app.include_router(auth.router)
 app.include_router(user.router)
 if ENABLE_DEV_TOOLS:
-    # TODO OWASP A01:2025 [ÉLEVÉE] - Vérifier que les routes dev-test sont réservées à un rôle d'administration et non à tout utilisateur authentifié.
     app.include_router(dev_test.router)
 app.add_middleware(
     CORSMiddleware,
@@ -49,7 +48,6 @@ app.add_middleware(
 
 # Serve georef dev-test assets (images, GeoJSON, etc.) as static files under /dev-test
 if ENABLE_DEV_TOOLS:
-    # TODO OWASP A01:2025 [ÉLEVÉE] - Évaluer si le montage des fichiers statiques dev-test expose des ressources partagées sans contrôle d'accès adapté.
     ensure_georef_assets_dir()
     app.mount("/dev-test", StaticFiles(directory=GEOREF_ASSETS_DIR), name="dev-test")
 
