@@ -545,29 +545,21 @@ function renderCities(features: Feature[]) {
 }
 
 function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.Layer, anchorX: number, anchorY: number) {
-  // Patch _setPos on the instance to persist rotation across map pan/zoom
-  const originalSetPos = (label as any)._setPos;
-  (label as any)._setPos = function(pos: any) {
-    originalSetPos.call(this, pos);
-    const rotation = feature.properties.rotation ?? 0;
-    if (this._icon) {
-      this._icon.style.transformOrigin = `${anchorX}px ${anchorY}px`;
-      if (rotation) {
-        const transform = this._icon.style.transform;
-        if (!transform.includes('rotate')) {
-          this._icon.style.transform += ` rotate(${rotation}deg)`;
-        } else {
-          this._icon.style.transform = transform.replace(/rotate\([^)]+\)/, `rotate(${rotation}deg)`);
-        }
-      }
+  const applyRotation = () => {
+    const el = label.getElement();
+    if (!el) return;
+    const wrapper = el.querySelector(".label-wrapper") as HTMLElement | null;
+    if (wrapper) {
+      const rotation = feature.properties.rotation ?? 0;
+      wrapper.style.transformOrigin = `${anchorX}px ${anchorY}px`;
+      wrapper.style.transform = rotation ? `rotate(${rotation}deg)` : "";
     }
   };
 
   label.on("add", () => {
+    applyRotation();
     const el = label.getElement();
     if (!el) return;
-    
-    el.style.transformOrigin = `${anchorX}px ${anchorY}px`;
     
     const anchor = el.querySelector('.label-anchor.rotate-handle');
     if (anchor) {
@@ -583,6 +575,8 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         
         let startAngle = Math.atan2((e as MouseEvent).clientY - centerY, (e as MouseEvent).clientX - centerX);
         let initialRotation = feature.properties.rotation ?? 0;
+
+        const wrapper = el.querySelector('.label-wrapper') as HTMLElement | null;
         
         const onMouseMove = (moveEvent: MouseEvent) => {
           const angle = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX);
@@ -590,11 +584,9 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
           let newRotation = initialRotation + delta;
           
           (el as any).__currentRotation = newRotation;
-          const transform = el.style.transform;
-          if (!transform.includes('rotate')) {
-            el.style.transform += ` rotate(${newRotation}deg)`;
-          } else {
-            el.style.transform = transform.replace(/rotate\([^)]+\)/, `rotate(${newRotation}deg)`);
+          if (wrapper) {
+            wrapper.style.transformOrigin = `${anchorX}px ${anchorY}px`;
+            wrapper.style.transform = `rotate(${newRotation}deg)`;
           }
         };
         
@@ -614,6 +606,10 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
       });
     }
   });
+
+  if (label.getElement()) {
+    applyRotation();
+  }
 }
 
 function applyLabelStyle(marker: L.Marker, feature: Feature) {
@@ -626,9 +622,14 @@ function applyLabelStyle(marker: L.Marker, feature: Feature) {
     "#000000";
   const sizePx = feature.properties.sizePx ?? 12;
 
-
   el.style.setProperty("--label-color", color);
   el.style.setProperty("--label-size", `${sizePx}px`);
+
+  const rotation = feature.properties.rotation ?? 0;
+  const wrapper = el.querySelector(".label-wrapper") as HTMLElement | null;
+  if (wrapper) {
+    wrapper.style.transform = rotation ? `rotate(${rotation}deg)` : "";
+  }
 }
 
 function renderLabels(features: Feature[]) {
@@ -658,6 +659,9 @@ function renderLabels(features: Feature[]) {
     label.on("add", () => {
       applyLabelStyle(label, feature);
     });
+    if (label.getElement()) {
+      applyLabelStyle(label, feature);
+    }
 
     attachFeatureToLayer(label, feature);
     bindRenderedFeatureEvents(label, applyLayerUpdate);
@@ -929,76 +933,6 @@ function renderAllFeatures() {
   }
 
   previousFeatureIds.value = currentIds;
-  
-  setTimeout(updateLabelVisibility, 10);
-}
-
-function updateLabelVisibility() {
-  if (!map) return;
-  const mapContainer = document.getElementById('map');
-  if (!mapContainer) return;
-  const mapRect = mapContainer.getBoundingClientRect();
-
-  const labels = Array.from(document.querySelectorAll('.city-label-text')) as HTMLElement[];
-  
-  labels.forEach(el => {
-    el.style.top = '0px';
-  });
-  
-  const boxes: DOMRect[] = [];
-  
-  for (const label of labels) {
-    if (label.style.display === 'none') continue;
-    
-    let rect = label.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) continue;
-    
-    // Ignore off-screen labels to improve performance and avoid processing invisible collisions
-    if (
-      rect.right < mapRect.left ||
-      rect.left > mapRect.right ||
-      rect.bottom < mapRect.top ||
-      rect.top > mapRect.bottom
-    ) {
-      continue;
-    }
-
-    const checkCollision = (r: DOMRect) => {
-      for (const box of boxes) {
-        if (
-          r.left < box.right &&
-          r.right > box.left &&
-          r.top < box.bottom &&
-          r.bottom > box.top
-        ) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    let collision = checkCollision(rect);
-    
-    if (collision) {
-      const shiftStep = rect.height;
-      const attempts = [];
-      for (let i = 1; i <= 12; i++) {
-        attempts.push(shiftStep * i);
-        attempts.push(-shiftStep * i);
-      }
-      
-      for (const shiftY of attempts) {
-        label.style.top = `${shiftY}px`;
-        rect = label.getBoundingClientRect();
-        if (!checkCollision(rect)) {
-          break;
-        }
-      }
-    }
-    
-    // Always add to boxes
-    boxes.push(rect);
-  }
 }
 
 // --- per-feature drag ---
@@ -1037,8 +971,6 @@ onMounted(() => {
   };
   map.whenReady(updateMinZoom);
   map.on('resize', updateMinZoom);
-  map.on('moveend', updateLabelVisibility);
-  map.on('zoomend', updateLabelVisibility);
 
   drawing.initializeDrawing(map);
   L.control.zoom({ position: "topleft" }).addTo(map);
