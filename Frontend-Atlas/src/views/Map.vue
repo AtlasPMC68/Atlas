@@ -18,6 +18,7 @@
           @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
           @update-feature="onUpdateFeature"
+          @validate-texts="onOpenTextValidation"
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
@@ -98,6 +99,15 @@
     @error="onCreateProjectError"
     @closed="onCreateProjectDialogClosed"
   />
+
+  <TextValidationModal
+    :is-open="showTextValidationModal"
+    :image-url="validationImageUrl"
+    :initial-items="textValidationEntries"
+    :is-submitting="isSavingTextValidation"
+    @confirm="onConfirmTextValidation"
+    @cancel="showTextValidationModal = false"
+  />
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
@@ -132,6 +142,9 @@ import type {
   CreateProjectDialogExposed,
 } from "../typescript/project";
 import CreateProjectDialog from "../components/CreateProjectDialog.vue";
+import TextValidationModal, {
+  type TextValidationEntry,
+} from "../components/import/TextValidationModal.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -582,6 +595,110 @@ async function onUpdateFeature(
   } catch (error) {
     console.error("Failed to update feature:", error);
     callbacks?.onError?.("Erreur lors de la mise à jour de l'élément.");
+  }
+}
+
+const showTextValidationModal = ref(false);
+const isSavingTextValidation = ref(false);
+const activeValidationMapId = ref<string | null>(null);
+const validationImageUrl = ref<string | null>(null);
+const textValidationEntries = ref<TextValidationEntry[]>([]);
+
+function onOpenTextValidation(mapId: string | null) {
+  activeValidationMapId.value = mapId;
+  const imageFeature = features.value.find(
+    (f) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
+  );
+  validationImageUrl.value = imageFeature?.image || imageFeature?.properties?.image || null;
+
+  const targetFeatures = features.value.filter((f) => {
+    const belongsToMap = !mapId || f.mapId === mapId;
+    const isText =
+      f.properties?.isOcrText ||
+      f.properties?.labelText !== undefined ||
+      getMapElementType(f) === "label" ||
+      getMapElementType(f) === "point";
+    return belongsToMap && isText;
+  });
+
+  if (targetFeatures.length === 0) {
+    showAlert("info", "Aucun texte trouvé pour cette carte.");
+    return;
+  }
+
+  textValidationEntries.value = targetFeatures.map((f) => {
+    const isRecognized = f.properties?.recognized ?? true;
+    const coords: [number, number] | undefined =
+      f.geometry?.type === "Point"
+        ? (f.geometry.coordinates as [number, number])
+        : undefined;
+
+    let category: TextValidationEntry["category"] = "unrecognized_unlocalized";
+    if (isRecognized) {
+      category = "recognized";
+    } else if (coords && (coords[0] !== 0 || coords[1] !== 0)) {
+      category = "unrecognized_localized";
+    }
+
+    return {
+      id: f.id,
+      text: f.properties?.labelText || f.properties?.name || f.name || "",
+      originalText:
+        f.properties?.originalText || f.properties?.name || f.name || "",
+      selected: featureVisibility.value.get(f.id) !== false,
+      recognized: isRecognized,
+      category,
+      matchedCity: f.properties?.matchedCity,
+      country: f.properties?.country,
+      coordinates: coords,
+      confidence: f.properties?.confidence,
+    };
+  });
+
+  showTextValidationModal.value = true;
+}
+
+async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
+  isSavingTextValidation.value = true;
+  try {
+    const validatedMap = new Map(validatedItems.map((i) => [i.id, i]));
+    const unselectedIds = new Set(
+      validatedItems.filter((i) => !i.selected).map((i) => i.id),
+    );
+
+    const nextFeatures = features.value
+      .filter((f) => !unselectedIds.has(f.id))
+      .map((f) => {
+        const validated = validatedMap.get(f.id);
+        if (validated) {
+          return {
+            ...f,
+            name: validated.text,
+            properties: {
+              ...f.properties,
+              name: validated.text,
+              ...(f.properties?.labelText !== undefined
+                ? { labelText: validated.text }
+                : {}),
+              show: true,
+            },
+          };
+        }
+        return f;
+      });
+
+    applyFeatureSnapshot(nextFeatures, true);
+    await onSaveMap(nextFeatures);
+    showTextValidationModal.value = false;
+    showAlert("success", "Textes validés et enregistrés sur la carte.");
+  } catch (err) {
+    console.error("Failed to save validated texts:", err);
+    showAlert(
+      "error",
+      "Erreur lors de l'enregistrement de la validation des textes.",
+    );
+  } finally {
+    isSavingTextValidation.value = false;
   }
 }
 

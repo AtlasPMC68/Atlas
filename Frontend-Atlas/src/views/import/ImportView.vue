@@ -191,6 +191,15 @@
       @confirm="onConfirmAccepted"
       @cancel="pendingConfirm = null"
     />
+
+    <TextValidationModal
+      :is-open="showValidationModal"
+      :image-url="store.previewUrl"
+      :initial-items="validationItems"
+      :is-submitting="isSubmittingValidation"
+      @confirm="onConfirmTextValidation"
+      @cancel="onCancelTextValidation"
+    />
   </div>
 </template>
 
@@ -226,6 +235,11 @@ import GeoRefCitiesModal from "../../components/georef/GeoRefCitiesModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 import StartFromCasePanel from "../../components/dev/StartFromCasePanel.vue";
+import TextValidationModal, {
+  type TextValidationEntry,
+} from "../../components/import/TextValidationModal.vue";
+import { apiFetch } from "../../utils/api";
+import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../../utils/utils";
 
 const route = useRoute();
 const router = useRouter();
@@ -247,6 +261,10 @@ const { checkPts, siftCheckPts, cityCheckPts } = devTest;
 const openModal = ref<StepId | null>(null);
 const worldAreaZoom = ref<number | null>(null);
 const isStarting = ref(false);
+
+const showValidationModal = ref(false);
+const isSubmittingValidation = ref(false);
+const validationItems = ref<TextValidationEntry[]>([]);
 
 interface PendingConfirm {
   title: string;
@@ -469,9 +487,118 @@ watch(
   async (completed) => {
     if (!completed) return;
     poller.stop();
+
+    if (!isDevTest && options.value?.textExtraction && store.projectId) {
+      try {
+        const res = await apiFetch(`/projects/${store.projectId}/features`);
+        if (res.ok) {
+          const allFeatures = snakeToCamel(await res.json()) as any[];
+          const ocrFeatures = allFeatures.filter(
+            (f) => f.properties?.isOcrText && (f.mapId === store.mapId || !f.mapId),
+          );
+
+          if (ocrFeatures.length > 0) {
+            validationItems.value = ocrFeatures.map((f) => {
+              const recognized: boolean = !!f.properties?.recognized;
+              const coords: [number, number] | undefined = f.geometry?.coordinates;
+              let category: TextValidationEntry["category"];
+              if (recognized) {
+                category = "recognized";
+              } else if (coords && (coords[0] !== 0 || coords[1] !== 0)) {
+                category = "unrecognized_localized";
+              } else {
+                category = "unrecognized_unlocalized";
+              }
+              return {
+                id: f.id,
+                text: f.properties?.name || f.name || "",
+                originalText: f.properties?.originalText || f.properties?.name || "",
+                selected: recognized,
+                recognized,
+                category,
+                matchedCity: f.properties?.matchedCity,
+                country: f.properties?.country,
+                coordinates: coords,
+                confidence: f.properties?.confidence,
+              };
+            });
+
+            showValidationModal.value = true;
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load extracted texts for validation:", err);
+      }
+    }
+
     await router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
   },
 );
+
+async function onConfirmTextValidation(items: TextValidationEntry[]) {
+  if (!store.projectId) {
+    await router.push("/tableau-de-bord");
+    return;
+  }
+
+  isSubmittingValidation.value = true;
+  try {
+    const unselectedIds = items.filter((i) => !i.selected).map((i) => i.id);
+    if (unselectedIds.length > 0) {
+      await apiFetch(`/projects/${store.projectId}/features`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(unselectedIds),
+      });
+    }
+
+    const selectedItems = items.filter((i) => i.selected);
+    if (selectedItems.length > 0) {
+      const res = await apiFetch(`/projects/${store.projectId}/features`);
+      if (res.ok) {
+        const currentFeatures = snakeToCamel(await res.json()) as any[];
+        const selectedMap = new Map(selectedItems.map((i) => [i.id, i]));
+        const featuresToUpdate = currentFeatures
+          .filter((f) => selectedMap.has(f.id))
+          .map((f) => {
+            const valItem = selectedMap.get(f.id)!;
+            return {
+              ...f,
+              name: valItem.text,
+              properties: {
+                ...f.properties,
+                name: valItem.text,
+                show: true,
+              },
+            };
+          });
+
+        if (featuresToUpdate.length > 0) {
+          const payload = camelToSnake(prepareFeaturesForSave(featuresToUpdate));
+          await apiFetch(`/projects/${store.projectId}/features`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        }
+      }
+    }
+
+    showValidationModal.value = false;
+    await router.push(`/projet/${store.projectId}`);
+  } catch (err) {
+    showAlert("error", "Erreur lors de l'enregistrement de la validation des textes");
+    console.error("Validation error:", err);
+  } finally {
+    isSubmittingValidation.value = false;
+  }
+}
+
+function onCancelTextValidation() {
+  showValidationModal.value = false;
+  router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
+}
 
 
 onMounted(async () => {

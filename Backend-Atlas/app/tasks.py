@@ -321,47 +321,136 @@ def _raise_if_cancelled(map_id: str) -> None:
 # --- extraction steps ---------------------------------------------------------
 
 
+def _categorized_text_features_from_ocr(
+    blocks: list,
+    legend_bounds: Optional[dict],
+    frame_bounds: Optional[dict],
+    placement: Optional[Any] = None,
+) -> List[dict[str, Any]]:
+    """Extract and categorize text into:
+    1) Recognized and localized (matched to a known city).
+    2) Unrecognized or unlocalized (estimated via georeferencing transform if placement is provided).
+    """
+    collections: List[dict[str, Any]] = []
+    seen_city_ids = set()
+    seen_unrecognized_texts = set()
+
+    for coords, text, prob in blocks:
+        if polygon_center_in_legend(coords, legend_bounds):
+            continue
+
+        raw_text = str(text or "").strip()
+        if not raw_text:
+            continue
+
+        city = match_ocr_label(raw_text, frame_bounds)
+        if city is not None:
+            city_id = city.get("geonameid") or city.get("name")
+            if city_id in seen_city_ids:
+                continue
+            seen_city_ids.add(city_id)
+            collections.append(
+                {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {
+                                "name": city["name"],
+                                "originalText": raw_text,
+                                "show": True,
+                                "mapElementType": "point",
+                                "color_name": "black",
+                                "color_rgb": [0, 0, 0],
+                                "isOcrText": True,
+                                "recognized": True,
+                                "matchedCity": city["name"],
+                                "country": city.get("country"),
+                                "population": city.get("population"),
+                                "confidence": float(prob) if prob is not None else 1.0,
+                                "quad": coords,
+                            },
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": [
+                                    city["lon"],
+                                    city["lat"],
+                                ],
+                            },
+                        }
+                    ],
+                }
+            )
+        else:
+            clean_unrecognized = raw_text.lower().strip()
+            if clean_unrecognized in seen_unrecognized_texts:
+                continue
+            seen_unrecognized_texts.add(clean_unrecognized)
+
+            coords_list = coords if isinstance(coords, list) else []
+            if coords_list and len(coords_list) > 0:
+                cx = sum(float(p[0]) for p in coords_list) / len(coords_list)
+                cy = sum(float(p[1]) for p in coords_list) / len(coords_list)
+            else:
+                cx, cy = 0.0, 0.0
+
+            approx_coords = [0.0, 0.0]
+            if placement is not None:
+                try:
+                    pixel_feat = {
+                        "type": "Feature",
+                        "properties": {},
+                        "geometry": {"type": "Point", "coordinates": [cx, cy]},
+                    }
+                    georef_res = placement.georeference(
+                        [{"type": "FeatureCollection", "features": [pixel_feat]}],
+                        clean=False,
+                    )
+                    if georef_res.collections and georef_res.collections[0].get("features"):
+                        approx_coords = georef_res.collections[0]["features"][0]["geometry"]["coordinates"]
+                except Exception as e:
+                    logger.debug(f"Failed to georeference unrecognized text {raw_text}: {e}")
+
+            collections.append(
+                {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {
+                                "name": raw_text,
+                                "originalText": raw_text,
+                                "show": False,
+                                "mapElementType": "point",
+                                "color_name": "black",
+                                "color_rgb": [0, 0, 0],
+                                "isOcrText": True,
+                                "recognized": False,
+                                "confidence": float(prob) if prob is not None else 1.0,
+                                "quad": coords,
+                            },
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": approx_coords,
+                            },
+                        }
+                    ],
+                }
+            )
+
+    return collections
+
+
 def _city_features_from_text(
     blocks: list, legend_bounds: Optional[dict], frame_bounds: Optional[dict]
 ) -> List[dict[str, Any]]:
-    """One point feature per place name read off the map."""
-    collections: List[dict[str, Any]] = []
-    seen_city_ids = set()
-    for coords, text, _prob in blocks:
-        if polygon_center_in_legend(coords, legend_bounds):
-            continue
-        city = match_ocr_label(text, frame_bounds)
-        if city is None:
-            continue
-        city_id = city.get("geonameid") or city.get("name")
-        if city_id in seen_city_ids:
-            continue
-        seen_city_ids.add(city_id)
-        collections.append(
-            {
-                "type": "FeatureCollection",
-                "features": [
-                    {
-                        "type": "Feature",
-                        "properties": {
-                            "name": city["name"],
-                            "show": True,
-                            "mapElementType": "point",
-                            "color_name": "black",
-                            "color_rgb": [0, 0, 0],
-                        },
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [
-                                city["lon"],
-                                city["lat"],
-                            ],
-                        },
-                    }
-                ],
-            }
-        )
-    return collections
+    """One point feature per place name read off the map (recognized cities only)."""
+    all_features = _categorized_text_features_from_ocr(blocks, legend_bounds, frame_bounds)
+    return [
+        c
+        for c in all_features
+        if c.get("features") and c["features"][0].get("properties", {}).get("recognized", False)
+    ]
 
 
 def _write_ocr_text_file(filename: str, blocks: list) -> str:
@@ -386,8 +475,6 @@ def _write_ocr_text_file(filename: str, blocks: list) -> str:
 
 
 # --- tasks --------------------------------------------------------------------
-
-
 @celery_app.task(bind=True)
 def run_map_ocr(self, map_id: str):
     """OCR for an import, started as soon as the map is uploaded."""
@@ -466,8 +553,11 @@ def process_map_extraction(self, map_id: str):
         if inputs.enable_text_extraction:
             progress(2, "Detecting cities in the extracted text")
             collections.extend(
-                _city_features_from_text(
-                    claimed.ocr_blocks, inputs.legend_bounds, inputs.frame_bounds
+                _categorized_text_features_from_ocr(
+                    claimed.ocr_blocks,
+                    inputs.legend_bounds,
+                    inputs.frame_bounds,
+                    placement=None,
                 )
             )
         _raise_if_cancelled(map_id)
@@ -486,6 +576,31 @@ def process_map_extraction(self, map_id: str):
             debug_dir=debug_dir,
         )
         _raise_if_cancelled(map_id)
+
+        # Georeference unrecognized text coordinates using the fitted placement
+        if inputs.enable_text_extraction and placement is not None:
+            for coll in collections:
+                for feat in coll.get("features", []):
+                    props = feat.get("properties", {})
+                    if props.get("isOcrText") and not props.get("recognized") and props.get("quad"):
+                        coords_list = props.get("quad")
+                        if coords_list and len(coords_list) > 0:
+                            cx = sum(float(p[0]) for p in coords_list) / len(coords_list)
+                            cy = sum(float(p[1]) for p in coords_list) / len(coords_list)
+                            try:
+                                pixel_feat = {
+                                    "type": "Feature",
+                                    "properties": {},
+                                    "geometry": {"type": "Point", "coordinates": [cx, cy]},
+                                }
+                                georef_res = placement.georeference(
+                                    [{"type": "FeatureCollection", "features": [pixel_feat]}],
+                                    clean=False,
+                                )
+                                if georef_res.collections and georef_res.collections[0].get("features"):
+                                    feat["geometry"]["coordinates"] = georef_res.collections[0]["features"][0]["geometry"]["coordinates"]
+                            except Exception as e:
+                                logger.debug(f"Failed to georeference unrecognized text: {e}")
 
         # Step 4: shapes, one flood fill per click. Not snapped or clipped: a
         # shape is not a land zone and may sit at sea.
