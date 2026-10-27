@@ -41,7 +41,7 @@
             @redo="onRedo"
             @edit-feature-request="onEditFeatureRequest"
           />
-          <div class="absolute bottom-4 left-4 z-[1001]">
+          <div v-show="!showTextValidationModal" class="absolute bottom-4 left-4 z-[1001]">
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
@@ -126,10 +126,12 @@ import {
   isUuid,
   prepareFeaturesForSave,
   snakeToCamel,
+  toImageSrc,
 } from "../utils/utils";
 import { toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { getOriginalMapImage } from "../composables/useMapImageCache";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
 import L, { type Map as LeafletMap } from "leaflet";
@@ -142,9 +144,13 @@ import type {
   CreateProjectDialogExposed,
 } from "../typescript/project";
 import CreateProjectDialog from "../components/CreateProjectDialog.vue";
-import TextValidationModal, {
+import TextValidationModal from "../components/import/TextValidationModal.vue";
+import {
   type TextValidationEntry,
-} from "../components/import/TextValidationModal.vue";
+  featureToValidationEntry,
+  applyValidationToFeature,
+  isUnrecognizedTextFeature,
+} from "../utils/textValidation";
 
 const route = useRoute();
 const router = useRouter();
@@ -259,6 +265,17 @@ const combinedFeatureVisibility = computed(() => {
   
   features.value.forEach((feature) => {
     const id = String(feature.id);
+
+    // Hide unvalidated OCR texts from the map
+    if (
+      feature.properties?.isOcrText &&
+      !feature.properties?.recognized &&
+      feature.properties?.show === false
+    ) {
+      combined.set(id, false);
+      return;
+    }
+
     const explicitlyVisible = featureVisibility.value.get(id) ?? true;
     const isTimelineVisible = visibleByTimeline.has(id);
     
@@ -606,54 +623,33 @@ const textValidationEntries = ref<TextValidationEntry[]>([]);
 
 function onOpenTextValidation(mapId: string | null) {
   activeValidationMapId.value = mapId;
-  const imageFeature = features.value.find(
-    (f) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
-  );
-  validationImageUrl.value = imageFeature?.image || imageFeature?.properties?.image || null;
 
-  const targetFeatures = features.value.filter((f) => {
-    const belongsToMap = !mapId || f.mapId === mapId;
-    const isText =
-      f.properties?.isOcrText ||
-      f.properties?.labelText !== undefined ||
-      getMapElementType(f) === "label" ||
-      getMapElementType(f) === "point";
-    return belongsToMap && isText;
-  });
+  // 1. Check in-memory cache from recent import session
+  let img = getOriginalMapImage(mapId);
+
+  // 2. If not found, look for an image feature belonging to this map in the project
+  if (!img) {
+    const imageFeature = features.value.find(
+      (f) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
+    );
+    const rawImage = imageFeature?.image || imageFeature?.properties?.image;
+    if (rawImage) {
+      img = toImageSrc(rawImage);
+    }
+  }
+
+  validationImageUrl.value = img;
+
+  const targetFeatures = features.value.filter((f) => isUnrecognizedTextFeature(f, mapId));
 
   if (targetFeatures.length === 0) {
-    showAlert("info", "Aucun texte trouvé pour cette carte.");
+    showAlert("info", "Aucun texte non reconnu trouvé pour cette carte.");
     return;
   }
 
-  textValidationEntries.value = targetFeatures.map((f) => {
-    const isRecognized = f.properties?.recognized ?? true;
-    const coords: [number, number] | undefined =
-      f.geometry?.type === "Point"
-        ? (f.geometry.coordinates as [number, number])
-        : undefined;
-
-    let category: TextValidationEntry["category"] = "unrecognized_unlocalized";
-    if (isRecognized) {
-      category = "recognized";
-    } else if (coords && (coords[0] !== 0 || coords[1] !== 0)) {
-      category = "unrecognized_localized";
-    }
-
-    return {
-      id: f.id,
-      text: f.properties?.labelText || f.properties?.name || f.name || "",
-      originalText:
-        f.properties?.originalText || f.properties?.name || f.name || "",
-      selected: featureVisibility.value.get(f.id) !== false,
-      recognized: isRecognized,
-      category,
-      matchedCity: f.properties?.matchedCity,
-      country: f.properties?.country,
-      coordinates: coords,
-      confidence: f.properties?.confidence,
-    };
-  });
+  textValidationEntries.value = targetFeatures.map((f) =>
+    featureToValidationEntry(f, featureVisibility.value.get(f.id) !== false),
+  );
 
   showTextValidationModal.value = true;
 }
@@ -662,41 +658,23 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
   isSavingTextValidation.value = true;
   try {
     const validatedMap = new Map(validatedItems.map((i) => [i.id, i]));
-    const unselectedIds = new Set(
-      validatedItems.filter((i) => !i.selected).map((i) => i.id),
-    );
 
-    const nextFeatures = features.value
-      .filter((f) => !unselectedIds.has(f.id))
-      .map((f) => {
-        const validated = validatedMap.get(f.id);
-        if (validated) {
-          return {
-            ...f,
-            name: validated.text,
-            properties: {
-              ...f.properties,
-              name: validated.text,
-              ...(f.properties?.labelText !== undefined
-                ? { labelText: validated.text }
-                : {}),
-              show: true,
-            },
-          };
-        }
-        return f;
-      });
+    const nextFeatures = features.value.map((f) => {
+      const validated = validatedMap.get(f.id);
+      if (!validated) return f;
 
+      featureVisibility.value.set(f.id, validated.selected);
+      return applyValidationToFeature(f, validated);
+    });
+
+    featureVisibility.value = new Map(featureVisibility.value);
     applyFeatureSnapshot(nextFeatures, true);
     await onSaveMap(nextFeatures);
     showTextValidationModal.value = false;
     showAlert("success", "Textes validés et enregistrés sur la carte.");
   } catch (err) {
     console.error("Failed to save validated texts:", err);
-    showAlert(
-      "error",
-      "Erreur lors de l'enregistrement de la validation des textes.",
-    );
+    showAlert("error", "Erreur lors de l'enregistrement de la validation des textes.");
   } finally {
     isSavingTextValidation.value = false;
   }

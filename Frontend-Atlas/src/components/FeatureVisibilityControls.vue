@@ -40,7 +40,7 @@
         </div>
         <div class="divider m-0 h-0"></div>
 
-        <!-- Bouton pour valider/corriger les textes extraits par carte -->
+        <!-- Validate extracted texts button -->
         <div
           v-if="activeGroup?.type === 'point' && featuresByMap.length > 0"
           class="flex flex-col gap-2 p-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl"
@@ -53,24 +53,10 @@
           </div>
 
           <div class="flex items-center gap-1.5">
-            <select
-              v-if="featuresByMap.length > 1"
-              v-model="selectedValidationMapId"
-              class="select select-bordered select-xs flex-1 text-xs bg-white"
-            >
-              <option
-                v-for="group in featuresByMap"
-                :key="group.id || 'general'"
-                :value="group.id"
-              >
-                {{ group.title }}
-              </option>
-            </select>
-
             <button
               type="button"
-              class="btn btn-primary btn-xs flex-1 bg-blue-600 hover:bg-blue-700 border-none text-white font-semibold flex items-center justify-center gap-1"
-              @click="triggerTextValidation(selectedValidationMapId ?? featuresByMap[0]?.id)"
+              class="btn btn-primary btn-xs flex-1 bg-blue-600 hover:bg-blue-700 border-none text-white font-semibold flex items-center justify-center gap-1 py-1 h-auto"
+              @click="openMapSelectionOrValidate"
             >
               <span>Examiner les rejets</span>
             </button>
@@ -127,7 +113,7 @@
                   </button>
                 </div>
               </div>
-              <div v-show="!isMapCollapsed(mapGroup.id)" class="flex flex-col gap-2">
+              <div v-if="!isMapCollapsed(mapGroup.id)" class="flex flex-col gap-2">
                 <div
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
@@ -414,6 +400,43 @@
       <button :disabled="isDeletingFeature">close</button>
     </form>
   </dialog>
+
+  <!-- Map selection dialog for text validation -->
+  <dialog ref="selectMapValidationDialogRef" data-testid="select-map-validation-dialog" class="modal z-[2500]">
+    <div class="modal-box max-w-sm">
+      <h3 class="text-base font-bold text-gray-900 flex items-center gap-2">
+        <DocumentCheckIcon class="w-5 h-5 text-indigo-600" />
+        Choisir la carte à examiner
+      </h3>
+      <p class="text-xs text-gray-500 mt-1 mb-4">
+        Sélectionnez la carte dont vous souhaitez examiner et valider les textes rejetés :
+      </p>
+      <div class="flex flex-col gap-2">
+        <button
+          v-for="group in featuresByMap"
+          :key="group.id || 'general'"
+          type="button"
+          class="btn btn-outline btn-sm justify-between text-left normal-case border-gray-300 hover:border-indigo-500 hover:bg-indigo-50 hover:text-indigo-900"
+          @click="confirmMapValidation(group.id)"
+        >
+          <span class="font-medium truncate">{{ group.title }}</span>
+          <span class="text-xs text-gray-400 font-normal">Ouvrir →</span>
+        </button>
+      </div>
+      <div class="modal-action mt-4">
+        <button
+          type="button"
+          class="btn btn-sm btn-ghost"
+          @click="selectMapValidationDialogRef?.close()"
+        >
+          Annuler
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
@@ -470,8 +493,9 @@ const featureToDeleteId = ref<string | null>(null);
 const featureToDeleteName = ref<string>("");
 const isDeletingFeature = ref(false);
 
+const selectMapValidationDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
-const selectedValidationMapId = ref<string | null>(null);
 
 const isEditing = ref(false);
 
@@ -486,7 +510,16 @@ const emit = defineEmits([
   "validate-texts",
 ]);
 
-function triggerTextValidation(mapId: string | null) {
+function openMapSelectionOrValidate() {
+  if (featuresByMap.value.length > 1) {
+    selectMapValidationDialogRef.value?.showModal?.();
+  } else {
+    emit("validate-texts", featuresByMap.value[0]?.id ?? null);
+  }
+}
+
+function confirmMapValidation(mapId: string | null) {
+  selectMapValidationDialogRef.value?.close?.();
   emit("validate-texts", mapId);
 }
 
@@ -523,6 +556,15 @@ const featureGroups = computed(() => {
   ];
 
   props.features.forEach((feature: Feature) => {
+    // Unrecognized OCR texts with show=false are only shown in the validation modal
+    if (
+      feature.properties?.isOcrText &&
+      !feature.properties?.recognized &&
+      feature.properties?.show === false
+    ) {
+      return;
+    }
+
     const featureType = getMapElementType(feature);
     if (!featureType) return;
 
@@ -610,23 +652,6 @@ const featuresByMap = computed(() => {
       return a.title.localeCompare(b.title);
     });
 });
-
-watch(
-  featuresByMap,
-  (groups) => {
-    if (groups.length > 0) {
-      if (
-        !selectedValidationMapId.value ||
-        !groups.some((g) => g.id === selectedValidationMapId.value)
-      ) {
-        selectedValidationMapId.value = groups[0].id;
-      }
-    } else {
-      selectedValidationMapId.value = null;
-    }
-  },
-  { immediate: true },
-);
 
 function toggleMapGroup(mapId: string | null, visible: boolean) {
   const mapGroup = featuresByMap.value.find((g) => g.id === mapId);

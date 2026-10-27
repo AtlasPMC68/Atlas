@@ -77,7 +77,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     expect(wrapper.text()).toContain("Examiner les rejets");
   });
 
-  it("shows map selector when multiple maps contain texts", () => {
+  it("shows map selection dialog with available maps when multiple maps contain texts", async () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {
         features,
@@ -86,15 +86,13 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       },
     });
 
-    const select = wrapper.find("select");
-    expect(select.exists()).toBe(true);
-    const options = select.findAll("option");
-    expect(options.length).toBe(2);
-    expect(options[0].text()).toContain("Carte Québec 1900");
-    expect(options[1].text()).toContain("Carte Montréal 1950");
+    const dialog = wrapper.find('[data-testid="select-map-validation-dialog"]');
+    expect(dialog.exists()).toBe(true);
+    expect(dialog.text()).toContain("Carte Québec 1900");
+    expect(dialog.text()).toContain("Carte Montréal 1950");
   });
 
-  it("emits validate-texts with selected map ID when top button is clicked", async () => {
+  it("emits validate-texts with map ID when a map is chosen in the selection dialog", async () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {
         features,
@@ -103,35 +101,16 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       },
     });
 
-    // Find the top validation button
-    const validateBtn = wrapper
+    // Find and click the map button in the validation dialog
+    const dialog = wrapper.find('[data-testid="select-map-validation-dialog"]');
+    const mapBtn = dialog
       .findAll("button")
-      .find((b) => b.text().includes("Examiner les rejets"));
-    expect(validateBtn).toBeDefined();
+      .find((b) => b.text().includes("Carte Montréal 1950"));
+    expect(mapBtn).toBeDefined();
 
-    await validateBtn!.trigger("click");
+    await mapBtn!.trigger("click");
 
     expect(wrapper.emitted("validate-texts")).toBeDefined();
-    expect(wrapper.emitted("validate-texts")![0]).toEqual(["map-1"]);
-  });
-
-  it("emits validate-texts with changed map ID when dropdown selection changes", async () => {
-    const wrapper = mount(FeatureVisibilityControls, {
-      props: {
-        features,
-        featureVisibility,
-        mapPeriods,
-      },
-    });
-
-    const select = wrapper.find("select");
-    await select.setValue("map-2");
-
-    const validateBtn = wrapper
-      .findAll("button")
-      .find((b) => b.text().includes("Examiner les rejets"));
-    await validateBtn!.trigger("click");
-
     expect(wrapper.emitted("validate-texts")![0]).toEqual(["map-2"]);
   });
 

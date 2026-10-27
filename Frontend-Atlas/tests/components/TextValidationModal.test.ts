@@ -6,6 +6,16 @@ import TextValidationModal, {
 
 // ── Mock Leaflet so jsdom doesn't crash ──────────────────────────────────────
 vi.mock("leaflet", () => {
+  const marker = vi.fn(() => ({
+    addTo: vi.fn().mockReturnThis(),
+    setIcon: vi.fn(),
+    setTooltipContent: vi.fn(),
+    bindTooltip: vi.fn().mockReturnThis(),
+    on: vi.fn().mockReturnThis(),
+    getLatLng: vi.fn(() => ({ lat: 0, lng: 0 })),
+    openTooltip: vi.fn(),
+    setLatLng: vi.fn(),
+  }));
   const circleMarker = vi.fn(() => ({
     addTo: vi.fn().mockReturnThis(),
     setStyle: vi.fn(),
@@ -14,9 +24,13 @@ vi.mock("leaflet", () => {
     on: vi.fn().mockReturnThis(),
     getLatLng: vi.fn(() => ({ lat: 0, lng: 0 })),
     openTooltip: vi.fn(),
+    setLatLng: vi.fn(),
   }));
+  const divIcon = vi.fn(() => ({}));
   const tileLayer = vi.fn(() => ({ addTo: vi.fn() }));
   const geoJSON = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
+  const circle = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
+  const polyline = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
   const map = vi.fn(() => ({
     setView: vi.fn().mockReturnThis(),
     addLayer: vi.fn(),
@@ -24,13 +38,19 @@ vi.mock("leaflet", () => {
     remove: vi.fn(),
     getZoom: vi.fn(() => 3),
     fitBounds: vi.fn(),
+    invalidateSize: vi.fn(),
+    on: vi.fn().mockReturnThis(),
   }));
 
   return {
-    default: { circleMarker, tileLayer, geoJSON, map },
+    default: { marker, circleMarker, divIcon, tileLayer, geoJSON, circle, polyline, map },
+    marker,
     circleMarker,
+    divIcon,
     tileLayer,
     geoJSON,
+    circle,
+    polyline,
     map,
   };
 });
@@ -38,70 +58,38 @@ vi.mock("leaflet", () => {
 // Mock dynamic import("leaflet/dist/leaflet.css")
 vi.mock("leaflet/dist/leaflet.css", () => ({}));
 
-// ── Test data ────────────────────────────────────────────────────────────────
+// ── Test data: Only rejected/unrecognized items are passed to the modal ─────────
 
-const recognized: TextValidationEntry[] = [
-  {
-    id: "rec-1",
-    text: "Québec",
-    originalText: "Quebec",
-    selected: true,
-    recognized: true,
-    category: "recognized",
-    matchedCity: "Québec",
-    country: "CA",
-    coordinates: [-71.2, 46.8],
-    confidence: 0.98,
-  },
-  {
-    id: "rec-2",
-    text: "Montréal",
-    originalText: "Montreal",
-    selected: true,
-    recognized: true,
-    category: "recognized",
-    matchedCity: "Montréal",
-    country: "CA",
-    coordinates: [-73.5, 45.5],
-    confidence: 0.95,
-  },
-];
-
-const unrecognizedLocalized: TextValidationEntry[] = [
+const itemsWithImagePos: TextValidationEntry[] = [
   {
     id: "unrec-loc-1",
-    text: "Lac Saint-Jean",
-    originalText: "Lac Saint-Jean",
-    selected: false,
-    recognized: false,
-    category: "unrecognized_localized",
-    coordinates: [-72.0, 48.5],
-    confidence: 0.85,
+    text: "Traité de Paris de 1783",
+    originalText: "Traité de Paris de 1783",
+    selected: true,
+    coordinates: [-82.35, 23.20],
+    suggestedCity: "Paris",
+    suggestedCoords: [2.35, 48.85],
   },
 ];
 
-const unrecognizedUnlocalized: TextValidationEntry[] = [
+const itemsWithoutPos: TextValidationEntry[] = [
   {
     id: "unrec-unloc-1",
     text: "Rivière Sauvage",
     originalText: "Riv Sauvage",
-    selected: false,
-    recognized: false,
-    category: "unrecognized_unlocalized",
+    selected: true,
     coordinates: [0, 0],
-    confidence: 0.75,
   },
 ];
 
-const allItems: TextValidationEntry[] = [
-  ...recognized,
-  ...unrecognizedLocalized,
-  ...unrecognizedUnlocalized,
+const testItems: TextValidationEntry[] = [
+  ...itemsWithImagePos,
+  ...itemsWithoutPos,
 ];
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 
-function mountModal(items = allItems, isOpen = true, imageUrl: string | null = "blob:http://localhost/test") {
+function mountModal(items = testItems, isOpen = true, imageUrl: string | null = "blob:http://localhost/test") {
   return mount(TextValidationModal, {
     props: { isOpen, initialItems: items, imageUrl },
   });
@@ -111,13 +99,13 @@ function mountModal(items = allItems, isOpen = true, imageUrl: string | null = "
 
 describe("TextValidationModal", () => {
   it("does not render when isOpen is false", () => {
-    const wrapper = mountModal(allItems, false);
+    const wrapper = mountModal(testItems, false);
     expect(wrapper.find(".fixed").exists()).toBe(false);
   });
 
   it("renders the header when isOpen is true", () => {
     const wrapper = mountModal();
-    expect(wrapper.text()).toContain("Validation des textes extraits");
+    expect(wrapper.text()).toContain("Validation des textes non reconnus");
   });
 
   it("renders the original image at the left when imageUrl is provided", () => {
@@ -128,43 +116,55 @@ describe("TextValidationModal", () => {
     expect(img.attributes("src")).toBe("blob:http://localhost/test");
   });
 
-  it("renders only 2 category tabs: Localisés and Non localisés (recognized are not shown)", () => {
-    const wrapper = mountModal();
-    const tabs = wrapper.findAll("button").filter((b) => b.text().match(/Localisés|Non localisés/));
-    expect(tabs.length).toBe(2);
-    // Reconnus tab should NOT exist
-    const reconnusTab = wrapper.findAll("button").filter((b) => b.text().includes("Reconnus"));
-    expect(reconnusTab.length).toBe(0);
+  it("renders upload button when imageUrl is null", () => {
+    const wrapper = mountModal(testItems, true, null);
+    expect(wrapper.text()).toContain("Aucune image originale disponible pour cette carte");
+    expect(wrapper.text()).toContain("Importer une image pour visualiser");
+    const fileInput = wrapper.find('input[type="file"]');
+    expect(fileInput.exists()).toBe(true);
   });
 
-  it("shows only unrecognized localized items by default in the list", () => {
+  it("renders the Non localisés header with item count", () => {
     const wrapper = mountModal();
-    const textInputs = wrapper.findAll('input[type="text"]');
-    // Only 1 localized item ("Lac Saint-Jean"), "Québec" and "Montréal" are not displayed
-    expect(textInputs.length).toBe(1);
-    expect((textInputs[0].element as HTMLInputElement).value).toBe("Lac Saint-Jean");
+    expect(wrapper.text()).toContain("Non localisés");
+    expect(wrapper.text()).toContain("2");
   });
 
-  it("switches to unrecognized_unlocalized tab and shows non-localized items", async () => {
+  it("shows non-localized items with text inputs, action buttons, and suggestion indicator", () => {
     const wrapper = mountModal();
-    const tabs = wrapper.findAll("button").filter((b) => b.text().match(/Non localisés/));
-    expect(tabs.length).toBe(1);
-    await tabs[0].trigger("click");
-
     const textInputs = wrapper.findAll('input[type="text"]');
-    expect(textInputs.length).toBe(1);
-    expect((textInputs[0].element as HTMLInputElement).value).toBe("Rivière Sauvage");
+    expect(textInputs.length).toBe(2);
+    expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
+    expect((textInputs[1].element as HTMLInputElement).value).toBe("Rivière Sauvage");
+    expect(wrapper.text()).toContain("Paris");
+    // Item 1 has suggestedCity 'Paris', so it should show the '!' badge
+    expect(wrapper.text()).toContain("!");
   });
 
-  it("allows editing text and toggling selection, and preserves recognized items on confirm", async () => {
+  it("allows user to accept suggested city in 1 click and toggle back", async () => {
     const wrapper = mountModal();
 
-    // In the localized tab
-    const textInputs = wrapper.findAll('input[type="text"]');
-    await textInputs[0].setValue("Lac Saint-Jean Corrigé");
+    // Check suggestion button for the item that has a suggestedCity
+    const suggestionBtn = wrapper.findAll("button").find((b) => b.text().includes("Paris"));
+    expect(suggestionBtn).toBeDefined();
+    expect(suggestionBtn?.text()).toContain("Accepter la suggestion");
 
-    const checkboxes = wrapper.findAll('input[type="checkbox"]');
-    await checkboxes[0].setValue(true);
+    // Click Suggestion button to accept
+    await suggestionBtn!.trigger("click");
+    const textInputs = wrapper.findAll('input[type="text"]');
+    expect((textInputs[0].element as HTMLInputElement).value).toBe("Paris");
+    expect(wrapper.text()).toContain("Adoptée");
+
+    // Click again to toggle back to original text
+    await suggestionBtn!.trigger("click");
+    expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
+  });
+
+  it("allows editing text and emits confirm with all items", async () => {
+    const wrapper = mountModal();
+
+    const textInputs = wrapper.findAll('input[type="text"]');
+    await textInputs[0].setValue("Traité de 1783");
 
     const confirmBtn = wrapper.findAll("button").find((b) => b.text().includes("Confirmer"));
     expect(confirmBtn).toBeDefined();
@@ -174,29 +174,46 @@ describe("TextValidationModal", () => {
     expect(emitted).toBeDefined();
     const confirmedItems = emitted![0][0] as TextValidationEntry[];
 
-    // Recognized items are preserved and selected
-    const recItem = confirmedItems.find((i) => i.id === "rec-1");
-    expect(recItem?.selected).toBe(true);
-
-    // Edited localized item is preserved with new text and selected
-    const editedItem = confirmedItems.find((i) => i.id === "unrec-loc-1");
-    expect(editedItem?.text).toBe("Lac Saint-Jean Corrigé");
-    expect(editedItem?.selected).toBe(true);
+    const item = confirmedItems.find((i) => i.id === "unrec-loc-1");
+    expect(item?.text).toBe("Traité de 1783");
+    expect(item?.selected).toBe(true);
   });
 
-  it("tout sélectionner and tout désélectionner work on active tab", async () => {
+  it("allows selecting all, deselecting all, and toggling individual items via checkboxes", async () => {
     const wrapper = mountModal();
-    const selectAllBtn = wrapper.findAll("button").find((b) => b.text() === "Tout sélectionner");
-    await selectAllBtn!.trigger("click");
+    const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
+    expect(selectAllCheckbox.exists()).toBe(true);
 
-    let checkboxes = wrapper.findAll('input[type="checkbox"]');
-    expect((checkboxes[0].element as HTMLInputElement).checked).toBe(true);
+    // Initial items are selected (watch inits with item.selected ?? true)
+    expect(wrapper.text()).toContain("2 / 2 conservé(s)");
 
-    const deselectBtn = wrapper.findAll("button").find((b) => b.text() === "Tout désélectionner");
-    await deselectBtn!.trigger("click");
+    // Uncheck select all
+    await selectAllCheckbox.setValue(false);
+    expect(wrapper.text()).toContain("0 / 2 conservé(s)");
 
-    checkboxes = wrapper.findAll('input[type="checkbox"]');
-    expect((checkboxes[0].element as HTMLInputElement).checked).toBe(false);
+    // Check individual checkbox
+    const itemCheckboxes = wrapper.findAll('input[data-testid="item-checkbox"]');
+    expect(itemCheckboxes.length).toBe(2);
+    await itemCheckboxes[0].setValue(true);
+    expect(wrapper.text()).toContain("1 / 2 conservé(s)");
+
+    // Check select all again
+    await selectAllCheckbox.setValue(true);
+    expect(wrapper.text()).toContain("2 / 2 conservé(s)");
+  });
+
+  it("clears suggested city and hides tolerance radius when position is manually changed", async () => {
+    const wrapper = mountModal();
+    const vm = wrapper.vm as any;
+    const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+    expect(item.suggestedCity).toBe("Paris");
+
+    // Manually reposition the item
+    vm.setItemCoordinates(item, -73.56, 45.50);
+
+    expect(item.suggestedCity).toBeUndefined();
+    expect(item.suggestedCoords).toBeUndefined();
+    expect(item.useSuggestedCity).toBe(false);
   });
 
   it("emits cancel when Passer button is clicked", async () => {

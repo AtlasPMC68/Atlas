@@ -65,8 +65,57 @@ for info in _gc.get_cities().values():
     _city_map.setdefault(key, []).append(city_entry)
 
 import difflib
+import math
 
-__all__ = ["_city_map", "get_city_with_max_population", "match_ocr_label"]
+__all__ = ["_city_map", "get_city_with_max_population", "match_ocr_label", "find_nearby_candidate_city"]
+
+
+def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate great-circle distance between two points in km."""
+    r = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2.0) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
+    )
+    return 2.0 * r * math.asin(math.sqrt(max(0.0, min(1.0, a))))
+
+
+def find_nearby_candidate_city(
+    text: str,
+    coords: List[float],
+    radius_km: float = 75.0,
+) -> Optional[Dict[str, Any]]:
+    """Find a candidate city within radius_km of coordinates [lon, lat]."""
+    if not coords or len(coords) < 2:
+        return None
+    lon, lat = float(coords[0]), float(coords[1])
+    key = _normalize(text)
+
+    nearby_cities: List[tuple[float, Dict[str, Any]]] = []
+    for city_list in _city_map.values():
+        for c in city_list:
+            if abs(c["lat"] - lat) * 111.0 > radius_km:
+                continue
+            dist = haversine_distance_km(lat, lon, c["lat"], c["lon"])
+            if dist <= radius_km:
+                nearby_cities.append((dist, c))
+
+    if not nearby_cities:
+        return None
+
+    if key:
+        scored = [
+            (difflib.SequenceMatcher(None, key, _normalize(c.get("name", ""))).ratio(), -dist, c)
+            for dist, c in nearby_cities
+        ]
+        best_sim, _, best_city = max(scored, key=lambda x: (x[0], x[1]))
+        if best_sim >= 0.45:
+            return best_city
+
+    return min(nearby_cities, key=lambda x: x[0])[1]
 
 
 def get_city_with_max_population(
@@ -141,6 +190,7 @@ def get_city_with_max_population(
         return result
 
     best = max(candidates, key=lambda c: c.get("population", 0))
+
     result.update(
         {
             "found": True,
@@ -151,6 +201,7 @@ def get_city_with_max_population(
             "country": best.get("country"),
             "population": best.get("population"),
             "matched_text": matched_key,
+            "is_exact": matched_key == key,
         }
     )
     return result
@@ -160,37 +211,25 @@ def match_ocr_label(
     text: str,
     frame_bounds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Match an OCR text label against the city gazetteer within frame_bounds.
-
-    Tries the whole text first, then falls back to matching line by line.
-    Returns the matched city dict (with 'geonameid', 'name', 'lat', 'lon', etc.)
-    or None if no match was found. Pure function: does not persist anything.
-    """
+    """Match OCR text against known cities within bounds."""
     clean = str(text or "").strip()
     if not clean:
         return None
 
-    def _try_match(query: str) -> Optional[Dict[str, Any]]:
-        try:
-            cand = get_city_with_max_population(
-                query, frame_bounds=frame_bounds, confidence_threshold=0.60
-            )
-            if cand.get("found"):
-                return cand
-        except Exception:
-            pass
-        return None
-
-    matched = _try_match(clean.replace("\n", " "))
-    if matched is not None:
-        return matched
+    cand = get_city_with_max_population(
+        clean.replace("\n", " "), frame_bounds=frame_bounds, confidence_threshold=0.85
+    )
+    if cand.get("found"):
+        return cand
 
     if "\n" in clean:
-        for line in clean.split("\n"):
+        for line in clean.splitlines():
             line = line.strip()
             if line:
-                matched_line = _try_match(line)
-                if matched_line is not None:
-                    return matched_line
+                cand = get_city_with_max_population(
+                    line, frame_bounds=frame_bounds, confidence_threshold=0.85
+                )
+                if cand.get("found"):
+                    return cand
 
     return None
