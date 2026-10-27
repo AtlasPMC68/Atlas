@@ -138,7 +138,7 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { getMapElementType, upsertFeature } from "../utils/featureHelpers";
+import { upsertFeature } from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -643,7 +643,7 @@ function onOpenTextValidation(mapId: string | null) {
   const targetFeatures = features.value.filter((f) => isUnrecognizedTextFeature(f, mapId));
 
   if (targetFeatures.length === 0) {
-    showAlert("info", "Aucun texte non reconnu trouvé pour cette carte.");
+    showAlert("error", "Aucun texte non reconnu trouvé pour cette carte.");
     return;
   }
 

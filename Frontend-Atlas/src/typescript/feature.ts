@@ -54,6 +54,19 @@ export interface FeatureProperties {
   bounds?: [Coordinate, Coordinate];
   layer?: number;
   rotation?: number;
+  opacity?: number;
+  image?: string;
+  isOcrText?: boolean;
+  recognized?: boolean;
+  show?: boolean;
+  originalText?: string;
+  matchedCity?: string;
+  country?: string;
+  population?: number;
+  confidence?: number;
+  suggestedCity?: string;
+  suggestedCoords?: [number, number];
+  [key: string]: any;
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;

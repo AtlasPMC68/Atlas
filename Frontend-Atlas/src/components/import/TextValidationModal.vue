@@ -228,7 +228,7 @@
               ]"
               @click="focusItem(item)"
               @mouseenter="onItemHover(item)"
-              @mouseleave="onItemLeave(item)"
+              @mouseleave="onItemLeave"
             >
               <!-- Checkbox + Input + Trash -->
               <div class="flex items-center gap-1.5">
@@ -475,7 +475,7 @@ function onItemHover(item: TextValidationEntry) {
   showToleranceRadius(item);
 }
 
-function onItemLeave(item: TextValidationEntry) {
+function onItemLeave() {
   hoveredId.value = null;
   if (highlightedId.value) {
     const activeItem = allItems.value.find((i) => i.id === highlightedId.value);
@@ -714,7 +714,8 @@ function renderMapMarkers() {
 }
 
 function adjustTooltipsAntiCollision() {
-  if (!leafletMap || !cachedLeaflet) return;
+  const currentMap = leafletMap;
+  if (!currentMap || !cachedLeaflet) return;
 
   const entries = allItems.value
     .map((item) => {
@@ -722,7 +723,7 @@ function adjustTooltipsAntiCollision() {
       const latlng = marker?.getLatLng();
       if (!marker || !latlng || (latlng.lat === 0 && latlng.lng === 0)) return null;
       try {
-        return { id: item.id, marker, pt: leafletMap.latLngToContainerPoint(latlng) };
+        return { id: item.id, marker, pt: currentMap.latLngToContainerPoint(latlng) };
       } catch {
         return null;
       }

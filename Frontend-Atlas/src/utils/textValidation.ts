@@ -1,4 +1,4 @@
-import type { Feature } from "../typescript/feature";
+import type { Coordinate, Feature } from "../typescript/feature";
 
 export interface TextValidationEntry {
   id: string;
@@ -66,16 +66,16 @@ export function applyValidationToFeature(
     };
   }
 
-  const coordinates =
+  const coordinates: Coordinate =
     entry.useSuggestedCity && entry.suggestedCoords
       ? entry.suggestedCoords
-      : (entry.coordinates || feature.geometry?.coordinates);
+      : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate);
 
   return {
     ...feature,
     name: entry.text,
     geometry: {
-      ...feature.geometry,
+      type: "Point",
       coordinates,
     },
     properties: {
