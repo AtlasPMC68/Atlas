@@ -10,6 +10,9 @@ Tests:
 - Line-by-line OCR label matching (match_ocr_label).
 """
 
+import json
+from pathlib import Path
+
 import pytest
 from app.utils.cities_validation import (
     _normalize,
@@ -328,3 +331,76 @@ def test_casing_priority_homonyms():
     assert res_ny_title["found"] is True
     assert res_ny_title.get("type") is None  # city
     assert res_ny_title["population"] > 8000000
+
+
+def test_json_duplicate_conflict_resolution_by_target_pos():
+    """Ensure that when a geographic entity appears multiple times in the JSON (e.g. Ontario across eras),
+    the one closest to target_pos (OCR text position on the map) is selected."""
+    r_south = get_city_with_max_population("ONTARIO", frame_bounds=CANADA_BOUNDS, target_pos=(45.5, -78.0))
+    r_north = get_city_with_max_population("ONTARIO", frame_bounds=CANADA_BOUNDS, target_pos=(52.0, -88.0))
+    assert r_south["found"] is True
+    assert r_north["found"] is True
+    assert r_south["type"] == "province"
+    assert r_north["type"] == "province"
+    assert r_south["lat"] < r_north["lat"]
+
+
+def test_canadian_provinces_no_ocean_artifacts():
+    """Safeguard: verify that no Canadian province in geographic_entities.json
+    has corrupt coordinates from isolated offshore islands or boundary adjustment slivers."""
+    data_path = Path(__file__).resolve().parent.parent / "app" / "data" / "geographic_entities.json"
+    with open(data_path, "r", encoding="utf-8") as f:
+        entities = json.load(f)
+
+    for e in entities:
+        name_fr = e.get("name_fr")
+        lat = e.get("lat")
+        lon = e.get("lon")
+        if lat is None or lon is None:
+            continue
+
+        if name_fr == "Nouvelle-Écosse":
+            # Must be on mainland Nova Scotia, never out in the Atlantic ocean (Sable Island: lon > -61.0)
+            assert lon <= -61.0, f"Nova Scotia entry ({e.get('start_year')}) placed in ocean at lon={lon}"
+            assert 43.0 <= lat <= 48.0, f"Nova Scotia entry ({e.get('start_year')}) invalid lat={lat}"
+
+        elif name_fr == "Nunavut":
+            # Must be in Arctic / Northern Canada, never in James Bay (lat ~ 51.7)
+            assert lat >= 60.0, f"Nunavut entry ({e.get('start_year')}) placed in James Bay at lat={lat}"
+
+        elif name_fr == "Ontario":
+            # Must not be collapsed to southernmost tip in Lake Erie (lat < 43.0)
+            assert lat >= 43.0, f"Ontario entry ({e.get('start_year')}) placed too far south at lat={lat}"
+
+
+def test_nova_scotia_resolution_mainland():
+    """Ensure that resolving NOUVELLE-ÉCOSSE even with an offshore OCR text box
+    always selects the valid mainland coordinates and never offshore ocean artifacts."""
+    res = get_city_with_max_population("NOUVELLE-ÉCOSSE", frame_bounds=CANADA_BOUNDS, target_pos=(44.0, -60.5))
+    assert res["found"] is True
+    assert res["type"] == "province"
+    assert res["lon"] <= -61.0
+    assert 44.0 <= res["lat"] <= 47.0
+
+
+def test_ocean_styling_is_uppercase_label_without_point():
+    """Ensure oceans are rendered as uppercase labels without a point marker."""
+    res = get_city_with_max_population("Océan Atlantique")
+    assert res["found"] is True
+    assert res["type"] == "ocean"
+    assert res["mapElementType"] == "label"
+    assert res["name"] == "OCÉAN ATLANTIQUE"
+
+
+def test_prefix_preserved_only_if_detected_in_extraction():
+    """Ensure geographic prefix (e.g. 'Province de ...') is preserved if detected in query,
+    and NOT added if the query did not contain it."""
+    # Prefix present in query -> preserved
+    res_with_prefix = get_city_with_max_population("Province de Québec", frame_bounds=CANADA_BOUNDS)
+    assert res_with_prefix["found"] is True
+    assert res_with_prefix["name"] == "PROVINCE DE QUÉBEC"
+
+    # Prefix NOT present in query -> NOT added
+    res_no_prefix = get_city_with_max_population("QUÉBEC", frame_bounds=CANADA_BOUNDS)
+    assert res_no_prefix["found"] is True
+    assert res_no_prefix["name"] == "QUÉBEC"

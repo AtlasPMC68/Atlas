@@ -20,8 +20,12 @@
     "lon": 135.0,
     "aliases": [
       "antarctica",
-      "antarctique"
-    ]
+      "antarctique",
+      "aq",
+      "ata"
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "continent",
@@ -228,23 +232,6 @@
       "republic of angola",
       "republica de angola",
       "ʁɛpublika de an ɡɔla"
-    ]
-  },
-  {
-    "type": "country",
-    "iso": "AQ",
-    "iso3": "ATA",
-    "name": "Antarctica",
-    "name_fr": "Antarctique",
-    "capital": "",
-    "population": 0,
-    "lat": -82.86,
-    "lon": 135.0,
-    "aliases": [
-      "antarctica",
-      "antarctique",
-      "aq",
-      "ata"
     ]
   },
   {
@@ -6709,7 +6696,9 @@
       "zaissan lake",
       "zaysan",
       "zaysan lake"
-    ]
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "lake",
@@ -8027,7 +8016,9 @@
       "lake mead",
       "mead",
       "mead lake"
-    ]
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "lake",
@@ -9371,7 +9362,9 @@
       "lac ft peck",
       "lake fort peck",
       "lake ft peck"
-    ]
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "lake",
@@ -9397,7 +9390,9 @@
       "lake teslin",
       "teslin",
       "teslin lake"
-    ]
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "lake",
@@ -9414,7 +9409,9 @@
       "lake lower arrow",
       "lower arrow",
       "lower arrow lake"
-    ]
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "lake",
@@ -9837,7 +9834,9 @@
       "lake volta",
       "volta",
       "volta lake"
-    ]
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "lake",
@@ -10024,23 +10023,6 @@
   },
   {
     "type": "lake",
-    "name": "Lake Zaysan",
-    "name_fr": "Lac Zaïssan",
-    "lat": 48.7069,
-    "lon": 83.7897,
-    "aliases": [
-      "lac zaissan",
-      "lac zaysan",
-      "lake zaissan",
-      "lake zaysan",
-      "zaissan",
-      "zaissan lake",
-      "zaysan",
-      "zaysan lake"
-    ]
-  },
-  {
-    "type": "lake",
     "name": "Churchill Lake",
     "name_fr": "Lac Churchill",
     "lat": 56.2234,
@@ -10131,19 +10113,6 @@
       "lake samara reservoir",
       "samara reservoir",
       "samara reservoir lake"
-    ]
-  },
-  {
-    "type": "lake",
-    "name": "Lake Mead",
-    "name_fr": "Lac Mead",
-    "lat": 36.1084,
-    "lon": -114.1875,
-    "aliases": [
-      "lac mead",
-      "lake mead",
-      "mead",
-      "mead lake"
     ]
   },
   {
@@ -10247,19 +10216,6 @@
   },
   {
     "type": "lake",
-    "name": "Fort Peck Lake",
-    "name_fr": "Lac Fort Peck",
-    "lat": 47.7078,
-    "lon": -106.9761,
-    "aliases": [
-      "fort peck",
-      "fort peck lake",
-      "lac fort peck",
-      "lake fort peck"
-    ]
-  },
-  {
-    "type": "lake",
     "name": "Lake Oahe",
     "name_fr": "Lac Oahe",
     "lat": 45.3038,
@@ -10269,36 +10225,6 @@
       "lake oahe",
       "oahe",
       "oahe lake"
-    ]
-  },
-  {
-    "type": "lake",
-    "name": "Teslin Lake",
-    "name_fr": "Lac Teslin",
-    "lat": 59.9472,
-    "lon": -132.4735,
-    "aliases": [
-      "lac teslin",
-      "lake teslin",
-      "teslin",
-      "teslin lake"
-    ]
-  },
-  {
-    "type": "lake",
-    "name": "Lower Arrow Lake",
-    "name_fr": "Lac lacs Arrow",
-    "lat": 49.5029,
-    "lon": -118.034,
-    "aliases": [
-      "lac lacs arrow",
-      "lac lower arrow",
-      "lacs arrow",
-      "lacs arrow lake",
-      "lake lacs arrow",
-      "lake lower arrow",
-      "lower arrow",
-      "lower arrow lake"
     ]
   },
   {
@@ -10329,19 +10255,6 @@
       "pyha lake",
       "pyhajarvi",
       "pyhajarvi lake"
-    ]
-  },
-  {
-    "type": "lake",
-    "name": "Lake Volta",
-    "name_fr": "Lac Volta",
-    "lat": 7.7575,
-    "lon": -0.2458,
-    "aliases": [
-      "lac volta",
-      "lake volta",
-      "volta",
-      "volta lake"
     ]
   },
   {
@@ -11892,10 +11805,13 @@
       "nova scotia",
       "ns",
       "province de acadia nouvelle ecosse",
+      "province de la nouvelle ecosse",
       "province de nouvelle ecosse",
       "province de nova scotia",
       "province de ns"
-    ]
+    ],
+    "start_year": null,
+    "end_year": null
   },
   {
     "type": "province",
@@ -11977,7 +11893,7 @@
     "type": "province",
     "country_code": "CAN",
     "name": "Québec",
-    "name_fr": "Province de Québec",
+    "name_fr": "Québec",
     "lat": 53.9949,
     "lon": -69.317,
     "aliases": [
@@ -22478,22 +22394,12 @@
   },
   {
     "type": "territory",
-    "name": "Rupert's Land",
-    "name_fr": "Terre de Rupert",
-    "lat": 55.0,
-    "lon": -85.0,
-    "aliases": [
-      "rupert s land",
-      "ruperts land",
-      "terre de rupert"
-    ]
-  },
-  {
-    "type": "territory",
     "name": "New France",
     "name_fr": "Nouvelle-France",
-    "lat": 48.0,
-    "lon": -72.0,
+    "lat": 47.1818,
+    "lon": -70.7503,
+    "start_year": 1534,
+    "end_year": 1763,
     "aliases": [
       "new france",
       "nouvelle france"
@@ -22503,16 +22409,129 @@
     "type": "territory",
     "name": "Louisiana",
     "name_fr": "Louisiane",
-    "lat": 39.5,
-    "lon": -96.5,
+    "lat": 30.6144,
+    "lon": -88.8565,
+    "start_year": 1682,
+    "end_year": 1803,
     "aliases": [
-      "louisiane",
-      "louisiana",
       "la louisiane",
+      "louisiana",
+      "louisiana territory",
+      "louisiane",
       "louisiane francaise",
       "territoire de la louisiane",
-      "territoire de louisiane",
-      "louisiana territory"
+      "territoire de louisiane"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Thirteen Colonies",
+    "name_fr": "Treize Colonies",
+    "lat": 40.0441,
+    "lon": -73.9834,
+    "start_year": 1607,
+    "end_year": 1776,
+    "aliases": [
+      "british american colonies",
+      "thirteen colonies",
+      "treize colonies",
+      "treize colonies britanniques"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Province of Quebec",
+    "name_fr": "Province de Québec",
+    "lat": 46.3688,
+    "lon": -73.7073,
+    "start_year": 1763,
+    "end_year": 1791,
+    "aliases": [
+      "province de quebec",
+      "province of quebec"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Viceroyalty of New Spain",
+    "name_fr": "Nouvelle-Espagne",
+    "lat": 18.3627,
+    "lon": -91.752,
+    "start_year": 1521,
+    "end_year": 1821,
+    "aliases": [
+      "new spain",
+      "nouvelle espagne",
+      "vice royaute de nouvelle espagne",
+      "viceroyalty of new spain"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Viceroyalty of Peru",
+    "name_fr": "Vice-royauté du Pérou",
+    "lat": -10.5315,
+    "lon": -74.0199,
+    "start_year": 1542,
+    "end_year": 1824,
+    "aliases": [
+      "perou colonial",
+      "vice royaute du perou",
+      "viceroyalty of peru"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Viceroyalty of Brazil",
+    "name_fr": "Vice-royauté du Brésil",
+    "lat": -14.1354,
+    "lon": -45.711,
+    "start_year": 1500,
+    "end_year": 1815,
+    "aliases": [
+      "bresil colonial",
+      "vice royaute du bresil",
+      "viceroyalty of brazil"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Holy Roman Empire",
+    "name_fr": "Saint-Empire romain germanique",
+    "lat": 50.1074,
+    "lon": 10.1858,
+    "start_year": 962,
+    "end_year": 1806,
+    "aliases": [
+      "holy roman empire",
+      "saint empire",
+      "saint empire romain germanique"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Ottoman Empire",
+    "name_fr": "Empire ottoman",
+    "lat": 38.6851,
+    "lon": 29.2431,
+    "start_year": 1299,
+    "end_year": 1922,
+    "aliases": [
+      "empire ottoman",
+      "ottoman empire"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Mughal Empire",
+    "name_fr": "Empire moghol",
+    "lat": 22.3633,
+    "lon": 80.8241,
+    "start_year": 1526,
+    "end_year": 1857,
+    "aliases": [
+      "empire moghol",
+      "mughal empire"
     ]
   },
   {
@@ -22521,9 +22540,11 @@
     "name_fr": "Bas-Canada",
     "lat": 47.5,
     "lon": -71.0,
+    "start_year": 1791,
+    "end_year": 1841,
     "aliases": [
-      "lower canada",
       "bas canada",
+      "lower canada",
       "province du bas canada"
     ]
   },
@@ -22533,10 +22554,12 @@
     "name_fr": "Haut-Canada",
     "lat": 44.5,
     "lon": -79.0,
+    "start_year": 1791,
+    "end_year": 1841,
     "aliases": [
-      "upper canada",
       "haut canada",
-      "province du haut canada"
+      "province du haut canada",
+      "upper canada"
     ]
   },
   {
@@ -22545,22 +22568,545 @@
     "name_fr": "Territoire du Nord-Ouest",
     "lat": 40.5,
     "lon": -85.0,
+    "start_year": 1787,
+    "end_year": 1803,
     "aliases": [
       "northwest territory",
-      "territoire du nord ouest",
-      "old northwest"
+      "old northwest",
+      "territoire du nord ouest"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "New Brunswick",
+    "name_fr": "Nouveau-Brunswick",
+    "lat": 46.5653,
+    "lon": -66.4619,
+    "start_year": 1867,
+    "end_year": 2003,
+    "aliases": [
+      "nb",
+      "new brunswick",
+      "nouveau brunswick",
+      "province du nouveau brunswick"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Ontario",
+    "name_fr": "Ontario",
+    "lat": 51.2538,
+    "lon": -85.3232,
+    "start_year": 1867,
+    "end_year": 2003,
+    "aliases": [
+      "on",
+      "ontario",
+      "province d ontario",
+      "province de l ontario"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Québec",
+    "name_fr": "Québec",
+    "lat": 52.9399,
+    "lon": -73.5491,
+    "start_year": 1867,
+    "end_year": 2003,
+    "aliases": [
+      "province de quebec",
+      "province du quebec",
+      "qc",
+      "quebec"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "British Columbia",
+    "name_fr": "Colombie-Britannique",
+    "lat": 53.7267,
+    "lon": -127.6476,
+    "start_year": 1867,
+    "end_year": 2003,
+    "aliases": [
+      "bc",
+      "british columbia",
+      "c b",
+      "colombie britannique",
+      "province de la colombie britannique"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Prince Edward Island",
+    "name_fr": "Île-du-Prince-Édouard",
+    "lat": 46.5107,
+    "lon": -63.4168,
+    "start_year": 1867,
+    "end_year": 2003,
+    "aliases": [
+      "ile du prince edouard",
+      "ipe",
+      "pei",
+      "prince edward island"
     ]
   },
   {
     "type": "territory",
-    "name": "Thirteen Colonies",
-    "name_fr": "Treize Colonies",
-    "lat": 38.0,
-    "lon": -77.5,
+    "name": "North-Western Territory",
+    "name_fr": "Territoire du Nord-Ouest",
+    "lat": 60.0,
+    "lon": -115.0,
+    "start_year": 1867,
+    "end_year": 1870,
     "aliases": [
-      "thirteen colonies",
-      "treize colonies",
-      "treize colonies britanniques"
+      "north western territory",
+      "northwestern territory",
+      "territoire du nord ouest"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Rupert's Land",
+    "name_fr": "Terre de Rupert",
+    "lat": 55.0,
+    "lon": -85.0,
+    "start_year": 1867,
+    "end_year": 1870,
+    "aliases": [
+      "rupert s land",
+      "ruperts land",
+      "terre de rupert"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Newfoundland",
+    "name_fr": "Terre-Neuve",
+    "lat": 48.9,
+    "lon": -55.8,
+    "start_year": 1867,
+    "end_year": 2001,
+    "aliases": [
+      "newfoundland",
+      "nl",
+      "province de terre neuve",
+      "terre neuve"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Manitoba",
+    "name_fr": "Manitoba",
+    "lat": 49.7397,
+    "lon": -97.4718,
+    "start_year": 1870,
+    "end_year": 1881,
+    "aliases": [
+      "manitoba",
+      "mb",
+      "province du manitoba"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Northwest Territories",
+    "name_fr": "Territoires du Nord-Ouest",
+    "lat": 64.8255,
+    "lon": -124.8457,
+    "start_year": 1870,
+    "end_year": 2003,
+    "aliases": [
+      "northwest territories",
+      "nt",
+      "nwt",
+      "territoires du nord ouest",
+      "territoires nord ouest"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Arctic Islands",
+    "name_fr": "Îles de l'Arctique",
+    "lat": 75.0,
+    "lon": -95.0,
+    "start_year": 1870,
+    "end_year": 1880,
+    "aliases": [
+      "arctic islands",
+      "iles de l arctique"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Keewatin District",
+    "name_fr": "Territoire de Keewatin",
+    "lat": 60.7112,
+    "lon": -94.0866,
+    "start_year": 1876,
+    "end_year": 1881,
+    "aliases": [
+      "district de keewatin",
+      "keewatin",
+      "keewatin district",
+      "territoire de keewatin"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Manitoba",
+    "name_fr": "Manitoba",
+    "lat": 50.9215,
+    "lon": -98.3119,
+    "start_year": 1881,
+    "end_year": 1912,
+    "aliases": [
+      "manitoba",
+      "mb",
+      "province du manitoba"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Keewatin District",
+    "name_fr": "Territoire de Keewatin",
+    "lat": 62.4241,
+    "lon": -94.0043,
+    "start_year": 1881,
+    "end_year": 1886,
+    "aliases": [
+      "district de keewatin",
+      "keewatin",
+      "keewatin district",
+      "territoire de keewatin"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Disputed Zone",
+    "name_fr": "Zone disputée",
+    "lat": 50.6536,
+    "lon": -92.986,
+    "start_year": 1881,
+    "end_year": 1889,
+    "aliases": [
+      "disputed zone",
+      "zone disputee",
+      "zone disputee ontario manitoba"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Assiniboine District",
+    "name_fr": "Territoire d'Assiniboine",
+    "lat": 50.4757,
+    "lon": -106.4049,
+    "start_year": 1882,
+    "end_year": 1905,
+    "aliases": [
+      "assiniboia",
+      "assiniboia district",
+      "assiniboine",
+      "assiniboine district",
+      "district d assiniboia",
+      "district d assiniboine",
+      "territoire d assiniboine"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Saskatchewan District",
+    "name_fr": "Territoire de Saskatchewan",
+    "lat": 53.571,
+    "lon": -105.8884,
+    "start_year": 1882,
+    "end_year": 1886,
+    "aliases": [
+      "district de saskatchewan",
+      "saskatchewan district",
+      "territoire de saskatchewan"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Alberta District",
+    "name_fr": "Territoire d'Alberta",
+    "lat": 52.664,
+    "lon": -114.7347,
+    "start_year": 1882,
+    "end_year": 1905,
+    "aliases": [
+      "alberta district",
+      "district d alberta",
+      "district dalberta",
+      "territoire d alberta"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Athabaska District",
+    "name_fr": "Territoire d'Athabaska",
+    "lat": 57.5539,
+    "lon": -115.7275,
+    "start_year": 1882,
+    "end_year": 1905,
+    "aliases": [
+      "athabasca",
+      "athabaska",
+      "athabaska district",
+      "district d athabasca",
+      "district d athabaska",
+      "territoire d athabaska"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Saskatchewan District",
+    "name_fr": "Territoire de Saskatchewan",
+    "lat": 53.6302,
+    "lon": -105.2148,
+    "start_year": 1886,
+    "end_year": 1905,
+    "aliases": [
+      "district de saskatchewan",
+      "saskatchewan district",
+      "territoire de saskatchewan"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Keewatin District",
+    "name_fr": "Territoire de Keewatin",
+    "lat": 62.6162,
+    "lon": -93.8874,
+    "start_year": 1886,
+    "end_year": 1889,
+    "aliases": [
+      "district de keewatin",
+      "keewatin",
+      "keewatin district",
+      "territoire de keewatin"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Keewatin District",
+    "name_fr": "Territoire de Keewatin",
+    "lat": 61.9904,
+    "lon": -93.8463,
+    "start_year": 1889,
+    "end_year": 1895,
+    "aliases": [
+      "district de keewatin",
+      "keewatin",
+      "keewatin district",
+      "territoire de keewatin"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Mackenzie District",
+    "name_fr": "Territoire de Mackenzie",
+    "lat": 64.0,
+    "lon": -120.0,
+    "start_year": 1895,
+    "end_year": 1999,
+    "aliases": [
+      "district de mackenzie",
+      "mackenzie",
+      "mackenzie district",
+      "territoire de mackenzie"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Keewatin District",
+    "name_fr": "Territoire de Keewatin",
+    "lat": 60.4263,
+    "lon": -92.5597,
+    "start_year": 1895,
+    "end_year": 1897,
+    "aliases": [
+      "district de keewatin",
+      "keewatin",
+      "keewatin district",
+      "territoire de keewatin"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Yukon District",
+    "name_fr": "Territoire du Yukon",
+    "lat": 64.0,
+    "lon": -135.0,
+    "start_year": 1895,
+    "end_year": 1901,
+    "aliases": [
+      "district du yukon",
+      "territoire du yukon",
+      "yukon district"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Franklin District",
+    "name_fr": "Territoire de Franklin",
+    "lat": 73.0,
+    "lon": -90.0,
+    "start_year": 1895,
+    "end_year": 1999,
+    "aliases": [
+      "district de franklin",
+      "franklin",
+      "franklin district",
+      "territoire de franklin"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Ungava District",
+    "name_fr": "Territoire d'Ungava",
+    "lat": 56.5,
+    "lon": -71.5,
+    "start_year": 1895,
+    "end_year": 1912,
+    "aliases": [
+      "district d ungava",
+      "district dungava",
+      "territoire d ungava",
+      "ungava",
+      "ungava district"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Keewatin District",
+    "name_fr": "Territoire de Keewatin",
+    "lat": 61.5,
+    "lon": -96.0,
+    "start_year": 1897,
+    "end_year": 1999,
+    "aliases": [
+      "district de keewatin",
+      "keewatin",
+      "keewatin district",
+      "territoire de keewatin"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Yukon Territory",
+    "name_fr": "Territoire du Yukon",
+    "lat": 64.2823,
+    "lon": -135.0,
+    "start_year": 1901,
+    "end_year": 2003,
+    "aliases": [
+      "territoire du yukon",
+      "yt",
+      "yukon",
+      "yukon territory"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Alberta",
+    "name_fr": "Alberta",
+    "lat": 55.1717,
+    "lon": -114.5085,
+    "start_year": 1905,
+    "end_year": 1999,
+    "aliases": [
+      "ab",
+      "alberta",
+      "province d alberta",
+      "province de l alberta"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Saskatchewan",
+    "name_fr": "Saskatchewan",
+    "lat": 54.4148,
+    "lon": -105.8831,
+    "start_year": 1905,
+    "end_year": 2003,
+    "aliases": [
+      "province de la saskatchewan",
+      "saskatchewan",
+      "sk"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Manitoba",
+    "name_fr": "Manitoba",
+    "lat": 54.9261,
+    "lon": -97.449,
+    "start_year": 1912,
+    "end_year": 1999,
+    "aliases": [
+      "manitoba",
+      "mb",
+      "province du manitoba"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Alberta",
+    "name_fr": "Alberta",
+    "lat": 55.1716,
+    "lon": -114.5085,
+    "start_year": 1999,
+    "end_year": 2003,
+    "aliases": [
+      "ab",
+      "alberta",
+      "province d alberta",
+      "province de l alberta"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Manitoba",
+    "name_fr": "Manitoba",
+    "lat": 54.9274,
+    "lon": -97.4414,
+    "start_year": 1999,
+    "end_year": 2003,
+    "aliases": [
+      "manitoba",
+      "mb",
+      "province du manitoba"
+    ]
+  },
+  {
+    "type": "territory",
+    "name": "Nunavut",
+    "name_fr": "Nunavut",
+    "lat": 70.2998,
+    "lon": -83.1076,
+    "start_year": 1999,
+    "end_year": 2003,
+    "aliases": [
+      "nu",
+      "nunavut",
+      "territoire du nunavut"
+    ]
+  },
+  {
+    "type": "province",
+    "name": "Newfoundland and Labrador",
+    "name_fr": "Terre-Neuve-et-Labrador",
+    "lat": 53.1355,
+    "lon": -57.6604,
+    "start_year": 2001,
+    "end_year": 2003,
+    "aliases": [
+      "newfoundland and labrador",
+      "nl",
+      "terre neuve et labrador"
     ]
   }
 ]

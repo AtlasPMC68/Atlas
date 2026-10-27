@@ -780,7 +780,7 @@ function renderLabels(features: Feature[]) {
     const styleAttr = inlineStyles.length ? ` style="${inlineStyles.join("; ")}"` : "";
 
     const displayedHtml = formatLabelHtml(
-      feature.properties.labelText,
+      feature.properties.labelText ?? feature.properties.name,
       textTransform === "uppercase"
     );
 
@@ -1068,6 +1068,8 @@ function updateLabelVisibility() {
     if (el.style.display === 'none') {
       el.style.display = '';
     }
+    el.style.visibility = '';
+    el.style.pointerEvents = '';
   });
 
   // 2. Sort labels by priority in descending order (largest / highest priority first)

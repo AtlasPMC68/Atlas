@@ -9,7 +9,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 from uuid import UUID, uuid4
 
 import cv2
@@ -31,7 +31,13 @@ from app.models.map_import import (
     MapImport,
 )
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
-from app.utils.cities_validation import capitalize_first, match_ocr_label
+from app.utils.cities_validation import (
+    DEFAULT_STYLE,
+    STYLES_MAP,
+    StyleTuple,
+    capitalize_first,
+    match_ocr_label,
+)
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencing import RunRecord, build_georef_inputs
@@ -308,94 +314,58 @@ def _raise_if_cancelled(map_id: str) -> None:
 
 
 # --- extraction steps ---------------------------------------------------------
-
-
 def _city_features_from_text(
-    blocks: list, legend_bounds: Optional[dict], frame_bounds: Optional[dict]
+    blocks: list,
+    legend_bounds: Optional[dict],
+    frame_bounds: Optional[dict],
+    image_size: Optional[tuple[int, int]] = None,
 ) -> List[dict[str, Any]]:
     """One point or label feature per place name read off the map."""
     collections: List[dict[str, Any]] = []
     seen_ids = set()
+
     for coords, text, _prob in blocks:
         if polygon_center_in_legend(coords, legend_bounds):
             continue
-        entity = match_ocr_label(text, frame_bounds)
+
+        target_pos = None
+        if coords and frame_bounds and image_size:
+            h, w = image_size
+            if w > 0 and h > 0:
+                cx = sum(p[0] for p in coords) / len(coords)
+                cy = sum(p[1] for p in coords) / len(coords)
+                text_lon = frame_bounds["west"] + (cx / w) * (frame_bounds["east"] - frame_bounds["west"])
+                text_lat = frame_bounds["north"] - (cy / h) * (frame_bounds["north"] - frame_bounds["south"])
+                target_pos = (text_lat, text_lon)
+
+        entity = match_ocr_label(text, frame_bounds, target_pos=target_pos)
         if entity is None:
             continue
 
         raw_type = entity.get("type")
-        # Prefix the deduplication id with the category type so that
-        # e.g. "province:Québec" and "city:Québec" (or geonameid) do not conflict.
+        # Prefix the deduplication id with the category type
         entity_id = f"{raw_type or 'city'}:{entity.get('geonameid') or entity.get('name')}"
         if entity_id in seen_ids:
             continue
         seen_ids.add(entity_id)
 
-        display_name = entity["name"]
+        # Application du style avec le dictionnaire
+        map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(raw_type or "", DEFAULT_STYLE)
+        display_name = transform_func(entity["name"])
 
-        # Category-based styling and element type:
-        if raw_type == "continent":
-            # Continents: largest size (18px), uppercase, no circle point
-            map_element_type = "label"
-            size_px = 18
-            font_style = "uppercase"
-            display_name = display_name.upper()
-
-        elif raw_type == "country":
-            # Countries: medium-large (16px), uppercase, no circle point
-            map_element_type = "label"
-            size_px = 16
-            font_style = "uppercase"
-            display_name = display_name.upper()
-
-        elif raw_type in ("state", "province", "territory"):
-            # States/Provinces: medium (14px), uppercase, no circle point
-            map_element_type = "label"
-            size_px = 14
-            font_style = "uppercase"
-            display_name = display_name.upper()
-
-        elif raw_type == "ocean":
-            # Oceans: largest size (18px), italic, no circle point
-            map_element_type = "label"
-            size_px = 18
-            font_style = "italic"
-            display_name = capitalize_first(display_name)
-
-        elif raw_type == "sea":
-            # Seas: medium-large (16px), italic, no circle point
-            map_element_type = "label"
-            size_px = 16
-            font_style = "italic"
-            display_name = capitalize_first(display_name)
-
-        elif raw_type == "fleuve":
-            # Fleuves: medium (14px), italic, no circle point
-            map_element_type = "label"
-            size_px = 14
-            font_style = "italic"
-            display_name = capitalize_first(display_name)
-
-        elif raw_type == "lake":
-            # Lacs: standard size (12px), italic, no circle point
-            map_element_type = "label"
-            size_px = 12
-            font_style = "italic"
-            display_name = capitalize_first(display_name)
-
-        elif raw_type in ("river",):
-            # Rivières: smallest size (10px), italic, no circle point
-            map_element_type = "label"
-            size_px = 10
-            font_style = "italic"
-            display_name = capitalize_first(display_name)
-
-        else:
-            # Cities / towns: standard point marker with circle and label (12px, normal)
-            map_element_type = "point"
-            size_px = 12
-            font_style = "normal"
-            display_name = capitalize_first(display_name)
+        feature_props: dict[str, Any] = {
+            "name": display_name,
+            "labelText": display_name,
+            "show": True,
+            "mapElementType": map_element_type,
+            "rawType": raw_type or "city",
+            "sizePx": size_px,
+            "fontStyle": font_style,
+            "color_name": "black",
+            "color_rgb": [0, 0, 0],
+            "fromGeographicEntitiesJson": True,
+            "isGeographicEntity": True,
+        }
 
         collections.append(
             {
@@ -403,28 +373,16 @@ def _city_features_from_text(
                 "features": [
                     {
                         "type": "Feature",
-                        "properties": {
-                            "name": display_name,
-                            "labelText": display_name,
-                            "show": True,
-                            "mapElementType": map_element_type,
-                            "rawType": raw_type or "city",
-                            "sizePx": size_px,
-                            "fontStyle": font_style,
-                            "color_name": "black",
-                            "color_rgb": [0, 0, 0],
-                        },
+                        "properties": feature_props,
                         "geometry": {
                             "type": "Point",
-                            "coordinates": [
-                                entity["lon"],
-                                entity["lat"],
-                            ],
+                            "coordinates": [entity["lon"], entity["lat"]],
                         },
                     }
                 ],
             }
         )
+
     return collections
 
 
@@ -525,7 +483,15 @@ def process_map_extraction(self, map_id: str):
         # Step 2: text -> city points
         if inputs.enable_text_extraction:
             progress(2, "Detecting cities in the extracted text")
-            collections.extend(_city_features_from_text(claimed.ocr_blocks, inputs.legend_bounds, inputs.frame_bounds))
+            img_size = (image.shape[0], image.shape[1]) if image is not None else None
+            collections.extend(
+                _city_features_from_text(
+                    claimed.ocr_blocks,
+                    inputs.legend_bounds,
+                    inputs.frame_bounds,
+                    image_size=img_size,
+                )
+            )
         _raise_if_cancelled(map_id)
 
         # Step 3: the transform, once, so shapes and colours share it
