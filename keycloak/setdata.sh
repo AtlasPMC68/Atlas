@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# TODO Add real credentials for deployment
+# TODO OWASP A07:2025 [ÉLEVÉE] - Vérifier que les identifiants administrateur sont fournis par des secrets de déploiement et faire tourner toute valeur exposée.
 echo "Configuring Keycloak..."
 /opt/keycloak/bin/kcadm.sh config credentials \
   --server http://localhost:8080 \
@@ -22,7 +22,7 @@ echo "Setting Atlas login theme..."
   -s loginTheme=atlas
   
 # Update realm settings
-# TODO remove sslRequired=None for production
+# TODO OWASP A04:2025 [ÉLEVÉE] - Vérifier que le realm impose TLS pour les communications d'authentification et de gestion hors environnement local.
 echo "Updating realm settings..."
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
   -s registrationAllowed=true \

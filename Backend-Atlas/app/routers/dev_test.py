@@ -18,7 +18,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from app.utils.auth import get_current_user_id
+from app.utils.auth import get_current_user_id, require_admin_user
 from ..tasks import (
     GEOREF_CONFIG,
     process_dev_test_extraction,
@@ -98,7 +98,11 @@ from app.utils.dev_test_evaluator import build_test_case_paths, error_overlay
 from app.utils.legend import legend_to_entry, parse_legend_entry
 ### ----------- IMPORTS ----------- ###
 
-router = APIRouter(prefix="/dev-test-api", tags=["Dev Test"])
+router = APIRouter(
+    prefix="/dev-test-api",
+    tags=["Dev Test"],
+    dependencies=[Depends(require_admin_user)],
+)
 
 logger = logging.getLogger(__name__)
 

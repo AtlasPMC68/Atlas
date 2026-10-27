@@ -8,7 +8,8 @@ services:
     env_file:
       - ./Backend-Atlas/.env.dev
     environment:
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/atlas
+      # The browser receives tokens from localhost in the local development setup.
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/atlas
       KEYCLOAK_AUDIENCE: atlas-backend
     restart: unless-stopped
     volumes:
@@ -35,6 +36,7 @@ services:
     image: redis:7-alpine
     container_name: atlas-redis
     restart: unless-stopped
+    # TODO OWASP A02:2025 [ÉLEVÉE] - Vérifier que Redis n'est pas publié sur un réseau non fiable et qu'une authentification/TLS est configurée si une exposition est nécessaire.
     ports:
       - "6379:6379"
     volumes:
@@ -90,6 +92,7 @@ services:
       context: ./Backend-Atlas
     container_name: atlas-flower
     restart: unless-stopped
+    # TODO OWASP A02:2025 [ÉLEVÉE] - Vérifier que Flower est inaccessible publiquement et protégé par une authentification forte ou un proxy sécurisé.
     ports:
       - "5555:5555"
     env_file:
@@ -102,6 +105,7 @@ services:
     command: celery -A app.celery_app flower --port=5555
 
   db:
+    # TODO OWASP A03:2025 [MOYENNE] - Évaluer l'utilisation d'une image PostGIS versionnée et épinglée par digest afin de rendre le build reproductible.
     image: postgis/postgis:latest
     container_name: atlas-db
     restart: unless-stopped
@@ -110,6 +114,7 @@ services:
     environment:
       POSTGRES_DB: atlas
       POSTGRES_USER: postgres
+      # TODO OWASP A07:2025 [ÉLEVÉE] - Vérifier que les identifiants de base de données ne sont jamais des valeurs par défaut ou des secrets suivis dans le dépôt.
       POSTGRES_PASSWORD: postgres
     platform: linux/amd64
     volumes:
@@ -124,6 +129,7 @@ services:
       - "8080:8080"
     environment:
       # Admin credentials
+      # TODO OWASP A07:2025 [ÉLEVÉE] - Vérifier que les identifiants administrateur Keycloak sont injectés par un gestionnaire de secrets et faire tourner toute valeur actuellement exposée.
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
 
@@ -134,6 +140,7 @@ services:
       KC_DB_PASSWORD: keycloak
 
       # Simple development configuration
+      # TODO OWASP A04:2025 [ÉLEVÉE] - Vérifier que le mode HTTP et la configuration de nom d'hôte ne permettent pas le transport de jetons ou de mots de passe sans TLS en production.
       KC_HOSTNAME_STRICT: false
       KC_HTTP_ENABLED: true
       KC_PROXY: edge # Important pour les environnements proxied

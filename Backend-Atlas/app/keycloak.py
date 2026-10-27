@@ -25,11 +25,16 @@ def get_keycloak_public_key():
 def verify_token(token: str):
     try:
         key = get_keycloak_public_key()
+        issuer = os.getenv("KEYCLOAK_ISSUER")
+        if not issuer:
+            print("JWT issuer is not configured")
+            return None
         payload = jwt.decode(
             token,
             key,
             algorithms=["RS256"],
-            options={"verify_aud": False}
+            issuer=issuer.rstrip("/"),
+            options={"verify_aud": False},
         )
         if payload.get("azp") != os.getenv("KEYCLOAK_FRONT_END_CLIENT_ID"):
             print("Token not for this client")

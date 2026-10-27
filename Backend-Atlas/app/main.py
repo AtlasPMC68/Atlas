@@ -18,8 +18,7 @@ from .utils.dev_test_assets import GEOREF_ASSETS_DIR, ensure_georef_assets_dir
 
 # The dev-test tool: its API routes (run, edit and delete test cases) and its
 # static files. On by default for now, for local development.
-# TODO: default this to "false" before deploying anywhere, so production does
-# not expose the dev-test routes; set ENABLE_DEV_TOOLS=true locally instead.
+# TODO OWASP A02:2025 [ÉLEVÉE] - Vérifier que les outils de développement sont désactivés par défaut et absents des déploiements de production.
 ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "true").strip().lower() in (
     "1",
     "true",
