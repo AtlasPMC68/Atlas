@@ -63,6 +63,7 @@ from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
 from app.utils.dev_test_derived import ensure_text_regions, text_regions_for_run
 
 from .celery_app import celery_app
+
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ GEOREF_CONFIG = ambient_georef_config()
 
 
 def _dev_test_debug_dir(test_id: str, test_case: str) -> str | None:
-    """ Where the alignement diagnostics go """
+    """Where the alignement diagnostics go"""
     if not debug_enabled():
         return None
 
@@ -102,8 +103,7 @@ def _write_dev_test_case_state(test_id: str, test_case: str, config=None) -> Non
         if state.requirements.blocked:
             logger.warning(
                 f"[DEV-TEST] {test_id}/{test_case} is missing user inputs the"
-                f" current algorithm needs: "
-                + ", ".join(s.key for s in state.requirements.blocked)
+                f" current algorithm needs: " + ", ".join(s.key for s in state.requirements.blocked)
             )
     except Exception as e:
         logger.warning(f"[DEV-TEST] Could not record case state for {test_id}: {e}")
@@ -132,7 +132,7 @@ def _dump_zones_debug(debug_dir: str | None, collections: list) -> None:
 
 
 def _alignment_summary(result) -> dict[str, Any]:
-    """What the UI needs to tell the user what happened. """
+    """What the UI needs to tell the user what happened."""
     if result is None:
         return {"enabled": False, "method": "gcp_only"}
     return {
@@ -194,6 +194,7 @@ def _decode_image(content: bytes):
         raise ValueError("Could not decode the map image")
     return image
 
+
 async def _claim_ocr(map_id: str, task_id: str) -> Optional[bytes]:
     async with WorkerSessionLocal() as session:
         async with session.begin():
@@ -238,15 +239,9 @@ async def _claim_extraction(map_id: str, task_id: str) -> Optional[_ClaimedImpor
     async with WorkerSessionLocal() as session:
         async with session.begin():
             row = await get_import(session, UUID(map_id), for_update=True)
-            if (
-                row is None
-                or row.extraction_task_id != task_id
-                or row.extraction_state != EXTRACTION_QUEUED
-            ):
+            if row is None or row.extraction_task_id != task_id or row.extraction_state != EXTRACTION_QUEUED:
                 return None
-            project_id = (
-                await session.execute(select(Map.project_id).where(Map.id == row.map_id))
-            ).scalar_one()
+            project_id = (await session.execute(select(Map.project_id).where(Map.id == row.map_id))).scalar_one()
             row.extraction_state = EXTRACTION_RUNNING
             row.extraction_error = None
             return _ClaimedImport(
@@ -260,15 +255,11 @@ async def _claim_extraction(map_id: str, task_id: str) -> Optional[_ClaimedImpor
 
 async def _extraction_state(map_id: str) -> Optional[str]:
     async with WorkerSessionLocal() as session:
-        result = await session.execute(
-            select(MapImport.extraction_state).where(MapImport.map_id == UUID(map_id))
-        )
+        result = await session.execute(select(MapImport.extraction_state).where(MapImport.map_id == UUID(map_id)))
         return result.scalar_one_or_none()
 
 
-async def _end_extraction(
-    map_id: str, task_id: str, state: str, error: Optional[str] = None
-) -> None:
+async def _end_extraction(map_id: str, task_id: str, state: str, error: Optional[str] = None) -> None:
     async with WorkerSessionLocal() as session:
         async with session.begin():
             row = await get_import(session, UUID(map_id), for_update=True)
@@ -285,7 +276,7 @@ async def _save_extraction(
     georef_inputs: Optional[dict],
 ) -> int:
     """Save every feature, record the inputs on the map and close the import,
-    in one transaction: a cancel or a crash leaves no partial map behind. """
+    in one transaction: a cancel or a crash leaves no partial map behind."""
     map_uuid = UUID(map_id)
     async with WorkerSessionLocal() as session:
         async with session.begin():
@@ -306,9 +297,7 @@ async def _save_extraction(
                     count += 1
 
             if georef_inputs is not None:
-                await session.execute(
-                    update(Map).where(Map.id == map_uuid).values(georef_inputs=georef_inputs)
-                )
+                await session.execute(update(Map).where(Map.id == map_uuid).values(georef_inputs=georef_inputs))
             await session.delete(row)
             return count
 
@@ -441,9 +430,7 @@ def _georeference_unrecognized_texts(
         q = feat["properties"]["quad"]
         cx = sum(float(p[0]) for p in q) / len(q)
         cy = sum(float(p[1]) for p in q) / len(q)
-        pixel_features.append(
-            {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [cx, cy]}}
-        )
+        pixel_features.append({"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [cx, cy]}})
 
     try:
         georef_res = placement.georeference(
@@ -456,9 +443,7 @@ def _georeference_unrecognized_texts(
                 if coords:
                     feat["geometry"]["coordinates"] = coords
                     orig_text = (
-                        feat.get("properties", {}).get("originalText")
-                        or feat.get("properties", {}).get("name")
-                        or ""
+                        feat.get("properties", {}).get("originalText") or feat.get("properties", {}).get("name") or ""
                     )
                     nearby_city = find_nearby_candidate_city(orig_text, coords, radius_km=75.0)
                     if nearby_city:
@@ -472,9 +457,7 @@ def _write_ocr_text_file(filename: str, blocks: list) -> str:
     """The OCR text as a .txt under app/extracted_texts, for inspection."""
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extracted_texts")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.join(
-        output_dir, f"{timestamp}_{os.path.splitext(filename)[0]}.txt"
-    )
+    output_path = os.path.join(output_dir, f"{timestamp}_{os.path.splitext(filename)[0]}.txt")
     try:
         os.makedirs(output_dir, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
@@ -510,9 +493,7 @@ def run_map_ocr(self, map_id: str):
     extraction_task_id = asyncio.run(_finish_ocr(map_id, task_id, payload))
     if extraction_task_id:
         try:
-            process_map_extraction.apply_async(
-                kwargs={"map_id": map_id}, task_id=extraction_task_id
-            )
+            process_map_extraction.apply_async(kwargs={"map_id": map_id}, task_id=extraction_task_id)
         except Exception as e:
             logger.error(f"[IMPORT] Could not dispatch extraction for {map_id}: {e}")
             asyncio.run(
@@ -605,11 +586,7 @@ def process_map_extraction(self, map_id: str):
                 click_positions=inputs.shape_clicks,
                 click_names=inputs.shape_names,
             )
-            collections.extend(
-                placement.georeference(
-                    shapes_result.get("pixel_features", []), clean=False
-                ).collections
-            )
+            collections.extend(placement.georeference(shapes_result.get("pixel_features", []), clean=False).collections)
         _raise_if_cancelled(map_id)
 
         # Step 5: colours, from the pipette alone
@@ -622,34 +599,22 @@ def process_map_extraction(self, map_id: str):
             config=GEOREF_CONFIG,
         )
         color_result.pop("classified_rgb", None)
-        color_collections = placement.georeference(
-            color_result.get("pixel_features", [])
-        ).collections
+        color_collections = placement.georeference(color_result.get("pixel_features", [])).collections
         collections.extend(color_collections)
         _dump_zones_debug(debug_dir, color_collections)
         _raise_if_cancelled(map_id)
 
         # Step 6: save everything and close the import
         progress(6, "Saving extracted features")
-        output_path = (
-            _write_ocr_text_file(claimed.filename, claimed.ocr_blocks)
-            if inputs.enable_text_extraction
-            else ""
-        )
-        all_positions, all_names, all_radii, all_kinds = parse_imposed_colors_entries(
-            inputs.all_colors or None
-        )
+        output_path = _write_ocr_text_file(claimed.filename, claimed.ocr_blocks) if inputs.enable_text_extraction else ""
+        all_positions, all_names, all_radii, all_kinds = parse_imposed_colors_entries(inputs.all_colors or None)
         georef_inputs = build_georef_inputs(
             control_points=inputs.control_points or None,
             frame_bounds=inputs.frame_bounds,
-            imposed_colors=imposed_colors_to_config_entries(
-                all_positions, all_names, all_radii, all_kinds
-            ),
+            imposed_colors=imposed_colors_to_config_entries(all_positions, all_names, all_radii, all_kinds),
             legend=legend_to_entry(inputs.legend_bounds),
         )
-        saved = asyncio.run(
-            _save_extraction(map_id, claimed.project_id, collections, georef_inputs)
-        )
+        saved = asyncio.run(_save_extraction(map_id, claimed.project_id, collections, georef_inputs))
 
     except ImportCancelled:
         logger.info(f"[IMPORT] extraction cancelled for map {map_id}; nothing saved")
@@ -673,9 +638,7 @@ def process_map_extraction(self, map_id: str):
         "filename": claimed.filename,
         "features_saved": saved,
         "output_path": output_path,
-        "color_result": {
-            "colors_detected": len(color_result.get("normalized_features", []))
-        },
+        "color_result": {"colors_detected": len(color_result.get("normalized_features", []))},
         "extractions_performed": {
             "georeferencing": True,
             "color_extraction": True,
@@ -716,10 +679,10 @@ def warm_dev_test_text_regions(self, test_id: str):
 
     regions, state = ensure_text_regions(test_id, image_path, image, refresh=False)
     logger.info(
-        f"[DEV-TEST] warmed text regions for {test_id}: {len(regions or [])}"
-        f" ({state.detail or 'already cached'})"
+        f"[DEV-TEST] warmed text regions for {test_id}: {len(regions or [])}" f" ({state.detail or 'already cached'})"
     )
     return {"status": "done", "regions": len(regions or [])}
+
 
 @celery_app.task(bind=True)
 def process_dev_test_extraction(
@@ -730,7 +693,7 @@ def process_dev_test_extraction(
     excluded_control_points: list | None = None,
 ):
     """Run a stored dev-test case from its ``config.json``, write the results to
-    its folder and score it. No database. """
+    its folder and score it. No database."""
 
     def progress(step: int, status: str) -> None:
         self.update_state(
@@ -741,9 +704,7 @@ def process_dev_test_extraction(
     progress(1, "Loading the test case")
     resolved_kind = resolve_case_kind(test_id, test_case)
     switches = {
-        key: value
-        for key, value in parse_config_overrides(config_overrides).items()
-        if getattr(GEOREF_CONFIG, key) != value
+        key: value for key, value in parse_config_overrides(config_overrides).items() if getattr(GEOREF_CONFIG, key) != value
     }
     run_config = GEOREF_CONFIG.with_overrides(**switches)
 
@@ -751,12 +712,8 @@ def process_dev_test_extraction(
     image = cv2.imread(image_path) if image_path else None
     if image is None:
         raise FileNotFoundError(f"No readable map image for test {test_id}")
-    inputs = parse_extraction_inputs(
-        load_case_config(GEOREF_ASSETS_DIR, test_id, test_case)
-    )
-    kept_points, excluded = drop_control_points(
-        inputs.control_points, excluded_control_points or []
-    )
+    inputs = parse_extraction_inputs(load_case_config(GEOREF_ASSETS_DIR, test_id, test_case))
+    kept_points, excluded = drop_control_points(inputs.control_points, excluded_control_points or [])
     ambient_run = not switches and not excluded
 
     record = RunRecord(run_id=f"{test_id}/{test_case}")

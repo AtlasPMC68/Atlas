@@ -141,9 +141,6 @@
                   @change="onLocalImageSelected"
                 />
               </label>
-              <span class="text-[10px] text-gray-500 italic">
-                (Visible uniquement pendant cette session)
-              </span>
             </div>
           </div>
         </div>
@@ -332,6 +329,7 @@ import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
 import type L from "leaflet";
 import { TrashIcon, PhotoIcon, ArrowUpTrayIcon } from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
+import { cacheOriginalMapImage } from "../../composables/useMapImageCache";
 
 export type { TextValidationEntry };
 
@@ -381,7 +379,12 @@ let radiusCircle: L.Circle | null = null;
 let suggestionPreviewMarker: L.Marker | null = null;
 let connectionLine: L.Polyline | null = null;
 
-const displayImageUrl = computed(() => localImageUrl.value || props.imageUrl || null);
+const localImageMap = ref<Record<string, string>>({});
+
+const displayImageUrl = computed(() => {
+  const currentKey = props.mapId ?? "_default";
+  return localImageMap.value[currentKey] || props.imageUrl || null;
+});
 
 const toKeepCount = computed(() => allItems.value.filter((i) => i.selected).length);
 
@@ -434,12 +437,27 @@ function onLocalImageSelected(event: Event) {
   const file = target.files?.[0];
   if (!file) return;
 
-  if (localImageUrl.value && localImageUrl.value.startsWith("blob:")) {
-    URL.revokeObjectURL(localImageUrl.value);
-  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const dataUrl = e.target?.result as string;
+    if (dataUrl) {
+      const currentKey = props.mapId ?? "_default";
+      const oldUrl = localImageMap.value[currentKey];
+      if (oldUrl && oldUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(oldUrl);
+      }
+      localImageMap.value = {
+        ...localImageMap.value,
+        [currentKey]: dataUrl,
+      };
+      imgZoom.value = 1;
 
-  localImageUrl.value = URL.createObjectURL(file);
-  imgZoom.value = 1;
+      if (props.mapId) {
+        cacheOriginalMapImage(props.mapId, dataUrl);
+      }
+    }
+  };
+  reader.readAsDataURL(file);
 }
 
 function itemBorderClass(item: TextValidationEntry): string {
