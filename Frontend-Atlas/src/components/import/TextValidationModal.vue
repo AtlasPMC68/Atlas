@@ -64,10 +64,10 @@
           class="flex flex-col bg-gray-900 min-h-0 relative shrink-0 overflow-hidden"
           :style="{ width: `${leftColWidth}px` }"
         >
-          <div class="px-3 py-2 bg-gray-800 text-white font-semibold flex items-center justify-between shrink-0 text-xs">
+          <div class="px-3 py-2 bg-gray-800 text-white font-semibold flex items-center justify-between shrink-0 text-sm">
             <span class="flex items-center gap-1.5">
               <PhotoIcon class="w-4 h-4 text-gray-400" />
-              Photo originale de l'image
+              Image de référence
             </span>
             <div class="flex items-center gap-1">
               <template v-if="displayImageUrl">
@@ -81,7 +81,7 @@
                 </button>
                 <button
                   type="button"
-                  class="btn btn-xs btn-ghost text-white px-2 min-h-0 h-6 text-[11px]"
+                  class="btn btn-xs btn-ghost text-white px-2 min-h-0 h-6 text-xs"
                   title="Réinitialiser"
                   @click="resetImgZoom"
                 >
@@ -98,7 +98,7 @@
               </template>
 
               <label
-                class="btn btn-xs btn-ghost text-white px-1.5 min-h-0 h-6 text-[11px] cursor-pointer"
+                class="btn btn-xs btn-ghost text-white px-1.5 min-h-0 h-6 text-xs cursor-pointer"
                 title="Charger une image pour visualiser"
               >
                 <ArrowUpTrayIcon class="w-3.5 h-3.5" />
@@ -110,10 +110,23 @@
                   @change="onLocalImageSelected"
                 />
               </label>
+              <button
+                v-if="displayImageUrl"
+                type="button"
+                class="btn btn-xs btn-ghost btn-square text-white hover:bg-error/80 px-1 min-h-0 h-6"
+                title="Supprimer l'image de référence et du cache"
+                aria-label="Supprimer l'image de référence"
+                @click="removeReferenceImage"
+              >
+                <XMarkIcon class="w-4 h-4" />
+              </button>
             </div>
           </div>
 
-          <div class="flex-1 min-h-0 overflow-auto flex items-center justify-center p-2 bg-gray-950">
+          <div
+            class="flex-1 min-h-0 overflow-auto flex items-center justify-center p-2 bg-gray-950"
+            @wheel="onImageWheel"
+          >
             <img
               v-if="displayImageUrl"
               :src="displayImageUrl"
@@ -124,14 +137,14 @@
             <div v-else class="flex flex-col items-center justify-center p-6 text-center gap-3 max-w-sm">
               <PhotoIcon class="w-12 h-12 text-gray-500" />
               <div class="flex flex-col gap-1">
-                <p class="text-xs text-gray-200 font-semibold">
+                <p class="text-sm text-gray-200 font-semibold">
                   Aucune image originale disponible pour cette carte.
                 </p>
-                <p class="text-[11px] text-gray-400">
+                <p class="text-xs text-gray-400">
                   Vous pouvez importer une image depuis votre ordinateur pour vous repérer pendant la validation.
                 </p>
               </div>
-              <label class="btn btn-primary btn-xs text-white cursor-pointer gap-1.5 font-medium shadow-xs mt-1">
+              <label class="btn btn-primary btn-sm text-white cursor-pointer gap-1.5 font-medium shadow-xs mt-1">
                 <ArrowUpTrayIcon class="w-3.5 h-3.5" />
                 <span>Importer une image pour visualiser</span>
                 <input
@@ -327,9 +340,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
 import type L from "leaflet";
-import { TrashIcon, PhotoIcon, ArrowUpTrayIcon } from "@heroicons/vue/24/outline";
+import { TrashIcon, PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
-import { cacheOriginalMapImage } from "../../composables/useMapImageCache";
+import { cacheOriginalMapImage, removeOriginalMapImage } from "../../composables/useMapImageCache";
 
 export type { TextValidationEntry };
 
@@ -367,7 +380,6 @@ const isDraggingLeft = ref(false);
 const isDraggingRight = ref(false);
 
 const imgZoom = ref(1);
-const localImageUrl = ref<string | null>(null);
 
 let leafletMap: L.Map | null = null;
 let landLayer: L.GeoJSON | null = null;
@@ -380,9 +392,11 @@ let suggestionPreviewMarker: L.Marker | null = null;
 let connectionLine: L.Polyline | null = null;
 
 const localImageMap = ref<Record<string, string>>({});
+const removedImageMap = ref<Record<string, boolean>>({});
 
 const displayImageUrl = computed(() => {
   const currentKey = props.mapId ?? "_default";
+  if (removedImageMap.value[currentKey]) return null;
   return localImageMap.value[currentKey] || props.imageUrl || null;
 });
 
@@ -432,6 +446,12 @@ function resetImgZoom() {
   imgZoom.value = 1;
 }
 
+function onImageWheel(event: WheelEvent) {
+  if (!displayImageUrl.value) return;
+  event.preventDefault();
+  zoomImg(event.deltaY < 0 ? 0.1 : -0.1);
+}
+
 function onLocalImageSelected(event: Event) {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
@@ -450,6 +470,7 @@ function onLocalImageSelected(event: Event) {
         ...localImageMap.value,
         [currentKey]: dataUrl,
       };
+      removedImageMap.value = { ...removedImageMap.value, [currentKey]: false };
       imgZoom.value = 1;
 
       if (props.mapId) {
@@ -458,6 +479,18 @@ function onLocalImageSelected(event: Event) {
     }
   };
   reader.readAsDataURL(file);
+}
+
+function removeReferenceImage() {
+  const currentKey = props.mapId ?? "_default";
+  const localUrl = localImageMap.value[currentKey];
+  if (localUrl?.startsWith("blob:")) {
+    URL.revokeObjectURL(localUrl);
+  }
+  localImageMap.value = { ...localImageMap.value, [currentKey]: "" };
+  removedImageMap.value = { ...removedImageMap.value, [currentKey]: true };
+  removeOriginalMapImage(props.mapId);
+  imgZoom.value = 1;
 }
 
 function itemBorderClass(item: TextValidationEntry): string {
@@ -891,10 +924,6 @@ watch(
   (open) => {
     if (!open) {
       destroyMap();
-      if (localImageUrl.value && localImageUrl.value.startsWith("blob:")) {
-        URL.revokeObjectURL(localImageUrl.value);
-        localImageUrl.value = null;
-      }
       return;
     }
     imgZoom.value = 1;
@@ -916,10 +945,6 @@ watch(
 
 onBeforeUnmount(() => {
   destroyMap();
-  if (localImageUrl.value && localImageUrl.value.startsWith("blob:")) {
-    URL.revokeObjectURL(localImageUrl.value);
-    localImageUrl.value = null;
-  }
 });
 
 function onConfirm() {

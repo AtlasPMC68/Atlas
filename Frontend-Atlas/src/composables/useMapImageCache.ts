@@ -36,8 +36,18 @@ export function getOriginalMapImage(mapId?: string | null): string | null {
   return null;
 }
 
+export function removeOriginalMapImage(mapId?: string | null): void {
+  if (!mapId) return;
+
+  mapImageCache.delete(mapId);
+  try {
+    localStorage.removeItem(`${STORAGE_PREFIX}${mapId}`);
+  } catch {
+    // Storage may be unavailable.
+  }
+}
+
 export function clearMapImageCache(): void {
   mapImageCache.clear();
 }
-
 

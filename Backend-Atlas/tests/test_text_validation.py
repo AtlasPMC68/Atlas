@@ -129,3 +129,50 @@ def test_find_nearby_candidate_city():
         assert far_away["country"] != "FR"
 
 
+def test_batch_georeference_and_candidate_association():
+    from unittest.mock import MagicMock
+    from app.tasks import _georeference_unrecognized_texts
+
+    collections = [
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": "Montrel",
+                        "originalText": "Montrel",
+                        "isOcrText": True,
+                        "recognized": False,
+                        "quad": [[10, 10], [20, 10], [20, 20], [10, 20]],
+                    },
+                    "geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+                }
+            ],
+        }
+    ]
+
+    placement = MagicMock()
+    # Mock georeferencing transform placing it near Montreal coordinates
+    placement.georeference.return_value = MagicMock(
+        collections=[
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {"geometry": {"type": "Point", "coordinates": [-73.567, 45.501]}}
+                ],
+            }
+        ]
+    )
+
+    _georeference_unrecognized_texts(collections, placement)
+
+    feat = collections[0]["features"][0]
+    assert feat["geometry"]["coordinates"] == [-73.567, 45.501]
+    # Suggested nearby city should have been discovered via find_nearby_candidate_city
+    assert feat["properties"]["suggestedCity"] is not None
+    assert "montr" in feat["properties"]["suggestedCity"].lower()
+    assert feat["properties"]["suggestedCoords"] is not None
+
+
+

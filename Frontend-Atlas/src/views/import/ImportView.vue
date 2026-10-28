@@ -194,6 +194,7 @@
 
     <TextValidationModal
       :is-open="showValidationModal"
+      :map-id="store.mapId"
       :image-url="store.previewUrl"
       :map-title="store.mapTitle || 'Carte sélectionnée'"
       :initial-items="validationItems"

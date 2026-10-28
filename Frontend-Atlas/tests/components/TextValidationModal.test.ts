@@ -89,9 +89,15 @@ const testItems: TextValidationEntry[] = [
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 
-function mountModal(items = testItems, isOpen = true, imageUrl: string | null = "blob:http://localhost/test") {
+function mountModal(
+  items = testItems,
+  isOpen = true,
+  imageUrl: string | null = "blob:http://localhost/test",
+  mapId: string | null = "map-1",
+  mapTitle = "Carte 1",
+) {
   return mount(TextValidationModal, {
-    props: { isOpen, initialItems: items, imageUrl },
+    props: { isOpen, initialItems: items, imageUrl, mapId, mapTitle },
   });
 }
 
@@ -231,5 +237,72 @@ describe("TextValidationModal", () => {
     expect(cancelBtn).toBeDefined();
     await cancelBtn!.trigger("click");
     expect(wrapper.emitted("cancel")).toBeDefined();
+  });
+
+  describe("Multi-map isolation and image persistence", () => {
+    it("displays the correct image corresponding to the selected mapId", async () => {
+      const wrapper = mountModal(
+        testItems,
+        true,
+        "https://example.com/map1.png",
+        "map-alpha",
+        "Carte Alpha",
+      );
+
+      let img = wrapper.find('img[alt="Image de la carte pour visualisation"]');
+      expect(img.exists()).toBe(true);
+      expect(img.attributes("src")).toBe("https://example.com/map1.png");
+
+      // Switch to a second map with its own image
+      await wrapper.setProps({
+        mapId: "map-beta",
+        mapTitle: "Carte Bêta",
+        imageUrl: "https://example.com/map2.png",
+      });
+
+      img = wrapper.find('img[alt="Image de la carte pour visualisation"]');
+      expect(img.exists()).toBe(true);
+      expect(img.attributes("src")).toBe("https://example.com/map2.png");
+    });
+
+    it("isolates local uploaded images between different maps", async () => {
+      const wrapper = mountModal(testItems, true, null, "map-1");
+
+      const vm = wrapper.vm as any;
+      // Simulate local upload on map-1
+      vm.localImageMap = {
+        "map-1": "data:image/png;base64,map1data",
+      };
+      await wrapper.vm.$nextTick();
+
+      let img = wrapper.find('img[alt="Image de la carte pour visualisation"]');
+      expect(img.attributes("src")).toBe("data:image/png;base64,map1data");
+
+      // Switch to map-2 which has no image uploaded yet
+      await wrapper.setProps({
+        mapId: "map-2",
+        imageUrl: null,
+      });
+
+      img = wrapper.find('img[alt="Image de la carte pour visualisation"]');
+      expect(img.exists()).toBe(false);
+
+      // Upload local image for map-2
+      vm.localImageMap = {
+        ...vm.localImageMap,
+        "map-2": "data:image/png;base64,map2data",
+      };
+      await wrapper.vm.$nextTick();
+
+      img = wrapper.find('img[alt="Image de la carte pour visualisation"]');
+      expect(img.attributes("src")).toBe("data:image/png;base64,map2data");
+
+      // Switch back to map-1 and ensure map-1's image is retained
+      await wrapper.setProps({
+        mapId: "map-1",
+      });
+      img = wrapper.find('img[alt="Image de la carte pour visualisation"]');
+      expect(img.attributes("src")).toBe("data:image/png;base64,map1data");
+    });
   });
 });
