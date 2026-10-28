@@ -102,7 +102,9 @@
 
   <TextValidationModal
     :is-open="showTextValidationModal"
+    :map-id="activeValidationMapId"
     :image-url="validationImageUrl"
+    :map-title="validationMapTitle"
     :initial-items="textValidationEntries"
     :is-submitting="isSavingTextValidation"
     @confirm="onConfirmTextValidation"
@@ -618,6 +620,11 @@ async function onUpdateFeature(
 const showTextValidationModal = ref(false);
 const isSavingTextValidation = ref(false);
 const activeValidationMapId = ref<string | null>(null);
+const validationMapTitle = computed(
+  () =>
+    mapPeriods.value.find((period) => period.id === activeValidationMapId.value)?.title ??
+    "Éléments généraux",
+);
 const validationImageUrl = ref<string | null>(null);
 const textValidationEntries = ref<TextValidationEntry[]>([]);
 

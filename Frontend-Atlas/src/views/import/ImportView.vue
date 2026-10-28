@@ -195,6 +195,7 @@
     <TextValidationModal
       :is-open="showValidationModal"
       :image-url="store.previewUrl"
+      :map-title="store.mapTitle || 'Carte sélectionnée'"
       :initial-items="validationItems"
       :is-submitting="isSubmittingValidation"
       @confirm="onConfirmTextValidation"

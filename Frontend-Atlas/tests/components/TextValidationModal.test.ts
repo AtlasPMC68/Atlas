@@ -108,6 +108,15 @@ describe("TextValidationModal", () => {
     expect(wrapper.text()).toContain("Validation des textes non reconnus");
   });
 
+  it("renders the selected map title in the footer", () => {
+    const wrapper = mount(TextValidationModal, {
+      props: { isOpen: true, initialItems: testItems, mapTitle: "1900" },
+    });
+
+    expect(wrapper.find(".border-t").text()).toContain("1900");
+    expect(wrapper.find(".border-t").text()).not.toContain("Sélectionné(s) à conserver");
+  });
+
   it("renders the original image at the left when imageUrl is provided", () => {
     const wrapper = mountModal();
     expect(wrapper.text()).toContain("Photo originale de l'image");

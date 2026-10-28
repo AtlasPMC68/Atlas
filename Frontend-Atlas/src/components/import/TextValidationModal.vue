@@ -302,11 +302,7 @@
 
       <!-- Footer -->
       <div class="px-6 py-3 border-t border-base-200 flex items-center justify-between bg-base-100 shrink-0">
-        <div class="text-xs text-black font-medium">
-          Sélectionné(s) à conserver :
-          <span class="font-bold text-black">{{ toKeepCount }}</span>
-          sur {{ allItems.length }} texte(s)
-        </div>
+        <div class="text-xs text-black font-medium">Carte sélectionnée : {{ mapTitle }}</div>
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -342,12 +338,16 @@ export type { TextValidationEntry };
 const props = withDefaults(
   defineProps<{
     isOpen: boolean;
+    mapId?: string | null;
     imageUrl?: string | null;
+    mapTitle?: string;
     initialItems?: TextValidationEntry[];
     isSubmitting?: boolean;
   }>(),
   {
+    mapId: null,
     imageUrl: null,
+    mapTitle: "Carte sélectionnée",
     initialItems: () => [],
     isSubmitting: false,
   },
