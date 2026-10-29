@@ -56,8 +56,6 @@ def test_is_in_bounds():
 
 
 # Offline Geographic Entities Lookup Tests
-
-
 def test_get_geographic_entity_countries():
     france = get_geographic_entity("France")
     assert france is not None
@@ -146,8 +144,6 @@ def test_get_geographic_entity_non_entities():
 
 
 # get_city_with_max_population with Geographic Entities
-
-
 def test_country_in_bounds_matched():
     res = get_city_with_max_population("France", frame_bounds=EUROPE_BOUNDS)
     assert res["found"] is True
@@ -223,13 +219,11 @@ def test_fuzzy_match_geographic_entities():
 
 
 # get_city_with_max_population with Cities
-
-
 def test_exact_city_in_bounds():
     res = get_city_with_max_population("Paris", frame_bounds=EUROPE_BOUNDS)
     assert res["found"] is True
     assert res["name"] == "Paris"
-    assert res["country"] == "FR"
+    assert 48.0 <= res["lat"] <= 49.0
     assert res["geonameid"] is not None
 
 
@@ -241,25 +235,24 @@ def test_city_out_of_bounds():
 
 def test_population_disambiguation():
     """When a city name exists in multiple locations, highest population candidate in bounds wins."""
-    # London, UK (pop > 7M) vs London, Canada (pop ~ 350k)
+    # London, UK (pop > 7M, lat ~ 51.5) vs London, Canada (pop ~ 350k, lon ~ -81.2)
     res_uk = get_city_with_max_population("London", frame_bounds=EUROPE_BOUNDS)
     assert res_uk["found"] is True
-    assert res_uk["country"] == "GB"
+    assert res_uk["lon"] > -5.0
+    assert res_uk["lat"] > 50.0
 
     res_ca = get_city_with_max_population("London", frame_bounds=CANADA_BOUNDS)
     assert res_ca["found"] is True
-    assert res_ca["country"] == "CA"
+    assert res_ca["lon"] < -80.0
 
 
 # Fuzzy Matching Fallback (Last Resort)
-
-
 def test_fuzzy_match_recovers_ocr_typos():
     # "Pariss" typo for Paris in Europe
     res = get_city_with_max_population("Pariss", frame_bounds=EUROPE_BOUNDS, confidence_threshold=0.70)
     assert res["found"] is True
     assert res["name"] == "Paris"
-    assert res["country"] == "FR"
+    assert 48.0 <= res["lat"] <= 49.0
 
 
 def test_fuzzy_match_cutoff_respected():
@@ -274,8 +267,6 @@ def test_empty_or_whitespace_query():
 
 
 # match_ocr_label Function
-
-
 def test_match_ocr_label_single_and_multiline():
     # Single label
     matched = match_ocr_label("Paris", frame_bounds=EUROPE_BOUNDS)
@@ -298,8 +289,6 @@ def test_match_ocr_label_single_and_multiline():
 
 
 # Casing Priority Tests (ALL-CAPS -> JSON entity, Title Case/lowercase -> City)
-
-
 def test_casing_priority_homonyms():
     """Ensure ALL-CAPS text prioritizes JSON geographic entities (provinces/states),
     while Title Case / lowercase text prioritizes geonamescache cities when present in both."""
