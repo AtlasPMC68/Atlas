@@ -191,6 +191,17 @@
       @confirm="onConfirmAccepted"
       @cancel="pendingConfirm = null"
     />
+
+    <TextValidationModal
+      :is-open="showValidationModal"
+      :map-id="store.mapId"
+      :image-url="store.previewUrl"
+      :map-title="store.mapTitle || 'Carte sélectionnée'"
+      :initial-items="validationItems"
+      :is-submitting="isSubmittingValidation"
+      @confirm="onConfirmTextValidation"
+      @cancel="onCancelTextValidation"
+    />
   </div>
 </template>
 
@@ -226,6 +237,15 @@ import GeoRefCitiesModal from "../../components/georef/GeoRefCitiesModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 import StartFromCasePanel from "../../components/dev/StartFromCasePanel.vue";
+import TextValidationModal from "../../components/import/TextValidationModal.vue";
+import {
+  type TextValidationEntry,
+  featureToValidationEntry,
+  applyValidationToFeature,
+  isUnrecognizedTextFeature,
+} from "../../utils/textValidation";
+import { apiFetch } from "../../utils/api";
+import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../../utils/utils";
 
 const route = useRoute();
 const router = useRouter();
@@ -247,6 +267,11 @@ const { checkPts, siftCheckPts, cityCheckPts } = devTest;
 const openModal = ref<StepId | null>(null);
 const worldAreaZoom = ref<number | null>(null);
 const isStarting = ref(false);
+
+const showValidationModal = ref(false);
+const isSubmittingValidation = ref(false);
+const validationItems = ref<TextValidationEntry[]>([]);
+const loadedProjectFeatures = ref<any[]>([]);
 
 interface PendingConfirm {
   title: string;
@@ -469,9 +494,77 @@ watch(
   async (completed) => {
     if (!completed) return;
     poller.stop();
+
+    if (!isDevTest && options.value?.textExtraction && store.projectId) {
+      try {
+        const res = await apiFetch(`/projects/${store.projectId}/features`);
+        if (res.ok) {
+          const allFeatures = snakeToCamel(await res.json()) as any[];
+          loadedProjectFeatures.value = allFeatures;
+          const ocrFeatures = allFeatures.filter((f) =>
+            isUnrecognizedTextFeature(f, store.mapId),
+          );
+
+          if (ocrFeatures.length > 0) {
+            validationItems.value = ocrFeatures.map((f) => featureToValidationEntry(f, false));
+            showValidationModal.value = true;
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load extracted texts for validation:", err);
+      }
+    }
+
     await router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
   },
 );
+
+async function onConfirmTextValidation(items: TextValidationEntry[]) {
+  if (!store.projectId) {
+    await router.push("/tableau-de-bord");
+    return;
+  }
+
+  isSubmittingValidation.value = true;
+  try {
+    const selectedItems = items.filter((i) => i.selected);
+
+    if (selectedItems.length > 0) {
+      const currentFeatures =
+        loadedProjectFeatures.value.length > 0
+          ? loadedProjectFeatures.value
+          : (snakeToCamel(await (await apiFetch(`/projects/${store.projectId}/features`)).json()) as any[]);
+
+      const selectedMap = new Map(selectedItems.map((i) => [i.id, i]));
+      const featuresToUpdate = currentFeatures
+        .filter((f) => selectedMap.has(f.id))
+        .map((f) => applyValidationToFeature(f, selectedMap.get(f.id)!));
+
+      if (featuresToUpdate.length > 0) {
+        const payload = camelToSnake(prepareFeaturesForSave(featuresToUpdate));
+        await apiFetch(`/projects/${store.projectId}/features`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+    }
+
+    showValidationModal.value = false;
+    await router.push(`/projet/${store.projectId}`);
+  } catch (err) {
+    showAlert("error", "Erreur lors de l'enregistrement de la validation des textes");
+    console.error("Validation error:", err);
+  } finally {
+    isSubmittingValidation.value = false;
+  }
+}
+
+function onCancelTextValidation() {
+  showValidationModal.value = false;
+  router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
+}
 
 
 onMounted(async () => {

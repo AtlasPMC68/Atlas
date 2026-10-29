@@ -18,6 +18,7 @@
           @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
           @update-feature="onUpdateFeature"
+          @validate-texts="onOpenTextValidation"
         />
       </div>
       <div class="flex-1 min-h-0 flex flex-col">
@@ -40,7 +41,7 @@
             @redo="onRedo"
             @edit-feature-request="onEditFeatureRequest"
           />
-          <div class="absolute bottom-4 left-4 z-[1001]">
+          <div v-show="!showTextValidationModal" class="absolute bottom-4 left-4 z-[1001]">
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
@@ -98,6 +99,17 @@
     @error="onCreateProjectError"
     @closed="onCreateProjectDialogClosed"
   />
+
+  <TextValidationModal
+    :is-open="showTextValidationModal"
+    :map-id="activeValidationMapId"
+    :image-url="validationImageUrl"
+    :map-title="validationMapTitle"
+    :initial-items="textValidationEntries"
+    :is-submitting="isSavingTextValidation"
+    @confirm="onConfirmTextValidation"
+    @cancel="showTextValidationModal = false"
+  />
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch } from "vue";
@@ -116,22 +128,31 @@ import {
   isUuid,
   prepareFeaturesForSave,
   snakeToCamel,
+  toImageSrc,
 } from "../utils/utils";
 import { toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { getOriginalMapImage } from "../composables/useMapImageCache";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
 import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { getMapElementType, upsertFeature } from "../utils/featureHelpers";
+import { upsertFeature } from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
 } from "../typescript/project";
 import CreateProjectDialog from "../components/CreateProjectDialog.vue";
+import TextValidationModal from "../components/import/TextValidationModal.vue";
+import {
+  type TextValidationEntry,
+  featureToValidationEntry,
+  applyValidationToFeature,
+  isUnrecognizedTextFeature,
+} from "../utils/textValidation";
 
 const route = useRoute();
 const router = useRouter();
@@ -246,6 +267,17 @@ const combinedFeatureVisibility = computed(() => {
   
   features.value.forEach((feature) => {
     const id = String(feature.id);
+
+    // Hide unvalidated OCR texts from the map
+    if (
+      feature.properties?.isOcrText &&
+      !feature.properties?.recognized &&
+      feature.properties?.show === false
+    ) {
+      combined.set(id, false);
+      return;
+    }
+
     const explicitlyVisible = featureVisibility.value.get(id) ?? true;
     const isTimelineVisible = visibleByTimeline.has(id);
     
@@ -582,6 +614,76 @@ async function onUpdateFeature(
   } catch (error) {
     console.error("Failed to update feature:", error);
     callbacks?.onError?.("Erreur lors de la mise à jour de l'élément.");
+  }
+}
+
+const showTextValidationModal = ref(false);
+const isSavingTextValidation = ref(false);
+const activeValidationMapId = ref<string | null>(null);
+const validationMapTitle = computed(
+  () =>
+    mapPeriods.value.find((period) => period.id === activeValidationMapId.value)?.title ??
+    "Éléments généraux",
+);
+const validationImageUrl = ref<string | null>(null);
+const textValidationEntries = ref<TextValidationEntry[]>([]);
+
+function onOpenTextValidation(mapId: string | null) {
+  activeValidationMapId.value = mapId;
+
+  // 1. Check in-memory cache from recent import session
+  let img = getOriginalMapImage(mapId);
+
+  // 2. If not found, look for an image feature belonging to this map in the project
+  if (!img) {
+    const imageFeature = features.value.find(
+      (f) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
+    );
+    const rawImage = imageFeature?.image || imageFeature?.properties?.image;
+    if (rawImage) {
+      img = toImageSrc(rawImage);
+    }
+  }
+
+  validationImageUrl.value = img;
+
+  const targetFeatures = features.value.filter((f) => isUnrecognizedTextFeature(f, mapId));
+
+  if (targetFeatures.length === 0) {
+    showAlert("error", "Aucun texte non reconnu trouvé pour cette carte.");
+    return;
+  }
+
+  textValidationEntries.value = targetFeatures.map((f) =>
+    featureToValidationEntry(f, featureVisibility.value.get(f.id) !== false),
+  );
+
+  showTextValidationModal.value = true;
+}
+
+async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
+  isSavingTextValidation.value = true;
+  try {
+    const validatedMap = new Map(validatedItems.map((i) => [i.id, i]));
+
+    const nextFeatures = features.value.map((f) => {
+      const validated = validatedMap.get(f.id);
+      if (!validated) return f;
+
+      featureVisibility.value.set(f.id, validated.selected);
+      return applyValidationToFeature(f, validated);
+    });
+
+    featureVisibility.value = new Map(featureVisibility.value);
+    applyFeatureSnapshot(nextFeatures, true);
+    await onSaveMap(nextFeatures);
+    showTextValidationModal.value = false;
+    showAlert("success", "Textes validés et enregistrés sur la carte.");
+  } catch (err) {
+    console.error("Failed to save validated texts:", err);
+    showAlert("error", "Erreur lors de l'enregistrement de la validation des textes.");
+  } finally {
+    isSavingTextValidation.value = false;
   }
 }
 

@@ -42,7 +42,6 @@ export interface FeatureProperties {
   isVisible?: boolean;
   labelText?: string;
   sizePx?: number;
-  rawType?: string;
   colorName?: string;
   colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
   strokeColor?: [number, number, number];
@@ -55,7 +54,19 @@ export interface FeatureProperties {
   bounds?: [Coordinate, Coordinate];
   layer?: number;
   rotation?: number;
-  fontStyle?: "normal" | "italic" |"uppercase"| string;
+  opacity?: number;
+  image?: string;
+  isOcrText?: boolean;
+  recognized?: boolean;
+  show?: boolean;
+  originalText?: string;
+  matchedCity?: string;
+  country?: string;
+  population?: number;
+  confidence?: number;
+  suggestedCity?: string;
+  suggestedCoords?: [number, number];
+  [key: string]: any;
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;
