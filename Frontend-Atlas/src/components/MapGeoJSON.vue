@@ -47,6 +47,12 @@ import {
 } from "../utils/mapDragUtils";
 import { toArray, toImageSrc } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
+import {
+  formatLabelHtml,
+  parseLabelFontStyle,
+  getLabelCategoryInfo,
+  getElementCategoryInfo,
+} from "../utils/mapLabelUtils";
 import type {
   Feature,
   FeatureId,
@@ -755,10 +761,13 @@ function applyLabelStyle(marker: L.Marker, feature: Feature) {
   el.dataset.category = info.category;
   el.dataset.sizePx = String(sizePx);
   el.dataset.featureId = String(feature.id);
+<<<<<<< Updated upstream
   (marker as any).__priority = info.priority;
   (marker as any).__minZoom = info.minZoom;
   (marker as any).__category = info.category;
   (marker as any).__featureId = String(feature.id);
+=======
+>>>>>>> Stashed changes
 }
 
 function renderLabels(features: Feature[]) {

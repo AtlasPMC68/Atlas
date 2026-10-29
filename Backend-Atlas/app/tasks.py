@@ -31,7 +31,12 @@ from app.models.map_import import (
     MapImport,
 )
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
-from app.utils.cities_validation import match_ocr_label, find_nearby_candidate_city
+from app.utils.cities_validation import (
+    DEFAULT_STYLE,
+    STYLES_MAP,
+    match_ocr_label,
+    find_nearby_candidate_city,
+)
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencing import RunRecord, build_georef_inputs
@@ -349,6 +354,7 @@ def _categorized_text_features_from_ocr(
     blocks: list,
     legend_bounds: Optional[dict],
     frame_bounds: Optional[dict],
+    _image_size: Optional[tuple[int, int]] = None,
 ) -> List[dict[str, Any]]:
     """Extract recognized cities and unrecognized texts from OCR blocks."""
     collections: List[dict[str, Any]] = []
@@ -366,7 +372,7 @@ def _categorized_text_features_from_ocr(
         confidence = float(prob) if prob is not None else 1.0
         city = match_ocr_label(raw_text, frame_bounds)
 
-        if city and city.get("is_exact", True):
+        if city and city.get("found", True) and city.get("lat") and city.get("lon"):
             city_id = city.get("geonameid") or city.get("name")
             if city_id in seen_cities:
                 continue
@@ -402,6 +408,91 @@ def _categorized_text_features_from_ocr(
                     extra={"suggestedCity": None, "suggestedCoords": None},
                 )
             )
+
+    return collections
+
+
+def _city_features_from_text(
+    blocks: list,
+    legend_bounds: Optional[dict],
+    frame_bounds: Optional[dict],
+    image_size: Optional[tuple[int, int]] = None,
+) -> List[dict[str, Any]]:
+    """One point or label feature per place name read off the map."""
+    collections: List[dict[str, Any]] = []
+    seen_ids = set()
+
+    for coords, text, _prob in blocks:
+        if polygon_center_in_legend(coords, legend_bounds):
+            continue
+
+        target_pos = None
+        if coords and frame_bounds and image_size:
+            h, w = image_size
+            if w > 0 and h > 0:
+                cx = sum(p[0] for p in coords) / len(coords)
+                cy = sum(p[1] for p in coords) / len(coords)
+                s = frame_bounds.get("south", frame_bounds.get("min_lat"))
+                n = frame_bounds.get("north", frame_bounds.get("max_lat"))
+                w_b = frame_bounds.get("west", frame_bounds.get("min_lon"))
+                e_b = frame_bounds.get("east", frame_bounds.get("max_lon"))
+                if None not in (s, n, w_b, e_b):
+                    text_lon = w_b + (cx / w) * (e_b - w_b)
+                    text_lat = n - (cy / h) * (n - s)
+                    target_pos = (text_lat, text_lon)
+
+        try:
+            if target_pos is not None:
+                entity = match_ocr_label(text, frame_bounds, target_pos=target_pos)
+            else:
+                entity = match_ocr_label(text, frame_bounds)
+        except TypeError:
+            entity = match_ocr_label(text, frame_bounds)
+
+        if entity is None:
+            continue
+
+        raw_type = entity.get("type")
+        entity_id = f"{raw_type or 'city'}:{entity.get('geonameid') or entity.get('name')}"
+        if entity_id in seen_ids:
+            continue
+        seen_ids.add(entity_id)
+
+        map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(raw_type or "", DEFAULT_STYLE)
+        display_name = transform_func(entity["name"])
+
+        feature_props: dict[str, Any] = {
+            "name": display_name,
+            "labelText": display_name,
+            "lat": entity["lat"],
+            "lon": entity["lon"],
+            "type": raw_type or "city",
+            "rawType": raw_type or "city",
+            "mapElementType": map_element_type,
+            "show": True,
+            "sizePx": size_px,
+            "fontStyle": font_style,
+            "color_name": "black",
+            "color_rgb": [0, 0, 0],
+            "fromGeographicEntitiesJson": True,
+            "isGeographicEntity": True,
+        }
+
+        collections.append(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": feature_props,
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [entity["lon"], entity["lat"]],
+                        },
+                    }
+                ],
+            }
+        )
 
     return collections
 
@@ -548,11 +639,13 @@ def process_map_extraction(self, map_id: str):
         # Step 2: text -> city points
         if inputs.enable_text_extraction:
             progress(2, "Detecting cities in the extracted text")
+            img_size = (image.shape[0], image.shape[1]) if image is not None else None
             collections.extend(
-                _categorized_text_features_from_ocr(
+                _city_features_from_text(
                     claimed.ocr_blocks,
                     inputs.legend_bounds,
                     inputs.frame_bounds,
+                    image_size=img_size,
                 )
             )
         _raise_if_cancelled(map_id)
