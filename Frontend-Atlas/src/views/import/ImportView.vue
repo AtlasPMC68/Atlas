@@ -509,6 +509,8 @@ watch(
             validationItems.value = ocrFeatures.map((f) => featureToValidationEntry(f, false));
             showValidationModal.value = true;
             return;
+          } else {
+            showValidationModal.value = false;
           }
         }
       } catch (err) {

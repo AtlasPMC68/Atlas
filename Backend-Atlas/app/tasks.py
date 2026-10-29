@@ -387,7 +387,6 @@ def _categorized_text_features_from_ocr(
                     recognized=True,
                     extra={
                         "matchedCity": city["name"],
-                        "country": city.get("country"),
                         "population": city.get("population"),
                     },
                 )
