@@ -125,7 +125,7 @@ describe("TextValidationModal", () => {
 
   it("renders the original image at the left when imageUrl is provided", () => {
     const wrapper = mountModal();
-    expect(wrapper.text()).toContain("Photo originale de l'image");
+    expect(wrapper.text()).toContain("Image de référence");
     const img = wrapper.find("img");
     expect(img.exists()).toBe(true);
     expect(img.attributes("src")).toBe("blob:http://localhost/test");

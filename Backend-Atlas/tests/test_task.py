@@ -75,7 +75,7 @@ QUEBEC = {
 }
 
 
-def _match_city(text, frame_bounds=None):
+def _match_city(text, frame_bounds=None, **kwargs):
     if text.strip().lower() == "quebec":
         return QUEBEC
     return None
@@ -188,7 +188,8 @@ def test_extraction_uses_the_stored_inputs_and_saves_once():
     assert [c.kwargs.get("clean", True) for c in georeference.call_args_list] == [False, True]
 
     # Text: looked up among the cities of the frame only.
-    mocks["city"].assert_called_once_with("Quebec", claimed_frame())
+    mocks["city"].assert_called_once()
+    assert mocks["city"].call_args[0] == ("Quebec", claimed_frame())
 
     # One save, carrying the georef inputs with the legend answer.
     mocks["save"].assert_awaited_once()
