@@ -5,6 +5,113 @@ export interface LabelFontStyle {
   textTransform: "uppercase" | "none";
 }
 
+export interface WordTypeStyle {
+  label: string;
+  mapElementType: "point" | "label";
+  sizePx: number;
+  fontStyle: "normal" | "uppercase" | "italic" | string;
+  transform: (text: string) => string;
+}
+
+export function capitalizeFirstOnly(text: string): string {
+  if (!text) return text;
+  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+}
+
+export function capitalizeWords(text: string): string {
+  if (!text) return text;
+  return text
+    .toLowerCase()
+    .split(/([\s-]+)/)
+    .map((part) => (part.length > 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join("");
+}
+
+export const WORD_TYPE_STYLES: Record<string, WordTypeStyle> = {
+  city: {
+    label: "Ville",
+    mapElementType: "point",
+    sizePx: 12,
+    fontStyle: "normal",
+    transform: capitalizeFirstOnly,
+  },
+  province: {
+    label: "Province",
+    mapElementType: "label",
+    sizePx: 14,
+    fontStyle: "uppercase",
+    transform: (t: string) => (t ? t.toUpperCase() : t),
+  },
+  state: {
+    label: "État",
+    mapElementType: "label",
+    sizePx: 14,
+    fontStyle: "uppercase",
+    transform: (t: string) => (t ? t.toUpperCase() : t),
+  },
+  country: {
+    label: "Pays",
+    mapElementType: "label",
+    sizePx: 16,
+    fontStyle: "uppercase",
+    transform: (t: string) => (t ? t.toUpperCase() : t),
+  },
+  continent: {
+    label: "Continent",
+    mapElementType: "label",
+    sizePx: 18,
+    fontStyle: "uppercase",
+    transform: (t: string) => (t ? t.toUpperCase() : t),
+  },
+  ocean: {
+    label: "Océan",
+    mapElementType: "label",
+    sizePx: 18,
+    fontStyle: "italic",
+    transform: (t: string) => (t ? t.toUpperCase() : t),
+  },
+  sea: {
+    label: "Mer",
+    mapElementType: "label",
+    sizePx: 16,
+    fontStyle: "italic",
+    transform: capitalizeWords,
+  },
+  fleuve: {
+    label: "Fleuve",
+    mapElementType: "label",
+    sizePx: 14,
+    fontStyle: "italic",
+    transform: capitalizeWords,
+  },
+  lake: {
+    label: "Lac",
+    mapElementType: "label",
+    sizePx: 12,
+    fontStyle: "italic",
+    transform: capitalizeWords,
+  },
+  river: {
+    label: "Rivière",
+    mapElementType: "label",
+    sizePx: 10,
+    fontStyle: "italic",
+    transform: capitalizeWords,
+  },
+  territory: {
+    label: "Territoire",
+    mapElementType: "label",
+    sizePx: 14,
+    fontStyle: "uppercase",
+    transform: (t: string) => (t ? t.toUpperCase() : t),
+  },
+};
+
+export function getWordTypeStyle(type?: string): WordTypeStyle {
+  const key = (type || "").toLowerCase();
+  return WORD_TYPE_STYLES[key] || WORD_TYPE_STYLES.city;
+}
+
 export interface LabelCategoryInfo {
   priority: number;
   minZoom: number;
@@ -74,7 +181,7 @@ export function formatLabelHtml(rawText: unknown, isUppercase: boolean = false):
     if (!trimmed) return "";
     const cased = isUppercase
       ? trimmed.toUpperCase()
-      : trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+      : capitalizeFirstOnly(trimmed);
     return splitBalancedLine(cased);
   });
 

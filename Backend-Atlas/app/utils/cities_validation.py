@@ -1,4 +1,4 @@
-﻿"""Place-name resolution for OCR labels.
+"""Place-name resolution for OCR labels.
 
 Matches text detected by Florence (OCR) against two gazetteers:
 
@@ -259,49 +259,52 @@ def _not_found(text: str) -> Dict[str, Any]:
     return {"found": False, "query": text, "name": text, "lat": 0.0, "lon": 0.0, "geonameid": None, "matched_text": None}
 
 
-def _geo_result(geo: Dict[str, Any], query: str, base: Dict[str, Any]) -> Dict[str, Any]:
-    """Format a geographic-entity match as a result dict using STYLES_MAP."""
-    raw_name = geo.get("name_fr") or geo.get("name", query)
+def _format_place_result(
+    place: Dict[str, Any],
+    query: str,
+    base: Optional[Dict[str, Any]] = None,
+    default_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Format a geographic-entity or city match as a result dict using STYLES_MAP."""
+    raw_name = place.get("name_fr") or place.get("name", query)
     raw_name = _preserve_prefix_nomenclature(raw_name, query)
-    geo_type = geo.get("type") or "country"
+    geo_type = place.get("type") or default_type
 
-    map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(geo_type, DEFAULT_STYLE)
+    style_key = geo_type or "city"
+    map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(style_key, DEFAULT_STYLE)
     display = transform_func(raw_name)
 
-    return {
-        **base,
+    result: Dict[str, Any] = {
+        **(base or {}),
         "found": True,
+        "query": query,
+        "geonameid": place.get("geonameid") or (f"{geo_type}:{place.get('name')}" if geo_type and place.get("name") else None),
         "name": display,
-        "lat": geo["lat"],
-        "lon": geo["lon"],
-        "geonameid": geo.get("geonameid") or f"{geo_type}:{geo.get('name')}",
-        "type": geo_type,
+        "lat": place.get("lat"),
+        "lon": place.get("lon"),
         "mapElementType": map_element_type,
         "sizePx": size_px,
         "fontStyle": font_style,
         "matched_text": _normalize(query),
     }
+
+    if "population" in place and place["population"] is not None:
+        result["population"] = place["population"]
+
+    if geo_type is not None:
+        result["type"] = geo_type
+
+    return result
+
+
+def _geo_result(geo: Dict[str, Any], query: str, base: Dict[str, Any]) -> Dict[str, Any]:
+    """Format a geographic-entity match as a result dict using STYLES_MAP."""
+    return _format_place_result(geo, query, base=base, default_type="country")
 
 
 def _city_result(city: Dict[str, Any], query: str) -> Dict[str, Any]:
     """Format a city match as a result dict using DEFAULT_STYLE."""
-    raw_name = city.get("name") or query
-    geo_type = city.get("type") or "city"
-    map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(geo_type, DEFAULT_STYLE)
-    display = transform_func(raw_name)
-    return {
-        "found": True,
-        "query": query,
-        "geonameid": city.get("geonameid"),
-        "name": display,
-        "lat": city.get("lat"),
-        "lon": city.get("lon"),
-        "population": city.get("population"),
-        "mapElementType": map_element_type,
-        "sizePx": size_px,
-        "fontStyle": font_style,
-        "matched_text": _normalize(query),
-    }
+    return _format_place_result(city, query)
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -541,6 +544,9 @@ __all__ = [
     "is_exploitable_text",
     "_normalize",
     "_city_map",
+    "_format_place_result",
+    "_geo_result",
+    "_city_result",
     "STYLES_MAP",
     "DEFAULT_STYLE",
     "StyleTuple",

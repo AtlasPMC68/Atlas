@@ -486,7 +486,7 @@ function renderCities(features: Feature[]) {
     });
 
     const featureProperties = feature.properties;
-    const rawCityName = featureProperties.name || feature.name || "";
+    const rawCityName = featureProperties.labelText || featureProperties.name || feature.name || "";
     const displayedCityHtml = formatLabelHtml(rawCityName, false);
     const label = L.marker(coord, {
       icon: L.divIcon({

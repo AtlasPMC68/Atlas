@@ -14,6 +14,9 @@ import json
 from pathlib import Path
 
 from app.utils.cities_validation import (
+    _city_result,
+    _format_place_result,
+    _geo_result,
     _normalize,
     get_city_with_max_population,
     get_geographic_entity,
@@ -389,3 +392,49 @@ def test_prefix_preserved_only_if_detected_in_extraction():
     res_no_prefix = get_city_with_max_population("QUÉBEC", frame_bounds=CANADA_BOUNDS)
     assert res_no_prefix["found"] is True
     assert res_no_prefix["name"] == "QUÉBEC"
+
+
+def test_format_place_result_unified_city_and_geo():
+    """Verify that _format_place_result correctly handles both cities and geographic entities."""
+    # City input
+    city_data = {
+        "geonameid": 6325494,
+        "name": "Québec",
+        "lat": 46.8123,
+        "lon": -71.2145,
+        "population": 540000,
+    }
+    res_city = _format_place_result(city_data, "quebec")
+    assert res_city["found"] is True
+    assert res_city["name"] == "Québec"
+    assert res_city["mapElementType"] == "point"
+    assert res_city["sizePx"] == 12
+    assert res_city["fontStyle"] == "normal"
+    assert res_city["population"] == 540000
+    assert res_city.get("type") is None
+
+    # Province input
+    province_data = {
+        "name": "Quebec",
+        "name_fr": "Québec",
+        "type": "province",
+        "lat": 52.0,
+        "lon": -70.0,
+    }
+    res_province = _format_place_result(province_data, "QUÉBEC", default_type="country")
+    assert res_province["found"] is True
+    assert res_province["name"] == "QUÉBEC"
+    assert res_province["type"] == "province"
+    assert res_province["mapElementType"] == "label"
+    assert res_province["sizePx"] == 14
+    assert res_province["fontStyle"] == "uppercase"
+    assert res_province["geonameid"] == "province:Quebec"
+
+    # Backward-compatible delegates
+    res_geo_delegated = _geo_result(province_data, "QUÉBEC", {"query": "QUÉBEC"})
+    assert res_geo_delegated["name"] == "QUÉBEC"
+    assert res_geo_delegated["type"] == "province"
+
+    res_city_delegated = _city_result(city_data, "quebec")
+    assert res_city_delegated["name"] == "Québec"
+    assert res_city_delegated["mapElementType"] == "point"
