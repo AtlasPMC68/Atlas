@@ -36,6 +36,7 @@ from app.utils.cities_validation import (
     STYLES_MAP,
     match_ocr_label,
     find_nearby_candidate_city,
+    is_exploitable_text,
 )
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
@@ -354,44 +355,97 @@ def _categorized_text_features_from_ocr(
     blocks: list,
     legend_bounds: Optional[dict],
     frame_bounds: Optional[dict],
-    _image_size: Optional[tuple[int, int]] = None,
+    image_size: Optional[tuple[int, int]] = None,
 ) -> List[dict[str, Any]]:
-    """Extract recognized cities and unrecognized texts from OCR blocks."""
+    """Extract recognized places (cities or geographic entities) and unrecognized texts from OCR blocks.
+
+    3 cas possibles:
+    Cas 1 : Rejet immédiat si texte vide, dans la légende, ou parasite (mots-clés échelle/légende, < 2 lettres, etc.).
+    Cas 2 : Texte OCR exploitable mais non reconnu ni par geonamescache ni par le JSON géographique
+            -> conservé pour validation manuelle (show=False, recognized=False).
+    Cas 3 : Texte reconnu comme ville ou entité géographique du JSON
+            -> affiché sur la carte finale (show=True, recognized=True).
+    """
     collections: List[dict[str, Any]] = []
-    seen_cities = set()
+    seen_recognized = set()
     seen_unrecognized = set()
 
     for coords, text, prob in blocks:
+        # Cas 1 : Rejet immédiat si dans la légende
         if polygon_center_in_legend(coords, legend_bounds):
             continue
 
         raw_text = str(text or "").strip()
-        if not raw_text:
+        # Cas 1 : Rejet immédiat si vide ou parasite (< 2 lettres, échelle, etc.)
+        if not is_exploitable_text(raw_text):
             continue
 
         confidence = float(prob) if prob is not None else 1.0
-        city = match_ocr_label(raw_text, frame_bounds)
 
-        if city and city.get("found", True) and city.get("lat") and city.get("lon"):
-            city_id = city.get("geonameid") or city.get("name")
-            if city_id in seen_cities:
+        target_pos = None
+        if coords and frame_bounds and image_size:
+            h, w = image_size
+            if w > 0 and h > 0:
+                cx = sum(p[0] for p in coords) / len(coords)
+                cy = sum(p[1] for p in coords) / len(coords)
+                s = frame_bounds.get("south", frame_bounds.get("min_lat"))
+                n = frame_bounds.get("north", frame_bounds.get("max_lat"))
+                w_b = frame_bounds.get("west", frame_bounds.get("min_lon"))
+                e_b = frame_bounds.get("east", frame_bounds.get("max_lon"))
+                if None not in (s, n, w_b, e_b):
+                    text_lon = w_b + (cx / w) * (e_b - w_b)
+                    text_lat = n - (cy / h) * (n - s)
+                    target_pos = (text_lat, text_lon)
+
+        try:
+            if target_pos is not None:
+                entity = match_ocr_label(raw_text, frame_bounds, target_pos=target_pos)
+            else:
+                entity = match_ocr_label(raw_text, frame_bounds)
+        except TypeError:
+            entity = match_ocr_label(raw_text, frame_bounds)
+
+        if entity and entity.get("found", True) and entity.get("lat") and entity.get("lon"):
+            # Cas 3 : Reconnu (ville ou entité géographique du JSON)
+            raw_type = entity.get("type")
+            entity_id = f"{raw_type or 'city'}:{entity.get('geonameid') or entity.get('name')}"
+            if entity_id in seen_recognized:
                 continue
-            seen_cities.add(city_id)
+            seen_recognized.add(entity_id)
+
+            map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(
+                raw_type or "", DEFAULT_STYLE
+            )
+            display_name = transform_func(entity.get("name", raw_text))
+
+            extra = {
+                "labelText": display_name,
+                "lat": entity["lat"],
+                "lon": entity["lon"],
+                "type": raw_type or "city",
+                "rawType": raw_type or "city",
+                "mapElementType": map_element_type,
+                "sizePx": size_px,
+                "fontStyle": font_style,
+                "matchedCity": entity.get("name"),
+                "population": entity.get("population"),
+                "fromGeographicEntitiesJson": bool(raw_type and raw_type != "city"),
+                "isGeographicEntity": bool(raw_type and raw_type != "city"),
+            }
+
             collections.append(
                 _make_text_feature(
-                    name=city["name"],
+                    name=display_name,
                     original_text=raw_text,
-                    coords=[city["lon"], city["lat"]],
+                    coords=[entity["lon"], entity["lat"]],
                     quad=coords,
                     confidence=confidence,
                     recognized=True,
-                    extra={
-                        "matchedCity": city["name"],
-                        "population": city.get("population"),
-                    },
+                    extra=extra,
                 )
             )
         else:
+            # Cas 2 : Texte OCR conservé mais non reconnu -> validation manuelle
             clean = raw_text.lower()
             if clean in seen_unrecognized:
                 continue
@@ -411,89 +465,8 @@ def _categorized_text_features_from_ocr(
     return collections
 
 
-def _city_features_from_text(
-    blocks: list,
-    legend_bounds: Optional[dict],
-    frame_bounds: Optional[dict],
-    image_size: Optional[tuple[int, int]] = None,
-) -> List[dict[str, Any]]:
-    """One point or label feature per place name read off the map."""
-    collections: List[dict[str, Any]] = []
-    seen_ids = set()
-
-    for coords, text, _prob in blocks:
-        if polygon_center_in_legend(coords, legend_bounds):
-            continue
-
-        target_pos = None
-        if coords and frame_bounds and image_size:
-            h, w = image_size
-            if w > 0 and h > 0:
-                cx = sum(p[0] for p in coords) / len(coords)
-                cy = sum(p[1] for p in coords) / len(coords)
-                s = frame_bounds.get("south", frame_bounds.get("min_lat"))
-                n = frame_bounds.get("north", frame_bounds.get("max_lat"))
-                w_b = frame_bounds.get("west", frame_bounds.get("min_lon"))
-                e_b = frame_bounds.get("east", frame_bounds.get("max_lon"))
-                if None not in (s, n, w_b, e_b):
-                    text_lon = w_b + (cx / w) * (e_b - w_b)
-                    text_lat = n - (cy / h) * (n - s)
-                    target_pos = (text_lat, text_lon)
-
-        try:
-            if target_pos is not None:
-                entity = match_ocr_label(text, frame_bounds, target_pos=target_pos)
-            else:
-                entity = match_ocr_label(text, frame_bounds)
-        except TypeError:
-            entity = match_ocr_label(text, frame_bounds)
-
-        if entity is None:
-            continue
-
-        raw_type = entity.get("type")
-        entity_id = f"{raw_type or 'city'}:{entity.get('geonameid') or entity.get('name')}"
-        if entity_id in seen_ids:
-            continue
-        seen_ids.add(entity_id)
-
-        map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(raw_type or "", DEFAULT_STYLE)
-        display_name = transform_func(entity["name"])
-
-        feature_props: dict[str, Any] = {
-            "name": display_name,
-            "labelText": display_name,
-            "lat": entity["lat"],
-            "lon": entity["lon"],
-            "type": raw_type or "city",
-            "rawType": raw_type or "city",
-            "mapElementType": map_element_type,
-            "show": True,
-            "sizePx": size_px,
-            "fontStyle": font_style,
-            "color_name": "black",
-            "color_rgb": [0, 0, 0],
-            "fromGeographicEntitiesJson": True,
-            "isGeographicEntity": True,
-        }
-
-        collections.append(
-            {
-                "type": "FeatureCollection",
-                "features": [
-                    {
-                        "type": "Feature",
-                        "properties": feature_props,
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [entity["lon"], entity["lat"]],
-                        },
-                    }
-                ],
-            }
-        )
-
-    return collections
+# Backward compatibility alias
+_city_features_from_text = _categorized_text_features_from_ocr
 
 
 def _georeference_unrecognized_texts(

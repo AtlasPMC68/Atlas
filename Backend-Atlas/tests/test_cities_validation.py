@@ -13,12 +13,10 @@ Tests:
 import json
 from pathlib import Path
 
-import pytest
 from app.utils.cities_validation import (
     _normalize,
     get_city_with_max_population,
     get_geographic_entity,
-    is_country_or_continent,
     is_in_bounds,
     match_ocr_label,
 )
@@ -69,8 +67,6 @@ def test_get_geographic_entity_countries():
     assert spain_en is not None
     assert spain_fr["name"] == spain_en["name"]
 
-    # Alias helper
-    assert is_country_or_continent("Canada") is not None
 
 
 def test_get_geographic_entity_continents():

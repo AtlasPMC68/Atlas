@@ -1,4 +1,4 @@
-"""Place-name resolution for OCR labels.
+﻿"""Place-name resolution for OCR labels.
 
 Matches text detected by Florence (OCR) against two gazetteers:
 
@@ -154,17 +154,6 @@ def find_geo_entity(
 get_geographic_entity = find_geo_entity
 
 
-def is_country_or_continent(
-    text: str,
-    fuzzy: bool = False,
-    cutoff: float = 0.80,
-    target_pos: Optional[Tuple[float, float]] = None,
-    bounds: Optional[Dict[str, float]] = None,
-) -> Optional[Dict[str, Any]]:
-    """Alias kept for backward compatibility."""
-    return find_geo_entity(text, fuzzy=fuzzy, cutoff=cutoff, target_pos=target_pos, bounds=bounds)
-
-
 # City gazetteer  (geonamescache)
 def _parse_pop(val: Any) -> int:
     try:
@@ -207,13 +196,14 @@ STYLES_MAP: Dict[str, StyleTuple] = {
     "state": ("label", 14, "uppercase", str.upper),
     "province": ("label", 14, "uppercase", str.upper),
     "territory": ("label", 14, "uppercase", str.upper),
+    "city": ("point", 12, "normal", capitalize_first),
     "ocean": ("label", 18, "italic", str.upper),
     "sea": ("label", 16, "italic", capitalize_first),
     "fleuve": ("label", 14, "italic", capitalize_first),
     "lake": ("label", 12, "italic", capitalize_first),
     "river": ("label", 10, "italic", capitalize_first),
 }
-DEFAULT_STYLE: StyleTuple = ("point", 12, "normal", capitalize_first)
+DEFAULT_STYLE: StyleTuple = STYLES_MAP.get("city", ("point", 12, "normal", capitalize_first))
 
 
 # Common geographic prefixes preserved for display nomenclature only if detected in extraction query
@@ -295,8 +285,9 @@ def _geo_result(geo: Dict[str, Any], query: str, base: Dict[str, Any]) -> Dict[s
 
 def _city_result(city: Dict[str, Any], query: str) -> Dict[str, Any]:
     """Format a city match as a result dict using DEFAULT_STYLE."""
-    map_element_type, size_px, font_style, transform_func = DEFAULT_STYLE
     raw_name = city.get("name") or query
+    geo_type = city.get("type") or "city"
+    map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(geo_type, DEFAULT_STYLE)
     display = transform_func(raw_name)
     return {
         "found": True,
@@ -543,7 +534,6 @@ __all__ = [
     "match_ocr_label",
     "find_geo_entity",
     "get_geographic_entity",
-    "is_country_or_continent",
     "is_in_bounds",
     "capitalize_first",
     "haversine_distance_km",
