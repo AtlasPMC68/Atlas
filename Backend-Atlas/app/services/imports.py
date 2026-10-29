@@ -13,7 +13,7 @@ each step is confirmed so a reload finds them again:
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -64,9 +64,7 @@ def _validate_colors(entries: Any) -> List[Dict[str, Any]]:
             {
                 "x": float(entry["x"]),
                 "y": float(entry["y"]),
-                "name": (str(entry["name"]).strip() or None)
-                if entry.get("name") is not None
-                else None,
+                "name": (str(entry["name"]).strip() or None) if entry.get("name") is not None else None,
                 "radius": int(float(entry.get("radius", 20))),
                 "kind": str(entry.get("kind") or KIND_ZONE).strip().lower(),
                 "hex": str(hex_value) if isinstance(hex_value, str) else None,
@@ -108,11 +106,9 @@ def _validate_options(entry: Any) -> Dict[str, bool]:
     return options
 
 
-def apply_inputs_patch(
-    current: Dict[str, Any], patch: Dict[str, Any]
-) -> Dict[str, Any]:
+def apply_inputs_patch(current: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
     """Validate *patch* and merge it into *current*. ``None`` clears a key."""
-    
+
     unknown = set(patch) - set(INPUT_KEYS)
     if unknown:
         raise ValueError(f"unknown input(s): {', '.join(sorted(unknown))}")
@@ -138,9 +134,7 @@ def apply_inputs_patch(
             merged[key] = _validate_options(value)
 
     previous_frame = (current or {}).get("frameBounds")
-    frame_changed = (
-        previous_frame is not None and merged.get("frameBounds") != previous_frame
-    )
+    frame_changed = previous_frame is not None and merged.get("frameBounds") != previous_frame
     if frame_changed and "controlPoints" not in patch:
         merged.pop("controlPoints", None)
 
@@ -182,21 +176,15 @@ def parse_import_inputs(inputs: Optional[Dict[str, Any]]) -> ImportInputs:
     colors = inputs.get("colors") or []
     positions, names, radii, kinds = parse_imposed_colors_entries(colors or None)
     options = dict(DEFAULT_OPTIONS)
-    options.update(
-        {k: v for k, v in (inputs.get("options") or {}).items() if k in DEFAULT_OPTIONS}
-    )
+    options.update({k: v for k, v in (inputs.get("options") or {}).items() if k in DEFAULT_OPTIONS})
 
     return ImportInputs(
         frame_bounds=parse_frame_bounds_entry(inputs.get("frameBounds")),
         legend_answered=legend_answered,
         legend_bounds=legend_bounds,
         control_points=parse_control_points(inputs.get("controlPoints") or []),
-        zone_picks=split_imposed_colors_by_kind(
-            positions, names, radii, kinds, KIND_ZONE
-        ),
-        water_picks=split_imposed_colors_by_kind(
-            positions, names, radii, kinds, KIND_WATER
-        ),
+        zone_picks=split_imposed_colors_by_kind(positions, names, radii, kinds, KIND_ZONE),
+        water_picks=split_imposed_colors_by_kind(positions, names, radii, kinds, KIND_WATER),
         all_colors=colors,
         shapes=inputs.get("shapes") or [],
         options=options,
@@ -223,20 +211,14 @@ def missing_inputs(inputs: ImportInputs) -> List[str]:
 # --------------------------------------------------------------------------
 
 
-async def get_owned_map(
-    session: AsyncSession, map_id: UUID, user_id: UUID
-) -> Optional[Map]:
+async def get_owned_map(session: AsyncSession, map_id: UUID, user_id: UUID) -> Optional[Map]:
     result = await session.execute(
-        select(Map)
-        .join(Project, Map.project_id == Project.id)
-        .where(Map.id == map_id, Project.user_id == user_id)
+        select(Map).join(Project, Map.project_id == Project.id).where(Map.id == map_id, Project.user_id == user_id)
     )
     return result.scalar_one_or_none()
 
 
-async def get_import(
-    session: AsyncSession, map_id: UUID, *, for_update: bool = False
-) -> Optional[MapImport]:
+async def get_import(session: AsyncSession, map_id: UUID, *, for_update: bool = False) -> Optional[MapImport]:
     query = select(MapImport).where(MapImport.map_id == map_id)
     if for_update:
         query = query.with_for_update()
@@ -250,7 +232,7 @@ def is_extraction_active(row: MapImport) -> bool:
 
 async def delete_stale_imports(session: AsyncSession) -> None:
     """Drop imports abandoned long ago. Not ones with an extraction on its way."""
-    cutoff = datetime.utcnow() - STALE_IMPORT_AGE
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - STALE_IMPORT_AGE
     await session.execute(
         delete(MapImport).where(
             MapImport.updated_at < cutoff,

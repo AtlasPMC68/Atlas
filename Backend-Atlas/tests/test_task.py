@@ -76,7 +76,7 @@ QUEBEC = {
 
 
 def _match_city(text, frame_bounds=None):
-    if "quebec" in text.lower():
+    if text.strip().lower() == "quebec":
         return QUEBEC
     return None
 
@@ -96,18 +96,14 @@ def _color_result():
 def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
     """Run the task with its database transitions stubbed. Returns the mocks."""
     placement = MagicMock(alignment=None)
-    placement.georeference.return_value = MagicMock(
-        collections=[{"type": "FeatureCollection", "features": []}]
-    )
+    placement.georeference.return_value = MagicMock(collections=[{"type": "FeatureCollection", "features": []}])
     mocks = {
         "claim": AsyncMock(return_value=claimed),
         "state": AsyncMock(return_value=state),
         "save": AsyncMock(return_value=3),
         "end": AsyncMock(),
         "colors": MagicMock(return_value=_color_result()),
-        "shapes": MagicMock(
-            return_value={"pixel_features": [], "normalized_features": [], "shapes": []}
-        ),
+        "shapes": MagicMock(return_value={"pixel_features": [], "normalized_features": [], "shapes": []}),
         "city": MagicMock(side_effect=_match_city),
         "place": MagicMock(return_value=placement),
     }
@@ -138,10 +134,7 @@ def test_unknown_words_are_kept_hidden():
 
     blocks = [[[[0, 0], [9, 0], [9, 9], [0, 9]], "Quebec Nowhere", 0.9]]
     with patch("app.tasks.match_ocr_label", side_effect=_match_city):
-        features = [
-            c["features"][0]
-            for c in _categorized_text_features_from_ocr(blocks, None, claimed_frame())
-        ]
+        features = [c["features"][0] for c in _categorized_text_features_from_ocr(blocks, None, claimed_frame())]
 
     # Recognized city is visible (show=True), unknown words are categorized as unrecognized and kept hidden (show=False)
     assert [(f["properties"]["name"], f["properties"]["show"]) for f in features] == [
@@ -157,10 +150,7 @@ def test_categorized_text_recognized_and_unrecognized_separation():
         [[[10, 10], [19, 10], [19, 19], [10, 19]], "Nowhere", 0.8],
     ]
     with patch("app.tasks.match_ocr_label", side_effect=_match_city):
-        features = [
-            c["features"][0]
-            for c in _categorized_text_features_from_ocr(blocks, None, claimed_frame())
-        ]
+        features = [c["features"][0] for c in _categorized_text_features_from_ocr(blocks, None, claimed_frame())]
 
     assert [(f["properties"]["name"], f["properties"]["show"], f["properties"]["recognized"]) for f in features] == [
         ("Québec", True, True),
@@ -260,9 +250,7 @@ def test_a_task_that_is_no_longer_current_does_nothing():
 
 
 def test_a_failure_marks_the_import_failed():
-    mocks = _run_extraction(
-        _claimed(), colors=MagicMock(side_effect=RuntimeError("boom"))
-    )
+    mocks = _run_extraction(_claimed(), colors=MagicMock(side_effect=RuntimeError("boom")))
 
     with pytest.raises(RuntimeError):
         mocks["outcome"].get(timeout=20, propagate=True)
