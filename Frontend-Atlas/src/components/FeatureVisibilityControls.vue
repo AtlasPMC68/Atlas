@@ -234,10 +234,30 @@
         </div>
         <div
           class="flex flex-col gap-2"
-          v-if="featureToEdit.properties.labelText !== undefined"
+          v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
         >
           <label class="label">Texte</label>
           <input v-model="featureToEditLabelText" type="text" class="input" />
+        </div>
+        <div
+          class="flex flex-col gap-2"
+          v-if="isTextElement"
+        >
+          <label class="label">Type de mot</label>
+          <select
+            v-model="featureToEditWordType"
+            data-testid="word-type-select"
+            class="select select-bordered w-full"
+            @change="onWordTypeChange"
+          >
+            <option
+              v-for="(style, typeKey) in WORD_TYPE_STYLES"
+              :key="typeKey"
+              :value="typeKey"
+            >
+              {{ style.label }}
+            </option>
+          </select>
         </div>
         <div
           class="flex gap-2"
@@ -459,6 +479,7 @@ import type {
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import { getMapElementType } from "../utils/featureHelpers";
+import { WORD_TYPE_STYLES } from "../utils/mapLabelUtils";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
 import { hexToRgb, rgbToHex } from "../utils/utils";
@@ -473,15 +494,44 @@ const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
 const featureToEditName = ref<string>("");
 const featureToEditLabelText = ref<string | undefined>(undefined);
+const featureToEditWordType = ref<string>("city");
 const featureToEditColor = ref<string | undefined>(undefined);
 const featureToEditStrokeColor = ref<string | undefined>(undefined);
 const featureToEditOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+
+const isTextElement = computed(() => {
+  if (!featureToEdit.value) return false;
+  const type = getMapElementType(featureToEdit.value);
+  return (
+    type === "label" ||
+    type === "point" ||
+    featureToEdit.value.properties.labelText !== undefined ||
+    featureToEdit.value.properties.rawType !== undefined
+  );
+});
+
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
+  if (isTextElement.value) {
+    const style = WORD_TYPE_STYLES[featureToEditWordType.value];
+    return (style?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
+  }
   return getMapElementType(featureToEdit.value) === "label";
 });
+
+function onWordTypeChange() {
+  const style = WORD_TYPE_STYLES[featureToEditWordType.value];
+  if (!style) return;
+
+  if (featureToEditLabelText.value !== undefined) {
+    featureToEditLabelText.value = style.transform(featureToEditLabelText.value);
+  }
+  if (featureToEditName.value) {
+    featureToEditName.value = style.transform(featureToEditName.value);
+  }
+}
 
 const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const mapToDeleteId = ref<string | null>(null);
@@ -556,11 +606,11 @@ const featureGroups = computed(() => {
   ];
 
   props.features.forEach((feature: Feature) => {
-    // Unrecognized OCR texts with show=false are only shown in the validation modal
+    // Unrecognized OCR texts must not be listed on the page
     if (
       feature.properties?.isOcrText &&
-      !feature.properties?.recognized &&
-      feature.properties?.show === false
+      (feature.properties?.recognized === false ||
+        (!feature.properties?.recognized && feature.properties?.show === false))
     ) {
       return;
     }
@@ -703,10 +753,33 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
 async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
   featureToEditName.value = feature.properties.name;
-  featureToEditLabelText.value = feature.properties.labelText;
+  const elemType = getMapElementType(feature);
+  const isText =
+    elemType === "label" ||
+    elemType === "point" ||
+    feature.properties.labelText !== undefined ||
+    feature.properties.rawType !== undefined;
+
+  const rawType = (
+    feature.properties.rawType ||
+    feature.properties.type ||
+    ""
+  ).toLowerCase();
+
+  if (rawType && WORD_TYPE_STYLES[rawType]) {
+    featureToEditWordType.value = rawType;
+  } else if (elemType === "label") {
+    featureToEditWordType.value = "province";
+  } else {
+    featureToEditWordType.value = "city";
+  }
+
+  featureToEditLabelText.value =
+    feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
+
   featureToEditColor.value =
     rgbToHex(feature.properties.colorRgb) ??
-    (getMapElementType(feature) === "label" || getMapElementType(feature) === "point" ? "#000000" : undefined);
+    (elemType === "label" || elemType === "point" ? "#000000" : undefined);
   featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
   featureToEditOpacity.value = feature.properties.fillOpacity;
   featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
@@ -719,13 +792,32 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
-  const isLabel = isEditingLabel.value;
+  const isText = isTextElement.value;
+  const wordStyle = isText ? WORD_TYPE_STYLES[featureToEditWordType.value] : null;
+
+  const currentMapElementType = getMapElementType(featureToEdit.value);
+  const newMapElementType = wordStyle ? wordStyle.mapElementType : currentMapElementType;
+  const newSizePx = wordStyle ? wordStyle.sizePx : featureToEdit.value.properties.sizePx;
+  const newFontStyle = wordStyle ? wordStyle.fontStyle : featureToEdit.value.properties.fontStyle;
+
+  const isLabel = newMapElementType === "label";
+
+  const finalName = wordStyle ? wordStyle.transform(featureToEditName.value) : featureToEditName.value;
+  const rawLabelText = featureToEditLabelText.value ?? (isText ? featureToEditName.value : undefined);
+  const finalLabelText = wordStyle && rawLabelText ? wordStyle.transform(rawLabelText) : rawLabelText;
+
   const updatedFeature: Feature = {
     ...featureToEdit.value,
+    name: finalName,
     properties: {
       ...featureToEdit.value.properties,
-      name: featureToEditName.value,
-      labelText: featureToEditLabelText.value,
+      name: finalName,
+      labelText: finalLabelText,
+      rawType: wordStyle ? featureToEditWordType.value : featureToEdit.value.properties.rawType,
+      type: wordStyle ? featureToEditWordType.value : featureToEdit.value.properties.type,
+      mapElementType: newMapElementType ?? featureToEdit.value.properties.mapElementType,
+      sizePx: newSizePx,
+      fontStyle: newFontStyle,
       colorRgb: hexToRgb(featureToEditColor.value),
       strokeColor: isLabel ? undefined : hexToRgb(featureToEditStrokeColor.value),
       fillOpacity: isLabel ? undefined : featureToEditOpacity.value,

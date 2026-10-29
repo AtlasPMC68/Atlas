@@ -47,6 +47,12 @@ import {
 } from "../utils/mapDragUtils";
 import { toArray, toImageSrc } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
+import {
+  formatLabelHtml,
+  parseLabelFontStyle,
+  getLabelCategoryInfo,
+  getElementCategoryInfo,
+} from "../utils/mapLabelUtils";
 import type {
   Feature,
   FeatureId,
@@ -480,12 +486,14 @@ function renderCities(features: Feature[]) {
     });
 
     const featureProperties = feature.properties;
+    const rawCityName = featureProperties.labelText || featureProperties.name || feature.name || "";
+    const displayedCityHtml = formatLabelHtml(rawCityName, false);
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
         html: `
           <div class="label-wrapper">
-            <div class="label-content">${featureProperties.name || feature.name || ""}</div>
+            <div class="label-content">${displayedCityHtml}</div>
             <div class="label-anchor rotate-handle"></div>
           </div>
         `,
@@ -493,6 +501,12 @@ function renderCities(features: Feature[]) {
         iconAnchor: [-8, 15],
       }),
     } as any);
+
+    const cityCategoryInfo = getLabelCategoryInfo(feature);
+    (label as any).__priority = cityCategoryInfo.priority;
+    (label as any).__minZoom = cityCategoryInfo.minZoom;
+    (label as any).__category = cityCategoryInfo.category;
+    (label as any).__featureId = String(feature.id);
 
     attachFeatureToLayer(point, feature);
     bindRenderedFeatureEvents(point, applyLayerUpdate);
@@ -616,6 +630,114 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
   });
 }
 
+function parseLabelFontStyle(rawStyle?: unknown) {
+  const styleStr = typeof rawStyle === "string" ? rawStyle.toLowerCase() : "";
+  const isUppercase = styleStr.includes("uppercase");
+  const isItalic = styleStr.includes("italic") || styleStr.includes("oblique");
+
+  return {
+    fontStyle: isItalic ? "italic" : "normal",
+    textTransform: isUppercase ? "uppercase" : "none",
+  };
+}
+
+function splitBalancedLine(text: string, maxLen = 13): string {
+  if (text.length <= maxLen) return text;
+
+  // Find candidate break points (spaces and hyphens)
+  const candidates: { index: number; after: boolean }[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === " ") {
+      candidates.push({ index: i, after: false });
+    } else if (text[i] === "-") {
+      candidates.push({ index: i + 1, after: true }); // break after hyphen, keeping hyphen
+    }
+  }
+
+  if (candidates.length === 0) {
+    if (text.length >= 16) {
+      const mid = Math.floor(text.length / 2);
+      return `${text.slice(0, mid)}-<br>${text.slice(mid)}`;
+    }
+    return text;
+  }
+
+  const mid = text.length / 2;
+  let best = candidates[0];
+  let bestDiff = Math.abs((best.after ? best.index : best.index + 0.5) - mid);
+
+  for (let k = 1; k < candidates.length; k++) {
+    const cand = candidates[k];
+    const pos = cand.after ? cand.index : cand.index + 0.5;
+    const diff = Math.abs(pos - mid);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = cand;
+    }
+  }
+
+  if (best.after) {
+    return `${text.slice(0, best.index).trim()}<br>${text.slice(best.index).trim()}`;
+  }
+  return `${text.slice(0, best.index).trim()}<br>${text.slice(best.index + 1).trim()}`;
+}
+
+function formatLabelHtml(rawText: unknown, isUppercase: boolean = false): string {
+  if (rawText === null || rawText === undefined) return "";
+  const str = String(rawText).trim();
+  if (!str) return "";
+
+  const lines = str.split("\n");
+  const formatted = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return "";
+    const cased = isUppercase
+      ? trimmed.toUpperCase()
+      : trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+    return splitBalancedLine(cased);
+  });
+
+  return formatted.join("<br>");
+}
+
+// Configuration claire et facile à modifier : [priority, minZoom, categoryName]
+const LABEL_CATEGORY_RULES: Record<string, [number, number, string]> = {
+  continent: [90, 1.0,  "continent"],
+  ocean:     [80, 1.0,  "ocean"],
+  country:   [70, 1.5,  "country"],
+  sea:       [60, 2.0,  "sea"],
+  state:     [50, 2.5,  "state"],
+  province:  [50, 2.5,  "state"],
+  territory: [50, 2.5,  "state"],
+  fleuve:    [40, 2.25, "fleuve"],
+  lake:      [20, 2.75, "lake"],
+  city:      [30, 4.0,  "city"],
+  point:     [30, 4.0,  "city"],
+  river:     [10, 4.5,  "river"],
+};
+
+function resolveCategoryKey(rawType: string, sizePx: number, isUpper: boolean, isItalic: boolean): string {
+  if (rawType && LABEL_CATEGORY_RULES[rawType]) return rawType;
+  if (sizePx >= 18) return isUpper ? "continent" : "ocean";
+  if (sizePx >= 16) return isUpper ? "country" : "sea";
+  if (sizePx >= 14) return isUpper ? "state" : "fleuve";
+  if (sizePx >= 12) return isItalic ? "lake" : "city";
+  return "river";
+}
+
+function getLabelCategoryInfo(feature: Feature | Record<string, any>): {
+  priority: number;
+  minZoom: number;
+  category: string;
+} {
+  const props = feature.properties || {};
+  const rawType = String(props.rawType || (props as any).entityType || props.mapElementType || "").toLowerCase();
+  const fontStyle = String((props as any).fontStyle || "").toLowerCase();
+  const key = resolveCategoryKey(rawType, props.sizePx ?? 12, fontStyle.includes("uppercase"), fontStyle.includes("italic"));
+
+  const [priority, minZoom, category] = LABEL_CATEGORY_RULES[key] || [30, 2.5, "custom"];
+  return { priority, minZoom, category };
+}
 function applyLabelStyle(marker: L.Marker, feature: Feature) {
   const el = marker.getElement() as HTMLElement | null;
   if (!el) return;
@@ -625,10 +747,20 @@ function applyLabelStyle(marker: L.Marker, feature: Feature) {
     (feature.properties as any).color ||
     "#000000";
   const sizePx = feature.properties.sizePx ?? 12;
-
+  const { fontStyle, textTransform } = parseLabelFontStyle(
+    (feature.properties as any).fontStyle
+  );
+  const info = getLabelCategoryInfo(feature);
 
   el.style.setProperty("--label-color", color);
   el.style.setProperty("--label-size", `${sizePx}px`);
+  el.style.setProperty("--label-style", fontStyle);
+  el.style.setProperty("--label-transform", textTransform);
+  el.dataset.priority = String(info.priority);
+  el.dataset.minZoom = String(info.minZoom);
+  el.dataset.category = info.category;
+  el.dataset.sizePx = String(sizePx);
+  el.dataset.featureId = String(feature.id);
 }
 
 function renderLabels(features: Feature[]) {
@@ -640,12 +772,26 @@ function renderLabels(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
+    const { fontStyle, textTransform } = parseLabelFontStyle(
+      (feature.properties as any).fontStyle
+    );
+
+    const inlineStyles: string[] = [];
+    if (fontStyle !== "normal") inlineStyles.push(`font-style: ${fontStyle}`);
+    if (textTransform !== "none") inlineStyles.push(`text-transform: ${textTransform}`);
+    const styleAttr = inlineStyles.length ? ` style="${inlineStyles.join("; ")}"` : "";
+
+    const displayedHtml = formatLabelHtml(
+      feature.properties.labelText ?? feature.properties.name,
+      textTransform === "uppercase"
+    );
+
     const label = L.marker(coord, {
       icon: L.divIcon({
         className: "city-label-text",
         html: `
           <div class="label-wrapper">
-            <div class="label-content">${feature.properties.labelText || ""}</div>
+            <div class="label-content"${styleAttr}>${displayedHtml}</div>
             <div class="label-anchor rotate-handle"></div>
           </div>
         `,
@@ -653,11 +799,21 @@ function renderLabels(features: Feature[]) {
       }),
     } as any);
 
+    const labelCategoryInfo = getLabelCategoryInfo(feature);
+    (label as any).__priority = labelCategoryInfo.priority;
+    (label as any).__minZoom = labelCategoryInfo.minZoom;
+    (label as any).__category = labelCategoryInfo.category;
+    (label as any).__featureId = String(feature.id);
+
     bindRotationHandle(label, feature, label, 0, 10);
 
     label.on("add", () => {
       applyLabelStyle(label, feature);
     });
+
+    if (label.getElement()) {
+      applyLabelStyle(label, feature);
+    }
 
     attachFeatureToLayer(label, feature);
     bindRenderedFeatureEvents(label, applyLayerUpdate);
@@ -665,7 +821,8 @@ function renderLabels(features: Feature[]) {
   });
 }
 
-function renderZones(features: Feature[]) {
+
+function renderPolygonFeatures(features: Feature[]) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -677,19 +834,18 @@ function renderZones(features: Feature[]) {
       return;
     }
 
-    const featureProperties = feature.properties;
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const fp = feature.properties;
+    const fillColor = colorRgbToCss(fp.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(fp.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
-        fillOpacity: featureProperties.fillOpacity ?? 0.5,
-        color: strokeColor || fillColor,
-        weight: featureProperties.strokeWidth || 1,
-        opacity: featureProperties.strokeOpacity ?? 1,
+        fillOpacity: fp.fillOpacity ?? 0.5,
+        color: strokeColor,
+        weight: fp.strokeWidth || 1,
+        opacity: fp.strokeOpacity ?? 1,
       },
     });
 
@@ -700,7 +856,7 @@ function renderZones(features: Feature[]) {
   });
 }
 
-function renderArrows(features: Feature[]) {
+function renderLineFeatures(features: Feature[], isArrow = false) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -724,75 +880,15 @@ function renderArrows(features: Feature[]) {
     attachFeatureToLayer(line, feature);
     bindRenderedFeatureEvents(line, applyLayerUpdate);
 
-    line.arrowheads({
-      size: "10px",
-      frequency: "endonly",
-      fill: true,
-    });
-
-    featureLayerManager.addFeatureLayer(feature.id, line);
-  });
-}
-
-function renderPolylines(features: Feature[]) {
-  const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!map || feature.geometry.type !== "LineString") return;
-
-    const latLngs = feature.geometry.coordinates.map(
-      ([lng, lat]) => [lat, lng] as L.LatLngTuple,
-    );
-
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
-    const line = L.polyline(latLngs, {
-      renderer: vectorRenderer ?? undefined,
-      color: strokeColor,
-      weight: feature.properties.strokeWidth ?? 2,
-      opacity: feature.properties.strokeOpacity ?? 1,
-    });
-
-    attachFeatureToLayer(line, feature);
-    bindRenderedFeatureEvents(line, applyLayerUpdate);
-
-    featureLayerManager.addFeatureLayer(feature.id, line);
-  });
-}
-
-function renderShapes(features: Feature[]) {
-  const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!map) return;
-    if (
-      feature.geometry.type !== "Polygon" &&
-      feature.geometry.type !== "MultiPolygon"
-    ) {
-      return;
+    if (isArrow) {
+      line.arrowheads({
+        size: "10px",
+        frequency: "endonly",
+        fill: true,
+      });
     }
 
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
-    const layer = L.geoJSON(feature.geometry, {
-      style: {
-        renderer: vectorRenderer ?? undefined,
-        fillColor: fillColor,
-        opacity: feature.properties.strokeOpacity ?? 1,
-        fillOpacity: feature.properties.fillOpacity ?? 0.5,
-        color: strokeColor,
-        weight: feature.properties.strokeWidth || 1,
-      },
-    });
-
-    attachFeatureToLayer(layer, feature);
-    bindRenderedFeatureEvents(layer, applyLayerUpdate);
-
-    featureLayerManager.addFeatureLayer(feature.id, layer);
+    featureLayerManager.addFeatureLayer(feature.id, line);
   });
 }
 
@@ -906,13 +1002,25 @@ function renderAllFeatures() {
   sortedFeatures.forEach((feature) => {
     const type = getMapElementType(feature);
     switch (type) {
-      case "zone": renderZones([feature]); break;
-      case "shape": renderShapes([feature]); break;
-      case "polyline": renderPolylines([feature]); break;
-      case "arrow": renderArrows([feature]); break;
-      case "point": renderCities([feature]); break;
-      case "label": renderLabels([feature]); break;
-      case "image": renderImages([feature]); break;
+      case "zone":
+      case "shape":
+        renderPolygonFeatures([feature]);
+        break;
+      case "polyline":
+        renderLineFeatures([feature], false);
+        break;
+      case "arrow":
+        renderLineFeatures([feature], true);
+        break;
+      case "point":
+        renderCities([feature]);
+        break;
+      case "label":
+        renderLabels([feature]);
+        break;
+      case "image":
+        renderImages([feature]);
+        break;
     }
   });
 
@@ -933,71 +1041,148 @@ function renderAllFeatures() {
   setTimeout(updateLabelVisibility, 10);
 }
 
+function getElementCategoryInfo(el: HTMLElement): { priority: number; minZoom: number } {
+  const p = parseFloat(el.dataset.priority || "");
+  const mz = parseFloat(el.dataset.minZoom || "");
+  if (!isNaN(p) && !isNaN(mz)) return { priority: p, minZoom: mz };
+
+  const size = parseFloat(el.style.getPropertyValue("--label-size") || "12") || 12;
+  const isUpper = (el.style.getPropertyValue("--label-transform") || "").includes("uppercase");
+  const isItalic = (el.style.getPropertyValue("--label-style") || "").includes("italic");
+  const key = resolveCategoryKey(el.dataset.category || "", size, isUpper, isItalic);
+  const [priority, minZoom] = LABEL_CATEGORY_RULES[key] || [30, 2.5];
+  return { priority, minZoom };
+}
+
 function updateLabelVisibility() {
   if (!map) return;
   const mapContainer = document.getElementById('map');
   if (!mapContainer) return;
   const mapRect = mapContainer.getBoundingClientRect();
+  const currentZoom = map.getZoom();
 
   const labels = Array.from(document.querySelectorAll('.city-label-text')) as HTMLElement[];
+  if (labels.length === 0) return;
   
+  // 1. Reset all positions: keep labels strictly at top 0px (no shifting), make them measurable
   labels.forEach(el => {
     el.style.top = '0px';
+    if (el.style.display === 'none') {
+      el.style.display = '';
+    }
+    el.style.visibility = '';
+    el.style.pointerEvents = '';
   });
-  
+
+  // 2. Sort labels by priority in descending order (largest / highest priority first)
+  // Higher priority labels take precedence and are placed into `boxes` first;
+  // Lower priority (smaller) labels collide with them and are temporarily hidden.
+  const sortedLabels = [...labels].sort((a, b) => {
+    const infoA = getElementCategoryInfo(a);
+    const infoB = getElementCategoryInfo(b);
+    if (infoB.priority !== infoA.priority) {
+      return infoB.priority - infoA.priority;
+    }
+    return (a.textContent || '').localeCompare(b.textContent || '');
+  });
+
   const boxes: DOMRect[] = [];
-  
-  for (const label of labels) {
-    if (label.style.display === 'none') continue;
-    
+
+  // Check if two labels are literally stacked directly one on top of the other (>= 70% overlap)
+  const isDirectlyStacked = (r: DOMRect) => {
+    for (const box of boxes) {
+      const xOverlap = Math.max(0, Math.min(r.right, box.right) - Math.max(r.left, box.left));
+      const yOverlap = Math.max(0, Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top));
+      const overlapArea = xOverlap * yOverlap;
+      if (overlapArea > 0) {
+        const minArea = Math.min(r.width * r.height, box.width * box.height);
+        if (minArea > 0 && overlapArea / minArea >= 0.70) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  for (const label of sortedLabels) {
+    const isSelected = Boolean(
+      selectedFeatureId.value && label.dataset.featureId === selectedFeatureId.value
+    );
+
+    const layer = label.dataset.featureId ? featureLayerManager.layers.get(label.dataset.featureId) : null;
+    let circlePoint: L.CircleMarker | null = null;
+    if (layer) {
+      forEachLeafLayer(layer, (leaf) => {
+        if (leaf instanceof L.CircleMarker) circlePoint = leaf;
+      });
+    }
+
+    // Rule 1: Disappearance by zoom level for entire category
+    const { minZoom } = getElementCategoryInfo(label);
+    if (currentZoom < minZoom && !isSelected) {
+      label.style.visibility = 'hidden';
+      label.style.pointerEvents = 'none';
+      if (circlePoint) {
+        (circlePoint as L.CircleMarker).setStyle({ opacity: 0, fillOpacity: 0 });
+      }
+      continue;
+    }
+
     let rect = label.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) continue;
-    
-    // Ignore off-screen labels to improve performance and avoid processing invisible collisions
+
+    // Ignore off-screen labels to improve performance
     if (
       rect.right < mapRect.left ||
       rect.left > mapRect.right ||
       rect.bottom < mapRect.top ||
       rect.top > mapRect.bottom
     ) {
+      label.style.visibility = 'hidden';
+      label.style.pointerEvents = 'none';
+      if (circlePoint) {
+        (circlePoint as L.CircleMarker).setStyle({ opacity: 0, fillOpacity: 0 });
+      }
       continue;
     }
 
-    const checkCollision = (r: DOMRect) => {
-      for (const box of boxes) {
-        if (
-          r.left < box.right &&
-          r.right > box.left &&
-          r.top < box.bottom &&
-          r.bottom > box.top
-        ) {
-          return true;
-        }
+    // Always display currently selected feature
+    if (isSelected) {
+      label.style.visibility = '';
+      label.style.pointerEvents = '';
+      if (circlePoint) {
+        const fp = ((circlePoint as any).feature?.properties) || {};
+        (circlePoint as L.CircleMarker).setStyle({
+          opacity: fp.strokeOpacity ?? 1,
+          fillOpacity: fp.fillOpacity ?? 0.5,
+        });
       }
-      return false;
-    };
-
-    let collision = checkCollision(rect);
-    
-    if (collision) {
-      const shiftStep = rect.height;
-      const attempts = [];
-      for (let i = 1; i <= 12; i++) {
-        attempts.push(shiftStep * i);
-        attempts.push(-shiftStep * i);
-      }
-      
-      for (const shiftY of attempts) {
-        label.style.top = `${shiftY}px`;
-        rect = label.getBoundingClientRect();
-        if (!checkCollision(rect)) {
-          break;
-        }
-      }
+      boxes.push(rect);
+      continue;
     }
-    
-    // Always add to boxes
-    boxes.push(rect);
+
+    // Rule 2: Only hide if literally stacked 1 right on top of the other (>= 70% overlap)
+    // Otherwise leave words at their real geographic positions without hiding them!
+    const isStacked = isDirectlyStacked(rect);
+
+    if (isStacked) {
+      label.style.visibility = 'hidden';
+      label.style.pointerEvents = 'none';
+      if (circlePoint) {
+        (circlePoint as L.CircleMarker).setStyle({ opacity: 0, fillOpacity: 0 });
+      }
+    } else {
+      label.style.visibility = '';
+      label.style.pointerEvents = '';
+      if (circlePoint) {
+        const fp = ((circlePoint as any).feature?.properties) || {};
+        (circlePoint as L.CircleMarker).setStyle({
+          opacity: fp.strokeOpacity ?? 1,
+          fillOpacity: fp.fillOpacity ?? 0.5,
+        });
+      }
+      boxes.push(rect);
+    }
   }
 }
 
@@ -1009,6 +1194,8 @@ onMounted(() => {
     preferCanvas: true,
     doubleClickZoom: false,
     zoomSnap: 0.25,
+    zoomDelta: 0.5,
+    wheelPxPerZoomLevel: 200,
     maxBounds: [[-90, -180], [90, 180]],
     maxBoundsViscosity: 1.0,
   }).setView(
@@ -1038,6 +1225,7 @@ onMounted(() => {
   map.whenReady(updateMinZoom);
   map.on('resize', updateMinZoom);
   map.on('moveend', updateLabelVisibility);
+  map.on('zoom', updateLabelVisibility);
   map.on('zoomend', updateLabelVisibility);
 
   drawing.initializeDrawing(map);
@@ -1353,6 +1541,7 @@ watch(selectedFeatureId, (id, oldId) => {
     shapeScaling.detach();
     document.querySelectorAll('.label-selected').forEach(el => el.classList.remove('label-selected'));
   }
+  updateLabelVisibility();
 });
 
 watch(
@@ -1379,6 +1568,8 @@ watch(
 .city-label-text {
   font-size: var(--label-size, 14px);
   font-weight: bold;
+  font-style: var(--label-style, normal);
+  text-transform: var(--label-transform, none);
   color: var(--label-color, #000);
   background: transparent;
   padding: 0;
@@ -1392,6 +1583,11 @@ watch(
   display: inline-block;
   white-space: nowrap;
   padding: 4px;
+}
+
+.label-content {
+  line-height: 1.2;
+  text-align: center;
 }
 
 .label-anchor {
