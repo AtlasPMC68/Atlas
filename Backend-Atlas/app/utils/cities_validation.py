@@ -22,8 +22,6 @@ from typing import List, Dict, Any, Optional
 
 import geonamescache
 
-_WORD_RE = re.compile(r"\b[\w\-']+\b", flags=re.UNICODE)
-
 
 def _normalize(s: str) -> str:
     """Normalize text by removing accents, punctuation, and extra whitespace."""
@@ -46,7 +44,6 @@ _gc = geonamescache.GeonamesCache()
 _city_map: Dict[str, List[Dict[str, Any]]] = {}
 for info in _gc.get_cities().values():
     name = info.get("name") or ""
-    country = info.get("countrycode") or ""
     try:
         lat = float(info.get("latitude"))
         lon = float(info.get("longitude"))
@@ -57,7 +54,6 @@ for info in _gc.get_cities().values():
         "name": name,
         "lat": lat,
         "lon": lon,
-        "country": country,
         "population": _parse_population(info.get("population")),
     }
 
@@ -76,10 +72,7 @@ def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) ->
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dphi / 2.0) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
-    )
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
     return 2.0 * r * math.asin(math.sqrt(max(0.0, min(1.0, a))))
 
 
@@ -165,11 +158,7 @@ def get_city_with_max_population(
         max_lon = bounds.get("east", bounds.get("max_lon"))
         if min_lat is None or max_lat is None or min_lon is None or max_lon is None:
             return cands
-        return [
-            c
-            for c in cands
-            if min_lat <= c["lat"] <= max_lat and min_lon <= c["lon"] <= max_lon
-        ]
+        return [c for c in cands if min_lat <= c["lat"] <= max_lat and min_lon <= c["lon"] <= max_lon]
 
     matched_key = key
     candidates = filter_by_bounds(list(_city_map.get(key, [])))
@@ -198,7 +187,6 @@ def get_city_with_max_population(
             "name": best.get("name"),
             "lat": best.get("lat"),
             "lon": best.get("lon"),
-            "country": best.get("country"),
             "population": best.get("population"),
             "matched_text": matched_key,
             "is_exact": matched_key == key,
@@ -216,9 +204,7 @@ def match_ocr_label(
     if not clean:
         return None
 
-    cand = get_city_with_max_population(
-        clean.replace("\n", " "), frame_bounds=frame_bounds, confidence_threshold=0.85
-    )
+    cand = get_city_with_max_population(clean.replace("\n", " "), frame_bounds=frame_bounds, confidence_threshold=0.85)
     if cand.get("found"):
         return cand
 
@@ -226,9 +212,7 @@ def match_ocr_label(
         for line in clean.splitlines():
             line = line.strip()
             if line:
-                cand = get_city_with_max_population(
-                    line, frame_bounds=frame_bounds, confidence_threshold=0.85
-                )
+                cand = get_city_with_max_population(line, frame_bounds=frame_bounds, confidence_threshold=0.85)
                 if cand.get("found"):
                     return cand
 

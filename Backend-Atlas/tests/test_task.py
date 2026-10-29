@@ -70,12 +70,11 @@ QUEBEC = {
     "name": "Québec",
     "lat": 46.8,
     "lon": -71.2,
-    "country": "CA",
     "population": 528595,
 }
 
 
-def _match_city(text, frame_bounds=None, **kwargs):
+def _match_city(text):
     if text.strip().lower() == "quebec":
         return QUEBEC
     return None

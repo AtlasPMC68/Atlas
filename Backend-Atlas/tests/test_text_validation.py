@@ -11,7 +11,6 @@ QUEBEC_CITY = {
     "name": "Québec",
     "lat": 46.8139,
     "lon": -71.2080,
-    "country": "CA",
     "population": 540000,
 }
 
@@ -52,7 +51,6 @@ def test_categorized_text_features_separates_recognized_and_unrecognized(monkeyp
     assert rec["properties"]["isOcrText"] is True
     assert rec["properties"]["show"] is True
     assert rec["properties"]["matchedCity"] == "Québec"
-    assert rec["properties"]["country"] == "CA"
     assert rec["geometry"]["coordinates"] == [-71.2080, 46.8139]
 
     # Check unrecognized feature (initialized with [0.0, 0.0], georeferenced later in batch)
@@ -122,11 +120,26 @@ def test_find_nearby_candidate_city():
     assert typo_match is not None
     assert "montr" in typo_match["name"].lower()
 
-    # Test that a city too far outside radius is not matched
-    far_away = find_nearby_candidate_city("Paris", [-73.56, 45.50], radius_km=50.0)
-    # Even if "Paris" is queried, if it is in Canada coordinates it should either return local city or None, never Paris France
-    if far_away is not None:
-        assert far_away["country"] != "FR"
+
+def test_categorized_text_features_when_no_unrecognized_words(monkeypatch):
+    """Ensure that when all words are recognized cities, no unrecognized features exist (window will not show)."""
+    monkeypatch.setattr("app.tasks.match_ocr_label", _mock_match_ocr)
+
+    blocks = [
+        [[[10, 10], [30, 10], [30, 20], [10, 20]], "Quebec", 0.95],
+    ]
+
+    collections = _categorized_text_features_from_ocr(
+        blocks,
+        legend_bounds=None,
+        frame_bounds=FRAME_BOUNDS,
+    )
+
+    features = [c["features"][0] for c in collections]
+    unrecognized = [f for f in features if not f["properties"]["recognized"]]
+    assert len(unrecognized) == 0
+    assert len(features) == 1
+    assert features[0]["properties"]["recognized"] is True
 
 
 def test_batch_georeference_and_candidate_association():

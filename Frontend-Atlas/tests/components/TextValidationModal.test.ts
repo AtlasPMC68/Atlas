@@ -109,6 +109,11 @@ describe("TextValidationModal", () => {
     expect(wrapper.find(".fixed").exists()).toBe(false);
   });
 
+  it("does not render when there are no unrecognized items (empty list)", () => {
+    const wrapper = mountModal([], true);
+    expect(wrapper.find(".fixed").exists()).toBe(false);
+  });
+
   it("renders the header when isOpen is true", () => {
     const wrapper = mountModal();
     expect(wrapper.text()).toContain("Validation des textes non reconnus");
