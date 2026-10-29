@@ -173,6 +173,7 @@ def _parse_pop(val: Any) -> int:
         return 0
 
 
+# City gazetteer (geonamescache)
 _gc = geonamescache.GeonamesCache()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 
