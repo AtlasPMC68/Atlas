@@ -606,11 +606,11 @@ const featureGroups = computed(() => {
   ];
 
   props.features.forEach((feature: Feature) => {
-    // Unrecognized OCR texts with show=false are only shown in the validation modal
+    // Unrecognized OCR texts must not be listed on the page
     if (
       feature.properties?.isOcrText &&
-      !feature.properties?.recognized &&
-      feature.properties?.show === false
+      (feature.properties?.recognized === false ||
+        (!feature.properties?.recognized && feature.properties?.show === false))
     ) {
       return;
     }

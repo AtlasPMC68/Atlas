@@ -236,6 +236,82 @@ describe("TextValidationModal", () => {
     expect(item.useSuggestedCity).toBe(false);
   });
 
+  it("allows selecting word type and applies text transformations according to word style", async () => {
+    const wrapper = mountModal([
+      {
+        id: "item-word-style-1",
+        text: "quebec",
+        originalText: "quebec",
+        selected: true,
+        wordType: "city",
+        coordinates: [-71.2, 46.8],
+      },
+    ]);
+
+    const select = wrapper.find('select[data-testid="item-word-type-select"]');
+    expect(select.exists()).toBe(true);
+
+    // Initial value is city
+    expect((select.element as HTMLSelectElement).value).toBe("city");
+
+    // Change to province -> transform to uppercase
+    await select.setValue("province");
+    const textInput = wrapper.find('input[type="text"]');
+    expect((textInput.element as HTMLInputElement).value).toBe("QUEBEC");
+
+    // Change back to city -> transform with capitalizeFirstOnly
+    await select.setValue("city");
+    expect((textInput.element as HTMLInputElement).value).toBe("Quebec");
+  });
+
+  it("only displays word type selector when the unrecognized item is selected", async () => {
+    const wrapper = mountModal([
+      {
+        id: "item-cond-1",
+        text: "LOUISIANE",
+        originalText: "LOUISIANE",
+        selected: true,
+        wordType: "province",
+        coordinates: [-91.1, 30.4],
+      },
+    ]);
+
+    // When item is selected, word type selector is visible
+    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(true);
+
+    // Uncheck item checkbox
+    const itemCheckbox = wrapper.find('input[data-testid="item-checkbox"]');
+    await itemCheckbox.setValue(false);
+
+    // Word type selector must now be hidden
+    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(false);
+
+    // Check item checkbox again
+    await itemCheckbox.setValue(true);
+
+    // Word type selector is visible again
+    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(true);
+  });
+
+  it("emits confirmed items with selected: false when deselecting all", async () => {
+    const wrapper = mountModal();
+
+    // Deselect all
+    const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
+    await selectAllCheckbox.setValue(false);
+
+    const confirmBtn = wrapper.findAll("button").find((b) => b.text().includes("Confirmer"));
+    await confirmBtn!.trigger("click");
+
+    const emitted = wrapper.emitted("confirm");
+    expect(emitted).toBeDefined();
+    const confirmedItems = emitted![0][0] as TextValidationEntry[];
+
+    expect(confirmedItems.length).toBe(2);
+    // All items have selected: false because deselect all was used
+    expect(confirmedItems.every((i) => i.selected === false)).toBe(true);
+  });
+
   it("emits cancel when Passer button is clicked", async () => {
     const wrapper = mountModal();
     const cancelBtn = wrapper.findAll("button").find((b) => b.text() === "Passer");

@@ -140,6 +140,62 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     );
     expect(expandBtn.exists()).toBe(true);
   });
+
+  it("does not list unrecognized OCR texts (recognized: false) in the page", () => {
+    const unrecFeature: Feature = {
+      type: "Feature",
+      id: "feat-unrec-1",
+      mapId: "map-1",
+      name: "Fort moose",
+      geometry: { type: "Point", coordinates: [-80.5, 51.2] },
+      properties: {
+        name: "Fort moose",
+        isOcrText: true,
+        recognized: false,
+        show: false,
+      },
+    };
+
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [...features, unrecFeature],
+        featureVisibility,
+        mapPeriods,
+      },
+    });
+
+    // Unrecognized text should NOT be listed in the page
+    expect(wrapper.text()).not.toContain("Fort moose");
+    // Recognized text is listed
+    expect(wrapper.text()).toContain("Québec");
+  });
+
+  it("lists accepted OCR texts (recognized: true) in the page", () => {
+    const acceptedFeature: Feature = {
+      type: "Feature",
+      id: "feat-acc-1",
+      mapId: "map-1",
+      name: "Fort moose",
+      geometry: { type: "Point", coordinates: [-80.5, 51.2] },
+      properties: {
+        name: "Fort moose",
+        isOcrText: true,
+        recognized: true,
+        show: true,
+      },
+    };
+
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [...features, acceptedFeature],
+        featureVisibility,
+        mapPeriods,
+      },
+    });
+
+    // Accepted text should now be listed in the page
+    expect(wrapper.text()).toContain("Fort moose");
+  });
 });
 
 describe("FeatureVisibilityControls - Word Type Selection and Font Modification", () => {

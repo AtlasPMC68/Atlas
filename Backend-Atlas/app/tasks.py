@@ -238,7 +238,7 @@ async def _fail_ocr(map_id: str, task_id: str, error: str) -> None:
             row.ocr_state = OCR_FAILED
             if row.extraction_state == EXTRACTION_WAITING_FOR_TEXT:
                 row.extraction_state = EXTRACTION_FAILED
-                row.extraction_error = f"L'analyse du texte a échoué : {error}"
+                row.extraction_error = f"Text analysis failed: {error}"
 
 
 async def _claim_extraction(map_id: str, task_id: str) -> Optional[_ClaimedImport]:
@@ -357,26 +357,27 @@ def _categorized_text_features_from_ocr(
     frame_bounds: Optional[dict],
     image_size: Optional[tuple[int, int]] = None,
 ) -> List[dict[str, Any]]:
-    """Extract recognized places (cities or geographic entities) and unrecognized texts from OCR blocks.
+    """Extract recognized places (cities or geographic entities) and unrecognized OCR text.
 
-    3 cas possibles:
-    Cas 1 : Rejet immédiat si texte vide, dans la légende, ou parasite (mots-clés échelle/légende, < 2 lettres, etc.).
-    Cas 2 : Texte OCR exploitable mais non reconnu ni par geonamescache ni par le JSON géographique
-            -> conservé pour validation manuelle (show=False, recognized=False).
-    Cas 3 : Texte reconnu comme ville ou entité géographique du JSON
-            -> affiché sur la carte finale (show=True, recognized=True).
+    Three possible cases:
+    Case 1: reject immediately if the text is empty, in the legend, or a junk token
+        (keywords such as scale/legend, fewer than 2 characters, etc.).
+    Case 2: OCR text is usable but not recognized by geonamescache or the geographic JSON
+        -> kept for manual validation (show=False, recognized=False).
+    Case 3: text is recognized as a city or geographic entity from the JSON
+        -> displayed on the final map (show=True, recognized=True).
     """
     collections: List[dict[str, Any]] = []
     seen_recognized = set()
     seen_unrecognized = set()
 
     for coords, text, prob in blocks:
-        # Cas 1 : Rejet immédiat si dans la légende
+        # Case 1: reject immediately if the text is inside the legend.
         if polygon_center_in_legend(coords, legend_bounds):
             continue
 
         raw_text = str(text or "").strip()
-        # Cas 1 : Rejet immédiat si vide ou parasite (< 2 lettres, échelle, etc.)
+        # Case 1: reject immediately if empty or junk text (< 2 letters, scale text, etc.).
         if not is_exploitable_text(raw_text):
             continue
 
@@ -406,7 +407,7 @@ def _categorized_text_features_from_ocr(
             entity = match_ocr_label(raw_text, frame_bounds)
 
         if entity and entity.get("found", True) and entity.get("lat") and entity.get("lon"):
-            # Cas 3 : Reconnu (ville ou entité géographique du JSON)
+            # Case 3: recognized as a city or geographic entity from the JSON.
             raw_type = entity.get("type")
             entity_id = f"{raw_type or 'city'}:{entity.get('geonameid') or entity.get('name')}"
             if entity_id in seen_recognized:
@@ -445,7 +446,7 @@ def _categorized_text_features_from_ocr(
                 )
             )
         else:
-            # Cas 2 : Texte OCR conservé mais non reconnu -> validation manuelle
+            # Case 2: keep OCR text even if it is not recognized -> manual validation.
             clean = raw_text.lower()
             if clean in seen_unrecognized:
                 continue
@@ -564,7 +565,7 @@ def run_map_ocr(self, map_id: str):
                     map_id,
                     extraction_task_id,
                     EXTRACTION_FAILED,
-                    "Impossible de lancer l'extraction",
+                    "Could not start extraction",
                 )
             )
 

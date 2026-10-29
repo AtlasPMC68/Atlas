@@ -281,6 +281,30 @@
                 </button>
               </div>
 
+              <!-- Word type selector -->
+              <div
+                v-if="item.selected"
+                class="flex items-center justify-between gap-2 pt-0.5"
+                @click.stop
+              >
+                <span class="text-xs font-semibold text-gray-700 shrink-0">Type de mot :</span>
+                <select
+                  v-model="item.wordType"
+                  class="select select-bordered select-xs flex-1 h-7 text-xs bg-base-100 text-black border-base-300 font-medium focus:border-primary"
+                  data-testid="item-word-type-select"
+                  @click.stop
+                  @change="onItemWordTypeChange(item)"
+                >
+                  <option
+                    v-for="(style, typeKey) in WORD_TYPE_STYLES"
+                    :key="typeKey"
+                    :value="typeKey"
+                  >
+                    {{ style.label }}
+                  </option>
+                </select>
+              </div>
+
               <!-- Suggested city pill button -->
               <div
                 v-if="item.suggestedCity"
@@ -342,6 +366,7 @@ import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
 import type L from "leaflet";
 import { TrashIcon, PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
+import { WORD_TYPE_STYLES } from "../../utils/mapLabelUtils";
 import { cacheOriginalMapImage, removeOriginalMapImage } from "../../composables/useMapImageCache";
 
 export type { TextValidationEntry };
@@ -555,6 +580,16 @@ function toggleItemSelection(item: TextValidationEntry) {
   updateMarkerStyle(item);
 }
 
+function onItemWordTypeChange(item: TextValidationEntry) {
+  const style = WORD_TYPE_STYLES[item.wordType || "city"];
+  if (!style) return;
+
+  if (item.text) {
+    item.text = style.transform(item.text);
+  }
+  updateMarkerStyle(item);
+}
+
 function onTextInput(item: TextValidationEntry) {
   item.useSuggestedCity = false;
   item.selected = true;
@@ -569,6 +604,7 @@ function toggleSuggestion(item: TextValidationEntry) {
   } else {
     item.useSuggestedCity = true;
     item.selected = true;
+    item.wordType = "city";
     if (item.suggestedCity) {
       item.text = item.suggestedCity;
     }
@@ -916,6 +952,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
     ...item,
     selected: item.selected ?? true,
     useSuggestedCity: item.useSuggestedCity ?? false,
+    wordType: item.wordType ?? "city",
   }));
 }
 
