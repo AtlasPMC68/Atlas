@@ -39,7 +39,8 @@ export class AddCityModeService {
   confirm() {
     const map = this.getMap();
     if (!this.pendingCity.value || !map) return;
-    const name = this.cityInputName.value.trim();
+    const rawName = this.cityInputName.value.trim();
+    const name = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : "";
     const { latlng, marker } = this.pendingCity.value;
     marker.remove();
     this.resetState();
