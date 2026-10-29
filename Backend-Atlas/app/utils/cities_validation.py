@@ -1,69 +1,131 @@
-"""City detection and geocoding helpers.
+"""Place-name resolution for OCR labels.
 
-This module provides:
-- an in-memory city gazetteer (from geonamescache) for fast word/phrase matching
-- a Nominatim-based fallback geocoder (via geopy) with rate-limiting and requests caching
+Matches text detected by Florence (OCR) against the city gazetteer
+from the geonamescache library (~24 000 cities worldwide).
 
-Usage:
-    from app.utils.geocoding import detect_cities_from_text, geocode_fallback
+When several candidates share the same name in the bounding area,
+the winner is picked by highest population.
 
-    matches = detect_cities_from_text(text)
-    for m in matches:
-        if not m['candidates']:
-            # no local match, fall back to Nominatim
-            geocoded = geocode_fallback(m['text'])
+Public API (used by tasks.py and tests):
+    resolve_place, get_city_with_max_population, match_ocr_label, is_in_bounds,
+    capitalize_first, haversine_distance_km, find_nearby_candidate_city, is_exploitable_text
 """
 
 from __future__ import annotations
 
+import difflib
+import math
 import re
 import unicodedata
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import geonamescache
 
 
-def _normalize(s: str) -> str:
-    """Normalize text by removing accents, punctuation, and extra whitespace."""
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
-    s = re.sub(r"\s+", " ", s)
-    return s.casefold().strip()
+def _normalize(text: str) -> str:
+    """Lower-case, strip accents, collapse whitespace."""
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
+    text = re.sub(r"\s+", " ", text)
+    return text.casefold().strip()
 
 
-def _parse_population(pop_val: Any) -> int:
+def capitalize_first(s: str) -> str:
+    """``'québec'`` → ``'Québec'``."""
+    return s[:1].upper() + s[1:] if s else s
+
+
+def is_in_bounds(lat: float, lon: float, bounds: Optional[Dict[str, float]]) -> bool:
+    """True when *(lat, lon)* falls inside *bounds* (or if bounds is None)."""
+    if bounds is None:
+        return True
+    s = bounds.get("south", bounds.get("min_lat"))
+    n = bounds.get("north", bounds.get("max_lat"))
+    w = bounds.get("west", bounds.get("min_lon"))
+    e = bounds.get("east", bounds.get("max_lon"))
+    if None in (s, n, w, e):
+        return True
+    return s <= lat <= n and w <= lon <= e
+
+
+def _parse_pop(val: Any) -> int:
     try:
-        return int(pop_val or 0)
+        return int(val or 0)
     except (TypeError, ValueError):
         return 0
 
 
-# Load geonamescache cities into a mapping: normalized name -> list of candidate dicts
+# City gazetteer (geonamescache)
 _gc = geonamescache.GeonamesCache()
-_city_map: Dict[str, List[Dict[str, Any]]] = {}
-for info in _gc.get_cities().values():
-    name = info.get("name") or ""
+_CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
+
+for _info in _gc.get_cities().values():
+    _name = _info.get("name") or ""
     try:
-        lat = float(info.get("latitude"))
-        lon = float(info.get("longitude"))
+        _lat, _lon = float(_info["latitude"]), float(_info["longitude"])
     except Exception:
         continue
-    city_entry = {
-        "geonameid": info.get("geonameid"),
-        "name": name,
-        "lat": lat,
-        "lon": lon,
-        "population": _parse_population(info.get("population")),
+    _city = {
+        "geonameid": _info.get("geonameid"),
+        "name": _name,
+        "lat": _lat,
+        "lon": _lon,
+        "population": _parse_pop(_info.get("population")),
+    }
+    _ck = _normalize(_name)
+    _CITY_INDEX.setdefault(_ck, []).append(_city)
+    if _ck.endswith(" city"):
+        _base = _ck[:-5].strip()
+        if _base:
+            _CITY_INDEX.setdefault(_base, []).append(_city)
+
+_city_map = _CITY_INDEX
+
+
+def _city_map_in_bounds(norm_key: str, bounds: Optional[Dict[str, float]]) -> List[Dict[str, Any]]:
+    cands = _CITY_INDEX.get(norm_key, [])
+    return [c for c in cands if is_in_bounds(c["lat"], c["lon"], bounds)] if bounds else list(cands)
+
+
+def _any_in_bounds(cands: List[Dict[str, Any]], bounds: Optional[Dict[str, float]]) -> bool:
+    return any(is_in_bounds(c["lat"], c["lon"], bounds) for c in cands)
+
+
+def _not_found(text: str) -> Dict[str, Any]:
+    """Canonical 'not found' result."""
+    return {
+        "found": False,
+        "query": text,
+        "name": text,
+        "lat": 0.0,
+        "lon": 0.0,
+        "geonameid": None,
+        "matched_text": None,
+        "is_exact": False,
     }
 
-    key = _normalize(name)
-    _city_map.setdefault(key, []).append(city_entry)
 
-import difflib
-import math
-
-__all__ = ["_city_map", "get_city_with_max_population", "match_ocr_label", "find_nearby_candidate_city"]
+def _city_result(
+    city: Dict[str, Any],
+    query: str,
+    is_exact: bool = True,
+    matched_text: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Format a city match as a result dict."""
+    raw_name = city.get("name") or query
+    return {
+        "found": True,
+        "query": query,
+        "geonameid": city.get("geonameid"),
+        "name": raw_name,
+        "lat": city.get("lat"),
+        "lon": city.get("lon"),
+        "population": city.get("population"),
+        "mapElementType": "point",
+        "matched_text": matched_text or _normalize(query),
+        "is_exact": is_exact,
+    }
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -88,7 +150,7 @@ def find_nearby_candidate_city(
     key = _normalize(text)
 
     nearby_cities: List[tuple[float, Dict[str, Any]]] = []
-    for city_list in _city_map.values():
+    for city_list in _CITY_INDEX.values():
         for c in city_list:
             if abs(c["lat"] - lat) * 111.0 > radius_km:
                 continue
@@ -111,109 +173,132 @@ def find_nearby_candidate_city(
     return min(nearby_cities, key=lambda x: x[0])[1]
 
 
-def get_city_with_max_population(
+def resolve_place(
     text: str,
     frame_bounds: Optional[Dict[str, float]] = None,
     confidence_threshold: float = 0.80,
     geo_bounds: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
-    """Return a standardized result for a city search.
+    """Resolve an OCR text string to a known city.
 
-    Performs a direct full-string match (accent/case insensitive, punctuation stripped)
-    against the city gazetteer, with a fallback to difflib.get_close_matches using
-    confidence_threshold (default 0.80) to recover minor OCR typos.
-    When frame_bounds (or geo_bounds) is provided, only candidates whose coordinates fall
-    inside that rectangle are considered. Supports both {'west', 'south', 'east', 'north'}
-    and {'min_lon', 'max_lon', 'min_lat', 'max_lat'}.
-
-    Always returns a dict with at least the keys:
-      - ``found``: bool
-      - ``query``: the original text passed in
-      - ``geonameid``: geoname identifier when found, else None
-      - ``name``, ``lat``, ``lon``: populated when ``found`` is True
-      - ``matched_text``: normalised query string when found, else None
+    Performs a direct match against the city gazetteer, with a fallback
+    to difflib fuzzy matching using confidence_threshold.
     """
-    result: Dict[str, Any] = {
-        "found": False,
-        "query": text,
-        "name": text,
-        "lat": 0.0,
-        "lon": 0.0,
-        "geonameid": None,
-        "matched_text": None,
-    }
-
     key = _normalize(text)
     if not key:
-        return result
+        return _not_found(text)
 
     bounds = frame_bounds if frame_bounds is not None else geo_bounds
 
-    def filter_by_bounds(cands: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if bounds is None:
-            return cands
-        min_lat = bounds.get("south", bounds.get("min_lat"))
-        max_lat = bounds.get("north", bounds.get("max_lat"))
-        min_lon = bounds.get("west", bounds.get("min_lon"))
-        max_lon = bounds.get("east", bounds.get("max_lon"))
-        if min_lat is None or max_lat is None or min_lon is None or max_lon is None:
-            return cands
-        return [c for c in cands if min_lat <= c["lat"] <= max_lat and min_lon <= c["lon"] <= max_lon]
+    # Exact match
+    cands = _city_map_in_bounds(key, bounds)
+    if cands:
+        best = max(cands, key=lambda c: c.get("population", 0))
+        return _city_result(best, text, is_exact=True, matched_text=key)
 
-    matched_key = key
-    candidates = filter_by_bounds(list(_city_map.get(key, [])))
+    # Fuzzy match fallback
+    if confidence_threshold < 1.0:
+        valid_keys = [k for k, v in _CITY_INDEX.items() if _any_in_bounds(v, bounds)] if bounds else list(_CITY_INDEX.keys())
+        close = difflib.get_close_matches(key, valid_keys, n=1, cutoff=confidence_threshold)
+        if close:
+            cands = _city_map_in_bounds(close[0], bounds)
+            if cands:
+                best = max(cands, key=lambda c: c.get("population", 0))
+                return _city_result(best, text, is_exact=False, matched_text=close[0])
 
-    # Fuzzy matching fallback if no valid exact match found
-    if not candidates and confidence_threshold < 1.0:
-        if bounds is not None:
-            valid_keys = [k for k, v in _city_map.items() if filter_by_bounds(v)]
-        else:
-            valid_keys = list(_city_map.keys())
+    return _not_found(text)
 
-        close_matches = difflib.get_close_matches(key, valid_keys, n=1, cutoff=confidence_threshold)
-        if close_matches:
-            matched_key = close_matches[0]
-            candidates = filter_by_bounds(list(_city_map.get(matched_key, [])))
 
-    if not candidates:
-        return result
+get_city_with_max_population = resolve_place
 
-    best = max(candidates, key=lambda c: c.get("population", 0))
 
-    result.update(
-        {
-            "found": True,
-            "geonameid": best.get("geonameid"),
-            "name": best.get("name"),
-            "lat": best.get("lat"),
-            "lon": best.get("lon"),
-            "population": best.get("population"),
-            "matched_text": matched_key,
-            "is_exact": matched_key == key,
-        }
-    )
-    return result
+def is_exploitable_text(text: str) -> bool:
+    """Check if text is usable:
+    - empty string -> reject
+    - numbers or symbols only -> reject
+    - legend / scale / annotation keywords -> reject
+    - noisy / parasitic text -> reject
+    - word too short / OCR noise -> reject
+    """
+    if not text:
+        return False
+    s = str(text).strip()
+    if not s:
+        return False
+    if not any(c.isalpha() for c in s):
+        return False
+    letters = [c for c in s if c.isalpha()]
+    if len(letters) < 2:
+        return False
+    s_lower = s.lower()
+    for kw in ("echelle", "échelle", "scale", "legende", "légende", "annotation"):
+        if kw in s_lower and len(s_lower.split()) <= 4:
+            return False
+    return True
 
 
 def match_ocr_label(
     text: str,
     frame_bounds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Match OCR text against known cities within bounds."""
+    """Match an OCR text label against the city gazetteer.
+
+    Tries the whole text first (exact then fuzzy),
+    then falls back to matching line-by-line for multi-line blocks.
+    Returns the matched city dict or ``None``.
+    """
     clean = str(text or "").strip()
     if not clean:
         return None
 
-    cand = get_city_with_max_population(clean.replace("\n", " "), frame_bounds=frame_bounds, confidence_threshold=0.85)
-    if cand.get("found"):
-        return cand
+    def _try(query: str, threshold: float) -> Optional[Dict[str, Any]]:
+        if not is_exploitable_text(query):
+            return None
+        try:
+            res = resolve_place(query, frame_bounds=frame_bounds, confidence_threshold=threshold)
+            return res if res.get("found") else None
+        except Exception:
+            return None
 
-    if "\n" in clean:
-        for line in clean.splitlines():
-            line = line.strip()
-            if line:
-                cand = get_city_with_max_population(line, frame_bounds=frame_bounds, confidence_threshold=0.85)
-                if cand.get("found"):
-                    return cand
+    whole = clean.replace("\n", " ")
+
+    # 1) Exact on whole text
+    hit = _try(whole, 1.0)
+    if hit:
+        return hit
+
+    lines = [ln.strip() for ln in clean.split("\n") if ln.strip()]
+
+    # 2) Exact on each line
+    if len(lines) > 1:
+        for ln in lines:
+            hit = _try(ln, 1.0)
+            if hit:
+                return hit
+
+    # 3) Fuzzy
+    if len(lines) > 1:
+        for ln in lines:
+            hit = _try(ln, 0.85)
+            if hit:
+                return hit
+    else:
+        hit = _try(whole, 0.85)
+        if hit:
+            return hit
 
     return None
+
+
+__all__ = [
+    "resolve_place",
+    "get_city_with_max_population",
+    "match_ocr_label",
+    "is_in_bounds",
+    "capitalize_first",
+    "haversine_distance_km",
+    "find_nearby_candidate_city",
+    "is_exploitable_text",
+    "_normalize",
+    "_city_map",
+]

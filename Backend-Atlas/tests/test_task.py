@@ -74,7 +74,7 @@ QUEBEC = {
 }
 
 
-def _match_city(text):
+def _match_city(text, frame_bounds=None, **kwargs):
     if text.strip().lower() == "quebec":
         return QUEBEC
     return None
