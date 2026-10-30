@@ -44,14 +44,43 @@
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm btn-circle text-black hover:bg-base-200"
-          :disabled="isSubmitting"
-          @click="emit('cancel')"
-        >
-          ✕
-        </button>
+
+        <div class="flex items-center gap-2">
+          <!-- Undo / Redo controls -->
+          <div class="flex items-center gap-1 bg-base-200/80 rounded-lg p-0.5 border border-base-300">
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs text-black h-7 px-2 font-medium flex items-center gap-1 hover:bg-base-100 disabled:opacity-30 disabled:hover:bg-transparent"
+              :disabled="!canUndo"
+              title="Annuler (Ctrl+Z)"
+              data-testid="modal-undo-button"
+              @click="undo"
+            >
+              <ArrowUturnLeftIcon class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline text-xs">Annuler</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs text-black h-7 px-2 font-medium flex items-center gap-1 hover:bg-base-100 disabled:opacity-30 disabled:hover:bg-transparent"
+              :disabled="!canRedo"
+              title="Rétablir (Ctrl+Y)"
+              data-testid="modal-redo-button"
+              @click="redo"
+            >
+              <ArrowUturnRightIcon class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline text-xs">Rétablir</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-circle text-black hover:bg-base-200"
+            :disabled="isSubmitting"
+            @click="emit('cancel')"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       <!-- Main Body: 3 columns with draggable dividers -->
@@ -259,6 +288,8 @@
                     class="input input-bordered input-sm w-full h-8 text-sm font-medium bg-base-100 text-black border-base-300 focus:border-primary placeholder:text-gray-400 px-2"
                     :placeholder="item.originalText"
                     @click.stop
+                    @focus="onInputFocus(item)"
+                    @blur="onInputBlur"
                     @input="onTextInput(item)"
                   />
                   <!-- Amber badge if suggestion available -->
@@ -279,6 +310,30 @@
                 >
                   <TrashIcon class="w-4 h-4 text-error" />
                 </button>
+              </div>
+
+              <!-- Word type selector -->
+              <div
+                v-if="item.selected"
+                class="flex items-center justify-between gap-2 pt-0.5"
+                @click.stop
+              >
+                <span class="text-xs font-semibold text-gray-700 shrink-0">Type de mot :</span>
+                <select
+                  :value="item.wordType || 'city'"
+                  class="select select-bordered select-xs flex-1 h-7 text-xs bg-base-100 text-black border-base-300 font-medium focus:border-primary"
+                  data-testid="item-word-type-select"
+                  @click.stop
+                  @change="onWordTypeSelect(item, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    v-for="(style, typeKey) in WORD_TYPE_STYLES"
+                    :key="typeKey"
+                    :value="typeKey"
+                  >
+                    {{ style.label }}
+                  </option>
+                </select>
               </div>
 
               <!-- Suggested city pill button -->
@@ -340,7 +395,14 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
 import type L from "leaflet";
-import { TrashIcon, PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from "@heroicons/vue/24/outline";
+import {
+  TrashIcon,
+  PhotoIcon,
+  ArrowUpTrayIcon,
+  XMarkIcon,
+  ArrowUturnLeftIcon,
+  ArrowUturnRightIcon,
+} from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
 import { cacheOriginalMapImage, removeOriginalMapImage } from "../../composables/useMapImageCache";
 
@@ -410,6 +472,98 @@ const isPartiallySelected = computed(() => {
   const selectedCount = toKeepCount.value;
   return selectedCount > 0 && selectedCount < allItems.value.length;
 });
+
+// ── Undo / Redo History Management ──────────────────────────────────────────
+const undoStack = ref<TextValidationEntry[][]>([]);
+const redoStack = ref<TextValidationEntry[][]>([]);
+const canUndo = computed(() => undoStack.value.length > 0);
+const canRedo = computed(() => redoStack.value.length > 0);
+
+function cloneEntries(entries: TextValidationEntry[]): TextValidationEntry[] {
+  return entries.map((item) => ({
+    ...item,
+    coordinates: item.coordinates ? [item.coordinates[0], item.coordinates[1]] : undefined,
+    suggestedCoords: item.suggestedCoords ? [item.suggestedCoords[0], item.suggestedCoords[1]] : undefined,
+  }));
+}
+
+function resetHistory() {
+  undoStack.value = [];
+  redoStack.value = [];
+}
+
+function saveHistorySnapshot() {
+  undoStack.value.push(cloneEntries(allItems.value));
+  if (undoStack.value.length > 30) {
+    undoStack.value.shift();
+  }
+  redoStack.value = [];
+}
+
+function undo() {
+  if (!canUndo.value) return;
+  const currentSnapshot = cloneEntries(allItems.value);
+  redoStack.value.push(currentSnapshot);
+
+  const previous = undoStack.value.pop()!;
+  allItems.value = cloneEntries(previous);
+
+  hideToleranceRadius();
+  renderMapMarkers();
+  adjustTooltipsAntiCollision();
+}
+
+function redo() {
+  if (!canRedo.value) return;
+  const currentSnapshot = cloneEntries(allItems.value);
+  undoStack.value.push(currentSnapshot);
+
+  const next = redoStack.value.pop()!;
+  allItems.value = cloneEntries(next);
+
+  hideToleranceRadius();
+  renderMapMarkers();
+  adjustTooltipsAntiCollision();
+}
+
+let isTypingSession = false;
+let typingTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function onInputFocus(_item: TextValidationEntry) {
+  if (!isTypingSession) {
+    saveHistorySnapshot();
+    isTypingSession = true;
+  }
+}
+
+function onInputBlur() {
+  isTypingSession = false;
+  if (typingTimeout) {
+    clearTimeout(typingTimeout);
+    typingTimeout = null;
+  }
+}
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (!props.isOpen) return;
+
+  const isMod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  if (isMod && !e.shiftKey && key === "z") {
+    e.preventDefault();
+    e.stopPropagation();
+    undo();
+    return;
+  }
+
+  if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
+    e.preventDefault();
+    e.stopPropagation();
+    redo();
+    return;
+  }
+}
 
 function startColResize(isLeft: boolean, e: MouseEvent) {
   const isDragging = isLeft ? isDraggingLeft : isDraggingRight;
@@ -544,6 +698,7 @@ function onToggleSelectAll(e: Event) {
 }
 
 function setAll(selected: boolean) {
+  saveHistorySnapshot();
   for (const item of allItems.value) {
     item.selected = selected;
     updateMarkerStyle(item);
@@ -551,24 +706,50 @@ function setAll(selected: boolean) {
 }
 
 function toggleItemSelection(item: TextValidationEntry) {
+  saveHistorySnapshot();
   item.selected = !item.selected;
   updateMarkerStyle(item);
 }
 
+function onWordTypeSelect(item: TextValidationEntry, newType: string) {
+  saveHistorySnapshot();
+  item.wordType = newType;
+  const style = WORD_TYPE_STYLES[newType || "city"];
+  if (style && item.text) {
+    item.text = style.transform(item.text);
+  }
+  updateMarkerStyle(item);
+}
+
+function onItemWordTypeChange(item: TextValidationEntry) {
+  onWordTypeSelect(item, item.wordType || "city");
+}
+
 function onTextInput(item: TextValidationEntry) {
+  if (!isTypingSession) {
+    saveHistorySnapshot();
+    isTypingSession = true;
+  }
   item.useSuggestedCity = false;
   item.selected = true;
   updateMarkerStyle(item);
   showToleranceRadius(item);
+
+  if (typingTimeout) clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    isTypingSession = false;
+  }, 800);
 }
 
 function toggleSuggestion(item: TextValidationEntry) {
+  saveHistorySnapshot();
   if (item.useSuggestedCity) {
     item.useSuggestedCity = false;
     item.text = item.originalText;
   } else {
     item.useSuggestedCity = true;
     item.selected = true;
+    item.wordType = "city";
     if (item.suggestedCity) {
       item.text = item.suggestedCity;
     }
@@ -579,11 +760,13 @@ function toggleSuggestion(item: TextValidationEntry) {
 }
 
 function toggleSupprimer(item: TextValidationEntry) {
+  saveHistorySnapshot();
   item.selected = !item.selected;
   updateMarkerStyle(item);
 }
 
 function setItemCoordinates(item: TextValidationEntry, lon: number, lat: number) {
+  saveHistorySnapshot();
   item.coordinates = [lon, lat];
   item.useSuggestedCity = false;
   item.suggestedCity = undefined;
@@ -618,6 +801,87 @@ function createMarkerIcon(L: typeof import("leaflet"), item: TextValidationEntry
   });
 }
 
+function getOptimalSuggestionTooltipPlacement(
+  lat: number,
+  lon: number,
+  sLat: number,
+  sLon: number,
+): { direction: "top" | "bottom" | "left" | "right"; offset: [number, number] } {
+  if (!leafletMap) {
+    const dLon = sLon - lon;
+    const dLat = sLat - lat;
+    if (dLon < 0) return { direction: "left", offset: [-12, 0] };
+    if (dLon > 0) return { direction: "right", offset: [12, 0] };
+    if (dLat < 0) return { direction: "bottom", offset: [0, 12] };
+    return { direction: "top", offset: [0, -14] };
+  }
+
+  try {
+    const pOrig = leafletMap.latLngToContainerPoint([lat, lon]);
+    const pSugg = leafletMap.latLngToContainerPoint([sLat, sLon]);
+
+    const dx = pSugg.x - pOrig.x; // > 0 if suggestion is to the right
+    const dy = pSugg.y - pOrig.y; // > 0 if suggestion is below
+
+    if (dx < -15) {
+      return { direction: "left", offset: [-12, 0] };
+    }
+    if (dx > 15) {
+      return { direction: "right", offset: [12, 0] };
+    }
+    if (dy > 0) {
+      return { direction: "bottom", offset: [0, 12] };
+    }
+    return { direction: "top", offset: [0, -18] };
+  } catch {
+    return { direction: "left", offset: [-12, 0] };
+  }
+}
+
+function preventSuggestionTooltipOverlap(item: TextValidationEntry) {
+  if (!suggestionPreviewMarker || !cachedLeaflet || !leafletMap) return;
+  const origMarker = markerMap.get(item.id);
+  const origTooltipEl = origMarker?.getTooltip()?.getElement();
+  const suggTooltipEl = suggestionPreviewMarker.getTooltip()?.getElement();
+
+  if (!origTooltipEl || !suggTooltipEl) return;
+
+  const rOrig = origTooltipEl.getBoundingClientRect();
+  const rSugg = suggTooltipEl.getBoundingClientRect();
+
+  const isOverlapping = !(
+    rOrig.right + 2 < rSugg.left ||
+    rOrig.left > rSugg.right + 2 ||
+    rOrig.bottom + 2 < rSugg.top ||
+    rOrig.top > rSugg.bottom + 2
+  );
+
+  if (isOverlapping) {
+    const coords = getItemCoords(item);
+    if (!coords || !item.suggestedCoords) return;
+    try {
+      const pOrig = leafletMap.latLngToContainerPoint([coords[1], coords[0]]);
+      const pSugg = leafletMap.latLngToContainerPoint([item.suggestedCoords[1], item.suggestedCoords[0]]);
+      const dx = pSugg.x - pOrig.x;
+
+      const fallbackDir: "left" | "right" | "bottom" = dx <= 0 ? "left" : "right";
+      const offset: [number, number] = fallbackDir === "left" ? [-14, 0] : [14, 0];
+
+      const tooltip = suggestionPreviewMarker.getTooltip();
+      if (tooltip) {
+        tooltip.options.direction = fallbackDir;
+        tooltip.options.offset = cachedLeaflet.point(offset[0], offset[1]);
+        if (suggestionPreviewMarker.isTooltipOpen?.()) {
+          suggestionPreviewMarker.closeTooltip();
+          suggestionPreviewMarker.openTooltip();
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
 function showToleranceRadius(item: TextValidationEntry) {
   if (!leafletMap || !cachedLeaflet || !item.suggestedCity || !item.suggestedCoords) return;
   hideToleranceRadius();
@@ -643,13 +907,17 @@ function showToleranceRadius(item: TextValidationEntry) {
     iconAnchor: [8, 8],
   });
 
+  const placement = getOptimalSuggestionTooltipPlacement(lat, lon, sLat, sLon);
+
   suggestionPreviewMarker = cachedLeaflet.marker([sLat, sLon], { icon: previewIcon }).addTo(leafletMap);
   suggestionPreviewMarker.bindTooltip(`<strong>${item.suggestedCity}</strong> (Suggestion)`, {
     permanent: true,
-    direction: "top",
-    offset: [0, -10],
+    direction: placement.direction,
+    offset: cachedLeaflet.point(placement.offset[0], placement.offset[1]),
     className: "leaflet-tooltip-suggestion",
   });
+
+  nextTick(() => preventSuggestionTooltipOverlap(item));
 
   connectionLine = cachedLeaflet.polyline([[lat, lon], [sLat, sLon]], {
     color: "#059669",
@@ -831,8 +1099,23 @@ async function initMap() {
     maxBoundsViscosity: 1.0,
   });
 
-  map.on("zoomend", () => adjustTooltipsAntiCollision());
-  map.on("moveend", () => adjustTooltipsAntiCollision());
+  leafletMap = map;
+  renderMapMarkers();
+
+  map.on("zoomend", () => {
+    adjustTooltipsAntiCollision();
+    const active = allItems.value.find((i) => i.id === hoveredId.value || i.id === highlightedId.value);
+    if (active && suggestionPreviewMarker) {
+      showToleranceRadius(active);
+    }
+  });
+  map.on("moveend", () => {
+    adjustTooltipsAntiCollision();
+    const active = allItems.value.find((i) => i.id === hoveredId.value || i.id === highlightedId.value);
+    if (active && suggestionPreviewMarker) {
+      showToleranceRadius(active);
+    }
+  });
 
   map.on("click", (e: any) => {
     if (!highlightedId.value) return;
@@ -892,9 +1175,6 @@ async function initMap() {
   } catch {
     // Basemap is optional visual context
   }
-
-  leafletMap = map;
-  renderMapMarkers();
 }
 
 function destroyMap() {
@@ -916,6 +1196,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
     ...item,
     selected: item.selected ?? true,
     useSuggestedCity: item.useSuggestedCity ?? false,
+    wordType: item.wordType ?? "city",
   }));
 }
 
@@ -923,9 +1204,16 @@ watch(
   () => props.isOpen,
   (open) => {
     if (!open) {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("keydown", handleKeyDown, true);
+      }
       destroyMap();
       return;
     }
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", handleKeyDown, true);
+    }
+    resetHistory();
     imgZoom.value = 1;
     allItems.value = mapInitialItems(props.initialItems);
     nextTick(() => initMap());
@@ -944,6 +1232,9 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("keydown", handleKeyDown, true);
+  }
   destroyMap();
 });
 
@@ -951,9 +1242,21 @@ function onConfirm() {
   emit("confirm", allItems.value);
 }
 
+function getSuggestionPreviewMarker(): L.Marker | null {
+  return suggestionPreviewMarker;
+}
+
 defineExpose({
   allItems,
   setItemCoordinates,
+  showToleranceRadius,
+  getSuggestionPreviewMarker,
+  getOptimalSuggestionTooltipPlacement,
+  initMap,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
 });
 </script>
 
@@ -977,6 +1280,7 @@ defineExpose({
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
   pointer-events: none;
+  z-index: 1000 !important;
 }
 .leaflet-tooltip-validation::before {
   border-top-color: #d1d5db;
@@ -992,6 +1296,7 @@ defineExpose({
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
   pointer-events: none;
+  z-index: 900 !important;
 }
 .leaflet-tooltip-suggestion::before {
   border-top-color: #10b981;

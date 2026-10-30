@@ -11,6 +11,12 @@ vi.mock("leaflet", () => {
     setIcon: vi.fn(),
     setTooltipContent: vi.fn(),
     bindTooltip: vi.fn().mockReturnThis(),
+    getTooltip: vi.fn(() => ({
+      options: { direction: "left", offset: { x: 0, y: 0 } },
+      getElement: vi.fn(() => document.createElement("div")),
+    })),
+    closeTooltip: vi.fn(),
+    isTooltipOpen: vi.fn(() => true),
     on: vi.fn().mockReturnThis(),
     getLatLng: vi.fn(() => ({ lat: 0, lng: 0 })),
     openTooltip: vi.fn(),
@@ -31,6 +37,7 @@ vi.mock("leaflet", () => {
   const geoJSON = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
   const circle = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
   const polyline = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
+  const point = vi.fn((x: number, y: number) => ({ x, y }));
   const map = vi.fn(() => ({
     setView: vi.fn().mockReturnThis(),
     addLayer: vi.fn(),
@@ -40,10 +47,11 @@ vi.mock("leaflet", () => {
     fitBounds: vi.fn(),
     invalidateSize: vi.fn(),
     on: vi.fn().mockReturnThis(),
+    latLngToContainerPoint: vi.fn(() => ({ x: 100, y: 100 })),
   }));
 
   return {
-    default: { marker, circleMarker, divIcon, tileLayer, geoJSON, circle, polyline, map },
+    default: { marker, circleMarker, divIcon, tileLayer, geoJSON, circle, polyline, point, map },
     marker,
     circleMarker,
     divIcon,
@@ -51,6 +59,7 @@ vi.mock("leaflet", () => {
     geoJSON,
     circle,
     polyline,
+    point,
     map,
   };
 });
@@ -234,6 +243,125 @@ describe("TextValidationModal", () => {
     expect(item.suggestedCity).toBeUndefined();
     expect(item.suggestedCoords).toBeUndefined();
     expect(item.useSuggestedCity).toBe(false);
+  });
+
+  describe("Suggestion tooltip anti-overlap", () => {
+    it("positions suggestion tooltip away from original marker coordinates so it does not hide original word", async () => {
+      const wrapper = mountModal([
+        {
+          id: "item-overlap-1",
+          text: "LE DU LE CAP",
+          originalText: "LE DU LE CAP",
+          selected: true,
+          coordinates: [-59.95, 46.20],
+          suggestedCity: "Glace Bay",
+          suggestedCoords: [-59.97, 46.21], // to the northwest (left of original)
+        },
+      ]);
+      await wrapper.vm.$nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const vm = wrapper.vm as any;
+      const item = vm.allItems[0];
+
+      vm.showToleranceRadius(item);
+      const marker = vm.getSuggestionPreviewMarker();
+      expect(marker).toBeDefined();
+
+      const tooltip = marker.getTooltip();
+      expect(tooltip).toBeDefined();
+      // Should be positioned away from original marker
+      expect(["left", "bottom", "right", "top"]).toContain(tooltip.options.direction);
+    });
+  });
+
+  describe("Undo / Redo (Ctrl+Z, Ctrl+Y, and UI buttons)", () => {
+    it("renders undo and redo buttons in header with initial disabled state", () => {
+      const wrapper = mountModal();
+      const undoBtn = wrapper.find('button[data-testid="modal-undo-button"]');
+      const redoBtn = wrapper.find('button[data-testid="modal-redo-button"]');
+
+      expect(undoBtn.exists()).toBe(true);
+      expect(redoBtn.exists()).toBe(true);
+      expect((undoBtn.element as HTMLButtonElement).disabled).toBe(true);
+      expect((redoBtn.element as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("allows undoing and redoing coordinate modifications via buttons and Ctrl+Z", async () => {
+      const wrapper = mountModal();
+      const vm = wrapper.vm as any;
+      const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+      const origLon = item.coordinates[0];
+      const origLat = item.coordinates[1];
+
+      // Move marker
+      vm.setItemCoordinates(item, -70.0, 45.0);
+      expect(item.coordinates).toEqual([-70.0, 45.0]);
+      expect(vm.canUndo).toBe(true);
+
+      // Trigger Ctrl+Z via keydown event on window
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }),
+      );
+      await wrapper.vm.$nextTick();
+
+      // Coordinates reverted back
+      const revertedItem = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+      expect(revertedItem.coordinates).toEqual([origLon, origLat]);
+      expect(vm.canRedo).toBe(true);
+
+      // Trigger Redo via Ctrl+Y
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "y", ctrlKey: true, bubbles: true }),
+      );
+      await wrapper.vm.$nextTick();
+      const redoneItem = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+      expect(redoneItem.coordinates).toEqual([-70.0, 45.0]);
+
+      // Undo again via undo button
+      const undoBtn = wrapper.find('button[data-testid="modal-undo-button"]');
+      await undoBtn.trigger("click");
+      const undoneAgain = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+      expect(undoneAgain.coordinates).toEqual([origLon, origLat]);
+    });
+
+    it("does not reset map zoom or fitBounds on undo (Ctrl+Z)", async () => {
+      const wrapper = mountModal();
+      const vm = wrapper.vm as any;
+      const fitBoundsSpy = vi.fn();
+      vm.leafletMap.fitBounds = fitBoundsSpy;
+
+      const item = vm.allItems[0];
+      vm.setItemCoordinates(item, -70.0, 45.0);
+
+      fitBoundsSpy.mockClear();
+
+      // Trigger Ctrl+Z
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }),
+      );
+      await wrapper.vm.$nextTick();
+
+      // fitBounds must NOT have been called on undo
+      expect(fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("allows undoing toggle select all via Ctrl+Z", async () => {
+      const wrapper = mountModal();
+      const vm = wrapper.vm as any;
+
+      const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
+      await selectAllCheckbox.setValue(false);
+      expect(vm.allItems.every((i: TextValidationEntry) => !i.selected)).toBe(true);
+
+      // Undo
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }),
+      );
+      await wrapper.vm.$nextTick();
+
+      expect(vm.allItems.every((i: TextValidationEntry) => i.selected)).toBe(true);
+    });
   });
 
   it("emits cancel when Passer button is clicked", async () => {

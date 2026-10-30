@@ -25,14 +25,19 @@ export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | nul
 /** Convert a GeoJSON feature into a text validation entry. */
 export function featureToValidationEntry(
   feature: Feature,
-  defaultSelected = false,
+  defaultSelected = true,
 ): TextValidationEntry {
   const text = feature.properties?.labelText || feature.properties?.name || feature.name || "";
   const originalText = feature.properties?.originalText || text;
-  const selected =
-    feature.properties?.show !== undefined
-      ? Boolean(feature.properties.show)
-      : defaultSelected;
+
+  const isUnrecognized = Boolean(feature.properties?.isOcrText && !feature.properties?.recognized);
+  const selected = isUnrecognized
+    ? (feature.properties?.userSelected !== undefined
+        ? Boolean(feature.properties.userSelected)
+        : defaultSelected)
+    : (feature.properties?.show !== undefined
+        ? Boolean(feature.properties.show)
+        : defaultSelected);
 
   const coordinates =
     feature.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)
