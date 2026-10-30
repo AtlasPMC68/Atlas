@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from asyncio import to_thread
 
 from app.celery_app import celery_app
@@ -44,6 +44,7 @@ from app.utils.dev_test_evaluator import build_test_case_paths
 from app.utils.georeferencing.records import RUN_RECORD_FILENAME
 from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
 from app.utils.georeferencing.config import ambient_georef_config
+
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ def write_test_config(
         "testId": parent_test_id,
         "testCase": test_case_name or test_case_id,
         "testCaseId": test_case_id,
-        "updatedAt": datetime.utcnow().isoformat() + "Z",
+        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "kind": kind,
         "georef": {
             "controlPoints": [cp.to_dict() for cp in control_points],
@@ -97,9 +98,7 @@ BEST_ARTIFACTS = (
 )
 
 
-def _drop_best_if_inputs_changed(
-    case_dir: str, config_path: str, new_config: dict[str, Any]
-) -> None:
+def _drop_best_if_inputs_changed(case_dir: str, config_path: str, new_config: dict[str, Any]) -> None:
     """Forget a case's best run when its clicks change."""
 
     try:
@@ -256,7 +255,7 @@ def upload_dev_test(
     entry = metadata.get(map_id, {}) if isinstance(metadata, dict) else {}
     entry["name"] = name
     entry["kind"] = resolved_kind
-    entry.setdefault("createdAt", datetime.utcnow().isoformat() + "Z")
+    entry.setdefault("createdAt", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     metadata[map_id] = entry
     _write_tests_metadata(metadata)
 
@@ -350,8 +349,8 @@ def evaluate_and_persist_case(
     min_iou: float | None,
     allow_best_promotion: bool = True,
 ) -> dict[str, Any]:
-    """Score a case and write its report. """
-    
+    """Score a case and write its report."""
+
     from app.utils.dev_test_evaluator import (
         build_test_case_paths,
         evaluate_georef_test_case,
@@ -373,9 +372,7 @@ def evaluate_and_persist_case(
     latest_score: float | None
     try:
         metrics = report.get("metrics") or {}
-        latest_score = float(
-            metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou"))
-        )
+        latest_score = float(metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou")))
     except Exception:
         latest_score = None
 
@@ -386,18 +383,12 @@ def evaluate_and_persist_case(
             with open(best_report_path, "r", encoding="utf-8") as f:
                 best = json.load(f)
             metrics = best.get("metrics") or {}
-            return float(
-                metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou"))
-            )
+            return float(metrics.get("scoreUsed") or ((metrics.get("mean") or {}).get("meanIou")))
         except Exception:
             return None
 
     best_score = _read_best_score()
-    if (
-        allow_best_promotion
-        and latest_score is not None
-        and (best_score is None or latest_score > best_score)
-    ):
+    if allow_best_promotion and latest_score is not None and (best_score is None or latest_score > best_score):
         try:
             _copy_latest_to_best(paths, report)
         except Exception:
@@ -434,8 +425,7 @@ def force_promote_latest_to_best(
         report = json.load(f)
     if report.get("testId") != test_id or report.get("testCaseId") != test_case_id:
         raise ValueError(
-            f"{paths.report_path} belongs to "
-            f"{report.get('testId')}/{report.get('testCaseId')}, not {label}"
+            f"{paths.report_path} belongs to " f"{report.get('testId')}/{report.get('testCaseId')}, not {label}"
         )
 
     record_path = os.path.join(paths.case_dir, RUN_RECORD_FILENAME)
@@ -460,9 +450,7 @@ def force_promote_latest_to_best(
     return previous, report
 
 
-def load_case_config(
-    assets_root: str, test_id: str, test_case_id: str
-) -> dict[str, Any]:
+def load_case_config(assets_root: str, test_id: str, test_case_id: str) -> dict[str, Any]:
     from app.utils.dev_test_evaluator import build_test_case_paths
 
     paths = build_test_case_paths(assets_root, test_id, test_case_id)
@@ -543,9 +531,7 @@ def parse_extraction_inputs(config: dict[str, Any]) -> CaseExtractionInputs:
     )
 
 
-def case_inputs_for_editing(
-    assets_root: str, test_id: str, test_case_id: str
-) -> dict[str, Any]:
+def case_inputs_for_editing(assets_root: str, test_id: str, test_case_id: str) -> dict[str, Any]:
     """A stored case's inputs, in the shape the import flow edits.
 
     What the dev tool needs to reopen a case's "Saisie utilisateur" steps --
@@ -565,24 +551,16 @@ def case_inputs_for_editing(
     config = load_case_config(assets_root, test_id, test_case_id)
     image_path = find_test_image_path(test_id)
     if not image_path or not os.path.exists(image_path):
-        raise FileNotFoundError(
-            f"Test image not found for test_id={test_id} under {MAPS_DIR}"
-        )
+        raise FileNotFoundError(f"Test image not found for test_id={test_id} under {MAPS_DIR}")
     inputs = parse_extraction_inputs(config)
 
     image_bgr = cv2.imread(image_path)
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB) if image_bgr is not None else None
     colors_section = config.get("colors") if isinstance(config.get("colors"), dict) else {}
-    positions, names, radii, kinds = parse_imposed_colors_entries(
-        colors_section.get("imposed")
-    )
+    positions, names, radii, kinds = parse_imposed_colors_entries(colors_section.get("imposed"))
     colors = []
     for (x, y), name, radius, kind in zip(positions or [], names or [], radii or [], kinds or []):
-        sampled = (
-            sample_color_at(image_rgb, x, y, radius_px=int(radius))
-            if image_rgb is not None
-            else None
-        )
+        sampled = sample_color_at(image_rgb, x, y, radius_px=int(radius)) if image_rgb is not None else None
         colors.append(
             {
                 "x": x,
@@ -631,9 +609,7 @@ def inspect_case(
     case_config = load_case_config(assets_root, test_id, test_case_id)
     image_path = find_test_image_path(test_id)
     if not image_path or not os.path.exists(image_path):
-        raise FileNotFoundError(
-            f"Test image not found for test_id={test_id} under {MAPS_DIR}"
-        )
+        raise FileNotFoundError(f"Test image not found for test_id={test_id} under {MAPS_DIR}")
 
     inputs = parse_extraction_inputs(case_config)
     state = build_case_state(
@@ -662,10 +638,7 @@ def drop_control_points(
     drop = sorted({int(i) for i in excluded or []})
     bad = [i for i in drop if not 0 <= i < len(control_points)]
     if bad:
-        raise ValueError(
-            f"Control point index out of range: {bad}"
-            f" (this case has {len(control_points)} points)"
-        )
+        raise ValueError(f"Control point index out of range: {bad}" f" (this case has {len(control_points)} points)")
     dropped = set(drop)
     kept = [cp for i, cp in enumerate(control_points) if i not in dropped]
     return kept, drop
@@ -692,17 +665,12 @@ def _start_extraction_for_case(
     if state.requirements.blocked:
         raise ValueError(
             "Cannot run this case: "
-            + "; ".join(
-                f"{s.key}: {s.detail or s.requirement.summary}"
-                for s in state.requirements.blocked
-            )
+            + "; ".join(f"{s.key}: {s.detail or s.requirement.summary}" for s in state.requirements.blocked)
         )
 
     # Excluding points can leave too few among the selected sources, which the
     # requirements above (checked on every stored point) cannot see.
-    kept, dropped = drop_control_points(
-        inputs.control_points, excluded_control_points or []
-    )
+    kept, dropped = drop_control_points(inputs.control_points, excluded_control_points or [])
     selected = select_control_points(kept, run_config.gcp_sources)
     if dropped and len(selected) < MIN_CONTROL_POINTS:
         raise ValueError(
@@ -748,7 +716,7 @@ async def run_evaluate_case_blocking(
 
     kind = resolve_case_kind(test_id, test_case_id)
 
-    # A probe has no expected zones by design, so there is nothing to evaluate against. 
+    # A probe has no expected zones by design, so there is nothing to evaluate against.
     report = None
     if kind != KIND_PROBE:
         paths = build_test_case_paths(assets_root, test_id, test_case_id)

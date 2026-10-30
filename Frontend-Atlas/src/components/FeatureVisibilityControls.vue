@@ -39,6 +39,30 @@
           </label>
         </div>
         <div class="divider m-0 h-0"></div>
+
+        <!-- Validate extracted texts button -->
+        <div
+          v-if="activeGroup?.type === 'point' && featuresByMap.length > 0"
+          class="flex flex-col gap-2 p-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl"
+        >
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+              <DocumentCheckIcon class="w-4 h-4 text-indigo-600" />
+              Textes non reconnus
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <button
+              type="button"
+              class="btn btn-primary btn-xs flex-1 bg-blue-600 hover:bg-blue-700 border-none text-white font-semibold flex items-center justify-center gap-1 py-1 h-auto"
+              @click="openMapSelectionOrValidate"
+            >
+              <span>Examiner les rejets</span>
+            </button>
+          </div>
+        </div>
+
         <div class="flex flex-col gap-2">
           <template v-if="featuresByMap.length > 0">
             <div
@@ -47,25 +71,39 @@
               class="flex flex-col gap-2"
             >
               <div class="flex items-center justify-between rounded group">
-                <label
-                  class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 p-0"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="isMapGroupAnyVisible(mapGroup.id)"
-                    @change="
-                      toggleMapGroup(
-                        mapGroup.id,
-                        !isMapGroupAnyVisible(mapGroup.id),
-                      )
-                    "
-                    class="checkbox checkbox-sm checkbox-primary"
-                  />
-                  <span class="text-sm font-semibold text-gray-700 truncate">
-                    {{ mapGroup.title }}
-                  </span>
-                </label>
-                <div class="flex items-center gap-1" v-if="mapGroup.id !== null">
+                <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                  <button
+                    type="button"
+                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-base-200 transition-colors focus:outline-none"
+                    @click="toggleMapCollapse(mapGroup.id)"
+                    :title="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
+                    :aria-label="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
+                  >
+                    <ChevronDownIcon
+                      class="w-4 h-4 transition-transform duration-200"
+                      :class="{ '-rotate-90': isMapCollapsed(mapGroup.id) }"
+                    />
+                  </button>
+                  <label
+                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 p-0"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="isMapGroupAnyVisible(mapGroup.id)"
+                      @change="
+                        toggleMapGroup(
+                          mapGroup.id,
+                          !isMapGroupAnyVisible(mapGroup.id),
+                        )
+                      "
+                      class="checkbox checkbox-sm checkbox-primary shrink-0"
+                    />
+                    <span class="text-sm font-semibold text-gray-700 truncate" :title="mapGroup.title">
+                      {{ mapGroup.title }}
+                    </span>
+                  </label>
+                </div>
+                <div class="flex items-center gap-1 shrink-0" v-if="mapGroup.id !== null">
                   <button
                     class="flex h-8 w-8 items-center justify-center"
                     @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)"
@@ -75,14 +113,14 @@
                   </button>
                 </div>
               </div>
-              <div class="flex flex-col gap-2">
+              <div v-if="!isMapCollapsed(mapGroup.id)" class="flex flex-col gap-2">
                 <div
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
                   class="flex w-full flex-row items-center justify-between gap-2"
                 >
                   <label
-                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0 pl-4"
+                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0 pl-6"
                   >
                     <input
                       type="checkbox"
@@ -362,6 +400,43 @@
       <button :disabled="isDeletingFeature">close</button>
     </form>
   </dialog>
+
+  <!-- Map selection dialog for text validation -->
+  <dialog ref="selectMapValidationDialogRef" data-testid="select-map-validation-dialog" class="modal z-[2500]">
+    <div class="modal-box max-w-sm">
+      <h3 class="text-base font-bold text-gray-900 flex items-center gap-2">
+        <DocumentCheckIcon class="w-5 h-5 text-indigo-600" />
+        Choisir la carte à examiner
+      </h3>
+      <p class="text-xs text-gray-500 mt-1 mb-4">
+        Sélectionnez la carte dont vous souhaitez examiner et valider les textes rejetés :
+      </p>
+      <div class="flex flex-col gap-2">
+        <button
+          v-for="group in featuresByMap"
+          :key="group.id || 'general'"
+          type="button"
+          class="btn btn-outline btn-sm justify-between text-left normal-case border-gray-300 hover:border-indigo-500 hover:bg-indigo-50 hover:text-indigo-900"
+          @click="confirmMapValidation(group.id)"
+        >
+          <span class="font-medium truncate">{{ group.title }}</span>
+          <span class="text-xs text-gray-400 font-normal">Ouvrir →</span>
+        </button>
+      </div>
+      <div class="modal-action mt-4">
+        <button
+          type="button"
+          class="btn btn-sm btn-ghost"
+          @click="selectMapValidationDialogRef?.close()"
+        >
+          Annuler
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
 </template>
 
 <script setup lang="ts">
@@ -369,6 +444,8 @@ import { computed, nextTick, ref, watch } from "vue";
 import type { Component } from "vue";
 import {
   ChatBubbleLeftEllipsisIcon,
+  ChevronDownIcon,
+  DocumentCheckIcon,
   MapIcon,
   PencilSquareIcon,
   PhotoIcon,
@@ -416,6 +493,8 @@ const featureToDeleteId = ref<string | null>(null);
 const featureToDeleteName = ref<string>("");
 const isDeletingFeature = ref(false);
 
+const selectMapValidationDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
 
 const isEditing = ref(false);
@@ -428,7 +507,36 @@ const emit = defineEmits([
   "delete-map",
   "add-map",
   "update-feature",
+  "validate-texts",
 ]);
+
+function openMapSelectionOrValidate() {
+  if (featuresByMap.value.length > 1) {
+    selectMapValidationDialogRef.value?.showModal?.();
+  } else {
+    emit("validate-texts", featuresByMap.value[0]?.id ?? null);
+  }
+}
+
+function confirmMapValidation(mapId: string | null) {
+  selectMapValidationDialogRef.value?.close?.();
+  emit("validate-texts", mapId);
+}
+
+const collapsedMaps = ref<Record<string, boolean>>({});
+
+function getMapCollapseKey(mapId: string | null): string {
+  return `${activeGroup.value?.type || "default"}_${mapId ?? "general"}`;
+}
+
+function isMapCollapsed(mapId: string | null): boolean {
+  return !!collapsedMaps.value[getMapCollapseKey(mapId)];
+}
+
+function toggleMapCollapse(mapId: string | null) {
+  const key = getMapCollapseKey(mapId);
+  collapsedMaps.value[key] = !collapsedMaps.value[key];
+}
 
 const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
   point: ChatBubbleLeftEllipsisIcon,
@@ -448,6 +556,15 @@ const featureGroups = computed(() => {
   ];
 
   props.features.forEach((feature: Feature) => {
+    // Unrecognized OCR texts with show=false are only shown in the validation modal
+    if (
+      feature.properties?.isOcrText &&
+      !feature.properties?.recognized &&
+      feature.properties?.show === false
+    ) {
+      return;
+    }
+
     const featureType = getMapElementType(feature);
     if (!featureType) return;
 
@@ -684,5 +801,7 @@ async function onDeleteFeature() {
 
 defineExpose({
   showEditFeatureDialog,
+  isMapCollapsed,
+  toggleMapCollapse,
 });
 </script>
