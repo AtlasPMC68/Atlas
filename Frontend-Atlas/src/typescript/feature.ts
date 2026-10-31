@@ -37,6 +37,8 @@ export type FeatureVisibilityGroup = {
 
 export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
+export type ValidationStatus = "accepted" | "rejected" | "manual_review";
+
 export interface FeatureProperties {
   name: string;
   isVisible?: boolean;
@@ -64,6 +66,7 @@ export interface FeatureProperties {
   country?: string;
   population?: number;
   confidence?: number;
+  validationStatus?: ValidationStatus;
   suggestedCity?: string;
   suggestedCoords?: [number, number];
   [key: string]: any;
