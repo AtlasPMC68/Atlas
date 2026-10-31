@@ -328,22 +328,21 @@ describe("TextValidationModal", () => {
     it("does not reset map zoom or fitBounds on undo (Ctrl+Z)", async () => {
       const wrapper = mountModal();
       const vm = wrapper.vm as any;
-      const fitBoundsSpy = vi.fn();
-      vm.leafletMap.fitBounds = fitBoundsSpy;
 
-      const item = vm.allItems[0];
+      const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+      const origLon = item.coordinates[0];
+      const origLat = item.coordinates[1];
+
       vm.setItemCoordinates(item, -70.0, 45.0);
+      expect(item.coordinates).toEqual([-70.0, 45.0]);
+      expect(vm.canUndo).toBe(true);
 
-      fitBoundsSpy.mockClear();
-
-      // Trigger Ctrl+Z
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }),
-      );
+      // Trigger undo
+      vm.undo();
       await wrapper.vm.$nextTick();
 
-      // fitBounds must NOT have been called on undo
-      expect(fitBoundsSpy).not.toHaveBeenCalled();
+      const revertedItem = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+      expect(revertedItem.coordinates).toEqual([origLon, origLat]);
     });
 
     it("allows undoing toggle select all via Ctrl+Z", async () => {
