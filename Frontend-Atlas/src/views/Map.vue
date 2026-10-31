@@ -957,7 +957,7 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
 }
 
 const handleKeyboardShortcuts = (e: KeyboardEvent) => {
-  if (isEditableTarget(e.target)) {
+  if (showTextValidationModal.value || isEditableTarget(e.target)) {
     return;
   }
 
