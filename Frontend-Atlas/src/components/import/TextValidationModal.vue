@@ -312,30 +312,6 @@
                 </button>
               </div>
 
-              <!-- Word type selector -->
-              <div
-                v-if="item.selected"
-                class="flex items-center justify-between gap-2 pt-0.5"
-                @click.stop
-              >
-                <span class="text-xs font-semibold text-gray-700 shrink-0">Type de mot :</span>
-                <select
-                  :value="item.wordType || 'city'"
-                  class="select select-bordered select-xs flex-1 h-7 text-xs bg-base-100 text-black border-base-300 font-medium focus:border-primary"
-                  data-testid="item-word-type-select"
-                  @click.stop
-                  @change="onWordTypeSelect(item, ($event.target as HTMLSelectElement).value)"
-                >
-                  <option
-                    v-for="(style, typeKey) in WORD_TYPE_STYLES"
-                    :key="typeKey"
-                    :value="typeKey"
-                  >
-                    {{ style.label }}
-                  </option>
-                </select>
-              </div>
-
               <!-- Suggested city pill button -->
               <div
                 v-if="item.suggestedCity"
@@ -711,20 +687,6 @@ function toggleItemSelection(item: TextValidationEntry) {
   updateMarkerStyle(item);
 }
 
-function onWordTypeSelect(item: TextValidationEntry, newType: string) {
-  saveHistorySnapshot();
-  item.wordType = newType;
-  const style = WORD_TYPE_STYLES[newType || "city"];
-  if (style && item.text) {
-    item.text = style.transform(item.text);
-  }
-  updateMarkerStyle(item);
-}
-
-function onItemWordTypeChange(item: TextValidationEntry) {
-  onWordTypeSelect(item, item.wordType || "city");
-}
-
 function onTextInput(item: TextValidationEntry) {
   if (!isTypingSession) {
     saveHistorySnapshot();
@@ -749,7 +711,6 @@ function toggleSuggestion(item: TextValidationEntry) {
   } else {
     item.useSuggestedCity = true;
     item.selected = true;
-    item.wordType = "city";
     if (item.suggestedCity) {
       item.text = item.suggestedCity;
     }
