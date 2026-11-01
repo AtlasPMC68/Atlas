@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   capitalizeFirstOnly,
   capitalizeWords,
+  toUpperCaseTransform,
+  LOWERCASE_PARTICLES,
   getWordTypeStyle,
   WORD_TYPE_STYLES,
   parseLabelFontStyle,
@@ -50,10 +52,18 @@ describe("mapLabelUtils - Word Type Styles and Police", () => {
     expect(capitalizeFirstOnly("ONTARIO")).toBe("Ontario");
   });
 
-  it("capitalizeWords formats text with initial capitals on hyphenated and spaced names", () => {
+  it("capitalizeWords formats text with initial capitals on hyphenated and spaced names, preserving particles", () => {
     expect(capitalizeWords("QUÉBEC")).toBe("Québec");
     expect(capitalizeWords("COLOMBIE-BRITANNIQUE")).toBe("Colombie-Britannique");
     expect(capitalizeWords("NOUVELLE ÉCOSSE")).toBe("Nouvelle Écosse");
+    expect(capitalizeWords("new york city")).toBe("New York City");
+    expect(capitalizeWords("saint-pierre")).toBe("Saint-Pierre");
+    expect(capitalizeWords("golfe du mexique")).toBe("Golfe du Mexique");
+    expect(capitalizeWords("mer du labrador")).toBe("Mer du Labrador");
+    expect(capitalizeWords("lac supérieur")).toBe("Lac Supérieur");
+    expect(capitalizeWords("baie d'hudson")).toBe("Baie d'Hudson");
+    expect(toUpperCaseTransform("saint-pierre")).toBe("SAINT-PIERRE");
+    expect(LOWERCASE_PARTICLES.has("du")).toBe(true);
   });
 
   it("transforms text to uppercase for province, country, continent and state", () => {

@@ -78,6 +78,7 @@ const emit = defineEmits<{
   (e: "undo"): void;
   (e: "redo"): void;
   (e: "edit-feature-request", feature: Feature): void;
+  (e: "select-feature", featureId: string | null): void;
 }>();
 
 const previousFeatureIds = ref(new Set<FeatureId>());
@@ -1310,6 +1311,8 @@ watch(
 localFeaturesSnapshot.value = [...props.features];
 
 watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
+  emit("select-feature", id);
+
   // Always remove the city selection ring on any selection change
   if (selectedCityRing) {
     selectedCityRing.remove();

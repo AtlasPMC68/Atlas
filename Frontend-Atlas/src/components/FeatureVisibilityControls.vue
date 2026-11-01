@@ -117,7 +117,14 @@
                 <div
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
-                  class="flex w-full flex-row items-center justify-between gap-2"
+                  :data-feature-item-id="String(feature.id)"
+                  class="flex w-full flex-row items-center justify-between gap-2 rounded px-1.5 py-1 transition-all cursor-pointer"
+                  :class="[
+                    selectedFeatureId === String(feature.id)
+                      ? 'ring-2 ring-primary bg-primary/10 border border-primary font-semibold'
+                      : 'hover:bg-base-200/60'
+                  ]"
+                  @click="emit('select-feature', String(feature.id))"
                 >
                   <label
                     class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0 pl-6"
@@ -503,6 +510,7 @@ const props = defineProps<{
   featureVisibility: Map<string, boolean>;
   mapPeriods?: MapPeriod[];
   isDevTestCreation?: boolean;
+  selectedFeatureId?: string | null;
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
@@ -571,7 +579,19 @@ const emit = defineEmits([
   "add-map",
   "update-feature",
   "validate-texts",
+  "select-feature",
 ]);
+
+watch(
+  () => props.selectedFeatureId,
+  (newId) => {
+    if (!newId) return;
+    nextTick(() => {
+      const el = document.querySelector(`[data-feature-item-id="${newId}"]`);
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  },
+);
 
 function openMapSelectionOrValidate() {
   if (featuresByMap.value.length > 1) {

@@ -11,6 +11,8 @@
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
+          :selected-feature-id="selectedFeatureId"
+          @select-feature="(id: string) => selectedFeatureId = id"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -33,6 +35,7 @@
             :project-id="projectId || projectRouteId || ''"
             :can-undo="canUndo"
             :can-redo="canRedo"
+            @select-feature="(id: string | null) => selectedFeatureId = id"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
@@ -180,6 +183,7 @@ function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
 const features = ref<Feature[]>([]);
+const selectedFeatureId = ref<string | null>(null);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());

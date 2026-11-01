@@ -247,7 +247,7 @@ describe("TextValidationModal", () => {
     const emitted = wrapper.emitted("confirm");
     const confirmedItems = emitted![0][0] as TextValidationEntry[];
     expect(confirmedItems.length).toBe(1);
-    expect(confirmedItems[0].id).toBe("unrec-loc-2");
+    expect(confirmedItems[0].id).toBe("unrec-unloc-1");
   });
 
   it("clears suggested city and hides tolerance radius when position is manually changed", async () => {

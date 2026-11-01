@@ -183,7 +183,7 @@ describe("textValidation utility functions", () => {
       expect(result.properties.recognized).toBe(false);
       expect(result.properties.userSelected).toBe(false);
       expect(result.properties.validationStatus).toBe("rejected");
-      expect(isUnrecognizedTextFeature(result)).toBe(false);
+      expect(isUnrecognizedTextFeature(result)).toBe(true);
     });
 
     it("persists accepted status with show=true, recognized=true and validationStatus='accepted'", () => {

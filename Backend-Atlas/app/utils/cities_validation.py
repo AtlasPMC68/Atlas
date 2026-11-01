@@ -41,6 +41,50 @@ def capitalize_first(s: str) -> str:
     return s[:1].upper() + s[1:] if s else s
 
 
+_LOWERCASE_PARTICLES = {"de", "du", "des", "d'", "l'", "la", "le", "et"}
+
+
+def capitalize_words(text: str) -> str:
+    """Capitalize each word/term in a place name, preserving hyphens and French particles.
+    E.g. 'new york city' -> 'New York City'
+         'saint-pierre' -> 'Saint-Pierre'
+         'golfe du mexique' -> 'Golfe du Mexique'
+         'mer du labrador' -> 'Mer du Labrador'
+         'baie d\'hudson' -> 'Baie d\'Hudson'
+    """
+    if not text:
+        return text
+
+    parts = re.split(r"([\s\-]+)", text)
+    result = []
+    word_idx = 0
+
+    for part in parts:
+        if not part:
+            continue
+        if re.match(r"^[\s\-]+$", part):
+            result.append(part)
+            continue
+
+        apo_m = re.match(r"^([dlDL]['’])(.*)$", part)
+        if apo_m:
+            pfx = apo_m.group(1).lower()
+            rest = apo_m.group(2)
+            cased_rest = rest[:1].upper() + rest[1:].lower() if rest else ""
+            result.append(f"{pfx}{cased_rest}")
+            word_idx += 1
+            continue
+
+        lower = part.casefold()
+        if word_idx > 0 and lower in _LOWERCASE_PARTICLES:
+            result.append(lower)
+        else:
+            result.append(lower[:1].upper() + lower[1:])
+        word_idx += 1
+
+    return "".join(result)
+
+
 def is_in_bounds(lat: float, lon: float, bounds: Optional[Dict[str, float]]) -> bool:
     """True when *(lat, lon)* falls inside *bounds* (or if bounds is None)."""
     if bounds is None:
@@ -194,14 +238,14 @@ STYLES_MAP: Dict[str, StyleTuple] = {
     "state": ("label", 14, "uppercase", str.upper),
     "province": ("label", 14, "uppercase", str.upper),
     "territory": ("label", 14, "uppercase", str.upper),
-    "city": ("point", 12, "normal", capitalize_first),
-    "ocean": ("label", 18, "italic", str.upper),
-    "sea": ("label", 16, "italic", capitalize_first),
-    "fleuve": ("label", 14, "italic", capitalize_first),
-    "lake": ("label", 12, "italic", capitalize_first),
-    "river": ("label", 10, "italic", capitalize_first),
+    "city": ("point", 12, "normal", capitalize_words),
+    "ocean": ("label", 18, "italic", capitalize_words),
+    "sea": ("label", 16, "italic", capitalize_words),
+    "fleuve": ("label", 14, "italic", capitalize_words),
+    "lake": ("label", 12, "italic", capitalize_words),
+    "river": ("label", 10, "italic", capitalize_words),
 }
-DEFAULT_STYLE: StyleTuple = STYLES_MAP.get("city", ("point", 12, "normal", capitalize_first))
+DEFAULT_STYLE: StyleTuple = STYLES_MAP.get("city", ("point", 12, "normal", capitalize_words))
 
 
 # Common geographic prefixes preserved for display nomenclature only if detected in extraction query
@@ -247,9 +291,9 @@ def _preserve_prefix_nomenclature(raw_name: str, query: str) -> str:
             # Only attach if raw_name does not already have a geographic prefix
             for p_norm, _ in _GEOGRAPHIC_PREFIXES:
                 if norm_raw.startswith(p_norm):
-                    return raw_name
-            return f"{prefix_display}{capitalize_first(raw_name)}"
-    return raw_name
+                    return capitalize_words(raw_name)
+            return f"{prefix_display}{capitalize_words(raw_name)}"
+    return capitalize_words(raw_name) if not raw_name.isupper() else raw_name
 
 
 def _not_found(text: str) -> Dict[str, Any]:
@@ -534,6 +578,7 @@ __all__ = [
     "find_geo_entity",
     "is_in_bounds",
     "capitalize_first",
+    "capitalize_words",
     "haversine_distance_km",
     "find_nearby_candidate_city",
     "is_exploitable_text",

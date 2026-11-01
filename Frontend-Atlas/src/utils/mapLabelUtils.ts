@@ -14,17 +14,38 @@ export interface WordTypeStyle {
   transform: (text: string) => string;
 }
 
+export const toUpperCaseTransform = (text: string): string => (text ? text.toUpperCase() : text);
+
 export function capitalizeFirstOnly(text: string): string {
   if (!text) return text;
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
 }
 
+export const LOWERCASE_PARTICLES = new Set(["de", "du", "des", "d'", "l'", "la", "le", "et"]);
+
 export function capitalizeWords(text: string): string {
   if (!text) return text;
   return text
-    .toLowerCase()
     .split(/([\s-]+)/)
-    .map((part) => (part.length > 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .map((part, index) => {
+      if (!part) return part;
+      if (/^[\s-]+$/.test(part)) return part;
+
+      const apostropheMatch = part.match(/^([dlDL]['’])(.*)$/);
+      if (apostropheMatch) {
+        const pfx = apostropheMatch[1].toLowerCase();
+        const rest = apostropheMatch[2];
+        const casedRest = rest.length > 0 ? rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase() : "";
+        return `${pfx}${casedRest}`;
+      }
+
+      const lower = part.toLowerCase();
+      if (index > 0 && LOWERCASE_PARTICLES.has(lower)) {
+        return lower;
+      }
+
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
     .join("");
 }
 
@@ -41,35 +62,35 @@ export const WORD_TYPE_STYLES: Record<string, WordTypeStyle> = {
     mapElementType: "label",
     sizePx: 14,
     fontStyle: "uppercase",
-    transform: (t: string) => (t ? t.toUpperCase() : t),
+    transform: toUpperCaseTransform,
   },
   state: {
     label: "État",
     mapElementType: "label",
     sizePx: 14,
     fontStyle: "uppercase",
-    transform: (t: string) => (t ? t.toUpperCase() : t),
+    transform: toUpperCaseTransform,
   },
   country: {
     label: "Pays",
     mapElementType: "label",
     sizePx: 16,
     fontStyle: "uppercase",
-    transform: (t: string) => (t ? t.toUpperCase() : t),
+    transform: toUpperCaseTransform,
   },
   continent: {
     label: "Continent",
     mapElementType: "label",
     sizePx: 18,
     fontStyle: "uppercase",
-    transform: (t: string) => (t ? t.toUpperCase() : t),
+    transform: toUpperCaseTransform,
   },
   ocean: {
     label: "Océan",
     mapElementType: "label",
     sizePx: 18,
     fontStyle: "italic",
-    transform: capitalizeWords,
+    transform: toUpperCaseTransform,
   },
   sea: {
     label: "Mer",
@@ -104,7 +125,7 @@ export const WORD_TYPE_STYLES: Record<string, WordTypeStyle> = {
     mapElementType: "label",
     sizePx: 14,
     fontStyle: "uppercase",
-    transform: (t: string) => (t ? t.toUpperCase() : t),
+    transform: toUpperCaseTransform,
   },
 };
 
