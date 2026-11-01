@@ -51,6 +51,8 @@ def is_in_bounds(lat: float, lon: float, bounds: Optional[Dict[str, float]]) -> 
     e = bounds.get("east", bounds.get("max_lon"))
     if None in (s, n, w, e):
         return True
+
+    assert s is not None and n is not None and w is not None and e is not None
     return s <= lat <= n and w <= lon <= e
 
 
@@ -150,10 +152,6 @@ def find_geo_entity(
     return None
 
 
-# Backward-compat aliases used by older call-sites and tests
-get_geographic_entity = find_geo_entity
-
-
 # City gazetteer  (geonamescache)
 def _parse_pop(val: Any) -> int:
     try:
@@ -163,7 +161,7 @@ def _parse_pop(val: Any) -> int:
 
 
 # City gazetteer (geonamescache)
-_gc = geonamescache.GeonamesCache()
+_gc = getattr(geonamescache, "GeonamesCache")()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 
 for _info in _gc.get_cities().values():
@@ -259,7 +257,7 @@ def _not_found(text: str) -> Dict[str, Any]:
     return {"found": False, "query": text, "name": text, "lat": 0.0, "lon": 0.0, "geonameid": None, "matched_text": None}
 
 
-def _format_place_result(
+def format_place_result(
     place: Dict[str, Any],
     query: str,
     base: Optional[Dict[str, Any]] = None,
@@ -278,7 +276,8 @@ def _format_place_result(
         **(base or {}),
         "found": True,
         "query": query,
-        "geonameid": place.get("geonameid") or (f"{geo_type}:{place.get('name')}" if geo_type and place.get("name") else None),
+        "geonameid": place.get("geonameid")
+        or (f"{geo_type}:{place.get('name')}" if geo_type and place.get("name") else None),
         "name": display,
         "lat": place.get("lat"),
         "lon": place.get("lon"),
@@ -295,16 +294,6 @@ def _format_place_result(
         result["type"] = geo_type
 
     return result
-
-
-def _geo_result(geo: Dict[str, Any], query: str, base: Dict[str, Any]) -> Dict[str, Any]:
-    """Format a geographic-entity match as a result dict using STYLES_MAP."""
-    return _format_place_result(geo, query, base=base, default_type="country")
-
-
-def _city_result(city: Dict[str, Any], query: str) -> Dict[str, Any]:
-    """Format a city match as a result dict using DEFAULT_STYLE."""
-    return _format_place_result(city, query)
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -324,7 +313,7 @@ def find_nearby_candidate_city(
     min_similarity: float = 0.80,
 ) -> Optional[Dict[str, Any]]:
     """Find a candidate city within radius_km of coordinates [lon, lat].
-    
+
     Strictly discriminates: requires exploitable text, non-empty normalized key,
     and difflib similarity >= min_similarity (default 0.80).
     Does NOT fall back to picking the nearest city when the score is insufficient.
@@ -351,8 +340,7 @@ def find_nearby_candidate_city(
         return None
 
     scored = [
-        (difflib.SequenceMatcher(None, key, _normalize(c.get("name", ""))).ratio(), -dist, c)
-        for dist, c in nearby_cities
+        (difflib.SequenceMatcher(None, key, _normalize(c.get("name", ""))).ratio(), -dist, c) for dist, c in nearby_cities
     ]
     best_sim, _, best_city = max(scored, key=lambda x: (x[0], x[1]))
     if best_sim >= min_similarity:
@@ -391,13 +379,17 @@ def resolve_place(
         ent = find_geo_entity(key, fuzzy=fuzzy, cutoff=cutoff, target_pos=target_pos, bounds=bounds)
         if ent is None:
             return None
-        return _geo_result(ent, text, base) if is_in_bounds(ent["lat"], ent["lon"], bounds) else _BLOCKED
+        return (
+            format_place_result(ent, text, base=base, default_type="country")
+            if is_in_bounds(ent["lat"], ent["lon"], bounds)
+            else _BLOCKED
+        )
 
     def _match_city_exact() -> Optional[Dict[str, Any]]:
         cands = _city_map_in_bounds(key, bounds)
         if not cands:
             return None
-        return _city_result(max(cands, key=lambda c: c.get("population", 0)), text)
+        return format_place_result(max(cands, key=lambda c: c.get("population", 0)), text)
 
     def _match_city_fuzzy(cutoff: float) -> Optional[Dict[str, Any]]:
         valid_keys = [k for k, v in _CITY_INDEX.items() if _any_in_bounds(v, bounds)] if bounds else list(_CITY_INDEX.keys())
@@ -407,7 +399,7 @@ def resolve_place(
         cands = _city_map_in_bounds(close[0], bounds)
         if not cands:
             return None
-        return _city_result(max(cands, key=lambda c: c.get("population", 0)), text)
+        return format_place_result(max(cands, key=lambda c: c.get("population", 0)), text)
 
     if text.isupper():
         # ALL-CAPS → prefer geographic entity
@@ -442,10 +434,6 @@ def resolve_place(
             return city_f
 
     return base
-
-
-# Backward-compat alias
-get_city_with_max_population = resolve_place
 
 
 def _city_map_in_bounds(norm_key: str, bounds: Optional[Dict[str, float]]) -> List[Dict[str, Any]]:
@@ -542,20 +530,16 @@ def match_ocr_label(
 
 __all__ = [
     "resolve_place",
-    "get_city_with_max_population",
     "match_ocr_label",
     "find_geo_entity",
-    "get_geographic_entity",
     "is_in_bounds",
     "capitalize_first",
     "haversine_distance_km",
     "find_nearby_candidate_city",
     "is_exploitable_text",
+    "format_place_result",
     "_normalize",
     "_city_map",
-    "_format_place_result",
-    "_geo_result",
-    "_city_result",
     "STYLES_MAP",
     "DEFAULT_STYLE",
     "StyleTuple",

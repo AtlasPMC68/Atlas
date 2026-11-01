@@ -4,6 +4,7 @@ import type { Feature } from "../../src/typescript/feature";
 import {
   featureToValidationEntry,
   applyValidationToFeature,
+  applyValidationStateToFeature,
   isUnrecognizedTextFeature,
   ValidationStatus,
   type TextValidationEntry,
@@ -669,6 +670,37 @@ describe("textValidation utility functions", () => {
       expect(validated.properties.validation_status).toBe(ValidationStatus.ACCEPTED);
       expect(validated.properties.show).toBe(true);
       expect(validated.properties.recognized).toBe(true);
+    });
+
+    it("applyValidationStateToFeature isolates business lifecycle updates without mutating style", () => {
+      const rawFeature: Feature = {
+        type: "Feature",
+        id: "feat-pure-state",
+        name: "Test Place",
+        geometry: { type: "Point", coordinates: [-70, 45] },
+        properties: {
+          name: "Test Place",
+          sizePx: 14,
+          fontStyle: "uppercase",
+          mapElementType: "label",
+        },
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      };
+
+      const accepted = applyValidationStateToFeature(rawFeature, true, [-71, 46]);
+      expect(accepted.properties.show).toBe(true);
+      expect(accepted.properties.recognized).toBe(true);
+      expect(accepted.properties.validationStatus).toBe(ValidationStatus.ACCEPTED);
+      expect(accepted.geometry.coordinates).toEqual([-71, 46]);
+      // Styles are untouched
+      expect(accepted.properties.sizePx).toBe(14);
+      expect(accepted.properties.fontStyle).toBe("uppercase");
+
+      const rejected = applyValidationStateToFeature(rawFeature, false);
+      expect(rejected.properties.show).toBe(false);
+      expect(rejected.properties.recognized).toBe(false);
+      expect(rejected.properties.validationStatus).toBe(ValidationStatus.REJECTED);
     });
   });
 });

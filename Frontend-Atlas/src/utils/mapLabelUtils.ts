@@ -1,4 +1,5 @@
 import type { Feature } from "../typescript/feature";
+import { getMapElementType } from "./featureHelpers";
 
 export interface LabelFontStyle {
   fontStyle: "normal" | "italic";
@@ -110,6 +111,65 @@ export const WORD_TYPE_STYLES: Record<string, WordTypeStyle> = {
 export function getWordTypeStyle(type?: string): WordTypeStyle {
   const key = (type || "").toLowerCase();
   return WORD_TYPE_STYLES[key] || WORD_TYPE_STYLES.city;
+}
+
+export function formatWordText(text: string, wordType?: string): string {
+  if (!text) return text;
+  const style = getWordTypeStyle(wordType);
+  return style.transform ? style.transform(text) : text;
+}
+
+export function isTextFeature(feature?: Feature | Record<string, any> | null): boolean {
+  if (!feature) return false;
+  const props = (feature.properties || {}) as Record<string, any>;
+  const elemType = getMapElementType(feature as Feature);
+  return (
+    elemType === "label" ||
+    elemType === "point" ||
+    Boolean(props.isOcrText) ||
+    props.labelText !== undefined ||
+    props.rawType !== undefined ||
+    feature.geometry?.type === "Point"
+  );
+}
+
+export function getWordTypeForFeature(feature?: Feature | Record<string, any> | null): string {
+  if (!feature) return "city";
+  const props = (feature.properties || {}) as Record<string, any>;
+  const rawType = String(props.rawType || props.type || "").toLowerCase();
+  if (rawType && WORD_TYPE_STYLES[rawType]) {
+    return rawType;
+  }
+  const elemType = getMapElementType(feature as Feature);
+  return elemType === "label" ? "province" : "city";
+}
+
+export function applyWordStyleToFeature(
+  feature: Feature,
+  wordType: string,
+  newText?: string,
+): Feature {
+  const style = getWordTypeStyle(wordType);
+  const currentText =
+    newText !== undefined
+      ? newText
+      : feature.properties?.labelText ?? feature.properties?.name ?? feature.name ?? "";
+  const transformedText = formatWordText(currentText, wordType);
+
+  return {
+    ...feature,
+    name: transformedText,
+    properties: {
+      ...feature.properties,
+      name: transformedText,
+      labelText: transformedText,
+      mapElementType: style.mapElementType,
+      sizePx: style.sizePx,
+      fontStyle: style.fontStyle,
+      rawType: wordType,
+      type: wordType,
+    },
+  };
 }
 
 export interface LabelCategoryInfo {

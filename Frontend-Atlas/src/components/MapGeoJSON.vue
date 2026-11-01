@@ -20,6 +20,7 @@
 </template>
 
 <script setup lang="ts">
+// @ts-ignore Vue is supplied by the app runtime; tolerate missing editor type resolution.
 import { onMounted, onBeforeUnmount, watch, ref, nextTick, toRef } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
@@ -189,7 +190,7 @@ const featureLayerManager = {
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
       selectedFeatureId.value = id;
-      const feature = props.features.find((f) => String(f.id) === id);
+      const feature = props.features.find((f: Feature) => String(f.id) === id);
       if (feature) {
         emit("edit-feature-request", feature);
       }
@@ -286,13 +287,15 @@ function syncFeaturesFromMapLayers(): Feature[] {
     mergedById.set(String(feature.id), feature);
   });
 
-  drawing.drawnItems.value?.eachLayer((layer) => {
+  drawing.drawnItems.value?.eachLayer((layer: L.Layer) => {
     const extracted = extractFeatureFromLayer(
       layer,
       props.selectedYear,
       props.projectId,
     );
-    if (!extracted?.id) return;
+    if (!extracted?.id) {
+      return;
+    }
     mergedById.set(String(extracted.id), extracted);
   });
 
@@ -350,7 +353,7 @@ const drawing = useMapDrawing(
     if (event === "feature-deleted") {
       const deletedId = String(args[0]);
       const next = current.filter(
-        (feature) => String(feature.id) !== deletedId,
+        (feature: Feature) => String(feature.id) !== deletedId,
       );
       localFeaturesSnapshot.value = next;
       emit("draw-delete", next);
@@ -369,12 +372,22 @@ const drawing = useMapDrawing(
       if (map && cuttingUpdatedIds !== null) {
         const isRemovedFromMap = (layer: L.Layer): boolean => {
           if (!map!.hasLayer(layer)) return true;
+
           const asGroup = layer as unknown as Partial<L.LayerGroup>;
           if (typeof asGroup.getLayers === "function") {
-            const children = asGroup.getLayers();
-            // All children gone (removed from group entirely, or none left on map)
+            const children = asGroup.getLayers() as L.Layer[];
+            // A GeoJSON feature group may keep its outer container on the map
+            // while Geoman removes all nested polygon sublayers. We need to
+            // consider the whole subtree, not just the first level of children.
             if (children.length === 0) return true;
-            return children.every((c) => !map!.hasLayer(c));
+            return children.every((child: L.Layer) => {
+              if (!map!.hasLayer(child)) return true;
+              const childGroup = child as unknown as Partial<L.LayerGroup>;
+              if (typeof childGroup.getLayers === "function") {
+                return isRemovedFromMap(child);
+              }
+              return false;
+            });
           }
           return false;
         };
@@ -388,11 +401,11 @@ const drawing = useMapDrawing(
         if (removedIds.length > 0) {
           let next = localFeaturesSnapshot.value;
           for (const deletedId of removedIds) {
-            next = next.filter((f) => String(f.id) !== deletedId);
+            next = next.filter((f: Feature) => String(f.id) !== deletedId);
             featureLayerManager.layers.delete(deletedId);
-            emit("draw-delete", next);
           }
           localFeaturesSnapshot.value = next;
+          emit("draw-delete", next);
         }
       }
       cuttingUpdatedIds = null;
@@ -411,7 +424,7 @@ const cityMode = useAddCityMode({
   selectedYear: toRef(props, "selectedYear"),
   localFeaturesSnapshot,
   cityInput,
-  onCreated: (next) => emit('draw-create', next),
+  onCreated: (next: any) => emit('draw-create', next),
   onAfterCreate: () => renderAllFeatures(),
 });
 const { addCityMode, pendingCity, cityInputName } = cityMode;
@@ -420,21 +433,21 @@ const confirmCity = cityMode.confirm;
 
 const imageOverlay = useImageOverlay({
   getMap: () => map,
-  getLayerById: (id) => featureLayerManager.layers.get(id),
+  getLayerById: (id: string) => featureLayerManager.layers.get(id),
   localFeaturesSnapshot,
   onBeforeEmit: () => { suppressNextPropsRender = true; },
-  onUpdate: (next) => emit('draw-update', next),
+  onUpdate: (next: any) => emit('draw-update', next),
   }
 );
 
 const shapeScaling = useShapeScaling({
   getMap: () => map,
-  getLayerById: (id) => featureLayerManager.layers.get(id),
+  getLayerById: (id: string) => featureLayerManager.layers.get(id),
   localFeaturesSnapshot,
   getProjectId: () => props.projectId,
   getSelectedYear: () => props.selectedYear,
   onBeforeEmit: () => { suppressNextPropsRender = true; },
-  onUpdate: (next) => emit('draw-update', next),
+  onUpdate: (next: any) => emit('draw-update', next),
 });
 
 const isScalableFeature = (feature?: Feature | null): boolean => {
@@ -444,7 +457,7 @@ const isScalableFeature = (feature?: Feature | null): boolean => {
 };
 
 const attachScalingIfEligible = (featureId: string) => {
-  const feature = localFeaturesSnapshot.value.find((f) => String(f.id) === featureId);
+  const feature = localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === featureId);
   if (isScalableFeature(feature)) {
     shapeScaling.attach(featureId);
   }
@@ -501,12 +514,6 @@ function renderCities(features: Feature[]) {
         iconAnchor: [-8, 15],
       }),
     } as any);
-
-    const cityCategoryInfo = getLabelCategoryInfo(feature);
-    (label as any).__priority = cityCategoryInfo.priority;
-    (label as any).__minZoom = cityCategoryInfo.minZoom;
-    (label as any).__category = cityCategoryInfo.category;
-    (label as any).__featureId = String(feature.id);
 
     attachFeatureToLayer(point, feature);
     bindRenderedFeatureEvents(point, applyLayerUpdate);
@@ -691,12 +698,6 @@ function renderLabels(features: Feature[]) {
       }),
     } as any);
 
-    const labelCategoryInfo = getLabelCategoryInfo(feature);
-    (label as any).__priority = labelCategoryInfo.priority;
-    (label as any).__minZoom = labelCategoryInfo.minZoom;
-    (label as any).__category = labelCategoryInfo.category;
-    (label as any).__featureId = String(feature.id);
-
     bindRotationHandle(label, feature, label, 0, 10);
 
     label.on("add", () => {
@@ -872,10 +873,10 @@ function renderAllFeatures() {
   if (!map) return;
 
   const currentFeatures = props.features;
-  const currentIds = new Set(currentFeatures.map((f) => String(f.id)));
+  const currentIds = new Set(currentFeatures.map((f: Feature) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
-  previousIds.forEach((oldId) => {
+  previousIds.forEach((oldId: string) => {
     if (!currentIds.has(oldId)) {
       const layer = featureLayerManager.layers.get(oldId);
       if (layer) {
@@ -919,7 +920,7 @@ function renderAllFeatures() {
   // Re-attach image / shape scaling interaction if the selected feature was re-rendered
   if (selectedFeatureId.value) {
     const selectedFeature = currentFeatures.find(
-      (f) => String(f.id) === selectedFeatureId.value,
+      (f: Feature) => String(f.id) === selectedFeatureId.value,
     );
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(selectedFeatureId.value);
@@ -1128,7 +1129,7 @@ onMounted(() => {
     savedPmIgnore.clear();
   };
 
-  map.on("pm:buttonclick", (e) => {
+  map.on("pm:buttonclick", (e: any) => {
     const { btnName } = e as unknown as { btnName: string };
     const pm = (map as MapWithPm).pm;
 
@@ -1161,7 +1162,7 @@ onMounted(() => {
     // Set pmIgnore on every non-selected layer so geoman's findLayers()
     // skips them when enabling the mode.
     savedPmIgnore.clear();
-    map!.eachLayer((l) => {
+    map!.eachLayer((l: L.Layer) => {
       if (selectedLayers.has(l)) return;
       const opts = l.options as PmIgnoreOptions;
       savedPmIgnore.set(l, opts.pmIgnore);
@@ -1170,7 +1171,7 @@ onMounted(() => {
   });
 
   map.on("pm:globaleditmodetoggled", restorePmIgnore);
-  map.on("pm:globaleditmodetoggled", (e) => {
+  map.on("pm:globaleditmodetoggled", (e: any) => {
     // While vertex-edit mode is active the zone must not be draggable —
     // the vertex handles wouldnt move with the shape leaving them behind.
     if (!selectedFeatureId.value) return;
@@ -1201,7 +1202,7 @@ onMounted(() => {
     }
   });
 
-  map.on("click", (e) => {
+  map.on("click", (e: L.LeafletMouseEvent) => {
     if (blockNextMapClick) {
       blockNextMapClick = false;
       return;
@@ -1275,23 +1276,24 @@ onBeforeUnmount(() => {
 
 watch(
   () => props.selectedYear,
-  (val) => {
-    drawing.setSelectedYear(val);
+  (val: string | number | undefined) => {
+    const numericYear = Number(val ?? 0);
+    drawing.setSelectedYear(Number.isFinite(numericYear) ? numericYear : 0);
   },
 );
 
 // While any draw mode is active, disable pointer-events on the canvas so that
 // hovering/clicking existing features doesn't override the draw cursor or steal clicks.
-watch(drawing.activeDrawingMode, (mode) => {
+watch(drawing.activeDrawingMode, (mode: string | null) => {
   if (!map) return;
-  map.getContainer().querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas) => {
+  map.getContainer().querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas: HTMLCanvasElement) => {
     canvas.style.pointerEvents = mode !== null ? 'none' : '';
   });
 });
 
 watch(
   () => props.features,
-  (newFeatures) => {
+  (newFeatures: Feature[]) => {
     localFeaturesSnapshot.value = [...newFeatures];
     // The map emitted draw-update, which echoed back here via props. Skip the
     // re-render so we don't destroy the layer the user is actively interacting with.
@@ -1307,7 +1309,7 @@ watch(
 
 localFeaturesSnapshot.value = [...props.features];
 
-watch(selectedFeatureId, (id, oldId) => {
+watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
   // Always remove the city selection ring on any selection change
   if (selectedCityRing) {
     selectedCityRing.remove();
@@ -1336,7 +1338,7 @@ watch(selectedFeatureId, (id, oldId) => {
 
   if (id != null) {
     const layer = featureLayerManager.layers.get(String(id));
-    const selectedFeature = localFeaturesSnapshot.value.find((f) => String(f.id) === id);
+    const selectedFeature = localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === id);
     const elementType = selectedFeature ? getMapElementType(selectedFeature) : null;
     if (layer instanceof L.ImageOverlay) {
       drawing.setToolbarMode("label");
@@ -1418,15 +1420,15 @@ watch(selectedFeatureId, (id, oldId) => {
     drawing.setToolbarMode("global");
     imageOverlay.detach();
     shapeScaling.detach();
-    document.querySelectorAll('.label-selected').forEach(el => el.classList.remove('label-selected'));
+    document.querySelectorAll('.label-selected').forEach((el: Element) => el.classList.remove('label-selected'));
   }
   updateLabelVisibility();
 });
 
 watch(
   () => props.featureVisibility,
-  (newVisibility) => {
-    newVisibility.forEach((visible, featureId) => {
+  (newVisibility: Map<string, boolean>) => {
+    newVisibility.forEach((visible: boolean, featureId: string) => {
       featureLayerManager.toggleFeature(featureId, visible);
     });
   },

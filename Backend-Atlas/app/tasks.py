@@ -473,10 +473,6 @@ def _categorized_text_features_from_ocr(
     return collections
 
 
-# Backward compatibility alias
-_city_features_from_text = _categorized_text_features_from_ocr
-
-
 def _georeference_unrecognized_texts(
     collections: List[dict[str, Any]],
     placement: Any,
@@ -621,7 +617,7 @@ def process_map_extraction(self, map_id: str):
             progress(2, "Detecting cities in the extracted text")
             img_size = (image.shape[0], image.shape[1]) if image is not None else None
             collections.extend(
-                _city_features_from_text(
+                _categorized_text_features_from_ocr(
                     claimed.ocr_blocks,
                     inputs.legend_bounds,
                     inputs.frame_bounds,

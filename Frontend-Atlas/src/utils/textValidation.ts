@@ -3,7 +3,11 @@ import {
   type Coordinate,
   type Feature,
 } from "../typescript/feature";
-import { WORD_TYPE_STYLES } from "./mapLabelUtils";
+import {
+  applyWordStyleToFeature,
+  getWordTypeForFeature,
+  isTextFeature,
+} from "./mapLabelUtils";
 
 export { ValidationStatus };
 
@@ -30,11 +34,7 @@ export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | nul
   const isCandidate =
     status === ValidationStatus.MANUAL_REVIEW ||
     (!feature.properties?.recognized && feature.properties?.show === false);
-  const isText =
-    Boolean(feature.properties?.isOcrText) ||
-    feature.properties?.labelText !== undefined ||
-    feature.geometry?.type === "Point";
-  return matchesMap && isCandidate && isText;
+  return matchesMap && isCandidate && isTextFeature(feature);
 }
 
 /** Convert a GeoJSON feature into a text validation entry. */
@@ -65,17 +65,7 @@ export function featureToValidationEntry(
       ? (feature.geometry.coordinates as [number, number])
       : undefined;
 
-  const rawType = (
-    feature.properties?.rawType ||
-    feature.properties?.type ||
-    ""
-  ).toLowerCase();
-  const elemType = feature.properties?.mapElementType;
-  const wordType = rawType && WORD_TYPE_STYLES[rawType]
-    ? rawType
-    : elemType === "label"
-      ? "province"
-      : "city";
+  const wordType = getWordTypeForFeature(feature);
 
   return {
     id: feature.id,
@@ -96,61 +86,22 @@ export function featureToValidationEntry(
   };
 }
 
-/** Apply user validation choices to a feature. */
-export function applyValidationToFeature(
+/** Update the validation lifecycle state of a feature (show, recognized, validationStatus, coords). */
+export function applyValidationStateToFeature(
   feature: Feature,
-  entry: TextValidationEntry,
+  isAccepted: boolean,
+  coordinates?: Coordinate,
 ): Feature {
-  const isSelected = Boolean(entry.selected);
-  const validationStatus: ValidationStatus = isSelected
-    ? ValidationStatus.ACCEPTED
-    : ValidationStatus.REJECTED;
-
-  const wordType = entry.wordType || "city";
-  const wordStyle = WORD_TYPE_STYLES[wordType] || WORD_TYPE_STYLES.city;
-  const transformedText = wordStyle.transform ? wordStyle.transform(entry.text) : entry.text;
-
-  if (!isSelected || validationStatus === ValidationStatus.REJECTED) {
-    return {
-      ...feature,
-      name: transformedText || feature.properties?.name || feature.name,
-      properties: {
-        ...feature.properties,
-        name: transformedText || feature.properties?.name || feature.name,
-        rawType: wordType,
-        mapElementType: wordStyle.mapElementType,
-        show: false,
-        recognized: false,
-        userSelected: false,
-        validationStatus,
-        validation_status: validationStatus,
-      },
-    };
-  }
-
-  const coordinates: Coordinate =
-    entry.useSuggestedCity && entry.suggestedCoords
-      ? entry.suggestedCoords
-      : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate);
-
-  const isAccepted = Boolean(entry.selected);
+  const validationStatus = isAccepted ? ValidationStatus.ACCEPTED : ValidationStatus.REJECTED;
+  const updatedGeometry = coordinates
+    ? { ...feature.geometry, type: "Point" as const, coordinates }
+    : feature.geometry;
 
   return {
     ...feature,
-    name: transformedText,
-    geometry: {
-      type: "Point",
-      coordinates,
-    },
+    geometry: updatedGeometry,
     properties: {
       ...feature.properties,
-      name: transformedText,
-      labelText: transformedText,
-      mapElementType: wordStyle.mapElementType,
-      sizePx: wordStyle.sizePx,
-      fontStyle: wordStyle.fontStyle,
-      rawType: wordType,
-      type: wordType,
       show: isAccepted,
       recognized: isAccepted,
       userSelected: isAccepted,
@@ -158,4 +109,26 @@ export function applyValidationToFeature(
       validation_status: validationStatus,
     },
   };
+}
+
+/** Apply user validation choices to a feature by composing word styling and validation state. */
+export function applyValidationToFeature(
+  feature: Feature,
+  entry: TextValidationEntry,
+): Feature {
+  const isSelected = Boolean(entry.selected);
+  const wordType = entry.wordType || "city";
+
+  // 1. Formatting & Visual styling
+  const styledFeature = applyWordStyleToFeature(feature, wordType, entry.text);
+
+  // 2. Coordinates
+  const coordinates: Coordinate | undefined = isSelected
+    ? entry.useSuggestedCity && entry.suggestedCoords
+      ? entry.suggestedCoords
+      : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate)
+    : undefined;
+
+  // 3. Validation lifecycle state
+  return applyValidationStateToFeature(styledFeature, isSelected, coordinates);
 }

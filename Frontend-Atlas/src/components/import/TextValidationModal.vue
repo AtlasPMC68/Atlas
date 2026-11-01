@@ -404,7 +404,7 @@ import {
   ArrowUturnRightIcon,
 } from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
-import { WORD_TYPE_STYLES } from "../../utils/mapLabelUtils";
+import { WORD_TYPE_STYLES, formatWordText } from "../../utils/mapLabelUtils";
 import { cacheOriginalMapImage, removeOriginalMapImage } from "../../composables/useMapImageCache";
 
 export type { TextValidationEntry };
@@ -717,11 +717,8 @@ function toggleItemSelection(item: TextValidationEntry) {
 }
 
 function onItemWordTypeChange(item: TextValidationEntry) {
-  const style = WORD_TYPE_STYLES[item.wordType || "city"];
-  if (!style) return;
-
   if (item.text) {
-    item.text = style.transform(item.text);
+    item.text = formatWordText(item.text, item.wordType);
   }
   updateMarkerStyle(item);
 }
@@ -754,7 +751,7 @@ function toggleSuggestion(item: TextValidationEntry) {
     item.wordType = "city";
     item.validationStatus = "accepted";
     if (item.suggestedCity) {
-      item.text = item.suggestedCity;
+      item.text = formatWordText(item.suggestedCity, item.wordType);
     }
   }
   updateMarkerStyle(item);

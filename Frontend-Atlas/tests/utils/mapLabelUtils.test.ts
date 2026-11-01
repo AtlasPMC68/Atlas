@@ -5,7 +5,12 @@ import {
   getWordTypeStyle,
   WORD_TYPE_STYLES,
   parseLabelFontStyle,
+  formatWordText,
+  isTextFeature,
+  getWordTypeForFeature,
+  applyWordStyleToFeature,
 } from "../../src/utils/mapLabelUtils";
+import type { Feature } from "../../src/typescript/feature";
 
 describe("mapLabelUtils - Word Type Styles and Police", () => {
   it("defines expected font styles, sizes, and element types for word categories", () => {
@@ -75,6 +80,82 @@ describe("mapLabelUtils - Word Type Styles and Police", () => {
     const cityStyle = parseLabelFontStyle(WORD_TYPE_STYLES.city.fontStyle);
     expect(cityStyle.textTransform).toBe("none");
     expect(cityStyle.fontStyle).toBe("normal");
+  });
+
+  it("isTextFeature accurately identifies text and label features", () => {
+    expect(isTextFeature(null)).toBe(false);
+    expect(isTextFeature(undefined)).toBe(false);
+
+    const pointFeature = {
+      type: "Feature",
+      id: "f-1",
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { name: "City" },
+    } as Feature;
+    expect(isTextFeature(pointFeature)).toBe(true);
+
+    const zoneFeature = {
+      type: "Feature",
+      id: "f-2",
+      geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] },
+      properties: { name: "Zone", mapElementType: "zone" },
+    } as Feature;
+    expect(isTextFeature(zoneFeature)).toBe(false);
+
+    const labelFeature = {
+      type: "Feature",
+      id: "f-3",
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { name: "Province", mapElementType: "label" },
+    } as Feature;
+    expect(isTextFeature(labelFeature)).toBe(true);
+  });
+
+  it("getWordTypeForFeature extracts word type with correct fallbacks", () => {
+    expect(getWordTypeForFeature(null)).toBe("city");
+
+    const provFeature = {
+      properties: { rawType: "province" },
+    } as any;
+    expect(getWordTypeForFeature(provFeature)).toBe("province");
+
+    const labelWithoutRawType = {
+      properties: { mapElementType: "label" },
+    } as any;
+    expect(getWordTypeForFeature(labelWithoutRawType)).toBe("province");
+
+    const pointWithoutRawType = {
+      properties: { mapElementType: "point" },
+    } as any;
+    expect(getWordTypeForFeature(pointWithoutRawType)).toBe("city");
+  });
+
+  it("formatWordText transforms text according to word type", () => {
+    expect(formatWordText("montreal", "city")).toBe("Montreal");
+    expect(formatWordText("quebec", "province")).toBe("QUEBEC");
+    expect(formatWordText("ontario", "lake")).toBe("Ontario");
+  });
+
+  it("applyWordStyleToFeature returns a consistently styled feature", () => {
+    const rawFeature: Feature = {
+      type: "Feature",
+      id: "feat-test",
+      name: "canada",
+      geometry: { type: "Point", coordinates: [-75, 45] },
+      properties: { name: "canada" },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    };
+
+    const styled = applyWordStyleToFeature(rawFeature, "country");
+    expect(styled.name).toBe("CANADA");
+    expect(styled.properties.name).toBe("CANADA");
+    expect(styled.properties.labelText).toBe("CANADA");
+    expect(styled.properties.mapElementType).toBe("label");
+    expect(styled.properties.sizePx).toBe(16);
+    expect(styled.properties.fontStyle).toBe("uppercase");
+    expect(styled.properties.rawType).toBe("country");
+    expect(styled.properties.type).toBe("country");
   });
 });
 
