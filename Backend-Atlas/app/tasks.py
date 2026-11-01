@@ -17,7 +17,7 @@ import numpy as np
 from sqlalchemy import select, update
 
 from app.database.session import WorkerSessionLocal
-from app.models.features import Feature
+from app.models.features import Feature, ValidationStatus
 from app.models.map import Map
 from app.models.map_import import (
     EXTRACTION_CANCELLED,
@@ -325,7 +325,11 @@ def _make_text_feature(
     recognized: bool,
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    validation_status = "accepted" if recognized else "manual_review"
+    validation_status = (
+        ValidationStatus.ACCEPTED.value
+        if recognized
+        else ValidationStatus.MANUAL_REVIEW.value
+    )
     props = {
         "name": name,
         "originalText": original_text,
@@ -338,6 +342,7 @@ def _make_text_feature(
         "confidence": confidence,
         "quad": quad,
         "validationStatus": validation_status,
+        "validation_status": validation_status,
     }
     if extra:
         props.update(extra)

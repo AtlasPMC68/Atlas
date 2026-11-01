@@ -93,8 +93,7 @@ export function applyValidationToFeature(
   entry: TextValidationEntry,
 ): Feature {
   const isSelected = Boolean(entry.selected);
-  const validationStatus: ValidationStatus =
-    entry.validationStatus ?? (isSelected ? "accepted" : "rejected");
+  const validationStatus: ValidationStatus = isSelected ? "accepted" : "rejected";
 
   const wordType = entry.wordType || "city";
   const wordStyle = WORD_TYPE_STYLES[wordType] || WORD_TYPE_STYLES.city;

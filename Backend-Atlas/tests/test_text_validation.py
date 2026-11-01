@@ -198,4 +198,62 @@ def test_batch_georeference_and_candidate_association():
     assert feat["properties"]["suggestedCoords"] is not None
 
 
+def test_text_feature_normalization_preserves_disjoint_validation_status():
+    """Verify that backend feature storage strictly preserves disjoint validation states with explicit enum."""
+    from app.models.features import ValidationStatus
+    from app.utils.update_feature import normalize_feature_for_storage
+
+    accepted_feature = {
+        "id": "city-1",
+        "geometry": {"type": "Point", "coordinates": [-71.2080, 46.8139]},
+        "properties": {
+            "name": "Québec",
+            "isOcrText": True,
+            "recognized": True,
+            "show": True,
+            "validation_status": ValidationStatus.ACCEPTED.value,
+        },
+    }
+
+    rejected_feature = {
+        "id": "text-2",
+        "geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "properties": {
+            "name": "Légende",
+            "isOcrText": True,
+            "recognized": False,
+            "show": False,
+            "validation_status": ValidationStatus.REJECTED.value,
+        },
+    }
+
+    manual_review_feature = {
+        "id": "text-3",
+        "geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "properties": {
+            "name": "Chicoutmi",
+            "isOcrText": True,
+            "recognized": False,
+            "show": False,
+            "validation_status": ValidationStatus.MANUAL_REVIEW.value,
+        },
+    }
+
+    norm_acc = normalize_feature_for_storage(accepted_feature)
+    assert norm_acc["properties"]["validation_status"] == ValidationStatus.ACCEPTED
+    assert norm_acc["properties"]["show"] is True
+    assert norm_acc["properties"]["recognized"] is True
+
+    norm_rej = normalize_feature_for_storage(rejected_feature)
+    assert norm_rej["properties"]["validation_status"] == ValidationStatus.REJECTED
+    assert norm_rej["properties"]["show"] is False
+    assert norm_rej["properties"]["recognized"] is False
+
+    norm_rev = normalize_feature_for_storage(manual_review_feature)
+    assert norm_rev["properties"]["validation_status"] == ValidationStatus.MANUAL_REVIEW
+    assert norm_rev["properties"]["show"] is False
+    assert norm_rev["properties"]["recognized"] is False
+
+
+
 
