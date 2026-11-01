@@ -668,14 +668,23 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
   isSavingTextValidation.value = true;
   try {
     const validatedMap = new Map(validatedItems.map((i) => [i.id, i]));
+    const openedIds = new Set(textValidationEntries.value.map((i) => i.id));
 
-    const nextFeatures = features.value.map((f: Feature) => {
-      const validated = validatedMap.get(f.id);
-      if (!validated) return f;
+    for (const id of openedIds) {
+      if (!validatedMap.has(id)) {
+        featureVisibility.value.delete(id);
+      }
+    }
 
-      featureVisibility.value.set(f.id, validated.selected);
-      return applyValidationToFeature(f, validated);
-    });
+    const nextFeatures = features.value
+      .filter((f: Feature) => !(openedIds.has(f.id) && !validatedMap.has(f.id)))
+      .map((f: Feature) => {
+        const validated = validatedMap.get(f.id);
+        if (!validated) return f;
+
+        featureVisibility.value.set(f.id, validated.selected);
+        return applyValidationToFeature(f, validated);
+      });
 
     featureVisibility.value = new Map(featureVisibility.value);
     applyFeatureSnapshot(nextFeatures, true);

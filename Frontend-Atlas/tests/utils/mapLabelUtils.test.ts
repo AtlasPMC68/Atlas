@@ -60,6 +60,7 @@ describe("mapLabelUtils - Word Type Styles and Police", () => {
     expect(WORD_TYPE_STYLES.province.transform("Québec")).toBe("QUÉBEC");
     expect(WORD_TYPE_STYLES.country.transform("Canada")).toBe("CANADA");
     expect(WORD_TYPE_STYLES.city.transform("QUÉBEC")).toBe("Québec");
+    expect(WORD_TYPE_STYLES.ocean.transform("OCEAN ATLANTIQUE")).toBe("Ocean Atlantique");
   });
 
   it("getWordTypeStyle resolves correctly with fallback to city", () => {

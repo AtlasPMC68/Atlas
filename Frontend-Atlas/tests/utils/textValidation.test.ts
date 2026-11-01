@@ -52,7 +52,7 @@ describe("textValidation utility functions", () => {
       expect(isUnrecognizedTextFeature(accepted, "map-1")).toBe(false);
     });
 
-    it("returns false for rejected features so they do not reappear after reload", () => {
+    it("returns true for rejected features so they can be re-examined unless deleted", () => {
       const rejected: Feature = {
         ...baseFeature,
         properties: {
@@ -62,7 +62,7 @@ describe("textValidation utility functions", () => {
           validationStatus: "rejected",
         },
       };
-      expect(isUnrecognizedTextFeature(rejected, "map-1")).toBe(false);
+      expect(isUnrecognizedTextFeature(rejected, "map-1")).toBe(true);
     });
 
     it("handles legacy features without explicit validationStatus", () => {
@@ -279,7 +279,7 @@ describe("textValidation utility functions", () => {
       expect(validated.properties.name).toBe("LOUISIANE");
       expect(validated.properties.mapElementType).toBe("label");
       expect(validated.properties.rawType).toBe("state");
-      expect(isUnrecognizedTextFeature(validated)).toBe(false);
+      expect(isUnrecognizedTextFeature(validated)).toBe(true);
     });
 
     it("converts uppercase text to capitalized when choosing city word type", () => {
@@ -499,10 +499,10 @@ describe("textValidation utility functions", () => {
       expect(payload[1].properties.show).toBe(false);
       expect(payload[1].properties.recognized).toBe(false);
 
-      // 6. Verify subsequent reload: rejected and accepted items never re-appear in modal
+      // 6. Verify subsequent reload: rejected items remain in modal until deleted, while accepted do not
       expect(isUnrecognizedTextFeature(rec)).toBe(false);
       expect(isUnrecognizedTextFeature(accepted)).toBe(false);
-      expect(isUnrecognizedTextFeature(rejected)).toBe(false);
+      expect(isUnrecognizedTextFeature(rejected)).toBe(true);
       expect(isUnrecognizedTextFeature(pending)).toBe(true);
     });
 

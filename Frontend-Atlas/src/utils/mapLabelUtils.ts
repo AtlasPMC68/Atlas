@@ -69,7 +69,7 @@ export const WORD_TYPE_STYLES: Record<string, WordTypeStyle> = {
     mapElementType: "label",
     sizePx: 18,
     fontStyle: "italic",
-    transform: (t: string) => (t ? t.toUpperCase() : t),
+    transform: capitalizeWords,
   },
   sea: {
     label: "Mer",
@@ -241,7 +241,7 @@ export function formatLabelHtml(rawText: unknown, isUppercase: boolean = false):
     if (!trimmed) return "";
     const cased = isUppercase
       ? trimmed.toUpperCase()
-      : capitalizeFirstOnly(trimmed);
+      : capitalizeWords(trimmed);
     return splitBalancedLine(cased);
   });
 

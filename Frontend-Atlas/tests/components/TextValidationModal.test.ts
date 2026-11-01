@@ -231,6 +231,25 @@ describe("TextValidationModal", () => {
     expect(wrapper.text()).toContain("2 / 2 conservé(s)");
   });
 
+  it("deletes item completely from list when trash icon is clicked", async () => {
+    const wrapper = mountModal();
+    expect(wrapper.text()).toContain("2 / 2 conservé(s)");
+
+    const trashButtons = wrapper.findAll('button[title="Supprimer ce texte de la carte"]');
+    expect(trashButtons.length).toBe(2);
+
+    await trashButtons[0].trigger("click");
+    expect(wrapper.text()).toContain("1 / 1 conservé(s)");
+
+    const confirmBtn = wrapper.findAll("button").find((b) => b.text().includes("Confirmer"));
+    await confirmBtn!.trigger("click");
+
+    const emitted = wrapper.emitted("confirm");
+    const confirmedItems = emitted![0][0] as TextValidationEntry[];
+    expect(confirmedItems.length).toBe(1);
+    expect(confirmedItems[0].id).toBe("unrec-loc-2");
+  });
+
   it("clears suggested city and hides tolerance radius when position is manually changed", async () => {
     const wrapper = mountModal();
     const vm = wrapper.vm as any;

@@ -28,11 +28,12 @@ export interface TextValidationEntry {
 export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | null): boolean {
   const matchesMap = !mapId || feature.mapId === mapId || !feature.mapId;
   const status = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-  if (status === ValidationStatus.ACCEPTED || status === ValidationStatus.REJECTED) {
+  if (status === ValidationStatus.ACCEPTED) {
     return false;
   }
   const isCandidate =
     status === ValidationStatus.MANUAL_REVIEW ||
+    status === ValidationStatus.REJECTED ||
     (!feature.properties?.recognized && feature.properties?.show === false);
   return matchesMap && isCandidate && isTextFeature(feature);
 }

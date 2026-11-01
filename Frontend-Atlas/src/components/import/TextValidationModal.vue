@@ -761,9 +761,16 @@ function toggleSuggestion(item: TextValidationEntry) {
 
 function toggleSupprimer(item: TextValidationEntry) {
   saveHistorySnapshot();
-  item.selected = !item.selected;
-  item.validationStatus = item.selected ? "accepted" : "rejected";
-  updateMarkerStyle(item);
+  const marker = markerMap.get(item.id);
+  if (marker && leafletMap) {
+    leafletMap.removeLayer(marker);
+    markerMap.delete(item.id);
+  }
+  if (highlightedId.value === item.id) {
+    highlightedId.value = null;
+    hideToleranceRadius();
+  }
+  allItems.value = allItems.value.filter((i: TextValidationEntry) => i.id !== item.id);
 }
 
 function setItemCoordinates(item: TextValidationEntry, lon: number, lat: number) {

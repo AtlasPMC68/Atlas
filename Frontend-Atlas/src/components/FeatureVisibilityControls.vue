@@ -228,6 +228,7 @@
             v-model="featureToEditName"
             type="text"
             class="input"
+            :style="editTextStyle"
             placeholder="Nom de l'élément"
             required
           />
@@ -237,7 +238,12 @@
           v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
         >
           <label class="label">Texte</label>
-          <input v-model="featureToEditLabelText" type="text" class="input" />
+          <input
+            v-model="featureToEditLabelText"
+            type="text"
+            class="input"
+            :style="editTextStyle"
+          />
         </div>
         <div
           class="flex flex-col gap-2"
@@ -486,6 +492,7 @@ import {
   getWordTypeForFeature,
   formatWordText,
   applyWordStyleToFeature,
+  parseLabelFontStyle,
 } from "../utils/mapLabelUtils";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
@@ -509,6 +516,17 @@ const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
 const featureToEditStrokeWidth = ref<number | undefined>(undefined);
 
 const isTextElement = computed(() => isTextFeature(featureToEdit.value));
+
+const editTextStyle = computed(() => {
+  if (!isTextElement.value) return {};
+  const style = WORD_TYPE_STYLES[featureToEditWordType.value];
+  const { fontStyle, textTransform } = parseLabelFontStyle(style?.fontStyle);
+  return {
+    fontStyle: fontStyle !== "normal" ? fontStyle : undefined,
+    textTransform: textTransform !== "none" ? textTransform : undefined,
+    color: featureToEditColor.value || undefined,
+  };
+});
 
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
@@ -756,13 +774,18 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
 
 async function showEditFeatureDialog(feature: Feature) {
   featureToEdit.value = feature;
-  featureToEditName.value = feature.properties.name;
   featureToEditWordType.value = getWordTypeForFeature(feature);
   const isText = isTextFeature(feature);
   const elemType = getMapElementType(feature);
 
-  featureToEditLabelText.value =
+  const rawLabel =
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
+  featureToEditLabelText.value =
+    isText && rawLabel ? formatWordText(rawLabel, featureToEditWordType.value) : rawLabel;
+  featureToEditName.value =
+    isText && feature.properties.name
+      ? formatWordText(feature.properties.name, featureToEditWordType.value)
+      : feature.properties.name;
 
   featureToEditColor.value =
     rgbToHex(feature.properties.colorRgb) ??
