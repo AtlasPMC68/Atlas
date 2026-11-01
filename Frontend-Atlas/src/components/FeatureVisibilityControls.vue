@@ -472,10 +472,11 @@ import {
   Square2StackIcon,
   TrashIcon,
 } from "@heroicons/vue/24/outline";
-import type {
-  Feature,
-  FeatureVisibilityGroup,
-  FeatureVisibilityGroupType,
+import {
+  type Feature,
+  type FeatureVisibilityGroup,
+  type FeatureVisibilityGroupType,
+  ValidationStatus,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import { getMapElementType } from "../utils/featureHelpers";
@@ -607,10 +608,11 @@ const featureGroups = computed(() => {
 
   props.features.forEach((feature: Feature) => {
     // Unrecognized or rejected OCR texts are only shown in the validation modal
+    const valStatus = feature.properties?.validationStatus ?? feature.properties?.validation_status;
     if (
       feature.properties?.isOcrText &&
-      (feature.properties?.validationStatus === "rejected" ||
-        feature.properties?.validationStatus === "manual_review" ||
+      (valStatus === ValidationStatus.REJECTED ||
+        valStatus === ValidationStatus.MANUAL_REVIEW ||
         (!feature.properties?.recognized && feature.properties?.show === false))
     ) {
       return;
@@ -639,7 +641,7 @@ const activeGroup = computed(() => {
   if (!activeGroupType.value) return featureGroups.value[0] ?? undefined;
 
   return (
-    featureGroups.value.find((group) => group.type === activeGroupType.value) ??
+    featureGroups.value.find((group: FeatureVisibilityGroup) => group.type === activeGroupType.value) ??
     featureGroups.value[0] ??
     undefined
   );
@@ -649,25 +651,32 @@ const isAnyVisible = computed(() => {
   if (!activeGroup.value || activeGroup.value.features.length === 0)
     return false;
   return activeGroup.value.features.some(
-    (feature) => props.featureVisibility.get(feature.id) !== false,
+    (feature: Feature) => props.featureVisibility.get(feature.id) !== false,
   );
 });
 
-const featuresByMap = computed(() => {
+interface MapGroupItem {
+  id: string | null;
+  title: string;
+  startDate?: string | null;
+  features: Feature[];
+}
+
+const featuresByMap = computed((): MapGroupItem[] => {
   if (!activeGroup.value) return [];
 
   const mapGroups = new Map<
     string | null,
-    { id: string | null; title: string; startDate?: string | null; features: Feature[] }
+    MapGroupItem
   >();
 
-  activeGroup.value.features.forEach((feature) => {
+  activeGroup.value.features.forEach((feature: Feature) => {
     const mapId = feature.mapId || null;
     if (!mapGroups.has(mapId)) {
       let title = "Éléments généraux";
       let startDate: string | null = null;
       if (mapId && props.mapPeriods) {
-        const period = props.mapPeriods.find((p) => p.id === mapId);
+        const period = props.mapPeriods.find((p: MapPeriod) => p.id === mapId);
         if (period) {
           title = period.title;
           startDate = period.startDate;
@@ -705,39 +714,39 @@ const featuresByMap = computed(() => {
 });
 
 function toggleMapGroup(mapId: string | null, visible: boolean) {
-  const mapGroup = featuresByMap.value.find((g) => g.id === mapId);
+  const mapGroup = featuresByMap.value.find((g: MapGroupItem) => g.id === mapId);
   if (mapGroup) {
-    mapGroup.features.forEach((feature) => {
+    mapGroup.features.forEach((feature: Feature) => {
       emit("toggle-feature", feature.id, visible);
     });
   }
 }
 
 function isMapGroupAnyVisible(mapId: string | null) {
-  const mapGroup = featuresByMap.value.find((g) => g.id === mapId);
+  const mapGroup = featuresByMap.value.find((g: MapGroupItem) => g.id === mapId);
   if (!mapGroup || mapGroup.features.length === 0) return false;
   return mapGroup.features.some(
-    (feature) => props.featureVisibility.get(feature.id) !== false,
+    (feature: Feature) => props.featureVisibility.get(feature.id) !== false,
   );
 }
 
 function toggleActiveGroup(visible: boolean) {
   if (!activeGroup.value) return;
-  activeGroup.value.features.forEach((feature) => {
+  activeGroup.value.features.forEach((feature: Feature) => {
     emit("toggle-feature", feature.id, visible);
   });
 }
 
 watch(
   featureGroups,
-  (groups) => {
+  (groups: FeatureVisibilityGroup[]) => {
     if (groups.length === 0) {
       activeGroupType.value = undefined;
       return;
     }
 
     const hasActiveGroup = groups.some(
-      (group) => group.type === activeGroupType.value,
+      (group: FeatureVisibilityGroup) => group.type === activeGroupType.value,
     );
 
     if (!hasActiveGroup) {
@@ -843,7 +852,7 @@ async function onEditFeature() {
 }
 
 function toggleAll(visible: boolean) {
-  props.features.forEach((feature) => {
+  props.features.forEach((feature: Feature) => {
     emit("toggle-feature", feature.id, visible);
   });
 }

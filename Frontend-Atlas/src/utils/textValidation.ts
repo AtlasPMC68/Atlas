@@ -1,14 +1,18 @@
-import type { Coordinate, Feature, ValidationStatus } from "../typescript/feature";
+import {
+  ValidationStatus,
+  type Coordinate,
+  type Feature,
+} from "../typescript/feature";
 import { WORD_TYPE_STYLES } from "./mapLabelUtils";
 
-export type { ValidationStatus };
+export { ValidationStatus };
 
 export interface TextValidationEntry {
   id: string;
   text: string;
   originalText: string;
   selected: boolean;
-  validationStatus?: ValidationStatus;
+  validationStatus?: ValidationStatus | `${ValidationStatus}`;
   coordinates?: [number, number];
   suggestedCity?: string;
   suggestedCoords?: [number, number];
@@ -19,12 +23,12 @@ export interface TextValidationEntry {
 /** Check if a feature is an unrecognized OCR text candidate for validation. */
 export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | null): boolean {
   const matchesMap = !mapId || feature.mapId === mapId || !feature.mapId;
-  const status = feature.properties?.validationStatus;
-  if (status === "accepted" || status === "rejected") {
+  const status = feature.properties?.validationStatus ?? feature.properties?.validation_status;
+  if (status === ValidationStatus.ACCEPTED || status === ValidationStatus.REJECTED) {
     return false;
   }
   const isCandidate =
-    status === "manual_review" ||
+    status === ValidationStatus.MANUAL_REVIEW ||
     (!feature.properties?.recognized && feature.properties?.show === false);
   const isText =
     Boolean(feature.properties?.isOcrText) ||
@@ -41,12 +45,12 @@ export function featureToValidationEntry(
   const text = feature.properties?.labelText || feature.properties?.name || feature.name || "";
   const originalText = feature.properties?.originalText || text;
 
-  const status = feature.properties?.validationStatus;
+  const status = feature.properties?.validationStatus ?? feature.properties?.validation_status;
   const isUnrecognized = Boolean(feature.properties?.isOcrText && !feature.properties?.recognized);
   const selected =
-    status === "accepted"
+    status === ValidationStatus.ACCEPTED
       ? true
-      : status === "rejected"
+      : status === ValidationStatus.REJECTED
       ? false
       : isUnrecognized
       ? (feature.properties?.userSelected !== undefined
@@ -79,7 +83,12 @@ export function featureToValidationEntry(
     originalText,
     selected,
     validationStatus:
-      status ?? (selected ? "accepted" : isUnrecognized ? "manual_review" : "rejected"),
+      status ??
+      (selected
+        ? ValidationStatus.ACCEPTED
+        : isUnrecognized
+        ? ValidationStatus.MANUAL_REVIEW
+        : ValidationStatus.REJECTED),
     coordinates,
     suggestedCity: feature.properties?.suggestedCity,
     suggestedCoords: feature.properties?.suggestedCoords,
@@ -93,13 +102,15 @@ export function applyValidationToFeature(
   entry: TextValidationEntry,
 ): Feature {
   const isSelected = Boolean(entry.selected);
-  const validationStatus: ValidationStatus = isSelected ? "accepted" : "rejected";
+  const validationStatus: ValidationStatus = isSelected
+    ? ValidationStatus.ACCEPTED
+    : ValidationStatus.REJECTED;
 
   const wordType = entry.wordType || "city";
   const wordStyle = WORD_TYPE_STYLES[wordType] || WORD_TYPE_STYLES.city;
   const transformedText = wordStyle.transform ? wordStyle.transform(entry.text) : entry.text;
 
-  if (!isSelected || validationStatus === "rejected") {
+  if (!isSelected || validationStatus === ValidationStatus.REJECTED) {
     return {
       ...feature,
       name: transformedText || feature.properties?.name || feature.name,
@@ -111,7 +122,8 @@ export function applyValidationToFeature(
         show: false,
         recognized: false,
         userSelected: false,
-        validationStatus: "rejected",
+        validationStatus,
+        validation_status: validationStatus,
       },
     };
   }
@@ -143,6 +155,7 @@ export function applyValidationToFeature(
       recognized: isAccepted,
       userSelected: isAccepted,
       validationStatus,
+      validation_status: validationStatus,
     },
   };
 }

@@ -5,9 +5,10 @@ import {
   featureToValidationEntry,
   applyValidationToFeature,
   isUnrecognizedTextFeature,
+  ValidationStatus,
   type TextValidationEntry,
 } from "../../src/utils/textValidation";
-import { prepareFeaturesForSave, camelToSnake } from "../../src/utils/utils";
+import { prepareFeaturesForSave, camelToSnake, snakeToCamel } from "../../src/utils/utils";
 
 describe("textValidation utility functions", () => {
   const baseFeature: Feature = {
@@ -193,7 +194,7 @@ describe("textValidation utility functions", () => {
       };
 
       const result = applyValidationToFeature(baseFeature, entry);
-      expect(result.name).toBe("Québec confirmé");
+      expect(result.name).toBe("Québec Confirmé");
       expect(result.properties.show).toBe(true);
       expect(result.properties.recognized).toBe(true);
       expect(result.properties.userSelected).toBe(true);
@@ -502,6 +503,172 @@ describe("textValidation utility functions", () => {
       expect(isUnrecognizedTextFeature(accepted)).toBe(false);
       expect(isUnrecognizedTextFeature(rejected)).toBe(false);
       expect(isUnrecognizedTextFeature(pending)).toBe(true);
+    });
+
+    it("verifies exact API payload serialization and ensures validated features do not return to manual_review on reload", () => {
+      // Feature as produced by OCR extraction tasks (contains both snake_case and camelCase keys)
+      const ocrExtractedFeature: Feature = {
+        type: "Feature",
+        id: "feat-ocr-42",
+        projectId: "proj-123",
+        mapId: "map-456",
+        name: "Trois-Rivires",
+        createdAt: "2026-03-01T10:00:00Z",
+        updatedAt: "2026-03-01T10:00:00Z",
+        geometry: {
+          type: "Point",
+          coordinates: [-72.54, 46.34],
+        },
+        properties: {
+          name: "Trois-Rivires",
+          originalText: "Trois-Rivires",
+          mapElementType: "point",
+          colorName: "black",
+          colorRgb: [0, 0, 0],
+          isOcrText: true,
+          recognized: false,
+          show: false,
+          validationStatus: "manual_review",
+          validation_status: "manual_review",
+          confidence: 0.72,
+          suggestedCity: "Trois-Rivières",
+          suggestedCoords: [-72.55, 46.35],
+        },
+      };
+
+      // 1. Initial state: correctly recognized as needing manual review
+      expect(isUnrecognizedTextFeature(ocrExtractedFeature)).toBe(true);
+
+      // 2. Open modal and convert to TextValidationEntry
+      const modalEntry = featureToValidationEntry(ocrExtractedFeature, true);
+      expect(modalEntry.validationStatus).toBe("manual_review");
+      expect(modalEntry.text).toBe("Trois-Rivires");
+
+      // 3. User accepts suggestion: updates text to "Trois-Rivières", selected = true, useSuggestedCity = true
+      const userChoice: TextValidationEntry = {
+        ...modalEntry,
+        text: "Trois-Rivières",
+        selected: true,
+        useSuggestedCity: true,
+      };
+
+      // 4. Apply validation to feature
+      const validatedFeature = applyValidationToFeature(ocrExtractedFeature, userChoice);
+
+      expect(validatedFeature.name).toBe("Trois-Rivières");
+      expect(validatedFeature.properties.validationStatus).toBe("accepted");
+      expect(validatedFeature.properties.validation_status).toBe("accepted");
+      expect(validatedFeature.properties.show).toBe(true);
+      expect(validatedFeature.properties.recognized).toBe(true);
+      expect(validatedFeature.geometry.coordinates).toEqual([-72.55, 46.35]);
+
+      // 5. Exact Map.vue serialization flow: prepareFeaturesForSave -> camelToSnake
+      const prepared = prepareFeaturesForSave([validatedFeature]);
+      const exactPayload = camelToSnake(prepared) as Array<Record<string, any>>;
+
+      // Exact API payload assertions
+      expect(exactPayload).toHaveLength(1);
+      const apiItem = exactPayload[0];
+      expect(apiItem.id).toBe("feat-ocr-42");
+      expect(apiItem.project_id).toBe("proj-123");
+      expect(apiItem.name).toBe("Trois-Rivières");
+      expect(apiItem.created_at).toBeUndefined(); // stripped for API PUT
+      expect(apiItem.updated_at).toBeUndefined();
+
+      // Properties in exact API payload:
+      expect(apiItem.properties.validation_status).toBe("accepted");
+      expect(apiItem.properties.show).toBe(true);
+      expect(apiItem.properties.recognized).toBe(true);
+      expect(apiItem.properties.is_ocr_text).toBe(true);
+
+      // 6. Simulate API round-trip: JSON stringify -> backend response -> snakeToCamel in loadInitialFeatures()
+      const rawApiResponse = JSON.parse(JSON.stringify(exactPayload));
+      const reloadedFeatures = snakeToCamel(rawApiResponse) as Feature[];
+      const reloadedFeature = reloadedFeatures[0];
+
+      // 7. Verify reloaded feature properties and state
+      expect(reloadedFeature.properties.validationStatus).toBe("accepted");
+      expect(reloadedFeature.properties.show).toBe(true);
+      expect(reloadedFeature.properties.recognized).toBe(true);
+
+      // 8. Crucial check: MUST NOT revert to manual_review or reappear in modal
+      expect(isUnrecognizedTextFeature(reloadedFeature)).toBe(false);
+    });
+
+    it("handles legacy/mixed features where only validation_status or only validationStatus exists", () => {
+      const featureWithSnakeOnly: Feature = {
+        type: "Feature",
+        id: "feat-snake-1",
+        projectId: "p1",
+        geometry: { type: "Point", coordinates: [0, 0] },
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        name: "Item",
+        properties: {
+          name: "Item",
+          isOcrText: true,
+          recognized: false,
+          show: false,
+          validation_status: "manual_review",
+          mapElementType: "point"
+        },
+      };
+
+      expect(isUnrecognizedTextFeature(featureWithSnakeOnly)).toBe(true);
+      const entry = featureToValidationEntry(featureWithSnakeOnly, true);
+      expect(entry.validationStatus).toBe("manual_review");
+
+      // Validate as accepted
+      const validated = applyValidationToFeature(featureWithSnakeOnly, { ...entry, selected: true });
+      expect(validated.properties.validationStatus).toBe("accepted");
+      expect(validated.properties.validation_status).toBe("accepted");
+
+      const payload = camelToSnake(prepareFeaturesForSave([validated])) as Array<Record<string, any>>;
+      expect(payload[0].properties.validation_status).toBe("accepted");
+      expect(payload[0].properties.show).toBe(true);
+      expect(payload[0].properties.recognized).toBe(true);
+
+      const reloaded = (snakeToCamel(payload) as Feature[])[0];
+      expect(isUnrecognizedTextFeature(reloaded)).toBe(false);
+    });
+
+    it("supports ValidationStatus enum members directly in feature properties and comparisons", () => {
+      expect(ValidationStatus.ACCEPTED).toBe("accepted");
+      expect(ValidationStatus.REJECTED).toBe("rejected");
+      expect(ValidationStatus.MANUAL_REVIEW).toBe("manual_review");
+
+      const featureWithEnum: Feature = {
+        type: "Feature",
+        id: "feat-enum-1",
+        projectId: "p1",
+        geometry: { type: "Point", coordinates: [0, 0] },
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        name: "EnumItem",
+        properties: {
+          name: "EnumItem",
+          isOcrText: true,
+          recognized: false,
+          show: false,
+          validationStatus: ValidationStatus.MANUAL_REVIEW,
+          validation_status: ValidationStatus.MANUAL_REVIEW,
+          mapElementType: "point"
+        },
+      };
+
+      expect(isUnrecognizedTextFeature(featureWithEnum)).toBe(true);
+
+      const entry = featureToValidationEntry(featureWithEnum, true);
+      expect(entry.validationStatus).toBe(ValidationStatus.MANUAL_REVIEW);
+
+      const validated = applyValidationToFeature(featureWithEnum, {
+        ...entry,
+        selected: true,
+      });
+      expect(validated.properties.validationStatus).toBe(ValidationStatus.ACCEPTED);
+      expect(validated.properties.validation_status).toBe(ValidationStatus.ACCEPTED);
+      expect(validated.properties.show).toBe(true);
+      expect(validated.properties.recognized).toBe(true);
     });
   });
 });

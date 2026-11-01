@@ -37,7 +37,17 @@ export type FeatureVisibilityGroup = {
 
 export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
-export type ValidationStatus = "accepted" | "rejected" | "manual_review";
+export enum ValidationStatus {
+  ACCEPTED = "accepted",
+  REJECTED = "rejected",
+  MANUAL_REVIEW = "manual_review",
+}
+
+export type ValidationStatusValue =
+  | ValidationStatus
+  | "accepted"
+  | "rejected"
+  | "manual_review";
 
 export interface FeatureProperties {
   name: string;
@@ -67,7 +77,8 @@ export interface FeatureProperties {
   country?: string;
   population?: number;
   confidence?: number;
-  validationStatus?: ValidationStatus;
+  validationStatus?: ValidationStatus | `${ValidationStatus}`;
+  validation_status?: ValidationStatus | `${ValidationStatus}`;
   suggestedCity?: string;
   suggestedCoords?: [number, number];
   [key: string]: any;

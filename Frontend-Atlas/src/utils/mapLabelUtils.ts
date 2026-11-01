@@ -33,7 +33,7 @@ export const WORD_TYPE_STYLES: Record<string, WordTypeStyle> = {
     mapElementType: "point",
     sizePx: 12,
     fontStyle: "normal",
-    transform: capitalizeFirstOnly,
+    transform: capitalizeWords,
   },
   province: {
     label: "Province",

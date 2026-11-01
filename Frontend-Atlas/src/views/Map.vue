@@ -149,6 +149,7 @@ import CreateProjectDialog from "../components/CreateProjectDialog.vue";
 import TextValidationModal from "../components/import/TextValidationModal.vue";
 import {
   type TextValidationEntry,
+  ValidationStatus,
   featureToValidationEntry,
   applyValidationToFeature,
   isUnrecognizedTextFeature,
@@ -190,7 +191,7 @@ const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
 
 const zoneFeatures = computed(() =>
-  filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
+  filteredFeatures.value.filter((f: Feature) => f.properties?.mapElementType === "zone"),
 );
 
 const selectedYear = ref(-1);
@@ -199,7 +200,7 @@ const useTimelineFilter = ref(false);
 
 const enrichedPeriods = computed((): SliderPeriod[] =>
   mapPeriods.value
-    .map((p) => ({
+    .map((p: MapPeriod) => ({
       ...p,
       startYear: toYear(p.startDate),
       endYear: toYear(p.endDate),
@@ -208,18 +209,18 @@ const enrichedPeriods = computed((): SliderPeriod[] =>
 );
 
 const periodByMapId = computed(
-  () => new Map(enrichedPeriods.value.map((p) => [p.id, p])),
+  () => new Map(enrichedPeriods.value.map((p: SliderPeriod) => [p.id, p])),
 );
 
 const timelineMinYear = computed(() =>
   enrichedPeriods.value.length
-    ? Math.min(...enrichedPeriods.value.map((p) => p.startYear))
+    ? Math.min(...enrichedPeriods.value.map((p: SliderPeriod) => p.startYear))
     : 1400,
 );
 
 const timelineMaxYear = computed(() =>
   enrichedPeriods.value.length
-    ? Math.max(...enrichedPeriods.value.map((p) => p.endYear))
+    ? Math.max(...enrichedPeriods.value.map((p: SliderPeriod) => p.endYear))
     : new Date().getFullYear(),
 );
 
@@ -228,7 +229,7 @@ const timelineMarkerYears = computed(() => {
     timelineMinYear.value,
     timelineMaxYear.value,
   ]);
-  enrichedPeriods.value.forEach((p) => {
+  enrichedPeriods.value.forEach((p: SliderPeriod) => {
     markers.add(p.startYear);
     markers.add(p.endYear);
   });
@@ -263,16 +264,17 @@ const filteredFeatures = computed(() => {
 const combinedFeatureVisibility = computed(() => {
   const combined = new Map<string, boolean>();
   
-  const visibleByTimeline = new Set(filteredFeatures.value.map(f => String(f.id)));
+  const visibleByTimeline = new Set(filteredFeatures.value.map((f: Feature) => String(f.id)));
   
-  features.value.forEach((feature) => {
+  features.value.forEach((feature: Feature) => {
     const id = String(feature.id);
 
     // Hide unvalidated or rejected OCR texts from the map
+    const valStatus = feature.properties?.validationStatus ?? feature.properties?.validation_status;
     if (
       feature.properties?.isOcrText &&
-      (feature.properties?.validationStatus === "rejected" ||
-        feature.properties?.validationStatus === "manual_review" ||
+      (valStatus === ValidationStatus.REJECTED ||
+        valStatus === ValidationStatus.MANUAL_REVIEW ||
         (!feature.properties?.recognized && feature.properties?.show === false))
     ) {
       combined.set(id, false);
@@ -542,7 +544,7 @@ async function onDeleteFeature(
 ) {
   try {
     const nextFeatures = features.value.filter(
-      (feature) => feature.id !== featureId,
+      (feature: Feature) => feature.id !== featureId,
     );
 
     if (trackingEnabled.value) {
@@ -580,7 +582,7 @@ async function onDeleteMap(
     }
 
     const nextFeatures = features.value.filter(
-      (feature) => feature.mapId !== mapId,
+      (feature: Feature) => feature.mapId !== mapId,
     );
 
     if (trackingEnabled.value) {
@@ -623,7 +625,7 @@ const isSavingTextValidation = ref(false);
 const activeValidationMapId = ref<string | null>(null);
 const validationMapTitle = computed(
   () =>
-    mapPeriods.value.find((period) => period.id === activeValidationMapId.value)?.title ??
+    mapPeriods.value.find((period: MapPeriod) => period.id === activeValidationMapId.value)?.title ??
     "Éléments généraux",
 );
 const validationImageUrl = ref<string | null>(null);
@@ -638,7 +640,7 @@ function onOpenTextValidation(mapId: string | null) {
   // 2. If not found, look for an image feature belonging to this map in the project
   if (!img) {
     const imageFeature = features.value.find(
-      (f) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
+      (f: Feature) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
     );
     const rawImage = imageFeature?.image || imageFeature?.properties?.image;
     if (rawImage) {
@@ -648,14 +650,14 @@ function onOpenTextValidation(mapId: string | null) {
 
   validationImageUrl.value = img;
 
-  const targetFeatures = features.value.filter((f) => isUnrecognizedTextFeature(f, mapId));
+  const targetFeatures = features.value.filter((f: Feature) => isUnrecognizedTextFeature(f, mapId));
 
   if (targetFeatures.length === 0) {
     showAlert("error", "Aucun texte non reconnu trouvé pour cette carte.");
     return;
   }
 
-  textValidationEntries.value = targetFeatures.map((f) =>
+  textValidationEntries.value = targetFeatures.map((f: Feature) =>
     featureToValidationEntry(f, featureVisibility.value.get(f.id) !== false),
   );
 
@@ -667,7 +669,7 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
   try {
     const validatedMap = new Map(validatedItems.map((i) => [i.id, i]));
 
-    const nextFeatures = features.value.map((f) => {
+    const nextFeatures = features.value.map((f: Feature) => {
       const validated = validatedMap.get(f.id);
       if (!validated) return f;
 
@@ -1035,7 +1037,7 @@ watch([timelineMinYear, timelineMaxYear], () => {
 
 watch(
   timelineMarkerYears,
-  (markers) => {
+  (markers: number[]) => {
     if (!markers.length) return;
     if (!markers.includes(selectedYear.value)) {
       selectedYear.value = markers[0];
@@ -1046,7 +1048,7 @@ watch(
 
 watch(
   () => route.params.mapId,
-  async (newMapId, oldMapId) => {
+  async (newMapId: string | string[] | undefined, oldMapId: string | string[] | undefined) => {
     if (!newMapId || newMapId === oldMapId) return;
 
     featureVisibility.value = new Map();
@@ -1146,7 +1148,7 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
     const featuresToSave = (
       featuresOverride ?? syncedFeatures ?? features.value
-    ).map((feature) => ({
+    ).map((feature: Feature) => ({
       ...feature,
       properties: {
         ...feature.properties,
