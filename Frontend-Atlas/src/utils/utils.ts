@@ -1,3 +1,5 @@
+import { ValidationStatus } from "../typescript/feature";
+
 // ---------- helpers ----------
 type IsTuple<T> = T extends readonly any[]
   ? number extends T["length"]
@@ -77,6 +79,46 @@ export function prepareFeaturesForSave(features: unknown[]): unknown[] {
     const { createdAt, updatedAt, ...next } = rawFeature;
     void createdAt;
     void updatedAt;
+
+    if (isRecord(next.properties)) {
+      const props = { ...next.properties };
+      const status = props.validationStatus ?? props.validation_status;
+      if (status !== undefined) {
+        props.validationStatus = status;
+        props.validation_status = status;
+        if (status === ValidationStatus.ACCEPTED) {
+          props.show = true;
+          props.recognized = true;
+        } else if (
+          status === ValidationStatus.REJECTED ||
+          status === ValidationStatus.MANUAL_REVIEW
+        ) {
+          props.show = false;
+          props.recognized = false;
+        }
+      }
+      next.properties = props;
+    }
+
+    if (isRecord(next.properties)) {
+      const props = { ...next.properties };
+      const status = props.validationStatus ?? props.validation_status;
+      if (status !== undefined) {
+        props.validationStatus = status;
+        props.validation_status = status;
+        if (status === ValidationStatus.ACCEPTED) {
+          props.show = true;
+          props.recognized = true;
+        } else if (
+          status === ValidationStatus.REJECTED ||
+          status === ValidationStatus.MANUAL_REVIEW
+        ) {
+          props.show = false;
+          props.recognized = false;
+        }
+      }
+      next.properties = props;
+    }
 
     return next;
   });

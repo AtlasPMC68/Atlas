@@ -255,5 +255,106 @@ def test_text_feature_normalization_preserves_disjoint_validation_status():
     assert norm_rev["properties"]["recognized"] is False
 
 
+def test_text_feature_normalization_harmonizes_camel_and_snake_status():
+    """Verify that normalize_feature_for_storage resolves and synchronizes validationStatus and validation_status."""
+    from app.models.features import ValidationStatus
+    from app.utils.update_feature import normalize_feature_for_storage
+
+    # Frontend payload may arrive with camelCase validationStatus
+    feat_camel = {
+        "properties": {
+            "name": "Trois-Rivières",
+            "isOcrText": True,
+            "validationStatus": "accepted",
+        }
+    }
+    norm = normalize_feature_for_storage(feat_camel)
+    assert norm["properties"]["validation_status"] == ValidationStatus.ACCEPTED.value
+    assert norm["properties"]["validationStatus"] == ValidationStatus.ACCEPTED.value
+    assert norm["properties"]["show"] is True
+    assert norm["properties"]["recognized"] is True
+
+    # When both are present but diverge, valid non-null status is resolved
+    feat_both = {
+        "properties": {
+            "name": "Trois-Rivières",
+            "isOcrText": True,
+            "validationStatus": "rejected",
+            "validation_status": "manual_review",
+        }
+    }
+    norm_both = normalize_feature_for_storage(feat_both)
+    assert norm_both["properties"]["validation_status"] in (
+        ValidationStatus.REJECTED.value,
+        ValidationStatus.MANUAL_REVIEW.value,
+    )
+    assert (
+        norm_both["properties"]["validation_status"]
+        == norm_both["properties"]["validationStatus"]
+    )
+    assert norm_both["properties"]["show"] is False
+    assert norm_both["properties"]["recognized"] is False
+
+
+def test_text_feature_normalization_enforces_show_and_recognized_consistency():
+    """Verify that show and recognized are forced into consistency with validation_status."""
+    from app.models.features import ValidationStatus
+    from app.utils.update_feature import normalize_feature_for_storage
+
+    # Inconsistent state: accepted but show=False, recognized=False
+    inconsistent_accepted = {
+        "properties": {
+            "validation_status": ValidationStatus.ACCEPTED.value,
+            "show": False,
+            "recognized": False,
+        }
+    }
+    norm_acc = normalize_feature_for_storage(inconsistent_accepted)
+    assert norm_acc["properties"]["show"] is True
+    assert norm_acc["properties"]["recognized"] is True
+
+    # Inconsistent state: rejected but show=True, recognized=True
+    inconsistent_rejected = {
+        "properties": {
+            "validation_status": ValidationStatus.REJECTED.value,
+            "show": True,
+            "recognized": True,
+        }
+    }
+    norm_rej = normalize_feature_for_storage(inconsistent_rejected)
+    assert norm_rej["properties"]["show"] is False
+    assert norm_rej["properties"]["recognized"] is False
+
+
+def test_feature_serialization_includes_both_validation_status_formats():
+    """Verify that serialize_db_feature ensures both validation_status and validationStatus are present."""
+    from uuid import uuid4
+    from app.models.features import Feature, ValidationStatus
+    from app.utils.update_feature import serialize_db_feature
+
+    row = Feature(
+        id=uuid4(),
+        project_id=uuid4(),
+        map_id=uuid4(),
+        data={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": "Québec",
+                        "validation_status": ValidationStatus.ACCEPTED.value,
+                    },
+                }
+            ],
+        },
+    )
+    serialized = serialize_db_feature(row)
+    assert serialized is not None
+    assert serialized["properties"]["validation_status"] == ValidationStatus.ACCEPTED.value
+    assert serialized["properties"]["validationStatus"] == ValidationStatus.ACCEPTED.value
+
+
+
 
 
