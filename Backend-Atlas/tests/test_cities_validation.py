@@ -370,12 +370,13 @@ def test_nova_scotia_resolution_mainland():
 
 
 def test_ocean_styling_is_uppercase_label_without_point():
-    """Ensure oceans are rendered as italic labels without a point marker with capitalized words."""
+    """Ensure oceans are rendered as italic uppercase labels without a point marker."""
     res = resolve_place("Océan Atlantique")
     assert res["found"] is True
     assert res["type"] == "ocean"
     assert res["mapElementType"] == "label"
-    assert res["name"] == "Océan Atlantique"
+    assert res["fontStyle"] == "italic uppercase"
+    assert res["name"] == "OCÉAN ATLANTIQUE"
 
 
 def test_capitalize_words_multi_term_and_particles():

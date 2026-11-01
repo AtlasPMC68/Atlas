@@ -53,6 +53,9 @@ import {
   parseLabelFontStyle,
   getLabelCategoryInfo,
   getElementCategoryInfo,
+  getWordTypeForFeature,
+  WORD_TYPE_STYLES,
+  toUpperCaseTransform,
 } from "../utils/mapLabelUtils";
 import type {
   Feature,
@@ -672,18 +675,21 @@ function renderLabels(features: Feature[]) {
     const [lng, lat] = feature.geometry.coordinates;
     const coord: L.LatLngTuple = [lat, lng];
 
+    const wordType = getWordTypeForFeature(feature);
+    const styleConfig = WORD_TYPE_STYLES[wordType];
     const { fontStyle, textTransform } = parseLabelFontStyle(
-      (feature.properties as any).fontStyle
+      (feature.properties as any).fontStyle || styleConfig?.fontStyle
     );
+    const isUppercase = textTransform === "uppercase" || styleConfig?.transform === toUpperCaseTransform;
 
     const inlineStyles: string[] = [];
     if (fontStyle !== "normal") inlineStyles.push(`font-style: ${fontStyle}`);
-    if (textTransform !== "none") inlineStyles.push(`text-transform: ${textTransform}`);
+    if (isUppercase) inlineStyles.push(`text-transform: uppercase`);
     const styleAttr = inlineStyles.length ? ` style="${inlineStyles.join("; ")}"` : "";
 
     const displayedHtml = formatLabelHtml(
       feature.properties.labelText ?? feature.properties.name,
-      textTransform === "uppercase"
+      isUppercase
     );
 
     const label = L.marker(coord, {

@@ -70,7 +70,10 @@ describe("mapLabelUtils - Word Type Styles and Police", () => {
     expect(WORD_TYPE_STYLES.province.transform("Québec")).toBe("QUÉBEC");
     expect(WORD_TYPE_STYLES.country.transform("Canada")).toBe("CANADA");
     expect(WORD_TYPE_STYLES.city.transform("QUÉBEC")).toBe("Québec");
-    expect(WORD_TYPE_STYLES.ocean.transform("OCEAN ATLANTIQUE")).toBe("Ocean Atlantique");
+    expect(WORD_TYPE_STYLES.ocean.transform("ocean atlantique")).toBe("OCEAN ATLANTIQUE");
+    const oceanParsed = parseLabelFontStyle(WORD_TYPE_STYLES.ocean.fontStyle);
+    expect(oceanParsed.fontStyle).toBe("italic");
+    expect(oceanParsed.textTransform).toBe("uppercase");
   });
 
   it("getWordTypeStyle resolves correctly with fallback to city", () => {

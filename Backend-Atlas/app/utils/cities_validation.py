@@ -239,7 +239,7 @@ STYLES_MAP: Dict[str, StyleTuple] = {
     "province": ("label", 14, "uppercase", str.upper),
     "territory": ("label", 14, "uppercase", str.upper),
     "city": ("point", 12, "normal", capitalize_words),
-    "ocean": ("label", 18, "italic", capitalize_words),
+    "ocean": ("label", 18, "italic uppercase", str.upper),
     "sea": ("label", 16, "italic", capitalize_words),
     "fleuve": ("label", 14, "italic", capitalize_words),
     "lake": ("label", 12, "italic", capitalize_words),

@@ -500,6 +500,7 @@ import {
   formatWordText,
   applyWordStyleToFeature,
   parseLabelFontStyle,
+  toUpperCaseTransform,
 } from "../utils/mapLabelUtils";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
@@ -529,9 +530,10 @@ const editTextStyle = computed(() => {
   if (!isTextElement.value) return {};
   const style = WORD_TYPE_STYLES[featureToEditWordType.value];
   const { fontStyle, textTransform } = parseLabelFontStyle(style?.fontStyle);
+  const isUppercase = textTransform === "uppercase" || style?.transform === toUpperCaseTransform;
   return {
     fontStyle: fontStyle !== "normal" ? fontStyle : undefined,
-    textTransform: textTransform !== "none" ? textTransform : undefined,
+    textTransform: isUppercase ? "uppercase" : undefined,
     color: featureToEditColor.value || undefined,
   };
 });

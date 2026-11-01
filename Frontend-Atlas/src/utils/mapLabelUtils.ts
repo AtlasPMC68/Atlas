@@ -89,7 +89,7 @@ export const WORD_TYPE_STYLES: Record<string, WordTypeStyle> = {
     label: "Océan",
     mapElementType: "label",
     sizePx: 18,
-    fontStyle: "italic",
+    fontStyle: "italic uppercase",
     transform: toUpperCaseTransform,
   },
   sea: {
