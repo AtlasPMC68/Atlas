@@ -530,18 +530,16 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
 
   isSubmittingValidation.value = true;
   try {
-    const selectedItems = items.filter((i) => i.selected);
-
-    if (selectedItems.length > 0) {
+    if (items.length > 0) {
       const currentFeatures =
         loadedProjectFeatures.value.length > 0
           ? loadedProjectFeatures.value
           : (snakeToCamel(await (await apiFetch(`/projects/${store.projectId}/features`)).json()) as any[]);
 
-      const selectedMap = new Map(selectedItems.map((i) => [i.id, i]));
+      const itemsMap = new Map(items.map((i) => [i.id, i]));
       const featuresToUpdate = currentFeatures
-        .filter((f) => selectedMap.has(f.id))
-        .map((f) => applyValidationToFeature(f, selectedMap.get(f.id)!));
+        .filter((f) => itemsMap.has(f.id))
+        .map((f) => applyValidationToFeature(f, itemsMap.get(f.id)!));
 
       if (featuresToUpdate.length > 0) {
         const payload = camelToSnake(prepareFeaturesForSave(featuresToUpdate));

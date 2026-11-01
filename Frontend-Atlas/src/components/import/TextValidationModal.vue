@@ -702,6 +702,7 @@ function setAll(selected: boolean) {
   saveHistorySnapshot();
   for (const item of allItems.value) {
     item.selected = selected;
+    item.validationStatus = selected ? "accepted" : "rejected";
     updateMarkerStyle(item);
   }
 }
@@ -709,6 +710,7 @@ function setAll(selected: boolean) {
 function toggleItemSelection(item: TextValidationEntry) {
   saveHistorySnapshot();
   item.selected = !item.selected;
+  item.validationStatus = item.selected ? "accepted" : "rejected";
   updateMarkerStyle(item);
 }
 
@@ -729,6 +731,7 @@ function onTextInput(item: TextValidationEntry) {
   }
   item.useSuggestedCity = false;
   item.selected = true;
+  item.validationStatus = "accepted";
   updateMarkerStyle(item);
   showToleranceRadius(item);
 
@@ -747,6 +750,7 @@ function toggleSuggestion(item: TextValidationEntry) {
     item.useSuggestedCity = true;
     item.selected = true;
     item.wordType = "city";
+    item.validationStatus = "accepted";
     if (item.suggestedCity) {
       item.text = item.suggestedCity;
     }
@@ -759,6 +763,7 @@ function toggleSuggestion(item: TextValidationEntry) {
 function toggleSupprimer(item: TextValidationEntry) {
   saveHistorySnapshot();
   item.selected = !item.selected;
+  item.validationStatus = item.selected ? "accepted" : "rejected";
   updateMarkerStyle(item);
 }
 
@@ -769,6 +774,7 @@ function setItemCoordinates(item: TextValidationEntry, lon: number, lat: number)
   item.suggestedCity = undefined;
   item.suggestedCoords = undefined;
   item.selected = true;
+  item.validationStatus = "accepted";
 
   hideToleranceRadius();
   updateMarkerStyle(item);
@@ -1189,12 +1195,15 @@ function destroyMap() {
 }
 
 function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
-  return (items || []).map((item) => ({
-    ...item,
-    selected: item.selected ?? true,
-    useSuggestedCity: item.useSuggestedCity ?? false,
-    wordType: item.wordType ?? "city",
-  }));
+  return (items || []).map((item) => {
+    const selected = item.selected ?? true;
+    return {
+      ...item,
+      selected,
+      validationStatus: item.validationStatus ?? (selected ? "accepted" : "manual_review"),
+      useSuggestedCity: item.useSuggestedCity ?? false,
+    };
+  });
 }
 
 watch(
@@ -1236,6 +1245,9 @@ onBeforeUnmount(() => {
 });
 
 function onConfirm() {
+  for (const item of allItems.value) {
+    item.validationStatus = item.selected ? "accepted" : "rejected";
+  }
   emit("confirm", allItems.value);
 }
 

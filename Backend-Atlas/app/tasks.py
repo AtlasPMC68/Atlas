@@ -325,6 +325,7 @@ def _make_text_feature(
     recognized: bool,
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
+    validation_status = "accepted" if recognized else "manual_review"
     props = {
         "name": name,
         "originalText": original_text,
@@ -336,6 +337,7 @@ def _make_text_feature(
         "recognized": recognized,
         "confidence": confidence,
         "quad": quad,
+        "validationStatus": validation_status,
     }
     if extra:
         props.update(extra)

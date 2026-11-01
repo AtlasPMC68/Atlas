@@ -50,6 +50,7 @@ def test_categorized_text_features_separates_recognized_and_unrecognized(monkeyp
     assert rec["properties"]["originalText"] == "Quebec"
     assert rec["properties"]["isOcrText"] is True
     assert rec["properties"]["show"] is True
+    assert rec["properties"]["validationStatus"] == "accepted"
     assert rec["properties"]["matchedCity"] == "Québec"
     assert rec["geometry"]["coordinates"] == [-71.2080, 46.8139]
 
@@ -59,6 +60,7 @@ def test_categorized_text_features_separates_recognized_and_unrecognized(monkeyp
     assert unrec["properties"]["originalText"] == "UnkPlace"
     assert unrec["properties"]["isOcrText"] is True
     assert unrec["properties"]["show"] is False
+    assert unrec["properties"]["validationStatus"] == "manual_review"
     assert unrec["geometry"]["coordinates"] == [0.0, 0.0]
 
 
@@ -119,6 +121,14 @@ def test_find_nearby_candidate_city():
     typo_match = find_nearby_candidate_city("Montrel", [-73.56, 45.50], radius_km=50.0)
     assert typo_match is not None
     assert "montr" in typo_match["name"].lower()
+
+    # Reject unexploitable / map noise text
+    assert find_nearby_candidate_city("Échelle 1:10000", [-73.56, 45.50], radius_km=50.0) is None
+    assert find_nearby_candidate_city("Légende", [-73.56, 45.50], radius_km=50.0) is None
+    assert find_nearby_candidate_city("1783", [-73.56, 45.50], radius_km=50.0) is None
+
+    # Do not auto-assimilate non-matching text to nearest city when similarity is insufficient
+    assert find_nearby_candidate_city("TotallyUnrelatedWord", [-73.56, 45.50], radius_km=50.0) is None
 
 
 def test_categorized_text_features_when_no_unrecognized_words(monkeypatch):

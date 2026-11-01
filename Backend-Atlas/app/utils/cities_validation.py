@@ -321,12 +321,22 @@ def find_nearby_candidate_city(
     text: str,
     coords: List[float],
     radius_km: float = 75.0,
+    min_similarity: float = 0.80,
 ) -> Optional[Dict[str, Any]]:
-    """Find a candidate city within radius_km of coordinates [lon, lat]."""
+    """Find a candidate city within radius_km of coordinates [lon, lat].
+    
+    Strictly discriminates: requires exploitable text, non-empty normalized key,
+    and difflib similarity >= min_similarity (default 0.80).
+    Does NOT fall back to picking the nearest city when the score is insufficient.
+    """
+    if not is_exploitable_text(text):
+        return None
     if not coords or len(coords) < 2:
         return None
     lon, lat = float(coords[0]), float(coords[1])
     key = _normalize(text)
+    if not key:
+        return None
 
     nearby_cities: List[tuple[float, Dict[str, Any]]] = []
     for city_list in _CITY_INDEX.values():
@@ -340,16 +350,15 @@ def find_nearby_candidate_city(
     if not nearby_cities:
         return None
 
-    if key:
-        scored = [
-            (difflib.SequenceMatcher(None, key, _normalize(c.get("name", ""))).ratio(), -dist, c)
-            for dist, c in nearby_cities
-        ]
-        best_sim, _, best_city = max(scored, key=lambda x: (x[0], x[1]))
-        if best_sim >= 0.45:
-            return best_city
+    scored = [
+        (difflib.SequenceMatcher(None, key, _normalize(c.get("name", ""))).ratio(), -dist, c)
+        for dist, c in nearby_cities
+    ]
+    best_sim, _, best_city = max(scored, key=lambda x: (x[0], x[1]))
+    if best_sim >= min_similarity:
+        return best_city
 
-    return min(nearby_cities, key=lambda x: x[0])[1]
+    return None
 
 
 # Sentinel for "matched but out of bounds → reject immediately"
