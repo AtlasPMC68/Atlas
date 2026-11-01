@@ -271,8 +271,9 @@ const combinedFeatureVisibility = computed(() => {
     // Hide unvalidated or rejected OCR texts from the map
     if (
       feature.properties?.isOcrText &&
-      (!feature.properties?.recognized || feature.properties?.validationStatus === "rejected") &&
-      feature.properties?.show === false
+      (feature.properties?.validationStatus === "rejected" ||
+        feature.properties?.validationStatus === "manual_review" ||
+        (!feature.properties?.recognized && feature.properties?.show === false))
     ) {
       combined.set(id, false);
       return;

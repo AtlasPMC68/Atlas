@@ -556,11 +556,12 @@ const featureGroups = computed(() => {
   ];
 
   props.features.forEach((feature: Feature) => {
-    // Unrecognized or rejected OCR texts with show=false are only shown in the validation modal
+    // Unrecognized or rejected OCR texts are only shown in the validation modal
     if (
       feature.properties?.isOcrText &&
-      (!feature.properties?.recognized || feature.properties?.validationStatus === "rejected") &&
-      feature.properties?.show === false
+      (feature.properties?.validationStatus === "rejected" ||
+        feature.properties?.validationStatus === "manual_review" ||
+        (!feature.properties?.recognized && feature.properties?.show === false))
     ) {
       return;
     }

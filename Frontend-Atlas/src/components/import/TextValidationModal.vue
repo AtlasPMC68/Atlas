@@ -438,10 +438,12 @@ const displayImageUrl = computed(() => {
   return localImageMap.value[currentKey] || props.imageUrl || null;
 });
 
-const toKeepCount = computed(() => allItems.value.filter((i) => i.selected).length);
+const toKeepCount = computed(() =>
+  allItems.value.filter((i: TextValidationEntry) => i.selected).length,
+);
 
 const isAllSelected = computed(
-  () => allItems.value.length > 0 && allItems.value.every((i) => i.selected),
+  () => allItems.value.length > 0 && allItems.value.every((i: TextValidationEntry) => i.selected),
 );
 
 const isPartiallySelected = computed(() => {
@@ -659,7 +661,7 @@ function onItemHover(item: TextValidationEntry) {
 function onItemLeave() {
   hoveredId.value = null;
   if (highlightedId.value) {
-    const activeItem = allItems.value.find((i) => i.id === highlightedId.value);
+    const activeItem = allItems.value.find((i: TextValidationEntry) => i.id === highlightedId.value);
     if (activeItem) {
       showToleranceRadius(activeItem);
       return;
@@ -932,7 +934,7 @@ function makeDraggableMarker(
   marker.on("mouseover", () => showToleranceRadius(item));
   marker.on("mouseout", () => {
     if (highlightedId.value !== item.id) {
-      const active = allItems.value.find((i) => i.id === highlightedId.value);
+      const active = allItems.value.find((i: TextValidationEntry) => i.id === highlightedId.value);
       if (active) showToleranceRadius(active);
       else hideToleranceRadius();
     }
@@ -943,7 +945,7 @@ function makeDraggableMarker(
     hideToleranceRadius();
   });
 
-  marker.on("dragend", (event: any) => {
+  marker.on("dragend", (event: L.DragEndEvent) => {
     const latlng = event.target.getLatLng();
     setItemCoordinates(
       item,
@@ -1071,20 +1073,20 @@ async function initMap() {
 
   map.on("zoomend", () => {
     adjustTooltipsAntiCollision();
-    const active = allItems.value.find((i) => i.id === hoveredId.value || i.id === highlightedId.value);
+    const active = allItems.value.find((i: TextValidationEntry) => i.id === hoveredId.value || i.id === highlightedId.value);
     if (active && suggestionPreviewMarker) {
       showToleranceRadius(active);
     }
   });
   map.on("moveend", () => {
     adjustTooltipsAntiCollision();
-    const active = allItems.value.find((i) => i.id === hoveredId.value || i.id === highlightedId.value);
+    const active = allItems.value.find((i: TextValidationEntry) => i.id === hoveredId.value || i.id === highlightedId.value);
     if (active && suggestionPreviewMarker) {
       showToleranceRadius(active);
     }
   });
 
-  map.on("click", (e: any) => {
+  map.on("click", (e: L.LeafletMouseEvent) => {
     if (!highlightedId.value) return;
     const item = allItems.value.find((i) => i.id === highlightedId.value);
     if (!item) return;
@@ -1116,14 +1118,16 @@ async function initMap() {
         geojsonFiles.map((f) => fetch(new URL(f, baseUrl).toString()).catch(() => null)),
       );
       const geojsonData = await Promise.all(
-        responses.filter((r): r is Response => Boolean(r && r.ok)).map((r) => r.json().catch(() => null)),
+        responses
+          .filter((r): r is Response => Boolean(r && r.ok))
+          .map((r) => r.json().catch(() => null)),
       );
 
-      const validData = geojsonData.filter(Boolean);
+      const validData = geojsonData.filter(isFeatureCollection);
       if (validData.length > 0) {
         cachedBasemapGeoJSON = {
           type: "FeatureCollection",
-          features: validData.flatMap((data: any) => data.features || []),
+          features: validData.flatMap((data) => data.features),
         };
       }
     }
@@ -1158,8 +1162,14 @@ function destroyMap() {
   cachedLeaflet = null;
 }
 
+function isFeatureCollection(value: unknown): value is GeoJSON.FeatureCollection {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { type?: unknown; features?: unknown };
+  return candidate.type === "FeatureCollection" && Array.isArray(candidate.features);
+}
+
 function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
-  return (items || []).map((item) => {
+  return (items || []).map((item: TextValidationEntry) => {
     const selected = item.selected ?? true;
     return {
       ...item,
@@ -1172,7 +1182,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
 
 watch(
   () => props.isOpen,
-  (open) => {
+  (open: boolean) => {
     if (!open) {
       if (typeof window !== "undefined") {
         window.removeEventListener("keydown", handleKeyDown, true);
@@ -1193,7 +1203,7 @@ watch(
 
 watch(
   () => props.initialItems,
-  (newItems) => {
+  (newItems: TextValidationEntry[]) => {
     if (props.isOpen && (!allItems.value || allItems.value.length === 0)) {
       allItems.value = mapInitialItems(newItems);
       renderMapMarkers();
