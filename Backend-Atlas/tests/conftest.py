@@ -13,7 +13,7 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Generator[None, None, Non
         report.user_metadata = metadata
         
     if report.when == "call" and report.failed:
-        if "test_text_extraction_accuracy" in item.name or "test_florence_raw_detection_count" in item.name:
+        if "test_text_extraction_accuracy" in item.name or "test_ocr_raw_detection_count" in item.name:
             report.sections = []
 
 
@@ -36,17 +36,6 @@ def pytest_report_teststatus(report: Any, config: Any) -> tuple[str, str, str] |
             )
 
     return None
-
-
-def pytest_collection_modifyitems(config: Any, items: list[Any]) -> None:
-    """Skip integration and slow tests when running with parallel xdist workers."""
-    if config.getoption("numprocesses", default=None):
-        skip_marker = pytest.mark.skip(
-            reason="integration tests run sequentially, not with -n"
-        )
-        for item in items:
-            if "integration" in item.keywords or "slow" in item.keywords:
-                item.add_marker(skip_marker)
 
 
 def pytest_addoption(parser: Any) -> None:

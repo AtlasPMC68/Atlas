@@ -47,15 +47,20 @@ def _image_fingerprint(image_path: str) -> str:
 
 
 def _ocr_producer_versions() -> Dict[str, str]:
-    try:
-        import easyocr
-        import torch
+    # Read from the package metadata: importing paddleocr would load Paddle in
+    # the API process just to name its version.
+    from importlib.metadata import PackageNotFoundError, version
 
+    from app.utils.ocr import OCR_DET_MODEL, OCR_REC_MODEL
+
+    try:
         return {
-            "easyocr": str(getattr(easyocr, "__version__", "?")),
-            "torch": str(torch.__version__),
+            "paddleocr": version("paddleocr"),
+            "paddlepaddle": version("paddlepaddle"),
+            "detector": OCR_DET_MODEL,
+            "recognizer": OCR_REC_MODEL,
         }
-    except Exception:  # pragma: no cover - only when the OCR stack is absent
+    except PackageNotFoundError:  # pragma: no cover - only when the OCR stack is absent
         return {}
 
 

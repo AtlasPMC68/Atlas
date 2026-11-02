@@ -15,7 +15,6 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ocr-data:/data
     depends_on:
       - keycloak
   frontend:
@@ -41,7 +40,7 @@ services:
       - redis-data:/data
     command: redis-server --appendonly yes
 
-  celery-worker: &celery-worker-base
+  celery-worker:
     build:
       context: ./Backend-Atlas
     container_name: atlas-celery-worker
@@ -57,33 +56,10 @@ services:
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/debug_runs:/app/debug_runs
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ocr-data:/data
     depends_on:
       - redis
       - db
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
-
-  celery-worker-ocr:
-    <<: *celery-worker-base
-    container_name: atlas-celery-worker-ocr
-    command: celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h
-
-  florence-worker:
-    build:
-      context: ./Backend-Atlas/ocr-florence
-      args:
-        UID: ${UID:-1000}
-    container_name: atlas-florence-worker
-    restart: unless-stopped
-    env_file:
-      - ./Backend-Atlas/.env.dev
-    environment:
-      SAVE_PREPROCESSED_IMAGES: "false"
-    volumes:
-      - ocr-data:/data
-      - ./Backend-Atlas/ocr-florence:/app/ocr-florence
-    depends_on:
-      - redis
 
   flower:
     build:
@@ -177,7 +153,6 @@ services:
     depends_on:
       - db
       - redis
-      - florence-worker
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
@@ -185,7 +160,6 @@ services:
       - ./Backend-Atlas/scripts:/app/scripts
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
-      - ocr-data:/data
 
   # Fast georeferencing loop: no broker, no database, no pytest collection, and
   # colour extraction cached between runs. See scripts/run_georef_alignment.py.
@@ -200,7 +174,6 @@ services:
       - ./Backend-Atlas/.georef_cache:/app/.georef_cache
       - ./Backend-Atlas/ablations:/app/ablations
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
-      - ocr-data:/data
 
   test-frontend:
     build:
@@ -214,4 +187,3 @@ volumes:
   postgres-data:
   redis-data:
   keycloak-data:
-  ocr-data:
