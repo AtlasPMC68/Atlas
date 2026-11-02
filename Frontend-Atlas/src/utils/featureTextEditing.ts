@@ -12,7 +12,6 @@ import {
 
 export interface FeatureEditState {
   feature: Feature;
-  isText: boolean;
   draft: FeatureEditSubmitPayload;
 }
 
@@ -36,7 +35,6 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
 
   return {
     feature,
-    isText,
     draft: {
       name: feature.properties.name,
       labelText: rawLabel,

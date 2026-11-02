@@ -244,7 +244,6 @@ describe("shared word styles and label presentation", () => {
     const state = prepareFeatureForEdit(feature);
     expect(state.draft.name).toBe("montreal");
     expect(state.draft.wordType).toBe("city");
-    expect(state.isText).toBe(true);
 
     const updated = coerceEditedFeature(feature, {
       name: "MONTREAL",
