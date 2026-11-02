@@ -438,3 +438,23 @@ def test_format_place_result_unified_city_and_geo():
     assert res_province["sizePx"] == 14
     assert res_province["fontStyle"] == "uppercase"
     assert res_province["geonameid"] == "province:Quebec"
+
+
+def test_resolve_best_candidate_centralized():
+    from app.utils.cities_validation import resolve_best_candidate
+
+    c1 = {"name": "Candidate A", "type": "lake", "lat": 45.0, "lon": -73.0, "population": 0}
+    c2 = {"name": "Candidate B", "type": "province", "lat": 46.0, "lon": -74.0, "population": 1000}
+    c3 = {"name": "Candidate C", "type": "city", "lat": 80.0, "lon": 0.0, "population": 500000}
+
+    # Bounds filter: c3 is out of CANADA_BOUNDS
+    best = resolve_best_candidate([c1, c2, c3], bounds=CANADA_BOUNDS, prefer_political=True)
+    assert best == c2  # Political preference selects province over lake
+
+    # Target position selection
+    best_target = resolve_best_candidate([c1, c2], target_pos=(45.1, -73.1), prefer_political=False)
+    assert best_target == c1
+
+    # Population preference
+    best_pop = resolve_best_candidate([c1, c2], prefer_political=False, prefer_population=True)
+    assert best_pop == c2

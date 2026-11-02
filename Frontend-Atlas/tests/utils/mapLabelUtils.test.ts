@@ -11,6 +11,9 @@ import {
   isTextFeature,
   getWordTypeForFeature,
   applyWordStyleToFeature,
+  getLabelPresentation,
+  prepareFeatureForEdit,
+  coerceEditedFeature,
 } from "../../src/utils/mapLabelUtils";
 import type { Feature } from "../../src/typescript/feature";
 
@@ -170,6 +173,61 @@ describe("mapLabelUtils - Word Type Styles and Police", () => {
     expect(styled.properties.fontStyle).toBe("uppercase");
     expect(styled.properties.rawType).toBe("country");
     expect(styled.properties.type).toBe("country");
+  });
+
+  it("getLabelPresentation returns complete unified presentation model", () => {
+    const rawFeature: Feature = {
+      type: "Feature",
+      id: "feat-pres",
+      name: "baie d'hudson",
+      geometry: { type: "Point", coordinates: [-85, 60] },
+      properties: { name: "baie d'hudson", rawType: "sea" },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    };
+
+    const pres = getLabelPresentation(rawFeature);
+    expect(pres.text).toBe("baie d'hudson");
+    expect(pres.formattedText).toBe("Baie d'Hudson");
+    expect(pres.wordType).toBe("sea");
+    expect(pres.mapElementType).toBe("label");
+    expect(pres.sizePx).toBe(16);
+    expect(pres.fontStyle).toBe("italic");
+    expect(pres.isItalic).toBe(true);
+    expect(pres.priority).toBe(60);
+    expect(pres.minZoom).toBe(2.0);
+    expect(pres.category).toBe("sea");
+    expect(pres.html).toContain("Baie d'Hudson");
+  });
+
+  it("prepareFeatureForEdit and coerceEditedFeature handle form roundtrips", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-edit",
+      name: "montreal",
+      geometry: { type: "Point", coordinates: [-73.5, 45.5] },
+      properties: { name: "montreal", rawType: "city", colorRgb: [0, 0, 0] },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    };
+
+    const state = prepareFeatureForEdit(feature);
+    expect(state.name).toBe("Montreal");
+    expect(state.wordType).toBe("city");
+    expect(state.isText).toBe(true);
+
+    const updated = coerceEditedFeature(feature, {
+      name: "MONTREAL",
+      wordType: "province",
+      colorHex: "#ff0000",
+    });
+
+    expect(updated.properties.rawType).toBe("province");
+    expect(updated.properties.mapElementType).toBe("label");
+    expect(updated.properties.sizePx).toBe(14);
+    expect(updated.properties.fontStyle).toBe("uppercase");
+    expect(updated.properties.labelText).toBe("MONTREAL");
+    expect(updated.properties.colorRgb).toEqual([255, 0, 0]);
   });
 });
 

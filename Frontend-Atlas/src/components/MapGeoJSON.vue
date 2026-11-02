@@ -49,13 +49,9 @@ import {
 import { toArray, toImageSrc } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
 import {
-  formatLabelHtml,
-  parseLabelFontStyle,
-  getLabelCategoryInfo,
+  getLabelPresentation,
   getElementCategoryInfo,
-  getWordTypeForFeature,
-  WORD_TYPE_STYLES,
-  toUpperCaseTransform,
+  type LabelPresentationModel,
 } from "../utils/mapLabelUtils";
 import type {
   Feature,
@@ -467,106 +463,55 @@ const attachScalingIfEligible = (featureId: string) => {
   }
 };
 
-function renderCities(features: Feature[]) {
-  const safeFeatures = toArray(features);
-  const seenCityKeys = new Set<string>();
+function applyLabelPresentationStyle(
+  marker: L.Marker,
+  presentation: LabelPresentationModel,
+  featureId: string | number,
+) {
+  const el = marker.getElement() as HTMLElement | null;
+  if (!el) return;
 
-  safeFeatures.forEach((feature) => {
-    if (!map || feature.geometry.type !== "Point") return;
+  el.style.setProperty("--label-color", presentation.colorCss);
+  el.style.setProperty("--label-size", `${presentation.sizePx}px`);
+  el.style.setProperty("--label-style", presentation.fontStyle);
+  el.style.setProperty("--label-transform", presentation.textTransform);
+  el.dataset.priority = String(presentation.priority);
+  el.dataset.minZoom = String(presentation.minZoom);
+  el.dataset.category = presentation.category;
+  el.dataset.sizePx = String(presentation.sizePx);
+  el.dataset.featureId = String(featureId);
+}
 
-    const [lng, lat] = feature.geometry.coordinates;
-    if (lng === 0 && lat === 0) return;
+function buildLabelMarker(
+  feature: Feature,
+  presentation: LabelPresentationModel,
+  iconAnchor?: [number, number],
+): L.Marker {
+  const [lng, lat] = feature.geometry.coordinates as [number, number];
+  const coord: L.LatLngTuple = [lat, lng];
 
-    const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
-    const mapId = feature.mapId ?? "";
-    const nameKey = name ? `${mapId}_name_${name}` : null;
-    const coordsKey = `${mapId}_coords_${lng.toFixed(4)}_${lat.toFixed(4)}`;
+  const marker = L.marker(coord, {
+    icon: L.divIcon({
+      className: "city-label-text",
+      html: `
+        <div class="label-wrapper">
+          <div class="label-content"${presentation.styleAttribute}>${presentation.html}</div>
+          <div class="label-anchor rotate-handle"></div>
+        </div>
+      `,
+      iconSize: null as any,
+      iconAnchor: iconAnchor ? (iconAnchor as any) : undefined,
+    }),
+  } as any);
 
-    if ((nameKey && seenCityKeys.has(nameKey)) || seenCityKeys.has(coordsKey)) return;
-    if (nameKey) seenCityKeys.add(nameKey);
-    seenCityKeys.add(coordsKey);
-
-    const coord: L.LatLngTuple = [lat, lng];
-
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
-    const point = L.circleMarker(coord, {
-      renderer: vectorRenderer ?? undefined,
-      radius: 6,
-      fillColor: fillColor,
-      color: strokeColor,
-      weight: feature.properties.strokeWidth ?? 1,
-      opacity: feature.properties.strokeOpacity ?? 1,
-      fillOpacity: feature.properties.fillOpacity ?? 0.5,
-    });
-
-    const featureProperties = feature.properties;
-    const rawCityName = featureProperties.labelText || featureProperties.name || feature.name || "";
-    const displayedCityHtml = formatLabelHtml(rawCityName, false);
-    const label = L.marker(coord, {
-      icon: L.divIcon({
-        className: "city-label-text",
-        html: `
-          <div class="label-wrapper">
-            <div class="label-content">${displayedCityHtml}</div>
-            <div class="label-anchor rotate-handle"></div>
-          </div>
-        `,
-        iconSize: null as any,
-        iconAnchor: [-8, 15],
-      }),
-    } as any);
-
-    attachFeatureToLayer(point, feature);
-    bindRenderedFeatureEvents(point, applyLayerUpdate);
-
-    // Forward clicks and double-clicks from the inner point to the layerGroup so that the
-    // standard featureLayerManager selection handler fires (same path as all
-    // other feature types), keeping blockNextMapClick behaviour consistent.
-    point.on("click", (e: L.LeafletEvent) => {
-      layerGroup.fire("click", e);
-    });
-
-    point.on("dblclick", (e: L.LeafletEvent) => {
-      layerGroup.fire("dblclick", e);
-    });
-
-    point.on("pm:drag", () => {
-      label.setLatLng(point.getLatLng());
-      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
-    });
-
-    point.on("pm:dragend", () => {
-      label.setLatLng(point.getLatLng());
-      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
-    });
-
-    label.on("click", (e: L.LeafletEvent) => {
-      layerGroup.fire("click", e);
-    });
-
-    label.on("dblclick", (e: L.LeafletEvent) => {
-      layerGroup.fire("dblclick", e);
-    });
-
-    attachFeatureToLayer(label, feature);
-
-    const layerGroup = L.layerGroup([point, label]);
-    
-    bindRotationHandle(label, feature, point, -8, 15);
-
-    label.on("add", () => {
-      applyLabelStyle(label, feature);
-    });
-    if (label.getElement()) {
-      applyLabelStyle(label, feature);
-    }
-
-    attachFeatureToLayer(layerGroup, feature);
-    featureLayerManager.addFeatureLayer(feature.id, layerGroup);
+  marker.on("add", () => {
+    applyLabelPresentationStyle(marker, presentation, feature.id);
   });
+  if (marker.getElement()) {
+    applyLabelPresentationStyle(marker, presentation, feature.id);
+  }
+
+  return marker;
 }
 
 function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.Layer, anchorX: number, anchorY: number) {
@@ -641,84 +586,105 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
   });
 }
 
-function applyLabelStyle(marker: L.Marker, feature: Feature) {
-  const el = marker.getElement() as HTMLElement | null;
-  if (!el) return;
+function materializeTextLayer(feature: Feature): L.Layer | null {
+  if (!map || feature.geometry.type !== "Point") return null;
 
-  const color =
-    colorRgbToCss(feature.properties.colorRgb) ||
-    (feature.properties as any).color ||
-    "#000000";
-  const sizePx = feature.properties.sizePx ?? 12;
-  const { fontStyle, textTransform } = parseLabelFontStyle(
-    (feature.properties as any).fontStyle
-  );
-  const info = getLabelCategoryInfo(feature);
+  const [lng, lat] = feature.geometry.coordinates as [number, number];
+  if (lng === 0 && lat === 0) return null;
 
-  el.style.setProperty("--label-color", color);
-  el.style.setProperty("--label-size", `${sizePx}px`);
-  el.style.setProperty("--label-style", fontStyle);
-  el.style.setProperty("--label-transform", textTransform);
-  el.dataset.priority = String(info.priority);
-  el.dataset.minZoom = String(info.minZoom);
-  el.dataset.category = info.category;
-  el.dataset.sizePx = String(sizePx);
-  el.dataset.featureId = String(feature.id);
+  const presentation = getLabelPresentation(feature);
+  const coord: L.LatLngTuple = [lat, lng];
+
+  if (presentation.mapElementType === "point") {
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+
+    const point = L.circleMarker(coord, {
+      renderer: vectorRenderer ?? undefined,
+      radius: 6,
+      fillColor: fillColor,
+      color: strokeColor,
+      weight: feature.properties.strokeWidth ?? 1,
+      opacity: feature.properties.strokeOpacity ?? 1,
+      fillOpacity: feature.properties.fillOpacity ?? 0.5,
+    });
+
+    const label = buildLabelMarker(feature, presentation, [-8, 15]);
+
+    attachFeatureToLayer(point, feature);
+    bindRenderedFeatureEvents(point, applyLayerUpdate);
+
+    const layerGroup = L.layerGroup([point, label]);
+
+    // Forward clicks and double-clicks from the inner point to the layerGroup
+    point.on("click", (e: L.LeafletEvent) => {
+      layerGroup.fire("click", e);
+    });
+    point.on("dblclick", (e: L.LeafletEvent) => {
+      layerGroup.fire("dblclick", e);
+    });
+
+    point.on("pm:drag", () => {
+      label.setLatLng(point.getLatLng());
+      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+    });
+    point.on("pm:dragend", () => {
+      label.setLatLng(point.getLatLng());
+      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+    });
+
+    label.on("click", (e: L.LeafletEvent) => {
+      layerGroup.fire("click", e);
+    });
+    label.on("dblclick", (e: L.LeafletEvent) => {
+      layerGroup.fire("dblclick", e);
+    });
+
+    attachFeatureToLayer(label, feature);
+    bindRotationHandle(label, feature, point, -8, 15);
+    attachFeatureToLayer(layerGroup, feature);
+
+    return layerGroup;
+  } else {
+    const label = buildLabelMarker(feature, presentation);
+    bindRotationHandle(label, feature, label, 0, 10);
+    attachFeatureToLayer(label, feature);
+    bindRenderedFeatureEvents(label, applyLayerUpdate);
+    return label;
+  }
+}
+
+function renderTextFeature(feature: Feature, seenKeys?: Set<string>) {
+  if (!map || feature.geometry.type !== "Point") return;
+  const [lng, lat] = feature.geometry.coordinates as [number, number];
+  if (lng === 0 && lat === 0) return;
+
+  if (seenKeys) {
+    const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
+    const mapId = feature.mapId ?? "";
+    const nameKey = name ? `${mapId}_name_${name}` : null;
+    const coordsKey = `${mapId}_coords_${lng.toFixed(4)}_${lat.toFixed(4)}`;
+
+    if ((nameKey && seenKeys.has(nameKey)) || seenKeys.has(coordsKey)) return;
+    if (nameKey) seenKeys.add(nameKey);
+    seenKeys.add(coordsKey);
+  }
+
+  const layer = materializeTextLayer(feature);
+  if (layer) {
+    featureLayerManager.addFeatureLayer(feature.id, layer);
+  }
+}
+
+function renderCities(features: Feature[]) {
+  const safeFeatures = toArray(features);
+  const seenCityKeys = new Set<string>();
+  safeFeatures.forEach((feature) => renderTextFeature(feature, seenCityKeys));
 }
 
 function renderLabels(features: Feature[]) {
   const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!map || feature.geometry.type !== "Point") return;
-
-    const [lng, lat] = feature.geometry.coordinates;
-    const coord: L.LatLngTuple = [lat, lng];
-
-    const wordType = getWordTypeForFeature(feature);
-    const styleConfig = WORD_TYPE_STYLES[wordType];
-    const { fontStyle, textTransform } = parseLabelFontStyle(
-      (feature.properties as any).fontStyle || styleConfig?.fontStyle
-    );
-    const isUppercase = textTransform === "uppercase" || styleConfig?.transform === toUpperCaseTransform;
-
-    const inlineStyles: string[] = [];
-    if (fontStyle !== "normal") inlineStyles.push(`font-style: ${fontStyle}`);
-    if (isUppercase) inlineStyles.push(`text-transform: uppercase`);
-    const styleAttr = inlineStyles.length ? ` style="${inlineStyles.join("; ")}"` : "";
-
-    const displayedHtml = formatLabelHtml(
-      feature.properties.labelText ?? feature.properties.name,
-      isUppercase
-    );
-
-    const label = L.marker(coord, {
-      icon: L.divIcon({
-        className: "city-label-text",
-        html: `
-          <div class="label-wrapper">
-            <div class="label-content"${styleAttr}>${displayedHtml}</div>
-            <div class="label-anchor rotate-handle"></div>
-          </div>
-        `,
-        iconSize: null as any,
-      }),
-    } as any);
-
-    bindRotationHandle(label, feature, label, 0, 10);
-
-    label.on("add", () => {
-      applyLabelStyle(label, feature);
-    });
-
-    if (label.getElement()) {
-      applyLabelStyle(label, feature);
-    }
-
-    attachFeatureToLayer(label, feature);
-    bindRenderedFeatureEvents(label, applyLayerUpdate);
-    featureLayerManager.addFeatureLayer(feature.id, label);
-  });
+  safeFeatures.forEach((feature) => renderTextFeature(feature));
 }
 
 

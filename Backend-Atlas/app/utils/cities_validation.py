@@ -120,20 +120,41 @@ if _GEO_DATA_PATH.exists():
 _POLITICAL_TYPES = frozenset({"country", "continent", "state", "province", "territory"})
 
 
-def _nearest_candidate(
+# Configuration table for matching thresholds
+MATCHING_CONFIG = {
+    "exact_threshold": 1.0,
+    "default_confidence_threshold": 0.80,
+    "ocr_fuzzy_threshold": 0.60,
+}
+
+
+def resolve_best_candidate(
     candidates: List[Dict[str, Any]],
     target_pos: Optional[Tuple[float, float]] = None,
     bounds: Optional[Dict[str, float]] = None,
+    *,
+    prefer_political: bool = True,
+    prefer_population: bool = False,
+    strict_bounds: bool = False,
 ) -> Optional[Dict[str, Any]]:
-    """Pick the candidate closest to *target_pos* (georeferenced OCR position).
+    """Select the best candidate from a candidate list.
 
-    When candidates mix political and physical types (e.g. "Ontario" is both
-    a province and a lake), political entities are preferred.
-    Fallback order: bounds center → first candidate (no geographic bias).
+    Unifies candidate selection across cities and geographic entities:
+    - Filters by spatial bounds (strict if requested, or prefers in-bounds candidates).
+    - Prioritizes political entities over physical entities when mixed (e.g. province vs lake).
+    - If target_pos is provided, picks the candidate closest to target_pos.
+    - If prefer_population is True (or cities without target_pos), picks highest population.
+    - If bounds center is available, picks closest to bounds center.
+    - Otherwise returns the first candidate in the pool.
     """
     if not candidates:
         return None
     if len(candidates) == 1:
+        if strict_bounds and bounds is not None:
+            c = candidates[0]
+            lat, lon = c.get("lat"), c.get("lon")
+            if lat is None or lon is None or not is_in_bounds(float(lat), float(lon), bounds):
+                return None
         return candidates[0]
 
     in_bounds = [
@@ -141,37 +162,63 @@ def _nearest_candidate(
         for c in candidates
         if c.get("lat") is not None
         and c.get("lon") is not None
-        and (bounds is None or is_in_bounds(c["lat"], c["lon"], bounds))
+        and (bounds is None or is_in_bounds(float(c["lat"]), float(c["lon"]), bounds))
     ]
-    pool = in_bounds or candidates
 
-    # If there's a mix of political vs physical types, keep only political
-    political = [c for c in pool if c.get("type") in _POLITICAL_TYPES]
-    if political and len(political) < len(pool):
-        pool = political
+    if strict_bounds and bounds is not None:
+        pool = in_bounds
+        if not pool:
+            return None
+    else:
+        pool = in_bounds or candidates
+
+    if prefer_political:
+        political = [c for c in pool if c.get("type") in _POLITICAL_TYPES]
+        if political and len(political) < len(pool):
+            pool = political
 
     if target_pos is not None:
         ref_lat, ref_lon = target_pos
-    elif bounds is not None:
-        ref_lat = (bounds["north"] + bounds["south"]) / 2.0
-        ref_lon = (bounds["east"] + bounds["west"]) / 2.0
-    else:
-        return pool[0]
 
-    def _dist(c: Dict[str, Any]) -> float:
-        lat, lon = c.get("lat"), c.get("lon")
-        return (
-            math.hypot(float(lat) - ref_lat, float(lon) - ref_lon) if lat is not None and lon is not None else float("inf")
-        )
+        def _dist(c: Dict[str, Any]) -> float:
+            lat, lon = c.get("lat"), c.get("lon")
+            return (
+                math.hypot(float(lat) - ref_lat, float(lon) - ref_lon)
+                if lat is not None and lon is not None
+                else float("inf")
+            )
 
-    return min(pool, key=_dist)
+        return min(pool, key=_dist)
+
+    if prefer_population:
+        return max(pool, key=lambda c: c.get("population", 0))
+
+    if bounds is not None:
+        s = bounds.get("south", bounds.get("min_lat", 0.0))
+        n = bounds.get("north", bounds.get("max_lat", 0.0))
+        w = bounds.get("west", bounds.get("min_lon", 0.0))
+        e = bounds.get("east", bounds.get("max_lon", 0.0))
+        ref_lat = (n + s) / 2.0
+        ref_lon = (e + w) / 2.0
+
+        def _dist_bounds(c: Dict[str, Any]) -> float:
+            lat, lon = c.get("lat"), c.get("lon")
+            return (
+                math.hypot(float(lat) - ref_lat, float(lon) - ref_lon)
+                if lat is not None and lon is not None
+                else float("inf")
+            )
+
+        return min(pool, key=_dist_bounds)
+
+    return pool[0]
 
 
 def find_geo_entity(
     text: str,
     *,
     fuzzy: bool = False,
-    cutoff: float = 0.80,
+    cutoff: float = MATCHING_CONFIG["default_confidence_threshold"],
     target_pos: Optional[Tuple[float, float]] = None,
     bounds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -186,12 +233,12 @@ def find_geo_entity(
 
     hits = _GEO_INDEX.get(norm)
     if hits:
-        return _nearest_candidate(hits, target_pos, bounds)
+        return resolve_best_candidate(hits, target_pos=target_pos, bounds=bounds, prefer_political=True)
 
-    if fuzzy and cutoff < 1.0:
+    if fuzzy and cutoff < MATCHING_CONFIG["exact_threshold"]:
         close = difflib.get_close_matches(norm, _GEO_INDEX.keys(), n=1, cutoff=cutoff)
         if close:
-            return _nearest_candidate(_GEO_INDEX[close[0]], target_pos, bounds)
+            return resolve_best_candidate(_GEO_INDEX[close[0]], target_pos=target_pos, bounds=bounds, prefer_political=True)
 
     return None
 
@@ -232,20 +279,26 @@ for _info in _gc.get_cities().values():
 # Style definitions for map display: (mapElementType, sizePx, fontStyle, textTransform)
 StyleTuple = Tuple[str, int, str, Any]
 
-STYLES_MAP: Dict[str, StyleTuple] = {
-    "continent": ("label", 18, "uppercase", str.upper),
-    "country": ("label", 16, "uppercase", str.upper),
-    "state": ("label", 14, "uppercase", str.upper),
-    "province": ("label", 14, "uppercase", str.upper),
-    "territory": ("label", 14, "uppercase", str.upper),
-    "city": ("point", 12, "normal", capitalize_words),
-    "ocean": ("label", 18, "italic uppercase", str.upper),
-    "sea": ("label", 16, "italic", capitalize_words),
-    "fleuve": ("label", 14, "italic", capitalize_words),
-    "lake": ("label", 12, "italic", capitalize_words),
-    "river": ("label", 10, "italic", capitalize_words),
+# Canonical taxonomy shared with frontend WORD_TYPE_TAXONOMY
+WORD_TAXONOMY: Dict[str, Dict[str, Any]] = {
+    "continent": {"element_type": "label", "size_px": 18, "font_style": "uppercase", "priority": 90, "min_zoom": 1.0, "transform": str.upper},
+    "ocean":     {"element_type": "label", "size_px": 18, "font_style": "italic uppercase", "priority": 80, "min_zoom": 1.0, "transform": str.upper},
+    "country":   {"element_type": "label", "size_px": 16, "font_style": "uppercase", "priority": 70, "min_zoom": 1.5, "transform": str.upper},
+    "sea":       {"element_type": "label", "size_px": 16, "font_style": "italic", "priority": 60, "min_zoom": 2.0, "transform": capitalize_words},
+    "state":     {"element_type": "label", "size_px": 14, "font_style": "uppercase", "priority": 50, "min_zoom": 2.5, "transform": str.upper},
+    "province":  {"element_type": "label", "size_px": 14, "font_style": "uppercase", "priority": 50, "min_zoom": 2.5, "transform": str.upper},
+    "territory": {"element_type": "label", "size_px": 14, "font_style": "uppercase", "priority": 50, "min_zoom": 2.5, "transform": str.upper},
+    "fleuve":    {"element_type": "label", "size_px": 14, "font_style": "italic", "priority": 40, "min_zoom": 2.25, "transform": capitalize_words},
+    "city":      {"element_type": "point", "size_px": 12, "font_style": "normal", "priority": 30, "min_zoom": 4.0, "transform": capitalize_words},
+    "lake":      {"element_type": "label", "size_px": 12, "font_style": "italic", "priority": 20, "min_zoom": 2.75, "transform": capitalize_words},
+    "river":     {"element_type": "label", "size_px": 10, "font_style": "italic", "priority": 10, "min_zoom": 4.5, "transform": capitalize_words},
 }
-DEFAULT_STYLE: StyleTuple = STYLES_MAP.get("city", ("point", 12, "normal", capitalize_words))
+
+STYLES_MAP: Dict[str, StyleTuple] = {
+    k: (v["element_type"], v["size_px"], v["font_style"], v["transform"])
+    for k, v in WORD_TAXONOMY.items()
+}
+DEFAULT_STYLE: StyleTuple = STYLES_MAP["city"]
 
 
 # Common geographic prefixes preserved for display nomenclature only if detected in extraction query
@@ -281,19 +334,37 @@ _GEOGRAPHIC_PREFIXES = (
 )
 
 
-def _preserve_prefix_nomenclature(raw_name: str, query: str) -> str:
-    """Preserve terms like 'Province de ...', 'Océan ...', 'Territoire de ...' only if present in extraction query."""
-    norm_query = _normalize(query)
-    norm_raw = _normalize(raw_name)
+def _find_geographic_prefix(norm_text: str) -> Optional[Tuple[str, str]]:
+    """Return (normalized_prefix, display_prefix) if norm_text begins with a known geographic prefix."""
+    for p_norm, p_disp in _GEOGRAPHIC_PREFIXES:
+        if norm_text.startswith(p_norm):
+            return p_norm, p_disp
+    return None
 
-    for prefix_norm, prefix_display in _GEOGRAPHIC_PREFIXES:
-        if norm_query.startswith(prefix_norm):
-            # Only attach if raw_name does not already have a geographic prefix
-            for p_norm, _ in _GEOGRAPHIC_PREFIXES:
-                if norm_raw.startswith(p_norm):
-                    return capitalize_words(raw_name)
-            return f"{prefix_display}{capitalize_words(raw_name)}"
-    return capitalize_words(raw_name) if not raw_name.isupper() else raw_name
+
+def format_geographic_nomenclature(raw_name: str, query: str = "") -> str:
+    """Format place name with unified nomenclature and preserve query prefix when present.
+
+    Preserves terms like 'Province de ...', 'Océan ...', 'Territoire de ...' only if present
+    in the extraction query, avoiding nested prefix loops or casing inconsistencies.
+    """
+    clean_name = raw_name.strip()
+    if not clean_name:
+        return raw_name
+
+    norm_query = _normalize(query)
+    norm_raw = _normalize(clean_name)
+
+    query_prefix = _find_geographic_prefix(norm_query) if query else None
+    raw_prefix = _find_geographic_prefix(norm_raw)
+
+    formatted_base = clean_name if clean_name.isupper() else capitalize_words(clean_name)
+
+    if query_prefix and not raw_prefix:
+        _, display_prefix = query_prefix
+        return f"{display_prefix}{capitalize_words(clean_name)}"
+
+    return formatted_base
 
 
 def _not_found(text: str) -> Dict[str, Any]:
@@ -309,7 +380,7 @@ def format_place_result(
 ) -> Dict[str, Any]:
     """Format a geographic-entity or city match as a result dict using STYLES_MAP."""
     raw_name = place.get("name_fr") or place.get("name", query)
-    raw_name = _preserve_prefix_nomenclature(raw_name, query)
+    raw_name = format_geographic_nomenclature(raw_name, query)
     geo_type = place.get("type") or default_type
 
     style_key = geo_type or "city"
@@ -419,7 +490,7 @@ def resolve_place(
     bounds = frame_bounds if frame_bounds is not None else geo_bounds
     base = _not_found(text)
 
-    def _match_geo(fuzzy: bool = False, cutoff: float = 0.80) -> Any:
+    def _match_geo(fuzzy: bool = False, cutoff: float = MATCHING_CONFIG["default_confidence_threshold"]) -> Any:
         ent = find_geo_entity(key, fuzzy=fuzzy, cutoff=cutoff, target_pos=target_pos, bounds=bounds)
         if ent is None:
             return None
@@ -429,64 +500,61 @@ def resolve_place(
             else _BLOCKED
         )
 
-    def _match_city_exact() -> Optional[Dict[str, Any]]:
-        cands = _city_map_in_bounds(key, bounds)
-        if not cands:
-            return None
-        return format_place_result(max(cands, key=lambda c: c.get("population", 0)), text)
+    def _match_city(fuzzy: bool = False, cutoff: float = MATCHING_CONFIG["default_confidence_threshold"]) -> Optional[Dict[str, Any]]:
+        if not fuzzy:
+            cands = _CITY_INDEX.get(key, [])
+        else:
+            valid_keys = [k for k, v in _CITY_INDEX.items() if any(is_in_bounds(c["lat"], c["lon"], bounds) for c in v)] if bounds else list(_CITY_INDEX.keys())
+            close = difflib.get_close_matches(key, valid_keys, n=1, cutoff=cutoff)
+            if not close:
+                return None
+            cands = _CITY_INDEX.get(close[0], [])
 
-    def _match_city_fuzzy(cutoff: float) -> Optional[Dict[str, Any]]:
-        valid_keys = [k for k, v in _CITY_INDEX.items() if _any_in_bounds(v, bounds)] if bounds else list(_CITY_INDEX.keys())
-        close = difflib.get_close_matches(key, valid_keys, n=1, cutoff=cutoff)
-        if not close:
+        best = resolve_best_candidate(
+            cands,
+            target_pos=target_pos,
+            bounds=bounds,
+            prefer_political=False,
+            prefer_population=True,
+            strict_bounds=True,
+        )
+        if not best:
             return None
-        cands = _city_map_in_bounds(close[0], bounds)
-        if not cands:
-            return None
-        return format_place_result(max(cands, key=lambda c: c.get("population", 0)), text)
+        return format_place_result(best, text)
 
     if text.isupper():
         # ALL-CAPS → prefer geographic entity
-        geo = _match_geo()
+        geo = _match_geo(fuzzy=False)
         if geo is _BLOCKED:
             return base
         if geo:
             return geo
-        city = _match_city_exact()
+        city = _match_city(fuzzy=False)
         if city:
             return city
     else:
         # Title / lowercase → prefer city
-        city = _match_city_exact()
+        city = _match_city(fuzzy=False)
         if city:
             return city
-        geo = _match_geo()
+        geo = _match_geo(fuzzy=False)
         if geo is _BLOCKED:
             return base
         if geo:
             return geo
 
-    if confidence_threshold < 1.0:
+    if confidence_threshold < MATCHING_CONFIG["exact_threshold"]:
         geo_f = _match_geo(fuzzy=True, cutoff=confidence_threshold)
         if geo_f is _BLOCKED:
             return base
         if geo_f:
             return geo_f
 
-        city_f = _match_city_fuzzy(confidence_threshold)
+        city_f = _match_city(fuzzy=True, cutoff=confidence_threshold)
         if city_f:
             return city_f
 
     return base
-
-
-def _city_map_in_bounds(norm_key: str, bounds: Optional[Dict[str, float]]) -> List[Dict[str, Any]]:
-    cands = _CITY_INDEX.get(norm_key, [])
-    return [c for c in cands if is_in_bounds(c["lat"], c["lon"], bounds)] if bounds else list(cands)
-
-
-def _any_in_bounds(cands: List[Dict[str, Any]], bounds: Optional[Dict[str, float]]) -> bool:
-    return any(is_in_bounds(c["lat"], c["lon"], bounds) for c in cands)
 
 
 def is_exploitable_text(text: str) -> bool:
@@ -543,29 +611,19 @@ def match_ocr_label(
             return None
 
     whole = clean.replace("\n", " ")
-
-    # 1) Exact on whole text
-    hit = _try(whole, 1.0)
-    if hit:
-        return hit
-
     lines = [ln.strip() for ln in clean.split("\n") if ln.strip()]
 
-    # 2) Exact on each line
-    if len(lines) > 1:
-        for ln in lines:
-            hit = _try(ln, 1.0)
-            if hit:
-                return hit
+    # Stage 1: Exact matches (whole text, then line-by-line)
+    exact_candidates = [whole] if len(lines) <= 1 else [whole, *lines]
+    for q in exact_candidates:
+        hit = _try(q, MATCHING_CONFIG["exact_threshold"])
+        if hit:
+            return hit
 
-    # 3) Fuzzy
-    if len(lines) > 1:
-        for ln in lines:
-            hit = _try(ln, 0.60)
-            if hit:
-                return hit
-    else:
-        hit = _try(whole, 0.60)
+    # Stage 2: Fuzzy matches (line-by-line if multiline, else whole text)
+    fuzzy_candidates = lines if len(lines) > 1 else [whole]
+    for q in fuzzy_candidates:
+        hit = _try(q, MATCHING_CONFIG["ocr_fuzzy_threshold"])
         if hit:
             return hit
 
@@ -574,20 +632,24 @@ def match_ocr_label(
 
 __all__ = [
     "resolve_place",
+    "resolve_best_candidate",
     "match_ocr_label",
     "find_geo_entity",
     "is_in_bounds",
     "capitalize_first",
     "capitalize_words",
+    "format_geographic_nomenclature",
     "haversine_distance_km",
     "find_nearby_candidate_city",
     "is_exploitable_text",
     "format_place_result",
     "_normalize",
     "_city_map",
+    "WORD_TAXONOMY",
     "STYLES_MAP",
     "DEFAULT_STYLE",
     "StyleTuple",
+    "MATCHING_CONFIG",
 ]
 
 _city_map = _CITY_INDEX

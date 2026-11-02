@@ -489,22 +489,25 @@ import {
   type Feature,
   type FeatureVisibilityGroup,
   type FeatureVisibilityGroupType,
-  ValidationStatus,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import { getMapElementType } from "../utils/featureHelpers";
 import {
   WORD_TYPE_STYLES,
+  WORD_TYPE_TAXONOMY,
   isTextFeature,
-  getWordTypeForFeature,
   formatWordText,
-  applyWordStyleToFeature,
-  parseLabelFontStyle,
-  toUpperCaseTransform,
+  prepareFeatureForEdit,
+  coerceEditedFeature,
+  getWordTypePreviewStyle,
 } from "../utils/mapLabelUtils";
+import {
+  groupFeaturesByType,
+  groupFeaturesByMap,
+  type MapGroupItem,
+} from "../utils/featureGrouping";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
-import { hexToRgb, rgbToHex } from "../utils/utils";
 
 const props = defineProps<{
   features: Feature[];
@@ -528,21 +531,14 @@ const isTextElement = computed(() => isTextFeature(featureToEdit.value));
 
 const editTextStyle = computed(() => {
   if (!isTextElement.value) return {};
-  const style = WORD_TYPE_STYLES[featureToEditWordType.value];
-  const { fontStyle, textTransform } = parseLabelFontStyle(style?.fontStyle);
-  const isUppercase = textTransform === "uppercase" || style?.transform === toUpperCaseTransform;
-  return {
-    fontStyle: fontStyle !== "normal" ? fontStyle : undefined,
-    textTransform: isUppercase ? "uppercase" : undefined,
-    color: featureToEditColor.value || undefined,
-  };
+  return getWordTypePreviewStyle(featureToEditWordType.value, featureToEditColor.value);
 });
 
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
   if (isTextElement.value) {
-    const style = WORD_TYPE_STYLES[featureToEditWordType.value];
-    return (style?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
+    const entry = WORD_TYPE_TAXONOMY[featureToEditWordType.value];
+    return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
   }
   return getMapElementType(featureToEdit.value) === "label";
 });
@@ -631,45 +627,7 @@ const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
   image: PhotoIcon,
 };
 
-const featureGroups = computed(() => {
-  const groups: FeatureVisibilityGroup[] = [
-    { type: "point", label: "Texte", features: [] as Feature[] },
-    { type: "zone", label: "Zone(s)", features: [] as Feature[] },
-    { type: "shape", label: "Forme(s)", features: [] as Feature[] },
-    { type: "image", label: "Image(s)", features: [] as Feature[] },
-    { type: "drawing", label: "Dessins", features: [] as Feature[] },
-  ];
-
-  props.features.forEach((feature: Feature) => {
-    // Unrecognized or rejected OCR texts are only shown in the validation modal
-    const valStatus = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-    if (
-      feature.properties?.isOcrText &&
-      (valStatus === ValidationStatus.REJECTED ||
-        valStatus === ValidationStatus.MANUAL_REVIEW ||
-        (!feature.properties?.recognized && feature.properties?.show === false))
-    ) {
-      return;
-    }
-
-    const featureType = getMapElementType(feature);
-    if (!featureType) return;
-
-    const targetGroup = groups.find((currentGroup) => {
-      if (featureType === "label" || featureType === "point") {
-        return currentGroup.type === "point";
-      }
-      if (featureType === "polyline" || featureType === "arrow") {
-        return currentGroup.type === "drawing";
-      }
-      return currentGroup.type === featureType;
-    }) ?? groups.find((currentGroup) => currentGroup.type === "drawing");
-
-    if (targetGroup) targetGroup.features.push(feature);
-  });
-
-  return groups;
-});
+const featureGroups = computed(() => groupFeaturesByType(props.features));
 
 const activeGroup = computed(() => {
   if (!activeGroupType.value) return featureGroups.value[0] ?? undefined;
@@ -689,62 +647,9 @@ const isAnyVisible = computed(() => {
   );
 });
 
-interface MapGroupItem {
-  id: string | null;
-  title: string;
-  startDate?: string | null;
-  features: Feature[];
-}
-
 const featuresByMap = computed((): MapGroupItem[] => {
   if (!activeGroup.value) return [];
-
-  const mapGroups = new Map<
-    string | null,
-    MapGroupItem
-  >();
-
-  activeGroup.value.features.forEach((feature: Feature) => {
-    const mapId = feature.mapId || null;
-    if (!mapGroups.has(mapId)) {
-      let title = "Éléments généraux";
-      let startDate: string | null = null;
-      if (mapId && props.mapPeriods) {
-        const period = props.mapPeriods.find((p: MapPeriod) => p.id === mapId);
-        if (period) {
-          title = period.title;
-          startDate = period.startDate;
-        }
-      }
-      mapGroups.set(mapId, { id: mapId, title, startDate, features: [] });
-    }
-    mapGroups.get(mapId)!.features.push(feature);
-  });
-
-  return Array.from(mapGroups.values())
-    .map((group) => {
-      group.features.sort((a, b) => {
-        const nameA = a.properties?.name || "Élément sans nom";
-        const nameB = b.properties?.name || "Élément sans nom";
-        return nameA.localeCompare(nameB);
-      });
-      return group;
-    })
-    .sort((a, b) => {
-      if (a.id === null) return -1;
-      if (b.id === null) return 1;
-
-      if (a.startDate && b.startDate) {
-        if (a.startDate < b.startDate) return -1;
-        if (a.startDate > b.startDate) return 1;
-      } else if (a.startDate) {
-        return -1;
-      } else if (b.startDate) {
-        return 1;
-      }
-
-      return a.title.localeCompare(b.title);
-    });
+  return groupFeaturesByMap(activeGroup.value.features, props.mapPeriods);
 });
 
 function toggleMapGroup(mapId: string | null, visible: boolean) {
@@ -795,27 +700,16 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
 }
 
 async function showEditFeatureDialog(feature: Feature) {
-  featureToEdit.value = feature;
-  featureToEditWordType.value = getWordTypeForFeature(feature);
-  const isText = isTextFeature(feature);
-  const elemType = getMapElementType(feature);
-
-  const rawLabel =
-    feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
-  featureToEditLabelText.value =
-    isText && rawLabel ? formatWordText(rawLabel, featureToEditWordType.value) : rawLabel;
-  featureToEditName.value =
-    isText && feature.properties.name
-      ? formatWordText(feature.properties.name, featureToEditWordType.value)
-      : feature.properties.name;
-
-  featureToEditColor.value =
-    rgbToHex(feature.properties.colorRgb) ??
-    (elemType === "label" || elemType === "point" ? "#000000" : undefined);
-  featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
-  featureToEditOpacity.value = feature.properties.fillOpacity;
-  featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
-  featureToEditStrokeWidth.value = feature.properties.strokeWidth;
+  const state = prepareFeatureForEdit(feature);
+  featureToEdit.value = state.feature;
+  featureToEditWordType.value = state.wordType;
+  featureToEditLabelText.value = state.labelText;
+  featureToEditName.value = state.name;
+  featureToEditColor.value = state.colorHex;
+  featureToEditStrokeColor.value = state.strokeColorHex;
+  featureToEditOpacity.value = state.fillOpacity;
+  featureToEditStrokeOpacity.value = state.strokeOpacity;
+  featureToEditStrokeWidth.value = state.strokeWidth;
 
   await nextTick();
   editFeatureDialogRef.value?.showModal();
@@ -825,46 +719,16 @@ async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
 
-  let updatedFeature: Feature;
-  if (isTextElement.value) {
-    const styled = applyWordStyleToFeature(
-      featureToEdit.value,
-      featureToEditWordType.value,
-      featureToEditName.value,
-    );
-    const isLabel = styled.properties.mapElementType === "label";
-    const customLabelText =
-      featureToEditLabelText.value !== undefined
-        ? formatWordText(featureToEditLabelText.value, featureToEditWordType.value)
-        : styled.properties.labelText;
-
-    updatedFeature = {
-      ...styled,
-      properties: {
-        ...styled.properties,
-        labelText: customLabelText,
-        colorRgb: hexToRgb(featureToEditColor.value),
-        strokeColor: isLabel ? undefined : hexToRgb(featureToEditStrokeColor.value),
-        fillOpacity: isLabel ? undefined : featureToEditOpacity.value,
-        strokeOpacity: isLabel ? undefined : featureToEditStrokeOpacity.value,
-        strokeWidth: isLabel ? undefined : featureToEditStrokeWidth.value,
-      },
-    };
-  } else {
-    updatedFeature = {
-      ...featureToEdit.value,
-      name: featureToEditName.value,
-      properties: {
-        ...featureToEdit.value.properties,
-        name: featureToEditName.value,
-        colorRgb: hexToRgb(featureToEditColor.value),
-        strokeColor: hexToRgb(featureToEditStrokeColor.value),
-        fillOpacity: featureToEditOpacity.value,
-        strokeOpacity: featureToEditStrokeOpacity.value,
-        strokeWidth: featureToEditStrokeWidth.value,
-      },
-    };
-  }
+  const updatedFeature = coerceEditedFeature(featureToEdit.value, {
+    name: featureToEditName.value,
+    labelText: featureToEditLabelText.value,
+    wordType: featureToEditWordType.value,
+    colorHex: featureToEditColor.value,
+    strokeColorHex: featureToEditStrokeColor.value,
+    fillOpacity: featureToEditOpacity.value,
+    strokeOpacity: featureToEditStrokeOpacity.value,
+    strokeWidth: featureToEditStrokeWidth.value,
+  });
 
   featureToEdit.value = updatedFeature;
 
