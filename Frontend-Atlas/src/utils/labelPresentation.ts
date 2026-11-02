@@ -6,22 +6,6 @@ import {
   getWordTypeStyle,
 } from "./wordStyles";
 
-export interface LabelFontStyle {
-  fontStyle: "normal" | "italic";
-  textTransform: "uppercase" | "none";
-}
-
-export function parseLabelFontStyle(rawStyle?: unknown): LabelFontStyle {
-  const styleStr = typeof rawStyle === "string" ? rawStyle.toLowerCase() : "";
-  return {
-    fontStyle:
-      styleStr.includes("italic") || styleStr.includes("oblique")
-        ? "italic"
-        : "normal",
-    textTransform: styleStr.includes("uppercase") ? "uppercase" : "none",
-  };
-}
-
 export function splitBalancedLine(text: string, maxLen = 13): string {
   if (text.length <= maxLen) return text;
 
@@ -96,26 +80,16 @@ export function getLabelPresentation(
   const rawText =
     customText ??
     String(props.labelText ?? props.name ?? typedFeature.name ?? "");
-  const explicitFontStyle = props.fontStyle
-    ? parseLabelFontStyle(props.fontStyle)
-    : null;
-  const isUppercase = explicitFontStyle
-    ? explicitFontStyle.textTransform === "uppercase"
-    : taxonomy.textTransform === "uppercase";
-  const isItalic = explicitFontStyle
-    ? explicitFontStyle.fontStyle === "italic"
-    : taxonomy.fontStyle === "italic";
+  const isUppercase = taxonomy.textTransform === "uppercase";
+  const isItalic = taxonomy.fontStyle === "italic";
   const formattedText = formatWordText(
     rawText,
     wordType,
-    isUppercase ? "uppercase" : explicitFontStyle ? "none" : undefined,
+    isUppercase ? "uppercase" : "none",
   );
   const html = formatLabelHtml(formattedText);
-  const sizePx = Number(props.sizePx ?? taxonomy.sizePx);
-  const mapElementType =
-    props.mapElementType === "point" || props.mapElementType === "label"
-      ? props.mapElementType
-      : taxonomy.mapElementType;
+  const sizePx = taxonomy.sizePx;
+  const mapElementType = taxonomy.mapElementType;
   const colorCss =
     colorRgbToCss(props.colorRgb) ||
     (typeof props.color === "string" ? props.color : "#000000");

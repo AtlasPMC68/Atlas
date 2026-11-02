@@ -42,7 +42,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       mapId: "map-1",
       name: "Québec",
       geometry: { type: "Point", coordinates: [-71.2, 46.8] },
-      properties: { name: "Québec", isOcrText: true },
+      properties: { name: "Québec", isOcrText: true, recognized: true, show: true },
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
     },
@@ -53,9 +53,30 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       mapId: "map-2",
       name: "Montréal",
       geometry: { type: "Point", coordinates: [-73.5, 45.5] },
-      properties: { name: "Montréal", isOcrText: true },
+      properties: { name: "Montréal", isOcrText: true, recognized: true, show: true },
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
+    },
+  ];
+
+  const reviewFeatures: Feature[] = [
+    {
+      ...features[0],
+      id: "review-1",
+      properties: {
+        ...features[0].properties,
+        recognized: false,
+        show: false,
+      },
+    },
+    {
+      ...features[1],
+      id: "review-2",
+      properties: {
+        ...features[1].properties,
+        recognized: false,
+        show: false,
+      },
     },
   ];
 
@@ -67,7 +88,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
   it("shows text validation button when text tab is active", () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {
-        features,
+        features: [...features, ...reviewFeatures],
         featureVisibility,
         mapPeriods,
       },
@@ -80,7 +101,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
   it("shows map selection dialog with available maps when multiple maps contain texts", async () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {
-        features,
+        features: [...features, ...reviewFeatures],
         featureVisibility,
         mapPeriods,
       },
@@ -95,7 +116,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
   it("emits validate-texts with map ID when a map is chosen in the selection dialog", async () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {
-        features,
+        features: [...features, ...reviewFeatures],
         featureVisibility,
         mapPeriods,
       },
@@ -168,6 +189,11 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     expect(wrapper.text()).not.toContain("Fort moose");
     // Recognized text is listed
     expect(wrapper.text()).toContain("Québec");
+    // Rejected OCR remains available through the validation workflow.
+    expect(wrapper.text()).toContain("Examiner les rejets");
+    expect(wrapper.find('[data-testid="select-map-validation-dialog"]').text()).toContain(
+      "Carte Québec 1900",
+    );
   });
 
   it("lists accepted OCR texts (recognized: true) in the page", () => {

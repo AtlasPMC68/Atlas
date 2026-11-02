@@ -18,6 +18,25 @@ export function getFeatureValidationStatus(
   );
 }
 
+export type FeatureReviewState = ValidationStatus | "unreviewed";
+
+export function getFeatureReviewState(feature: Feature): FeatureReviewState {
+  const status = getFeatureValidationStatus(feature);
+  if (
+    status === ValidationStatus.ACCEPTED ||
+    status === ValidationStatus.REJECTED ||
+    status === ValidationStatus.MANUAL_REVIEW
+  ) {
+    return status;
+  }
+
+  if (feature.properties?.isOcrText && !feature.properties.recognized) {
+    return ValidationStatus.MANUAL_REVIEW;
+  }
+
+  return "unreviewed";
+}
+
 export function isReviewStatus(status: unknown): boolean {
   return (
     status === ValidationStatus.REJECTED ||
@@ -26,20 +45,40 @@ export function isReviewStatus(status: unknown): boolean {
 }
 
 export function isTextValidationReviewCandidate(feature: Feature): boolean {
+  const state = getFeatureReviewState(feature);
   return (
-    isReviewStatus(getFeatureValidationStatus(feature)) ||
-    isUnrecognizedOcrFeature(feature)
+    state === ValidationStatus.REJECTED ||
+    state === ValidationStatus.MANUAL_REVIEW
   );
 }
 
 export function isUnrecognizedOcrFeature(feature: Feature): boolean {
   if (!feature.properties?.isOcrText) return false;
 
-  const status = getFeatureValidationStatus(feature);
-  return (
-    isReviewStatus(status) ||
-    (!feature.properties.recognized && feature.properties.show === false)
-  );
+  const state = getFeatureReviewState(feature);
+  return state !== ValidationStatus.ACCEPTED && state !== "unreviewed";
+}
+
+export function isFeatureSelectedForValidation(
+  feature: Feature,
+  defaultSelected = true,
+): boolean {
+  const state = getFeatureReviewState(feature);
+  if (state === ValidationStatus.ACCEPTED) return true;
+  if (state === ValidationStatus.REJECTED) return false;
+
+  const isUnrecognizedOcr =
+    feature.properties?.isOcrText &&
+    state === ValidationStatus.MANUAL_REVIEW;
+  if (isUnrecognizedOcr) {
+    return feature.properties?.userSelected !== undefined
+      ? Boolean(feature.properties.userSelected)
+      : defaultSelected;
+  }
+
+  return feature.properties?.show !== undefined
+    ? Boolean(feature.properties.show)
+    : defaultSelected;
 }
 
 export function isVisibleInMainLayers(feature: Feature): boolean {

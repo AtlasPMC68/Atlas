@@ -10,7 +10,9 @@ import {
   isTextFeature,
 } from "./wordStyles";
 import {
+  getFeatureReviewState,
   getFeatureValidationStatus,
+  isFeatureSelectedForValidation,
   isTextValidationReviewCandidate,
   synchronizeValidationState,
 } from "./featureValidationState";
@@ -33,10 +35,6 @@ export interface TextValidationEntry {
 /** Check if a feature is an unrecognized OCR text candidate for validation. */
 export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | null): boolean {
   const matchesMap = !mapId || feature.mapId === mapId || !feature.mapId;
-  const status = getFeatureValidationStatus(feature);
-  if (status === ValidationStatus.ACCEPTED) {
-    return false;
-  }
   return (
     matchesMap &&
     isTextValidationReviewCandidate(feature) &&
@@ -53,19 +51,8 @@ export function featureToValidationEntry(
   const originalText = feature.properties?.originalText || text;
 
   const status = getFeatureValidationStatus(feature);
-  const isUnrecognized = Boolean(feature.properties?.isOcrText && !feature.properties?.recognized);
-  const selected =
-    status === ValidationStatus.ACCEPTED
-      ? true
-      : status === ValidationStatus.REJECTED
-      ? false
-      : isUnrecognized
-      ? (feature.properties?.userSelected !== undefined
-          ? Boolean(feature.properties.userSelected)
-          : defaultSelected)
-      : (feature.properties?.show !== undefined
-          ? Boolean(feature.properties.show)
-          : defaultSelected);
+  const reviewState = getFeatureReviewState(feature);
+  const selected = isFeatureSelectedForValidation(feature, defaultSelected);
 
   const coordinates =
     feature.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)
@@ -83,7 +70,7 @@ export function featureToValidationEntry(
       status ??
       (selected
         ? ValidationStatus.ACCEPTED
-        : isUnrecognized
+        : reviewState === ValidationStatus.MANUAL_REVIEW
         ? ValidationStatus.MANUAL_REVIEW
         : ValidationStatus.REJECTED),
     coordinates,

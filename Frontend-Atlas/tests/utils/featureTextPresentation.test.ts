@@ -11,10 +11,7 @@ import {
   applyWordStyleToFeature,
   WORD_TYPE_TAXONOMY,
 } from "../../src/utils/wordStyles";
-import {
-  parseLabelFontStyle,
-  getLabelPresentation,
-} from "../../src/utils/labelPresentation";
+import { getLabelPresentation } from "../../src/utils/labelPresentation";
 import {
   prepareFeatureForEdit,
   coerceEditedFeature,
@@ -85,9 +82,6 @@ describe("shared word styles and label presentation", () => {
     expect(WORD_TYPE_STYLES.country.transform("Canada")).toBe("CANADA");
     expect(WORD_TYPE_STYLES.city.transform("QUÉBEC")).toBe("Québec");
     expect(WORD_TYPE_STYLES.ocean.transform("ocean atlantique")).toBe("OCEAN ATLANTIQUE");
-    const oceanParsed = parseLabelFontStyle(WORD_TYPE_STYLES.ocean.cssFontStyle);
-    expect(oceanParsed.fontStyle).toBe("italic");
-    expect(oceanParsed.textTransform).toBe("uppercase");
   });
 
   it("getWordTypeStyle resolves correctly with fallback to city", () => {
@@ -100,20 +94,6 @@ describe("shared word styles and label presentation", () => {
     expect(getWordTypePreviewStyle("city").fontSize).toBe("12px");
     expect(getWordTypePreviewStyle("province").fontSize).toBe("14px");
     expect(getWordTypePreviewStyle("country").fontSize).toBe("16px");
-  });
-
-  it("parseLabelFontStyle parses uppercase and italic correctly", () => {
-    const provinceStyle = parseLabelFontStyle(WORD_TYPE_STYLES.province.cssFontStyle);
-    expect(provinceStyle.textTransform).toBe("uppercase");
-    expect(provinceStyle.fontStyle).toBe("normal");
-
-    const lakeStyle = parseLabelFontStyle(WORD_TYPE_STYLES.lake.cssFontStyle);
-    expect(lakeStyle.textTransform).toBe("none");
-    expect(lakeStyle.fontStyle).toBe("italic");
-
-    const cityStyle = parseLabelFontStyle(WORD_TYPE_STYLES.city.cssFontStyle);
-    expect(cityStyle.textTransform).toBe("none");
-    expect(cityStyle.fontStyle).toBe("normal");
   });
 
   it("isTextFeature accurately identifies text and label features", () => {
@@ -220,6 +200,32 @@ describe("shared word styles and label presentation", () => {
     expect(pres.priority).toBe(60);
     expect(pres.minZoom).toBe(2.0);
     expect(pres.html).toContain("Baie d'Hudson");
+  });
+
+  it("uses taxonomy as the sole source for label style despite stale feature properties", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-stale-style",
+      name: "montreal",
+      geometry: { type: "Point", coordinates: [-73.5, 45.5] },
+      properties: {
+        name: "montreal",
+        rawType: "city",
+        mapElementType: "label",
+        sizePx: 99,
+        fontStyle: "uppercase italic",
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presentation = getLabelPresentation(feature);
+    expect(presentation.mapElementType).toBe("point");
+    expect(presentation.sizePx).toBe(12);
+    expect(presentation.fontStyle).toBe("normal");
+    expect(presentation.textTransform).toBe("none");
+    expect(presentation.formattedText).toBe("Montreal");
   });
 
   it("prepareFeatureForEdit and coerceEditedFeature handle form roundtrips", () => {

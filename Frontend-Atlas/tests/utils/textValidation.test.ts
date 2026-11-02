@@ -51,6 +51,21 @@ describe("textValidation utility functions", () => {
       expect(isUnrecognizedTextFeature(accepted, "map-1")).toBe(false);
     });
 
+    it("lets accepted status override stale OCR rejection flags", () => {
+      const accepted: Feature = {
+        ...baseFeature,
+        properties: {
+          ...baseFeature.properties,
+          recognized: false,
+          show: false,
+          validationStatus: "accepted",
+        },
+      };
+
+      expect(isUnrecognizedTextFeature(accepted, "map-1")).toBe(false);
+      expect(featureToValidationEntry(accepted).selected).toBe(true);
+    });
+
     it("returns true for rejected features so they can be re-examined unless deleted", () => {
       const rejected: Feature = {
         ...baseFeature,

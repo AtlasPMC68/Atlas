@@ -42,7 +42,7 @@
 
         <!-- Validate extracted texts button -->
         <div
-          v-if="activeGroup?.type === 'point' && featuresByMap.length > 0"
+          v-if="validationFeaturesByMap.length > 0"
           class="flex flex-col gap-2 p-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl"
         >
           <div class="flex items-center justify-between">
@@ -464,7 +464,7 @@
       </p>
       <div class="flex flex-col gap-2">
         <button
-          v-for="group in featuresByMap"
+          v-for="group in validationFeaturesByMap"
           :key="group.id || 'general'"
           type="button"
           class="btn btn-outline btn-sm justify-between text-left normal-case border-gray-300 hover:border-indigo-500 hover:bg-indigo-50 hover:text-indigo-900"
@@ -526,6 +526,7 @@ import {
   groupFeaturesByMap,
   type MapGroupItem,
 } from "../utils/featureGrouping";
+import { isUnrecognizedTextFeature } from "../utils/textValidation";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
 
@@ -604,10 +605,10 @@ watch(
 );
 
 function openMapSelectionOrValidate() {
-  if (featuresByMap.value.length > 1) {
+  if (validationFeaturesByMap.value.length > 1) {
     selectMapValidationDialogRef.value?.showModal?.();
   } else {
-    emit("validate-texts", featuresByMap.value[0]?.id ?? null);
+    emit("validate-texts", validationFeaturesByMap.value[0]?.id ?? null);
   }
 }
 
@@ -663,6 +664,13 @@ const featuresByMap = computed((): MapGroupItem[] => {
   if (!activeGroup.value) return [];
   return groupFeaturesByMap(activeGroup.value.features, props.mapPeriods);
 });
+
+const validationFeaturesByMap = computed(() =>
+  groupFeaturesByMap(
+    props.features.filter((feature) => isUnrecognizedTextFeature(feature)),
+    props.mapPeriods,
+  ),
+);
 
 function toggleMapGroup(mapId: string | null, visible: boolean) {
   const mapGroup = featuresByMap.value.find((g: MapGroupItem) => g.id === mapId);
