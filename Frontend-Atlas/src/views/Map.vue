@@ -35,6 +35,7 @@
             :project-id="projectId || projectRouteId || ''"
             :can-undo="canUndo"
             :can-redo="canRedo"
+            :selected-feature-id="selectedFeatureId"
             @select-feature="(id: string | null) => selectedFeatureId = id"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
@@ -152,11 +153,11 @@ import CreateProjectDialog from "../components/CreateProjectDialog.vue";
 import TextValidationModal from "../components/import/TextValidationModal.vue";
 import {
   type TextValidationEntry,
-  ValidationStatus,
   featureToValidationEntry,
   applyValidationToFeature,
   isUnrecognizedTextFeature,
 } from "../utils/textValidation";
+import { isVisibleInMainLayers } from "../utils/featureValidationState";
 
 const route = useRoute();
 const router = useRouter();
@@ -274,13 +275,7 @@ const combinedFeatureVisibility = computed(() => {
     const id = String(feature.id);
 
     // Hide unvalidated or rejected OCR texts from the map
-    const valStatus = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-    if (
-      feature.properties?.isOcrText &&
-      (valStatus === ValidationStatus.REJECTED ||
-        valStatus === ValidationStatus.MANUAL_REVIEW ||
-        (!feature.properties?.recognized && feature.properties?.show === false))
-    ) {
+    if (!isVisibleInMainLayers(feature)) {
       combined.set(id, false);
       return;
     }

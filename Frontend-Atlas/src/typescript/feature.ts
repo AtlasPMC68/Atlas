@@ -61,7 +61,7 @@ export interface FeatureProperties {
   fillOpacity?: number;
   strokeOpacity?: number;
   strokeWidth?: number;
-  mapElementType: MapElementType;
+  mapElementType?: MapElementType;
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];

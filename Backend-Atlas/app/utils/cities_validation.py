@@ -85,7 +85,7 @@ def capitalize_words(text: str) -> str:
             word_idx += 1
             continue
 
-        lower = part.casefold()
+        lower = part.lower()
         if word_idx > 0 and lower in _LOWERCASE_PARTICLES:
             result.append(lower)
         else:

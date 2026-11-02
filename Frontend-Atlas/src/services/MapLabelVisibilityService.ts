@@ -1,8 +1,8 @@
 import L from "leaflet";
 import type { Feature } from "../typescript/feature";
 import { forEachLeafLayer } from "../utils/mapDragUtils";
-import { getElementCategoryInfo } from "../utils/labelPresentation";
 import { selectVisibleLabels } from "../utils/labelCollision";
+import { getWordTypeStyle } from "../utils/wordStyles";
 
 type CircleMarkerWithFeature = L.CircleMarker & { feature?: Feature };
 
@@ -44,12 +44,14 @@ export function updateMapLabelVisibility(
 
   const candidates = labels
     .map((label) => {
-      const { priority, minZoom } = getElementCategoryInfo(label);
+      const style = getWordTypeStyle(label.dataset.wordType);
+      const priority = Number.parseFloat(label.dataset.priority || "");
+      const minZoom = Number.parseFloat(label.dataset.minZoom || "");
       return {
         id: label.dataset.featureId || "",
         text: label.textContent || "",
-        priority,
-        minZoom,
+        priority: Number.isFinite(priority) ? priority : style.priority,
+        minZoom: Number.isFinite(minZoom) ? minZoom : style.minZoom,
         rectangle: label.getBoundingClientRect(),
       };
     })

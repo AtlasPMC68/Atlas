@@ -26,23 +26,12 @@ const config = wordStyleConfig as WordStyleConfig;
 
 export type WordType = keyof typeof wordStyleConfig.types;
 
-export interface WordTypeTaxonomyEntry {
+export type WordTypeTaxonomyEntry = {
   id: WordType;
-  label: string;
-  mapElementType: "point" | "label";
-  sizePx: number;
-  fontStyle: "normal" | "italic";
-  textTransform: "uppercase" | "none";
-  priority: number;
-  minZoom: number;
-  category: string;
-}
+} & WordStyleConfig["types"][WordType];
 
-export interface WordTypeStyle {
-  label: string;
-  mapElementType: "point" | "label";
-  sizePx: number;
-  fontStyle: string;
+export interface WordTypeStyle extends WordTypeTaxonomyEntry {
+  cssFontStyle: string;
   transform: (text: string) => string;
 }
 
@@ -55,13 +44,6 @@ const APOSTROPHE_PREFIX_PATTERN = new RegExp(
   "i",
 );
 
-export const WORD_TYPE_TAXONOMY = Object.fromEntries(
-  Object.entries(config.types).map(([id, entry]) => [
-    id,
-    { id, ...entry },
-  ]),
-) as Record<WordType, WordTypeTaxonomyEntry>;
-
 export const toUpperCaseTransform = (text: string): string =>
   text ? text.toUpperCase() : text;
 
@@ -70,17 +52,15 @@ export function capitalizeSegment(segment: string): string {
   return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
 }
 
-export function capitalizeFirstOnly(text: string): string {
-  return capitalizeSegment(text);
-}
-
 export function capitalizeWords(text: string): string {
   if (!text) return text;
+  let wordIndex = 0;
   return text
     .split(/([\s-]+)/)
-    .map((part, index) => {
+    .map((part) => {
       if (!part || /^[\s-]+$/.test(part)) return part;
 
+      const currentWordIndex = wordIndex++;
       const apostropheMatch = part.match(APOSTROPHE_PREFIX_PATTERN);
       if (
         apostropheMatch &&
@@ -92,7 +72,7 @@ export function capitalizeWords(text: string): string {
       }
 
       const lower = part.toLowerCase();
-      if (index > 0 && LOWERCASE_PARTICLES.has(lower)) return lower;
+      if (currentWordIndex > 0 && LOWERCASE_PARTICLES.has(lower)) return lower;
       return capitalizeSegment(part);
     })
     .join("");
@@ -105,32 +85,46 @@ export function normalizeWordType(type?: string): WordType {
     : "city";
 }
 
-export const WORD_TYPE_STYLES: Record<WordType, WordTypeStyle> = Object.fromEntries(
-  Object.entries(WORD_TYPE_TAXONOMY).map(([key, entry]) => [
+export const WORD_TYPE_STYLES: Record<WordType, WordTypeStyle> =
+  Object.fromEntries(
+  Object.entries(config.types).map(([key, entry]) => [
     key,
     {
-      label: entry.label,
-      mapElementType: entry.mapElementType,
-      sizePx: entry.sizePx,
-      fontStyle: [
+      id: key,
+      ...entry,
+      cssFontStyle: [
         entry.fontStyle === "italic" ? "italic" : "",
         entry.textTransform === "uppercase" ? "uppercase" : "",
       ]
         .filter(Boolean)
         .join(" ") || "normal",
-      transform:
-        entry.textTransform === "uppercase" ? toUpperCaseTransform : capitalizeWords,
+      transform: (text: string) =>
+        entry.textTransform === "uppercase"
+          ? toUpperCaseTransform(text)
+          : capitalizeWords(text),
     },
   ]),
 ) as Record<WordType, WordTypeStyle>;
+
+export const WORD_TYPE_TAXONOMY: Record<WordType, WordTypeTaxonomyEntry> =
+  WORD_TYPE_STYLES;
 
 export function getWordTypeStyle(type?: string): WordTypeStyle {
   return WORD_TYPE_STYLES[normalizeWordType(type)];
 }
 
-export function formatWordText(text: string, wordType?: string): string {
+export function formatWordText(
+  text: string,
+  wordType?: string,
+  textTransform?: "uppercase" | "none",
+): string {
   if (!text) return text;
-  return getWordTypeStyle(wordType).transform(text);
+  const style = getWordTypeStyle(wordType);
+  return textTransform
+    ? textTransform === "uppercase"
+      ? toUpperCaseTransform(text)
+      : capitalizeWords(text)
+    : style.transform(text);
 }
 
 export function isTextFeature(
@@ -165,6 +159,7 @@ export function applyWordStyleToFeature(
   feature: Feature,
   wordType: WordType,
   newText?: string,
+  newLabelText?: string,
 ): Feature {
   const canonicalType = normalizeWordType(wordType);
   const style = getWordTypeStyle(canonicalType);
@@ -173,6 +168,10 @@ export function applyWordStyleToFeature(
       ? newText
       : feature.properties?.labelText ?? feature.properties?.name ?? feature.name ?? "";
   const transformedText = formatWordText(currentText, canonicalType);
+  const labelText = formatWordText(
+    newLabelText ?? currentText,
+    canonicalType,
+  );
 
   return {
     ...feature,
@@ -180,10 +179,10 @@ export function applyWordStyleToFeature(
     properties: {
       ...feature.properties,
       name: transformedText,
-      labelText: transformedText,
+      labelText,
       mapElementType: style.mapElementType,
       sizePx: style.sizePx,
-      fontStyle: style.fontStyle,
+      fontStyle: style.cssFontStyle,
       rawType: canonicalType,
       type: canonicalType,
     },

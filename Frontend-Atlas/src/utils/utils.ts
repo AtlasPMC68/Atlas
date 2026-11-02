@@ -1,4 +1,4 @@
-import { ValidationStatus } from "../typescript/feature";
+import { synchronizeValidationState } from "./featureValidationState";
 
 // ---------- helpers ----------
 type IsTuple<T> = T extends readonly any[]
@@ -81,43 +81,7 @@ export function prepareFeaturesForSave(features: unknown[]): unknown[] {
     void updatedAt;
 
     if (isRecord(next.properties)) {
-      const props = { ...next.properties };
-      const status = props.validationStatus ?? props.validation_status;
-      if (status !== undefined) {
-        props.validationStatus = status;
-        props.validation_status = status;
-        if (status === ValidationStatus.ACCEPTED) {
-          props.show = true;
-          props.recognized = true;
-        } else if (
-          status === ValidationStatus.REJECTED ||
-          status === ValidationStatus.MANUAL_REVIEW
-        ) {
-          props.show = false;
-          props.recognized = false;
-        }
-      }
-      next.properties = props;
-    }
-
-    if (isRecord(next.properties)) {
-      const props = { ...next.properties };
-      const status = props.validationStatus ?? props.validation_status;
-      if (status !== undefined) {
-        props.validationStatus = status;
-        props.validation_status = status;
-        if (status === ValidationStatus.ACCEPTED) {
-          props.show = true;
-          props.recognized = true;
-        } else if (
-          status === ValidationStatus.REJECTED ||
-          status === ValidationStatus.MANUAL_REVIEW
-        ) {
-          props.show = false;
-          props.recognized = false;
-        }
-      }
-      next.properties = props;
+      next.properties = synchronizeValidationState(next.properties);
     }
 
     return next;

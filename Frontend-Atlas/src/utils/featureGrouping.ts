@@ -1,33 +1,18 @@
 import {
   type Feature,
   type FeatureVisibilityGroup,
-  ValidationStatus,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
+import { isVisibleInMainLayers } from "./featureValidationState";
 import { getMapElementType } from "./featureHelpers";
+
+export { isVisibleInMainLayers } from "./featureValidationState";
 
 export interface MapGroupItem {
   id: string | null;
   title: string;
   startDate?: string | null;
   features: Feature[];
-}
-
-/**
- * Filter OCR features that should not be visible in main layers
- * (unrecognized or rejected OCR texts belong in validation modal).
- */
-export function isVisibleInMainLayers(feature: Feature): boolean {
-  const valStatus = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-  if (
-    feature.properties?.isOcrText &&
-    (valStatus === ValidationStatus.REJECTED ||
-      valStatus === ValidationStatus.MANUAL_REVIEW ||
-      (!feature.properties?.recognized && feature.properties?.show === false))
-  ) {
-    return false;
-  }
-  return true;
 }
 
 /**

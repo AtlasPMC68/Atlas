@@ -297,9 +297,9 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("province");
     await select.trigger("change");
 
-    // The text input should automatically be capitalized to uppercase
-    const textInput = wrapper.findAll("input").find((i) => i.element.value === "QUÉBEC");
-    expect(textInput?.element.value).toBe("QUÉBEC");
+    const textInput = wrapper.findAll("input").find((i) => i.element.value === "Québec");
+    expect(textInput?.element.value).toBe("Québec");
+    expect(textInput?.attributes("style")).toContain("font-size: 14px");
 
     // Click modifier button
     const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
@@ -314,6 +314,34 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     expect(emittedFeature.properties.sizePx).toBe(14);
     expect(emittedFeature.properties.fontStyle).toBe("uppercase");
     expect(emittedFeature.properties.labelText).toBe("QUÉBEC");
+  });
+
+  it("preserves the entered text while switching word types before saving", async () => {
+    const feature: Feature = {
+      ...textFeature,
+      name: "mCGuIlL",
+      properties: {
+        ...textFeature.properties,
+        name: "mCGuIlL",
+        labelText: "mCGuIlL",
+      },
+    };
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [feature],
+        featureVisibility: new Map([[feature.id, true]]),
+      },
+    });
+
+    await (wrapper.vm as any).showEditFeatureDialog(feature);
+    const select = wrapper.find('[data-testid="word-type-select"]');
+    const textInput = wrapper.findAll("input").find((input) => input.element.value === "mCGuIlL");
+    expect(textInput).toBeDefined();
+
+    await select.setValue("province");
+    await select.setValue("city");
+
+    expect(textInput!.element.value).toBe("mCGuIlL");
   });
 
   it("updates font police and style when changing type from province to city", async () => {
@@ -364,7 +392,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     expect(emittedFeature.properties.labelText).toBe("Québec");
   });
 
-  it("formats SASKATCHEWAN with only the first letter capitalized when changed from province to city", async () => {
+  it("preserves text when changing province to city and formats it on save", async () => {
     const saskatchewanFeature: Feature = {
       type: "Feature",
       id: "feat-sask-1",
@@ -400,14 +428,14 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("city");
     await select.trigger("change");
 
-    // The text inputs should now have only the first letter in uppercase: "Saskatchewan"
-    const textInput = wrapper.findAll("input").find((i) => i.element.value === "Saskatchewan");
+    const textInput = wrapper.findAll("input").find((i) => i.element.value === "SASKATCHEWAN");
     expect(textInput).toBeDefined();
 
     const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
     await modifyBtn!.trigger("click");
 
     const emittedFeature = wrapper.emitted("update-feature")![0][0] as Feature;
+    expect(textInput!.element.value).toBe("SASKATCHEWAN");
     expect(emittedFeature.name).toBe("Saskatchewan");
     expect(emittedFeature.properties.name).toBe("Saskatchewan");
     expect(emittedFeature.properties.labelText).toBe("Saskatchewan");

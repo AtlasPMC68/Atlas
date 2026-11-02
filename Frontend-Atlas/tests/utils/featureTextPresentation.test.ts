@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  capitalizeFirstOnly,
   capitalizeWords,
   toUpperCaseTransform,
   LOWERCASE_PARTICLES,
@@ -19,6 +18,7 @@ import {
 import {
   prepareFeatureForEdit,
   coerceEditedFeature,
+  getWordTypePreviewStyle,
 } from "../../src/utils/featureTextEditing";
 import wordStyleConfig from "../../../shared/word-taxonomy.json";
 import type { Feature } from "../../src/typescript/feature";
@@ -40,35 +40,30 @@ describe("shared word styles and label presentation", () => {
     expect(WORD_TYPE_STYLES.city.mapElementType).toBe("point");
     expect(WORD_TYPE_STYLES.city.sizePx).toBe(12);
     expect(WORD_TYPE_STYLES.city.fontStyle).toBe("normal");
+    expect(WORD_TYPE_STYLES.city.priority).toBe(30);
 
     // Province -> label, 14px, uppercase
     expect(WORD_TYPE_STYLES.province).toBeDefined();
     expect(WORD_TYPE_STYLES.province.mapElementType).toBe("label");
     expect(WORD_TYPE_STYLES.province.sizePx).toBe(14);
-    expect(WORD_TYPE_STYLES.province.fontStyle).toBe("uppercase");
+    expect(WORD_TYPE_STYLES.province.cssFontStyle).toBe("uppercase");
 
     // Country / Pays -> label, 16px, uppercase
     expect(WORD_TYPE_STYLES.country).toBeDefined();
     expect(WORD_TYPE_STYLES.country.mapElementType).toBe("label");
     expect(WORD_TYPE_STYLES.country.sizePx).toBe(16);
-    expect(WORD_TYPE_STYLES.country.fontStyle).toBe("uppercase");
+    expect(WORD_TYPE_STYLES.country.cssFontStyle).toBe("uppercase");
 
     // Lake / Lac -> label, 12px, italic
     expect(WORD_TYPE_STYLES.lake).toBeDefined();
     expect(WORD_TYPE_STYLES.lake.mapElementType).toBe("label");
     expect(WORD_TYPE_STYLES.lake.sizePx).toBe(12);
-    expect(WORD_TYPE_STYLES.lake.fontStyle).toBe("italic");
+    expect(WORD_TYPE_STYLES.lake.cssFontStyle).toBe("italic");
 
     // River / Rivière -> label, 10px, italic
     expect(WORD_TYPE_STYLES.river).toBeDefined();
     expect(WORD_TYPE_STYLES.river.sizePx).toBe(10);
-    expect(WORD_TYPE_STYLES.river.fontStyle).toBe("italic");
-  });
-
-  it("capitalizeFirstOnly capitalizes ONLY the very first letter and lowers the rest", () => {
-    expect(capitalizeFirstOnly("SASKATCHEWAN")).toBe("Saskatchewan");
-    expect(capitalizeFirstOnly("QUÉBEC")).toBe("Québec");
-    expect(capitalizeFirstOnly("ONTARIO")).toBe("Ontario");
+    expect(WORD_TYPE_STYLES.river.cssFontStyle).toBe("italic");
   });
 
   it("capitalizeWords formats text with initial capitals on hyphenated and spaced names, preserving particles", () => {
@@ -90,7 +85,7 @@ describe("shared word styles and label presentation", () => {
     expect(WORD_TYPE_STYLES.country.transform("Canada")).toBe("CANADA");
     expect(WORD_TYPE_STYLES.city.transform("QUÉBEC")).toBe("Québec");
     expect(WORD_TYPE_STYLES.ocean.transform("ocean atlantique")).toBe("OCEAN ATLANTIQUE");
-    const oceanParsed = parseLabelFontStyle(WORD_TYPE_STYLES.ocean.fontStyle);
+    const oceanParsed = parseLabelFontStyle(WORD_TYPE_STYLES.ocean.cssFontStyle);
     expect(oceanParsed.fontStyle).toBe("italic");
     expect(oceanParsed.textTransform).toBe("uppercase");
   });
@@ -101,16 +96,22 @@ describe("shared word styles and label presentation", () => {
     expect(getWordTypeStyle("unknown_xyz").label).toBe("Ville");
   });
 
+  it("previews the configured font size for the selected word type", () => {
+    expect(getWordTypePreviewStyle("city").fontSize).toBe("12px");
+    expect(getWordTypePreviewStyle("province").fontSize).toBe("14px");
+    expect(getWordTypePreviewStyle("country").fontSize).toBe("16px");
+  });
+
   it("parseLabelFontStyle parses uppercase and italic correctly", () => {
-    const provinceStyle = parseLabelFontStyle(WORD_TYPE_STYLES.province.fontStyle);
+    const provinceStyle = parseLabelFontStyle(WORD_TYPE_STYLES.province.cssFontStyle);
     expect(provinceStyle.textTransform).toBe("uppercase");
     expect(provinceStyle.fontStyle).toBe("normal");
 
-    const lakeStyle = parseLabelFontStyle(WORD_TYPE_STYLES.lake.fontStyle);
+    const lakeStyle = parseLabelFontStyle(WORD_TYPE_STYLES.lake.cssFontStyle);
     expect(lakeStyle.textTransform).toBe("none");
     expect(lakeStyle.fontStyle).toBe("italic");
 
-    const cityStyle = parseLabelFontStyle(WORD_TYPE_STYLES.city.fontStyle);
+    const cityStyle = parseLabelFontStyle(WORD_TYPE_STYLES.city.cssFontStyle);
     expect(cityStyle.textTransform).toBe("none");
     expect(cityStyle.fontStyle).toBe("normal");
   });
@@ -175,9 +176,10 @@ describe("shared word styles and label presentation", () => {
       id: "feat-test",
       name: "canada",
       geometry: { type: "Point", coordinates: [-75, 45] },
-      properties: { name: "canada" },
+      properties: { name: "canada", mapElementType: "label" },
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
+      projectId: ""
     };
 
     const styled = applyWordStyleToFeature(rawFeature, "country");
@@ -197,9 +199,14 @@ describe("shared word styles and label presentation", () => {
       id: "feat-pres",
       name: "baie d'hudson",
       geometry: { type: "Point", coordinates: [-85, 60] },
-      properties: { name: "baie d'hudson", rawType: "sea" },
+      properties: {
+        name: "baie d'hudson",
+        rawType: "sea",
+        mapElementType: "label",
+      } satisfies Feature["properties"],
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
+      projectId: ""
     };
 
     const pres = getLabelPresentation(rawFeature);
@@ -212,7 +219,6 @@ describe("shared word styles and label presentation", () => {
     expect(pres.isItalic).toBe(true);
     expect(pres.priority).toBe(60);
     expect(pres.minZoom).toBe(2.0);
-    expect(pres.category).toBe("sea");
     expect(pres.html).toContain("Baie d'Hudson");
   });
 
@@ -222,13 +228,14 @@ describe("shared word styles and label presentation", () => {
       id: "feat-edit",
       name: "montreal",
       geometry: { type: "Point", coordinates: [-73.5, 45.5] },
-      properties: { name: "montreal", rawType: "city", colorRgb: [0, 0, 0] },
+      properties: { name: "montreal", rawType: "city", mapElementType: "point", colorRgb: [0, 0, 0] },
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
+      projectId: ""
     };
 
     const state = prepareFeatureForEdit(feature);
-    expect(state.name).toBe("Montreal");
+    expect(state.name).toBe("montreal");
     expect(state.wordType).toBe("city");
     expect(state.isText).toBe(true);
 

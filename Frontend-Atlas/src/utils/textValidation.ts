@@ -9,6 +9,11 @@ import {
   getWordTypeForFeature,
   isTextFeature,
 } from "./wordStyles";
+import {
+  getFeatureValidationStatus,
+  isTextValidationReviewCandidate,
+  synchronizeValidationState,
+} from "./featureValidationState";
 
 export { ValidationStatus };
 
@@ -28,15 +33,15 @@ export interface TextValidationEntry {
 /** Check if a feature is an unrecognized OCR text candidate for validation. */
 export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | null): boolean {
   const matchesMap = !mapId || feature.mapId === mapId || !feature.mapId;
-  const status = feature.properties?.validationStatus ?? feature.properties?.validation_status;
+  const status = getFeatureValidationStatus(feature);
   if (status === ValidationStatus.ACCEPTED) {
     return false;
   }
-  const isCandidate =
-    status === ValidationStatus.MANUAL_REVIEW ||
-    status === ValidationStatus.REJECTED ||
-    (!feature.properties?.recognized && feature.properties?.show === false);
-  return matchesMap && isCandidate && isTextFeature(feature);
+  return (
+    matchesMap &&
+    isTextValidationReviewCandidate(feature) &&
+    isTextFeature(feature)
+  );
 }
 
 /** Convert a GeoJSON feature into a text validation entry. */
@@ -47,7 +52,7 @@ export function featureToValidationEntry(
   const text = feature.properties?.labelText || feature.properties?.name || feature.name || "";
   const originalText = feature.properties?.originalText || text;
 
-  const status = feature.properties?.validationStatus ?? feature.properties?.validation_status;
+  const status = getFeatureValidationStatus(feature);
   const isUnrecognized = Boolean(feature.properties?.isOcrText && !feature.properties?.recognized);
   const selected =
     status === ValidationStatus.ACCEPTED
@@ -104,19 +109,19 @@ export function applyValidationToFeature(
   const validationStatus = isSelected
     ? ValidationStatus.ACCEPTED
     : ValidationStatus.REJECTED;
+  const properties = synchronizeValidationState(
+    {
+      ...styledFeature.properties,
+      userSelected: isSelected,
+    },
+    validationStatus,
+  );
 
   return {
     ...styledFeature,
     geometry: coordinates
       ? { ...styledFeature.geometry, type: "Point", coordinates }
       : styledFeature.geometry,
-    properties: {
-      ...styledFeature.properties,
-      show: isSelected,
-      recognized: isSelected,
-      userSelected: isSelected,
-      validationStatus,
-      validation_status: validationStatus,
-    },
+    properties,
   };
 }

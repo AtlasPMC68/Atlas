@@ -1,21 +1,14 @@
 import type { Feature } from "../typescript/feature";
 import { colorRgbToCss } from "./featureHelpers";
 import {
-  capitalizeWords,
   formatWordText,
   getWordTypeForFeature,
-  WORD_TYPE_TAXONOMY,
+  getWordTypeStyle,
 } from "./wordStyles";
 
 export interface LabelFontStyle {
   fontStyle: "normal" | "italic";
   textTransform: "uppercase" | "none";
-}
-
-export interface LabelCategoryInfo {
-  priority: number;
-  minZoom: number;
-  category: string;
 }
 
 export function parseLabelFontStyle(rawStyle?: unknown): LabelFontStyle {
@@ -60,9 +53,9 @@ export function splitBalancedLine(text: string, maxLen = 13): string {
     : `${text.slice(0, best.index).trim()}<br>${text.slice(best.index + 1).trim()}`;
 }
 
-export function formatLabelHtml(rawText: unknown, isUppercase = false): string {
-  if (rawText === null || rawText === undefined) return "";
-  const text = String(rawText).trim();
+export function formatLabelHtml(formattedText: unknown): string {
+  if (formattedText === null || formattedText === undefined) return "";
+  const text = String(formattedText).trim();
   if (!text) return "";
 
   return text
@@ -70,76 +63,9 @@ export function formatLabelHtml(rawText: unknown, isUppercase = false): string {
     .map((line) => {
       const trimmed = line.trim();
       if (!trimmed) return "";
-      return splitBalancedLine(
-        isUppercase ? trimmed.toUpperCase() : capitalizeWords(trimmed),
-      );
+      return splitBalancedLine(trimmed);
     })
     .join("<br>");
-}
-
-export const LABEL_CATEGORY_RULES: Record<string, [number, number, string]> = {
-  ...Object.fromEntries(
-    Object.entries(WORD_TYPE_TAXONOMY).map(([key, entry]) => [
-      key,
-      [entry.priority, entry.minZoom, entry.category] as [number, number, string],
-    ]),
-  ),
-  point: [30, 4.0, "city"],
-};
-
-export function resolveCategoryKey(
-  rawType: string,
-  sizePx: number,
-  isUpper: boolean,
-  isItalic: boolean,
-): string {
-  if (rawType && LABEL_CATEGORY_RULES[rawType]) return rawType;
-  if (sizePx >= 18) return isUpper ? "continent" : "ocean";
-  if (sizePx >= 16) return isUpper ? "country" : "sea";
-  if (sizePx >= 14) return isUpper ? "state" : "fleuve";
-  if (sizePx >= 12) return isItalic ? "lake" : "city";
-  return "river";
-}
-
-export function getLabelCategoryInfo(
-  feature: Feature | Record<string, unknown>,
-): LabelCategoryInfo {
-  const props = ((feature as Feature).properties || {}) as Record<string, unknown>;
-  const rawType = String(
-    props.rawType || props.entityType || props.mapElementType || "",
-  ).toLowerCase();
-  const fontStyle = String(props.fontStyle || "").toLowerCase();
-  const key = resolveCategoryKey(
-    rawType,
-    Number(props.sizePx ?? 12),
-    fontStyle.includes("uppercase"),
-    fontStyle.includes("italic"),
-  );
-
-  const [priority, minZoom, category] = LABEL_CATEGORY_RULES[key] || [
-    30,
-    2.5,
-    "custom",
-  ];
-  return { priority, minZoom, category };
-}
-
-export function getElementCategoryInfo(el: HTMLElement): {
-  priority: number;
-  minZoom: number;
-} {
-  const priority = Number.parseFloat(el.dataset.priority || "");
-  const minZoom = Number.parseFloat(el.dataset.minZoom || "");
-  if (Number.isFinite(priority) && Number.isFinite(minZoom)) {
-    return { priority, minZoom };
-  }
-
-  const size = Number.parseFloat(el.style.getPropertyValue("--label-size") || "12") || 12;
-  const isUpper = el.style.getPropertyValue("--label-transform").includes("uppercase");
-  const isItalic = el.style.getPropertyValue("--label-style").includes("italic");
-  const key = resolveCategoryKey(el.dataset.category || "", size, isUpper, isItalic);
-  const [fallbackPriority, fallbackMinZoom] = LABEL_CATEGORY_RULES[key] || [30, 2.5];
-  return { priority: fallbackPriority, minZoom: fallbackMinZoom };
 }
 
 export interface LabelPresentationModel {
@@ -155,7 +81,6 @@ export interface LabelPresentationModel {
   isItalic: boolean;
   priority: number;
   minZoom: number;
-  category: string;
   colorCss: string;
   styleAttribute: string;
 }
@@ -167,7 +92,7 @@ export function getLabelPresentation(
   const typedFeature = feature as Feature;
   const props = (typedFeature.properties || {}) as Record<string, unknown>;
   const wordType = getWordTypeForFeature(feature);
-  const taxonomy = WORD_TYPE_TAXONOMY[wordType];
+  const taxonomy = getWordTypeStyle(wordType);
   const rawText =
     customText ??
     String(props.labelText ?? props.name ?? typedFeature.name ?? "");
@@ -180,8 +105,12 @@ export function getLabelPresentation(
   const isItalic = explicitFontStyle
     ? explicitFontStyle.fontStyle === "italic"
     : taxonomy.fontStyle === "italic";
-  const formattedText = formatWordText(rawText, wordType);
-  const html = formatLabelHtml(rawText, isUppercase);
+  const formattedText = formatWordText(
+    rawText,
+    wordType,
+    isUppercase ? "uppercase" : explicitFontStyle ? "none" : undefined,
+  );
+  const html = formatLabelHtml(formattedText);
   const sizePx = Number(props.sizePx ?? taxonomy.sizePx);
   const mapElementType =
     props.mapElementType === "point" || props.mapElementType === "label"
@@ -207,7 +136,6 @@ export function getLabelPresentation(
     isItalic,
     priority: taxonomy.priority,
     minZoom: taxonomy.minZoom,
-    category: taxonomy.category,
     colorCss,
     styleAttribute: inlineStyles.length
       ? ` style="${inlineStyles.join("; ")}"`

@@ -3,7 +3,6 @@ import { getMapElementType } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {
   applyWordStyleToFeature,
-  formatWordText,
   getWordTypeForFeature,
   isTextFeature,
   normalizeWordType,
@@ -44,12 +43,8 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
 
   return {
     feature,
-    name:
-      isText && feature.properties.name
-        ? formatWordText(feature.properties.name, wordType)
-        : feature.properties.name,
-    labelText:
-      isText && rawLabel ? formatWordText(rawLabel, wordType) : rawLabel,
+    name: feature.properties.name,
+    labelText: rawLabel,
     wordType,
     isText,
     colorHex:
@@ -86,18 +81,14 @@ export function coerceEditedFeature(
     originalFeature,
     payload.wordType,
     payload.name,
+    payload.labelText ?? payload.name,
   );
   const isLabel = styledFeature.properties.mapElementType === "label";
-  const labelText =
-    payload.labelText !== undefined
-      ? formatWordText(payload.labelText, payload.wordType)
-      : styledFeature.properties.labelText;
 
   return {
     ...styledFeature,
     properties: {
       ...styledFeature.properties,
-      labelText,
       colorRgb: hexToRgb(payload.colorHex),
       strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),
       fillOpacity: isLabel ? undefined : payload.fillOpacity,
@@ -114,13 +105,14 @@ export function getWordTypePreviewStyle(
   fontStyle?: "normal" | "italic";
   textTransform?: "uppercase";
   color?: string;
+  fontSize: string;
 } {
-  const taxonomy =
-    WORD_TYPE_TAXONOMY[normalizeWordType(wordType)];
+  const taxonomy = WORD_TYPE_TAXONOMY[normalizeWordType(wordType)];
   return {
     fontStyle: taxonomy.fontStyle !== "normal" ? taxonomy.fontStyle : undefined,
     textTransform:
       taxonomy.textTransform === "uppercase" ? "uppercase" : undefined,
     color: colorHex || undefined,
+    fontSize: `${taxonomy.sizePx}px`,
   };
 }

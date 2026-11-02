@@ -287,7 +287,7 @@ describe("TextValidationModal", () => {
     const textInput = wrapper.find('input[type="text"]');
     expect((textInput.element as HTMLInputElement).value).toBe("QUEBEC");
 
-    // Change back to city -> transform with capitalizeFirstOnly
+    // Change back to city -> apply the canonical city capitalization.
     await select.setValue("city");
     expect((textInput.element as HTMLInputElement).value).toBe("Quebec");
   });

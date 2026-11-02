@@ -21,7 +21,15 @@
 
 <script setup lang="ts">
 // @ts-ignore Vue is supplied by the app runtime; tolerate missing editor type resolution.
-import { onMounted, onBeforeUnmount, watch, ref, nextTick, toRef } from "vue";
+import {
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  ref,
+  computed,
+  nextTick,
+  toRef,
+} from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -67,6 +75,7 @@ const props = defineProps<{
   selectedYear: number;
   canUndo: boolean;
   canRedo: boolean;
+  selectedFeatureId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -97,7 +106,7 @@ let selectedCityRing: L.Marker | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
-const selectedFeatureId = ref<string | null>(null);
+const selectedFeatureId = computed(() => props.selectedFeatureId ?? null);
 
 const undoControlName = "atlasUndo";
 const redoControlName = "atlasRedo";
@@ -180,7 +189,7 @@ const featureLayerManager = {
       // click handler would immediately deselect what we just selected.
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
-      selectedFeatureId.value = id;
+      emit("select-feature", id);
     });
 
     layer.on("dblclick", () => {
@@ -190,7 +199,7 @@ const featureLayerManager = {
       if (pm?.globalRemovalModeEnabled?.()) return;
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
-      selectedFeatureId.value = id;
+      emit("select-feature", id);
       const feature = props.features.find((f: Feature) => String(f.id) === id);
       if (feature) {
         emit("edit-feature-request", feature);
@@ -308,7 +317,7 @@ function clearDraftLayers() {
 }
 
 function resetSelection() {
-  selectedFeatureId.value = null;
+  emit("select-feature", null);
 }
 
 defineExpose({
@@ -478,8 +487,7 @@ function applyLabelPresentationStyle(
   el.style.setProperty("--label-transform", presentation.textTransform);
   el.dataset.priority = String(presentation.priority);
   el.dataset.minZoom = String(presentation.minZoom);
-  el.dataset.category = presentation.category;
-  el.dataset.sizePx = String(presentation.sizePx);
+  el.dataset.wordType = presentation.wordType;
   el.dataset.featureId = String(featureId);
 }
 
@@ -1195,8 +1203,6 @@ watch(
 localFeaturesSnapshot.value = [...props.features];
 
 watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
-  emit("select-feature", id);
-
   // Always remove the city selection ring on any selection change
   if (selectedCityRing) {
     selectedCityRing.remove();

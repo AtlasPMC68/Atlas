@@ -261,7 +261,6 @@
             v-model="featureToEditWordType"
             data-testid="word-type-select"
             class="select select-bordered w-full"
-            @change="onWordTypeChange"
           >
             <option
               v-for="(style, typeKey) in WORD_TYPE_STYLES"
@@ -272,6 +271,13 @@
             </option>
           </select>
         </div>
+        <p
+          v-if="!isEditingLabel && getMapElementType(featureToEdit) === 'point'"
+          class="text-xs text-base-content/60"
+        >
+          Ces réglages s'appliquent au symbole du point qui représente la ville
+          sur la carte.
+        </p>
         <div
           class="flex gap-2"
           v-if="
@@ -291,7 +297,13 @@
             class="flex flex-col gap-2 w-full"
             v-if="featureToEdit.properties.strokeOpacity !== undefined"
           >
-            <label class="label">Opacité du contour</label>
+            <label class="label">
+              {{
+                getMapElementType(featureToEdit) === "point"
+                  ? "Opacité du contour du point"
+                  : "Opacité du contour"
+              }}
+            </label>
             <input
               v-model="featureToEditStrokeOpacity"
               type="number"
@@ -303,7 +315,13 @@
           class="flex flex-col gap-2 w-full"
           v-if="!isEditingLabel && featureToEdit.properties.strokeWidth !== undefined"
         >
-          <label class="label">Épaisseur du contour</label>
+          <label class="label">
+            {{
+              getMapElementType(featureToEdit) === "point"
+                ? "Épaisseur du contour du point"
+                : "Épaisseur du contour"
+            }}
+          </label>
           <input
             v-model="featureToEditStrokeWidth"
             type="number"
@@ -496,7 +514,6 @@ import {
   WORD_TYPE_STYLES,
   WORD_TYPE_TAXONOMY,
   isTextFeature,
-  formatWordText,
   type WordType,
 } from "../utils/wordStyles";
 import {
@@ -540,20 +557,12 @@ const editTextStyle = computed(() => {
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
   if (isTextElement.value) {
-    const entry = WORD_TYPE_TAXONOMY[featureToEditWordType.value];
+    const wordType = featureToEditWordType.value as WordType;
+    const entry = WORD_TYPE_TAXONOMY[wordType];
     return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
   }
   return getMapElementType(featureToEdit.value) === "label";
 });
-
-function onWordTypeChange() {
-  if (featureToEditLabelText.value !== undefined) {
-    featureToEditLabelText.value = formatWordText(featureToEditLabelText.value, featureToEditWordType.value);
-  }
-  if (featureToEditName.value) {
-    featureToEditName.value = formatWordText(featureToEditName.value, featureToEditWordType.value);
-  }
-}
 
 const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const mapToDeleteId = ref<string | null>(null);

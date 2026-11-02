@@ -154,6 +154,8 @@
     { "type": "sea", "input": "mer du labrador", "expected": "Mer du Labrador" },
     { "type": "fleuve", "input": "saint-laurent", "expected": "Saint-Laurent" },
     { "type": "lake", "input": "lac supérieur", "expected": "Lac Supérieur" },
-    { "type": "river", "input": "rivière des outaouais", "expected": "Rivière des Outaouais" }
+    { "type": "river", "input": "rivière des outaouais", "expected": "Rivière des Outaouais" },
+    { "type": "city", "input": "  du mexique", "expected": "  Du Mexique" },
+    { "type": "city", "input": "baie   du mexique", "expected": "Baie   du Mexique" }
   ]
 }
