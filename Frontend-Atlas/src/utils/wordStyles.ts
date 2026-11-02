@@ -47,6 +47,15 @@ const APOSTROPHE_PREFIX_PATTERN = new RegExp(
 export const toUpperCaseTransform = (text: string): string =>
   text ? text.toUpperCase() : text;
 
+function applyTextTransform(
+  text: string,
+  textTransform: "uppercase" | "none",
+): string {
+  return textTransform === "uppercase"
+    ? toUpperCaseTransform(text)
+    : capitalizeWords(text);
+}
+
 export function capitalizeSegment(segment: string): string {
   if (!segment) return segment;
   return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
@@ -99,9 +108,7 @@ export const WORD_TYPE_STYLES: Record<WordType, WordTypeStyle> =
         .filter(Boolean)
         .join(" ") || "normal",
       transform: (text: string) =>
-        entry.textTransform === "uppercase"
-          ? toUpperCaseTransform(text)
-          : capitalizeWords(text),
+        applyTextTransform(text, entry.textTransform),
     },
   ]),
 ) as Record<WordType, WordTypeStyle>;
@@ -121,9 +128,7 @@ export function formatWordText(
   if (!text) return text;
   const style = getWordTypeStyle(wordType);
   return textTransform
-    ? textTransform === "uppercase"
-      ? toUpperCaseTransform(text)
-      : capitalizeWords(text)
+    ? applyTextTransform(text, textTransform)
     : style.transform(text);
 }
 

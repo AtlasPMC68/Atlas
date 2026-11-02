@@ -22,12 +22,10 @@ export type FeatureReviewState = ValidationStatus | "unreviewed";
 
 export function getFeatureReviewState(feature: Feature): FeatureReviewState {
   const status = getFeatureValidationStatus(feature);
-  if (
-    status === ValidationStatus.ACCEPTED ||
-    status === ValidationStatus.REJECTED ||
-    status === ValidationStatus.MANUAL_REVIEW
-  ) {
-    return status;
+  if (status === ValidationStatus.ACCEPTED) return ValidationStatus.ACCEPTED;
+  if (status === ValidationStatus.REJECTED) return ValidationStatus.REJECTED;
+  if (status === ValidationStatus.MANUAL_REVIEW) {
+    return ValidationStatus.MANUAL_REVIEW;
   }
 
   if (feature.properties?.isOcrText && !feature.properties.recognized) {
@@ -56,7 +54,8 @@ export function isUnrecognizedOcrFeature(feature: Feature): boolean {
   if (!feature.properties?.isOcrText) return false;
 
   const state = getFeatureReviewState(feature);
-  return state !== ValidationStatus.ACCEPTED && state !== "unreviewed";
+  return state === ValidationStatus.REJECTED ||
+    state === ValidationStatus.MANUAL_REVIEW;
 }
 
 export function isFeatureSelectedForValidation(

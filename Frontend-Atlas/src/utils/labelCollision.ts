@@ -15,6 +15,9 @@ export interface LabelCollisionCandidate {
   rectangle: LabelRectangle;
 }
 
+const COLLISION_GRID_SIZE = 64;
+const MAX_GRID_CELLS_PER_LABEL = 256;
+
 function isOutsideBounds(
   rect: LabelRectangle,
   bounds: LabelRectangle,
@@ -30,8 +33,10 @@ function isOutsideBounds(
 function overlapsByThreshold(
   rect: LabelRectangle,
   occupied: LabelRectangle[],
+  occupiedIndexes: number[],
 ): boolean {
-  for (const box of occupied) {
+  for (const index of occupiedIndexes) {
+    const box = occupied[index];
     const width = Math.max(
       0,
       Math.min(rect.right, box.right) - Math.max(rect.left, box.left),
@@ -47,6 +52,23 @@ function overlapsByThreshold(
   return false;
 }
 
+function getGridCells(rect: LabelRectangle): string[] | null {
+  const minX = Math.floor(rect.left / COLLISION_GRID_SIZE);
+  const maxX = Math.floor(rect.right / COLLISION_GRID_SIZE);
+  const minY = Math.floor(rect.top / COLLISION_GRID_SIZE);
+  const maxY = Math.floor(rect.bottom / COLLISION_GRID_SIZE);
+  const cellCount = (maxX - minX + 1) * (maxY - minY + 1);
+  if (cellCount > MAX_GRID_CELLS_PER_LABEL) return null;
+
+  const cells: string[] = [];
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      cells.push(`${x}:${y}`);
+    }
+  }
+  return cells;
+}
+
 export function selectVisibleLabels(
   candidates: LabelCollisionCandidate[],
   bounds: LabelRectangle,
@@ -58,20 +80,49 @@ export function selectVisibleLabels(
   );
   const visible = new Set<string>();
   const occupied: LabelRectangle[] = [];
+  const occupiedByCell = new Map<string, number[]>();
+  const largeOccupiedIndexes: number[] = [];
 
   for (const candidate of sorted) {
     const isSelected = candidate.id === selectedId;
     if (zoom < candidate.minZoom && !isSelected) continue;
     if (isOutsideBounds(candidate.rectangle, bounds)) continue;
-    if (
-      !isSelected &&
-      overlapsByThreshold(candidate.rectangle, occupied)
-    ) {
-      continue;
+
+    const candidateCells = getGridCells(candidate.rectangle);
+    if (!isSelected) {
+      const nearbyIndexes = candidateCells
+        ? [
+            ...largeOccupiedIndexes,
+            ...new Set(
+              candidateCells.flatMap(
+                (cell) => occupiedByCell.get(cell) ?? [],
+              ),
+            ),
+          ]
+        : occupied.map((_, index) => index);
+      if (
+        overlapsByThreshold(
+          candidate.rectangle,
+          occupied,
+          nearbyIndexes,
+        )
+      ) {
+        continue;
+      }
     }
 
     visible.add(candidate.id);
+    const occupiedIndex = occupied.length;
     occupied.push(candidate.rectangle);
+    if (candidateCells) {
+      candidateCells.forEach((cell) => {
+        const indexes = occupiedByCell.get(cell) ?? [];
+        indexes.push(occupiedIndex);
+        occupiedByCell.set(cell, indexes);
+      });
+    } else {
+      largeOccupiedIndexes.push(occupiedIndex);
+    }
   }
 
   return visible;

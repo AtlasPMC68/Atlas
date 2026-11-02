@@ -12,15 +12,8 @@ import {
 
 export interface FeatureEditState {
   feature: Feature;
-  name: string;
-  labelText?: string;
-  wordType: WordType;
   isText: boolean;
-  colorHex?: string;
-  strokeColorHex?: string;
-  fillOpacity?: number;
-  strokeOpacity?: number;
-  strokeWidth?: number;
+  draft: FeatureEditSubmitPayload;
 }
 
 export interface FeatureEditSubmitPayload {
@@ -43,17 +36,21 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
 
   return {
     feature,
-    name: feature.properties.name,
-    labelText: rawLabel,
-    wordType,
     isText,
-    colorHex:
-      rgbToHex(feature.properties.colorRgb) ??
-      (elementType === "label" || elementType === "point" ? "#000000" : undefined),
-    strokeColorHex: rgbToHex(feature.properties.strokeColor),
-    fillOpacity: feature.properties.fillOpacity,
-    strokeOpacity: feature.properties.strokeOpacity,
-    strokeWidth: feature.properties.strokeWidth,
+    draft: {
+      name: feature.properties.name,
+      labelText: rawLabel,
+      wordType,
+      colorHex:
+        rgbToHex(feature.properties.colorRgb) ??
+        (elementType === "label" || elementType === "point"
+          ? "#000000"
+          : undefined),
+      strokeColorHex: rgbToHex(feature.properties.strokeColor),
+      fillOpacity: feature.properties.fillOpacity,
+      strokeOpacity: feature.properties.strokeOpacity,
+      strokeWidth: feature.properties.strokeWidth,
+    },
   };
 }
 

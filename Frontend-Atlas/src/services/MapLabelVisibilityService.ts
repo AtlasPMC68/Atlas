@@ -64,21 +64,22 @@ export function updateMapLabelVisibility(
     selectedFeatureId,
   );
 
+  const circlePoints = new Map<string, L.CircleMarker>();
+  layers.forEach((layer, featureId) => {
+    forEachLeafLayer(layer, (leaf) => {
+      if (leaf instanceof L.CircleMarker) {
+        circlePoints.set(featureId, leaf);
+      }
+    });
+  });
+
   labels.forEach((label) => {
     const featureId = label.dataset.featureId;
     if (!featureId) return;
 
-    const layer = layers.get(featureId);
-    let circlePoint: L.CircleMarker | null = null;
-    if (layer) {
-      forEachLeafLayer(layer, (leaf) => {
-        if (leaf instanceof L.CircleMarker) circlePoint = leaf;
-      });
-    }
-
     const isVisible = visibleIds.has(featureId);
     label.style.visibility = isVisible ? "" : "hidden";
     label.style.pointerEvents = isVisible ? "" : "none";
-    updatePointVisibility(circlePoint, isVisible);
+    updatePointVisibility(circlePoints.get(featureId) ?? null, isVisible);
   });
 }

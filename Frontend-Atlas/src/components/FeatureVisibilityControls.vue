@@ -232,7 +232,7 @@
         <div class="flex flex-col gap-2">
           <label class="label">Nom de l'élément</label>
           <input
-            v-model="featureToEditName"
+            v-model="editDraft.name"
             type="text"
             class="input"
             :style="editTextStyle"
@@ -246,7 +246,7 @@
         >
           <label class="label">Texte</label>
           <input
-            v-model="featureToEditLabelText"
+            v-model="editDraft.labelText"
             type="text"
             class="input"
             :style="editTextStyle"
@@ -258,7 +258,7 @@
         >
           <label class="label">Type de mot</label>
           <select
-            v-model="featureToEditWordType"
+            v-model="editDraft.wordType"
             data-testid="word-type-select"
             class="select select-bordered w-full"
           >
@@ -291,7 +291,7 @@
             v-if="featureToEdit.properties.fillOpacity !== undefined"
           >
             <label class="label">Opacité</label>
-            <input v-model="featureToEditOpacity" type="number" class="input" />
+            <input v-model="editDraft.fillOpacity" type="number" class="input" />
           </div>
           <div
             class="flex flex-col gap-2 w-full"
@@ -305,7 +305,7 @@
               }}
             </label>
             <input
-              v-model="featureToEditStrokeOpacity"
+              v-model="editDraft.strokeOpacity"
               type="number"
               class="input"
             />
@@ -323,14 +323,14 @@
             }}
           </label>
           <input
-            v-model="featureToEditStrokeWidth"
+            v-model="editDraft.strokeWidth"
             type="number"
             class="input"
           />
         </div>
         <div
           class="flex flex-col gap-2"
-          v-if="featureToEditColor || featureToEditStrokeColor"
+          v-if="editDraft.colorHex || editDraft.strokeColorHex"
         >
           <div
             class="flex items-center gap-2"
@@ -338,7 +338,7 @@
           >
             <label class="label">Couleur :</label>
             <input
-              v-model="featureToEditColor"
+              v-model="editDraft.colorHex"
               type="color"
               class="h-9 w-8 cursor-pointer bg-base-100"
             />
@@ -349,7 +349,7 @@
           >
             <label class="label">Couleur du contour :</label>
             <input
-              v-model="featureToEditStrokeColor"
+              v-model="editDraft.strokeColorHex"
               type="color"
               class="h-9 w-8 cursor-pointer bg-base-100"
             />
@@ -514,12 +514,12 @@ import {
   WORD_TYPE_STYLES,
   WORD_TYPE_TAXONOMY,
   isTextFeature,
-  type WordType,
 } from "../utils/wordStyles";
 import {
   prepareFeatureForEdit,
   coerceEditedFeature,
   getWordTypePreviewStyle,
+  type FeatureEditSubmitPayload,
 } from "../utils/featureTextEditing";
 import {
   groupFeaturesByType,
@@ -539,27 +539,25 @@ const props = defineProps<{
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
-const featureToEditName = ref<string>("");
-const featureToEditLabelText = ref<string | undefined>(undefined);
-const featureToEditWordType = ref<WordType>("city");
-const featureToEditColor = ref<string | undefined>(undefined);
-const featureToEditStrokeColor = ref<string | undefined>(undefined);
-const featureToEditOpacity = ref<number | undefined>(undefined);
-const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
-const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+const editDraft = ref<FeatureEditSubmitPayload>({
+  name: "",
+  wordType: "city",
+});
 
 const isTextElement = computed(() => isTextFeature(featureToEdit.value));
 
 const editTextStyle = computed(() => {
   if (!isTextElement.value) return {};
-  return getWordTypePreviewStyle(featureToEditWordType.value, featureToEditColor.value);
+  return getWordTypePreviewStyle(
+    editDraft.value.wordType,
+    editDraft.value.colorHex,
+  );
 });
 
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
   if (isTextElement.value) {
-    const wordType = featureToEditWordType.value as WordType;
-    const entry = WORD_TYPE_TAXONOMY[wordType];
+    const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType];
     return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
   }
   return getMapElementType(featureToEdit.value) === "label";
@@ -722,14 +720,7 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
 async function showEditFeatureDialog(feature: Feature) {
   const state = prepareFeatureForEdit(feature);
   featureToEdit.value = state.feature;
-  featureToEditWordType.value = state.wordType;
-  featureToEditLabelText.value = state.labelText;
-  featureToEditName.value = state.name;
-  featureToEditColor.value = state.colorHex;
-  featureToEditStrokeColor.value = state.strokeColorHex;
-  featureToEditOpacity.value = state.fillOpacity;
-  featureToEditStrokeOpacity.value = state.strokeOpacity;
-  featureToEditStrokeWidth.value = state.strokeWidth;
+  editDraft.value = state.draft;
 
   await nextTick();
   editFeatureDialogRef.value?.showModal();
@@ -740,14 +731,7 @@ async function onEditFeature() {
   isEditing.value = true;
 
   const updatedFeature = coerceEditedFeature(featureToEdit.value, {
-    name: featureToEditName.value,
-    labelText: featureToEditLabelText.value,
-    wordType: featureToEditWordType.value,
-    colorHex: featureToEditColor.value,
-    strokeColorHex: featureToEditStrokeColor.value,
-    fillOpacity: featureToEditOpacity.value,
-    strokeOpacity: featureToEditStrokeOpacity.value,
-    strokeWidth: featureToEditStrokeWidth.value,
+    ...editDraft.value,
   });
 
   featureToEdit.value = updatedFeature;

@@ -60,4 +60,59 @@ describe("map label collision selection", () => {
     );
     expect(visible).toEqual(new Set(["visible"]));
   });
+
+  it("keeps collision results correct for large labels and many separated labels", () => {
+    const largeBounds = {
+      left: 0,
+      right: 5000,
+      top: 0,
+      bottom: 5000,
+      width: 5000,
+      height: 5000,
+    };
+    const separated = Array.from({ length: 400 }, (_, index) => {
+      const left = (index % 20) * 200;
+      const top = Math.floor(index / 20) * 200;
+      return label(`separated-${index}`, 1, 0, {
+        left,
+        right: left + 40,
+        top,
+        bottom: top + 20,
+        width: 40,
+        height: 20,
+      });
+    });
+    const large = label("large", 100, 0, {
+      left: 1000,
+      right: 2000,
+      top: 1000,
+      bottom: 2000,
+      width: 1000,
+      height: 1000,
+    });
+    const overlapped = label("overlapped", 10, 0, {
+      left: 1100,
+      right: 1900,
+      top: 1100,
+      bottom: 1900,
+      width: 800,
+      height: 800,
+    });
+
+    const separatedVisible = selectVisibleLabels(
+      separated,
+      largeBounds,
+      5,
+      null,
+    );
+    const largeLabelVisible = selectVisibleLabels(
+      [overlapped, large],
+      largeBounds,
+      5,
+      null,
+    );
+
+    expect(separatedVisible.size).toBe(separated.length);
+    expect(largeLabelVisible).toEqual(new Set(["large"]));
+  });
 });

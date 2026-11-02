@@ -12,6 +12,7 @@ import {
   WORD_TYPE_TAXONOMY,
 } from "../../src/utils/wordStyles";
 import { getLabelPresentation } from "../../src/utils/labelPresentation";
+import { getMapElementType } from "../../src/utils/featureHelpers";
 import {
   prepareFeatureForEdit,
   coerceEditedFeature,
@@ -241,8 +242,8 @@ describe("shared word styles and label presentation", () => {
     };
 
     const state = prepareFeatureForEdit(feature);
-    expect(state.name).toBe("montreal");
-    expect(state.wordType).toBe("city");
+    expect(state.draft.name).toBe("montreal");
+    expect(state.draft.wordType).toBe("city");
     expect(state.isText).toBe(true);
 
     const updated = coerceEditedFeature(feature, {
@@ -257,5 +258,27 @@ describe("shared word styles and label presentation", () => {
     expect(updated.properties.fontStyle).toBe("uppercase");
     expect(updated.properties.labelText).toBe("MONTREAL");
     expect(updated.properties.colorRgb).toEqual([255, 0, 0]);
+  });
+
+  it("uses taxonomy to resolve conflicting persisted map element types", () => {
+    const cityWithStaleLabelType = {
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: {
+        rawType: "city",
+        mapElementType: "label",
+        labelText: "Montréal",
+      },
+    } as Feature;
+    const provinceWithStalePointType = {
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: {
+        rawType: "province",
+        mapElementType: "point",
+        labelText: "Québec",
+      },
+    } as Feature;
+
+    expect(getMapElementType(cityWithStaleLabelType)).toBe("point");
+    expect(getMapElementType(provinceWithStalePointType)).toBe("label");
   });
 });

@@ -3,6 +3,7 @@ import type {
   FeatureProperties,
   MapElementType,
 } from "../typescript/feature";
+import wordTaxonomy from "../../../shared/word-taxonomy.json";
 
 export function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   const next = [...features];
@@ -24,10 +25,34 @@ export function getMapElementType(
     : featureOrProperties;
 
   const geometry = hasProperties ? featureOrProperties.geometry : undefined;
-  const rawType = properties?.mapElementType;
+  const rawMapElementType = properties?.mapElementType;
+  const rawWordType = String(properties?.rawType || properties?.type || "")
+    .toLowerCase();
+  const isTextElement =
+    geometry?.type === "Point" ||
+    rawMapElementType === "label" ||
+    rawMapElementType === "point";
+  const taxonomyEntry = Object.prototype.hasOwnProperty.call(
+    wordTaxonomy.types,
+    rawWordType,
+  )
+    ? wordTaxonomy.types[rawWordType as keyof typeof wordTaxonomy.types]
+    : undefined;
 
-  if (rawType) {
-    return rawType;
+  if (isTextElement && taxonomyEntry) {
+    return taxonomyEntry.mapElementType === "point" ? "point" : "label";
+  }
+
+  if (
+    rawMapElementType === "point" ||
+    rawMapElementType === "zone" ||
+    rawMapElementType === "polyline" ||
+    rawMapElementType === "arrow" ||
+    rawMapElementType === "shape" ||
+    rawMapElementType === "label" ||
+    rawMapElementType === "image"
+  ) {
+    return rawMapElementType;
   }
 
   if (geometry?.type === "LineString") {
