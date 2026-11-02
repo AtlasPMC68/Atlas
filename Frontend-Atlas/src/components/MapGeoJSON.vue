@@ -50,9 +50,9 @@ import { toArray, toImageSrc } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
 import {
   getLabelPresentation,
-  getElementCategoryInfo,
   type LabelPresentationModel,
-} from "../utils/mapLabelUtils";
+} from "../utils/labelPresentation";
+import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
 import type {
   Feature,
   FeatureId,
@@ -91,6 +91,7 @@ let vectorRenderer: L.Canvas | null = null;
 // don't destroy and re-create the layer the user is actively interacting with.
 let suppressNextPropsRender = false;
 let blockNextMapClick = false;
+let labelVisibilityFrame: number | null = null;
 let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
 let selectedCityRing: L.Marker | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
@@ -758,6 +759,31 @@ function renderLineFeatures(features: Feature[], isArrow = false) {
   });
 }
 
+function renderZones(features: Feature[]) {
+  renderPolygonFeatures(
+    features.filter((feature) => getMapElementType(feature) === "zone"),
+  );
+}
+
+function renderShapes(features: Feature[]) {
+  renderPolygonFeatures(
+    features.filter((feature) => getMapElementType(feature) === "shape"),
+  );
+}
+
+function renderPolylines(features: Feature[]) {
+  renderLineFeatures(
+    features.filter((feature) => getMapElementType(feature) === "polyline"),
+  );
+}
+
+function renderArrows(features: Feature[]) {
+  renderLineFeatures(
+    features.filter((feature) => getMapElementType(feature) === "arrow"),
+    true,
+  );
+}
+
 function renderImages(features: Feature[]) {
   const safeFeatures = toArray(features);
 
@@ -869,14 +895,16 @@ function renderAllFeatures() {
     const type = getMapElementType(feature);
     switch (type) {
       case "zone":
+        renderZones([feature]);
+        break;
       case "shape":
-        renderPolygonFeatures([feature]);
+        renderShapes([feature]);
         break;
       case "polyline":
-        renderLineFeatures([feature], false);
+        renderPolylines([feature]);
         break;
       case "arrow":
-        renderLineFeatures([feature], true);
+        renderArrows([feature]);
         break;
       case "point":
         renderCities([feature]);
@@ -904,139 +932,20 @@ function renderAllFeatures() {
 
   previousFeatureIds.value = currentIds;
   
-  setTimeout(updateLabelVisibility, 10);
+  scheduleLabelVisibilityUpdate();
 }
 
 function updateLabelVisibility() {
   if (!map) return;
-  const mapContainer = document.getElementById('map');
-  if (!mapContainer) return;
-  const mapRect = mapContainer.getBoundingClientRect();
-  const currentZoom = map.getZoom();
+  updateMapLabelVisibility(map, selectedFeatureId.value, featureLayerManager.layers);
+}
 
-  const labels = Array.from(document.querySelectorAll('.city-label-text')) as HTMLElement[];
-  if (labels.length === 0) return;
-  
-  // 1. Reset all positions: keep labels strictly at top 0px (no shifting), make them measurable
-  labels.forEach(el => {
-    el.style.top = '0px';
-    if (el.style.display === 'none') {
-      el.style.display = '';
-    }
-    el.style.visibility = '';
-    el.style.pointerEvents = '';
+function scheduleLabelVisibilityUpdate() {
+  if (labelVisibilityFrame !== null) return;
+  labelVisibilityFrame = requestAnimationFrame(() => {
+    labelVisibilityFrame = null;
+    updateLabelVisibility();
   });
-
-  // 2. Sort labels by priority in descending order (largest / highest priority first)
-  // Higher priority labels take precedence and are placed into `boxes` first;
-  // Lower priority (smaller) labels collide with them and are temporarily hidden.
-  const sortedLabels = [...labels].sort((a, b) => {
-    const infoA = getElementCategoryInfo(a);
-    const infoB = getElementCategoryInfo(b);
-    if (infoB.priority !== infoA.priority) {
-      return infoB.priority - infoA.priority;
-    }
-    return (a.textContent || '').localeCompare(b.textContent || '');
-  });
-
-  const boxes: DOMRect[] = [];
-
-  // Check if two labels are literally stacked directly one on top of the other (>= 70% overlap)
-  const isDirectlyStacked = (r: DOMRect) => {
-    for (const box of boxes) {
-      const xOverlap = Math.max(0, Math.min(r.right, box.right) - Math.max(r.left, box.left));
-      const yOverlap = Math.max(0, Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top));
-      const overlapArea = xOverlap * yOverlap;
-      if (overlapArea > 0) {
-        const minArea = Math.min(r.width * r.height, box.width * box.height);
-        if (minArea > 0 && overlapArea / minArea >= 0.70) {
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-
-  for (const label of sortedLabels) {
-    const isSelected = Boolean(
-      selectedFeatureId.value && label.dataset.featureId === selectedFeatureId.value
-    );
-
-    const layer = label.dataset.featureId ? featureLayerManager.layers.get(label.dataset.featureId) : null;
-    let circlePoint: L.CircleMarker | null = null;
-    if (layer) {
-      forEachLeafLayer(layer, (leaf) => {
-        if (leaf instanceof L.CircleMarker) circlePoint = leaf;
-      });
-    }
-
-    // Rule 1: Disappearance by zoom level for entire category
-    const { minZoom } = getElementCategoryInfo(label);
-    if (currentZoom < minZoom && !isSelected) {
-      label.style.visibility = 'hidden';
-      label.style.pointerEvents = 'none';
-      if (circlePoint) {
-        (circlePoint as L.CircleMarker).setStyle({ opacity: 0, fillOpacity: 0 });
-      }
-      continue;
-    }
-
-    let rect = label.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) continue;
-
-    // Ignore off-screen labels to improve performance
-    if (
-      rect.right < mapRect.left ||
-      rect.left > mapRect.right ||
-      rect.bottom < mapRect.top ||
-      rect.top > mapRect.bottom
-    ) {
-      label.style.visibility = 'hidden';
-      label.style.pointerEvents = 'none';
-      if (circlePoint) {
-        (circlePoint as L.CircleMarker).setStyle({ opacity: 0, fillOpacity: 0 });
-      }
-      continue;
-    }
-
-    // Always display currently selected feature
-    if (isSelected) {
-      label.style.visibility = '';
-      label.style.pointerEvents = '';
-      if (circlePoint) {
-        const fp = ((circlePoint as any).feature?.properties) || {};
-        (circlePoint as L.CircleMarker).setStyle({
-          opacity: fp.strokeOpacity ?? 1,
-          fillOpacity: fp.fillOpacity ?? 0.5,
-        });
-      }
-      boxes.push(rect);
-      continue;
-    }
-
-    // Rule 2: Only hide if literally stacked 1 right on top of the other (>= 70% overlap)
-    // Otherwise leave words at their real geographic positions without hiding them!
-    const isStacked = isDirectlyStacked(rect);
-
-    if (isStacked) {
-      label.style.visibility = 'hidden';
-      label.style.pointerEvents = 'none';
-      if (circlePoint) {
-        (circlePoint as L.CircleMarker).setStyle({ opacity: 0, fillOpacity: 0 });
-      }
-    } else {
-      label.style.visibility = '';
-      label.style.pointerEvents = '';
-      if (circlePoint) {
-        const fp = ((circlePoint as any).feature?.properties) || {};
-        (circlePoint as L.CircleMarker).setStyle({
-          opacity: fp.strokeOpacity ?? 1,
-          fillOpacity: fp.fillOpacity ?? 0.5,
-        });
-      }
-      boxes.push(rect);
-    }
-  }
 }
 
 // --- per-feature drag ---
@@ -1077,9 +986,8 @@ onMounted(() => {
   };
   map.whenReady(updateMinZoom);
   map.on('resize', updateMinZoom);
-  map.on('moveend', updateLabelVisibility);
-  map.on('zoom', updateLabelVisibility);
-  map.on('zoomend', updateLabelVisibility);
+  map.on("moveend", scheduleLabelVisibilityUpdate);
+  map.on("zoomend", scheduleLabelVisibilityUpdate);
 
   drawing.initializeDrawing(map);
   L.control.zoom({ position: "topleft" }).addTo(map);
@@ -1232,6 +1140,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (labelVisibilityFrame !== null) {
+    cancelAnimationFrame(labelVisibilityFrame);
+    labelVisibilityFrame = null;
+  }
   if (escapeKeyHandler) {
     document.removeEventListener("keydown", escapeKeyHandler);
     escapeKeyHandler = null;

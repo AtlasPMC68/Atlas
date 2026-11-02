@@ -14,8 +14,13 @@ import json
 from pathlib import Path
 
 from app.utils.cities_validation import (
+    STYLES_MAP,
+    WORD_TAXONOMY,
+    _WORD_STYLE_CONFIG,
     _normalize,
+    capitalize_words,
     find_geo_entity,
+    format_geographic_nomenclature,
     format_place_result,
     is_in_bounds,
     match_ocr_label,
@@ -380,13 +385,25 @@ def test_ocean_styling_is_uppercase_label_without_point():
 
 
 def test_capitalize_words_multi_term_and_particles():
-    from app.utils.cities_validation import capitalize_words
     assert capitalize_words("new york city") == "New York City"
     assert capitalize_words("saint-pierre") == "Saint-Pierre"
     assert capitalize_words("golfe du mexique") == "Golfe du Mexique"
     assert capitalize_words("mer du labrador") == "Mer du Labrador"
     assert capitalize_words("lac supérieur") == "Lac Supérieur"
     assert capitalize_words("baie d'hudson") == "Baie d'Hudson"
+
+
+def test_backend_uses_shared_word_style_contract():
+    assert set(WORD_TAXONOMY) == set(_WORD_STYLE_CONFIG["types"])
+    for example in _WORD_STYLE_CONFIG["formattingExamples"]:
+        transform = STYLES_MAP[example["type"]][3]
+        assert transform(example["input"]) == example["expected"]
+
+
+def test_geographic_prefixes_are_loaded_from_shared_contract():
+    assert format_geographic_nomenclature(
+        "Québec", "Province de Québec"
+    ) == "Province de Québec"
 
 
 def test_prefix_preserved_only_if_detected_in_extraction():

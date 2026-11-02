@@ -404,7 +404,7 @@ import {
   ArrowUturnRightIcon,
 } from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
-import { WORD_TYPE_STYLES, formatWordText } from "../../utils/mapLabelUtils";
+import { WORD_TYPE_STYLES, formatWordText } from "../../utils/wordStyles";
 import { cacheOriginalMapImage, removeOriginalMapImage } from "../../composables/useMapImageCache";
 
 export type { TextValidationEntry };

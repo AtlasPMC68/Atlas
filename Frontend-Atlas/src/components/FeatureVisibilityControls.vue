@@ -497,10 +497,13 @@ import {
   WORD_TYPE_TAXONOMY,
   isTextFeature,
   formatWordText,
+  type WordType,
+} from "../utils/wordStyles";
+import {
   prepareFeatureForEdit,
   coerceEditedFeature,
   getWordTypePreviewStyle,
-} from "../utils/mapLabelUtils";
+} from "../utils/featureTextEditing";
 import {
   groupFeaturesByType,
   groupFeaturesByMap,
@@ -520,7 +523,7 @@ const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
 const featureToEditName = ref<string>("");
 const featureToEditLabelText = ref<string | undefined>(undefined);
-const featureToEditWordType = ref<string>("city");
+const featureToEditWordType = ref<WordType>("city");
 const featureToEditColor = ref<string | undefined>(undefined);
 const featureToEditStrokeColor = ref<string | undefined>(undefined);
 const featureToEditOpacity = ref<number | undefined>(undefined);

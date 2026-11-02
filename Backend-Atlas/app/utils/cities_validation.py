@@ -27,6 +27,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import geonamescache
 
 
+_WORD_STYLE_CONFIG_PATH = Path(__file__).resolve().parents[3] / "shared" / "word-taxonomy.json"
+with _WORD_STYLE_CONFIG_PATH.open(encoding="utf-8") as _config_file:
+    _WORD_STYLE_CONFIG = json.load(_config_file)
+
+
 def _normalize(text: str) -> str:
     """Lower-case, strip accents, collapse whitespace."""
     text = unicodedata.normalize("NFKD", text)
@@ -41,7 +46,12 @@ def capitalize_first(s: str) -> str:
     return s[:1].upper() + s[1:] if s else s
 
 
-_LOWERCASE_PARTICLES = {"de", "du", "des", "d'", "l'", "la", "le", "et"}
+_LOWERCASE_PARTICLES = set(_WORD_STYLE_CONFIG["capitalization"]["lowercaseParticles"])
+_APOSTROPHE_PREFIXES = tuple(_WORD_STYLE_CONFIG["capitalization"]["apostrophePrefixes"])
+_APOSTROPHE_PREFIX_PATTERN = re.compile(
+    rf"^([{''.join(re.escape(prefix) for prefix in _APOSTROPHE_PREFIXES)}]['’])(.*)$",
+    flags=re.IGNORECASE,
+)
 
 
 def capitalize_words(text: str) -> str:
@@ -66,7 +76,7 @@ def capitalize_words(text: str) -> str:
             result.append(part)
             continue
 
-        apo_m = re.match(r"^([dlDL]['’])(.*)$", part)
+        apo_m = _APOSTROPHE_PREFIX_PATTERN.match(part)
         if apo_m:
             pfx = apo_m.group(1).lower()
             rest = apo_m.group(2)
@@ -276,22 +286,29 @@ for _info in _gc.get_cities().values():
             _CITY_INDEX.setdefault(_base, []).append(_city)
 
 
-# Style definitions for map display: (mapElementType, sizePx, fontStyle, textTransform)
+# Style definitions derive from the shared, language-neutral taxonomy.
 StyleTuple = Tuple[str, int, str, Any]
 
-# Canonical taxonomy shared with frontend WORD_TYPE_TAXONOMY
 WORD_TAXONOMY: Dict[str, Dict[str, Any]] = {
-    "continent": {"element_type": "label", "size_px": 18, "font_style": "uppercase", "priority": 90, "min_zoom": 1.0, "transform": str.upper},
-    "ocean":     {"element_type": "label", "size_px": 18, "font_style": "italic uppercase", "priority": 80, "min_zoom": 1.0, "transform": str.upper},
-    "country":   {"element_type": "label", "size_px": 16, "font_style": "uppercase", "priority": 70, "min_zoom": 1.5, "transform": str.upper},
-    "sea":       {"element_type": "label", "size_px": 16, "font_style": "italic", "priority": 60, "min_zoom": 2.0, "transform": capitalize_words},
-    "state":     {"element_type": "label", "size_px": 14, "font_style": "uppercase", "priority": 50, "min_zoom": 2.5, "transform": str.upper},
-    "province":  {"element_type": "label", "size_px": 14, "font_style": "uppercase", "priority": 50, "min_zoom": 2.5, "transform": str.upper},
-    "territory": {"element_type": "label", "size_px": 14, "font_style": "uppercase", "priority": 50, "min_zoom": 2.5, "transform": str.upper},
-    "fleuve":    {"element_type": "label", "size_px": 14, "font_style": "italic", "priority": 40, "min_zoom": 2.25, "transform": capitalize_words},
-    "city":      {"element_type": "point", "size_px": 12, "font_style": "normal", "priority": 30, "min_zoom": 4.0, "transform": capitalize_words},
-    "lake":      {"element_type": "label", "size_px": 12, "font_style": "italic", "priority": 20, "min_zoom": 2.75, "transform": capitalize_words},
-    "river":     {"element_type": "label", "size_px": 10, "font_style": "italic", "priority": 10, "min_zoom": 4.5, "transform": capitalize_words},
+    word_type: {
+        "element_type": entry["mapElementType"],
+        "size_px": entry["sizePx"],
+        "font_style": (
+            f"{entry['fontStyle']} uppercase"
+            if entry["fontStyle"] == "italic"
+            and entry["textTransform"] == "uppercase"
+            else "uppercase"
+            if entry["textTransform"] == "uppercase"
+            else entry["fontStyle"]
+        ),
+        "priority": entry["priority"],
+        "min_zoom": entry["minZoom"],
+        "category": entry["category"],
+        "transform": (
+            str.upper if entry["textTransform"] == "uppercase" else capitalize_words
+        ),
+    }
+    for word_type, entry in _WORD_STYLE_CONFIG["types"].items()
 }
 
 STYLES_MAP: Dict[str, StyleTuple] = {
@@ -301,36 +318,9 @@ STYLES_MAP: Dict[str, StyleTuple] = {
 DEFAULT_STYLE: StyleTuple = STYLES_MAP["city"]
 
 
-# Common geographic prefixes preserved for display nomenclature only if detected in extraction query
-_GEOGRAPHIC_PREFIXES = (
-    ("province de l ", "Province de l'"),
-    ("province d ", "Province d'"),
-    ("province de ", "Province de "),
-    ("province du ", "Province du "),
-    ("province des ", "Province des "),
-    ("territoire du ", "Territoire du "),
-    ("territoire de ", "Territoire de "),
-    ("territoire des ", "Territoire des "),
-    ("territoire d ", "Territoire d'"),
-    ("district de ", "District de "),
-    ("district du ", "District du "),
-    ("district d ", "District d'"),
-    ("etat de ", "État de "),
-    ("ocean ", "Océan "),
-    ("mer ", "Mer "),
-    ("lac ", "Lac "),
-    ("fleuve ", "Fleuve "),
-    ("riviere ", "Rivière "),
-    ("baie d ", "Baie d'"),
-    ("baie de ", "Baie de "),
-    ("golfe du ", "Golfe du "),
-    ("detroit de ", "Détroit de "),
-    ("detroit d ", "Détroit d'"),
-    ("ile du ", "Île-du-"),
-    ("ile de ", "Île de "),
-    ("ile d ", "Île d'"),
-    ("iles de l ", "Îles de l'"),
-    ("iles ", "Îles "),
+_GEOGRAPHIC_PREFIXES = tuple(
+    (str(normalized), str(display))
+    for normalized, display in _WORD_STYLE_CONFIG["geographicPrefixes"]
 )
 
 

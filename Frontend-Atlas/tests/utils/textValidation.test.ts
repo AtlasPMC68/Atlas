@@ -4,7 +4,6 @@ import type { Feature } from "../../src/typescript/feature";
 import {
   featureToValidationEntry,
   applyValidationToFeature,
-  applyValidationStateToFeature,
   isUnrecognizedTextFeature,
   ValidationStatus,
   type TextValidationEntry,
@@ -672,7 +671,7 @@ describe("textValidation utility functions", () => {
       expect(validated.properties.recognized).toBe(true);
     });
 
-    it("applyValidationStateToFeature isolates business lifecycle updates without mutating style", () => {
+    it("applies validation state, selected word style, and coordinates in one operation", () => {
       const rawFeature: Feature = {
         type: "Feature",
         id: "feat-pure-state",
@@ -688,16 +687,30 @@ describe("textValidation utility functions", () => {
         updatedAt: "2026-01-01",
       };
 
-      const accepted = applyValidationStateToFeature(rawFeature, true, [-71, 46]);
+      const accepted = applyValidationToFeature(rawFeature, {
+        id: rawFeature.id,
+        text: "Test Place",
+        originalText: "Test Place",
+        selected: true,
+        wordType: "province",
+        coordinates: [-71, 46],
+      });
       expect(accepted.properties.show).toBe(true);
       expect(accepted.properties.recognized).toBe(true);
       expect(accepted.properties.validationStatus).toBe(ValidationStatus.ACCEPTED);
       expect(accepted.geometry.coordinates).toEqual([-71, 46]);
-      // Styles are untouched
+      expect(accepted.properties.rawType).toBe("province");
+      expect(accepted.properties.mapElementType).toBe("label");
       expect(accepted.properties.sizePx).toBe(14);
       expect(accepted.properties.fontStyle).toBe("uppercase");
 
-      const rejected = applyValidationStateToFeature(rawFeature, false);
+      const rejected = applyValidationToFeature(rawFeature, {
+        id: rawFeature.id,
+        text: "Test Place",
+        originalText: "Test Place",
+        selected: false,
+        wordType: "city",
+      });
       expect(rejected.properties.show).toBe(false);
       expect(rejected.properties.recognized).toBe(false);
       expect(rejected.properties.validationStatus).toBe(ValidationStatus.REJECTED);

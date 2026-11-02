@@ -3,11 +3,12 @@ import {
   type Coordinate,
   type Feature,
 } from "../typescript/feature";
+import type { WordType } from "./wordStyles";
 import {
   applyWordStyleToFeature,
   getWordTypeForFeature,
   isTextFeature,
-} from "./mapLabelUtils";
+} from "./wordStyles";
 
 export { ValidationStatus };
 
@@ -21,7 +22,7 @@ export interface TextValidationEntry {
   suggestedCity?: string;
   suggestedCoords?: [number, number];
   useSuggestedCity?: boolean;
-  wordType?: string;
+  wordType?: WordType;
 }
 
 /** Check if a feature is an unrecognized OCR text candidate for validation. */
@@ -87,49 +88,35 @@ export function featureToValidationEntry(
   };
 }
 
-/** Update the validation lifecycle state of a feature (show, recognized, validationStatus, coords). */
-export function applyValidationStateToFeature(
-  feature: Feature,
-  isAccepted: boolean,
-  coordinates?: Coordinate,
-): Feature {
-  const validationStatus = isAccepted ? ValidationStatus.ACCEPTED : ValidationStatus.REJECTED;
-  const updatedGeometry = coordinates
-    ? { ...feature.geometry, type: "Point" as const, coordinates }
-    : feature.geometry;
-
-  return {
-    ...feature,
-    geometry: updatedGeometry,
-    properties: {
-      ...feature.properties,
-      show: isAccepted,
-      recognized: isAccepted,
-      userSelected: isAccepted,
-      validationStatus,
-      validation_status: validationStatus,
-    },
-  };
-}
-
-/** Apply user validation choices to a feature by composing word styling and validation state. */
+/** Apply a validation decision, selected word type, and coordinates atomically. */
 export function applyValidationToFeature(
   feature: Feature,
   entry: TextValidationEntry,
 ): Feature {
   const isSelected = Boolean(entry.selected);
   const wordType = entry.wordType || "city";
-
-  // 1. Formatting & Visual styling
   const styledFeature = applyWordStyleToFeature(feature, wordType, entry.text);
-
-  // 2. Coordinates
   const coordinates: Coordinate | undefined = isSelected
     ? entry.useSuggestedCity && entry.suggestedCoords
       ? entry.suggestedCoords
       : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate)
     : undefined;
+  const validationStatus = isSelected
+    ? ValidationStatus.ACCEPTED
+    : ValidationStatus.REJECTED;
 
-  // 3. Validation lifecycle state
-  return applyValidationStateToFeature(styledFeature, isSelected, coordinates);
+  return {
+    ...styledFeature,
+    geometry: coordinates
+      ? { ...styledFeature.geometry, type: "Point", coordinates }
+      : styledFeature.geometry,
+    properties: {
+      ...styledFeature.properties,
+      show: isSelected,
+      recognized: isSelected,
+      userSelected: isSelected,
+      validationStatus,
+      validation_status: validationStatus,
+    },
+  };
 }

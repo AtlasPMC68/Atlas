@@ -6,18 +6,34 @@ import {
   LOWERCASE_PARTICLES,
   getWordTypeStyle,
   WORD_TYPE_STYLES,
-  parseLabelFontStyle,
   formatWordText,
   isTextFeature,
   getWordTypeForFeature,
   applyWordStyleToFeature,
+  WORD_TYPE_TAXONOMY,
+} from "../../src/utils/wordStyles";
+import {
+  parseLabelFontStyle,
   getLabelPresentation,
+} from "../../src/utils/labelPresentation";
+import {
   prepareFeatureForEdit,
   coerceEditedFeature,
-} from "../../src/utils/mapLabelUtils";
+} from "../../src/utils/featureTextEditing";
+import wordStyleConfig from "../../../shared/word-taxonomy.json";
 import type { Feature } from "../../src/typescript/feature";
 
-describe("mapLabelUtils - Word Type Styles and Police", () => {
+describe("shared word styles and label presentation", () => {
+  it("uses the shared formatting examples for every frontend word style", () => {
+    for (const example of wordStyleConfig.formattingExamples) {
+      expect(formatWordText(example.input, example.type)).toBe(example.expected);
+    }
+
+    expect(Object.keys(WORD_TYPE_TAXONOMY).sort()).toEqual(
+      Object.keys(wordStyleConfig.types).sort(),
+    );
+  });
+
   it("defines expected font styles, sizes, and element types for word categories", () => {
     // City / Ville -> point, 12px, normal
     expect(WORD_TYPE_STYLES.city).toBeDefined();
@@ -230,4 +246,3 @@ describe("mapLabelUtils - Word Type Styles and Police", () => {
     expect(updated.properties.colorRgb).toEqual([255, 0, 0]);
   });
 });
-
