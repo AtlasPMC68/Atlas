@@ -1,7 +1,9 @@
 """Tests for text validation categorization and georeferencing."""
 
 from app.tasks import _categorized_text_features_from_ocr
-from app.utils.cities_validation import find_nearby_candidate_city
+from app.utils.cities_validation import (
+    find_nearby_candidate_place,
+)
 
 FRAME_BOUNDS = {"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0}
 LEGEND_BOUNDS = {"x": 50.0, "y": 50.0, "width": 20.0, "height": 20.0}
@@ -105,30 +107,44 @@ def test_categorized_text_features_fuzzy_unrecognized(monkeypatch):
     feat = collections[0]["features"][0]
     props = feat["properties"]
     assert props["recognized"] is False
-    assert props["suggestedCity"] is None
-    assert props["suggestedCoords"] is None
+    assert props["suggestedPlace"] is None
     assert props["name"] == "Traité de Paris de 1783"
     assert props["originalText"] == "Traité de Paris de 1783"
 
 
-def test_find_nearby_candidate_city():
+def test_find_nearby_candidate_place_matches_city_and_rejects_unrelated_text():
     # Test searching for Montreal near its real coordinates [-73.5673, 45.5017]
-    montreal = find_nearby_candidate_city("Montréal", [-73.56, 45.50], radius_km=50.0)
+    montreal = find_nearby_candidate_place("Montréal", [-73.56, 45.50], radius_km=50.0)
     assert montreal is not None
     assert "montr" in montreal["name"].lower()
 
     # Test searching with minor OCR typo near coordinates
-    typo_match = find_nearby_candidate_city("Montrel", [-73.56, 45.50], radius_km=50.0)
+    typo_match = find_nearby_candidate_place("Montrel", [-73.56, 45.50], radius_km=50.0)
     assert typo_match is not None
     assert "montr" in typo_match["name"].lower()
 
     # Reject unexploitable / map noise text
-    assert find_nearby_candidate_city("Échelle 1:10000", [-73.56, 45.50], radius_km=50.0) is None
-    assert find_nearby_candidate_city("Légende", [-73.56, 45.50], radius_km=50.0) is None
-    assert find_nearby_candidate_city("1783", [-73.56, 45.50], radius_km=50.0) is None
+    assert find_nearby_candidate_place("Échelle 1:10000", [-73.56, 45.50], radius_km=50.0) is None
+    assert find_nearby_candidate_place("Légende", [-73.56, 45.50], radius_km=50.0) is None
+    assert find_nearby_candidate_place("1783", [-73.56, 45.50], radius_km=50.0) is None
 
     # Do not auto-assimilate non-matching text to nearest city when similarity is insufficient
-    assert find_nearby_candidate_city("TotallyUnrelatedWord", [-73.56, 45.50], radius_km=50.0) is None
+    assert find_nearby_candidate_place("TotallyUnrelatedWord", [-73.56, 45.50], radius_km=50.0) is None
+
+
+def test_find_nearby_candidate_place_suggests_new_orleans_from_partial_ocr():
+    candidate = find_nearby_candidate_place("La Nouvel", [-90.075, 29.955])
+
+    assert candidate is not None
+    assert candidate["name_fr"] == "La Nouvelle-Orléans"
+
+
+def test_find_nearby_candidate_place_suggests_quebec_province_from_ocr_typo():
+    candidate = find_nearby_candidate_place("Province de Quebe", [-73.707, 46.369])
+
+    assert candidate is not None
+    assert candidate["type"] == "province"
+    assert candidate["name_fr"] == "Province de Québec"
 
 
 def test_categorized_text_features_when_no_unrecognized_words(monkeypatch):
@@ -192,10 +208,12 @@ def test_batch_georeference_and_candidate_association():
 
     feat = collections[0]["features"][0]
     assert feat["geometry"]["coordinates"] == [-73.567, 45.501]
-    # Suggested nearby city should have been discovered via find_nearby_candidate_city
-    assert feat["properties"]["suggestedCity"] is not None
-    assert "montr" in feat["properties"]["suggestedCity"].lower()
-    assert feat["properties"]["suggestedCoords"] is not None
+    # Nearby place suggestion should be discovered by the shared candidate resolver.
+    suggestion = feat["properties"]["suggestedPlace"]
+    assert suggestion is not None
+    assert "montr" in suggestion["name"].lower()
+    assert suggestion["coordinates"] is not None
+    assert suggestion["type"] == "city"
 
 
 def test_text_feature_normalization_preserves_disjoint_validation_status():
@@ -353,8 +371,3 @@ def test_feature_serialization_includes_both_validation_status_formats():
     assert serialized is not None
     assert serialized["properties"]["validation_status"] == ValidationStatus.ACCEPTED.value
     assert serialized["properties"]["validationStatus"] == ValidationStatus.ACCEPTED.value
-
-
-
-
-

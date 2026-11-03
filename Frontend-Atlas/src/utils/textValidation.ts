@@ -1,4 +1,5 @@
 import {
+  type SuggestedPlace,
   ValidationStatus,
   type Coordinate,
   type Feature,
@@ -16,7 +17,6 @@ import {
   isTextValidationReviewCandidate,
   synchronizeValidationState,
 } from "./featureValidationState";
-
 export { ValidationStatus };
 
 export interface TextValidationEntry {
@@ -26,9 +26,8 @@ export interface TextValidationEntry {
   selected: boolean;
   validationStatus?: ValidationStatus | `${ValidationStatus}`;
   coordinates?: [number, number];
-  suggestedCity?: string;
-  suggestedCoords?: [number, number];
-  useSuggestedCity?: boolean;
+  suggestedPlace?: SuggestedPlace;
+  useSuggestedPlace?: boolean;
   wordType?: WordType;
 }
 
@@ -74,8 +73,7 @@ export function featureToValidationEntry(
         ? ValidationStatus.MANUAL_REVIEW
         : ValidationStatus.REJECTED),
     coordinates,
-    suggestedCity: feature.properties?.suggestedCity,
-    suggestedCoords: feature.properties?.suggestedCoords,
+    suggestedPlace: feature.properties?.suggestedPlace,
     wordType,
   };
 }
@@ -89,8 +87,8 @@ export function applyValidationToFeature(
   const wordType = entry.wordType || "city";
   const styledFeature = applyWordStyleToFeature(feature, wordType, entry.text);
   const coordinates: Coordinate | undefined = isSelected
-    ? entry.useSuggestedCity && entry.suggestedCoords
-      ? entry.suggestedCoords
+    ? entry.useSuggestedPlace && entry.suggestedPlace
+      ? entry.suggestedPlace.coordinates
       : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate)
     : undefined;
   const validationStatus = isSelected

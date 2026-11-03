@@ -264,6 +264,9 @@ def _parse_pop(val: Any) -> int:
 # City gazetteer (geonamescache)
 _gc = getattr(geonamescache, "GeonamesCache")()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
+_CITY_ALIASES = {
+    "New Orleans": ("La Nouvelle-Orléans",),
+}
 
 for _info in _gc.get_cities().values():
     _name = _info.get("name") or ""
@@ -411,47 +414,112 @@ def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) ->
     return 2.0 * r * math.asin(math.sqrt(max(0.0, min(1.0, a))))
 
 
-def find_nearby_candidate_city(
+def find_nearby_candidate_place(
     text: str,
     coords: List[float],
     radius_km: float = 75.0,
     min_similarity: float = 0.80,
 ) -> Optional[Dict[str, Any]]:
-    """Find a candidate city within radius_km of coordinates [lon, lat].
+    """Find a nearby city or geographic entity matching OCR text for review."""
+    if not is_exploitable_text(text) or not coords or len(coords) < 2:
+        return None
 
-    Strictly discriminates: requires exploitable text, non-empty normalized key,
-    and difflib similarity >= min_similarity (default 0.80).
-    Does NOT fall back to picking the nearest city when the score is insufficient.
-    """
-    if not is_exploitable_text(text):
-        return None
-    if not coords or len(coords) < 2:
-        return None
     lon, lat = float(coords[0]), float(coords[1])
-    key = _normalize(text)
-    if not key:
+    normalized_query = _normalize(text)
+    if not normalized_query:
         return None
 
-    nearby_cities: List[tuple[float, Dict[str, Any]]] = []
-    for city_list in _CITY_INDEX.values():
-        for c in city_list:
-            if abs(c["lat"] - lat) * 111.0 > radius_km:
-                continue
-            dist = haversine_distance_km(lat, lon, c["lat"], c["lon"])
-            if dist <= radius_km:
-                nearby_cities.append((dist, c))
-
-    if not nearby_cities:
-        return None
-
-    scored = [
-        (difflib.SequenceMatcher(None, key, _normalize(c.get("name", ""))).ratio(), -dist, c) for dist, c in nearby_cities
+    query_tokens = [
+        token
+        for token in normalized_query.split()
+        if len(token) >= 3
+        and token
+        not in {
+            "de", "del", "des", "du", "la", "le", "les", "of", "the",
+            "province", "territoire", "territory", "state", "état",
+        }
     ]
-    best_sim, _, best_city = max(scored, key=lambda x: (x[0], x[1]))
-    if best_sim >= min_similarity:
-        return best_city
 
-    return None
+    candidates: Dict[Tuple[str, str, float, float], Dict[str, Any]] = {}
+    seen_cities: set[Tuple[Any, float, float]] = set()
+    for city_list in _CITY_INDEX.values():
+        for city in city_list:
+            city_key = (city.get("geonameid"), city["lat"], city["lon"])
+            if city_key in seen_cities:
+                continue
+            seen_cities.add(city_key)
+            if abs(city["lat"] - lat) * 111.0 > radius_km:
+                continue
+            if haversine_distance_km(lat, lon, city["lat"], city["lon"]) > radius_km:
+                continue
+            candidate = dict(city)
+            candidate["aliases"] = list(_CITY_ALIASES.get(city["name"], ()))
+            if candidate["aliases"]:
+                candidate["name_fr"] = candidate["aliases"][0]
+            key = ("city", candidate["name"], candidate["lat"], candidate["lon"])
+            candidates[key] = candidate
+
+    seen_entities: set[Tuple[str, str, float, float]] = set()
+    for entity_list in _GEO_INDEX.values():
+        for entity in entity_list:
+            if entity.get("lat") is None or entity.get("lon") is None:
+                continue
+            entity_key = (
+                str(entity.get("type", "")),
+                str(entity.get("name", "")),
+                float(entity["lat"]),
+                float(entity["lon"]),
+            )
+            if entity_key in seen_entities:
+                continue
+            seen_entities.add(entity_key)
+            if abs(float(entity["lat"]) - lat) * 111.0 > radius_km:
+                continue
+            if haversine_distance_km(lat, lon, entity["lat"], entity["lon"]) > radius_km:
+                continue
+            candidates[entity_key] = entity
+
+    scored: List[Tuple[float, float, Dict[str, Any]]] = []
+    for candidate in candidates.values():
+        variants = {
+            _normalize(str(value))
+            for value in (
+                candidate.get("name"),
+                candidate.get("name_fr"),
+                *candidate.get("aliases", []),
+            )
+            if value
+        }
+        similarity = max(
+            (
+                difflib.SequenceMatcher(None, normalized_query, variant).ratio()
+                for variant in variants
+            ),
+            default=0.0,
+        )
+
+        if query_tokens:
+            variant_tokens = {token for variant in variants for token in variant.split()}
+            token_matches = [
+                max(
+                    (
+                        difflib.SequenceMatcher(None, query_token, candidate_token).ratio()
+                        for candidate_token in variant_tokens
+                    ),
+                    default=0.0,
+                )
+                for query_token in query_tokens
+            ]
+            if all(score >= min_similarity for score in token_matches):
+                similarity = max(similarity, min(token_matches))
+
+        if similarity >= min_similarity:
+            distance = haversine_distance_km(lat, lon, candidate["lat"], candidate["lon"])
+            scored.append((similarity, -distance, candidate))
+
+    if not scored:
+        return None
+    return max(scored, key=lambda match: (match[0], match[1]))[2]
 
 
 # Sentinel for "matched but out of bounds → reject immediately"
@@ -630,7 +698,7 @@ __all__ = [
     "capitalize_words",
     "format_geographic_nomenclature",
     "haversine_distance_km",
-    "find_nearby_candidate_city",
+    "find_nearby_candidate_place",
     "is_exploitable_text",
     "format_place_result",
     "_normalize",

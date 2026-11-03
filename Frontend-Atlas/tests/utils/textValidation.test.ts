@@ -331,14 +331,17 @@ describe("textValidation utility functions", () => {
       expect(validated.properties.sizePx).toBe(12);
     });
 
-    it("applies suggestedCoords when useSuggestedCity is true", () => {
+    it("applies suggested place coordinates when the suggestion is accepted", () => {
       const entry: TextValidationEntry = {
         id: "feat-1",
         text: "Montréal",
         originalText: "Montrel",
         selected: true,
-        useSuggestedCity: true,
-        suggestedCoords: [-73.5673, 45.5017],
+        useSuggestedPlace: true,
+        suggestedPlace: {
+          name: "Montréal",
+          coordinates: [-73.5673, 45.5017],
+        },
       };
 
       const result = applyValidationToFeature(baseFeature, entry);
@@ -410,8 +413,10 @@ describe("textValidation utility functions", () => {
             recognized: false,
             show: false,
             validationStatus: "manual_review",
-            suggestedCity: "Chicoutimi",
-            suggestedCoords: [-71.06, 48.43],
+            suggestedPlace: {
+              name: "Chicoutimi",
+              coordinates: [-71.06, 48.43],
+            },
           },
         },
         {
@@ -456,7 +461,7 @@ describe("textValidation utility functions", () => {
           ...modalEntries[1], // text-to-accept
           text: "Chicoutimi",
           selected: true,
-          useSuggestedCity: true,
+          useSuggestedPlace: true,
         },
         {
           ...modalEntries[2], // text-to-reject
@@ -546,8 +551,10 @@ describe("textValidation utility functions", () => {
           validationStatus: "manual_review",
           validation_status: "manual_review",
           confidence: 0.72,
-          suggestedCity: "Trois-Rivières",
-          suggestedCoords: [-72.55, 46.35],
+          suggestedPlace: {
+            name: "Trois-Rivières",
+            coordinates: [-72.55, 46.35],
+          },
         },
       };
 
@@ -559,12 +566,12 @@ describe("textValidation utility functions", () => {
       expect(modalEntry.validationStatus).toBe("manual_review");
       expect(modalEntry.text).toBe("Trois-Rivires");
 
-      // 3. User accepts suggestion: updates text to "Trois-Rivières", selected = true, useSuggestedCity = true
+      // 3. User accepts suggestion: updates text to "Trois-Rivières", selected = true, useSuggestedPlace = true
       const userChoice: TextValidationEntry = {
         ...modalEntry,
         text: "Trois-Rivières",
         selected: true,
-        useSuggestedCity: true,
+        useSuggestedPlace: true,
       };
 
       // 4. Apply validation to feature

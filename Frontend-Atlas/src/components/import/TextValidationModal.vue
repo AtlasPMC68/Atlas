@@ -294,9 +294,9 @@
                   />
                   <!-- Amber badge if suggestion available -->
                   <span
-                    v-if="item.suggestedCity && !item.useSuggestedCity"
+                    v-if="item.suggestedPlace && !item.useSuggestedPlace"
                     class="absolute right-2 px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[10px] pointer-events-none shadow-xs"
-                    title="Suggestion de ville à proximité disponible"
+                    title="Suggestion de lieu à proximité disponible"
                   >
                     !
                   </span>
@@ -336,26 +336,26 @@
                 </select>
               </div>
 
-              <!-- Suggested city pill button -->
+              <!-- Suggested place pill button -->
               <div
-                v-if="item.suggestedCity"
+                v-if="item.suggestedPlace"
                 class="flex items-center pt-0.5"
                 @click.stop
               >
                 <button
                   type="button"
                   class="btn btn-xs h-7 flex-1 justify-between normal-case font-medium transition-all text-xs text-black px-2"
-                  :class="item.selected && item.useSuggestedCity
+                  :class="item.selected && item.useSuggestedPlace
                     ? 'btn-success bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs border-emerald-600'
                     : 'btn-outline border-emerald-400 text-black hover:bg-emerald-50 bg-base-100'"
                   @click="toggleSuggestion(item)"
-                  :title="item.useSuggestedCity ? 'Cliquer pour revenir au texte libre' : `Accepter la suggestion ${item.suggestedCity}`"
+                  :title="item.useSuggestedPlace ? 'Cliquer pour revenir au texte libre' : `Accepter la suggestion ${item.suggestedPlace.name}`"
                 >
                   <span class="truncate">
-                    Ville suggérée : <strong>{{ item.suggestedCity }}</strong>
+                    Lieu suggéré : <strong>{{ item.suggestedPlace.name }}</strong>
                   </span>
                   <span class="font-semibold shrink-0 text-[11px] flex items-center gap-1">
-                    <span v-if="item.useSuggestedCity" class="font-bold">✓ Adoptée</span>
+                    <span v-if="item.useSuggestedPlace" class="font-bold">✓ Adoptée</span>
                     <span v-else class="underline">Accepter la suggestion</span>
                   </span>
                 </button>
@@ -404,7 +404,11 @@ import {
   ArrowUturnRightIcon,
 } from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
-import { WORD_TYPE_STYLES, formatWordText } from "../../utils/wordStyles";
+import {
+  WORD_TYPE_STYLES,
+  formatWordText,
+  normalizeWordType,
+} from "../../utils/wordStyles";
 import { cacheOriginalMapImage, removeOriginalMapImage } from "../../composables/useMapImageCache";
 
 export type { TextValidationEntry };
@@ -486,7 +490,15 @@ function cloneEntries(entries: TextValidationEntry[]): TextValidationEntry[] {
   return entries.map((item) => ({
     ...item,
     coordinates: item.coordinates ? [item.coordinates[0], item.coordinates[1]] : undefined,
-    suggestedCoords: item.suggestedCoords ? [item.suggestedCoords[0], item.suggestedCoords[1]] : undefined,
+    suggestedPlace: item.suggestedPlace
+      ? {
+          ...item.suggestedPlace,
+          coordinates: [
+            item.suggestedPlace.coordinates[0],
+            item.suggestedPlace.coordinates[1],
+          ],
+        }
+      : undefined,
   }));
 }
 
@@ -651,18 +663,18 @@ function removeReferenceImage() {
 }
 
 function itemBorderClass(item: TextValidationEntry): string {
-  if (item.useSuggestedCity) {
+  if (item.useSuggestedPlace) {
     return "border-emerald-500 bg-emerald-50/30 ring-1 ring-emerald-400";
   }
-  if (item.suggestedCity) {
+  if (item.suggestedPlace) {
     return "border-amber-300 bg-amber-50/20";
   }
   return "border-base-200";
 }
 
 function getItemCoords(item: TextValidationEntry): [number, number] | undefined {
-  return item.useSuggestedCity && item.suggestedCoords
-    ? item.suggestedCoords
+  return item.useSuggestedPlace && item.suggestedPlace
+    ? item.suggestedPlace.coordinates
     : item.coordinates;
 }
 
@@ -728,7 +740,7 @@ function onTextInput(item: TextValidationEntry) {
     saveHistorySnapshot();
     isTypingSession = true;
   }
-  item.useSuggestedCity = false;
+  item.useSuggestedPlace = false;
   item.selected = true;
   item.validationStatus = "accepted";
   updateMarkerStyle(item);
@@ -742,16 +754,16 @@ function onTextInput(item: TextValidationEntry) {
 
 function toggleSuggestion(item: TextValidationEntry) {
   saveHistorySnapshot();
-  if (item.useSuggestedCity) {
-    item.useSuggestedCity = false;
+  if (item.useSuggestedPlace) {
+    item.useSuggestedPlace = false;
     item.text = item.originalText;
   } else {
-    item.useSuggestedCity = true;
+    item.useSuggestedPlace = true;
     item.selected = true;
-    item.wordType = "city";
+    item.wordType = normalizeWordType(item.suggestedPlace?.type);
     item.validationStatus = "accepted";
-    if (item.suggestedCity) {
-      item.text = formatWordText(item.suggestedCity, item.wordType);
+    if (item.suggestedPlace) {
+      item.text = formatWordText(item.suggestedPlace.name, item.wordType);
     }
   }
   updateMarkerStyle(item);
@@ -776,9 +788,8 @@ function toggleSupprimer(item: TextValidationEntry) {
 function setItemCoordinates(item: TextValidationEntry, lon: number, lat: number) {
   saveHistorySnapshot();
   item.coordinates = [lon, lat];
-  item.useSuggestedCity = false;
-  item.suggestedCity = undefined;
-  item.suggestedCoords = undefined;
+  item.useSuggestedPlace = false;
+  item.suggestedPlace = undefined;
   item.selected = true;
   item.validationStatus = "accepted";
 
@@ -788,12 +799,12 @@ function setItemCoordinates(item: TextValidationEntry, lon: number, lat: number)
 }
 
 function getMarkerHtml(item: TextValidationEntry): string {
-  const isSuggested = Boolean(item.useSuggestedCity);
+  const isSuggested = Boolean(item.useSuggestedPlace);
   const fillColor = isSuggested ? "#059669" : "#2563eb";
   const strokeColor = isSuggested ? "#047857" : "#1d4ed8";
   const opacity = item.selected ? "1" : "0.45";
 
-  const hasSuggestion = Boolean(item.suggestedCity) && !item.useSuggestedCity;
+  const hasSuggestion = Boolean(item.suggestedPlace) && !item.useSuggestedPlace;
   const badgeHtml = hasSuggestion
     ? `<div style="position: absolute; top: -7px; right: -7px; width: 14px; height: 14px; border-radius: 50%; background-color: #f59e0b; color: #ffffff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 1.5px solid #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); pointer-events: none;">!</div>`
     : "";
@@ -867,10 +878,13 @@ function preventSuggestionTooltipOverlap(item: TextValidationEntry) {
 
   if (isOverlapping) {
     const coords = getItemCoords(item);
-    if (!coords || !item.suggestedCoords) return;
+    if (!coords || !item.suggestedPlace) return;
     try {
       const pOrig = leafletMap.latLngToContainerPoint([coords[1], coords[0]]);
-      const pSugg = leafletMap.latLngToContainerPoint([item.suggestedCoords[1], item.suggestedCoords[0]]);
+      const pSugg = leafletMap.latLngToContainerPoint([
+        item.suggestedPlace.coordinates[1],
+        item.suggestedPlace.coordinates[0],
+      ]);
       const dx = pSugg.x - pOrig.x;
 
       const fallbackDir: "left" | "right" | "bottom" = dx <= 0 ? "left" : "right";
@@ -892,13 +906,13 @@ function preventSuggestionTooltipOverlap(item: TextValidationEntry) {
 }
 
 function showToleranceRadius(item: TextValidationEntry) {
-  if (!leafletMap || !cachedLeaflet || !item.suggestedCity || !item.suggestedCoords) return;
+  if (!leafletMap || !cachedLeaflet || !item.suggestedPlace) return;
   hideToleranceRadius();
 
   const coords = getItemCoords(item);
   if (!coords || (coords[0] === 0 && coords[1] === 0)) return;
   const [lon, lat] = coords;
-  const [sLon, sLat] = item.suggestedCoords;
+  const [sLon, sLat] = item.suggestedPlace.coordinates;
 
   radiusCircle = cachedLeaflet.circle([lat, lon], {
     radius: 75000,
@@ -919,7 +933,7 @@ function showToleranceRadius(item: TextValidationEntry) {
   const placement = getOptimalSuggestionTooltipPlacement(lat, lon, sLat, sLon);
 
   suggestionPreviewMarker = cachedLeaflet.marker([sLat, sLon], { icon: previewIcon }).addTo(leafletMap);
-  suggestionPreviewMarker.bindTooltip(`<strong>${item.suggestedCity}</strong> (Suggestion)`, {
+  suggestionPreviewMarker.bindTooltip(`<strong>${item.suggestedPlace.name}</strong> (Suggestion)`, {
     permanent: true,
     direction: placement.direction,
     offset: cachedLeaflet.point(placement.offset[0], placement.offset[1]),
@@ -1215,7 +1229,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
       ...item,
       selected,
       validationStatus: item.validationStatus ?? (selected ? "accepted" : "manual_review"),
-      useSuggestedCity: item.useSuggestedCity ?? false,
+      useSuggestedPlace: item.useSuggestedPlace ?? false,
     };
   });
 }

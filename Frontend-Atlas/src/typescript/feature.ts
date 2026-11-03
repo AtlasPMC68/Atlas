@@ -49,6 +49,12 @@ export type ValidationStatusValue =
   | "rejected"
   | "manual_review";
 
+export interface SuggestedPlace {
+  name: string;
+  coordinates: Coordinate;
+  type?: string;
+}
+
 export interface FeatureProperties {
   name: string;
   isVisible?: boolean;
@@ -79,8 +85,7 @@ export interface FeatureProperties {
   confidence?: number;
   validationStatus?: ValidationStatus | `${ValidationStatus}`;
   validation_status?: ValidationStatus | `${ValidationStatus}`;
-  suggestedCity?: string;
-  suggestedCoords?: [number, number];
+  suggestedPlace?: SuggestedPlace;
   [key: string]: any;
   fontStyle?: "normal" | "italic" |"uppercase"| string;
 }

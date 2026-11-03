@@ -35,7 +35,7 @@ from app.utils.cities_validation import (
     DEFAULT_STYLE,
     STYLES_MAP,
     match_ocr_label,
-    find_nearby_candidate_city,
+    find_nearby_candidate_place,
     is_exploitable_text,
 )
 from app.utils.extraction_steps import extract_zone_colors, place_map
@@ -466,7 +466,9 @@ def _categorized_text_features_from_ocr(
                     quad=coords,
                     confidence=confidence,
                     recognized=False,
-                    extra={"suggestedCity": None, "suggestedCoords": None},
+                    extra={
+                        "suggestedPlace": None,
+                    },
                 )
             )
 
@@ -477,7 +479,7 @@ def _georeference_unrecognized_texts(
     collections: List[dict[str, Any]],
     placement: Any,
 ) -> None:
-    """Batch georeference unrecognized OCR text centroids and attach nearby candidate cities."""
+    """Batch georeference unrecognized OCR text and attach nearby place suggestions."""
     if placement is None:
         return
 
@@ -512,10 +514,17 @@ def _georeference_unrecognized_texts(
                     orig_text = (
                         feat.get("properties", {}).get("originalText") or feat.get("properties", {}).get("name") or ""
                     )
-                    nearby_city = find_nearby_candidate_city(orig_text, coords, radius_km=75.0)
-                    if nearby_city:
-                        feat["properties"]["suggestedCity"] = nearby_city.get("name")
-                        feat["properties"]["suggestedCoords"] = [nearby_city.get("lon"), nearby_city.get("lat")]
+                    nearby_place = find_nearby_candidate_place(orig_text, coords, radius_km=75.0)
+                    if nearby_place:
+                        feat["properties"]["suggestedPlace"] = {
+                            "name": nearby_place.get("name_fr")
+                            or nearby_place.get("name"),
+                            "coordinates": [
+                                nearby_place.get("lon"),
+                                nearby_place.get("lat"),
+                            ],
+                            "type": nearby_place.get("type") or "city",
+                        }
     except Exception as e:
         logger.debug(f"Failed to batch georeference unrecognized texts: {e}")
 

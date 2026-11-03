@@ -201,7 +201,7 @@ const zoneFeatures = computed(() =>
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
-const useTimelineFilter = ref(false);
+const useTimelineFilter = ref(true);
 
 const enrichedPeriods = computed((): SliderPeriod[] =>
   mapPeriods.value

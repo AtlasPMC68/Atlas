@@ -42,7 +42,7 @@
 
         <!-- Validate extracted texts button -->
         <div
-          v-if="validationFeaturesByMap.length > 0"
+          v-if="activeGroup?.type === 'point' && validationFeaturesByMap.length > 0"
           class="flex flex-col gap-2 p-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl"
         >
           <div class="flex items-center justify-between">

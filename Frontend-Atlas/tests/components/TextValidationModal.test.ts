@@ -76,8 +76,11 @@ const itemsWithImagePos: TextValidationEntry[] = [
     originalText: "Traité de Paris de 1783",
     selected: true,
     coordinates: [-82.35, 23.20],
-    suggestedCity: "Paris",
-    suggestedCoords: [2.35, 48.85],
+    suggestedPlace: {
+      name: "Paris",
+      coordinates: [2.35, 48.85],
+      type: "city",
+    },
   },
 ];
 
@@ -166,14 +169,14 @@ describe("TextValidationModal", () => {
     expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
     expect((textInputs[1].element as HTMLInputElement).value).toBe("Rivière Sauvage");
     expect(wrapper.text()).toContain("Paris");
-    // Item 1 has suggestedCity 'Paris', so it should show the '!' badge
+    // Item 1 has a nearby place suggestion, so it should show the '!' badge
     expect(wrapper.text()).toContain("!");
   });
 
   it("allows user to accept suggested city in 1 click and toggle back", async () => {
     const wrapper = mountModal();
 
-    // Check suggestion button for the item that has a suggestedCity
+    // Check suggestion button for the item that has a nearby place suggestion
     const suggestionBtn = wrapper.findAll("button").find((b) => b.text().includes("Paris"));
     expect(suggestionBtn).toBeDefined();
     expect(suggestionBtn?.text()).toContain("Accepter la suggestion");
@@ -187,6 +190,40 @@ describe("TextValidationModal", () => {
     // Click again to toggle back to original text
     await suggestionBtn!.trigger("click");
     expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
+  });
+
+  it("uses a suggested province's type when accepted in one click", async () => {
+    const wrapper = mountModal(
+      [
+        {
+          ...itemsWithImagePos[0],
+          id: "province-suggestion",
+          text: "Province de Quebe",
+          originalText: "Province de Quebe",
+          suggestedPlace: {
+            name: "Province de Québec",
+            coordinates: [-73.7073, 46.3688],
+            type: "province",
+          },
+        },
+      ],
+      true,
+      null,
+    );
+    const suggestionButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Province de Québec"));
+
+    expect(suggestionButton).toBeDefined();
+    await suggestionButton!.trigger("click");
+
+    expect(
+      (wrapper.find('input[type="text"]').element as HTMLInputElement).value,
+    ).toBe("PROVINCE DE QUÉBEC");
+    expect(
+      (wrapper.find('[data-testid="item-word-type-select"]').element as HTMLSelectElement)
+        .value,
+    ).toBe("province");
   });
 
   it("allows editing text and emits confirm with all items", async () => {
@@ -254,14 +291,13 @@ describe("TextValidationModal", () => {
     const wrapper = mountModal();
     const vm = wrapper.vm as any;
     const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-    expect(item.suggestedCity).toBe("Paris");
+    expect(item.suggestedPlace?.name).toBe("Paris");
 
     // Manually reposition the item
     vm.setItemCoordinates(item, -73.56, 45.50);
 
-    expect(item.suggestedCity).toBeUndefined();
-    expect(item.suggestedCoords).toBeUndefined();
-    expect(item.useSuggestedCity).toBe(false);
+    expect(item.suggestedPlace).toBeUndefined();
+    expect(item.useSuggestedPlace).toBe(false);
   });
 
   it("allows selecting word type and applies text transformations according to word style", async () => {
@@ -349,8 +385,10 @@ describe("TextValidationModal", () => {
           originalText: "LE DU LE CAP",
           selected: true,
           coordinates: [-59.95, 46.20],
-          suggestedCity: "Glace Bay",
-          suggestedCoords: [-59.97, 46.21], // to the northwest (left of original)
+          suggestedPlace: {
+            name: "Glace Bay",
+            coordinates: [-59.97, 46.21],
+          }, // to the northwest (left of original)
         },
       ]);
       await wrapper.vm.$nextTick();

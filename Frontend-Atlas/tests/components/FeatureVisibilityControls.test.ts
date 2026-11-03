@@ -196,6 +196,39 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     );
   });
 
+  it("only shows the reject review button in the text group", async () => {
+    const shapeFeature: Feature = {
+      ...features[0],
+      id: "shape-feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [-71.2, 46.8],
+          [-71.1, 46.8],
+          [-71.1, 46.9],
+          [-71.2, 46.9],
+          [-71.2, 46.8],
+        ]],
+      },
+      properties: { name: "Zone", mapElementType: "shape" },
+    };
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [...features, ...reviewFeatures, shapeFeature],
+        featureVisibility,
+        mapPeriods,
+      },
+    });
+
+    expect(wrapper.text()).toContain("Examiner les rejets");
+    const shapesTab = wrapper.findAll('[role="tab"]').find((tab) =>
+      tab.attributes("title")?.includes("Forme"),
+    );
+    expect(shapesTab).toBeDefined();
+    await shapesTab!.trigger("click");
+    expect(wrapper.text()).not.toContain("Examiner les rejets");
+  });
+
   it("lists accepted OCR texts (recognized: true) in the page", () => {
     const acceptedFeature: Feature = {
       type: "Feature",
