@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 import os
 import time
 from contextlib import contextmanager
@@ -135,3 +136,88 @@ class RunRecord:
         except Exception as e:  # pragma: no cover - diagnostics must not break runs
             logger.warning(f"Failed to write georef run record to {directory}: {e}")
             return None
+
+
+#: Evidence statistics read from ``inputs.userEvidence``, under their own names.
+_EVIDENCE_SIGNALS = (
+    "edgeFraction",
+    "waterEdgeFilterKept",
+    "waterFraction",
+    "coastLinePairedFraction",
+    "coastLineMergedFraction",
+    "coastLineFlankGapPx",
+)
+
+
+def record_signals(record: Dict[str, Any]) -> Dict[str, Any]:
+    """What a run did and what it could see, flat: the blind side of a results
+    table. Read the same way from real and synthetic runs, so their signals
+    compare (georeferencing-synthetic.md §7.3). A key the record
+    lacks (an older run) is None."""
+    inputs = record.get("inputs") or {}
+    errors = record.get("errors") or {}
+    alignment = inputs.get("alignment") or {}
+    evidence = inputs.get("userEvidence") or {}
+    post = errors.get("postAlignment") or {}
+    bend = errors.get("coastBend") or {}
+    inland = errors.get("inlandCorrection") or {}
+    checks = errors.get("checkPoints") or {}
+    by_source = inputs.get("controlPointsBySource") or {}
+    layout = inputs.get("controlPointLayout") or {}
+    loo = errors.get("affineLeaveOneOut") or {}
+    image_size = inputs.get("imageSize") or []
+    gcp_affine = (record.get("models") or {}).get("gcp_affine") or {}
+    row: Dict[str, Any] = {
+        "appliedModel": ((record.get("models") or {}).get("applied") or {}).get("name"),
+        "alignmentMethod": alignment.get("method"),
+        "alignmentSkipped": alignment.get("skipped"),
+        "failedChecks": ",".join(alignment.get("failedChecks") or []) or None,
+        "postAlignmentApplied": post.get("applied"),
+        "coastBendApplied": bend.get("applied"),
+        "coastBendSkippedBecause": bend.get("skippedBecause"),
+        "coastBendMaxPx": bend.get("maxCorrectionPx"),
+        "coastBendCorrespondences": bend.get("correspondences"),
+        "coastBendCoastShare": bend.get("coastShare"),
+        "coastBendChamferBeforePx": bend.get("chamferBeforePx"),
+        "coastBendChamferAfterPx": bend.get("chamferAfterPx"),
+        "inlandApplied": inland.get("applied"),
+        "bendFallbackApplied": (errors.get("bendFallback") or {}).get("applied"),
+        "inlandSkippedBecause": inland.get("skippedBecause"),
+        "inlandPoints": inland.get("inlandPoints"),
+        "inlandMaxShiftPx": inland.get("maxShiftPx"),
+        "snapToleranceMeters": inputs.get("snapToleranceMeters"),
+        "snapMisfitPx": inputs.get("snapMisfitPx"),
+        "gcpRmseKm": errors.get("gcpRmseKm"),
+        "gcpRmseKind": errors.get("gcpRmseKind"),
+        "controlPointCount": inputs.get("controlPointCount"),
+        "siftCount": by_source.get("sift"),
+        "cityCount": by_source.get("city"),
+        "hullShare": layout.get("hullShare"),
+        "nearestGapMedianRatio": layout.get("nearestGapMedianRatio"),
+        "nearestGapMaxRatio": layout.get("nearestGapMaxRatio"),
+        "emptyRadiusRatio": layout.get("emptyRadiusRatio"),
+        "looAffineRmsPx": loo.get("rmsPx"),
+        "looAffineMaxPx": loo.get("maxPx"),
+        "looAffineMaxOverMedian": loo.get("maxOverMedian"),
+        "imageDiagonalPx": round(math.hypot(*image_size), 1) if len(image_size) == 2 else None,
+        "coastlineSamples": alignment.get("coastlineSamples"),
+        "coastlineCoverage": (inputs.get("referenceCoverage") or {}).get("coastline"),
+        "metersPerPixel": gcp_affine.get("metersPerPixel"),
+        "referenceLatitude": inputs.get("referenceLatitude"),
+        "baselineGcpRmsPx": alignment.get("baselineGcpRmsPx"),
+        "alignedGcpRmsPx": alignment.get("alignedGcpRmsPx"),
+        "coastDisplacementPx": alignment.get("coastDisplacementPx"),
+        "baselineChamferPx": alignment.get("baselineChamferPx"),
+        "alignedChamferPx": alignment.get("alignedChamferPx"),
+        "inlierFraction": alignment.get("inlierFraction"),
+        "correspondences": alignment.get("correspondences"),
+        **{key: evidence.get(key) for key in _EVIDENCE_SIGNALS},
+        "predictedIou": (errors.get("predictedQuality") or {}).get("iou"),
+        "predictedMedianKm": (errors.get("predictedQuality") or {}).get("mapMedianKm"),
+        "checkCount": checks.get("count"),
+        "checkRmseKm": checks.get("rmseKm"),
+        "checkRmseKmGcpAffine": (checks.get("byModel") or {}).get("gcp_affine"),
+    }
+    for gate in record.get("gates") or []:
+        row[f"gate.{gate.get('name')}"] = gate.get("value")
+    return row

@@ -65,19 +65,27 @@ def build_text_mask(
 # --------------------------------------------------------------------------
 
 
-def build_edge_map(
+def blurred_gray(
     image_bgr: np.ndarray,
-    text_mask: Optional[np.ndarray] = None,
     config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
 ) -> np.ndarray:
-    """Canny edges of the user's map, with text regions removed."""
+    """The grey image Canny runs on."""
     if image_bgr.ndim == 3:
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     else:
         gray = image_bgr
 
     ksize = int(config.edge_blur_ksize) | 1  # Gaussian kernels must be odd
-    blurred = cv2.GaussianBlur(gray, (ksize, ksize), 0)
+    return cv2.GaussianBlur(gray, (ksize, ksize), 0)
+
+
+def build_edge_map(
+    image_bgr: np.ndarray,
+    text_mask: Optional[np.ndarray] = None,
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
+) -> np.ndarray:
+    """Canny edges of the user's map, with text regions removed."""
+    blurred = blurred_gray(image_bgr, config)
     edges = cv2.Canny(blurred, config.edge_canny_low, config.edge_canny_high) > 0
 
     if text_mask is not None and text_mask.any():
@@ -247,6 +255,110 @@ def filter_edges_near_water(
     return edges & near_water & near_land, True
 
 
+#: Smoothing of the distance field the normals come from, in px.
+_NORMAL_SIGMA_PX = 1.5
+
+
+def _nearest(mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """For every pixel, the (y, x) of the nearest pixel of *mask*."""
+    _, labels = cv2.distanceTransformWithLabels(
+        (~mask).astype(np.uint8), cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL
+    )
+    ys, xs = np.nonzero(mask)
+    by_label_y = np.zeros(int(labels.max()) + 1, dtype=np.int64)
+    by_label_x = np.zeros_like(by_label_y)
+    by_label_y[labels[ys, xs]] = ys
+    by_label_x[labels[ys, xs]] = xs
+    return by_label_y[labels], by_label_x[labels]
+
+
+def centre_drawn_coast_lines(
+    coast_edges: np.ndarray,
+    edges: np.ndarray,
+    water: np.ndarray,
+    blurred: np.ndarray,
+    config: GeorefConfig = DEFAULT_GEOREF_CONFIG,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Move the coast evidence from a drawn line's sea-side flank to its centre.
+
+    A coast drawn as a line has two Canny edges, one per flank, and the water
+    filter keeps only the sea-side one once the line is wider than its margin,
+    while the reference coastline is the line's centre: the fit was pulled
+    seaward by about half the line (georeferencing-history.md, 2026-10-27).
+
+    The two flanks of a line have opposite grey gradients along the coast's
+    normal (dark line: falling, then rising, going landward). For each edge of
+    *coast_edges* (the water filter's output), the nearest edge of *edges*
+    with the opposite gradient, if within ``coast_line_max_width_px``, is the
+    line's other flank: landward of it, the pair is replaced by its midpoint,
+    which is the line's centre whatever the blur or the Canny thresholds;
+    seaward of it, the edge is itself a land-side flank (both pass the filter
+    when the line is thin) and is dropped, its pair being counted from the sea
+    side. An edge with no partner is a coast drawn as a plain colour change,
+    already the coast, and is kept as it is.
+
+    Nearest by distance transform rather than by marching along the normal: a
+    ray can slip between the diagonal pixels of an edge and miss it.
+    """
+
+    stats: Dict[str, Any] = {"coastLinePairedFraction": None, "coastLineMergedFraction": None, "coastLineFlankGapPx": None}
+    max_gap = float(config.coast_line_max_width_px)
+    if max_gap <= 0 or not coast_edges.any() or not water.any():
+        return coast_edges, stats
+
+    water_u8 = water.astype(np.uint8)
+    signed = cv2.distanceTransform(1 - water_u8, cv2.DIST_L2, 5) - cv2.distanceTransform(
+        water_u8, cv2.DIST_L2, 5
+    )
+    signed = cv2.GaussianBlur(signed, (0, 0), _NORMAL_SIGMA_PX)
+    ny_field, nx_field = np.gradient(signed)
+    grey = blurred.astype(np.float32)
+    # The grey gradient along the normal (pointing landward): which flank an
+    # edge is. The norm does not change the sign, so it is not divided out.
+    along = (
+        cv2.Sobel(grey, cv2.CV_32F, 1, 0, ksize=3) * nx_field
+        + cv2.Sobel(grey, cv2.CV_32F, 0, 1, ksize=3) * ny_field
+    )
+    rising, falling = edges & (along > 0), edges & (along < 0)
+    out = np.zeros_like(coast_edges, dtype=bool)
+    if not rising.any() or not falling.any():
+        stats["coastLinePairedFraction"] = 0.0
+        return coast_edges, stats
+
+    ys, xs = np.nonzero(coast_edges)
+    sign = along[ys, xs]
+    near_rising, near_falling = _nearest(rising), _nearest(falling)
+    qy = np.where(sign > 0, near_falling[0][ys, xs], near_rising[0][ys, xs])
+    qx = np.where(sign > 0, near_falling[1][ys, xs], near_rising[1][ys, xs])
+    gap = np.hypot(qx - xs, qy - ys)
+    landward = signed[qy, qx] > signed[ys, xs]
+    found = (sign != 0) & (gap <= max_gap)
+    paired = found & landward
+    land_flank = found & ~landward
+    # The other flank landward but beyond a line's width: strokes merged into
+    # a dark mass (islands, a delta, a narrow channel), whose sea side is not
+    # the coast either. Dropped, rather than kept on the sea side.
+    merged = (sign != 0) & ~found & landward & (gap <= 2.0 * max_gap)
+    alone = ~found & ~merged
+
+    out[ys[alone], xs[alone]] = True
+    # The midpoint is often a half pixel: mark the pixels on both sides of it
+    # rather than rounding, which would move every point of a straight run of
+    # coast the same way.
+    mx = (xs[paired] + qx[paired]) / 2.0
+    my = (ys[paired] + qy[paired]) / 2.0
+    for cx in (np.floor(mx), np.ceil(mx)):
+        for cy in (np.floor(my), np.ceil(my)):
+            out[cy.astype(int), cx.astype(int)] = True
+
+    seeds = ~land_flank
+    stats["coastLinePairedFraction"] = float(paired[seeds].mean()) if seeds.any() else 0.0
+    stats["coastLineMergedFraction"] = float(merged[seeds].mean()) if seeds.any() else 0.0
+    if paired.any():
+        stats["coastLineFlankGapPx"] = float(np.median(gap[paired]))
+    return out, stats
+
+
 # --------------------------------------------------------------------------
 # The bundle
 # --------------------------------------------------------------------------
@@ -303,13 +415,18 @@ def build_user_evidence(
     ) & ~legend
     ocean, lakes = split_ocean_and_lakes(water, config)
 
-    edges = build_edge_map(image_bgr, text_mask | legend, config)
-    raw_edge_pixels = int(edges.sum())
+    all_edges = build_edge_map(image_bgr, text_mask | legend, config)
+    raw_edge_pixels = int(all_edges.sum())
     # Filtered before straight-line detection, so Hough only sees what the
     # alignment will actually use.
     edges, water_filter_applied = filter_edges_near_water(
-        edges, ocean | lakes, config
+        all_edges, ocean | lakes, config
     )
+    line_stats: Dict[str, Any] = {"coastLinePairedFraction": None, "coastLineMergedFraction": None, "coastLineFlankGapPx": None}
+    if water_filter_applied:
+        edges, line_stats = centre_drawn_coast_lines(
+            edges, all_edges, ocean | lakes, blurred_gray(image_bgr, config), config
+        )
     lines = detect_straight_lines(edges, config)
     edge_weight = suppress_straight_lines(edges, lines, config)
 
@@ -333,6 +450,7 @@ def build_user_evidence(
         "oceanFraction": float(ocean.sum()) / pixels,
         "lakeFraction": float(lakes.sum()) / pixels,
         "hasWater": bool(water.any()),
+        **line_stats,
     }
 
     return UserEvidence(

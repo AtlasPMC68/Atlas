@@ -138,6 +138,27 @@ class TestAlignAfterPiecewise:
         after = np.hypot(*(np.subtract(aligned(x, y), _truth(x, y))))
         assert after.mean() < before.mean()
 
+    def test_refuses_a_fit_that_pulls_the_map_off_the_clicks(self):
+        """m00712/local with one more city: a front that sheared the map 3.3x
+        and pulled the clicks 2.5% of the diagonal off took it from 20 to 94 km
+        (georeferencing-synthetic.md §10.12). Here the fit's ordinary pull is
+        over a limit set below it."""
+        model = _piecewise()
+        record_errors = {}
+
+        class _Record:
+            def set_errors(self, **kwargs):
+                record_errors.update(kwargs)
+
+        config = CONFIG.with_overrides(post_align_max_gcp_shift_ratio_of_diagonal=1e-4)
+        aligned = align_after_piecewise(model, _control_points(), _context(), config, record=_Record())
+
+        stats = record_errors["postAlignment"]
+        assert aligned is model
+        assert stats["applied"] is False
+        assert stats["skippedBecause"] == "the fit pulled the map off the clicks"
+        assert stats["gcpRmsPx"] - stats["baseGcpRmsPx"] > stats["gcpShiftLimitPx"]
+
     def test_keeps_the_model_without_evidence(self):
         model = _piecewise()
         empty = CurveSamples(xy=np.zeros((0, 2)), xy_normal=np.zeros((0, 2)))
@@ -165,11 +186,15 @@ class TestThroughThePipeline:
     }
 
     def _run(self, refine, model=None, control_points=None, **overrides):
+        # The second alignment as it ran before config v22, without the bend.
         config = DEFAULT_GEOREF_CONFIG.with_overrides(
-            snap_to_coastline=False,
-            clip_to_land_mask=False,
-            align_after_piecewise=True,
-            **overrides,
+            **{
+                "snap_to_coastline": False,
+                "clip_to_land_mask": False,
+                "align_after_piecewise": True,
+                "coast_bend": False,
+                **overrides,
+            }
         )
         return georeference_features(
             [self.ZONE],
@@ -224,7 +249,25 @@ class TestThroughThePipeline:
         stats = result.record.to_dict()["errors"]["postAlignment"]
         assert stats == {"applied": False, "skippedBecause": "no alignment inputs"}
 
-    def test_is_on_by_default(self):
-        """B7b (config v19)."""
-        assert DEFAULT_GEOREF_CONFIG.align_after_piecewise is True
+    def test_runs_where_the_bend_has_no_inputs(self):
+        """No alignment inputs, so nothing to bend to: the fallback still runs
+        the piecewise step, as it does where the bend refuses."""
+        result = self._run(
+            None,
+            transform_model="affine",
+            align_after_piecewise=False,
+            coast_bend=True,
+            coast_bend_fallback_piecewise=True,
+        )
+        errors = result.record.to_dict()["errors"]
+        assert errors["coastBend"] == {"applied": False, "skippedBecause": "no alignment inputs"}
+        assert errors["bendFallback"]["applied"] is True
+        assert result.model.name == "piecewise_affine"
+
+    def test_runs_only_in_the_bend_fallback_by_default(self):
+        """W13 (config v22): the bend replaced the piecewise step and the
+        alignment after it, which run only where the bend refuses."""
+        assert DEFAULT_GEOREF_CONFIG.align_after_piecewise is False
+        assert DEFAULT_GEOREF_CONFIG.coast_bend is True
+        assert DEFAULT_GEOREF_CONFIG.coast_bend_fallback_piecewise is True
         assert DEFAULT_GEOREF_CONFIG.weight_curve == 10.0

@@ -1,0 +1,141 @@
+{
+  "version": "georef-quality-q4-2026-11-01+georef-success-q8-2026-11-01",
+  "units": "log blind pixels; km = exp(prediction) * the run's km per pixel",
+  "successTarget": "log(max(1 - snapped IoU, floorLoss))",
+  "mapMedian": {
+    "inputs": [
+      "logBendMaxPx",
+      "logSnapMisfitPx",
+      "logLooRmsPx",
+      "logBaselineChamferPx",
+      "coastlineCoverage",
+      "inlierFraction"
+    ],
+    "fill": [
+      3.3319367153735846,
+      1.4256126084424834,
+      2.869913846453891,
+      1.9105170628179307,
+      0.008523469387755103,
+      0.2209588108632537
+    ],
+    "missingFlag": [
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ],
+    "coefficients": [
+      0.16954021657784576,
+      0.40964324078819553,
+      0.5473713023747587,
+      0.5596167663126771,
+      -0.007184454703492044,
+      0.3877245816222702,
+      0.8185161764039123,
+      -0.612725294710823,
+      -0.007184454703443347,
+      -32.81927093238477,
+      -1.7519569139310882,
+      -0.007184454703420787
+    ]
+  },
+  "mapP90": {
+    "inputs": [
+      "logBendMaxPx",
+      "logSnapMisfitPx",
+      "logLooRmsPx",
+      "logBaselineChamferPx",
+      "coastlineCoverage",
+      "inlierFraction"
+    ],
+    "fill": [
+      3.3319367153735846,
+      1.4256126084424834,
+      2.869913846453891,
+      1.9105170628179307,
+      0.008523469387755103,
+      0.2209588108632537
+    ],
+    "missingFlag": [
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ],
+    "coefficients": [
+      0.7471386105295459,
+      0.48831837266272315,
+      0.7740496325569737,
+      0.35353859238773266,
+      -0.13970419140369986,
+      0.462152220090184,
+      0.9829861129513747,
+      -0.47081552773784746,
+      -0.13970419140367066,
+      -20.757297722545882,
+      -2.4294160123865356,
+      -0.13970419140365373
+    ]
+  },
+  "pointMedian": {
+    "inputs": [
+      "mapMedian",
+      "logCoastMisfitPx",
+      "logPointsNearby",
+      "logShiftPx",
+      "logCoastDistanceRatio",
+      "insideHull"
+    ],
+    "fill": [
+      1.6465833294260328,
+      1.6097409654166537,
+      0.7880527401612235,
+      2.1965128600976933,
+      -3.2980453973909896,
+      0.3584126984126984
+    ],
+    "missingFlag": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ],
+    "coefficients": [
+      0.43929515202493075,
+      0.6333613082686078,
+      0.2113617285355933,
+      0.23780976566635287,
+      -0.3090734434117548,
+      0.20667082392460506,
+      0.14253498489191913,
+      -0.2664585978118846
+    ]
+  },
+  "success": {
+    "inputs": [
+      "logZoneErrorOverWidth",
+      "logZoneWidthMedian"
+    ],
+    "fill": [
+      -1.907517100496028,
+      3.7083332800049
+    ],
+    "missingFlag": [
+      false,
+      false
+    ],
+    "coefficients": [
+      -0.8561166450211846,
+      0.8662869226030585,
+      0.11311261729428768
+    ],
+    "floorLoss": 0.005
+  }
+}

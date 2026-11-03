@@ -1,7 +1,7 @@
 {
   "testId": "c858266f-56d1-489c-8e40-20dc0906fcaf",
   "testCaseId": "italie",
-  "evaluatedAt": "2026-10-05T16:49:24.551174Z",
+  "evaluatedAt": "2026-11-01T01:29:18.823232Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,19 +16,19 @@
           "area": 32.858699932433254
         },
         "bestMatch": {
-          "iou": 0.909531969583163,
-          "intersectionArea": 30.478907923047085,
-          "unionArea": 33.51054052230349,
-          "precision": 0.979061197658009,
-          "recall": 0.9275749797076668,
-          "falseNegativeArea": 2.379792009386252,
-          "falsePositiveArea": 0.651840589870202,
+          "iou": 0.937270952957133,
+          "intersectionArea": 31.35784495980015,
+          "unionArea": 33.4565419539192,
+          "precision": 0.9812915296787067,
+          "recall": 0.9543239697334561,
+          "falseNegativeArea": 1.5008549726331264,
+          "falsePositiveArea": 0.5978420214858504,
           "boundary": {
-            "meanKm": 57.063,
-            "p90Km": 308.476,
-            "maxKm": 525.171,
-            "expectedToExtractedMeanKm": 5.362,
-            "extractedToExpectedMeanKm": 108.764,
+            "meanKm": 53.477,
+            "p90Km": 307.352,
+            "maxKm": 490.026,
+            "expectedToExtractedMeanKm": 3.603,
+            "extractedToExpectedMeanKm": 103.351,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -36,25 +36,25 @@
             "index": 0,
             "id": null,
             "name": "Italie",
-            "area": 31.13074851291729
+            "area": 31.955686981286078
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.909531969583163,
-      "meanPrecision": 0.979061197658009,
-      "meanRecall": 0.9275749797076668,
-      "totalFalseNegativeArea": 2.379792009386252,
-      "totalFalsePositiveArea": 0.651840589870202,
-      "meanBoundaryKm": 57.063,
-      "meanBoundaryP90Km": 308.476,
-      "maxBoundaryKm": 525.171,
+      "meanIou": 0.937270952957133,
+      "meanPrecision": 0.9812915296787067,
+      "meanRecall": 0.9543239697334561,
+      "totalFalseNegativeArea": 1.5008549726331264,
+      "totalFalsePositiveArea": 0.5978420214858504,
+      "meanBoundaryKm": 53.477,
+      "meanBoundaryP90Km": 307.352,
+      "maxBoundaryKm": 490.026,
       "zonesWithBoundary": 1,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.909531969583163,
+    "scoreUsed": 0.937270952957133,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
@@ -77,19 +77,19 @@
             "area": 33.179431680298855
           },
           "bestMatch": {
-            "iou": 0.8479722392400312,
-            "intersectionArea": 29.9100226137577,
-            "unionArea": 35.27240778608935,
-            "precision": 0.9346006252685264,
-            "recall": 0.9014627767574919,
-            "falseNegativeArea": 3.269409066541117,
-            "falsePositiveArea": 2.0929761057906173,
+            "iou": 0.9207519690785413,
+            "intersectionArea": 31.36831373724395,
+            "unionArea": 34.06814733031344,
+            "precision": 0.9724489307634244,
+            "recall": 0.9454144374591472,
+            "falseNegativeArea": 1.8111179430548858,
+            "falsePositiveArea": 0.888715650014623,
             "boundary": {
-              "meanKm": 56.531,
-              "p90Km": 298.546,
-              "maxKm": 525.171,
-              "expectedToExtractedMeanKm": 8.036,
-              "extractedToExpectedMeanKm": 105.026,
+              "meanKm": 51.273,
+              "p90Km": 299.091,
+              "maxKm": 490.026,
+              "expectedToExtractedMeanKm": 3.751,
+              "extractedToExpectedMeanKm": 98.795,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -97,30 +97,32 @@
               "index": 0,
               "id": null,
               "name": "Italie",
-              "area": 32.00299871954831
+              "area": 32.25702938725856
             },
             "matchedBy": "name"
           }
         }
       ],
       "mean": {
-        "meanIou": 0.8479722392400312,
-        "meanPrecision": 0.9346006252685264,
-        "meanRecall": 0.9014627767574919,
-        "totalFalseNegativeArea": 3.269409066541117,
-        "totalFalsePositiveArea": 2.0929761057906173,
-        "meanBoundaryKm": 56.531,
-        "meanBoundaryP90Km": 298.546,
-        "maxBoundaryKm": 525.171,
+        "meanIou": 0.9207519690785413,
+        "meanPrecision": 0.9724489307634244,
+        "meanRecall": 0.9454144374591472,
+        "totalFalseNegativeArea": 1.8111179430548858,
+        "totalFalsePositiveArea": 0.888715650014623,
+        "meanBoundaryKm": 51.273,
+        "meanBoundaryP90Km": 299.091,
+        "maxBoundaryKm": 490.026,
         "zonesWithBoundary": 1,
         "zonesWithoutBoundary": 0
       },
-      "scoreUsed": 0.8479722392400312,
+      "scoreUsed": 0.9207519690785413,
       "scoreUsedKey": "mean.meanIou"
     },
     "nameMatching": {
       "expectedWithoutNameMatch": [],
       "extractedNeverMatchedByName": []
     }
-  }
+  },
+  "unsnapped": null,
+  "snapped": null
 }

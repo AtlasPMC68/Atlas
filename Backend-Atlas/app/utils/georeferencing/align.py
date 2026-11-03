@@ -123,6 +123,19 @@ def _sample_bilinear(field: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndar
     return out.reshape(x.shape)
 
 
+def edge_distance_px(user_field: UserField, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Distance to the nearest drawn edge at each pixel position, as the
+    chamfer reads it; NaN outside the image or where the field cannot see."""
+    x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    out = np.full(x.shape, np.nan)
+    inside = (x >= 0) & (x < user_field.width) & (y >= 0) & (y < user_field.height)
+    if inside.any():
+        d = _sample_bilinear(user_field.distance_px, x[inside], y[inside])
+        seen = _sample_bilinear(user_field.validity, x[inside], y[inside]) > 0.5
+        out[np.flatnonzero(inside)[seen]] = d[seen]
+    return out
+
+
 # --------------------------------------------------------------------------
 # Robust loss
 # --------------------------------------------------------------------------

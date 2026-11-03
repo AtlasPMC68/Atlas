@@ -514,10 +514,12 @@ def process_map_extraction(self, map_id: str):
             config=GEOREF_CONFIG,
         )
         color_result.pop("classified_rgb", None)
-        color_collections = placement.georeference(
-            color_result.get("pixel_features", [])
-        ).collections
+        colors_georef = placement.georeference(color_result.get("pixel_features", []))
+        color_collections = colors_georef.collections
         collections.extend(color_collections)
+        # What the run expects of its placement (quality.predict_quality): not
+        # stored with the map yet, logged and returned for the import to read.
+        predicted_quality = colors_georef.record.errors.get("predictedQuality") or {}
         _dump_zones_debug(debug_dir, color_collections)
         _raise_if_cancelled(map_id)
 
@@ -558,7 +560,10 @@ def process_map_extraction(self, map_id: str):
             except OSError:
                 pass
 
-    logger.info(f"[IMPORT] extraction done for map {map_id}: {saved} feature(s) saved")
+    logger.info(
+        f"[IMPORT] extraction done for map {map_id}: {saved} feature(s) saved, "
+        f"predicted IoU {predicted_quality.get('iou')}"
+    )
     return {
         "status": "completed",
         "map_id": map_id,
@@ -575,6 +580,7 @@ def process_map_extraction(self, map_id: str):
             "text_extraction": inputs.enable_text_extraction,
         },
         "alignment": _alignment_summary(placement.alignment),
+        "predicted_quality": predicted_quality,
     }
 
 

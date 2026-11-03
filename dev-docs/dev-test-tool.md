@@ -558,6 +558,48 @@ It never touches the cases' own files; results go to `Backend-Atlas/ablations/<r
 (gitignored), with a `summary.md` comparing every variant to `A0`. See
 [`georeferencing-testing.md` §6](georeferencing-testing.md#6-variant-runner); its results are in §8.
 
+### Synthetic maps
+
+The same variants can also run on generated maps whose deformation is known, so placement is
+measured everywhere rather than at a few check points
+([`georeferencing-synthetic.md`](georeferencing-synthetic.md), which explains how the maps and
+the simulated user are drawn and why):
+
+```
+docker compose run --rm georef-dev python scripts/run_georef_synthetic.py \
+    --maps 20 --layouts 5 --seed 0 --variants A0,PROD --workers 6
+docker compose run --rm georef-dev python scripts/run_georef_synthetic.py \
+    --case m00003-l02 --variants PROD --debug
+docker compose run --rm georef-dev python scripts/run_georef_synthetic.py \
+    --maps 40 --seed 100 --layouts 2 --deformation none,field,local --variants A0,PROD --workers 6
+```
+
+A map seed always gives the same map, and a (map seed, layout) pair the same clicks, so a case
+id like `m00003-l02` is all it takes to reproduce one. `--deformation` runs each map's **twins**
+instead: the same map with no displacement, with its smooth field only, with its local error
+only (`m00003-field-l02`), sharing everything else, the clicks' draws included.
+`scripts/analyze_georef_synthetic.py <run folder>` reads a finished run's `results.csv` and
+compares any variants one vote per map (`--compare B10:B5b --by gen_projection`), across twins
+(`--twins none:field`), or as step 2's findings (`--findings`); it needs no container. Against
+the real corpus, first read both folders' run records into flat tables
+(`scripts/read_georef_records.py <folder> …`, in the container: `signals.csv` and
+`checkpoints.csv` in each folder), then `--signals --real <real folder>` puts each real case's
+signals in the synthetic range and `--checkpoints B5c,PROD --real <real folder>` compares what
+the variants gain at the check points, coastal and inland, in both corpora. Each synthetic
+layout also gets check points (orange in `control_points.png`), placed as the real protocol
+asks; they are scored, never fitted. `--stage S` adds every variant of a stage of
+`georef_variants.py` to `--variants` (stage `S`: step 3's sweep, one constant at a time around
+`PROD`; stage `R`: its search over the constants that mattered), and `--sweep` reads such a run
+knob by knob against `PROD`. `scripts/show_georef_twins.py --seeds 300,301` draws a map's four
+twins side by side, each over the undeformed map, into `ablations/twins/`.
+`scripts/georef_coast_ceiling.py --maps 50 --seed 300 --workers 4 --out coast-ceiling-…` measures,
+without running the pipeline, how much a smooth bend fitted to the true coast could take out (an
+upper bound for step 4); its fits are heavy, so give it a few workers and hours. Results go to
+`Backend-Atlas/ablations/synthetic-…/` (gitignored): per map its image and an `overview.png`
+with the suggestions and cities; per case its clicks (`control_points.png`) and per variant the
+run record; `results.csv` (one row per case × variant) and `summary.md`. Needs the `borders/`
+files (`scripts/fetch_natural_earth_borders.py`).
+
 ### Why did this map place badly?
 
 An IoU number, or a probe case with no number at all, cannot tell you *why* the zones landed

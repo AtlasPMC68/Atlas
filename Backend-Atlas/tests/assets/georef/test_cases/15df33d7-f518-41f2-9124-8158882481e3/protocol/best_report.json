@@ -1,0 +1,260 @@
+{
+  "testId": "15df33d7-f518-41f2-9124-8158882481e3",
+  "testCaseId": "protocol",
+  "evaluatedAt": "2026-11-01T01:25:26.869783Z",
+  "thresholds": {
+    "minIou": null,
+    "scoreKey": "metrics.mean.meanIou"
+  },
+  "metrics": {
+    "expected": [
+      {
+        "expected": {
+          "index": 0,
+          "id": "dev-zone-1793476257389",
+          "name": "mexique",
+          "area": 173.311060997401
+        },
+        "bestMatch": {
+          "iou": 0.9003768025314169,
+          "intersectionArea": 157.27715726587093,
+          "unionArea": 174.6792640855305,
+          "precision": 0.9913757131940244,
+          "recall": 0.9074848215730991,
+          "falseNegativeArea": 16.03390373152924,
+          "falsePositiveArea": 1.368203088130094,
+          "boundary": {
+            "meanKm": 16.143,
+            "p90Km": 51.628,
+            "maxKm": 512.124,
+            "expectedToExtractedMeanKm": 19.913,
+            "extractedToExpectedMeanKm": 12.373,
+            "expectedHoles": 3,
+            "extractedHoles": 3
+          },
+          "extracted": {
+            "index": 0,
+            "id": null,
+            "name": "mexique",
+            "area": 158.64536035400118
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 1,
+          "id": "dev-zone-1793476368653",
+          "name": "texas",
+          "area": 62.08314697421428
+        },
+        "bestMatch": {
+          "iou": 0.6159648842258963,
+          "intersectionArea": 51.34551099267819,
+          "unionArea": 83.35785416924507,
+          "precision": 0.7070415412407621,
+          "recall": 0.8270442703879706,
+          "falseNegativeArea": 10.737635981536108,
+          "falsePositiveArea": 21.274707195030793,
+          "boundary": {
+            "meanKm": 127.085,
+            "p90Km": 507.695,
+            "maxKm": 748.173,
+            "expectedToExtractedMeanKm": 38.211,
+            "extractedToExpectedMeanKm": 215.958,
+            "expectedHoles": 0,
+            "extractedHoles": 1
+          },
+          "extracted": {
+            "index": 1,
+            "id": null,
+            "name": "texas",
+            "area": 72.620218187709
+          },
+          "matchedBy": "name"
+        }
+      },
+      {
+        "expected": {
+          "index": 2,
+          "id": "dev-zone-1793476387711",
+          "name": "Guatemala",
+          "area": 9.087612713674782
+        },
+        "bestMatch": {
+          "iou": 0.7508438427351639,
+          "intersectionArea": 8.562870968235107,
+          "unionArea": 11.404330009609447,
+          "precision": 0.7870583665776761,
+          "recall": 0.9422574704740598,
+          "falseNegativeArea": 0.5247417454396854,
+          "falsePositiveArea": 2.3167172959346654,
+          "boundary": {
+            "meanKm": 20.353,
+            "p90Km": 55.615,
+            "maxKm": 88.403,
+            "expectedToExtractedMeanKm": 20.019,
+            "extractedToExpectedMeanKm": 20.688,
+            "expectedHoles": 1,
+            "extractedHoles": 1
+          },
+          "extracted": {
+            "index": 2,
+            "id": null,
+            "name": "Guatemala",
+            "area": 10.87958826416976
+          },
+          "matchedBy": "name"
+        }
+      }
+    ],
+    "mean": {
+      "meanIou": 0.7557285098308256,
+      "meanPrecision": 0.828491873670821,
+      "meanRecall": 0.8922621874783765,
+      "totalFalseNegativeArea": 27.29628145850503,
+      "totalFalsePositiveArea": 24.959627579095553,
+      "meanBoundaryKm": 54.527,
+      "meanBoundaryP90Km": 204.979,
+      "maxBoundaryKm": 748.173,
+      "zonesWithBoundary": 3,
+      "zonesWithoutBoundary": 0
+    },
+    "scoreUsed": 0.7557285098308256,
+    "scoreUsedKey": "mean.meanIou"
+  },
+  "nameMatching": {
+    "expectedWithoutNameMatch": [],
+    "extractedNeverMatchedByName": []
+  },
+  "scoreVersion": "2",
+  "comparison": {
+    "main": "The shipped zones (zones.geojson: after snapping, ocean clip and lake cut) against the expected zones through the same ocean and lake cuts.",
+    "raw": "The zones as the transform placed them (zones_raw.geojson: before snapping and the clip) against the expected zones as drawn. For judging placement: cleaning corrects and hides transform error."
+  },
+  "raw": {
+    "metrics": {
+      "expected": [
+        {
+          "expected": {
+            "index": 0,
+            "id": "dev-zone-1793476257389",
+            "name": "mexique",
+            "area": 174.20372134368554
+          },
+          "bestMatch": {
+            "iou": 0.8600883704232035,
+            "intersectionArea": 153.89035256030547,
+            "unionArea": 178.92388486148727,
+            "precision": 0.9702405386823326,
+            "recall": 0.8833930261265548,
+            "falseNegativeArea": 20.313368783380128,
+            "falsePositiveArea": 4.72016351780176,
+            "boundary": {
+              "meanKm": 24.838,
+              "p90Km": 57.051,
+              "maxKm": 731.468,
+              "expectedToExtractedMeanKm": 29.352,
+              "extractedToExpectedMeanKm": 20.325,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 0,
+              "id": null,
+              "name": "mexique",
+              "area": 158.61051607810717
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 1,
+            "id": "dev-zone-1793476368653",
+            "name": "texas",
+            "area": 62.228638280640524
+          },
+          "bestMatch": {
+            "iou": 0.6073168563683704,
+            "intersectionArea": 50.728930918555406,
+            "unionArea": 83.52959478500885,
+            "precision": 0.7042761377745916,
+            "recall": 0.8152023299911625,
+            "falseNegativeArea": 11.49970736208505,
+            "falsePositiveArea": 21.30095650436837,
+            "boundary": {
+              "meanKm": 137.482,
+              "p90Km": 511.977,
+              "maxKm": 748.173,
+              "expectedToExtractedMeanKm": 41.245,
+              "extractedToExpectedMeanKm": 233.719,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 1,
+              "id": null,
+              "name": "texas",
+              "area": 72.02988742292379
+            },
+            "matchedBy": "name"
+          }
+        },
+        {
+          "expected": {
+            "index": 2,
+            "id": "dev-zone-1793476387711",
+            "name": "Guatemala",
+            "area": 9.170618627411502
+          },
+          "bestMatch": {
+            "iou": 0.7058452956512697,
+            "intersectionArea": 8.19212687153277,
+            "unionArea": 11.606122364213043,
+            "precision": 0.7708328576181789,
+            "recall": 0.8933014450133206,
+            "falseNegativeArea": 0.9784917558787242,
+            "falsePositiveArea": 2.4355037368015484,
+            "boundary": {
+              "meanKm": 24.368,
+              "p90Km": 57.377,
+              "maxKm": 91.763,
+              "expectedToExtractedMeanKm": 23.677,
+              "extractedToExpectedMeanKm": 25.059,
+              "expectedHoles": 0,
+              "extractedHoles": 0
+            },
+            "extracted": {
+              "index": 2,
+              "id": null,
+              "name": "Guatemala",
+              "area": 10.627630608334321
+            },
+            "matchedBy": "name"
+          }
+        }
+      ],
+      "mean": {
+        "meanIou": 0.7244168408142811,
+        "meanPrecision": 0.8151165113583677,
+        "meanRecall": 0.8639656003770128,
+        "totalFalseNegativeArea": 32.7915679013439,
+        "totalFalsePositiveArea": 28.456623758971677,
+        "meanBoundaryKm": 62.229,
+        "meanBoundaryP90Km": 208.802,
+        "maxBoundaryKm": 748.173,
+        "zonesWithBoundary": 3,
+        "zonesWithoutBoundary": 0
+      },
+      "scoreUsed": 0.7244168408142811,
+      "scoreUsedKey": "mean.meanIou"
+    },
+    "nameMatching": {
+      "expectedWithoutNameMatch": [],
+      "extractedNeverMatchedByName": []
+    }
+  },
+  "unsnapped": null,
+  "snapped": null
+}

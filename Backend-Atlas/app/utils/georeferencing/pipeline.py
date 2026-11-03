@@ -31,8 +31,14 @@ from .projection import (
     webmercator_meters_to_km,
 )
 from .cleaning import land_mask_3857 as land_mask_3857_shared
+from .quality import affine_leave_one_out, control_point_layout
 from .records import RunRecord
-from .snapping import load_coastline_geometry, snap_geometry_to_coastline
+from .snapping import (
+    CoastIndex,
+    load_coastline_geometry,
+    snap_geometry_to_coastline,
+    snap_geometry_to_coastline_stretches,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,13 @@ class GeorefResult:
     baseline: Optional[AffineModel] = None
     #: The zones as the transform placed them, before snapping and the clip.
     raw_collections: List[JSONDict] = field(default_factory=list)
+    #: With ``score_snapping``, the zones cleaned both ways whatever the config
+    #: says: clipped without snapping, and snapped then clipped. Snapping is a
+    #: last step on any transform, so the dev runners score every variant
+    #: both ways rather than make it a variant (georeferencing-synthetic.md
+    #: §10.6). Empty otherwise, and the snapped ones without a coastline.
+    unsnapped_collections: List[JSONDict] = field(default_factory=list)
+    snapped_collections: List[JSONDict] = field(default_factory=list)
 
     @property
     def transform_payload(self) -> Optional[Dict[str, Any]]:
@@ -72,6 +85,9 @@ def georeference_features(
     model: Optional[TransformModel] = None,
     extra_properties: Optional[Dict[str, Any]] = None,
     refine_piecewise: Optional[Callable[[Any, RunRecord], Any]] = None,
+    bend_to_coast: Optional[Callable[[Any, RunRecord], Any]] = None,
+    coast_misfit_px: Optional[Callable[[Any], float]] = None,
+    score_snapping: bool = False,
 ) -> GeorefResult:
     """Georeference pixel-space features with an affine fitted to *control_points*."""
 
@@ -138,6 +154,30 @@ def georeference_features(
             with record.phase("post_piecewise_alignment"):
                 model = refine_piecewise(model, record)
 
+    if config.coast_bend:
+        if bend_to_coast is None:
+            record.set_errors(coastBend={"applied": False, "skippedBecause": "no alignment inputs"})
+        else:
+            with record.phase("coast_bend"):
+                model = bend_to_coast(model, record)
+        refused = not (record.errors.get("coastBend") or {}).get("applied")
+        if config.coast_bend_fallback_piecewise and refused and not use_piecewise:
+            # The bend was to replace the piecewise step and could not, or had
+            # nothing to bend to: the step and the second alignment instead,
+            # as before config v22.
+            with record.phase("bend_fallback_piecewise"):
+                model = _apply_piecewise_correction(
+                    model,
+                    control_points,
+                    config,
+                    record,
+                    image_size=image_size,
+                    refit_base=base_is_gcp_affine,
+                )
+                if isinstance(model, PiecewiseAffineModel) and refine_piecewise is not None:
+                    model = refine_piecewise(model, record)
+            record.set_errors(bendFallback={"applied": isinstance(model, PiecewiseAffineModel)})
+
     ref_lat = reference_latitude(frame_bounds)
 
     rmse_3857 = model.rmse_3857
@@ -150,8 +190,15 @@ def georeference_features(
         controlPoints=[cp.to_dict() for cp in control_points],
         controlPointCount=len(control_points),
         controlPointsBySource=count_by_source(control_points),
+        # How the points cover the image, and the affine's leave-one-out:
+        # inputs of the quality estimator (quality.py).
+        controlPointLayout=control_point_layout(control_points, image_size),
+        imageSize=[int(image_size[0]), int(image_size[1])],
         frameBounds=frame_bounds,
         referenceLatitude=ref_lat,
+    )
+    record.set_errors(
+        affineLeaveOneOut=affine_leave_one_out(control_points, gcp_affine.meters_per_pixel)
     )
     # The model the features were actually placed with: the GCP affine, the
     # aligned affine, or either one under the piecewise correction.
@@ -182,7 +229,7 @@ def georeference_features(
     coastline_geom_3857 = None
     land_mask_3857 = None
 
-    if config.snap_to_coastline:
+    if config.snap_to_coastline or score_snapping:
         with record.phase("load_coastline"):
             coastline_geom_wgs84 = load_coastline_geometry()
             if coastline_geom_wgs84 is not None:
@@ -199,20 +246,61 @@ def georeference_features(
         with record.phase("load_land_mask"):
             land_mask_3857 = land_mask_3857_shared()
 
-    snap_tolerance_m = (
-        snap_tolerance_m_for(model, image_size, config) if snapping_enabled else None
+    both_ways = score_snapping and coastline_geom_3857 is not None
+    snaps = snapping_enabled or both_ways
+    # How far the reference coast sits from the drawn edges under the applied
+    # model, for the measured tolerance; None without the alignment evidence.
+    misfit_px = (
+        coast_misfit_px(model)
+        if snaps and config.coastline_snap_measured and coast_misfit_px is not None
+        else None
     )
+    snap_tolerance_m = (
+        snap_tolerance_m_for(model, image_size, config, misfit_px) if snaps else None
+    )
+    coast_index = (
+        CoastIndex.build(coastline_geom_3857)
+        if snaps and config.coastline_snap_stretches
+        else None
+    )
+    min_run_m = config.coastline_snap_min_run_px * model.meters_per_pixel
+
+    def clean(geom_3857: Any, snap: bool) -> Tuple[Any, int, int]:
+        """Snapped (with *snap*) then clipped to land: the zone in EPSG:3857, or
+        None when the clip leaves too little of it; and the snap's counts."""
+        total = snapped = 0
+        if snap and coast_index is not None:
+            geom_3857, total, snapped = snap_geometry_to_coastline_stretches(
+                geom_3857,
+                coast_index,
+                snap_tolerance_m,
+                min_run_m,
+                config.coastline_snap_max_angle_deg,
+                config.coastline_snap_max_area_change,
+            )
+        elif snap:
+            geom_3857, total, snapped = snap_geometry_to_coastline(
+                geom_3857, coastline_geom_3857, snap_tolerance_m
+            )
+        if config.clip_to_land_mask and land_mask_3857 is not None:
+            geom_3857 = clip_zone_to_land_mask(
+                geom_3857,
+                land_mask_3857,
+                land_coverage_threshold=config.land_coverage_threshold,
+            )
+        return geom_3857, total, snapped
 
     # --- apply --------------------------------------------------------------
     to_3857 = model.as_shapely_transform()
 
     # Only vertices are warped. A long straight edge crossing several of the
-    # piecewise model's triangles would stay straight and cut across the
-    # correction, so geometries are densified first. The affine maps straight
-    # lines to straight lines and needs none of this.
+    # piecewise model's triangles, or under the coast bend, would stay
+    # straight and cut across the correction, so geometries are densified
+    # first. The affine maps straight lines to straight lines and needs none
+    # of this.
     densify_px = (
         _densify_step_px(image_size, config)
-        if isinstance(model, PiecewiseAffineModel)
+        if not isinstance(model, AffineModel)
         else None
     )
 
@@ -224,6 +312,8 @@ def georeference_features(
     # clip: what placement experiments are judged on, since cleaning corrects
     # and hides transform error.
     raw_collections: List[JSONDict] = []
+    unsnapped_collections: List[JSONDict] = []
+    snapped_collections: List[JSONDict] = []
 
     with record.phase("apply"):
         for fc in pixel_feature_collections:
@@ -232,6 +322,7 @@ def georeference_features(
 
             new_features: List[JSONDict] = []
             raw_features: List[JSONDict] = []
+            both_features: Dict[bool, List[JSONDict]] = {False: [], True: []}
 
             for feat_idx, feat in enumerate(fc.get("features", [])):
                 try:
@@ -281,23 +372,26 @@ def georeference_features(
                 except Exception as e:
                     logger.warning(f"Could not keep raw zone {feat_idx}: {e}")
 
-                if snapping_enabled:
-                    geom_3857, total_pts, snapped_pts = snap_geometry_to_coastline(
-                        geom_3857, coastline_geom_3857, snap_tolerance_m
-                    )
-                    total_boundary_points += total_pts
-                    total_snapped_points += snapped_pts
+                if both_ways:
+                    for snap, out in both_features.items():
+                        scored, _, _ = clean(geom_3857, snap)
+                        if scored is not None:
+                            out.append(
+                                {
+                                    "type": "Feature",
+                                    "properties": props,
+                                    "geometry": mapping(
+                                        transform(webmercator_arrays_to_lonlat, scored)
+                                    ),
+                                }
+                            )
 
-                if config.clip_to_land_mask and land_mask_3857 is not None:
-                    clipped_geom = clip_zone_to_land_mask(
-                        geom_3857,
-                        land_mask_3857,
-                        land_coverage_threshold=config.land_coverage_threshold,
-                    )
-                    if clipped_geom is None:
-                        dropped_off_land += 1
-                        continue
-                    geom_3857 = clipped_geom
+                geom_3857, total_pts, snapped_pts = clean(geom_3857, snapping_enabled)
+                total_boundary_points += total_pts
+                total_snapped_points += snapped_pts
+                if geom_3857 is None:
+                    dropped_off_land += 1
+                    continue
 
                 try:
                     geom_wgs84 = transform(webmercator_arrays_to_lonlat, geom_3857)
@@ -325,6 +419,9 @@ def georeference_features(
                 raw_collections.append(
                     {"type": "FeatureCollection", "features": raw_features}
                 )
+            for snap, out in ((False, unsnapped_collections), (True, snapped_collections)):
+                if both_features[snap]:
+                    out.append({"type": "FeatureCollection", "features": both_features[snap]})
 
     record.set_errors(
         snapTotalBoundaryPoints=total_boundary_points,
@@ -334,6 +431,7 @@ def georeference_features(
     record.set_inputs(
         snapToCoastline=snapping_enabled,
         snapToleranceMeters=snap_tolerance_m,
+        snapMisfitPx=misfit_px,
         clipToLandMask=bool(config.clip_to_land_mask and land_mask_3857 is not None),
         densifyStepPx=densify_px,
     )
@@ -344,6 +442,8 @@ def georeference_features(
         record=record,
         baseline=gcp_affine,
         raw_collections=raw_collections,
+        unsnapped_collections=unsnapped_collections,
+        snapped_collections=snapped_collections,
     )
 
 
@@ -434,12 +534,23 @@ def _apply_piecewise_correction(
 
 
 def snap_tolerance_m_for(
-    model: TransformModel, image_size: Tuple[int, int], config: GeorefConfig
+    model: TransformModel,
+    image_size: Tuple[int, int],
+    config: GeorefConfig,
+    misfit_px: Optional[float] = None,
 ) -> float:
     """How far a zone vertex may be snapped, in EPSG:3857 metres: a share of
-    the image diagonal, through the transform's scale."""
+    the image diagonal, through the transform's scale. With
+    ``coastline_snap_measured`` and a measured *misfit_px*, a multiple of it
+    instead, between the floor and that share."""
     diagonal_px = math.hypot(float(image_size[0]), float(image_size[1]))
-    return diagonal_px * config.coastline_snap_ratio_of_diagonal * model.meters_per_pixel
+    tolerance_px = diagonal_px * config.coastline_snap_ratio_of_diagonal
+    if config.coastline_snap_measured and misfit_px is not None and math.isfinite(misfit_px):
+        tolerance_px = min(
+            tolerance_px,
+            max(config.coastline_snap_min_px, config.coastline_snap_misfit_factor * misfit_px),
+        )
+    return tolerance_px * model.meters_per_pixel
 
 
 def _densify_step_px(image_size: Tuple[int, int], config: GeorefConfig) -> float:

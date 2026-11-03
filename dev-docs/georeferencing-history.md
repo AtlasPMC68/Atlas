@@ -269,6 +269,117 @@ that reuse colours.
   `cv2.inpaint`, a weighted average that can blend two zone colours; the palette repaint did
   better consistently. With it went `text_inpaint_algo` and `text_inpaint_radius_px`.
 
+## 2026-10-27 — The synthetic corpus, step 1
+
+The generator of [`georeferencing-synthetic.md`](georeferencing-synthetic.md) §3, built in one
+pass (generator v1) and revised four times after looking at its maps and its first pilot. What
+it is now is in that document; what changed, and why, is here, so the current values are not
+argued again.
+
+| Was (v1) | Now (v5) | Why |
+|---|---|---|
+| Longitude span 4°–40° (median 12.6°) | 5°–90° (median ~21°) | Most maps looked zoomed in next to the real corpus (~20°–50°) |
+| Land 20–85% of the image, sea ≥ 5% | No minimum; coast amounts recorded | Every map is centred on a coast; the minimum rejected maps for nothing |
+| Mercator drawn 50% of the time (~12% easy maps) | 30% (~7%) | Too many easy maps |
+| Image 900–2000 px | 500–2000 px | The real corpus goes down to 602 px, and the coarse schedule is suspected too wide for small maps |
+| Framing box padded 5–20% per side | 5–10% | Closer to how a user frames; a wider box puts fewer suggestions on the map |
+| Countries only, zones from 1% of the image | Countries or provinces from what the map shows; zones from 0.1% | Countries alone rejected regional maps of large countries; at 1% a map of East Asia lost Japan and Korea |
+| Provinces always merged by Natural Earth group | Merged only when too small to pick | Canada's groups lump three territories into "Northern Canada" |
+| 3–15 points, a uniform share of cities | At least 3 SIFT pairs (from 60% of the suggestions to all), cities none 60% of the time, else 1–6 | The import requires 3 SIFT pairs and makes cities optional; a uniform share made a third of layouts mostly cities |
+| Soft concentration: a centre anywhere, weights `exp(−(d/r)²)` | A hard circle, centred where suggestions are dense, radius 30%–100% | Soft weights spilled clustered layouts over the whole map; a random centre could hold no suggestion; from 15%, a quarter of layouts were clipped to exactly 3 points (median 4 SIFT pairs) |
+| Bad point on 15%: a random 15–30 px jump, or a wrong city | 5%: a SIFT pair matched to the neighbouring feature, 20–80 px along the drawn coast | A random jump models nothing; a wrong city almost never happens; a mismatched cape is the realistic gross error |
+
+Building it also found two pipeline defects, the two entries below.
+
+## 2026-10-27 — The keypoint finder lost most of its detections
+
+Found by the first synthetic maps ([`georeferencing-synthetic.md`](georeferencing-synthetic.md)),
+which call the finder exactly as the import does: on regional frames it suggested 0–2 points,
+and the import requires 3 pairs, so a user framing Portugal to Morocco could not get past the
+SIFT step. Three defects, all in `sift_key_points_finder.py`:
+
+- **The mask.** SIFT could only place keypoints on the Canny outline of the drawn 3 px line,
+  1 px wide, and SIFT centres a keypoint on what it finds, rarely exactly there. On 52
+  synthetic frames: a median of 10 detections per frame, 20 frames under 6. With the outline
+  widened by 5 px: a median of ~460, none under 6. Every synthetic map now gets 5–13
+  suggestions inside its image.
+- **Phantom lines.** The finder had its own rasterizer, the one `reference.py` replaced in
+  Step 1: it dropped vertices outside the box and joined what was left, drawing a straight line
+  from where a coast leaves the frame to where it comes back. With few detections this rarely
+  mattered; with hundreds, farthest-point sampling would pick exactly such isolated, invented
+  lines. Lines are now clipped to the box with the reference grid.
+- **Off the curve.** A keypoint sits anywhere on the drawn line, up to half its width off the
+  curve, and its lon/lat becomes the control point's true position (1.5 px is ~6 km on a 40°
+  frame). Each suggestion is now snapped onto the vector curve.
+
+Stored cases keep the lon/lat their SIFT pairs were clicked with; only new suggestions change.
+Known since: tiny isolated islands (Bermuda, Malta, the Bonin Islands) are strong SIFT blobs
+and farthest-point sampling favours them, though a map may well omit them.
+
+## 2026-10-27 — Alignment is biased by the coastline's drawn width
+
+Found by the synthetic generator's convention test
+([`georeferencing-synthetic.md` §3.5](georeferencing-synthetic.md#35-the-metric)): a map with
+no deformation and exact clicks, aligned (affine, no piecewise). With the coast drawn 1 px
+wide, alignment leaves it exactly in place (0.00 km). Drawn 2 px wide, it moves it by 1.4 px on
+average (11.7 km at 8.2 km/px): a 0.1–0.3% scale change plus a shift, up to 2.7 px at a corner.
+A graticule on the same map changed nothing (11.66 km without it).
+
+The cause: the water filter keeps only the edges on the water/land boundary, which for a thick
+coastline is its **sea-side** edge, while the reference coastline is the line's centre. The fit
+pulls the map so the reference sits on that edge, about half the line's width seaward. Scanned
+maps draw coasts 2–5 px wide, so production alignment carries the same systematic error, a few
+km on a typical map: small next to the tens of km measured on the corpus, but systematic, and
+larger on small-scale maps.
+
+**Measured, then fixed (config v21).** Canny does find both flanks of the drawn line; the water
+filter keeps edges within `edge_water_margin_px` (3) of the water, and from a 2 px line on, the
+land-side flank lies beyond it (at +4–5 px for 2 px, +6–7 px for 3–4 px). The fix
+(`evidence.centre_drawn_coast_lines`) pairs each kept edge with the nearest edge whose grey
+gradient along the coast's normal has the opposite sign, and puts the evidence at their
+midpoint, the line's centre whatever the blur or the Canny thresholds. Three things went wrong
+on the way, each found by measuring the evidence against the true drawn coast:
+
+- **The land-side flank paired as well.** When the line is thin, both flanks pass the water
+  filter; the land-side one, left unclaimed, paired with whatever lay further inland and pulled
+  the evidence landward. Now an edge whose opposite flank is on its *sea* side is a land-side
+  flank and is dropped.
+- **Marching along the normal missed flanks**: a ray slips between the diagonal pixels of an
+  8-connected edge. Replaced by a nearest-pixel distance transform per gradient sign.
+- **Merged strokes.** Where coast strokes merge into a dark mass 9–15 px wide (dense islands,
+  deltas, narrow channels), a quarter of the sea-side flanks at 3–4 px found no partner within
+  8 px and stayed on the sea side. An edge whose opposite flank is landward but beyond the
+  line's width (up to twice it) is now dropped: neither side of that mass is the coast.
+
+Midpoints falling on a half pixel mark the pixels on both sides, rather than rounding every
+point of a straight run the same way.
+
+On the undeformed synthetic map, aligned (affine), error in px:
+
+| Coast drawn | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| Sea-side flank (before) | refused | refused | 0.97 | 1.23 | 1.35 |
+| Both flanks, margin 8 (`L3`) | refused | refused | 0.63 | 1.29 | 1.35 |
+| Line centre (v21) | 0.21 | 0.24 | 0.35 | 0.28 | 0.30 |
+
+**The earlier "0.00 km at 1 px" was alignment refused**, not alignment holding: on a map whose
+clicks are exact, the old evidence made the chamfer slightly worse than the clicks did, so
+`curve_fit_engaged` failed and the exact-click affine was used. With the line's centre,
+alignment engages at every width. The 0.2–0.35 px left is the fit's own floor on this map (the
+chamfer at the true position is ~0.55 px), not a bias: the evidence's median offset from the
+drawn coast is −0.4 to +0.2 px at every width, against −0.8 to −2.8 px before. Widening the
+water margin to keep both flanks (`L3`) is not a fix: the chamfer then settles on either flank.
+
+The generator now draws the coast 0–4 px wide (v6; it drew 1–2), so the synthetic corpus has
+coasts drawn as a colour change and thick ones.
+
+**On the real corpus it is neutral** ([testing §8.10](georeferencing-testing.md#810-the-coast-lines-centre-2026-10-27)):
+`B5b` against the same configuration on the sea-side flank, 5 cases better and 6 worse on check
+points, median +0.04 km; `PROD`, 6 and 5, +0.01 km. Those maps draw their coasts 1–2 px wide
+(median flank gap 2.2–3.0 px), where the bias was already under a pixel. Kept because scanned
+and historical coasts are thicker, and because the synthetic corpus needs evidence that is
+right at every width; it costs ~0.3 s per aligned run.
+
 ## Considered and set aside
 
 | Idea | Why not |
@@ -279,4 +390,4 @@ that reuse colours.
 | Persisting the fitted matrix | Refitting is cheap; the inputs were what got lost |
 | Homography (8 parameters) | Inputs are digital renders, not photographs: the extra freedom would absorb drawing noise |
 | A full planar arrangement for zones | Zones are already an exact pixel partition; shared borders can be made at vectorising time |
-| A synthetic test corpus | More effort than the project can spend; real maps with borders as ground truth came first |
+| A synthetic test corpus | Set aside until the configuration space outgrew the real corpus; built 2026-10-27 ([`georeferencing-synthetic.md`](georeferencing-synthetic.md)) |

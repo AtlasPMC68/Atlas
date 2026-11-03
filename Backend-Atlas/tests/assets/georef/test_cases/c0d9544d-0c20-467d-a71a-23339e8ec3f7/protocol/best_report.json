@@ -1,7 +1,7 @@
 {
   "testId": "c0d9544d-0c20-467d-a71a-23339e8ec3f7",
   "testCaseId": "protocol",
-  "evaluatedAt": "2026-10-05T05:27:33.462462Z",
+  "evaluatedAt": "2026-11-01T01:27:42.597114Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,19 +16,19 @@
           "area": 73.67807111092027
         },
         "bestMatch": {
-          "iou": 0.560396184245765,
-          "intersectionArea": 43.382286137328144,
-          "unionArea": 77.41360015810278,
-          "precision": 0.9207193917512004,
-          "recall": 0.5888086574907387,
-          "falseNegativeArea": 30.295784973592028,
-          "falsePositiveArea": 3.735529047182545,
+          "iou": 0.6901000317367659,
+          "intersectionArea": 52.15607568017545,
+          "unionArea": 75.5775587329201,
+          "precision": 0.9648604601272706,
+          "recall": 0.7078914376253952,
+          "falseNegativeArea": 21.521995430744752,
+          "falsePositiveArea": 1.899487621999673,
           "boundary": {
-            "meanKm": 25.756,
-            "p90Km": 71.907,
-            "maxKm": 3486.423,
-            "expectedToExtractedMeanKm": 39.008,
-            "extractedToExpectedMeanKm": 12.504,
+            "meanKm": 18.803,
+            "p90Km": 51.346,
+            "maxKm": 3481.855,
+            "expectedToExtractedMeanKm": 27.565,
+            "extractedToExpectedMeanKm": 10.042,
             "expectedHoles": 3,
             "extractedHoles": 3
           },
@@ -36,7 +36,7 @@
             "index": 1,
             "id": null,
             "name": "chile",
-            "area": 47.117815184510675
+            "area": 54.05556330217508
           },
           "matchedBy": "name"
         }
@@ -49,19 +49,19 @@
           "area": 277.2762392746843
         },
         "bestMatch": {
-          "iou": 0.8701866777446787,
-          "intersectionArea": 259.09847952758076,
-          "unionArea": 297.75045533804735,
-          "precision": 0.9267660383640622,
-          "recall": 0.9344416968628325,
-          "falseNegativeArea": 18.177759747103853,
-          "falsePositiveArea": 20.474216063363038,
+          "iou": 0.8853462362187543,
+          "intersectionArea": 262.5167719704251,
+          "unionArea": 296.51311682490916,
+          "precision": 0.9317244778090638,
+          "recall": 0.9467698085387053,
+          "falseNegativeArea": 14.759467304259562,
+          "falsePositiveArea": 19.23687755022444,
           "boundary": {
-            "meanKm": 98.127,
-            "p90Km": 258.929,
-            "maxKm": 1236.023,
-            "expectedToExtractedMeanKm": 39.705,
-            "extractedToExpectedMeanKm": 156.549,
+            "meanKm": 89.763,
+            "p90Km": 252.128,
+            "maxKm": 1202.45,
+            "expectedToExtractedMeanKm": 30.759,
+            "extractedToExpectedMeanKm": 148.766,
             "expectedHoles": 3,
             "extractedHoles": 2
           },
@@ -69,7 +69,7 @@
             "index": 0,
             "id": null,
             "name": "argentina",
-            "area": 279.5726955909436
+            "area": 281.7536495206495
           },
           "matchedBy": "name"
         }
@@ -82,19 +82,19 @@
           "area": 63.20044551671413
         },
         "bestMatch": {
-          "iou": 0.6495030113788042,
-          "intersectionArea": 59.059853983616144,
-          "unionArea": 90.93083934782739,
-          "precision": 0.6804895189340952,
-          "recall": 0.934484773022637,
-          "falseNegativeArea": 4.140591533097979,
-          "falsePositiveArea": 27.730393831113304,
+          "iou": 0.6835933707353472,
+          "intersectionArea": 58.96773028677269,
+          "unionArea": 86.26141330677417,
+          "precision": 0.7188670754171929,
+          "recall": 0.9330271298669557,
+          "falseNegativeArea": 4.2327152299414035,
+          "falsePositiveArea": 23.060967790060154,
           "boundary": {
-            "meanKm": 190.065,
-            "p90Km": 1077.48,
-            "maxKm": 1501.386,
-            "expectedToExtractedMeanKm": 63.717,
-            "extractedToExpectedMeanKm": 316.413,
+            "meanKm": 179.419,
+            "p90Km": 1068.381,
+            "maxKm": 1507.33,
+            "expectedToExtractedMeanKm": 52.575,
+            "extractedToExpectedMeanKm": 306.262,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -102,25 +102,25 @@
             "index": 2,
             "id": null,
             "name": "bolivia",
-            "area": 86.79024781472944
+            "area": 82.02869807683278
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.6933619577897493,
-      "meanPrecision": 0.8426583163497859,
-      "meanRecall": 0.8192450424587361,
-      "totalFalseNegativeArea": 52.61413625379386,
-      "totalFalsePositiveArea": 51.94013894165889,
-      "meanBoundaryKm": 104.649,
-      "meanBoundaryP90Km": 469.439,
-      "maxBoundaryKm": 3486.423,
+      "meanIou": 0.7530132128969558,
+      "meanPrecision": 0.871817337784509,
+      "meanRecall": 0.862562792010352,
+      "totalFalseNegativeArea": 40.514177964945716,
+      "totalFalsePositiveArea": 44.197332962284264,
+      "meanBoundaryKm": 95.995,
+      "meanBoundaryP90Km": 457.285,
+      "maxBoundaryKm": 3481.855,
       "zonesWithBoundary": 3,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.6933619577897493,
+    "scoreUsed": 0.7530132128969558,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
@@ -143,19 +143,19 @@
             "area": 76.69420917576099
           },
           "bestMatch": {
-            "iou": 0.5511712456189021,
-            "intersectionArea": 47.891508067067186,
-            "unionArea": 86.89043277881908,
-            "precision": 0.8244685528269279,
-            "recall": 0.6244475115104672,
-            "falseNegativeArea": 28.802701108693995,
-            "falsePositiveArea": 10.196223603058352,
+            "iou": 0.5580745868162927,
+            "intersectionArea": 50.327659806255085,
+            "unionArea": 90.18088441074627,
+            "precision": 0.7886575919615942,
+            "recall": 0.6562119923672284,
+            "falseNegativeArea": 26.36654936950598,
+            "falsePositiveArea": 13.486675234985448,
             "boundary": {
-              "meanKm": 30.319,
-              "p90Km": 74.628,
-              "maxKm": 3463.156,
-              "expectedToExtractedMeanKm": 41.43,
-              "extractedToExpectedMeanKm": 19.207,
+              "meanKm": 28.529,
+              "p90Km": 64.528,
+              "maxKm": 3459.851,
+              "expectedToExtractedMeanKm": 35.958,
+              "extractedToExpectedMeanKm": 21.1,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -163,7 +163,7 @@
               "index": 1,
               "id": null,
               "name": "chile",
-              "area": 58.087731670125386
+              "area": 63.81433504124046
             },
             "matchedBy": "name"
           }
@@ -176,19 +176,19 @@
             "area": 278.5048249786484
           },
           "bestMatch": {
-            "iou": 0.8486461192832778,
-            "intersectionArea": 252.1296277074291,
-            "unionArea": 297.09630666827843,
-            "precision": 0.9313260730534253,
-            "recall": 0.9052971621829483,
-            "falseNegativeArea": 26.37519727121986,
-            "falsePositiveArea": 18.591481689628967,
+            "iou": 0.8724548828318943,
+            "intersectionArea": 259.86442885218065,
+            "unionArea": 297.8542890478059,
+            "precision": 0.9307002102699512,
+            "recall": 0.9330697551545226,
+            "falseNegativeArea": 18.640396126468538,
+            "falsePositiveArea": 19.349464069157037,
             "boundary": {
-              "meanKm": 105.188,
-              "p90Km": 300.949,
-              "maxKm": 1236.023,
-              "expectedToExtractedMeanKm": 43.272,
-              "extractedToExpectedMeanKm": 167.105,
+              "meanKm": 95.343,
+              "p90Km": 294.469,
+              "maxKm": 1202.45,
+              "expectedToExtractedMeanKm": 34.022,
+              "extractedToExpectedMeanKm": 156.664,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -196,7 +196,7 @@
               "index": 0,
               "id": null,
               "name": "argentina",
-              "area": 270.72110939705834
+              "area": 279.21389292133773
             },
             "matchedBy": "name"
           }
@@ -209,19 +209,19 @@
             "area": 63.45766835433101
           },
           "bestMatch": {
-            "iou": 0.6503415301455968,
-            "intersectionArea": 59.13125410428261,
-            "unionArea": 90.92338619531873,
-            "precision": 0.682832814773868,
-            "recall": 0.9318220419651911,
-            "falseNegativeArea": 4.326414250048381,
-            "falsePositiveArea": 27.465717840987693,
+            "iou": 0.6836080421865379,
+            "intersectionArea": 59.08980750549744,
+            "unionArea": 86.43813978035888,
+            "precision": 0.719990333587126,
+            "recall": 0.931168904214309,
+            "falseNegativeArea": 4.3678608488335255,
+            "falsePositiveArea": 22.98047142602792,
             "boundary": {
-              "meanKm": 191.007,
-              "p90Km": 1071.035,
-              "maxKm": 1508.893,
-              "expectedToExtractedMeanKm": 65.783,
-              "extractedToExpectedMeanKm": 316.232,
+              "meanKm": 187.342,
+              "p90Km": 1087.99,
+              "maxKm": 1513.426,
+              "expectedToExtractedMeanKm": 55.261,
+              "extractedToExpectedMeanKm": 319.423,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -229,30 +229,32 @@
               "index": 2,
               "id": null,
               "name": "bolivia",
-              "area": 86.59697194527031
+              "area": 82.07027893152538
             },
             "matchedBy": "name"
           }
         }
       ],
       "mean": {
-        "meanIou": 0.683386298349259,
-        "meanPrecision": 0.812875813551407,
-        "meanRecall": 0.8205222385528689,
-        "totalFalseNegativeArea": 59.504312629962236,
-        "totalFalsePositiveArea": 56.253423133675014,
-        "meanBoundaryKm": 108.838,
-        "meanBoundaryP90Km": 482.204,
-        "maxBoundaryKm": 3463.156,
+        "meanIou": 0.7047125039449084,
+        "meanPrecision": 0.8131160452728906,
+        "meanRecall": 0.8401502172453533,
+        "totalFalseNegativeArea": 49.37480634480804,
+        "totalFalsePositiveArea": 55.8166107301704,
+        "meanBoundaryKm": 103.738,
+        "meanBoundaryP90Km": 482.329,
+        "maxBoundaryKm": 3459.851,
         "zonesWithBoundary": 3,
         "zonesWithoutBoundary": 0
       },
-      "scoreUsed": 0.683386298349259,
+      "scoreUsed": 0.7047125039449084,
       "scoreUsedKey": "mean.meanIou"
     },
     "nameMatching": {
       "expectedWithoutNameMatch": [],
       "extractedNeverMatchedByName": []
     }
-  }
+  },
+  "unsnapped": null,
+  "snapped": null
 }

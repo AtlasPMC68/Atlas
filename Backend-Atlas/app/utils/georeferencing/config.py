@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "20"
+CONFIG_VERSION = "23"
 
 #: In increasing order of freedom, then ``auto``, which picks one per map.
 #: ``pipeline`` has to know how to build each; a test holds the two together.
@@ -47,6 +47,32 @@ class GeorefConfig:
     # Tolerance as a share of the image diagonal, converted to metres with the
     # transform's scale.
     coastline_snap_ratio_of_diagonal: float = 0.015
+    # That tolerance runs to 35-220 km on the corpus and moves half the
+    # boundary vertices or more, inland borders near the sea with them
+    # (georeferencing-synthetic.md §10.8). Measured: the tolerance is this
+    # many times how far the reference coast sits from the drawn edges under
+    # the applied transform (the trimmed chamfer), at least the floor, at
+    # most the ratio above. Off, or with no alignment evidence: the ratio.
+    # The misfit is ~1 px on most real maps, so the floor decides there: 5 px
+    # costs nothing on synthetic maps and gains on real ones, whose drawn
+    # coasts stray further from the reference; 8 px and more cost on
+    # synthetic ones (§10.9). Pixels, not a share of the map: open.
+    coastline_snap_measured: bool = True
+    coastline_snap_misfit_factor: float = 3.0
+    coastline_snap_min_px: float = 5.0
+    # Stretches: only a run of consecutive boundary vertices near the coast
+    # and along it is snapped, and onto the coast's own vertices between them
+    # rather than in chords. A run shorter than this, or the run's ends where
+    # the boundary leaves the coast at more than the angle, are left as they
+    # are. A polygon whose snap would change more than this share of its
+    # area is left as it is (a zone narrower than the tolerance folds onto
+    # the coast). Off: every vertex within the tolerance moves to its nearest
+    # point. With both on, snapping costs more than 0.01 IoU on 2 of 196
+    # synthetic cases and on no real one (old snapping: 53 and 4, §10.8).
+    coastline_snap_stretches: bool = True
+    coastline_snap_min_run_px: float = 20.0
+    coastline_snap_max_angle_deg: float = 45.0
+    coastline_snap_max_area_change: float = 0.25
 
     # --- Land clipping (georeferencing.md section 6) -------------------------
     clip_to_land_mask: bool = True
@@ -85,11 +111,12 @@ class GeorefConfig:
     # ``auto``: piecewise only when the affine's GCP RMS exceeds the threshold
     # below (with 3 points the affine is exact, so it stays affine).
     #
-    # Piecewise between two alignments (B7b, 2026-10-08) had the best mean raw
-    # IoU of every variant: 14 cases better than B2, 3 worse, with its largest
-    # gains on the worst-placed maps. ``auto`` could gate away the small losses
-    # (~0.01 IoU) on maps the affine already fits.
-    transform_model: str = "piecewise_affine"
+    # Piecewise between two alignments (B7b, 2026-10-08) was production until
+    # config v22. Now the aligned affine is bent to the coast instead
+    # (``coast_bend``), and the piecewise step only runs where the bend
+    # refuses (``coast_bend_fallback_piecewise``): W13 on synthetic and real
+    # maps, georeferencing-synthetic.md §10.6-10.9.
+    transform_model: str = "affine"
     # Affine GCP RMS as a share of the image diagonal. Not measured yet.
     auto_piecewise_rmse_ratio_of_diagonal: float = 0.01
     # Frame padding, as a fraction of the map's size. Wider: gentler decay.
@@ -139,6 +166,12 @@ class GeorefConfig:
     # measure what the filter is worth.
     edge_water_filter: bool = True
     edge_water_margin_px: int = 3
+    # A coast drawn as a line: each kept edge is paired with the line's other
+    # flank, up to this far landward (px), and the evidence moved to their
+    # midpoint, the line's centre (evidence.centre_drawn_coast_lines). Covers
+    # lines up to ~5 px wide plus Canny's spread. 0 keeps the sea-side flank,
+    # which biased the fit by half the line's width (before config v21).
+    coast_line_max_width_px: int = 8
     # Below this share of the image, the water mask is more likely a stray pick
     # than the sea, and alignment is skipped.
     edge_water_min_fraction: float = 0.01
@@ -150,8 +183,58 @@ class GeorefConfig:
     # Align again after the piecewise correction, as an affine in front of it
     # (post_align.py), kept only if the coastline chamfer does not get worse.
     # Without a piecewise model the GCP affine is aligned instead. A gain on
-    # the corpus (B7 vs B3Lb, 2026-10-08).
-    align_after_piecewise: bool = True
+    # the corpus (B7 vs B3Lb, 2026-10-08). Off since config v22: with the
+    # affine as the model there is nothing to align again, and the bend's
+    # fallback runs this alignment after its own piecewise step.
+    align_after_piecewise: bool = False
+    # The second alignment starts on the clicks (the piecewise step pins
+    # them), so it may only pull them this far off, RMS over the diagonal.
+    # Synthetic runs pulled them at most 0.013 (0.0085 at p99), the real
+    # corpus 6 px; the one front past 0.02 sheared a map from 20 to 94 km
+    # (georeferencing-synthetic.md §10.12). Since config v23.
+    post_align_max_gcp_shift_ratio_of_diagonal: float = 0.02
+
+    # Bend the map to its coast after the alignments (bend.py), a smooth
+    # correction in pixels: Gaussians on a grid of knots, fitted by ridge to
+    # the coast's normal-search correspondences and the control points. The
+    # bound it was built from is georeferencing-synthetic.md §10.4.
+    coast_bend: bool = True
+    coast_bend_knots_across: int = 6
+    # Against the observations' mean squared px, weights summing to 1. Stiffer
+    # than the ceiling's best (1e-4): real correspondences are noisy, and at
+    # 1e-4 the bend tilted maps that were already right (10 maps, 2026-10-29).
+    # 3e-3 was the best fixed ridge of the sweep with no piecewise step under
+    # the bend (W7, §10.5).
+    coast_bend_ridge: float = 3e-3
+    # The same on the correction's affine part. Near 0 lets the bend take out
+    # what alignment left of the affine; at the ridge it is safer on maps
+    # without a bend but keeps little of the gain on the bent ones.
+    coast_bend_affine_ridge: float = 1e-8
+    # Each observation is weighted by 1/σ², a coast match counting as the
+    # share of an independent one its spacing is of the correlation length,
+    # so the balance follows how many control points and how much coast a map
+    # has; the weights then sum to 1, so the ridges keep their scale. Better
+    # than a fixed share of 0.9 on every twin, and more weight on the control
+    # points made the bend refuse itself (georeferencing-synthetic.md §10.5).
+    coast_bend_gcp_sigma_px: float = 4.0
+    coast_bend_coast_sigma_px: float = 2.0
+    coast_bend_coast_correlation_px: float = 20.0
+    # One search per entry, as ICP's.
+    coast_bend_search_radius_px: tuple = (40.0, 30.0, 22.0, 16.0, 12.0, 9.0, 7.0, 5.0)
+    # Refused past this correction anywhere on the image.
+    coast_bend_max_ratio_of_diagonal: float = 0.10
+    # After the bend, a local correction at the control points this far
+    # from the reference coast (share of the diagonal): what the coast
+    # cannot show and only the piecewise step followed (§10.6). Each
+    # point's pull fades out over the radius, the piecewise step's reach.
+    coast_bend_inland: bool = False
+    coast_bend_inland_min_ratio_of_diagonal: float = 0.05
+    coast_bend_inland_radius_ratio_of_diagonal: float = 0.15
+    # Where the bend refuses and no piecewise step ran (``transform_model``
+    # affine), run it then, as PROD does: the piecewise step, then the
+    # second alignment. The inland correction is skipped, since the
+    # piecewise step pins every control point (§10.6).
+    coast_bend_fallback_piecewise: bool = True
 
     # Reference curve sampling. Coastline sets the transform first; lakes are
     # admitted in the fine stage.
@@ -267,6 +350,13 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         (
             "snap_to_coastline",
             "coastline_snap_ratio_of_diagonal",
+            "coastline_snap_measured",
+            "coastline_snap_misfit_factor",
+            "coastline_snap_min_px",
+            "coastline_snap_stretches",
+            "coastline_snap_min_run_px",
+            "coastline_snap_max_angle_deg",
+            "coastline_snap_max_area_change",
         ),
     ),
     ("Land clipping", ("clip_to_land_mask", "land_coverage_threshold")),
@@ -320,6 +410,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "water_min_component_px",
             "edge_water_filter",
             "edge_water_margin_px",
+            "coast_line_max_width_px",
             "edge_water_min_fraction",
         ),
     ),
@@ -328,6 +419,20 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         (
             "enable_curve_alignment",
             "align_after_piecewise",
+            "post_align_max_gcp_shift_ratio_of_diagonal",
+            "coast_bend",
+            "coast_bend_knots_across",
+            "coast_bend_ridge",
+            "coast_bend_affine_ridge",
+            "coast_bend_gcp_sigma_px",
+            "coast_bend_coast_sigma_px",
+            "coast_bend_coast_correlation_px",
+            "coast_bend_search_radius_px",
+            "coast_bend_max_ratio_of_diagonal",
+            "coast_bend_inland",
+            "coast_bend_inland_min_ratio_of_diagonal",
+            "coast_bend_inland_radius_ratio_of_diagonal",
+            "coast_bend_fallback_piecewise",
             "curve_sample_spacing_px",
             "curve_max_samples",
             "use_lakes_for_alignment",

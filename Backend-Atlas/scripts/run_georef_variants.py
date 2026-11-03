@@ -71,6 +71,8 @@ SUMMARY_METRICS: Tuple[Tuple[str, str, str], ...] = (
     ("rawMeanBoundaryKm", "lower", "Before cleaning: zone outline distance, mean (km)"),
     ("rawMeanBoundaryP90Km", "lower", "Before cleaning: zone outline distance, p90 (km)"),
     ("rawMeanIou", "higher", "Before cleaning: mean IoU"),
+    ("unsnappedMeanIou", "higher", "Cleaned, not snapped: mean IoU"),
+    ("snappedMeanIou", "higher", "Cleaned and snapped: mean IoU"),
     ("meanBoundaryKm", "lower", "Shipped output: zone outline distance, mean (km)"),
     ("meanIou", "higher", "Shipped output: mean IoU (the regression score)"),
 )
@@ -84,6 +86,8 @@ MIN_TIE: Dict[str, float] = {
     "rawMeanIou": 0.001,
     "meanBoundaryKm": 0.1,
     "meanIou": 0.001,
+    "unsnappedMeanIou": 0.001,
+    "snappedMeanIou": 0.001,
 }
 NOISE_VARIANT = "N1"
 
@@ -133,9 +137,15 @@ def _metrics(record: dict, report: Optional[dict], zones_out: int) -> Dict[str, 
         keys = ("meanIou", "meanBoundaryKm", "meanBoundaryP90Km", "maxBoundaryKm")
         mean = (report.get("metrics") or {}).get("mean") or {}
         raw_mean = ((report.get("raw") or {}).get("metrics") or {}).get("mean") or {}
+        both = {
+            prefix: (((report.get(prefix) or {}).get("metrics") or {}).get("mean") or {})
+            for prefix in ("unsnapped", "snapped")
+        }
         for key in keys:
             row[key] = mean.get(key)
             row["raw" + key[0].upper() + key[1:]] = raw_mean.get(key)
+            for prefix, values in both.items():
+                row[prefix + key[0].upper() + key[1:]] = values.get(key)
     return row
 
 
@@ -192,13 +202,15 @@ def run_variant(
         config=config,
         record=record,
     )
-    georef = placement.georeference(pixel_features, check_points=inputs.check_points)
+    georef = placement.georeference(pixel_features, check_points=inputs.check_points, score_snapping=True)
     def _flat(collections: List[dict]) -> dict:
         features = [f for fc in collections for f in fc.get("features", [])]
         return {"type": "FeatureCollection", "features": features}
 
     zones = _flat(georef.collections)
     raw_zones = _flat(georef.raw_collections)
+    unsnapped_zones = _flat(georef.unsnapped_collections)
+    snapped_zones = _flat(georef.snapped_collections)
 
     report = None
     if expected is not None:
@@ -210,6 +222,8 @@ def run_variant(
             cleaned_expected=cleaned,
             zones=zones,
             raw_zones=raw_zones,
+            unsnapped_zones=unsnapped_zones,
+            snapped_zones=snapped_zones,
         )
 
     record_dict = record.to_dict()
@@ -369,7 +383,7 @@ def _select_variants(args: argparse.Namespace) -> List[Variant]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--stage", default="", help="Comma-separated stages: 1, 2, 3, E, N")
+    parser.add_argument("--stage", default="", help="Comma-separated stages: 1, 2, L, 3, S, R, E, N")
     parser.add_argument("--variants", default="", help="Comma-separated variant names")
     parser.add_argument("--test-id", default="", help="Only cases of these maps (comma-separated)")
     parser.add_argument("--case-id", default="", help="Only cases with these ids (comma-separated)")

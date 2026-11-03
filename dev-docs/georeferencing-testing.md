@@ -43,9 +43,9 @@ points the model was fitted to, and IoU mixes placement with extraction) and one
 
 ### The corpus protocol
 
-- **Modern maps** with expected zones loaded from administrative borders (§7), and
-  **historical maps** (Quebec 1791, traité 1783, the `pip_7sift` map, Leclerc), judged mainly
-  on their check points.
+- **Modern maps** with expected zones loaded from administrative borders (§7; Test 1, the
+  `pip_7sift` map, is one of them), and **historical maps** (Quebec 1791, traité 1783,
+  Leclerc), judged mainly on their check points.
 - **Per case:** framing box and legend answer; at least 6 well-spread SIFT points; 3–6 cities
   in the fit; **at least 5 check points**, placed as §3 describes, with cities among them (the
   only check points that are inland, see §8.2); a water pick if the sea is painted.
@@ -208,6 +208,7 @@ docker compose run --rm georef-dev python scripts/run_georef_variants.py \
 |---|---|
 | 1. Base transform | `A0` affine, no snapping, clipping on (the floor) · `A1` piecewise · `A1La/b/c` piecewise, local regularization at reach 0.1, 0.175, 0.25 of the diagonal · `A2` A0 + snapping · `A3` / `A4` SIFT / cities only |
 | 2. Alignment | `B1` chamfer only · `B2` chamfer + ICP · `B3` B2 + piecewise · `B3La/b/c` B2 + local piecewise, same reaches · `B4` ICP at 60° · `B5a/b/c/d` coastline weight ×3, ×10, ×30, ×100 · `B6` chamfer only at ×10 · `B7` B3Lb then align again (align → piecewise → align) · `B8` local piecewise at 0.175 then align (piecewise → align; the GCP affine is aligned when the correction is refused) · `B7a/b` B7 with coastline weight ×3, ×10 · `B9` / `B10` ICP only at ×1 / ×10 |
+| L. Coast line centre | `L1` / `L2`: `B5b` / `PROD` on the coast's sea-side flank, the evidence before config v21 · `L3`: `B5b` keeping both flanks with an 8 px water margin (§8.10) |
 | 3. Production | `PROD`: the file defaults, no overrides (= `B7b` + snapping) |
 | Extraction | `E2` zone gap fill on (`E1`, label text fill, was removed with the method) |
 | Noise | `N1` |
@@ -384,6 +385,49 @@ starts beyond ICP's 40 px search radius and only the chamfer's wide basin brings
 control-point error says nothing about this (it is 3–8 px on those cases): what matters is how
 far off the coast is *away* from the points. **The chamfer stays.** ICP-only could become a
 fast path for maps with well-spread points, but no measured case asks for it.
+
+### 8.10 The coast line's centre (2026-10-27)
+
+Does moving the alignment evidence from a drawn coast's sea-side flank to its centre (config
+v21, [history](georeferencing-history.md#2026-10-27--alignment-is-biased-by-the-coastlines-drawn-width))
+change anything on real maps? Run `coast-line-centre-2026-10-27`: the 17 regression cases (14
+with check points; the probe cases were skipped for missing inputs, the historical
+`quebec_traite1783` among them). `B5b` and `PROD` with the fix against `L1` and `L2`, the same
+configurations on the sea-side flank; `L3`, both flanks kept by a water margin of 8 px instead.
+
+**Check-point error (km):**
+
+| Case | A0 | L1 (B5b, flank) | B5b | L3 | L2 (PROD, flank) | PROD |
+|---|---|---|---|---|---|---|
+| Test 1 protocol / minimal-4 / clustered / 7sift-5-checkpoints | 18.0 / 20.0 / 31.0 / 18.8 | 17.2 / 17.5 / 15.4 / 17.8 | 17.0 / 17.4 / 15.4 / 17.9 | 17.0 / 17.4 / 15.4 / 17.8 | 16.7 / 17.9 / 14.7 / 17.8 | 16.5 / 18.0 / 14.7 / 17.6 |
+| central africa protocol / minimal / clustered | 91.5 / 106.4 / 159.5 | 62.5 / 65.3 / 68.2 | 64.5 / 67.4 / 65.8 | 63.6 / 63.5 / 65.5 | 68.7 / 59.1 / 58.2 | 69.8 / 59.5 / 57.4 |
+| Maghreb protocol / minimal / clustered | 32.2 / 131.9 / 108.2 | 20.5 / 35.4 / 37.3 | 20.9 / 32.5 / 34.7 | 20.7 / 36.0 / 38.0 | 29.0 / 29.0 / 37.3 | 28.8 / 29.7 / 34.7 |
+| east asia protocol / minimal / clustered | 113.8 / 112.0 / 144.4 | 114.0 / 112.6 / 111.2 | 114.5 / 112.8 / 112.1 | 113.8 / 112.2 / 111.3 | 108.6 / 112.6 / 110.1 | 109.3 / 112.7 / 111.0 |
+| south-america protocol | 129.3 | 135.3 | 131.1 | 132.1 | 116.3 | 111.4 |
+
+| Comparison | Check points: better / worse / tie, median | Raw boundary distance | Raw IoU |
+|---|---|---|---|
+| `B5b` vs `L1` | 5 / 6 / 3, +0.04 km | 5 / 4 / 5, +0.03 km | 5 / 4 / 5 |
+| `PROD` vs `L2` | 6 / 5 / 3, +0.01 km | 6 / 5 / 3, +0.02 km | 4 / 4 / 6 |
+| `B5b` vs `L3` | 3 / 8 / 3, +0.16 km | 6 / 2 / 6 | 6 / 2 / 6 |
+
+Japon and Italie (no check points): raw boundary distance and IoU slightly better with the fix
+under both `B5b` and `PROD`. Ties under 0.1 km / 0.001 IoU.
+
+**Reading.** On these maps the fix is neutral: per-case changes of ±0.5–3 km either way on
+errors of 15–135 km, no map consistently better or worse, the largest gains on Maghreb
+(`minimal`, `clustered`: −2.6 to −2.9 km under `B5b`), the largest loss on central africa
+(`minimal`, `protocol`: +2.0 to +2.1 km). Expected: their coasts are drawn thin. The median gap
+between a line's flanks is 2.2–3.0 px, so a 1–2 px line whose sea-side flank was already within
+a pixel of its centre; 44–79% of the coast edges pair, 2–11% are merged strokes. The bias the fix
+removes is ~1–3 px on lines 2–4 px wide, which these maps do not have. It is a fix for scanned and
+historical maps, and for the synthetic corpus, whose coasts are now drawn 0–4 px wide. It costs
+~0.3 s per aligned run (`B5b` 3.0 s median against 2.7 s).
+
+**Not a regression** under the decision rules: no case is worse by more than ~2 km, within the
+click noise at these scales. These numbers are now the real baseline for step 2 of the synthetic
+plan ([synthetic §7](georeferencing-synthetic.md#7-how-results-are-read)). Alongside: `PROD` now beats `A0` on
+13 of 14 cases (8 of 12 on 2026-10-04, before `B7b` became the default).
 
 ---
 

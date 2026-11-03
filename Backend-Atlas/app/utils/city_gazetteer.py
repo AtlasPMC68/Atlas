@@ -212,6 +212,11 @@ def _cities_in_frame(bounds: Dict[str, float]) -> Tuple[_FrameCity, ...]:
     return _read_frame(ensure_gazetteer(), _frame_key(bounds))
 
 
+def cities_in_frame(bounds: Dict[str, float]) -> Tuple[_FrameCity, ...]:
+    """Every gazetteer city inside *bounds* (the synthetic maps' simulated user)."""
+    return _cities_in_frame(bounds)
+
+
 @lru_cache(maxsize=FRAME_CACHE_SIZE)
 def _read_frame(
     path: str, frame: Tuple[float, float, float, float]

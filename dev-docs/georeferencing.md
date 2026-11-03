@@ -12,7 +12,9 @@ Keep this document true: when the code changes, change it here.
 **Status (2026-10-07).** Still experimental. The production defaults are the ones in
 [§8](#8-configuration-and-switches): curve alignment is on everywhere at a coastline weight
 of ×10, only on maps whose coastline the water picks identify, behind four lenient checks.
-Still open: the transform model (piecewise today, affine expected);
+Since config v22 (2026-10-31) the aligned affine is bent to the drawn coast, with the
+piecewise correction only where the bend refuses, and snapping only snaps the coast
+([§5.5](#55-the-bend-to-the-coast), [§6](#6-cleaning));
 [§10](#10-before-the-pull-request) lists what remains.
 
 ---
@@ -41,7 +43,8 @@ inputs (control points, framing box, legend, pipette picks)
   -> control-point affine
   -> curve alignment (optional)          coastline -> better affine
   -> transform model                      affine | piecewise correction
-  -> cleaning                             snap to coast, clip ocean and lakes
+  -> bend to the coast                    smooth correction; piecewise where it refuses
+  -> cleaning                             snap the shore to the coast, clip ocean and lakes
   -> EPSG:4326, saved with the map
 ```
 
@@ -99,8 +102,11 @@ they produce identical zones.
 `control_points.py`); a city also carries `city: {id, name}` (its GeoNames id).
 
 - **SIFT points.** `sift_key_points_finder.py` renders the Natural Earth coastline and the
-  lake shorelines over the framing box (1024×768), separately, runs SIFT on each render, and
-  returns up to 15 keypoints by **farthest-point sampling**: the strongest coastline keypoint
+  lake shorelines over the framing box (1024×768), separately, with each line clipped to the
+  box (never joined across it), and runs SIFT on each render, keeping detections on the drawn
+  line (its Canny outline widened by 5 px). Each chosen keypoint is snapped onto the vector
+  curve before its lon/lat is computed, so a suggestion lies exactly on the reference
+  coastline. It returns up to 15 keypoints by **farthest-point sampling**: the strongest coastline keypoint
   first, then always the candidate farthest from those chosen. **Coastline first:** a lake
   keypoint is taken only when no coastline candidate is at least 5% of the diagonal from every
   chosen point, because a map may omit or distort a lake but always draws its coast. Below
@@ -182,7 +188,15 @@ that affine; nothing ever searches the world for where the map might be.
    found with Hough) down-weighted to 0.15. The water picks give a water mask, split into ocean
    (the largest component touching the image border) and lakes, and **only edges on the
    water/land boundary are kept**. That is what identifies the map's coastline: rivers, borders
-   and roads lie inside the land and are dropped.
+   and roads lie inside the land and are dropped. **A coast drawn as a line is then moved to
+   its centre** (`centre_drawn_coast_lines`), since the reference coastline is the line's
+   centre and the filter keeps only its sea-side flank once it is over ~1 px wide. The two
+   flanks of a line have opposite grey gradients along the coast's normal; each kept edge
+   takes the nearest opposite-gradient edge: within `coast_line_max_width_px` (8) and landward,
+   the pair becomes its midpoint; seaward, the edge is itself a land-side flank and is dropped;
+   landward but up to twice as far, the strokes have merged into a dark mass (islands, a delta)
+   and the edge is dropped; with nothing there, the coast is a plain colour change and the edge
+   is kept. The run record has the paired share, the merged share and the median flank gap.
 3. **The loop** (`align.py`). Push every reference point *into the image* through the current
    affine; measure how far each lands from the map's coastline edges; nudge the affine's six
    parameters to bring them closer, while keeping the control points close to where the user
@@ -252,8 +266,9 @@ replaced (a probe fit, eight neutralised gates and a recovery ladder):
 
 `transform_model` decides what places the map, given the affine from §5.1 or §5.2:
 
-- **`affine`**: that affine as-is.
-- **`piecewise_affine`** (`piecewise.py`, the default): the affine plus a correction that
+- **`affine`** (the default since config v22): that affine as-is; the bend (§5.5) then
+  corrects it.
+- **`piecewise_affine`** (`piecewise.py`): the affine plus a correction that
   passes exactly through every control point. The control points and 8 anchors on a frame (padded 25% around
   image ∪ zones ∪ control points) are triangulated; inside each triangle the correction is
   linear; the anchors pin it to zero. Geometries are densified to 1% of the image diagonal
@@ -274,34 +289,66 @@ replaced (a probe fit, eight neutralised gates and a recovery ladder):
   points the fit is exact and the affine is kept. The run record has `autoAffineRmsePx`,
   `autoThresholdPx` and `autoChoseModel`. The threshold is a first guess, not measured.
 
-Piecewise is the default since the 2026-10-08 run, where local piecewise between two
+Piecewise was the default from the 2026-10-08 run, where local piecewise between two
 alignments (`B7b`, §5.4) had the best mean raw IoU of every variant
-([history](georeferencing-history.md#2026-10-08--local-piecewise-between-two-alignments)).
+([history](georeferencing-history.md#2026-10-08--local-piecewise-between-two-alignments)),
+to config v22, where the bend replaced it (§5.5). Its settings still apply where the bend
+falls back to it.
 `auto` stays as the switch for gating away its small losses on maps the affine already fits.
 The roadmap's version compares leave-one-out errors instead of an in-sample threshold
 ([roadmap](georeferencing-roadmap.md#2-transform-model-affine-by-default-piecewise-by-leave-one-out)).
 
 ### 5.4 Alignment after the piecewise correction
 
-`align_after_piecewise` (on; `post_align.py`) runs the alignment stages again on the model §5.3
-produced. Alignment fits six affine parameters and cannot move a piecewise model, so it fits an
+`align_after_piecewise` (off since config v22; `post_align.py`) runs the alignment stages
+again on the model §5.3 produced. The bend's fallback (§5.5) runs it after its own piecewise
+step whatever this switch says. Alignment fits six affine parameters and cannot move a piecewise model, so it fits an
 affine `M` *in front of* it, in pixel space: the placement becomes `P(M(pixel))`. The reference
 curves and the control-point targets are pushed through `P`'s inverse once, the same staged fit
 (`gates.fit_stages`) runs from the identity, and `M` is folded back into an ordinary piecewise
 model on the same triangles. Without a piecewise model (refused, or `auto` kept the affine) the
 control-point affine is aligned instead; an already aligned affine is left as it is.
 
-It has no checks of its own: `M` is kept only when it keeps the map's orientation and the
-coastline chamfer does not get worse; otherwise `P` is used. **It does not go through §5.2's
-precondition or its other checks.** It runs whenever the alignment evidence could be built,
-even when the first alignment was skipped or refused, and nothing checks the water agreement
-or how far it moves the clicks (the run record logs the latter as `postAlignment.gcpRmsPx`).
+Its checks are its own: `M` is kept only when it keeps the map's orientation, the coastline
+chamfer does not get worse, and it pulls the map off the clicks by no more than
+`post_align_max_gcp_shift_ratio_of_diagonal` (2% of the diagonal, RMS, since config v23: the
+start sits on the clicks, so the first alignment's 5% would let a shear through,
+[synthetic §10.12](georeferencing-synthetic.md#1012-q6-and-the-second-alignments-guard-2026-11-01));
+otherwise `P` is used. **It does not go through §5.2's precondition or its water check.** It
+runs whenever the alignment evidence could be built, even when the first alignment was skipped
+or refused (the run record logs the pull as `postAlignment.gcpRmsPx` against `baseGcpRmsPx`).
 With no water picks it finds no edges and skips itself; with a water mask under
 `edge_water_min_fraction` it runs on the edges around that small patch, which the first
 alignment refuses to trust ([§9](#9-known-limitations)). The evidence is built once and
 shared with the first alignment. The run record has `postAlignment` (applied or why not, the
 chamfer before and after). With `enable_curve_alignment` also on, the pipeline is
-align → piecewise → align (`B7b`).
+align → piecewise → align (`B7b`, production up to config v21).
+
+### 5.5 The bend to the coast
+
+`coast_bend` (on since config v22; `bend.py`) bends the aligned affine to the map's drawn
+coast with a smooth correction in pixels: Gaussians on a grid of `coast_bend_knots_across`
+(6) knots across the image, fitted by ridge (`coast_bend_ridge`, 3e-3) to two kinds of
+observation. The coast gives one per normal-search correspondence, along the coast's normal
+only (ICP's search, Tukey-weighted, over a shrinking radius); the control points give both
+components. Their balance follows the counts: each observation weighs 1/σ² (2 px for a coast
+match, discounted by its spacing against a 20 px correlation length; 4 px for a click), so a
+map with many control points gives them more say.
+
+It is refused, and the affine kept, when the correction would fold the map, move it more than
+`coast_bend_max_ratio_of_diagonal` (10%) of the diagonal anywhere, or make the coastline
+chamfer worse, or when there is no coast to match or no alignment evidence at all. Where it
+is refused, `coast_bend_fallback_piecewise` (on) runs §5.3's piecewise correction and §5.4's
+alignment instead: the old pipeline, map by map. The run record has `coastBend` (applied or
+why not, the coast's share, the chamfer before and after, the largest correction) and
+`bendFallback`.
+
+Being smooth, the bend does not pass through the control points, and it spreads a control
+point's pull over about a sixth of the image. A badly placed point moves its whole region
+(c0d9544d's SIFT pair 380 km down the Chilean coast moved check points 50–90 km;
+[georeferencing-synthetic.md §10.9](georeferencing-synthetic.md#109-step-7-c7-on-the-real-corpus-and-production-2026-10-31)),
+where the piecewise correction keeps it local. Why the bend, and the runs that chose its
+settings: [georeferencing-synthetic.md §10.4–10.9](georeferencing-synthetic.md#10-results).
 
 ---
 
@@ -311,10 +358,17 @@ align → piecewise → align (`B7b`).
 
 1. **Raw copy.** The zone straight out of the transform is kept (`raw_collections`, property
    `cleaned: false`). Dev-test runs score it separately; production does not save it.
-2. **Coastline snap** (`snapping.py`, `snap_to_coastline`): every boundary vertex within the
-   tolerance of the Natural Earth coastline moves onto it. Tolerance: 1.5% of the image
-   diagonal, converted to metres with the transform's scale. Nearest point, no orientation
-   test.
+2. **Coastline snap** (`snapping.py`, `snap_to_coastline`): the shore moves onto the Natural
+   Earth coastline. With `coastline_snap_stretches` (on since config v22) only runs of
+   consecutive boundary vertices near the coast and along it are snapped (ends leaving it at
+   more than 45° trimmed, at least 20 px long), onto the coast's own vertices between them; a
+   polygon whose snap would change more than 25% of its area is left as it is. With
+   `coastline_snap_measured` (on) the tolerance is 3× how far the reference coast sits from
+   the drawn edges under the applied transform (`snapMisfitPx` in the run record), at least
+   `coastline_snap_min_px` (5 px) and at most 1.5% of the image diagonal; without alignment
+   evidence it is the 1.5%. Converted to metres with the transform's scale. With both off,
+   every vertex within 1.5% of the diagonal moves to its nearest point (production up to
+   config v21). [georeferencing-synthetic.md §10.8–10.9](georeferencing-synthetic.md#108-snapping-that-only-snaps-the-coast-2026-10-31).
 3. **Clip to land** (`clip_to_land_mask`): intersect with land minus ocean **and lakes**
    (`cleaning.py`, `land_mask_3857`; the same mask cleans expected zones in dev-test). A zone
    with less than 1% of its area left is dropped.
@@ -330,6 +384,12 @@ align → piecewise → align (`B7b`).
   inputs, the models (`gcp_affine`, `aligned_affine`, `applied`), every gate, errors
   (`gcpRmseKm` with `gcpRmseKind`, per-source error, check points), per-phase timings, the
   config and any per-run switches.
+- **Predicted quality** (`errors.predictedQuality`, every run, imports included): the snapped
+  IoU the run expects of its zones, from the error the fitted estimator predicts inside each
+  one over its width (`quality.predict_quality`, models in `quality_model.json`;
+  georeferencing-synthetic.md §10.13). Blind: computed before the check points are measured.
+  An import logs it and returns it in the task result (`predicted_quality`); nothing stores it
+  with the map yet.
 - **Debug dumps** (`debug.py`) when `GEOREF_DEBUG=true` (off by default; set on
   `celery-worker` in `docker-compose.yml`): a folder of overlays and a `summary.txt` per
   import under `Backend-Atlas/debug_runs/` (newest 20 kept), or per case under
@@ -339,7 +399,7 @@ align → piecewise → align (`B7b`).
 
 ## 8. Configuration and switches
 
-Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 20), so a run
+Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 22), so a run
 records exactly what it used and a variant is a set of overrides. **The file defaults are the
 production configuration**, and every container runs them: the app, the regression suite, the
 dev-test UI and the CLI. `ambient_georef_config()` lets a deployment override two of them
@@ -353,9 +413,12 @@ Current defaults, and where each stands:
 | Curve alignment | on | Supported by the first corpus run: lower check-point error on 11 of 12 cases, worse on none |
 | `weight_curve` / `weight_gcp` | 10 / 1 | The gain grows to ×30 and stops there, mostly at the coast ([testing §8](georeferencing-testing.md#8-results)). ×10 takes most of it (10 of 12 cases better, the 2 worse within 0.7 km) and leaves the control points more say inland |
 | `enable_icp` | on, 30° | Kept: removing it is worse at high weight |
-| `transform_model` | `piecewise_affine`, `local` at 0.175 | Best mean raw IoU on the 2026-10-08 run (`B7b`: 14 cases better than `B2`, 3 worse); 0.175 the most even of 0.1 / 0.175 / 0.25 |
-| `align_after_piecewise` | on | A gain over the same piecewise without it (`B7` vs `B3Lb`, 2026-10-08) |
-| `snap_to_coastline` | on | Kept: improves the shipped zones on 9 of 12 cases, worse on none |
+| `transform_model` | `affine` | The bend replaced the piecewise correction (config v22) |
+| `coast_bend` | on, ridge 3e-3, with `coast_bend_fallback_piecewise` | `C7` against v21's production: snapped IoU 0.894 against 0.876 on 18 real cases (9 better, none worse by more than 0.005), 0.768 against 0.712 on 196 synthetic ones; check points even once c0d9544d's wrong point is removed ([synthetic §10.6–10.9](georeferencing-synthetic.md#109-step-7-c7-on-the-real-corpus-and-production-2026-10-31)) |
+| Piecewise fallback | `local` at 0.175, then the second alignment | v21's production, where the bend refuses; 0.175 the most even of 0.1 / 0.175 / 0.25 |
+| `post_align_max_gcp_shift_ratio_of_diagonal` | 0.02 | The second alignment's pull off the clicks: at most 0.013 on 255 synthetic fallback runs and 6 px on the real corpus; the one front past it sheared a map from 20 to 94 km (config v23, [synthetic §10.12](georeferencing-synthetic.md#1012-q6-and-the-second-alignments-guard-2026-11-01)) |
+| `align_after_piecewise` | off | Runs only in the fallback |
+| `snap_to_coastline` | on: stretches, measured, 5 px floor | Snapping costs more than 0.01 IoU on 2 of 196 synthetic cases and on no real one (old snapping: 53 and 4); the floor is in pixels, which is open |
 | `clip_to_land_mask`, lake cut | on | Kept (production behaviour; expected zones are cut the same way when scored) |
 | Text fill | `palette` inpaint | Kept; `label` (worse on every case) and `telea` (consistently worse than `palette`) were removed |
 | `zone_gap_fill` | off | Off: worse in its current form |
@@ -389,6 +452,16 @@ Verified in the code. Ordered roughly by impact.
    it runs even when the first alignment was skipped (water mask too small) or refused by a
    check, with only the mirror and chamfer-not-worse checks. Running it only when the first
    alignment applied (`method: joint`), with the same four checks, would close it.
+10. **The coast line's centre is found only for lines up to ~5 px** ([§5.2](#52-curve-alignment)):
+    wider, or where strokes merge (dense islands, deltas), the evidence there is dropped. An
+    aliased 1 px line gives Canny a single edge, ~1 px landward of the line, with nothing to
+    pair. On a perfect synthetic map, aligned placement stays within 0.2–0.35 px at every drawn
+    width from 0 to 4 px
+    ([history, 2026-10-27](georeferencing-history.md#2026-10-27--alignment-is-biased-by-the-coastlines-drawn-width)).
+    A coast drawn as a plain colour change, with no line at all (italie), is found to the
+    pixel only: Canny marks one of the two pixels either side of the step, and a single edge
+    is kept where it is, so the same map places ~0.7 px off. Sub-pixel edge positions would
+    close it; under 1 km at the corpus's scales, it has not been worth it yet.
 
 ---
 
@@ -418,7 +491,8 @@ removed; the debug dumps are off by default. Still to settle before `georef-exp`
 | `control_points.py` | `ControlPoint`, `CityRef`, parsing, per-source selection and weights |
 | `affine.py` | `AffineModel` (fit, apply, inverse, serialize) |
 | `piecewise.py` | `PiecewiseAffineModel`, leave-one-out, local anchors |
-| `post_align.py` | alignment after the piecewise correction (§5.4) |
+| `post_align.py` | alignment after the piecewise correction (§5.4), the coast misfit for snapping |
+| `bend.py` | the bend to the coast (§5.5) |
 | `projection.py` | EPSG:3857 maths, km units |
 | `frame.py`, `inputs.py` | framing box; `maps.georef_inputs` |
 | `reference.py` | reference rasters and distance fields over the framing box |
@@ -429,6 +503,7 @@ removed; the debug dumps are off by default. Still to settle before `georef-exp`
 | `pipeline.py` | transform → snap → clip → EPSG:4326 |
 | `snapping.py`, `cleaning.py` | the snap; the shared ocean + lake mask |
 | `records.py`, `diagnostics.py`, `debug.py`, `gcp_overlay.py` | run record; dev-tool diagnostics; debug dumps; control-point overlay |
+| `quality.py`, `quality_model.json` | the run's blind quality inputs, and the fitted models that predict its error and snapped IoU (§7) |
 | `checkpoints.py`, `requirements.py` | dev-test only: check points; what a case must have |
 
 Elsewhere: `app/utils/extraction_steps.py` (`extract_zone_colors`, `place_map`,

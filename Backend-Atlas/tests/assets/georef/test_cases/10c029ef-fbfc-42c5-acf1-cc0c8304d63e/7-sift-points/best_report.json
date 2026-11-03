@@ -1,7 +1,7 @@
 {
   "testId": "10c029ef-fbfc-42c5-acf1-cc0c8304d63e",
   "testCaseId": "7-sift-points",
-  "evaluatedAt": "2026-10-05T17:04:06.030959Z",
+  "evaluatedAt": "2026-11-01T01:25:17.099508Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,19 +16,19 @@
           "area": 8.577156482553514
         },
         "bestMatch": {
-          "iou": 0.8958155945723725,
-          "intersectionArea": 7.830459108718793,
-          "unionArea": 8.74115069682031,
-          "precision": 0.9794865004971297,
-          "recall": 0.9129434824520748,
-          "falseNegativeArea": 0.7466973738347286,
-          "falsePositiveArea": 0.16399421426677963,
+          "iou": 0.7873598377571692,
+          "intersectionArea": 6.841032598103909,
+          "unionArea": 8.688571946457042,
+          "precision": 0.9839746427575106,
+          "recall": 0.7975874769242006,
+          "falseNegativeArea": 1.736123884449613,
+          "falsePositiveArea": 0.11141546390352018,
           "boundary": {
-            "meanKm": 6.054,
-            "p90Km": 26.238,
-            "maxKm": 79.149,
-            "expectedToExtractedMeanKm": 9.535,
-            "extractedToExpectedMeanKm": 2.573,
+            "meanKm": 10.983,
+            "p90Km": 30.653,
+            "maxKm": 73.274,
+            "expectedToExtractedMeanKm": 14.179,
+            "extractedToExpectedMeanKm": 7.788,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -36,7 +36,7 @@
             "index": 7,
             "id": null,
             "name": "Hokkaido",
-            "area": 7.994453322985578
+            "area": 6.952448062007432
           },
           "matchedBy": "name"
         }
@@ -49,19 +49,19 @@
           "area": 6.8755544482867625
         },
         "bestMatch": {
-          "iou": 0.9060476124449803,
-          "intersectionArea": 6.2841024598617485,
-          "unionArea": 6.935730941229482,
-          "precision": 0.9905148412624409,
-          "recall": 0.9139775573194114,
-          "falseNegativeArea": 0.591451988425017,
-          "falsePositiveArea": 0.060176492942708236,
+          "iou": 0.9678901938157333,
+          "intersectionArea": 6.7492769748375965,
+          "unionArea": 6.973184580194768,
+          "precision": 0.9857409878086694,
+          "recall": 0.9816338486737413,
+          "falseNegativeArea": 0.12627747344917092,
+          "falsePositiveArea": 0.09763013190800389,
           "boundary": {
-            "meanKm": 3.624,
-            "p90Km": 9.102,
-            "maxKm": 18.015,
-            "expectedToExtractedMeanKm": 3.655,
-            "extractedToExpectedMeanKm": 3.592,
+            "meanKm": 1.375,
+            "p90Km": 3.84,
+            "maxKm": 12.97,
+            "expectedToExtractedMeanKm": 1.553,
+            "extractedToExpectedMeanKm": 1.198,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -69,7 +69,7 @@
             "index": 6,
             "id": null,
             "name": "Tohoku",
-            "area": 6.344278952804454
+            "area": 6.84690710674559
           },
           "matchedBy": "name"
         }
@@ -82,19 +82,19 @@
           "area": 3.1866363163339217
         },
         "bestMatch": {
-          "iou": 0.8972075596276484,
-          "intersectionArea": 2.9116034922274494,
-          "unionArea": 3.2451838607287247,
-          "precision": 0.9802880245237011,
-          "recall": 0.9136918064051675,
-          "falseNegativeArea": 0.27503282410647,
-          "falsePositiveArea": 0.05854754439480265,
+          "iou": 0.928342310460143,
+          "intersectionArea": 3.0176289522902047,
+          "unionArea": 3.2505563069666445,
+          "precision": 0.9792571879218329,
+          "recall": 0.9469637111780135,
+          "falseNegativeArea": 0.16900736404371683,
+          "falsePositiveArea": 0.06391999063272502,
           "boundary": {
-            "meanKm": 3.049,
-            "p90Km": 7.395,
-            "maxKm": 12.087,
-            "expectedToExtractedMeanKm": 3.327,
-            "extractedToExpectedMeanKm": 2.771,
+            "meanKm": 2.133,
+            "p90Km": 5.412,
+            "maxKm": 9.539,
+            "expectedToExtractedMeanKm": 2.28,
+            "extractedToExpectedMeanKm": 1.986,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -102,7 +102,7 @@
             "index": 5,
             "id": null,
             "name": "Kanto",
-            "area": 2.970151036622251
+            "area": 3.0815489429229292
           },
           "matchedBy": "name"
         }
@@ -115,19 +115,19 @@
           "area": 6.572085106422372
         },
         "bestMatch": {
-          "iou": 0.8916810022321316,
-          "intersectionArea": 6.118878945212905,
-          "unionArea": 6.8621838189841515,
-          "precision": 0.9547355712482685,
-          "recall": 0.9310407345810868,
-          "falseNegativeArea": 0.453206161209464,
-          "falsePositiveArea": 0.2900987125617807,
+          "iou": 0.9519544922850582,
+          "intersectionArea": 6.448451959074197,
+          "unionArea": 6.773907798465684,
+          "precision": 0.969651976402298,
+          "recall": 0.9811881396320693,
+          "falseNegativeArea": 0.12363314734816767,
+          "falsePositiveArea": 0.2018226920433171,
           "boundary": {
-            "meanKm": 4.595,
-            "p90Km": 14.381,
-            "maxKm": 55.794,
-            "expectedToExtractedMeanKm": 7.247,
-            "extractedToExpectedMeanKm": 1.943,
+            "meanKm": 1.553,
+            "p90Km": 4.002,
+            "maxKm": 16.728,
+            "expectedToExtractedMeanKm": 1.97,
+            "extractedToExpectedMeanKm": 1.137,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -135,7 +135,7 @@
             "index": 4,
             "id": null,
             "name": "Chubu",
-            "area": 6.408977657774686
+            "area": 6.650274651117511
           },
           "matchedBy": "name"
         }
@@ -148,19 +148,19 @@
           "area": 3.1081247684002777
         },
         "bestMatch": {
-          "iou": 0.8870512802450671,
-          "intersectionArea": 2.9914882768081226,
-          "unionArea": 3.3723960986580837,
-          "precision": 0.9188295936578795,
-          "recall": 0.9624736777693172,
-          "falseNegativeArea": 0.11663649159215556,
-          "falsePositiveArea": 0.2642713302578084,
+          "iou": 0.9285348781675813,
+          "intersectionArea": 2.9525349801517424,
+          "unionArea": 3.179778217893578,
+          "precision": 0.9763065525974145,
+          "recall": 0.9499409451543298,
+          "falseNegativeArea": 0.15558978824853514,
+          "falsePositiveArea": 0.0716534494933046,
           "boundary": {
-            "meanKm": 3.233,
-            "p90Km": 10.145,
-            "maxKm": 21.528,
-            "expectedToExtractedMeanKm": 3.85,
-            "extractedToExpectedMeanKm": 2.616,
+            "meanKm": 2.008,
+            "p90Km": 5.563,
+            "maxKm": 19.697,
+            "expectedToExtractedMeanKm": 2.573,
+            "extractedToExpectedMeanKm": 1.443,
             "expectedHoles": 3,
             "extractedHoles": 1
           },
@@ -168,7 +168,7 @@
             "index": 3,
             "id": null,
             "name": "Kansai",
-            "area": 3.2557596070659263
+            "area": 3.024188429645045
           },
           "matchedBy": "name"
         }
@@ -181,19 +181,19 @@
           "area": 2.9702631125637766
         },
         "bestMatch": {
-          "iou": 0.9214521769552602,
-          "intersectionArea": 2.7862790148876995,
-          "unionArea": 3.0237912336311985,
-          "precision": 0.981150789999189,
-          "recall": 0.9380579798140267,
-          "falseNegativeArea": 0.1839840976760775,
-          "falsePositiveArea": 0.05352812106741925,
+          "iou": 0.9569919068392404,
+          "intersectionArea": 2.924878757168907,
+          "unionArea": 3.0563254885082753,
+          "precision": 0.9714167856030109,
+          "recall": 0.9847204258764484,
+          "falseNegativeArea": 0.045384355394871706,
+          "falsePositiveArea": 0.08606237594449367,
           "boundary": {
-            "meanKm": 3.229,
-            "p90Km": 12.595,
-            "maxKm": 37.414,
-            "expectedToExtractedMeanKm": 4.852,
-            "extractedToExpectedMeanKm": 1.605,
+            "meanKm": 1.844,
+            "p90Km": 5.519,
+            "maxKm": 23.096,
+            "expectedToExtractedMeanKm": 2.78,
+            "extractedToExpectedMeanKm": 0.907,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -201,7 +201,7 @@
             "index": 2,
             "id": null,
             "name": "Chugoku",
-            "area": 2.839807135955119
+            "area": 3.0109411331134006
           },
           "matchedBy": "name"
         }
@@ -214,19 +214,19 @@
           "area": 1.7406382466053834
         },
         "bestMatch": {
-          "iou": 0.9519735455291147,
-          "intersectionArea": 1.7083573135070638,
-          "unionArea": 1.7945428436853723,
-          "precision": 0.9694116993869364,
-          "recall": 0.9814545422282462,
-          "falseNegativeArea": 0.03228093309831975,
-          "falsePositiveArea": 0.053904597079988674,
+          "iou": 0.9544320186654437,
+          "intersectionArea": 1.7278777969795898,
+          "unionArea": 1.810372832415696,
+          "precision": 0.961207106449676,
+          "recall": 0.9926690972976843,
+          "falseNegativeArea": 0.012760449625794328,
+          "falsePositiveArea": 0.06973458581031129,
           "boundary": {
-            "meanKm": 1.662,
-            "p90Km": 3.653,
-            "maxKm": 26.368,
-            "expectedToExtractedMeanKm": 2.596,
-            "extractedToExpectedMeanKm": 0.727,
+            "meanKm": 1.423,
+            "p90Km": 2.97,
+            "maxKm": 26.262,
+            "expectedToExtractedMeanKm": 2.056,
+            "extractedToExpectedMeanKm": 0.789,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -234,7 +234,7 @@
             "index": 1,
             "id": null,
             "name": "Shikoku",
-            "area": 1.7622619105870523
+            "area": 1.7976123827899027
           },
           "matchedBy": "name"
         }
@@ -247,19 +247,19 @@
           "area": 3.4693127211150077
         },
         "bestMatch": {
-          "iou": 0.874256870231958,
-          "intersectionArea": 3.1080626183759503,
-          "unionArea": 3.5550908711204277,
-          "precision": 0.9731426341430011,
-          "recall": 0.8958727183800962,
-          "falseNegativeArea": 0.36125010273905694,
-          "falsePositiveArea": 0.08577815000542463,
+          "iou": 0.9353056604586273,
+          "intersectionArea": 3.3419647183231778,
+          "unionArea": 3.573125727352537,
+          "precision": 0.9698724019551316,
+          "recall": 0.9632930170818094,
+          "falseNegativeArea": 0.12734800279183234,
+          "falsePositiveArea": 0.10381300623753195,
           "boundary": {
-            "meanKm": 4.445,
-            "p90Km": 18.752,
-            "maxKm": 44.858,
-            "expectedToExtractedMeanKm": 6.761,
-            "extractedToExpectedMeanKm": 2.129,
+            "meanKm": 2.344,
+            "p90Km": 6.947,
+            "maxKm": 32.728,
+            "expectedToExtractedMeanKm": 3.956,
+            "extractedToExpectedMeanKm": 0.731,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -267,25 +267,25 @@
             "index": 0,
             "id": null,
             "name": "Kyushu & Okinawa",
-            "area": 3.193840768381367
+            "area": 3.445777724560704
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.9031857052298166,
-      "meanPrecision": 0.9684449568398182,
-      "meanRecall": 0.9311890623686784,
-      "totalFalseNegativeArea": 2.7605399726812894,
-      "totalFalsePositiveArea": 1.0302991625767122,
-      "meanBoundaryKm": 3.736,
-      "meanBoundaryP90Km": 12.783,
-      "maxBoundaryKm": 79.149,
+      "meanIou": 0.9263514123061245,
+      "meanPrecision": 0.974678455186943,
+      "meanRecall": 0.949749582727287,
+      "totalFalseNegativeArea": 2.496124465351702,
+      "totalFalsePositiveArea": 0.8060516959732077,
+      "meanBoundaryKm": 2.958,
+      "meanBoundaryP90Km": 8.113,
+      "maxBoundaryKm": 73.274,
       "zonesWithBoundary": 8,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.9031857052298166,
+    "scoreUsed": 0.9263514123061245,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
@@ -308,19 +308,19 @@
             "area": 8.726264883708472
           },
           "bestMatch": {
-            "iou": 0.7289219647229781,
-            "intersectionArea": 6.530400815313405,
-            "unionArea": 8.958984817799037,
-            "precision": 0.9655898596648509,
-            "recall": 0.7483615157620711,
-            "falseNegativeArea": 2.195864068395063,
-            "falsePositiveArea": 0.23271993409055253,
+            "iou": 0.7347827954921149,
+            "intersectionArea": 6.591087433474616,
+            "unionArea": 8.97011671191932,
+            "precision": 0.9643227512528455,
+            "recall": 0.7553159938772737,
+            "falseNegativeArea": 2.135177450233856,
+            "falsePositiveArea": 0.24385182821084345,
             "boundary": {
-              "meanKm": 13.764,
-              "p90Km": 35.385,
-              "maxKm": 66.749,
-              "expectedToExtractedMeanKm": 17.128,
-              "extractedToExpectedMeanKm": 10.4,
+              "meanKm": 13.128,
+              "p90Km": 33.615,
+              "maxKm": 73.95,
+              "expectedToExtractedMeanKm": 16.408,
+              "extractedToExpectedMeanKm": 9.848,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -328,7 +328,7 @@
               "index": 7,
               "id": null,
               "name": "Hokkaido",
-              "area": 6.763120749403955
+              "area": 6.834939261685461
             },
             "matchedBy": "name"
           }
@@ -341,19 +341,19 @@
             "area": 6.972736526563776
           },
           "bestMatch": {
-            "iou": 0.8877545601114353,
-            "intersectionArea": 6.302758165153254,
-            "unionArea": 7.099662956799794,
-            "precision": 0.9802593069142103,
-            "recall": 0.9039145737318296,
-            "falseNegativeArea": 0.6699783614105274,
-            "falsePositiveArea": 0.12692643023601194,
+            "iou": 0.9178598499520413,
+            "intersectionArea": 6.4880834751432035,
+            "unionArea": 7.068708229782803,
+            "precision": 0.9854236180257997,
+            "recall": 0.9304931357187802,
+            "falseNegativeArea": 0.48465305142058085,
+            "falsePositiveArea": 0.09597170321902661,
             "boundary": {
-              "meanKm": 4.206,
-              "p90Km": 9.416,
-              "maxKm": 41.691,
-              "expectedToExtractedMeanKm": 4.437,
-              "extractedToExpectedMeanKm": 3.974,
+              "meanKm": 3.136,
+              "p90Km": 6.439,
+              "maxKm": 34.969,
+              "expectedToExtractedMeanKm": 3.455,
+              "extractedToExpectedMeanKm": 2.817,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -361,7 +361,7 @@
               "index": 6,
               "id": null,
               "name": "Tohoku",
-              "area": 6.429684595389263
+              "area": 6.584055178362223
             },
             "matchedBy": "name"
           }
@@ -374,19 +374,19 @@
             "area": 3.210251486602613
           },
           "bestMatch": {
-            "iou": 0.8818841948736625,
-            "intersectionArea": 2.9171385856885816,
-            "unionArea": 3.3078476773319276,
-            "precision": 0.9676269396920947,
-            "recall": 0.908694723096529,
-            "falseNegativeArea": 0.2931129009140302,
-            "falsePositiveArea": 0.09759619072931344,
+            "iou": 0.8973816383702699,
+            "intersectionArea": 2.929407705542284,
+            "unionArea": 3.2643945232291203,
+            "precision": 0.981852818569074,
+            "recall": 0.9125165793918707,
+            "falseNegativeArea": 0.28084378106032903,
+            "falsePositiveArea": 0.054143036626508295,
             "boundary": {
-              "meanKm": 3.484,
-              "p90Km": 7.559,
-              "maxKm": 12.426,
-              "expectedToExtractedMeanKm": 3.798,
-              "extractedToExpectedMeanKm": 3.171,
+              "meanKm": 3.132,
+              "p90Km": 6.385,
+              "maxKm": 14.025,
+              "expectedToExtractedMeanKm": 3.502,
+              "extractedToExpectedMeanKm": 2.761,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -394,7 +394,7 @@
               "index": 5,
               "id": null,
               "name": "Kanto",
-              "area": 3.0147347764178978
+              "area": 2.983550742168795
             },
             "matchedBy": "name"
           }
@@ -407,19 +407,19 @@
             "area": 6.692910539503913
           },
           "bestMatch": {
-            "iou": 0.8225755531268218,
-            "intersectionArea": 6.080379267819306,
-            "unionArea": 7.391879377774134,
-            "precision": 0.8968973377185983,
-            "recall": 0.908480582839225,
-            "falseNegativeArea": 0.6125312716846119,
-            "falsePositiveArea": 0.6989688382702111,
+            "iou": 0.9058028079246824,
+            "intersectionArea": 6.298886006924527,
+            "unionArea": 6.9539263422644195,
+            "precision": 0.960210410104748,
+            "recall": 0.941128074213197,
+            "falseNegativeArea": 0.39402453257939357,
+            "falsePositiveArea": 0.26101580276049124,
             "boundary": {
-              "meanKm": 5.659,
-              "p90Km": 11.692,
-              "maxKm": 23.066,
-              "expectedToExtractedMeanKm": 6.213,
-              "extractedToExpectedMeanKm": 5.105,
+              "meanKm": 2.931,
+              "p90Km": 6.117,
+              "maxKm": 16.569,
+              "expectedToExtractedMeanKm": 3.463,
+              "extractedToExpectedMeanKm": 2.399,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -427,7 +427,7 @@
               "index": 4,
               "id": null,
               "name": "Chubu",
-              "area": 6.779348106089514
+              "area": 6.559901809685016
             },
             "matchedBy": "name"
           }
@@ -440,19 +440,19 @@
             "area": 3.253740236099218
           },
           "bestMatch": {
-            "iou": 0.8075914744612659,
-            "intersectionArea": 2.928891091889468,
-            "unionArea": 3.6266988750014906,
-            "precision": 0.8870455443734452,
-            "recall": 0.9001613157050303,
-            "falseNegativeArea": 0.3248491442097539,
-            "falsePositiveArea": 0.3729586389022696,
+            "iou": 0.8848059423379945,
+            "intersectionArea": 2.947290972072051,
+            "unionArea": 3.331002687757934,
+            "precision": 0.9744549224845864,
+            "recall": 0.9058163092962341,
+            "falseNegativeArea": 0.30644926402716577,
+            "falsePositiveArea": 0.0772624516587149,
             "boundary": {
-              "meanKm": 5.828,
-              "p90Km": 12.134,
-              "maxKm": 18.545,
-              "expectedToExtractedMeanKm": 6.698,
-              "extractedToExpectedMeanKm": 4.958,
+              "meanKm": 3.001,
+              "p90Km": 6.468,
+              "maxKm": 19.697,
+              "expectedToExtractedMeanKm": 3.552,
+              "extractedToExpectedMeanKm": 2.45,
               "expectedHoles": 2,
               "extractedHoles": 0
             },
@@ -460,7 +460,7 @@
               "index": 3,
               "id": null,
               "name": "Kansai",
-              "area": 3.3018497307917354
+              "area": 3.024553423730763
             },
             "matchedBy": "name"
           }
@@ -473,19 +473,19 @@
             "area": 3.1059798167886354
           },
           "bestMatch": {
-            "iou": 0.7422364439013698,
-            "intersectionArea": 2.6557251429461477,
-            "unionArea": 3.5780042394402383,
-            "precision": 0.8490849690002613,
-            "recall": 0.855036188126934,
-            "falseNegativeArea": 0.45025467384249196,
-            "falsePositiveArea": 0.47202442265160577,
+            "iou": 0.8814171413727073,
+            "intersectionArea": 2.7825726630237066,
+            "unionArea": 3.1569305070357094,
+            "precision": 0.9820186093796404,
+            "recall": 0.8958759641589336,
+            "falseNegativeArea": 0.3234071537649312,
+            "falsePositiveArea": 0.05095069024707532,
             "boundary": {
-              "meanKm": 9.45,
-              "p90Km": 19.194,
-              "maxKm": 40.367,
-              "expectedToExtractedMeanKm": 11.185,
-              "extractedToExpectedMeanKm": 7.714,
+              "meanKm": 4.151,
+              "p90Km": 11.565,
+              "maxKm": 46.967,
+              "expectedToExtractedMeanKm": 5.887,
+              "extractedToExpectedMeanKm": 2.416,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -493,7 +493,7 @@
               "index": 2,
               "id": null,
               "name": "Chugoku",
-              "area": 3.1277495655977514
+              "area": 2.8335233532707798
             },
             "matchedBy": "name"
           }
@@ -506,19 +506,19 @@
             "area": 1.8252355102825182
           },
           "bestMatch": {
-            "iou": 0.8393904785123399,
-            "intersectionArea": 1.6603425168109938,
-            "unionArea": 1.9780335366129422,
-            "precision": 0.9157274228363518,
-            "recall": 0.9096593329778021,
-            "falseNegativeArea": 0.16489299347152517,
-            "falsePositiveArea": 0.15279802633042183,
+            "iou": 0.8427490232592427,
+            "intersectionArea": 1.5754542526724213,
+            "unionArea": 1.8694228165100906,
+            "precision": 0.9727178485975717,
+            "recall": 0.8631512173618436,
+            "falseNegativeArea": 0.24978125761009523,
+            "falsePositiveArea": 0.04418730622757249,
             "boundary": {
-              "meanKm": 5.16,
-              "p90Km": 16.291,
-              "maxKm": 38.387,
-              "expectedToExtractedMeanKm": 7.619,
-              "extractedToExpectedMeanKm": 2.7,
+              "meanKm": 5.025,
+              "p90Km": 17.34,
+              "maxKm": 32.095,
+              "expectedToExtractedMeanKm": 7.605,
+              "extractedToExpectedMeanKm": 2.445,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -526,7 +526,7 @@
               "index": 1,
               "id": null,
               "name": "Shikoku",
-              "area": 1.813140543141418
+              "area": 1.619641558899996
             },
             "matchedBy": "name"
           }
@@ -539,19 +539,19 @@
             "area": 3.6662422763679707
           },
           "bestMatch": {
-            "iou": 0.6863760931547775,
-            "intersectionArea": 2.9379092621489864,
-            "unionArea": 4.280319917096077,
-            "precision": 0.8271171438637028,
-            "recall": 0.8013407300129328,
-            "falseNegativeArea": 0.7283330142189797,
-            "falsePositiveArea": 0.6140776407281113,
+            "iou": 0.8276358793380635,
+            "intersectionArea": 3.2567300805206827,
+            "unionArea": 3.9349793330919742,
+            "precision": 0.9237726388412665,
+            "recall": 0.8883019274293628,
+            "falseNegativeArea": 0.4095121958472858,
+            "falsePositiveArea": 0.2687370567239982,
             "boundary": {
-              "meanKm": 80.361,
-              "p90Km": 20.414,
-              "maxKm": 997.376,
-              "expectedToExtractedMeanKm": 9.142,
-              "extractedToExpectedMeanKm": 151.579,
+              "meanKm": 76.214,
+              "p90Km": 17.424,
+              "maxKm": 1000.067,
+              "expectedToExtractedMeanKm": 6.121,
+              "extractedToExpectedMeanKm": 146.306,
               "expectedHoles": 0,
               "extractedHoles": 0
             },
@@ -559,30 +559,32 @@
               "index": 0,
               "id": null,
               "name": "Kyushu & Okinawa",
-              "area": 3.5519869028770996
+              "area": 3.525467137244679
             },
             "matchedBy": "name"
           }
         }
       ],
       "mean": {
-        "meanIou": 0.7995913453580814,
-        "meanPrecision": 0.9111685655079393,
-        "meanRecall": 0.8669561202815442,
-        "totalFalseNegativeArea": 5.439816428146983,
-        "totalFalsePositiveArea": 2.7680701219384973,
-        "meanBoundaryKm": 15.989,
-        "meanBoundaryP90Km": 16.511,
-        "maxBoundaryKm": 997.376,
+        "meanIou": 0.8615543847558895,
+        "meanPrecision": 0.9680967021569415,
+        "meanRecall": 0.886574900180937,
+        "totalFalseNegativeArea": 4.583848686543638,
+        "totalFalsePositiveArea": 1.0961198756742305,
+        "meanBoundaryKm": 13.84,
+        "meanBoundaryP90Km": 13.169,
+        "maxBoundaryKm": 1000.067,
         "zonesWithBoundary": 8,
         "zonesWithoutBoundary": 0
       },
-      "scoreUsed": 0.7995913453580814,
+      "scoreUsed": 0.8615543847558895,
       "scoreUsedKey": "mean.meanIou"
     },
     "nameMatching": {
       "expectedWithoutNameMatch": [],
       "extractedNeverMatchedByName": []
     }
-  }
+  },
+  "unsnapped": null,
+  "snapped": null
 }
