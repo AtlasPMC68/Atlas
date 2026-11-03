@@ -42,7 +42,7 @@
 
         <!-- Validate extracted texts button -->
         <div
-          v-if="activeGroup?.type === 'point' && featuresByMap.length > 0"
+          v-if="activeGroup?.type === 'point' && validationFeaturesByMap.length > 0"
           class="flex flex-col gap-2 p-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl"
         >
           <div class="flex items-center justify-between">
@@ -117,7 +117,14 @@
                 <div
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
-                  class="flex w-full flex-row items-center justify-between gap-2"
+                  :data-feature-item-id="String(feature.id)"
+                  class="flex w-full flex-row items-center justify-between gap-2 rounded px-1.5 py-1 transition-all cursor-pointer"
+                  :class="[
+                    selectedFeatureId === String(feature.id)
+                      ? 'ring-2 ring-primary bg-primary/10 border border-primary font-semibold'
+                      : 'hover:bg-base-200/60'
+                  ]"
+                  @click="emit('select-feature', String(feature.id))"
                 >
                   <label
                     class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0 pl-6"
@@ -225,20 +232,52 @@
         <div class="flex flex-col gap-2">
           <label class="label">Nom de l'élément</label>
           <input
-            v-model="featureToEditName"
+            v-model="editDraft.name"
             type="text"
             class="input"
+            :style="editTextStyle"
             placeholder="Nom de l'élément"
             required
           />
         </div>
         <div
           class="flex flex-col gap-2"
-          v-if="featureToEdit.properties.labelText !== undefined"
+          v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
         >
           <label class="label">Texte</label>
-          <input v-model="featureToEditLabelText" type="text" class="input" />
+          <input
+            v-model="editDraft.labelText"
+            type="text"
+            class="input"
+            :style="editTextStyle"
+          />
         </div>
+        <div
+          class="flex flex-col gap-2"
+          v-if="isTextElement"
+        >
+          <label class="label">Type de mot</label>
+          <select
+            v-model="editDraft.wordType"
+            data-testid="word-type-select"
+            class="select select-bordered w-full"
+          >
+            <option
+              v-for="(style, typeKey) in WORD_TYPE_STYLES"
+              :key="typeKey"
+              :value="typeKey"
+            >
+              {{ style.label }}
+            </option>
+          </select>
+        </div>
+        <p
+          v-if="!isEditingLabel && getMapElementType(featureToEdit) === 'point'"
+          class="text-xs text-base-content/60"
+        >
+          Ces réglages s'appliquent au symbole du point qui représente la ville
+          sur la carte.
+        </p>
         <div
           class="flex gap-2"
           v-if="
@@ -252,15 +291,21 @@
             v-if="featureToEdit.properties.fillOpacity !== undefined"
           >
             <label class="label">Opacité</label>
-            <input v-model="featureToEditOpacity" type="number" class="input" />
+            <input v-model="editDraft.fillOpacity" type="number" class="input" />
           </div>
           <div
             class="flex flex-col gap-2 w-full"
             v-if="featureToEdit.properties.strokeOpacity !== undefined"
           >
-            <label class="label">Opacité du contour</label>
+            <label class="label">
+              {{
+                getMapElementType(featureToEdit) === "point"
+                  ? "Opacité du contour du point"
+                  : "Opacité du contour"
+              }}
+            </label>
             <input
-              v-model="featureToEditStrokeOpacity"
+              v-model="editDraft.strokeOpacity"
               type="number"
               class="input"
             />
@@ -270,16 +315,22 @@
           class="flex flex-col gap-2 w-full"
           v-if="!isEditingLabel && featureToEdit.properties.strokeWidth !== undefined"
         >
-          <label class="label">Épaisseur du contour</label>
+          <label class="label">
+            {{
+              getMapElementType(featureToEdit) === "point"
+                ? "Épaisseur du contour du point"
+                : "Épaisseur du contour"
+            }}
+          </label>
           <input
-            v-model="featureToEditStrokeWidth"
+            v-model="editDraft.strokeWidth"
             type="number"
             class="input"
           />
         </div>
         <div
           class="flex flex-col gap-2"
-          v-if="featureToEditColor || featureToEditStrokeColor"
+          v-if="editDraft.colorHex || editDraft.strokeColorHex"
         >
           <div
             class="flex items-center gap-2"
@@ -287,7 +338,7 @@
           >
             <label class="label">Couleur :</label>
             <input
-              v-model="featureToEditColor"
+              v-model="editDraft.colorHex"
               type="color"
               class="h-9 w-8 cursor-pointer bg-base-100"
             />
@@ -298,7 +349,7 @@
           >
             <label class="label">Couleur du contour :</label>
             <input
-              v-model="featureToEditStrokeColor"
+              v-model="editDraft.strokeColorHex"
               type="color"
               class="h-9 w-8 cursor-pointer bg-base-100"
             />
@@ -413,7 +464,7 @@
       </p>
       <div class="flex flex-col gap-2">
         <button
-          v-for="group in featuresByMap"
+          v-for="group in validationFeaturesByMap"
           :key="group.id || 'general'"
           type="button"
           class="btn btn-outline btn-sm justify-between text-left normal-case border-gray-300 hover:border-indigo-500 hover:bg-indigo-50 hover:text-indigo-900"
@@ -456,31 +507,59 @@ import {
   type Feature,
   type FeatureVisibilityGroup,
   type FeatureVisibilityGroupType,
-  ValidationStatus,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import { getMapElementType } from "../utils/featureHelpers";
+import {
+  WORD_TYPE_STYLES,
+  WORD_TYPE_TAXONOMY,
+  isTextFeature,
+} from "../utils/wordStyles";
+import {
+  prepareFeatureForEdit,
+  coerceEditedFeature,
+  getWordTypePreviewStyle,
+  type FeatureEditSubmitPayload,
+} from "../utils/featureTextEditing";
+import {
+  groupFeaturesByType,
+  groupFeaturesByMap,
+  type MapGroupItem,
+} from "../utils/featureGrouping";
+import { isUnrecognizedTextFeature } from "../utils/textValidation";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
-import { hexToRgb, rgbToHex } from "../utils/utils";
 
 const props = defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
   mapPeriods?: MapPeriod[];
   isDevTestCreation?: boolean;
+  selectedFeatureId?: string | null;
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
-const featureToEditName = ref<string>("");
-const featureToEditLabelText = ref<string | undefined>(undefined);
-const featureToEditColor = ref<string | undefined>(undefined);
-const featureToEditStrokeColor = ref<string | undefined>(undefined);
-const featureToEditOpacity = ref<number | undefined>(undefined);
-const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
-const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+const editDraft = ref<FeatureEditSubmitPayload>({
+  name: "",
+  wordType: "city",
+});
+
+const isTextElement = computed(() => isTextFeature(featureToEdit.value));
+
+const editTextStyle = computed(() => {
+  if (!isTextElement.value) return {};
+  return getWordTypePreviewStyle(
+    editDraft.value.wordType,
+    editDraft.value.colorHex,
+  );
+});
+
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
+  if (isTextElement.value) {
+    const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType];
+    return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
+  }
   return getMapElementType(featureToEdit.value) === "label";
 });
 
@@ -509,13 +588,25 @@ const emit = defineEmits([
   "add-map",
   "update-feature",
   "validate-texts",
+  "select-feature",
 ]);
 
+watch(
+  () => props.selectedFeatureId,
+  (newId) => {
+    if (!newId) return;
+    nextTick(() => {
+      const el = document.querySelector(`[data-feature-item-id="${newId}"]`);
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  },
+);
+
 function openMapSelectionOrValidate() {
-  if (featuresByMap.value.length > 1) {
+  if (validationFeaturesByMap.value.length > 1) {
     selectMapValidationDialogRef.value?.showModal?.();
   } else {
-    emit("validate-texts", featuresByMap.value[0]?.id ?? null);
+    emit("validate-texts", validationFeaturesByMap.value[0]?.id ?? null);
   }
 }
 
@@ -547,45 +638,7 @@ const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
   image: PhotoIcon,
 };
 
-const featureGroups = computed(() => {
-  const groups: FeatureVisibilityGroup[] = [
-    { type: "point", label: "Texte", features: [] as Feature[] },
-    { type: "zone", label: "Zone(s)", features: [] as Feature[] },
-    { type: "shape", label: "Forme(s)", features: [] as Feature[] },
-    { type: "image", label: "Image(s)", features: [] as Feature[] },
-    { type: "drawing", label: "Dessins", features: [] as Feature[] },
-  ];
-
-  props.features.forEach((feature: Feature) => {
-    // Unrecognized or rejected OCR texts are only shown in the validation modal
-    const valStatus = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-    if (
-      feature.properties?.isOcrText &&
-      (valStatus === ValidationStatus.REJECTED ||
-        valStatus === ValidationStatus.MANUAL_REVIEW ||
-        (!feature.properties?.recognized && feature.properties?.show === false))
-    ) {
-      return;
-    }
-
-    const featureType = getMapElementType(feature);
-    if (!featureType) return;
-
-    const targetGroup = groups.find((currentGroup) => {
-      if (featureType === "label" || featureType === "point") {
-        return currentGroup.type === "point";
-      }
-      if (featureType === "polyline" || featureType === "arrow") {
-        return currentGroup.type === "drawing";
-      }
-      return currentGroup.type === featureType;
-    }) ?? groups.find((currentGroup) => currentGroup.type === "drawing");
-
-    if (targetGroup) targetGroup.features.push(feature);
-  });
-
-  return groups;
-});
+const featureGroups = computed(() => groupFeaturesByType(props.features));
 
 const activeGroup = computed(() => {
   if (!activeGroupType.value) return featureGroups.value[0] ?? undefined;
@@ -605,63 +658,17 @@ const isAnyVisible = computed(() => {
   );
 });
 
-interface MapGroupItem {
-  id: string | null;
-  title: string;
-  startDate?: string | null;
-  features: Feature[];
-}
-
 const featuresByMap = computed((): MapGroupItem[] => {
   if (!activeGroup.value) return [];
-
-  const mapGroups = new Map<
-    string | null,
-    MapGroupItem
-  >();
-
-  activeGroup.value.features.forEach((feature: Feature) => {
-    const mapId = feature.mapId || null;
-    if (!mapGroups.has(mapId)) {
-      let title = "Éléments généraux";
-      let startDate: string | null = null;
-      if (mapId && props.mapPeriods) {
-        const period = props.mapPeriods.find((p: MapPeriod) => p.id === mapId);
-        if (period) {
-          title = period.title;
-          startDate = period.startDate;
-        }
-      }
-      mapGroups.set(mapId, { id: mapId, title, startDate, features: [] });
-    }
-    mapGroups.get(mapId)!.features.push(feature);
-  });
-
-  return Array.from(mapGroups.values())
-    .map((group) => {
-      group.features.sort((a, b) => {
-        const nameA = a.properties?.name || "Élément sans nom";
-        const nameB = b.properties?.name || "Élément sans nom";
-        return nameA.localeCompare(nameB);
-      });
-      return group;
-    })
-    .sort((a, b) => {
-      if (a.id === null) return -1;
-      if (b.id === null) return 1;
-
-      if (a.startDate && b.startDate) {
-        if (a.startDate < b.startDate) return -1;
-        if (a.startDate > b.startDate) return 1;
-      } else if (a.startDate) {
-        return -1;
-      } else if (b.startDate) {
-        return 1;
-      }
-
-      return a.title.localeCompare(b.title);
-    });
+  return groupFeaturesByMap(activeGroup.value.features, props.mapPeriods);
 });
+
+const validationFeaturesByMap = computed(() =>
+  groupFeaturesByMap(
+    props.features.filter((feature) => isUnrecognizedTextFeature(feature)),
+    props.mapPeriods,
+  ),
+);
 
 function toggleMapGroup(mapId: string | null, visible: boolean) {
   const mapGroup = featuresByMap.value.find((g: MapGroupItem) => g.id === mapId);
@@ -711,16 +718,9 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
 }
 
 async function showEditFeatureDialog(feature: Feature) {
-  featureToEdit.value = feature;
-  featureToEditName.value = feature.properties.name;
-  featureToEditLabelText.value = feature.properties.labelText;
-  featureToEditColor.value =
-    rgbToHex(feature.properties.colorRgb) ??
-    (getMapElementType(feature) === "label" || getMapElementType(feature) === "point" ? "#000000" : undefined);
-  featureToEditStrokeColor.value = rgbToHex(feature.properties.strokeColor);
-  featureToEditOpacity.value = feature.properties.fillOpacity;
-  featureToEditStrokeOpacity.value = feature.properties.strokeOpacity;
-  featureToEditStrokeWidth.value = feature.properties.strokeWidth;
+  const state = prepareFeatureForEdit(feature);
+  featureToEdit.value = state.feature;
+  editDraft.value = state.draft;
 
   await nextTick();
   editFeatureDialogRef.value?.showModal();
@@ -729,20 +729,10 @@ async function showEditFeatureDialog(feature: Feature) {
 async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
-  const isLabel = isEditingLabel.value;
-  const updatedFeature: Feature = {
-    ...featureToEdit.value,
-    properties: {
-      ...featureToEdit.value.properties,
-      name: featureToEditName.value,
-      labelText: featureToEditLabelText.value,
-      colorRgb: hexToRgb(featureToEditColor.value),
-      strokeColor: isLabel ? undefined : hexToRgb(featureToEditStrokeColor.value),
-      fillOpacity: isLabel ? undefined : featureToEditOpacity.value,
-      strokeOpacity: isLabel ? undefined : featureToEditStrokeOpacity.value,
-      strokeWidth: isLabel ? undefined : featureToEditStrokeWidth.value,
-    },
-  };
+
+  const updatedFeature = coerceEditedFeature(featureToEdit.value, {
+    ...editDraft.value,
+  });
 
   featureToEdit.value = updatedFeature;
 

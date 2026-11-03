@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "capitalization": {
+    "lowercaseParticles": ["de", "du", "des", "d'", "l'", "la", "le", "et"],
+    "apostrophePrefixes": ["d", "l"]
+  },
+  "types": {
+    "continent": {
+      "label": "Continent",
+      "mapElementType": "label",
+      "sizePx": 18,
+      "fontStyle": "normal",
+      "textTransform": "uppercase",
+      "priority": 90,
+      "minZoom": 1.0,
+      "category": "continent"
+    },
+    "ocean": {
+      "label": "Océan",
+      "mapElementType": "label",
+      "sizePx": 18,
+      "fontStyle": "italic",
+      "textTransform": "uppercase",
+      "priority": 80,
+      "minZoom": 1.0,
+      "category": "ocean"
+    },
+    "country": {
+      "label": "Pays",
+      "mapElementType": "label",
+      "sizePx": 16,
+      "fontStyle": "normal",
+      "textTransform": "uppercase",
+      "priority": 70,
+      "minZoom": 1.5,
+      "category": "country"
+    },
+    "sea": {
+      "label": "Mer",
+      "mapElementType": "label",
+      "sizePx": 16,
+      "fontStyle": "italic",
+      "textTransform": "none",
+      "priority": 60,
+      "minZoom": 2.0,
+      "category": "sea"
+    },
+    "state": {
+      "label": "État",
+      "mapElementType": "label",
+      "sizePx": 14,
+      "fontStyle": "normal",
+      "textTransform": "uppercase",
+      "priority": 50,
+      "minZoom": 2.5,
+      "category": "state"
+    },
+    "province": {
+      "label": "Province",
+      "mapElementType": "label",
+      "sizePx": 14,
+      "fontStyle": "normal",
+      "textTransform": "uppercase",
+      "priority": 50,
+      "minZoom": 2.5,
+      "category": "state"
+    },
+    "territory": {
+      "label": "Territoire",
+      "mapElementType": "label",
+      "sizePx": 14,
+      "fontStyle": "normal",
+      "textTransform": "uppercase",
+      "priority": 50,
+      "minZoom": 2.5,
+      "category": "state"
+    },
+    "fleuve": {
+      "label": "Fleuve",
+      "mapElementType": "label",
+      "sizePx": 14,
+      "fontStyle": "italic",
+      "textTransform": "none",
+      "priority": 40,
+      "minZoom": 2.25,
+      "category": "fleuve"
+    },
+    "city": {
+      "label": "Ville",
+      "mapElementType": "point",
+      "sizePx": 12,
+      "fontStyle": "normal",
+      "textTransform": "none",
+      "priority": 30,
+      "minZoom": 4.0,
+      "category": "city"
+    },
+    "lake": {
+      "label": "Lac",
+      "mapElementType": "label",
+      "sizePx": 12,
+      "fontStyle": "italic",
+      "textTransform": "none",
+      "priority": 20,
+      "minZoom": 2.75,
+      "category": "lake"
+    },
+    "river": {
+      "label": "Rivière",
+      "mapElementType": "label",
+      "sizePx": 10,
+      "fontStyle": "italic",
+      "textTransform": "none",
+      "priority": 10,
+      "minZoom": 4.5,
+      "category": "river"
+    }
+  },
+  "geographicPrefixes": [
+    ["province de l ", "Province de l'"],
+    ["province d ", "Province d'"],
+    ["province de ", "Province de "],
+    ["province du ", "Province du "],
+    ["province des ", "Province des "],
+    ["territoire du ", "Territoire du "],
+    ["territoire de ", "Territoire de "],
+    ["territoire des ", "Territoire des "],
+    ["territoire d ", "Territoire d'"],
+    ["district de ", "District de "],
+    ["district du ", "District du "],
+    ["district d ", "District d'"],
+    ["etat de ", "État de "],
+    ["ocean ", "Océan "],
+    ["mer ", "Mer "],
+    ["lac ", "Lac "],
+    ["fleuve ", "Fleuve "],
+    ["riviere ", "Rivière "],
+    ["baie d ", "Baie d'"],
+    ["baie de ", "Baie de "],
+    ["golfe du ", "Golfe du "],
+    ["detroit de ", "Détroit de "],
+    ["detroit d ", "Détroit d'"],
+    ["ile du ", "Île-du-"],
+    ["ile de ", "Île de "],
+    ["ile d ", "Île d'"],
+    ["iles de l ", "Îles de l'"],
+    ["iles ", "Îles "]
+  ],
+  "formattingExamples": [
+    { "type": "city", "input": "QUÉBEC", "expected": "Québec" },
+    { "type": "city", "input": "baie d’Hudson", "expected": "Baie d’Hudson" },
+    { "type": "province", "input": "Québec", "expected": "QUÉBEC" },
+    { "type": "ocean", "input": "océan atlantique", "expected": "OCÉAN ATLANTIQUE" },
+    { "type": "sea", "input": "mer du labrador", "expected": "Mer du Labrador" },
+    { "type": "fleuve", "input": "saint-laurent", "expected": "Saint-Laurent" },
+    { "type": "lake", "input": "lac supérieur", "expected": "Lac Supérieur" },
+    { "type": "river", "input": "rivière des outaouais", "expected": "Rivière des Outaouais" },
+    { "type": "city", "input": "  du mexique", "expected": "  Du Mexique" },
+    { "type": "city", "input": "baie   du mexique", "expected": "Baie   du Mexique" }
+  ]
+}

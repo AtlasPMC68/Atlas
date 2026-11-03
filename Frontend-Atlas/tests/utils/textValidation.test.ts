@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
+
+import type { Feature } from "../../src/typescript/feature";
 import {
-  isUnrecognizedTextFeature,
   featureToValidationEntry,
   applyValidationToFeature,
+  isUnrecognizedTextFeature,
   ValidationStatus,
   type TextValidationEntry,
 } from "../../src/utils/textValidation";
-import type { Feature } from "../../src/typescript/feature";
 import { prepareFeaturesForSave, camelToSnake, snakeToCamel } from "../../src/utils/utils";
 
 describe("textValidation utility functions", () => {
@@ -50,7 +51,22 @@ describe("textValidation utility functions", () => {
       expect(isUnrecognizedTextFeature(accepted, "map-1")).toBe(false);
     });
 
-    it("returns false for rejected features so they do not reappear after reload", () => {
+    it("lets accepted status override stale OCR rejection flags", () => {
+      const accepted: Feature = {
+        ...baseFeature,
+        properties: {
+          ...baseFeature.properties,
+          recognized: false,
+          show: false,
+          validationStatus: "accepted",
+        },
+      };
+
+      expect(isUnrecognizedTextFeature(accepted, "map-1")).toBe(false);
+      expect(featureToValidationEntry(accepted).selected).toBe(true);
+    });
+
+    it("returns true for rejected features so they can be re-examined unless deleted", () => {
       const rejected: Feature = {
         ...baseFeature,
         properties: {
@@ -60,7 +76,7 @@ describe("textValidation utility functions", () => {
           validationStatus: "rejected",
         },
       };
-      expect(isUnrecognizedTextFeature(rejected, "map-1")).toBe(false);
+      expect(isUnrecognizedTextFeature(rejected, "map-1")).toBe(true);
     });
 
     it("handles legacy features without explicit validationStatus", () => {
@@ -89,6 +105,55 @@ describe("textValidation utility functions", () => {
       expect(entry.text).toBe("Québec");
       expect(entry.selected).toBe(true);
       expect(entry.validationStatus).toBe("manual_review");
+    });
+
+    it("defaults unrecognized OCR features to selected: true (show by default)", () => {
+      const rawOcrFeature: Feature = {
+        id: "feat-ocr-1",
+        projectId: "proj-1",
+        mapId: "map-1",
+        type: "Feature",
+        name: "QUEBEC",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        geometry: { type: "Point", coordinates: [-71.2, 46.8] },
+        properties: {
+          name: "QUEBEC",
+          mapElementType: "point",
+          isOcrText: true,
+          recognized: false,
+          show: false,
+        },
+      };
+
+      const entry = featureToValidationEntry(rawOcrFeature);
+      expect(entry.selected).toBe(true);
+      expect(entry.text).toBe("QUEBEC");
+      expect(entry.wordType).toBe("city");
+    });
+
+    it("recognizes existing rawType or label element type when converting feature", () => {
+      const provinceFeature: Feature = {
+        id: "feat-prov-1",
+        projectId: "proj-1",
+        mapId: "map-1",
+        type: "Feature",
+        name: "ONTARIO",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        geometry: { type: "Point", coordinates: [-79.3, 43.6] },
+        properties: {
+          name: "ONTARIO",
+          isOcrText: true,
+          recognized: false,
+          show: false,
+          rawType: "province",
+          mapElementType: "label",
+        },
+      };
+
+      const entry = featureToValidationEntry(provinceFeature);
+      expect(entry.wordType).toBe("province");
     });
 
     it("preserves rejected status if already rejected", () => {
@@ -130,7 +195,9 @@ describe("textValidation utility functions", () => {
       const result = applyValidationToFeature(baseFeature, entry);
       expect(result.properties.show).toBe(false);
       expect(result.properties.recognized).toBe(false);
+      expect(result.properties.userSelected).toBe(false);
       expect(result.properties.validationStatus).toBe("rejected");
+      expect(isUnrecognizedTextFeature(result)).toBe(true);
     });
 
     it("persists accepted status with show=true, recognized=true and validationStatus='accepted'", () => {
@@ -145,23 +212,143 @@ describe("textValidation utility functions", () => {
       expect(result.name).toBe("Québec Confirmé");
       expect(result.properties.show).toBe(true);
       expect(result.properties.recognized).toBe(true);
+      expect(result.properties.userSelected).toBe(true);
       expect(result.properties.validationStatus).toBe("accepted");
+      expect(isUnrecognizedTextFeature(result)).toBe(false);
     });
 
-    it("applies suggestedCoords when useSuggestedCity is true", () => {
+    it("applies selected=true validation with province word style", () => {
+      const feature: Feature = {
+        id: "feat-1",
+        projectId: "proj-1",
+        mapId: "map-1",
+        type: "Feature",
+        name: "quebec",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        geometry: { type: "Point", coordinates: [-71.2, 46.8] },
+        properties: {
+          name: "quebec",
+          mapElementType: "point",
+          isOcrText: true,
+          recognized: false,
+          show: false,
+        },
+      };
+
+      const validated = applyValidationToFeature(feature, {
+        id: "feat-1",
+        text: "quebec",
+        originalText: "quebec",
+        selected: true,
+        wordType: "province",
+        coordinates: [-71.2, 46.8],
+      });
+
+      expect(validated.name).toBe("QUEBEC");
+      expect(validated.properties.name).toBe("QUEBEC");
+      expect(validated.properties.labelText).toBe("QUEBEC");
+      expect(validated.properties.recognized).toBe(true);
+      expect(validated.properties.show).toBe(true);
+      expect(validated.properties.userSelected).toBe(true);
+      expect(validated.properties.mapElementType).toBe("label");
+      expect(validated.properties.fontStyle).toBe("uppercase");
+      expect(validated.properties.sizePx).toBe(14);
+      expect(validated.properties.rawType).toBe("province");
+      expect(isUnrecognizedTextFeature(validated)).toBe(false);
+    });
+
+    it("applies selected=false validation with rejected status and word styles", () => {
+      const feature: Feature = {
+        id: "feat-2",
+        projectId: "proj-1",
+        mapId: "map-1",
+        type: "Feature",
+        name: "LOUISIANE",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        geometry: { type: "Point", coordinates: [-91.1, 30.4] },
+        properties: {
+          name: "LOUISIANE",
+          mapElementType: "point",
+          isOcrText: true,
+          recognized: false,
+          show: false,
+        },
+      };
+
+      const validated = applyValidationToFeature(feature, {
+        id: "feat-2",
+        text: "LOUISIANE",
+        originalText: "LOUISIANE",
+        selected: false,
+        wordType: "state",
+        coordinates: [-91.1, 30.4],
+      });
+
+      expect(validated.properties.recognized).toBe(false);
+      expect(validated.properties.show).toBe(false);
+      expect(validated.properties.userSelected).toBe(false);
+      expect(validated.properties.validationStatus).toBe("rejected");
+      expect(validated.properties.name).toBe("LOUISIANE");
+      expect(validated.properties.mapElementType).toBe("label");
+      expect(validated.properties.rawType).toBe("state");
+      expect(isUnrecognizedTextFeature(validated)).toBe(true);
+    });
+
+    it("converts uppercase text to capitalized when choosing city word type", () => {
+      const feature: Feature = {
+        id: "feat-3",
+        projectId: "proj-1",
+        mapId: "map-1",
+        type: "Feature",
+        name: "SASKATCHEWAN",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        geometry: { type: "Point", coordinates: [-106.6, 52.1] },
+        properties: {
+          name: "SASKATCHEWAN",
+          mapElementType: "point",
+          isOcrText: true,
+          recognized: false,
+          show: false,
+        },
+      };
+
+      const validated = applyValidationToFeature(feature, {
+        id: "feat-3",
+        text: "SASKATCHEWAN",
+        originalText: "SASKATCHEWAN",
+        selected: true,
+        wordType: "city",
+        coordinates: [-106.6, 52.1],
+      });
+
+      expect(validated.name).toBe("Saskatchewan");
+      expect(validated.properties.name).toBe("Saskatchewan");
+      expect(validated.properties.mapElementType).toBe("point");
+      expect(validated.properties.fontStyle).toBe("normal");
+      expect(validated.properties.sizePx).toBe(12);
+    });
+
+    it("applies suggested place coordinates when the suggestion is accepted", () => {
       const entry: TextValidationEntry = {
         id: "feat-1",
         text: "Montréal",
         originalText: "Montrel",
         selected: true,
-        useSuggestedCity: true,
-        suggestedCoords: [-73.5673, 45.5017],
+        useSuggestedPlace: true,
+        suggestedPlace: {
+          name: "Montréal",
+          coordinates: [-73.5673, 45.5017],
+        },
       };
 
       const result = applyValidationToFeature(baseFeature, entry);
       expect(result.geometry.coordinates).toEqual([-73.5673, 45.5017]);
       expect(result.properties.show).toBe(true);
       expect(result.properties.recognized).toBe(true);
+      expect(result.properties.userSelected).toBe(true);
       expect(result.properties.validationStatus).toBe("accepted");
     });
   });
@@ -226,8 +413,10 @@ describe("textValidation utility functions", () => {
             recognized: false,
             show: false,
             validationStatus: "manual_review",
-            suggestedCity: "Chicoutimi",
-            suggestedCoords: [-71.06, 48.43],
+            suggestedPlace: {
+              name: "Chicoutimi",
+              coordinates: [-71.06, 48.43],
+            },
           },
         },
         {
@@ -272,7 +461,7 @@ describe("textValidation utility functions", () => {
           ...modalEntries[1], // text-to-accept
           text: "Chicoutimi",
           selected: true,
-          useSuggestedCity: true,
+          useSuggestedPlace: true,
         },
         {
           ...modalEntries[2], // text-to-reject
@@ -329,10 +518,10 @@ describe("textValidation utility functions", () => {
       expect(payload[1].properties.show).toBe(false);
       expect(payload[1].properties.recognized).toBe(false);
 
-      // 6. Verify subsequent reload: rejected and accepted items never re-appear in modal
+      // 6. Verify subsequent reload: rejected items remain in modal until deleted, while accepted do not
       expect(isUnrecognizedTextFeature(rec)).toBe(false);
       expect(isUnrecognizedTextFeature(accepted)).toBe(false);
-      expect(isUnrecognizedTextFeature(rejected)).toBe(false);
+      expect(isUnrecognizedTextFeature(rejected)).toBe(true);
       expect(isUnrecognizedTextFeature(pending)).toBe(true);
     });
 
@@ -362,8 +551,10 @@ describe("textValidation utility functions", () => {
           validationStatus: "manual_review",
           validation_status: "manual_review",
           confidence: 0.72,
-          suggestedCity: "Trois-Rivières",
-          suggestedCoords: [-72.55, 46.35],
+          suggestedPlace: {
+            name: "Trois-Rivières",
+            coordinates: [-72.55, 46.35],
+          },
         },
       };
 
@@ -375,12 +566,12 @@ describe("textValidation utility functions", () => {
       expect(modalEntry.validationStatus).toBe("manual_review");
       expect(modalEntry.text).toBe("Trois-Rivires");
 
-      // 3. User accepts suggestion: updates text to "Trois-Rivières", selected = true, useSuggestedCity = true
+      // 3. User accepts suggestion: updates text to "Trois-Rivières", selected = true, useSuggestedPlace = true
       const userChoice: TextValidationEntry = {
         ...modalEntry,
         text: "Trois-Rivières",
         selected: true,
-        useSuggestedCity: true,
+        useSuggestedPlace: true,
       };
 
       // 4. Apply validation to feature
@@ -502,171 +693,49 @@ describe("textValidation utility functions", () => {
       expect(validated.properties.recognized).toBe(true);
     });
 
-    it("verifies exact API payload serialization and ensures validated features do not return to manual_review on reload", () => {
-      // Feature as produced by OCR extraction tasks (contains both snake_case and camelCase keys)
-      const ocrExtractedFeature: Feature = {
+    it("applies validation state, selected word style, and coordinates in one operation", () => {
+      const rawFeature: Feature = {
         type: "Feature",
-        id: "feat-ocr-42",
-        projectId: "proj-123",
-        mapId: "map-456",
-        name: "Trois-Rivires",
-        createdAt: "2026-03-01T10:00:00Z",
-        updatedAt: "2026-03-01T10:00:00Z",
-        geometry: {
-          type: "Point",
-          coordinates: [-72.54, 46.34],
-        },
+        id: "feat-pure-state",
+        name: "Test Place",
+        geometry: { type: "Point", coordinates: [-70, 45] },
         properties: {
-          name: "Trois-Rivires",
-          originalText: "Trois-Rivires",
-          mapElementType: "point",
-          colorName: "black",
-          colorRgb: [0, 0, 0],
-          isOcrText: true,
-          recognized: false,
-          show: false,
-          validationStatus: "manual_review",
-          validation_status: "manual_review",
-          confidence: 0.72,
-          suggestedCity: "Trois-Rivières",
-          suggestedCoords: [-72.55, 46.35],
+          name: "Test Place",
+          sizePx: 14,
+          fontStyle: "uppercase",
+          mapElementType: "label",
         },
-      };
-
-      // 1. Initial state: correctly recognized as needing manual review
-      expect(isUnrecognizedTextFeature(ocrExtractedFeature)).toBe(true);
-
-      // 2. Open modal and convert to TextValidationEntry
-      const modalEntry = featureToValidationEntry(ocrExtractedFeature, true);
-      expect(modalEntry.validationStatus).toBe("manual_review");
-      expect(modalEntry.text).toBe("Trois-Rivires");
-
-      // 3. User accepts suggestion: updates text to "Trois-Rivières", selected = true, useSuggestedCity = true
-      const userChoice: TextValidationEntry = {
-        ...modalEntry,
-        text: "Trois-Rivières",
-        selected: true,
-        useSuggestedCity: true,
-      };
-
-      // 4. Apply validation to feature
-      const validatedFeature = applyValidationToFeature(ocrExtractedFeature, userChoice);
-
-      expect(validatedFeature.name).toBe("Trois-Rivières");
-      expect(validatedFeature.properties.validationStatus).toBe("accepted");
-      expect(validatedFeature.properties.validation_status).toBe("accepted");
-      expect(validatedFeature.properties.show).toBe(true);
-      expect(validatedFeature.properties.recognized).toBe(true);
-      expect(validatedFeature.geometry.coordinates).toEqual([-72.55, 46.35]);
-
-      // 5. Exact Map.vue serialization flow: prepareFeaturesForSave -> camelToSnake
-      const prepared = prepareFeaturesForSave([validatedFeature]);
-      const exactPayload = camelToSnake(prepared) as Array<Record<string, any>>;
-
-      // Exact API payload assertions
-      expect(exactPayload).toHaveLength(1);
-      const apiItem = exactPayload[0];
-      expect(apiItem.id).toBe("feat-ocr-42");
-      expect(apiItem.project_id).toBe("proj-123");
-      expect(apiItem.name).toBe("Trois-Rivières");
-      expect(apiItem.created_at).toBeUndefined(); // stripped for API PUT
-      expect(apiItem.updated_at).toBeUndefined();
-
-      // Properties in exact API payload:
-      expect(apiItem.properties.validation_status).toBe("accepted");
-      expect(apiItem.properties.show).toBe(true);
-      expect(apiItem.properties.recognized).toBe(true);
-      expect(apiItem.properties.is_ocr_text).toBe(true);
-
-      // 6. Simulate API round-trip: JSON stringify -> backend response -> snakeToCamel in loadInitialFeatures()
-      const rawApiResponse = JSON.parse(JSON.stringify(exactPayload));
-      const reloadedFeatures = snakeToCamel(rawApiResponse) as Feature[];
-      const reloadedFeature = reloadedFeatures[0];
-
-      // 7. Verify reloaded feature properties and state
-      expect(reloadedFeature.properties.validationStatus).toBe("accepted");
-      expect(reloadedFeature.properties.show).toBe(true);
-      expect(reloadedFeature.properties.recognized).toBe(true);
-
-      // 8. Crucial check: MUST NOT revert to manual_review or reappear in modal
-      expect(isUnrecognizedTextFeature(reloadedFeature)).toBe(false);
-    });
-
-    it("handles legacy/mixed features where only validation_status or only validationStatus exists", () => {
-      const featureWithSnakeOnly: Feature = {
-        type: "Feature",
-        id: "feat-snake-1",
-        projectId: "p1",
-        geometry: { type: "Point", coordinates: [0, 0] },
         createdAt: "2026-01-01",
         updatedAt: "2026-01-01",
-        name: "Item",
-        properties: {
-          name: "Item",
-          isOcrText: true,
-          recognized: false,
-          show: false,
-          validation_status: "manual_review",
-          mapElementType: "point"
-        },
       };
 
-      expect(isUnrecognizedTextFeature(featureWithSnakeOnly)).toBe(true);
-      const entry = featureToValidationEntry(featureWithSnakeOnly, true);
-      expect(entry.validationStatus).toBe("manual_review");
-
-      // Validate as accepted
-      const validated = applyValidationToFeature(featureWithSnakeOnly, { ...entry, selected: true });
-      expect(validated.properties.validationStatus).toBe("accepted");
-      expect(validated.properties.validation_status).toBe("accepted");
-
-      const payload = camelToSnake(prepareFeaturesForSave([validated])) as Array<Record<string, any>>;
-      expect(payload[0].properties.validation_status).toBe("accepted");
-      expect(payload[0].properties.show).toBe(true);
-      expect(payload[0].properties.recognized).toBe(true);
-
-      const reloaded = (snakeToCamel(payload) as Feature[])[0];
-      expect(isUnrecognizedTextFeature(reloaded)).toBe(false);
-    });
-
-    it("supports ValidationStatus enum members directly in feature properties and comparisons", () => {
-      expect(ValidationStatus.ACCEPTED).toBe("accepted");
-      expect(ValidationStatus.REJECTED).toBe("rejected");
-      expect(ValidationStatus.MANUAL_REVIEW).toBe("manual_review");
-
-      const featureWithEnum: Feature = {
-        type: "Feature",
-        id: "feat-enum-1",
-        projectId: "p1",
-        geometry: { type: "Point", coordinates: [0, 0] },
-        createdAt: "2026-01-01",
-        updatedAt: "2026-01-01",
-        name: "EnumItem",
-        properties: {
-          name: "EnumItem",
-          isOcrText: true,
-          recognized: false,
-          show: false,
-          validationStatus: ValidationStatus.MANUAL_REVIEW,
-          validation_status: ValidationStatus.MANUAL_REVIEW,
-          mapElementType: "point"
-        },
-      };
-
-      expect(isUnrecognizedTextFeature(featureWithEnum)).toBe(true);
-
-      const entry = featureToValidationEntry(featureWithEnum, true);
-      expect(entry.validationStatus).toBe(ValidationStatus.MANUAL_REVIEW);
-
-      const validated = applyValidationToFeature(featureWithEnum, {
-        ...entry,
+      const accepted = applyValidationToFeature(rawFeature, {
+        id: rawFeature.id,
+        text: "Test Place",
+        originalText: "Test Place",
         selected: true,
+        wordType: "province",
+        coordinates: [-71, 46],
       });
-      expect(validated.properties.validationStatus).toBe(ValidationStatus.ACCEPTED);
-      expect(validated.properties.validation_status).toBe(ValidationStatus.ACCEPTED);
-      expect(validated.properties.show).toBe(true);
-      expect(validated.properties.recognized).toBe(true);
+      expect(accepted.properties.show).toBe(true);
+      expect(accepted.properties.recognized).toBe(true);
+      expect(accepted.properties.validationStatus).toBe(ValidationStatus.ACCEPTED);
+      expect(accepted.geometry.coordinates).toEqual([-71, 46]);
+      expect(accepted.properties.rawType).toBe("province");
+      expect(accepted.properties.mapElementType).toBe("label");
+      expect(accepted.properties.sizePx).toBe(14);
+      expect(accepted.properties.fontStyle).toBe("uppercase");
+
+      const rejected = applyValidationToFeature(rawFeature, {
+        id: rawFeature.id,
+        text: "Test Place",
+        originalText: "Test Place",
+        selected: false,
+        wordType: "city",
+      });
+      expect(rejected.properties.show).toBe(false);
+      expect(rejected.properties.recognized).toBe(false);
+      expect(rejected.properties.validationStatus).toBe(ValidationStatus.REJECTED);
     });
   });
 });
-

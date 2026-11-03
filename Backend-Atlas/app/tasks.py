@@ -31,7 +31,13 @@ from app.models.map_import import (
     MapImport,
 )
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
-from app.utils.cities_validation import match_ocr_label, find_nearby_candidate_city
+from app.utils.cities_validation import (
+    DEFAULT_STYLE,
+    STYLES_MAP,
+    match_ocr_label,
+    find_nearby_candidate_place,
+    is_exploitable_text,
+)
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
 from app.utils.georeferencing import RunRecord, build_georef_inputs
@@ -232,7 +238,7 @@ async def _fail_ocr(map_id: str, task_id: str, error: str) -> None:
             row.ocr_state = OCR_FAILED
             if row.extraction_state == EXTRACTION_WAITING_FOR_TEXT:
                 row.extraction_state = EXTRACTION_FAILED
-                row.extraction_error = f"L'analyse du texte a échoué : {error}"
+                row.extraction_error = f"Text analysis failed: {error}"
 
 
 async def _claim_extraction(map_id: str, task_id: str) -> Optional[_ClaimedImport]:
@@ -356,43 +362,103 @@ def _categorized_text_features_from_ocr(
     blocks: list,
     legend_bounds: Optional[dict],
     frame_bounds: Optional[dict],
+    image_size: Optional[tuple[int, int]] = None,
 ) -> List[dict[str, Any]]:
-    """Extract recognized cities and unrecognized texts from OCR blocks."""
+    """Extract recognized places (cities or geographic entities) and unrecognized OCR text.
+
+    Three possible cases:
+    Case 1: reject immediately if the text is empty, in the legend, or a junk token
+        (keywords such as scale/legend, fewer than 2 characters, etc.).
+    Case 2: OCR text is usable but not recognized by geonamescache or the geographic JSON
+        -> kept for manual validation (show=False, recognized=False).
+    Case 3: text is recognized as a city or geographic entity from the JSON
+        -> displayed on the final map (show=True, recognized=True).
+    """
     collections: List[dict[str, Any]] = []
-    seen_cities = set()
+    seen_recognized = set()
     seen_unrecognized = set()
 
     for coords, text, prob in blocks:
+        # Case 1: reject immediately if the text is inside the legend.
         if polygon_center_in_legend(coords, legend_bounds):
             continue
 
         raw_text = str(text or "").strip()
-        if not raw_text:
+        # Case 1: reject immediately if empty or junk text (< 2 letters, scale text, etc.).
+        if not is_exploitable_text(raw_text):
             continue
 
         confidence = float(prob) if prob is not None else 1.0
-        city = match_ocr_label(raw_text, frame_bounds)
 
-        if city and city.get("is_exact", True):
-            city_id = city.get("geonameid") or city.get("name")
-            if city_id in seen_cities:
+        target_pos = None
+        if coords and frame_bounds and image_size:
+            h, w = image_size
+            if w > 0 and h > 0:
+                cx = sum(p[0] for p in coords) / len(coords)
+                cy = sum(p[1] for p in coords) / len(coords)
+                s = frame_bounds.get("south", frame_bounds.get("min_lat"))
+                n = frame_bounds.get("north", frame_bounds.get("max_lat"))
+                w_b = frame_bounds.get("west", frame_bounds.get("min_lon"))
+                e_b = frame_bounds.get("east", frame_bounds.get("max_lon"))
+                if None not in (s, n, w_b, e_b):
+                    text_lon = w_b + (cx / w) * (e_b - w_b)
+                    text_lat = n - (cy / h) * (n - s)
+                    target_pos = (text_lat, text_lon)
+
+        try:
+            if target_pos is not None:
+                entity = match_ocr_label(raw_text, frame_bounds, target_pos=target_pos)
+            else:
+                entity = match_ocr_label(raw_text, frame_bounds)
+        except TypeError:
+            entity = match_ocr_label(raw_text, frame_bounds)
+
+        if entity and entity.get("found", True) and entity.get("lat") and entity.get("lon"):
+            # Case 3: recognized as a city or geographic entity from the JSON.
+            raw_type = entity.get("type")
+            entity_id = f"{raw_type or 'city'}:{entity.get('geonameid') or entity.get('name')}"
+            if entity_id in seen_recognized:
                 continue
-            seen_cities.add(city_id)
+            seen_recognized.add(entity_id)
+
+            map_element_type, size_px, font_style, transform_func = STYLES_MAP.get(
+                raw_type or "", DEFAULT_STYLE
+            )
+            display_name = transform_func(entity.get("name", raw_text))
+
+            extra = {
+                "labelText": display_name,
+                "lat": entity["lat"],
+                "lon": entity["lon"],
+                "type": raw_type or "city",
+                "rawType": raw_type or "city",
+                "mapElementType": map_element_type,
+                "sizePx": size_px,
+                "fontStyle": font_style,
+                "matchedCity": entity.get("name"),
+                "population": entity.get("population"),
+                "fromGeographicEntitiesJson": bool(raw_type and raw_type != "city"),
+                "isGeographicEntity": bool(raw_type and raw_type != "city"),
+            }
+            ocr_coords = (
+                [target_pos[1], target_pos[0]]
+                if extra["fromGeographicEntitiesJson"] and target_pos is not None
+                else [entity["lon"], entity["lat"]]
+            )
+
             collections.append(
                 _make_text_feature(
-                    name=city["name"],
+                    name=display_name,
                     original_text=raw_text,
-                    coords=[city["lon"], city["lat"]],
+                    coords=ocr_coords,
                     quad=coords,
                     confidence=confidence,
                     recognized=True,
-                    extra={
-                        "matchedCity": city["name"],
-                        "population": city.get("population"),
-                    },
+                    extra=extra,
                 )
             )
         else:
+            # Case 2: keep OCR text even if it is not recognized -> manual validation.
             clean = raw_text.lower()
             if clean in seen_unrecognized:
                 continue
@@ -405,18 +471,20 @@ def _categorized_text_features_from_ocr(
                     quad=coords,
                     confidence=confidence,
                     recognized=False,
-                    extra={"suggestedCity": None, "suggestedCoords": None},
+                    extra={
+                        "suggestedPlace": None,
+                    },
                 )
             )
 
     return collections
 
 
-def _georeference_unrecognized_texts(
+def _georeference_text_features(
     collections: List[dict[str, Any]],
     placement: Any,
 ) -> None:
-    """Batch georeference unrecognized OCR text centroids and attach nearby candidate cities."""
+    """Georeference OCR positions for review text and JSON-matched entities."""
     if placement is None:
         return
 
@@ -424,9 +492,14 @@ def _georeference_unrecognized_texts(
         feat
         for coll in collections
         for feat in coll.get("features", [])
-        if feat.get("properties", {}).get("isOcrText")
-        and not feat.get("properties", {}).get("recognized")
-        and feat.get("properties", {}).get("quad")
+        if (
+            (props := feat.get("properties", {})).get("isOcrText")
+            and props.get("quad")
+            and (
+                not props.get("recognized")
+                or props.get("fromGeographicEntitiesJson")
+            )
+        )
     ]
     if not target_features:
         return
@@ -448,15 +521,24 @@ def _georeference_unrecognized_texts(
                 coords = res_feat.get("geometry", {}).get("coordinates")
                 if coords:
                     feat["geometry"]["coordinates"] = coords
+                    if feat.get("properties", {}).get("recognized"):
+                        continue
                     orig_text = (
                         feat.get("properties", {}).get("originalText") or feat.get("properties", {}).get("name") or ""
                     )
-                    nearby_city = find_nearby_candidate_city(orig_text, coords, radius_km=75.0)
-                    if nearby_city:
-                        feat["properties"]["suggestedCity"] = nearby_city.get("name")
-                        feat["properties"]["suggestedCoords"] = [nearby_city.get("lon"), nearby_city.get("lat")]
+                    nearby_place = find_nearby_candidate_place(orig_text, coords, radius_km=75.0)
+                    if nearby_place:
+                        feat["properties"]["suggestedPlace"] = {
+                            "name": nearby_place.get("name_fr")
+                            or nearby_place.get("name"),
+                            "coordinates": [
+                                nearby_place.get("lon"),
+                                nearby_place.get("lat"),
+                            ],
+                            "type": nearby_place.get("type") or "city",
+                        }
     except Exception as e:
-        logger.debug(f"Failed to batch georeference unrecognized texts: {e}")
+        logger.debug(f"Failed to batch georeference OCR text features: {e}")
 
 
 def _write_ocr_text_file(filename: str, blocks: list) -> str:
@@ -507,7 +589,7 @@ def run_map_ocr(self, map_id: str):
                     map_id,
                     extraction_task_id,
                     EXTRACTION_FAILED,
-                    "Impossible de lancer l'extraction",
+                    "Could not start extraction",
                 )
             )
 
@@ -554,11 +636,13 @@ def process_map_extraction(self, map_id: str):
         # Step 2: text -> city points
         if inputs.enable_text_extraction:
             progress(2, "Detecting cities in the extracted text")
+            img_size = (image.shape[0], image.shape[1]) if image is not None else None
             collections.extend(
                 _categorized_text_features_from_ocr(
                     claimed.ocr_blocks,
                     inputs.legend_bounds,
                     inputs.frame_bounds,
+                    image_size=img_size,
                 )
             )
         _raise_if_cancelled(map_id)
@@ -578,9 +662,9 @@ def process_map_extraction(self, map_id: str):
         )
         _raise_if_cancelled(map_id)
 
-        # Georeference unrecognized text coordinates using the fitted placement
+        # Georeference OCR positions for unrecognized text and JSON-matched entities.
         if inputs.enable_text_extraction:
-            _georeference_unrecognized_texts(collections, placement)
+            _georeference_text_features(collections, placement)
 
         # Step 4: shapes, one flood fill per click. Not snapped or clipped: a
         # shape is not a land zone and may sit at sea.

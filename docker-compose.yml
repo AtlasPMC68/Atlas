@@ -15,6 +15,7 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
       - ocr-data:/data
     depends_on:
       - keycloak
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./Frontend-Atlas:/app # bind mount pour hot reload
       - /app/node_modules # éviter conflit node_modules
+      - ./shared:/shared:ro
 
   redis:
     image: redis:7-alpine
@@ -57,6 +59,7 @@ services:
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/debug_runs:/app/debug_runs
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
       - ocr-data:/data
     depends_on:
       - redis
@@ -97,6 +100,7 @@ services:
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
     depends_on:
       - redis
     command: celery -A app.celery_app flower --port=5555
@@ -185,6 +189,7 @@ services:
       - ./Backend-Atlas/scripts:/app/scripts
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./Backend-Atlas/.env.dev:/app/.env.dev
+      - ./shared:/shared:ro
       - ocr-data:/data
 
   # Fast georeferencing loop: no broker, no database, no pytest collection, and
@@ -200,6 +205,7 @@ services:
       - ./Backend-Atlas/.georef_cache:/app/.georef_cache
       - ./Backend-Atlas/ablations:/app/ablations
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
       - ocr-data:/data
 
   test-frontend:
@@ -209,6 +215,7 @@ services:
     volumes:
       - ./Frontend-Atlas:/app
       - /app/node_modules
+      - ./shared:/shared:ro
 
 volumes:
   postgres-data:

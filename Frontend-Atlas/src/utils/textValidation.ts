@@ -1,5 +1,22 @@
-import { ValidationStatus, type Coordinate, type Feature } from "../typescript/feature";
-
+import {
+  type SuggestedPlace,
+  ValidationStatus,
+  type Coordinate,
+  type Feature,
+} from "../typescript/feature";
+import type { WordType } from "./wordStyles";
+import {
+  applyWordStyleToFeature,
+  getWordTypeForFeature,
+  isTextFeature,
+} from "./wordStyles";
+import {
+  getFeatureReviewState,
+  getFeatureValidationStatus,
+  isFeatureSelectedForValidation,
+  isTextValidationReviewCandidate,
+  synchronizeValidationState,
+} from "./featureValidationState";
 export { ValidationStatus };
 
 export interface TextValidationEntry {
@@ -9,26 +26,19 @@ export interface TextValidationEntry {
   selected: boolean;
   validationStatus?: ValidationStatus | `${ValidationStatus}`;
   coordinates?: [number, number];
-  suggestedCity?: string;
-  suggestedCoords?: [number, number];
-  useSuggestedCity?: boolean;
+  suggestedPlace?: SuggestedPlace;
+  useSuggestedPlace?: boolean;
+  wordType?: WordType;
 }
 
 /** Check if a feature is an unrecognized OCR text candidate for validation. */
 export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | null): boolean {
   const matchesMap = !mapId || feature.mapId === mapId || !feature.mapId;
-  const status = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-  if (status === ValidationStatus.ACCEPTED || status === ValidationStatus.REJECTED) {
-    return false;
-  }
-  const isCandidate =
-    status === ValidationStatus.MANUAL_REVIEW ||
-    (!feature.properties?.recognized && feature.properties?.show === false);
-  const isText =
-    Boolean(feature.properties?.isOcrText) ||
-    feature.properties?.labelText !== undefined ||
-    feature.geometry?.type === "Point";
-  return matchesMap && isCandidate && isText;
+  return (
+    matchesMap &&
+    isTextValidationReviewCandidate(feature) &&
+    isTextFeature(feature)
+  );
 }
 
 /** Convert a GeoJSON feature into a text validation entry. */
@@ -39,25 +49,16 @@ export function featureToValidationEntry(
   const text = feature.properties?.labelText || feature.properties?.name || feature.name || "";
   const originalText = feature.properties?.originalText || text;
 
-  const status = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-  const isUnrecognized = Boolean(feature.properties?.isOcrText && !feature.properties?.recognized);
-  const selected =
-    status === ValidationStatus.ACCEPTED
-      ? true
-      : status === ValidationStatus.REJECTED
-      ? false
-      : isUnrecognized
-      ? (feature.properties?.userSelected !== undefined
-          ? Boolean(feature.properties.userSelected)
-          : defaultSelected)
-      : (feature.properties?.show !== undefined
-          ? Boolean(feature.properties.show)
-          : defaultSelected);
+  const status = getFeatureValidationStatus(feature);
+  const reviewState = getFeatureReviewState(feature);
+  const selected = isFeatureSelectedForValidation(feature, defaultSelected);
 
   const coordinates =
     feature.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)
       ? (feature.geometry.coordinates as [number, number])
       : undefined;
+
+  const wordType = getWordTypeForFeature(feature);
 
   return {
     id: feature.id,
@@ -68,58 +69,44 @@ export function featureToValidationEntry(
       status ??
       (selected
         ? ValidationStatus.ACCEPTED
-        : isUnrecognized
+        : reviewState === ValidationStatus.MANUAL_REVIEW
         ? ValidationStatus.MANUAL_REVIEW
         : ValidationStatus.REJECTED),
     coordinates,
-    suggestedCity: feature.properties?.suggestedCity,
-    suggestedCoords: feature.properties?.suggestedCoords,
+    suggestedPlace: feature.properties?.suggestedPlace,
+    wordType,
   };
 }
 
-/** Apply user validation choices to a feature. */
+/** Apply a validation decision, selected word type, and coordinates atomically. */
 export function applyValidationToFeature(
   feature: Feature,
   entry: TextValidationEntry,
 ): Feature {
   const isSelected = Boolean(entry.selected);
-  const validationStatus: ValidationStatus = isSelected
+  const wordType = entry.wordType || "city";
+  const styledFeature = applyWordStyleToFeature(feature, wordType, entry.text);
+  const coordinates: Coordinate | undefined = isSelected
+    ? entry.useSuggestedPlace && entry.suggestedPlace
+      ? entry.suggestedPlace.coordinates
+      : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate)
+    : undefined;
+  const validationStatus = isSelected
     ? ValidationStatus.ACCEPTED
     : ValidationStatus.REJECTED;
-
-  if (!isSelected) {
-    return {
-      ...feature,
-      properties: {
-        ...feature.properties,
-        show: false,
-        recognized: false,
-        validationStatus,
-        validation_status: validationStatus,
-      },
-    };
-  }
-
-  const coordinates: Coordinate =
-    entry.useSuggestedCity && entry.suggestedCoords
-      ? entry.suggestedCoords
-      : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate);
+  const properties = synchronizeValidationState(
+    {
+      ...styledFeature.properties,
+      userSelected: isSelected,
+    },
+    validationStatus,
+  );
 
   return {
-    ...feature,
-    name: entry.text,
-    geometry: {
-      type: "Point",
-      coordinates,
-    },
-    properties: {
-      ...feature.properties,
-      name: entry.text,
-      ...(feature.properties?.labelText !== undefined ? { labelText: entry.text } : {}),
-      show: true,
-      recognized: true,
-      validationStatus,
-      validation_status: validationStatus,
-    },
+    ...styledFeature,
+    geometry: coordinates
+      ? { ...styledFeature.geometry, type: "Point", coordinates }
+      : styledFeature.geometry,
+    properties,
   };
 }

@@ -16,3 +16,6 @@ declare module "leaflet-image" {
   const leafletImage: (map: Map, done: LeafletImageCallback) => void;
   export default leafletImage;
 }
+
+declare module "leaflet-geometryutil";
+declare module "leaflet-arrowheads";

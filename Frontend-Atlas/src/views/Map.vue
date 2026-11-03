@@ -11,6 +11,8 @@
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
+          :selected-feature-id="selectedFeatureId"
+          @select-feature="(id: string) => selectedFeatureId = id"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -33,6 +35,8 @@
             :project-id="projectId || projectRouteId || ''"
             :can-undo="canUndo"
             :can-redo="canRedo"
+            :selected-feature-id="selectedFeatureId"
+            @select-feature="(id: string | null) => selectedFeatureId = id"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
@@ -149,11 +153,11 @@ import CreateProjectDialog from "../components/CreateProjectDialog.vue";
 import TextValidationModal from "../components/import/TextValidationModal.vue";
 import {
   type TextValidationEntry,
-  ValidationStatus,
   featureToValidationEntry,
   applyValidationToFeature,
   isUnrecognizedTextFeature,
 } from "../utils/textValidation";
+import { isVisibleInMainLayers } from "../utils/featureValidationState";
 
 const route = useRoute();
 const router = useRouter();
@@ -180,6 +184,7 @@ function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
 const features = ref<Feature[]>([]);
+const selectedFeatureId = ref<string | null>(null);
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
@@ -196,7 +201,7 @@ const zoneFeatures = computed(() =>
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
-const useTimelineFilter = ref(false);
+const useTimelineFilter = ref(true);
 
 const enrichedPeriods = computed((): SliderPeriod[] =>
   mapPeriods.value
@@ -270,13 +275,7 @@ const combinedFeatureVisibility = computed(() => {
     const id = String(feature.id);
 
     // Hide unvalidated or rejected OCR texts from the map
-    const valStatus = feature.properties?.validationStatus ?? feature.properties?.validation_status;
-    if (
-      feature.properties?.isOcrText &&
-      (valStatus === ValidationStatus.REJECTED ||
-        valStatus === ValidationStatus.MANUAL_REVIEW ||
-        (!feature.properties?.recognized && feature.properties?.show === false))
-    ) {
+    if (!isVisibleInMainLayers(feature)) {
       combined.set(id, false);
       return;
     }
@@ -668,14 +667,23 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
   isSavingTextValidation.value = true;
   try {
     const validatedMap = new Map(validatedItems.map((i) => [i.id, i]));
+    const openedIds = new Set(textValidationEntries.value.map((i) => i.id));
 
-    const nextFeatures = features.value.map((f: Feature) => {
-      const validated = validatedMap.get(f.id);
-      if (!validated) return f;
+    for (const id of openedIds) {
+      if (!validatedMap.has(id)) {
+        featureVisibility.value.delete(id);
+      }
+    }
 
-      featureVisibility.value.set(f.id, validated.selected);
-      return applyValidationToFeature(f, validated);
-    });
+    const nextFeatures = features.value
+      .filter((f: Feature) => !(openedIds.has(f.id) && !validatedMap.has(f.id)))
+      .map((f: Feature) => {
+        const validated = validatedMap.get(f.id);
+        if (!validated) return f;
+
+        featureVisibility.value.set(f.id, validated.selected);
+        return applyValidationToFeature(f, validated);
+      });
 
     featureVisibility.value = new Map(featureVisibility.value);
     applyFeatureSnapshot(nextFeatures, true);
