@@ -488,7 +488,7 @@ choice for the selector, not a default.
 | `scripts/read_georef_records.py` | reads a run folder's `run_record.json` files, real or synthetic, into `signals.csv` (the `run_` columns) and `checkpoints.csv`; refits the control-point affine where an old record did not log it |
 | `scripts/run_georef_variants.py` | the same variants on the real corpus, scoring snapping three ways (§3.5) |
 | `scripts/fit_georef_quality.py` | fits the quality estimator on `--fit` datasets (forward selection, leave-map-out CV, stress held out), scores it once on `--test`, against the constant and `rmse_km`; writes `report.md`, `model.json`, `predictions.csv` (§10.10). The point p90 (quantile regression by linear programme) takes most of its ~25 min |
-| `scripts/run_georef_add_point.py` | Q5: each case placed by `PROD`, then again with one more click chosen four ways (estimator, random, farthest, oracle) from the SIFT suggestions and the 40 largest cities; `--model` a Q4 `model.json` (§10.11). The `guard_` columns and the guarded tables: what a guarded rerun could read to keep or drop the new click (§10.14) |
+| `scripts/run_georef_add_point.py` | Q5: each case placed by `PROD`, then again with one more click chosen four ways (estimator, random, farthest, oracle) from the SIFT suggestions and the 40 largest cities; `--model` a Q4 `model.json` (§10.11). The `guard_` columns and the guarded tables: what a guarded rerun could read to keep or drop the new click (§10.14). The `local_` columns: the old placement corrected instead of placed again, by a bump at the click or the warm-started bend; `--asked-only`, `--strategies` (§10.15) |
 | `scripts/run_georef_quality_corpus.py` | Q6: the Q4 model on every dev-test case, probes included, against its check points and snapped IoU; the leave-one-out flag on the real cases and on the Q3 synthetic layouts (§10.12); each case's predicted IoU as production records it (§10.13) |
 | `scripts/fit_georef_success.py` | Q8: predicted snapped IoU on the Q3 runs, from Q4's predictions and the zones' sizes (`quality.zone_sizes`, `zone_errors`, `disc_iou`), scored as "ask for a click below a threshold" (§10.13); `--ship` writes the Q4 and Q8 models into `georeferencing/quality_model.json`, the file production applies |
 | `scripts/show_georef_twins.py`, `scripts/georef_coast_ceiling.py` | a map's twins drawn; the ceiling of a coast fit given the truth (§10.4) |
@@ -534,10 +534,12 @@ choice for the selector, not a default.
   with no coast, placed from cities alone, is unmeasured: it needs inland regions in the
   generator, and city-only layouts.
 - **An added click can make a map worse** in 13% of Q5's cases (§10.11, §10.13). No blind
-  guard on the rerun fixes it (§10.14): the best halve the losses at a few percent of the gain
-  and miss the largest, where the bend moves zones on the stress twin while the dense error and
-  the predicted IoU say the map got better. Untried: a correction local to the new click
-  instead of a refit, and why the bend does that.
+  guard on the rerun fixes it (§10.14). Why (§10.15): the click changes the affine the bend
+  starts from, and on the far side of the map part of the coast starts beyond the bend's 40 px
+  reach. Bending the old placement again with the new click, and placing the map again only
+  where that bend refuses, halves the maps made worse and gains a third to a half more, on Q5's
+  maps and on unseen seeds. In production it needs the previous placement kept with the map;
+  not built. What is left: the fallback's own losses (m00786/stress).
 - **One click can still break the piecewise fallback.** With the second alignment guarded
   (§10.12), m00712/stress still goes from 53 to ~290 km with one more correct city, before the
   second alignment runs; not looked into.
@@ -1141,3 +1143,78 @@ it (+0.022 and +0.048 mean IoU where asked, 30–41 maps helped against 14 hurt)
 belongs in production on this evidence. What the losses need is the pipeline's, not a
 referee's: why one correct click makes the bend move zones it should not (the stress twin, as
 m00712/stress in §9), or a correction local to the new click instead of a refit (§9).
+
+### 10.15 Why a click hurts, and the warm-started bend (2026-11-02/03)
+
+**Why.** Scratch probes on the largest losses of §10.14, each placed three ways: as before the
+click, placed again with it, and with the old alignment kept and the click only in the bend.
+- **The loss is far from the click.** m00763/stress (−0.14): Indonesia, near the click, gains
+  (0.625 → 0.681); Thailand (0.81 → 0.51) and Burma (0.72 → 0.02), at 0.74–0.86 of the
+  diagonal from it, lose it. m00771/stress: the near zone −0.03, the far one −0.14. The dense
+  error, weighted by area, hardly moves or improves (42 → 43 km, 53 → 37 km).
+- **The click moves where the bend starts.** The alignment refits with the click; on a map an
+  affine cannot follow, that trades the far side for the near one. The true coast misfit at the
+  bend's start, more than half the diagonal from the click: m00763 20 → 36 px median, the share
+  within the bend's first search radius (40 px) 0.87 → 0.69; m00771 88 → 118 px. The bend ends
+  there at 9 → 23 px and 28 → 37 px: what starts out of reach is not matched, and the ridge
+  keeps the correction small where nothing pulls.
+- **Some losses are the click's noise.** m00712/local: the old placement is 0.5 km off at the
+  new click's spot and the click 12 px off it (layout noise 5.4 px); anything that follows the
+  click loses (−0.07 placed again).
+
+**A bump at the click** (`synthetic-addpoint-local-2026-11-02`, seeds 700–749, every case):
+the old placement kept, a Gaussian bump at the new click pulling it to where it was clicked,
+over 5–25% of the diagonal, alone or held at zero on the old points. It loses to placing again
+everywhere (asked, farthest pick: +0.004 at best against +0.022), its worst cases are worse
+(−0.16 to −0.29 against −0.04), and the field and none twins lose most. The losses are the
+click's noise: in the 15 worst, the old placement was 2–5 px off at the click and the click
+9–18 px. A bump believes one click completely; placing again shares it among the points, and
+the bend weighs it as a 4 px measurement. And most of what a click adds is global: on the field
+and none twins it improves the affine everywhere, which no local correction can.
+
+**The warm-started bend** (`synthetic-addpoint-warm-2026-11-02`, seeds 700–749, `--asked-only`,
+79 cases): `bend_to_coast` on the old applied model, the new click among the control points.
+The far coast starts where the old bend left it, the coast holds the map wherever it is seen,
+the click weighs what the bend gives a click. Where it refuses (§5.5's safeguards), the old
+placement; "warm, else rerun" places the map again there instead.
+
+| pick | placement | mean IoU gain | hurt (> 0.01) | helped | worst | dense gain |
+|---|---|---|---|---|---|---|
+| farthest | plain rerun | +0.022 | 14 | 30 | −0.037 | +0.057 |
+| farthest | warm | +0.028 | 3 | 41 | −0.024 | +0.106 |
+| farthest | **warm, else rerun** | **+0.034** | 6 | 47 | −0.028 | +0.108 |
+| estimator | plain rerun | +0.022 | 15 | 30 | −0.037 | +0.072 |
+| estimator | warm | +0.028 | **0** | 41 | −0.010 | +0.109 |
+| estimator | **warm, else rerun** | **+0.036** | 4 | 48 | −0.027 | +0.118 |
+
+Dense gain: mean log(before / after). By twin (farthest, warm else rerun against the rerun):
+none +0.030 / +0.024, field +0.002 / +0.000, local +0.013 / −0.004, stress +0.058 / +0.040.
+The warm bend refuses on the big gains the rerun finds (m00712/none: it would move the map more
+than 10% of the diagonal; placed again, +0.25), which is what the fallback is for.
+
+**On unseen seeds** (`synthetic-addpoint-warm-holdout-2026-11-03`, seeds 750–799, 70 asked
+cases, the rule fixed beforehand: warm, else rerun):
+
+| pick | placement | mean IoU gain | hurt (> 0.01) | helped | worst | dense gain |
+|---|---|---|---|---|---|---|
+| farthest | plain rerun | +0.048 | 14 | 41 | −0.143 | +0.231 |
+| farthest | warm | +0.040 | 4 | 44 | −0.053 | +0.218 |
+| farthest | **warm, else rerun** | **+0.064** | 6 | 56 | −0.053 | +0.305 |
+| estimator | plain rerun | +0.041 | 12 | 44 | −0.281 | +0.189 |
+| estimator | warm | +0.037 | 3 | 45 | −0.053 | +0.190 |
+| estimator | **warm, else rerun** | **+0.050** | 6 | 54 | −0.281 | +0.264 |
+
+By twin (farthest, warm else rerun against the rerun): none +0.038 / +0.029, field +0.048 /
++0.032, local +0.040 / +0.033, stress +0.088 / +0.067. The warm bend refuses on 15–16 of 70.
+
+- **It confirms.** A third more IoU gained than placing again, half the maps made worse, and
+  the farthest pick's worst loss −0.05 instead of −0.14; better on every twin.
+- **The warm bend alone is the safest and gains less** (3–4 hurt, worst −0.05), as on the
+  first set: the fallback is where the gain is, and where what is left of the risk is.
+  m00786/stress (estimator's pick, −0.28) is a refusal placed again: the same loss as §10.14.
+- **Farthest beats the estimator's pick again** (§10.11), with the warm bend too.
+
+**Reading.** "Add a point here" should bend the previous placement again with the new point,
+and place the map again from scratch only where that bend refuses. In production that needs the
+previous applied model kept with the map (it is in the run record, not in the database), and
+the re-import to start from it; not built.

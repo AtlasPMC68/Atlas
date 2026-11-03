@@ -182,8 +182,9 @@ def warm_bend(result: Any, placement: Any, click: Any, points: Sequence[Any], co
 
 
 #: The local corrections (module docstring): each returns the model and its own columns.
+#: ``synthetic-addpoint-local-2026-11-02`` ran b05, b10, b15, h15 and h25;
+#: ``synthetic-addpoint-warm-2026-11-02`` b05 and warm.
 LOCALS: Dict[str, Callable[..., Tuple[Any, Dict[str, Any]]]] = {
-    "b05": _bump(0.05, False),
     "warm": warm_bend,
 }
 
