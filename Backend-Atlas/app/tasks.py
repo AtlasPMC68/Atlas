@@ -440,12 +440,17 @@ def _categorized_text_features_from_ocr(
                 "fromGeographicEntitiesJson": bool(raw_type and raw_type != "city"),
                 "isGeographicEntity": bool(raw_type and raw_type != "city"),
             }
+            ocr_coords = (
+                [target_pos[1], target_pos[0]]
+                if extra["fromGeographicEntitiesJson"] and target_pos is not None
+                else [entity["lon"], entity["lat"]]
+            )
 
             collections.append(
                 _make_text_feature(
                     name=display_name,
                     original_text=raw_text,
-                    coords=[entity["lon"], entity["lat"]],
+                    coords=ocr_coords,
                     quad=coords,
                     confidence=confidence,
                     recognized=True,
@@ -475,11 +480,11 @@ def _categorized_text_features_from_ocr(
     return collections
 
 
-def _georeference_unrecognized_texts(
+def _georeference_text_features(
     collections: List[dict[str, Any]],
     placement: Any,
 ) -> None:
-    """Batch georeference unrecognized OCR text and attach nearby place suggestions."""
+    """Georeference OCR positions for review text and JSON-matched entities."""
     if placement is None:
         return
 
@@ -487,9 +492,14 @@ def _georeference_unrecognized_texts(
         feat
         for coll in collections
         for feat in coll.get("features", [])
-        if feat.get("properties", {}).get("isOcrText")
-        and not feat.get("properties", {}).get("recognized")
-        and feat.get("properties", {}).get("quad")
+        if (
+            (props := feat.get("properties", {})).get("isOcrText")
+            and props.get("quad")
+            and (
+                not props.get("recognized")
+                or props.get("fromGeographicEntitiesJson")
+            )
+        )
     ]
     if not target_features:
         return
@@ -511,6 +521,8 @@ def _georeference_unrecognized_texts(
                 coords = res_feat.get("geometry", {}).get("coordinates")
                 if coords:
                     feat["geometry"]["coordinates"] = coords
+                    if feat.get("properties", {}).get("recognized"):
+                        continue
                     orig_text = (
                         feat.get("properties", {}).get("originalText") or feat.get("properties", {}).get("name") or ""
                     )
@@ -526,7 +538,7 @@ def _georeference_unrecognized_texts(
                             "type": nearby_place.get("type") or "city",
                         }
     except Exception as e:
-        logger.debug(f"Failed to batch georeference unrecognized texts: {e}")
+        logger.debug(f"Failed to batch georeference OCR text features: {e}")
 
 
 def _write_ocr_text_file(filename: str, blocks: list) -> str:
@@ -650,9 +662,9 @@ def process_map_extraction(self, map_id: str):
         )
         _raise_if_cancelled(map_id)
 
-        # Georeference unrecognized text coordinates using the fitted placement
+        # Georeference OCR positions for unrecognized text and JSON-matched entities.
         if inputs.enable_text_extraction:
-            _georeference_unrecognized_texts(collections, placement)
+            _georeference_text_features(collections, placement)
 
         # Step 4: shapes, one flood fill per click. Not snapped or clipped: a
         # shape is not a land zone and may sit at sea.

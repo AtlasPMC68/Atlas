@@ -287,7 +287,7 @@ describe("TextValidationModal", () => {
     expect(confirmedItems[0].id).toBe("unrec-unloc-1");
   });
 
-  it("clears suggested city and hides tolerance radius when position is manually changed", async () => {
+  it("clears the suggested place when position is manually changed", async () => {
     const wrapper = mountModal();
     const vm = wrapper.vm as any;
     const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
@@ -298,6 +298,17 @@ describe("TextValidationModal", () => {
 
     expect(item.suggestedPlace).toBeUndefined();
     expect(item.useSuggestedPlace).toBe(false);
+  });
+
+  it("keeps the OCR position on the temporary map when a place suggestion is accepted", () => {
+    const wrapper = mountModal();
+    const vm = wrapper.vm as any;
+    const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
+
+    vm.toggleSuggestion(item);
+
+    expect(item.useSuggestedPlace).toBe(true);
+    expect(vm.getItemCoords(item)).toEqual([-82.35, 23.2]);
   });
 
   it("allows selecting word type and applies text transformations according to word style", async () => {

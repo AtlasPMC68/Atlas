@@ -673,9 +673,7 @@ function itemBorderClass(item: TextValidationEntry): string {
 }
 
 function getItemCoords(item: TextValidationEntry): [number, number] | undefined {
-  return item.useSuggestedPlace && item.suggestedPlace
-    ? item.suggestedPlace.coordinates
-    : item.coordinates;
+  return item.coordinates;
 }
 
 function focusItem(item: TextValidationEntry, minZoom = 5) {

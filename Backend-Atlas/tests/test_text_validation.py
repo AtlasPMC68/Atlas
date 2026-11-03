@@ -168,9 +168,63 @@ def test_categorized_text_features_when_no_unrecognized_words(monkeypatch):
     assert features[0]["properties"]["recognized"] is True
 
 
+def test_json_matched_text_uses_ocr_position_but_geonames_city_keeps_cached_position(monkeypatch):
+    from unittest.mock import MagicMock
+    from app.tasks import _georeference_text_features
+
+    json_entity = {
+        "name": "Province de Québec",
+        "type": "province",
+        "lat": 46.8,
+        "lon": -71.2,
+    }
+
+    def _mock_match(text, frame_bounds=None, target_pos=None):
+        if text == "Province de Québec":
+            return json_entity
+        return QUEBEC_CITY
+
+    monkeypatch.setattr("app.tasks.match_ocr_label", _mock_match)
+    collections = _categorized_text_features_from_ocr(
+        [
+            [[[10, 10], [20, 10], [20, 20], [10, 20]], "Province de Québec", 0.95],
+            [[[30, 30], [40, 30], [40, 40], [30, 40]], "Québec", 0.90],
+        ],
+        legend_bounds=None,
+        frame_bounds=FRAME_BOUNDS,
+        image_size=(100, 100),
+    )
+
+    features = [collection["features"][0] for collection in collections]
+    province = next(feature for feature in features if feature["properties"]["type"] == "province")
+    city = next(feature for feature in features if feature["properties"]["type"] == "city")
+    assert province["properties"]["name"] == "Province de Québec"
+    assert province["geometry"]["coordinates"] == [-77.0, 57.0]
+    assert city["geometry"]["coordinates"] == [QUEBEC_CITY["lon"], QUEBEC_CITY["lat"]]
+
+    placement = MagicMock()
+    placement.georeference.return_value = MagicMock(
+        collections=[
+            {
+                "type": "FeatureCollection",
+                "features": [{"geometry": {"type": "Point", "coordinates": [-76.5, 56.5]}}],
+            }
+        ]
+    )
+
+    _georeference_text_features(collections, placement)
+
+    assert placement.georeference.call_args.args[0][0]["features"][0]["properties"] == {}
+    assert province["geometry"]["coordinates"] == [-76.5, 56.5]
+    assert province["properties"]["name"] == "Province de Québec"
+    assert province["properties"]["lat"] == json_entity["lat"]
+    assert province["properties"]["lon"] == json_entity["lon"]
+    assert city["geometry"]["coordinates"] == [QUEBEC_CITY["lon"], QUEBEC_CITY["lat"]]
+
+
 def test_batch_georeference_and_candidate_association():
     from unittest.mock import MagicMock
-    from app.tasks import _georeference_unrecognized_texts
+    from app.tasks import _georeference_text_features
 
     collections = [
         {
@@ -204,7 +258,7 @@ def test_batch_georeference_and_candidate_association():
         ]
     )
 
-    _georeference_unrecognized_texts(collections, placement)
+    _georeference_text_features(collections, placement)
 
     feat = collections[0]["features"][0]
     assert feat["geometry"]["coordinates"] == [-73.567, 45.501]
