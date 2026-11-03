@@ -198,7 +198,7 @@ def test_json_matched_text_uses_ocr_position_but_geonames_city_keeps_cached_posi
     features = [collection["features"][0] for collection in collections]
     province = next(feature for feature in features if feature["properties"]["type"] == "province")
     city = next(feature for feature in features if feature["properties"]["type"] == "city")
-    assert province["properties"]["name"] == "Province de Québec"
+    assert province["properties"]["name"] == "PROVINCE DE QUÉBEC"
     assert province["geometry"]["coordinates"] == [-77.0, 57.0]
     assert city["geometry"]["coordinates"] == [QUEBEC_CITY["lon"], QUEBEC_CITY["lat"]]
 
@@ -216,7 +216,7 @@ def test_json_matched_text_uses_ocr_position_but_geonames_city_keeps_cached_posi
 
     assert placement.georeference.call_args.args[0][0]["features"][0]["properties"] == {}
     assert province["geometry"]["coordinates"] == [-76.5, 56.5]
-    assert province["properties"]["name"] == "Province de Québec"
+    assert province["properties"]["name"] == "PROVINCE DE QUÉBEC"
     assert province["properties"]["lat"] == json_entity["lat"]
     assert province["properties"]["lon"] == json_entity["lon"]
     assert city["geometry"]["coordinates"] == [QUEBEC_CITY["lon"], QUEBEC_CITY["lat"]]
