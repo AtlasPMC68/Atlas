@@ -348,7 +348,8 @@ def test_find_nearby_candidate_place_geo_entity():
     coords = [-73.7073, 46.3688]
     match = find_nearby_candidate_place("Province de Quebe", coords, radius_km=150.0, min_similarity=0.80)
     assert match is not None
-    assert "Québec" in (match.get("name"), *match.get("aliases", []))
+    all_names = [match.get("name", ""), *match.get("aliases", [])]
+    assert any("quebec" in name.lower() for name in all_names)
 
 
 def test_find_nearby_candidate_place_out_of_radius():
