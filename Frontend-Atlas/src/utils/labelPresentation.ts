@@ -78,9 +78,11 @@ export interface LabelPresentationModel {
   mapElementType: "point" | "label";
   sizePx: number;
   fontStyle: "normal" | "italic";
+  fontWeight: "normal" | "bold";
   textTransform: "uppercase" | "none";
   isUppercase: boolean;
   isItalic: boolean;
+  isBold: boolean;
   priority: number;
   minZoom: number;
   colorCss: string;
@@ -101,6 +103,9 @@ export function getLabelPresentation(
     String(props.labelText ?? props.name ?? typedFeature.name ?? "");
   const isUppercase = (customStyle?.textTransform ?? taxonomy.textTransform) === "uppercase";
   const isItalic = (customStyle?.fontStyle ?? taxonomy.fontStyle) === "italic";
+  const isBold = customStyle
+    ? customStyle.fontWeight === "bold"
+    : true; // Les libellés cartographiques standard utilisent bold par défaut
   const formattedText = customStyle
     ? isUppercase
       ? rawText.toUpperCase()
@@ -115,6 +120,7 @@ export function getLabelPresentation(
     (typeof props.color === "string" ? props.color : "#000000");
   const inlineStyles: string[] = [];
   if (isItalic) inlineStyles.push("font-style: italic");
+  inlineStyles.push(`font-weight: ${isBold ? "bold" : "normal"}`);
   if (isUppercase) inlineStyles.push("text-transform: uppercase");
 
   return {
@@ -125,9 +131,11 @@ export function getLabelPresentation(
     mapElementType,
     sizePx,
     fontStyle: isItalic ? "italic" : "normal",
+    fontWeight: isBold ? "bold" : "normal",
     textTransform: isUppercase ? "uppercase" : "none",
     isUppercase,
     isItalic,
+    isBold,
     priority: customStyle?.priority ?? taxonomy.priority,
     minZoom: customStyle?.minZoom ?? taxonomy.minZoom,
     colorCss,
@@ -140,6 +148,7 @@ export function getLabelPresentation(
 function parseCustomStyle(value: unknown): {
   sizePx: number;
   fontStyle: "normal" | "italic";
+  fontWeight: "normal" | "bold";
   textTransform: "none" | "uppercase";
   color: string;
   priority: number;
@@ -157,9 +166,14 @@ function parseCustomStyle(value: unknown): {
   ) {
     return null;
   }
+  const isBold =
+    style.fontWeight === "bold" ||
+    Boolean(style.bold) ||
+    (style.fontWeight !== "normal" && style.bold === true);
   return {
     sizePx: style.sizePx,
     fontStyle: style.fontStyle,
+    fontWeight: isBold ? "bold" : "normal",
     textTransform: style.textTransform,
     color: style.color,
     priority: typeof style.priority === "number" ? style.priority : 30,

@@ -40,6 +40,7 @@ from app.utils.cities_validation import (
     find_nearby_candidate_place,
     is_exploitable_text,
     is_geographic_prefix_only,
+    GEOGRAPHIC_PREFIX_TYPES,
     _normalize,
 )
 from app.utils.extraction_steps import extract_zone_colors, place_map
@@ -450,15 +451,6 @@ def _categorized_text_features_from_ocr(
             float(west) + (cx / w) * (float(east) - float(west)),
         )
 
-    prefix_types = {
-        "ocean": {"ocean"},
-        "mer": {"sea"},
-        "lac": {"lake"},
-        "fleuve": {"river", "fleuve"},
-        "riviere": {"river", "fleuve"},
-        "baie"
-    }
-
     for prefix_index, prefix_block in enumerate(source_blocks):
         prefix_text = prefix_block["text"]
         if (
@@ -472,7 +464,7 @@ def _categorized_text_features_from_ocr(
         expected_types = next(
             (
                 types
-                for key, types in prefix_types.items()
+                for key, types in GEOGRAPHIC_PREFIX_TYPES.items()
                 if key in prefix_key
             ),
             None,

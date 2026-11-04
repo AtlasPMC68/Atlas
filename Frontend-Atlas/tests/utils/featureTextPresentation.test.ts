@@ -198,9 +198,60 @@ describe("shared word styles and label presentation", () => {
     expect(pres.sizePx).toBe(16);
     expect(pres.fontStyle).toBe("italic");
     expect(pres.isItalic).toBe(true);
+    expect(pres.fontWeight).toBe("bold");
+    expect(pres.isBold).toBe(true);
     expect(pres.priority).toBe(60);
     expect(pres.minZoom).toBe(2.0);
     expect(pres.html).toContain("Baie d'Hudson");
+  });
+
+  it("applies custom label style bold/fontWeight correctly to presentation model", () => {
+    const featureWithCustomNormal: Feature = {
+      type: "Feature",
+      id: "feat-custom-normal",
+      name: "Terre de Rupert",
+      geometry: { type: "Point", coordinates: [-75, 52] },
+      properties: {
+        name: "Terre de Rupert",
+        customLabelStyle: {
+          id: "style-1",
+          name: "Fort",
+          sizePx: 14,
+          fontStyle: "normal",
+          fontWeight: "normal",
+          bold: false,
+          textTransform: "none",
+          color: "#ff0000",
+          priority: 40,
+          minZoom: 1,
+        },
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presNormal = getLabelPresentation(featureWithCustomNormal);
+    expect(presNormal.fontWeight).toBe("normal");
+    expect(presNormal.isBold).toBe(false);
+    expect(presNormal.styleAttribute).toContain("font-weight: normal");
+
+    const featureWithCustomBold: Feature = {
+      ...featureWithCustomNormal,
+      properties: {
+        ...featureWithCustomNormal.properties,
+        customLabelStyle: {
+          ...featureWithCustomNormal.properties.customLabelStyle!,
+          fontWeight: "bold",
+          bold: true,
+        },
+      },
+    };
+
+    const presBold = getLabelPresentation(featureWithCustomBold);
+    expect(presBold.fontWeight).toBe("bold");
+    expect(presBold.isBold).toBe(true);
+    expect(presBold.styleAttribute).toContain("font-weight: bold");
   });
 
   it("uses taxonomy as the sole source for label style despite stale feature properties", () => {

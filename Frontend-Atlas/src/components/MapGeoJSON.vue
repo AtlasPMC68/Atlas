@@ -484,6 +484,7 @@ function applyLabelPresentationStyle(
   el.style.setProperty("--label-color", presentation.colorCss);
   el.style.setProperty("--label-size", `${presentation.sizePx}px`);
   el.style.setProperty("--label-style", presentation.fontStyle);
+  el.style.setProperty("--label-weight", presentation.fontWeight);
   el.style.setProperty("--label-transform", presentation.textTransform);
   el.dataset.priority = String(presentation.priority);
   el.dataset.minZoom = String(presentation.minZoom);
@@ -1341,7 +1342,7 @@ watch(
 <style>
 .city-label-text {
   font-size: var(--label-size, 14px);
-  font-weight: bold;
+  font-weight: var(--label-weight, bold);
   font-style: var(--label-style, normal);
   text-transform: var(--label-transform, none);
   color: var(--label-color, #000);

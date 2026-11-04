@@ -328,6 +328,23 @@ _GEOGRAPHIC_PREFIXES = tuple(
     for normalized, display in _WORD_STYLE_CONFIG["geographicPrefixes"]
 )
 
+GEOGRAPHIC_PREFIX_TYPES: Dict[str, Set[str]] = {
+    "ocean": {"ocean"},
+    "mer": {"sea"},
+    "lac": {"lake"},
+    "fleuve": {"river", "fleuve"},
+    "riviere": {"river", "fleuve"},
+    "baie": {"sea", "lake", "ocean"},
+    "golfe": {"sea", "ocean"},
+    "detroit": {"sea", "ocean"},
+    "ile": {"province", "state", "territory", "country", "city"},
+    "iles": {"province", "state", "territory", "country", "city"},
+    "province": {"province", "state"},
+    "territoire": {"territory", "state", "province"},
+    "district": {"territory", "province", "state"},
+    "etat": {"state", "province", "country"},
+}
+
 
 def _find_geographic_prefix(norm_text: str) -> Optional[Tuple[str, str]]:
     """Return (normalized_prefix, display_prefix) if norm_text begins with a known geographic prefix."""
@@ -740,6 +757,7 @@ __all__ = [
     "is_exploitable_text",
     "format_place_result",
     "is_geographic_prefix_only",
+    "GEOGRAPHIC_PREFIX_TYPES",
     "_normalize",
     "_city_map",
     "WORD_TAXONOMY",

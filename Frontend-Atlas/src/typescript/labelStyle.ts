@@ -13,30 +13,18 @@ export interface CustomLabelStyle {
 
 export type NewCustomLabelStyle = Omit<CustomLabelStyle, "id">;
 
-export function formatCustomStyleOptionLabel(style: CustomLabelStyle): string {
-  const parts: string[] = [];
 
-  if (style.color) {
-    parts.push(style.color);
-  }
-
+export function getCustomStyleObject(style: CustomLabelStyle) {
   const isBold = style.fontWeight === "bold" || Boolean(style.bold);
-  const isItalic = style.fontStyle === "italic";
-  const isUppercase = style.textTransform === "uppercase";
+  
+  return {
+    color: style.color || "inherit",
+    fontWeight: isBold ? "bold" : "normal",
+    fontStyle: style.fontStyle || "normal",
+    textTransform: style.textTransform || "none",
+  };
+}
 
-  if (isBold) {
-    parts.push("gras");
-  }
-  if (isItalic) {
-    parts.push("italique");
-  }
-  if (isUppercase) {
-    parts.push("majuscules");
-  }
-
-  if (parts.length === 0) {
-    return `${style.name} (personnalisé)`;
-  }
-
-  return `${style.name} (${parts.join(", ")})`;
+export function formatCustomStyleOptionLabel(style: CustomLabelStyle): string {
+  return style.name; 
 }

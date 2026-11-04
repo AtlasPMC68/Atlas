@@ -23,10 +23,10 @@
               v-for="style in draftStyles"
               :key="style.id"
               class="flex items-center justify-between gap-2 rounded-lg border p-2 transition-colors cursor-pointer"
-              :class="editingId === style.id ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'"
+              :class="editingId === style.id ? 'border-[3px] border-primary bg-primary/5 shadow-xs' : 'border-base-300 hover:border-base-content/30'"
               @click="editStyle(style)"
             >
-              <span class="truncate font-medium" :style="previewStyle(style)">{{ style.name }}</span>
+              <span class="truncate font-medium pr-3" :style="previewStyle(style)">{{ style.name }}</span>
               <div class="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
@@ -228,7 +228,7 @@ function resetDraft() {
 }
 
 function open() {
-  draftStyles.value = props.styles.map((style) => ({ ...style }));
+  draftStyles.value = props.styles.map((style: CustomLabelStyle) => ({ ...style }));
   if (draftStyles.value.length > 0) {
     editStyle(draftStyles.value[0]);
   } else {
@@ -263,7 +263,7 @@ function syncLiveDraft() {
     return;
   }
 
-  const index = draftStyles.value.findIndex((item) => item.id === editingId.value);
+  const index = draftStyles.value.findIndex((item: CustomLabelStyle) => item.id === editingId.value);
   if (index >= 0) {
     draftStyles.value[index] = {
       ...draftStyles.value[index],

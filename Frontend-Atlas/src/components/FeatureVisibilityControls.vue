@@ -295,13 +295,14 @@
                 {{ style.label }}
               </option>
               <option
-                v-for="style in availableCustomLabelStyles"
-                :key="style.id"
-                :value="`custom:${style.id}`"
-              >
-                {{ formatCustomStyleOptionLabel(style) }}
-              </option>
-            </select>
+                  v-for="style in availableCustomLabelStyles"
+                  :key="style.id"
+                  :value="`custom:${style.id}`"
+                  :style="getCustomStyleObject(style)"
+                >
+                  {{ formatCustomStyleOptionLabel(style) }}
+                </option>
+              </select>
 
             <button
               type="button"
@@ -560,7 +561,7 @@ import {
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import type { CustomLabelStyle } from "../typescript/labelStyle";
-import { formatCustomStyleOptionLabel } from "../typescript/labelStyle";
+import { formatCustomStyleOptionLabel, getCustomStyleObject } from "../typescript/labelStyle";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import { getMapElementType } from "../utils/featureHelpers";
 import {
@@ -574,6 +575,7 @@ import {
   getWordTypePreviewStyle,
   type FeatureEditSubmitPayload,
 } from "../utils/featureTextEditing";
+import { rgbToHex } from "../utils/utils";
 import {
   groupFeaturesByType,
   groupFeaturesByMap,
@@ -621,7 +623,7 @@ const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
   if (isTextElement.value) {
     if (editDraft.value.customLabelStyle) return true;
-    const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType];
+    const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType as keyof typeof WORD_TYPE_TAXONOMY];
     return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
   }
   return getMapElementType(featureToEdit.value) === "label";
@@ -663,7 +665,7 @@ const localCustomStyles = ref<CustomLabelStyle[]>([]);
 
 watch(
   () => props.customLabelStyles,
-  (styles) => {
+  (styles: CustomLabelStyle[] | undefined) => {
     if (styles) {
       localCustomStyles.value = [...styles];
     }
@@ -686,7 +688,7 @@ function onLabelStyleSelectionChange() {
   const selection = editDraft.value.labelStyleSelection ?? "";
   if (selection.startsWith("custom:")) {
     const style = availableCustomLabelStyles.value.find(
-      (item) => item.id === selection.slice("custom:".length),
+      (item: CustomLabelStyle) => item.id === selection.slice("custom:".length),
     );
     if (!style) return;
     editDraft.value.customLabelStyleId = style.id;
@@ -700,20 +702,25 @@ function onLabelStyleSelectionChange() {
   if (Object.prototype.hasOwnProperty.call(WORD_TYPE_TAXONOMY, wordType)) {
     editDraft.value.wordType = wordType as keyof typeof WORD_TYPE_TAXONOMY;
   }
+  // Réinitialiser la couleur vers celle d'origine de l'élément (ou noir par défaut pour les labels)
+  const originalColorHex = featureToEdit.value
+    ? rgbToHex(featureToEdit.value.properties.colorRgb)
+    : undefined;
+  editDraft.value.colorHex = originalColorHex ?? "#000000";
 }
 
 watch(
   () => props.selectedFeatureId,
-  async (newId) => {
+  async (newId: string | null) => {
     if (!newId) return;
 
     const feature = props.features.find(
-      (item) => String(item.id) === newId,
+      (item: any) => String(item.id) === newId,
     );
     if (!feature) return;
 
-    const group = featureGroups.value.find((item) =>
-      item.features.some((groupFeature) => String(groupFeature.id) === newId),
+    const group = featureGroups.value.find((item: FeatureVisibilityGroup) =>
+      item.features.some((groupFeature: Feature) => String(groupFeature.id) === newId),
     );
     if (!group) return;
 
@@ -721,7 +728,7 @@ watch(
     await nextTick();
 
     const mapGroup = groupFeaturesByMap(group.features, props.mapPeriods).find(
-      (item) => String(item.id ?? "") === String(feature.mapId ?? ""),
+      (item: MapGroupItem) => String(item.id ?? "") === String(feature.mapId ?? ""),
     );
     if (mapGroup) {
       collapsedMaps.value[`${group.type}_${mapGroup.id ?? "general"}`] = false;
@@ -798,7 +805,7 @@ const featuresByMap = computed((): MapGroupItem[] => {
 
 const validationFeaturesByMap = computed(() =>
   groupFeaturesByMap(
-    props.features.filter((feature) => isUnrecognizedTextFeature(feature)),
+    props.features.filter((feature: Feature) => isUnrecognizedTextFeature(feature)),
     props.mapPeriods,
   ),
 );

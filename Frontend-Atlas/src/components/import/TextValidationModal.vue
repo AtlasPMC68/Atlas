@@ -337,23 +337,24 @@
                     {{ style.label }}
                   </option>
                   <option
-                    v-for="style in availableCustomLabelStyles"
-                    :key="style.id"
-                    :value="`custom:${style.id}`"
-                  >
-                    {{ formatCustomStyleOptionLabel(style) }}
-                  </option>
-                </select>
-                  <button
-                  type="button"
-                  class="btn btn-outline btn-xs h-7 shrink-0 text-[10px] px-2"
-                  data-testid="manage-custom-label-styles"
-                  @click.stop="labelStyleManagerRef?.open()"
-                >
-                  Personnaliser
-                </button>
-              </div>
+                        v-for="style in availableCustomLabelStyles"
+                        :key="style.id"
+                        :value="`custom:${style.id}`"
+                        :style="getCustomStyleObject(style)"
+                      >
+                        {{ formatCustomStyleOptionLabel(style) }}
+                      </option>
+                    </select>
 
+                    <button
+                      type="button"
+                      class="btn btn-outline btn-xs h-7 shrink-0 text-[10px] px-2"
+                      data-testid="manage-custom-label-styles"
+                      @click.stop="labelStyleManagerRef?.open()"
+                    >
+                      Personnaliser
+                    </button>
+                  </div>
               <!-- Suggested place pill button -->
               <div
                 v-if="item.suggestedPlace"
@@ -421,10 +422,7 @@ import type { CSSProperties } from "vue";
 import type L from "leaflet";
 import type { FeatureCollection } from "geojson";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
-import {
-  formatCustomStyleOptionLabel,
-  type CustomLabelStyle,
-} from "../../typescript/labelStyle";
+import { formatCustomStyleOptionLabel, getCustomStyleObject, CustomLabelStyle } from "../../typescript/labelStyle";
 import {
   TrashIcon,
   PhotoIcon,
@@ -482,7 +480,7 @@ const localCustomStyles = ref<CustomLabelStyle[]>([]);
 
 watch(
   () => props.customLabelStyles,
-  (styles) => {
+  (styles: CustomLabelStyle[] | undefined) => {
     if (styles) {
       localCustomStyles.value = [...styles];
     }
@@ -813,8 +811,8 @@ function onItemLabelStyleChange(item: TextValidationEntry) {
   saveHistorySnapshot();
   const selection = item.labelStyleSelection ?? "";
   if (selection.startsWith("custom:")) {
-    const style = availableCustomLabelStyles.value.find(
-      (candidate) => candidate.id === selection.slice("custom:".length),
+    const style = availableCustomLabelStyles.value?.find(
+      (candidate: CustomLabelStyle) => candidate.id === selection.slice("custom:".length),
     );
     if (!style) return;
     item.customLabelStyleId = style.id;
@@ -1179,7 +1177,7 @@ function adjustTooltipsAntiCollision() {
   if (!currentMap || !cachedLeaflet) return;
 
   const entries = allItems.value
-    .map((item) => {
+    .map((item: TextValidationEntry) => {
       const marker = markerMap.get(item.id);
       const latlng = marker?.getLatLng();
       if (!marker || !latlng || (latlng.lat === 0 && latlng.lng === 0)) return null;
@@ -1335,7 +1333,7 @@ function destroyMap() {
   cachedLeaflet = null;
 }
 
-function isFeatureCollection(value: unknown): value is GeoJSON.FeatureCollection {
+function isFeatureCollection(value: unknown): value is FeatureCollection {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as { type?: unknown; features?: unknown };
   return candidate.type === "FeatureCollection" && Array.isArray(candidate.features);
@@ -1354,7 +1352,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
           : item.wordType ?? "city"),
       customLabelStyle:
         props.customLabelStyles.find(
-          (style) => style.id === item.customLabelStyleId,
+          (style: CustomLabelStyle) => style.id === item.customLabelStyleId,
         ) ?? item.customLabelStyle,
       validationStatus: item.validationStatus ?? (selected ? "accepted" : "manual_review"),
       useSuggestedPlace: item.useSuggestedPlace ?? false,
@@ -1364,7 +1362,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
 
 watch(
   () => props.customLabelStyles,
-  (styles) => {
+  (styles: CustomLabelStyle[]) => {
     const stylesById = new Map(styles.map((style) => [style.id, style]));
     for (const item of allItems.value) {
       if (!item.customLabelStyleId) continue;
