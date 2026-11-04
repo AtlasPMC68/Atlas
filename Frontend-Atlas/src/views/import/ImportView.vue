@@ -218,7 +218,7 @@ import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../
 import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
 import type { DevTestCaseInputsResponse } from "../../typescript/devTest";
 import type { Feature } from "../../typescript/feature";
-import type { CustomLabelStyle } from "../../typescript/labelStyle";
+import type { CustomLabelStyle } from "../../utils/labelPresentation";
 import type {
   ExtractionState,
   ImportInputsPatch,

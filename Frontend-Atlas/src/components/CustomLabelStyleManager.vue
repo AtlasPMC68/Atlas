@@ -26,7 +26,7 @@
               :class="editingId === style.id ? 'border-[3px] border-primary bg-primary/5 shadow-xs' : 'border-base-300 hover:border-base-content/30'"
               @click="editStyle(style)"
             >
-              <span class="truncate font-medium pr-3" :style="previewStyle(style)">{{ style.name }}</span>
+              <span class="truncate font-medium pr-3" :style="previewStyle(style, true)">{{ style.name }}</span>
               <div class="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
@@ -171,7 +171,8 @@ import { computed, ref } from "vue";
 import type {
   CustomLabelStyle,
   NewCustomLabelStyle,
-} from "../typescript/labelStyle";
+} from "../utils/labelPresentation";
+import { getLabelStylePreviewCss } from "../utils/labelPresentation";
 import {
   PencilSquareIcon,
   TrashIcon,
@@ -246,7 +247,7 @@ function editStyle(style: CustomLabelStyle) {
     bold: Boolean(style.bold || style.fontWeight === "bold"),
     italic: style.fontStyle === "italic",
     uppercase: style.textTransform === "uppercase",
-    color: style.color,
+    color: style.color || "#000000",
   };
 }
 
@@ -305,7 +306,7 @@ function revertStyle() {
     bold: Boolean(snap.bold || snap.fontWeight === "bold"),
     italic: snap.fontStyle === "italic",
     uppercase: snap.textTransform === "uppercase",
-    color: snap.color,
+    color: snap.color || "#000000",
   };
   const index = draftStyles.value.findIndex((item) => item.id === snap.id);
   if (index >= 0) {
@@ -338,14 +339,11 @@ function toStyleDraft(name = draft.value.name.trim()): NewCustomLabelStyle {
   };
 }
 
-function previewStyle(style: CustomLabelStyle) {
-  return {
-    color: style.color,
-    fontSize: `${style.sizePx}px`,
-    fontStyle: style.fontStyle,
-    fontWeight: style.bold || style.fontWeight === "bold" ? "bold" : "normal",
-    textTransform: style.textTransform,
-  };
+function previewStyle(style: CustomLabelStyle, limitSize = false) {
+  return getLabelStylePreviewCss(style, {
+    limitSize,
+    maxPx: 16,
+  });
 }
 
 function saveStyles() {

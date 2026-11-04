@@ -5,7 +5,7 @@ import CustomLabelStyleManager from "../../src/components/CustomLabelStyleManage
 import {
   formatCustomStyleOptionLabel,
   type CustomLabelStyle,
-} from "../../src/typescript/labelStyle";
+} from "../../src/utils/labelPresentation";
 
 describe("CustomLabelStyleManager", () => {
   beforeEach(() => {

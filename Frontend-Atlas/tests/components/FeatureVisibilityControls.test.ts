@@ -408,7 +408,9 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("province");
     await select.trigger("change");
 
-    const textInput = wrapper.findAll("input").find((i) => i.element.value === "Québec");
+    const textInput = wrapper
+      .findAll("input")
+      .find((i) => i.element.value === "Québec" && i.attributes("style"));
     expect(textInput?.element.value).toBe("Québec");
     expect(textInput?.attributes("style")).toContain("font-size: 14px");
 

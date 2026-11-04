@@ -255,7 +255,6 @@
             v-model="editDraft.name"
             type="text"
             class="input"
-            :style="editTextStyle"
             placeholder="Nom de l'élément"
             required
           />
@@ -264,7 +263,7 @@
           class="flex flex-col gap-2"
           v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
         >
-          <label class="label">Texte</label>
+          <label class="label">Texte (Aperçu)</label>
           <input
             v-model="editDraft.labelText"
             type="text"
@@ -288,22 +287,22 @@
               @change="onLabelStyleSelectionChange"
             >
               <option
-                v-for="(style, typeKey) in WORD_TYPE_STYLES"
+                v-for="style in availableCustomLabelStyles"
+                :key="style.id"
+                :value="`custom:${style.id}`"
+                :style="getCustomStyleObject(style)"
+              >
+                {{ style.name }}
+              </option>            
+              <option
+                v-for="(_, typeKey) in WORD_TYPE_STYLES"
                 :key="typeKey"
                 :value="typeKey"
+                :style="getWordTypeOptionStyle(typeKey)"
               >
-                {{ style.label }}
+                {{ getWordTypeOptionLabel(typeKey) }}
               </option>
-              <option
-                  v-for="style in availableCustomLabelStyles"
-                  :key="style.id"
-                  :value="`custom:${style.id}`"
-                  :style="getCustomStyleObject(style)"
-                >
-                  {{ formatCustomStyleOptionLabel(style) }}
-                </option>
-              </select>
-
+            </select>
             <button
               type="button"
               class="btn btn-outline border-base-300 rounded-lg shrink-0 hover:bg-base-200 hover:border-base-content/40 hover:text-base-content"
@@ -316,7 +315,7 @@
         </div>
 
         <p
-          v-if="!isEditingLabel && getMapElementType(featureToEdit) === 'point'"
+          v-if="!isEditingLabel"
           class="text-xs text-base-content/60 italic"
         >
           Ces réglages suivants s'appliquent au symbole du point qui représente la ville
@@ -324,29 +323,19 @@
         </p>
         <div
           class="flex gap-2"
-          v-if="
-            !isEditingLabel &&
-            (featureToEdit.properties.fillOpacity !== undefined ||
-              featureToEdit.properties.strokeOpacity !== undefined)
-          "
+          v-if="!isEditingLabel"
         >
           <div
             class="flex flex-col gap-2 w-full"
-            v-if="featureToEdit.properties.fillOpacity !== undefined"
           >
             <label class="label">Opacité</label>
             <input v-model="editDraft.fillOpacity" type="number" class="input" />
           </div>
           <div
             class="flex flex-col gap-2 w-full"
-            v-if="featureToEdit.properties.strokeOpacity !== undefined"
           >
             <label class="label">
-              {{
-                getMapElementType(featureToEdit) === "point"
-                  ? "Opacité du contour du point"
-                  : "Opacité du contour"
-              }}
+              Opacité du contour du point
             </label>
             <input
               v-model="editDraft.strokeOpacity"
@@ -357,14 +346,10 @@
         </div>
         <div
           class="flex flex-col gap-2 w-full"
-          v-if="!isEditingLabel && featureToEdit.properties.strokeWidth !== undefined"
+          v-if="!isEditingLabel"
         >
           <label class="label">
-            {{
-              getMapElementType(featureToEdit) === "point"
-                ? "Épaisseur du contour du point"
-                : "Épaisseur du contour"
-            }}
+            Épaisseur du contour du point
           </label>
           <input
             v-model="editDraft.strokeWidth"
@@ -374,11 +359,11 @@
         </div>
         <div
           class="flex flex-col gap-2"
-          v-if="editDraft.colorHex || editDraft.strokeColorHex"
+          v-if="!editDraft.customLabelStyleId && (editDraft.colorHex || editDraft.strokeColorHex)"
         >
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.colorRgb !== undefined || isEditingLabel || getMapElementType(featureToEdit) === 'point'"
+            v-if="!editDraft.customLabelStyleId"
           >
             <label class="label">Couleur :</label>
             <input
@@ -389,7 +374,7 @@
           </div>
           <div
             class="flex items-center gap-2"
-            v-if="featureToEdit.properties.strokeColor !== undefined && !isEditingLabel"
+            v-if="!isEditingLabel"
           >
             <label class="label">Couleur du contour :</label>
             <input
@@ -560,8 +545,13 @@ import {
   type FeatureVisibilityGroupType,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
-import type { CustomLabelStyle } from "../typescript/labelStyle";
-import { formatCustomStyleOptionLabel, getCustomStyleObject } from "../typescript/labelStyle";
+import type { CustomLabelStyle } from "../utils/labelPresentation";
+import {
+  getCustomStyleObject,
+  getLabelStylePreviewCss,
+  getWordTypeOptionLabel,
+  getWordTypeOptionStyle,
+} from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import { getMapElementType } from "../utils/featureHelpers";
 import {
@@ -604,19 +594,26 @@ const isTextElement = computed(() => isTextFeature(featureToEdit.value));
 
 const editTextStyle = computed<CSSProperties>(() => {
   if (!isTextElement.value) return {};
-  const style = editDraft.value.customLabelStyle;
+  const selection = editDraft.value.labelStyleSelection ?? "";
+  const style = selection.startsWith("custom:")
+    ? availableCustomLabelStyles.value.find(
+        (item: CustomLabelStyle) => item.id === selection.slice("custom:".length),
+      ) ?? editDraft.value.customLabelStyle
+    : editDraft.value.customLabelStyle;
+
   if (style) {
-    return {
-      fontStyle: style.fontStyle,
-      textTransform: style.textTransform,
-      color: style.color,
-      fontSize: `${style.sizePx}px`,
-    };
+    return getLabelStylePreviewCss(style, { limitSize: true, maxPx: 18 });
   }
-  return getWordTypePreviewStyle(
+  const preview = getWordTypePreviewStyle(
     editDraft.value.wordType,
     editDraft.value.colorHex,
   );
+  return {
+    ...preview,
+    fontSize: preview.fontSize
+      ? `${Math.min(parseInt(String(preview.fontSize), 10) || 14, 18)}px`
+      : undefined,
+  };
 });
 
 const isEditingLabel = computed(() => {
@@ -681,6 +678,16 @@ const availableCustomLabelStyles = computed(() => {
 
 function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
   localCustomStyles.value = [...styles];
+  if (editDraft.value.customLabelStyleId) {
+    const updated = styles.find((s) => s.id === editDraft.value.customLabelStyleId);
+    if (updated) {
+      editDraft.value.customLabelStyle = updated;
+      editDraft.value.colorHex = updated.color;
+      if (updated.textTransform === "uppercase" && editDraft.value.labelText) {
+        editDraft.value.labelText = editDraft.value.labelText.toUpperCase();
+      }
+    }
+  }
   emit("save-label-styles", styles);
 }
 
@@ -711,7 +718,7 @@ function onLabelStyleSelectionChange() {
 
 watch(
   () => props.selectedFeatureId,
-  async (newId: string | null) => {
+  async (newId: string | null | undefined) => {
     if (!newId) return;
 
     const feature = props.features.find(

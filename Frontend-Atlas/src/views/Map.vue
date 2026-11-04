@@ -152,7 +152,7 @@ import FeatureVisibilityControls from "../components/FeatureVisibilityControls.v
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
-import type { CustomLabelStyle } from "../typescript/labelStyle";
+import type { CustomLabelStyle } from "../utils/labelPresentation";
 import type { SliderPeriod } from "../typescript/map";
 import {
   camelToSnake,

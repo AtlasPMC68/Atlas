@@ -1,5 +1,5 @@
 import type { Feature } from "../typescript/feature";
-import type { CustomLabelStyle } from "../typescript/labelStyle";
+import type { CustomLabelStyle } from "./labelPresentation";
 import { getMapElementType } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {

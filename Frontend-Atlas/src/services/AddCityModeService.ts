@@ -50,6 +50,7 @@ export class AddCityModeService {
     const feature: Feature = {
       id,
       type: "Feature",
+      projectId: "",
       mapId: "",
       geometry: {
         type: "Point",

@@ -287,7 +287,7 @@
                     v-model="item.text"
                     type="text"
                     class="input input-bordered input-sm w-full h-8 text-sm font-medium bg-base-100 text-black border-base-300 focus:border-primary placeholder:text-gray-400 px-2"
-                    :style="itemStylePreview(item)"
+                    :style="itemRightInputStyle(item)"
                     :placeholder="item.originalText"
                     @click.stop
                     @focus="onInputFocus(item)"
@@ -330,20 +330,22 @@
                   @change="onItemLabelStyleChange(item)"
                 >
                   <option
-                    v-for="(style, typeKey) in WORD_TYPE_STYLES"
+                    v-for="style in availableCustomLabelStyles"
+                    :key="style.id"
+                    :value="`custom:${style.id}`"
+                    :style="getCustomStyleObject(style)"
+                  >
+                    {{ style.name }}
+                  </option>                
+                  <option
+                    v-for="(_, typeKey) in WORD_TYPE_STYLES"
                     :key="typeKey"
                     :value="typeKey"
+                    :style="getWordTypeOptionStyle(typeKey)"
                   >
-                    {{ style.label }}
+                    {{ getWordTypeOptionLabel(typeKey) }}
                   </option>
-                  <option
-                        v-for="style in availableCustomLabelStyles"
-                        :key="style.id"
-                        :value="`custom:${style.id}`"
-                        :style="getCustomStyleObject(style)"
-                      >
-                        {{ formatCustomStyleOptionLabel(style) }}
-                      </option>
+
                     </select>
 
                     <button
@@ -422,7 +424,12 @@ import type { CSSProperties } from "vue";
 import type L from "leaflet";
 import type { FeatureCollection } from "geojson";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
-import { formatCustomStyleOptionLabel, getCustomStyleObject, CustomLabelStyle } from "../../typescript/labelStyle";
+import {
+  getCustomStyleObject,
+  getWordTypeOptionLabel,
+  getWordTypeOptionStyle,
+  type CustomLabelStyle,
+} from "../../utils/labelPresentation";
 import {
   TrashIcon,
   PhotoIcon,
@@ -494,8 +501,28 @@ const availableCustomLabelStyles = computed(() => {
     : props.customLabelStyles ?? [];
 });
 
+function applyUpdatedCustomStylesToItems(styles: CustomLabelStyle[]) {
+  const stylesById = new Map(styles.map((s) => [s.id, s]));
+  for (const item of allItems.value) {
+    if (!item.customLabelStyleId) continue;
+    const style = stylesById.get(item.customLabelStyleId);
+    if (style) {
+      item.customLabelStyle = style;
+      if (style.textTransform === "uppercase" && item.text) {
+        item.text = item.text.toUpperCase();
+      }
+    } else {
+      item.customLabelStyleId = undefined;
+      item.customLabelStyle = undefined;
+      item.labelStyleSelection = item.wordType ?? "city";
+    }
+    updateMarkerStyle(item);
+  }
+}
+
 function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
   localCustomStyles.value = [...styles];
+  applyUpdatedCustomStylesToItems(styles);
   emit("save-label-styles", styles);
 }
 
@@ -827,15 +854,16 @@ function onItemLabelStyleChange(item: TextValidationEntry) {
   updateMarkerStyle(item);
 }
 
-function itemStylePreview(item: TextValidationEntry): CSSProperties {
+function itemRightInputStyle(item: TextValidationEntry): CSSProperties {
   const customStyle = item.customLabelStyle;
   const taxonomy = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
+  const isUppercase =
+    (customStyle?.textTransform ?? taxonomy?.textTransform) === "uppercase";
+  const isItalic =
+    (customStyle?.fontStyle ?? taxonomy?.fontStyle) === "italic";
   return {
-    color: customStyle?.color,
-    fontSize: `${customStyle?.sizePx ?? taxonomy.sizePx}px`,
-    fontStyle: customStyle?.fontStyle ?? taxonomy.fontStyle,
-    fontWeight: customStyle?.bold || customStyle?.fontWeight === "bold" ? "bold" : "normal",
-    textTransform: customStyle?.textTransform ?? taxonomy.textTransform,
+    textTransform: isUppercase ? "uppercase" : "none",
+    fontStyle: isItalic ? "italic" : "normal",
   };
 }
 
@@ -1088,7 +1116,7 @@ function makeDraggableMarker(
     icon: createMarkerIcon(L, item),
   });
 
-  marker.bindTooltip(createTextTooltip(item.text), {
+  marker.bindTooltip(createTextTooltip(item), {
     permanent: true,
     direction: "top",
     offset: [0, -12],
@@ -1132,12 +1160,44 @@ function updateMarkerStyle(item: TextValidationEntry) {
   }
 
   marker.setIcon(createMarkerIcon(cachedLeaflet, item));
-  marker.setTooltipContent(createTextTooltip(item.text));
+  marker.setTooltipContent(createTextTooltip(item));
 }
 
-function createTextTooltip(text: string): HTMLElement {
+function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
   const content = document.createElement("span");
-  content.textContent = text;
+  if (typeof item === "string") {
+    content.textContent = item;
+    return content;
+  }
+
+  if (item.selected) {
+    const customStyle = item.customLabelStyle;
+    const taxonomy = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
+    const isUppercase =
+      (customStyle?.textTransform ?? taxonomy?.textTransform) === "uppercase";
+    const isItalic =
+      (customStyle?.fontStyle ?? taxonomy?.fontStyle) === "italic";
+    const isBold = customStyle
+      ? customStyle.fontWeight === "bold" || Boolean(customStyle.bold)
+      : true;
+    const color = customStyle?.color || "#000000";
+    const size = Math.min(customStyle?.sizePx ?? taxonomy?.sizePx ?? 12, 14);
+
+    content.style.color = color;
+    content.style.fontSize = `${size}px`;
+    content.style.fontStyle = isItalic ? "italic" : "normal";
+    content.style.fontWeight = isBold ? "bold" : "normal";
+    content.style.textTransform = isUppercase ? "uppercase" : "none";
+    content.textContent = isUppercase ? item.text.toUpperCase() : item.text;
+  } else {
+    content.style.color = "#6b7280";
+    content.style.fontSize = "11px";
+    content.style.fontStyle = "normal";
+    content.style.fontWeight = "normal";
+    content.style.textTransform = "none";
+    content.style.opacity = "0.6";
+    content.textContent = item.text;
+  }
   return content;
 }
 
@@ -1363,18 +1423,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
 watch(
   () => props.customLabelStyles,
   (styles: CustomLabelStyle[]) => {
-    const stylesById = new Map(styles.map((style) => [style.id, style]));
-    for (const item of allItems.value) {
-      if (!item.customLabelStyleId) continue;
-      const style = stylesById.get(item.customLabelStyleId);
-      if (style) {
-        item.customLabelStyle = style;
-      } else {
-        item.customLabelStyleId = undefined;
-        item.customLabelStyle = undefined;
-        item.labelStyleSelection = item.wordType ?? "city";
-      }
-    }
+    applyUpdatedCustomStylesToItems(styles);
   },
 );
 
@@ -1479,7 +1528,7 @@ defineExpose({
   border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
-  color: #000000 !important;
+  color: #000000;
   padding: 2px 6px;
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);

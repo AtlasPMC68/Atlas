@@ -4,7 +4,7 @@ import {
   type Coordinate,
   type Feature,
 } from "../typescript/feature";
-import type { CustomLabelStyle } from "../typescript/labelStyle";
+import type { CustomLabelStyle } from "./labelPresentation";
 import type { WordType } from "./wordStyles";
 import {
   applyWordStyleToFeature,

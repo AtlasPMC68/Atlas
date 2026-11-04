@@ -1,10 +1,128 @@
+import type { CSSProperties } from "vue";
 import type { Feature } from "../typescript/feature";
 import { colorRgbToCss } from "./featureHelpers";
 import {
   formatWordText,
   getWordTypeForFeature,
   getWordTypeStyle,
+  normalizeWordType,
+  WORD_TYPE_TAXONOMY,
 } from "./wordStyles";
+
+export interface LabelStyle {
+  id: string;
+  name: string;
+  sizePx: number;
+  fontStyle: "normal" | "italic";
+  fontWeight?: "normal" | "bold";
+  bold?: boolean;
+  textTransform: "none" | "uppercase";
+  color?: string;
+  priority: number;
+  minZoom: number;
+  mapElementType?: "point" | "label";
+  isCustom?: boolean;
+}
+
+export type CustomLabelStyle = LabelStyle;
+
+export type NewCustomLabelStyle = Omit<CustomLabelStyle, "id">;
+
+export const MAX_PREVIEW_FONT_SIZE_PX = 18;
+
+export function getCustomStyleObject(style: CustomLabelStyle): CSSProperties {
+  const isBold = style.fontWeight === "bold" || Boolean(style.bold);
+
+  return {
+    color: style.color || "inherit",
+    fontWeight: isBold ? "bold" : "normal",
+    fontStyle: style.fontStyle || "normal",
+    textTransform: style.textTransform || "none",
+  };
+}
+
+export function getLabelStylePreviewCss(
+  style: CustomLabelStyle | Partial<LabelStyle>,
+  options?: {
+    limitSize?: boolean;
+    maxPx?: number;
+    includeSize?: boolean;
+    textOnly?: boolean;
+  },
+): CSSProperties {
+  const isBold = style.fontWeight === "bold" || Boolean(style.bold);
+  const css: CSSProperties = {
+    fontStyle: style.fontStyle || "normal",
+    fontWeight: isBold ? "bold" : "normal",
+    textTransform: style.textTransform || "none",
+  };
+
+  if (!options?.textOnly && style.color) {
+    css.color = style.color;
+  }
+
+  if (options?.includeSize !== false && typeof style.sizePx === "number") {
+    const size = options?.limitSize
+      ? Math.min(style.sizePx, options.maxPx ?? MAX_PREVIEW_FONT_SIZE_PX)
+      : style.sizePx;
+    css.fontSize = `${size}px`;
+  }
+
+  return css;
+}
+
+export function formatCustomStyleOptionLabel(
+  style: CustomLabelStyle,
+  verbose = true,
+): string {
+  if (!verbose) {
+    return style.name;
+  }
+
+  const parts: string[] = [];
+
+  if (style.color) {
+    parts.push(style.color);
+  }
+
+  const isBold = style.fontWeight === "bold" || Boolean(style.bold);
+  const isItalic = style.fontStyle === "italic";
+  const isUppercase = style.textTransform === "uppercase";
+
+  if (isBold) {
+    parts.push("gras");
+  }
+  if (isItalic) {
+    parts.push("italique");
+  }
+  if (isUppercase) {
+    parts.push("majuscules");
+  }
+
+  if (parts.length === 0) {
+    return `${style.name} (personnalisé)`;
+  }
+
+  return `${style.name} (${parts.join(", ")})`;
+}
+
+export function getWordTypeOptionStyle(typeKey: string): CSSProperties {
+  const norm = normalizeWordType(typeKey);
+  const tax = WORD_TYPE_TAXONOMY[norm];
+  if (!tax) return {};
+  return {
+    fontStyle: tax.fontStyle,
+    fontWeight: "bold",
+    textTransform: tax.textTransform,
+  };
+}
+
+export function getWordTypeOptionLabel(typeKey: string): string {
+  const norm = normalizeWordType(typeKey);
+  const tax = WORD_TYPE_TAXONOMY[norm];
+  if (!tax) return typeKey;
+  return tax.textTransform === "uppercase" ? tax.label.toUpperCase() : tax.label;
+}
 
 export function splitBalancedLine(text: string, maxLen = 13): string {
   if (text.length <= maxLen) return text;
@@ -54,23 +172,20 @@ export function formatLabelHtml(formattedText: unknown): string {
     })
     .join("<br>");
 }
-// Security Improvement: Added HTML escaping (escapeHtml) to the label formatting pipeline. 
-// This neutralizes special characters (&, <, >, ", ') across line segments 
-// to prevent potential XSS vulnerabilities or unintended HTML rendering from raw OCR text inputs.
+
 function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (character) => {
+  return text.replace(/[&<>"]/g, (character) => {
     const entities: Record<string, string> = {
       "&": "&amp;",
       "<": "&lt;",
       ">": "&gt;",
       '"': "&quot;",
-      "'": "&#39;",
     };
     return entities[character];
   });
 }
 
-export interface LabelPresentationModel {
+export interface LabelPresentationModel extends LabelStyle {
   text: string;
   formattedText: string;
   html: string;
@@ -105,7 +220,7 @@ export function getLabelPresentation(
   const isItalic = (customStyle?.fontStyle ?? taxonomy.fontStyle) === "italic";
   const isBold = customStyle
     ? customStyle.fontWeight === "bold"
-    : true; // Les libellés cartographiques standard utilisent bold par défaut
+    : true;
   const formattedText = customStyle
     ? isUppercase
       ? rawText.toUpperCase()
@@ -124,6 +239,8 @@ export function getLabelPresentation(
   if (isUppercase) inlineStyles.push("text-transform: uppercase");
 
   return {
+    id: customStyle?.id ?? wordType,
+    name: customStyle?.name ?? taxonomy.label,
     text: rawText,
     formattedText,
     html,
@@ -132,20 +249,25 @@ export function getLabelPresentation(
     sizePx,
     fontStyle: isItalic ? "italic" : "normal",
     fontWeight: isBold ? "bold" : "normal",
+    bold: isBold,
     textTransform: isUppercase ? "uppercase" : "none",
     isUppercase,
     isItalic,
     isBold,
     priority: customStyle?.priority ?? taxonomy.priority,
     minZoom: customStyle?.minZoom ?? taxonomy.minZoom,
+    color: colorCss,
     colorCss,
     styleAttribute: inlineStyles.length
       ? ` style="${inlineStyles.join("; ")}"`
       : "",
+    isCustom: Boolean(customStyle),
   };
 }
 
 function parseCustomStyle(value: unknown): {
+  id?: string;
+  name?: string;
   sizePx: number;
   fontStyle: "normal" | "italic";
   fontWeight: "normal" | "bold";
@@ -171,6 +293,8 @@ function parseCustomStyle(value: unknown): {
     Boolean(style.bold) ||
     (style.fontWeight !== "normal" && style.bold === true);
   return {
+    id: typeof style.id === "string" ? style.id : undefined,
+    name: typeof style.name === "string" ? style.name : undefined,
     sizePx: style.sizePx,
     fontStyle: style.fontStyle,
     fontWeight: isBold ? "bold" : "normal",
