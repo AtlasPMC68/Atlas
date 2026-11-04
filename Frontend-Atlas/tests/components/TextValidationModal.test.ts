@@ -1,8 +1,22 @@
-import { describe, it, expect, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { flushPromises, mount } from "@vue/test-utils";
 import TextValidationModal, {
   type TextValidationEntry,
 } from "../../src/components/import/TextValidationModal.vue";
+
+const { fetchReferenceImage, saveReferenceImage, deleteReferenceImage } = vi.hoisted(() => ({
+  fetchReferenceImage: vi.fn(),
+  saveReferenceImage: vi.fn(),
+  deleteReferenceImage: vi.fn(),
+}));
+
+vi.mock("../../src/composables/useMapReferenceImage", () => ({
+  useMapReferenceImage: () => ({
+    fetchReferenceImage,
+    saveReferenceImage,
+    deleteReferenceImage,
+  }),
+}));
 
 // ── Mock Leaflet so jsdom doesn't crash ──────────────────────────────────────
 vi.mock("leaflet", () => {
@@ -68,14 +82,13 @@ vi.mock("leaflet", () => {
 vi.mock("leaflet/dist/leaflet.css", () => ({}));
 
 // ── Test data: Only rejected/unrecognized items are passed to the modal ─────────
-
 const itemsWithImagePos: TextValidationEntry[] = [
   {
     id: "unrec-loc-1",
     text: "Traité de Paris de 1783",
     originalText: "Traité de Paris de 1783",
     selected: true,
-    coordinates: [-82.35, 23.20],
+    coordinates: [-82.35, 23.2],
     suggestedPlace: {
       name: "Paris",
       coordinates: [2.35, 48.85],
@@ -100,7 +113,6 @@ const testItems: TextValidationEntry[] = [
 ];
 
 // ── Helper ───────────────────────────────────────────────────────────────────
-
 function mountModal(
   items = testItems,
   isOpen = true,
@@ -113,9 +125,25 @@ function mountModal(
   });
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+function findButtonByText(wrapper: any, text: string, exact = false) {
+  return wrapper.findAll("button").find((button: any) => {
+    const buttonText = button.text();
+    return exact ? buttonText === text : buttonText.includes(text);
+  });
+}
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
 describe("TextValidationModal", () => {
+  beforeEach(() => {
+    fetchReferenceImage.mockResolvedValue({
+      success: false,
+      status: 404,
+      error: "No reference image",
+    });
+    saveReferenceImage.mockResolvedValue({ success: true, data: undefined });
+    deleteReferenceImage.mockResolvedValue({ success: true, data: undefined });
+  });
+
   it("does not render when isOpen is false", () => {
     const wrapper = mountModal(testItems, false);
     expect(wrapper.find(".fixed").exists()).toBe(false);
@@ -156,6 +184,48 @@ describe("TextValidationModal", () => {
     expect(fileInput.exists()).toBe(true);
   });
 
+  it("saves a selected reference image for its map", async () => {
+    const previousCreateObjectURL = Object.getOwnPropertyDescriptor(
+      URL,
+      "createObjectURL",
+    );
+    const previousRevokeObjectURL = Object.getOwnPropertyDescriptor(
+      URL,
+      "revokeObjectURL",
+    );
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:http://localhost/saved-reference"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const wrapper = mountModal();
+    const input = wrapper.find('input[type="file"]');
+    const file = new File(["image"], "reference.png", { type: "image/png" });
+    Object.defineProperty(input.element, "files", { value: [file], configurable: true });
+
+    await input.trigger("change");
+    await flushPromises();
+
+    expect(saveReferenceImage).toHaveBeenCalledWith("map-1", file);
+    expect(wrapper.find("img").attributes("src")).toBe(
+      "blob:http://localhost/saved-reference",
+    );
+    wrapper.unmount();
+    if (previousCreateObjectURL) {
+      Object.defineProperty(URL, "createObjectURL", previousCreateObjectURL);
+    } else {
+      Reflect.deleteProperty(URL, "createObjectURL");
+    }
+    if (previousRevokeObjectURL) {
+      Object.defineProperty(URL, "revokeObjectURL", previousRevokeObjectURL);
+    } else {
+      Reflect.deleteProperty(URL, "revokeObjectURL");
+    }
+  });
+
   it("renders the Non localisés header with item count", () => {
     const wrapper = mountModal();
     expect(wrapper.text()).toContain("Non localisés");
@@ -177,7 +247,9 @@ describe("TextValidationModal", () => {
     const wrapper = mountModal();
 
     // Check suggestion button for the item that has a nearby place suggestion
-    const suggestionBtn = wrapper.findAll("button").find((b) => b.text().includes("Paris"));
+    const suggestionBtn = wrapper
+      .findAll("button")
+      .find((b: any) => b.text().includes("Paris"));
     expect(suggestionBtn).toBeDefined();
     expect(suggestionBtn?.text()).toContain("Accepter la suggestion");
 
@@ -232,7 +304,7 @@ describe("TextValidationModal", () => {
     const textInputs = wrapper.findAll('input[type="text"]');
     await textInputs[0].setValue("Traité de 1783");
 
-    const confirmBtn = wrapper.findAll("button").find((b) => b.text().includes("Confirmer"));
+    const confirmBtn = findButtonByText(wrapper, "Confirmer");
     expect(confirmBtn).toBeDefined();
     await confirmBtn!.trigger("click");
 
@@ -278,7 +350,7 @@ describe("TextValidationModal", () => {
     await trashButtons[0].trigger("click");
     expect(wrapper.text()).toContain("1 / 1 conservé(s)");
 
-    const confirmBtn = wrapper.findAll("button").find((b) => b.text().includes("Confirmer"));
+    const confirmBtn = findButtonByText(wrapper, "Confirmer");
     await confirmBtn!.trigger("click");
 
     const emitted = wrapper.emitted("confirm");
@@ -294,7 +366,7 @@ describe("TextValidationModal", () => {
     expect(item.suggestedPlace?.name).toBe("Paris");
 
     // Manually reposition the item
-    vm.setItemCoordinates(item, -73.56, 45.50);
+    vm.setItemCoordinates(item, -73.56, 45.5);
 
     expect(item.suggestedPlace).toBeUndefined();
     expect(item.useSuggestedPlace).toBe(false);
@@ -375,7 +447,7 @@ describe("TextValidationModal", () => {
     const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
     await selectAllCheckbox.setValue(false);
 
-    const confirmBtn = wrapper.findAll("button").find((b) => b.text().includes("Confirmer"));
+    const confirmBtn = findButtonByText(wrapper, "Confirmer");
     await confirmBtn!.trigger("click");
 
     const emitted = wrapper.emitted("confirm");
@@ -395,7 +467,7 @@ describe("TextValidationModal", () => {
           text: "LE DU LE CAP",
           originalText: "LE DU LE CAP",
           selected: true,
-          coordinates: [-59.95, 46.20],
+          coordinates: [-59.95, 46.2],
           suggestedPlace: {
             name: "Glace Bay",
             coordinates: [-59.97, 46.21],
@@ -509,7 +581,7 @@ describe("TextValidationModal", () => {
 
   it("emits cancel when Passer button is clicked", async () => {
     const wrapper = mountModal();
-    const cancelBtn = wrapper.findAll("button").find((b) => b.text() === "Passer");
+    const cancelBtn = findButtonByText(wrapper, "Passer", true);
     expect(cancelBtn).toBeDefined();
     await cancelBtn!.trigger("click");
     expect(wrapper.emitted("cancel")).toBeDefined();

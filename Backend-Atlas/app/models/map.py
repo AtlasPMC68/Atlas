@@ -20,6 +20,8 @@ class Map(Base):
     # clicking again; the fitted transform itself is cheap to recompute.
     # Written by the import; nothing reads it yet.
     georef_inputs = Column(JSONB)
+    reference_image = Column(LargeBinary)
+    reference_image_content_type = Column(Text)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     

@@ -39,6 +39,75 @@ from app.utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/imports", tags=["Map import"])
+REFERENCE_IMAGE_CONTENT_TYPES = {
+    "image/avif",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+
+
+@router.get("/{map_id}/reference-image")
+async def get_reference_image(
+    map_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    map_obj = await _require_owned_map(session, map_id, user_id)
+    if not map_obj.reference_image:
+        raise HTTPException(status_code=404, detail="No reference image for this map")
+    media_type = map_obj.reference_image_content_type or "application/octet-stream"
+    return Response(
+        content=map_obj.reference_image,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.put("/{map_id}/reference-image")
+async def save_reference_image(
+    map_id: UUID,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    map_obj = await _require_owned_map(session, map_id, user_id)
+    content_type = (file.content_type or "").lower()
+    if content_type not in REFERENCE_IMAGE_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported reference image type")
+    if file.size is not None and file.size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty reference image")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+
+    map_obj.reference_image = content
+    map_obj.reference_image_content_type = content_type
+    await session.commit()
+    return {"detail": "Reference image saved"}
+
+
+@router.delete("/{map_id}/reference-image")
+async def delete_reference_image(
+    map_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    map_obj = await _require_owned_map(session, map_id, user_id)
+    map_obj.reference_image = None
+    map_obj.reference_image_content_type = None
+    await session.commit()
+    return {"detail": "Reference image deleted"}
 
 
 def _task_progress(task_id: str | None) -> Dict[str, Any]:

@@ -33,7 +33,9 @@ from app.models.map_import import (
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
 from app.utils.cities_validation import (
     DEFAULT_STYLE,
+    MATCHING_CONFIG,
     STYLES_MAP,
+    haversine_distance_km,
     match_ocr_label,
     find_nearby_candidate_place,
     is_exploitable_text,
@@ -384,8 +386,10 @@ def _categorized_text_features_from_ocr(
             continue
 
         raw_text = str(text or "").strip()
-        # Case 1: reject immediately if empty or junk text (< 2 letters, scale text, etc.).
-        if not is_exploitable_text(raw_text):
+        # Keep numeric OCR labels available for manual review instead of discarding them.
+        has_letters = any(char.isalpha() for char in raw_text)
+        has_digits = any(char.isdigit() for char in raw_text)
+        if not is_exploitable_text(raw_text) and not (has_digits and not has_letters):
             continue
 
         confidence = float(prob) if prob is not None else 1.0
@@ -413,7 +417,37 @@ def _categorized_text_features_from_ocr(
         except TypeError:
             entity = match_ocr_label(raw_text, frame_bounds)
 
-        if entity and entity.get("found", True) and entity.get("lat") and entity.get("lon"):
+        has_place_coordinates = (
+            entity is not None
+            and entity.get("lat") is not None
+            and entity.get("lon") is not None
+        )
+        is_city = entity is not None and (not entity.get("type") or entity.get("type") == "city")
+        distance_requires_review = bool(
+            has_place_coordinates
+            and target_pos is not None
+            and (entity.get("matchMethod") == "fuzzy" or is_city)
+            and haversine_distance_km(
+                target_pos[0],
+                target_pos[1],
+                float(entity["lat"]),
+                float(entity["lon"]),
+            )
+            > MATCHING_CONFIG["max_fuzzy_distance_km"]
+        )
+        missing_position_requires_review = bool(
+            entity is not None
+            and entity.get("matchMethod") == "fuzzy"
+            and target_pos is None
+        )
+
+        if (
+            entity
+            and entity.get("found", True)
+            and has_place_coordinates
+            and not distance_requires_review
+            and not missing_position_requires_review
+        ):
             # Case 3: recognized as a city or geographic entity from the JSON.
             raw_type = entity.get("type")
             entity_id = f"{raw_type or 'city'}:{entity.get('geonameid') or entity.get('name')}"
@@ -463,6 +497,13 @@ def _categorized_text_features_from_ocr(
             if clean in seen_unrecognized:
                 continue
             seen_unrecognized.add(clean)
+            suggested_place = None
+            if has_place_coordinates and entity and entity.get("name"):
+                suggested_place = {
+                    "name": entity["name"],
+                    "coordinates": [entity["lon"], entity["lat"]],
+                    "type": entity.get("type") or "city",
+                }
             collections.append(
                 _make_text_feature(
                     name=raw_text,
@@ -472,7 +513,7 @@ def _categorized_text_features_from_ocr(
                     confidence=confidence,
                     recognized=False,
                     extra={
-                        "suggestedPlace": None,
+                        "suggestedPlace": suggested_place,
                     },
                 )
             )
@@ -526,17 +567,22 @@ def _georeference_text_features(
                     orig_text = (
                         feat.get("properties", {}).get("originalText") or feat.get("properties", {}).get("name") or ""
                     )
-                    nearby_place = find_nearby_candidate_place(orig_text, coords, radius_km=75.0)
-                    if nearby_place:
-                        feat["properties"]["suggestedPlace"] = {
-                            "name": nearby_place.get("name_fr")
-                            or nearby_place.get("name"),
-                            "coordinates": [
-                                nearby_place.get("lon"),
-                                nearby_place.get("lat"),
-                            ],
-                            "type": nearby_place.get("type") or "city",
-                        }
+                    if not feat["properties"].get("suggestedPlace"):
+                        nearby_place = find_nearby_candidate_place(
+                            orig_text,
+                            coords,
+                            radius_km=MATCHING_CONFIG["suggestion_radius_km"],
+                        )
+                        if nearby_place:
+                            feat["properties"]["suggestedPlace"] = {
+                                "name": nearby_place.get("name_fr")
+                                or nearby_place.get("name"),
+                                "coordinates": [
+                                    nearby_place.get("lon"),
+                                    nearby_place.get("lat"),
+                                ],
+                                "type": nearby_place.get("type") or "city",
+                            }
     except Exception as e:
         logger.debug(f"Failed to batch georeference OCR text features: {e}")
 

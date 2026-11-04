@@ -134,8 +134,9 @@
                 <span class="hidden sm:inline">Changer</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
                   class="hidden"
+                  :disabled="isUpdatingReferenceImage"
                   @change="onLocalImageSelected"
                 />
               </label>
@@ -143,7 +144,7 @@
                 v-if="displayImageUrl"
                 type="button"
                 class="btn btn-xs btn-ghost btn-square text-white hover:bg-error/80 px-1 min-h-0 h-6"
-                title="Supprimer l'image de référence et du cache"
+                title="Supprimer l'image de référence associée à cette carte"
                 aria-label="Supprimer l'image de référence"
                 @click="removeReferenceImage"
               >
@@ -178,8 +179,9 @@
                 <span>Importer une image pour visualiser</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
                   class="hidden"
+                  :disabled="isUpdatingReferenceImage"
                   @change="onLocalImageSelected"
                 />
               </label>
@@ -304,6 +306,7 @@
 
                 <button
                   type="button"
+                  :disabled="isUpdatingReferenceImage"
                   class="btn btn-ghost btn-xs btn-square w-7 h-7 text-error hover:bg-error/10 shrink-0"
                   title="Supprimer ce texte de la carte"
                   @click.stop="toggleSupprimer(item)"
@@ -395,6 +398,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
 import type L from "leaflet";
+import type { FeatureCollection } from "geojson";
 import {
   TrashIcon,
   PhotoIcon,
@@ -409,7 +413,9 @@ import {
   formatWordText,
   normalizeWordType,
 } from "../../utils/wordStyles";
-import { cacheOriginalMapImage, removeOriginalMapImage } from "../../composables/useMapImageCache";
+import { removeOriginalMapImage } from "../../composables/useMapImageCache";
+import { useMapReferenceImage } from "../../composables/useMapReferenceImage";
+import { showAlert } from "../../composables/useAlert";
 
 export type { TextValidationEntry };
 
@@ -451,7 +457,7 @@ const imgZoom = ref(1);
 let leafletMap: L.Map | null = null;
 let landLayer: L.GeoJSON | null = null;
 let cachedLeaflet: typeof import("leaflet") | null = null;
-let cachedBasemapGeoJSON: GeoJSON.FeatureCollection | null = null;
+let cachedBasemapGeoJSON: FeatureCollection | null = null;
 const markerMap = new Map<string, L.Marker>();
 
 let radiusCircle: L.Circle | null = null;
@@ -460,6 +466,10 @@ let connectionLine: L.Polyline | null = null;
 
 const localImageMap = ref<Record<string, string>>({});
 const removedImageMap = ref<Record<string, boolean>>({});
+const loadedReferenceImageMap = new Set<string>();
+const { fetchReferenceImage, saveReferenceImage, deleteReferenceImage } =
+  useMapReferenceImage();
+const isUpdatingReferenceImage = ref(false);
 
 const displayImageUrl = computed(() => {
   const currentKey = props.mapId ?? "_default";
@@ -621,45 +631,61 @@ function onImageWheel(event: WheelEvent) {
   zoomImg(event.deltaY < 0 ? 0.1 : -0.1);
 }
 
-function onLocalImageSelected(event: Event) {
+async function onLocalImageSelected(event: Event) {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const dataUrl = e.target?.result as string;
-    if (dataUrl) {
-      const currentKey = props.mapId ?? "_default";
-      const oldUrl = localImageMap.value[currentKey];
-      if (oldUrl && oldUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(oldUrl);
-      }
-      localImageMap.value = {
-        ...localImageMap.value,
-        [currentKey]: dataUrl,
-      };
-      removedImageMap.value = { ...removedImageMap.value, [currentKey]: false };
-      imgZoom.value = 1;
-
-      if (props.mapId) {
-        cacheOriginalMapImage(props.mapId, dataUrl);
+  target.value = "";
+  const mapId = props.mapId;
+  const currentKey = mapId ?? "_default";
+  isUpdatingReferenceImage.value = true;
+  try {
+    if (mapId) {
+      const result = await saveReferenceImage(mapId, file);
+      if (!result.success) {
+        showAlert("error", result.error);
+        return;
       }
     }
-  };
-  reader.readAsDataURL(file);
+    const oldUrl = localImageMap.value[currentKey];
+    if (oldUrl?.startsWith("blob:")) URL.revokeObjectURL(oldUrl);
+    localImageMap.value = {
+      ...localImageMap.value,
+      [currentKey]: URL.createObjectURL(file),
+    };
+    removedImageMap.value = { ...removedImageMap.value, [currentKey]: false };
+    if (mapId) loadedReferenceImageMap.add(mapId);
+    imgZoom.value = 1;
+  } finally {
+    isUpdatingReferenceImage.value = false;
+  }
 }
 
-function removeReferenceImage() {
-  const currentKey = props.mapId ?? "_default";
-  const localUrl = localImageMap.value[currentKey];
-  if (localUrl?.startsWith("blob:")) {
-    URL.revokeObjectURL(localUrl);
+async function removeReferenceImage() {
+  const mapId = props.mapId;
+  const currentKey = mapId ?? "_default";
+  isUpdatingReferenceImage.value = true;
+  try {
+    if (mapId) {
+      const result = await deleteReferenceImage(mapId);
+      if (!result.success) {
+        showAlert("error", result.error);
+        return;
+      }
+    }
+    const localUrl = localImageMap.value[currentKey];
+    if (localUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(localUrl);
+    }
+    localImageMap.value = { ...localImageMap.value, [currentKey]: "" };
+    removedImageMap.value = { ...removedImageMap.value, [currentKey]: true };
+    removeOriginalMapImage(mapId);
+    if (mapId) loadedReferenceImageMap.add(mapId);
+    imgZoom.value = 1;
+  } finally {
+    isUpdatingReferenceImage.value = false;
   }
-  localImageMap.value = { ...localImageMap.value, [currentKey]: "" };
-  removedImageMap.value = { ...removedImageMap.value, [currentKey]: true };
-  removeOriginalMapImage(props.mapId);
-  imgZoom.value = 1;
 }
 
 function itemBorderClass(item: TextValidationEntry): string {
@@ -1263,9 +1289,32 @@ watch(
   },
 );
 
+watch(
+  () => [props.isOpen, props.mapId] as const,
+  async ([isOpen, mapId]: readonly [boolean, string | null]) => {
+    if (!isOpen || !mapId || loadedReferenceImageMap.has(mapId)) return;
+    const result = await fetchReferenceImage(mapId);
+    if (!props.isOpen || props.mapId !== mapId) {
+      if (result.success) URL.revokeObjectURL(result.data);
+      return;
+    }
+
+    loadedReferenceImageMap.add(mapId);
+    if (result.success) {
+      localImageMap.value = { ...localImageMap.value, [mapId]: result.data };
+    } else if (result.status !== 404) {
+      showAlert("error", result.error);
+    }
+  },
+  { immediate: true },
+);
+
 onBeforeUnmount(() => {
   if (typeof window !== "undefined") {
     window.removeEventListener("keydown", handleKeyDown, true);
+  }
+  for (const imageUrl of Object.values<string>(localImageMap.value)) {
+    if (imageUrl.startsWith("blob:")) URL.revokeObjectURL(imageUrl);
   }
   destroyMap();
 });

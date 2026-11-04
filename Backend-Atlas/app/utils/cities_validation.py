@@ -136,6 +136,7 @@ MATCHING_CONFIG = {
     "default_confidence_threshold": 0.80,
     "ocr_fuzzy_threshold": 0.60,
     "max_fuzzy_distance_km": 75.0,
+    "suggestion_radius_km": 150.0,
 }
 
 
@@ -553,11 +554,14 @@ def resolve_place(
         ent = find_geo_entity(key, fuzzy=fuzzy, cutoff=cutoff, target_pos=target_pos, bounds=bounds)
         if ent is None:
             return None
-        return (
+        result = (
             format_place_result(ent, text, base=base, default_type="country")
             if is_in_bounds(ent["lat"], ent["lon"], bounds)
             else _BLOCKED
         )
+        if result is not _BLOCKED:
+            result["matchMethod"] = "fuzzy" if fuzzy else "exact"
+        return result
 
     def _match_city(fuzzy: bool = False, cutoff: float = MATCHING_CONFIG["default_confidence_threshold"]) -> Optional[Dict[str, Any]]:
         if not fuzzy:
@@ -579,18 +583,9 @@ def resolve_place(
         )
         if not best:
             return None
-        return format_place_result(best, text)
-
-    def _is_near_target(place: Dict[str, Any]) -> bool:
-        if target_pos is None:
-            return True
-        lat, lon = place.get("lat"), place.get("lon")
-        if lat is None or lon is None:
-            return False
-        return (
-            haversine_distance_km(target_pos[0], target_pos[1], float(lat), float(lon))
-            <= MATCHING_CONFIG["max_fuzzy_distance_km"]
-        )
+        result = format_place_result(best, text)
+        result["matchMethod"] = "fuzzy" if fuzzy else "exact"
+        return result
 
     if text.isupper():
         # ALL-CAPS → prefer geographic entity
@@ -617,11 +612,11 @@ def resolve_place(
         geo_f = _match_geo(fuzzy=True, cutoff=confidence_threshold)
         if geo_f is _BLOCKED:
             return base
-        if geo_f and _is_near_target(geo_f):
+        if geo_f:
             return geo_f
 
         city_f = _match_city(fuzzy=True, cutoff=confidence_threshold)
-        if city_f and _is_near_target(city_f):
+        if city_f:
             return city_f
 
     return base
@@ -689,10 +684,6 @@ def match_ocr_label(
         hit = _try(q, MATCHING_CONFIG["exact_threshold"])
         if hit:
             return hit
-
-    # Fuzzy OCR matches need a georeferenced position before they can be accepted.
-    if target_pos is None:
-        return None
 
     # Stage 2: Fuzzy matches (line-by-line if multiline, else whole text)
     fuzzy_candidates = lines if len(lines) > 1 else [whole]

@@ -257,23 +257,16 @@ def test_fuzzy_match_recovers_ocr_typos():
     assert 48.0 <= res["lat"] <= 49.0
 
 
-def test_fuzzy_match_requires_geographic_proximity_to_ocr_position():
-    near_paris = resolve_place(
-        "Pariss",
-        frame_bounds=EUROPE_BOUNDS,
-        confidence_threshold=0.70,
-        target_pos=(48.8566, 2.3522),
-    )
-    assert near_paris["found"] is True
-    assert near_paris["name"] == "Paris"
-
-    far_from_paris = resolve_place(
+def test_fuzzy_match_returns_candidate_for_geographic_review():
+    candidate = resolve_place(
         "Pariss",
         frame_bounds=EUROPE_BOUNDS,
         confidence_threshold=0.70,
         target_pos=(38.7223, -9.1393),
     )
-    assert far_from_paris["found"] is False
+    assert candidate["found"] is True
+    assert candidate["name"] == "Paris"
+    assert candidate["matchMethod"] == "fuzzy"
 
     # Exact matches keep their existing behavior; the distance gate is for fuzzy matches only.
     exact_far_match = resolve_place(
@@ -317,12 +310,14 @@ def test_match_ocr_label_single_and_multiline():
     assert match_ocr_label(None) is None
 
 
-def test_match_ocr_label_requires_position_for_fuzzy_matches(monkeypatch):
+def test_match_ocr_label_returns_fuzzy_candidate_without_position(monkeypatch):
     from app.utils.cities_validation import MATCHING_CONFIG
 
     monkeypatch.setitem(MATCHING_CONFIG, "ocr_fuzzy_threshold", 0.70)
 
-    assert match_ocr_label("Pariss", frame_bounds=EUROPE_BOUNDS) is None
+    no_position = match_ocr_label("Pariss", frame_bounds=EUROPE_BOUNDS)
+    assert no_position is not None
+    assert no_position["name"] == "Paris"
 
     nearby = match_ocr_label(
         "Pariss",

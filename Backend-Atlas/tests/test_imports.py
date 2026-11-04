@@ -1,9 +1,19 @@
 """The legend helpers and the import inputs: validation, merging, readiness."""
 
+import asyncio
+from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
 import cv2
 import numpy as np
 import pytest
+from fastapi import HTTPException, UploadFile
+from starlette.datastructures import Headers
 
+from app.models.map import Map
+from app.routers import imports as imports_router
 from app.services.imports import (
     apply_inputs_patch,
     missing_inputs,
@@ -29,8 +39,6 @@ ZONE = {"x": 0.2, "y": 0.2, "name": "Forest", "radius": 5, "kind": "zone", "hex"
 
 
 # --- legend -------------------------------------------------------------------
-
-
 def test_legend_bounds_are_validated():
     assert parse_legend_bounds({"x": 1, "y": 2, "width": 3, "height": 4}) == {
         "x": 1.0,
@@ -95,9 +103,7 @@ def test_patch_validates_and_merges():
 
 
 def test_shape_clicks_are_validated_and_named():
-    inputs = apply_inputs_patch(
-        {}, {"shapes": [{"x": 0.4, "y": 0.6, "name": " Cercle "}, {"x": 0.1, "y": 0.2}]}
-    )
+    inputs = apply_inputs_patch({}, {"shapes": [{"x": 0.4, "y": 0.6, "name": " Cercle "}, {"x": 0.1, "y": 0.2}]})
     parsed = parse_import_inputs(inputs)
     assert parsed.shape_clicks == [(0.4, 0.6), (0.1, 0.2)]
     assert parsed.shape_names == ["Cercle", "Forme 2"]
@@ -149,6 +155,54 @@ def test_missing_inputs_follow_the_checklist():
     assert missing_inputs(parse_import_inputs(complete)) == []
 
     water_only = {**complete, "colors": [{**ZONE, "kind": "water"}]}
-    assert missing_inputs(parse_import_inputs(water_only)) == [
-        "Couleurs à extraire (au moins une zone)"
-    ]
+    assert missing_inputs(parse_import_inputs(water_only)) == ["Couleurs à extraire (au moins une zone)"]
+
+
+def test_reference_images_are_saved_and_retrieved_per_map(monkeypatch):
+    map_ids = [uuid4(), uuid4()]
+    map_objects = {map_id: Map(id=map_id) for map_id in map_ids}
+
+    async def require_owned_map(_session, map_id, _user_id):
+        return map_objects[map_id]
+
+    monkeypatch.setattr(imports_router, "_require_owned_map", require_owned_map)
+    session = SimpleNamespace(commit=AsyncMock())
+    images = [b"first map image", b"second map image"]
+
+    for map_id, image in zip(map_ids, images):
+        upload = UploadFile(
+            filename="reference.png",
+            file=BytesIO(image),
+            headers=Headers({"content-type": "image/png"}),
+        )
+        asyncio.run(imports_router.save_reference_image(map_id, upload, str(uuid4()), session))
+
+    for map_id, expected_image in zip(map_ids, images):
+        response = asyncio.run(imports_router.get_reference_image(map_id, str(uuid4()), session))
+        assert response.body == expected_image
+        assert response.media_type == "image/png"
+
+    asyncio.run(imports_router.delete_reference_image(map_ids[0], str(uuid4()), session))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.get_reference_image(map_ids[0], str(uuid4()), session))
+    assert error.value.status_code == 404
+    assert asyncio.run(imports_router.get_reference_image(map_ids[1], str(uuid4()), session)).body == images[1]
+
+
+def test_reference_image_rejects_non_image_upload(monkeypatch):
+    map_id = uuid4()
+    map_obj = Map(id=map_id)
+
+    async def require_owned_map(_session, _map_id, _user_id):
+        return map_obj
+
+    monkeypatch.setattr(imports_router, "_require_owned_map", require_owned_map)
+    upload = UploadFile(
+        filename="not-an-image.txt",
+        file=BytesIO(b"not an image"),
+        headers=Headers({"content-type": "text/plain"}),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.save_reference_image(map_id, upload, str(uuid4()), SimpleNamespace()))
+    assert error.value.status_code == 400

@@ -139,6 +139,56 @@ def test_categorized_text_features_only_accepts_nearby_fuzzy_place(monkeypatch):
     assert distant["properties"]["recognized"] is False
     assert distant["properties"]["validationStatus"] == "manual_review"
     assert distant["properties"]["name"] == "Pariss"
+    assert distant["properties"]["suggestedPlace"] == {
+        "name": "Paris",
+        "coordinates": [2.3488, 48.85341],
+        "type": "city",
+    }
+
+
+def test_categorized_text_features_keeps_numeric_ocr_for_review():
+    features = _categorized_text_features_from_ocr(
+        [
+            [[[10, 10], [30, 10], [30, 20], [10, 20]], "1783", 0.95],
+        ],
+        legend_bounds=None,
+        frame_bounds=None,
+    )
+
+    assert len(features) == 1
+    feature = features[0]["features"][0]
+    assert feature["properties"]["recognized"] is False
+    assert feature["properties"]["validationStatus"] == "manual_review"
+    assert feature["properties"]["originalText"] == "1783"
+
+
+def test_distant_fuzzy_json_match_is_unrecognized_with_json_suggestion(monkeypatch):
+    json_entity = {
+        "found": True,
+        "name": "ONTARIO",
+        "type": "province",
+        "lat": 50.0,
+        "lon": -85.0,
+        "matchMethod": "fuzzy",
+    }
+    monkeypatch.setattr("app.tasks.match_ocr_label", lambda *args, **kwargs: json_entity)
+
+    feature = _categorized_text_features_from_ocr(
+        [
+            [[[490, 490], [510, 490], [510, 510], [490, 510]], "Ontaro", 0.95],
+        ],
+        legend_bounds=None,
+        frame_bounds={"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0},
+        image_size=(1000, 1000),
+    )[0]["features"][0]
+
+    assert feature["properties"]["recognized"] is False
+    assert feature["properties"]["validationStatus"] == "manual_review"
+    assert feature["properties"]["suggestedPlace"] == {
+        "name": "ONTARIO",
+        "coordinates": [-85.0, 50.0],
+        "type": "province",
+    }
 
 
 def test_find_nearby_candidate_place_matches_city_and_rejects_unrelated_text():
@@ -216,19 +266,19 @@ def test_json_matched_text_uses_ocr_position_but_geonames_city_keeps_cached_posi
     monkeypatch.setattr("app.tasks.match_ocr_label", _mock_match)
     collections = _categorized_text_features_from_ocr(
         [
-            [[[10, 10], [20, 10], [20, 20], [10, 20]], "Province de Québec", 0.95],
-            [[[30, 30], [40, 30], [40, 40], [30, 40]], "Québec", 0.90],
+            [[[430, 650], [450, 650], [450, 670], [430, 670]], "Province de Québec", 0.95],
+            [[[432, 652], [452, 652], [452, 672], [432, 672]], "Québec", 0.90],
         ],
         legend_bounds=None,
         frame_bounds=FRAME_BOUNDS,
-        image_size=(100, 100),
+        image_size=(1000, 1000),
     )
 
     features = [collection["features"][0] for collection in collections]
     province = next(feature for feature in features if feature["properties"]["type"] == "province")
     city = next(feature for feature in features if feature["properties"]["type"] == "city")
     assert province["properties"]["name"] == "PROVINCE DE QUÉBEC"
-    assert province["geometry"]["coordinates"] == [-77.0, 57.0]
+    assert province["geometry"]["coordinates"] == [-71.2, 46.8]
     assert city["geometry"]["coordinates"] == [QUEBEC_CITY["lon"], QUEBEC_CITY["lat"]]
 
     placement = MagicMock()
@@ -251,9 +301,18 @@ def test_json_matched_text_uses_ocr_position_but_geonames_city_keeps_cached_posi
     assert city["geometry"]["coordinates"] == [QUEBEC_CITY["lon"], QUEBEC_CITY["lat"]]
 
 
-def test_batch_georeference_and_candidate_association():
+def test_batch_georeference_and_candidate_association(monkeypatch):
     from unittest.mock import MagicMock
     from app.tasks import _georeference_text_features
+
+    original_find_candidate = find_nearby_candidate_place
+    search_radii = []
+
+    def _find_candidate(text, coords, radius_km):
+        search_radii.append(radius_km)
+        return original_find_candidate(text, coords, radius_km)
+
+    monkeypatch.setattr("app.tasks.find_nearby_candidate_place", _find_candidate)
 
     collections = [
         {
@@ -297,6 +356,7 @@ def test_batch_georeference_and_candidate_association():
     assert "montr" in suggestion["name"].lower()
     assert suggestion["coordinates"] is not None
     assert suggestion["type"] == "city"
+    assert search_radii == [MATCHING_CONFIG["suggestion_radius_km"]]
 
 
 def test_text_feature_normalization_preserves_disjoint_validation_status():
