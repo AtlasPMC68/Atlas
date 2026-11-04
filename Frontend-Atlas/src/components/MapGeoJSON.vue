@@ -525,29 +525,21 @@ function buildLabelMarker(
 }
 
 function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.Layer, anchorX: number, anchorY: number) {
-  // Patch _setPos on the instance to persist rotation across map pan/zoom
-  const originalSetPos = (label as any)._setPos;
-  (label as any)._setPos = function(pos: any) {
-    originalSetPos.call(this, pos);
-    const rotation = feature.properties.rotation ?? 0;
-    if (this._icon) {
-      this._icon.style.transformOrigin = `${anchorX}px ${anchorY}px`;
-      if (rotation) {
-        const transform = this._icon.style.transform;
-        if (!transform.includes('rotate')) {
-          this._icon.style.transform += ` rotate(${rotation}deg)`;
-        } else {
-          this._icon.style.transform = transform.replace(/rotate\([^)]+\)/, `rotate(${rotation}deg)`);
-        }
-      }
+  const applyRotation = () => {
+    const el = label.getElement();
+    if (!el) return;
+    const wrapper = el.querySelector(".label-wrapper") as HTMLElement | null;
+    if (wrapper) {
+      const rotation = feature.properties.rotation ?? 0;
+      wrapper.style.transformOrigin = `${anchorX}px ${anchorY}px`;
+      wrapper.style.transform = rotation ? `rotate(${rotation}deg)` : "";
     }
   };
 
   label.on("add", () => {
+    applyRotation();
     const el = label.getElement();
     if (!el) return;
-    
-    el.style.transformOrigin = `${anchorX}px ${anchorY}px`;
     
     const anchor = el.querySelector('.label-anchor.rotate-handle');
     if (anchor) {
@@ -563,6 +555,8 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         
         let startAngle = Math.atan2((e as MouseEvent).clientY - centerY, (e as MouseEvent).clientX - centerX);
         let initialRotation = feature.properties.rotation ?? 0;
+
+        const wrapper = el.querySelector('.label-wrapper') as HTMLElement | null;
         
         const onMouseMove = (moveEvent: MouseEvent) => {
           const angle = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX);
@@ -570,11 +564,9 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
           let newRotation = initialRotation + delta;
           
           (el as any).__currentRotation = newRotation;
-          const transform = el.style.transform;
-          if (!transform.includes('rotate')) {
-            el.style.transform += ` rotate(${newRotation}deg)`;
-          } else {
-            el.style.transform = transform.replace(/rotate\([^)]+\)/, `rotate(${newRotation}deg)`);
+          if (wrapper) {
+            wrapper.style.transformOrigin = `${anchorX}px ${anchorY}px`;
+            wrapper.style.transform = `rotate(${newRotation}deg)`;
           }
         };
         
@@ -594,6 +586,10 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
       });
     }
   });
+
+  if (label.getElement()) {
+    applyRotation();
+  }
 }
 
 function materializeTextLayer(feature: Feature): L.Layer | null {
@@ -1383,6 +1379,13 @@ watch(
 
 .label-rotate-mode .label-wrapper {
   outline: 1px dashed #3b82f6;
+}
+
+.label-selected .label-wrapper,
+.city-label-text.label-selected .label-wrapper {
+  outline: 2px solid #2563eb;
+  background-color: rgba(37, 99, 235, 0.08);
+  border-radius: 4px;
 }
 
 .label-rotate-mode .label-anchor,
