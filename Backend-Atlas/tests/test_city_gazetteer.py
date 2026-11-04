@@ -4,7 +4,6 @@ Built once per module from the pinned geonamescache into a temp directory, so
 the tests exercise the real data and never touch ``app/.cache``.
 """
 
-
 import pytest
 
 from app.utils import city_gazetteer
@@ -46,9 +45,7 @@ def test_alternate_names_match():
 
 def test_cities_outside_the_frame_are_never_returned():
     assert "Toronto" not in _names("Toronto")
-    assert "Toronto" in _names(
-        "Toronto", {"west": -90.0, "south": 40.0, "east": -70.0, "north": 50.0}
-    )
+    assert "Toronto" in _names("Toronto", {"west": -90.0, "south": 40.0, "east": -70.0, "north": 50.0})
 
 
 def test_a_frame_crossing_the_antimeridian_is_searched_on_both_sides():
@@ -60,8 +57,3 @@ def test_an_unknown_name_is_an_empty_list_not_an_error():
     assert search_cities("Stadacona", QUEBEC) == []
     assert search_cities("", QUEBEC) == []
     assert search_cities("   ", QUEBEC) == []
-
-
-# --- place names read off the map -----------------------------------------
-
-

@@ -456,6 +456,7 @@ def _categorized_text_features_from_ocr(
         "lac": {"lake"},
         "fleuve": {"river", "fleuve"},
         "riviere": {"river", "fleuve"},
+        "baie"
     }
 
     for prefix_index, prefix_block in enumerate(source_blocks):

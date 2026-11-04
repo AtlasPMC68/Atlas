@@ -305,7 +305,7 @@
 
             <button
               type="button"
-              class="btn btn-outline shrink-0"
+              class="btn btn-outline border-base-300 rounded-lg shrink-0 hover:bg-base-200 hover:border-base-content/40 hover:text-base-content"
               data-testid="manage-custom-label-styles"
               @click="labelStyleManagerRef?.open()"
             >
@@ -316,9 +316,9 @@
 
         <p
           v-if="!isEditingLabel && getMapElementType(featureToEdit) === 'point'"
-          class="text-xs text-base-content/60"
+          class="text-xs text-base-content/60 italic"
         >
-          Ces réglages s'appliquent au symbole du point qui représente la ville
+          Ces réglages suivants s'appliquent au symbole du point qui représente la ville
           sur la carte.
         </p>
         <div
