@@ -135,6 +135,7 @@ MATCHING_CONFIG = {
     "exact_threshold": 1.0,
     "default_confidence_threshold": 0.80,
     "ocr_fuzzy_threshold": 0.60,
+    "max_fuzzy_distance_km": 75.0,
 }
 
 
@@ -580,6 +581,17 @@ def resolve_place(
             return None
         return format_place_result(best, text)
 
+    def _is_near_target(place: Dict[str, Any]) -> bool:
+        if target_pos is None:
+            return True
+        lat, lon = place.get("lat"), place.get("lon")
+        if lat is None or lon is None:
+            return False
+        return (
+            haversine_distance_km(target_pos[0], target_pos[1], float(lat), float(lon))
+            <= MATCHING_CONFIG["max_fuzzy_distance_km"]
+        )
+
     if text.isupper():
         # ALL-CAPS → prefer geographic entity
         geo = _match_geo(fuzzy=False)
@@ -605,11 +617,11 @@ def resolve_place(
         geo_f = _match_geo(fuzzy=True, cutoff=confidence_threshold)
         if geo_f is _BLOCKED:
             return base
-        if geo_f:
+        if geo_f and _is_near_target(geo_f):
             return geo_f
 
         city_f = _match_city(fuzzy=True, cutoff=confidence_threshold)
-        if city_f:
+        if city_f and _is_near_target(city_f):
             return city_f
 
     return base
@@ -677,6 +689,10 @@ def match_ocr_label(
         hit = _try(q, MATCHING_CONFIG["exact_threshold"])
         if hit:
             return hit
+
+    # Fuzzy OCR matches need a georeferenced position before they can be accepted.
+    if target_pos is None:
+        return None
 
     # Stage 2: Fuzzy matches (line-by-line if multiline, else whole text)
     fuzzy_candidates = lines if len(lines) > 1 else [whole]

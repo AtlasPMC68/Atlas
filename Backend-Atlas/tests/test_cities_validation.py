@@ -257,6 +257,33 @@ def test_fuzzy_match_recovers_ocr_typos():
     assert 48.0 <= res["lat"] <= 49.0
 
 
+def test_fuzzy_match_requires_geographic_proximity_to_ocr_position():
+    near_paris = resolve_place(
+        "Pariss",
+        frame_bounds=EUROPE_BOUNDS,
+        confidence_threshold=0.70,
+        target_pos=(48.8566, 2.3522),
+    )
+    assert near_paris["found"] is True
+    assert near_paris["name"] == "Paris"
+
+    far_from_paris = resolve_place(
+        "Pariss",
+        frame_bounds=EUROPE_BOUNDS,
+        confidence_threshold=0.70,
+        target_pos=(38.7223, -9.1393),
+    )
+    assert far_from_paris["found"] is False
+
+    # Exact matches keep their existing behavior; the distance gate is for fuzzy matches only.
+    exact_far_match = resolve_place(
+        "Paris",
+        frame_bounds=EUROPE_BOUNDS,
+        target_pos=(38.7223, -9.1393),
+    )
+    assert exact_far_match["found"] is True
+
+
 def test_fuzzy_match_cutoff_respected():
     # Complete gibberish should not match
     res = resolve_place("Xqzjkwlf", frame_bounds=EUROPE_BOUNDS, confidence_threshold=0.80)
@@ -288,6 +315,22 @@ def test_match_ocr_label_single_and_multiline():
     # None / empty
     assert match_ocr_label("") is None
     assert match_ocr_label(None) is None
+
+
+def test_match_ocr_label_requires_position_for_fuzzy_matches(monkeypatch):
+    from app.utils.cities_validation import MATCHING_CONFIG
+
+    monkeypatch.setitem(MATCHING_CONFIG, "ocr_fuzzy_threshold", 0.70)
+
+    assert match_ocr_label("Pariss", frame_bounds=EUROPE_BOUNDS) is None
+
+    nearby = match_ocr_label(
+        "Pariss",
+        frame_bounds=EUROPE_BOUNDS,
+        target_pos=(48.8566, 2.3522),
+    )
+    assert nearby is not None
+    assert nearby["name"] == "Paris"
 
 
 # Casing Priority Tests (ALL-CAPS -> JSON entity, Title Case/lowercase -> City)

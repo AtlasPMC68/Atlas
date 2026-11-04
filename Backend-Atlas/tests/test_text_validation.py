@@ -2,6 +2,7 @@
 
 from app.tasks import _categorized_text_features_from_ocr
 from app.utils.cities_validation import (
+    MATCHING_CONFIG,
     find_nearby_candidate_place,
 )
 
@@ -110,6 +111,34 @@ def test_categorized_text_features_fuzzy_unrecognized(monkeypatch):
     assert props["suggestedPlace"] is None
     assert props["name"] == "Traité de Paris de 1783"
     assert props["originalText"] == "Traité de Paris de 1783"
+
+
+def test_categorized_text_features_only_accepts_nearby_fuzzy_place(monkeypatch):
+    monkeypatch.setitem(MATCHING_CONFIG, "ocr_fuzzy_threshold", 0.70)
+    frame_bounds = {"west": -10.0, "south": 35.0, "east": 40.0, "north": 70.0}
+
+    nearby = _categorized_text_features_from_ocr(
+        [
+            [[[242, 599], [252, 599], [252, 609], [242, 609]], "Pariss", 0.95],
+        ],
+        legend_bounds=None,
+        frame_bounds=frame_bounds,
+        image_size=(1000, 1000),
+    )[0]["features"][0]
+    assert nearby["properties"]["recognized"] is True
+    assert nearby["properties"]["name"] == "Paris"
+
+    distant = _categorized_text_features_from_ocr(
+        [
+            [[[12, 889], [22, 889], [22, 899], [12, 899]], "Pariss", 0.95],
+        ],
+        legend_bounds=None,
+        frame_bounds=frame_bounds,
+        image_size=(1000, 1000),
+    )[0]["features"][0]
+    assert distant["properties"]["recognized"] is False
+    assert distant["properties"]["validationStatus"] == "manual_review"
+    assert distant["properties"]["name"] == "Pariss"
 
 
 def test_find_nearby_candidate_place_matches_city_and_rejects_unrelated_text():
