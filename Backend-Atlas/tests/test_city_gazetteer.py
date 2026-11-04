@@ -46,7 +46,9 @@ def test_alternate_names_match():
 
 def test_cities_outside_the_frame_are_never_returned():
     assert "Toronto" not in _names("Toronto")
-    assert "Toronto" in _names("Toronto", {"west": -90.0, "south": 40.0, "east": -70.0, "north": 50.0})
+    assert "Toronto" in _names(
+        "Toronto", {"west": -90.0, "south": 40.0, "east": -70.0, "north": 50.0}
+    )
 
 
 def test_a_frame_crossing_the_antimeridian_is_searched_on_both_sides():

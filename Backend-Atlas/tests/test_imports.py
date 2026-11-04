@@ -106,7 +106,9 @@ def test_patch_validates_and_merges():
 
 
 def test_shape_clicks_are_validated_and_named():
-    inputs = apply_inputs_patch({}, {"shapes": [{"x": 0.4, "y": 0.6, "name": " Cercle "}, {"x": 0.1, "y": 0.2}]})
+    inputs = apply_inputs_patch(
+        {}, {"shapes": [{"x": 0.4, "y": 0.6, "name": " Cercle "}, {"x": 0.1, "y": 0.2}]}
+    )
     parsed = parse_import_inputs(inputs)
     assert parsed.shape_clicks == [(0.4, 0.6), (0.1, 0.2)]
     assert parsed.shape_names == ["Cercle", "Forme 2"]

@@ -95,14 +95,18 @@ def _color_result():
 def _run_extraction(claimed, state=EXTRACTION_RUNNING, **patches):
     """Run the task with its database transitions stubbed. Returns the mocks."""
     placement = MagicMock(alignment=None)
-    placement.georeference.return_value = MagicMock(collections=[{"type": "FeatureCollection", "features": []}])
+    placement.georeference.return_value = MagicMock(
+        collections=[{"type": "FeatureCollection", "features": []}]
+    )
     mocks = {
         "claim": AsyncMock(return_value=claimed),
         "state": AsyncMock(return_value=state),
         "save": AsyncMock(return_value=3),
         "end": AsyncMock(),
         "colors": MagicMock(return_value=_color_result()),
-        "shapes": MagicMock(return_value={"pixel_features": [], "normalized_features": [], "shapes": []}),
+        "shapes": MagicMock(
+            return_value={"pixel_features": [], "normalized_features": [], "shapes": []}
+        ),
         "city": MagicMock(side_effect=_match_city),
         "place": MagicMock(return_value=placement),
     }
@@ -250,7 +254,9 @@ def test_a_task_that_is_no_longer_current_does_nothing():
 
 
 def test_a_failure_marks_the_import_failed():
-    mocks = _run_extraction(_claimed(), colors=MagicMock(side_effect=RuntimeError("boom")))
+    mocks = _run_extraction(
+        _claimed(), colors=MagicMock(side_effect=RuntimeError("boom"))
+    )
 
     with pytest.raises(RuntimeError):
         mocks["outcome"].get(timeout=20, propagate=True)
