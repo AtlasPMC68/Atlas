@@ -108,7 +108,7 @@ def _validate_options(entry: Any) -> Dict[str, bool]:
 
 def apply_inputs_patch(current: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
     """Validate *patch* and merge it into *current*. ``None`` clears a key."""
-
+    
     unknown = set(patch) - set(INPUT_KEYS)
     if unknown:
         raise ValueError(f"unknown input(s): {', '.join(sorted(unknown))}")

@@ -44,7 +44,6 @@ from app.utils.dev_test_evaluator import build_test_case_paths
 from app.utils.georeferencing.records import RUN_RECORD_FILENAME
 from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
 from app.utils.georeferencing.config import ambient_georef_config
-
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -349,8 +348,8 @@ def evaluate_and_persist_case(
     min_iou: float | None,
     allow_best_promotion: bool = True,
 ) -> dict[str, Any]:
-    """Score a case and write its report."""
-
+    """Score a case and write its report. """
+    
     from app.utils.dev_test_evaluator import (
         build_test_case_paths,
         evaluate_georef_test_case,
@@ -716,7 +715,7 @@ async def run_evaluate_case_blocking(
 
     kind = resolve_case_kind(test_id, test_case_id)
 
-    # A probe has no expected zones by design, so there is nothing to evaluate against.
+    # A probe has no expected zones by design, so there is nothing to evaluate against. 
     report = None
     if kind != KIND_PROBE:
         paths = build_test_case_paths(assets_root, test_id, test_case_id)

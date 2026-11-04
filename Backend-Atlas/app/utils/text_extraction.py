@@ -34,7 +34,7 @@ def should_ignore(text_val: str) -> bool:
         r"(?<![a-z])(?:km|kms|kilom[eè]tres?|kilometers?|miles?)(?![a-z])",
         clean,
     ):
-        return True
+            return True
 
     if len(clean.split()) > 5:
         return True

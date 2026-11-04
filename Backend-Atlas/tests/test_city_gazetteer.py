@@ -4,6 +4,7 @@ Built once per module from the pinned geonamescache into a temp directory, so
 the tests exercise the real data and never touch ``app/.cache``.
 """
 
+
 import pytest
 
 from app.utils import city_gazetteer

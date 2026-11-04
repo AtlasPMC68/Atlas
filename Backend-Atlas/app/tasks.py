@@ -75,7 +75,6 @@ from app.utils.dev_test_cases import KIND_PROBE, resolve_case_kind
 from app.utils.dev_test_derived import ensure_text_regions, text_regions_for_run
 
 from .celery_app import celery_app
-
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -88,7 +87,7 @@ GEOREF_CONFIG = ambient_georef_config()
 
 
 def _dev_test_debug_dir(test_id: str, test_case: str) -> str | None:
-    """Where the alignement diagnostics go"""
+    """ Where the alignement diagnostics go """
     if not debug_enabled():
         return None
 
@@ -144,7 +143,7 @@ def _dump_zones_debug(debug_dir: str | None, collections: list) -> None:
 
 
 def _alignment_summary(result) -> dict[str, Any]:
-    """What the UI needs to tell the user what happened."""
+    """What the UI needs to tell the user what happened. """
     if result is None:
         return {"enabled": False, "method": "gcp_only"}
     return {
@@ -205,7 +204,6 @@ def _decode_image(content: bytes):
     if image is None:
         raise ValueError("Could not decode the map image")
     return image
-
 
 async def _claim_ocr(map_id: str, task_id: str) -> Optional[bytes]:
     async with WorkerSessionLocal() as session:
@@ -288,7 +286,7 @@ async def _save_extraction(
     georef_inputs: Optional[dict],
 ) -> int:
     """Save every feature, record the inputs on the map and close the import,
-    in one transaction: a cancel or a crash leaves no partial map behind."""
+    in one transaction: a cancel or a crash leaves no partial map behind. """
     map_uuid = UUID(map_id)
     async with WorkerSessionLocal() as session:
         async with session.begin():
@@ -604,7 +602,7 @@ def _categorized_text_features_from_ocr(
                 else [entity["lon"], entity["lat"]]
             )
 
-            collections.append(
+        collections.append(
                 _make_text_feature(
                     name=display_name,
                     original_text=raw_text,
@@ -649,7 +647,7 @@ def _categorized_text_features_from_ocr(
                     recognized=False,
                     extra={
                         "suggestedPlace": suggested_place,
-                    },
+                        },
                 )
             )
 
@@ -712,12 +710,12 @@ def _georeference_text_features(
                             feat["properties"]["suggestedPlace"] = {
                                 "name": nearby_place.get("name_fr")
                                 or nearby_place.get("name"),
-                                "coordinates": [
+                            "coordinates": [
                                     nearby_place.get("lon"),
                                     nearby_place.get("lat"),
-                                ],
+                            ],
                                 "type": nearby_place.get("type") or "city",
-                            }
+                    }
     except Exception as e:
         logger.debug(f"Failed to batch georeference OCR text features: {e}")
 
@@ -742,6 +740,8 @@ def _write_ocr_text_file(filename: str, blocks: list) -> str:
 
 
 # --- tasks --------------------------------------------------------------------
+
+
 @celery_app.task(bind=True)
 def run_map_ocr(self, map_id: str):
     """OCR for an import, started as soon as the map is uploaded."""
@@ -954,7 +954,6 @@ def warm_dev_test_text_regions(self, test_id: str):
     )
     return {"status": "done", "regions": len(regions or [])}
 
-
 @celery_app.task(bind=True)
 def process_dev_test_extraction(
     self,
@@ -964,7 +963,7 @@ def process_dev_test_extraction(
     excluded_control_points: list | None = None,
 ):
     """Run a stored dev-test case from its ``config.json``, write the results to
-    its folder and score it. No database."""
+    its folder and score it. No database. """
 
     def progress(step: int, status: str) -> None:
         self.update_state(

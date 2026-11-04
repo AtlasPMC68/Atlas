@@ -40,6 +40,8 @@ ZONE = {"x": 0.2, "y": 0.2, "name": "Forest", "radius": 5, "kind": "zone", "hex"
 
 
 # --- legend -------------------------------------------------------------------
+
+
 def test_legend_bounds_are_validated():
     assert parse_legend_bounds({"x": 1, "y": 2, "width": 3, "height": 4}) == {
         "x": 1.0,
@@ -271,7 +273,7 @@ def test_project_timeline_excludes_maps_with_an_unfinished_import():
             side_effect=[
                 SimpleNamespace(scalar_one_or_none=lambda: project_id),
                 SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
-            ]
+    ]
         )
     )
 
