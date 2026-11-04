@@ -181,6 +181,20 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     expect(expandBtn.exists()).toBe(true);
   });
 
+  it("opens map period editing when its title is clicked", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features,
+        featureVisibility,
+        mapPeriods,
+      },
+    });
+
+    await wrapper.find('button[title="Modifier Carte Québec 1900"]').trigger("click");
+
+    expect(wrapper.emitted("edit-map")).toEqual([["map-1"]]);
+  });
+
   it("switches to the selected feature's tab and displays it", async () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {

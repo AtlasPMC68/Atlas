@@ -149,9 +149,11 @@ describe("TextValidationModal", () => {
     expect(wrapper.find(".fixed").exists()).toBe(false);
   });
 
-  it("does not render when there are no unrecognized items (empty list)", () => {
+  it("keeps the confirmation dialog open when all OCR texts have been removed", () => {
     const wrapper = mountModal([], true);
-    expect(wrapper.find(".fixed").exists()).toBe(false);
+    expect(wrapper.find(".fixed").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Aucun texte");
+    expect(findButtonByText(wrapper, "Confirmer et afficher sur la carte")).toBeDefined();
   });
 
   it("renders the header when isOpen is true", () => {
@@ -409,6 +411,45 @@ describe("TextValidationModal", () => {
     // Change back to city -> apply the canonical city capitalization.
     await select.setValue("city");
     expect((textInput.element as HTMLInputElement).value).toBe("Quebec");
+  });
+
+  it("applies a selected custom label style to the confirmed text", async () => {
+    const wrapper = mountModal([
+      {
+        id: "custom-style-item",
+        text: "rivière rouge",
+        originalText: "rivière rouge",
+        selected: true,
+        wordType: "city",
+        coordinates: [-71.2, 46.8],
+      },
+    ]);
+    await wrapper.setProps({
+      customLabelStyles: [
+        {
+          id: "water-style",
+          name: "Cours d'eau",
+          sizePx: 20,
+          fontStyle: "italic",
+          textTransform: "uppercase",
+          color: "#123456",
+          priority: 30,
+          minZoom: 1,
+        },
+      ],
+    });
+
+    await wrapper
+      .find('[data-testid="item-word-type-select"]')
+      .setValue("custom:water-style");
+    await findButtonByText(
+      wrapper,
+      "Confirmer et afficher sur la carte",
+    ).trigger("click");
+
+    const confirmed = wrapper.emitted("confirm")?.[0][0] as TextValidationEntry[];
+    expect(confirmed[0].customLabelStyleId).toBe("water-style");
+    expect(confirmed[0].customLabelStyle?.name).toBe("Cours d'eau");
   });
 
   it("only displays word type selector when the unrecognized item is selected", async () => {

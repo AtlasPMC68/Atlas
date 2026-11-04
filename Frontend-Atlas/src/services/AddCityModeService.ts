@@ -71,8 +71,6 @@ export class AddCityModeService {
       createdAt: now,
       updatedAt: now,
       name,
-      opacity: 1,
-      strokeWidth: 1,
     };
     const next = upsertFeature(this.localFeaturesSnapshot.value, feature);
     this.localFeaturesSnapshot.value = next;

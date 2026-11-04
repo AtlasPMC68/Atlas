@@ -1,4 +1,5 @@
 import type { Feature } from "../typescript/feature";
+import type { CustomLabelStyle } from "../typescript/labelStyle";
 import { getMapElementType } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {
@@ -24,11 +25,73 @@ export interface FeatureEditSubmitPayload {
   fillOpacity?: number;
   strokeOpacity?: number;
   strokeWidth?: number;
+  labelStyleSelection?: string;
+  customLabelStyleId?: string;
+  customLabelStyle?: CustomLabelStyle;
+}
+
+export function applyCustomLabelStyleToFeature(
+  feature: Feature,
+  style: CustomLabelStyle,
+  wordType: WordType,
+  name: string,
+  labelText: string,
+): Feature {
+  const formattedText =
+    style.textTransform === "uppercase" ? labelText.toUpperCase() : labelText;
+  const styledFeature = applyWordStyleToFeature(
+    feature,
+    wordType,
+    name,
+    formattedText,
+  );
+  return {
+    ...styledFeature,
+    name,
+    properties: {
+      ...styledFeature.properties,
+      name,
+      labelText: formattedText,
+      mapElementType: "label",
+      rawType: "custom",
+      type: "custom",
+      customLabelStyleId: style.id,
+      customLabelStyle: style,
+      customLabelStyleFallbackWordType: wordType,
+      colorRgb: hexToRgb(style.color),
+      strokeColor: undefined,
+      fillOpacity: undefined,
+      strokeOpacity: undefined,
+      strokeWidth: undefined,
+    },
+  };
+}
+
+export function removeCustomLabelStyleFromFeature(feature: Feature): Feature {
+  const fallbackWordType =
+    typeof feature.properties.customLabelStyleFallbackWordType === "string"
+      ? normalizeWordType(feature.properties.customLabelStyleFallbackWordType)
+      : getMapElementType(feature) === "label"
+        ? "province"
+        : "city";
+  const restored = applyWordStyleToFeature(
+    feature,
+    fallbackWordType,
+    feature.properties.name,
+    feature.properties.labelText ?? feature.properties.name,
+  );
+  const properties = { ...restored.properties };
+  delete properties.customLabelStyleId;
+  delete properties.customLabelStyle;
+  delete properties.customLabelStyleFallbackWordType;
+  return { ...restored, properties };
 }
 
 export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   const isText = isTextFeature(feature);
-  const wordType = getWordTypeForFeature(feature);
+  const wordType = feature.properties.customLabelStyleFallbackWordType
+    ? normalizeWordType(feature.properties.customLabelStyleFallbackWordType)
+    : getWordTypeForFeature(feature);
   const elementType = getMapElementType(feature);
   const rawLabel =
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
@@ -39,6 +102,11 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
       name: feature.properties.name,
       labelText: rawLabel,
       wordType,
+      labelStyleSelection: feature.properties.customLabelStyleId
+        ? `custom:${feature.properties.customLabelStyleId}`
+        : wordType,
+      customLabelStyleId: feature.properties.customLabelStyleId,
+      customLabelStyle: feature.properties.customLabelStyle,
       colorHex:
         rgbToHex(feature.properties.colorRgb) ??
         (elementType === "label" || elementType === "point"
@@ -78,12 +146,23 @@ export function coerceEditedFeature(
     payload.name,
     payload.labelText ?? payload.name,
   );
+  if (payload.customLabelStyleId && payload.customLabelStyle) {
+    return applyCustomLabelStyleToFeature(
+      originalFeature,
+      payload.customLabelStyle,
+      payload.wordType,
+      payload.name,
+      payload.labelText ?? payload.name,
+    );
+  }
   const isLabel = styledFeature.properties.mapElementType === "label";
 
   return {
     ...styledFeature,
     properties: {
       ...styledFeature.properties,
+      customLabelStyleId: undefined,
+      customLabelStyle: undefined,
       colorRgb: hexToRgb(payload.colorHex),
       strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),
       fillOpacity: isLabel ? undefined : payload.fillOpacity,

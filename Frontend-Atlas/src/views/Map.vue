@@ -12,6 +12,7 @@
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
+          :custom-label-styles="customLabelStyles"
           :selected-feature-id="selectedFeatureId"
           @select-feature="(id: string) => selectedFeatureId = id"
           @toggle-feature="toggleFeatureVisibility"
@@ -20,6 +21,8 @@
           @delete-feature="onDeleteFeature"
           @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
+          @edit-map="openEditMapDialog"
+          @save-label-styles="saveCustomLabelStyles"
           @update-feature="onUpdateFeature"
           @validate-texts="onOpenTextValidation"
         />
@@ -112,6 +115,11 @@
     @submit="createMapForProject"
   />
 
+  <EditMapPeriodDialog
+    ref="editMapPeriodDialogRef"
+    @save="saveMapPeriod"
+  />
+
   <CreateProjectDialog
     ref="createProjectDialogRef"
     @created="onProjectCreated"
@@ -126,8 +134,10 @@
     :map-title="validationMapTitle"
     :initial-items="textValidationEntries"
     :is-submitting="isSavingTextValidation"
+    :custom-label-styles="customLabelStyles"
     @confirm="onConfirmTextValidation"
     @cancel="showTextValidationModal = false"
+    @save-label-styles="saveCustomLabelStyles"
   />
 </template>
 <script setup lang="ts">
@@ -135,12 +145,14 @@ import { ref, onMounted, computed, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
+import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
+import type { CustomLabelStyle } from "../typescript/labelStyle";
 import type { SliderPeriod } from "../typescript/map";
 import {
   camelToSnake,
@@ -173,7 +185,11 @@ import {
   isUnrecognizedTextFeature,
 } from "../utils/textValidation";
 import { isVisibleInMainLayers } from "../utils/featureValidationState";
-import { isTextFeature } from "../utils/wordStyles";
+import { isTextFeature, normalizeWordType } from "../utils/wordStyles";
+import {
+  applyCustomLabelStyleToFeature,
+  removeCustomLabelStyleFromFeature,
+} from "../utils/featureTextEditing";
 
 const route = useRoute();
 const router = useRouter();
@@ -189,6 +205,12 @@ const mapGeoJsonRef = ref<{
 const addMapDialogRef = ref<{
   open: () => void;
   close: () => void;
+} | null>(null);
+const editMapPeriodDialogRef = ref<{
+  open: (period: MapPeriod) => void;
+  close: () => void;
+  setSaving: (value: boolean) => void;
+  setError: (message: string) => void;
 } | null>(null);
 const addFeatureImageDialogRef = ref<{
   open: () => void;
@@ -327,6 +349,7 @@ const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
+const customLabelStyles = ref<CustomLabelStyle[]>([]);
 
 const zoneFeatures = computed(() =>
   filteredFeatures.value.filter((f: Feature) => f.properties?.mapElementType === "zone"),
@@ -667,6 +690,83 @@ async function loadProjectMapsForTimeline() {
   }
 }
 
+async function loadCustomLabelStyles() {
+  if (!projectId.value) {
+    customLabelStyles.value = [];
+    return;
+  }
+  try {
+    const response = await apiFetch(
+      `/projects/${projectId.value}/label-styles`,
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to load project label styles: ${response.status}`);
+    }
+    customLabelStyles.value = snakeToCamel(
+      await response.json(),
+    ) as CustomLabelStyle[];
+  } catch (error) {
+    console.error("Failed to load project label styles:", error);
+    showAlert("error", "Impossible de charger les styles de libellés du projet.");
+  }
+}
+
+async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  try {
+    if (isSaving.value) {
+      throw new Error("Cannot update label styles while project features are saving");
+    }
+    const targetProjectId = await requireProjectId();
+    const response = await apiFetch(
+      `/projects/${targetProjectId}/label-styles`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(camelToSnake({ styles })),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to save project label styles: ${response.status}`);
+    }
+    customLabelStyles.value = snakeToCamel(
+      await response.json(),
+    ) as CustomLabelStyle[];
+
+    const stylesById = new Map(
+      customLabelStyles.value.map((style) => [style.id, style]),
+    );
+    const nextFeatures = features.value.map((feature) => {
+      const styleId = feature.properties.customLabelStyleId;
+      if (typeof styleId !== "string") return feature;
+      const style = stylesById.get(styleId);
+      if (!style) return removeCustomLabelStyleFromFeature(feature);
+      return applyCustomLabelStyleToFeature(
+        feature,
+        style,
+        normalizeWordType(
+          feature.properties.customLabelStyleFallbackWordType,
+        ),
+        feature.properties.name,
+        feature.properties.labelText ?? feature.properties.name,
+      );
+    });
+    const changed = nextFeatures.some(
+      (feature, index) => feature !== features.value[index],
+    );
+    if (changed) {
+      features.value = nextFeatures;
+      await onSaveMap(nextFeatures);
+    }
+    showAlert("success", "Styles de libellé enregistrés dans ce projet.");
+  } catch (error) {
+    console.error("Failed to save project label styles:", error);
+    showAlert(
+      "error",
+      "Impossible d'enregistrer les styles. Vérifiez que vous êtes propriétaire du projet.",
+    );
+  }
+}
+
 async function onDeleteFeature(
   featureId: string,
   callbacks?: {
@@ -850,6 +950,58 @@ async function requireProjectId(): Promise<string> {
 
 function openAddMapDialog() {
   addMapDialogRef.value?.open();
+}
+
+function openEditMapDialog(mapId: string) {
+  const period = mapPeriods.value.find((item) => item.id === mapId);
+  if (!period) {
+    showAlert("error", "Impossible de trouver la carte à modifier.");
+    return;
+  }
+  editMapPeriodDialogRef.value?.open(period);
+}
+
+async function saveMapPeriod(payload: {
+  mapId: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
+  editMapPeriodDialogRef.value?.setSaving(true);
+  editMapPeriodDialogRef.value?.setError("");
+  try {
+    const targetProjectId = await requireProjectId();
+    const response = await apiFetch(
+      `/projects/${targetProjectId}/maps/${payload.mapId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          camelToSnake({
+            title: payload.title,
+            startDate: payload.startDate,
+            endDate: payload.endDate,
+            exactDate: payload.exactDate,
+          }),
+        ),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Error updating map metadata: ${response.status}`);
+    }
+    await loadProjectMapsForTimeline();
+    editMapPeriodDialogRef.value?.close();
+    showAlert("success", "Nom et période de la carte mis à jour.");
+  } catch (error) {
+    console.error("Failed to update map metadata:", error);
+    editMapPeriodDialogRef.value?.setError(
+      "Erreur lors de l'enregistrement du nom et de la période.",
+    );
+    showAlert("error", "Erreur lors de la mise à jour de la carte.");
+  } finally {
+    editMapPeriodDialogRef.value?.setSaving(false);
+  }
 }
 
 async function createMapForProject(formPayload: {
@@ -1156,6 +1308,7 @@ onMounted(async () => {
   await fetchCurrentUser();
   await resolveRouteContext();
   await loadProjectMapsForTimeline();
+  await loadCustomLabelStyles();
   await loadCurrentMapInfo();
   await loadInitialFeatures();
 

@@ -233,6 +233,37 @@ def test_city_out_of_bounds():
     # Paris on Canada map -> not found
     res = resolve_place("Paris", frame_bounds=CANADA_BOUNDS)
     assert res["found"] is False
+    assert res["out_of_bounds"] is True
+
+
+def test_fuzzy_city_candidate_out_of_bounds_is_blocked(monkeypatch):
+    import app.utils.cities_validation as validation
+
+    monkeypatch.setattr(validation, "find_geo_entity", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        validation,
+        "_CITY_INDEX",
+        {
+            "paris": [
+                {
+                    "name": "Paris",
+                    "lat": 48.8566,
+                    "lon": 2.3522,
+                    "population": 0,
+                    "geonameid": 1,
+                }
+            ]
+        },
+    )
+
+    result = resolve_place(
+        "Pariss",
+        frame_bounds=CANADA_BOUNDS,
+        confidence_threshold=0.60,
+    )
+
+    assert result["found"] is False
+    assert result["out_of_bounds"] is True
 
 
 def test_population_disambiguation():

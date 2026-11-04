@@ -47,9 +47,27 @@ export function formatLabelHtml(formattedText: unknown): string {
     .map((line) => {
       const trimmed = line.trim();
       if (!trimmed) return "";
-      return splitBalancedLine(trimmed);
+      return splitBalancedLine(trimmed)
+        .split("<br>")
+        .map((segment) => escapeHtml(segment))
+        .join("<br>");
     })
     .join("<br>");
+}
+// Security Improvement: Added HTML escaping (escapeHtml) to the label formatting pipeline. 
+// This neutralizes special characters (&, <, >, ", ') across line segments 
+// to prevent potential XSS vulnerabilities or unintended HTML rendering from raw OCR text inputs.
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return entities[character];
+  });
 }
 
 export interface LabelPresentationModel {
@@ -77,20 +95,22 @@ export function getLabelPresentation(
   const props = (typedFeature.properties || {}) as Record<string, unknown>;
   const wordType = getWordTypeForFeature(feature);
   const taxonomy = getWordTypeStyle(wordType);
+  const customStyle = parseCustomStyle(props.customLabelStyle);
   const rawText =
     customText ??
     String(props.labelText ?? props.name ?? typedFeature.name ?? "");
-  const isUppercase = taxonomy.textTransform === "uppercase";
-  const isItalic = taxonomy.fontStyle === "italic";
-  const formattedText = formatWordText(
-    rawText,
-    wordType,
-    isUppercase ? "uppercase" : "none",
-  );
+  const isUppercase = (customStyle?.textTransform ?? taxonomy.textTransform) === "uppercase";
+  const isItalic = (customStyle?.fontStyle ?? taxonomy.fontStyle) === "italic";
+  const formattedText = customStyle
+    ? isUppercase
+      ? rawText.toUpperCase()
+      : rawText
+    : formatWordText(rawText, wordType, isUppercase ? "uppercase" : "none");
   const html = formatLabelHtml(formattedText);
-  const sizePx = taxonomy.sizePx;
-  const mapElementType = taxonomy.mapElementType;
+  const sizePx = customStyle?.sizePx ?? taxonomy.sizePx;
+  const mapElementType = customStyle ? "label" : taxonomy.mapElementType;
   const colorCss =
+    customStyle?.color ||
     colorRgbToCss(props.colorRgb) ||
     (typeof props.color === "string" ? props.color : "#000000");
   const inlineStyles: string[] = [];
@@ -108,11 +128,41 @@ export function getLabelPresentation(
     textTransform: isUppercase ? "uppercase" : "none",
     isUppercase,
     isItalic,
-    priority: taxonomy.priority,
-    minZoom: taxonomy.minZoom,
+    priority: customStyle?.priority ?? taxonomy.priority,
+    minZoom: customStyle?.minZoom ?? taxonomy.minZoom,
     colorCss,
     styleAttribute: inlineStyles.length
       ? ` style="${inlineStyles.join("; ")}"`
       : "",
+  };
+}
+
+function parseCustomStyle(value: unknown): {
+  sizePx: number;
+  fontStyle: "normal" | "italic";
+  textTransform: "none" | "uppercase";
+  color: string;
+  priority: number;
+  minZoom: number;
+} | null {
+  if (!value || typeof value !== "object") return null;
+  const style = value as Record<string, unknown>;
+  if (
+    typeof style.sizePx !== "number" ||
+    !Number.isFinite(style.sizePx) ||
+    (style.fontStyle !== "normal" && style.fontStyle !== "italic") ||
+    (style.textTransform !== "none" && style.textTransform !== "uppercase") ||
+    typeof style.color !== "string" ||
+    !/^#[0-9a-f]{6}$/i.test(style.color)
+  ) {
+    return null;
+  }
+  return {
+    sizePx: style.sizePx,
+    fontStyle: style.fontStyle,
+    textTransform: style.textTransform,
+    color: style.color,
+    priority: typeof style.priority === "number" ? style.priority : 30,
+    minZoom: typeof style.minZoom === "number" ? style.minZoom : 1,
   };
 }

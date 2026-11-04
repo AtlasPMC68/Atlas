@@ -337,6 +337,19 @@ def _find_geographic_prefix(norm_text: str) -> Optional[Tuple[str, str]]:
     return None
 
 
+def is_geographic_prefix_only(text: str) -> bool:
+    """Whether *text* is only a geographic prefix with no place name."""
+    normalized = _normalize(text)
+    if not normalized:
+        return False
+    prefix_fragments = {
+        " ".join(prefix.strip().split()[:count])
+        for prefix, _display in _GEOGRAPHIC_PREFIXES
+        for count in range(1, len(prefix.strip().split()) + 1)
+    }
+    return normalized in prefix_fragments
+
+
 def format_geographic_nomenclature(raw_name: str, query: str = "") -> str:
     """Format place name with unified nomenclature and preserve query prefix when present.
 
@@ -549,6 +562,7 @@ def resolve_place(
 
     bounds = frame_bounds if frame_bounds is not None else geo_bounds
     base = _not_found(text)
+    blocked = {**base, "out_of_bounds": True}
 
     def _match_geo(fuzzy: bool = False, cutoff: float = MATCHING_CONFIG["default_confidence_threshold"]) -> Any:
         ent = find_geo_entity(key, fuzzy=fuzzy, cutoff=cutoff, target_pos=target_pos, bounds=bounds)
@@ -567,8 +581,9 @@ def resolve_place(
         if not fuzzy:
             cands = _CITY_INDEX.get(key, [])
         else:
-            valid_keys = [k for k, v in _CITY_INDEX.items() if any(is_in_bounds(c["lat"], c["lon"], bounds) for c in v)] if bounds else list(_CITY_INDEX.keys())
-            close = difflib.get_close_matches(key, valid_keys, n=1, cutoff=cutoff)
+            close = difflib.get_close_matches(
+                key, list(_CITY_INDEX.keys()), n=1, cutoff=cutoff
+            )
             if not close:
                 return None
             cands = _CITY_INDEX.get(close[0], [])
@@ -582,6 +597,12 @@ def resolve_place(
             strict_bounds=True,
         )
         if not best:
+            if bounds is not None and cands and not any(
+                is_in_bounds(float(candidate["lat"]), float(candidate["lon"]), bounds)
+                for candidate in cands
+                if candidate.get("lat") is not None and candidate.get("lon") is not None
+            ):
+                return _BLOCKED
             return None
         result = format_place_result(best, text)
         result["matchMethod"] = "fuzzy" if fuzzy else "exact"
@@ -591,31 +612,37 @@ def resolve_place(
         # ALL-CAPS → prefer geographic entity
         geo = _match_geo(fuzzy=False)
         if geo is _BLOCKED:
-            return base
+            return blocked
         if geo:
             return geo
         city = _match_city(fuzzy=False)
+        if city is _BLOCKED:
+            return blocked
         if city:
             return city
     else:
         # Title / lowercase → prefer city
         city = _match_city(fuzzy=False)
+        if city is _BLOCKED:
+            return blocked
         if city:
             return city
         geo = _match_geo(fuzzy=False)
         if geo is _BLOCKED:
-            return base
+            return blocked
         if geo:
             return geo
 
     if confidence_threshold < MATCHING_CONFIG["exact_threshold"]:
         geo_f = _match_geo(fuzzy=True, cutoff=confidence_threshold)
         if geo_f is _BLOCKED:
-            return base
+            return blocked
         if geo_f:
             return geo_f
 
         city_f = _match_city(fuzzy=True, cutoff=confidence_threshold)
+        if city_f is _BLOCKED:
+            return blocked
         if city_f:
             return city_f
 
@@ -671,7 +698,7 @@ def match_ocr_label(
             return None
         try:
             res = resolve_place(query, frame_bounds=frame_bounds, confidence_threshold=threshold, target_pos=target_pos)
-            return res if res.get("found") else None
+            return res if res.get("found") or res.get("out_of_bounds") else None
         except Exception:
             return None
 
@@ -683,6 +710,8 @@ def match_ocr_label(
     for q in exact_candidates:
         hit = _try(q, MATCHING_CONFIG["exact_threshold"])
         if hit:
+            if hit.get("out_of_bounds"):
+                return hit
             return hit
 
     # Stage 2: Fuzzy matches (line-by-line if multiline, else whole text)
@@ -690,6 +719,8 @@ def match_ocr_label(
     for q in fuzzy_candidates:
         hit = _try(q, MATCHING_CONFIG["ocr_fuzzy_threshold"])
         if hit:
+            if hit.get("out_of_bounds"):
+                return hit
             return hit
 
     return None
@@ -708,6 +739,7 @@ __all__ = [
     "find_nearby_candidate_place",
     "is_exploitable_text",
     "format_place_result",
+    "is_geographic_prefix_only",
     "_normalize",
     "_city_map",
     "WORD_TAXONOMY",

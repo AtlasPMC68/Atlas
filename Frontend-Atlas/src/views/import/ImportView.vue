@@ -199,8 +199,10 @@
       :map-title="store.mapTitle || 'Carte sélectionnée'"
       :initial-items="validationItems"
       :is-submitting="isSubmittingValidation"
+      :custom-label-styles="customLabelStyles"
       @confirm="onConfirmTextValidation"
       @cancel="onCancelTextValidation"
+      @save-label-styles="saveCustomLabelStyles"
     />
   </div>
 </template>
@@ -215,6 +217,8 @@ import { showAlert } from "../../composables/useAlert";
 import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../../utils/importSteps";
 import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
 import type { DevTestCaseInputsResponse } from "../../typescript/devTest";
+import type { Feature } from "../../typescript/feature";
+import type { CustomLabelStyle } from "../../typescript/labelStyle";
 import type {
   ExtractionState,
   ImportInputsPatch,
@@ -258,6 +262,47 @@ const caseToComplete =
   isDevTest && typeof route.query.case === "string" ? route.query.case : null;
 
 const store = useImportSessionStore();
+const customLabelStyles = ref<CustomLabelStyle[]>([]);
+
+async function loadCustomLabelStyles() {
+  if (!store.projectId) return;
+  const response = await apiFetch(
+    `/projects/${store.projectId}/label-styles`,
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to load project label styles: ${response.status}`);
+  }
+  customLabelStyles.value = snakeToCamel(
+    await response.json(),
+  ) as CustomLabelStyle[];
+}
+
+async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  if (!store.projectId) {
+    showAlert("error", "Impossible d'enregistrer un style sans projet.");
+    return;
+  }
+  try {
+    const response = await apiFetch(
+      `/projects/${store.projectId}/label-styles`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(camelToSnake({ styles })),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to save project label styles: ${response.status}`);
+    }
+    customLabelStyles.value = snakeToCamel(
+      await response.json(),
+    ) as CustomLabelStyle[];
+    showAlert("success", "Styles de libellé enregistrés dans ce projet.");
+  } catch (error) {
+    console.error("Failed to save project label styles:", error);
+    showAlert("error", "Impossible d'enregistrer les styles de libellé.");
+  }
+}
 store.reset(mode, mapId);
 
 // What dev-test mode adds to the page; unused in user mode.
@@ -530,24 +575,47 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
 
   isSubmittingValidation.value = true;
   try {
-    if (items.length > 0) {
-      const currentFeatures =
-        loadedProjectFeatures.value.length > 0
-          ? loadedProjectFeatures.value
-          : (snakeToCamel(await (await apiFetch(`/projects/${store.projectId}/features`)).json()) as any[]);
+    let currentFeatures = loadedProjectFeatures.value;
+    if (currentFeatures.length === 0) {
+      const response = await apiFetch(`/projects/${store.projectId}/features`);
+      if (!response.ok) {
+        throw new Error(`Failed to load project features: ${response.status}`);
+      }
+      currentFeatures = snakeToCamel(await response.json()) as any[];
+    }
 
-      const itemsMap = new Map(items.map((i) => [i.id, i]));
-      const featuresToUpdate = currentFeatures
-        .filter((f) => itemsMap.has(f.id))
-        .map((f) => applyValidationToFeature(f, itemsMap.get(f.id)!));
+    const openedIds = new Set(
+      currentFeatures
+        .filter((feature: Feature) => isUnrecognizedTextFeature(feature, store.mapId))
+        .map((feature) => feature.id),
+    );
+    const submittedIds = new Set(items.map((item) => item.id));
+    const itemsMap = new Map(items.map((item) => [item.id, item]));
+    const featuresToUpdate = currentFeatures
+      .filter((feature) => itemsMap.has(feature.id))
+      .map((feature) => applyValidationToFeature(feature, itemsMap.get(feature.id)!));
+    if (featuresToUpdate.length > 0) {
+      const response = await apiFetch(`/projects/${store.projectId}/features`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          camelToSnake(prepareFeaturesForSave(featuresToUpdate)),
+        ),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to save OCR text decisions: ${response.status}`);
+      }
+    }
 
-      if (featuresToUpdate.length > 0) {
-        const payload = camelToSnake(prepareFeaturesForSave(featuresToUpdate));
-        await apiFetch(`/projects/${store.projectId}/features`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+    const removedIds = [...openedIds].filter((id) => !submittedIds.has(id));
+    if (removedIds.length > 0) {
+      const response = await apiFetch(`/projects/${store.projectId}/features`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(removedIds),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to delete removed OCR texts: ${response.status}`);
       }
     }
 
@@ -571,6 +639,12 @@ onMounted(async () => {
   if (caseToComplete) await store.openDevTestCase(caseToComplete);
   else await store.restore();
   if (store.error) showAlert("error", store.error);
+  try {
+    await loadCustomLabelStyles();
+  } catch (error) {
+    console.error("Failed to load project label styles:", error);
+    showAlert("error", "Impossible de charger les styles de libellé du projet.");
+  }
   // The first case on a new test map should not wait ~135 s for OCR.
   if (isDevTest) void devTest.warmTextRegions();
 });

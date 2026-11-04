@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="isOpen && allItems.length > 0"
+    v-if="isOpen"
     class="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3"
   >
     <div
@@ -250,6 +250,17 @@
             </span>
           </div>
 
+          <div class="px-3.5 py-2 border-b border-base-200 shrink-0">
+            <button
+              type="button"
+              class="btn btn-outline btn-xs"
+              data-testid="manage-custom-label-styles"
+              @click="labelStyleManagerRef?.open()"
+            >
+              Gérer les styles de libellé
+            </button>
+          </div>
+
           <!-- Items list -->
           <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
             <div
@@ -288,6 +299,7 @@
                     v-model="item.text"
                     type="text"
                     class="input input-bordered input-sm w-full h-8 text-sm font-medium bg-base-100 text-black border-base-300 focus:border-primary placeholder:text-gray-400 px-2"
+                    :style="itemStylePreview(item)"
                     :placeholder="item.originalText"
                     @click.stop
                     @focus="onInputFocus(item)"
@@ -323,11 +335,11 @@
               >
                 <span class="text-xs font-semibold text-gray-700 shrink-0">Type de mot :</span>
                 <select
-                  v-model="item.wordType"
+                  v-model="item.labelStyleSelection"
                   class="select select-bordered select-xs flex-1 h-7 text-xs bg-base-100 text-black border-base-300 font-medium focus:border-primary"
                   data-testid="item-word-type-select"
                   @click.stop
-                  @change="onItemWordTypeChange(item)"
+                  @change="onItemLabelStyleChange(item)"
                 >
                   <option
                     v-for="(style, typeKey) in WORD_TYPE_STYLES"
@@ -335,6 +347,13 @@
                     :value="typeKey"
                   >
                     {{ style.label }}
+                  </option>
+                  <option
+                    v-for="style in customLabelStyles"
+                    :key="style.id"
+                    :value="`custom:${style.id}`"
+                  >
+                    {{ style.name }} (personnalisé)
                   </option>
                 </select>
               </div>
@@ -364,6 +383,11 @@
                 </button>
               </div>
             </div>
+            <CustomLabelStyleManager
+              ref="labelStyleManagerRef"
+              :styles="customLabelStyles"
+              @save="emit('save-label-styles', $event)"
+            />
           </div>
         </div>
       </div>
@@ -397,8 +421,11 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
+import type { CSSProperties } from "vue";
 import type L from "leaflet";
 import type { FeatureCollection } from "geojson";
+import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
+import type { CustomLabelStyle } from "../../typescript/labelStyle";
 import {
   TrashIcon,
   PhotoIcon,
@@ -412,6 +439,7 @@ import {
   WORD_TYPE_STYLES,
   formatWordText,
   normalizeWordType,
+  WORD_TYPE_TAXONOMY,
 } from "../../utils/wordStyles";
 import { removeOriginalMapImage } from "../../composables/useMapImageCache";
 import { useMapReferenceImage } from "../../composables/useMapReferenceImage";
@@ -427,6 +455,7 @@ const props = withDefaults(
     mapTitle?: string;
     initialItems?: TextValidationEntry[];
     isSubmitting?: boolean;
+    customLabelStyles?: CustomLabelStyle[];
   }>(),
   {
     mapId: null,
@@ -434,18 +463,21 @@ const props = withDefaults(
     mapTitle: "Carte sélectionnée",
     initialItems: () => [],
     isSubmitting: false,
+    customLabelStyles: () => [],
   },
 );
 
 const emit = defineEmits<{
   (e: "confirm", items: TextValidationEntry[]): void;
   (e: "cancel"): void;
+  (e: "save-label-styles", styles: CustomLabelStyle[]): void;
 }>();
 
 const mapContainer = ref<HTMLElement | null>(null);
 const highlightedId = ref<string | null>(null);
 const hoveredId = ref<string | null>(null);
 const allItems = ref<TextValidationEntry[]>([]);
+const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
 
 const leftColWidth = ref(420);
 const rightColWidth = ref(380);
@@ -508,6 +540,9 @@ function cloneEntries(entries: TextValidationEntry[]): TextValidationEntry[] {
             item.suggestedPlace.coordinates[1],
           ],
         }
+      : undefined,
+    customLabelStyle: item.customLabelStyle
+      ? { ...item.customLabelStyle }
       : undefined,
   }));
 }
@@ -752,11 +787,35 @@ function toggleItemSelection(item: TextValidationEntry) {
   updateMarkerStyle(item);
 }
 
-function onItemWordTypeChange(item: TextValidationEntry) {
-  if (item.text) {
-    item.text = formatWordText(item.text, item.wordType);
+function onItemLabelStyleChange(item: TextValidationEntry) {
+  saveHistorySnapshot();
+  const selection = item.labelStyleSelection ?? "";
+  if (selection.startsWith("custom:")) {
+    const style = props.customLabelStyles.find(
+      (candidate) => candidate.id === selection.slice("custom:".length),
+    );
+    if (!style) return;
+    item.customLabelStyleId = style.id;
+    item.customLabelStyle = style;
+    if (style.textTransform === "uppercase") item.text = item.text.toUpperCase();
+  } else {
+    item.customLabelStyleId = undefined;
+    item.customLabelStyle = undefined;
+    item.wordType = normalizeWordType(selection);
+    if (item.text) item.text = formatWordText(item.text, item.wordType);
   }
   updateMarkerStyle(item);
+}
+
+function itemStylePreview(item: TextValidationEntry): CSSProperties {
+  const customStyle = item.customLabelStyle;
+  const taxonomy = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
+  return {
+    color: customStyle?.color,
+    fontSize: `${customStyle?.sizePx ?? taxonomy.sizePx}px`,
+    fontStyle: customStyle?.fontStyle ?? taxonomy.fontStyle,
+    textTransform: customStyle?.textTransform ?? taxonomy.textTransform,
+  };
 }
 
 function onTextInput(item: TextValidationEntry) {
@@ -785,6 +844,9 @@ function toggleSuggestion(item: TextValidationEntry) {
     item.useSuggestedPlace = true;
     item.selected = true;
     item.wordType = normalizeWordType(item.suggestedPlace?.type);
+    item.labelStyleSelection = item.wordType;
+    item.customLabelStyleId = undefined;
+    item.customLabelStyle = undefined;
     item.validationStatus = "accepted";
     if (item.suggestedPlace) {
       item.text = formatWordText(item.suggestedPlace.name, item.wordType);
@@ -957,7 +1019,11 @@ function showToleranceRadius(item: TextValidationEntry) {
   const placement = getOptimalSuggestionTooltipPlacement(lat, lon, sLat, sLon);
 
   suggestionPreviewMarker = cachedLeaflet.marker([sLat, sLon], { icon: previewIcon }).addTo(leafletMap);
-  suggestionPreviewMarker.bindTooltip(`<strong>${item.suggestedPlace.name}</strong> (Suggestion)`, {
+  const suggestionTooltip = document.createElement("span");
+  const suggestionName = document.createElement("strong");
+  suggestionName.textContent = item.suggestedPlace.name;
+  suggestionTooltip.append(suggestionName, document.createTextNode(" (Suggestion)"));
+  suggestionPreviewMarker.bindTooltip(suggestionTooltip, {
     permanent: true,
     direction: placement.direction,
     offset: cachedLeaflet.point(placement.offset[0], placement.offset[1]),
@@ -1001,7 +1067,7 @@ function makeDraggableMarker(
     icon: createMarkerIcon(L, item),
   });
 
-  marker.bindTooltip(item.text, {
+  marker.bindTooltip(createTextTooltip(item.text), {
     permanent: true,
     direction: "top",
     offset: [0, -12],
@@ -1045,7 +1111,13 @@ function updateMarkerStyle(item: TextValidationEntry) {
   }
 
   marker.setIcon(createMarkerIcon(cachedLeaflet, item));
-  marker.setTooltipContent(item.text);
+  marker.setTooltipContent(createTextTooltip(item.text));
+}
+
+function createTextTooltip(text: string): HTMLElement {
+  const content = document.createElement("span");
+  content.textContent = text;
+  return content;
 }
 
 function renderMapMarkers() {
@@ -1252,11 +1324,38 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
     return {
       ...item,
       selected,
+      labelStyleSelection:
+        item.labelStyleSelection ??
+        (item.customLabelStyleId
+          ? `custom:${item.customLabelStyleId}`
+          : item.wordType ?? "city"),
+      customLabelStyle:
+        props.customLabelStyles.find(
+          (style) => style.id === item.customLabelStyleId,
+        ) ?? item.customLabelStyle,
       validationStatus: item.validationStatus ?? (selected ? "accepted" : "manual_review"),
       useSuggestedPlace: item.useSuggestedPlace ?? false,
     };
   });
 }
+
+watch(
+  () => props.customLabelStyles,
+  (styles) => {
+    const stylesById = new Map(styles.map((style) => [style.id, style]));
+    for (const item of allItems.value) {
+      if (!item.customLabelStyleId) continue;
+      const style = stylesById.get(item.customLabelStyleId);
+      if (style) {
+        item.customLabelStyle = style;
+      } else {
+        item.customLabelStyleId = undefined;
+        item.customLabelStyle = undefined;
+        item.labelStyleSelection = item.wordType ?? "city";
+      }
+    }
+  },
+);
 
 watch(
   () => props.isOpen,

@@ -100,12 +100,30 @@
                       "
                       class="checkbox checkbox-sm checkbox-primary shrink-0"
                     />
-                    <span class="text-sm font-semibold text-gray-700 truncate" :title="mapGroup.title">
+                    <button
+                      v-if="mapGroup.id !== null"
+                      type="button"
+                      class="text-sm font-semibold text-gray-700 truncate text-left hover:text-primary"
+                      :title="`Modifier ${mapGroup.title}`"
+                      @click.stop="emit('edit-map', mapGroup.id)"
+                    >
+                      {{ mapGroup.title }}
+                    </button>
+                    <span v-else class="text-sm font-semibold text-gray-700 truncate" :title="mapGroup.title">
                       {{ mapGroup.title }}
                     </span>
                   </label>
                 </div>
                 <div class="flex items-center gap-1 shrink-0" v-if="mapGroup.id !== null">
+                  <button
+                    type="button"
+                    class="flex h-8 w-8 items-center justify-center rounded hover:bg-base-200"
+                    :aria-label="`Modifier le nom et la période de ${mapGroup.title}`"
+                    title="Modifier le nom et la période"
+                    @click.stop="emit('edit-map', mapGroup.id)"
+                  >
+                    <PencilSquareIcon class="w-4 h-4 text-gray-500 hover:text-primary" />
+                  </button>
                   <button
                     class="flex h-8 w-8 items-center justify-center"
                     @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)"
@@ -129,7 +147,7 @@
                   @click="emit('select-feature', String(feature.id))"
                 >
                   <label
-                    class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 py-0 pl-6"
+                    class="label cursor-pointer justify-start gap-1 flex-1 min-w-0 py-0 pl-2"
                   >
                     <input
                       type="checkbox"
@@ -260,9 +278,10 @@
         >
           <label class="label">Type de mot</label>
           <select
-            v-model="editDraft.wordType"
+            v-model="editDraft.labelStyleSelection"
             data-testid="word-type-select"
             class="select select-bordered w-full"
+            @change="onLabelStyleSelectionChange"
           >
             <option
               v-for="(style, typeKey) in WORD_TYPE_STYLES"
@@ -271,7 +290,21 @@
             >
               {{ style.label }}
             </option>
+            <option
+              v-for="style in customLabelStyles"
+              :key="style.id"
+              :value="`custom:${style.id}`"
+            >
+              {{ style.name }} (personnalisé)
+            </option>
           </select>
+          <button
+            type="button"
+            class="btn btn-outline btn-xs self-start"
+            @click="labelStyleManagerRef?.open()"
+          >
+            Gérer les styles de libellé
+          </button>
         </div>
         <p
           v-if="!isEditingLabel && getMapElementType(featureToEdit) === 'point'"
@@ -384,6 +417,12 @@
     </form>
   </dialog>
 
+  <CustomLabelStyleManager
+    ref="labelStyleManagerRef"
+    :styles="customLabelStyles ?? []"
+    @save="emit('save-label-styles', $event)"
+  />
+
   <!-- Delete map confirmation dialog -->
   <dialog ref="deleteMapDialogRef" class="modal">
     <div class="modal-box">
@@ -495,6 +534,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import type { Component } from "vue";
+import type { CSSProperties } from "vue";
 import {
   ChatBubbleLeftEllipsisIcon,
   ChevronDownIcon,
@@ -511,6 +551,8 @@ import {
   type FeatureVisibilityGroupType,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
+import type { CustomLabelStyle } from "../typescript/labelStyle";
+import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import { getMapElementType } from "../utils/featureHelpers";
 import {
   WORD_TYPE_STYLES,
@@ -538,6 +580,7 @@ const props = defineProps<{
   mapPeriods?: MapPeriod[];
   isDevTestCreation?: boolean;
   selectedFeatureId?: string | null;
+  customLabelStyles?: CustomLabelStyle[];
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
@@ -548,8 +591,17 @@ const editDraft = ref<FeatureEditSubmitPayload>({
 
 const isTextElement = computed(() => isTextFeature(featureToEdit.value));
 
-const editTextStyle = computed(() => {
+const editTextStyle = computed<CSSProperties>(() => {
   if (!isTextElement.value) return {};
+  const style = editDraft.value.customLabelStyle;
+  if (style) {
+    return {
+      fontStyle: style.fontStyle,
+      textTransform: style.textTransform,
+      color: style.color,
+      fontSize: `${style.sizePx}px`,
+    };
+  }
   return getWordTypePreviewStyle(
     editDraft.value.wordType,
     editDraft.value.colorHex,
@@ -559,6 +611,7 @@ const editTextStyle = computed(() => {
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
   if (isTextElement.value) {
+    if (editDraft.value.customLabelStyle) return true;
     const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType];
     return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
   }
@@ -591,7 +644,31 @@ const emit = defineEmits([
   "update-feature",
   "validate-texts",
   "select-feature",
+  "edit-map",
+  "save-label-styles",
 ]);
+
+const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
+
+function onLabelStyleSelectionChange() {
+  const selection = editDraft.value.labelStyleSelection ?? "";
+  if (selection.startsWith("custom:")) {
+    const style = props.customLabelStyles?.find(
+      (item) => item.id === selection.slice("custom:".length),
+    );
+    if (!style) return;
+    editDraft.value.customLabelStyleId = style.id;
+    editDraft.value.customLabelStyle = style;
+    editDraft.value.colorHex = style.color;
+    return;
+  }
+  editDraft.value.customLabelStyleId = undefined;
+  editDraft.value.customLabelStyle = undefined;
+  const wordType = selection;
+  if (Object.prototype.hasOwnProperty.call(WORD_TYPE_TAXONOMY, wordType)) {
+    editDraft.value.wordType = wordType as keyof typeof WORD_TYPE_TAXONOMY;
+  }
+}
 
 watch(
   () => props.selectedFeatureId,

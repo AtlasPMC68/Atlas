@@ -84,9 +84,96 @@ def test_categorized_text_features_deduplicates_repeated_texts(monkeypatch):
     )
 
     features = [c["features"][0] for c in collections]
-    assert len(features) == 2
+    assert len(features) == 3
     names = {f["properties"]["name"] for f in features}
     assert names == {"Québec", "Riviere"}
+    assert sum(f["properties"]["name"] == "Riviere" for f in features) == 2
+
+
+def test_out_of_bounds_places_are_rejected_without_manual_review(monkeypatch):
+    monkeypatch.setattr(
+        "app.tasks.match_ocr_label",
+        lambda *args, **kwargs: {
+            "found": False,
+            "out_of_bounds": True,
+            "name": "Paris",
+        },
+    )
+    result = _categorized_text_features_from_ocr(
+        [
+            [[[100, 100], [140, 100], [140, 120], [100, 120]], "Paris", 0.95],
+        ],
+        legend_bounds=None,
+        frame_bounds=FRAME_BOUNDS,
+    )
+
+    assert result == []
+
+
+def test_neighboring_geographic_prefix_is_kept_as_suffix_with_full_suggestion(monkeypatch):
+    def match_place(text, frame_bounds=None, target_pos=None):
+        if text == "Océan Atlantique":
+            return {
+                "found": True,
+                "name": "OCÉAN ATLANTIQUE",
+                "type": "ocean",
+                "lat": 50.0,
+                "lon": -70.0,
+                "matchMethod": "exact",
+            }
+        return None
+
+    monkeypatch.setattr("app.tasks.match_ocr_label", match_place)
+    result = _categorized_text_features_from_ocr(
+        [
+            [[[10, 10], [50, 10], [50, 22], [10, 22]], "Océan", 0.95],
+            [[[54, 10], [120, 10], [120, 22], [54, 22]], "Atlantique", 0.95],
+        ],
+        legend_bounds=None,
+        frame_bounds=FRAME_BOUNDS,
+        image_size=(1000, 1000),
+    )
+
+    features = [collection["features"][0] for collection in result]
+    assert len(features) == 1
+    assert features[0]["properties"]["recognized"] is False
+    assert features[0]["properties"]["originalText"] == "Atlantique"
+    assert features[0]["properties"]["suggestedPlace"] == {
+        "name": "OCÉAN ATLANTIQUE",
+        "coordinates": [-70.0, 50.0],
+        "type": "ocean",
+    }
+
+
+def test_distant_word_to_the_left_is_not_joined_to_geographic_prefix(monkeypatch):
+    def match_place(text, frame_bounds=None, target_pos=None):
+        if text == "Océan Atlantique":
+            return {
+                "found": True,
+                "name": "OCÉAN ATLANTIQUE",
+                "type": "ocean",
+                "lat": 50.0,
+                "lon": -70.0,
+                "matchMethod": "exact",
+            }
+        return None
+
+    monkeypatch.setattr("app.tasks.match_ocr_label", match_place)
+    result = _categorized_text_features_from_ocr(
+        [
+            [[[100, 10], [130, 10], [130, 22], [100, 22]], "Océan", 0.95],
+            [[[0, 10], [30, 10], [30, 22], [0, 22]], "Atlantique", 0.95],
+        ],
+        legend_bounds=None,
+        frame_bounds=FRAME_BOUNDS,
+        image_size=(1000, 1000),
+    )
+
+    assert len(result) == 2
+    assert all(
+        collection["features"][0]["properties"]["recognized"] is False
+        for collection in result
+    )
 
 
 def test_categorized_text_features_fuzzy_unrecognized(monkeypatch):

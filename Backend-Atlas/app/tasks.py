@@ -39,6 +39,8 @@ from app.utils.cities_validation import (
     match_ocr_label,
     find_nearby_candidate_place,
     is_exploitable_text,
+    is_geographic_prefix_only,
+    _normalize,
 )
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
@@ -379,9 +381,147 @@ def _categorized_text_features_from_ocr(
     """
     collections: List[dict[str, Any]] = []
     seen_recognized = set()
-    seen_unrecognized = set()
+    seen_unrecognized: dict[str, list[tuple[float, float]]] = {}
+    source_blocks = [
+        {
+            "coords": coords,
+            "text": str(text or "").strip(),
+            "prob": prob,
+            "skip": False,
+            "prefix_suggestion": None,
+        }
+        for coords, text, prob in blocks
+    ]
 
-    for coords, text, prob in blocks:
+    def center_of(coords: Any) -> Optional[tuple[float, float]]:
+        if not coords:
+            return None
+        try:
+            return (
+                sum(float(point[0]) for point in coords) / len(coords),
+                sum(float(point[1]) for point in coords) / len(coords),
+            )
+        except (TypeError, ValueError, IndexError):
+            return None
+
+    def nearby_word_boxes(left: Any, right: Any) -> bool:
+        if not left or not right:
+            return False
+        try:
+            left_xs = [float(point[0]) for point in left]
+            left_ys = [float(point[1]) for point in left]
+            right_xs = [float(point[0]) for point in right]
+            right_ys = [float(point[1]) for point in right]
+        except (TypeError, ValueError, IndexError):
+            return False
+
+        left_height = max(left_ys) - min(left_ys)
+        right_height = max(right_ys) - min(right_ys)
+        word_height = max(1.0, left_height, right_height)
+        horizontal_gap = max(
+            0.0,
+            max(
+                min(right_xs) - max(left_xs),
+                min(left_xs) - max(right_xs),
+            ),
+        )
+        vertical_gap = max(
+            0.0,
+            max(min(right_ys) - max(left_ys), min(left_ys) - max(right_ys)),
+        )
+        return horizontal_gap <= word_height * 2.5 and vertical_gap <= word_height * 0.5
+
+    def estimated_position(coords: Any) -> Optional[tuple[float, float]]:
+        center = center_of(coords)
+        if center is None or not frame_bounds or not image_size:
+            return None
+        h, w = image_size
+        if w <= 0 or h <= 0:
+            return None
+        cx, cy = center
+        south = frame_bounds.get("south", frame_bounds.get("min_lat"))
+        north = frame_bounds.get("north", frame_bounds.get("max_lat"))
+        west = frame_bounds.get("west", frame_bounds.get("min_lon"))
+        east = frame_bounds.get("east", frame_bounds.get("max_lon"))
+        if None in (south, north, west, east):
+            return None
+        return (
+            float(north) - (cy / h) * (float(north) - float(south)),
+            float(west) + (cx / w) * (float(east) - float(west)),
+        )
+
+    prefix_types = {
+        "ocean": {"ocean"},
+        "mer": {"sea"},
+        "lac": {"lake"},
+        "fleuve": {"river", "fleuve"},
+        "riviere": {"river", "fleuve"},
+    }
+
+    for prefix_index, prefix_block in enumerate(source_blocks):
+        prefix_text = prefix_block["text"]
+        if (
+            not is_geographic_prefix_only(prefix_text)
+            or should_ignore(prefix_text)
+            or not is_exploitable_text(prefix_text)
+            or polygon_center_in_legend(prefix_block["coords"], legend_bounds)
+        ):
+            continue
+        prefix_key = _normalize(prefix_text)
+        expected_types = next(
+            (
+                types
+                for key, types in prefix_types.items()
+                if key in prefix_key
+            ),
+            None,
+        )
+        if expected_types is None:
+            continue
+
+        for suffix_index, suffix_block in enumerate(source_blocks):
+            if suffix_index == prefix_index or suffix_block["skip"]:
+                continue
+            suffix_text = suffix_block["text"]
+            if (
+                not suffix_text
+                or is_geographic_prefix_only(suffix_text)
+                or should_ignore(suffix_text)
+                or not is_exploitable_text(suffix_text)
+                or polygon_center_in_legend(suffix_block["coords"], legend_bounds)
+                or not nearby_word_boxes(prefix_block["coords"], suffix_block["coords"])
+            ):
+                continue
+
+            phrase = f"{prefix_text} {suffix_text}"
+            phrase_position = estimated_position(suffix_block["coords"])
+            try:
+                place = (
+                    match_ocr_label(phrase, frame_bounds, target_pos=phrase_position)
+                    if phrase_position is not None
+                    else match_ocr_label(phrase, frame_bounds)
+                )
+            except TypeError:
+                place = match_ocr_label(phrase, frame_bounds)
+            if not place or not place.get("found", True):
+                continue
+            if place.get("type") not in expected_types:
+                continue
+
+            prefix_block["skip"] = True
+            suffix_block["prefix_suggestion"] = {
+                "name": place.get("name", phrase),
+                "coordinates": [place["lon"], place["lat"]],
+                "type": place.get("type"),
+            }
+            break
+
+    for block in source_blocks:
+        if block["skip"]:
+            continue
+        coords = block["coords"]
+        text = block["text"]
+        prob = block["prob"]
         # Case 1: reject immediately if the text is inside the legend.
         if polygon_center_in_legend(coords, legend_bounds):
             continue
@@ -393,20 +533,7 @@ def _categorized_text_features_from_ocr(
 
         confidence = float(prob) if prob is not None else 1.0
 
-        target_pos = None
-        if coords and frame_bounds and image_size:
-            h, w = image_size
-            if w > 0 and h > 0:
-                cx = sum(p[0] for p in coords) / len(coords)
-                cy = sum(p[1] for p in coords) / len(coords)
-                s = frame_bounds.get("south", frame_bounds.get("min_lat"))
-                n = frame_bounds.get("north", frame_bounds.get("max_lat"))
-                w_b = frame_bounds.get("west", frame_bounds.get("min_lon"))
-                e_b = frame_bounds.get("east", frame_bounds.get("max_lon"))
-                if None not in (s, n, w_b, e_b):
-                    text_lon = w_b + (cx / w) * (e_b - w_b)
-                    text_lat = n - (cy / h) * (n - s)
-                    target_pos = (text_lat, text_lon)
+        target_pos = estimated_position(coords)
 
         try:
             if target_pos is not None:
@@ -416,16 +543,21 @@ def _categorized_text_features_from_ocr(
         except TypeError:
             entity = match_ocr_label(raw_text, frame_bounds)
 
+        if block["prefix_suggestion"]:
+            entity = None
+
+        if entity and entity.get("out_of_bounds"):
+            continue
+
         has_place_coordinates = (
             entity is not None
             and entity.get("lat") is not None
             and entity.get("lon") is not None
         )
-        is_city = entity is not None and (not entity.get("type") or entity.get("type") == "city")
         distance_requires_review = bool(
             has_place_coordinates
             and target_pos is not None
-            and (entity.get("matchMethod") == "fuzzy" or is_city)
+            and entity.get("matchMethod") == "fuzzy"
             and haversine_distance_km(
                 target_pos[0],
                 target_pos[1],
@@ -492,11 +624,22 @@ def _categorized_text_features_from_ocr(
             )
         else:
             # Case 2: keep OCR text even if it is not recognized -> manual validation.
-            clean = raw_text.lower()
-            if clean in seen_unrecognized:
+            clean = raw_text.casefold()
+            center = center_of(coords)
+            prior_centers = seen_unrecognized.setdefault(clean, [])
+            if center is None:
+                if prior_centers:
+                    continue
+                prior_centers.append((0.0, 0.0))
+            elif any(
+                (center[0] - previous[0]) ** 2 + (center[1] - previous[1]) ** 2
+                <= 20.0**2
+                for previous in prior_centers
+            ):
                 continue
-            seen_unrecognized.add(clean)
-            suggested_place = None
+            else:
+                prior_centers.append(center)
+            suggested_place = block["prefix_suggestion"]
             if has_place_coordinates and entity and entity.get("name"):
                 suggested_place = {
                     "name": entity["name"],

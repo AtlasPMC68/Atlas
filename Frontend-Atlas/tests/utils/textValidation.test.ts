@@ -184,6 +184,33 @@ describe("textValidation utility functions", () => {
   });
 
   describe("applyValidationToFeature", () => {
+    it("persists a selected custom label style on the accepted feature", () => {
+      const style = {
+        id: "water-style",
+        name: "Cours d'eau",
+        sizePx: 20,
+        fontStyle: "italic" as const,
+        textTransform: "uppercase" as const,
+        color: "#123456",
+        priority: 30,
+        minZoom: 1,
+      };
+      const result = applyValidationToFeature(baseFeature, {
+        id: baseFeature.id,
+        text: "rivière rouge",
+        originalText: "rivière rouge",
+        selected: true,
+        wordType: "city",
+        customLabelStyleId: style.id,
+        customLabelStyle: style,
+      });
+
+      expect(result.properties.customLabelStyleId).toBe(style.id);
+      expect(result.properties.customLabelStyle).toEqual(style);
+      expect(result.properties.customLabelStyleFallbackWordType).toBe("city");
+      expect(result.properties.labelText).toBe("RIVIÈRE ROUGE");
+    });
+
     it("persists rejected status with show=false, recognized=false and validationStatus='rejected'", () => {
       const entry: TextValidationEntry = {
         id: "feat-1",

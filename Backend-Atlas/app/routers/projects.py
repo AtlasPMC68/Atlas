@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
+from app.models.map_import import MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
 from app.schemas.projectCreateRequest import ProjectCreateRequest
 from app.schemas.mapImportRequest import MapImportRequest
+from app.schemas.label_styles import LabelStylesRequest
 from app.services.maps import create_map_in_db
 from app.services.projects import (
     create_project_in_db,
@@ -110,6 +112,105 @@ async def delete_map(
     except Exception as e:
         logger.error(f"Error deleting map: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete map")
+
+
+@router.put("/{project_id}/maps/{map_id}")
+async def update_map_metadata(
+    project_id: UUID,
+    map_id: UUID,
+    request: MapImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not request.title.strip():
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    if request.start_date > request.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="start_date must be before or equal to end_date",
+        )
+
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await db.execute(
+        select(Map)
+        .join(Project, Map.project_id == Project.id)
+        .where(
+            Map.id == map_id,
+            Map.project_id == project_id,
+            Project.user_id == user_uuid,
+        )
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
+    map_obj.title = request.title.strip()
+    map_obj.start_date = request.start_date
+    map_obj.end_date = request.end_date
+    map_obj.exact_date = request.exact_date
+    await db.commit()
+    return {"map_id": str(map_obj.id)}
+
+
+@router.get("/{project_id}/label-styles")
+async def get_project_label_styles(
+    project_id: UUID,
+    user_id: str | None = Depends(get_optional_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    conditions = Project.is_private.is_(False)
+    if user_id:
+        try:
+            user_uuid = UUID(user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid user")
+        conditions = (Project.user_id == user_uuid) | conditions
+
+    result = await db.execute(
+        select(Project.label_styles).where(
+            Project.id == project_id,
+            conditions,
+        )
+    )
+    styles = result.scalar_one_or_none()
+    if styles is None:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+    return styles
+
+
+@router.put("/{project_id}/label-styles")
+async def update_project_label_styles(
+    project_id: UUID,
+    request: LabelStylesRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not request.unique_ids():
+        raise HTTPException(status_code=400, detail="Label style IDs must be unique")
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == user_uuid,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+    project.label_styles = [
+        style.model_dump(mode="json") for style in request.styles
+    ]
+    await db.commit()
+    return project.label_styles
 
 
 @router.post("/create")
@@ -507,6 +608,7 @@ async def get_project_maps(
     maps_result = await session.execute(
         select(Map)
         .where(Map.project_id == project_uuid)
+        .where(Map.id.not_in(select(MapImport.map_id)))
         .order_by(Map.start_date.asc(), Map.created_at.asc())
     )
     maps = maps_result.scalars().all()

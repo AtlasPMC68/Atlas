@@ -13,7 +13,8 @@ from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
 from app.models.map import Map
-from app.routers import imports as imports_router
+from app.routers import imports as imports_router, projects as projects_router
+from app.schemas.mapImportRequest import MapImportRequest
 from app.services.imports import (
     apply_inputs_patch,
     missing_inputs,
@@ -206,3 +207,84 @@ def test_reference_image_rejects_non_image_upload(monkeypatch):
     with pytest.raises(HTTPException) as error:
         asyncio.run(imports_router.save_reference_image(map_id, upload, str(uuid4()), SimpleNamespace()))
     assert error.value.status_code == 400
+
+
+def test_update_map_metadata_saves_title_and_complete_period():
+    project_id = uuid4()
+    map_obj = Map(id=uuid4(), project_id=project_id)
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: map_obj)),
+        commit=AsyncMock(),
+    )
+    request = MapImportRequest(
+        title="  Carte de Québec  ",
+        start_date="1850-02-01",
+        end_date="1860-11-30",
+        exact_date=True,
+    )
+
+    response = asyncio.run(
+        projects_router.update_map_metadata(
+            project_id,
+            map_obj.id,
+            request,
+            str(uuid4()),
+            session,
+        )
+    )
+
+    assert response == {"map_id": str(map_obj.id)}
+    assert map_obj.title == "Carte de Québec"
+    assert map_obj.start_date.isoformat() == "1850-02-01"
+    assert map_obj.end_date.isoformat() == "1860-11-30"
+    assert map_obj.exact_date is True
+    session.commit.assert_awaited_once()
+
+
+def test_update_map_metadata_rejects_reversed_period_before_querying():
+    session = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock())
+    request = MapImportRequest(
+        title="Carte",
+        start_date="1860-01-01",
+        end_date="1850-12-31",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.update_map_metadata(
+                uuid4(),
+                uuid4(),
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+
+    assert error.value.status_code == 400
+    session.execute.assert_not_awaited()
+
+
+def test_project_timeline_excludes_maps_with_an_unfinished_import():
+    project_id = uuid4()
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project_id),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+            ]
+        )
+    )
+
+    response = asyncio.run(
+        projects_router.get_project_maps(
+            str(project_id),
+            str(uuid4()),
+            session,
+        )
+    )
+
+    map_query = session.execute.await_args_list[1].args[0]
+    query_sql = str(map_query).lower()
+    assert response == []
+    assert "map_imports" in query_sql
+    assert "not in" in query_sql

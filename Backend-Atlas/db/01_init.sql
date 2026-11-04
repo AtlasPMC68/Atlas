@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS "projects" (
   "title" TEXT NOT NULL,
   "description" TEXT,
   "is_private" BOOLEAN DEFAULT TRUE,
+  "label_styles" JSONB NOT NULL DEFAULT '[]'::jsonb,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())
 );

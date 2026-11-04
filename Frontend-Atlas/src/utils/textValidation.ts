@@ -4,12 +4,14 @@ import {
   type Coordinate,
   type Feature,
 } from "../typescript/feature";
+import type { CustomLabelStyle } from "../typescript/labelStyle";
 import type { WordType } from "./wordStyles";
 import {
   applyWordStyleToFeature,
   getWordTypeForFeature,
   isTextFeature,
 } from "./wordStyles";
+import { applyCustomLabelStyleToFeature } from "./featureTextEditing";
 import {
   getFeatureReviewState,
   getFeatureValidationStatus,
@@ -29,6 +31,9 @@ export interface TextValidationEntry {
   suggestedPlace?: SuggestedPlace;
   useSuggestedPlace?: boolean;
   wordType?: WordType;
+  labelStyleSelection?: string;
+  customLabelStyleId?: string;
+  customLabelStyle?: CustomLabelStyle;
 }
 
 /** Check if a feature is an unrecognized OCR text candidate for validation. */
@@ -75,6 +80,11 @@ export function featureToValidationEntry(
     coordinates,
     suggestedPlace: feature.properties?.suggestedPlace,
     wordType,
+    labelStyleSelection: feature.properties?.customLabelStyleId
+      ? `custom:${feature.properties.customLabelStyleId}`
+      : wordType,
+    customLabelStyleId: feature.properties?.customLabelStyleId,
+    customLabelStyle: feature.properties?.customLabelStyle,
   };
 }
 
@@ -85,7 +95,16 @@ export function applyValidationToFeature(
 ): Feature {
   const isSelected = Boolean(entry.selected);
   const wordType = entry.wordType || "city";
-  const styledFeature = applyWordStyleToFeature(feature, wordType, entry.text);
+  const styledFeature =
+    entry.customLabelStyleId && entry.customLabelStyle
+      ? applyCustomLabelStyleToFeature(
+          feature,
+          entry.customLabelStyle,
+          wordType,
+          entry.text,
+          entry.text,
+        )
+      : applyWordStyleToFeature(feature, wordType, entry.text);
   const coordinates: Coordinate | undefined = isSelected
     ? entry.useSuggestedPlace && entry.suggestedPlace
       ? entry.suggestedPlace.coordinates
@@ -94,9 +113,15 @@ export function applyValidationToFeature(
   const validationStatus = isSelected
     ? ValidationStatus.ACCEPTED
     : ValidationStatus.REJECTED;
+  const styledProperties = { ...styledFeature.properties };
+  if (!entry.customLabelStyleId || !entry.customLabelStyle) {
+    delete styledProperties.customLabelStyleId;
+    delete styledProperties.customLabelStyle;
+    delete styledProperties.customLabelStyleFallbackWordType;
+  }
   const properties = synchronizeValidationState(
     {
-      ...styledFeature.properties,
+      ...styledProperties,
       userSelected: isSelected,
     },
     validationStatus,
