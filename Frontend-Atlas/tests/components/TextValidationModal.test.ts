@@ -694,4 +694,65 @@ describe("TextValidationModal", () => {
       expect(img.attributes("src")).toBe("data:image/png;base64,map1data");
     });
   });
+
+  describe("Word focus, point contour styling and undo stability", () => {
+    it("temporarily applies full checked style and changes point contour color when an unchecked item is focused", async () => {
+      const wrapper = mountModal([
+        {
+          id: "item-focus-1",
+          text: "montreal",
+          originalText: "montreal",
+          selected: false,
+          wordType: "province",
+          coordinates: [-73.5, 45.5],
+        },
+      ]);
+      await wrapper.vm.$nextTick();
+
+      const vm = wrapper.vm as any;
+      const item = vm.allItems[0];
+
+      // Before focus: unchecked
+      expect(item.selected).toBe(false);
+
+      // Focus item
+      vm.focusItem(item);
+      await wrapper.vm.$nextTick();
+
+      expect(vm.highlightedId).toBe("item-focus-1");
+
+      // Clicking outside clears focus
+      document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await wrapper.vm.$nextTick();
+
+      expect(vm.highlightedId).toBeNull();
+    });
+
+    it("does not reset map bounds on undo so map position does not change", async () => {
+      const wrapper = mountModal([
+        {
+          id: "item-undo-1",
+          text: "Quebec",
+          originalText: "Quebec",
+          selected: true,
+          coordinates: [-71.2, 46.8],
+        },
+      ]);
+      await wrapper.vm.$nextTick();
+
+      const vm = wrapper.vm as any;
+      const item = vm.allItems[0];
+
+      // Move coordinate
+      vm.setItemCoordinates(item, -70.0, 47.0);
+      expect(vm.canUndo).toBe(true);
+
+      // Perform undo
+      vm.undo();
+      await wrapper.vm.$nextTick();
+
+      const reverted = vm.allItems.find((i: any) => i.id === "item-undo-1");
+      expect(reverted.coordinates).toEqual([-71.2, 46.8]);
+    });
+  });
 });

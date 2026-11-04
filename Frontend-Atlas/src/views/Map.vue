@@ -732,10 +732,14 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       await response.json(),
     ) as CustomLabelStyle[];
 
+    const effectiveStyles =
+      Array.isArray(customLabelStyles.value) && customLabelStyles.value.length > 0
+        ? customLabelStyles.value
+        : styles;
     const stylesById = new Map(
-      customLabelStyles.value.map((style) => [style.id, style]),
+      effectiveStyles.map((style: CustomLabelStyle) => [style.id, style]),
     );
-    const nextFeatures = features.value.map((feature) => {
+    const nextFeatures = features.value.map((feature: Feature) => {
       const styleId = feature.properties.customLabelStyleId;
       if (typeof styleId !== "string") return feature;
       const style = stylesById.get(styleId);
@@ -751,7 +755,7 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       );
     });
     const changed = nextFeatures.some(
-      (feature, index) => feature !== features.value[index],
+      (feature: Feature, index: number) => feature !== features.value[index],
     );
     if (changed) {
       features.value = nextFeatures;
@@ -1277,7 +1281,7 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
 
   if (key === "delete" && selectedFeatureId.value) {
     const selectedFeature = features.value.find(
-      (feature) => String(feature.id) === selectedFeatureId.value,
+      (feature: Feature) => String(feature.id) === selectedFeatureId.value,
     );
     if (selectedFeature) {
       e.preventDefault();
@@ -1303,6 +1307,28 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     onRedo();
   }
 };
+
+function onDocumentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement | null;
+  if (!target || typeof target.closest !== "function") {
+    if (selectedFeatureId.value) {
+      selectedFeatureId.value = null;
+    }
+    return;
+  }
+  if (
+    target.closest(".leaflet-container") ||
+    target.closest(".city-label-text") ||
+    target.closest("[data-testid='feature-visibility-controls']") ||
+    target.closest(".modal") ||
+    target.closest("dialog")
+  ) {
+    return;
+  }
+  if (selectedFeatureId.value) {
+    selectedFeatureId.value = null;
+  }
+}
 
 onMounted(async () => {
   await fetchCurrentUser();
@@ -1338,6 +1364,7 @@ onMounted(async () => {
   }
 
   window.addEventListener("keydown", handleKeyboardShortcuts);
+  window.addEventListener("click", onDocumentClick);
 });
 
 watch([projectRouteId], async () => {
@@ -1384,6 +1411,7 @@ watch(
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyboardShortcuts);
+  window.removeEventListener("click", onDocumentClick);
   stopSidebarResize();
   clearAlert();
 });

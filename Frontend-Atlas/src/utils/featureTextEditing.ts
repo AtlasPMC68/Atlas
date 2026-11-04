@@ -45,6 +45,7 @@ export function applyCustomLabelStyleToFeature(
     name,
     formattedText,
   );
+  const isBold = Boolean(style.bold || style.fontWeight === "bold");
   return {
     ...styledFeature,
     name,
@@ -58,6 +59,10 @@ export function applyCustomLabelStyleToFeature(
       customLabelStyleId: style.id,
       customLabelStyle: style,
       customLabelStyleFallbackWordType: wordType,
+      sizePx: style.sizePx,
+      fontStyle: style.fontStyle || "normal",
+      fontWeight: isBold ? "bold" : "normal",
+      bold: isBold,
       colorRgb: hexToRgb(style.color),
       strokeColor: undefined,
       fillOpacity: undefined,

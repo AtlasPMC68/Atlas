@@ -261,6 +261,7 @@
             <div
               v-for="item in allItems"
               :key="item.id"
+              data-validation-item="true"
               class="flex flex-col p-2 gap-1.5 rounded-lg border transition-all cursor-pointer bg-base-100 hover:border-primary/50"
               :class="[
                 item.id === highlightedId ? 'ring-2 ring-primary border-primary bg-primary/5' : '',
@@ -480,6 +481,7 @@ const emit = defineEmits<{
 const mapContainer = ref<HTMLElement | null>(null);
 const highlightedId = ref<string | null>(null);
 const hoveredId = ref<string | null>(null);
+const isDraggingId = ref<string | null>(null);
 const allItems = ref<TextValidationEntry[]>([]);
 const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
 
@@ -616,7 +618,7 @@ function undo() {
   allItems.value = cloneEntries(previous);
 
   hideToleranceRadius();
-  renderMapMarkers();
+  renderMapMarkers(false);
   adjustTooltipsAntiCollision();
 }
 
@@ -629,7 +631,7 @@ function redo() {
   allItems.value = cloneEntries(next);
 
   hideToleranceRadius();
-  renderMapMarkers();
+  renderMapMarkers(false);
   adjustTooltipsAntiCollision();
 }
 
@@ -935,16 +937,24 @@ function setItemCoordinates(item: TextValidationEntry, lon: number, lat: number)
 
 function getMarkerHtml(item: TextValidationEntry): string {
   const isSuggested = Boolean(item.useSuggestedPlace);
+  const isMovingOrSelected =
+    highlightedId.value === item.id || isDraggingId.value === item.id;
+
   const fillColor = isSuggested ? "#059669" : "#2563eb";
-  const strokeColor = isSuggested ? "#047857" : "#1d4ed8";
-  const opacity = item.selected ? "1" : "0.45";
+  const strokeColor = isMovingOrSelected
+    ? "#f59e0b"
+    : isSuggested
+      ? "#047857"
+      : "#1d4ed8";
+  const strokeWidth = isMovingOrSelected ? "3px" : "2px";
+  const opacity = item.selected || isMovingOrSelected ? "1" : "0.45";
 
   const hasSuggestion = Boolean(item.suggestedPlace) && !item.useSuggestedPlace;
   const badgeHtml = hasSuggestion
     ? `<div style="position: absolute; top: -7px; right: -7px; width: 14px; height: 14px; border-radius: 50%; background-color: #f59e0b; color: #ffffff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 1.5px solid #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); pointer-events: none;">!</div>`
     : "";
 
-  return `<div class="relative validation-point-dot" style="width: 18px; height: 18px; border-radius: 50%; background-color: ${fillColor}; border: 2px solid ${strokeColor}; opacity: ${opacity}; box-shadow: 0 2px 5px rgba(0,0,0,0.35); cursor: grab; transition: transform 0.1s ease;">${badgeHtml}</div>`;
+  return `<div class="relative validation-point-dot" style="width: 18px; height: 18px; border-radius: 50%; background-color: ${fillColor}; border: ${strokeWidth} solid ${strokeColor}; opacity: ${opacity}; box-shadow: 0 2px 5px rgba(0,0,0,0.35); cursor: grab; transition: transform 0.1s ease;">${badgeHtml}</div>`;
 }
 
 function createMarkerIcon(L: typeof import("leaflet"), item: TextValidationEntry) {
@@ -1116,14 +1126,34 @@ function makeDraggableMarker(
     icon: createMarkerIcon(L, item),
   });
 
+  const isFocused = item.id === highlightedId.value;
   marker.bindTooltip(createTextTooltip(item), {
     permanent: true,
     direction: "top",
     offset: [0, -12],
-    className: "leaflet-tooltip-validation",
+    interactive: true,
+    className: isFocused
+      ? "leaflet-tooltip-validation validation-tooltip-focused"
+      : "leaflet-tooltip-validation",
   });
 
-  marker.on("click", () => focusItem(item));
+  marker.on("click", (e: L.LeafletMouseEvent) => {
+    L.DomEvent.stopPropagation(e as any);
+    focusItem(item);
+  });
+
+  marker.on("tooltipopen", () => {
+    const el = marker.getTooltip()?.getElement();
+    if (el) {
+      el.style.pointerEvents = "auto";
+      el.style.cursor = "pointer";
+      el.onclick = (e) => {
+        e.stopPropagation();
+        focusItem(item);
+      };
+    }
+  });
+
   marker.on("mouseover", () => showToleranceRadius(item));
   marker.on("mouseout", () => {
     if (highlightedId.value !== item.id) {
@@ -1134,17 +1164,21 @@ function makeDraggableMarker(
   });
 
   marker.on("dragstart", () => {
+    isDraggingId.value = item.id;
     highlightedId.value = item.id;
     hideToleranceRadius();
+    updateMarkerStyle(item);
   });
 
   marker.on("dragend", (event: L.DragEndEvent) => {
+    isDraggingId.value = null;
     const latlng = event.target.getLatLng();
     setItemCoordinates(
       item,
       Number(latlng.lng.toFixed(5)),
       Number(latlng.lat.toFixed(5)),
     );
+    updateMarkerStyle(item);
   });
 
   return marker;
@@ -1161,6 +1195,17 @@ function updateMarkerStyle(item: TextValidationEntry) {
 
   marker.setIcon(createMarkerIcon(cachedLeaflet, item));
   marker.setTooltipContent(createTextTooltip(item));
+
+  const isFocused = item.id === highlightedId.value;
+  const tooltip = marker.getTooltip();
+  const tooltipEl = tooltip?.getElement();
+  if (tooltipEl) {
+    if (isFocused) {
+      tooltipEl.classList.add("validation-tooltip-focused");
+    } else {
+      tooltipEl.classList.remove("validation-tooltip-focused");
+    }
+  }
 }
 
 function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
@@ -1170,7 +1215,8 @@ function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
     return content;
   }
 
-  if (item.selected) {
+  const isFocused = item.id === highlightedId.value;
+  if (item.selected || isFocused) {
     const customStyle = item.customLabelStyle;
     const taxonomy = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
     const isUppercase =
@@ -1201,13 +1247,27 @@ function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
   return content;
 }
 
-function renderMapMarkers() {
+watch(highlightedId, (newId: string | null, oldId: string | null) => {
+  if (oldId) {
+    const oldItem = allItems.value.find((i: TextValidationEntry) => i.id === oldId);
+    if (oldItem) updateMarkerStyle(oldItem);
+  }
+  if (newId) {
+    const newItem = allItems.value.find((i: TextValidationEntry) => i.id === newId);
+    if (newItem) updateMarkerStyle(newItem);
+  }
+});
+
+function renderMapMarkers(shouldFitBounds = true) {
   if (!leafletMap || !cachedLeaflet) return;
 
-  for (const marker of markerMap.values()) {
-    leafletMap.removeLayer(marker);
+  const currentItemIds = new Set(allItems.value.map((i) => i.id));
+  for (const [id, marker] of markerMap.entries()) {
+    if (!currentItemIds.has(id)) {
+      leafletMap.removeLayer(marker);
+      markerMap.delete(id);
+    }
   }
-  markerMap.clear();
 
   const bounds: [number, number][] = [];
 
@@ -1217,13 +1277,19 @@ function renderMapMarkers() {
     const [lon, lat] = coords;
     if (lon === 0 && lat === 0) continue;
 
-    const marker = makeDraggableMarker(cachedLeaflet, item);
-    marker.addTo(leafletMap);
-    markerMap.set(item.id, marker);
+    let marker = markerMap.get(item.id);
+    if (!marker) {
+      marker = makeDraggableMarker(cachedLeaflet, item);
+      marker.addTo(leafletMap);
+      markerMap.set(item.id, marker);
+    } else {
+      marker.setLatLng([lat, lon]);
+      updateMarkerStyle(item);
+    }
     bounds.push([lat, lon]);
   }
 
-  if (bounds.length > 0) {
+  if (shouldFitBounds && bounds.length > 0) {
     leafletMap.fitBounds(bounds as L.LatLngBoundsExpression, {
       padding: [40, 40],
       maxZoom: 8,
@@ -1427,18 +1493,47 @@ watch(
   },
 );
 
+function onDocumentClick(e: MouseEvent) {
+  if (!props.isOpen) return;
+  const target = e.target as HTMLElement | null;
+  if (!target || typeof target.closest !== "function") {
+    if (highlightedId.value) {
+      highlightedId.value = null;
+      hideToleranceRadius();
+    }
+    return;
+  }
+
+  if (
+    target.closest("[data-testid='map-container']") ||
+    target.closest("[data-validation-item]") ||
+    target.closest(".leaflet-pane") ||
+    target.closest(".leaflet-marker-icon") ||
+    target.closest(".leaflet-tooltip")
+  ) {
+    return;
+  }
+
+  if (highlightedId.value) {
+    highlightedId.value = null;
+    hideToleranceRadius();
+  }
+}
+
 watch(
   () => props.isOpen,
   (open: boolean) => {
     if (!open) {
       if (typeof window !== "undefined") {
         window.removeEventListener("keydown", handleKeyDown, true);
+        window.removeEventListener("click", onDocumentClick, true);
       }
       destroyMap();
       return;
     }
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", handleKeyDown, true);
+      window.addEventListener("click", onDocumentClick, true);
     }
     resetHistory();
     imgZoom.value = 1;
@@ -1481,6 +1576,7 @@ watch(
 onBeforeUnmount(() => {
   if (typeof window !== "undefined") {
     window.removeEventListener("keydown", handleKeyDown, true);
+    window.removeEventListener("click", onDocumentClick, true);
   }
   for (const imageUrl of Object.values<string>(localImageMap.value)) {
     if (imageUrl.startsWith("blob:")) URL.revokeObjectURL(imageUrl);
@@ -1532,11 +1628,22 @@ defineExpose({
   padding: 2px 6px;
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   z-index: 1000 !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .leaflet-tooltip-validation::before {
   border-top-color: #d1d5db;
+}
+.leaflet-tooltip-validation.validation-tooltip-focused {
+  border: 2px solid #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25), 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+  background: #ffffff !important;
+  z-index: 2000 !important;
+}
+.leaflet-tooltip-validation.validation-tooltip-focused::before {
+  border-top-color: #2563eb !important;
 }
 .leaflet-tooltip-suggestion {
   background: #ecfdf5;
