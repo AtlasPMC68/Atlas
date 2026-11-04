@@ -276,36 +276,44 @@
           class="flex flex-col gap-2"
           v-if="isTextElement"
         >
+          <!-- Le label reste au-dessus -->
+          
           <label class="label">Type de mot</label>
-          <select
-            v-model="editDraft.labelStyleSelection"
-            data-testid="word-type-select"
-            class="select select-bordered w-full"
-            @change="onLabelStyleSelectionChange"
-          >
-            <option
-              v-for="(style, typeKey) in WORD_TYPE_STYLES"
-              :key="typeKey"
-              :value="typeKey"
+          <!-- Conteneur flex horizontal obligatoire ici -->
+          <div class="flex flex-row items-center gap-2 w-full">
+            <select
+              v-model="editDraft.labelStyleSelection"
+              data-testid="word-type-select"
+              class="select select-bordered flex-1 min-w-0"
+              @change="onLabelStyleSelectionChange"
             >
-              {{ style.label }}
-            </option>
-            <option
-              v-for="style in customLabelStyles"
-              :key="style.id"
-              :value="`custom:${style.id}`"
+              <option
+                v-for="(style, typeKey) in WORD_TYPE_STYLES"
+                :key="typeKey"
+                :value="typeKey"
+              >
+                {{ style.label }}
+              </option>
+              <option
+                v-for="style in availableCustomLabelStyles"
+                :key="style.id"
+                :value="`custom:${style.id}`"
+              >
+                {{ formatCustomStyleOptionLabel(style) }}
+              </option>
+            </select>
+
+            <button
+              type="button"
+              class="btn btn-outline shrink-0"
+              data-testid="manage-custom-label-styles"
+              @click="labelStyleManagerRef?.open()"
             >
-              {{ style.name }} (personnalisé)
-            </option>
-          </select>
-          <button
-            type="button"
-            class="btn btn-outline btn-xs self-start"
-            @click="labelStyleManagerRef?.open()"
-          >
-            Gérer les styles de libellé
-          </button>
+              Personnaliser
+            </button>
+          </div>
         </div>
+
         <p
           v-if="!isEditingLabel && getMapElementType(featureToEdit) === 'point'"
           class="text-xs text-base-content/60"
@@ -419,8 +427,8 @@
 
   <CustomLabelStyleManager
     ref="labelStyleManagerRef"
-    :styles="customLabelStyles ?? []"
-    @save="emit('save-label-styles', $event)"
+    :styles="availableCustomLabelStyles"
+    @save="onSaveCustomLabelStyles"
   />
 
   <!-- Delete map confirmation dialog -->
@@ -552,6 +560,7 @@ import {
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import type { CustomLabelStyle } from "../typescript/labelStyle";
+import { formatCustomStyleOptionLabel } from "../typescript/labelStyle";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import { getMapElementType } from "../utils/featureHelpers";
 import {
@@ -650,10 +659,33 @@ const emit = defineEmits([
 
 const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
 
+const localCustomStyles = ref<CustomLabelStyle[]>([]);
+
+watch(
+  () => props.customLabelStyles,
+  (styles) => {
+    if (styles) {
+      localCustomStyles.value = [...styles];
+    }
+  },
+  { immediate: true },
+);
+
+const availableCustomLabelStyles = computed(() => {
+  return localCustomStyles.value.length > 0
+    ? localCustomStyles.value
+    : props.customLabelStyles ?? [];
+});
+
+function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  localCustomStyles.value = [...styles];
+  emit("save-label-styles", styles);
+}
+
 function onLabelStyleSelectionChange() {
   const selection = editDraft.value.labelStyleSelection ?? "";
   if (selection.startsWith("custom:")) {
-    const style = props.customLabelStyles?.find(
+    const style = availableCustomLabelStyles.value.find(
       (item) => item.id === selection.slice("custom:".length),
     );
     if (!style) return;

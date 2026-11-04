@@ -5,57 +5,89 @@
       <div class="mt-4 grid gap-5 md:grid-cols-2">
 
         <div class="flex flex-col gap-2">
-          <h4 class="font-semibold">Styles personnalisés</h4>
-          <div
-            v-for="style in draftStyles"
-            :key="style.id"
-            class="flex items-center justify-between gap-2 rounded border border-base-300 p-2"
-          >
-            <span class="truncate" :style="previewStyle(style)">{{ style.name }}</span>
-            <div class="flex shrink-0 gap-1">
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs"
-                :aria-label="`Modifier le style ${style.name}`"
-                @click="editStyle(style)"
-              >
-                <PencilSquareIcon
-                  class="w-5 h-5 text-gray-500 hover:text-gray-800"
-                />
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs text-error"
-                :aria-label="`Supprimer le style ${style.name}`"
-                @click="removeStyle(style.id)"
-              >
-                <TrashIcon
-                  class="w-5 h-5 text-gray-500 hover:text-gray-800"
-                />
-              </button>
-            </div>
+          <div class="flex items-center justify-between">
+            <h4 class="font-semibold text-base">Styles personnalisés</h4>
+            <button
+              type="button"
+              class="btn btn-primary btn-xs flex items-center gap-1"
+              data-testid="add-new-style-btn"
+              title="Ajouter un nouveau style"
+              @click="addNewStyle"
+            >
+              <PlusIcon class="w-3.5 h-3.5" />
+              <span>Nouveau style</span>
+            </button>
           </div>
-          <p v-if="draftStyles.length === 0" class="text-sm opacity-70">
-            Aucun style personnalisé.
-          </p>
+          <div class="flex flex-col gap-2 overflow-y-auto max-h-[380px] pr-1">
+            <div
+              v-for="style in draftStyles"
+              :key="style.id"
+              class="flex items-center justify-between gap-2 rounded-lg border p-2 transition-colors cursor-pointer"
+              :class="editingId === style.id ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'"
+              @click="editStyle(style)"
+            >
+              <span class="truncate font-medium" :style="previewStyle(style)">{{ style.name }}</span>
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-square"
+                  :aria-label="`Modifier le style ${style.name}`"
+                  @click.stop="editStyle(style)"
+                >
+                  <PencilSquareIcon
+                    class="w-4 h-4 text-gray-500 hover:text-gray-800"
+                  />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10"
+                  :aria-label="`Supprimer le style ${style.name}`"
+                  @click.stop="removeStyle(style.id)"
+                >
+                  <TrashIcon
+                    class="w-4 h-4 text-error"
+                  />
+                </button>
+              </div>
+            </div>
+            <p v-if="draftStyles.length === 0" class="text-sm opacity-70">
+              Aucun style personnalisé.
+            </p>
+          </div>
         </div>
 
         <form class="flex flex-col gap-3" @submit.prevent="submitDraft">
-          <h4 class="font-semibold">
-            {{ editingId ? "Modifier un style" : "Créer un style" }}
-          </h4>
+          <div class="flex items-center justify-between">
+            <h4 class="font-semibold text-base">
+              {{ editingId ? "Modifier un style" : "Créer un style" }}
+            </h4>
+            <button
+              v-if="editingId"
+              type="button"
+              class="btn btn-ghost btn-xs btn-square text-gray-500 hover:text-gray-800 hover:bg-base-200"
+              title="Réinitialiser les modifications"
+              aria-label="Réinitialiser les modifications"
+              data-testid="revert-style-btn"
+              @click="revertStyle"
+            >
+              <ArrowPathIcon class="w-4 h-4" />
+            </button>
+          </div>
+
           <label class="form-control">
-            <span class="label">Nom du style</span>
+            <span class="label text-xs font-medium">Nom du style</span>
             <input
               v-model="draft.name"
               class="input input-bordered input-sm"
               required
               maxlength="50"
               data-testid="custom-style-name"
+              placeholder="Ex: Titre Région, Fort..."
+              @input="syncLiveDraft"
             />
           </label>
           <label class="form-control">
-            <span class="label">Taille du texte (px)</span>
+            <span class="label text-xs font-medium">Taille du texte (px)</span>
             <input
               v-model.number="draft.sizePx"
               class="input input-bordered input-sm"
@@ -63,35 +95,55 @@
               min="6"
               max="96"
               required
+              @input="syncLiveDraft"
             />
           </label>
           <label class="label cursor-pointer justify-start gap-2 py-0">
-            <input v-model="draft.italic" type="checkbox" class="checkbox checkbox-sm" />
-            <span>Italique</span>
+            <input
+              v-model="draft.bold"
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              @change="syncLiveDraft"
+            />
+            <span class="text-sm">Gras</span>
           </label>
           <label class="label cursor-pointer justify-start gap-2 py-0">
-            <input v-model="draft.uppercase" type="checkbox" class="checkbox checkbox-sm" />
-            <span>Majuscules</span>
+            <input
+              v-model="draft.italic"
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              @change="syncLiveDraft"
+            />
+            <span class="text-sm">Italique</span>
+          </label>
+          <label class="label cursor-pointer justify-start gap-2 py-0">
+            <input
+              v-model="draft.uppercase"
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              @change="syncLiveDraft"
+            />
+            <span class="text-sm">Majuscules</span>
           </label>
           <label class="label justify-start gap-3 py-0">
-            <span>Couleur du texte</span>
-            <input v-model="draft.color" type="color" class="h-9 w-12" />
+            <span class="text-sm">Couleur du texte</span>
+            <input
+              v-model="draft.color"
+              type="color"
+              class="h-9 w-12 cursor-pointer rounded border border-base-300"
+              @input="syncLiveDraft"
+            />
           </label>
-          <button
-            type="submit"
-            class="btn btn-outline btn-sm self-start"
-            :disabled="!draft.name.trim()"
-          >
-            {{ editingId ? "Appliquer" : "Ajouter" }}
-          </button>
-          <button
-            v-if="editingId"
-            type="button"
-            class="btn btn-ghost btn-sm self-start"
-            @click="resetDraft"
-          >
-            Annuler la modification
-          </button>
+
+          <div class="mt-1 rounded-lg border border-base-300 bg-base-200/40 p-2.5">
+            <span class="text-xs text-base-content/60 block mb-1">Aperçu :</span>
+            <div
+              class="truncate p-2 rounded bg-base-100 border border-base-200"
+              :style="previewStyle(currentLiveStyle)"
+            >
+              {{ draft.name.trim() || "Exemple de texte" }}
+            </div>
+          </div>
         </form>
       </div>
       <div class="modal-action">
@@ -115,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type {
   CustomLabelStyle,
   NewCustomLabelStyle,
@@ -123,7 +175,10 @@ import type {
 import {
   PencilSquareIcon,
   TrashIcon,
+  ArrowPathIcon,
+  PlusIcon,
 } from "@heroicons/vue/24/outline";
+
 const props = defineProps<{
   styles: CustomLabelStyle[];
 }>();
@@ -135,19 +190,37 @@ const emit = defineEmits<{
 const dialogRef = ref<HTMLDialogElement | null>(null);
 const draftStyles = ref<CustomLabelStyle[]>([]);
 const editingId = ref<string | null>(null);
+const initialSnapshot = ref<CustomLabelStyle | null>(null);
+
 const draft = ref({
   name: "",
   sizePx: 14,
+  bold: false,
   italic: false,
   uppercase: false,
   color: "#000000",
 });
 
+const currentLiveStyle = computed<CustomLabelStyle>(() => ({
+  id: editingId.value ?? "preview",
+  name: draft.value.name.trim() || "Style",
+  sizePx: Math.max(6, Math.min(96, Number(draft.value.sizePx) || 14)),
+  fontStyle: draft.value.italic ? "italic" : "normal",
+  fontWeight: draft.value.bold ? "bold" : "normal",
+  bold: draft.value.bold,
+  textTransform: draft.value.uppercase ? "uppercase" : "none",
+  color: draft.value.color,
+  priority: 30,
+  minZoom: 1,
+}));
+
 function resetDraft() {
   editingId.value = null;
+  initialSnapshot.value = null;
   draft.value = {
     name: "",
     sizePx: 14,
+    bold: false,
     italic: false,
     uppercase: false,
     color: "#000000",
@@ -156,43 +229,99 @@ function resetDraft() {
 
 function open() {
   draftStyles.value = props.styles.map((style) => ({ ...style }));
-  resetDraft();
+  if (draftStyles.value.length > 0) {
+    editStyle(draftStyles.value[0]);
+  } else {
+    resetDraft();
+  }
   dialogRef.value?.showModal();
 }
 
 function editStyle(style: CustomLabelStyle) {
   editingId.value = style.id;
+  initialSnapshot.value = { ...style };
   draft.value = {
     name: style.name,
     sizePx: style.sizePx,
+    bold: Boolean(style.bold || style.fontWeight === "bold"),
     italic: style.fontStyle === "italic",
     uppercase: style.textTransform === "uppercase",
     color: style.color,
   };
 }
 
-function removeStyle(id: string) {
-  draftStyles.value = draftStyles.value.filter((style) => style.id !== id);
-  if (editingId.value === id) resetDraft();
+function syncLiveDraft() {
+  if (!editingId.value) {
+    if (draft.value.name.trim()) {
+      const newStyle: CustomLabelStyle = {
+        id: crypto.randomUUID(),
+        ...toStyleDraft(draft.value.name.trim()),
+      };
+      draftStyles.value.push(newStyle);
+      editStyle(newStyle);
+    }
+    return;
+  }
+
+  const index = draftStyles.value.findIndex((item) => item.id === editingId.value);
+  if (index >= 0) {
+    draftStyles.value[index] = {
+      ...draftStyles.value[index],
+      ...toStyleDraft(draft.value.name.trim() || draftStyles.value[index].name),
+    };
+  }
 }
 
 function submitDraft() {
-  const name = draft.value.name.trim();
-  if (!name) return;
+  syncLiveDraft();
+}
 
-  const style: CustomLabelStyle = {
-    id: editingId.value ?? crypto.randomUUID(),
-    ...toStyleDraft(name),
+function addNewStyle() {
+  const newStyle: CustomLabelStyle = {
+    id: crypto.randomUUID(),
+    name: `Style ${draftStyles.value.length + 1}`,
+    sizePx: 14,
+    fontStyle: "normal",
+    fontWeight: "normal",
+    bold: false,
+    textTransform: "none",
+    color: "#000000",
+    priority: 30,
+    minZoom: 1,
   };
-  const index = draftStyles.value.findIndex((item) => item.id === style.id);
-  if (index < 0) {
-    draftStyles.value = [...draftStyles.value, style];
-  } else {
-    draftStyles.value = draftStyles.value.map((item) =>
-      item.id === style.id ? style : item,
-    );
+  draftStyles.value.push(newStyle);
+  editStyle(newStyle);
+}
+
+function revertStyle() {
+  if (!initialSnapshot.value || !editingId.value) {
+    resetDraft();
+    return;
   }
-  resetDraft();
+  const snap = initialSnapshot.value;
+  draft.value = {
+    name: snap.name,
+    sizePx: snap.sizePx,
+    bold: Boolean(snap.bold || snap.fontWeight === "bold"),
+    italic: snap.fontStyle === "italic",
+    uppercase: snap.textTransform === "uppercase",
+    color: snap.color,
+  };
+  const index = draftStyles.value.findIndex((item) => item.id === snap.id);
+  if (index >= 0) {
+    draftStyles.value[index] = { ...snap };
+  }
+}
+
+function removeStyle(id: string) {
+  draftStyles.value = draftStyles.value.filter((style) => style.id !== id);
+  if (editingId.value === id) {
+    if (draftStyles.value.length > 0) {
+      editStyle(draftStyles.value[0]);
+    } else {
+      resetDraft();
+    }
+  }
 }
 
 function toStyleDraft(name = draft.value.name.trim()): NewCustomLabelStyle {
@@ -200,6 +329,8 @@ function toStyleDraft(name = draft.value.name.trim()): NewCustomLabelStyle {
     name,
     sizePx: Math.max(6, Math.min(96, Number(draft.value.sizePx) || 14)),
     fontStyle: draft.value.italic ? "italic" : "normal",
+    fontWeight: draft.value.bold ? "bold" : "normal",
+    bold: draft.value.bold,
     textTransform: draft.value.uppercase ? "uppercase" : "none",
     color: draft.value.color,
     priority: 30,
@@ -212,6 +343,7 @@ function previewStyle(style: CustomLabelStyle) {
     color: style.color,
     fontSize: `${style.sizePx}px`,
     fontStyle: style.fontStyle,
+    fontWeight: style.bold || style.fontWeight === "bold" ? "bold" : "normal",
     textTransform: style.textTransform,
   };
 }
@@ -221,5 +353,15 @@ function saveStyles() {
   dialogRef.value?.close();
 }
 
-defineExpose({ open });
+defineExpose({
+  open,
+  draftStyles,
+  editingId,
+  draft,
+  addNewStyle,
+  editStyle,
+  revertStyle,
+  removeStyle,
+  syncLiveDraft,
+});
 </script>

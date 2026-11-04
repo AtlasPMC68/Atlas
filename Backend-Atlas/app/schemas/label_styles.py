@@ -8,6 +8,8 @@ class LabelStyle(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     size_px: int = Field(ge=6, le=96)
     font_style: Literal["normal", "italic"]
+    font_weight: Literal["normal", "bold"] = "normal"
+    bold: bool = False
     text_transform: Literal["none", "uppercase"]
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     priority: int = Field(default=30, ge=0, le=100)

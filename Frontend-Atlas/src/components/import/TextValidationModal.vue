@@ -249,18 +249,6 @@
               {{ toKeepCount }} / {{ allItems.length }} conservé(s)
             </span>
           </div>
-
-          <div class="px-3.5 py-2 border-b border-base-200 shrink-0">
-            <button
-              type="button"
-              class="btn btn-outline btn-xs"
-              data-testid="manage-custom-label-styles"
-              @click="labelStyleManagerRef?.open()"
-            >
-              Gérer les styles de libellé
-            </button>
-          </div>
-
           <!-- Items list -->
           <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
             <div
@@ -349,13 +337,21 @@
                     {{ style.label }}
                   </option>
                   <option
-                    v-for="style in customLabelStyles"
+                    v-for="style in availableCustomLabelStyles"
                     :key="style.id"
                     :value="`custom:${style.id}`"
                   >
-                    {{ style.name }} (personnalisé)
+                    {{ formatCustomStyleOptionLabel(style) }}
                   </option>
                 </select>
+                  <button
+                  type="button"
+                  class="btn btn-outline btn-xs h-7 shrink-0 text-[10px] px-2"
+                  data-testid="manage-custom-label-styles"
+                  @click.stop="labelStyleManagerRef?.open()"
+                >
+                  Personnaliser
+                </button>
               </div>
 
               <!-- Suggested place pill button -->
@@ -385,8 +381,8 @@
             </div>
             <CustomLabelStyleManager
               ref="labelStyleManagerRef"
-              :styles="customLabelStyles"
-              @save="emit('save-label-styles', $event)"
+              :styles="availableCustomLabelStyles"
+              @save="onSaveCustomLabelStyles"
             />
           </div>
         </div>
@@ -425,7 +421,10 @@ import type { CSSProperties } from "vue";
 import type L from "leaflet";
 import type { FeatureCollection } from "geojson";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
-import type { CustomLabelStyle } from "../../typescript/labelStyle";
+import {
+  formatCustomStyleOptionLabel,
+  type CustomLabelStyle,
+} from "../../typescript/labelStyle";
 import {
   TrashIcon,
   PhotoIcon,
@@ -478,6 +477,29 @@ const highlightedId = ref<string | null>(null);
 const hoveredId = ref<string | null>(null);
 const allItems = ref<TextValidationEntry[]>([]);
 const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
+
+const localCustomStyles = ref<CustomLabelStyle[]>([]);
+
+watch(
+  () => props.customLabelStyles,
+  (styles) => {
+    if (styles) {
+      localCustomStyles.value = [...styles];
+    }
+  },
+  { immediate: true },
+);
+
+const availableCustomLabelStyles = computed(() => {
+  return localCustomStyles.value.length > 0
+    ? localCustomStyles.value
+    : props.customLabelStyles ?? [];
+});
+
+function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  localCustomStyles.value = [...styles];
+  emit("save-label-styles", styles);
+}
 
 const leftColWidth = ref(420);
 const rightColWidth = ref(380);
@@ -791,7 +813,7 @@ function onItemLabelStyleChange(item: TextValidationEntry) {
   saveHistorySnapshot();
   const selection = item.labelStyleSelection ?? "";
   if (selection.startsWith("custom:")) {
-    const style = props.customLabelStyles.find(
+    const style = availableCustomLabelStyles.value.find(
       (candidate) => candidate.id === selection.slice("custom:".length),
     );
     if (!style) return;
@@ -814,6 +836,7 @@ function itemStylePreview(item: TextValidationEntry): CSSProperties {
     color: customStyle?.color,
     fontSize: `${customStyle?.sizePx ?? taxonomy.sizePx}px`,
     fontStyle: customStyle?.fontStyle ?? taxonomy.fontStyle,
+    fontWeight: customStyle?.bold || customStyle?.fontWeight === "bold" ? "bold" : "normal",
     textTransform: customStyle?.textTransform ?? taxonomy.textTransform,
   };
 }
