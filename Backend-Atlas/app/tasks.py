@@ -55,6 +55,7 @@ from app.utils.imposed_colors import (
 from app.utils.legend import legend_to_entry, polygon_center_in_legend
 from app.utils.shapes_extraction import extract_shapes_from_clicks
 from app.utils.text_extraction import extract_text, ocr_blocks_to_payload
+from app.utils.text_extraction import should_ignore
 from app.utils.dev_test_assets import TEST_CASES_DIR, GEOREF_ASSETS_DIR
 from app.utils.dev_test_pixel_zones import write_classified_image, write_pixel_zones
 from app.utils.dev_test import (
@@ -386,10 +387,8 @@ def _categorized_text_features_from_ocr(
             continue
 
         raw_text = str(text or "").strip()
-        # Keep numeric OCR labels available for manual review instead of discarding them.
-        has_letters = any(char.isalpha() for char in raw_text)
-        has_digits = any(char.isdigit() for char in raw_text)
-        if not is_exploitable_text(raw_text) and not (has_digits and not has_letters):
+        # Ignore numeric-only text and map-scale labels; they are not place names.
+        if should_ignore(raw_text) or not is_exploitable_text(raw_text):
             continue
 
         confidence = float(prob) if prob is not None else 1.0

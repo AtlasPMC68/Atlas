@@ -40,7 +40,7 @@
             </div>
             <div class="flex items-center gap-1.5">
               <span class="w-3.5 h-3.5 rounded-full bg-amber-500 text-white font-bold text-[9px] flex items-center justify-center border border-amber-600">!</span>
-              <span class="font-medium text-black">Suggestion disponible (75 km)</span>
+              <span class="font-medium text-black">Suggestion disponible (150 km)</span>
             </div>
           </div>
         </div>

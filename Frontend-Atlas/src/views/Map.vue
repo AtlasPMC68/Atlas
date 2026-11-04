@@ -4,7 +4,8 @@
   >
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
-        class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+        class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+        :style="{ width: `${sidebarWidth}px` }"
       >
         <FeatureVisibilityControls
           ref="featureVisibilityControlsRef"
@@ -23,6 +24,17 @@
           @validate-texts="onOpenTextValidation"
         />
       </div>
+      <div
+        role="separator"
+        aria-label="Redimensionner le panneau latéral"
+        aria-orientation="vertical"
+        tabindex="0"
+        class="w-1.5 shrink-0 cursor-col-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors"
+        data-testid="sidebar-resize-handle"
+        @mousedown.prevent="startSidebarResize"
+        @keydown.left.prevent="resizeSidebarBy(-16)"
+        @keydown.right.prevent="resizeSidebarBy(16)"
+      />
       <div class="flex-1 min-h-0 flex flex-col">
         <div class="flex-1 relative min-h-0 h-full w-full">
           <MapGeoJSON
@@ -49,6 +61,9 @@
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
+              :selected-feature-id="selectedFeatureId"
+              @select-feature="selectFeature"
+              @edit-feature="onEditFeatureRequest"
             />
           </div>
         </div>
@@ -158,6 +173,7 @@ import {
   isUnrecognizedTextFeature,
 } from "../utils/textValidation";
 import { isVisibleInMainLayers } from "../utils/featureValidationState";
+import { isTextFeature } from "../utils/wordStyles";
 
 const route = useRoute();
 const router = useRouter();
@@ -183,8 +199,125 @@ const featureVisibilityControlsRef = ref<InstanceType<typeof FeatureVisibilityCo
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
+function selectFeature(id: string) {
+  selectedFeatureId.value = id;
+}
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
+const copiedTextFeature = ref<Feature | null>(null);
+const sidebarWidth = ref(320);
+let sidebarResizeStartX = 0;
+let sidebarResizeStartWidth = 0;
+let isResizingSidebar = false;
+let previousBodyCursor = "";
+let previousBodyUserSelect = "";
+
+function resizeSidebarBy(delta: number) {
+  const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
+  sidebarWidth.value = Math.max(240, Math.min(maxWidth, sidebarWidth.value + delta));
+}
+
+function onSidebarResizeMove(event: MouseEvent) {
+  const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
+  sidebarWidth.value = Math.max(
+    240,
+    Math.min(maxWidth, sidebarResizeStartWidth + event.clientX - sidebarResizeStartX),
+  );
+}
+
+function copySelectedTextFeature(): boolean {
+  const feature = features.value.find(
+    (item) => String(item.id) === selectedFeatureId.value,
+  );
+  if (
+    !feature ||
+    !isTextFeature(feature) ||
+    feature.geometry.type !== "Point"
+  ) {
+    return false;
+  }
+
+  copiedTextFeature.value = feature;
+  const label = feature.properties.labelText || feature.properties.name;
+  if (navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(label).catch((error: unknown) => {
+      console.error("Could not copy selected map label to clipboard:", error);
+      showAlert(
+        "error",
+        "Le texte est copié dans Atlas, mais pas dans le presse-papiers système.",
+      );
+    });
+  } else {
+    showAlert(
+      "error",
+      "Le navigateur ne permet pas de copier le texte dans le presse-papiers système.",
+    );
+  }
+  return true;
+}
+
+function pasteCopiedTextFeature() {
+  const source = copiedTextFeature.value;
+  const map = leafletMap.value;
+  if (!source || !map || source.geometry.type !== "Point") return;
+
+  const selectedFeature = features.value.find(
+    (item) => String(item.id) === selectedFeatureId.value,
+  );
+  const positionGeometry =
+    selectedFeature?.geometry.type === "Point"
+      ? selectedFeature.geometry
+      : source.geometry;
+  const [longitude, latitude] = positionGeometry.coordinates;
+  const screenPosition = map
+    .latLngToContainerPoint(L.latLng(latitude, longitude))
+    .add(L.point(24, -24));
+  const pastedPosition = map.containerPointToLatLng(screenPosition);
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  const label = source.properties.labelText || source.properties.name;
+  const pastedFeature: Feature = {
+    ...source,
+    id,
+    name: label,
+    geometry: {
+      type: "Point",
+      coordinates: [pastedPosition.lng, pastedPosition.lat],
+    },
+    properties: {
+      ...source.properties,
+      name: label,
+      labelText: label,
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  commitFeatureSnapshot([...features.value, pastedFeature]);
+  selectedFeatureId.value = id;
+}
+
+function stopSidebarResize() {
+  window.removeEventListener("mousemove", onSidebarResizeMove);
+  window.removeEventListener("mouseup", stopSidebarResize);
+  if (isResizingSidebar) {
+    document.body.style.cursor = previousBodyCursor;
+    document.body.style.userSelect = previousBodyUserSelect;
+    isResizingSidebar = false;
+  }
+}
+
+function startSidebarResize(event: MouseEvent) {
+  sidebarResizeStartX = event.clientX;
+  sidebarResizeStartWidth = sidebarWidth.value;
+  previousBodyCursor = document.body.style.cursor;
+  previousBodyUserSelect = document.body.style.userSelect;
+  isResizingSidebar = true;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  window.addEventListener("mousemove", onSidebarResizeMove);
+  window.addEventListener("mouseup", stopSidebarResize);
+}
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
@@ -968,12 +1101,38 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
 }
 
 const handleKeyboardShortcuts = (e: KeyboardEvent) => {
-  if (showTextValidationModal.value || isEditableTarget(e.target)) {
+  if (
+    showTextValidationModal.value ||
+    document.querySelector("dialog[open]") ||
+    isEditableTarget(e.target)
+  ) {
     return;
   }
 
   const isMod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
+
+  if (isMod && key === "c" && copySelectedTextFeature()) {
+    e.preventDefault();
+    return;
+  }
+
+  if (isMod && key === "v" && copiedTextFeature.value) {
+    e.preventDefault();
+    pasteCopiedTextFeature();
+    return;
+  }
+
+  if (key === "delete" && selectedFeatureId.value) {
+    const selectedFeature = features.value.find(
+      (feature) => String(feature.id) === selectedFeatureId.value,
+    );
+    if (selectedFeature) {
+      e.preventDefault();
+      featureVisibilityControlsRef.value?.showDeleteFeatureDialog(selectedFeature);
+    }
+    return;
+  }
 
   if (isMod && key === "s") {
     e.preventDefault();
@@ -1072,6 +1231,7 @@ watch(
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyboardShortcuts);
+  stopSidebarResize();
   clearAlert();
 });
 

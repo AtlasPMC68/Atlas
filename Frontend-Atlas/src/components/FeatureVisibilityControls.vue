@@ -6,6 +6,8 @@
         :key="group.type"
         type="button"
         role="tab"
+        :aria-selected="activeGroup?.type === group.type"
+        :data-testid="`feature-tab-${group.type}`"
         class="tab flex-1 p-0"
         :title="`${group.label}`"
         @click="activeGroupType = group.type"
@@ -593,12 +595,34 @@ const emit = defineEmits([
 
 watch(
   () => props.selectedFeatureId,
-  (newId) => {
+  async (newId) => {
     if (!newId) return;
-    nextTick(() => {
-      const el = document.querySelector(`[data-feature-item-id="${newId}"]`);
-      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
+
+    const feature = props.features.find(
+      (item) => String(item.id) === newId,
+    );
+    if (!feature) return;
+
+    const group = featureGroups.value.find((item) =>
+      item.features.some((groupFeature) => String(groupFeature.id) === newId),
+    );
+    if (!group) return;
+
+    activeGroupType.value = group.type;
+    await nextTick();
+
+    const mapGroup = groupFeaturesByMap(group.features, props.mapPeriods).find(
+      (item) => String(item.id ?? "") === String(feature.mapId ?? ""),
+    );
+    if (mapGroup) {
+      collapsedMaps.value[`${group.type}_${mapGroup.id ?? "general"}`] = false;
+    }
+
+    await nextTick();
+    const el = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-feature-item-id]"),
+    ).find((item) => item.dataset.featureItemId === newId);
+    el?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
   },
 );
 
@@ -801,6 +825,7 @@ async function onDeleteFeature() {
 
 defineExpose({
   showEditFeatureDialog,
+  showDeleteFeatureDialog,
   isMapCollapsed,
   toggleMapCollapse,
 });

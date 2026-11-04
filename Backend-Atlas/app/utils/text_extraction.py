@@ -27,11 +27,14 @@ def should_ignore(text_val: str) -> bool:
     if clean in MAP_IGNORED_WORDS:
         return True
 
-    if all(c.isdigit() or c.isspace() or c in ".," for c in clean):
+    if clean and all(c.isdigit() or c.isspace() or c in ".," for c in clean):
         return True
-    for keyword in ["légende", "legende", "échelle", "echelle", "scale", "kilomètre", "kilometre", "miles"]:
-        if keyword in clean:
-            return True
+    if re.search(
+        r"\b(?:légende|legende|échelle|echelle|scale)\b|"
+        r"(?<![a-z])(?:km|kms|kilom[eè]tres?|kilometers?|miles?)(?![a-z])",
+        clean,
+    ):
+        return True
 
     if len(clean.split()) > 5:
         return True
@@ -59,9 +62,8 @@ def ocr_blocks_to_payload(blocks: list[dict[str, Any]]) -> list[list]:
 
 
 def process_candidate_text(text_val: str, quad: list[list[int]]) -> dict[str, Any] | None:
-    clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text_val)
     # Retain newlines, but collapse spaces within each line
-    clean_text = "\n".join(" ".join(line.split()) for line in clean_text.split("\n")).strip(" .,;:!?()[]{}'\"")
+    clean_text = "\n".join(" ".join(line.split()) for line in text_val.split("\n")).strip(" .,;:!?()[]{}'\"")
     if not clean_text or should_ignore(clean_text):
         return None
     return {

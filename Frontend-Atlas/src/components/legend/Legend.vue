@@ -23,7 +23,10 @@
           <li
             v-for="feature in visibleZoneFeatures"
             :key="feature.id ?? feature.properties?.name"
-            class="flex items-center gap-2"
+            class="flex items-center gap-2 rounded px-1 py-0.5 cursor-pointer"
+            :class="selectedFeatureId === String(feature.id) ? 'ring-2 ring-primary bg-primary/10' : 'hover:bg-base-200/60'"
+            @click="selectFeature(feature)"
+            @dblclick.prevent.stop="editFeature(feature)"
           >
             <span
               class="inline-block h-5 w-5 rounded-sm shrink-0 border-2"
@@ -63,13 +66,28 @@ const props = withDefaults(
   defineProps<{
     zoneFeatures: Feature[];
     featureVisibility: Map<string, boolean>;
+    selectedFeatureId?: string | null;
   }>(),
   {
     zoneFeatures: () => [],
   },
 );
 
+const emit = defineEmits<{
+  (event: "select-feature", featureId: string): void;
+  (event: "edit-feature", feature: Feature): void;
+}>();
+
 const isLegendVisible = ref(true);
+
+function selectFeature(feature: Feature) {
+  if (feature.id != null) emit("select-feature", String(feature.id));
+}
+
+function editFeature(feature: Feature) {
+  selectFeature(feature);
+  emit("edit-feature", feature);
+}
 
 function toggleLegend() {
   isLegendVisible.value = !isLegendVisible.value;

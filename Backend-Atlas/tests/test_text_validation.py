@@ -146,20 +146,20 @@ def test_categorized_text_features_only_accepts_nearby_fuzzy_place(monkeypatch):
     }
 
 
-def test_categorized_text_features_keeps_numeric_ocr_for_review():
+def test_categorized_text_features_ignores_numeric_and_scale_labels():
     features = _categorized_text_features_from_ocr(
         [
             [[[10, 10], [30, 10], [30, 20], [10, 20]], "1783", 0.95],
+            [[[40, 10], [60, 10], [60, 20], [40, 20]], "600 Km", 0.95],
+            [[[70, 10], [90, 10], [90, 20], [70, 20]], "Québec", 0.95],
         ],
         legend_bounds=None,
         frame_bounds=None,
     )
 
-    assert len(features) == 1
-    feature = features[0]["features"][0]
-    assert feature["properties"]["recognized"] is False
-    assert feature["properties"]["validationStatus"] == "manual_review"
-    assert feature["properties"]["originalText"] == "1783"
+    assert [feature["features"][0]["properties"]["originalText"] for feature in features] == [
+        "Québec"
+    ]
 
 
 def test_distant_fuzzy_json_match_is_unrecognized_with_json_suggestion(monkeypatch):

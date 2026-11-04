@@ -80,6 +80,25 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     },
   ];
 
+  const zoneFeature: Feature = {
+    type: "Feature",
+    id: "zone-1",
+    projectId: "proj-1",
+    mapId: "map-1",
+    name: "Zone Québec",
+    geometry: {
+      type: "Polygon",
+      coordinates: [[
+        [-71.3, 46.7],
+        [-71.1, 46.7],
+        [-71.1, 46.9],
+        [-71.3, 46.9],
+        [-71.3, 46.7],
+      ]],
+    },
+    properties: { name: "Zone Québec", mapElementType: "zone" },
+  };
+
   const featureVisibility = new Map<string, boolean>([
     ["feat-1", true],
     ["feat-2", true],
@@ -160,6 +179,25 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       'button[title*="Développer Carte Québec 1900"]',
     );
     expect(expandBtn.exists()).toBe(true);
+  });
+
+  it("switches to the selected feature's tab and displays it", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [...features, zoneFeature],
+        featureVisibility,
+        mapPeriods,
+        selectedFeatureId: null,
+      },
+    });
+
+    await wrapper.setProps({ selectedFeatureId: "zone-1" });
+    await wrapper.vm.$nextTick();
+
+    expect(
+      wrapper.find('[data-testid="feature-tab-zone"]').attributes("aria-selected"),
+    ).toBe("true");
+    expect(wrapper.find('[data-feature-item-id="zone-1"]').exists()).toBe(true);
   });
 
   it("does not list unrecognized OCR texts (recognized: false) in the page", () => {
