@@ -171,15 +171,15 @@ async def get_project_label_styles(
         conditions = (Project.user_id == user_uuid) | conditions
 
     result = await db.execute(
-        select(Project.label_styles).where(
+        select(Project).where(
             Project.id == project_id,
             conditions,
         )
     )
-    styles = result.scalar_one_or_none()
-    if styles is None:
+    project = result.scalar_one_or_none()
+    if project is None:
         raise HTTPException(status_code=404, detail="Project not found or access denied")
-    return styles
+    return project.label_styles or []
 
 
 @router.put("/{project_id}/label-styles")

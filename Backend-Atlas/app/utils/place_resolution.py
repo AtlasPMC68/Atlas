@@ -56,6 +56,9 @@ _GEO_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "geographic_e
 
 # normalized alias -> [entity, ...]
 _GEO_INDEX: Dict[str, List[Dict[str, Any]]] = {}
+# (floor(lat), floor(lon)) -> [entity, ...]
+_SPATIAL_GEO_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+_SEEN_GEO_KEYS: Set[Tuple[str, str, float, float]] = set()
 
 if _GEO_DATA_PATH.exists():
     with open(_GEO_DATA_PATH, "r", encoding="utf-8") as _f:
@@ -64,6 +67,16 @@ if _GEO_DATA_PATH.exists():
                 _key = _normalize(_alias)
                 if _key:
                     _GEO_INDEX.setdefault(_key, []).append(_entry)
+            if _entry.get("lat") is not None and _entry.get("lon") is not None:
+                try:
+                    _glat, _glon = float(_entry["lat"]), float(_entry["lon"])
+                    _gkey = (str(_entry.get("type", "")), str(_entry.get("name", "")), _glat, _glon)
+                    if _gkey not in _SEEN_GEO_KEYS:
+                        _SEEN_GEO_KEYS.add(_gkey)
+                        _cell = (math.floor(_glat), math.floor(_glon))
+                        _SPATIAL_GEO_GRID.setdefault(_cell, []).append(_entry)
+                except (ValueError, TypeError):
+                    pass
 
 
 # Political types take priority when multiple entity types share the same name
@@ -228,6 +241,8 @@ def _parse_pop(val: Any) -> int:
 
 _gc = getattr(geonamescache, "GeonamesCache")()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
+_SPATIAL_CITY_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+_SEEN_CITY_IDS: Set[Any] = set()
 _CITY_ALIASES = {
     "New Orleans": ("La Nouvelle-Orléans",),
 }
@@ -251,6 +266,35 @@ for _info in _gc.get_cities().values():
         _base = _ck[:-5].strip()
         if _base:
             _CITY_INDEX.setdefault(_base, []).append(_city)
+
+    _gid = _city.get("geonameid") or (_name, _lat, _lon)
+    if _gid not in _SEEN_CITY_IDS:
+        _SEEN_CITY_IDS.add(_gid)
+        _cell = (math.floor(_lat), math.floor(_lon))
+        _SPATIAL_CITY_GRID.setdefault(_cell, []).append(_city)
+
+
+def _get_spatial_cells(lat: float, lon: float, radius_km: float) -> List[Tuple[int, int]]:
+    """Return all 1x1 degree grid cells overlapping a circular bounding box."""
+    lat_delta = radius_km / 111.0
+    lat_min = lat - lat_delta
+    lat_max = lat + lat_delta
+
+    max_lat_abs = min(89.0, max(abs(lat_min), abs(lat_max)))
+    cos_lat = math.cos(math.radians(max_lat_abs))
+    lon_delta = 180.0 if cos_lat < 0.05 else radius_km / (111.0 * cos_lat)
+
+    min_cell_lat = math.floor(lat_min)
+    max_cell_lat = math.floor(lat_max)
+    min_cell_lon = math.floor(lon - lon_delta)
+    max_cell_lon = math.floor(lon + lon_delta)
+
+    cells = []
+    for c_lat in range(min_cell_lat, max_cell_lat + 1):
+        for c_lon in range(min_cell_lon, max_cell_lon + 1):
+            norm_lon = ((c_lon + 180) % 360) - 180
+            cells.append((c_lat, norm_lon))
+    return cells
 
 
 def find_nearby_candidate_place(
@@ -279,16 +323,16 @@ def find_nearby_candidate_place(
         }
     ]
 
+    cells = _get_spatial_cells(lat, lon, radius_km)
     candidates: Dict[Tuple[str, str, float, float], Dict[str, Any]] = {}
     seen_cities: set[Tuple[Any, float, float]] = set()
-    for city_list in _CITY_INDEX.values():
-        for city in city_list:
+
+    for cell in cells:
+        for city in _SPATIAL_CITY_GRID.get(cell, []):
             city_key = (city.get("geonameid"), city["lat"], city["lon"])
             if city_key in seen_cities:
                 continue
             seen_cities.add(city_key)
-            if abs(city["lat"] - lat) * 111.0 > radius_km:
-                continue
             if haversine_distance_km(lat, lon, city["lat"], city["lon"]) > radius_km:
                 continue
             candidate = dict(city)
@@ -299,8 +343,8 @@ def find_nearby_candidate_place(
             candidates[key] = candidate
 
     seen_entities: set[Tuple[str, str, float, float]] = set()
-    for entity_list in _GEO_INDEX.values():
-        for entity in entity_list:
+    for cell in cells:
+        for entity in _SPATIAL_GEO_GRID.get(cell, []):
             if entity.get("lat") is None or entity.get("lon") is None:
                 continue
             entity_key = (
@@ -312,9 +356,7 @@ def find_nearby_candidate_place(
             if entity_key in seen_entities:
                 continue
             seen_entities.add(entity_key)
-            if abs(float(entity["lat"]) - lat) * 111.0 > radius_km:
-                continue
-            if haversine_distance_km(lat, lon, entity["lat"], entity["lon"]) > radius_km:
+            if haversine_distance_km(lat, lon, float(entity["lat"]), float(entity["lon"])) > radius_km:
                 continue
             candidates[entity_key] = entity
 

@@ -164,6 +164,7 @@ import {
 import { toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { useProjectLabelStyles } from "../composables/useProjectLabelStyles";
 import { getOriginalMapImage } from "../composables/useMapImageCache";
 import keycloak from "../keycloak";
 import leafletImage from "leaflet-image";
@@ -349,7 +350,11 @@ const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
-const customLabelStyles = ref<CustomLabelStyle[]>([]);
+const {
+  customLabelStyles,
+  loadCustomLabelStyles: fetchCustomLabelStyles,
+  saveCustomLabelStyles: persistCustomLabelStyles,
+} = useProjectLabelStyles();
 
 const zoneFeatures = computed(() =>
   filteredFeatures.value.filter((f: Feature) => f.properties?.mapElementType === "zone"),
@@ -691,24 +696,7 @@ async function loadProjectMapsForTimeline() {
 }
 
 async function loadCustomLabelStyles() {
-  if (!projectId.value) {
-    customLabelStyles.value = [];
-    return;
-  }
-  try {
-    const response = await apiFetch(
-      `/projects/${projectId.value}/label-styles`,
-    );
-    if (!response.ok) {
-      throw new Error(`Failed to load project label styles: ${response.status}`);
-    }
-    customLabelStyles.value = snakeToCamel(
-      await response.json(),
-    ) as CustomLabelStyle[];
-  } catch (error) {
-    console.error("Failed to load project label styles:", error);
-    showAlert("error", "Impossible de charger les styles de libellés du projet.");
-  }
+  await fetchCustomLabelStyles(projectId.value);
 }
 
 async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
@@ -717,20 +705,7 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       throw new Error("Cannot update label styles while project features are saving");
     }
     const targetProjectId = await requireProjectId();
-    const response = await apiFetch(
-      `/projects/${targetProjectId}/label-styles`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(camelToSnake({ styles })),
-      },
-    );
-    if (!response.ok) {
-      throw new Error(`Failed to save project label styles: ${response.status}`);
-    }
-    customLabelStyles.value = snakeToCamel(
-      await response.json(),
-    ) as CustomLabelStyle[];
+    await persistCustomLabelStyles(targetProjectId, styles);
 
     const effectiveStyles =
       Array.isArray(customLabelStyles.value) && customLabelStyles.value.length > 0

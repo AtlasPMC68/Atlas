@@ -12,7 +12,9 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
-_WORD_STYLE_CONFIG_PATH = Path(__file__).resolve().parents[3] / "shared" / "word-taxonomy.json"
+_WORD_STYLE_CONFIG_PATH = Path("/shared/word-taxonomy.json")
+if not _WORD_STYLE_CONFIG_PATH.exists():
+    _WORD_STYLE_CONFIG_PATH = Path(__file__).resolve().parents[3] / "shared" / "word-taxonomy.json"
 with _WORD_STYLE_CONFIG_PATH.open(encoding="utf-8") as _config_file:
     _WORD_STYLE_CONFIG = json.load(_config_file)
 

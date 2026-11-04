@@ -666,14 +666,9 @@ function renderTextFeature(feature: Feature, seenKeys?: Set<string>) {
   if (lng === 0 && lat === 0) return;
 
   if (seenKeys) {
-    const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
-    const mapId = feature.mapId ?? "";
-    const nameKey = name ? `${mapId}_name_${name}` : null;
-    const coordsKey = `${mapId}_coords_${lng.toFixed(4)}_${lat.toFixed(4)}`;
-
-    if ((nameKey && seenKeys.has(nameKey)) || seenKeys.has(coordsKey)) return;
-    if (nameKey) seenKeys.add(nameKey);
-    seenKeys.add(coordsKey);
+    const key = feature.id ? String(feature.id) : `${lng.toFixed(5)}_${lat.toFixed(5)}`;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
   }
 
   const layer = materializeTextLayer(feature);

@@ -28,6 +28,7 @@ export interface TextValidationEntry {
   selected: boolean;
   validationStatus?: ValidationStatus | `${ValidationStatus}`;
   coordinates?: [number, number];
+  originalCoordinates?: [number, number];
   suggestedPlace?: SuggestedPlace;
   useSuggestedPlace?: boolean;
   wordType?: WordType;
@@ -78,6 +79,7 @@ export function featureToValidationEntry(
         ? ValidationStatus.MANUAL_REVIEW
         : ValidationStatus.REJECTED),
     coordinates,
+    originalCoordinates: coordinates ? [coordinates[0], coordinates[1]] : undefined,
     suggestedPlace: feature.properties?.suggestedPlace,
     wordType,
     labelStyleSelection: feature.properties?.customLabelStyleId

@@ -268,6 +268,30 @@ describe("TextValidationModal", () => {
     expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
   });
 
+  it("updates coordinates to suggested place coordinates when adopted and restores original coordinates when toggled back", async () => {
+    const wrapper = mountModal([itemsWithImagePos[0]]);
+    const suggestionBtn = wrapper
+      .findAll("button")
+      .find((b: any) => b.text().includes("Paris"));
+    expect(suggestionBtn).toBeDefined();
+
+    // Adopt suggestion
+    await suggestionBtn!.trigger("click");
+    const confirmBtn = findButtonByText(wrapper, "Confirmer");
+    await confirmBtn!.trigger("click");
+    let emitted = wrapper.emitted("confirm");
+    expect(emitted).toBeDefined();
+    let confirmedItems = emitted![0][0] as TextValidationEntry[];
+    expect(confirmedItems[0].coordinates).toEqual([2.35, 48.85]);
+
+    // Toggle back
+    await suggestionBtn!.trigger("click");
+    await confirmBtn!.trigger("click");
+    emitted = wrapper.emitted("confirm");
+    confirmedItems = emitted![1][0] as TextValidationEntry[];
+    expect(confirmedItems[0].coordinates).toEqual([-82.35, 23.2]);
+  });
+
   it("uses a suggested province's type when accepted in one click", async () => {
     const wrapper = mountModal(
       [

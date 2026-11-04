@@ -46,6 +46,8 @@ export function applyCustomLabelStyleToFeature(
     formattedText,
   );
   const isBold = Boolean(style.bold || style.fontWeight === "bold");
+  const targetElementType =
+    style.mapElementType ?? styledFeature.properties.mapElementType ?? "point";
   return {
     ...styledFeature,
     name,
@@ -53,7 +55,7 @@ export function applyCustomLabelStyleToFeature(
       ...styledFeature.properties,
       name,
       labelText: formattedText,
-      mapElementType: "label",
+      mapElementType: targetElementType,
       rawType: "custom",
       type: "custom",
       customLabelStyleId: style.id,
@@ -64,10 +66,10 @@ export function applyCustomLabelStyleToFeature(
       fontWeight: isBold ? "bold" : "normal",
       bold: isBold,
       colorRgb: hexToRgb(style.color),
-      strokeColor: undefined,
-      fillOpacity: undefined,
-      strokeOpacity: undefined,
-      strokeWidth: undefined,
+      strokeColor: targetElementType === "label" ? undefined : styledFeature.properties.strokeColor,
+      fillOpacity: targetElementType === "label" ? undefined : styledFeature.properties.fillOpacity,
+      strokeOpacity: targetElementType === "label" ? undefined : styledFeature.properties.strokeOpacity,
+      strokeWidth: targetElementType === "label" ? undefined : styledFeature.properties.strokeWidth,
     },
   };
 }

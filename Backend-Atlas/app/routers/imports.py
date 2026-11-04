@@ -149,7 +149,11 @@ def _import_out(row: MapImport, map_obj: Map) -> Dict[str, Any]:
 async def _require_owned_map(
     session: AsyncSession, map_id: UUID, user_id: str
 ) -> Map:
-    map_obj = await get_owned_map(session, map_id, UUID(user_id))
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+    map_obj = await get_owned_map(session, map_id, user_uuid)
     if not map_obj:
         raise HTTPException(status_code=404, detail="Map not found or access denied")
     return map_obj

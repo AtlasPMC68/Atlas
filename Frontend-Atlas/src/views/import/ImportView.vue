@@ -242,6 +242,7 @@ import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 import StartFromCasePanel from "../../components/dev/StartFromCasePanel.vue";
 import TextValidationModal from "../../components/import/TextValidationModal.vue";
+import { useProjectLabelStyles } from "../../composables/useProjectLabelStyles";
 import {
   type TextValidationEntry,
   featureToValidationEntry,
@@ -262,46 +263,18 @@ const caseToComplete =
   isDevTest && typeof route.query.case === "string" ? route.query.case : null;
 
 const store = useImportSessionStore();
-const customLabelStyles = ref<CustomLabelStyle[]>([]);
+const {
+  customLabelStyles,
+  loadCustomLabelStyles: fetchCustomStyles,
+  saveCustomLabelStyles: persistCustomStyles,
+} = useProjectLabelStyles();
 
 async function loadCustomLabelStyles() {
-  if (!store.projectId) return;
-  const response = await apiFetch(
-    `/projects/${store.projectId}/label-styles`,
-  );
-  if (!response.ok) {
-    throw new Error(`Failed to load project label styles: ${response.status}`);
-  }
-  customLabelStyles.value = snakeToCamel(
-    await response.json(),
-  ) as CustomLabelStyle[];
+  await fetchCustomStyles(store.projectId);
 }
 
 async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
-  if (!store.projectId) {
-    showAlert("error", "Impossible d'enregistrer un style sans projet.");
-    return;
-  }
-  try {
-    const response = await apiFetch(
-      `/projects/${store.projectId}/label-styles`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(camelToSnake({ styles })),
-      },
-    );
-    if (!response.ok) {
-      throw new Error(`Failed to save project label styles: ${response.status}`);
-    }
-    customLabelStyles.value = snakeToCamel(
-      await response.json(),
-    ) as CustomLabelStyle[];
-    showAlert("success", "Styles de libellé enregistrés dans ce projet.");
-  } catch (error) {
-    console.error("Failed to save project label styles:", error);
-    showAlert("error", "Impossible d'enregistrer les styles de libellé.");
-  }
+  await persistCustomStyles(store.projectId, styles);
 }
 store.reset(mode, mapId);
 

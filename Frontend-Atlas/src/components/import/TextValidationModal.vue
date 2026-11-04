@@ -499,6 +499,7 @@ watch(
   (styles: CustomLabelStyle[] | undefined) => {
     if (styles) {
       localCustomStyles.value = [...styles];
+      applyUpdatedCustomStylesToItems(styles);
     }
   },
   { immediate: true },
@@ -587,6 +588,9 @@ function cloneEntries(entries: TextValidationEntry[]): TextValidationEntry[] {
   return entries.map((item) => ({
     ...item,
     coordinates: item.coordinates ? [item.coordinates[0], item.coordinates[1]] : undefined,
+    originalCoordinates: item.originalCoordinates
+      ? [item.originalCoordinates[0], item.originalCoordinates[1]]
+      : undefined,
   }));
 }
 
@@ -880,6 +884,9 @@ function toggleSuggestion(item: TextValidationEntry) {
   if (item.useSuggestedPlace) {
     item.useSuggestedPlace = false;
     item.text = item.originalText;
+    if (item.originalCoordinates) {
+      item.coordinates = [item.originalCoordinates[0], item.originalCoordinates[1]];
+    }
   } else {
     item.useSuggestedPlace = true;
     item.selected = true;
@@ -890,8 +897,13 @@ function toggleSuggestion(item: TextValidationEntry) {
     item.validationStatus = "accepted";
     if (item.suggestedPlace) {
       item.text = formatWordText(item.suggestedPlace.name, item.wordType);
+      item.coordinates = [
+        item.suggestedPlace.coordinates[0],
+        item.suggestedPlace.coordinates[1],
+      ];
     }
   }
+  hideToleranceRadius();
   updateMarkerStyle(item);
   focusItem(item, 4);
   adjustTooltipsAntiCollision();
@@ -1049,7 +1061,7 @@ function showToleranceRadius(item: TextValidationEntry) {
   const [sLon, sLat] = item.suggestedPlace.coordinates;
 
   radiusCircle = L.circle([lat, lon], {
-    radius: 75000,
+    radius: 150000,
     color: "#2563eb",
     weight: 1.5,
     dashArray: "5, 5",
@@ -1441,9 +1453,19 @@ function isFeatureCollection(value: unknown): value is FeatureCollection {
 function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
   return (items || []).map((item: TextValidationEntry) => {
     const selected = item.selected ?? true;
+    const coordinates = item.coordinates
+      ? ([item.coordinates[0], item.coordinates[1]] as [number, number])
+      : undefined;
+    const originalCoordinates = item.originalCoordinates
+      ? ([item.originalCoordinates[0], item.originalCoordinates[1]] as [number, number])
+      : coordinates
+      ? ([coordinates[0], coordinates[1]] as [number, number])
+      : undefined;
     return {
       ...item,
       selected,
+      coordinates,
+      originalCoordinates,
       labelStyleSelection:
         item.labelStyleSelection ??
         (item.customLabelStyleId
@@ -1459,12 +1481,7 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
   });
 }
 
-watch(
-  () => props.customLabelStyles,
-  (styles: CustomLabelStyle[]) => {
-    applyUpdatedCustomStylesToItems(styles);
-  },
-);
+
 
 function onDocumentClick(e: MouseEvent) {
   if (!props.isOpen) return;

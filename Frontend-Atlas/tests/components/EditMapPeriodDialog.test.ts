@@ -70,8 +70,8 @@ describe("EditMapPeriodDialog", () => {
       {
         mapId: "map-123",
         title: "Nouvelle-France 1750",
-        startDate: "1750-01-01T00:00:00.000Z",
-        endDate: "1760-12-31T23:59:59.999Z",
+        startDate: "1750-01-01",
+        endDate: "1760-12-31",
         exactDate: false,
       },
     ]);

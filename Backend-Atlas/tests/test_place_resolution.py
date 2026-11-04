@@ -344,6 +344,20 @@ def test_find_nearby_candidate_place():
     assert match["name"] in ("Montréal", "Montreal")
 
 
+def test_find_nearby_candidate_place_geo_entity():
+    coords = [-73.7073, 46.3688]
+    match = find_nearby_candidate_place("Province de Quebe", coords, radius_km=150.0, min_similarity=0.80)
+    assert match is not None
+    assert "Québec" in (match.get("name"), *match.get("aliases", []))
+
+
+def test_find_nearby_candidate_place_out_of_radius():
+    # Montreal coords, but searching for Paris
+    coords = [-73.5673, 45.5017]
+    match = find_nearby_candidate_place("Paris", coords, radius_km=50.0, min_similarity=0.90)
+    assert match is None
+
+
 # --- 6. OCR Multiline Label Matching ---
 
 

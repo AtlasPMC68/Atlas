@@ -378,3 +378,32 @@ def test_update_project_label_styles_rejects_duplicate_ids():
     assert "unique" in error.value.detail.lower()
     session.execute.assert_not_awaited()
 
+
+def test_get_project_label_styles_returns_empty_list_when_column_is_null():
+    project_id = uuid4()
+    project_obj = SimpleNamespace(id=project_id, label_styles=None)
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: project_obj))
+    )
+
+    result = asyncio.run(
+        projects_router.get_project_label_styles(
+            project_id,
+            str(uuid4()),
+            session,
+        )
+    )
+
+    assert result == []
+
+
+def test_require_owned_map_rejects_invalid_user_uuid():
+    map_id = uuid4()
+    session = SimpleNamespace()
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router._require_owned_map(session, map_id, "invalid-user-uuid"))
+
+    assert error.value.status_code == 401
+
+

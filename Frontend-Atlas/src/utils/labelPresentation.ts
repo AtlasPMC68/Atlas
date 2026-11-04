@@ -287,7 +287,7 @@ export function getLabelPresentation(
       : rawText
     : formatWordText(rawText, wordType, typo.textTransform);
   const html = formatLabelHtml(formattedText);
-  const mapElementType = customStyle ? "label" : taxonomy.mapElementType;
+  const mapElementType = customStyle?.mapElementType ?? taxonomy.mapElementType;
 
   const inlineStyles: string[] = [];
   if (typo.isItalic) inlineStyles.push("font-style: italic");
@@ -331,6 +331,7 @@ function parseCustomStyle(value: unknown): {
   color: string;
   priority: number;
   minZoom: number;
+  mapElementType?: "point" | "label";
 } | null {
   if (!value || typeof value !== "object") return null;
   const style = value as Record<string, unknown>;
@@ -348,6 +349,10 @@ function parseCustomStyle(value: unknown): {
     style.fontWeight === "bold" ||
     Boolean(style.bold) ||
     (style.fontWeight !== "normal" && style.bold === true);
+  const mapElementType =
+    style.mapElementType === "point" || style.mapElementType === "label"
+      ? style.mapElementType
+      : undefined;
   return {
     id: typeof style.id === "string" ? style.id : undefined,
     name: typeof style.name === "string" ? style.name : undefined,
@@ -358,5 +363,6 @@ function parseCustomStyle(value: unknown): {
     color: style.color,
     priority: typeof style.priority === "number" ? style.priority : 30,
     minZoom: typeof style.minZoom === "number" ? style.minZoom : 1,
+    mapElementType,
   };
 }

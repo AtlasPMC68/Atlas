@@ -1,7 +1,7 @@
 /** Parse a YYYY-MM-DD ISO string and return the year, or null if invalid. */
 export function toYear(value: string | null | undefined): number | null {
   if (!value) return null;
-  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
+  const match = /^(\d{4})-\d{2}-\d{2}(?:T.*)?$/.exec(value);
   if (!match) return null;
   const year = Number(match[1]);
   return Number.isFinite(year) ? year : null;
@@ -10,7 +10,7 @@ export function toYear(value: string | null | undefined): number | null {
 /** Parse a YYYY-MM-DD ISO string into a UTC Date, or null if invalid. */
 export function parseIsoDateUtc(value: string | null | undefined): Date | null {
   if (!value) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(value);
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
