@@ -204,6 +204,59 @@ export interface LabelPresentationModel extends LabelStyle {
   styleAttribute: string;
 }
 
+export interface DerivedLabelTypography {
+  isUppercase: boolean;
+  isItalic: boolean;
+  isBold: boolean;
+  color: string;
+  sizePx: number;
+  textTransform: "uppercase" | "none";
+  fontStyle: "italic" | "normal";
+  fontWeight: "bold" | "normal";
+}
+
+export function resolveLabelTypography(options: {
+  wordType?: string | null;
+  customLabelStyle?: CustomLabelStyle | Partial<LabelStyle> | null;
+  color?: string | null;
+  defaultSizePx?: number;
+}): DerivedLabelTypography {
+  const norm = normalizeWordType(options.wordType ?? undefined);
+  const taxonomy = WORD_TYPE_TAXONOMY[norm];
+  const custom = options.customLabelStyle;
+
+  const isUppercase = (custom?.textTransform ?? taxonomy?.textTransform) === "uppercase";
+  const isItalic = (custom?.fontStyle ?? taxonomy?.fontStyle) === "italic";
+  const isBold = custom
+    ? custom.fontWeight === "bold" || Boolean(custom.bold)
+    : true;
+  const color = custom?.color || options.color || "#000000";
+  const sizePx = custom?.sizePx ?? taxonomy?.sizePx ?? options.defaultSizePx ?? 12;
+
+  return {
+    isUppercase,
+    isItalic,
+    isBold,
+    color,
+    sizePx,
+    textTransform: isUppercase ? "uppercase" : "none",
+    fontStyle: isItalic ? "italic" : "normal",
+    fontWeight: isBold ? "bold" : "normal",
+  };
+}
+
+export function getEntryTypography(entry: {
+  wordType?: string;
+  customLabelStyle?: CustomLabelStyle | Partial<LabelStyle> | null;
+  color?: string | null;
+}): DerivedLabelTypography {
+  return resolveLabelTypography({
+    wordType: entry.wordType,
+    customLabelStyle: entry.customLabelStyle,
+    color: entry.color,
+  });
+}
+
 export function getLabelPresentation(
   feature: Feature | Record<string, unknown>,
   customText?: string,
@@ -216,27 +269,30 @@ export function getLabelPresentation(
   const rawText =
     customText ??
     String(props.labelText ?? props.name ?? typedFeature.name ?? "");
-  const isUppercase = (customStyle?.textTransform ?? taxonomy.textTransform) === "uppercase";
-  const isItalic = (customStyle?.fontStyle ?? taxonomy.fontStyle) === "italic";
-  const isBold = customStyle
-    ? customStyle.fontWeight === "bold"
-    : true;
-  const formattedText = customStyle
-    ? isUppercase
-      ? rawText.toUpperCase()
-      : rawText
-    : formatWordText(rawText, wordType, isUppercase ? "uppercase" : "none");
-  const html = formatLabelHtml(formattedText);
-  const sizePx = customStyle?.sizePx ?? taxonomy.sizePx;
-  const mapElementType = customStyle ? "label" : taxonomy.mapElementType;
+
   const colorCss =
     customStyle?.color ||
     colorRgbToCss(props.colorRgb) ||
     (typeof props.color === "string" ? props.color : "#000000");
+
+  const typo = resolveLabelTypography({
+    wordType,
+    customLabelStyle: customStyle as CustomLabelStyle,
+    color: colorCss,
+  });
+
+  const formattedText = customStyle
+    ? typo.isUppercase
+      ? rawText.toUpperCase()
+      : rawText
+    : formatWordText(rawText, wordType, typo.textTransform);
+  const html = formatLabelHtml(formattedText);
+  const mapElementType = customStyle ? "label" : taxonomy.mapElementType;
+
   const inlineStyles: string[] = [];
-  if (isItalic) inlineStyles.push("font-style: italic");
-  inlineStyles.push(`font-weight: ${isBold ? "bold" : "normal"}`);
-  if (isUppercase) inlineStyles.push("text-transform: uppercase");
+  if (typo.isItalic) inlineStyles.push("font-style: italic");
+  inlineStyles.push(`font-weight: ${typo.isBold ? "bold" : "normal"}`);
+  if (typo.isUppercase) inlineStyles.push("text-transform: uppercase");
 
   return {
     id: customStyle?.id ?? wordType,
@@ -246,18 +302,18 @@ export function getLabelPresentation(
     html,
     wordType,
     mapElementType,
-    sizePx,
-    fontStyle: isItalic ? "italic" : "normal",
-    fontWeight: isBold ? "bold" : "normal",
-    bold: isBold,
-    textTransform: isUppercase ? "uppercase" : "none",
-    isUppercase,
-    isItalic,
-    isBold,
+    sizePx: typo.sizePx,
+    fontStyle: typo.fontStyle,
+    fontWeight: typo.fontWeight,
+    bold: typo.isBold,
+    textTransform: typo.textTransform,
+    isUppercase: typo.isUppercase,
+    isItalic: typo.isItalic,
+    isBold: typo.isBold,
     priority: customStyle?.priority ?? taxonomy.priority,
     minZoom: customStyle?.minZoom ?? taxonomy.minZoom,
-    color: colorCss,
-    colorCss,
+    color: typo.color,
+    colorCss: typo.color,
     styleAttribute: inlineStyles.length
       ? ` style="${inlineStyles.join("; ")}"`
       : "",

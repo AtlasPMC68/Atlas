@@ -86,8 +86,9 @@ export function removeCustomLabelStyleFromFeature(feature: Feature): Feature {
     feature.properties.labelText ?? feature.properties.name,
   );
   const properties = { ...restored.properties };
-  delete properties.customLabelStyleId;
-  delete properties.customLabelStyle;
+  properties.customLabelStyleId = null as any;
+  properties.customLabelStyle = null as any;
+  (properties as Record<string, unknown>).custom_label_style_id = null;
   delete properties.customLabelStyleFallbackWordType;
   return { ...restored, properties };
 }
@@ -166,8 +167,9 @@ export function coerceEditedFeature(
     ...styledFeature,
     properties: {
       ...styledFeature.properties,
-      customLabelStyleId: undefined,
-      customLabelStyle: undefined,
+      customLabelStyleId: null as any,
+      customLabelStyle: null as any,
+      custom_label_style_id: null,
       colorRgb: hexToRgb(payload.colorHex),
       strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),
       fillOpacity: isLabel ? undefined : payload.fillOpacity,

@@ -292,3 +292,89 @@ def test_project_timeline_excludes_maps_with_an_unfinished_import():
     assert response == []
     assert "map_imports" in query_sql
     assert "not in" in query_sql
+
+
+def test_delete_reference_image_clears_field_and_commits():
+    map_id = uuid4()
+    map_obj = Map(id=map_id, reference_image=b"binary-image-data")
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: map_obj)),
+        commit=AsyncMock(),
+    )
+
+    response = asyncio.run(
+        imports_router.delete_reference_image(map_id, str(uuid4()), session)
+    )
+
+    assert response == {"detail": "Reference image deleted"}
+    assert map_obj.reference_image is None
+    session.commit.assert_awaited_once()
+
+
+def test_update_map_metadata_rejects_non_owner():
+    project_id = uuid4()
+    map_id = uuid4()
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: None)),
+        commit=AsyncMock(),
+    )
+    request = MapImportRequest(
+        title="Carte",
+        start_date="1850-01-01",
+        end_date="1860-01-01",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.update_map_metadata(
+                project_id,
+                map_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+
+    assert error.value.status_code == 404
+
+
+def test_update_project_label_styles_rejects_duplicate_ids():
+    from app.schemas.label_styles import LabelStyle, LabelStylesRequest
+
+    project_id = uuid4()
+    session = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock())
+    request = LabelStylesRequest(
+        styles=[
+            LabelStyle(
+                id="style-duplicate",
+                name="Style 1",
+                size_px=14,
+                font_style="normal",
+                text_transform="none",
+                color="#ff0000",
+            ),
+            LabelStyle(
+                id="style-duplicate",
+                name="Style 2",
+                size_px=16,
+                font_style="italic",
+                text_transform="uppercase",
+                color="#00ff00",
+            ),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.update_project_label_styles(
+                project_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+
+    assert error.value.status_code == 400
+    assert "unique" in error.value.detail.lower()
+    session.execute.assert_not_awaited()
+

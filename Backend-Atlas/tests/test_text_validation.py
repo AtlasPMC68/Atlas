@@ -1,7 +1,7 @@
 """Tests for text validation categorization and georeferencing."""
 
 from app.tasks import _categorized_text_features_from_ocr
-from app.utils.cities_validation import (
+from app.utils.place_resolution import (
     MATCHING_CONFIG,
     find_nearby_candidate_place,
 )

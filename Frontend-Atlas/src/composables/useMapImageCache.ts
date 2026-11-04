@@ -7,9 +7,11 @@ export function cacheOriginalMapImage(mapId: string, url: string): void {
   if (mapId && url) {
     mapImageCache.set(mapId, url);
     try {
-      // If it's a blob URL, it won't persist across sessions if stored as-is in localStorage.
-      // But data URIs and HTTP/S URLs persist across sessions.
-      if (!url.startsWith("blob:")) {
+      // Only persist lightweight HTTP/HTTPS URLs across sessions to prevent localStorage quota exhaustion.
+      // Large binary payloads (blobs, data URIs) are kept only in the in-memory cache and backed by the server.
+      const isHttpUrl = url.startsWith("http://") || url.startsWith("https://");
+      const isShortUrl = url.length < 2048 && !url.startsWith("blob:") && !url.startsWith("data:");
+      if (isHttpUrl || isShortUrl) {
         localStorage.setItem(`${STORAGE_PREFIX}${mapId}`, url);
       }
     } catch {

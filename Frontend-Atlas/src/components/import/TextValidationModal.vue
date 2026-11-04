@@ -422,15 +422,18 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
 import type { CSSProperties } from "vue";
-import type L from "leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import type { FeatureCollection } from "geojson";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
 import {
   getCustomStyleObject,
+  getEntryTypography,
   getWordTypeOptionLabel,
   getWordTypeOptionStyle,
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
+import { resolveClusteredTooltipDirections } from "../../utils/labelCollision";
 import {
   TrashIcon,
   PhotoIcon,
@@ -444,13 +447,17 @@ import {
   WORD_TYPE_STYLES,
   formatWordText,
   normalizeWordType,
-  WORD_TYPE_TAXONOMY,
 } from "../../utils/wordStyles";
 import { removeOriginalMapImage } from "../../composables/useMapImageCache";
 import { useMapReferenceImage } from "../../composables/useMapReferenceImage";
 import { showAlert } from "../../composables/useAlert";
 
 export type { TextValidationEntry };
+
+/** GeoJSON coordinates convention: [longitude, latitude] */
+export type GeoJsonCoordinates = [longitude: number, latitude: number];
+/** Leaflet coordinates convention: [latitude, longitude] */
+export type LeafletLatLng = [latitude: number, longitude: number];
 
 const props = withDefaults(
   defineProps<{
@@ -537,7 +544,6 @@ const imgZoom = ref(1);
 
 let leafletMap: L.Map | null = null;
 let landLayer: L.GeoJSON | null = null;
-let cachedLeaflet: typeof import("leaflet") | null = null;
 let cachedBasemapGeoJSON: FeatureCollection | null = null;
 const markerMap = new Map<string, L.Marker>();
 
@@ -581,18 +587,6 @@ function cloneEntries(entries: TextValidationEntry[]): TextValidationEntry[] {
   return entries.map((item) => ({
     ...item,
     coordinates: item.coordinates ? [item.coordinates[0], item.coordinates[1]] : undefined,
-    suggestedPlace: item.suggestedPlace
-      ? {
-          ...item.suggestedPlace,
-          coordinates: [
-            item.suggestedPlace.coordinates[0],
-            item.suggestedPlace.coordinates[1],
-          ],
-        }
-      : undefined,
-    customLabelStyle: item.customLabelStyle
-      ? { ...item.customLabelStyle }
-      : undefined,
   }));
 }
 
@@ -857,15 +851,10 @@ function onItemLabelStyleChange(item: TextValidationEntry) {
 }
 
 function itemRightInputStyle(item: TextValidationEntry): CSSProperties {
-  const customStyle = item.customLabelStyle;
-  const taxonomy = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
-  const isUppercase =
-    (customStyle?.textTransform ?? taxonomy?.textTransform) === "uppercase";
-  const isItalic =
-    (customStyle?.fontStyle ?? taxonomy?.fontStyle) === "italic";
+  const typo = getEntryTypography(item);
   return {
-    textTransform: isUppercase ? "uppercase" : "none",
-    fontStyle: isItalic ? "italic" : "normal",
+    textTransform: typo.textTransform,
+    fontStyle: typo.fontStyle,
   };
 }
 
@@ -877,7 +866,7 @@ function onTextInput(item: TextValidationEntry) {
   item.useSuggestedPlace = false;
   item.selected = true;
   item.validationStatus = "accepted";
-  updateMarkerStyle(item);
+  updateMarkerStyle(item, true);
   showToleranceRadius(item);
 
   if (typingTimeout) clearTimeout(typingTimeout);
@@ -957,7 +946,7 @@ function getMarkerHtml(item: TextValidationEntry): string {
   return `<div class="relative validation-point-dot" style="width: 18px; height: 18px; border-radius: 50%; background-color: ${fillColor}; border: ${strokeWidth} solid ${strokeColor}; opacity: ${opacity}; box-shadow: 0 2px 5px rgba(0,0,0,0.35); cursor: grab; transition: transform 0.1s ease;">${badgeHtml}</div>`;
 }
 
-function createMarkerIcon(L: typeof import("leaflet"), item: TextValidationEntry) {
+function createMarkerIcon(item: TextValidationEntry) {
   return L.divIcon({
     className: "custom-validation-marker",
     html: getMarkerHtml(item),
@@ -1004,7 +993,7 @@ function getOptimalSuggestionTooltipPlacement(
 }
 
 function preventSuggestionTooltipOverlap(item: TextValidationEntry) {
-  if (!suggestionPreviewMarker || !cachedLeaflet || !leafletMap) return;
+  if (!suggestionPreviewMarker || !leafletMap) return;
   const origMarker = markerMap.get(item.id);
   const origTooltipEl = origMarker?.getTooltip()?.getElement();
   const suggTooltipEl = suggestionPreviewMarker.getTooltip()?.getElement();
@@ -1038,7 +1027,7 @@ function preventSuggestionTooltipOverlap(item: TextValidationEntry) {
       const tooltip = suggestionPreviewMarker.getTooltip();
       if (tooltip) {
         tooltip.options.direction = fallbackDir;
-        tooltip.options.offset = cachedLeaflet.point(offset[0], offset[1]);
+        tooltip.options.offset = L.point(offset[0], offset[1]);
         if (suggestionPreviewMarker.isTooltipOpen?.()) {
           suggestionPreviewMarker.closeTooltip();
           suggestionPreviewMarker.openTooltip();
@@ -1051,7 +1040,7 @@ function preventSuggestionTooltipOverlap(item: TextValidationEntry) {
 }
 
 function showToleranceRadius(item: TextValidationEntry) {
-  if (!leafletMap || !cachedLeaflet || !item.suggestedPlace) return;
+  if (!leafletMap || !item.suggestedPlace) return;
   hideToleranceRadius();
 
   const coords = getItemCoords(item);
@@ -1059,7 +1048,7 @@ function showToleranceRadius(item: TextValidationEntry) {
   const [lon, lat] = coords;
   const [sLon, sLat] = item.suggestedPlace.coordinates;
 
-  radiusCircle = cachedLeaflet.circle([lat, lon], {
+  radiusCircle = L.circle([lat, lon], {
     radius: 75000,
     color: "#2563eb",
     weight: 1.5,
@@ -1068,7 +1057,7 @@ function showToleranceRadius(item: TextValidationEntry) {
     fillOpacity: 0.12,
   }).addTo(leafletMap);
 
-  const previewIcon = cachedLeaflet.divIcon({
+  const previewIcon = L.divIcon({
     className: "custom-suggestion-preview-marker",
     html: `<div style="width: 16px; height: 16px; border-radius: 50%; background-color: #059669; border: 2px solid #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"></div>`,
     iconSize: [16, 16],
@@ -1077,7 +1066,7 @@ function showToleranceRadius(item: TextValidationEntry) {
 
   const placement = getOptimalSuggestionTooltipPlacement(lat, lon, sLat, sLon);
 
-  suggestionPreviewMarker = cachedLeaflet.marker([sLat, sLon], { icon: previewIcon }).addTo(leafletMap);
+  suggestionPreviewMarker = L.marker([sLat, sLon], { icon: previewIcon }).addTo(leafletMap);
   const suggestionTooltip = document.createElement("span");
   const suggestionName = document.createElement("strong");
   suggestionName.textContent = item.suggestedPlace.name;
@@ -1085,13 +1074,13 @@ function showToleranceRadius(item: TextValidationEntry) {
   suggestionPreviewMarker.bindTooltip(suggestionTooltip, {
     permanent: true,
     direction: placement.direction,
-    offset: cachedLeaflet.point(placement.offset[0], placement.offset[1]),
+    offset: L.point(placement.offset[0], placement.offset[1]),
     className: "leaflet-tooltip-suggestion",
   });
 
   nextTick(() => preventSuggestionTooltipOverlap(item));
 
-  connectionLine = cachedLeaflet.polyline([[lat, lon], [sLat, sLon]], {
+  connectionLine = L.polyline([[lat, lon], [sLat, sLon]], {
     color: "#059669",
     weight: 1.5,
     dashArray: "3, 3",
@@ -1115,15 +1104,12 @@ function hideToleranceRadius() {
   }
 }
 
-function makeDraggableMarker(
-  L: typeof import("leaflet"),
-  item: TextValidationEntry,
-): L.Marker {
+function makeDraggableMarker(item: TextValidationEntry): L.Marker {
   const [lon, lat] = getItemCoords(item) ?? [0, 0];
 
   const marker = L.marker([lat, lon], {
     draggable: true,
-    icon: createMarkerIcon(L, item),
+    icon: createMarkerIcon(item),
   });
 
   const isFocused = item.id === highlightedId.value;
@@ -1184,16 +1170,35 @@ function makeDraggableMarker(
   return marker;
 }
 
-function updateMarkerStyle(item: TextValidationEntry) {
+function updateMarkerStyle(item: TextValidationEntry, textOnly = false) {
   const marker = markerMap.get(item.id);
-  if (!marker || !cachedLeaflet) return;
+  if (!marker) return;
 
   const coords = getItemCoords(item);
-  if (coords && (coords[0] !== 0 || coords[1] !== 0)) {
+  if (!textOnly && coords && (coords[0] !== 0 || coords[1] !== 0)) {
     marker.setLatLng([coords[1], coords[0]]);
   }
 
-  marker.setIcon(createMarkerIcon(cachedLeaflet, item));
+  const markerEl = typeof marker.getElement === "function" ? marker.getElement() : null;
+  if (!textOnly || !markerEl) {
+    marker.setIcon(createMarkerIcon(item));
+  } else {
+    const dotEl = markerEl.querySelector(".validation-point-dot") as HTMLElement | null;
+    if (dotEl) {
+      const isSuggested = Boolean(item.useSuggestedPlace);
+      const isMovingOrSelected =
+        highlightedId.value === item.id || isDraggingId.value === item.id;
+      dotEl.style.backgroundColor = isSuggested ? "#059669" : "#2563eb";
+      dotEl.style.borderColor = isMovingOrSelected
+        ? "#f59e0b"
+        : isSuggested
+          ? "#047857"
+          : "#1d4ed8";
+      dotEl.style.borderWidth = isMovingOrSelected ? "3px" : "2px";
+      dotEl.style.opacity = item.selected || isMovingOrSelected ? "1" : "0.45";
+    }
+  }
+
   marker.setTooltipContent(createTextTooltip(item));
 
   const isFocused = item.id === highlightedId.value;
@@ -1217,24 +1222,15 @@ function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
 
   const isFocused = item.id === highlightedId.value;
   if (item.selected || isFocused) {
-    const customStyle = item.customLabelStyle;
-    const taxonomy = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
-    const isUppercase =
-      (customStyle?.textTransform ?? taxonomy?.textTransform) === "uppercase";
-    const isItalic =
-      (customStyle?.fontStyle ?? taxonomy?.fontStyle) === "italic";
-    const isBold = customStyle
-      ? customStyle.fontWeight === "bold" || Boolean(customStyle.bold)
-      : true;
-    const color = customStyle?.color || "#000000";
-    const size = Math.min(customStyle?.sizePx ?? taxonomy?.sizePx ?? 12, 14);
+    const typo = getEntryTypography(item);
+    const size = Math.min(typo.sizePx, 14);
 
-    content.style.color = color;
+    content.style.color = typo.color;
     content.style.fontSize = `${size}px`;
-    content.style.fontStyle = isItalic ? "italic" : "normal";
-    content.style.fontWeight = isBold ? "bold" : "normal";
-    content.style.textTransform = isUppercase ? "uppercase" : "none";
-    content.textContent = isUppercase ? item.text.toUpperCase() : item.text;
+    content.style.fontStyle = typo.fontStyle;
+    content.style.fontWeight = typo.fontWeight;
+    content.style.textTransform = typo.textTransform;
+    content.textContent = typo.isUppercase ? item.text.toUpperCase() : item.text;
   } else {
     content.style.color = "#6b7280";
     content.style.fontSize = "11px";
@@ -1259,7 +1255,7 @@ watch(highlightedId, (newId: string | null, oldId: string | null) => {
 });
 
 function renderMapMarkers(shouldFitBounds = true) {
-  if (!leafletMap || !cachedLeaflet) return;
+  if (!leafletMap) return;
 
   const currentItemIds = new Set(allItems.value.map((i) => i.id));
   for (const [id, marker] of markerMap.entries()) {
@@ -1279,7 +1275,7 @@ function renderMapMarkers(shouldFitBounds = true) {
 
     let marker = markerMap.get(item.id);
     if (!marker) {
-      marker = makeDraggableMarker(cachedLeaflet, item);
+      marker = makeDraggableMarker(item);
       marker.addTo(leafletMap);
       markerMap.set(item.id, marker);
     } else {
@@ -1300,62 +1296,40 @@ function renderMapMarkers(shouldFitBounds = true) {
 
 function adjustTooltipsAntiCollision() {
   const currentMap = leafletMap;
-  if (!currentMap || !cachedLeaflet) return;
+  if (!currentMap) return;
 
-  const entries = allItems.value
+  const validEntries = allItems.value
     .map((item: TextValidationEntry) => {
       const marker = markerMap.get(item.id);
       const latlng = marker?.getLatLng();
       if (!marker || !latlng || (latlng.lat === 0 && latlng.lng === 0)) return null;
       try {
-        return { id: item.id, marker, pt: currentMap.latLngToContainerPoint(latlng) };
+        const pt = currentMap.latLngToContainerPoint(latlng);
+        return { id: item.id, marker, x: pt.x, y: pt.y };
       } catch {
         return null;
       }
     })
-    .filter(Boolean) as { id: string; marker: L.Marker; pt: L.Point }[];
+    .filter(Boolean) as { id: string; marker: L.Marker; x: number; y: number }[];
 
-  const directions: ("top" | "bottom" | "right" | "left")[] = ["top", "bottom", "right", "left"];
-  const assigned = new Set<string>();
-
-  for (let i = 0; i < entries.length; i++) {
-    const curr = entries[i];
-    if (assigned.has(curr.id)) continue;
-
-    const cluster = [curr];
-    assigned.add(curr.id);
-
-    for (let j = i + 1; j < entries.length; j++) {
-      const other = entries[j];
-      if (!assigned.has(other.id) && Math.hypot(curr.pt.x - other.pt.x, curr.pt.y - other.pt.y) < 70) {
-        cluster.push(other);
-        assigned.add(other.id);
+  const placements = resolveClusteredTooltipDirections(validEntries);
+  for (const entry of validEntries) {
+    const placement = placements.get(entry.id);
+    if (!placement) continue;
+    const tooltip = entry.marker.getTooltip();
+    if (tooltip) {
+      tooltip.options.direction = placement.direction;
+      tooltip.options.offset = L.point(placement.offset[0], placement.offset[1]);
+      if (entry.marker.isTooltipOpen?.()) {
+        entry.marker.closeTooltip();
+        entry.marker.openTooltip();
       }
     }
-
-    cluster.forEach((entry, idx) => {
-      const dir = directions[idx % directions.length];
-      const offset: [number, number] =
-        dir === "top" ? [0, -12] : dir === "bottom" ? [0, 12] : dir === "right" ? [14, 0] : [-14, 0];
-      const tooltip = entry.marker.getTooltip();
-      if (tooltip && cachedLeaflet) {
-        tooltip.options.direction = dir;
-        tooltip.options.offset = cachedLeaflet.point(offset[0], offset[1]);
-        if (entry.marker.isTooltipOpen?.()) {
-          entry.marker.closeTooltip();
-          entry.marker.openTooltip();
-        }
-      }
-    });
   }
 }
 
 async function initMap() {
   if (!mapContainer.value || leafletMap) return;
-
-  const L = await import("leaflet");
-  await import("leaflet/dist/leaflet.css");
-  cachedLeaflet = L;
 
   const map = L.map(mapContainer.value, {
     center: [20, 0],
@@ -1392,8 +1366,8 @@ async function initMap() {
     const lat = Number(e.latlng.lat.toFixed(5));
 
     let marker = markerMap.get(item.id);
-    if (!marker && cachedLeaflet && leafletMap) {
-      marker = makeDraggableMarker(cachedLeaflet, item);
+    if (!marker && leafletMap) {
+      marker = makeDraggableMarker(item);
       marker.addTo(leafletMap);
       markerMap.set(item.id, marker);
     }
@@ -1456,7 +1430,6 @@ function destroyMap() {
     leafletMap = null;
   }
   markerMap.clear();
-  cachedLeaflet = null;
 }
 
 function isFeatureCollection(value: unknown): value is FeatureCollection {

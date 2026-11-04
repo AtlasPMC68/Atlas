@@ -31,17 +31,19 @@ from app.models.map_import import (
     MapImport,
 )
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
-from app.utils.cities_validation import (
+from app.utils.place_nomenclature import (
     DEFAULT_STYLE,
-    MATCHING_CONFIG,
+    GEOGRAPHIC_PREFIX_TYPES,
     STYLES_MAP,
-    haversine_distance_km,
-    match_ocr_label,
-    find_nearby_candidate_place,
+    _normalize,
     is_exploitable_text,
     is_geographic_prefix_only,
-    GEOGRAPHIC_PREFIX_TYPES,
-    _normalize,
+)
+from app.utils.place_resolution import (
+    MATCHING_CONFIG,
+    find_nearby_candidate_place,
+    haversine_distance_km,
+    match_ocr_label,
 )
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
@@ -614,7 +616,7 @@ def _categorized_text_features_from_ocr(
                 else [entity["lon"], entity["lat"]]
             )
 
-        collections.append(
+            collections.append(
                 _make_text_feature(
                     name=display_name,
                     original_text=raw_text,

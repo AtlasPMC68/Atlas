@@ -36,7 +36,6 @@ export function updateMapLabelVisibility(
   if (labels.length === 0) return;
 
   labels.forEach((label) => {
-    label.style.top = "0px";
     if (label.style.display === "none") label.style.display = "";
     label.style.visibility = "";
     label.style.pointerEvents = "";

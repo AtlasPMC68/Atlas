@@ -10,12 +10,12 @@ import numpy as np
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, Body
 from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
-from app.models.map_import import MapImport
+from app.models.map_import import EXTRACTION_ACTIVE, MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
@@ -605,10 +605,15 @@ async def get_project_maps(
             status_code=404, detail="Project not found or access denied"
         )
 
+    active_imports = (
+        select(MapImport.map_id)
+        .where(MapImport.extraction_state.in_(EXTRACTION_ACTIVE))
+    )
     maps_result = await session.execute(
         select(Map)
+        .options(defer(Map.reference_image), defer(Map.georef_inputs))
         .where(Map.project_id == project_uuid)
-        .where(Map.id.not_in(select(MapImport.map_id)))
+        .where(Map.id.not_in(active_imports))
         .order_by(Map.start_date.asc(), Map.created_at.asc())
     )
     maps = maps_result.scalars().all()

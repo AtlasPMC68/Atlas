@@ -107,7 +107,7 @@ const isValid = computed(() => {
   return !!title.value.trim() && !!start && !!end && start <= end;
 });
 
-function open(period: MapPeriod) {
+function open(period: MapPeriod | (Omit<MapPeriod, "color"> & { color?: string })) {
   mapId.value = period.id;
   title.value = period.title;
   startDate.value = period.startDate ?? "";

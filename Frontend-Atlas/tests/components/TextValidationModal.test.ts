@@ -33,6 +33,7 @@ vi.mock("leaflet", () => {
     isTooltipOpen: vi.fn(() => true),
     on: vi.fn().mockReturnThis(),
     getLatLng: vi.fn(() => ({ lat: 0, lng: 0 })),
+    getElement: vi.fn(() => document.createElement("div")),
     openTooltip: vi.fn(),
     setLatLng: vi.fn(),
   }));
@@ -43,6 +44,7 @@ vi.mock("leaflet", () => {
     bindTooltip: vi.fn().mockReturnThis(),
     on: vi.fn().mockReturnThis(),
     getLatLng: vi.fn(() => ({ lat: 0, lng: 0 })),
+    getElement: vi.fn(() => document.createElement("div")),
     openTooltip: vi.fn(),
     setLatLng: vi.fn(),
   }));

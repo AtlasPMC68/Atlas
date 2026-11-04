@@ -127,3 +127,59 @@ export function selectVisibleLabels(
 
   return visible;
 }
+
+export interface TooltipPlacementPoint {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export type TooltipDirection = "top" | "bottom" | "right" | "left";
+
+export interface TooltipPlacementResult {
+  direction: TooltipDirection;
+  offset: [number, number];
+}
+
+export function resolveClusteredTooltipDirections(
+  points: TooltipPlacementPoint[],
+  clusterDistance = 70,
+): Map<string, TooltipPlacementResult> {
+  const directions: TooltipDirection[] = ["top", "bottom", "right", "left"];
+  const results = new Map<string, TooltipPlacementResult>();
+  const assigned = new Set<string>();
+
+  for (let i = 0; i < points.length; i++) {
+    const curr = points[i];
+    if (assigned.has(curr.id)) continue;
+
+    const cluster = [curr];
+    assigned.add(curr.id);
+
+    for (let j = i + 1; j < points.length; j++) {
+      const other = points[j];
+      if (
+        !assigned.has(other.id) &&
+        Math.hypot(curr.x - other.x, curr.y - other.y) < clusterDistance
+      ) {
+        cluster.push(other);
+        assigned.add(other.id);
+      }
+    }
+
+    cluster.forEach((entry, idx) => {
+      const dir = directions[idx % directions.length];
+      const offset: [number, number] =
+        dir === "top"
+          ? [0, -12]
+          : dir === "bottom"
+          ? [0, 12]
+          : dir === "right"
+          ? [14, 0]
+          : [-14, 0];
+      results.set(entry.id, { direction: dir, offset });
+    });
+  }
+
+  return results;
+}
