@@ -2,9 +2,12 @@ name: CI - Atlas Project Tests
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'AP-*'
   pull_request:
-    
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:

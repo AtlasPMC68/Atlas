@@ -314,74 +314,85 @@
           </div>
         </div>
 
+        <div
+          class="flex items-center gap-2"
+          v-if="!editDraft.customLabelStyleId"
+        >
+          <label class="label">Couleur :</label>
+          <input
+            v-model="editDraft.colorHex"
+            type="color"
+            class="h-9 w-8 cursor-pointer bg-base-100"
+          />
+        </div>
+
         <p
-          v-if="!isEditingLabel"
+          v-if="isEditingPoint"
           class="text-xs text-base-content/60 italic"
         >
           Ces réglages suivants s'appliquent au symbole du point qui représente la ville
           sur la carte.
         </p>
         <div
-          class="flex gap-2"
-          v-if="!isEditingLabel"
+          v-if="isEditingPoint"
+          class="grid grid-cols-2 gap-4 items-center"
         >
-          <div
-            class="flex flex-col gap-2 w-full"
-          >
-            <label class="label">Opacité</label>
-            <input v-model="editDraft.fillOpacity" type="number" class="input" />
+          <!-- Contrôles du point (alignés à gauche) -->
+          <div class="flex flex-col gap-2">
+            <div class="flex flex-col gap-1">
+              <label class="label py-0 text-sm">Opacité</label>
+              <input
+                v-model="editDraft.fillOpacity"
+                type="number"
+                class="input"
+              />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="label py-0 text-sm">Opacité du contour du point</label>
+              <input
+                v-model="editDraft.strokeOpacity"
+                type="number"
+                class="input"
+              />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="label py-0 text-sm">Épaisseur du contour du point</label>
+              <input
+                v-model="editDraft.strokeWidth"
+                type="number"
+                class="input"
+              />
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+              <label class="label py-0 text-sm">Couleur du contour :</label>
+              <input
+                v-model="editDraft.strokeColorHex"
+                type="color"
+                class="h-9 w-8 cursor-pointer bg-base-100"
+              />
+            </div>
           </div>
+
+          <!-- Aperçu du point (en bas à droite) -->
           <div
-            class="flex flex-col gap-2 w-full"
+            class="flex flex-col items-center justify-center rounded-lg border border-base-300 bg-base-200/40 p-3 self-stretch"
+            data-testid="point-preview-container"
           >
-            <label class="label">
-              Opacité du contour du point
-            </label>
-            <input
-              v-model="editDraft.strokeOpacity"
-              type="number"
-              class="input"
-            />
-          </div>
-        </div>
-        <div
-          class="flex flex-col gap-2 w-full"
-          v-if="!isEditingLabel"
-        >
-          <label class="label">
-            Épaisseur du contour du point
-          </label>
-          <input
-            v-model="editDraft.strokeWidth"
-            type="number"
-            class="input"
-          />
-        </div>
-        <div
-          class="flex flex-col gap-2"
-          v-if="!editDraft.customLabelStyleId && (editDraft.colorHex || editDraft.strokeColorHex)"
-        >
-          <div
-            class="flex items-center gap-2"
-            v-if="!editDraft.customLabelStyleId"
-          >
-            <label class="label">Couleur :</label>
-            <input
-              v-model="editDraft.colorHex"
-              type="color"
-              class="h-9 w-8 cursor-pointer bg-base-100"
-            />
-          </div>
-          <div
-            class="flex items-center gap-2"
-            v-if="!isEditingLabel"
-          >
-            <label class="label">Couleur du contour :</label>
-            <input
-              v-model="editDraft.strokeColorHex"
-              type="color"
-              class="h-9 w-8 cursor-pointer bg-base-100"
-            />
+            <span class="text-xs text-base-content/60 font-medium mb-2">Aperçu du point</span>
+            <div class="flex items-center justify-center flex-1 w-full min-h-[90px]">
+              <svg width="70" height="70" viewBox="0 0 70 70" class="overflow-visible">
+                <circle
+                  cx="35"
+                  cy="35"
+                  r="16"
+                  :fill="pointPreviewFillColor"
+                  :fill-opacity="pointPreviewFillOpacity"
+                  :stroke="pointPreviewStrokeColor"
+                  :stroke-width="pointPreviewStrokeWidth"
+                  :stroke-opacity="pointPreviewStrokeOpacity"
+                />
+              </svg>
+            </div>
           </div>
         </div>
       </fieldset>
@@ -616,14 +627,47 @@ const editTextStyle = computed<CSSProperties>(() => {
   };
 });
 
-const isEditingLabel = computed(() => {
+const isEditingPoint = computed(() => {
   if (!featureToEdit.value) return false;
   if (isTextElement.value) {
-    if (editDraft.value.customLabelStyle) return true;
+    if (editDraft.value.customLabelStyle) return false;
     const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType as keyof typeof WORD_TYPE_TAXONOMY];
-    return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "label";
+    return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "point";
   }
-  return getMapElementType(featureToEdit.value) === "label";
+  return getMapElementType(featureToEdit.value) === "point";
+});
+
+const pointPreviewFillColor = computed(() => {
+  return editDraft.value.colorHex || "#000000";
+});
+
+const pointPreviewFillOpacity = computed(() => {
+  const val = editDraft.value.fillOpacity;
+  if (val === undefined || val === null || (val as unknown) === "") return 0.5;
+  const num = Number(val);
+  if (Number.isNaN(num)) return 0.5;
+  const normalized = num > 1 ? (num <= 10 ? num / 10 : num / 100) : num;
+  return Math.max(0, Math.min(1, normalized));
+});
+
+const pointPreviewStrokeColor = computed(() => {
+  return editDraft.value.strokeColorHex || editDraft.value.colorHex || "#000000";
+});
+
+const pointPreviewStrokeOpacity = computed(() => {
+  const val = editDraft.value.strokeOpacity;
+  if (val === undefined || val === null || (val as unknown) === "") return 1;
+  const num = Number(val);
+  if (Number.isNaN(num)) return 1;
+  const normalized = num > 1 ? (num <= 10 ? num / 10 : num / 100) : num;
+  return Math.max(0, Math.min(1, normalized));
+});
+
+const pointPreviewStrokeWidth = computed(() => {
+  const val = editDraft.value.strokeWidth;
+  if (val === undefined || val === null || (val as unknown) === "") return 1;
+  const num = Number(val);
+  return Number.isNaN(num) ? 1 : Math.max(0, num);
 });
 
 const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
