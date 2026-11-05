@@ -139,4 +139,53 @@ describe("featureGrouping", () => {
     expect(fallbackGroup).toBeDefined();
     expect(fallbackGroup?.title).toBe("Carte Historique 1850");
   });
+
+  it("places features with null mapId in Éléments généraux, and removes the group when empty", () => {
+    const mapPeriods: MapPeriod[] = [
+      {
+        id: "m-1",
+        title: "Carte Québec 1900",
+        description: "",
+        startDate: "1900-01-01",
+        endDate: "1910-01-01",
+        visible: true,
+        center: [0, 0],
+        zoom: 5,
+      },
+    ];
+
+    const generalText = {
+      type: "Feature",
+      id: "f-gen-1",
+      mapId: null,
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { name: "FLORIDE" },
+    } as Feature;
+
+    const generalShape = {
+      type: "Feature",
+      id: "f-gen-2",
+      mapId: null,
+      geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] },
+      properties: { name: "Zone Floride", mapElementType: "zone" },
+    } as Feature;
+
+    // Initially with general features
+    const initialGroups = groupFeaturesByMap([generalText, generalShape], mapPeriods);
+    expect(initialGroups).toHaveLength(1);
+    expect(initialGroups[0].title).toBe("Éléments généraux");
+    expect(initialGroups[0].features).toHaveLength(2);
+
+    // When features are assigned to map m-1
+    const movedText = { ...generalText, mapId: "m-1" };
+    const movedShape = { ...generalShape, mapId: "m-1" };
+    const updatedGroups = groupFeaturesByMap([movedText, movedShape], mapPeriods);
+
+    expect(updatedGroups).toHaveLength(1);
+    expect(updatedGroups[0].title).toBe("Carte Québec 1900");
+    expect(updatedGroups[0].features).toHaveLength(2);
+
+    // Éléments généraux must no longer exist because it is empty
+    expect(updatedGroups.find((g) => g.title === "Éléments généraux")).toBeUndefined();
+  });
 });

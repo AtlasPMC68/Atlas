@@ -166,7 +166,7 @@
                       class="checkbox checkbox-xs checkbox-primary"
                     />
                     <span class="label-text text-sm truncate">
-                      {{ feature.properties?.name || "Élément sans nom" }}
+                      {{ feature.properties?.name || "! Nom manquant" }}
                     </span>
                   </label>
                   <div class="flex items-center gap-1">
@@ -448,6 +448,36 @@
             </div>
           </div>
         </div>
+
+        <!-- Map assignment: choose which map(s) the element belongs to -->
+        <div
+          v-if="props.mapPeriods && props.mapPeriods.length > 0"
+          class="flex flex-col gap-2 pt-2 border-t border-base-200"
+          data-testid="map-assignment-section"
+        >
+          <label class="label py-0 font-medium text-sm">
+            Cartes associées :
+          </label>
+          <div class="flex flex-col gap-1.5 max-h-40 overflow-y-auto border border-base-300 rounded-lg p-2 bg-base-100">
+            <label
+              v-for="period in props.mapPeriods"
+              :key="period.id"
+              class="flex items-center gap-2 cursor-pointer hover:bg-base-200/50 rounded px-1.5 py-1"
+            >
+              <input
+                type="checkbox"
+                :value="period.id"
+                v-model="editDraft.selectedMapIds"
+                class="checkbox checkbox-xs checkbox-primary"
+                :data-testid="`map-checkbox-${period.id}`"
+              />
+              <span class="text-sm truncate">{{ period.title }}</span>
+            </label>
+          </div>
+          <span class="text-xs text-base-content/60 italic">
+            Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
+          </span>
+        </div>
       </fieldset>
       <div class="modal-action">
         <button
@@ -627,6 +657,7 @@ import {
 import {
   prepareFeatureForEdit,
   coerceEditedFeature,
+  createFeaturesForSelectedMaps,
   getWordTypePreviewStyle,
   type FeatureEditSubmitPayload,
 } from "../utils/featureTextEditing";
@@ -998,16 +1029,25 @@ async function onEditFeature() {
     ...editDraft.value,
   });
 
+  const allUpdated = createFeaturesForSelectedMaps(
+    updatedFeature,
+    editDraft.value.selectedMapIds,
+  );
+
   featureToEdit.value = updatedFeature;
 
-  emit("update-feature", updatedFeature, {
-    onSuccess: () => {
-      showAlert("success", "Élément mis à jour !");
+  emit(
+    "update-feature",
+    (allUpdated.length === 1 ? allUpdated[0] : allUpdated) as any,
+    {
+      onSuccess: () => {
+        showAlert("success", "Élément mis à jour !");
+      },
+      onError: (message: string) => {
+        showAlert("error", message);
+      },
     },
-    onError: (message: string) => {
-      showAlert("error", message);
-    },
-  });
+  );
 
   isEditing.value = false;
   editFeatureDialogRef.value?.close();

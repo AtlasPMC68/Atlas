@@ -228,7 +228,7 @@ function selectFeature(id: string) {
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
 const copiedTextFeature = ref<Feature | null>(null);
-const sidebarWidth = ref(320);
+const sidebarWidth = ref(400);
 let sidebarResizeStartX = 0;
 let sidebarResizeStartWidth = 0;
 let isResizingSidebar = false;
@@ -812,19 +812,23 @@ async function onDeleteMap(
 }
 
 async function onUpdateFeature(
-  updatedFeature: Feature,
+  updatedFeature: Feature | Feature[],
   callbacks?: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
   },
 ) {
   try {
-    const nextFeatures = upsertFeature(features.value, updatedFeature);
-    commitFeatureSnapshot(
-      nextFeatures,
-      `Modification de ${updatedFeature.name || "l'élément"}`,
-    );
-    await onSaveMap(nextFeatures);
+    const list = Array.isArray(updatedFeature) ? updatedFeature : [updatedFeature];
+    let nextFeatures = features.value;
+    for (const f of list) {
+      nextFeatures = upsertFeature(nextFeatures, f);
+    }
+    const label =
+      list.length === 1
+        ? `Modification de ${list[0].name || "l'élément"}`
+        : `Modification de ${list.length} éléments`;
+    commitFeatureSnapshot(nextFeatures, label);
     callbacks?.onSuccess?.();
   } catch (error) {
     console.error("Failed to update feature:", error);

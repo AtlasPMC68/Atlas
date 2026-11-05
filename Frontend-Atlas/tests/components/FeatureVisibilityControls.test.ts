@@ -612,4 +612,191 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     expect(emittedFeature.properties.fillOpacity).toBe(0.5);
     expect(emittedFeature.properties.strokeWidth).toBe(2);
   });
+
+  describe("Map Assignment for General and Map Elements", () => {
+    const localMapPeriods: MapPeriod[] = [
+      {
+        id: "map-1",
+        title: "Carte Québec 1900",
+        description: "",
+        startDate: "1900-01-01",
+        endDate: "1910-01-01",
+        visible: true,
+        center: [46.8, -71.2],
+        zoom: 10,
+      },
+      {
+        id: "map-2",
+        title: "Carte Montréal 1950",
+        description: "",
+        startDate: "1950-01-01",
+        endDate: "1960-01-01",
+        visible: true,
+        center: [45.5, -73.5],
+        zoom: 10,
+      },
+    ];
+
+    const generalTextFeature: Feature = {
+      type: "Feature",
+      id: "feat-gen-1",
+      projectId: "proj-1",
+      mapId: null,
+      name: "FLORIDE",
+      geometry: { type: "Point", coordinates: [-81.5, 27.5] },
+      properties: {
+        name: "FLORIDE",
+        labelText: "FLORIDE",
+        mapElementType: "label",
+        rawType: "province",
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    };
+
+    const generalShapeFeature: Feature = {
+      type: "Feature",
+      id: "feat-gen-shape-1",
+      projectId: "proj-1",
+      mapId: null,
+      name: "Zone Floride",
+      geometry: {
+        type: "Polygon",
+        coordinates: [[[-82, 27], [-81, 27], [-81, 28], [-82, 28], [-82, 27]]],
+      },
+      properties: {
+        name: "Zone Floride",
+        mapElementType: "zone",
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    };
+
+    it("displays map assignment checkboxes in the edit dialog when mapPeriods are provided", async () => {
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [generalTextFeature],
+          featureVisibility: new Map([[generalTextFeature.id, true]]),
+          mapPeriods: localMapPeriods,
+        },
+      });
+
+      await (wrapper.vm as any).showEditFeatureDialog(generalTextFeature);
+
+      const section = wrapper.find('[data-testid="map-assignment-section"]');
+      expect(section.exists()).toBe(true);
+      expect(section.text()).toContain("Cartes associées");
+      expect(section.text()).toContain("Carte Québec 1900");
+      expect(section.text()).toContain("Carte Montréal 1950");
+    });
+
+    it("assigns a general element to a chosen map upon selection", async () => {
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [generalTextFeature],
+          featureVisibility: new Map([[generalTextFeature.id, true]]),
+          mapPeriods: localMapPeriods,
+        },
+      });
+
+      await (wrapper.vm as any).showEditFeatureDialog(generalTextFeature);
+
+      // Check map-1
+      const checkboxMap1 = wrapper.find('[data-testid="map-checkbox-map-1"]');
+      expect(checkboxMap1.exists()).toBe(true);
+      await checkboxMap1.setValue(true);
+
+      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      await modifyBtn!.trigger("click");
+
+      expect(wrapper.emitted("update-feature")).toBeDefined();
+      const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
+      expect(emitted.mapId).toBe("map-1");
+      expect(emitted.properties.mapId).toBe("map-1");
+    });
+
+    it("assigns a general shape to a map and emits the updated shape", async () => {
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [generalShapeFeature],
+          featureVisibility: new Map([[generalShapeFeature.id, true]]),
+          mapPeriods: localMapPeriods,
+        },
+      });
+
+      await (wrapper.vm as any).showEditFeatureDialog(generalShapeFeature);
+
+      const checkboxMap2 = wrapper.find('[data-testid="map-checkbox-map-2"]');
+      expect(checkboxMap2.exists()).toBe(true);
+      await checkboxMap2.setValue(true);
+
+      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      await modifyBtn!.trigger("click");
+
+      expect(wrapper.emitted("update-feature")).toBeDefined();
+      const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
+      expect(emitted.mapId).toBe("map-2");
+      expect(emitted.properties.mapElementType).toBe("zone");
+    });
+
+    it("clones feature across multiple maps when multiple map checkboxes are checked", async () => {
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [generalTextFeature],
+          featureVisibility: new Map([[generalTextFeature.id, true]]),
+          mapPeriods: localMapPeriods,
+        },
+      });
+
+      await (wrapper.vm as any).showEditFeatureDialog(generalTextFeature);
+
+      const checkboxMap1 = wrapper.find('[data-testid="map-checkbox-map-1"]');
+      const checkboxMap2 = wrapper.find('[data-testid="map-checkbox-map-2"]');
+
+      await checkboxMap1.setValue(true);
+      await checkboxMap2.setValue(true);
+
+      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      await modifyBtn!.trigger("click");
+
+      expect(wrapper.emitted("update-feature")).toBeDefined();
+      const emitted = wrapper.emitted("update-feature")![0][0] as Feature[];
+      expect(Array.isArray(emitted)).toBe(true);
+      expect(emitted).toHaveLength(2);
+      expect(emitted[0].mapId).toBe("map-1");
+      expect(emitted[1].mapId).toBe("map-2");
+      expect(emitted[0].id).not.toBe(emitted[1].id);
+    });
+
+    it("unassigns an element to become general (null mapId) when all map checkboxes are unchecked", async () => {
+      const featureInMap1: Feature = {
+        ...generalTextFeature,
+        id: "feat-map-1",
+        mapId: "map-1",
+      };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [featureInMap1],
+          featureVisibility: new Map([[featureInMap1.id, true]]),
+          mapPeriods: localMapPeriods,
+        },
+      });
+
+      await (wrapper.vm as any).showEditFeatureDialog(featureInMap1);
+
+      const checkboxMap1 = wrapper.find('[data-testid="map-checkbox-map-1"]');
+      expect((checkboxMap1.element as HTMLInputElement).checked).toBe(true);
+
+      // Uncheck map-1
+      await checkboxMap1.setValue(false);
+
+      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      await modifyBtn!.trigger("click");
+
+      expect(wrapper.emitted("update-feature")).toBeDefined();
+      const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
+      expect(emitted.mapId).toBeNull();
+    });
+  });
 });

@@ -93,8 +93,8 @@ export function groupFeaturesByMap(
   return Array.from(mapGroups.values())
     .map((group) => {
       group.features.sort((a, b) => {
-        const nameA = a.properties?.name || "Élément sans nom";
-        const nameB = b.properties?.name || "Élément sans nom";
+        const nameA = a.properties?.name || "! Nom manquant";
+        const nameB = b.properties?.name || "! Nom manquant";
         return nameA.localeCompare(nameB);
       });
       return group;

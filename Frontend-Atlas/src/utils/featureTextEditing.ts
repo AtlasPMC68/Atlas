@@ -28,6 +28,7 @@ export interface FeatureEditSubmitPayload {
   labelStyleSelection?: string;
   customLabelStyleId?: string;
   customLabelStyle?: CustomLabelStyle;
+  selectedMapIds?: string[];
 }
 
 export function applyCustomLabelStyleToFeature(
@@ -104,12 +105,21 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   const rawLabel =
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
 
+  const rawMapId =
+    feature.mapId ??
+    (feature as any).map_id ??
+    (feature.properties as any)?.mapId ??
+    (feature.properties as any)?.map_id ??
+    null;
+  const initialMapIds = rawMapId ? [String(rawMapId)] : [];
+
   return {
     feature,
     draft: {
       name: feature.properties.name,
       labelText: rawLabel,
       wordType,
+      selectedMapIds: initialMapIds,
       labelStyleSelection: feature.properties.customLabelStyleId
         ? `custom:${feature.properties.customLabelStyleId}`
         : wordType,
@@ -132,12 +142,19 @@ export function coerceEditedFeature(
   originalFeature: Feature,
   payload: FeatureEditSubmitPayload,
 ): Feature {
+  const chosenMapId =
+    payload.selectedMapIds && payload.selectedMapIds.length > 0
+      ? payload.selectedMapIds[0]
+      : null;
+
   if (!isTextFeature(originalFeature)) {
     return {
       ...originalFeature,
+      mapId: chosenMapId,
       name: payload.name,
       properties: {
         ...originalFeature.properties,
+        mapId: chosenMapId,
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),
         strokeColor: hexToRgb(payload.strokeColorHex),
@@ -155,20 +172,30 @@ export function coerceEditedFeature(
     payload.labelText ?? payload.name,
   );
   if (payload.customLabelStyleId && payload.customLabelStyle) {
-    return applyCustomLabelStyleToFeature(
+    const custom = applyCustomLabelStyleToFeature(
       originalFeature,
       payload.customLabelStyle,
       payload.wordType,
       payload.name,
       payload.labelText ?? payload.name,
     );
+    return {
+      ...custom,
+      mapId: chosenMapId,
+      properties: {
+        ...custom.properties,
+        mapId: chosenMapId,
+      },
+    };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
 
   return {
     ...styledFeature,
+    mapId: chosenMapId,
     properties: {
       ...styledFeature.properties,
+      mapId: chosenMapId,
       customLabelStyleId: null as any,
       customLabelStyle: null as any,
       custom_label_style_id: null,
@@ -179,6 +206,43 @@ export function coerceEditedFeature(
       strokeWidth: isLabel ? undefined : payload.strokeWidth,
     },
   };
+}
+
+/**
+ * When multiple maps are selected, clones the feature for each additional map
+ * with a new unique ID and the respective mapId.
+ */
+export function createFeaturesForSelectedMaps(
+  baseEditedFeature: Feature,
+  selectedMapIds?: string[],
+): Feature[] {
+  if (!selectedMapIds || selectedMapIds.length <= 1) {
+    return [baseEditedFeature];
+  }
+
+  const results: Feature[] = [
+    {
+      ...baseEditedFeature,
+      mapId: selectedMapIds[0],
+      properties: {
+        ...baseEditedFeature.properties,
+        mapId: selectedMapIds[0],
+      },
+    },
+  ];
+
+  for (let i = 1; i < selectedMapIds.length; i++) {
+    const targetMapId = selectedMapIds[i];
+    const cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
+    cloned.id = crypto.randomUUID();
+    cloned.mapId = targetMapId;
+    if (cloned.properties) {
+      cloned.properties.mapId = targetMapId;
+    }
+    results.push(cloned);
+  }
+
+  return results;
 }
 
 export function getWordTypePreviewStyle(

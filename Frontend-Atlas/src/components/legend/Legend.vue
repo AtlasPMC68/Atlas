@@ -45,9 +45,9 @@
             />
             <span
               class="text-sm leading-tight truncate min-w-0 flex-1"
-              :title="feature.properties?.name || 'Élément sans nom'"
+              :title="feature.properties?.name || '! Nom manquant'"
             >
-              {{ feature.properties?.name || "Élément sans nom" }}
+              {{ feature.properties?.name || "! Nom manquant" }}
             </span>
           </li>
         </ul>

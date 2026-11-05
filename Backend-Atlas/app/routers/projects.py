@@ -446,6 +446,14 @@ async def update_features(
                     f"Feature id is not a valid UUID, creating a new row: {feature_id}"
                 )
 
+        raw_map_id = feature.get("map_id") or (feature.get("properties") or {}).get("map_id")
+        feature_map_id = None
+        if raw_map_id:
+            try:
+                feature_map_id = UUID(str(raw_map_id))
+            except (ValueError, TypeError):
+                feature_map_id = None
+
         if db_feature:
             new_data = to_feature_collection(feature)
             old_data = normalize_feature_collection(db_feature.data)
@@ -453,6 +461,10 @@ async def update_features(
 
             if db_feature.project_id != project_uuid:
                 db_feature.project_id = project_uuid
+                changed = True
+
+            if db_feature.map_id != feature_map_id:
+                db_feature.map_id = feature_map_id
                 changed = True
 
             if old_data != new_data:
@@ -465,7 +477,7 @@ async def update_features(
         else:
             new_feature = Feature(
                 project_id=project_uuid,
-                map_id=None,
+                map_id=feature_map_id,
                 data=to_feature_collection(feature),
             )
             session.add(new_feature)
