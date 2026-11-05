@@ -89,105 +89,17 @@
         :class="{ 'cursor-col-resize': isDraggingLeft || isDraggingRight }"
       >
         <!-- 1. Left: Original Image Viewer -->
-        <div
-          class="flex flex-col bg-gray-900 min-h-0 relative shrink-0 overflow-hidden"
-          :style="{ width: `${leftColWidth}px` }"
-        >
-          <div class="px-3 py-2 bg-gray-800 text-white font-semibold flex items-center justify-between shrink-0 text-sm">
-            <span class="flex items-center gap-1.5">
-              <PhotoIcon class="w-4 h-4 text-gray-400" />
-              Image de référence
-            </span>
-            <div class="flex items-center gap-1">
-              <template v-if="displayImageUrl">
-                <button
-                  type="button"
-                  class="btn btn-xs btn-ghost text-white px-1.5 min-h-0 h-6 text-xs"
-                  title="Dézoomer"
-                  @click="zoomImg(-0.1)"
-                >
-                  −
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-xs btn-ghost text-white px-2 min-h-0 h-6 text-xs"
-                  title="Réinitialiser"
-                  @click="resetImgZoom"
-                >
-                  {{ Math.round(imgZoom * 100) }}%
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-xs btn-ghost text-white px-1.5 min-h-0 h-6 text-xs"
-                  title="Zoomer"
-                  @click="zoomImg(0.1)"
-                >
-                  +
-                </button>
-              </template>
-
-              <label
-                class="btn btn-xs btn-ghost text-white px-1.5 min-h-0 h-6 text-xs cursor-pointer"
-                title="Charger une image pour visualiser"
-              >
-                <ArrowUpTrayIcon class="w-3.5 h-3.5" />
-                <span class="hidden sm:inline">Changer</span>
-                <input
-                  type="file"
-                  accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
-                  class="hidden"
-                  :disabled="isUpdatingReferenceImage"
-                  @change="onLocalImageSelected"
-                />
-              </label>
-              <button
-                v-if="displayImageUrl"
-                type="button"
-                class="btn btn-xs btn-ghost btn-square text-white hover:bg-error/80 px-1 min-h-0 h-6"
-                title="Supprimer l'image de référence associée à cette carte"
-                aria-label="Supprimer l'image de référence"
-                @click="removeReferenceImage"
-              >
-                <XMarkIcon class="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div
-            class="flex-1 min-h-0 overflow-auto flex items-center justify-center p-2 bg-gray-950"
-            @wheel="onImageWheel"
-          >
-            <img
-              v-if="displayImageUrl"
-              :src="displayImageUrl"
-              alt="Image de la carte pour visualisation"
-              class="max-w-full max-h-full object-contain transition-transform duration-100 origin-center select-none will-change-transform"
-              :style="{ transform: `scale(${imgZoom}) translateZ(0)` }"
-            />
-            <div v-else class="flex flex-col items-center justify-center p-6 text-center gap-3 max-w-sm">
-              <PhotoIcon class="w-12 h-12 text-gray-500" />
-              <div class="flex flex-col gap-1">
-                <p class="text-sm text-gray-200 font-semibold">
-                  Aucune image originale disponible pour cette carte.
-                </p>
-                <p class="text-xs text-gray-400">
-                  Vous pouvez importer une image depuis votre ordinateur pour vous repérer pendant la validation.
-                </p>
-              </div>
-              <label class="btn btn-primary btn-sm text-white cursor-pointer gap-1.5 font-medium shadow-xs mt-1">
-                <ArrowUpTrayIcon class="w-3.5 h-3.5" />
-                <span>Importer une image pour visualiser</span>
-                <input
-                  type="file"
-                  accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
-                  class="hidden"
-                  :disabled="isUpdatingReferenceImage"
-                  @change="onLocalImageSelected"
-                />
-              </label>
-            </div>
-          </div>
-        </div>
+        <ValidationImageViewer
+          :width="leftColWidth"
+          :display-image-url="displayImageUrl"
+          :img-zoom="imgZoom"
+          :is-updating-reference-image="isUpdatingReferenceImage"
+          @zoom="zoomImg"
+          @reset-zoom="resetImgZoom"
+          @wheel="onImageWheel"
+          @select-image="onLocalImageSelected"
+          @remove-image="removeReferenceImage"
+        />
 
         <!-- Left Resizer Divider -->
         <div
@@ -427,6 +339,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { FeatureCollection } from "geojson";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
+import ValidationImageViewer from "./ValidationImageViewer.vue";
 import {
   getCustomStyleObject,
   getEntryTypography,
@@ -437,9 +350,6 @@ import {
 import { resolveClusteredTooltipDirections } from "../../utils/labelCollision";
 import {
   TrashIcon,
-  PhotoIcon,
-  ArrowUpTrayIcon,
-  XMarkIcon,
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
 } from "@heroicons/vue/24/outline";
