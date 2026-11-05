@@ -23,10 +23,7 @@ export type MapElementType =
   | "image";
 
 export type FeatureVisibilityGroupType =
-  | "point"
-  | "zone"
-  | "shape"
-  | "image"
+  | Exclude<MapElementType, "label" | "polyline" | "arrow">
   | "drawing";
 
 export type FeatureVisibilityGroup = {
