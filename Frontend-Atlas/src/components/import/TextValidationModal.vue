@@ -884,9 +884,6 @@ function toggleSuggestion(item: TextValidationEntry) {
   if (item.useSuggestedPlace) {
     item.useSuggestedPlace = false;
     item.text = item.originalText;
-    if (item.originalCoordinates) {
-      item.coordinates = [item.originalCoordinates[0], item.originalCoordinates[1]];
-    }
   } else {
     item.useSuggestedPlace = true;
     item.selected = true;
@@ -897,10 +894,6 @@ function toggleSuggestion(item: TextValidationEntry) {
     item.validationStatus = "accepted";
     if (item.suggestedPlace) {
       item.text = formatWordText(item.suggestedPlace.name, item.wordType);
-      item.coordinates = [
-        item.suggestedPlace.coordinates[0],
-        item.suggestedPlace.coordinates[1],
-      ];
     }
   }
   hideToleranceRadius();
