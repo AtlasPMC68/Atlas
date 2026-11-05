@@ -44,6 +44,7 @@ from app.utils.place_resolution import (
     find_nearby_candidate_place,
     haversine_distance_km,
     match_ocr_label,
+    polygon_centroid,
 )
 from app.utils.extraction_steps import extract_zone_colors, place_map
 from app.utils.file_utils import validate_file_extension
@@ -406,16 +407,7 @@ def _categorized_text_features_from_ocr(
         for coords, text, prob in blocks
     ]
 
-    def center_of(coords: Any) -> Optional[tuple[float, float]]:
-        if not coords:
-            return None
-        try:
-            return (
-                sum(float(point[0]) for point in coords) / len(coords),
-                sum(float(point[1]) for point in coords) / len(coords),
-            )
-        except (TypeError, ValueError, IndexError):
-            return None
+    center_of = polygon_centroid
 
     def nearby_word_boxes(left: Any, right: Any) -> bool:
         if not left or not right:
@@ -695,9 +687,9 @@ def _georeference_text_features(
     pixel_features = []
     for feat in target_features:
         q = feat["properties"]["quad"]
-        cx = sum(float(p[0]) for p in q) / len(q)
-        cy = sum(float(p[1]) for p in q) / len(q)
-        pixel_features.append({"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [cx, cy]}})
+        c = polygon_centroid(q)
+        coord = [c[0], c[1]] if c else [0.0, 0.0]
+        pixel_features.append({"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": coord}})
 
     try:
         georef_res = placement.georeference(

@@ -1,11 +1,13 @@
 # region Imports
 import logging
 import mimetypes
+import os
+import uuid as uuid_module
 from typing import Any, Dict
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.celery_app import celery_app
@@ -47,6 +49,9 @@ REFERENCE_IMAGE_CONTENT_TYPES = {
     "image/webp",
 }
 
+MEDIA_ROOT = os.environ.get("MEDIA_ROOT", "/app/media")
+REFERENCE_IMAGES_DIR = os.path.join(MEDIA_ROOT, "reference_images")
+
 
 @router.get("/{map_id}/reference-image")
 async def get_reference_image(
@@ -55,14 +60,14 @@ async def get_reference_image(
     session: AsyncSession = Depends(get_async_session),
 ):
     map_obj = await _require_owned_map(session, map_id, user_id)
-    if not map_obj.reference_image:
+    if not map_obj.reference_image_path:
         raise HTTPException(status_code=404, detail="No reference image for this map")
+    abs_path = os.path.join(MEDIA_ROOT, map_obj.reference_image_path)
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="Reference image file not found")
     media_type = map_obj.reference_image_content_type or "application/octet-stream"
-    return Response(
-        content=map_obj.reference_image,
-        media_type=media_type,
-        headers={"Cache-Control": "no-store"},
-    )
+    # Stream the file
+    return FileResponse(abs_path, media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 @router.put("/{map_id}/reference-image")
@@ -81,17 +86,53 @@ async def save_reference_image(
             status_code=400,
             detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
-
-    content = await file.read()
-    if not content:
+    # Read in chunks to avoid loading 25MB into memory at once
+    chunk_size = 1024 * 256  # 256 KB chunks
+    os.makedirs(REFERENCE_IMAGES_DIR, exist_ok=True)
+    ext = mimetypes.guess_extension(content_type) or ".bin"
+    # Normalize common extensions
+    ext_map = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+               "image/gif": ".gif", "image/avif": ".avif"}
+    ext = ext_map.get(content_type, ext)
+    filename = f"{map_id}{ext}"
+    abs_path = os.path.join(REFERENCE_IMAGES_DIR, filename)
+    rel_path = os.path.join("reference_images", filename)
+    total = 0
+    # Delete old file if exists
+    old_path = None
+    if map_obj.reference_image_path:
+        old_path = os.path.join(MEDIA_ROOT, map_obj.reference_image_path)
+    try:
+        with open(abs_path, "wb") as out:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_FILE_SIZE:
+                    out.close()
+                    os.unlink(abs_path)
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.exists(abs_path):
+            os.unlink(abs_path)
+        raise HTTPException(status_code=500, detail=f"Could not save reference image: {e}")
+    if total == 0:
+        os.unlink(abs_path)
         raise HTTPException(status_code=400, detail="Empty reference image")
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
-        )
-
-    map_obj.reference_image = content
+    # Delete old file after successful write
+    if old_path and old_path != abs_path and os.path.isfile(old_path):
+        try:
+            os.unlink(old_path)
+        except OSError:
+            pass
+    map_obj.reference_image_path = rel_path
     map_obj.reference_image_content_type = content_type
     await session.commit()
     return {"detail": "Reference image saved"}
@@ -104,7 +145,14 @@ async def delete_reference_image(
     session: AsyncSession = Depends(get_async_session),
 ):
     map_obj = await _require_owned_map(session, map_id, user_id)
-    map_obj.reference_image = None
+    if map_obj.reference_image_path:
+        abs_path = os.path.join(MEDIA_ROOT, map_obj.reference_image_path)
+        if os.path.isfile(abs_path):
+            try:
+                os.unlink(abs_path)
+            except OSError:
+                pass
+    map_obj.reference_image_path = None
     map_obj.reference_image_content_type = None
     await session.commit()
     return {"detail": "Reference image deleted"}

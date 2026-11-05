@@ -421,6 +421,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
+import { useHistory } from "../../composables/useHistory";
 import type { CSSProperties } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -578,56 +579,33 @@ const isPartiallySelected = computed(() => {
   return selectedCount > 0 && selectedCount < allItems.value.length;
 });
 
-// ── Undo / Redo History Management ──────────────────────────────────────────
-const undoStack = ref<TextValidationEntry[][]>([]);
-const redoStack = ref<TextValidationEntry[][]>([]);
-const canUndo = computed(() => undoStack.value.length > 0);
-const canRedo = computed(() => redoStack.value.length > 0);
-
-function cloneEntries(entries: TextValidationEntry[]): TextValidationEntry[] {
-  return entries.map((item) => ({
-    ...item,
-    coordinates: item.coordinates ? [item.coordinates[0], item.coordinates[1]] : undefined,
-    originalCoordinates: item.originalCoordinates
-      ? [item.originalCoordinates[0], item.originalCoordinates[1]]
-      : undefined,
-  }));
-}
-
-function resetHistory() {
-  undoStack.value = [];
-  redoStack.value = [];
-}
+// ── Undo / Redo History Management (via useHistory composable) ──────────────
+const {
+  canUndo,
+  canRedo,
+  resetHistory,
+  pushHistory,
+  undo: historyUndo,
+  redo: historyRedo,
+} = useHistory<TextValidationEntry[]>(30);
 
 function saveHistorySnapshot() {
-  undoStack.value.push(cloneEntries(allItems.value));
-  if (undoStack.value.length > 30) {
-    undoStack.value.shift();
-  }
-  redoStack.value = [];
+  pushHistory(allItems.value);
 }
 
 function undo() {
-  if (!canUndo.value) return;
-  const currentSnapshot = cloneEntries(allItems.value);
-  redoStack.value.push(currentSnapshot);
-
-  const previous = undoStack.value.pop()!;
-  allItems.value = cloneEntries(previous);
-
+  const previous = historyUndo(allItems.value);
+  if (!previous) return;
+  allItems.value = previous;
   hideToleranceRadius();
   renderMapMarkers(false);
   adjustTooltipsAntiCollision();
 }
 
 function redo() {
-  if (!canRedo.value) return;
-  const currentSnapshot = cloneEntries(allItems.value);
-  undoStack.value.push(currentSnapshot);
-
-  const next = redoStack.value.pop()!;
-  allItems.value = cloneEntries(next);
-
+  const next = historyRedo(allItems.value);
+  if (!next) return;
+  allItems.value = next;
   hideToleranceRadius();
   renderMapMarkers(false);
   adjustTooltipsAntiCollision();
@@ -1426,15 +1404,26 @@ async function initMap() {
 
 function destroyMap() {
   hideToleranceRadius();
+  if (typingTimeout) {
+    clearTimeout(typingTimeout);
+    typingTimeout = null;
+  }
   if (landLayer && leafletMap) {
     leafletMap.removeLayer(landLayer);
     landLayer = null;
   }
+  for (const marker of markerMap.values()) {
+    if (leafletMap) {
+      leafletMap.removeLayer(marker);
+    }
+    marker.off();
+  }
+  markerMap.clear();
   if (leafletMap) {
+    leafletMap.off();
     leafletMap.remove();
     leafletMap = null;
   }
-  markerMap.clear();
 }
 
 function isFeatureCollection(value: unknown): value is FeatureCollection {
@@ -1503,21 +1492,30 @@ function onDocumentClick(e: MouseEvent) {
   }
 }
 
+let isListening = false;
+function attachGlobalListeners() {
+  if (isListening || typeof window === "undefined") return;
+  window.addEventListener("keydown", handleKeyDown, true);
+  window.addEventListener("click", onDocumentClick, true);
+  isListening = true;
+}
+
+function removeGlobalListeners() {
+  if (!isListening || typeof window === "undefined") return;
+  window.removeEventListener("keydown", handleKeyDown, true);
+  window.removeEventListener("click", onDocumentClick, true);
+  isListening = false;
+}
+
 watch(
   () => props.isOpen,
   (open: boolean) => {
     if (!open) {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("keydown", handleKeyDown, true);
-        window.removeEventListener("click", onDocumentClick, true);
-      }
+      removeGlobalListeners();
       destroyMap();
       return;
     }
-    if (typeof window !== "undefined") {
-      window.addEventListener("keydown", handleKeyDown, true);
-      window.addEventListener("click", onDocumentClick, true);
-    }
+    attachGlobalListeners();
     resetHistory();
     imgZoom.value = 1;
     allItems.value = mapInitialItems(props.initialItems);
@@ -1557,10 +1555,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
-  if (typeof window !== "undefined") {
-    window.removeEventListener("keydown", handleKeyDown, true);
-    window.removeEventListener("click", onDocumentClick, true);
-  }
+  removeGlobalListeners();
   for (const imageUrl of Object.values<string>(localImageMap.value)) {
     if (imageUrl.startsWith("blob:")) URL.revokeObjectURL(imageUrl);
   }

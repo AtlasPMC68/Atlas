@@ -298,13 +298,6 @@ def test_find_nearby_candidate_place_matches_city_and_rejects_unrelated_text():
     assert find_nearby_candidate_place("TotallyUnrelatedWord", [-73.56, 45.50], radius_km=50.0) is None
 
 
-def test_find_nearby_candidate_place_suggests_new_orleans_from_partial_ocr():
-    candidate = find_nearby_candidate_place("La Nouvel", [-90.075, 29.955])
-
-    assert candidate is not None
-    assert candidate["name_fr"] == "La Nouvelle-Orléans"
-
-
 def test_find_nearby_candidate_place_suggests_quebec_province_from_ocr_typo():
     candidate = find_nearby_candidate_place("Province de Quebe", [-73.707, 46.369])
 

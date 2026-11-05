@@ -40,15 +40,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import geonamescache
 
 from app.utils.place_nomenclature import (
-    DEFAULT_STYLE,
-    STYLES_MAP,
-    WORD_TAXONOMY,
     _normalize,
-    capitalize_words,
-    format_geographic_nomenclature,
+    _not_found,
     format_place_result,
     is_exploitable_text,
-    _not_found,
 )
 
 # Geographic-entities gazetteer (JSON file)
@@ -59,24 +54,34 @@ _GEO_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 # (floor(lat), floor(lon)) -> [entity, ...]
 _SPATIAL_GEO_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
 _SEEN_GEO_KEYS: Set[Tuple[str, str, float, float]] = set()
+_GEO_DATA_LOADED = False
+_GEO_INDEX_KEYS: List[str] = []
 
-if _GEO_DATA_PATH.exists():
-    with open(_GEO_DATA_PATH, "r", encoding="utf-8") as _f:
-        for _entry in json.load(_f):
-            for _alias in _entry.get("aliases", []):
-                _key = _normalize(_alias)
-                if _key:
-                    _GEO_INDEX.setdefault(_key, []).append(_entry)
-            if _entry.get("lat") is not None and _entry.get("lon") is not None:
-                try:
-                    _glat, _glon = float(_entry["lat"]), float(_entry["lon"])
-                    _gkey = (str(_entry.get("type", "")), str(_entry.get("name", "")), _glat, _glon)
-                    if _gkey not in _SEEN_GEO_KEYS:
-                        _SEEN_GEO_KEYS.add(_gkey)
-                        _cell = (math.floor(_glat), math.floor(_glon))
-                        _SPATIAL_GEO_GRID.setdefault(_cell, []).append(_entry)
-                except (ValueError, TypeError):
-                    pass
+
+def _ensure_geo_data() -> None:
+    """Load geographic entities data lazily (once, on first use)."""
+    global _GEO_DATA_LOADED, _GEO_INDEX_KEYS
+    if _GEO_DATA_LOADED:
+        return
+    if _GEO_DATA_PATH.exists():
+        with open(_GEO_DATA_PATH, "r", encoding="utf-8") as _f:
+            for _entry in json.load(_f):
+                for _alias in _entry.get("aliases", []):
+                    _key = _normalize(_alias)
+                    if _key:
+                        _GEO_INDEX.setdefault(_key, []).append(_entry)
+                if _entry.get("lat") is not None and _entry.get("lon") is not None:
+                    try:
+                        _glat, _glon = float(_entry["lat"]), float(_entry["lon"])
+                        _gkey = (str(_entry.get("type", "")), str(_entry.get("name", "")), _glat, _glon)
+                        if _gkey not in _SEEN_GEO_KEYS:
+                            _SEEN_GEO_KEYS.add(_gkey)
+                            _cell = (math.floor(_glat), math.floor(_glon))
+                            _SPATIAL_GEO_GRID.setdefault(_cell, []).append(_entry)
+                    except (ValueError, TypeError):
+                        pass
+    _GEO_INDEX_KEYS = list(_GEO_INDEX.keys())
+    _GEO_DATA_LOADED = True
 
 
 # Political types take priority when multiple entity types share the same name
@@ -92,6 +97,22 @@ MATCHING_CONFIG = {
     "max_fuzzy_distance_km": 75.0,
     "suggestion_radius_km": 150.0,
 }
+
+
+def polygon_centroid(coords: Any) -> Optional[Tuple[float, float]]:
+    """Compute the centroid (x, y) of a sequence of 2D points."""
+    if not coords:
+        return None
+    try:
+        n = len(coords)
+        if n == 0:
+            return None
+        return (
+            sum(float(point[0]) for point in coords) / n,
+            sum(float(point[1]) for point in coords) / n,
+        )
+    except (TypeError, ValueError, IndexError, ZeroDivisionError):
+        return None
 
 
 def is_in_bounds(lat: float, lon: float, bounds: Optional[Dict[str, float]]) -> bool:
@@ -131,8 +152,8 @@ def resolve_best_candidate(
     """Select the best candidate from a candidate list following resolution priorities:
 
     1. Bounds Filtering (strict if requested, or prefers in-bounds candidates).
-    2. Political Entity Priority (prefers political entities over lakes/physical features).
-    3. Target Position Proximity (closest to target_pos wins).
+    2. Target Position Proximity (closest to target_pos wins).
+    3. Political Entity Priority (prefers political entities over lakes/physical features).
     4. Population / Bounds Center (highest population or closest to map center).
     """
     if not candidates:
@@ -159,12 +180,6 @@ def resolve_best_candidate(
             return None
     else:
         pool = in_bounds or candidates
-
-    if prefer_political:
-        political = [c for c in pool if c.get("type") in _POLITICAL_TYPES]
-        if political and len(political) < len(pool):
-            pool = political
-
     if target_pos is not None:
         ref_lat, ref_lon = target_pos
 
@@ -177,6 +192,13 @@ def resolve_best_candidate(
             )
 
         return min(pool, key=_dist)
+    
+    if prefer_political:
+        political = [c for c in pool if c.get("type") in _POLITICAL_TYPES]
+        if political and len(political) < len(pool):
+            pool = political
+
+    
 
     if prefer_population:
         return max(pool, key=lambda c: c.get("population", 0))
@@ -215,6 +237,7 @@ def find_geo_entity(
     Returns the best-matching entity dict or ``None``.
     When *fuzzy=True*, tolerates OCR typos up to *cutoff*.
     """
+    _ensure_geo_data()
     norm = _normalize(text)
     if not norm:
         return None
@@ -224,7 +247,7 @@ def find_geo_entity(
         return resolve_best_candidate(hits, target_pos=target_pos, bounds=bounds, prefer_political=True)
 
     if fuzzy and cutoff < MATCHING_CONFIG["exact_threshold"]:
-        close = difflib.get_close_matches(norm, _GEO_INDEX.keys(), n=1, cutoff=cutoff)
+        close = difflib.get_close_matches(norm, _GEO_INDEX_KEYS, n=1, cutoff=cutoff)
         if close:
             return resolve_best_candidate(_GEO_INDEX[close[0]], target_pos=target_pos, bounds=bounds, prefer_political=True)
 
@@ -243,9 +266,6 @@ _gc = getattr(geonamescache, "GeonamesCache")()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 _SPATIAL_CITY_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
 _SEEN_CITY_IDS: Set[Any] = set()
-_CITY_ALIASES = {
-    "New Orleans": ("La Nouvelle-Orléans",),
-}
 
 for _info in _gc.get_cities().values():
     _name = _info.get("name") or ""
@@ -272,6 +292,8 @@ for _info in _gc.get_cities().values():
         _SEEN_CITY_IDS.add(_gid)
         _cell = (math.floor(_lat), math.floor(_lon))
         _SPATIAL_CITY_GRID.setdefault(_cell, []).append(_city)
+
+_CITY_INDEX_KEYS = list(_CITY_INDEX.keys())
 
 
 def _get_spatial_cells(lat: float, lon: float, radius_km: float) -> List[Tuple[int, int]]:
@@ -307,6 +329,8 @@ def find_nearby_candidate_place(
     if not is_exploitable_text(text) or not coords or len(coords) < 2:
         return None
 
+    _ensure_geo_data()
+
     lon, lat = float(coords[0]), float(coords[1])
     normalized_query = _normalize(text)
     if not normalized_query:
@@ -336,9 +360,6 @@ def find_nearby_candidate_place(
             if haversine_distance_km(lat, lon, city["lat"], city["lon"]) > radius_km:
                 continue
             candidate = dict(city)
-            candidate["aliases"] = list(_CITY_ALIASES.get(city["name"], ()))
-            if candidate["aliases"]:
-                candidate["name_fr"] = candidate["aliases"][0]
             key = ("city", candidate["name"], candidate["lat"], candidate["lon"])
             candidates[key] = candidate
 
@@ -446,7 +467,7 @@ def resolve_place(
             cands = _CITY_INDEX.get(key, [])
         else:
             close = difflib.get_close_matches(
-                key, list(_CITY_INDEX.keys()), n=1, cutoff=cutoff
+                key, _CITY_INDEX_KEYS, n=1, cutoff=cutoff
             )
             if not close:
                 return None
@@ -562,10 +583,10 @@ __all__ = [
     "match_ocr_label",
     "find_geo_entity",
     "find_nearby_candidate_place",
+    "polygon_centroid",
     "is_in_bounds",
     "haversine_distance_km",
     "MATCHING_CONFIG",
     "_GEO_INDEX",
     "_CITY_INDEX",
-    "_CITY_ALIASES",
 ]

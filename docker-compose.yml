@@ -17,6 +17,7 @@ services:
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./shared:/shared:ro
       - ocr-data:/data
+      - media-data:/app/media
     depends_on:
       - keycloak
   frontend:
@@ -61,6 +62,7 @@ services:
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./shared:/shared:ro
       - ocr-data:/data
+      - media-data:/app/media
     depends_on:
       - redis
       - db
@@ -222,3 +224,4 @@ volumes:
   redis-data:
   keycloak-data:
   ocr-data:
+  media-data:

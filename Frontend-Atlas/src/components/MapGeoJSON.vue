@@ -20,7 +20,6 @@
 </template>
 
 <script setup lang="ts">
-// @ts-ignore Vue is supplied by the app runtime; tolerate missing editor type resolution.
 import {
   onMounted,
   onBeforeUnmount,
