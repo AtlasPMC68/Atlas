@@ -97,4 +97,46 @@ describe("featureGrouping", () => {
     expect(grouped[1].features[0].id).toBe("f-2");
     expect(grouped[1].features[1].id).toBe("f-1");
   });
+
+  it("groupFeaturesByMap supports snake_case map_id, case-insensitive ID matching, and mapTitle fallback", () => {
+    const mapPeriods: MapPeriod[] = [
+      {
+        id: "UUID-1234",
+        title: "Le territoire du Canada en 1905",
+        description: "",
+        startDate: "1905-01-01",
+        endDate: "1905-12-31",
+        visible: true,
+        center: [0, 0],
+        zoom: 4,
+      },
+    ];
+
+    const fWithSnakeCase = {
+      type: "Feature",
+      id: "f-snake",
+      map_id: "uuid-1234",
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { name: "Québec" },
+    } as unknown as Feature;
+
+    const fWithFallbackTitle = {
+      type: "Feature",
+      id: "f-fallback",
+      mapId: "unknown-map-999",
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { name: "Montréal", mapTitle: "Carte Historique 1850" },
+    } as unknown as Feature;
+
+    const grouped = groupFeaturesByMap([fWithSnakeCase, fWithFallbackTitle], mapPeriods);
+    expect(grouped).toHaveLength(2);
+
+    const periodGroup = grouped.find((g) => g.id === "uuid-1234");
+    expect(periodGroup).toBeDefined();
+    expect(periodGroup?.title).toBe("Le territoire du Canada en 1905");
+
+    const fallbackGroup = grouped.find((g) => g.id === "unknown-map-999");
+    expect(fallbackGroup).toBeDefined();
+    expect(fallbackGroup?.title).toBe("Carte Historique 1850");
+  });
 });

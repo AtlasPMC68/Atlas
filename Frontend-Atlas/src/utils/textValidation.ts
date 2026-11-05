@@ -142,9 +142,14 @@ export function applyValidationToFeature(
           entry.text,
         )
       : applyWordStyleToFeature(feature, wordType, entry.text);
+  const shouldUseSuggestedCoords =
+    entry.useSuggestedPlace &&
+    entry.suggestedPlace &&
+    !isJsonSuggestion(entry);
+
   const coordinates: Coordinate | undefined = isSelected
-    ? entry.useSuggestedPlace && entry.suggestedPlace
-      ? entry.suggestedPlace.coordinates
+    ? shouldUseSuggestedCoords
+      ? entry.suggestedPlace!.coordinates
       : ((entry.coordinates || feature.geometry?.coordinates) as Coordinate)
     : undefined;
   const validationStatus = isSelected

@@ -33,11 +33,8 @@ from app.models.map_import import (
 from app.services.imports import ImportInputs, get_import, parse_import_inputs
 from app.utils.place_nomenclature import (
     DEFAULT_STYLE,
-    GEOGRAPHIC_PREFIX_TYPES,
     STYLES_MAP,
-    _normalize,
     is_exploitable_text,
-    is_geographic_prefix_only,
 )
 from app.utils.place_resolution import (
     MATCHING_CONFIG,
@@ -396,45 +393,8 @@ def _categorized_text_features_from_ocr(
     collections: List[dict[str, Any]] = []
     seen_recognized = set()
     seen_unrecognized: dict[str, list[tuple[float, float]]] = {}
-    source_blocks = [
-        {
-            "coords": coords,
-            "text": str(text or "").strip(),
-            "prob": prob,
-            "skip": False,
-            "prefix_suggestion": None,
-        }
-        for coords, text, prob in blocks
-    ]
 
     center_of = polygon_centroid
-
-    def nearby_word_boxes(left: Any, right: Any) -> bool:
-        if not left or not right:
-            return False
-        try:
-            left_xs = [float(point[0]) for point in left]
-            left_ys = [float(point[1]) for point in left]
-            right_xs = [float(point[0]) for point in right]
-            right_ys = [float(point[1]) for point in right]
-        except (TypeError, ValueError, IndexError):
-            return False
-
-        left_height = max(left_ys) - min(left_ys)
-        right_height = max(right_ys) - min(right_ys)
-        word_height = max(1.0, left_height, right_height)
-        horizontal_gap = max(
-            0.0,
-            max(
-                min(right_xs) - max(left_xs),
-                min(left_xs) - max(right_xs),
-            ),
-        )
-        vertical_gap = max(
-            0.0,
-            max(min(right_ys) - max(left_ys), min(left_ys) - max(right_ys)),
-        )
-        return horizontal_gap <= word_height * 2.5 and vertical_gap <= word_height * 0.5
 
     def estimated_position(coords: Any) -> Optional[tuple[float, float]]:
         center = center_of(coords)
@@ -455,72 +415,7 @@ def _categorized_text_features_from_ocr(
             float(west) + (cx / w) * (float(east) - float(west)),
         )
 
-    for prefix_index, prefix_block in enumerate(source_blocks):
-        prefix_text = prefix_block["text"]
-        if (
-            not is_geographic_prefix_only(prefix_text)
-            or should_ignore(prefix_text)
-            or not is_exploitable_text(prefix_text)
-            or polygon_center_in_legend(prefix_block["coords"], legend_bounds)
-        ):
-            continue
-        prefix_key = _normalize(prefix_text)
-        expected_types = next(
-            (
-                types
-                for key, types in GEOGRAPHIC_PREFIX_TYPES.items()
-                if key in prefix_key
-            ),
-            None,
-        )
-        if expected_types is None:
-            continue
-
-        for suffix_index, suffix_block in enumerate(source_blocks):
-            if suffix_index == prefix_index or suffix_block["skip"]:
-                continue
-            suffix_text = suffix_block["text"]
-            if (
-                not suffix_text
-                or is_geographic_prefix_only(suffix_text)
-                or should_ignore(suffix_text)
-                or not is_exploitable_text(suffix_text)
-                or polygon_center_in_legend(suffix_block["coords"], legend_bounds)
-                or not nearby_word_boxes(prefix_block["coords"], suffix_block["coords"])
-            ):
-                continue
-
-            phrase = f"{prefix_text} {suffix_text}"
-            phrase_position = estimated_position(suffix_block["coords"])
-            try:
-                place = (
-                    match_ocr_label(phrase, frame_bounds, target_pos=phrase_position)
-                    if phrase_position is not None
-                    else match_ocr_label(phrase, frame_bounds)
-                )
-            except TypeError:
-                place = match_ocr_label(phrase, frame_bounds)
-            if not place or not place.get("found", True):
-                continue
-            if place.get("type") not in expected_types:
-                continue
-
-            prefix_block["skip"] = True
-            p_type = place.get("type") or "city"
-            suffix_block["prefix_suggestion"] = {
-                "name": place.get("name", phrase),
-                "coordinates": [place["lon"], place["lat"]],
-                "type": p_type,
-                "source": "json" if (p_type and p_type != "city") else "geonames",
-            }
-            break
-
-    for block in source_blocks:
-        if block["skip"]:
-            continue
-        coords = block["coords"]
-        text = block["text"]
-        prob = block["prob"]
+    for coords, text, prob in blocks:
         # Case 1: reject immediately if the text is inside the legend.
         if polygon_center_in_legend(coords, legend_bounds):
             continue
@@ -541,9 +436,6 @@ def _categorized_text_features_from_ocr(
                 entity = match_ocr_label(raw_text, frame_bounds)
         except TypeError:
             entity = match_ocr_label(raw_text, frame_bounds)
-
-        if block["prefix_suggestion"]:
-            entity = None
 
         if entity and entity.get("out_of_bounds"):
             continue
@@ -638,7 +530,7 @@ def _categorized_text_features_from_ocr(
                 continue
             else:
                 prior_centers.append(center)
-            suggested_place = block["prefix_suggestion"]
+            suggested_place = None
             if has_place_coordinates and entity and entity.get("name"):
                 raw_type = entity.get("type") or "city"
                 is_from_json = bool(raw_type and raw_type != "city")
@@ -648,9 +540,6 @@ def _categorized_text_features_from_ocr(
                     "type": raw_type,
                     "source": "json" if is_from_json else "geonames",
                 }
-            elif suggested_place and isinstance(suggested_place, dict) and "source" not in suggested_place:
-                raw_type = suggested_place.get("type") or "city"
-                suggested_place["source"] = "json" if (raw_type and raw_type != "city") else "geonames"
             collections.append(
                 _make_text_feature(
                     name=raw_text,

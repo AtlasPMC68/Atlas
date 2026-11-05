@@ -18,71 +18,6 @@ vi.mock("../../src/composables/useMapReferenceImage", () => ({
   }),
 }));
 
-// ── Mock Leaflet so jsdom doesn't crash ──────────────────────────────────────
-vi.mock("leaflet", () => {
-  const marker = vi.fn(() => ({
-    addTo: vi.fn().mockReturnThis(),
-    setIcon: vi.fn(),
-    setTooltipContent: vi.fn(),
-    bindTooltip: vi.fn().mockReturnThis(),
-    getTooltip: vi.fn(() => ({
-      options: { direction: "left", offset: { x: 0, y: 0 } },
-      getElement: vi.fn(() => document.createElement("div")),
-    })),
-    closeTooltip: vi.fn(),
-    isTooltipOpen: vi.fn(() => true),
-    on: vi.fn().mockReturnThis(),
-    getLatLng: vi.fn(() => ({ lat: 0, lng: 0 })),
-    getElement: vi.fn(() => document.createElement("div")),
-    openTooltip: vi.fn(),
-    setLatLng: vi.fn(),
-  }));
-  const circleMarker = vi.fn(() => ({
-    addTo: vi.fn().mockReturnThis(),
-    setStyle: vi.fn(),
-    setTooltipContent: vi.fn(),
-    bindTooltip: vi.fn().mockReturnThis(),
-    on: vi.fn().mockReturnThis(),
-    getLatLng: vi.fn(() => ({ lat: 0, lng: 0 })),
-    getElement: vi.fn(() => document.createElement("div")),
-    openTooltip: vi.fn(),
-    setLatLng: vi.fn(),
-  }));
-  const divIcon = vi.fn(() => ({}));
-  const tileLayer = vi.fn(() => ({ addTo: vi.fn() }));
-  const geoJSON = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
-  const circle = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
-  const polyline = vi.fn(() => ({ addTo: vi.fn().mockReturnThis() }));
-  const point = vi.fn((x: number, y: number) => ({ x, y }));
-  const map = vi.fn(() => ({
-    setView: vi.fn().mockReturnThis(),
-    addLayer: vi.fn(),
-    removeLayer: vi.fn(),
-    remove: vi.fn(),
-    getZoom: vi.fn(() => 3),
-    fitBounds: vi.fn(),
-    invalidateSize: vi.fn(),
-    on: vi.fn().mockReturnThis(),
-    latLngToContainerPoint: vi.fn(() => ({ x: 100, y: 100 })),
-  }));
-
-  return {
-    default: { marker, circleMarker, divIcon, tileLayer, geoJSON, circle, polyline, point, map },
-    marker,
-    circleMarker,
-    divIcon,
-    tileLayer,
-    geoJSON,
-    circle,
-    polyline,
-    point,
-    map,
-  };
-});
-
-// Mock dynamic import("leaflet/dist/leaflet.css")
-vi.mock("leaflet/dist/leaflet.css", () => ({}));
-
 // ── Test data: Only rejected/unrecognized items are passed to the modal ─────────
 const itemsWithImagePos: TextValidationEntry[] = [
   {
@@ -149,6 +84,12 @@ describe("TextValidationModal", () => {
   it("does not render when isOpen is false", () => {
     const wrapper = mountModal(testItems, false);
     expect(wrapper.find(".fixed").exists()).toBe(false);
+  });
+
+  it("does not render any temporary map container (map removed)", () => {
+    const wrapper = mountModal();
+    expect(wrapper.find('[data-testid="map-container"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Positionnement géographique");
   });
 
   it("keeps the confirmation dialog open when all OCR texts have been removed", () => {
@@ -363,30 +304,6 @@ describe("TextValidationModal", () => {
     expect(confirmedItems[0].id).toBe("unrec-unloc-1");
   });
 
-  it("clears the suggested place when position is manually changed", async () => {
-    const wrapper = mountModal();
-    const vm = wrapper.vm as any;
-    const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-    expect(item.suggestedPlace?.name).toBe("Paris");
-
-    // Manually reposition the item
-    vm.setItemCoordinates(item, -73.56, 45.5);
-
-    expect(item.suggestedPlace).toBeUndefined();
-    expect(item.useSuggestedPlace).toBe(false);
-  });
-
-  it("keeps the OCR position on the temporary map when a place suggestion is accepted", () => {
-    const wrapper = mountModal();
-    const vm = wrapper.vm as any;
-    const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-
-    vm.toggleSuggestion(item);
-
-    expect(item.useSuggestedPlace).toBe(true);
-    expect(vm.getItemCoords(item)).toEqual([-82.35, 23.2]);
-  });
-
   it("allows selecting word type and applies text transformations according to word style", async () => {
     const wrapper = mountModal([
       {
@@ -502,38 +419,6 @@ describe("TextValidationModal", () => {
     expect(confirmedItems.every((i) => i.selected === false)).toBe(true);
   });
 
-  describe("Suggestion tooltip anti-overlap", () => {
-    it("positions suggestion tooltip away from original marker coordinates so it does not hide original word", async () => {
-      const wrapper = mountModal([
-        {
-          id: "item-overlap-1",
-          text: "LE DU LE CAP",
-          originalText: "LE DU LE CAP",
-          selected: true,
-          coordinates: [-59.95, 46.2],
-          suggestedPlace: {
-            name: "Glace Bay",
-            coordinates: [-59.97, 46.21],
-          }, // to the northwest (left of original)
-        },
-      ]);
-      await wrapper.vm.$nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      const vm = wrapper.vm as any;
-      const item = vm.allItems[0];
-
-      vm.showToleranceRadius(item);
-      const marker = vm.getSuggestionPreviewMarker();
-      expect(marker).toBeDefined();
-
-      const tooltip = marker.getTooltip();
-      expect(tooltip).toBeDefined();
-      // Should be positioned away from original marker
-      expect(["left", "bottom", "right", "top"]).toContain(tooltip.options.direction);
-    });
-  });
-
   describe("Undo / Redo (Ctrl+Z, Ctrl+Y, and UI buttons)", () => {
     it("renders undo and redo buttons in header with initial disabled state", () => {
       const wrapper = mountModal();
@@ -546,16 +431,15 @@ describe("TextValidationModal", () => {
       expect((redoBtn.element as HTMLButtonElement).disabled).toBe(true);
     });
 
-    it("allows undoing and redoing coordinate modifications via buttons and Ctrl+Z", async () => {
+    it("allows undoing and redoing text modifications via buttons and Ctrl+Z", async () => {
       const wrapper = mountModal();
       const vm = wrapper.vm as any;
-      const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-      const origLon = item.coordinates[0];
-      const origLat = item.coordinates[1];
+      const textInput = wrapper.findAll('input[type="text"]')[0];
 
-      // Move marker
-      vm.setItemCoordinates(item, -70.0, 45.0);
-      expect(item.coordinates).toEqual([-70.0, 45.0]);
+      // Focus input starts session
+      await textInput.trigger("focus");
+      await textInput.setValue("Nouveau Texte");
+      expect(vm.allItems[0].text).toBe("Nouveau Texte");
       expect(vm.canUndo).toBe(true);
 
       // Trigger Ctrl+Z via keydown event on window
@@ -564,9 +448,8 @@ describe("TextValidationModal", () => {
       );
       await wrapper.vm.$nextTick();
 
-      // Coordinates reverted back
-      const revertedItem = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-      expect(revertedItem.coordinates).toEqual([origLon, origLat]);
+      // Text reverted back
+      expect(vm.allItems[0].text).toBe("Traité de Paris de 1783");
       expect(vm.canRedo).toBe(true);
 
       // Trigger Redo via Ctrl+Y
@@ -574,34 +457,12 @@ describe("TextValidationModal", () => {
         new KeyboardEvent("keydown", { key: "y", ctrlKey: true, bubbles: true }),
       );
       await wrapper.vm.$nextTick();
-      const redoneItem = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-      expect(redoneItem.coordinates).toEqual([-70.0, 45.0]);
+      expect(vm.allItems[0].text).toBe("Nouveau Texte");
 
       // Undo again via undo button
       const undoBtn = wrapper.find('button[data-testid="modal-undo-button"]');
       await undoBtn.trigger("click");
-      const undoneAgain = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-      expect(undoneAgain.coordinates).toEqual([origLon, origLat]);
-    });
-
-    it("does not reset map zoom or fitBounds on undo (Ctrl+Z)", async () => {
-      const wrapper = mountModal();
-      const vm = wrapper.vm as any;
-
-      const item = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-      const origLon = item.coordinates[0];
-      const origLat = item.coordinates[1];
-
-      vm.setItemCoordinates(item, -70.0, 45.0);
-      expect(item.coordinates).toEqual([-70.0, 45.0]);
-      expect(vm.canUndo).toBe(true);
-
-      // Trigger undo
-      vm.undo();
-      await wrapper.vm.$nextTick();
-
-      const revertedItem = vm.allItems.find((i: TextValidationEntry) => i.id === "unrec-loc-1");
-      expect(revertedItem.coordinates).toEqual([origLon, origLat]);
+      expect(vm.allItems[0].text).toBe("Traité de Paris de 1783");
     });
 
     it("allows undoing toggle select all via Ctrl+Z", async () => {
@@ -697,8 +558,8 @@ describe("TextValidationModal", () => {
     });
   });
 
-  describe("Word focus, point contour styling and undo stability", () => {
-    it("temporarily applies full checked style and changes point contour color when an unchecked item is focused", async () => {
+  describe("Word focus and item selection", () => {
+    it("sets highlightedId when an item is focused and clears when clicking outside", async () => {
       const wrapper = mountModal([
         {
           id: "item-focus-1",
@@ -714,9 +575,6 @@ describe("TextValidationModal", () => {
       const vm = wrapper.vm as any;
       const item = vm.allItems[0];
 
-      // Before focus: unchecked
-      expect(item.selected).toBe(false);
-
       // Focus item
       vm.focusItem(item);
       await wrapper.vm.$nextTick();
@@ -728,108 +586,6 @@ describe("TextValidationModal", () => {
       await wrapper.vm.$nextTick();
 
       expect(vm.highlightedId).toBeNull();
-    });
-
-    it("does not reset map bounds on undo so map position does not change", async () => {
-      const wrapper = mountModal([
-        {
-          id: "item-undo-1",
-          text: "Quebec",
-          originalText: "Quebec",
-          selected: true,
-          coordinates: [-71.2, 46.8],
-        },
-      ]);
-      await wrapper.vm.$nextTick();
-
-      const vm = wrapper.vm as any;
-      const item = vm.allItems[0];
-
-      // Move coordinate
-      vm.setItemCoordinates(item, -70.0, 47.0);
-      expect(vm.canUndo).toBe(true);
-
-      // Perform undo
-      vm.undo();
-      await wrapper.vm.$nextTick();
-
-      const reverted = vm.allItems.find((i: any) => i.id === "item-undo-1");
-      expect(reverted.coordinates).toEqual([-71.2, 46.8]);
-    });
-  });
-
-  describe("Suggestion display distinction: entity from JSON vs city / proximity radius", () => {
-    it("does not render blue tolerance circle for JSON entities and displays only green connection", async () => {
-      const circleSpy = vi.spyOn(L, "circle");
-      const polylineSpy = vi.spyOn(L, "polyline");
-
-      const wrapper = mountModal([
-        {
-          id: "item-lake-1",
-          text: "Lac Superinla",
-          originalText: "Lac Superinla",
-          selected: true,
-          coordinates: [-87.0, 48.0],
-          suggestedPlace: {
-            name: "Lac Supérieur",
-            coordinates: [-87.5, 47.7],
-            type: "lake",
-            source: "json",
-          },
-        },
-      ]);
-      await wrapper.vm.$nextTick();
-
-      const vm = wrapper.vm as any;
-      circleSpy.mockClear();
-      polylineSpy.mockClear();
-
-      vm.showToleranceRadius(vm.allItems[0]);
-      await wrapper.vm.$nextTick();
-
-      expect(circleSpy).not.toHaveBeenCalled();
-      expect(polylineSpy).toHaveBeenCalled();
-      expect(wrapper.text()).not.toContain("JSON");
-      expect(wrapper.text()).not.toContain("nearby");
-      expect(wrapper.text()).not.toContain("Entité");
-    });
-
-    it("renders blue tolerance circle for city/nearby suggestions and shows 150 km", async () => {
-      const circleSpy = vi.spyOn(L, "circle");
-      const polylineSpy = vi.spyOn(L, "polyline");
-
-      const wrapper = mountModal([
-        {
-          id: "item-city-1",
-          text: "Montr",
-          originalText: "Montr",
-          selected: true,
-          coordinates: [-73.5, 45.5],
-          suggestedPlace: {
-            name: "Montréal",
-            coordinates: [-73.56, 45.50],
-            type: "city",
-            source: "nearby",
-          },
-        },
-      ]);
-      await wrapper.vm.$nextTick();
-
-      const vm = wrapper.vm as any;
-      circleSpy.mockClear();
-      polylineSpy.mockClear();
-
-      vm.showToleranceRadius(vm.allItems[0]);
-      await wrapper.vm.$nextTick();
-
-      expect(circleSpy).toHaveBeenCalledWith(
-        [45.5, -73.5],
-        expect.objectContaining({ radius: 150000 }),
-      );
-      expect(polylineSpy).toHaveBeenCalled();
-      expect(wrapper.text()).not.toContain("JSON");
-      expect(wrapper.text()).not.toContain("nearby");
-      expect(wrapper.text()).not.toContain("Entité");
     });
   });
 });

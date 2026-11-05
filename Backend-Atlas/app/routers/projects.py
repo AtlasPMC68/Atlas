@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, defer
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
-from app.models.map_import import EXTRACTION_ACTIVE, MapImport
+from app.models.map_import import EXTRACTION_PENDING, MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
@@ -607,7 +607,7 @@ async def get_project_maps(
 
     active_imports = (
         select(MapImport.map_id)
-        .where(MapImport.extraction_state.in_(EXTRACTION_ACTIVE))
+        .where(MapImport.extraction_state.in_(EXTRACTION_PENDING))
     )
     maps_result = await session.execute(
         select(Map)

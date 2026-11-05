@@ -834,11 +834,26 @@ async function onUpdateFeature(
 const showTextValidationModal = ref(false);
 const isSavingTextValidation = ref(false);
 const activeValidationMapId = ref<string | null>(null);
-const validationMapTitle = computed(
-  () =>
-    mapPeriods.value.find((period: MapPeriod) => period.id === activeValidationMapId.value)?.title ??
-    "Éléments généraux",
-);
+const validationMapTitle = computed(() => {
+  if (!activeValidationMapId.value) return "Éléments généraux";
+  const mapIdStr = String(activeValidationMapId.value).trim().toLowerCase();
+  const period = mapPeriods.value.find(
+    (p: MapPeriod) => String(p.id).trim().toLowerCase() === mapIdStr,
+  );
+  if (period?.title) return period.title;
+
+  const matchingFeature = features.value.find(
+    (f: Feature) =>
+      String(f.mapId || (f as any).map_id || "").trim().toLowerCase() === mapIdStr &&
+      Boolean((f as any).mapTitle || (f.properties as any)?.mapTitle),
+  );
+  const customTitle =
+    (matchingFeature as any)?.mapTitle ||
+    (matchingFeature?.properties as any)?.mapTitle;
+  if (customTitle) return customTitle;
+
+  return "Éléments généraux";
+});
 const validationImageUrl = ref<string | null>(null);
 const textValidationEntries = ref<TextValidationEntry[]>([]);
 

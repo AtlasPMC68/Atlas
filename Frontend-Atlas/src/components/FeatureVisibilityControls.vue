@@ -103,13 +103,17 @@
                     <button
                       v-if="mapGroup.id !== null"
                       type="button"
-                      class="text-sm font-semibold text-gray-700 truncate text-left hover:text-primary"
+                      class="text-sm font-semibold text-gray-700 truncate text-left hover:text-primary flex-1 min-w-0"
                       :title="`Modifier ${mapGroup.title}`"
                       @click.stop="emit('edit-map', mapGroup.id)"
                     >
                       {{ mapGroup.title }}
                     </button>
-                    <span v-else class="text-sm font-semibold text-gray-700 truncate" :title="mapGroup.title">
+                    <span
+                      v-else
+                      class="text-sm font-semibold text-gray-700 truncate flex-1 min-w-0"
+                      :title="mapGroup.title"
+                    >
                       {{ mapGroup.title }}
                     </span>
                   </label>

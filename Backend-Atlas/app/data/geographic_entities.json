@@ -4866,22 +4866,26 @@
     "type": "ocean",
     "name": "North Pacific Ocean",
     "name_fr": "Océan Pacifique",
-    "lat": 32.4661,
-    "lon": -59.3161,
+    "lat": 42.0,
+    "lon": -145.0,
     "aliases": [
       "north pacific ocean",
-      "ocean pacifique"
+      "ocean pacifique",
+      "pacific ocean",
+      "pacifique"
     ]
   },
   {
     "type": "ocean",
     "name": "South Pacific Ocean",
     "name_fr": "Océan Pacifique",
-    "lat": -32.2741,
-    "lon": 31.638,
+    "lat": -30.0,
+    "lon": -120.0,
     "aliases": [
       "ocean pacifique",
-      "south pacific ocean"
+      "south pacific ocean",
+      "pacific ocean",
+      "pacifique"
     ]
   },
   {

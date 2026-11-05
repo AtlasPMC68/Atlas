@@ -380,6 +380,29 @@ describe("textValidation utility functions", () => {
       expect(result.properties.userSelected).toBe(true);
       expect(result.properties.validationStatus).toBe("accepted");
     });
+
+    it("does not apply coordinates from JSON suggestion when suggestion is accepted, keeping original coordinates", () => {
+      const entry: TextValidationEntry = {
+        id: "feat-1",
+        text: "Lac Supérieur",
+        originalText: "Lac Superinla",
+        selected: true,
+        useSuggestedPlace: true,
+        coordinates: [-88.0, 47.0],
+        suggestedPlace: {
+          name: "Lac Supérieur",
+          coordinates: [-87.0, 48.0],
+          type: "lake",
+          source: "json",
+        },
+      };
+
+      const result = applyValidationToFeature(baseFeature, entry);
+      expect(result.geometry.coordinates).toEqual([-88.0, 47.0]);
+      expect(result.name).toBe("Lac Supérieur");
+      expect(result.properties.show).toBe(true);
+      expect(result.properties.recognized).toBe(true);
+    });
   });
 
   describe("OCR validation end-to-end integration flow", () => {

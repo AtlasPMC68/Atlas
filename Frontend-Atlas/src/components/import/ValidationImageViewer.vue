@@ -1,7 +1,8 @@
 <template>
   <div
-    class="flex flex-col bg-gray-900 min-h-0 relative shrink-0 overflow-hidden"
-    :style="{ width: `${width}px` }"
+    class="flex flex-col bg-gray-900 min-h-0 relative overflow-hidden"
+    :class="width !== undefined ? 'shrink-0' : 'flex-1 min-w-0'"
+    :style="width !== undefined ? { width: `${width}px` } : undefined"
   >
     <div class="px-3 py-2 bg-gray-800 text-white font-semibold flex items-center justify-between shrink-0 text-sm">
       <span class="flex items-center gap-1.5">
@@ -104,7 +105,7 @@
 import { PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from "@heroicons/vue/24/outline";
 
 defineProps<{
-  width: number;
+  width?: number;
   displayImageUrl?: string | null;
   imgZoom: number;
   isUpdatingReferenceImage?: boolean;

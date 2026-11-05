@@ -60,15 +60,29 @@ export function groupFeaturesByMap(
   const mapGroups = new Map<string | null, MapGroupItem>();
 
   features.forEach((feature: Feature) => {
-    const mapId = feature.mapId || null;
+    const rawMapId =
+      feature.mapId ??
+      (feature as any).map_id ??
+      (feature.properties as any)?.mapId ??
+      (feature.properties as any)?.map_id ??
+      null;
+    const mapId = rawMapId ? String(rawMapId).trim() : null;
     if (!mapGroups.has(mapId)) {
       let title = "Éléments généraux";
       let startDate: string | null = null;
       if (mapId && mapPeriods) {
-        const period = mapPeriods.find((p: MapPeriod) => p.id === mapId);
+        const period = mapPeriods.find(
+          (p: MapPeriod) => String(p.id).trim().toLowerCase() === mapId.toLowerCase(),
+        );
         if (period) {
           title = period.title;
           startDate = period.startDate;
+        }
+      }
+      if (title === "Éléments généraux" && mapId) {
+        const customTitle = (feature as any).mapTitle || (feature.properties as any)?.mapTitle;
+        if (customTitle) {
+          title = customTitle;
         }
       }
       mapGroups.set(mapId, { id: mapId, title, startDate, features: [] });

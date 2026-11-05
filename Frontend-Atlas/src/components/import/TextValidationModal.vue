@@ -31,16 +31,12 @@
           <!-- Status legend -->
           <div class="hidden md:flex items-center gap-4 px-3 py-1 bg-base-200/50 rounded-lg border border-base-300 text-xs">
             <div class="flex items-center gap-1.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block border border-blue-600" />
-              <span class="font-medium text-black">Position image de référence</span>
+              <span class="w-3.5 h-3.5 rounded-full bg-amber-500 text-white font-bold text-[9px] flex items-center justify-center border border-amber-600">!</span>
+              <span class="font-medium text-black">Suggestion disponible</span>
             </div>
             <div class="flex items-center gap-1.5">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block border border-emerald-600" />
               <span class="font-medium text-black">Lieu suggéré</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <span class="w-3.5 h-3.5 rounded-full bg-amber-500 text-white font-bold text-[9px] flex items-center justify-center border border-amber-600">!</span>
-              <span class="font-medium text-black">Suggestion disponible</span>
             </div>
           </div>
         </div>
@@ -83,14 +79,13 @@
         </div>
       </div>
 
-      <!-- Main Body: 3 columns with draggable dividers -->
+      <!-- Main Body: 2 columns with draggable divider -->
       <div
         class="flex-1 min-h-0 flex overflow-hidden select-none"
-        :class="{ 'cursor-col-resize': isDraggingLeft || isDraggingRight }"
+        :class="{ 'cursor-col-resize': isDragging }"
       >
         <!-- 1. Left: Original Image Viewer -->
         <ValidationImageViewer
-          :width="leftColWidth"
           :display-image-url="displayImageUrl"
           :img-zoom="imgZoom"
           :is-updating-reference-image="isUpdatingReferenceImage"
@@ -101,32 +96,14 @@
           @remove-image="removeReferenceImage"
         />
 
-        <!-- Left Resizer Divider -->
+        <!-- Resizer Divider -->
         <div
           class="w-1.5 bg-base-300 hover:bg-primary active:bg-primary transition-colors cursor-col-resize shrink-0 z-10"
           title="Glisser pour redimensionner la colonne"
-          @mousedown="startColResize(true, $event)"
+          @mousedown="startColResize"
         />
 
-        <!-- 2. Center: Leaflet Map -->
-        <div class="flex-1 min-w-[200px] relative flex flex-col overflow-hidden" data-testid="map-container">
-          <div class="px-3 py-2 bg-base-200/70 border-b border-base-300 text-xs shrink-0 flex items-center justify-between">
-            <span class="text-black font-semibold">Positionnement géographique</span>
-            <span class="text-[11px] text-primary font-medium">Glissez les points ou cliquez sur la carte pour ajuster leur position</span>
-          </div>
-          <div class="flex-1 min-h-0 relative">
-            <div ref="mapContainer" class="w-full h-full bg-[#f1f5f9]" />
-          </div>
-        </div>
-
-        <!-- Right Resizer Divider -->
-        <div
-          class="w-1.5 bg-base-300 hover:bg-primary active:bg-primary transition-colors cursor-col-resize shrink-0 z-10"
-          title="Glisser pour redimensionner la colonne"
-          @mousedown="startColResize(false, $event)"
-        />
-
-        <!-- 3. Right: Validation List -->
+        <!-- 2. Right: Validation List -->
         <div
           class="shrink-0 flex flex-col bg-base-100 overflow-hidden border-l border-base-200"
           :style="{ width: `${rightColWidth}px` }"
@@ -161,6 +138,7 @@
               {{ toKeepCount }} / {{ allItems.length }} conservé(s)
             </span>
           </div>
+
           <!-- Items list -->
           <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
             <div
@@ -180,8 +158,6 @@
                 itemBorderClass(item),
               ]"
               @click="focusItem(item)"
-              @mouseenter="onItemHover(item)"
-              @mouseleave="onItemLeave"
             >
               <!-- Checkbox + Input + Trash -->
               <div class="flex items-center gap-1.5">
@@ -249,7 +225,7 @@
                     :style="getCustomStyleObject(style)"
                   >
                     {{ style.name }}
-                  </option>                
+                  </option>
                   <option
                     v-for="(_, typeKey) in WORD_TYPE_STYLES"
                     :key="typeKey"
@@ -258,18 +234,18 @@
                   >
                     {{ getWordTypeOptionLabel(typeKey) }}
                   </option>
+                </select>
 
-                    </select>
+                <button
+                  type="button"
+                  class="btn btn-outline btn-xs h-7 shrink-0 text-[10px] px-2"
+                  data-testid="manage-custom-label-styles"
+                  @click.stop="labelStyleManagerRef?.open()"
+                >
+                  Personnaliser
+                </button>
+              </div>
 
-                    <button
-                      type="button"
-                      class="btn btn-outline btn-xs h-7 shrink-0 text-[10px] px-2"
-                      data-testid="manage-custom-label-styles"
-                      @click.stop="labelStyleManagerRef?.open()"
-                    >
-                      Personnaliser
-                    </button>
-                  </div>
               <!-- Suggested place pill button -->
               <div
                 v-if="item.suggestedPlace"
@@ -295,6 +271,7 @@
                 </button>
               </div>
             </div>
+
             <CustomLabelStyleManager
               ref="labelStyleManagerRef"
               :styles="availableCustomLabelStyles"
@@ -332,12 +309,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount, nextTick } from "vue";
+import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { useHistory } from "../../composables/useHistory";
 import type { CSSProperties } from "vue";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import type { FeatureCollection } from "geojson";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
 import ValidationImageViewer from "./ValidationImageViewer.vue";
 import {
@@ -347,13 +321,12 @@ import {
   getWordTypeOptionStyle,
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
-import { resolveClusteredTooltipDirections } from "../../utils/labelCollision";
 import {
   TrashIcon,
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
 } from "@heroicons/vue/24/outline";
-import { isJsonSuggestion, type TextValidationEntry } from "../../utils/textValidation";
+import type { TextValidationEntry } from "../../utils/textValidation";
 import {
   WORD_TYPE_STYLES,
   formatWordText,
@@ -364,11 +337,6 @@ import { useMapReferenceImage } from "../../composables/useMapReferenceImage";
 import { showAlert } from "../../composables/useAlert";
 
 export type { TextValidationEntry };
-
-/** GeoJSON coordinates convention: [longitude, latitude] */
-export type GeoJsonCoordinates = [longitude: number, latitude: number];
-/** Leaflet coordinates convention: [latitude, longitude] */
-export type LeafletLatLng = [latitude: number, longitude: number];
 
 const props = withDefaults(
   defineProps<{
@@ -396,10 +364,7 @@ const emit = defineEmits<{
   (e: "save-label-styles", styles: CustomLabelStyle[]): void;
 }>();
 
-const mapContainer = ref<HTMLElement | null>(null);
 const highlightedId = ref<string | null>(null);
-const hoveredId = ref<string | null>(null);
-const isDraggingId = ref<string | null>(null);
 const allItems = ref<TextValidationEntry[]>([]);
 const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
 
@@ -437,7 +402,6 @@ function applyUpdatedCustomStylesToItems(styles: CustomLabelStyle[]) {
       item.customLabelStyle = undefined;
       item.labelStyleSelection = item.wordType ?? "city";
     }
-    updateMarkerStyle(item);
   }
 }
 
@@ -447,21 +411,10 @@ function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
   emit("save-label-styles", styles);
 }
 
-const leftColWidth = ref(420);
-const rightColWidth = ref(380);
-const isDraggingLeft = ref(false);
-const isDraggingRight = ref(false);
+const rightColWidth = ref(450);
+const isDragging = ref(false);
 
 const imgZoom = ref(1);
-
-let leafletMap: L.Map | null = null;
-let landLayer: L.GeoJSON | null = null;
-let cachedBasemapGeoJSON: FeatureCollection | null = null;
-const markerMap = new Map<string, L.Marker>();
-
-let radiusCircle: L.Circle | null = null;
-let suggestionPreviewMarker: L.Marker | null = null;
-let connectionLine: L.Polyline | null = null;
 
 const localImageMap = ref<Record<string, string>>({});
 const removedImageMap = ref<Record<string, boolean>>({});
@@ -489,7 +442,7 @@ const isPartiallySelected = computed(() => {
   return selectedCount > 0 && selectedCount < allItems.value.length;
 });
 
-// ── Undo / Redo History Management (via useHistory composable) ──────────────
+// ── Undo / Redo History Management ───────────────────────────────────────────
 const {
   canUndo,
   canRedo,
@@ -507,18 +460,12 @@ function undo() {
   const previous = historyUndo(allItems.value);
   if (!previous) return;
   allItems.value = previous;
-  hideToleranceRadius();
-  renderMapMarkers(false);
-  adjustTooltipsAntiCollision();
 }
 
 function redo() {
   const next = historyRedo(allItems.value);
   if (!next) return;
   allItems.value = next;
-  hideToleranceRadius();
-  renderMapMarkers(false);
-  adjustTooltipsAntiCollision();
 }
 
 let isTypingSession = false;
@@ -560,27 +507,23 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 }
 
-function startColResize(isLeft: boolean, e: MouseEvent) {
-  const isDragging = isLeft ? isDraggingLeft : isDraggingRight;
-  const colWidth = isLeft ? leftColWidth : rightColWidth;
-  const minWidth = isLeft ? 220 : 260;
-
+function startColResize(e: MouseEvent) {
   isDragging.value = true;
   const startX = e.clientX;
-  const startW = colWidth.value;
+  const startW = rightColWidth.value;
+  const minWidth = 320;
+  const maxWidth = 800;
 
   const onMouseMove = (ev: MouseEvent) => {
     if (!isDragging.value) return;
-    const delta = isLeft ? ev.clientX - startX : startX - ev.clientX;
-    colWidth.value = Math.max(minWidth, Math.min(800, startW + delta));
-    leafletMap?.invalidateSize();
+    const delta = startX - ev.clientX;
+    rightColWidth.value = Math.max(minWidth, Math.min(maxWidth, startW + delta));
   };
 
   const onMouseUp = () => {
     isDragging.value = false;
     window.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("mouseup", onMouseUp);
-    leafletMap?.invalidateSize();
   };
 
   window.addEventListener("mousemove", onMouseMove);
@@ -668,37 +611,8 @@ function itemBorderClass(item: TextValidationEntry): string {
   return "border-base-200";
 }
 
-function getItemCoords(item: TextValidationEntry): [number, number] | undefined {
-  return item.coordinates;
-}
-
-function focusItem(item: TextValidationEntry, minZoom = 5) {
+function focusItem(item: TextValidationEntry) {
   highlightedId.value = item.id;
-  const marker = markerMap.get(item.id);
-  if (marker && leafletMap) {
-    leafletMap.setView(marker.getLatLng(), Math.max(leafletMap.getZoom(), minZoom), {
-      animate: true,
-    });
-    marker.openTooltip();
-  }
-  showToleranceRadius(item);
-}
-
-function onItemHover(item: TextValidationEntry) {
-  hoveredId.value = item.id;
-  showToleranceRadius(item);
-}
-
-function onItemLeave() {
-  hoveredId.value = null;
-  if (highlightedId.value) {
-    const activeItem = allItems.value.find((i: TextValidationEntry) => i.id === highlightedId.value);
-    if (activeItem) {
-      showToleranceRadius(activeItem);
-      return;
-    }
-  }
-  hideToleranceRadius();
 }
 
 function onToggleSelectAll(e: Event) {
@@ -711,7 +625,6 @@ function setAll(selected: boolean) {
   for (const item of allItems.value) {
     item.selected = selected;
     item.validationStatus = selected ? "accepted" : "rejected";
-    updateMarkerStyle(item);
   }
 }
 
@@ -719,7 +632,6 @@ function toggleItemSelection(item: TextValidationEntry) {
   saveHistorySnapshot();
   item.selected = !item.selected;
   item.validationStatus = item.selected ? "accepted" : "rejected";
-  updateMarkerStyle(item);
 }
 
 function onItemLabelStyleChange(item: TextValidationEntry) {
@@ -739,7 +651,6 @@ function onItemLabelStyleChange(item: TextValidationEntry) {
     item.wordType = normalizeWordType(selection);
     if (item.text) item.text = formatWordText(item.text, item.wordType);
   }
-  updateMarkerStyle(item);
 }
 
 function itemRightInputStyle(item: TextValidationEntry): CSSProperties {
@@ -758,8 +669,6 @@ function onTextInput(item: TextValidationEntry) {
   item.useSuggestedPlace = false;
   item.selected = true;
   item.validationStatus = "accepted";
-  updateMarkerStyle(item, true);
-  showToleranceRadius(item);
 
   if (typingTimeout) clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
@@ -784,572 +693,14 @@ function toggleSuggestion(item: TextValidationEntry) {
       item.text = formatWordText(item.suggestedPlace.name, item.wordType);
     }
   }
-  hideToleranceRadius();
-  updateMarkerStyle(item);
-  focusItem(item, 4);
-  adjustTooltipsAntiCollision();
 }
 
 function toggleSupprimer(item: TextValidationEntry) {
   saveHistorySnapshot();
-  const marker = markerMap.get(item.id);
-  if (marker && leafletMap) {
-    leafletMap.removeLayer(marker);
-    markerMap.delete(item.id);
-  }
   if (highlightedId.value === item.id) {
     highlightedId.value = null;
-    hideToleranceRadius();
   }
   allItems.value = allItems.value.filter((i: TextValidationEntry) => i.id !== item.id);
-}
-
-function setItemCoordinates(item: TextValidationEntry, lon: number, lat: number) {
-  saveHistorySnapshot();
-  item.coordinates = [lon, lat];
-  item.useSuggestedPlace = false;
-  item.suggestedPlace = undefined;
-  item.selected = true;
-  item.validationStatus = "accepted";
-
-  hideToleranceRadius();
-  updateMarkerStyle(item);
-  adjustTooltipsAntiCollision();
-}
-
-function getMarkerHtml(item: TextValidationEntry): string {
-  const isSuggested = Boolean(item.useSuggestedPlace);
-  const isMovingOrSelected =
-    highlightedId.value === item.id || isDraggingId.value === item.id;
-
-  const fillColor = isSuggested ? "#059669" : "#2563eb";
-  const strokeColor = isMovingOrSelected
-    ? "#f59e0b"
-    : isSuggested
-      ? "#047857"
-      : "#1d4ed8";
-  const strokeWidth = isMovingOrSelected ? "3px" : "2px";
-  const opacity = item.selected || isMovingOrSelected ? "1" : "0.45";
-
-  const hasSuggestion = Boolean(item.suggestedPlace) && !item.useSuggestedPlace;
-  const badgeHtml = hasSuggestion
-    ? `<div style="position: absolute; top: -7px; right: -7px; width: 14px; height: 14px; border-radius: 50%; background-color: #f59e0b; color: #ffffff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 1.5px solid #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); pointer-events: none;">!</div>`
-    : "";
-
-  return `<div class="relative validation-point-dot" style="width: 18px; height: 18px; border-radius: 50%; background-color: ${fillColor}; border: ${strokeWidth} solid ${strokeColor}; opacity: ${opacity}; box-shadow: 0 2px 5px rgba(0,0,0,0.35); cursor: grab; transition: transform 0.1s ease;">${badgeHtml}</div>`;
-}
-
-function createMarkerIcon(item: TextValidationEntry) {
-  return L.divIcon({
-    className: "custom-validation-marker",
-    html: getMarkerHtml(item),
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-  });
-}
-
-function getOptimalSuggestionTooltipPlacement(
-  lat: number,
-  lon: number,
-  sLat: number,
-  sLon: number,
-): { direction: "top" | "bottom" | "left" | "right"; offset: [number, number] } {
-  if (!leafletMap) {
-    const dLon = sLon - lon;
-    const dLat = sLat - lat;
-    if (dLon < 0) return { direction: "left", offset: [-12, 0] };
-    if (dLon > 0) return { direction: "right", offset: [12, 0] };
-    if (dLat < 0) return { direction: "bottom", offset: [0, 12] };
-    return { direction: "top", offset: [0, -14] };
-  }
-
-  try {
-    const pOrig = leafletMap.latLngToContainerPoint([lat, lon]);
-    const pSugg = leafletMap.latLngToContainerPoint([sLat, sLon]);
-
-    const dx = pSugg.x - pOrig.x; // > 0 if suggestion is to the right
-    const dy = pSugg.y - pOrig.y; // > 0 if suggestion is below
-
-    if (dx < -15) {
-      return { direction: "left", offset: [-12, 0] };
-    }
-    if (dx > 15) {
-      return { direction: "right", offset: [12, 0] };
-    }
-    if (dy > 0) {
-      return { direction: "bottom", offset: [0, 12] };
-    }
-    return { direction: "top", offset: [0, -18] };
-  } catch {
-    return { direction: "left", offset: [-12, 0] };
-  }
-}
-
-function preventSuggestionTooltipOverlap(item: TextValidationEntry) {
-  if (!suggestionPreviewMarker || !leafletMap) return;
-  const origMarker = markerMap.get(item.id);
-  const origTooltipEl = origMarker?.getTooltip()?.getElement();
-  const suggTooltipEl = suggestionPreviewMarker.getTooltip()?.getElement();
-
-  if (!origTooltipEl || !suggTooltipEl) return;
-
-  const rOrig = origTooltipEl.getBoundingClientRect();
-  const rSugg = suggTooltipEl.getBoundingClientRect();
-
-  const isOverlapping = !(
-    rOrig.right + 2 < rSugg.left ||
-    rOrig.left > rSugg.right + 2 ||
-    rOrig.bottom + 2 < rSugg.top ||
-    rOrig.top > rSugg.bottom + 2
-  );
-
-  if (isOverlapping) {
-    const coords = getItemCoords(item);
-    if (!coords || !item.suggestedPlace) return;
-    try {
-      const pOrig = leafletMap.latLngToContainerPoint([coords[1], coords[0]]);
-      const pSugg = leafletMap.latLngToContainerPoint([
-        item.suggestedPlace.coordinates[1],
-        item.suggestedPlace.coordinates[0],
-      ]);
-      const dx = pSugg.x - pOrig.x;
-
-      const fallbackDir: "left" | "right" | "bottom" = dx <= 0 ? "left" : "right";
-      const offset: [number, number] = fallbackDir === "left" ? [-14, 0] : [14, 0];
-
-      const tooltip = suggestionPreviewMarker.getTooltip();
-      if (tooltip) {
-        tooltip.options.direction = fallbackDir;
-        tooltip.options.offset = L.point(offset[0], offset[1]);
-        if (suggestionPreviewMarker.isTooltipOpen?.()) {
-          suggestionPreviewMarker.closeTooltip();
-          suggestionPreviewMarker.openTooltip();
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-}
-
-function showToleranceRadius(item: TextValidationEntry) {
-  if (!leafletMap || !item.suggestedPlace) return;
-  hideToleranceRadius();
-
-  const coords = getItemCoords(item);
-  if (!coords || (coords[0] === 0 && coords[1] === 0)) return;
-  const [lon, lat] = coords;
-  const [sLon, sLat] = item.suggestedPlace.coordinates;
-
-  const isJson = isJsonSuggestion(item);
-
-  if (!isJson) {
-    radiusCircle = L.circle([lat, lon], {
-      radius: 150000,
-      color: "#059669",
-      weight: 1.5,
-      dashArray: "5, 5",
-      fillColor: "#10b981",
-      fillOpacity: 0.12,
-    }).addTo(leafletMap);
-  }
-
-  const previewIcon = L.divIcon({
-    className: "custom-suggestion-preview-marker",
-    html: `<div style="width: 16px; height: 16px; border-radius: 50%; background-color: #059669; border: 2px solid #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-  });
-
-  const placement = getOptimalSuggestionTooltipPlacement(lat, lon, sLat, sLon);
-
-  suggestionPreviewMarker = L.marker([sLat, sLon], { icon: previewIcon }).addTo(leafletMap);
-  const suggestionTooltip = document.createElement("span");
-  const suggestionName = document.createElement("strong");
-  suggestionName.textContent = item.suggestedPlace.name;
-  suggestionTooltip.append(suggestionName, document.createTextNode(" (Suggestion)"));
-  suggestionPreviewMarker.bindTooltip(suggestionTooltip, {
-    permanent: true,
-    direction: placement.direction,
-    offset: L.point(placement.offset[0], placement.offset[1]),
-    className: "leaflet-tooltip-suggestion",
-  });
-
-  nextTick(() => preventSuggestionTooltipOverlap(item));
-
-  connectionLine = L.polyline([[lat, lon], [sLat, sLon]], {
-    color: "#059669",
-    weight: 1.5,
-    dashArray: "3, 3",
-    opacity: 0.75,
-  }).addTo(leafletMap);
-}
-
-function hideToleranceRadius() {
-  if (!leafletMap) return;
-  if (radiusCircle) {
-    leafletMap.removeLayer(radiusCircle);
-    radiusCircle = null;
-  }
-  if (suggestionPreviewMarker) {
-    leafletMap.removeLayer(suggestionPreviewMarker);
-    suggestionPreviewMarker = null;
-  }
-  if (connectionLine) {
-    leafletMap.removeLayer(connectionLine);
-    connectionLine = null;
-  }
-}
-
-function makeDraggableMarker(item: TextValidationEntry): L.Marker {
-  const [lon, lat] = getItemCoords(item) ?? [0, 0];
-
-  const marker = L.marker([lat, lon], {
-    draggable: true,
-    icon: createMarkerIcon(item),
-  });
-
-  const isFocused = item.id === highlightedId.value;
-  marker.bindTooltip(createTextTooltip(item), {
-    permanent: true,
-    direction: "top",
-    offset: [0, -12],
-    interactive: true,
-    className: isFocused
-      ? "leaflet-tooltip-validation validation-tooltip-focused"
-      : "leaflet-tooltip-validation",
-  });
-
-  marker.on("click", (e: L.LeafletMouseEvent) => {
-    L.DomEvent.stopPropagation(e as any);
-    focusItem(item);
-  });
-
-  marker.on("tooltipopen", () => {
-    const el = marker.getTooltip()?.getElement();
-    if (el) {
-      el.style.pointerEvents = "auto";
-      el.style.cursor = "pointer";
-      el.onclick = (e) => {
-        e.stopPropagation();
-        focusItem(item);
-      };
-    }
-  });
-
-  marker.on("mouseover", () => showToleranceRadius(item));
-  marker.on("mouseout", () => {
-    if (highlightedId.value !== item.id) {
-      const active = allItems.value.find((i: TextValidationEntry) => i.id === highlightedId.value);
-      if (active) showToleranceRadius(active);
-      else hideToleranceRadius();
-    }
-  });
-
-  marker.on("dragstart", () => {
-    isDraggingId.value = item.id;
-    highlightedId.value = item.id;
-    hideToleranceRadius();
-    updateMarkerStyle(item);
-  });
-
-  marker.on("dragend", (event: L.DragEndEvent) => {
-    isDraggingId.value = null;
-    const latlng = event.target.getLatLng();
-    setItemCoordinates(
-      item,
-      Number(latlng.lng.toFixed(5)),
-      Number(latlng.lat.toFixed(5)),
-    );
-    updateMarkerStyle(item);
-  });
-
-  return marker;
-}
-
-function updateMarkerStyle(item: TextValidationEntry, textOnly = false) {
-  const marker = markerMap.get(item.id);
-  if (!marker) return;
-
-  const coords = getItemCoords(item);
-  if (!textOnly && coords && (coords[0] !== 0 || coords[1] !== 0)) {
-    marker.setLatLng([coords[1], coords[0]]);
-  }
-
-  const markerEl = typeof marker.getElement === "function" ? marker.getElement() : null;
-  if (!textOnly || !markerEl) {
-    marker.setIcon(createMarkerIcon(item));
-  } else {
-    const dotEl = markerEl.querySelector(".validation-point-dot") as HTMLElement | null;
-    if (dotEl) {
-      const isSuggested = Boolean(item.useSuggestedPlace);
-      const isMovingOrSelected =
-        highlightedId.value === item.id || isDraggingId.value === item.id;
-      dotEl.style.backgroundColor = isSuggested ? "#059669" : "#2563eb";
-      dotEl.style.borderColor = isMovingOrSelected
-        ? "#f59e0b"
-        : isSuggested
-          ? "#047857"
-          : "#1d4ed8";
-      dotEl.style.borderWidth = isMovingOrSelected ? "3px" : "2px";
-      dotEl.style.opacity = item.selected || isMovingOrSelected ? "1" : "0.45";
-    }
-  }
-
-  marker.setTooltipContent(createTextTooltip(item));
-
-  const isFocused = item.id === highlightedId.value;
-  const tooltip = marker.getTooltip();
-  const tooltipEl = tooltip?.getElement();
-  if (tooltipEl) {
-    if (isFocused) {
-      tooltipEl.classList.add("validation-tooltip-focused");
-    } else {
-      tooltipEl.classList.remove("validation-tooltip-focused");
-    }
-  }
-}
-
-function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
-  const content = document.createElement("span");
-  if (typeof item === "string") {
-    content.textContent = item;
-    return content;
-  }
-
-  const isFocused = item.id === highlightedId.value;
-  if (item.selected || isFocused) {
-    const typo = getEntryTypography(item);
-    const size = Math.min(typo.sizePx, 18);
-
-    content.style.color = typo.color;
-    content.style.fontSize = `${size}px`;
-    content.style.fontStyle = typo.fontStyle;
-    content.style.fontWeight = typo.fontWeight;
-    content.style.textTransform = typo.textTransform;
-    content.textContent = typo.isUppercase ? item.text.toUpperCase() : item.text;
-  } else {
-    content.style.color = "#6b7280";
-    content.style.fontSize = "14px";
-    content.style.fontStyle = "normal";
-    content.style.fontWeight = "normal";
-    content.style.textTransform = "none";
-    content.style.opacity = "0.6";
-    content.textContent = item.text;
-  }
-  return content;
-}
-
-watch(highlightedId, (newId: string | null, oldId: string | null) => {
-  if (oldId) {
-    const oldItem = allItems.value.find((i: TextValidationEntry) => i.id === oldId);
-    if (oldItem) updateMarkerStyle(oldItem);
-  }
-  if (newId) {
-    const newItem = allItems.value.find((i: TextValidationEntry) => i.id === newId);
-    if (newItem) updateMarkerStyle(newItem);
-  }
-});
-
-function renderMapMarkers(shouldFitBounds = true) {
-  if (!leafletMap) return;
-
-  const currentItemIds = new Set(allItems.value.map((i) => i.id));
-  for (const [id, marker] of markerMap.entries()) {
-    if (!currentItemIds.has(id)) {
-      leafletMap.removeLayer(marker);
-      markerMap.delete(id);
-    }
-  }
-
-  const bounds: [number, number][] = [];
-
-  for (const item of allItems.value) {
-    const coords = getItemCoords(item);
-    if (!coords) continue;
-    const [lon, lat] = coords;
-    if (lon === 0 && lat === 0) continue;
-
-    let marker = markerMap.get(item.id);
-    if (!marker) {
-      marker = makeDraggableMarker(item);
-      marker.addTo(leafletMap);
-      markerMap.set(item.id, marker);
-    } else {
-      marker.setLatLng([lat, lon]);
-      updateMarkerStyle(item);
-    }
-    bounds.push([lat, lon]);
-  }
-
-  if (shouldFitBounds && bounds.length > 0) {
-    leafletMap.fitBounds(bounds as L.LatLngBoundsExpression, {
-      padding: [40, 40],
-      maxZoom: 8,
-    });
-  }
-  nextTick(() => adjustTooltipsAntiCollision());
-}
-
-function adjustTooltipsAntiCollision() {
-  const currentMap = leafletMap;
-  if (!currentMap) return;
-
-  const validEntries = allItems.value
-    .map((item: TextValidationEntry) => {
-      const marker = markerMap.get(item.id);
-      const latlng = marker?.getLatLng();
-      if (!marker || !latlng || (latlng.lat === 0 && latlng.lng === 0)) return null;
-      try {
-        const pt = currentMap.latLngToContainerPoint(latlng);
-        return { id: item.id, marker, x: pt.x, y: pt.y };
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as { id: string; marker: L.Marker; x: number; y: number }[];
-
-  const placements = resolveClusteredTooltipDirections(validEntries);
-  for (const entry of validEntries) {
-    const placement = placements.get(entry.id);
-    if (!placement) continue;
-    const tooltip = entry.marker.getTooltip();
-    if (tooltip) {
-      tooltip.options.direction = placement.direction;
-      tooltip.options.offset = L.point(placement.offset[0], placement.offset[1]);
-      if (entry.marker.isTooltipOpen?.()) {
-        entry.marker.closeTooltip();
-        entry.marker.openTooltip();
-      }
-    }
-  }
-}
-
-async function initMap() {
-  if (!mapContainer.value || leafletMap) return;
-
-  const map = L.map(mapContainer.value, {
-    center: [20, 0],
-    zoom: 2,
-    zoomControl: true,
-    attributionControl: false,
-    maxBoundsViscosity: 1.0,
-  });
-
-  leafletMap = map;
-  renderMapMarkers();
-
-  map.on("zoomend", () => {
-    adjustTooltipsAntiCollision();
-    const active = allItems.value.find((i: TextValidationEntry) => i.id === hoveredId.value || i.id === highlightedId.value);
-    if (active && suggestionPreviewMarker) {
-      showToleranceRadius(active);
-    }
-  });
-  map.on("moveend", () => {
-    adjustTooltipsAntiCollision();
-    const active = allItems.value.find((i: TextValidationEntry) => i.id === hoveredId.value || i.id === highlightedId.value);
-    if (active && suggestionPreviewMarker) {
-      showToleranceRadius(active);
-    }
-  });
-
-  map.on("click", (e: L.LeafletMouseEvent) => {
-    if (!highlightedId.value) return;
-    const item = allItems.value.find((i: TextValidationEntry) => i.id === highlightedId.value);
-    if (!item) return;
-
-    const lon = Number(e.latlng.lng.toFixed(5));
-    const lat = Number(e.latlng.lat.toFixed(5));
-
-    let marker = markerMap.get(item.id);
-    if (!marker && leafletMap) {
-      marker = makeDraggableMarker(item);
-      marker.addTo(leafletMap);
-      markerMap.set(item.id, marker);
-    }
-    setItemCoordinates(item, lon, lat);
-  });
-
-  // Offline basemap using local GeoJSON (cached in memory)
-  try {
-    if (!cachedBasemapGeoJSON && typeof fetch === "function") {
-      const baseUrl =
-        typeof window !== "undefined" && window.location?.origin
-          ? window.location.origin
-          : "http://localhost";
-      const geojsonFiles = [
-        "/geojson/ne_coastline.geojson",
-        "/geojson/ne_50m_lakes.geojson",
-      ];
-      const responses = await Promise.all(
-        geojsonFiles.map((f) => fetch(new URL(f, baseUrl).toString()).catch(() => null)),
-      );
-      const geojsonData = await Promise.all(
-        responses
-          .filter((r): r is Response => Boolean(r && r.ok))
-          .map((r) => r.json().catch(() => null)),
-      );
-
-      const validData = geojsonData.filter(isFeatureCollection);
-      if (validData.length > 0) {
-        cachedBasemapGeoJSON = {
-          type: "FeatureCollection",
-          features: validData.flatMap((data) => data.features),
-        };
-      }
-    }
-
-    if (cachedBasemapGeoJSON) {
-      landLayer = L.geoJSON(cachedBasemapGeoJSON, {
-        style: {
-          fillColor: "#ffffff",
-          fillOpacity: 1,
-          color: "#94a3b8",
-          weight: 1,
-          opacity: 1,
-        },
-      }).addTo(map);
-    }
-  } catch {
-    // Basemap is optional visual context
-  }
-}
-
-function destroyMap() {
-  hideToleranceRadius();
-  if (typingTimeout) {
-    clearTimeout(typingTimeout);
-    typingTimeout = null;
-  }
-  if (landLayer && leafletMap) {
-    leafletMap.removeLayer(landLayer);
-    landLayer = null;
-  }
-  for (const marker of markerMap.values()) {
-    if (leafletMap) {
-      leafletMap.removeLayer(marker);
-    }
-    if (typeof marker.off === "function") {
-      marker.off();
-    }
-  }
-  markerMap.clear();
-  if (leafletMap) {
-    if (typeof leafletMap.off === "function") {
-      leafletMap.off();
-    }
-    if (typeof leafletMap.remove === "function") {
-      leafletMap.remove();
-    }
-    leafletMap = null;
-  }
-}
-
-function isFeatureCollection(value: unknown): value is FeatureCollection {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { type?: unknown; features?: unknown };
-  return candidate.type === "FeatureCollection" && Array.isArray(candidate.features);
 }
 
 function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
@@ -1383,32 +734,20 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
   });
 }
 
-
-
 function onDocumentClick(e: MouseEvent) {
   if (!props.isOpen) return;
   const target = e.target as HTMLElement | null;
   if (!target || typeof target.closest !== "function") {
-    if (highlightedId.value) {
-      highlightedId.value = null;
-      hideToleranceRadius();
-    }
+    if (highlightedId.value) highlightedId.value = null;
     return;
   }
 
-  if (
-    target.closest("[data-testid='map-container']") ||
-    target.closest("[data-validation-item]") ||
-    target.closest(".leaflet-pane") ||
-    target.closest(".leaflet-marker-icon") ||
-    target.closest(".leaflet-tooltip")
-  ) {
+  if (target.closest("[data-validation-item]")) {
     return;
   }
 
   if (highlightedId.value) {
     highlightedId.value = null;
-    hideToleranceRadius();
   }
 }
 
@@ -1432,14 +771,12 @@ watch(
   (open: boolean) => {
     if (!open) {
       removeGlobalListeners();
-      destroyMap();
       return;
     }
     attachGlobalListeners();
     resetHistory();
     imgZoom.value = 1;
     allItems.value = mapInitialItems(props.initialItems);
-    nextTick(() => initMap());
   },
   { immediate: true },
 );
@@ -1449,7 +786,6 @@ watch(
   (newItems: TextValidationEntry[]) => {
     if (props.isOpen && (!allItems.value || allItems.value.length === 0)) {
       allItems.value = mapInitialItems(newItems);
-      renderMapMarkers();
     }
   },
 );
@@ -1476,6 +812,10 @@ watch(
 
 onBeforeUnmount(() => {
   removeGlobalListeners();
+  if (typingTimeout) {
+    clearTimeout(typingTimeout);
+    typingTimeout = null;
+  }
   if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function" && localImageMap.value) {
     for (const imageUrl of Object.values(localImageMap.value)) {
       if (typeof imageUrl === "string" && imageUrl.startsWith("blob:")) {
@@ -1483,7 +823,6 @@ onBeforeUnmount(() => {
       }
     }
   }
-  destroyMap();
 });
 
 function onConfirm() {
@@ -1493,74 +832,13 @@ function onConfirm() {
   emit("confirm", allItems.value);
 }
 
-function getSuggestionPreviewMarker(): L.Marker | null {
-  return suggestionPreviewMarker;
-}
-
 defineExpose({
   allItems,
-  setItemCoordinates,
-  showToleranceRadius,
-  getSuggestionPreviewMarker,
-  getOptimalSuggestionTooltipPlacement,
-  initMap,
+  highlightedId,
+  focusItem,
   undo,
   redo,
   canUndo,
   canRedo,
 });
 </script>
-
-<style>
-.custom-validation-marker {
-  background: transparent !important;
-  border: none !important;
-}
-.custom-suggestion-preview-marker {
-  background: transparent !important;
-  border: none !important;
-}
-.leaflet-tooltip-validation {
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #000000;
-  padding: 2px 6px;
-  white-space: nowrap;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  pointer-events: auto;
-  cursor: pointer;
-  z-index: 1000 !important;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.leaflet-tooltip-validation::before {
-  border-top-color: #d1d5db;
-}
-.leaflet-tooltip-validation.validation-tooltip-focused {
-  border: 2px solid #2563eb !important;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25), 0 2px 6px rgba(0, 0, 0, 0.2) !important;
-  background: #ffffff !important;
-  z-index: 2000 !important;
-}
-.leaflet-tooltip-validation.validation-tooltip-focused::before {
-  border-top-color: #2563eb !important;
-}
-.leaflet-tooltip-suggestion {
-  background: #ecfdf5;
-  border: 1px solid #10b981;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #065f46 !important;
-  padding: 2px 6px;
-  white-space: nowrap;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  pointer-events: none;
-  z-index: 900 !important;
-}
-.leaflet-tooltip-suggestion::before {
-  border-top-color: #10b981;
-}
-</style>
