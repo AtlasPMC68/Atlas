@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { ref, computed } from "vue";
 import type { Feature } from "../typescript/feature";
 import {
   cloneFeatureSnapshot,
@@ -12,132 +13,160 @@ export interface ProjectHistoryEntry {
   timestamp: number;
 }
 
-export const useProjectHistoryStore = defineStore("projectHistory", {
-  state: () => ({
-    undoStack: [] as ProjectHistoryEntry[],
-    redoStack: [] as ProjectHistoryEntry[],
-    trackingEnabled: true,
-    maxLimit: 30,
-    currentSignature: "",
-  }),
+export const useProjectHistoryStore = defineStore("projectHistory", () => {
+  const undoStack = ref<ProjectHistoryEntry[]>([]);
+  const redoStack = ref<ProjectHistoryEntry[]>([]);
+  const trackingEnabled = ref(true);
+  const maxLimit = ref(30);
+  const currentSignature = ref("");
 
-  getters: {
-    canUndo: (state): boolean => state.undoStack.length > 0,
-    canRedo: (state): boolean => state.redoStack.length > 0,
-    undoCount: (state): number => state.undoStack.length,
-    redoCount: (state): number => state.redoStack.length,
-    lastActionLabel: (state): string | null =>
-      state.undoStack.length > 0 ? (state.undoStack[0].label ?? null) : null,
-  },
+  const canUndo = computed(() => undoStack.value.length > 0);
+  const canRedo = computed(() => redoStack.value.length > 0);
+  const undoCount = computed(() => undoStack.value.length);
+  const redoCount = computed(() => redoStack.value.length);
+  const lastActionLabel = computed<string | null>(() =>
+    undoStack.value.length > 0 ? (undoStack.value[0].label ?? null) : null,
+  );
 
-  actions: {
-    /**
-     * Records a new state in the history stack.
-     * Skips recording if tracking is disabled or if content has not changed.
-     */
-    commit(currentFeatures: Feature[], nextFeatures: Feature[], label?: string): Feature[] {
-      if (!this.trackingEnabled) {
-        return cloneFeatureSnapshot(nextFeatures);
-      }
-
-      const currentSig = buildFeatureSnapshotSignature(currentFeatures);
-      const nextSig = buildFeatureSnapshotSignature(nextFeatures);
-
-      // If content is identical, do not pollute the history stack
-      if (currentSig === nextSig) {
-        return cloneFeatureSnapshot(currentFeatures);
-      }
-
-      const entry: ProjectHistoryEntry = {
-        features: cloneFeatureSnapshot(currentFeatures),
-        label,
-        timestamp: Date.now(),
-      };
-
-      this.undoStack = trimFeatureHistoryStack([entry, ...this.undoStack], this.maxLimit);
-      this.redoStack = [];
-      this.currentSignature = nextSig;
-
+  /**
+   * Enregistre un nouvel état dans la pile d'historique.
+   * Ignore les modifications si le tracking est désactivé ou si le contenu est identique.
+   */
+  function commit(
+    currentFeatures: Feature[],
+    nextFeatures: Feature[],
+    label?: string,
+  ): Feature[] {
+    if (!trackingEnabled.value) {
       return cloneFeatureSnapshot(nextFeatures);
-    },
+    }
 
-    /**
-     * Reverts the last action and returns the previous state.
-     */
-    undo(currentFeatures: Feature[]): Feature[] {
-      if (!this.canUndo) {
-        return cloneFeatureSnapshot(currentFeatures);
-      }
+    const currentSig = buildFeatureSnapshotSignature(currentFeatures);
+    const nextSig = buildFeatureSnapshotSignature(nextFeatures);
 
-      const previousEntry = this.undoStack[0];
-      this.undoStack = this.undoStack.slice(1);
+    // Si le contenu n'a pas changé, ne pas polluer l'historique
+    if (currentSig === nextSig) {
+      return cloneFeatureSnapshot(currentFeatures);
+    }
 
-      const currentEntry: ProjectHistoryEntry = {
-        features: cloneFeatureSnapshot(currentFeatures),
-        label: previousEntry.label,
-        timestamp: Date.now(),
-      };
+    const entry: ProjectHistoryEntry = {
+      features: cloneFeatureSnapshot(currentFeatures),
+      label,
+      timestamp: Date.now(),
+    };
 
-      this.redoStack = trimFeatureHistoryStack([currentEntry, ...this.redoStack], this.maxLimit);
-      this.currentSignature = buildFeatureSnapshotSignature(previousEntry.features);
+    undoStack.value = trimFeatureHistoryStack(
+      [entry, ...undoStack.value],
+      maxLimit.value,
+    );
+    redoStack.value = [];
+    currentSignature.value = nextSig;
 
-      return cloneFeatureSnapshot(previousEntry.features);
-    },
+    return cloneFeatureSnapshot(nextFeatures);
+  }
 
-    /**
-     * Reapplies the last undone action and returns the next state.
-     */
-    redo(currentFeatures: Feature[]): Feature[] {
-      if (!this.canRedo) {
-        return cloneFeatureSnapshot(currentFeatures);
-      }
+  /**
+   * Annule la dernière action et renvoie l'état précédent.
+   */
+  function undo(currentFeatures: Feature[]): Feature[] {
+    if (!canUndo.value) {
+      return cloneFeatureSnapshot(currentFeatures);
+    }
 
-      const nextEntry = this.redoStack[0];
-      this.redoStack = this.redoStack.slice(1);
+    const previousEntry = undoStack.value[0];
+    undoStack.value = undoStack.value.slice(1);
 
-      const currentEntry: ProjectHistoryEntry = {
-        features: cloneFeatureSnapshot(currentFeatures),
-        label: nextEntry.label,
-        timestamp: Date.now(),
-      };
+    const currentEntry: ProjectHistoryEntry = {
+      features: cloneFeatureSnapshot(currentFeatures),
+      label: previousEntry.label,
+      timestamp: Date.now(),
+    };
 
-      this.undoStack = trimFeatureHistoryStack([currentEntry, ...this.undoStack], this.maxLimit);
-      this.currentSignature = buildFeatureSnapshotSignature(nextEntry.features);
+    redoStack.value = trimFeatureHistoryStack(
+      [currentEntry, ...redoStack.value],
+      maxLimit.value,
+    );
+    currentSignature.value = buildFeatureSnapshotSignature(previousEntry.features);
 
-      return cloneFeatureSnapshot(nextEntry.features);
-    },
+    return cloneFeatureSnapshot(previousEntry.features);
+  }
 
-    /**
-     * Resets history stacks (e.g. on active map or project switch).
-     */
-    reset(initialFeatures: Feature[] = []): Feature[] {
-      this.undoStack = [];
-      this.redoStack = [];
-      this.currentSignature = buildFeatureSnapshotSignature(initialFeatures);
-      return cloneFeatureSnapshot(initialFeatures);
-    },
+  /**
+   * Rétablit la dernière action annulée et renvoie le nouvel état.
+   */
+  function redo(currentFeatures: Feature[]): Feature[] {
+    if (!canRedo.value) {
+      return cloneFeatureSnapshot(currentFeatures);
+    }
 
-    /**
-     * Executes an operation without recording any action in the history.
-     */
-    withoutTracking<T>(callback: () => T): T {
-      const prev = this.trackingEnabled;
-      this.trackingEnabled = false;
-      try {
-        return callback();
-      } finally {
-        queueMicrotask(() => {
-          this.trackingEnabled = prev;
-        });
-      }
-    },
+    const nextEntry = redoStack.value[0];
+    redoStack.value = redoStack.value.slice(1);
 
-    setTrackingEnabled(enabled: boolean) {
-      this.trackingEnabled = enabled;
-    },
+    const currentEntry: ProjectHistoryEntry = {
+      features: cloneFeatureSnapshot(currentFeatures),
+      label: nextEntry.label,
+      timestamp: Date.now(),
+    };
 
-    setMaxLimit(limit: number) {
-      this.maxLimit = Math.max(1, limit);
-    },
-  },
+    undoStack.value = trimFeatureHistoryStack(
+      [currentEntry, ...undoStack.value],
+      maxLimit.value,
+    );
+    currentSignature.value = buildFeatureSnapshotSignature(nextEntry.features);
+
+    return cloneFeatureSnapshot(nextEntry.features);
+  }
+
+  /**
+   * Réinitialise les piles d'historique (ex: changement de carte ou de projet).
+   */
+  function reset(initialFeatures: Feature[] = []): Feature[] {
+    undoStack.value = [];
+    redoStack.value = [];
+    currentSignature.value = buildFeatureSnapshotSignature(initialFeatures);
+    return cloneFeatureSnapshot(initialFeatures);
+  }
+
+  /**
+   * Exécute une opération sans enregistrer d'action dans l'historique.
+   */
+  function withoutTracking<T>(callback: () => T): T {
+    const prev = trackingEnabled.value;
+    trackingEnabled.value = false;
+    try {
+      return callback();
+    } finally {
+      queueMicrotask(() => {
+        trackingEnabled.value = prev;
+      });
+    }
+  }
+
+  function setTrackingEnabled(enabled: boolean) {
+    trackingEnabled.value = enabled;
+  }
+
+  function setMaxLimit(limit: number) {
+    maxLimit.value = Math.max(1, limit);
+  }
+
+  return {
+    undoStack,
+    redoStack,
+    trackingEnabled,
+    maxLimit,
+    currentSignature,
+    canUndo,
+    canRedo,
+    undoCount,
+    redoCount,
+    lastActionLabel,
+    commit,
+    undo,
+    redo,
+    reset,
+    withoutTracking,
+    setTrackingEnabled,
+    setMaxLimit,
+  };
 });

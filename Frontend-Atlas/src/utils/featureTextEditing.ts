@@ -233,7 +233,16 @@ export function createFeaturesForSelectedMaps(
 
   for (let i = 1; i < selectedMapIds.length; i++) {
     const targetMapId = selectedMapIds[i];
-    const cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
+    let cloned: Feature;
+    if (typeof structuredClone === "function") {
+      try {
+        cloned = structuredClone(baseEditedFeature);
+      } catch {
+        cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
+      }
+    } else {
+      cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
+    }
     cloned.id = crypto.randomUUID();
     cloned.mapId = targetMapId;
     if (cloned.properties) {

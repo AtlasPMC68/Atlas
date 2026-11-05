@@ -410,3 +410,81 @@ def test_require_owned_map_rejects_invalid_user_uuid():
     assert error.value.status_code == 401
 
 
+def test_reference_image_rejects_empty_upload(monkeypatch):
+    map_id = uuid4()
+    map_obj = Map(id=map_id, reference_image_path=None)
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: map_obj)),
+        commit=AsyncMock(),
+    )
+    monkeypatch.setattr(imports_router, "_require_owned_map", AsyncMock(return_value=map_obj))
+
+    upload = UploadFile(
+        file=BytesIO(b""),
+        filename="empty.png",
+        headers=Headers({"content-type": "image/png"}),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.save_reference_image(map_id, upload, str(uuid4()), session))
+
+    assert error.value.status_code == 400
+    assert "empty" in error.value.detail.lower()
+
+
+def test_get_reference_image_raises_404_when_no_image(monkeypatch):
+    map_id = uuid4()
+    map_obj = Map(id=map_id, reference_image_path=None)
+    monkeypatch.setattr(imports_router, "_require_owned_map", AsyncMock(return_value=map_obj))
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.get_reference_image(map_id, str(uuid4()), SimpleNamespace()))
+
+    assert error.value.status_code == 404
+    assert "no reference image" in error.value.detail.lower()
+
+
+def test_update_features_supports_map_id_and_camelcase_mapId():
+    project_id = uuid4()
+    target_map_id = uuid4()
+
+    # Feature using camelCase mapId
+    payload = [
+        {
+            "id": str(uuid4()),
+            "mapId": str(target_map_id),
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [0, 0]},
+            "properties": {"name": "Test Feature"},
+        }
+    ]
+
+    added_features = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                # Project lookup
+                SimpleNamespace(scalar_one_or_none=lambda: SimpleNamespace(id=project_id)),
+                # Existing features lookup
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+            ]
+        ),
+        add=lambda feat: added_features.append(feat),
+        commit=AsyncMock(),
+    )
+
+    response = asyncio.run(
+        projects_router.update_features(
+            project_id=project_id,
+            features=payload,
+            user_id=str(uuid4()),
+            session=session,
+        )
+    )
+
+    assert response == {"detail": "Features updated successfully"}
+    assert len(added_features) == 1
+    assert added_features[0].map_id == target_map_id
+
+
+

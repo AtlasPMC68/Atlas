@@ -1,6 +1,6 @@
 <template>
-  <div class="relative h-full w-full z-0">
-    <div id="map" class="h-full w-full"></div>
+  <div class="relative h-full w-full z-0 bg-[#d4dadc]">
+    <div id="map" class="h-full w-full bg-[#d4dadc]"></div>
     <div
       v-if="pendingCity"
       class="city-name-input-container"

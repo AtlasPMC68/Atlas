@@ -323,7 +323,7 @@
           class="flex items-center gap-2"
           v-if="!editDraft.customLabelStyleId"
         >
-          <label class="label">Couleur :</label>
+          <label class="label">Couleur:</label>
           <input
             v-model="editDraft.colorHex"
             type="color"
@@ -336,9 +336,14 @@
           v-if="!isTextElement"
           class="flex flex-col gap-2"
         >
+        <p
+          class="text-xs text-base-content/60 italic"
+        >
+          Ces réglages suivants s'appliquent au formes (zones, polygones, lignes, légendes) qui représentent la ville sur la carte.
+        </p>
           <div class="flex gap-2">
             <div class="flex flex-col gap-1 w-full">
-              <label class="label py-0 text-sm">Opacité</label>
+              <label class="label py-0 text-sm">Opacité du fond</label>
               <input
                 v-model="editDraft.fillOpacity"
                 type="number"
@@ -379,13 +384,13 @@
           </div>
         </div>
 
-        <p
-          v-if="isEditingPoint"
-          class="text-xs text-base-content/60 italic"
-        >
-          Ces réglages suivants s'appliquent au symbole du point qui représente la ville
-          sur la carte.
-        </p>
+          <p
+            v-if="isEditingPoint"
+            class="text-xs text-base-content/60 italic"
+          >
+            Ces réglages suivants s'appliquent au symbole du point qui représente la ville
+            sur la carte.
+          </p>
         <div
           v-if="isEditingPoint"
           class="grid grid-cols-2 gap-4 items-center"
@@ -393,7 +398,7 @@
           <!-- Contrôles du point (alignés à gauche) -->
           <div class="flex flex-col gap-2">
             <div class="flex flex-col gap-1">
-              <label class="label py-0 text-sm">Opacité</label>
+              <label class="label py-0 text-sm">Opacité du fond</label>
               <input
                 v-model="editDraft.fillOpacity"
                 type="number"

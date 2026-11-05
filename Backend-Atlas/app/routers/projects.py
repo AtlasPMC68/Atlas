@@ -446,7 +446,12 @@ async def update_features(
                     f"Feature id is not a valid UUID, creating a new row: {feature_id}"
                 )
 
-        raw_map_id = feature.get("map_id") or (feature.get("properties") or {}).get("map_id")
+        raw_map_id = (
+            feature.get("map_id")
+            or feature.get("mapId")
+            or (feature.get("properties") or {}).get("map_id")
+            or (feature.get("properties") or {}).get("mapId")
+        )
         feature_map_id = None
         if raw_map_id:
             try:

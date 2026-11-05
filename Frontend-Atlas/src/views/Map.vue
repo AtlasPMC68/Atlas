@@ -39,7 +39,7 @@
         @keydown.right.prevent="resizeSidebarBy(16)"
       />
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="flex-1 relative min-h-0 h-full w-full">
+        <div class="flex-1 relative min-h-0 h-full w-full bg-[#d4dadc]">
           <MapGeoJSON
             ref="mapGeoJsonRef"
             class="flex-1 min-h-0 w-full"
@@ -172,7 +172,12 @@ import L, { type Map as LeafletMap } from "leaflet";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { upsertFeature } from "../utils/featureHelpers";
+import {
+  upsertFeature,
+  isCopyableFeature,
+  getGeometryAnchor,
+  cloneFeatureWithOffset,
+} from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -227,8 +232,9 @@ function selectFeature(id: string) {
 }
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
-const copiedTextFeature = ref<Feature | null>(null);
-const sidebarWidth = ref(400);
+const copiedFeature = ref<Feature | null>(null);
+const copiedTextFeature = copiedFeature;
+const sidebarWidth = ref(350);
 let sidebarResizeStartX = 0;
 let sidebarResizeStartWidth = 0;
 let isResizingSidebar = false;
@@ -248,29 +254,28 @@ function onSidebarResizeMove(event: MouseEvent) {
   );
 }
 
-function copySelectedTextFeature(): boolean {
+function copySelectedFeature(): boolean {
   const feature = features.value.find(
     (item) => String(item.id) === selectedFeatureId.value,
   );
-  if (
-    !feature ||
-    !isTextFeature(feature) ||
-    feature.geometry.type !== "Point"
-  ) {
+  if (!isCopyableFeature(feature)) {
     return false;
   }
 
-  copiedTextFeature.value = feature;
-  const label = feature.properties.labelText || feature.properties.name;
-  if (navigator.clipboard?.writeText) {
+  copiedFeature.value = feature;
+  const label =
+    feature.properties?.labelText || feature.properties?.name || feature.name;
+  if (label && navigator.clipboard?.writeText) {
     void navigator.clipboard.writeText(label).catch((error: unknown) => {
-      console.error("Could not copy selected map label to clipboard:", error);
-      showAlert(
-        "error",
-        "Le texte est copié dans Atlas, mais pas dans le presse-papiers système.",
-      );
+      console.error("Could not copy feature label to clipboard:", error);
+      if (isTextFeature(feature)) {
+        showAlert(
+          "error",
+          "Le texte est copié dans Atlas, mais pas dans le presse-papiers système.",
+        );
+      }
     });
-  } else {
+  } else if (isTextFeature(feature)) {
     showAlert(
       "error",
       "Le navigateur ne permet pas de copier le texte dans le presse-papiers système.",
@@ -279,46 +284,37 @@ function copySelectedTextFeature(): boolean {
   return true;
 }
 
-function pasteCopiedTextFeature() {
-  const source = copiedTextFeature.value;
+function pasteCopiedFeature() {
+  const source = copiedFeature.value;
   const map = leafletMap.value;
-  if (!source || !map || source.geometry.type !== "Point") return;
+  if (!source || !map || !source.geometry) return;
 
   const selectedFeature = features.value.find(
     (item) => String(item.id) === selectedFeatureId.value,
   );
-  const positionGeometry =
-    selectedFeature?.geometry.type === "Point"
-      ? selectedFeature.geometry
-      : source.geometry;
-  const [longitude, latitude] = positionGeometry.coordinates;
+  const refGeometry =
+    (selectedFeature && isCopyableFeature(selectedFeature) && selectedFeature.geometry) ||
+    source.geometry;
+  const anchor = getGeometryAnchor(refGeometry);
+  if (!anchor) return;
+
+  const [lng, lat] = anchor;
   const screenPosition = map
-    .latLngToContainerPoint(L.latLng(latitude, longitude))
+    .latLngToContainerPoint(L.latLng(lat, lng))
     .add(L.point(24, -24));
   const pastedPosition = map.containerPointToLatLng(screenPosition);
-  const now = new Date().toISOString();
-  const id = crypto.randomUUID();
-  const label = source.properties.labelText || source.properties.name;
-  const pastedFeature: Feature = {
-    ...source,
-    id,
-    name: label,
-    geometry: {
-      type: "Point",
-      coordinates: [pastedPosition.lng, pastedPosition.lat],
-    },
-    properties: {
-      ...source.properties,
-      name: label,
-      labelText: label,
-    },
-    createdAt: now,
-    updatedAt: now,
-  };
+  const deltaLat = pastedPosition.lat - lat;
+  const deltaLng = pastedPosition.lng - lng;
+
+  const pastedFeature = cloneFeatureWithOffset(source, deltaLng, deltaLat);
 
   commitFeatureSnapshot([...features.value, pastedFeature]);
-  selectedFeatureId.value = id;
+  selectedFeatureId.value = pastedFeature.id;
 }
+
+// Backwards-compatibility aliases
+const copySelectedTextFeature = copySelectedFeature;
+const pasteCopiedTextFeature = pasteCopiedFeature;
 
 function stopSidebarResize() {
   window.removeEventListener("mousemove", onSidebarResizeMove);
@@ -829,6 +825,7 @@ async function onUpdateFeature(
         ? `Modification de ${list[0].name || "l'élément"}`
         : `Modification de ${list.length} éléments`;
     commitFeatureSnapshot(nextFeatures, label);
+    await onSaveMap(nextFeatures);
     callbacks?.onSuccess?.();
   } catch (error) {
     console.error("Failed to update feature:", error);
@@ -1263,14 +1260,14 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
   const isMod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
 
-  if (isMod && key === "c" && copySelectedTextFeature()) {
+  if (isMod && key === "c" && copySelectedFeature()) {
     e.preventDefault();
     return;
   }
 
-  if (isMod && key === "v" && copiedTextFeature.value) {
+  if (isMod && key === "v" && copiedFeature.value) {
     e.preventDefault();
-    pasteCopiedTextFeature();
+    pasteCopiedFeature();
     return;
   }
 
