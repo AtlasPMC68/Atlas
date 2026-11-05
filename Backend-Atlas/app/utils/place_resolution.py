@@ -180,6 +180,11 @@ def resolve_best_candidate(
             return None
     else:
         pool = in_bounds or candidates
+
+    if len(pool) <= 1:
+        return pool[0] if pool else None
+
+    # 2. Target Position Proximity (closest to target_pos wins)
     if target_pos is not None:
         ref_lat, ref_lon = target_pos
 
@@ -191,17 +196,24 @@ def resolve_best_candidate(
                 else float("inf")
             )
 
-        return min(pool, key=_dist)
-    
+        min_d = min(_dist(c) for c in pool)
+        tied = [c for c in pool if math.isclose(_dist(c), min_d, abs_tol=1e-5)]
+        if len(tied) == 1:
+            return tied[0]
+        pool = tied
+
+    # 3. Political Entity Priority (prefers political entities over lakes/physical features)
     if prefer_political:
         political = [c for c in pool if c.get("type") in _POLITICAL_TYPES]
         if political and len(political) < len(pool):
             pool = political
 
-    
+    if len(pool) <= 1:
+        return pool[0] if pool else None
 
+    # 4. Population / Bounds Center (highest population or closest to map center)
     if prefer_population:
-        return max(pool, key=lambda c: c.get("population", 0))
+        return max(pool, key=lambda c: c.get("population", 0) or 0)
 
     if bounds is not None:
         s = bounds.get("south", bounds.get("min_lat", 0.0))

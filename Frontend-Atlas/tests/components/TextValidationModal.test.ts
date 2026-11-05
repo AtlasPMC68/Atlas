@@ -757,4 +757,79 @@ describe("TextValidationModal", () => {
       expect(reverted.coordinates).toEqual([-71.2, 46.8]);
     });
   });
+
+  describe("Suggestion display distinction: entity from JSON vs city / proximity radius", () => {
+    it("does not render blue tolerance circle for JSON entities and displays only green connection", async () => {
+      const circleSpy = vi.spyOn(L, "circle");
+      const polylineSpy = vi.spyOn(L, "polyline");
+
+      const wrapper = mountModal([
+        {
+          id: "item-lake-1",
+          text: "Lac Superinla",
+          originalText: "Lac Superinla",
+          selected: true,
+          coordinates: [-87.0, 48.0],
+          suggestedPlace: {
+            name: "Lac Supérieur",
+            coordinates: [-87.5, 47.7],
+            type: "lake",
+            source: "json",
+          },
+        },
+      ]);
+      await wrapper.vm.$nextTick();
+
+      const vm = wrapper.vm as any;
+      circleSpy.mockClear();
+      polylineSpy.mockClear();
+
+      vm.showToleranceRadius(vm.allItems[0]);
+      await wrapper.vm.$nextTick();
+
+      expect(circleSpy).not.toHaveBeenCalled();
+      expect(polylineSpy).toHaveBeenCalled();
+      expect(wrapper.text()).not.toContain("JSON");
+      expect(wrapper.text()).not.toContain("nearby");
+      expect(wrapper.text()).not.toContain("Entité");
+    });
+
+    it("renders blue tolerance circle for city/nearby suggestions and shows 150 km", async () => {
+      const circleSpy = vi.spyOn(L, "circle");
+      const polylineSpy = vi.spyOn(L, "polyline");
+
+      const wrapper = mountModal([
+        {
+          id: "item-city-1",
+          text: "Montr",
+          originalText: "Montr",
+          selected: true,
+          coordinates: [-73.5, 45.5],
+          suggestedPlace: {
+            name: "Montréal",
+            coordinates: [-73.56, 45.50],
+            type: "city",
+            source: "nearby",
+          },
+        },
+      ]);
+      await wrapper.vm.$nextTick();
+
+      const vm = wrapper.vm as any;
+      circleSpy.mockClear();
+      polylineSpy.mockClear();
+
+      vm.showToleranceRadius(vm.allItems[0]);
+      await wrapper.vm.$nextTick();
+
+      expect(circleSpy).toHaveBeenCalledWith(
+        [45.5, -73.5],
+        expect.objectContaining({ radius: 150000 }),
+      );
+      expect(polylineSpy).toHaveBeenCalled();
+      expect(wrapper.text()).not.toContain("JSON");
+      expect(wrapper.text()).not.toContain("nearby");
+      expect(wrapper.text()).not.toContain("Entité");
+    });
+  });
 });

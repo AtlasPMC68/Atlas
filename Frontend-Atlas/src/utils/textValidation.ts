@@ -37,6 +37,41 @@ export interface TextValidationEntry {
   customLabelStyle?: CustomLabelStyle;
 }
 
+/** Compute great-circle distance between two (lat, lon) points in kilometers. */
+export function haversineDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const R = 6371.0;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Return true if a suggestion originates from geographic_entities.json
+ * (provinces, states, lakes, rivers, oceans, countries, etc.), rather than a city (from GeoNames)
+ * or a local radius proximity suggestion.
+ */
+export function isJsonSuggestion(item: TextValidationEntry): boolean {
+  if (!item.suggestedPlace) return false;
+  if (item.suggestedPlace.source === "json") return true;
+  if (item.suggestedPlace.source === "nearby" || item.suggestedPlace.source === "geonames") {
+    return false;
+  }
+  const type = item.suggestedPlace.type;
+  return Boolean(type && type !== "city");
+}
+
 /** Check if a feature is an unrecognized OCR text candidate for validation. */
 export function isUnrecognizedTextFeature(feature: Feature, mapId?: string | null): boolean {
   const matchesMap = !mapId || feature.mapId === mapId || !feature.mapId;

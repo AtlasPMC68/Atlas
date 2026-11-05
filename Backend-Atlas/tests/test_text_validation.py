@@ -142,6 +142,7 @@ def test_neighboring_geographic_prefix_is_kept_as_suffix_with_full_suggestion(mo
         "name": "OCÉAN ATLANTIQUE",
         "coordinates": [-70.0, 50.0],
         "type": "ocean",
+        "source": "json",
     }
 
 
@@ -230,6 +231,7 @@ def test_categorized_text_features_only_accepts_nearby_fuzzy_place(monkeypatch):
         "name": "Paris",
         "coordinates": [2.3488, 48.85341],
         "type": "city",
+        "source": "geonames",
     }
 
 
@@ -275,6 +277,7 @@ def test_distant_fuzzy_json_match_is_unrecognized_with_json_suggestion(monkeypat
         "name": "ONTARIO",
         "coordinates": [-85.0, 50.0],
         "type": "province",
+        "source": "json",
     }
 
 
@@ -436,6 +439,7 @@ def test_batch_georeference_and_candidate_association(monkeypatch):
     assert "montr" in suggestion["name"].lower()
     assert suggestion["coordinates"] is not None
     assert suggestion["type"] == "city"
+    assert suggestion["source"] == "nearby"
     assert search_radii == [MATCHING_CONFIG["suggestion_radius_km"]]
 
 

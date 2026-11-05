@@ -231,7 +231,7 @@ def test_casing_priority_homonyms():
 
 
 def test_json_duplicate_conflict_resolution_by_target_pos():
-    r_south = resolve_place("ONTARIO", frame_bounds=CANADA_BOUNDS, target_pos=(45.5, -78.0))
+    r_south = resolve_place("ONTARIO", frame_bounds=CANADA_BOUNDS, target_pos=(48.0, -83.0))
     r_north = resolve_place("ONTARIO", frame_bounds=CANADA_BOUNDS, target_pos=(52.0, -88.0))
     assert r_south["found"] is True
     assert r_north["found"] is True

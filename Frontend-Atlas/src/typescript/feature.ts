@@ -53,6 +53,7 @@ export interface SuggestedPlace {
   name: string;
   coordinates: Coordinate;
   type?: string;
+  source?: "json" | "nearby" | string;
 }
 
 export interface FeatureProperties {

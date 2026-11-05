@@ -36,11 +36,11 @@
             </div>
             <div class="flex items-center gap-1.5">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block border border-emerald-600" />
-              <span class="font-medium text-black">Ville suggérée adoptée</span>
+              <span class="font-medium text-black">Lieu suggéré adopté</span>
             </div>
             <div class="flex items-center gap-1.5">
               <span class="w-3.5 h-3.5 rounded-full bg-amber-500 text-white font-bold text-[9px] flex items-center justify-center border border-amber-600">!</span>
-              <span class="font-medium text-black">Suggestion disponible (150 km)</span>
+              <span class="font-medium text-black">Suggestion disponible</span>
             </div>
           </div>
         </div>
@@ -115,7 +115,7 @@
             <span class="text-[11px] text-primary font-medium">Glissez les points ou cliquez sur la carte pour ajuster leur position</span>
           </div>
           <div class="flex-1 min-h-0 relative">
-            <div ref="mapContainer" class="w-full h-full bg-[#cfe8ff]" />
+            <div ref="mapContainer" class="w-full h-full bg-[#f1f5f9]" />
           </div>
         </div>
 
@@ -211,7 +211,7 @@
                   <span
                     v-if="item.suggestedPlace && !item.useSuggestedPlace"
                     class="absolute right-2 px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[10px] pointer-events-none shadow-xs"
-                    title="Suggestion de lieu à proximité disponible"
+                    title="Suggestion de lieu disponible"
                   >
                     !
                   </span>
@@ -353,7 +353,7 @@ import {
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
 } from "@heroicons/vue/24/outline";
-import type { TextValidationEntry } from "../../utils/textValidation";
+import { isJsonSuggestion, type TextValidationEntry } from "../../utils/textValidation";
 import {
   WORD_TYPE_STYLES,
   formatWordText,
@@ -941,14 +941,20 @@ function showToleranceRadius(item: TextValidationEntry) {
   const [lon, lat] = coords;
   const [sLon, sLat] = item.suggestedPlace.coordinates;
 
-  radiusCircle = L.circle([lat, lon], {
-    radius: 150000,
-    color: "#2563eb",
-    weight: 1.5,
-    dashArray: "5, 5",
-    fillColor: "#3b82f6",
-    fillOpacity: 0.12,
-  }).addTo(leafletMap);
+  const isJson = isJsonSuggestion(item);
+
+  // Si suggestion du JSON (entités géographiques) -> afficher seulement la ligne verte, aucun cercle bleu.
+  // Si le mot n'a aucune suggestion du JSON (ex: ville ou proximité 150 km) -> afficher le cercle bleu de 150 km.
+  if (!isJson) {
+    radiusCircle = L.circle([lat, lon], {
+      radius: 150000,
+      color: "#2563eb",
+      weight: 1.5,
+      dashArray: "5, 5",
+      fillColor: "#3b82f6",
+      fillOpacity: 0.12,
+    }).addTo(leafletMap);
+  }
 
   const previewIcon = L.divIcon({
     className: "custom-suggestion-preview-marker",
@@ -1299,9 +1305,9 @@ async function initMap() {
     if (cachedBasemapGeoJSON) {
       landLayer = L.geoJSON(cachedBasemapGeoJSON, {
         style: {
-          fillColor: "#e5e7eb",
-          fillOpacity: 0.9,
-          color: "#9ca3af",
+          fillColor: "#ffffff",
+          fillOpacity: 1,
+          color: "#94a3b8",
           weight: 1,
           opacity: 1,
         },
@@ -1326,12 +1332,18 @@ function destroyMap() {
     if (leafletMap) {
       leafletMap.removeLayer(marker);
     }
-    marker.off();
+    if (typeof marker.off === "function") {
+      marker.off();
+    }
   }
   markerMap.clear();
   if (leafletMap) {
-    leafletMap.off();
-    leafletMap.remove();
+    if (typeof leafletMap.off === "function") {
+      leafletMap.off();
+    }
+    if (typeof leafletMap.remove === "function") {
+      leafletMap.remove();
+    }
     leafletMap = null;
   }
 }
@@ -1466,8 +1478,12 @@ watch(
 
 onBeforeUnmount(() => {
   removeGlobalListeners();
-  for (const imageUrl of Object.values<string>(localImageMap.value)) {
-    if (imageUrl.startsWith("blob:")) URL.revokeObjectURL(imageUrl);
+  if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function" && localImageMap.value) {
+    for (const imageUrl of Object.values(localImageMap.value)) {
+      if (typeof imageUrl === "string" && imageUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(imageUrl);
+      }
+    }
   }
   destroyMap();
 });

@@ -506,10 +506,12 @@ def _categorized_text_features_from_ocr(
                 continue
 
             prefix_block["skip"] = True
+            p_type = place.get("type") or "city"
             suffix_block["prefix_suggestion"] = {
                 "name": place.get("name", phrase),
                 "coordinates": [place["lon"], place["lat"]],
-                "type": place.get("type"),
+                "type": p_type,
+                "source": "json" if (p_type and p_type != "city") else "geonames",
             }
             break
 
@@ -638,11 +640,17 @@ def _categorized_text_features_from_ocr(
                 prior_centers.append(center)
             suggested_place = block["prefix_suggestion"]
             if has_place_coordinates and entity and entity.get("name"):
+                raw_type = entity.get("type") or "city"
+                is_from_json = bool(raw_type and raw_type != "city")
                 suggested_place = {
                     "name": entity["name"],
                     "coordinates": [entity["lon"], entity["lat"]],
-                    "type": entity.get("type") or "city",
+                    "type": raw_type,
+                    "source": "json" if is_from_json else "geonames",
                 }
+            elif suggested_place and isinstance(suggested_place, dict) and "source" not in suggested_place:
+                raw_type = suggested_place.get("type") or "city"
+                suggested_place["source"] = "json" if (raw_type and raw_type != "city") else "geonames"
             collections.append(
                 _make_text_feature(
                     name=raw_text,
@@ -716,12 +724,13 @@ def _georeference_text_features(
                             feat["properties"]["suggestedPlace"] = {
                                 "name": nearby_place.get("name_fr")
                                 or nearby_place.get("name"),
-                            "coordinates": [
+                                "coordinates": [
                                     nearby_place.get("lon"),
                                     nearby_place.get("lat"),
-                            ],
+                                ],
                                 "type": nearby_place.get("type") or "city",
-                    }
+                                "source": "nearby",
+                            }
     except Exception as e:
         logger.debug(f"Failed to batch georeference OCR text features: {e}")
 

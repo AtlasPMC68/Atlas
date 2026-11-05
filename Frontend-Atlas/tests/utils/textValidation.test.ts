@@ -5,6 +5,8 @@ import {
   featureToValidationEntry,
   applyValidationToFeature,
   isUnrecognizedTextFeature,
+  isJsonSuggestion,
+  haversineDistanceKm,
   ValidationStatus,
   type TextValidationEntry,
 } from "../../src/utils/textValidation";
@@ -763,6 +765,62 @@ describe("textValidation utility functions", () => {
       expect(rejected.properties.show).toBe(false);
       expect(rejected.properties.recognized).toBe(false);
       expect(rejected.properties.validationStatus).toBe(ValidationStatus.REJECTED);
+    });
+  });
+
+  describe("isJsonSuggestion & haversineDistanceKm", () => {
+    it("correctly identifies geographic entities from JSON vs cities from GeoNames", () => {
+      const lakeEntry: TextValidationEntry = {
+        id: "1",
+        text: "Lac Superinla",
+        originalText: "Lac Superinla",
+        selected: true,
+        coordinates: [-87.0, 48.0],
+        suggestedPlace: {
+          name: "Lac Supérieur",
+          coordinates: [-87.5, 47.7],
+          type: "lake",
+          source: "json",
+        },
+      };
+      expect(isJsonSuggestion(lakeEntry)).toBe(true);
+
+      const cityEntry: TextValidationEntry = {
+        id: "2",
+        text: "Paris",
+        originalText: "Paris",
+        selected: true,
+        coordinates: [2.3, 48.8],
+        suggestedPlace: {
+          name: "Paris",
+          coordinates: [2.35, 48.85],
+          type: "city",
+          source: "geonames",
+        },
+      };
+      expect(isJsonSuggestion(cityEntry)).toBe(false);
+
+      const nearbyEntry: TextValidationEntry = {
+        id: "3",
+        text: "Montr",
+        originalText: "Montr",
+        selected: true,
+        coordinates: [-73.5, 45.5],
+        suggestedPlace: {
+          name: "Montréal",
+          coordinates: [-73.56, 45.50],
+          type: "city",
+          source: "nearby",
+        },
+      };
+      expect(isJsonSuggestion(nearbyEntry)).toBe(false);
+    });
+
+    it("calculates distance in km between coordinates", () => {
+      // Montreal to Quebec is ~233 km
+      const dist = haversineDistanceKm(45.5017, -73.5673, 46.8139, -71.208);
+      expect(dist).toBeGreaterThan(220);
+      expect(dist).toBeLessThan(250);
     });
   });
 });
