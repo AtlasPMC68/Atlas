@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS "maps" (
   "start_date" DATE,
   "end_date" DATE,
   "exact_date" BOOLEAN NOT NULL DEFAULT FALSE,
-  "reference_image" BYTEA,
+  "reference_image_path" TEXT,
   "reference_image_content_type" TEXT,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())

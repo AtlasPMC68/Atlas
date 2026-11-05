@@ -410,8 +410,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const textInput = wrapper
       .findAll("input")
-      .find((i) => i.element.value === "Québec" && i.attributes("style"));
-    expect(textInput?.element.value).toBe("Québec");
+      .find((i) => i.element.value === "QUÉBEC" && i.attributes("style"));
+    expect(textInput?.element.value).toBe("QUÉBEC");
     expect(textInput?.attributes("style")).toContain("font-size: 14px");
 
     // Click modifier button
@@ -556,5 +556,60 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     expect(emittedFeature.properties.mapElementType).toBe("point");
     expect(emittedFeature.properties.fontStyle).toBe("normal");
     expect(emittedFeature.properties.sizePx).toBe(12);
+  });
+
+  it("updates Texte (Aperçu) dynamically when typing the element name", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [textFeature],
+        featureVisibility: new Map([[textFeature.id, true]]),
+      },
+    });
+
+    await (wrapper.vm as any).showEditFeatureDialog(textFeature);
+
+    // Find the Nom de l'élément input (first text input without style)
+    const nameInput = wrapper
+      .findAll("input")
+      .find((i) => i.element.value === "Québec" && !i.attributes("style"));
+    expect(nameInput).toBeDefined();
+
+    await nameInput!.setValue("Trois-Rivières");
+    await nameInput!.trigger("input");
+
+    // The preview input should be updated
+    const previewInput = wrapper
+      .findAll("input")
+      .find((i) => i.attributes("style")?.includes("font-size"));
+    expect(previewInput).toBeDefined();
+    expect(previewInput!.element.value).toBe("Trois-Rivières");
+  });
+
+  it("displays shape controls (opacity, stroke) when editing a non-text feature", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [zoneFeature],
+        featureVisibility: new Map([[zoneFeature.id, true]]),
+      },
+    });
+
+    await (wrapper.vm as any).showEditFeatureDialog(zoneFeature);
+
+    // Should display labels for shape opacity and stroke
+    expect(wrapper.text()).toContain("Opacité");
+    expect(wrapper.text()).toContain("Opacité du contour");
+    expect(wrapper.text()).toContain("Épaisseur du contour");
+    expect(wrapper.text()).toContain("Couleur du contour :");
+
+    // Click modifier button
+    const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+    expect(modifyBtn).toBeDefined();
+    await modifyBtn!.trigger("click");
+
+    expect(wrapper.emitted("update-feature")).toBeDefined();
+    const emittedFeature = wrapper.emitted("update-feature")![0][0] as Feature;
+    expect(emittedFeature.id).toBe(zoneFeature.id);
+    expect(emittedFeature.properties.fillOpacity).toBe(0.5);
+    expect(emittedFeature.properties.strokeWidth).toBe(2);
   });
 });

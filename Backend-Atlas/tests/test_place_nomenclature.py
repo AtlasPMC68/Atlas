@@ -13,7 +13,6 @@ from pathlib import Path
 
 from app.utils.place_nomenclature import (
     DEFAULT_STYLE,
-    GEOGRAPHIC_PREFIX_TYPES,
     STYLES_MAP,
     WORD_TAXONOMY,
     _WORD_STYLE_CONFIG,
@@ -23,7 +22,6 @@ from app.utils.place_nomenclature import (
     format_geographic_nomenclature,
     format_place_result,
     is_exploitable_text,
-    is_geographic_prefix_only,
 )
 
 
@@ -47,14 +45,6 @@ def test_capitalize_words_with_particles_and_hyphens():
     assert capitalize_words("mer du labrador") == "Mer du Labrador"
     assert capitalize_words("baie d'hudson") == "Baie d'Hudson"
     assert capitalize_words("lac de la haute-marne") == "Lac de la Haute-Marne"
-
-
-def test_geographic_prefixes():
-    assert is_geographic_prefix_only("province de") is True
-    assert is_geographic_prefix_only("océan") is True
-    assert is_geographic_prefix_only("territoire du") is True
-    assert is_geographic_prefix_only("océan atlantique") is False
-    assert is_geographic_prefix_only("paris") is False
 
 
 def test_format_geographic_nomenclature():

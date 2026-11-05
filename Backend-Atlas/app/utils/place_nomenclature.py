@@ -120,23 +120,6 @@ _GEOGRAPHIC_PREFIXES = tuple(
     for normalized, display in _WORD_STYLE_CONFIG["geographicPrefixes"]
 )
 
-GEOGRAPHIC_PREFIX_TYPES: Dict[str, Set[str]] = {
-    "ocean": {"ocean"},
-    "mer": {"sea"},
-    "lac": {"lake"},
-    "fleuve": {"river", "fleuve"},
-    "riviere": {"river", "fleuve"},
-    "baie": {"sea", "lake", "ocean"},
-    "golfe": {"sea", "ocean"},
-    "detroit": {"sea", "ocean"},
-    "ile": {"province", "state", "territory", "country", "city"},
-    "iles": {"province", "state", "territory", "country", "city"},
-    "province": {"province", "state"},
-    "territoire": {"territory", "state", "province"},
-    "district": {"territory", "province", "state"},
-    "etat": {"state", "province", "country"},
-}
-
 
 def _find_geographic_prefix(norm_text: str) -> Optional[Tuple[str, str]]:
     """Return (normalized_prefix, display_prefix) if norm_text begins with a known geographic prefix."""
@@ -144,19 +127,6 @@ def _find_geographic_prefix(norm_text: str) -> Optional[Tuple[str, str]]:
         if norm_text.startswith(p_norm):
             return p_norm, p_disp
     return None
-
-
-def is_geographic_prefix_only(text: str) -> bool:
-    """Whether *text* is only a geographic prefix with no place name."""
-    normalized = _normalize(text)
-    if not normalized:
-        return False
-    prefix_fragments = {
-        " ".join(prefix.strip().split()[:count])
-        for prefix, _display in _GEOGRAPHIC_PREFIXES
-        for count in range(1, len(prefix.strip().split()) + 1)
-    }
-    return normalized in prefix_fragments
 
 
 def format_geographic_nomenclature(raw_name: str, query: str = "") -> str:
@@ -269,7 +239,6 @@ __all__ = [
     "capitalize_first",
     "capitalize_words",
     "format_geographic_nomenclature",
-    "is_geographic_prefix_only",
     "is_exploitable_text",
     "_find_geographic_prefix",
     "format_place_result",
@@ -278,6 +247,5 @@ __all__ = [
     "STYLES_MAP",
     "DEFAULT_STYLE",
     "StyleTuple",
-    "GEOGRAPHIC_PREFIX_TYPES",
     "_WORD_STYLE_CONFIG",
 ]

@@ -6,7 +6,6 @@ import {
   applyValidationToFeature,
   isUnrecognizedTextFeature,
   isJsonSuggestion,
-  haversineDistanceKm,
   ValidationStatus,
   type TextValidationEntry,
 } from "../../src/utils/textValidation";
@@ -791,7 +790,7 @@ describe("textValidation utility functions", () => {
     });
   });
 
-  describe("isJsonSuggestion & haversineDistanceKm", () => {
+  describe("isJsonSuggestion", () => {
     it("correctly identifies geographic entities from JSON vs cities from GeoNames", () => {
       const lakeEntry: TextValidationEntry = {
         id: "1",
@@ -837,13 +836,6 @@ describe("textValidation utility functions", () => {
         },
       };
       expect(isJsonSuggestion(nearbyEntry)).toBe(false);
-    });
-
-    it("calculates distance in km between coordinates", () => {
-      // Montreal to Quebec is ~233 km
-      const dist = haversineDistanceKm(45.5017, -73.5673, 46.8139, -71.208);
-      expect(dist).toBeGreaterThan(220);
-      expect(dist).toBeLessThan(250);
     });
   });
 });

@@ -496,8 +496,8 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
   featureHistoryService.withoutTracking(apply);
 }
 
-function commitFeatureSnapshot(next: Feature[]) {
-  applyFeatureSnapshot(featureHistoryService.commit(features.value, next));
+function commitFeatureSnapshot(next: Feature[], label?: string) {
+  applyFeatureSnapshot(featureHistoryService.commit(features.value, next, label));
 }
 
 function resetMapSelection() {
@@ -820,9 +820,10 @@ async function onUpdateFeature(
 ) {
   try {
     const nextFeatures = upsertFeature(features.value, updatedFeature);
-    features.value = nextFeatures;
-    reconcileVisibility(nextFeatures);
-
+    commitFeatureSnapshot(
+      nextFeatures,
+      `Modification de ${updatedFeature.name || "l'élément"}`,
+    );
     await onSaveMap(nextFeatures);
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -913,7 +914,7 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
       });
 
     featureVisibility.value = new Map(featureVisibility.value);
-    applyFeatureSnapshot(nextFeatures, true);
+    commitFeatureSnapshot(nextFeatures, "Validation des textes");
     await onSaveMap(nextFeatures);
     showTextValidationModal.value = false;
     showAlert("success", "Textes validés et enregistrés sur la carte.");

@@ -261,6 +261,7 @@
             class="input"
             placeholder="Nom de l'élément"
             required
+            @input="onNameInput"
           />
         </div>
         <div
@@ -328,6 +329,54 @@
             type="color"
             class="h-9 w-8 cursor-pointer bg-base-100"
           />
+        </div>
+
+        <!-- Controls for shapes / zones / polygons / lines / legend (non-text elements) -->
+        <div
+          v-if="!isTextElement"
+          class="flex flex-col gap-2"
+        >
+          <div class="flex gap-2">
+            <div class="flex flex-col gap-1 w-full">
+              <label class="label py-0 text-sm">Opacité</label>
+              <input
+                v-model="editDraft.fillOpacity"
+                type="number"
+                step="0.1"
+                min="0"
+                max="1"
+                class="input"
+              />
+            </div>
+            <div class="flex flex-col gap-1 w-full">
+              <label class="label py-0 text-sm">Opacité du contour</label>
+              <input
+                v-model="editDraft.strokeOpacity"
+                type="number"
+                step="0.1"
+                min="0"
+                max="1"
+                class="input"
+              />
+            </div>
+          </div>
+          <div class="flex flex-col gap-1 w-full">
+            <label class="label py-0 text-sm">Épaisseur du contour</label>
+            <input
+              v-model="editDraft.strokeWidth"
+              type="number"
+              min="0"
+              class="input"
+            />
+          </div>
+          <div class="flex items-center gap-2 pt-1">
+            <label class="label py-0 text-sm">Couleur du contour :</label>
+            <input
+              v-model="editDraft.strokeColorHex"
+              type="color"
+              class="h-9 w-8 cursor-pointer bg-base-100"
+            />
+          </div>
         </div>
 
         <p
@@ -573,6 +622,7 @@ import {
   WORD_TYPE_STYLES,
   WORD_TYPE_TAXONOMY,
   isTextFeature,
+  formatWordText,
 } from "../utils/wordStyles";
 import {
   prepareFeatureForEdit,
@@ -739,6 +789,19 @@ function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
   emit("save-label-styles", styles);
 }
 
+function onNameInput() {
+  if (!isTextElement.value) return;
+  const baseText = editDraft.value.name || "";
+  if (editDraft.value.customLabelStyle) {
+    editDraft.value.labelText =
+      editDraft.value.customLabelStyle.textTransform === "uppercase"
+        ? baseText.toUpperCase()
+        : baseText;
+  } else {
+    editDraft.value.labelText = formatWordText(baseText, editDraft.value.wordType);
+  }
+}
+
 function onLabelStyleSelectionChange() {
   const selection = editDraft.value.labelStyleSelection ?? "";
   if (selection.startsWith("custom:")) {
@@ -749,6 +812,9 @@ function onLabelStyleSelectionChange() {
     editDraft.value.customLabelStyleId = style.id;
     editDraft.value.customLabelStyle = style;
     editDraft.value.colorHex = style.color;
+    const baseText = editDraft.value.labelText || editDraft.value.name || "";
+    editDraft.value.labelText =
+      style.textTransform === "uppercase" ? baseText.toUpperCase() : baseText;
     return;
   }
   editDraft.value.customLabelStyleId = undefined;
@@ -762,6 +828,9 @@ function onLabelStyleSelectionChange() {
     ? rgbToHex(featureToEdit.value.properties.colorRgb)
     : undefined;
   editDraft.value.colorHex = originalColorHex ?? "#000000";
+
+  const baseText = editDraft.value.labelText || editDraft.value.name || "";
+  editDraft.value.labelText = formatWordText(baseText, editDraft.value.wordType);
 }
 
 watch(

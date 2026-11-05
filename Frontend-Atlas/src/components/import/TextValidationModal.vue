@@ -42,32 +42,6 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <!-- Undo / Redo controls -->
-          <div class="flex items-center gap-1 bg-base-200/80 rounded-lg p-0.5 border border-base-300">
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs text-black h-7 px-2 font-medium flex items-center gap-1 hover:bg-base-100 disabled:opacity-30 disabled:hover:bg-transparent"
-              :disabled="!canUndo"
-              title="Annuler (Ctrl+Z)"
-              data-testid="modal-undo-button"
-              @click="undo"
-            >
-              <ArrowUturnLeftIcon class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline text-xs">Annuler</span>
-            </button>
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs text-black h-7 px-2 font-medium flex items-center gap-1 hover:bg-base-100 disabled:opacity-30 disabled:hover:bg-transparent"
-              :disabled="!canRedo"
-              title="Rétablir (Ctrl+Y)"
-              data-testid="modal-redo-button"
-              @click="redo"
-            >
-              <ArrowUturnRightIcon class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline text-xs">Rétablir</span>
-            </button>
-          </div>
-
           <button
             type="button"
             class="btn btn-ghost btn-sm btn-circle text-black hover:bg-base-200"
@@ -179,8 +153,6 @@
                     :style="itemRightInputStyle(item)"
                     :placeholder="item.originalText"
                     @click.stop
-                    @focus="onInputFocus(item)"
-                    @blur="onInputBlur"
                     @input="onTextInput(item)"
                   />
                   <!-- Amber badge if suggestion available -->
@@ -310,7 +282,6 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from "vue";
-import { useHistory } from "../../composables/useHistory";
 import type { CSSProperties } from "vue";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
 import ValidationImageViewer from "./ValidationImageViewer.vue";
@@ -321,11 +292,7 @@ import {
   getWordTypeOptionStyle,
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
-import {
-  TrashIcon,
-  ArrowUturnLeftIcon,
-  ArrowUturnRightIcon,
-} from "@heroicons/vue/24/outline";
+import { TrashIcon } from "@heroicons/vue/24/outline";
 import type { TextValidationEntry } from "../../utils/textValidation";
 import {
   WORD_TYPE_STYLES,
@@ -442,71 +409,6 @@ const isPartiallySelected = computed(() => {
   return selectedCount > 0 && selectedCount < allItems.value.length;
 });
 
-// ── Undo / Redo History Management ───────────────────────────────────────────
-const {
-  canUndo,
-  canRedo,
-  resetHistory,
-  pushHistory,
-  undo: historyUndo,
-  redo: historyRedo,
-} = useHistory<TextValidationEntry[]>(30);
-
-function saveHistorySnapshot() {
-  pushHistory(allItems.value);
-}
-
-function undo() {
-  const previous = historyUndo(allItems.value);
-  if (!previous) return;
-  allItems.value = previous;
-}
-
-function redo() {
-  const next = historyRedo(allItems.value);
-  if (!next) return;
-  allItems.value = next;
-}
-
-let isTypingSession = false;
-let typingTimeout: ReturnType<typeof setTimeout> | null = null;
-
-function onInputFocus(_item: TextValidationEntry) {
-  if (!isTypingSession) {
-    saveHistorySnapshot();
-    isTypingSession = true;
-  }
-}
-
-function onInputBlur() {
-  isTypingSession = false;
-  if (typingTimeout) {
-    clearTimeout(typingTimeout);
-    typingTimeout = null;
-  }
-}
-
-function handleKeyDown(e: KeyboardEvent) {
-  if (!props.isOpen) return;
-
-  const isMod = e.ctrlKey || e.metaKey;
-  const key = e.key.toLowerCase();
-
-  if (isMod && !e.shiftKey && key === "z") {
-    e.preventDefault();
-    e.stopPropagation();
-    undo();
-    return;
-  }
-
-  if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
-    e.preventDefault();
-    e.stopPropagation();
-    redo();
-    return;
-  }
-}
-
 function startColResize(e: MouseEvent) {
   isDragging.value = true;
   const startX = e.clientX;
@@ -621,7 +523,6 @@ function onToggleSelectAll(e: Event) {
 }
 
 function setAll(selected: boolean) {
-  saveHistorySnapshot();
   for (const item of allItems.value) {
     item.selected = selected;
     item.validationStatus = selected ? "accepted" : "rejected";
@@ -629,13 +530,11 @@ function setAll(selected: boolean) {
 }
 
 function toggleItemSelection(item: TextValidationEntry) {
-  saveHistorySnapshot();
   item.selected = !item.selected;
   item.validationStatus = item.selected ? "accepted" : "rejected";
 }
 
 function onItemLabelStyleChange(item: TextValidationEntry) {
-  saveHistorySnapshot();
   const selection = item.labelStyleSelection ?? "";
   if (selection.startsWith("custom:")) {
     const style = availableCustomLabelStyles.value?.find(
@@ -662,22 +561,12 @@ function itemRightInputStyle(item: TextValidationEntry): CSSProperties {
 }
 
 function onTextInput(item: TextValidationEntry) {
-  if (!isTypingSession) {
-    saveHistorySnapshot();
-    isTypingSession = true;
-  }
   item.useSuggestedPlace = false;
   item.selected = true;
   item.validationStatus = "accepted";
-
-  if (typingTimeout) clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    isTypingSession = false;
-  }, 800);
 }
 
 function toggleSuggestion(item: TextValidationEntry) {
-  saveHistorySnapshot();
   if (item.useSuggestedPlace) {
     item.useSuggestedPlace = false;
     item.text = item.originalText;
@@ -696,7 +585,6 @@ function toggleSuggestion(item: TextValidationEntry) {
 }
 
 function toggleSupprimer(item: TextValidationEntry) {
-  saveHistorySnapshot();
   if (highlightedId.value === item.id) {
     highlightedId.value = null;
   }
@@ -754,14 +642,12 @@ function onDocumentClick(e: MouseEvent) {
 let isListening = false;
 function attachGlobalListeners() {
   if (isListening || typeof window === "undefined") return;
-  window.addEventListener("keydown", handleKeyDown, true);
   window.addEventListener("click", onDocumentClick, true);
   isListening = true;
 }
 
 function removeGlobalListeners() {
   if (!isListening || typeof window === "undefined") return;
-  window.removeEventListener("keydown", handleKeyDown, true);
   window.removeEventListener("click", onDocumentClick, true);
   isListening = false;
 }
@@ -774,7 +660,6 @@ watch(
       return;
     }
     attachGlobalListeners();
-    resetHistory();
     imgZoom.value = 1;
     allItems.value = mapInitialItems(props.initialItems);
   },
@@ -812,10 +697,6 @@ watch(
 
 onBeforeUnmount(() => {
   removeGlobalListeners();
-  if (typingTimeout) {
-    clearTimeout(typingTimeout);
-    typingTimeout = null;
-  }
   if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function" && localImageMap.value) {
     for (const imageUrl of Object.values(localImageMap.value)) {
       if (typeof imageUrl === "string" && imageUrl.startsWith("blob:")) {
@@ -836,9 +717,5 @@ defineExpose({
   allItems,
   highlightedId,
   focusItem,
-  undo,
-  redo,
-  canUndo,
-  canRedo,
 });
 </script>

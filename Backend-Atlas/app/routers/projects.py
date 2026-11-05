@@ -611,7 +611,7 @@ async def get_project_maps(
     )
     maps_result = await session.execute(
         select(Map)
-        .options(defer(Map.reference_image), defer(Map.georef_inputs))
+        .options(defer(Map.georef_inputs))
         .where(Map.project_id == project_uuid)
         .where(Map.id.not_in(active_imports))
         .order_by(Map.start_date.asc(), Map.created_at.asc())

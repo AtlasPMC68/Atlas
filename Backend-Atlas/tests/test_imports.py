@@ -184,14 +184,17 @@ def test_reference_images_are_saved_and_retrieved_per_map(monkeypatch):
 
     for map_id, expected_image in zip(map_ids, images):
         response = asyncio.run(imports_router.get_reference_image(map_id, str(uuid4()), session))
-        assert response.body == expected_image
+        with open(response.path, "rb") as f:
+            assert f.read() == expected_image
         assert response.media_type == "image/png"
 
     asyncio.run(imports_router.delete_reference_image(map_ids[0], str(uuid4()), session))
     with pytest.raises(HTTPException) as error:
         asyncio.run(imports_router.get_reference_image(map_ids[0], str(uuid4()), session))
     assert error.value.status_code == 404
-    assert asyncio.run(imports_router.get_reference_image(map_ids[1], str(uuid4()), session)).body == images[1]
+    resp1 = asyncio.run(imports_router.get_reference_image(map_ids[1], str(uuid4()), session))
+    with open(resp1.path, "rb") as f:
+        assert f.read() == images[1]
 
 
 def test_reference_image_rejects_non_image_upload(monkeypatch):
@@ -296,7 +299,7 @@ def test_project_timeline_excludes_maps_with_an_unfinished_import():
 
 def test_delete_reference_image_clears_field_and_commits():
     map_id = uuid4()
-    map_obj = Map(id=map_id, reference_image=b"binary-image-data")
+    map_obj = Map(id=map_id, reference_image_path="reference_images/test.png")
     session = SimpleNamespace(
         execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: map_obj)),
         commit=AsyncMock(),
@@ -307,7 +310,7 @@ def test_delete_reference_image_clears_field_and_commits():
     )
 
     assert response == {"detail": "Reference image deleted"}
-    assert map_obj.reference_image is None
+    assert map_obj.reference_image_path is None
     session.commit.assert_awaited_once()
 
 
