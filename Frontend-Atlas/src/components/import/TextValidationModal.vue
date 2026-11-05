@@ -32,11 +32,11 @@
           <div class="hidden md:flex items-center gap-4 px-3 py-1 bg-base-200/50 rounded-lg border border-base-300 text-xs">
             <div class="flex items-center gap-1.5">
               <span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block border border-blue-600" />
-              <span class="font-medium text-black">Position estimée image</span>
+              <span class="font-medium text-black">Position image de référence</span>
             </div>
             <div class="flex items-center gap-1.5">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block border border-emerald-600" />
-              <span class="font-medium text-black">Lieu suggéré adopté</span>
+              <span class="font-medium text-black">Lieu suggéré</span>
             </div>
             <div class="flex items-center gap-1.5">
               <span class="w-3.5 h-3.5 rounded-full bg-amber-500 text-white font-bold text-[9px] flex items-center justify-center border border-amber-600">!</span>
@@ -943,15 +943,13 @@ function showToleranceRadius(item: TextValidationEntry) {
 
   const isJson = isJsonSuggestion(item);
 
-  // Si suggestion du JSON (entités géographiques) -> afficher seulement la ligne verte, aucun cercle bleu.
-  // Si le mot n'a aucune suggestion du JSON (ex: ville ou proximité 150 km) -> afficher le cercle bleu de 150 km.
   if (!isJson) {
     radiusCircle = L.circle([lat, lon], {
       radius: 150000,
-      color: "#2563eb",
+      color: "#059669",
       weight: 1.5,
       dashArray: "5, 5",
-      fillColor: "#3b82f6",
+      fillColor: "#10b981",
       fillOpacity: 0.12,
     }).addTo(leafletMap);
   }
@@ -1122,7 +1120,7 @@ function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
   const isFocused = item.id === highlightedId.value;
   if (item.selected || isFocused) {
     const typo = getEntryTypography(item);
-    const size = Math.min(typo.sizePx, 14);
+    const size = Math.min(typo.sizePx, 18);
 
     content.style.color = typo.color;
     content.style.fontSize = `${size}px`;
@@ -1132,7 +1130,7 @@ function createTextTooltip(item: TextValidationEntry | string): HTMLElement {
     content.textContent = typo.isUppercase ? item.text.toUpperCase() : item.text;
   } else {
     content.style.color = "#6b7280";
-    content.style.fontSize = "11px";
+    content.style.fontSize = "14px";
     content.style.fontStyle = "normal";
     content.style.fontWeight = "normal";
     content.style.textTransform = "none";
@@ -1526,7 +1524,7 @@ defineExpose({
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: #000000;
   padding: 2px 6px;
