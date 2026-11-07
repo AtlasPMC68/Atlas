@@ -109,7 +109,7 @@
     <template #list-area>
       <div v-if="pickedColors.length > 0" class="flex flex-col gap-2 min-h-0">
         <span class="text-sm font-medium">Couleurs sélectionnées :</span>
-        <div class="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
+        <div class="flex flex-col gap-2 max-h-[26rem] overflow-y-auto pr-1">
           <div
             v-for="(color, index) in pickedColors"
             :key="`row-${index}`"
@@ -155,10 +155,12 @@
         </div>
       </div>
 
-      <p v-else class="text-sm text-base-content/50 italic">
-        Aucune couleur sélectionnée — sélectionnez au moins une couleur de zone
-        pour continuer.
-      </p>
+      <div
+        v-else
+        class="p-4 bg-base-200/50 rounded-lg border border-dashed border-base-300 text-sm text-base-content/60 italic text-center"
+      >
+        Aucune couleur sélectionnée — cliquez sur les zones colorées de la carte pour ajouter des couleurs.
+      </div>
     </template>
 
     <template #error-area>
