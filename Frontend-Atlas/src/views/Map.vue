@@ -256,7 +256,7 @@ function onSidebarResizeMove(event: MouseEvent) {
 
 function copySelectedFeature(): boolean {
   const feature = features.value.find(
-    (item) => String(item.id) === selectedFeatureId.value,
+    (item: Feature) => String(item.id) === selectedFeatureId.value,
   );
   if (!isCopyableFeature(feature)) {
     return false;
@@ -290,7 +290,7 @@ function pasteCopiedFeature() {
   if (!source || !map || !source.geometry) return;
 
   const selectedFeature = features.value.find(
-    (item) => String(item.id) === selectedFeatureId.value,
+    (item: Feature) => String(item.id) === selectedFeatureId.value,
   );
   const refGeometry =
     (selectedFeature && isCopyableFeature(selectedFeature) && selectedFeature.geometry) ||
@@ -367,7 +367,7 @@ const enrichedPeriods = computed((): SliderPeriod[] =>
       startYear: toYear(p.startDate),
       endYear: toYear(p.endDate),
     }))
-    .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
+    .filter((p: SliderPeriod): p is SliderPeriod => p.startYear != null && p.endYear != null),
 );
 
 const periodByMapId = computed(
@@ -707,8 +707,11 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       Array.isArray(customLabelStyles.value) && customLabelStyles.value.length > 0
         ? customLabelStyles.value
         : styles;
-    const stylesById = new Map(
-      effectiveStyles.map((style: CustomLabelStyle) => [style.id, style]),
+    const stylesById = new Map<string, CustomLabelStyle>(
+      effectiveStyles.map((style: CustomLabelStyle): [string, CustomLabelStyle] => [
+        style.id,
+        style,
+      ]),
     );
     const nextFeatures = features.value.map((feature: Feature) => {
       const styleId = feature.properties.customLabelStyleId;
@@ -895,11 +898,13 @@ function onOpenTextValidation(mapId: string | null) {
 async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
   isSavingTextValidation.value = true;
   try {
-    const validatedMap = new Map(validatedItems.map((i) => [i.id, i]));
-    const openedIds = new Set(textValidationEntries.value.map((i) => i.id));
+    const validatedMap = new Map<string, TextValidationEntry>(
+      validatedItems.map((i): [string, TextValidationEntry] => [i.id, i]),
+    );
+    const openedIds = new Set(textValidationEntries.value.map((i: TextValidationEntry) => i.id));
 
     for (const id of openedIds) {
-      if (!validatedMap.has(id)) {
+      if (!validatedMap.has(id as string)) {
         featureVisibility.value.delete(id);
       }
     }
@@ -949,7 +954,7 @@ function openAddMapDialog() {
 }
 
 function openEditMapDialog(mapId: string) {
-  const period = mapPeriods.value.find((item) => item.id === mapId);
+  const period = mapPeriods.value.find((item: MapPeriod) => item.id === mapId);
   if (!period) {
     showAlert("error", "Impossible de trouver la carte à modifier.");
     return;

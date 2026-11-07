@@ -410,9 +410,9 @@ async def update_features(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        project_uuid = UUID(project_id)
-        user_uuid = UUID(user_id)
-    except ValueError:
+        project_uuid = project_id if isinstance(project_id, UUID) else UUID(str(project_id))
+        user_uuid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+    except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid project_id or user")
 
     project_result = await session.execute(
@@ -505,9 +505,9 @@ async def delete_features_bulk(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        project_uuid = UUID(project_id)
-        user_uuid = UUID(user_id)
-    except ValueError:
+        project_uuid = project_id if isinstance(project_id, UUID) else UUID(str(project_id))
+        user_uuid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+    except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid project_id or user")
 
     project_result = await session.execute(

@@ -467,6 +467,8 @@ def test_update_features_supports_map_id_and_camelcase_mapId():
                 SimpleNamespace(scalar_one_or_none=lambda: SimpleNamespace(id=project_id)),
                 # Existing features lookup
                 SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+                # Refreshed features lookup
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: added_features)),
             ]
         ),
         add=lambda feat: added_features.append(feat),
@@ -482,7 +484,7 @@ def test_update_features_supports_map_id_and_camelcase_mapId():
         )
     )
 
-    assert response == {"detail": "Features updated successfully"}
+    assert response.get("type") == "FeatureCollection"
     assert len(added_features) == 1
     assert added_features[0].map_id == target_map_id
 

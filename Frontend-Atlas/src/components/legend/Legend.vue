@@ -1,5 +1,5 @@
 <template>
-  <div class="card bg-base-100 py-3">
+  <div class="card bg-base-100 shadow-md p-3">
     <div
       class="card-body p-0"
       @mousedown.stop
@@ -7,24 +7,34 @@
       @dblclick.stop
       @wheel.stop
     >
-      <h2 class="card-title m-0 p-0 flex items-center">
+      <h2 class="card-title m-0 px-1 pb-1 text-base flex items-center">
         Légende
-        <button class="btn btn-ghost btn-sm ml-auto" @click="toggleLegend">
-          <EyeIcon v-if="isLegendVisible" class="w-5 h-5" />
-          <EyeSlashIcon v-else class="w-5 h-5" />
+        <button
+          class="btn btn-ghost btn-xs ml-auto"
+          @click="toggleLegend"
+          :title="isLegendVisible ? 'Masquer la légende' : 'Afficher la légende'"
+        >
+          <EyeIcon v-if="isLegendVisible" class="w-4 h-4" />
+          <EyeSlashIcon v-else class="w-4 h-4" />
         </button>
       </h2>
       <template v-if="isLegendVisible">
-        <p v-if="visibleZoneFeatures.length === 0">Aucune zone</p>
+        <p v-if="visibleZoneFeatures.length === 0" class="text-xs text-base-content/60 px-1 py-1">
+          Aucune zone
+        </p>
         <ul
           v-else
-          class="space-y-2 max-h-[25vh] max-w-[20vh] overflow-y-auto pr-2"
+          class="space-y-1 max-h-[vh] min-w-[12rem] max-w-xs overflow-y-auto p-1"
         >
           <li
             v-for="feature in visibleZoneFeatures"
             :key="feature.id ?? feature.properties?.name"
-            class="flex items-center gap-2 rounded px-1 py-0.5 cursor-pointer"
-            :class="selectedFeatureId === String(feature.id) ? 'ring-2 ring-primary bg-primary/10' : 'hover:bg-base-200/60'"
+            class="flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer border transition-all"
+            :class="[
+              selectedFeatureId === String(feature.id)
+                ? 'border-primary ring-1 ring-primary bg-primary/10 font-semibold'
+                : 'border-transparent hover:bg-base-200/60',
+            ]"
             @click="selectFeature(feature)"
             @dblclick.prevent.stop="editFeature(feature)"
           >
