@@ -53,7 +53,6 @@ _GEO_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "geographic_e
 _GEO_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 # (floor(lat), floor(lon)) -> [entity, ...]
 _SPATIAL_GEO_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
-_SEEN_GEO_KEYS: Set[Tuple[str, str, float, float]] = set()
 _GEO_DATA_LOADED = False
 _GEO_INDEX_KEYS: List[str] = []
 
@@ -63,6 +62,7 @@ def _ensure_geo_data() -> None:
     global _GEO_DATA_LOADED, _GEO_INDEX_KEYS
     if _GEO_DATA_LOADED:
         return
+    _seen_geo_keys: Set[Tuple[str, str, float, float]] = set()
     if _GEO_DATA_PATH.exists():
         with open(_GEO_DATA_PATH, "r", encoding="utf-8") as _f:
             for _entry in json.load(_f):
@@ -74,8 +74,8 @@ def _ensure_geo_data() -> None:
                     try:
                         _glat, _glon = float(_entry["lat"]), float(_entry["lon"])
                         _gkey = (str(_entry.get("type", "")), str(_entry.get("name", "")), _glat, _glon)
-                        if _gkey not in _SEEN_GEO_KEYS:
-                            _SEEN_GEO_KEYS.add(_gkey)
+                        if _gkey not in _seen_geo_keys:
+                            _seen_geo_keys.add(_gkey)
                             _cell = (math.floor(_glat), math.floor(_glon))
                             _SPATIAL_GEO_GRID.setdefault(_cell, []).append(_entry)
                     except (ValueError, TypeError):
@@ -126,7 +126,6 @@ def is_in_bounds(lat: float, lon: float, bounds: Optional[Dict[str, float]]) -> 
     if None in (s, n, w, e):
         return True
 
-    assert s is not None and n is not None and w is not None and e is not None
     return s <= lat <= n and w <= lon <= e
 
 
@@ -196,8 +195,9 @@ def resolve_best_candidate(
                 else float("inf")
             )
 
-        min_d = min(_dist(c) for c in pool)
-        tied = [c for c in pool if math.isclose(_dist(c), min_d, abs_tol=1e-5)]
+        candidate_dists = [(c, _dist(c)) for c in pool]
+        min_d = min(d for _, d in candidate_dists)
+        tied = [c for c, d in candidate_dists if math.isclose(d, min_d, abs_tol=1e-5)]
         if len(tied) == 1:
             return tied[0]
         pool = tied
@@ -277,7 +277,7 @@ def _parse_pop(val: Any) -> int:
 _gc = getattr(geonamescache, "GeonamesCache")()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 _SPATIAL_CITY_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
-_SEEN_CITY_IDS: Set[Any] = set()
+_seen_city_ids: Set[Any] = set()
 
 for _info in _gc.get_cities().values():
     _name = _info.get("name") or ""
@@ -300,11 +300,12 @@ for _info in _gc.get_cities().values():
             _CITY_INDEX.setdefault(_base, []).append(_city)
 
     _gid = _city.get("geonameid") or (_name, _lat, _lon)
-    if _gid not in _SEEN_CITY_IDS:
-        _SEEN_CITY_IDS.add(_gid)
+    if _gid not in _seen_city_ids:
+        _seen_city_ids.add(_gid)
         _cell = (math.floor(_lat), math.floor(_lon))
         _SPATIAL_CITY_GRID.setdefault(_cell, []).append(_city)
 
+del _seen_city_ids
 _CITY_INDEX_KEYS = list(_CITY_INDEX.keys())
 
 

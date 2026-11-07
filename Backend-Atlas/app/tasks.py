@@ -394,10 +394,8 @@ def _categorized_text_features_from_ocr(
     seen_recognized = set()
     seen_unrecognized: dict[str, list[tuple[float, float]]] = {}
 
-    center_of = polygon_centroid
-
     def estimated_position(coords: Any) -> Optional[tuple[float, float]]:
-        center = center_of(coords)
+        center = polygon_centroid(coords)
         if center is None or not frame_bounds or not image_size:
             return None
         h, w = image_size
@@ -428,12 +426,8 @@ def _categorized_text_features_from_ocr(
         confidence = float(prob) if prob is not None else 1.0
 
         target_pos = estimated_position(coords)
-
         try:
-            if target_pos is not None:
-                entity = match_ocr_label(raw_text, frame_bounds, target_pos=target_pos)
-            else:
-                entity = match_ocr_label(raw_text, frame_bounds)
+            entity = match_ocr_label(raw_text, frame_bounds, target_pos=target_pos)
         except TypeError:
             entity = match_ocr_label(raw_text, frame_bounds)
 
@@ -516,7 +510,7 @@ def _categorized_text_features_from_ocr(
         else:
             # Case 2: keep OCR text even if it is not recognized -> manual validation.
             clean = raw_text.casefold()
-            center = center_of(coords)
+            center = polygon_centroid(coords)
             prior_centers = seen_unrecognized.setdefault(clean, [])
             if center is None:
                 if prior_centers:
@@ -550,7 +544,7 @@ def _categorized_text_features_from_ocr(
                     recognized=False,
                     extra={
                         "suggestedPlace": suggested_place,
-                        },
+                    },
                 )
             )
 

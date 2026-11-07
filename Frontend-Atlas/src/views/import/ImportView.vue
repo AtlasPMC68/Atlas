@@ -289,7 +289,7 @@ const isStarting = ref(false);
 const showValidationModal = ref(false);
 const isSubmittingValidation = ref(false);
 const validationItems = ref<TextValidationEntry[]>([]);
-const loadedProjectFeatures = ref<any[]>([]);
+const loadedProjectFeatures = ref<Feature[]>([]);
 
 interface PendingConfirm {
   title: string;
@@ -517,21 +517,21 @@ watch(
       try {
         const res = await apiFetch(`/projects/${store.projectId}/features`);
         if (res.ok) {
-          const allFeatures = snakeToCamel(await res.json()) as any[];
+          const allFeatures = snakeToCamel(await res.json()) as Feature[];
           loadedProjectFeatures.value = allFeatures;
-          const ocrFeatures = allFeatures.filter((f) =>
+          const ocrFeatures = allFeatures.filter((f: Feature) =>
             isUnrecognizedTextFeature(f, store.mapId),
           );
 
           if (ocrFeatures.length > 0) {
-            validationItems.value = ocrFeatures.map((f) => featureToValidationEntry(f, false));
+            validationItems.value = ocrFeatures.map((f: Feature) => featureToValidationEntry(f, false));
             showValidationModal.value = true;
             return;
           } else {
             showValidationModal.value = false;
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Failed to load extracted texts for validation:", err);
       }
     }
@@ -548,25 +548,25 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
 
   isSubmittingValidation.value = true;
   try {
-    let currentFeatures = loadedProjectFeatures.value;
+    let currentFeatures: Feature[] = loadedProjectFeatures.value;
     if (currentFeatures.length === 0) {
       const response = await apiFetch(`/projects/${store.projectId}/features`);
       if (!response.ok) {
         throw new Error(`Failed to load project features: ${response.status}`);
       }
-      currentFeatures = snakeToCamel(await response.json()) as any[];
+      currentFeatures = snakeToCamel(await response.json()) as Feature[];
     }
 
     const openedIds = new Set(
       currentFeatures
         .filter((feature: Feature) => isUnrecognizedTextFeature(feature, store.mapId))
-        .map((feature) => feature.id),
+        .map((feature: Feature) => feature.id),
     );
-    const submittedIds = new Set(items.map((item) => item.id));
-    const itemsMap = new Map(items.map((item) => [item.id, item]));
+    const submittedIds = new Set(items.map((item: TextValidationEntry) => item.id));
+    const itemsMap = new Map(items.map((item: TextValidationEntry) => [item.id, item]));
     const featuresToUpdate = currentFeatures
-      .filter((feature) => itemsMap.has(feature.id))
-      .map((feature) => applyValidationToFeature(feature, itemsMap.get(feature.id)!));
+      .filter((feature: Feature) => itemsMap.has(feature.id))
+      .map((feature: Feature) => applyValidationToFeature(feature, itemsMap.get(feature.id)!));
     if (featuresToUpdate.length > 0) {
       const response = await apiFetch(`/projects/${store.projectId}/features`, {
         method: "PUT",
@@ -580,7 +580,7 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
       }
     }
 
-    const removedIds = [...openedIds].filter((id) => !submittedIds.has(id));
+    const removedIds = [...openedIds].filter((id: string) => !submittedIds.has(id));
     if (removedIds.length > 0) {
       const response = await apiFetch(`/projects/${store.projectId}/features`, {
         method: "DELETE",

@@ -731,13 +731,16 @@ const pointPreviewFillColor = computed(() => {
   return editDraft.value.colorHex || "#000000";
 });
 
-const pointPreviewFillOpacity = computed(() => {
-  const val = editDraft.value.fillOpacity;
-  if (val === undefined || val === null || (val as unknown) === "") return 0.5;
+function parseNormalizedOpacity(val: unknown, fallback: number): number {
+  if (val === undefined || val === null || (val as unknown) === "") return fallback;
   const num = Number(val);
-  if (Number.isNaN(num)) return 0.5;
+  if (Number.isNaN(num)) return fallback;
   const normalized = num > 1 ? (num <= 10 ? num / 10 : num / 100) : num;
   return Math.max(0, Math.min(1, normalized));
+}
+
+const pointPreviewFillOpacity = computed(() => {
+  return parseNormalizedOpacity(editDraft.value.fillOpacity, 0.5);
 });
 
 const pointPreviewStrokeColor = computed(() => {
@@ -745,12 +748,7 @@ const pointPreviewStrokeColor = computed(() => {
 });
 
 const pointPreviewStrokeOpacity = computed(() => {
-  const val = editDraft.value.strokeOpacity;
-  if (val === undefined || val === null || (val as unknown) === "") return 1;
-  const num = Number(val);
-  if (Number.isNaN(num)) return 1;
-  const normalized = num > 1 ? (num <= 10 ? num / 10 : num / 100) : num;
-  return Math.max(0, Math.min(1, normalized));
+  return parseNormalizedOpacity(editDraft.value.strokeOpacity, 1);
 });
 
 const pointPreviewStrokeWidth = computed(() => {
@@ -875,7 +873,7 @@ watch(
     if (!newId) return;
 
     const feature = props.features.find(
-      (item: any) => String(item.id) === newId,
+      (item: Feature) => String(item.id) === newId,
     );
     if (!feature) return;
 

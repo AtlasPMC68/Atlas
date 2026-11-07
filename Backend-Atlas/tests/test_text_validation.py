@@ -18,7 +18,7 @@ QUEBEC_CITY = {
 }
 
 
-def _mock_match_ocr(text, frame_bounds=None):
+def _mock_match_ocr(text, frame_bounds=None, **kwargs):
     if "quebec" in text.lower():
         return QUEBEC_CITY
     return None
@@ -111,7 +111,7 @@ def test_out_of_bounds_places_are_rejected_without_manual_review(monkeypatch):
 
 
 def test_categorized_text_features_fuzzy_unrecognized(monkeypatch):
-    def _mock_fuzzy(text, frame_bounds=None):
+    def _mock_fuzzy(text, frame_bounds=None, **kwargs):
         return None
 
     monkeypatch.setattr("app.tasks.match_ocr_label", _mock_fuzzy)

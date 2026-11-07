@@ -484,7 +484,7 @@ def test_update_features_supports_map_id_and_camelcase_mapId():
         )
     )
 
-    assert response.get("type") == "FeatureCollection"
+    assert isinstance(response, list)
     assert len(added_features) == 1
     assert added_features[0].map_id == target_map_id
 

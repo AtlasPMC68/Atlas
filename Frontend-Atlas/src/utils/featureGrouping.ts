@@ -4,7 +4,7 @@ import {
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import { isVisibleInMainLayers } from "./featureValidationState";
-import { getMapElementType } from "./featureHelpers";
+import { getFeatureMapId, getMapElementType } from "./featureHelpers";
 
 export { isVisibleInMainLayers } from "./featureValidationState";
 
@@ -64,13 +64,7 @@ export function groupFeaturesByMap(
     : null;
 
   features.forEach((feature: Feature) => {
-    const rawMapId =
-      feature.mapId ??
-      (feature as any).map_id ??
-      (feature.properties as any)?.mapId ??
-      (feature.properties as any)?.map_id ??
-      null;
-    const mapId = rawMapId ? String(rawMapId).trim() : null;
+    const mapId = getFeatureMapId(feature);
     if (!mapGroups.has(mapId)) {
       let title = "Éléments généraux";
       let startDate: string | null = null;
@@ -82,7 +76,9 @@ export function groupFeaturesByMap(
         }
       }
       if (title === "Éléments généraux" && mapId) {
-        const customTitle = (feature as any).mapTitle || (feature.properties as any)?.mapTitle;
+        const customTitle =
+          ("mapTitle" in feature ? (feature as { mapTitle?: string }).mapTitle : undefined) ||
+          feature.properties?.mapTitle;
         if (customTitle) {
           title = customTitle;
         }

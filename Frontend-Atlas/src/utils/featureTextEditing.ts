@@ -1,6 +1,6 @@
 import type { Feature } from "../typescript/feature";
 import type { CustomLabelStyle } from "./labelPresentation";
-import { getMapElementType } from "./featureHelpers";
+import { getFeatureMapId, getMapElementType } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {
   applyWordStyleToFeature,
@@ -105,13 +105,8 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   const rawLabel =
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
 
-  const rawMapId =
-    feature.mapId ??
-    (feature as any).map_id ??
-    (feature.properties as any)?.mapId ??
-    (feature.properties as any)?.map_id ??
-    null;
-  const initialMapIds = rawMapId ? [String(rawMapId)] : [];
+  const mapId = getFeatureMapId(feature);
+  const initialMapIds = mapId ? [mapId] : [];
 
   return {
     feature,

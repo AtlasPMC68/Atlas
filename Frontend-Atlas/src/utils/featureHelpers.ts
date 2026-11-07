@@ -85,6 +85,23 @@ export function colorRgbToCss(rgb: unknown): string | null {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
+/**
+ * Safely extracts the mapId from a feature or its properties (supporting both camelCase and snake_case).
+ */
+export function getFeatureMapId(
+  feature: Feature | Record<string, unknown> | null | undefined,
+): string | null {
+  if (!feature) return null;
+  const directMapId = "mapId" in feature ? (feature as Feature).mapId : undefined;
+  const snakeMapId = "map_id" in feature ? (feature as { map_id?: string | null }).map_id : undefined;
+  const props = "properties" in feature ? (feature as Feature).properties : undefined;
+  const propCamelMapId = props?.mapId;
+  const propSnakeMapId = props ? (props as Record<string, unknown>).map_id : undefined;
+
+  const rawMapId = directMapId ?? snakeMapId ?? propCamelMapId ?? propSnakeMapId ?? null;
+  return rawMapId ? String(rawMapId).trim() : null;
+}
+
 export function getDefaultLayer(type: MapElementType | string | null): number {
   switch (type) {
     case "zone": return 0;

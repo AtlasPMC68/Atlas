@@ -1,6 +1,7 @@
 # region Imports
 import logging
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 import json
 import base64
@@ -402,6 +403,15 @@ async def get_extraction_results(task_id: str):
         )
 
 
+def _parse_entity_uuids(project_id: Any, user_id: Any) -> tuple[UUID, UUID]:
+    try:
+        project_uuid = project_id if isinstance(project_id, UUID) else UUID(str(project_id))
+        user_uuid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+        return project_uuid, user_uuid
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+
+
 @router.put("/{project_id}/features")
 async def update_features(
     project_id: str,
@@ -409,11 +419,7 @@ async def update_features(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    try:
-        project_uuid = project_id if isinstance(project_id, UUID) else UUID(str(project_id))
-        user_uuid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+    project_uuid, user_uuid = _parse_entity_uuids(project_id, user_id)
 
     project_result = await session.execute(
         select(Project.id).where(
@@ -504,11 +510,7 @@ async def delete_features_bulk(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    try:
-        project_uuid = project_id if isinstance(project_id, UUID) else UUID(str(project_id))
-        user_uuid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+    project_uuid, user_uuid = _parse_entity_uuids(project_id, user_id)
 
     project_result = await session.execute(
         select(Project.id).where(

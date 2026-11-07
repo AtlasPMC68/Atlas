@@ -14,7 +14,7 @@
           :map-periods="mapPeriods"
           :custom-label-styles="customLabelStyles"
           :selected-feature-id="selectedFeatureId"
-          @select-feature="(id: string) => selectedFeatureId = id"
+          @select-feature="(id: string | null) => selectedFeatureId = id"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -227,7 +227,7 @@ const featureVisibilityControlsRef = ref<InstanceType<typeof FeatureVisibilityCo
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
-function selectFeature(id: string) {
+function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
 }
 const features = ref<Feature[]>([]);
@@ -477,11 +477,11 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
     reconcileVisibility(next);
 
     const currentUuidIds = new Set(
-      next.map((feature) => String(feature.id)).filter((id) => isUuid(id)),
+      next.map((feature: Feature) => String(feature.id)).filter((id: string) => isUuid(id)),
     );
 
     pendingDeletions.value = [...persistedFeatureIds.value].filter(
-      (id) => !currentUuidIds.has(id),
+      (id: string) => !currentUuidIds.has(id),
     );
   };
 
