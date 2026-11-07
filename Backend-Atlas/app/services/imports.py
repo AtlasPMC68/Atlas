@@ -13,7 +13,7 @@ each step is confirmed so a reload finds them again:
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -250,7 +250,7 @@ def is_extraction_active(row: MapImport) -> bool:
 
 async def delete_stale_imports(session: AsyncSession) -> None:
     """Drop imports abandoned long ago. Not ones with an extraction on its way."""
-    cutoff = datetime.utcnow() - STALE_IMPORT_AGE
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - STALE_IMPORT_AGE
     await session.execute(
         delete(MapImport).where(
             MapImport.updated_at < cutoff,

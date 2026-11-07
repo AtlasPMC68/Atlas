@@ -1,6 +1,6 @@
 import uuid
-from sqlalchemy import Boolean, Column, LargeBinary, Text, TIMESTAMP, func  
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, LargeBinary, Text, TIMESTAMP, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -14,5 +14,6 @@ class Project(Base):
     description = Column(Text)
     image = Column(LargeBinary, nullable=True)
     is_private = Column(Boolean, default=True)
+    label_styles = Column(JSONB, nullable=False, default=list)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

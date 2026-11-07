@@ -195,10 +195,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (
-    e: "confirmed",
-    colors: { x: number; y: number; name: string; radius: number }[],
-  ): void;
+  (e: "confirmed", colors: ImposedColor[]): void;
 }>();
 
 const container = ref<HTMLDivElement | null>(null);

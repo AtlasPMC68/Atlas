@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Boolean, Column, LargeBinary, Text, TIMESTAMP, func, Date
+from sqlalchemy import Boolean, Column, Text, TIMESTAMP, func, Date
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base
 
@@ -20,6 +20,8 @@ class Map(Base):
     # clicking again; the fitted transform itself is cheap to recompute.
     # Written by the import; nothing reads it yet.
     georef_inputs = Column(JSONB)
+    reference_image_path = Column(Text)        # relative path under /app/media/reference_images/
+    reference_image_content_type = Column(Text)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     

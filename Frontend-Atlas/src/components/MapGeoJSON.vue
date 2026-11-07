@@ -1,6 +1,6 @@
 <template>
-  <div class="relative h-full w-full z-0">
-    <div id="map" class="h-full w-full"></div>
+  <div class="relative h-full w-full z-0 bg-[#d4dadc]">
+    <div id="map" class="h-full w-full bg-[#d4dadc]"></div>
     <div
       v-if="pendingCity"
       class="city-name-input-container"
@@ -20,7 +20,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, ref, nextTick, toRef } from "vue";
+import {
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  ref,
+  computed,
+  nextTick,
+  toRef,
+} from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
 import "leaflet-arrowheads";
@@ -47,6 +55,11 @@ import {
 } from "../utils/mapDragUtils";
 import { toArray, toImageSrc } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
+import {
+  getLabelPresentation,
+  type LabelPresentationModel,
+} from "../utils/labelPresentation";
+import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
 import type {
   Feature,
   FeatureId,
@@ -61,6 +74,7 @@ const props = defineProps<{
   selectedYear: number;
   canUndo: boolean;
   canRedo: boolean;
+  selectedFeatureId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -71,6 +85,7 @@ const emit = defineEmits<{
   (e: "undo"): void;
   (e: "redo"): void;
   (e: "edit-feature-request", feature: Feature): void;
+  (e: "select-feature", featureId: string | null): void;
 }>();
 
 const previousFeatureIds = ref(new Set<FeatureId>());
@@ -84,12 +99,13 @@ let vectorRenderer: L.Canvas | null = null;
 // don't destroy and re-create the layer the user is actively interacting with.
 let suppressNextPropsRender = false;
 let blockNextMapClick = false;
+let labelVisibilityFrame: number | null = null;
 let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
 let selectedCityRing: L.Marker | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
-const selectedFeatureId = ref<string | null>(null);
+const selectedFeatureId = computed(() => props.selectedFeatureId ?? null);
 
 const undoControlName = "atlasUndo";
 const redoControlName = "atlasRedo";
@@ -172,7 +188,7 @@ const featureLayerManager = {
       // click handler would immediately deselect what we just selected.
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
-      selectedFeatureId.value = id;
+      emit("select-feature", id);
     });
 
     layer.on("dblclick", () => {
@@ -182,8 +198,8 @@ const featureLayerManager = {
       if (pm?.globalRemovalModeEnabled?.()) return;
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
-      selectedFeatureId.value = id;
-      const feature = props.features.find((f) => String(f.id) === id);
+      emit("select-feature", id);
+      const feature = props.features.find((f: Feature) => String(f.id) === id);
       if (feature) {
         emit("edit-feature-request", feature);
       }
@@ -280,13 +296,15 @@ function syncFeaturesFromMapLayers(): Feature[] {
     mergedById.set(String(feature.id), feature);
   });
 
-  drawing.drawnItems.value?.eachLayer((layer) => {
+  drawing.drawnItems.value?.eachLayer((layer: L.Layer) => {
     const extracted = extractFeatureFromLayer(
       layer,
       props.selectedYear,
       props.projectId,
     );
-    if (!extracted?.id) return;
+    if (!extracted?.id) {
+      return;
+    }
     mergedById.set(String(extracted.id), extracted);
   });
 
@@ -298,7 +316,7 @@ function clearDraftLayers() {
 }
 
 function resetSelection() {
-  selectedFeatureId.value = null;
+  emit("select-feature", null);
 }
 
 defineExpose({
@@ -344,7 +362,7 @@ const drawing = useMapDrawing(
     if (event === "feature-deleted") {
       const deletedId = String(args[0]);
       const next = current.filter(
-        (feature) => String(feature.id) !== deletedId,
+        (feature: Feature) => String(feature.id) !== deletedId,
       );
       localFeaturesSnapshot.value = next;
       emit("draw-delete", next);
@@ -363,12 +381,22 @@ const drawing = useMapDrawing(
       if (map && cuttingUpdatedIds !== null) {
         const isRemovedFromMap = (layer: L.Layer): boolean => {
           if (!map!.hasLayer(layer)) return true;
+
           const asGroup = layer as unknown as Partial<L.LayerGroup>;
           if (typeof asGroup.getLayers === "function") {
-            const children = asGroup.getLayers();
-            // All children gone (removed from group entirely, or none left on map)
+            const children = asGroup.getLayers() as L.Layer[];
+            // A GeoJSON feature group may keep its outer container on the map
+            // while Geoman removes all nested polygon sublayers. We need to
+            // consider the whole subtree, not just the first level of children.
             if (children.length === 0) return true;
-            return children.every((c) => !map!.hasLayer(c));
+            return children.every((child: L.Layer) => {
+              if (!map!.hasLayer(child)) return true;
+              const childGroup = child as unknown as Partial<L.LayerGroup>;
+              if (typeof childGroup.getLayers === "function") {
+                return isRemovedFromMap(child);
+              }
+              return false;
+            });
           }
           return false;
         };
@@ -382,11 +410,11 @@ const drawing = useMapDrawing(
         if (removedIds.length > 0) {
           let next = localFeaturesSnapshot.value;
           for (const deletedId of removedIds) {
-            next = next.filter((f) => String(f.id) !== deletedId);
+            next = next.filter((f: Feature) => String(f.id) !== deletedId);
             featureLayerManager.layers.delete(deletedId);
-            emit("draw-delete", next);
           }
           localFeaturesSnapshot.value = next;
+          emit("draw-delete", next);
         }
       }
       cuttingUpdatedIds = null;
@@ -405,7 +433,7 @@ const cityMode = useAddCityMode({
   selectedYear: toRef(props, "selectedYear"),
   localFeaturesSnapshot,
   cityInput,
-  onCreated: (next) => emit('draw-create', next),
+  onCreated: (next: any) => emit('draw-create', next),
   onAfterCreate: () => renderAllFeatures(),
 });
 const { addCityMode, pendingCity, cityInputName } = cityMode;
@@ -414,21 +442,21 @@ const confirmCity = cityMode.confirm;
 
 const imageOverlay = useImageOverlay({
   getMap: () => map,
-  getLayerById: (id) => featureLayerManager.layers.get(id),
+  getLayerById: (id: string) => featureLayerManager.layers.get(id),
   localFeaturesSnapshot,
   onBeforeEmit: () => { suppressNextPropsRender = true; },
-  onUpdate: (next) => emit('draw-update', next),
+  onUpdate: (next: any) => emit('draw-update', next),
   }
 );
 
 const shapeScaling = useShapeScaling({
   getMap: () => map,
-  getLayerById: (id) => featureLayerManager.layers.get(id),
+  getLayerById: (id: string) => featureLayerManager.layers.get(id),
   localFeaturesSnapshot,
   getProjectId: () => props.projectId,
   getSelectedYear: () => props.selectedYear,
   onBeforeEmit: () => { suppressNextPropsRender = true; },
-  onUpdate: (next) => emit('draw-update', next),
+  onUpdate: (next: any) => emit('draw-update', next),
 });
 
 const isScalableFeature = (feature?: Feature | null): boolean => {
@@ -438,110 +466,61 @@ const isScalableFeature = (feature?: Feature | null): boolean => {
 };
 
 const attachScalingIfEligible = (featureId: string) => {
-  const feature = localFeaturesSnapshot.value.find((f) => String(f.id) === featureId);
+  const feature = localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === featureId);
   if (isScalableFeature(feature)) {
     shapeScaling.attach(featureId);
   }
 };
 
-function renderCities(features: Feature[]) {
-  const safeFeatures = toArray(features);
-  const seenCityKeys = new Set<string>();
+function applyLabelPresentationStyle(
+  marker: L.Marker,
+  presentation: LabelPresentationModel,
+  featureId: string | number,
+) {
+  const el = marker.getElement() as HTMLElement | null;
+  if (!el) return;
 
-  safeFeatures.forEach((feature) => {
-    if (!map || feature.geometry.type !== "Point") return;
+  el.style.setProperty("--label-color", presentation.colorCss);
+  el.style.setProperty("--label-size", `${presentation.sizePx}px`);
+  el.style.setProperty("--label-style", presentation.fontStyle);
+  el.style.setProperty("--label-weight", presentation.fontWeight);
+  el.style.setProperty("--label-transform", presentation.textTransform);
+  el.dataset.priority = String(presentation.priority);
+  el.dataset.minZoom = String(presentation.minZoom);
+  el.dataset.wordType = presentation.wordType;
+  el.dataset.featureId = String(featureId);
+}
 
-    const [lng, lat] = feature.geometry.coordinates;
-    if (lng === 0 && lat === 0) return;
+function buildLabelMarker(
+  feature: Feature,
+  presentation: LabelPresentationModel,
+  iconAnchor?: [number, number],
+): L.Marker {
+  const [lng, lat] = feature.geometry.coordinates as [number, number];
+  const coord: L.LatLngTuple = [lat, lng];
 
-    const name = String(feature.properties?.name || feature.name || "").trim().toLowerCase();
-    const mapId = feature.mapId ?? "";
-    const nameKey = name ? `${mapId}_name_${name}` : null;
-    const coordsKey = `${mapId}_coords_${lng.toFixed(4)}_${lat.toFixed(4)}`;
+  const marker = L.marker(coord, {
+    icon: L.divIcon({
+      className: "city-label-text",
+      html: `
+        <div class="label-wrapper">
+          <div class="label-content"${presentation.styleAttribute}>${presentation.html}</div>
+          <div class="label-anchor rotate-handle"></div>
+        </div>
+      `,
+      iconSize: null as any,
+      iconAnchor: iconAnchor ? (iconAnchor as any) : undefined,
+    }),
+  } as any);
 
-    if ((nameKey && seenCityKeys.has(nameKey)) || seenCityKeys.has(coordsKey)) return;
-    if (nameKey) seenCityKeys.add(nameKey);
-    seenCityKeys.add(coordsKey);
-
-    const coord: L.LatLngTuple = [lat, lng];
-
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
-    const point = L.circleMarker(coord, {
-      renderer: vectorRenderer ?? undefined,
-      radius: 6,
-      fillColor: fillColor,
-      color: strokeColor,
-      weight: feature.properties.strokeWidth ?? 1,
-      opacity: feature.properties.strokeOpacity ?? 1,
-      fillOpacity: feature.properties.fillOpacity ?? 0.5,
-    });
-
-    const featureProperties = feature.properties;
-    const label = L.marker(coord, {
-      icon: L.divIcon({
-        className: "city-label-text",
-        html: `
-          <div class="label-wrapper">
-            <div class="label-content">${featureProperties.name || feature.name || ""}</div>
-            <div class="label-anchor rotate-handle"></div>
-          </div>
-        `,
-        iconSize: null as any,
-        iconAnchor: [-8, 15],
-      }),
-    } as any);
-
-    attachFeatureToLayer(point, feature);
-    bindRenderedFeatureEvents(point, applyLayerUpdate);
-
-    // Forward clicks and double-clicks from the inner point to the layerGroup so that the
-    // standard featureLayerManager selection handler fires (same path as all
-    // other feature types), keeping blockNextMapClick behaviour consistent.
-    point.on("click", (e: L.LeafletEvent) => {
-      layerGroup.fire("click", e);
-    });
-
-    point.on("dblclick", (e: L.LeafletEvent) => {
-      layerGroup.fire("dblclick", e);
-    });
-
-    point.on("pm:drag", () => {
-      label.setLatLng(point.getLatLng());
-      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
-    });
-
-    point.on("pm:dragend", () => {
-      label.setLatLng(point.getLatLng());
-      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
-    });
-
-    label.on("click", (e: L.LeafletEvent) => {
-      layerGroup.fire("click", e);
-    });
-
-    label.on("dblclick", (e: L.LeafletEvent) => {
-      layerGroup.fire("dblclick", e);
-    });
-
-    attachFeatureToLayer(label, feature);
-
-    const layerGroup = L.layerGroup([point, label]);
-    
-    bindRotationHandle(label, feature, point, -8, 15);
-
-    label.on("add", () => {
-      applyLabelStyle(label, feature);
-    });
-    if (label.getElement()) {
-      applyLabelStyle(label, feature);
-    }
-
-    attachFeatureToLayer(layerGroup, feature);
-    featureLayerManager.addFeatureLayer(feature.id, layerGroup);
+  marker.on("add", () => {
+    applyLabelPresentationStyle(marker, presentation, feature.id);
   });
+  if (marker.getElement()) {
+    applyLabelPresentationStyle(marker, presentation, feature.id);
+  }
+
+  return marker;
 }
 
 function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.Layer, anchorX: number, anchorY: number) {
@@ -561,10 +540,10 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
     const el = label.getElement();
     if (!el) return;
     
-    const anchor = el.querySelector('.label-anchor.rotate-handle');
+    const anchor = el.querySelector<HTMLElement>('.label-anchor.rotate-handle');
     if (anchor) {
-      anchor.addEventListener('mousedown', (e: any) => {
-        L.DomEvent.stopPropagation(e as any);
+      anchor.addEventListener('mousedown', (e: MouseEvent) => {
+        L.DomEvent.stopPropagation(e);
         if (!map) return;
         map.dragging.disable();
         
@@ -573,7 +552,7 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         const centerX = containerRect.left + point.x;
         const centerY = containerRect.top + point.y;
         
-        let startAngle = Math.atan2((e as MouseEvent).clientY - centerY, (e as MouseEvent).clientX - centerX);
+        let startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
         let initialRotation = feature.properties.rotation ?? 0;
 
         const wrapper = el.querySelector('.label-wrapper') as HTMLElement | null;
@@ -612,64 +591,104 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
   }
 }
 
-function applyLabelStyle(marker: L.Marker, feature: Feature) {
-  const el = marker.getElement() as HTMLElement | null;
-  if (!el) return;
+function materializeTextLayer(feature: Feature): L.Layer | null {
+  if (!map || feature.geometry.type !== "Point") return null;
 
-  const color =
-    colorRgbToCss(feature.properties.colorRgb) ||
-    (feature.properties as any).color ||
-    "#000000";
-  const sizePx = feature.properties.sizePx ?? 12;
+  const [lng, lat] = feature.geometry.coordinates as [number, number];
+  if (lng === 0 && lat === 0) return null;
 
-  el.style.setProperty("--label-color", color);
-  el.style.setProperty("--label-size", `${sizePx}px`);
+  const presentation = getLabelPresentation(feature);
+  const coord: L.LatLngTuple = [lat, lng];
 
-  const rotation = feature.properties.rotation ?? 0;
-  const wrapper = el.querySelector(".label-wrapper") as HTMLElement | null;
-  if (wrapper) {
-    wrapper.style.transform = rotation ? `rotate(${rotation}deg)` : "";
+  if (presentation.mapElementType === "point") {
+    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+
+    const point = L.circleMarker(coord, {
+      renderer: vectorRenderer ?? undefined,
+      radius: 6,
+      fillColor: fillColor,
+      color: strokeColor,
+      weight: feature.properties.strokeWidth ?? 1,
+      opacity: feature.properties.strokeOpacity ?? 1,
+      fillOpacity: feature.properties.fillOpacity ?? 0.5,
+    });
+
+    const label = buildLabelMarker(feature, presentation, [-8, 15]);
+
+    attachFeatureToLayer(point, feature);
+    bindRenderedFeatureEvents(point, applyLayerUpdate);
+
+    const layerGroup = L.layerGroup([point, label]);
+
+    // Forward clicks and double-clicks from the inner point to the layerGroup
+    point.on("click", (e: L.LeafletEvent) => {
+      layerGroup.fire("click", e);
+    });
+    point.on("dblclick", (e: L.LeafletEvent) => {
+      layerGroup.fire("dblclick", e);
+    });
+
+    point.on("pm:drag", () => {
+      label.setLatLng(point.getLatLng());
+      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+    });
+    point.on("pm:dragend", () => {
+      label.setLatLng(point.getLatLng());
+      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+    });
+
+    label.on("click", (e: L.LeafletEvent) => {
+      layerGroup.fire("click", e);
+    });
+    label.on("dblclick", (e: L.LeafletEvent) => {
+      layerGroup.fire("dblclick", e);
+    });
+
+    attachFeatureToLayer(label, feature);
+    bindRotationHandle(label, feature, point, -8, 15);
+    attachFeatureToLayer(layerGroup, feature);
+
+    return layerGroup;
+  } else {
+    const label = buildLabelMarker(feature, presentation);
+    bindRotationHandle(label, feature, label, 0, 10);
+    attachFeatureToLayer(label, feature);
+    bindRenderedFeatureEvents(label, applyLayerUpdate);
+    return label;
   }
+}
+
+function renderTextFeature(feature: Feature, seenKeys?: Set<string>) {
+  if (!map || feature.geometry.type !== "Point") return;
+  const [lng, lat] = feature.geometry.coordinates as [number, number];
+  if (lng === 0 && lat === 0) return;
+
+  if (seenKeys) {
+    const key = feature.id ? String(feature.id) : `${lng.toFixed(5)}_${lat.toFixed(5)}`;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+  }
+
+  const layer = materializeTextLayer(feature);
+  if (layer) {
+    featureLayerManager.addFeatureLayer(feature.id, layer);
+  }
+}
+
+function renderCities(features: Feature[]) {
+  const safeFeatures = toArray(features);
+  const seenCityKeys = new Set<string>();
+  safeFeatures.forEach((feature) => renderTextFeature(feature, seenCityKeys));
 }
 
 function renderLabels(features: Feature[]) {
   const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!map || feature.geometry.type !== "Point") return;
-
-    const [lng, lat] = feature.geometry.coordinates;
-    const coord: L.LatLngTuple = [lat, lng];
-
-    const label = L.marker(coord, {
-      icon: L.divIcon({
-        className: "city-label-text",
-        html: `
-          <div class="label-wrapper">
-            <div class="label-content">${feature.properties.labelText || ""}</div>
-            <div class="label-anchor rotate-handle"></div>
-          </div>
-        `,
-        iconSize: null as any,
-      }),
-    } as any);
-
-    bindRotationHandle(label, feature, label, 0, 10);
-
-    label.on("add", () => {
-      applyLabelStyle(label, feature);
-    });
-    if (label.getElement()) {
-      applyLabelStyle(label, feature);
-    }
-
-    attachFeatureToLayer(label, feature);
-    bindRenderedFeatureEvents(label, applyLayerUpdate);
-    featureLayerManager.addFeatureLayer(feature.id, label);
-  });
+  safeFeatures.forEach((feature) => renderTextFeature(feature));
 }
 
-function renderZones(features: Feature[]) {
+
+function renderPolygonFeatures(features: Feature[]) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -681,19 +700,18 @@ function renderZones(features: Feature[]) {
       return;
     }
 
-    const featureProperties = feature.properties;
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const fp = feature.properties;
+    const fillColor = colorRgbToCss(fp.colorRgb) || "#000000";
+    const strokeColor = colorRgbToCss(fp.strokeColor) || fillColor;
 
     const layer = L.geoJSON(feature.geometry, {
       style: {
         renderer: vectorRenderer ?? undefined,
         fillColor,
-        fillOpacity: featureProperties.fillOpacity ?? 0.5,
-        color: strokeColor || fillColor,
-        weight: featureProperties.strokeWidth || 1,
-        opacity: featureProperties.strokeOpacity ?? 1,
+        fillOpacity: fp.fillOpacity ?? 0.5,
+        color: strokeColor,
+        weight: fp.strokeWidth || 1,
+        opacity: fp.strokeOpacity ?? 1,
       },
     });
 
@@ -704,7 +722,7 @@ function renderZones(features: Feature[]) {
   });
 }
 
-function renderArrows(features: Feature[]) {
+function renderLineFeatures(features: Feature[], isArrow = false) {
   const safeFeatures = toArray(features);
 
   safeFeatures.forEach((feature) => {
@@ -728,76 +746,41 @@ function renderArrows(features: Feature[]) {
     attachFeatureToLayer(line, feature);
     bindRenderedFeatureEvents(line, applyLayerUpdate);
 
-    line.arrowheads({
-      size: "10px",
-      frequency: "endonly",
-      fill: true,
-    });
+    if (isArrow) {
+      line.arrowheads({
+        size: "10px",
+        frequency: "endonly",
+        fill: true,
+      });
+    }
 
     featureLayerManager.addFeatureLayer(feature.id, line);
   });
 }
 
-function renderPolylines(features: Feature[]) {
-  const safeFeatures = toArray(features);
-
-  safeFeatures.forEach((feature) => {
-    if (!map || feature.geometry.type !== "LineString") return;
-
-    const latLngs = feature.geometry.coordinates.map(
-      ([lng, lat]) => [lat, lng] as L.LatLngTuple,
-    );
-
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
-    const line = L.polyline(latLngs, {
-      renderer: vectorRenderer ?? undefined,
-      color: strokeColor,
-      weight: feature.properties.strokeWidth ?? 2,
-      opacity: feature.properties.strokeOpacity ?? 1,
-    });
-
-    attachFeatureToLayer(line, feature);
-    bindRenderedFeatureEvents(line, applyLayerUpdate);
-
-    featureLayerManager.addFeatureLayer(feature.id, line);
-  });
+function renderZones(features: Feature[]) {
+  renderPolygonFeatures(
+    features.filter((feature) => getMapElementType(feature) === "zone"),
+  );
 }
 
 function renderShapes(features: Feature[]) {
-  const safeFeatures = toArray(features);
+  renderPolygonFeatures(
+    features.filter((feature) => getMapElementType(feature) === "shape"),
+  );
+}
 
-  safeFeatures.forEach((feature) => {
-    if (!map) return;
-    if (
-      feature.geometry.type !== "Polygon" &&
-      feature.geometry.type !== "MultiPolygon"
-    ) {
-      return;
-    }
+function renderPolylines(features: Feature[]) {
+  renderLineFeatures(
+    features.filter((feature) => getMapElementType(feature) === "polyline"),
+  );
+}
 
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor =
-      colorRgbToCss(feature.properties.strokeColor) || fillColor;
-
-    const layer = L.geoJSON(feature.geometry, {
-      style: {
-        renderer: vectorRenderer ?? undefined,
-        fillColor: fillColor,
-        opacity: feature.properties.strokeOpacity ?? 1,
-        fillOpacity: feature.properties.fillOpacity ?? 0.5,
-        color: strokeColor,
-        weight: feature.properties.strokeWidth || 1,
-      },
-    });
-
-    attachFeatureToLayer(layer, feature);
-    bindRenderedFeatureEvents(layer, applyLayerUpdate);
-
-    featureLayerManager.addFeatureLayer(feature.id, layer);
-  });
+function renderArrows(features: Feature[]) {
+  renderLineFeatures(
+    features.filter((feature) => getMapElementType(feature) === "arrow"),
+    true,
+  );
 }
 
 function renderImages(features: Feature[]) {
@@ -888,10 +871,10 @@ function renderAllFeatures() {
   if (!map) return;
 
   const currentFeatures = props.features;
-  const currentIds = new Set(currentFeatures.map((f) => String(f.id)));
+  const currentIds = new Set(currentFeatures.map((f: Feature) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
-  previousIds.forEach((oldId) => {
+  previousIds.forEach((oldId: string) => {
     if (!currentIds.has(oldId)) {
       const layer = featureLayerManager.layers.get(oldId);
       if (layer) {
@@ -910,20 +893,34 @@ function renderAllFeatures() {
   sortedFeatures.forEach((feature) => {
     const type = getMapElementType(feature);
     switch (type) {
-      case "zone": renderZones([feature]); break;
-      case "shape": renderShapes([feature]); break;
-      case "polyline": renderPolylines([feature]); break;
-      case "arrow": renderArrows([feature]); break;
-      case "point": renderCities([feature]); break;
-      case "label": renderLabels([feature]); break;
-      case "image": renderImages([feature]); break;
+      case "zone":
+        renderZones([feature]);
+        break;
+      case "shape":
+        renderShapes([feature]);
+        break;
+      case "polyline":
+        renderPolylines([feature]);
+        break;
+      case "arrow":
+        renderArrows([feature]);
+        break;
+      case "point":
+        renderCities([feature]);
+        break;
+      case "label":
+        renderLabels([feature]);
+        break;
+      case "image":
+        renderImages([feature]);
+        break;
     }
   });
 
   // Re-attach image / shape scaling interaction if the selected feature was re-rendered
   if (selectedFeatureId.value) {
     const selectedFeature = currentFeatures.find(
-      (f) => String(f.id) === selectedFeatureId.value,
+      (f: Feature) => String(f.id) === selectedFeatureId.value,
     );
     if (selectedFeature && getMapElementType(selectedFeature) === "image") {
       imageOverlay.attach(selectedFeatureId.value);
@@ -933,6 +930,21 @@ function renderAllFeatures() {
   }
 
   previousFeatureIds.value = currentIds;
+  
+  scheduleLabelVisibilityUpdate();
+}
+
+function updateLabelVisibility() {
+  if (!map) return;
+  updateMapLabelVisibility(map, selectedFeatureId.value, featureLayerManager.layers);
+}
+
+function scheduleLabelVisibilityUpdate() {
+  if (labelVisibilityFrame !== null) return;
+  labelVisibilityFrame = requestAnimationFrame(() => {
+    labelVisibilityFrame = null;
+    updateLabelVisibility();
+  });
 }
 
 // --- per-feature drag ---
@@ -943,6 +955,8 @@ onMounted(() => {
     preferCanvas: true,
     doubleClickZoom: false,
     zoomSnap: 0.25,
+    zoomDelta: 0.5,
+    wheelPxPerZoomLevel: 200,
     maxBounds: [[-90, -180], [90, 180]],
     maxBoundsViscosity: 1.0,
   }).setView(
@@ -971,6 +985,8 @@ onMounted(() => {
   };
   map.whenReady(updateMinZoom);
   map.on('resize', updateMinZoom);
+  map.on("moveend", scheduleLabelVisibilityUpdate);
+  map.on("zoomend", scheduleLabelVisibilityUpdate);
 
   drawing.initializeDrawing(map);
   L.control.zoom({ position: "topleft" }).addTo(map);
@@ -993,8 +1009,8 @@ onMounted(() => {
     savedPmIgnore.clear();
   };
 
-  map.on("pm:buttonclick", (e) => {
-    const { btnName } = e as unknown as { btnName: string };
+  map.on("pm:buttonclick", (e: { btnName: string }) => {
+    const { btnName } = e;
     const pm = (map as MapWithPm).pm;
 
     if (btnName === "addCity") {
@@ -1026,7 +1042,7 @@ onMounted(() => {
     // Set pmIgnore on every non-selected layer so geoman's findLayers()
     // skips them when enabling the mode.
     savedPmIgnore.clear();
-    map!.eachLayer((l) => {
+    map!.eachLayer((l: L.Layer) => {
       if (selectedLayers.has(l)) return;
       const opts = l.options as PmIgnoreOptions;
       savedPmIgnore.set(l, opts.pmIgnore);
@@ -1035,13 +1051,13 @@ onMounted(() => {
   });
 
   map.on("pm:globaleditmodetoggled", restorePmIgnore);
-  map.on("pm:globaleditmodetoggled", (e) => {
+  map.on("pm:globaleditmodetoggled", (e: { enabled?: boolean }) => {
     // While vertex-edit mode is active the zone must not be draggable —
     // the vertex handles wouldnt move with the shape leaving them behind.
     if (!selectedFeatureId.value) return;
     const selectedLayer = featureLayerManager.layers.get(selectedFeatureId.value);
     if (!selectedLayer || selectedLayer instanceof L.ImageOverlay) return;
-    const isEnabled = (e as { enabled?: boolean }).enabled;
+    const isEnabled = e.enabled;
     if (isEnabled) {
       disablePerFeatureDrag(selectedLayer);
       pixelSpaceDragCleanup?.();
@@ -1066,7 +1082,7 @@ onMounted(() => {
     }
   });
 
-  map.on("click", (e) => {
+  map.on("click", (e: L.LeafletMouseEvent) => {
     if (blockNextMapClick) {
       blockNextMapClick = false;
       return;
@@ -1123,6 +1139,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (labelVisibilityFrame !== null) {
+    cancelAnimationFrame(labelVisibilityFrame);
+    labelVisibilityFrame = null;
+  }
   if (escapeKeyHandler) {
     document.removeEventListener("keydown", escapeKeyHandler);
     escapeKeyHandler = null;
@@ -1140,23 +1160,24 @@ onBeforeUnmount(() => {
 
 watch(
   () => props.selectedYear,
-  (val) => {
-    drawing.setSelectedYear(val);
+  (val: string | number | undefined) => {
+    const numericYear = Number(val ?? 0);
+    drawing.setSelectedYear(Number.isFinite(numericYear) ? numericYear : 0);
   },
 );
 
 // While any draw mode is active, disable pointer-events on the canvas so that
 // hovering/clicking existing features doesn't override the draw cursor or steal clicks.
-watch(drawing.activeDrawingMode, (mode) => {
+watch(drawing.activeDrawingMode, (mode: string | null) => {
   if (!map) return;
-  map.getContainer().querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas) => {
+  map.getContainer().querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas: HTMLCanvasElement) => {
     canvas.style.pointerEvents = mode !== null ? 'none' : '';
   });
 });
 
 watch(
   () => props.features,
-  (newFeatures) => {
+  (newFeatures: Feature[]) => {
     localFeaturesSnapshot.value = [...newFeatures];
     // The map emitted draw-update, which echoed back here via props. Skip the
     // re-render so we don't destroy the layer the user is actively interacting with.
@@ -1172,7 +1193,7 @@ watch(
 
 localFeaturesSnapshot.value = [...props.features];
 
-watch(selectedFeatureId, (id, oldId) => {
+watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
   // Always remove the city selection ring on any selection change
   if (selectedCityRing) {
     selectedCityRing.remove();
@@ -1201,7 +1222,7 @@ watch(selectedFeatureId, (id, oldId) => {
 
   if (id != null) {
     const layer = featureLayerManager.layers.get(String(id));
-    const selectedFeature = localFeaturesSnapshot.value.find((f) => String(f.id) === id);
+    const selectedFeature = localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === id);
     const elementType = selectedFeature ? getMapElementType(selectedFeature) : null;
     if (layer instanceof L.ImageOverlay) {
       drawing.setToolbarMode("label");
@@ -1283,14 +1304,15 @@ watch(selectedFeatureId, (id, oldId) => {
     drawing.setToolbarMode("global");
     imageOverlay.detach();
     shapeScaling.detach();
-    document.querySelectorAll('.label-selected').forEach(el => el.classList.remove('label-selected'));
+    document.querySelectorAll('.label-selected').forEach((el: Element) => el.classList.remove('label-selected'));
   }
+  updateLabelVisibility();
 });
 
 watch(
   () => props.featureVisibility,
-  (newVisibility) => {
-    newVisibility.forEach((visible, featureId) => {
+  (newVisibility: Map<string, boolean>) => {
+    newVisibility.forEach((visible: boolean, featureId: string) => {
       featureLayerManager.toggleFeature(featureId, visible);
     });
   },
@@ -1310,7 +1332,9 @@ watch(
 <style>
 .city-label-text {
   font-size: var(--label-size, 14px);
-  font-weight: bold;
+  font-weight: var(--label-weight, bold);
+  font-style: var(--label-style, normal);
+  text-transform: var(--label-transform, none);
   color: var(--label-color, #000);
   background: transparent;
   padding: 0;
@@ -1324,6 +1348,11 @@ watch(
   display: inline-block;
   white-space: nowrap;
   padding: 4px;
+}
+
+.label-content {
+  line-height: 1.2;
+  text-align: center;
 }
 
 .label-anchor {
@@ -1344,6 +1373,13 @@ watch(
 
 .label-rotate-mode .label-wrapper {
   outline: 1px dashed #3b82f6;
+}
+
+.label-selected .label-wrapper,
+.city-label-text.label-selected .label-wrapper {
+  outline: 2px solid #2563eb;
+  background-color: rgba(37, 99, 235, 0.08);
+  border-radius: 4px;
 }
 
 .label-rotate-mode .label-anchor,

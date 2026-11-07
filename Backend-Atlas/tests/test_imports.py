@@ -1,9 +1,20 @@
 """The legend helpers and the import inputs: validation, merging, readiness."""
 
+import asyncio
+from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
 import cv2
 import numpy as np
 import pytest
+from fastapi import HTTPException, UploadFile
+from starlette.datastructures import Headers
 
+from app.models.map import Map
+from app.routers import imports as imports_router, projects as projects_router
+from app.schemas.mapImportRequest import MapImportRequest
 from app.services.imports import (
     apply_inputs_patch,
     missing_inputs,
@@ -149,6 +160,333 @@ def test_missing_inputs_follow_the_checklist():
     assert missing_inputs(parse_import_inputs(complete)) == []
 
     water_only = {**complete, "colors": [{**ZONE, "kind": "water"}]}
-    assert missing_inputs(parse_import_inputs(water_only)) == [
-        "Couleurs à extraire (au moins une zone)"
+    assert missing_inputs(parse_import_inputs(water_only)) == ["Couleurs à extraire (au moins une zone)"]
+
+
+def test_reference_images_are_saved_and_retrieved_per_map(monkeypatch):
+    map_ids = [uuid4(), uuid4()]
+    map_objects = {map_id: Map(id=map_id) for map_id in map_ids}
+
+    async def require_owned_map(_session, map_id, _user_id):
+        return map_objects[map_id]
+
+    monkeypatch.setattr(imports_router, "_require_owned_map", require_owned_map)
+    session = SimpleNamespace(commit=AsyncMock())
+    images = [b"first map image", b"second map image"]
+
+    for map_id, image in zip(map_ids, images):
+        upload = UploadFile(
+            filename="reference.png",
+            file=BytesIO(image),
+            headers=Headers({"content-type": "image/png"}),
+        )
+        asyncio.run(imports_router.save_reference_image(map_id, upload, str(uuid4()), session))
+
+    for map_id, expected_image in zip(map_ids, images):
+        response = asyncio.run(imports_router.get_reference_image(map_id, str(uuid4()), session))
+        with open(response.path, "rb") as f:
+            assert f.read() == expected_image
+        assert response.media_type == "image/png"
+
+    asyncio.run(imports_router.delete_reference_image(map_ids[0], str(uuid4()), session))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.get_reference_image(map_ids[0], str(uuid4()), session))
+    assert error.value.status_code == 404
+    resp1 = asyncio.run(imports_router.get_reference_image(map_ids[1], str(uuid4()), session))
+    with open(resp1.path, "rb") as f:
+        assert f.read() == images[1]
+
+
+def test_reference_image_rejects_non_image_upload(monkeypatch):
+    map_id = uuid4()
+    map_obj = Map(id=map_id)
+
+    async def require_owned_map(_session, _map_id, _user_id):
+        return map_obj
+
+    monkeypatch.setattr(imports_router, "_require_owned_map", require_owned_map)
+    upload = UploadFile(
+        filename="not-an-image.txt",
+        file=BytesIO(b"not an image"),
+        headers=Headers({"content-type": "text/plain"}),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.save_reference_image(map_id, upload, str(uuid4()), SimpleNamespace()))
+    assert error.value.status_code == 400
+
+
+def test_update_map_metadata_saves_title_and_complete_period():
+    project_id = uuid4()
+    map_obj = Map(id=uuid4(), project_id=project_id)
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: map_obj)),
+        commit=AsyncMock(),
+    )
+    request = MapImportRequest(
+        title="  Carte de Québec  ",
+        start_date="1850-02-01",
+        end_date="1860-11-30",
+        exact_date=True,
+    )
+
+    response = asyncio.run(
+        projects_router.update_map_metadata(
+            project_id,
+            map_obj.id,
+            request,
+            str(uuid4()),
+            session,
+        )
+    )
+
+    assert response == {"map_id": str(map_obj.id)}
+    assert map_obj.title == "Carte de Québec"
+    assert map_obj.start_date.isoformat() == "1850-02-01"
+    assert map_obj.end_date.isoformat() == "1860-11-30"
+    assert map_obj.exact_date is True
+    session.commit.assert_awaited_once()
+
+
+def test_update_map_metadata_rejects_reversed_period_before_querying():
+    session = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock())
+    request = MapImportRequest(
+        title="Carte",
+        start_date="1860-01-01",
+        end_date="1850-12-31",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.update_map_metadata(
+                uuid4(),
+                uuid4(),
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+
+    assert error.value.status_code == 400
+    session.execute.assert_not_awaited()
+
+
+def test_project_timeline_excludes_maps_with_an_unfinished_import():
+    project_id = uuid4()
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project_id),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
     ]
+        )
+    )
+
+    response = asyncio.run(
+        projects_router.get_project_maps(
+            str(project_id),
+            str(uuid4()),
+            session,
+        )
+    )
+
+    map_query = session.execute.await_args_list[1].args[0]
+    query_sql = str(map_query).lower()
+    assert response == []
+    assert "map_imports" in query_sql
+    assert "not in" in query_sql
+
+
+def test_delete_reference_image_clears_field_and_commits():
+    map_id = uuid4()
+    map_obj = Map(id=map_id, reference_image_path="reference_images/test.png")
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: map_obj)),
+        commit=AsyncMock(),
+    )
+
+    response = asyncio.run(
+        imports_router.delete_reference_image(map_id, str(uuid4()), session)
+    )
+
+    assert response == {"detail": "Reference image deleted"}
+    assert map_obj.reference_image_path is None
+    session.commit.assert_awaited_once()
+
+
+def test_update_map_metadata_rejects_non_owner():
+    project_id = uuid4()
+    map_id = uuid4()
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: None)),
+        commit=AsyncMock(),
+    )
+    request = MapImportRequest(
+        title="Carte",
+        start_date="1850-01-01",
+        end_date="1860-01-01",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.update_map_metadata(
+                project_id,
+                map_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+
+    assert error.value.status_code == 404
+
+
+def test_update_project_label_styles_rejects_duplicate_ids():
+    from app.schemas.label_styles import LabelStyle, LabelStylesRequest
+
+    project_id = uuid4()
+    session = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock())
+    request = LabelStylesRequest(
+        styles=[
+            LabelStyle(
+                id="style-duplicate",
+                name="Style 1",
+                size_px=14,
+                font_style="normal",
+                text_transform="none",
+                color="#ff0000",
+            ),
+            LabelStyle(
+                id="style-duplicate",
+                name="Style 2",
+                size_px=16,
+                font_style="italic",
+                text_transform="uppercase",
+                color="#00ff00",
+            ),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.update_project_label_styles(
+                project_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+
+    assert error.value.status_code == 400
+    assert "unique" in error.value.detail.lower()
+    session.execute.assert_not_awaited()
+
+
+def test_get_project_label_styles_returns_empty_list_when_column_is_null():
+    project_id = uuid4()
+    project_obj = SimpleNamespace(id=project_id, label_styles=None)
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: project_obj))
+    )
+
+    result = asyncio.run(
+        projects_router.get_project_label_styles(
+            project_id,
+            str(uuid4()),
+            session,
+        )
+    )
+
+    assert result == []
+
+
+def test_require_owned_map_rejects_invalid_user_uuid():
+    map_id = uuid4()
+    session = SimpleNamespace()
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router._require_owned_map(session, map_id, "invalid-user-uuid"))
+
+    assert error.value.status_code == 401
+
+
+def test_reference_image_rejects_empty_upload(monkeypatch):
+    map_id = uuid4()
+    map_obj = Map(id=map_id, reference_image_path=None)
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: map_obj)),
+        commit=AsyncMock(),
+    )
+    monkeypatch.setattr(imports_router, "_require_owned_map", AsyncMock(return_value=map_obj))
+
+    upload = UploadFile(
+        file=BytesIO(b""),
+        filename="empty.png",
+        headers=Headers({"content-type": "image/png"}),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.save_reference_image(map_id, upload, str(uuid4()), session))
+
+    assert error.value.status_code == 400
+    assert "empty" in error.value.detail.lower()
+
+
+def test_get_reference_image_raises_404_when_no_image(monkeypatch):
+    map_id = uuid4()
+    map_obj = Map(id=map_id, reference_image_path=None)
+    monkeypatch.setattr(imports_router, "_require_owned_map", AsyncMock(return_value=map_obj))
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(imports_router.get_reference_image(map_id, str(uuid4()), SimpleNamespace()))
+
+    assert error.value.status_code == 404
+    assert "no reference image" in error.value.detail.lower()
+
+
+def test_update_features_supports_map_id_and_camelcase_mapId():
+    project_id = uuid4()
+    target_map_id = uuid4()
+
+    # Feature using camelCase mapId
+    payload = [
+        {
+            "id": str(uuid4()),
+            "mapId": str(target_map_id),
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [0, 0]},
+            "properties": {"name": "Test Feature"},
+        }
+    ]
+
+    added_features = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                # Project lookup
+                SimpleNamespace(scalar_one_or_none=lambda: SimpleNamespace(id=project_id)),
+                # Existing features lookup
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+                # Refreshed features lookup
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: added_features)),
+            ]
+        ),
+        add=lambda feat: added_features.append(feat),
+        commit=AsyncMock(),
+    )
+
+    response = asyncio.run(
+        projects_router.update_features(
+            project_id=project_id,
+            features=payload,
+            user_id=str(uuid4()),
+            session=session,
+        )
+    )
+
+    assert response.get("type") == "FeatureCollection"
+    assert len(added_features) == 1
+    assert added_features[0].map_id == target_map_id
+
+
+

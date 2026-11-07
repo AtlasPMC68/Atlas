@@ -191,6 +191,19 @@
       @confirm="onConfirmAccepted"
       @cancel="pendingConfirm = null"
     />
+
+    <TextValidationModal
+      :is-open="showValidationModal"
+      :map-id="store.mapId"
+      :image-url="store.previewUrl"
+      :map-title="store.mapTitle || 'Carte sélectionnée'"
+      :initial-items="validationItems"
+      :is-submitting="isSubmittingValidation"
+      :custom-label-styles="customLabelStyles"
+      @confirm="onConfirmTextValidation"
+      @cancel="onCancelTextValidation"
+      @save-label-styles="saveCustomLabelStyles"
+    />
   </div>
 </template>
 
@@ -204,6 +217,8 @@ import { showAlert } from "../../composables/useAlert";
 import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../../utils/importSteps";
 import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
 import type { DevTestCaseInputsResponse } from "../../typescript/devTest";
+import type { Feature } from "../../typescript/feature";
+import type { CustomLabelStyle } from "../../utils/labelPresentation";
 import type {
   ExtractionState,
   ImportInputsPatch,
@@ -226,6 +241,16 @@ import GeoRefCitiesModal from "../../components/georef/GeoRefCitiesModal.vue";
 import ColorPickerModal from "../../components/import/ColorPickerModal.vue";
 import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 import StartFromCasePanel from "../../components/dev/StartFromCasePanel.vue";
+import TextValidationModal from "../../components/import/TextValidationModal.vue";
+import { useProjectLabelStyles } from "../../composables/useProjectLabelStyles";
+import {
+  type TextValidationEntry,
+  featureToValidationEntry,
+  applyValidationToFeature,
+  isUnrecognizedTextFeature,
+} from "../../utils/textValidation";
+import { apiFetch } from "../../utils/api";
+import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../../utils/utils";
 
 const route = useRoute();
 const router = useRouter();
@@ -238,6 +263,19 @@ const caseToComplete =
   isDevTest && typeof route.query.case === "string" ? route.query.case : null;
 
 const store = useImportSessionStore();
+const {
+  customLabelStyles,
+  loadCustomLabelStyles: fetchCustomStyles,
+  saveCustomLabelStyles: persistCustomStyles,
+} = useProjectLabelStyles();
+
+async function loadCustomLabelStyles() {
+  await fetchCustomStyles(store.projectId);
+}
+
+async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  await persistCustomStyles(store.projectId, styles);
+}
 store.reset(mode, mapId);
 
 // What dev-test mode adds to the page; unused in user mode.
@@ -247,6 +285,11 @@ const { checkPts, siftCheckPts, cityCheckPts } = devTest;
 const openModal = ref<StepId | null>(null);
 const worldAreaZoom = ref<number | null>(null);
 const isStarting = ref(false);
+
+const showValidationModal = ref(false);
+const isSubmittingValidation = ref(false);
+const validationItems = ref<TextValidationEntry[]>([]);
+const loadedProjectFeatures = ref<any[]>([]);
 
 interface PendingConfirm {
   title: string;
@@ -469,15 +512,112 @@ watch(
   async (completed) => {
     if (!completed) return;
     poller.stop();
+
+    if (!isDevTest && options.value?.textExtraction && store.projectId) {
+      try {
+        const res = await apiFetch(`/projects/${store.projectId}/features`);
+        if (res.ok) {
+          const allFeatures = snakeToCamel(await res.json()) as any[];
+          loadedProjectFeatures.value = allFeatures;
+          const ocrFeatures = allFeatures.filter((f) =>
+            isUnrecognizedTextFeature(f, store.mapId),
+          );
+
+          if (ocrFeatures.length > 0) {
+            validationItems.value = ocrFeatures.map((f) => featureToValidationEntry(f, false));
+            showValidationModal.value = true;
+            return;
+          } else {
+            showValidationModal.value = false;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load extracted texts for validation:", err);
+      }
+    }
+
     await router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
   },
 );
+
+async function onConfirmTextValidation(items: TextValidationEntry[]) {
+  if (!store.projectId) {
+    await router.push("/tableau-de-bord");
+    return;
+  }
+
+  isSubmittingValidation.value = true;
+  try {
+    let currentFeatures = loadedProjectFeatures.value;
+    if (currentFeatures.length === 0) {
+      const response = await apiFetch(`/projects/${store.projectId}/features`);
+      if (!response.ok) {
+        throw new Error(`Failed to load project features: ${response.status}`);
+      }
+      currentFeatures = snakeToCamel(await response.json()) as any[];
+    }
+
+    const openedIds = new Set(
+      currentFeatures
+        .filter((feature: Feature) => isUnrecognizedTextFeature(feature, store.mapId))
+        .map((feature) => feature.id),
+    );
+    const submittedIds = new Set(items.map((item) => item.id));
+    const itemsMap = new Map(items.map((item) => [item.id, item]));
+    const featuresToUpdate = currentFeatures
+      .filter((feature) => itemsMap.has(feature.id))
+      .map((feature) => applyValidationToFeature(feature, itemsMap.get(feature.id)!));
+    if (featuresToUpdate.length > 0) {
+      const response = await apiFetch(`/projects/${store.projectId}/features`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          camelToSnake(prepareFeaturesForSave(featuresToUpdate)),
+        ),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to save OCR text decisions: ${response.status}`);
+      }
+    }
+
+    const removedIds = [...openedIds].filter((id) => !submittedIds.has(id));
+    if (removedIds.length > 0) {
+      const response = await apiFetch(`/projects/${store.projectId}/features`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(removedIds),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to delete removed OCR texts: ${response.status}`);
+      }
+    }
+
+    showValidationModal.value = false;
+    await router.push(`/projet/${store.projectId}`);
+  } catch (err) {
+    showAlert("error", "Erreur lors de l'enregistrement de la validation des textes");
+    console.error("Validation error:", err);
+  } finally {
+    isSubmittingValidation.value = false;
+  }
+}
+
+function onCancelTextValidation() {
+  showValidationModal.value = false;
+  router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
+}
 
 
 onMounted(async () => {
   if (caseToComplete) await store.openDevTestCase(caseToComplete);
   else await store.restore();
   if (store.error) showAlert("error", store.error);
+  try {
+    await loadCustomLabelStyles();
+  } catch (error) {
+    console.error("Failed to load project label styles:", error);
+    showAlert("error", "Impossible de charger les styles de libellé du projet.");
+  }
   // The first case on a new test map should not wait ~135 s for OCR.
   if (isDevTest) void devTest.warmTextRegions();
 });
