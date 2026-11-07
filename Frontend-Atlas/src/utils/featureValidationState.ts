@@ -3,8 +3,8 @@ import { ValidationStatus, type Feature } from "../typescript/feature";
 type ValidationProperties = Record<string, unknown>;
 
 type SynchronizedValidationProperties = {
-  validationStatus?: unknown;
-  validation_status?: unknown;
+  validationStatus?: ValidationStatus | `${ValidationStatus}` | string;
+  validation_status?: ValidationStatus | `${ValidationStatus}` | string;
   show?: boolean;
   recognized?: boolean;
 };
@@ -44,18 +44,14 @@ export function isReviewStatus(status: unknown): boolean {
 
 export function isTextValidationReviewCandidate(feature: Feature): boolean {
   const state = getFeatureReviewState(feature);
-  return (
-    state === ValidationStatus.REJECTED ||
-    state === ValidationStatus.MANUAL_REVIEW
-  );
+  return isReviewStatus(state);
 }
 
 export function isUnrecognizedOcrFeature(feature: Feature): boolean {
   if (!feature.properties?.isOcrText) return false;
 
   const state = getFeatureReviewState(feature);
-  return state === ValidationStatus.REJECTED ||
-    state === ValidationStatus.MANUAL_REVIEW;
+  return isReviewStatus(state);
 }
 
 export function isFeatureSelectedForValidation(
@@ -86,7 +82,11 @@ export function isVisibleInMainLayers(feature: Feature): boolean {
 
 export function synchronizeValidationState<T extends ValidationProperties>(
   properties: T,
-  status = properties.validationStatus ?? properties.validation_status,
+  status: ValidationStatus | `${ValidationStatus}` | string | undefined = (properties.validationStatus ?? properties.validation_status) as
+    | ValidationStatus
+    | `${ValidationStatus}`
+    | string
+    | undefined,
 ): T & SynchronizedValidationProperties {
   const next = { ...properties } as T & SynchronizedValidationProperties;
   if (status === undefined) return next;

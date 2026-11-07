@@ -26,8 +26,8 @@ export interface FeatureEditSubmitPayload {
   strokeOpacity?: number;
   strokeWidth?: number;
   labelStyleSelection?: string;
-  customLabelStyleId?: string;
-  customLabelStyle?: CustomLabelStyle;
+  customLabelStyleId?: string | null;
+  customLabelStyle?: CustomLabelStyle | null;
   selectedMapIds?: string[];
 }
 
@@ -89,8 +89,8 @@ export function removeCustomLabelStyleFromFeature(feature: Feature): Feature {
     feature.properties.labelText ?? feature.properties.name,
   );
   const properties = { ...restored.properties };
-  properties.customLabelStyleId = null as any;
-  properties.customLabelStyle = null as any;
+  properties.customLabelStyleId = null;
+  properties.customLabelStyle = null;
   (properties as Record<string, unknown>).custom_label_style_id = null;
   delete properties.customLabelStyleFallbackWordType;
   return { ...restored, properties };
@@ -196,8 +196,8 @@ export function coerceEditedFeature(
     properties: {
       ...styledFeature.properties,
       mapId: chosenMapId,
-      customLabelStyleId: null as any,
-      customLabelStyle: null as any,
+      customLabelStyleId: null,
+      customLabelStyle: null,
       custom_label_style_id: null,
       colorRgb: hexToRgb(payload.colorHex),
       strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),

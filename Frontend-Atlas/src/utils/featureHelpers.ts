@@ -110,11 +110,8 @@ export function isCopyableFeature(
 ): feature is Feature {
   if (!feature || !feature.geometry) return false;
   const props = feature.properties;
-  if (
-    props?.mapElementType === "legend" ||
-    props?.type === "legend" ||
-    Boolean(props?.isLegend)
-  ) {
+  const rawType = String(props?.mapElementType || props?.type || "");
+  if (rawType === "legend" || Boolean(props?.isLegend)) {
     return false;
   }
   return true;

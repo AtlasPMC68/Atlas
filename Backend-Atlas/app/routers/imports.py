@@ -2,7 +2,6 @@
 import logging
 import mimetypes
 import os
-import uuid as uuid_module
 from typing import Any, Dict
 from uuid import UUID, uuid4
 

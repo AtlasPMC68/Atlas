@@ -308,14 +308,14 @@ function revertStyle() {
     uppercase: snap.textTransform === "uppercase",
     color: snap.color || "#000000",
   };
-  const index = draftStyles.value.findIndex((item) => item.id === snap.id);
+  const index = draftStyles.value.findIndex((item: CustomLabelStyle) => item.id === snap.id);
   if (index >= 0) {
     draftStyles.value[index] = { ...snap };
   }
 }
 
 function removeStyle(id: string) {
-  draftStyles.value = draftStyles.value.filter((style) => style.id !== id);
+  draftStyles.value = draftStyles.value.filter((style: CustomLabelStyle) => style.id !== id);
   if (editingId.value === id) {
     if (draftStyles.value.length > 0) {
       editStyle(draftStyles.value[0]);
@@ -347,7 +347,7 @@ function previewStyle(style: CustomLabelStyle, limitSize = false) {
 }
 
 function saveStyles() {
-  emit("save", draftStyles.value.map((style) => ({ ...style })));
+  emit("save", draftStyles.value.map((style: CustomLabelStyle) => ({ ...style })));
   dialogRef.value?.close();
 }
 

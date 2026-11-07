@@ -540,10 +540,10 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
     const el = label.getElement();
     if (!el) return;
     
-    const anchor = el.querySelector('.label-anchor.rotate-handle');
+    const anchor = el.querySelector<HTMLElement>('.label-anchor.rotate-handle');
     if (anchor) {
-      anchor.addEventListener('mousedown', (e: any) => {
-        L.DomEvent.stopPropagation(e as any);
+      anchor.addEventListener('mousedown', (e: MouseEvent) => {
+        L.DomEvent.stopPropagation(e);
         if (!map) return;
         map.dragging.disable();
         
@@ -552,7 +552,7 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         const centerX = containerRect.left + point.x;
         const centerY = containerRect.top + point.y;
         
-        let startAngle = Math.atan2((e as MouseEvent).clientY - centerY, (e as MouseEvent).clientX - centerX);
+        let startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
         let initialRotation = feature.properties.rotation ?? 0;
 
         const wrapper = el.querySelector('.label-wrapper') as HTMLElement | null;
@@ -1009,8 +1009,8 @@ onMounted(() => {
     savedPmIgnore.clear();
   };
 
-  map.on("pm:buttonclick", (e: any) => {
-    const { btnName } = e as unknown as { btnName: string };
+  map.on("pm:buttonclick", (e: { btnName: string }) => {
+    const { btnName } = e;
     const pm = (map as MapWithPm).pm;
 
     if (btnName === "addCity") {
@@ -1051,13 +1051,13 @@ onMounted(() => {
   });
 
   map.on("pm:globaleditmodetoggled", restorePmIgnore);
-  map.on("pm:globaleditmodetoggled", (e: any) => {
+  map.on("pm:globaleditmodetoggled", (e: { enabled?: boolean }) => {
     // While vertex-edit mode is active the zone must not be draggable —
     // the vertex handles wouldnt move with the shape leaving them behind.
     if (!selectedFeatureId.value) return;
     const selectedLayer = featureLayerManager.layers.get(selectedFeatureId.value);
     if (!selectedLayer || selectedLayer instanceof L.ImageOverlay) return;
-    const isEnabled = (e as { enabled?: boolean }).enabled;
+    const isEnabled = e.enabled;
     if (isEnabled) {
       disablePerFeatureDrag(selectedLayer);
       pixelSpaceDragCleanup?.();

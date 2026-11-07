@@ -1,9 +1,5 @@
 import { toRaw } from "vue";
-import type { Feature } from "../typescript/feature";
-import type {
-  FeatureHistoryStack,
-  FeatureSnapshot,
-} from "../typescript/feature";
+import type { Feature, FeatureSnapshot } from "../typescript/feature";
 
 /**
  * Normalizes a feature for signature hashing without redundantly duplicating

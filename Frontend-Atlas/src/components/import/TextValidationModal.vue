@@ -355,7 +355,9 @@ const availableCustomLabelStyles = computed(() => {
 });
 
 function applyUpdatedCustomStylesToItems(styles: CustomLabelStyle[]) {
-  const stylesById = new Map(styles.map((s) => [s.id, s]));
+  const stylesById = new Map<string, CustomLabelStyle>(
+    styles.map((s): [string, CustomLabelStyle] => [s.id, s]),
+  );
   for (const item of allItems.value) {
     if (!item.customLabelStyleId) continue;
     const style = stylesById.get(item.customLabelStyleId);
@@ -409,6 +411,8 @@ const isPartiallySelected = computed(() => {
   return selectedCount > 0 && selectedCount < allItems.value.length;
 });
 
+let activeResizeCleanup: (() => void) | null = null;
+
 function startColResize(e: MouseEvent) {
   isDragging.value = true;
   const startX = e.clientX;
@@ -423,6 +427,13 @@ function startColResize(e: MouseEvent) {
   };
 
   const onMouseUp = () => {
+    isDragging.value = false;
+    window.removeEventListener("mousemove", onMouseMove);
+    window.removeEventListener("mouseup", onMouseUp);
+    activeResizeCleanup = null;
+  };
+
+  activeResizeCleanup = () => {
     isDragging.value = false;
     window.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("mouseup", onMouseUp);
@@ -697,6 +708,10 @@ watch(
 
 onBeforeUnmount(() => {
   removeGlobalListeners();
+  if (activeResizeCleanup) {
+    activeResizeCleanup();
+    activeResizeCleanup = null;
+  }
   if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function" && localImageMap.value) {
     for (const imageUrl of Object.values(localImageMap.value)) {
       if (typeof imageUrl === "string" && imageUrl.startsWith("blob:")) {

@@ -33,7 +33,7 @@ function isOutsideBounds(
 function overlapsByThreshold(
   rect: LabelRectangle,
   occupied: LabelRectangle[],
-  occupiedIndexes: number[],
+  occupiedIndexes: Iterable<number>,
 ): boolean {
   for (const index of occupiedIndexes) {
     const box = occupied[index];
@@ -90,16 +90,22 @@ export function selectVisibleLabels(
 
     const candidateCells = getGridCells(candidate.rectangle);
     if (!isSelected) {
-      const nearbyIndexes = candidateCells
-        ? [
-            ...largeOccupiedIndexes,
-            ...new Set(
-              candidateCells.flatMap(
-                (cell) => occupiedByCell.get(cell) ?? [],
-              ),
-            ),
-          ]
-        : occupied.map((_, index) => index);
+      let nearbyIndexes: Iterable<number>;
+      if (candidateCells) {
+        const indexSet = new Set<number>(largeOccupiedIndexes);
+        for (const cell of candidateCells) {
+          const indexes = occupiedByCell.get(cell);
+          if (indexes) {
+            for (const idx of indexes) {
+              indexSet.add(idx);
+            }
+          }
+        }
+        nearbyIndexes = indexSet;
+      } else {
+        nearbyIndexes = occupied.keys();
+      }
+
       if (
         overlapsByThreshold(
           candidate.rectangle,

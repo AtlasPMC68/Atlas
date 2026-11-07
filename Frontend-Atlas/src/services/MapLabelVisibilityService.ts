@@ -23,6 +23,18 @@ function updatePointVisibility(
   });
 }
 
+function findCircleMarker(layer: L.Layer | undefined): L.CircleMarker | null {
+  if (!layer) return null;
+  if (layer instanceof L.CircleMarker) return layer;
+  let found: L.CircleMarker | null = null;
+  forEachLeafLayer(layer, (leaf) => {
+    if (!found && leaf instanceof L.CircleMarker) {
+      found = leaf;
+    }
+  });
+  return found;
+}
+
 export function updateMapLabelVisibility(
   map: L.Map,
   selectedFeatureId: string | null,
@@ -63,15 +75,6 @@ export function updateMapLabelVisibility(
     selectedFeatureId,
   );
 
-  const circlePoints = new Map<string, L.CircleMarker>();
-  layers.forEach((layer, featureId) => {
-    forEachLeafLayer(layer, (leaf) => {
-      if (leaf instanceof L.CircleMarker) {
-        circlePoints.set(featureId, leaf);
-      }
-    });
-  });
-
   labels.forEach((label) => {
     const featureId = label.dataset.featureId;
     if (!featureId) return;
@@ -79,6 +82,7 @@ export function updateMapLabelVisibility(
     const isVisible = visibleIds.has(featureId);
     label.style.visibility = isVisible ? "" : "hidden";
     label.style.pointerEvents = isVisible ? "" : "none";
-    updatePointVisibility(circlePoints.get(featureId) ?? null, isVisible);
+    const circle = findCircleMarker(layers.get(featureId));
+    updatePointVisibility(circle, isVisible);
   });
 }

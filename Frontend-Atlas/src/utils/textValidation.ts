@@ -33,8 +33,8 @@ export interface TextValidationEntry {
   useSuggestedPlace?: boolean;
   wordType?: WordType;
   labelStyleSelection?: string;
-  customLabelStyleId?: string;
-  customLabelStyle?: CustomLabelStyle;
+  customLabelStyleId?: string | null;
+  customLabelStyle?: CustomLabelStyle | null;
 }
 
 /**

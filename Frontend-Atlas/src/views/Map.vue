@@ -233,7 +233,6 @@ function selectFeature(id: string) {
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
 const copiedFeature = ref<Feature | null>(null);
-const copiedTextFeature = copiedFeature;
 const sidebarWidth = ref(350);
 let sidebarResizeStartX = 0;
 let sidebarResizeStartWidth = 0;
@@ -312,10 +311,6 @@ function pasteCopiedFeature() {
   selectedFeatureId.value = pastedFeature.id;
 }
 
-// Backwards-compatibility aliases
-const copySelectedTextFeature = copySelectedFeature;
-const pasteCopiedTextFeature = pasteCopiedFeature;
-
 function stopSidebarResize() {
   window.removeEventListener("mousemove", onSidebarResizeMove);
   window.removeEventListener("mouseup", stopSidebarResize);
@@ -360,15 +355,21 @@ const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
 const useTimelineFilter = ref(true);
 
-const enrichedPeriods = computed((): SliderPeriod[] =>
-  mapPeriods.value
-    .map((p: MapPeriod) => ({
-      ...p,
-      startYear: toYear(p.startDate),
-      endYear: toYear(p.endDate),
-    }))
-    .filter((p: SliderPeriod): p is SliderPeriod => p.startYear != null && p.endYear != null),
-);
+const enrichedPeriods = computed<SliderPeriod[]>(() => {
+  const periods: SliderPeriod[] = [];
+  for (const p of mapPeriods.value) {
+    const startYear = toYear(p.startDate);
+    const endYear = toYear(p.endDate);
+    if (startYear != null && endYear != null) {
+      periods.push({
+        ...p,
+        startYear,
+        endYear,
+      });
+    }
+  }
+  return periods;
+});
 
 const periodByMapId = computed(
   () => new Map(enrichedPeriods.value.map((p: SliderPeriod) => [p.id, p])),
@@ -901,10 +902,12 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
     const validatedMap = new Map<string, TextValidationEntry>(
       validatedItems.map((i): [string, TextValidationEntry] => [i.id, i]),
     );
-    const openedIds = new Set(textValidationEntries.value.map((i: TextValidationEntry) => i.id));
+    const openedIds = new Set<string>(
+      textValidationEntries.value.map((i: TextValidationEntry) => i.id),
+    );
 
     for (const id of openedIds) {
-      if (!validatedMap.has(id as string)) {
+      if (!validatedMap.has(id)) {
         featureVisibility.value.delete(id);
       }
     }

@@ -24,7 +24,7 @@
         </p>
         <ul
           v-else
-          class="space-y-1 max-h-[vh] min-w-[12rem] max-w-xs overflow-y-auto p-1"
+          class="space-y-1 max-h-[25vh] min-w-[12rem] max-w-xs overflow-y-auto p-1"
         >
           <li
             v-for="feature in visibleZoneFeatures"
@@ -104,7 +104,7 @@ function toggleLegend() {
 }
 
 const visibleZoneFeatures = computed(() =>
-  props.zoneFeatures.filter((feature) => {
+  props.zoneFeatures.filter((feature: Feature) => {
     const id = feature?.id;
     if (id == null) return true;
     return props.featureVisibility.get(id) !== false;

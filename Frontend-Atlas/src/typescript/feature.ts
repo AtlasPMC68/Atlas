@@ -87,6 +87,9 @@ export interface FeatureProperties {
   validationStatus?: ValidationStatus | `${ValidationStatus}`;
   validation_status?: ValidationStatus | `${ValidationStatus}`;
   suggestedPlace?: SuggestedPlace;
+  customLabelStyleId?: string | null;
+  customLabelStyle?: any;
+  customLabelStyleFallbackWordType?: string;
   [key: string]: any;
   fontStyle?: "normal" | "italic" |"uppercase"| string;
 }

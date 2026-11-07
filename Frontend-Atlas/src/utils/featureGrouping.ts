@@ -19,13 +19,22 @@ export interface MapGroupItem {
  * Group features into standard display categories (point, zone, shape, image, drawing).
  */
 export function groupFeaturesByType(features: Feature[]): FeatureVisibilityGroup[] {
-  const groups: FeatureVisibilityGroup[] = [
-    { type: "point", label: "Texte", features: [] },
-    { type: "zone", label: "Zone(s)", features: [] },
-    { type: "shape", label: "Forme(s)", features: [] },
-    { type: "image", label: "Image(s)", features: [] },
-    { type: "drawing", label: "Dessins", features: [] },
-  ];
+  const pointGroup: FeatureVisibilityGroup = { type: "point", label: "Texte", features: [] };
+  const zoneGroup: FeatureVisibilityGroup = { type: "zone", label: "Zone(s)", features: [] };
+  const shapeGroup: FeatureVisibilityGroup = { type: "shape", label: "Forme(s)", features: [] };
+  const imageGroup: FeatureVisibilityGroup = { type: "image", label: "Image(s)", features: [] };
+  const drawingGroup: FeatureVisibilityGroup = { type: "drawing", label: "Dessins", features: [] };
+
+  const groupsByType: Record<string, FeatureVisibilityGroup> = {
+    point: pointGroup,
+    label: pointGroup,
+    zone: zoneGroup,
+    shape: shapeGroup,
+    image: imageGroup,
+    polyline: drawingGroup,
+    arrow: drawingGroup,
+    drawing: drawingGroup,
+  };
 
   features.forEach((feature: Feature) => {
     if (!isVisibleInMainLayers(feature)) return;
@@ -33,21 +42,11 @@ export function groupFeaturesByType(features: Feature[]): FeatureVisibilityGroup
     const featureType = getMapElementType(feature);
     if (!featureType) return;
 
-    const targetGroup =
-      groups.find((currentGroup) => {
-        if (featureType === "label" || featureType === "point") {
-          return currentGroup.type === "point";
-        }
-        if (featureType === "polyline" || featureType === "arrow") {
-          return currentGroup.type === "drawing";
-        }
-        return currentGroup.type === featureType;
-      }) ?? groups.find((currentGroup) => currentGroup.type === "drawing");
-
-    if (targetGroup) targetGroup.features.push(feature);
+    const targetGroup = groupsByType[featureType] ?? drawingGroup;
+    targetGroup.features.push(feature);
   });
 
-  return groups;
+  return [pointGroup, zoneGroup, shapeGroup, imageGroup, drawingGroup];
 }
 
 /**
@@ -58,6 +57,11 @@ export function groupFeaturesByMap(
   mapPeriods?: MapPeriod[],
 ): MapGroupItem[] {
   const mapGroups = new Map<string | null, MapGroupItem>();
+  const periodByNormalizedId = mapPeriods
+    ? new Map<string, MapPeriod>(
+        mapPeriods.map((p) => [String(p.id).trim().toLowerCase(), p]),
+      )
+    : null;
 
   features.forEach((feature: Feature) => {
     const rawMapId =
@@ -70,10 +74,8 @@ export function groupFeaturesByMap(
     if (!mapGroups.has(mapId)) {
       let title = "Éléments généraux";
       let startDate: string | null = null;
-      if (mapId && mapPeriods) {
-        const period = mapPeriods.find(
-          (p: MapPeriod) => String(p.id).trim().toLowerCase() === mapId.toLowerCase(),
-        );
+      if (mapId && periodByNormalizedId) {
+        const period = periodByNormalizedId.get(mapId.toLowerCase());
         if (period) {
           title = period.title;
           startDate = period.startDate;

@@ -1,9 +1,11 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LabelStyle(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=50)
     size_px: int = Field(ge=6, le=96)

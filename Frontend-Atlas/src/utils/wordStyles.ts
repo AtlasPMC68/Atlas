@@ -89,7 +89,7 @@ export function capitalizeWords(text: string): string {
 
 export function normalizeWordType(type?: string): WordType {
   const key = (type || "").toLowerCase();
-  return Object.prototype.hasOwnProperty.call(WORD_TYPE_TAXONOMY, key)
+  return Object.prototype.hasOwnProperty.call(config.types, key)
     ? (key as WordType)
     : "city";
 }
