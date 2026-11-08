@@ -60,6 +60,7 @@ import {
   type LabelPresentationModel,
 } from "../utils/labelPresentation";
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
+import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import type {
   Feature,
   FeatureId,
@@ -166,6 +167,18 @@ function addUndoRedoControls(mapInstance: L.Map) {
   updateHistoryToolbarState();
 }
 
+const { handleClick: handleLayerClick, handleDblClick: handleLayerDblClick } =
+  createFeatureDoubleClickHandler<Feature>({
+    onSelect: (feature) => {
+      emit("select-feature", String(feature.id));
+    },
+    onEdit: (feature) => {
+      emit("select-feature", String(feature.id));
+      emit("edit-feature-request", feature);
+    },
+    getId: (feature) => feature.id,
+  });
+
 const featureLayerManager = {
   layers: new Map<FeatureId, L.Layer>(),
 
@@ -188,7 +201,13 @@ const featureLayerManager = {
       // click handler would immediately deselect what we just selected.
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
-      emit("select-feature", id);
+
+      const feature = props.features.find((f: Feature) => String(f.id) === id);
+      if (feature) {
+        handleLayerClick(feature);
+      } else {
+        emit("select-feature", id);
+      }
     });
 
     layer.on("dblclick", () => {
@@ -198,10 +217,10 @@ const featureLayerManager = {
       if (pm?.globalRemovalModeEnabled?.()) return;
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
-      emit("select-feature", id);
+
       const feature = props.features.find((f: Feature) => String(f.id) === id);
       if (feature) {
-        emit("edit-feature-request", feature);
+        handleLayerDblClick(feature);
       }
     });
 

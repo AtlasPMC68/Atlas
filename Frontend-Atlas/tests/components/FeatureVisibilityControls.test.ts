@@ -799,4 +799,54 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(emitted.mapId).toBeNull();
     });
   });
+
+  describe("Feature item click and double click interactions", () => {
+    beforeEach(() => {
+      HTMLDialogElement.prototype.showModal = vi.fn();
+    });
+
+    const florideFeature: Feature = {
+      type: "Feature",
+      id: "feat-floride-1",
+      projectId: "proj-1",
+      mapId: null,
+      name: "FLORIDE",
+      geometry: { type: "Point", coordinates: [-81.5, 27.5] },
+      properties: {
+        name: "FLORIDE",
+        labelText: "FLORIDE",
+        mapElementType: "label",
+        rawType: "province",
+      },
+    };
+
+    it("selects feature on single click and opens edit dialog on double click", async () => {
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [florideFeature],
+          featureVisibility: new Map([[florideFeature.id, true]]),
+        },
+      });
+
+      const textTab = wrapper.findAll('[role="tab"]').find((tab) =>
+        tab.attributes("title")?.includes("Texte") || tab.attributes("data-testid") === "feature-tab-label",
+      );
+      if (textTab) {
+        await textTab.trigger("click");
+      }
+
+      const item = wrapper.find(`[data-feature-item-id="${florideFeature.id}"]`);
+      expect(item.exists()).toBe(true);
+
+      // Single click selects feature
+      await item.trigger("click");
+      expect(wrapper.emitted("select-feature")?.[0]).toEqual(["feat-floride-1"]);
+
+      // Double click opens edit modal
+      const showModalSpy = vi.spyOn(HTMLDialogElement.prototype, "showModal");
+      await item.trigger("dblclick");
+      expect(wrapper.emitted("select-feature")?.[1]).toEqual(["feat-floride-1"]);
+      expect(showModalSpy).toHaveBeenCalled();
+    });
+  });
 });

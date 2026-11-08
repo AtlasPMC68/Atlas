@@ -112,7 +112,7 @@
                     <span
                       v-else
                       class="text-sm font-semibold text-gray-700 truncate flex-1 min-w-0"
-                      :title="mapGroup.title"
+                      title="Éléments qui appartiennent à toutes les cartes"
                     >
                       {{ mapGroup.title }}
                     </span>
@@ -142,20 +142,20 @@
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
                   :data-feature-item-id="String(feature.id)"
-                  class="flex w-full flex-row items-center justify-between gap-2 rounded px-1.5 py-1 transition-all cursor-pointer"
+                  class="flex w-full flex-row items-center justify-between gap-2 rounded px-1.5 py-1 transition-all cursor-pointer select-none"
                   :class="[
                     selectedFeatureId === String(feature.id)
                       ? 'ring-2 ring-primary bg-primary/10 border border-primary font-semibold'
                       : 'hover:bg-base-200/60'
                   ]"
-                  @click="emit('select-feature', String(feature.id))"
+                  @click="onFeatureItemClick(feature)"
+                  @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
                 >
-                  <label
-                    class="label cursor-pointer justify-start gap-1 flex-1 min-w-0 py-0 pl-2"
-                  >
+                  <div class="flex items-center gap-1 flex-1 min-w-0 py-0 pl-2">
                     <input
                       type="checkbox"
                       :checked="featureVisibility.get(feature.id) !== false"
+                      @click.stop
                       @change="
                         $emit(
                           'toggle-feature',
@@ -165,14 +165,18 @@
                       "
                       class="checkbox checkbox-xs checkbox-primary"
                     />
-                    <span class="label-text text-sm truncate">
+                    <span
+                      class="label-text text-sm truncate flex-1 select-none"
+                      :title="feature.properties?.name || '! Nom manquant'"
+                      @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
+                    >
                       {{ feature.properties?.name || "! Nom manquant" }}
                     </span>
-                  </label>
+                  </div>
                   <div class="flex items-center gap-1">
                     <button
                       class="flex h-8 w-8 items-center justify-center"
-                      @click="showEditFeatureDialog(feature)"
+                      @click.stop="showEditFeatureDialog(feature)"
                       title="Modifier l'élément"
                     >
                       <PencilSquareIcon
@@ -181,7 +185,7 @@
                     </button>
                     <button
                       class="flex h-8 w-8 items-center justify-center"
-                      @click="showDeleteFeatureDialog(feature)"
+                      @click.stop="showDeleteFeatureDialog(feature)"
                       title="Supprimer l'élément"
                     >
                       <TrashIcon
@@ -675,6 +679,7 @@ import {
 import { isUnrecognizedTextFeature } from "../utils/textValidation";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
+import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 
 const props = defineProps<{
   features: Feature[];
@@ -1023,6 +1028,18 @@ async function showEditFeatureDialog(feature: Feature) {
   await nextTick();
   editFeatureDialogRef.value?.showModal();
 }
+
+const { handleClick: onFeatureItemClick, handleDblClick: onFeatureItemDblClick } =
+  createFeatureDoubleClickHandler<Feature>({
+    onSelect: (feature) => {
+      if (feature.id != null) emit("select-feature", String(feature.id));
+    },
+    onEdit: (feature) => {
+      if (feature.id != null) emit("select-feature", String(feature.id));
+      showEditFeatureDialog(feature);
+    },
+    getId: (feature) => feature.id,
+  });
 
 async function onEditFeature() {
   if (!featureToEdit.value) return;
