@@ -61,8 +61,9 @@ async def get_reference_image(
     map_obj = await _require_owned_map(session, map_id, user_id)
     if not map_obj.reference_image_path:
         raise HTTPException(status_code=404, detail="No reference image for this map")
-    abs_path = os.path.join(MEDIA_ROOT, map_obj.reference_image_path)
-    if not os.path.isfile(abs_path):
+    abs_path = os.path.abspath(os.path.join(MEDIA_ROOT, map_obj.reference_image_path))
+    media_root_abs = os.path.abspath(MEDIA_ROOT)
+    if not abs_path.startswith(media_root_abs) or not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="Reference image file not found")
     media_type = map_obj.reference_image_content_type or "application/octet-stream"
     # Stream the file
@@ -145,8 +146,9 @@ async def delete_reference_image(
 ):
     map_obj = await _require_owned_map(session, map_id, user_id)
     if map_obj.reference_image_path:
-        abs_path = os.path.join(MEDIA_ROOT, map_obj.reference_image_path)
-        if os.path.isfile(abs_path):
+        abs_path = os.path.abspath(os.path.join(MEDIA_ROOT, map_obj.reference_image_path))
+        media_root_abs = os.path.abspath(MEDIA_ROOT)
+        if abs_path.startswith(media_root_abs) and os.path.isfile(abs_path):
             try:
                 os.unlink(abs_path)
             except OSError:

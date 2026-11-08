@@ -119,7 +119,6 @@ import { useZoomableStage } from "../../composables/useZoomableStage";
 const props = defineProps<{
   width?: number;
   displayImageUrl?: string | null;
-  imgZoom?: number;
   isUpdatingReferenceImage?: boolean;
 }>();
 

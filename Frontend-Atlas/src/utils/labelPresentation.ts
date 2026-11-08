@@ -173,16 +173,15 @@ export function formatLabelHtml(formattedText: unknown): string {
     .join("<br>");
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+};
+
 function escapeHtml(text: string): string {
-  return text.replace(/[&<>"]/g, (character) => {
-    const entities: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-    };
-    return entities[character];
-  });
+  return text.replace(/[&<>"]/g, (character) => HTML_ENTITIES[character]);
 }
 
 export interface LabelPresentationModel extends LabelStyle {

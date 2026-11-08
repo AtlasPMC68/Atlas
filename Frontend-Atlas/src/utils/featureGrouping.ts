@@ -88,16 +88,16 @@ export function groupFeaturesByMap(
     mapGroups.get(mapId)!.features.push(feature);
   });
 
-  return Array.from(mapGroups.values())
-    .map((group) => {
-      group.features.sort((a, b) => {
-        const nameA = a.properties?.name || "! Nom manquant";
-        const nameB = b.properties?.name || "! Nom manquant";
-        return nameA.localeCompare(nameB);
-      });
-      return group;
-    })
-    .sort((a, b) => {
+  const groups = Array.from(mapGroups.values());
+  for (const group of groups) {
+    group.features.sort((a, b) => {
+      const nameA = a.properties?.name || "! Nom manquant";
+      const nameB = b.properties?.name || "! Nom manquant";
+      return nameA.localeCompare(nameB);
+    });
+  }
+
+  return groups.sort((a, b) => {
       if (a.id === null) return -1;
       if (b.id === null) return 1;
 

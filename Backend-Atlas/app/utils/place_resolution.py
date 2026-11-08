@@ -35,6 +35,7 @@ import difflib
 import json
 import math
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import geonamescache
@@ -84,9 +85,90 @@ def _ensure_geo_data() -> None:
     _GEO_DATA_LOADED = True
 
 
-# Political types take priority when multiple entity types share the same name
-# (e.g. "Ontario" = province AND lake -> province wins).
-_POLITICAL_TYPES = frozenset({"country", "continent", "state", "province", "territory"})
+# Semantic prefix to entity types mapping for prefix-aware candidate priority
+_PREFIX_TYPE_MAP: Dict[str, Set[str]] = {
+    # Hydrography
+    "lac": {"lake"},
+    "lacs": {"lake"},
+    "lake": {"lake"},
+    "lakes": {"lake"},
+    "baie": {"bay", "sea"},
+    "baies": {"bay", "sea"},
+    "bay": {"bay", "sea"},
+    "bays": {"bay", "sea"},
+    "golfe": {"bay", "sea"},
+    "gulf": {"bay", "sea"},
+    "detroit": {"strait", "sea"},
+    "strait": {"strait", "sea"},
+    "mer": {"sea", "ocean"},
+    "sea": {"sea", "ocean"},
+    "ocean": {"ocean", "sea"},
+    "riviere": {"river"},
+    "river": {"river"},
+    "fleuve": {"river", "fleuve"},
+    "ruisseau": {"river"},
+    "canal": {"river"},
+    # Relief
+    "mont": {"mountain"},
+    "montagne": {"mountain"},
+    "mount": {"mountain"},
+    "mountain": {"mountain"},
+    "pic": {"mountain"},
+    "peak": {"mountain"},
+    "cap": {"cape"},
+    "cape": {"cape"},
+    "ile": {"island"},
+    "iles": {"island"},
+    "island": {"island"},
+    "islands": {"island"},
+    "archipel": {"island"},
+    "archipelago": {"island"},
+    "peninsule": {"peninsula"},
+    "peninsula": {"peninsula"},
+    # Administrative
+    "province": {"province"},
+    "etat": {"state"},
+    "state": {"state"},
+    "territoire": {"territory"},
+    "territory": {"territory"},
+    "pays": {"country"},
+    "country": {"country"},
+    "royaume": {"country"},
+    "kingdom": {"country"},
+    "ville": {"city"},
+    "city": {"city"},
+    "comte": {"county"},
+    "county": {"county"},
+}
+
+_RE_GLUED_DATES = re.compile(r"([a-zA-ZÀ-ÿ])(vers\s+\d{3,4}|\(\s*\d{3,4})", flags=re.IGNORECASE)
+_RE_STRIP_DATES = re.compile(
+    r"(?:\b(?:vers|ca\.?|circa|en|an|ann[ée]e?)\s*)?\(?\s*\b(?:1[4-9]\d{2}|20\d{2})\b\s*\)?",
+    flags=re.IGNORECASE,
+)
+_RE_EMPTY_PARENS = re.compile(r"\(\s*\)")
+_RE_COLLAPSE_SPACES = re.compile(r"\s+")
+_RE_UNCLOSED_DATE_PARENS = re.compile(r"\(\s*(\d{3,4})\s*(?!\))(?=[^\d]|$)")
+
+
+def strip_dates_for_matching(text: str) -> str:
+    """Strip historical years and dates from text for gazetteer matching without altering raw text."""
+    if not text:
+        return ""
+    # Separate glued 'vers 1750' or '(1750' from preceding word (e.g. 'Francevers 1750' -> 'France vers 1750')
+    cleaned = _RE_GLUED_DATES.sub(r"\1 \2", text)
+    # Remove dates with optional parentheses and historical prefixes (e.g. '(1789)', 'vers 1750', '1789')
+    cleaned = _RE_STRIP_DATES.sub(" ", cleaned)
+    # Remove any leftover empty parentheses
+    cleaned = _RE_EMPTY_PARENS.sub(" ", cleaned)
+    return _RE_COLLAPSE_SPACES.sub(" ", cleaned).strip()
+
+
+def close_unclosed_date_parentheses(text: str) -> str:
+    """Close unclosed date parentheses for display, e.g. 'La Nouvellle-Orleans (1789' -> 'La Nouvellle-Orleans (1789)'."""
+    if not text:
+        return text
+    return _RE_UNCLOSED_DATE_PARENS.sub(r"(\1)", text)
 
 
 # Configuration table for matching thresholds
@@ -126,8 +208,6 @@ def is_in_bounds(lat: float, lon: float, bounds: Optional[Dict[str, float]]) -> 
     if None in (s, n, w, e):
         return True
 
-    if s is None or n is None or w is None or e is None:
-        return True
     return s <= lat <= n and w <= lon <= e
 
 
@@ -146,15 +226,16 @@ def resolve_best_candidate(
     target_pos: Optional[Tuple[float, float]] = None,
     bounds: Optional[Dict[str, float]] = None,
     *,
-    prefer_political: bool = True,
+    query: Optional[str] = None,
     prefer_population: bool = False,
     strict_bounds: bool = False,
+    **_kwargs: Any,
 ) -> Optional[Dict[str, Any]]:
     """Select the best candidate from a candidate list following resolution priorities:
 
     1. Bounds Filtering (strict if requested, or prefers in-bounds candidates).
     2. Target Position Proximity (closest to target_pos wins).
-    3. Political Entity Priority (prefers political entities over lakes/physical features).
+    3. Prefix-Aware Priority (when query contains an explicit prefix like 'lac', 'baie', etc.).
     4. Population / Bounds Center (highest population or closest to map center).
     """
     if not candidates:
@@ -204,11 +285,19 @@ def resolve_best_candidate(
             return tied[0]
         pool = tied
 
-    # 3. Political Entity Priority (prefers political entities over lakes/physical features)
-    if prefer_political:
-        political = [c for c in pool if c.get("type") in _POLITICAL_TYPES]
-        if political and len(political) < len(pool):
-            pool = political
+    # 3. Prefix-Aware Priority: when query contains an explicit prefix (e.g. 'lac ontarion' -> 'lake')
+    if query:
+        norm_q = _normalize(query)
+        tokens = set(norm_q.split())
+        desired_types: Set[str] = set()
+        for pfx, types in _PREFIX_TYPE_MAP.items():
+            if pfx in tokens:
+                desired_types.update(types)
+
+        if desired_types:
+            matching_prefix = [c for c in pool if c.get("type") in desired_types]
+            if matching_prefix and len(matching_prefix) < len(pool):
+                pool = matching_prefix
 
     if len(pool) <= 1:
         return pool[0] if pool else None
@@ -252,18 +341,27 @@ def find_geo_entity(
     When *fuzzy=True*, tolerates OCR typos up to *cutoff*.
     """
     _ensure_geo_data()
-    norm = _normalize(text)
+    clean_text = strip_dates_for_matching(text)
+    norm = _normalize(clean_text)
     if not norm:
         return None
 
     hits = _GEO_INDEX.get(norm)
     if hits:
-        return resolve_best_candidate(hits, target_pos=target_pos, bounds=bounds, prefer_political=True)
+        return resolve_best_candidate(hits, target_pos=target_pos, bounds=bounds, query=text)
 
     if fuzzy and cutoff < MATCHING_CONFIG["exact_threshold"]:
-        close = difflib.get_close_matches(norm, _GEO_INDEX_KEYS, n=1, cutoff=cutoff)
+        close = difflib.get_close_matches(norm, _GEO_INDEX_KEYS, n=10, cutoff=cutoff)
         if close:
-            return resolve_best_candidate(_GEO_INDEX[close[0]], target_pos=target_pos, bounds=bounds, prefer_political=True)
+            candidates: List[Dict[str, Any]] = []
+            seen_candidates: Set[Tuple[Any, Any, Any, Any]] = set()
+            for key in close:
+                for ent in _GEO_INDEX.get(key, []):
+                    ekey = (ent.get("type"), ent.get("name"), ent.get("lat"), ent.get("lon"))
+                    if ekey not in seen_candidates:
+                        seen_candidates.add(ekey)
+                        candidates.append(ent)
+            return resolve_best_candidate(candidates, target_pos=target_pos, bounds=bounds, query=text)
 
     return None
 
@@ -276,10 +374,12 @@ def _parse_pop(val: Any) -> int:
         return 0
 
 
-_gc = getattr(geonamescache, "GeonamesCache")()
+_gc = geonamescache.GeonamesCache()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 _SPATIAL_CITY_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
 _seen_city_ids: Set[Any] = set()
+_FRENCH_CHAR_PAT = re.compile(r"[éèêàâîïôûùçœæ]|^(?:la|le|les|l')\s+", re.IGNORECASE)
+_LATIN_NAME_PAT = re.compile(r"^[A-Za-zÀ-ÿ\s\-\'’\.]+$")
 
 for _info in _gc.get_cities().values():
     _name = _info.get("name") or ""
@@ -306,6 +406,14 @@ for _info in _gc.get_cities().values():
         _seen_city_ids.add(_gid)
         _cell = (math.floor(_lat), math.floor(_lon))
         _SPATIAL_CITY_GRID.setdefault(_cell, []).append(_city)
+
+    # Index French alternate names (e.g. 'La Nouvelle-Orléans', 'Londres', 'Québec')
+    for _alt in (_info.get("alternatenames") or []):
+        if len(_alt) >= 3 and _LATIN_NAME_PAT.match(_alt) and _FRENCH_CHAR_PAT.search(_alt):
+            _alt_k = _normalize(_alt)
+            if _alt_k and _alt_k != _ck:
+                _alt_city = {**_city, "name_fr": _alt}
+                _CITY_INDEX.setdefault(_alt_k, []).append(_alt_city)
 
 del _seen_city_ids
 _CITY_INDEX_KEYS = list(_CITY_INDEX.keys())
@@ -347,7 +455,8 @@ def find_nearby_candidate_place(
     _ensure_geo_data()
 
     lon, lat = float(coords[0]), float(coords[1])
-    normalized_query = _normalize(text)
+    clean_text = strip_dates_for_matching(text)
+    normalized_query = _normalize(clean_text)
     if not normalized_query:
         return None
 
@@ -459,7 +568,8 @@ def resolve_place(
 
     Returns a dict containing at minimum ``found`` (bool).
     """
-    key = _normalize(text)
+    clean_text = strip_dates_for_matching(text)
+    key = _normalize(clean_text)
     if not key:
         return _not_found(text)
 
@@ -468,7 +578,7 @@ def resolve_place(
     blocked = {**base, "out_of_bounds": True}
 
     def _match_geo(fuzzy: bool = False, cutoff: float = MATCHING_CONFIG["default_confidence_threshold"]) -> Any:
-        ent = find_geo_entity(key, fuzzy=fuzzy, cutoff=cutoff, target_pos=target_pos, bounds=bounds)
+        ent = find_geo_entity(clean_text, fuzzy=fuzzy, cutoff=cutoff, target_pos=target_pos, bounds=bounds)
         if ent is None:
             return None
         if not is_in_bounds(ent["lat"], ent["lon"], bounds):
@@ -482,17 +592,17 @@ def resolve_place(
             cands = _CITY_INDEX.get(key, [])
         else:
             close = difflib.get_close_matches(
-                key, _CITY_INDEX_KEYS, n=1, cutoff=cutoff
+                key, _CITY_INDEX_KEYS, n=5, cutoff=cutoff
             )
             if not close:
                 return None
-            cands = _CITY_INDEX.get(close[0], [])
+            cands = [cand for k in close for cand in _CITY_INDEX.get(k, [])]
 
         best = resolve_best_candidate(
             cands,
             target_pos=target_pos,
             bounds=bounds,
-            prefer_political=False,
+            query=text,
             prefer_population=True,
             strict_bounds=True,
         )
@@ -508,43 +618,48 @@ def resolve_place(
         result["matchMethod"] = "fuzzy" if fuzzy else "exact"
         return result
 
+    blocked_candidate = None
     if text.isupper():
-        # ALL-CAPS -> prefer geographic entity
-        geo = _match_geo(fuzzy=False)
-        if geo is _BLOCKED:
-            return blocked
-        if geo:
-            return geo
-        city = _match_city(fuzzy=False)
-        if city is _BLOCKED:
-            return blocked
-        if city:
-            return city
+        first_exact, second_exact = _match_geo, _match_city
     else:
-        # Title / lowercase -> prefer city
-        city = _match_city(fuzzy=False)
-        if city is _BLOCKED:
-            return blocked
-        if city:
-            return city
-        geo = _match_geo(fuzzy=False)
-        if geo is _BLOCKED:
-            return blocked
-        if geo:
-            return geo
+        first_exact, second_exact = _match_city, _match_geo
+
+    hit1 = first_exact(fuzzy=False)
+    if hit1 is _BLOCKED:
+        blocked_candidate = blocked
+    elif hit1:
+        return hit1
+
+    hit2 = second_exact(fuzzy=False)
+    if hit2 is _BLOCKED:
+        blocked_candidate = blocked
+    elif hit2:
+        return hit2
+
+    if blocked_candidate:
+        return blocked_candidate
 
     if confidence_threshold < MATCHING_CONFIG["exact_threshold"]:
         geo_f = _match_geo(fuzzy=True, cutoff=confidence_threshold)
-        if geo_f is _BLOCKED:
-            return blocked
-        if geo_f:
-            return geo_f
-
         city_f = _match_city(fuzzy=True, cutoff=confidence_threshold)
-        if city_f is _BLOCKED:
+
+        valid_geo = geo_f if (geo_f and geo_f is not _BLOCKED) else None
+        valid_city = city_f if (city_f and city_f is not _BLOCKED) else None
+
+        if valid_geo and valid_city:
+            if target_pos is not None and valid_geo.get("lat") is not None and valid_city.get("lat") is not None:
+                dist_geo = haversine_distance_km(target_pos[0], target_pos[1], float(valid_geo["lat"]), float(valid_geo["lon"]))
+                dist_city = haversine_distance_km(target_pos[0], target_pos[1], float(valid_city["lat"]), float(valid_city["lon"]))
+                return valid_geo if dist_geo <= dist_city else valid_city
+            return valid_geo if text.isupper() else valid_city
+
+        if valid_geo:
+            return valid_geo
+        if valid_city:
+            return valid_city
+
+        if geo_f is _BLOCKED or city_f is _BLOCKED:
             return blocked
-        if city_f:
-            return city_f
 
     return base
 
@@ -572,8 +687,13 @@ def match_ocr_label(
         except Exception:
             return None
 
-    whole = clean.replace("\n", " ")
-    lines = [ln.strip() for ln in clean.split("\n") if ln.strip()]
+    cleaned_whole = strip_dates_for_matching(clean)
+    whole = (cleaned_whole or clean).replace("\n", " ")
+    lines = [
+        strip_dates_for_matching(ln) or ln
+        for ln in clean.split("\n")
+        if (strip_dates_for_matching(ln) or ln).strip()
+    ]
 
     # Stage 1: Exact matches (whole text, then line-by-line)
     exact_candidates = [whole] if len(lines) <= 1 else [whole, *lines]
@@ -601,6 +721,8 @@ __all__ = [
     "polygon_centroid",
     "is_in_bounds",
     "haversine_distance_km",
+    "strip_dates_for_matching",
+    "close_unclosed_date_parentheses",
     "MATCHING_CONFIG",
     "_GEO_INDEX",
     "_CITY_INDEX",

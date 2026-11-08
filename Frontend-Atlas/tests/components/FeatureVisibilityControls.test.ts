@@ -15,22 +15,18 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     {
       id: "map-1",
       title: "Carte Québec 1900",
-      description: "",
       startDate: "1900-01-01",
       endDate: "1910-01-01",
-      visible: true,
-      center: [46.8, -71.2],
-      zoom: 10,
+      exactDate: false,
+      color: "#0ea5e9",
     },
     {
       id: "map-2",
       title: "Carte Montréal 1950",
-      description: "",
       startDate: "1950-01-01",
       endDate: "1960-01-01",
-      visible: true,
-      center: [45.5, -73.5],
-      zoom: 10,
+      exactDate: false,
+      color: "#10b981",
     },
   ];
 
@@ -97,6 +93,8 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       ]],
     },
     properties: { name: "Zone Québec", mapElementType: "zone" },
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
   };
 
   const featureVisibility = new Map<string, boolean>([
@@ -145,7 +143,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     const dialog = wrapper.find('[data-testid="select-map-validation-dialog"]');
     const mapBtn = dialog
       .findAll("button")
-      .find((b) => b.text().includes("Carte Montréal 1950"));
+      .find((b: any) => b.text().includes("Carte Montréal 1950"));
     expect(mapBtn).toBeDefined();
 
     await mapBtn!.trigger("click");
@@ -218,6 +216,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     const unrecFeature: Feature = {
       type: "Feature",
       id: "feat-unrec-1",
+      projectId: "proj-1",
       mapId: "map-1",
       name: "Fort moose",
       geometry: { type: "Point", coordinates: [-80.5, 51.2] },
@@ -227,6 +226,8 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
         recognized: false,
         show: false,
       },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
     };
 
     const wrapper = mount(FeatureVisibilityControls, {
@@ -273,7 +274,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     });
 
     expect(wrapper.text()).toContain("Examiner les rejets");
-    const shapesTab = wrapper.findAll('[role="tab"]').find((tab) =>
+    const shapesTab = wrapper.findAll('[role="tab"]').find((tab: any) =>
       tab.attributes("title")?.includes("Forme"),
     );
     expect(shapesTab).toBeDefined();
@@ -285,6 +286,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     const acceptedFeature: Feature = {
       type: "Feature",
       id: "feat-acc-1",
+      projectId: "proj-1",
       mapId: "map-1",
       name: "Fort moose",
       geometry: { type: "Point", coordinates: [-80.5, 51.2] },
@@ -294,6 +296,8 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
         recognized: true,
         show: true,
       },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
     };
 
     const wrapper = mount(FeatureVisibilityControls, {
@@ -410,12 +414,12 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const textInput = wrapper
       .findAll("input")
-      .find((i) => i.element.value === "QUÉBEC" && i.attributes("style"));
+      .find((i: any) => i.element.value === "QUÉBEC" && i.attributes("style"));
     expect(textInput?.element.value).toBe("QUÉBEC");
     expect(textInput?.attributes("style")).toContain("font-size: 14px");
 
     // Click modifier button
-    const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+    const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     expect(modifyBtn).toBeDefined();
     await modifyBtn!.trigger("click");
 
@@ -448,7 +452,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(feature);
     const select = wrapper.find('[data-testid="word-type-select"]');
-    const textInput = wrapper.findAll("input").find((input) => input.element.value === "mCGuIlL");
+    const textInput = wrapper.findAll("input").find((input: any) => input.element.value === "mCGuIlL");
     expect(textInput).toBeDefined();
 
     await select.setValue("province");
@@ -494,7 +498,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("city");
     await select.trigger("change");
 
-    const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+    const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     await modifyBtn!.trigger("click");
 
     const emittedFeature = wrapper.emitted("update-feature")![0][0] as Feature;
@@ -541,10 +545,10 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("city");
     await select.trigger("change");
 
-    const textInput = wrapper.findAll("input").find((i) => i.element.value === "SASKATCHEWAN");
+    const textInput = wrapper.findAll("input").find((i: any) => i.element.value === "SASKATCHEWAN");
     expect(textInput).toBeDefined();
 
-    const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+    const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     await modifyBtn!.trigger("click");
 
     const emittedFeature = wrapper.emitted("update-feature")![0][0] as Feature;
@@ -571,7 +575,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     // Find the Nom de l'élément input (first text input without style)
     const nameInput = wrapper
       .findAll("input")
-      .find((i) => i.element.value === "Québec" && !i.attributes("style"));
+      .find((i: any) => i.element.value === "Québec" && !i.attributes("style"));
     expect(nameInput).toBeDefined();
 
     await nameInput!.setValue("Trois-Rivières");
@@ -580,7 +584,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     // The preview input should be updated
     const previewInput = wrapper
       .findAll("input")
-      .find((i) => i.attributes("style")?.includes("font-size"));
+      .find((i: any) => i.attributes("style")?.includes("font-size"));
     expect(previewInput).toBeDefined();
     expect(previewInput!.element.value).toBe("Trois-Rivières");
   });
@@ -602,7 +606,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     expect(wrapper.text()).toContain("Couleur du contour :");
 
     // Click modifier button
-    const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+    const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     expect(modifyBtn).toBeDefined();
     await modifyBtn!.trigger("click");
 
@@ -618,22 +622,18 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       {
         id: "map-1",
         title: "Carte Québec 1900",
-        description: "",
         startDate: "1900-01-01",
         endDate: "1910-01-01",
-        visible: true,
-        center: [46.8, -71.2],
-        zoom: 10,
+        exactDate: false,
+        color: "#0ea5e9",
       },
       {
         id: "map-2",
         title: "Carte Montréal 1950",
-        description: "",
         startDate: "1950-01-01",
         endDate: "1960-01-01",
-        visible: true,
-        center: [45.5, -73.5],
-        zoom: 10,
+        exactDate: false,
+        color: "#10b981",
       },
     ];
 
@@ -706,7 +706,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(checkboxMap1.exists()).toBe(true);
       await checkboxMap1.setValue(true);
 
-      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
@@ -730,7 +730,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(checkboxMap2.exists()).toBe(true);
       await checkboxMap2.setValue(true);
 
-      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
@@ -756,7 +756,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await checkboxMap1.setValue(true);
       await checkboxMap2.setValue(true);
 
-      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
@@ -791,7 +791,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       // Uncheck map-1
       await checkboxMap1.setValue(false);
 
-      const modifyBtn = wrapper.findAll("button").find((b) => b.text().includes("Modifier"));
+      const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
@@ -818,6 +818,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
         mapElementType: "label",
         rawType: "province",
       },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
     };
 
     it("selects feature on single click and opens edit dialog on double click", async () => {
@@ -828,7 +830,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
         },
       });
 
-      const textTab = wrapper.findAll('[role="tab"]').find((tab) =>
+      const textTab = wrapper.findAll('[role="tab"]').find((tab: any) =>
         tab.attributes("title")?.includes("Texte") || tab.attributes("data-testid") === "feature-tab-label",
       );
       if (textTab) {

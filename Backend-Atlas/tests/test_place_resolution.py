@@ -22,6 +22,7 @@ from pathlib import Path
 
 from app.utils.place_resolution import (
     MATCHING_CONFIG,
+    close_unclosed_date_parentheses,
     find_geo_entity,
     find_nearby_candidate_place,
     haversine_distance_km,
@@ -29,6 +30,7 @@ from app.utils.place_resolution import (
     match_ocr_label,
     resolve_best_candidate,
     resolve_place,
+    strip_dates_for_matching,
 )
 
 # Reference test bounding boxes
@@ -142,14 +144,20 @@ def test_find_geo_entity_non_entities():
 # --- 3. Candidate Resolution Priorities ---
 
 
-def test_resolve_best_candidate_prefers_political_entity():
+def test_resolve_best_candidate_prefers_prefix_over_other_types():
     candidates = [
         {"name": "Ontario", "type": "lake", "lat": 43.7, "lon": -77.9},
         {"name": "Ontario", "type": "province", "lat": 51.25, "lon": -85.32},
     ]
-    winner = resolve_best_candidate(candidates, prefer_political=True)
-    assert winner is not None
-    assert winner["type"] == "province"
+    # When query specifies "Lac", the lake entity wins
+    winner_lake = resolve_best_candidate(candidates, query="Lac Ontario")
+    assert winner_lake is not None
+    assert winner_lake["type"] == "lake"
+
+    # When query specifies "Province", the province entity wins
+    winner_province = resolve_best_candidate(candidates, query="Province d'Ontario")
+    assert winner_province is not None
+    assert winner_province["type"] == "province"
 
 
 def test_resolve_best_candidate_picks_closest_to_target_pos():
@@ -172,17 +180,39 @@ def test_resolve_best_candidate_centralized():
     c2 = {"name": "Candidate B", "type": "province", "lat": 46.0, "lon": -74.0, "population": 1000}
     c3 = {"name": "Candidate C", "type": "city", "lat": 80.0, "lon": 0.0, "population": 500000}
 
-    # Bounds filter: c3 is out of CANADA_BOUNDS
-    best = resolve_best_candidate([c1, c2, c3], bounds=CANADA_BOUNDS, prefer_political=True)
-    assert best == c2  # Political preference selects province over lake
-
-    # Target position selection
-    best_target = resolve_best_candidate([c1, c2], target_pos=(45.1, -73.1), prefer_political=False)
+    # Bounds filter: c3 is out of CANADA_BOUNDS; with target_pos near c1, c1 wins
+    best_target = resolve_best_candidate([c1, c2, c3], target_pos=(45.1, -73.1), bounds=CANADA_BOUNDS)
     assert best_target == c1
 
+    # Prefix preference: when query contains "lac", c1 wins
+    best_prefix = resolve_best_candidate([c1, c2], query="Lac Candidate")
+    assert best_prefix == c1
+
     # Population preference
-    best_pop = resolve_best_candidate([c1, c2], prefer_political=False, prefer_population=True)
+    best_pop = resolve_best_candidate([c1, c2], prefer_population=True)
     assert best_pop == c2
+
+
+def test_strip_dates_for_matching():
+    assert strip_dates_for_matching("La Nouvellle-Orleans (1789") == "La Nouvellle-Orleans"
+    assert strip_dates_for_matching("La Nouvelle-Francevers 1750") == "La Nouvelle-France"
+    assert strip_dates_for_matching("Baton Rouge (1720") == "Baton Rouge"
+    assert strip_dates_for_matching("Philadelphia (1885)Balmainaire (1873") == "Philadelphia Balmainaire"
+
+
+def test_close_unclosed_date_parentheses():
+    assert close_unclosed_date_parentheses("La Nouvellle-Orleans (1789") == "La Nouvellle-Orleans (1789)"
+    assert close_unclosed_date_parentheses("Baton Rouge (1720") == "Baton Rouge (1720)"
+    assert close_unclosed_date_parentheses("Already closed (1750)") == "Already closed (1750)"
+    assert close_unclosed_date_parentheses("No date here") == "No date here"
+
+
+def test_new_orleans_fuzzy_match_does_not_suggest_new_france():
+    # Given OCR text with date and slight typo, it should match New Orleans and NOT Nouvelle-France
+    res = resolve_place("La Nouvellle-Orleans (1789", confidence_threshold=0.60)
+    assert res["found"] is True
+    assert "orleans" in res["name"].casefold()
+    assert res["name"] != "NOUVELLE-FRANCE"
 
 
 def test_population_disambiguation():
@@ -419,3 +449,24 @@ def test_prefix_preserved_only_if_detected_in_extraction():
     res_no_prefix = resolve_place("QUÉBEC", frame_bounds=CANADA_BOUNDS)
     assert res_no_prefix["found"] is True
     assert res_no_prefix["name"] == "QUÉBEC"
+
+
+def test_hudson_bay_prefixed_resolution():
+    # OCR detected "d' Hudson" positioned in Northern Canada (Hudson Bay)
+    target_pos = (60.0, -85.0)
+    ent = find_geo_entity("d' Hudson", fuzzy=True, cutoff=0.60, target_pos=target_pos)
+    assert ent is not None
+    assert ent["name"] == "Hudson Bay"
+    assert ent.get("name_fr") == "Baie d'Hudson"
+
+    res = resolve_place("d' Hudson", frame_bounds=CANADA_BOUNDS, confidence_threshold=0.60, target_pos=target_pos)
+    assert res["found"] is True
+    assert res["name"] == "Baie d'Hudson"
+
+
+def test_lake_ontario_prefix_priority_over_province():
+    # When text is "Lac Ontario", prefix-aware priority must select Lake Ontario rather than Ontario province
+    res = resolve_place("Lac Ontario", frame_bounds=CANADA_BOUNDS)
+    assert res["found"] is True
+    assert res["type"] == "lake"
+    assert res["name"] == "Lac Ontario"

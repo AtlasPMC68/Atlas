@@ -169,14 +169,14 @@ function addUndoRedoControls(mapInstance: L.Map) {
 
 const { handleClick: handleLayerClick, handleDblClick: handleLayerDblClick } =
   createFeatureDoubleClickHandler<Feature>({
-    onSelect: (feature) => {
+    onSelect: (feature: Feature) => {
       emit("select-feature", String(feature.id));
     },
-    onEdit: (feature) => {
+    onEdit: (feature: Feature) => {
       emit("select-feature", String(feature.id));
       emit("edit-feature-request", feature);
     },
-    getId: (feature) => feature.id,
+    getId: (feature: Feature) => feature.id,
   });
 
 const featureLayerManager = {

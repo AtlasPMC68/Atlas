@@ -1031,14 +1031,14 @@ async function showEditFeatureDialog(feature: Feature) {
 
 const { handleClick: onFeatureItemClick, handleDblClick: onFeatureItemDblClick } =
   createFeatureDoubleClickHandler<Feature>({
-    onSelect: (feature) => {
+    onSelect: (feature: Feature) => {
       if (feature.id != null) emit("select-feature", String(feature.id));
     },
-    onEdit: (feature) => {
+    onEdit: (feature: Feature) => {
       if (feature.id != null) emit("select-feature", String(feature.id));
       showEditFeatureDialog(feature);
     },
-    getId: (feature) => feature.id,
+    getId: (feature: Feature) => feature.id,
   });
 
 async function onEditFeature() {

@@ -219,12 +219,9 @@ def is_exploitable_text(text: str) -> bool:
     s = str(text).strip()
     if not s:
         return False
-    # If no letters at all (only digits, symbols, punctuation) -> reject
-    if not any(c.isalpha() for c in s):
-        return False
-    # Less than 2 letters -> word too short / OCR noise -> reject
-    letters = [c for c in s if c.isalpha()]
-    if len(letters) < 2:
+    # Reject if less than 2 letters (numbers/symbols only or word too short / OCR noise)
+    letter_count = sum(1 for c in s if c.isalpha())
+    if letter_count < 2:
         return False
     # Block legend / scale / annotation keywords
     s_lower = s.lower()

@@ -93,14 +93,14 @@ const isLegendVisible = ref(true);
 
 const { handleClick: onFeatureClick, handleDblClick: onFeatureDblClick } =
   createFeatureDoubleClickHandler<Feature>({
-    onSelect: (feature) => {
+    onSelect: (feature: Feature) => {
       if (feature.id != null) emit("select-feature", String(feature.id));
     },
-    onEdit: (feature) => {
+    onEdit: (feature: Feature) => {
       if (feature.id != null) emit("select-feature", String(feature.id));
       emit("edit-feature", feature);
     },
-    getId: (feature) => feature.id ?? feature.properties?.name,
+    getId: (feature: Feature) => feature.id ?? feature.properties?.name,
   });
 
 function toggleLegend() {

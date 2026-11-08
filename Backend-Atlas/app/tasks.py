@@ -38,6 +38,7 @@ from app.utils.place_nomenclature import (
 )
 from app.utils.place_resolution import (
     MATCHING_CONFIG,
+    close_unclosed_date_parentheses,
     find_nearby_candidate_place,
     haversine_distance_km,
     match_ocr_label,
@@ -426,10 +427,7 @@ def _categorized_text_features_from_ocr(
         confidence = float(prob) if prob is not None else 1.0
 
         target_pos = estimated_position(coords)
-        try:
-            entity = match_ocr_label(raw_text, frame_bounds, target_pos=target_pos)
-        except TypeError:
-            entity = match_ocr_label(raw_text, frame_bounds)
+        entity = match_ocr_label(raw_text, frame_bounds, target_pos=target_pos)
 
         if entity and entity.get("out_of_bounds"):
             continue
@@ -456,6 +454,8 @@ def _categorized_text_features_from_ocr(
             and entity.get("matchMethod") == "fuzzy"
             and target_pos is None
         )
+
+        cleaned_raw_text = close_unclosed_date_parentheses(raw_text)
 
         if (
             entity
@@ -499,7 +499,7 @@ def _categorized_text_features_from_ocr(
             collections.append(
                 _make_text_feature(
                     name=display_name,
-                    original_text=raw_text,
+                    original_text=cleaned_raw_text,
                     coords=ocr_coords,
                     quad=coords,
                     confidence=confidence,
@@ -536,8 +536,8 @@ def _categorized_text_features_from_ocr(
                 }
             collections.append(
                 _make_text_feature(
-                    name=raw_text,
-                    original_text=raw_text,
+                    name=cleaned_raw_text,
+                    original_text=cleaned_raw_text,
                     coords=[0.0, 0.0],
                     quad=coords,
                     confidence=confidence,

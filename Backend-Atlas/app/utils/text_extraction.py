@@ -20,6 +20,11 @@ MAP_IGNORED_WORDS = {
 }
 # fmt: on
 
+_RE_LEGEND_OR_SCALE = re.compile(
+    r"\b(?:légende|legende|échelle|echelle|scale)\b|"
+    r"(?<![a-z])(?:km|kms|kilom[eè]tres?|kilometers?|miles?)(?![a-z])",
+)
+
 
 def should_ignore(text_val: str) -> bool:
     clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
@@ -29,12 +34,8 @@ def should_ignore(text_val: str) -> bool:
 
     if clean and all(c.isdigit() or c.isspace() or c in ".," for c in clean):
         return True
-    if re.search(
-        r"\b(?:légende|legende|échelle|echelle|scale)\b|"
-        r"(?<![a-z])(?:km|kms|kilom[eè]tres?|kilometers?|miles?)(?![a-z])",
-        clean,
-    ):
-            return True
+    if _RE_LEGEND_OR_SCALE.search(clean):
+        return True
 
     if len(clean.split()) > 5:
         return True
