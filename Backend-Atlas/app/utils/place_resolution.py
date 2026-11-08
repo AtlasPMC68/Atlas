@@ -126,6 +126,8 @@ def is_in_bounds(lat: float, lon: float, bounds: Optional[Dict[str, float]]) -> 
     if None in (s, n, w, e):
         return True
 
+    if s is None or n is None or w is None or e is None:
+        return True
     return s <= lat <= n and w <= lon <= e
 
 

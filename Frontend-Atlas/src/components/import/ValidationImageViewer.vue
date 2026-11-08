@@ -4,7 +4,7 @@
     :class="width !== undefined ? 'shrink-0' : 'flex-1 min-w-0'"
     :style="width !== undefined ? { width: `${width}px` } : undefined"
   >
-    <div class="px-3 py-2 bg-gray-800 text-white font-semibold flex items-center justify-between shrink-0 text-sm">
+    <div class="px-3 py-2 bg-gray-800 text-white font-semibold flex items-center justify-between shrink-0 text-sm z-10">
       <span class="flex items-center gap-1.5">
         <PhotoIcon class="w-4 h-4 text-gray-400" />
         Image de référence
@@ -15,23 +15,25 @@
             type="button"
             class="btn btn-xs btn-ghost text-white px-1.5 min-h-0 h-6 text-xs"
             title="Dézoomer"
-            @click="emit('zoom', -0.1)"
+            :disabled="zoom <= zoomMin"
+            @click="zoomOut"
           >
             −
           </button>
           <button
             type="button"
             class="btn btn-xs btn-ghost text-white px-2 min-h-0 h-6 text-xs"
-            title="Réinitialiser"
-            @click="emit('reset-zoom')"
+            title="Réinitialiser le zoom et le cadrage"
+            @click="resetView"
           >
-            {{ Math.round(imgZoom * 100) }}%
+            {{ Math.round(zoom * 100) }}%
           </button>
           <button
             type="button"
             class="btn btn-xs btn-ghost text-white px-1.5 min-h-0 h-6 text-xs"
             title="Zoomer"
-            @click="emit('zoom', 0.1)"
+            :disabled="zoom >= zoomMax"
+            @click="zoomIn"
           >
             +
           </button>
@@ -65,16 +67,24 @@
     </div>
 
     <div
-      class="flex-1 min-h-0 overflow-auto flex items-center justify-center p-2 bg-gray-950"
-      @wheel="emit('wheel', $event)"
+      ref="container"
+      class="flex-1 min-h-0 overflow-hidden relative flex items-center justify-center bg-gray-950 select-none"
+      :class="cursorClass"
+      @mousedown.left="onPointerDown"
+      @mousemove="onPointerMove"
+      @mouseup.left="onPointerUp"
+      @mouseleave="onPointerLeave"
+      @wheel.prevent="onWheel"
     >
-      <img
-        v-if="displayImageUrl"
-        :src="displayImageUrl"
-        alt="Image de la carte pour visualisation"
-        class="max-w-full max-h-full object-contain transition-transform duration-100 origin-center select-none will-change-transform"
-        :style="{ transform: `scale(${imgZoom}) translateZ(0)` }"
-      />
+      <div v-if="displayImageUrl" class="absolute" :style="stageStyle">
+        <img
+          ref="imageEl"
+          :src="displayImageUrl"
+          alt="Image de la carte pour visualisation"
+          class="w-full h-full object-contain select-none pointer-events-none will-change-transform"
+          @load="onImageLoad"
+        />
+      </div>
       <div v-else class="flex flex-col items-center justify-center p-6 text-center gap-3 max-w-sm">
         <PhotoIcon class="w-12 h-12 text-gray-500" />
         <div class="flex flex-col gap-1">
@@ -102,21 +112,97 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from "vue";
 import { PhotoIcon, ArrowUpTrayIcon, XMarkIcon } from "@heroicons/vue/24/outline";
+import { useZoomableStage } from "../../composables/useZoomableStage";
 
-defineProps<{
+const props = defineProps<{
   width?: number;
   displayImageUrl?: string | null;
-  imgZoom: number;
+  imgZoom?: number;
   isUpdatingReferenceImage?: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: "zoom", delta: number): void;
-  (e: "reset-zoom"): void;
-  (e: "wheel", event: WheelEvent): void;
   (e: "select-image", event: Event): void;
   (e: "remove-image"): void;
 }>();
-</script>
 
+const container = ref<HTMLDivElement | null>(null);
+const imageEl = ref<HTMLImageElement | null>(null);
+
+const {
+  stageStyle,
+  zoom,
+  panX,
+  panY,
+  zoomMin,
+  zoomMax,
+  updateBaseStage,
+  clampPan,
+  getLocalPointer,
+  onWheel,
+  zoomIn,
+  zoomOut,
+  resetView,
+} = useZoomableStage({
+  containerRef: container,
+  imageRef: imageEl,
+  zoomMin: 1,
+  zoomMax: 6,
+  zoomStepFactor: 1.25,
+});
+
+const isPointerDown = ref(false);
+const pointerStart = ref({ x: 0, y: 0 });
+const panStart = ref({ x: 0, y: 0 });
+
+const cursorClass = computed(() => {
+  if (zoom.value > 1) {
+    return isPointerDown.value ? "cursor-grabbing" : "cursor-grab";
+  }
+  return "cursor-default";
+});
+
+function onImageLoad(): void {
+  updateBaseStage();
+}
+
+watch(
+  () => props.displayImageUrl,
+  () => {
+    resetView();
+    updateBaseStage();
+  },
+);
+
+function onPointerDown(event: MouseEvent): void {
+  if (event.button !== 0) return;
+  isPointerDown.value = true;
+  const local = getLocalPointer(event);
+  if (!local) return;
+  pointerStart.value = local;
+  panStart.value = { x: panX.value, y: panY.value };
+}
+
+function onPointerMove(event: MouseEvent): void {
+  if (!isPointerDown.value) return;
+  if (zoom.value <= 1) return;
+  const local = getLocalPointer(event);
+  if (!local) return;
+
+  const dx = local.x - pointerStart.value.x;
+  const dy = local.y - pointerStart.value.y;
+  const clamped = clampPan(panStart.value.x + dx, panStart.value.y + dy);
+  panX.value = clamped.x;
+  panY.value = clamped.y;
+}
+
+function onPointerUp(): void {
+  isPointerDown.value = false;
+}
+
+function onPointerLeave(): void {
+  isPointerDown.value = false;
+}
+</script>

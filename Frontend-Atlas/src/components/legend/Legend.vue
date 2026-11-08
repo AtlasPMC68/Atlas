@@ -29,14 +29,14 @@
           <li
             v-for="feature in visibleZoneFeatures"
             :key="feature.id ?? feature.properties?.name"
-            class="flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer border transition-all"
+            class="flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer border transition-all select-none"
             :class="[
               selectedFeatureId === String(feature.id)
                 ? 'border-primary ring-1 ring-primary bg-primary/10 font-semibold'
                 : 'border-transparent hover:bg-base-200/60',
             ]"
-            @click="selectFeature(feature)"
-            @dblclick.prevent.stop="editFeature(feature)"
+            @click="onFeatureClick(feature)"
+            @dblclick.prevent.stop="onFeatureDblClick(feature)"
           >
             <span
               class="inline-block h-5 w-5 rounded-sm shrink-0 border-2"
@@ -71,6 +71,7 @@ import { computed, ref } from "vue";
 import type { Feature } from "../../typescript/feature";
 import { rgbToRgba } from "../../utils/utils";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/vue/24/outline";
+import { createFeatureDoubleClickHandler } from "../../utils/featureInteraction";
 
 const props = withDefaults(
   defineProps<{
@@ -90,14 +91,17 @@ const emit = defineEmits<{
 
 const isLegendVisible = ref(true);
 
-function selectFeature(feature: Feature) {
-  if (feature.id != null) emit("select-feature", String(feature.id));
-}
-
-function editFeature(feature: Feature) {
-  selectFeature(feature);
-  emit("edit-feature", feature);
-}
+const { handleClick: onFeatureClick, handleDblClick: onFeatureDblClick } =
+  createFeatureDoubleClickHandler<Feature>({
+    onSelect: (feature) => {
+      if (feature.id != null) emit("select-feature", String(feature.id));
+    },
+    onEdit: (feature) => {
+      if (feature.id != null) emit("select-feature", String(feature.id));
+      emit("edit-feature", feature);
+    },
+    getId: (feature) => feature.id ?? feature.properties?.name,
+  });
 
 function toggleLegend() {
   isLegendVisible.value = !isLegendVisible.value;

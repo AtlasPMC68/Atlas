@@ -61,11 +61,7 @@
         <!-- 1. Left: Original Image Viewer -->
         <ValidationImageViewer
           :display-image-url="displayImageUrl"
-          :img-zoom="imgZoom"
           :is-updating-reference-image="isUpdatingReferenceImage"
-          @zoom="zoomImg"
-          @reset-zoom="resetImgZoom"
-          @wheel="onImageWheel"
           @select-image="onLocalImageSelected"
           @remove-image="removeReferenceImage"
         />
@@ -383,8 +379,6 @@ function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
 const rightColWidth = ref(450);
 const isDragging = ref(false);
 
-const imgZoom = ref(1);
-
 const localImageMap = ref<Record<string, string>>({});
 const removedImageMap = ref<Record<string, boolean>>({});
 const loadedReferenceImageMap = new Set<string>();
@@ -443,20 +437,6 @@ function startColResize(e: MouseEvent) {
   window.addEventListener("mouseup", onMouseUp);
 }
 
-function zoomImg(delta: number) {
-  imgZoom.value = Math.max(0.2, Math.min(4, Number((imgZoom.value + delta).toFixed(2))));
-}
-
-function resetImgZoom() {
-  imgZoom.value = 1;
-}
-
-function onImageWheel(event: WheelEvent) {
-  if (!displayImageUrl.value) return;
-  event.preventDefault();
-  zoomImg(event.deltaY < 0 ? 0.1 : -0.1);
-}
-
 async function onLocalImageSelected(event: Event) {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
@@ -482,7 +462,6 @@ async function onLocalImageSelected(event: Event) {
     };
     removedImageMap.value = { ...removedImageMap.value, [currentKey]: false };
     if (mapId) loadedReferenceImageMap.add(mapId);
-    imgZoom.value = 1;
   } finally {
     isUpdatingReferenceImage.value = false;
   }
@@ -508,7 +487,6 @@ async function removeReferenceImage() {
     removedImageMap.value = { ...removedImageMap.value, [currentKey]: true };
     removeOriginalMapImage(mapId);
     if (mapId) loadedReferenceImageMap.add(mapId);
-    imgZoom.value = 1;
   } finally {
     isUpdatingReferenceImage.value = false;
   }
@@ -602,6 +580,11 @@ function toggleSupprimer(item: TextValidationEntry) {
   allItems.value = allItems.value.filter((i: TextValidationEntry) => i.id !== item.id);
 }
 
+function closeUnclosedDateParentheses(text?: string | null): string {
+  if (!text) return text ?? "";
+  return text.replace(/\(\s*(\d{3,4})\s*(?!\))(?=[^\d]|$)/g, "($1)");
+}
+
 function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
   return (items || []).map((item: TextValidationEntry) => {
     const selected = item.selected ?? true;
@@ -613,8 +596,12 @@ function mapInitialItems(items?: TextValidationEntry[]): TextValidationEntry[] {
       : coordinates
       ? ([coordinates[0], coordinates[1]] as [number, number])
       : undefined;
+    const closedText = closeUnclosedDateParentheses(item.text);
+    const closedOriginalText = closeUnclosedDateParentheses(item.originalText);
     return {
       ...item,
+      text: closedText,
+      originalText: closedOriginalText,
       selected,
       coordinates,
       originalCoordinates,
@@ -671,7 +658,6 @@ watch(
       return;
     }
     attachGlobalListeners();
-    imgZoom.value = 1;
     allItems.value = mapInitialItems(props.initialItems);
   },
   { immediate: true },
