@@ -1,6 +1,14 @@
 <template>
   <div class="relative h-full w-full z-0">
-    <div id="map" class="h-full w-full"></div>
+    <!-- Hidden (not display:none, Leaflet still needs its size) until the first
+         framing, so the map doesn't flash the default location before jumping -->
+    <div id="map" class="h-full w-full" :class="{ invisible: !isViewReady }"></div>
+    <div
+      v-if="!isViewReady"
+      class="absolute inset-0 flex items-center justify-center"
+    >
+      <span class="loading loading-spinner loading-lg text-base-content/40"></span>
+    </div>
     <div
       v-if="pendingCity"
       class="city-name-input-container"
@@ -293,10 +301,22 @@ function syncFeaturesFromMapLayers(): Feature[] {
   return Array.from(mergedById.values());
 }
 
+const isViewReady = ref(false);
+// Shows the map even if the parent never frames it (e.g. a failed load)
+const VIEW_READY_FALLBACK_MS = 5000;
+let viewReadyFallback: ReturnType<typeof setTimeout> | null = null;
+
+function revealMap() {
+  isViewReady.value = true;
+  if (viewReadyFallback) clearTimeout(viewReadyFallback);
+  viewReadyFallback = null;
+}
+
 // Frames the features currently drawn on the map (visibility and timeline
 // filters applied). Keeps the current view when nothing is drawn.
 function fitToVisibleFeatures() {
   if (!map) return;
+  revealMap();
   const bounds = L.latLngBounds([]);
   featureLayerManager.layers.forEach((layer) => {
     if (!map!.hasLayer(layer)) return;
@@ -1052,6 +1072,7 @@ onMounted(() => {
     [52.9399, -73.5491],
     5,
   );
+  viewReadyFallback = setTimeout(revealMap, VIEW_READY_FALLBACK_MS);
   vectorRenderer = L.canvas({ padding: 0.5 });
   // Make all path layers (including geoman's temp drawing layers) use the
   // same canvas renderer. Without this, geoman creates a second <canvas>
@@ -1228,6 +1249,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (viewReadyFallback) clearTimeout(viewReadyFallback);
   if (escapeKeyHandler) {
     document.removeEventListener("keydown", escapeKeyHandler);
     escapeKeyHandler = null;
