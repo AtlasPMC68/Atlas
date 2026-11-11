@@ -1,5 +1,5 @@
 # Development stage for Vite Frontend Application
-FROM node:20-alpine AS development
+FROM node:24-alpine AS development
 
 WORKDIR /app
 
