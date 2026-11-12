@@ -2,13 +2,13 @@
 
 This is our PMC for university : Atlas
 
-## 📚 Git & Jira Naming Conventions
+## Git & Jira Naming Conventions
 
 To ensure clarity and traceability across branches and commits, all contributors must follow the naming conventions outlined below.
 
 ---
 
-### 🔀 Branch Naming Convention
+### Branch Naming Convention
 
 All branches must follow the format:
 
@@ -25,7 +25,7 @@ ATLAS-123-add-login-feature
 
 ---
 
-### ✅ Pull Request Message Convention
+### Pull Request Message Convention
 
 All pull request messages must follow this format:
 
@@ -120,7 +120,28 @@ To run the project using Docker Compose, follow these steps:
 
 ---
 
-### 🧪 Run Georef Evaluation Manually
+### Updating Geographic Entities Dataset
+
+The OCR place-name resolution pipeline uses an offline gazetteer dataset located at `Backend-Atlas/app/data/geographic_entities.json` (covering countries, continents, provinces, states, territories, lakes, rivers, seas, and oceans).
+
+If you need to regenerate or update this geographic dataset from sources (`geonamescache` and Natural Earth GeoJSON), run the script inside the running backend container:
+
+```sh
+# Option 1: On Windows (PowerShell)
+Get-Content Backend-Atlas\scripts\update_geographic_entities.py | docker exec -i atlas-backend python -
+
+# Option 2: Linux / macOS / Bash
+docker exec -i atlas-backend python < Backend-Atlas/scripts/update_geographic_entities.py
+
+# Option 3: Direct container execution (when scripts folder is mounted)
+docker exec atlas-backend python /app/scripts/update_geographic_entities.py
+```
+
+This script safely merges newly fetched features into the existing dataset using atomic file writes to prevent corruption.
+
+---
+
+### Run Georef Evaluation Manually
 
 If you changed the georeferencing/extraction algorithm and want to re-run the georef evaluation locally without restarting the whole stack, you can run the dedicated georef pytest directly.
 

@@ -1,9 +1,10 @@
-import { computed, ref } from "vue";
+import { computed, ref, type ComputedRef } from "vue";
 import type { Feature } from "../typescript/feature";
 import type {
   FeatureSnapshot,
   FeatureTrackingCallback,
 } from "../typescript/feature";
+import { useProjectHistoryStore } from "../stores/projectHistory";
 import {
   buildFeatureSnapshotSignature,
   cloneFeatureSnapshot,
@@ -11,17 +12,83 @@ import {
 } from "../utils/featureHistory";
 
 export class FeatureHistoryService {
-  public undoStack = ref<FeatureSnapshot[]>([]);
-  public redoStack = ref<FeatureSnapshot[]>([]);
-  public trackingEnabled = ref(true);
+  private localUndoStack = ref<FeatureSnapshot[]>([]);
+  private localRedoStack = ref<FeatureSnapshot[]>([]);
+  private localTrackingEnabled = ref(true);
 
-  public canUndo = computed(() => this.undoStack.value.length > 0);
-  public canRedo = computed(() => this.redoStack.value.length > 0);
+  private _undoStack?: ComputedRef<FeatureSnapshot[]>;
+  private _redoStack?: ComputedRef<FeatureSnapshot[]>;
+  private _trackingEnabled?: ComputedRef<boolean>;
+  private _canUndo?: ComputedRef<boolean>;
+  private _canRedo?: ComputedRef<boolean>;
 
-  constructor(private readonly limit: number = 5) {}
+  constructor(private readonly limit: number = 30) {}
 
-  commit(current: Feature[], next: Feature[]): FeatureSnapshot {
-    if (!this.trackingEnabled.value) {
+  private get store() {
+    try {
+      return useProjectHistoryStore();
+    } catch {
+      return null;
+    }
+  }
+
+  public get undoStack(): ComputedRef<FeatureSnapshot[]> {
+    if (!this._undoStack) {
+      this._undoStack = computed(() => {
+        const s = this.store;
+        return s ? s.undoStack.map((e) => e.features) : this.localUndoStack.value;
+      });
+    }
+    return this._undoStack;
+  }
+
+  public get redoStack(): ComputedRef<FeatureSnapshot[]> {
+    if (!this._redoStack) {
+      this._redoStack = computed(() => {
+        const s = this.store;
+        return s ? s.redoStack.map((e) => e.features) : this.localRedoStack.value;
+      });
+    }
+    return this._redoStack;
+  }
+
+  public get trackingEnabled(): ComputedRef<boolean> {
+    if (!this._trackingEnabled) {
+      this._trackingEnabled = computed(() => {
+        const s = this.store;
+        return s ? s.trackingEnabled : this.localTrackingEnabled.value;
+      });
+    }
+    return this._trackingEnabled;
+  }
+
+  public get canUndo(): ComputedRef<boolean> {
+    if (!this._canUndo) {
+      this._canUndo = computed(() => {
+        const s = this.store;
+        return s ? s.canUndo : this.localUndoStack.value.length > 0;
+      });
+    }
+    return this._canUndo;
+  }
+
+  public get canRedo(): ComputedRef<boolean> {
+    if (!this._canRedo) {
+      this._canRedo = computed(() => {
+        const s = this.store;
+        return s ? s.canRedo : this.localRedoStack.value.length > 0;
+      });
+    }
+    return this._canRedo;
+  }
+
+  commit(current: Feature[], next: Feature[], label?: string): FeatureSnapshot {
+    const s = this.store;
+    if (s) {
+      return s.commit(current, next, label);
+    }
+
+    if (!this.localTrackingEnabled.value) {
       return cloneFeatureSnapshot(next);
     }
 
@@ -32,24 +99,29 @@ export class FeatureHistoryService {
       return cloneFeatureSnapshot(current);
     }
 
-    this.undoStack.value = trimFeatureHistoryStack(
-      [cloneFeatureSnapshot(current), ...this.undoStack.value],
+    this.localUndoStack.value = trimFeatureHistoryStack(
+      [cloneFeatureSnapshot(current), ...this.localUndoStack.value],
       this.limit,
     );
-    this.redoStack.value = [];
+    this.localRedoStack.value = [];
 
     return cloneFeatureSnapshot(next);
   }
 
   undo(current: Feature[]): FeatureSnapshot {
-    const previous = this.undoStack.value[0];
+    const s = this.store;
+    if (s) {
+      return s.undo(current);
+    }
+
+    const previous = this.localUndoStack.value[0];
     if (!previous) {
       return cloneFeatureSnapshot(current);
     }
 
-    this.undoStack.value = this.undoStack.value.slice(1);
-    this.redoStack.value = trimFeatureHistoryStack(
-      [cloneFeatureSnapshot(current), ...this.redoStack.value],
+    this.localUndoStack.value = this.localUndoStack.value.slice(1);
+    this.localRedoStack.value = trimFeatureHistoryStack(
+      [cloneFeatureSnapshot(current), ...this.localRedoStack.value],
       this.limit,
     );
 
@@ -57,14 +129,19 @@ export class FeatureHistoryService {
   }
 
   redo(current: Feature[]): FeatureSnapshot {
-    const next = this.redoStack.value[0];
+    const s = this.store;
+    if (s) {
+      return s.redo(current);
+    }
+
+    const next = this.localRedoStack.value[0];
     if (!next) {
       return cloneFeatureSnapshot(current);
     }
 
-    this.redoStack.value = this.redoStack.value.slice(1);
-    this.undoStack.value = trimFeatureHistoryStack(
-      [cloneFeatureSnapshot(current), ...this.undoStack.value],
+    this.localRedoStack.value = this.localRedoStack.value.slice(1);
+    this.localUndoStack.value = trimFeatureHistoryStack(
+      [cloneFeatureSnapshot(current), ...this.localUndoStack.value],
       this.limit,
     );
 
@@ -72,20 +149,29 @@ export class FeatureHistoryService {
   }
 
   reset(initial: Feature[] = []): FeatureSnapshot {
-    this.undoStack.value = [];
-    this.redoStack.value = [];
+    const s = this.store;
+    if (s) {
+      return s.reset(initial);
+    }
+
+    this.localUndoStack.value = [];
+    this.localRedoStack.value = [];
 
     return cloneFeatureSnapshot(initial);
   }
 
   withoutTracking<T>(callback: FeatureTrackingCallback<T>): T {
-    this.trackingEnabled.value = false;
+    const s = this.store;
+    if (s) {
+      return s.withoutTracking(callback);
+    }
 
+    this.localTrackingEnabled.value = false;
     try {
       return callback();
     } finally {
       queueMicrotask(() => {
-        this.trackingEnabled.value = true;
+        this.localTrackingEnabled.value = true;
       });
     }
   }

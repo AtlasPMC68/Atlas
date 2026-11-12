@@ -5,6 +5,7 @@ import type { Feature } from "../typescript/feature";
 import type { MapWithPm } from "../typescript/mapDrawing";
 import type { PendingCity } from "../typescript/addCityMode";
 import { upsertFeature } from "../utils/featureHelpers";
+import { formatWordText } from "../utils/wordStyles";
 
 export class AddCityModeService {
   public addCityMode = ref(false);
@@ -39,7 +40,8 @@ export class AddCityModeService {
   confirm() {
     const map = this.getMap();
     if (!this.pendingCity.value || !map) return;
-    const name = this.cityInputName.value.trim();
+    const rawName = this.cityInputName.value.trim();
+    const name = formatWordText(rawName, "city");
     const { latlng, marker } = this.pendingCity.value;
     marker.remove();
     this.resetState();
@@ -48,6 +50,7 @@ export class AddCityModeService {
     const feature: Feature = {
       id,
       type: "Feature",
+      projectId: "",
       mapId: "",
       geometry: {
         type: "Point",
@@ -69,8 +72,6 @@ export class AddCityModeService {
       createdAt: now,
       updatedAt: now,
       name,
-      opacity: 1,
-      strokeWidth: 1,
     };
     const next = upsertFeature(this.localFeaturesSnapshot.value, feature);
     this.localFeaturesSnapshot.value = next;
