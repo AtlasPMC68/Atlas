@@ -19,7 +19,10 @@ fi
 echo "Setting Atlas login theme..."
 
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
-  -s loginTheme=atlas
+  -s loginTheme=atlas \
+  -s internationalizationEnabled=true \
+  -s 'supportedLocales=["fr"]' \
+  -s defaultLocale=fr
   
 # Update realm settings
 # TODO remove sslRequired=None for production

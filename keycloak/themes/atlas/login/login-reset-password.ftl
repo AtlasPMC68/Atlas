@@ -11,11 +11,11 @@
     <#elseif section = "form">
 
         <h1 id="kc-page-title">
-            Reset your password
+            ${msg("atlasResetPasswordTitle")}
         </h1>
 
         <p class="atlas-description">
-            Enter your username or email address and we'll send you instructions to reset your password.
+            ${msg("atlasResetPasswordDescription")}
         </p>
 
         <form
@@ -48,7 +48,7 @@
         <a
             class="atlas-back"
             href="${url.loginUrl}">
-            ← Back to login
+            ${msg("atlasBackToLogin")}
         </a>
 
     </#if>
