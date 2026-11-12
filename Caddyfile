@@ -1,0 +1,41 @@
+{
+    # Global options
+    # In production, Caddy uses this email for Let's Encrypt renewal notices (optional)
+    email {$ACME_EMAIL:admin@example.com}
+}
+
+{$CADDY_SITE:http://localhost} {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    # Keycloak admin console + master realm: only reachable from ADMIN_ALLOWED_IPS
+    # (space-separated IPs/CIDRs; defaults to private ranges for local dev)
+    @keycloak_admin {
+        path /auth/admin* /auth/realms/master*
+        not remote_ip {$ADMIN_ALLOWED_IPS:private_ranges}
+    }
+    handle @keycloak_admin {
+        respond "Forbidden" 403
+    }
+
+    # Backend FastAPI
+    handle_path /api* {
+        reverse_proxy backend:8000
+    }
+
+    # Keycloak Identity Provider
+    handle /auth* {
+        reverse_proxy keycloak:8080
+    }
+
+    # Frontend (Vite dev server locally, static build in production)
+    handle {
+        reverse_proxy frontend:5173
+    }
+}

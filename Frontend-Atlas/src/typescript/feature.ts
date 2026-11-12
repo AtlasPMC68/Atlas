@@ -56,6 +56,7 @@ export interface SuggestedPlace {
 export interface FeatureProperties {
   name: string;
   isVisible?: boolean;
+  show?: boolean; // set by the backend extraction (tasks.py); false hides the feature initially
   labelText?: string;
   sizePx?: number;
   rawType?: string;
@@ -79,7 +80,6 @@ export interface FeatureProperties {
   image?: string;
   isOcrText?: boolean;
   recognized?: boolean;
-  show?: boolean;
   originalText?: string;
   matchedCity?: string;
   country?: string;

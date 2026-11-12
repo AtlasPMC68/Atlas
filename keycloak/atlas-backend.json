@@ -5,7 +5,6 @@
     "protocol": "openid-connect",
     "publicClient": false,
     "clientAuthenticatorType": "client-secret",
-    "secret": "secret",
     "bearerOnly": true,
     "serviceAccountsEnabled": true,
     "standardFlowEnabled": false,
