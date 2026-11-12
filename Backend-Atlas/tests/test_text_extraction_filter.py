@@ -9,9 +9,10 @@ def test_should_ignore_numeric_and_scale_annotations():
     assert should_ignore("Miles")
 
 
-def test_process_candidate_text_preserves_numbers_in_place_names():
+def test_process_candidate_text_keeps_numbers_but_strips_years():
     quad = [[0, 0], [10, 0], [10, 10], [0, 10]]
 
     assert process_candidate_text("Route 600", quad)["text"] == "Route 600"
-    assert process_candidate_text("Québec 1783", quad)["text"] == "Québec 1783"
+    assert process_candidate_text("Québec 1783", quad)["text"] == "Québec"
+    assert process_candidate_text("Boston (1630)", quad)["text"] == "Boston"
     assert process_candidate_text("600 Km", quad) is None
