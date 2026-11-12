@@ -21,7 +21,9 @@ services:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
       - ocr-data:/data
+      - media-data:/app/media
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -52,6 +54,7 @@ services:
     volumes:
       - ./Frontend-Atlas:/app
       - /app/node_modules
+      - ./shared:/shared:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ >/dev/null || exit 1"]
       interval: 15s
@@ -95,7 +98,9 @@ services:
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/debug_runs:/app/debug_runs
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
       - ocr-data:/data
+      - media-data:/app/media
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -147,6 +152,7 @@ services:
     volumes:
       - ./Backend-Atlas/app:/app/app
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -300,6 +306,7 @@ services:
       - ./Backend-Atlas/pytest.ini:/app/pytest.ini
       - ./Backend-Atlas/scripts:/app/scripts
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
       - ocr-data:/data
 
   # Fast georeferencing loop: no broker, no database, no pytest collection, and
@@ -316,6 +323,7 @@ services:
       - ./Backend-Atlas/.georef_cache:/app/.georef_cache
       - ./Backend-Atlas/ablations:/app/ablations
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
+      - ./shared:/shared:ro
       - ocr-data:/data
 
   test-frontend:
@@ -327,6 +335,7 @@ services:
     volumes:
       - ./Frontend-Atlas:/app
       - /app/node_modules
+      - ./shared:/shared:ro
 
 volumes:
   postgres-data:
@@ -335,3 +344,4 @@ volumes:
   caddy-data:
   caddy-config:
   ocr-data:
+  media-data:

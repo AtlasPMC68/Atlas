@@ -27,8 +27,10 @@ COPY scripts ./scripts
 # Unprivileged user, used in production (docker-compose.prod.yml sets `user: app`).
 # Dev keeps root so bind-mounted source stays writable on any host.
 # /data is the ocr-data volume shared with florence-worker (same uid 1000).
+# /app/media is the media-data volume (reference images), created here so the
+# fresh volume is owned by app and stays writable.
 RUN useradd --create-home --uid 1000 app \
-    && mkdir -p /data \
+    && mkdir -p /data /app/media \
     && chown -R app:app /app /data
 
 # No .env.dev in the image: configuration comes from env_file at run time

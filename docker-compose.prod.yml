@@ -15,8 +15,11 @@ services:
     # Run the code baked into the image: no bind mounts, no --reload
     user: app
     security_opt: [no-new-privileges:true]
+    # shared/: word taxonomy read at import time; media: uploaded reference images
     volumes: !override
       - ocr-data:/data
+      - media-data:/app/media
+      - ./shared:/shared:ro
     command:
       [
         "uvicorn", "app.main:app",
@@ -31,9 +34,12 @@ services:
   celery-worker:
     user: app
     security_opt: [no-new-privileges:true]
-    # Code from the image; keep only the OCR files shared with florence-worker
+    # Code from the image; keep the OCR files shared with florence-worker,
+    # the uploaded media and the shared word taxonomy
     volumes: !override
       - ocr-data:/data
+      - media-data:/app/media
+      - ./shared:/shared:ro
     logging: *default-logging
 
   celery-worker-ocr:
@@ -41,6 +47,7 @@ services:
     security_opt: [no-new-privileges:true]
     volumes: !override
       - ocr-data:/data
+      - ./shared:/shared:ro
     logging: *default-logging
 
   florence-worker:
@@ -53,7 +60,8 @@ services:
   flower:
     user: app
     security_opt: [no-new-privileges:true]
-    volumes: !reset []
+    volumes: !override
+      - ./shared:/shared:ro
     logging: *default-logging
 
   frontend:
@@ -61,6 +69,9 @@ services:
     build:
       context: ./Frontend-Atlas
       target: production
+      # The app imports ../shared/word-taxonomy.json, outside the build context
+      additional_contexts:
+        shared: ./shared
       args:
         VITE_API_URL: ${VITE_API_URL}
         VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL}

@@ -60,8 +60,3 @@ def test_an_unknown_name_is_an_empty_list_not_an_error():
     assert search_cities("Stadacona", QUEBEC) == []
     assert search_cities("", QUEBEC) == []
     assert search_cities("   ", QUEBEC) == []
-
-
-# --- place names read off the map -----------------------------------------
-
-

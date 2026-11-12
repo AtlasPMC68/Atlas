@@ -20,8 +20,9 @@ RUN pip install --no-cache-dir \
     Pillow \
     numpy \
     accelerate \
-    celery \
-    redis
+    celery[redis]==5.6.3 \
+    kombu==5.7.0 \
+    redis==6.4.0
 
 # Florence-2 specific dependencies
 RUN pip install --no-cache-dir transformers==4.43.0 \

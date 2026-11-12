@@ -83,6 +83,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, nextTick, watch, ref } from "vue";
+import type { FeatureCollection } from "geojson";
 import L from "leaflet";
 import type { WorldBounds, WorldAreaSelection } from "../../typescript/georef";
 
@@ -145,8 +146,8 @@ async function initMap(): Promise<void> {
     ]);
 
     // Combine features from both GeoJSON files
-    const combinedGeoJSON = {
-      type: "FeatureCollection" as const,
+    const combinedGeoJSON: FeatureCollection = {
+      type: "FeatureCollection",
       features: [
         ...(coastlineGeoJSON.features || []),
         ...(lakesGeoJSON.features || []),

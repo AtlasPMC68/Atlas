@@ -178,7 +178,10 @@ export function layerToFeature(
         baseFeature?.properties?.strokeColor ??
         baseFeature?.properties?.colorRgb,
       strokeWidth: baseFeature?.properties?.strokeWidth ?? 2,
-      strokeOpacity: baseFeature?.properties?.strokeOpacity ?? 0.5,
+      // A point is rendered with an opaque outline when it has no value
+      // (MapGeoJSON); writing 0.5 here faded it the first time it was moved.
+      strokeOpacity:
+        baseFeature?.properties?.strokeOpacity ?? (type === "point" ? 1 : 0.5),
       mapElementType: type,
       layer: baseFeature?.properties?.layer ?? getDefaultLayer(type),
       rotation,

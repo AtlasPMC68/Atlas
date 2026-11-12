@@ -4,34 +4,53 @@
   >
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
-        class="w-80 h-full min-h-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+        class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+        :style="{ width: `${sidebarWidth}px` }"
       >
         <FeatureVisibilityControls
           ref="featureVisibilityControlsRef"
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
+          :custom-label-styles="customLabelStyles"
+          :selected-feature-id="selectedFeatureId"
+          @select-feature="(id: string | null) => selectedFeatureId = id"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
+          @edit-map="openEditMapDialog"
+          @save-label-styles="saveCustomLabelStyles"
           @update-feature="onUpdateFeature"
+          @validate-texts="onOpenTextValidation"
         />
       </div>
+      <div
+        role="separator"
+        aria-label="Redimensionner le panneau latéral"
+        aria-orientation="vertical"
+        tabindex="0"
+        class="w-1.5 shrink-0 cursor-col-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors"
+        data-testid="sidebar-resize-handle"
+        @mousedown.prevent="startSidebarResize"
+        @keydown.left.prevent="resizeSidebarBy(-16)"
+        @keydown.right.prevent="resizeSidebarBy(16)"
+      />
       <div class="flex-1 min-h-0 flex flex-col">
-        <div class="flex-1 relative min-h-0 h-full w-full">
+        <div class="flex-1 relative min-h-0 h-full w-full bg-[#d4dadc]">
           <MapGeoJSON
             ref="mapGeoJsonRef"
             class="flex-1 min-h-0 w-full"
             :features="features"
             :feature-visibility="combinedFeatureVisibility"
             :selected-year="selectedYear"
-            :map-periods="mapPeriods"
             :project-id="projectId || projectRouteId || ''"
             :can-undo="canUndo"
             :can-redo="canRedo"
+            :selected-feature-id="selectedFeatureId"
+            @select-feature="(id: string | null) => selectedFeatureId = id"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
@@ -40,10 +59,13 @@
             @redo="onRedo"
             @edit-feature-request="onEditFeatureRequest"
           />
-          <div class="absolute bottom-4 left-4 z-[1001]">
+          <div v-show="!showTextValidationModal" class="absolute bottom-4 left-4 z-[1001]">
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
+              :selected-feature-id="selectedFeatureId"
+              @select-feature="selectFeature"
+              @edit-feature="onEditFeatureRequest"
             />
           </div>
         </div>
@@ -92,11 +114,29 @@
     @submit="createMapForProject"
   />
 
+  <EditMapPeriodDialog
+    ref="editMapPeriodDialogRef"
+    @save="saveMapPeriod"
+  />
+
   <CreateProjectDialog
     ref="createProjectDialogRef"
     @created="onProjectCreated"
     @error="onCreateProjectError"
     @closed="onCreateProjectDialogClosed"
+  />
+
+  <TextValidationModal
+    :is-open="showTextValidationModal"
+    :map-id="activeValidationMapId"
+    :image-url="validationImageUrl"
+    :map-title="validationMapTitle"
+    :initial-items="textValidationEntries"
+    :is-submitting="isSavingTextValidation"
+    :custom-label-styles="customLabelStyles"
+    @confirm="onConfirmTextValidation"
+    @cancel="showTextValidationModal = false"
+    @save-label-styles="saveCustomLabelStyles"
   />
 </template>
 <script setup lang="ts">
@@ -104,37 +144,61 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
+import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
+import type { CustomLabelStyle } from "../utils/labelPresentation";
 import type { SliderPeriod } from "../typescript/map";
 import {
   camelToSnake,
   isUuid,
   prepareFeaturesForSave,
   snakeToCamel,
+  toImageSrc,
 } from "../utils/utils";
-import { toYear } from "../utils/dateUtils";
+import { isPeriodActiveAt, toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { useProjectLabelStyles } from "../composables/useProjectLabelStyles";
+import { getOriginalMapImage } from "../composables/useMapImageCache";
 import keycloak from "../keycloak";
-import leafletImage from "leaflet-image";
 import L, { type Map as LeafletMap } from "leaflet";
+import { captureMapThumbnail } from "../utils/mapThumbnail";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
-import { upsertFeature } from "../utils/featureHelpers";
+import {
+  upsertFeature,
+  isCopyableFeature,
+  getGeometryAnchor,
+  cloneFeatureWithOffset,
+} from "../utils/featureHelpers";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
 } from "../typescript/project";
 import CreateProjectDialog from "../components/CreateProjectDialog.vue";
+import TextValidationModal from "../components/import/TextValidationModal.vue";
+import {
+  type TextValidationEntry,
+  featureToValidationEntry,
+  applyValidationToFeature,
+  isUnrecognizedTextFeature,
+} from "../utils/textValidation";
+import { isVisibleInMainLayers } from "../utils/featureValidationState";
+import { isTextFeature, normalizeWordType } from "../utils/wordStyles";
+import {
+  applyCustomLabelStyleToFeature,
+  removeCustomLabelStyleFromFeature,
+} from "../utils/featureTextEditing";
 
 const route = useRoute();
 const router = useRouter();
+const IMPORTED_MAP_QUERY = "carte";
 const projectRouteId = computed(
   () => (route.params.projectId as string | undefined) ?? null,
 );
@@ -143,11 +207,17 @@ const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
   resetSelection: () => void;
-  fitToVisibleFeatures: () => void;
+  fitToVisibleFeatures: (featureIds?: ReadonlySet<string>) => void;
 } | null>(null);
 const addMapDialogRef = ref<{
   open: () => void;
   close: () => void;
+} | null>(null);
+const editMapPeriodDialogRef = ref<{
+  open: (period: MapPeriod) => void;
+  close: () => void;
+  setSaving: (value: boolean) => void;
+  setError: (message: string) => void;
 } | null>(null);
 const addFeatureImageDialogRef = ref<{
   open: () => void;
@@ -158,7 +228,111 @@ const featureVisibilityControlsRef = ref<InstanceType<typeof FeatureVisibilityCo
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
+function selectFeature(id: string | null) {
+  selectedFeatureId.value = id;
+}
 const features = ref<Feature[]>([]);
+const selectedFeatureId = ref<string | null>(null);
+const copiedFeature = ref<Feature | null>(null);
+const sidebarWidth = ref(350);
+let sidebarResizeStartX = 0;
+let sidebarResizeStartWidth = 0;
+let isResizingSidebar = false;
+let previousBodyCursor = "";
+let previousBodyUserSelect = "";
+
+function resizeSidebarBy(delta: number) {
+  const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
+  sidebarWidth.value = Math.max(240, Math.min(maxWidth, sidebarWidth.value + delta));
+}
+
+function onSidebarResizeMove(event: MouseEvent) {
+  const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
+  sidebarWidth.value = Math.max(
+    240,
+    Math.min(maxWidth, sidebarResizeStartWidth + event.clientX - sidebarResizeStartX),
+  );
+}
+
+function copySelectedFeature(): boolean {
+  const feature = features.value.find(
+    (item: Feature) => String(item.id) === selectedFeatureId.value,
+  );
+  if (!isCopyableFeature(feature)) {
+    return false;
+  }
+
+  copiedFeature.value = feature;
+  const label =
+    feature.properties?.labelText || feature.properties?.name || feature.name;
+  if (label && navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(label).catch((error: unknown) => {
+      console.error("Could not copy feature label to clipboard:", error);
+      if (isTextFeature(feature)) {
+        showAlert(
+          "error",
+          "Le texte est copié dans Atlas, mais pas dans le presse-papiers système.",
+        );
+      }
+    });
+  } else if (isTextFeature(feature)) {
+    showAlert(
+      "error",
+      "Le navigateur ne permet pas de copier le texte dans le presse-papiers système.",
+    );
+  }
+  return true;
+}
+
+function pasteCopiedFeature() {
+  const source = copiedFeature.value;
+  const map = leafletMap.value;
+  if (!source || !map || !source.geometry) return;
+
+  const selectedFeature = features.value.find(
+    (item: Feature) => String(item.id) === selectedFeatureId.value,
+  );
+  const refGeometry =
+    (selectedFeature && isCopyableFeature(selectedFeature) && selectedFeature.geometry) ||
+    source.geometry;
+  const anchor = getGeometryAnchor(refGeometry);
+  if (!anchor) return;
+
+  const [lng, lat] = anchor;
+  const screenPosition = map
+    .latLngToContainerPoint(L.latLng(lat, lng))
+    .add(L.point(24, -24));
+  const pastedPosition = map.containerPointToLatLng(screenPosition);
+  const deltaLat = pastedPosition.lat - lat;
+  const deltaLng = pastedPosition.lng - lng;
+
+  const pastedFeature = cloneFeatureWithOffset(source, deltaLng, deltaLat);
+
+  commitFeatureSnapshot([...features.value, pastedFeature]);
+  selectedFeatureId.value = pastedFeature.id;
+}
+
+function stopSidebarResize() {
+  window.removeEventListener("mousemove", onSidebarResizeMove);
+  window.removeEventListener("mouseup", stopSidebarResize);
+  if (isResizingSidebar) {
+    document.body.style.cursor = previousBodyCursor;
+    document.body.style.userSelect = previousBodyUserSelect;
+    isResizingSidebar = false;
+  }
+}
+
+function startSidebarResize(event: MouseEvent) {
+  sidebarResizeStartX = event.clientX;
+  sidebarResizeStartWidth = sidebarWidth.value;
+  previousBodyCursor = document.body.style.cursor;
+  previousBodyUserSelect = document.body.style.userSelect;
+  isResizingSidebar = true;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  window.addEventListener("mousemove", onSidebarResizeMove);
+  window.addEventListener("mouseup", stopSidebarResize);
+}
 const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
@@ -168,38 +342,49 @@ const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
+const {
+  customLabelStyles,
+  loadCustomLabelStyles: fetchCustomLabelStyles,
+  saveCustomLabelStyles: persistCustomLabelStyles,
+} = useProjectLabelStyles();
 
 const zoneFeatures = computed(() =>
-  filteredFeatures.value.filter((f) => f.properties?.mapElementType === "zone"),
+  filteredFeatures.value.filter((f: Feature) => f.properties?.mapElementType === "zone"),
 );
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
-const useTimelineFilter = ref(false);
+const useTimelineFilter = ref(true);
 
-const enrichedPeriods = computed((): SliderPeriod[] =>
-  mapPeriods.value
-    .map((p) => ({
-      ...p,
-      startYear: toYear(p.startDate),
-      endYear: toYear(p.endDate),
-    }))
-    .filter((p): p is SliderPeriod => p.startYear != null && p.endYear != null),
-);
+const enrichedPeriods = computed<SliderPeriod[]>(() => {
+  const periods: SliderPeriod[] = [];
+  for (const p of mapPeriods.value) {
+    const startYear = toYear(p.startDate);
+    const endYear = toYear(p.endDate);
+    if (startYear != null && endYear != null) {
+      periods.push({
+        ...p,
+        startYear,
+        endYear,
+      });
+    }
+  }
+  return periods;
+});
 
 const periodByMapId = computed(
-  () => new Map(enrichedPeriods.value.map((p) => [p.id, p])),
+  () => new Map(enrichedPeriods.value.map((p: SliderPeriod) => [p.id, p])),
 );
 
 const timelineMinYear = computed(() =>
   enrichedPeriods.value.length
-    ? Math.min(...enrichedPeriods.value.map((p) => p.startYear))
+    ? Math.min(...enrichedPeriods.value.map((p: SliderPeriod) => p.startYear))
     : 1400,
 );
 
 const timelineMaxYear = computed(() =>
   enrichedPeriods.value.length
-    ? Math.max(...enrichedPeriods.value.map((p) => p.endYear))
+    ? Math.max(...enrichedPeriods.value.map((p: SliderPeriod) => p.endYear))
     : new Date().getFullYear(),
 );
 
@@ -208,12 +393,25 @@ const timelineMarkerYears = computed(() => {
     timelineMinYear.value,
     timelineMaxYear.value,
   ]);
-  enrichedPeriods.value.forEach((p) => {
+  enrichedPeriods.value.forEach((p: SliderPeriod) => {
     markers.add(p.startYear);
     markers.add(p.endYear);
   });
   return [...markers].sort((a, b) => a - b);
 });
+
+const periodStartYears = computed(
+  () => new Set(enrichedPeriods.value.map((p: SliderPeriod) => p.startYear)),
+);
+
+const periodStartDates = computed(
+  () =>
+    new Set(
+      enrichedPeriods.value
+        .map((p: SliderPeriod) => p.startDate)
+        .filter((date: string | null): date is string => Boolean(date)),
+    ),
+);
 
 const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
@@ -226,16 +424,20 @@ const filteredFeatures = computed(() => {
     if (!period) return true;
 
     if (selectedExactDate.value && period.startDate && period.endDate) {
-      return (
-        period.startDate <= selectedExactDate.value &&
-        period.endDate >= selectedExactDate.value
+      return isPeriodActiveAt(
+        period.startDate,
+        period.endDate,
+        selectedExactDate.value,
+        periodStartDates.value,
       );
     }
 
     if (period.startYear == null || period.endYear == null) return true;
-    return (
-      period.startYear <= selectedYear.value &&
-      period.endYear >= selectedYear.value
+    return isPeriodActiveAt(
+      period.startYear,
+      period.endYear,
+      selectedYear.value,
+      periodStartYears.value,
     );
   });
 });
@@ -243,10 +445,17 @@ const filteredFeatures = computed(() => {
 const combinedFeatureVisibility = computed(() => {
   const combined = new Map<string, boolean>();
   
-  const visibleByTimeline = new Set(filteredFeatures.value.map(f => String(f.id)));
+  const visibleByTimeline = new Set(filteredFeatures.value.map((f: Feature) => String(f.id)));
   
-  features.value.forEach((feature) => {
+  features.value.forEach((feature: Feature) => {
     const id = String(feature.id);
+
+    // Hide unvalidated or rejected OCR texts from the map
+    if (!isVisibleInMainLayers(feature)) {
+      combined.set(id, false);
+      return;
+    }
+
     const explicitlyVisible = featureVisibility.value.get(id) ?? true;
     const isTimelineVisible = visibleByTimeline.has(id);
     
@@ -286,11 +495,11 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
     reconcileVisibility(next);
 
     const currentUuidIds = new Set(
-      next.map((feature) => String(feature.id)).filter((id) => isUuid(id)),
+      next.map((feature: Feature) => String(feature.id)).filter((id: string) => isUuid(id)),
     );
 
     pendingDeletions.value = [...persistedFeatureIds.value].filter(
-      (id) => !currentUuidIds.has(id),
+      (id: string) => !currentUuidIds.has(id),
     );
   };
 
@@ -302,8 +511,8 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
   featureHistoryService.withoutTracking(apply);
 }
 
-function commitFeatureSnapshot(next: Feature[]) {
-  applyFeatureSnapshot(featureHistoryService.commit(features.value, next));
+function commitFeatureSnapshot(next: Feature[], label?: string) {
+  applyFeatureSnapshot(featureHistoryService.commit(features.value, next, label));
 }
 
 function resetMapSelection() {
@@ -413,52 +622,21 @@ async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
   const uploadProjectId = resolvedProjectId ?? projectId.value;
   if (!uploadProjectId) return false;
 
-  await new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  );
+  const blob = await captureMapThumbnail(leafletMap.value as LeafletMap);
+  if (!blob) return false;
 
-  const mapToCapture = leafletMap.value as LeafletMap;
-  const originalEachLayer = mapToCapture.eachLayer;
+  const formData = new FormData();
+  formData.append("image", blob);
 
-  // Temporarily override eachLayer to hide DivIcon markers from leafletImage
-  // This avoids mutating Leaflet's internal layer states which causes zoom crashes 
-  // when combined with asynchronous Vue state updates and layer re-rendering.
-  mapToCapture.eachLayer = function (this: LeafletMap, fn: (layer: L.Layer) => void, context?: any) {
-    return originalEachLayer.call(this, (layer: L.Layer) => {
-      if (layer instanceof L.Marker && layer.options.icon instanceof L.DivIcon) {
-        return;
-      }
-      fn.call(context, layer);
-    }, context);
-  } as any;
-
-  return await new Promise<boolean>((resolve) => {
-    leafletImage(mapToCapture, async (err, canvas) => {
-      try {
-        if (err || !canvas) return resolve(false);
-
-        const blob = await new Promise<Blob | null>((r) =>
-          canvas.toBlob(r, "image/png"),
-        );
-        if (!blob) return resolve(false);
-
-        const formData = new FormData();
-        formData.append("image", blob);
-
-        const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!res.ok) {
-          console.error("Project thumbnail upload failed:", res.status);
-        }
-        resolve(res.ok);
-      } finally {
-        mapToCapture.eachLayer = originalEachLayer;
-      }
-    });
+  const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
+    method: "POST",
+    body: formData,
   });
+
+  if (!res.ok) {
+    console.error("Project thumbnail upload failed:", res.status);
+  }
+  return res.ok;
 }
 
 async function loadProjectIdForMap(): Promise<boolean> {
@@ -501,6 +679,60 @@ async function loadProjectMapsForTimeline() {
   }
 }
 
+async function loadCustomLabelStyles() {
+  await fetchCustomLabelStyles(projectId.value);
+}
+
+async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  try {
+    if (isSaving.value) {
+      throw new Error("Cannot update label styles while project features are saving");
+    }
+    const targetProjectId = await requireProjectId();
+    await persistCustomLabelStyles(targetProjectId, styles);
+
+    const effectiveStyles =
+      Array.isArray(customLabelStyles.value) && customLabelStyles.value.length > 0
+        ? customLabelStyles.value
+        : styles;
+    const stylesById = new Map<string, CustomLabelStyle>(
+      effectiveStyles.map((style: CustomLabelStyle): [string, CustomLabelStyle] => [
+        style.id,
+        style,
+      ]),
+    );
+    const nextFeatures = features.value.map((feature: Feature) => {
+      const styleId = feature.properties.customLabelStyleId;
+      if (typeof styleId !== "string") return feature;
+      const style = stylesById.get(styleId);
+      if (!style) return removeCustomLabelStyleFromFeature(feature);
+      return applyCustomLabelStyleToFeature(
+        feature,
+        style,
+        normalizeWordType(
+          feature.properties.customLabelStyleFallbackWordType,
+        ),
+        feature.properties.name,
+        feature.properties.labelText ?? feature.properties.name,
+      );
+    });
+    const changed = nextFeatures.some(
+      (feature: Feature, index: number) => feature !== features.value[index],
+    );
+    if (changed) {
+      features.value = nextFeatures;
+      await onSaveMap(nextFeatures);
+    }
+    // persistCustomLabelStyles already confirmed the save to the user.
+  } catch (error) {
+    console.error("Failed to save project label styles:", error);
+    showAlert(
+      "error",
+      "Impossible d'enregistrer les styles. Vérifiez que vous êtes propriétaire du projet.",
+    );
+  }
+}
+
 async function onDeleteFeature(
   featureId: string,
   callbacks?: {
@@ -510,7 +742,7 @@ async function onDeleteFeature(
 ) {
   try {
     const nextFeatures = features.value.filter(
-      (feature) => feature.id !== featureId,
+      (feature: Feature) => feature.id !== featureId,
     );
 
     if (trackingEnabled.value) {
@@ -548,7 +780,7 @@ async function onDeleteMap(
     }
 
     const nextFeatures = features.value.filter(
-      (feature) => feature.mapId !== mapId,
+      (feature: Feature) => feature.mapId !== mapId,
     );
 
     if (trackingEnabled.value) {
@@ -567,22 +799,126 @@ async function onDeleteMap(
 }
 
 async function onUpdateFeature(
-  updatedFeature: Feature,
+  updatedFeature: Feature | Feature[],
   callbacks?: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
   },
 ) {
   try {
-    const nextFeatures = upsertFeature(features.value, updatedFeature);
-    features.value = nextFeatures;
-    reconcileVisibility(nextFeatures);
-
+    const list = Array.isArray(updatedFeature) ? updatedFeature : [updatedFeature];
+    let nextFeatures = features.value;
+    for (const f of list) {
+      nextFeatures = upsertFeature(nextFeatures, f);
+    }
+    const label =
+      list.length === 1
+        ? `Modification de ${list[0].name || "l'élément"}`
+        : `Modification de ${list.length} éléments`;
+    commitFeatureSnapshot(nextFeatures, label);
     await onSaveMap(nextFeatures);
     callbacks?.onSuccess?.();
   } catch (error) {
     console.error("Failed to update feature:", error);
     callbacks?.onError?.("Erreur lors de la mise à jour de l'élément.");
+  }
+}
+
+const showTextValidationModal = ref(false);
+const isSavingTextValidation = ref(false);
+const activeValidationMapId = ref<string | null>(null);
+const validationMapTitle = computed(() => {
+  if (!activeValidationMapId.value) return "Éléments généraux";
+  const mapIdStr = String(activeValidationMapId.value).trim().toLowerCase();
+  const period = mapPeriods.value.find(
+    (p: MapPeriod) => String(p.id).trim().toLowerCase() === mapIdStr,
+  );
+  if (period?.title) return period.title;
+
+  const matchingFeature = features.value.find(
+    (f: Feature) =>
+      String(f.mapId || (f as any).map_id || "").trim().toLowerCase() === mapIdStr &&
+      Boolean((f as any).mapTitle || (f.properties as any)?.mapTitle),
+  );
+  const customTitle =
+    (matchingFeature as any)?.mapTitle ||
+    (matchingFeature?.properties as any)?.mapTitle;
+  if (customTitle) return customTitle;
+
+  return "Éléments généraux";
+});
+const validationImageUrl = ref<string | null>(null);
+const textValidationEntries = ref<TextValidationEntry[]>([]);
+
+function onOpenTextValidation(mapId: string | null) {
+  activeValidationMapId.value = mapId;
+
+  // 1. Check in-memory cache from recent import session
+  let img = getOriginalMapImage(mapId);
+
+  // 2. If not found, look for an image feature belonging to this map in the project
+  if (!img) {
+    const imageFeature = features.value.find(
+      (f: Feature) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
+    );
+    const rawImage = imageFeature?.image || imageFeature?.properties?.image;
+    if (rawImage) {
+      img = toImageSrc(rawImage);
+    }
+  }
+
+  validationImageUrl.value = img;
+
+  const targetFeatures = features.value.filter((f: Feature) => isUnrecognizedTextFeature(f, mapId));
+
+  if (targetFeatures.length === 0) {
+    showAlert("error", "Aucun texte non reconnu trouvé pour cette carte.");
+    return;
+  }
+
+  textValidationEntries.value = targetFeatures.map((f: Feature) =>
+    featureToValidationEntry(f, featureVisibility.value.get(f.id) !== false),
+  );
+
+  showTextValidationModal.value = true;
+}
+
+async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
+  isSavingTextValidation.value = true;
+  try {
+    const validatedMap = new Map<string, TextValidationEntry>(
+      validatedItems.map((i): [string, TextValidationEntry] => [i.id, i]),
+    );
+    const openedIds = new Set<string>(
+      textValidationEntries.value.map((i: TextValidationEntry) => i.id),
+    );
+
+    for (const id of openedIds) {
+      if (!validatedMap.has(id)) {
+        featureVisibility.value.delete(id);
+      }
+    }
+
+    const nextFeatures = features.value
+      .filter((f: Feature) => !(openedIds.has(f.id) && !validatedMap.has(f.id)))
+      .map((f: Feature) => {
+        const validated = validatedMap.get(f.id);
+        if (!validated) return f;
+
+        featureVisibility.value.set(f.id, validated.selected);
+        return applyValidationToFeature(f, validated);
+      });
+
+    featureVisibility.value = new Map(featureVisibility.value);
+    commitFeatureSnapshot(nextFeatures, "Validation des textes");
+    await onSaveMap(nextFeatures);
+    showTextValidationModal.value = false;
+    showAlert("success", "Textes validés et enregistrés sur la carte.");
+  } catch (err) {
+    console.error("Failed to save validated texts:", err);
+    showAlert("error", "Erreur lors de l'enregistrement de la validation des textes.");
+  } finally {
+    isSavingTextValidation.value = false;
   }
 }
 
@@ -605,6 +941,58 @@ async function requireProjectId(): Promise<string> {
 
 function openAddMapDialog() {
   addMapDialogRef.value?.open();
+}
+
+function openEditMapDialog(mapId: string) {
+  const period = mapPeriods.value.find((item: MapPeriod) => item.id === mapId);
+  if (!period) {
+    showAlert("error", "Impossible de trouver la carte à modifier.");
+    return;
+  }
+  editMapPeriodDialogRef.value?.open(period);
+}
+
+async function saveMapPeriod(payload: {
+  mapId: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
+  editMapPeriodDialogRef.value?.setSaving(true);
+  editMapPeriodDialogRef.value?.setError("");
+  try {
+    const targetProjectId = await requireProjectId();
+    const response = await apiFetch(
+      `/projects/${targetProjectId}/maps/${payload.mapId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          camelToSnake({
+            title: payload.title,
+            startDate: payload.startDate,
+            endDate: payload.endDate,
+            exactDate: payload.exactDate,
+          }),
+        ),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Error updating map metadata: ${response.status}`);
+    }
+    await loadProjectMapsForTimeline();
+    editMapPeriodDialogRef.value?.close();
+    showAlert("success", "Nom et période de la carte mis à jour.");
+  } catch (error) {
+    console.error("Failed to update map metadata:", error);
+    editMapPeriodDialogRef.value?.setError(
+      "Erreur lors de l'enregistrement du nom et de la période.",
+    );
+    showAlert("error", "Erreur lors de la mise à jour de la carte.");
+  } finally {
+    editMapPeriodDialogRef.value?.setSaving(false);
+  }
 }
 
 async function createMapForProject(formPayload: {
@@ -698,6 +1086,37 @@ async function frameVisibleFeatures() {
   // Let MapGeoJSON render the freshly loaded features first
   await nextTick();
   mapGeoJsonRef.value?.fitToVisibleFeatures();
+}
+
+// Coming back from an import (?carte=<mapId>): moves the timeline onto the map
+// that was just extracted and frames it, rather than the whole project.
+async function frameImportedMap(): Promise<boolean> {
+  const importedMapId = route.query[IMPORTED_MAP_QUERY];
+  if (typeof importedMapId !== "string" || !importedMapId) return false;
+
+  const period = periodByMapId.value.get(importedMapId);
+  if (period) selectedYear.value = period.startYear;
+
+  const importedFeatureIds = new Set<string>(
+    features.value
+      .filter((feature: Feature) => feature.mapId === importedMapId)
+      .map((feature: Feature) => String(feature.id)),
+  );
+
+  // The marker is single-use: a reload should open on the whole project again.
+  const { [IMPORTED_MAP_QUERY]: _consumed, ...query } = route.query;
+  void _consumed;
+  await router.replace({ query });
+
+  if (importedFeatureIds.size === 0) return false;
+  await nextTick();
+  mapGeoJsonRef.value?.fitToVisibleFeatures(importedFeatureIds);
+  return true;
+}
+
+async function frameOpenedProject() {
+  if (await frameImportedMap()) return;
+  await frameVisibleFeatures();
 }
 
 async function loadCurrentMapInfo(): Promise<void> {
@@ -864,12 +1283,38 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
 }
 
 const handleKeyboardShortcuts = (e: KeyboardEvent) => {
-  if (isEditableTarget(e.target)) {
+  if (
+    showTextValidationModal.value ||
+    document.querySelector("dialog[open]") ||
+    isEditableTarget(e.target)
+  ) {
     return;
   }
 
   const isMod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
+
+  if (isMod && key === "c" && copySelectedFeature()) {
+    e.preventDefault();
+    return;
+  }
+
+  if (isMod && key === "v" && copiedFeature.value) {
+    e.preventDefault();
+    pasteCopiedFeature();
+    return;
+  }
+
+  if (key === "delete" && selectedFeatureId.value) {
+    const selectedFeature = features.value.find(
+      (feature: Feature) => String(feature.id) === selectedFeatureId.value,
+    );
+    if (selectedFeature) {
+      e.preventDefault();
+      featureVisibilityControlsRef.value?.showDeleteFeatureDialog(selectedFeature);
+    }
+    return;
+  }
 
   if (isMod && key === "s") {
     e.preventDefault();
@@ -889,13 +1334,36 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
   }
 };
 
+function onDocumentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement | null;
+  if (!target || typeof target.closest !== "function") {
+    if (selectedFeatureId.value) {
+      selectedFeatureId.value = null;
+    }
+    return;
+  }
+  if (
+    target.closest(".leaflet-container") ||
+    target.closest(".city-label-text") ||
+    target.closest("[data-testid='feature-visibility-controls']") ||
+    target.closest(".modal") ||
+    target.closest("dialog")
+  ) {
+    return;
+  }
+  if (selectedFeatureId.value) {
+    selectedFeatureId.value = null;
+  }
+}
+
 onMounted(async () => {
   await fetchCurrentUser();
   await resolveRouteContext();
   await loadProjectMapsForTimeline();
+  await loadCustomLabelStyles();
   await loadCurrentMapInfo();
   await loadInitialFeatures();
-  await frameVisibleFeatures();
+  await frameOpenedProject();
 
   if (projectId.value) {
     const pendingEditsStr = localStorage.getItem(`pending_public_edits_${projectId.value}`);
@@ -919,10 +1387,13 @@ onMounted(async () => {
       }
     }
 
-    await uploadMapThumbnail();
   }
 
   window.addEventListener("keydown", handleKeyboardShortcuts);
+  window.addEventListener("click", onDocumentClick);
+
+  // Not awaited: the shortcuts above must not wait for the tiles to load.
+  if (projectId.value) void uploadMapThumbnail();
 });
 
 watch([projectRouteId], async () => {
@@ -943,7 +1414,7 @@ watch([timelineMinYear, timelineMaxYear], () => {
 
 watch(
   timelineMarkerYears,
-  (markers) => {
+  (markers: number[]) => {
     if (!markers.length) return;
     if (!markers.includes(selectedYear.value)) {
       selectedYear.value = markers[0];
@@ -954,7 +1425,7 @@ watch(
 
 watch(
   () => route.params.mapId,
-  async (newMapId, oldMapId) => {
+  async (newMapId: string | string[] | undefined, oldMapId: string | string[] | undefined) => {
     if (!newMapId || newMapId === oldMapId) return;
 
     featureVisibility.value = new Map();
@@ -971,6 +1442,8 @@ watch(
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyboardShortcuts);
+  window.removeEventListener("click", onDocumentClick);
+  stopSidebarResize();
   clearAlert();
 });
 
@@ -1055,7 +1528,7 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
     const featuresToSave = (
       featuresOverride ?? syncedFeatures ?? features.value
-    ).map((feature) => ({
+    ).map((feature: Feature) => ({
       ...feature,
       properties: {
         ...feature.properties,
@@ -1096,7 +1569,7 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       featuresToSave,
       pendingDeletions.value,
     );
-    showAlert("success", "Projet sauvegardée avec succès !");
+    showAlert("success", "Projet sauvegardé avec succès !");
   } catch (err) {
     showAlert("error", "Erreur lors de la sauvegarde des éléments.");
     throw new Error(
@@ -1108,48 +1581,3 @@ async function onSaveMap(featuresOverride?: Feature[]) {
 }
 </script>
 
-<style>
-.timeline-filter-toggle {
-  appearance: none;
-  width: 2.25rem;
-  height: 1.25rem;
-  border-radius: 9999px;
-  border: 1px solid var(--color-base-300);
-  background-color: var(--color-base-300);
-  position: relative;
-  cursor: pointer;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease;
-}
-
-.timeline-filter-toggle::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 9999px;
-  background-color: var(--color-primary-content);
-  transform: translate(0, -50%);
-  transition:
-    transform 150ms ease,
-    background-color 150ms ease;
-}
-
-.timeline-filter-toggle:checked {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.timeline-filter-toggle:checked::before {
-  background-color: var(--color-primary-content);
-  transform: translate(1rem, -50%);
-}
-
-.timeline-filter-toggle:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-</style>

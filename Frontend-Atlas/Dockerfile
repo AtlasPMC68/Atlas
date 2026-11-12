@@ -1,5 +1,5 @@
 # Development stage for Vite Frontend Application
-FROM node:20.20.2-alpine AS development
+FROM node:24-alpine AS development
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host", "--port", "5173"]
 
 # Build stage: VITE_* values are baked into the bundle at build time
-FROM node:20.20.2-alpine AS build
+FROM node:24-alpine AS build
 
 WORKDIR /app
 
@@ -28,6 +28,9 @@ ARG VITE_KEYCLOAK_REALM
 ARG VITE_KEYCLOAK_CLIENT_ID
 ARG VITE_CARTO_API_KEY
 ARG VITE_ENABLE_DEV_TOOLS=false
+
+# src/ imports ../../../shared/word-taxonomy.json, i.e. /shared from /app
+COPY --from=shared . /shared
 
 # Type check + build: a type error fails the image build
 RUN npm run build

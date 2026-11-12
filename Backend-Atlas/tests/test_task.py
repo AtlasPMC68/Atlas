@@ -70,13 +70,12 @@ QUEBEC = {
     "name": "Québec",
     "lat": 46.8,
     "lon": -71.2,
-    "country": "CA",
     "population": 528595,
 }
 
 
-def _match_city(text, frame_bounds=None):
-    if "quebec" in text.lower():
+def _match_city(text, frame_bounds=None, **kwargs):
+    if text.strip().lower() == "quebec":
         return QUEBEC
     return None
 
@@ -134,18 +133,34 @@ def claimed_frame():
 
 
 def test_unknown_words_are_kept_hidden():
-    from app.tasks import _city_features_from_text
+    from app.tasks import _categorized_text_features_from_ocr
 
     blocks = [[[[0, 0], [9, 0], [9, 9], [0, 9]], "Quebec Nowhere", 0.9]]
     with patch("app.tasks.match_ocr_label", side_effect=_match_city):
-        features = [
-            c["features"][0] for c in _city_features_from_text(blocks, None, claimed_frame())
-        ]
+        features = [c["features"][0] for c in _categorized_text_features_from_ocr(blocks, None, claimed_frame())]
 
+    # Recognized city is visible (show=True), unknown words are categorized as unrecognized and kept hidden (show=False)
     assert [(f["properties"]["name"], f["properties"]["show"]) for f in features] == [
-        ("Québec", True),
+        ("Quebec Nowhere", False),
+    ]
+
+
+def test_categorized_text_recognized_and_unrecognized_separation():
+    from app.tasks import _categorized_text_features_from_ocr
+
+    blocks = [
+        [[[0, 0], [9, 0], [9, 9], [0, 9]], "Quebec", 0.9],
+        [[[10, 10], [19, 10], [19, 19], [10, 19]], "Nowhere", 0.8],
+    ]
+    with patch("app.tasks.match_ocr_label", side_effect=_match_city):
+        features = [c["features"][0] for c in _categorized_text_features_from_ocr(blocks, None, claimed_frame())]
+
+    assert [(f["properties"]["name"], f["properties"]["show"], f["properties"]["recognized"]) for f in features] == [
+        ("Québec", True, True),
+        ("Nowhere", False, False),
     ]
     assert features[0]["geometry"]["coordinates"] == [-71.2, 46.8]
+    assert features[1]["geometry"]["coordinates"] == [0.0, 0.0]
 
 
 def test_extraction_uses_the_stored_inputs_and_saves_once():
@@ -176,7 +191,8 @@ def test_extraction_uses_the_stored_inputs_and_saves_once():
     assert [c.kwargs.get("clean", True) for c in georeference.call_args_list] == [False, True]
 
     # Text: looked up among the cities of the frame only.
-    mocks["city"].assert_called_once_with("Quebec", claimed_frame())
+    mocks["city"].assert_called_once()
+    assert mocks["city"].call_args[0] == ("Quebec", claimed_frame())
 
     # One save, carrying the georef inputs with the legend answer.
     mocks["save"].assert_awaited_once()
