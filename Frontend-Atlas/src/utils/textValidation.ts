@@ -21,6 +21,16 @@ import {
 } from "./featureValidationState";
 export { ValidationStatus };
 
+/** Corners of a detected text, in pixels of the image it was read from. */
+export type TextQuad = [number, number][];
+
+/** A detected text located on the reference image. */
+export interface TextRegion {
+  id: string;
+  label: string;
+  quad: TextQuad;
+}
+
 export interface TextValidationEntry {
   id: string;
   text: string;
@@ -35,6 +45,36 @@ export interface TextValidationEntry {
   labelStyleSelection?: string;
   customLabelStyleId?: string | null;
   customLabelStyle?: CustomLabelStyle | null;
+  /** Where the OCR read this text on the imported image, when known. */
+  quad?: TextQuad;
+}
+
+/** The OCR quad stored on a feature, or undefined when it is missing or malformed. */
+export function parseTextQuad(value: unknown): TextQuad | undefined {
+  if (!Array.isArray(value) || value.length < 3) return undefined;
+  const quad: TextQuad = [];
+  for (const point of value) {
+    if (!Array.isArray(point) || point.length < 2) return undefined;
+    const x = Number(point[0]);
+    const y = Number(point[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+    quad.push([x, y]);
+  }
+  return quad;
+}
+
+/** The entries that can be framed on the reference image. */
+export function toTextRegions(entries: TextValidationEntry[]): TextRegion[] {
+  const regions: TextRegion[] = [];
+  for (const entry of entries) {
+    if (!entry.quad) continue;
+    regions.push({
+      id: entry.id,
+      label: entry.originalText || entry.text,
+      quad: entry.quad,
+    });
+  }
+  return regions;
 }
 
 /**
@@ -102,6 +142,7 @@ export function featureToValidationEntry(
       : wordType,
     customLabelStyleId: feature.properties?.customLabelStyleId,
     customLabelStyle: feature.properties?.customLabelStyle,
+    quad: parseTextQuad(feature.properties?.quad),
   };
 }
 

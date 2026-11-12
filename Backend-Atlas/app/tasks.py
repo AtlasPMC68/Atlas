@@ -354,6 +354,9 @@ def _make_text_feature(
         "mapElementType": "point",
         "color_name": "black",
         "color_rgb": [0, 0, 0],
+        # The point's outline is opaque from the start, so the value shown in
+        # the edit dialog is the stored one rather than a display default.
+        "stroke_opacity": 1,
         "isOcrText": True,
         "recognized": recognized,
         "confidence": confidence,

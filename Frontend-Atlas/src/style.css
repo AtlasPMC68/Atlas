@@ -329,6 +329,26 @@
   white-space: nowrap;
 }
 
+.tick-label-button {
+  padding: 0 0.15rem;
+  line-height: 1rem;
+  border-radius: 0.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tick-label-button:hover,
+.tick-label-button:focus-visible {
+  color: var(--color-primary);
+  background: #eff6ff;
+  outline: none;
+}
+
+.tick-label-active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
 .period-tracks {
   position: relative;
   margin-bottom: 0.4rem;

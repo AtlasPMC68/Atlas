@@ -35,3 +35,26 @@ export function yearToIsoStart(year: number): string {
 export function yearToIsoEnd(year: number): string {
   return `${String(year).padStart(4, "0")}-12-31`;
 }
+
+/**
+ * Whether the period from `start` to `end` is the one shown at `value`.
+ *
+ * Periods are read as [start, end[ where they meet: when one map ends the year
+ * (or day) another begins, that shared bound belongs to the map that begins, so
+ * the two are never drawn on top of each other. A bound nothing else starts on
+ * stays inclusive, otherwise the last map would vanish at the end of the
+ * timeline, and so would a map covering a single year.
+ *
+ * `periodStarts` holds the start of every period on the timeline, in the same
+ * unit as the other arguments (years, or ISO dates, which sort as strings).
+ */
+export function isPeriodActiveAt<T extends number | string>(
+  start: T,
+  end: T,
+  value: T,
+  periodStarts: ReadonlySet<T>,
+): boolean {
+  if (value < start || value > end) return false;
+  if (value < end || start === end) return true;
+  return !periodStarts.has(end);
+}

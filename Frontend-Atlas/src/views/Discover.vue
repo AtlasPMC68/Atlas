@@ -130,8 +130,14 @@ async function fetchProjectsAndRender() {
         :to="`/projet/${map.id}`"
         class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
-        <figure>
-          <img :src="toImageSrc(map.image)" class="w-full h-full" />
+        <!-- Fixed ratio: thumbnails are captured at whatever size the map had -->
+        <figure class="aspect-video bg-base-200">
+          <img
+            :src="toImageSrc(map.image)"
+            :alt="`Aperçu de ${map.title}`"
+            class="w-full h-full object-cover"
+            loading="lazy"
+          />
         </figure>
         <div class="card-body pb-0">
           <h2 class="card-title text-sm xl:text-lg">

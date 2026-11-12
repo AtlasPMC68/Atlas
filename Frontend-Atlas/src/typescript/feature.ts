@@ -64,6 +64,10 @@ export interface FeatureProperties {
   rawType?: string;
   colorName?: string;
   colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
+  // Label text colour, when it differs from colorRgb (the point symbol's fill).
+  textColorRgb?: [number, number, number];
+  // Label size override; the word type's (or custom style's) size applies without it.
+  textSizePx?: number;
   strokeColor?: [number, number, number];
   fillOpacity?: number;
   strokeOpacity?: number;

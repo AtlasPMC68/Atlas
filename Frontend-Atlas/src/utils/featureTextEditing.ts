@@ -1,5 +1,5 @@
 import type { Feature } from "../typescript/feature";
-import type { CustomLabelStyle } from "./labelPresentation";
+import { normalizeTextSizePx, type CustomLabelStyle } from "./labelPresentation";
 import { getFeatureMapId, getMapElementType } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {
@@ -21,6 +21,10 @@ export interface FeatureEditSubmitPayload {
   labelText?: string;
   wordType: WordType;
   colorHex?: string;
+  /** Label text colour of a point element, set apart from its symbol's colour. */
+  textColorHex?: string;
+  /** Label size in px; the word type's size when left untouched. */
+  textSizePx?: number;
   strokeColorHex?: string;
   fillOpacity?: number;
   strokeOpacity?: number;
@@ -29,6 +33,31 @@ export interface FeatureEditSubmitPayload {
   customLabelStyleId?: string | null;
   customLabelStyle?: CustomLabelStyle | null;
   selectedMapIds?: string[];
+}
+
+export const MAX_STROKE_WIDTH_PX = 50;
+export const DEFAULT_POINT_STROKE_OPACITY = 1;
+
+/**
+ * An opacity as Leaflet expects it, in [0, 1]. Number inputs hand back strings
+ * and accept anything typed, so the form value is not trusted as is.
+ */
+export function normalizeOpacity(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const opacity = Number(value);
+  if (!Number.isFinite(opacity)) return undefined;
+  return Math.max(0, Math.min(1, opacity));
+}
+
+export function normalizeStrokeWidth(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const width = Number(value);
+  if (!Number.isFinite(width)) return undefined;
+  return Math.max(0, Math.min(MAX_STROKE_WIDTH_PX, width));
+}
+
+export function getDefaultTextSizePx(wordType: string | undefined): number {
+  return WORD_TYPE_TAXONOMY[normalizeWordType(wordType)].sizePx;
 }
 
 export function applyCustomLabelStyleToFeature(
@@ -107,6 +136,9 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
 
   const mapId = getFeatureMapId(feature);
   const initialMapIds = mapId ? [mapId] : [];
+  const colorHex =
+    rgbToHex(feature.properties.colorRgb) ??
+    (elementType === "label" || elementType === "point" ? "#000000" : undefined);
 
   return {
     feature,
@@ -120,15 +152,20 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
         : wordType,
       customLabelStyleId: feature.properties.customLabelStyleId,
       customLabelStyle: feature.properties.customLabelStyle,
-      colorHex:
-        rgbToHex(feature.properties.colorRgb) ??
-        (elementType === "label" || elementType === "point"
-          ? "#000000"
-          : undefined),
+      colorHex,
+      textColorHex: rgbToHex(feature.properties.textColorRgb) ?? colorHex,
+      textSizePx: isText
+        ? normalizeTextSizePx(feature.properties.textSizePx) ??
+          getDefaultTextSizePx(wordType)
+        : undefined,
       strokeColorHex: rgbToHex(feature.properties.strokeColor),
-      fillOpacity: feature.properties.fillOpacity,
-      strokeOpacity: feature.properties.strokeOpacity,
-      strokeWidth: feature.properties.strokeWidth,
+      fillOpacity: normalizeOpacity(feature.properties.fillOpacity),
+      // A point's outline is drawn opaque unless told otherwise; show that
+      // value rather than an empty field.
+      strokeOpacity:
+        normalizeOpacity(feature.properties.strokeOpacity) ??
+        (elementType === "point" ? DEFAULT_POINT_STROKE_OPACITY : undefined),
+      strokeWidth: normalizeStrokeWidth(feature.properties.strokeWidth),
     },
   };
 }
@@ -153,9 +190,9 @@ export function coerceEditedFeature(
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),
         strokeColor: hexToRgb(payload.strokeColorHex),
-        fillOpacity: payload.fillOpacity,
-        strokeOpacity: payload.strokeOpacity,
-        strokeWidth: payload.strokeWidth,
+        fillOpacity: normalizeOpacity(payload.fillOpacity),
+        strokeOpacity: normalizeOpacity(payload.strokeOpacity),
+        strokeWidth: normalizeStrokeWidth(payload.strokeWidth),
       },
     };
   }
@@ -184,6 +221,19 @@ export function coerceEditedFeature(
     };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
+  // A label has no symbol, so its one colour is the text colour. A point keeps
+  // a text colour only when it differs from the symbol's.
+  const textColorHex =
+    !isLabel && payload.textColorHex && payload.textColorHex !== payload.colorHex
+      ? payload.textColorHex
+      : undefined;
+  // Only a size the user moved away from the word type's is stored, so the
+  // element keeps following its type otherwise.
+  const textSizePx = normalizeTextSizePx(payload.textSizePx);
+  const customTextSizePx =
+    textSizePx !== undefined && textSizePx !== getDefaultTextSizePx(payload.wordType)
+      ? textSizePx
+      : undefined;
 
   return {
     ...styledFeature,
@@ -195,10 +245,12 @@ export function coerceEditedFeature(
       customLabelStyle: null,
       custom_label_style_id: null,
       colorRgb: hexToRgb(payload.colorHex),
+      textColorRgb: hexToRgb(textColorHex),
+      textSizePx: customTextSizePx,
       strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),
-      fillOpacity: isLabel ? undefined : payload.fillOpacity,
-      strokeOpacity: isLabel ? undefined : payload.strokeOpacity,
-      strokeWidth: isLabel ? undefined : payload.strokeWidth,
+      fillOpacity: isLabel ? undefined : normalizeOpacity(payload.fillOpacity),
+      strokeOpacity: isLabel ? undefined : normalizeOpacity(payload.strokeOpacity),
+      strokeWidth: isLabel ? undefined : normalizeStrokeWidth(payload.strokeWidth),
     },
   };
 }
@@ -252,6 +304,7 @@ export function createFeaturesForSelectedMaps(
 export function getWordTypePreviewStyle(
   wordType: string,
   colorHex?: string,
+  sizePx?: number,
 ): {
   fontStyle?: "normal" | "italic";
   textTransform?: "uppercase";
@@ -264,6 +317,6 @@ export function getWordTypePreviewStyle(
     textTransform:
       taxonomy.textTransform === "uppercase" ? "uppercase" : undefined,
     color: colorHex || undefined,
-    fontSize: `${taxonomy.sizePx}px`,
+    fontSize: `${sizePx ?? taxonomy.sizePx}px`,
   };
 }

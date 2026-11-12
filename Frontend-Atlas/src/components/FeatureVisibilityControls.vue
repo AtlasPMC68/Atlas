@@ -45,24 +45,19 @@
         <!-- Validate extracted texts button -->
         <div
           v-if="activeGroup?.type === 'point' && validationFeaturesByMap.length > 0"
-          class="flex flex-col gap-2 p-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl"
+          class="flex flex-col gap-2 p-2 bg-primary-50 border border-primary-200 rounded-lg"
         >
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-              <DocumentCheckIcon class="w-4 h-4 text-indigo-600" />
-              Textes non reconnus
-            </span>
-          </div>
-
-          <div class="flex items-center gap-1.5">
-            <button
-              type="button"
-              class="btn btn-primary btn-xs flex-1 bg-blue-600 hover:bg-blue-700 border-none text-white font-semibold flex items-center justify-center gap-1 py-1 h-auto"
-              @click="openMapSelectionOrValidate"
-            >
-              <span>Examiner les rejets</span>
-            </button>
-          </div>
+          <span class="text-xs font-bold flex items-center gap-1.5">
+            <DocumentCheckIcon class="w-4 h-4 text-primary-600" />
+            Textes non reconnus
+          </span>
+          <button
+            type="button"
+            class="btn btn-primary btn-xs w-full"
+            @click="openMapSelectionOrValidate"
+          >
+            Examiner les rejets
+          </button>
         </div>
 
         <div class="flex flex-col gap-2">
@@ -126,12 +121,14 @@
                     title="Modifier le nom et la période"
                     @click.stop="emit('edit-map', mapGroup.id)"
                   >
-                    <PencilSquareIcon class="w-4 h-4 text-gray-500 hover:text-primary" />
+                    <PencilSquareIcon class="w-5 h-5 text-gray-500 hover:text-primary" />
                   </button>
                   <button
-                    class="flex h-8 w-8 items-center justify-center"
+                    type="button"
+                    class="flex h-8 w-8 items-center justify-center rounded hover:bg-base-200"
                     @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)"
                     title="Supprimer la carte"
+                    aria-label="Supprimer la carte"
                   >
                     <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
                   </button>
@@ -173,23 +170,27 @@
                       {{ feature.properties?.name || "! Nom manquant" }}
                     </span>
                   </div>
-                  <div class="flex items-center gap-1">
+                  <div class="flex items-center gap-0.5 shrink-0">
                     <button
-                      class="flex h-8 w-8 items-center justify-center"
+                      type="button"
+                      class="flex h-7 w-7 items-center justify-center rounded hover:bg-base-200"
                       @click.stop="showEditFeatureDialog(feature)"
                       title="Modifier l'élément"
+                      aria-label="Modifier l'élément"
                     >
                       <PencilSquareIcon
-                        class="w-5 h-5 text-gray-500 hover:text-gray-800"
+                        class="w-4 h-4 text-gray-500 hover:text-gray-800"
                       />
                     </button>
                     <button
-                      class="flex h-8 w-8 items-center justify-center"
+                      type="button"
+                      class="flex h-7 w-7 items-center justify-center rounded hover:bg-base-200"
                       @click.stop="showDeleteFeatureDialog(feature)"
                       title="Supprimer l'élément"
+                      aria-label="Supprimer l'élément"
                     >
                       <TrashIcon
-                        class="w-5 h-5 text-red-500 hover:text-red-800"
+                        class="w-4 h-4 text-red-500 hover:text-red-800"
                       />
                     </button>
                   </div>
@@ -252,7 +253,10 @@
   </div>
 
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
-    <div class="modal-box flex flex-col gap-4">
+    <div
+      class="modal-box flex flex-col gap-4"
+      :class="isEditingPoint ? 'max-w-3xl' : 'max-w-xl'"
+    >
       <h3 class="text-lg font-bold truncate">
         Modification de {{ featureToEdit.properties.name }}
       </h3>
@@ -272,13 +276,18 @@
           class="flex flex-col gap-2"
           v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
         >
-          <label class="label">Texte (Aperçu)</label>
-          <input
+          <label class="label" for="edit-feature-label-text">Texte (Aperçu)</label>
+          <textarea
+            id="edit-feature-label-text"
             v-model="editDraft.labelText"
-            type="text"
-            class="input"
+            data-testid="label-text-input"
+            class="textarea w-full leading-snug"
+            :rows="labelTextRows"
             :style="editTextStyle"
-          />
+          ></textarea>
+          <span v-if="isTextElement" class="text-xs text-base-content/60">
+            Appuyez sur Entrée pour ajouter un saut de ligne.
+          </span>
         </div>
         <div
           class="flex flex-col gap-2"
@@ -324,15 +333,54 @@
         </div>
 
         <div
-          class="flex items-center gap-2"
           v-if="!editDraft.customLabelStyleId"
+          class="flex flex-wrap items-center gap-x-6 gap-y-2"
         >
-          <label class="label">Couleur:</label>
-          <input
-            v-model="editDraft.colorHex"
-            type="color"
-            class="h-9 w-8 cursor-pointer bg-base-100"
-          />
+          <div v-if="isEditingPoint" class="flex items-center gap-2">
+            <label class="label" for="edit-feature-text-color">Couleur du texte :</label>
+            <input
+              id="edit-feature-text-color"
+              v-model="editDraft.textColorHex"
+              data-testid="text-color-input"
+              type="color"
+              class="h-9 w-8 cursor-pointer bg-base-100"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="label" for="edit-feature-color">{{ colorLabel }}</label>
+            <input
+              id="edit-feature-color"
+              v-model="editDraft.colorHex"
+              data-testid="color-input"
+              type="color"
+              class="h-9 w-8 cursor-pointer bg-base-100"
+            />
+          </div>
+          <div v-if="isEditingPoint" class="flex items-center gap-2">
+            <label class="label" for="edit-feature-stroke-color">Couleur du contour :</label>
+            <input
+              id="edit-feature-stroke-color"
+              v-model="editDraft.strokeColorHex"
+              data-testid="point-stroke-color-input"
+              type="color"
+              class="h-9 w-8 cursor-pointer bg-base-100"
+            />
+          </div>
+          <div v-if="isTextElement" class="flex items-center gap-2">
+            <label class="label" for="edit-feature-text-size">Taille du texte :</label>
+            <input
+              id="edit-feature-text-size"
+              v-model.number="editDraft.textSizePx"
+              data-testid="text-size-input"
+              type="number"
+              :min="MIN_TEXT_SIZE_PX"
+              :max="MAX_TEXT_SIZE_PX"
+              step="1"
+              class="input w-20"
+              @change="editDraft.textSizePx = normalizeTextSizePx(editDraft.textSizePx) ?? defaultTextSizePx"
+            />
+            <span class="text-xs text-base-content/60">px</span>
+          </div>
         </div>
 
         <!-- Controls for shapes / zones / polygons / lines / legend (non-text elements) -->
@@ -343,39 +391,44 @@
         <p
           class="text-xs text-base-content/60 italic"
         >
-          Ces réglages suivants s'appliquent au formes (zones, polygones, lignes, légendes) qui représentent la ville sur la carte.
+          Les réglages suivants s'appliquent à la forme (zone, polygone, ligne) dessinée sur la carte.
         </p>
           <div class="flex gap-2">
             <div class="flex flex-col gap-1 w-full">
               <label class="label py-0 text-sm">Opacité du fond</label>
               <input
-                v-model="editDraft.fillOpacity"
+                v-model.number="editDraft.fillOpacity"
+                data-testid="fill-opacity-input"
                 type="number"
                 step="0.1"
                 min="0"
                 max="1"
                 class="input"
+                @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
               />
             </div>
             <div class="flex flex-col gap-1 w-full">
               <label class="label py-0 text-sm">Opacité du contour</label>
               <input
-                v-model="editDraft.strokeOpacity"
+                v-model.number="editDraft.strokeOpacity"
                 type="number"
                 step="0.1"
                 min="0"
                 max="1"
                 class="input"
+                @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
               />
             </div>
           </div>
           <div class="flex flex-col gap-1 w-full">
             <label class="label py-0 text-sm">Épaisseur du contour</label>
             <input
-              v-model="editDraft.strokeWidth"
+              v-model.number="editDraft.strokeWidth"
               type="number"
               min="0"
+              :max="MAX_STROKE_WIDTH_PX"
               class="input"
+              @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
             />
           </div>
           <div class="flex items-center gap-2 pt-1">
@@ -388,65 +441,72 @@
           </div>
         </div>
 
-          <p
-            v-if="isEditingPoint"
-            class="text-xs text-base-content/60 italic"
-          >
-            Ces réglages suivants s'appliquent au symbole du point qui représente la ville
-            sur la carte.
-          </p>
+        <!-- Point symbol: its three numbers side by side, and a live preview
+             of the symbol with its text -->
         <div
           v-if="isEditingPoint"
-          class="grid grid-cols-2 gap-4 items-center"
+          class="grid grid-cols-1 sm:grid-cols-[1fr_13rem] gap-4 items-stretch"
         >
-          <!-- Contrôles du point (alignés à gauche) -->
           <div class="flex flex-col gap-2">
-            <div class="flex flex-col gap-1">
-              <label class="label py-0 text-sm">Opacité du fond</label>
-              <input
-                v-model="editDraft.fillOpacity"
-                type="number"
-                class="input"
-              />
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="label py-0 text-sm">Opacité du contour du point</label>
-              <input
-                v-model="editDraft.strokeOpacity"
-                type="number"
-                class="input"
-              />
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="label py-0 text-sm">Épaisseur du contour du point</label>
-              <input
-                v-model="editDraft.strokeWidth"
-                type="number"
-                class="input"
-              />
-            </div>
-            <div class="flex items-center gap-2 pt-1">
-              <label class="label py-0 text-sm">Couleur du contour :</label>
-              <input
-                v-model="editDraft.strokeColorHex"
-                type="color"
-                class="h-9 w-8 cursor-pointer bg-base-100"
-              />
+            <p class="text-xs opacity-60 italic">
+              Les réglages suivants s'appliquent au symbole du point qui représente
+              la ville sur la carte.
+            </p>
+            <div class="grid grid-cols-3 gap-3 items-end">
+              <div class="flex flex-col gap-1">
+                <label class="label py-0 text-sm" for="edit-point-fill-opacity">Opacité du fond</label>
+                <input
+                  id="edit-point-fill-opacity"
+                  v-model.number="editDraft.fillOpacity"
+                  data-testid="point-fill-opacity-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  class="input"
+                  @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="label py-0 text-sm" for="edit-point-stroke-opacity">Opacité du contour</label>
+                <input
+                  id="edit-point-stroke-opacity"
+                  v-model.number="editDraft.strokeOpacity"
+                  data-testid="point-stroke-opacity-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  class="input"
+                  @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="label py-0 text-sm" for="edit-point-stroke-width">Épaisseur du contour</label>
+                <input
+                  id="edit-point-stroke-width"
+                  v-model.number="editDraft.strokeWidth"
+                  type="number"
+                  min="0"
+                  :max="MAX_STROKE_WIDTH_PX"
+                  class="input"
+                  @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
+                />
+              </div>
             </div>
           </div>
 
-          <!-- Aperçu du point (en bas à droite) -->
           <div
-            class="flex flex-col items-center justify-center rounded-lg border border-base-300 bg-base-200/40 p-3 self-stretch"
+            class="flex flex-col rounded-lg border border-base-300 bg-base-200 p-3"
             data-testid="point-preview-container"
           >
-            <span class="text-xs text-base-content/60 font-medium mb-2">Aperçu du point</span>
-            <div class="flex items-center justify-center flex-1 w-full min-h-[90px]">
-              <svg width="70" height="70" viewBox="0 0 70 70" class="overflow-visible">
+            <span class="text-xs opacity-60 font-medium">Aperçu</span>
+            <div class="flex flex-1 items-center justify-center gap-2 min-h-[70px] overflow-hidden">
+              <svg width="36" height="36" viewBox="0 0 36 36" class="shrink-0 overflow-visible">
                 <circle
-                  cx="35"
-                  cy="35"
-                  r="16"
+                  cx="18"
+                  cy="18"
+                  r="10"
                   :fill="pointPreviewFillColor"
                   :fill-opacity="pointPreviewFillOpacity"
                   :stroke="pointPreviewStrokeColor"
@@ -454,6 +514,11 @@
                   :stroke-opacity="pointPreviewStrokeOpacity"
                 />
               </svg>
+              <span
+                class="whitespace-pre-line leading-tight"
+                :style="editTextStyle"
+                data-testid="point-preview-text"
+              >{{ editDraft.labelText || editDraft.name }}</span>
             </div>
           </div>
         </div>
@@ -593,11 +658,11 @@
   <!-- Map selection dialog for text validation -->
   <dialog ref="selectMapValidationDialogRef" data-testid="select-map-validation-dialog" class="modal z-[2500]">
     <div class="modal-box max-w-sm">
-      <h3 class="text-base font-bold text-gray-900 flex items-center gap-2">
-        <DocumentCheckIcon class="w-5 h-5 text-indigo-600" />
+      <h3 class="text-lg font-bold flex items-center gap-2">
+        <DocumentCheckIcon class="w-5 h-5 text-primary-600" />
         Choisir la carte à examiner
       </h3>
-      <p class="text-xs text-gray-500 mt-1 mb-4">
+      <p class="text-sm text-base-content/70 mt-1 mb-4">
         Sélectionnez la carte dont vous souhaitez examiner et valider les textes rejetés :
       </p>
       <div class="flex flex-col gap-2">
@@ -605,17 +670,17 @@
           v-for="group in validationFeaturesByMap"
           :key="group.id || 'general'"
           type="button"
-          class="btn btn-outline btn-sm justify-between text-left normal-case border-gray-300 hover:border-indigo-500 hover:bg-indigo-50 hover:text-indigo-900"
+          class="btn btn-outline btn-sm justify-between text-left"
           @click="confirmMapValidation(group.id)"
         >
           <span class="font-medium truncate">{{ group.title }}</span>
-          <span class="text-xs text-gray-400 font-normal">Ouvrir →</span>
+          <span class="text-xs font-normal opacity-60">Ouvrir →</span>
         </button>
       </div>
       <div class="modal-action mt-4">
         <button
           type="button"
-          class="btn btn-sm btn-ghost"
+          class="btn"
           @click="selectMapValidationDialogRef?.close()"
         >
           Annuler
@@ -650,6 +715,10 @@ import {
 import type { MapPeriod } from "../typescript/map";
 import type { CustomLabelStyle } from "../utils/labelPresentation";
 import {
+  MAX_TEXT_SIZE_PX,
+  MIN_TEXT_SIZE_PX,
+  normalizeTextSizePx,
+  MAX_PREVIEW_FONT_SIZE_PX,
   getCustomStyleObject,
   getLabelStylePreviewCss,
   getWordTypeOptionLabel,
@@ -668,6 +737,10 @@ import {
   coerceEditedFeature,
   createFeaturesForSelectedMaps,
   getWordTypePreviewStyle,
+  getDefaultTextSizePx,
+  normalizeOpacity,
+  normalizeStrokeWidth,
+  MAX_STROKE_WIDTH_PX,
   type FeatureEditSubmitPayload,
 } from "../utils/featureTextEditing";
 import { rgbToHex } from "../utils/utils";
@@ -712,14 +785,33 @@ const editTextStyle = computed<CSSProperties>(() => {
   }
   const preview = getWordTypePreviewStyle(
     editDraft.value.wordType,
-    editDraft.value.colorHex,
+    isEditingPoint.value
+      ? editDraft.value.textColorHex ?? editDraft.value.colorHex
+      : editDraft.value.colorHex,
+    normalizeTextSizePx(editDraft.value.textSizePx),
   );
   return {
     ...preview,
-    fontSize: preview.fontSize
-      ? `${Math.min(parseInt(String(preview.fontSize), 10) || 14, 18)}px`
-      : undefined,
+    fontWeight: "bold",
+    // The field stays a comfortable size to type in; the map shows the real one.
+    fontSize: `${Math.min(parseInt(preview.fontSize, 10) || 14, MAX_PREVIEW_FONT_SIZE_PX)}px`,
   };
+});
+
+const labelTextRows = computed(() => {
+  const lines = (editDraft.value.labelText ?? "").split("\n").length;
+  return Math.max(2, Math.min(6, lines));
+});
+
+const defaultTextSizePx = computed(() =>
+  getDefaultTextSizePx(editDraft.value.wordType),
+);
+
+// A point element has two colours (its text and its symbol); every other
+// element has one.
+const colorLabel = computed(() => {
+  if (isEditingPoint.value) return "Couleur du point :";
+  return isTextElement.value ? "Couleur du texte :" : "Couleur :";
 });
 
 const isEditingPoint = computed(() => {
@@ -736,16 +828,8 @@ const pointPreviewFillColor = computed(() => {
   return editDraft.value.colorHex || "#000000";
 });
 
-function parseNormalizedOpacity(val: unknown, fallback: number): number {
-  if (val === undefined || val === null || (val as unknown) === "") return fallback;
-  const num = Number(val);
-  if (Number.isNaN(num)) return fallback;
-  const normalized = num > 1 ? (num <= 10 ? num / 10 : num / 100) : num;
-  return Math.max(0, Math.min(1, normalized));
-}
-
 const pointPreviewFillOpacity = computed(() => {
-  return parseNormalizedOpacity(editDraft.value.fillOpacity, 0.5);
+  return normalizeOpacity(editDraft.value.fillOpacity) ?? 0.5;
 });
 
 const pointPreviewStrokeColor = computed(() => {
@@ -753,14 +837,11 @@ const pointPreviewStrokeColor = computed(() => {
 });
 
 const pointPreviewStrokeOpacity = computed(() => {
-  return parseNormalizedOpacity(editDraft.value.strokeOpacity, 1);
+  return normalizeOpacity(editDraft.value.strokeOpacity) ?? 1;
 });
 
 const pointPreviewStrokeWidth = computed(() => {
-  const val = editDraft.value.strokeWidth;
-  if (val === undefined || val === null || (val as unknown) === "") return 1;
-  const num = Number(val);
-  return Number.isNaN(num) ? 1 : Math.max(0, num);
+  return normalizeStrokeWidth(editDraft.value.strokeWidth) ?? 1;
 });
 
 const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
@@ -867,6 +948,11 @@ function onLabelStyleSelectionChange() {
     ? rgbToHex(featureToEdit.value.properties.colorRgb)
     : undefined;
   editDraft.value.colorHex = originalColorHex ?? "#000000";
+  editDraft.value.textColorHex =
+    (featureToEdit.value
+      ? rgbToHex(featureToEdit.value.properties.textColorRgb)
+      : undefined) ?? editDraft.value.colorHex;
+  editDraft.value.textSizePx = defaultTextSizePx.value;
 
   const baseText = editDraft.value.labelText || editDraft.value.name || "";
   editDraft.value.labelText = formatWordText(baseText, editDraft.value.wordType);

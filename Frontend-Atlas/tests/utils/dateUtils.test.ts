@@ -5,6 +5,7 @@ import {
   toIsoDateUtc,
   yearToIsoStart,
   yearToIsoEnd,
+  isPeriodActiveAt,
 } from "../../src/utils/dateUtils";
 
 describe("dateUtils", () => {
@@ -69,6 +70,39 @@ describe("dateUtils", () => {
     it("pads 3-digit or fewer year numbers with leading zeros", () => {
       expect(yearToIsoStart(500)).toBe("0500-01-01");
       expect(yearToIsoEnd(500)).toBe("0500-12-31");
+    });
+  });
+
+  describe("isPeriodActiveAt", () => {
+    // 1700-1800, 1800-1850, 1900-1925: the first two meet in 1800.
+    const starts = new Set([1700, 1800, 1900]);
+
+    it("covers the start and the inside of a period", () => {
+      expect(isPeriodActiveAt(1700, 1800, 1700, starts)).toBe(true);
+      expect(isPeriodActiveAt(1700, 1800, 1750, starts)).toBe(true);
+      expect(isPeriodActiveAt(1700, 1800, 1699, starts)).toBe(false);
+      expect(isPeriodActiveAt(1700, 1800, 1801, starts)).toBe(false);
+    });
+
+    it("gives a shared bound to the period that starts on it", () => {
+      expect(isPeriodActiveAt(1700, 1800, 1800, starts)).toBe(false);
+      expect(isPeriodActiveAt(1800, 1850, 1800, starts)).toBe(true);
+    });
+
+    it("keeps the end when no other period starts there", () => {
+      expect(isPeriodActiveAt(1800, 1850, 1850, starts)).toBe(true);
+      expect(isPeriodActiveAt(1900, 1925, 1925, starts)).toBe(true);
+    });
+
+    it("keeps a period that lasts a single year", () => {
+      expect(isPeriodActiveAt(1800, 1800, 1800, new Set([1700, 1800]))).toBe(true);
+    });
+
+    it("compares exact ISO dates the same way", () => {
+      const dateStarts = new Set(["2000-01-12", "2026-04-15"]);
+      expect(isPeriodActiveAt("2000-01-12", "2026-04-15", "2026-04-14", dateStarts)).toBe(true);
+      expect(isPeriodActiveAt("2000-01-12", "2026-04-15", "2026-04-15", dateStarts)).toBe(false);
+      expect(isPeriodActiveAt("2026-04-15", "2026-06-01", "2026-04-15", dateStarts)).toBe(true);
     });
   });
 });

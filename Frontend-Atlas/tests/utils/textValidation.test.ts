@@ -8,6 +8,8 @@ import {
   isJsonSuggestion,
   ValidationStatus,
   type TextValidationEntry,
+  parseTextQuad,
+  toTextRegions,
 } from "../../src/utils/textValidation";
 import { prepareFeaturesForSave, camelToSnake, snakeToCamel } from "../../src/utils/utils";
 
@@ -836,6 +838,40 @@ describe("textValidation utility functions", () => {
         },
       };
       expect(isJsonSuggestion(nearbyEntry)).toBe(false);
+    });
+  });
+
+  describe("text regions on the reference image", () => {
+    it("reads the OCR quad stored on a feature", () => {
+      expect(parseTextQuad([[10, 20], [110, 20], [110, 40], [10, 40]])).toEqual([
+        [10, 20],
+        [110, 20],
+        [110, 40],
+        [10, 40],
+      ]);
+    });
+
+    it("rejects a missing or malformed quad", () => {
+      expect(parseTextQuad(undefined)).toBeUndefined();
+      expect(parseTextQuad([[1, 2]])).toBeUndefined();
+      expect(parseTextQuad([[1, 2], [3], [4, 5]])).toBeUndefined();
+      expect(parseTextQuad([[1, 2], ["a", 3], [4, 5]])).toBeUndefined();
+    });
+
+    it("frames only the entries that were located, labelled with what the OCR read", () => {
+      const regions = toTextRegions([
+        {
+          id: "a",
+          text: "Lac Supérieur",
+          originalText: "Lac Superinale",
+          selected: true,
+          quad: [[0, 0], [10, 0], [10, 5], [0, 5]],
+        },
+        { id: "b", text: "Sans position", originalText: "Sans position", selected: true },
+      ]);
+      expect(regions).toEqual([
+        { id: "a", label: "Lac Superinale", quad: [[0, 0], [10, 0], [10, 5], [0, 5]] },
+      ]);
     });
   });
 });

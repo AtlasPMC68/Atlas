@@ -57,6 +57,9 @@ export function createCartoTileLayer(
     attribution: CARTO_ATTRIBUTION,
     subdomains: CARTO_SUBDOMAINS,
     maxZoom: CARTO_MAX_ZOOM,
+    // Tiles are copied onto a canvas for the project thumbnail; without CORS
+    // the canvas is tainted and cannot be exported.
+    crossOrigin: true,
     ...options,
   });
 }

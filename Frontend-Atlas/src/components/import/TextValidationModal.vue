@@ -1,119 +1,76 @@
 <template>
+  <!-- Same daisyUI modal as the other import steps (see BasePickerModal). It is
+       not a <dialog> because the label-style manager opens one on top of it. -->
   <div
     v-if="isOpen"
-    class="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3"
+    class="modal modal-open z-[2000]"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="text-validation-title"
+    data-testid="text-validation-modal"
   >
-    <div
-      class="bg-base-100 rounded-2xl shadow-2xl w-full max-w-[96vw] h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-    >
-      <!-- Header -->
-      <div class="px-6 py-3 border-b border-base-200 flex items-center justify-between bg-base-100 shrink-0">
-        <div class="flex items-center gap-6">
-          <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h2 class="text-base font-bold text-black leading-tight">Validation des textes non reconnus</h2>
-              <p class="text-xs text-black/70">
-                Comparez avec l'image originale et validez les textes détectés.
-              </p>
-            </div>
-          </div>
-
-          <!-- Status legend -->
-          <div class="hidden md:flex items-center gap-4 px-3 py-1 bg-base-200/50 rounded-lg border border-base-300 text-xs">
-            <div class="flex items-center gap-1.5">
-              <span class="w-3.5 h-3.5 rounded-full bg-amber-500 text-white font-bold text-[9px] flex items-center justify-center border border-amber-600">!</span>
-              <span class="font-medium text-black">Suggestion disponible</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block border border-emerald-600" />
-              <span class="font-medium text-black">Lieu suggéré</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm btn-circle text-black hover:bg-base-200"
-            :disabled="isSubmitting"
-            @click="emit('cancel')"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <!-- Main Body: 2 columns with draggable divider -->
-      <div
-        class="flex-1 min-h-0 flex overflow-hidden select-none"
-        :class="{ 'cursor-col-resize': isDragging }"
+    <div class="modal-box w-11/12 max-w-7xl h-[90vh] max-h-[90vh] flex flex-col gap-4">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+        aria-label="Fermer"
+        :disabled="isSubmitting"
+        @click="emit('cancel')"
       >
-        <!-- 1. Left: Original Image Viewer -->
-        <ValidationImageViewer
-          :display-image-url="displayImageUrl"
-          :is-updating-reference-image="isUpdatingReferenceImage"
-          @select-image="onLocalImageSelected"
-          @remove-image="removeReferenceImage"
-        />
+        ✕
+      </button>
 
-        <!-- Resizer Divider -->
-        <div
-          class="w-1.5 bg-base-300 hover:bg-primary active:bg-primary transition-colors cursor-col-resize shrink-0 z-10"
-          title="Glisser pour redimensionner la colonne"
-          @mousedown="startColResize"
-        />
+      <h2 id="text-validation-title" class="text-xl font-semibold">
+        Validation des textes non reconnus
+      </h2>
 
-        <!-- 2. Right: Validation List -->
-        <div
-          class="shrink-0 flex flex-col bg-base-100 overflow-hidden border-l border-base-200"
-          :style="{ width: `${rightColWidth}px` }"
-        >
-          <!-- List Header -->
-          <div class="px-3.5 py-2.5 border-b border-base-200 shrink-0 bg-base-200/50 flex items-center justify-between text-sm">
-            <span class="font-bold text-black flex items-center gap-1.5">
-              <span>✕</span>
-              <span>Non localisés</span>
+      <p class="text-sm opacity-70">
+        Ces textes ont été lus sur la carte, mais aucun lieu connu ne leur correspond.
+        Comparez-les avec l'image, corrigez-les au besoin et cochez ceux à conserver.
+      </p>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0">
+        <!-- Reference image -->
+        <div class="lg:col-span-7 border rounded-md overflow-hidden flex flex-col min-h-[16rem] lg:min-h-0">
+          <ValidationImageViewer
+            :display-image-url="displayImageUrl"
+            :is-updating-reference-image="isUpdatingReferenceImage"
+            :regions="textRegions"
+            :highlighted-id="highlightedId"
+            @select-image="onLocalImageSelected"
+            @remove-image="removeReferenceImage"
+            @select-region="focusItemById"
+          />
+        </div>
+
+        <!-- Texts to validate -->
+        <div class="lg:col-span-5 flex flex-col gap-2 min-h-0">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm font-medium flex items-center gap-2">
+              Non localisés
+              <span class="badge badge-sm badge-ghost">{{ allItems.length }}</span>
             </span>
-            <span class="badge badge-sm badge-neutral font-semibold text-black bg-base-300 border-0">
-              {{ allItems.length }}
-            </span>
-          </div>
-
-          <!-- Select All Controls -->
-          <div class="px-3.5 py-2.5 border-b border-base-200 flex items-center justify-between shrink-0 bg-base-100 text-xs">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                data-testid="select-all-checkbox"
-                class="checkbox checkbox-sm checkbox-primary rounded cursor-pointer"
-                :checked="isAllSelected"
-                :indeterminate.prop="isPartiallySelected"
-                @change="onToggleSelectAll"
-              />
-              <span class="font-bold text-black text-sm">
-                Tout sélectionner
-              </span>
-            </label>
-            <span class="font-semibold text-black">
+            <span class="text-xs text-base-content/60">
               {{ toKeepCount }} / {{ allItems.length }} conservé(s)
             </span>
           </div>
 
-          <!-- Items list -->
-          <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+          <label class="label cursor-pointer justify-start gap-2 py-0">
+            <input
+              type="checkbox"
+              data-testid="select-all-checkbox"
+              class="checkbox checkbox-sm checkbox-primary"
+              :checked="isAllSelected"
+              :indeterminate.prop="isPartiallySelected"
+              @change="onToggleSelectAll"
+            />
+            <span class="text-sm">Tout sélectionner</span>
+          </label>
+
+          <div class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-2">
             <div
               v-if="allItems.length === 0"
-              class="text-xs text-black italic text-center py-8"
+              class="p-4 bg-base-200/50 rounded-lg border border-dashed border-base-300 text-sm text-base-content/60 italic text-center"
             >
               Aucun texte dans cette catégorie.
             </div>
@@ -122,68 +79,66 @@
               v-for="item in allItems"
               :key="item.id"
               data-validation-item="true"
-              class="flex flex-col p-2 gap-1.5 rounded-lg border transition-all cursor-pointer bg-base-100 hover:border-primary/50"
-              :class="[
-                item.id === highlightedId ? 'ring-2 ring-primary border-primary bg-primary/5' : '',
-                itemBorderClass(item),
-              ]"
+              :data-validation-item-id="item.id"
+              class="flex flex-col gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors"
+              :class="item.id === highlightedId
+                ? 'border-primary-600 bg-primary-50'
+                : 'border-transparent bg-base-200 hover:border-base-300'"
               @click="focusItem(item)"
             >
-              <!-- Checkbox + Input + Trash -->
-              <div class="flex items-center gap-1.5">
+              <!-- Keep or not + the text + remove -->
+              <div class="flex items-center gap-2">
                 <input
                   type="checkbox"
                   data-testid="item-checkbox"
-                  class="checkbox checkbox-sm checkbox-primary rounded shrink-0 cursor-pointer"
+                  class="checkbox checkbox-sm checkbox-primary shrink-0"
                   :checked="item.selected"
                   :title="item.selected ? 'Décocher pour ne pas conserver ce texte' : 'Cocher pour conserver ce texte'"
                   @click.stop
                   @change="toggleItemSelection(item)"
                 />
-
-                <div class="relative flex-1 flex items-center">
-                  <input
-                    v-model="item.text"
-                    type="text"
-                    class="input input-bordered input-sm w-full h-8 text-sm font-medium bg-base-100 text-black border-base-300 focus:border-primary placeholder:text-gray-400 px-2"
-                    :style="itemRightInputStyle(item)"
-                    :placeholder="item.originalText"
-                    @click.stop
-                    @input="onTextInput(item)"
-                  />
-                  <!-- Amber badge if suggestion available -->
-                  <span
-                    v-if="item.suggestedPlace && !item.useSuggestedPlace"
-                    class="absolute right-2 px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[10px] pointer-events-none shadow-xs"
-                    title="Suggestion de lieu disponible"
-                  >
-                    !
-                  </span>
-                </div>
-
+                <input
+                  v-model="item.text"
+                  type="text"
+                  class="input input-sm input-bordered flex-1 min-w-0"
+                  :style="itemRightInputStyle(item)"
+                  :placeholder="item.originalText"
+                  :aria-label="`Texte à conserver pour « ${item.originalText} »`"
+                  @click.stop
+                  @focus="focusItem(item)"
+                  @input="onTextInput(item)"
+                />
                 <button
                   type="button"
                   :disabled="isUpdatingReferenceImage"
-                  class="btn btn-ghost btn-xs btn-square w-7 h-7 text-error hover:bg-error/10 shrink-0"
+                  class="btn btn-sm btn-ghost btn-circle shrink-0 text-error"
                   title="Supprimer ce texte de la carte"
+                  aria-label="Supprimer ce texte de la carte"
                   @click.stop="toggleSupprimer(item)"
                 >
-                  <TrashIcon class="w-4 h-4 text-error" />
+                  <TrashIcon class="w-4 h-4" />
                 </button>
               </div>
 
-              <!-- Word type selector -->
+              <!-- What the OCR read, once the text has been changed -->
+              <p
+                v-if="item.originalText && item.originalText !== item.text"
+                class="text-xs text-base-content/60"
+              >
+                Texte détecté : « {{ item.originalText }} »
+              </p>
+
+              <!-- Word type -->
               <div
                 v-if="item.selected"
-                class="flex items-center justify-between gap-2 pt-0.5"
+                class="flex items-center gap-2"
                 @click.stop
               >
-                <span class="text-xs font-semibold text-gray-700 shrink-0">Type de mot :</span>
+                <span class="text-xs text-base-content/70 shrink-0">Type de mot</span>
                 <select
                   v-model="item.labelStyleSelection"
-                  class="select select-bordered select-xs flex-1 h-7 text-xs bg-base-100 text-black border-base-300 font-medium focus:border-primary"
+                  class="select select-sm select-bordered flex-1 min-w-0"
                   data-testid="item-word-type-select"
-                  @click.stop
                   @change="onItemLabelStyleChange(item)"
                 >
                   <option
@@ -203,59 +158,48 @@
                     {{ getWordTypeOptionLabel(typeKey) }}
                   </option>
                 </select>
-
                 <button
                   type="button"
-                  class="btn btn-outline btn-xs h-7 shrink-0 text-[10px] px-2"
+                  class="btn btn-sm btn-outline shrink-0"
                   data-testid="manage-custom-label-styles"
-                  @click.stop="labelStyleManagerRef?.open()"
+                  @click="labelStyleManagerRef?.open()"
                 >
                   Personnaliser
                 </button>
               </div>
 
-              <!-- Suggested place pill button -->
-              <div
+              <!-- Suggested place: one click to adopt it, one more to go back -->
+              <button
                 v-if="item.suggestedPlace"
-                class="flex items-center pt-0.5"
-                @click.stop
+                type="button"
+                class="btn btn-sm w-full justify-between gap-2 font-normal"
+                :class="item.selected && item.useSuggestedPlace
+                  ? 'btn-success'
+                  : 'btn-outline btn-success'"
+                :title="item.useSuggestedPlace ? 'Cliquer pour revenir au texte libre' : `Accepter la suggestion ${item.suggestedPlace.name}`"
+                :aria-pressed="Boolean(item.useSuggestedPlace)"
+                @click.stop="toggleSuggestion(item)"
               >
-                <button
-                  type="button"
-                  class="btn btn-xs h-7 flex-1 justify-between normal-case font-medium transition-all text-xs text-black px-2"
-                  :class="item.selected && item.useSuggestedPlace
-                    ? 'btn-success bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs border-emerald-600'
-                    : 'btn-outline border-emerald-400 text-black hover:bg-emerald-50 bg-base-100'"
-                  @click="toggleSuggestion(item)"
-                  :title="item.useSuggestedPlace ? 'Cliquer pour revenir au texte libre' : `Accepter la suggestion ${item.suggestedPlace.name}`"
-                >
-                  <span class="truncate">
-                    Lieu suggéré : <strong>{{ item.suggestedPlace.name }}</strong>
-                  </span>
-                  <span class="font-semibold shrink-0 text-[11px] flex items-center gap-1">
-                    <span v-if="item.useSuggestedPlace" class="font-bold">✓ Adoptée</span>
-                    <span v-else class="underline">Accepter la suggestion</span>
-                  </span>
-                </button>
-              </div>
+                <span class="truncate">
+                  Lieu suggéré : <strong>{{ item.suggestedPlace.name }}</strong>
+                </span>
+                <span class="shrink-0 text-xs font-semibold">
+                  {{ item.useSuggestedPlace ? "✓ Adoptée" : "Accepter la suggestion" }}
+                </span>
+              </button>
             </div>
-
-            <CustomLabelStyleManager
-              ref="labelStyleManagerRef"
-              :styles="availableCustomLabelStyles"
-              @save="onSaveCustomLabelStyles"
-            />
           </div>
         </div>
       </div>
 
-      <!-- Footer -->
-      <div class="px-6 py-3 border-t border-base-200 flex items-center justify-between bg-base-100 shrink-0">
-        <div class="text-xs text-black font-medium">Carte sélectionnée : {{ mapTitle }}</div>
-        <div class="flex items-center gap-2">
+      <div class="modal-action mt-0 items-center justify-between" data-testid="text-validation-footer">
+        <span class="text-sm text-base-content/70 truncate">
+          Carte sélectionnée : {{ mapTitle }}
+        </span>
+        <div class="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            class="btn btn-ghost btn-sm text-black hover:bg-base-200"
+            class="btn btn-ghost"
             :disabled="isSubmitting"
             @click="emit('cancel')"
           >
@@ -263,7 +207,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-primary btn-sm text-white font-semibold shadow-xs"
+            class="btn btn-primary"
             :disabled="isSubmitting"
             @click="onConfirm"
           >
@@ -273,11 +217,17 @@
         </div>
       </div>
     </div>
+
+    <CustomLabelStyleManager
+      ref="labelStyleManagerRef"
+      :styles="availableCustomLabelStyles"
+      @save="onSaveCustomLabelStyles"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from "vue";
+import { computed, nextTick, ref, watch, onBeforeUnmount } from "vue";
 import type { CSSProperties } from "vue";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
 import ValidationImageViewer from "./ValidationImageViewer.vue";
@@ -289,7 +239,7 @@ import {
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
 import { TrashIcon } from "@heroicons/vue/24/outline";
-import type { TextValidationEntry } from "../../utils/textValidation";
+import { toTextRegions, type TextValidationEntry } from "../../utils/textValidation";
 import {
   WORD_TYPE_STYLES,
   formatWordText,
@@ -376,9 +326,6 @@ function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
   emit("save-label-styles", styles);
 }
 
-const rightColWidth = ref(450);
-const isDragging = ref(false);
-
 const localImageMap = ref<Record<string, string>>({});
 const removedImageMap = ref<Record<string, boolean>>({});
 const loadedReferenceImageMap = new Set<string>();
@@ -405,37 +352,7 @@ const isPartiallySelected = computed(() => {
   return selectedCount > 0 && selectedCount < allItems.value.length;
 });
 
-let activeResizeCleanup: (() => void) | null = null;
-
-function startColResize(e: MouseEvent) {
-  isDragging.value = true;
-  const startX = e.clientX;
-  const startW = rightColWidth.value;
-  const minWidth = 320;
-  const maxWidth = 800;
-
-  const onMouseMove = (ev: MouseEvent) => {
-    if (!isDragging.value) return;
-    const delta = startX - ev.clientX;
-    rightColWidth.value = Math.max(minWidth, Math.min(maxWidth, startW + delta));
-  };
-
-  const onMouseUp = () => {
-    isDragging.value = false;
-    window.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("mouseup", onMouseUp);
-    activeResizeCleanup = null;
-  };
-
-  activeResizeCleanup = () => {
-    isDragging.value = false;
-    window.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("mouseup", onMouseUp);
-  };
-
-  window.addEventListener("mousemove", onMouseMove);
-  window.addEventListener("mouseup", onMouseUp);
-}
+const textRegions = computed(() => toTextRegions(allItems.value));
 
 async function onLocalImageSelected(event: Event) {
   const target = event.target as HTMLInputElement;
@@ -492,18 +409,19 @@ async function removeReferenceImage() {
   }
 }
 
-function itemBorderClass(item: TextValidationEntry): string {
-  if (item.useSuggestedPlace) {
-    return "border-emerald-500 bg-emerald-50/30 ring-1 ring-emerald-400";
-  }
-  if (item.suggestedPlace) {
-    return "border-amber-300 bg-amber-50/20";
-  }
-  return "border-base-200";
-}
-
 function focusItem(item: TextValidationEntry) {
   highlightedId.value = item.id;
+}
+
+// A frame clicked on the image: highlight its text and bring it into view.
+async function focusItemById(id: string) {
+  if (!allItems.value.some((item: TextValidationEntry) => item.id === id)) return;
+  highlightedId.value = id;
+  await nextTick();
+  const row = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-validation-item-id]"),
+  ).find((element) => element.dataset.validationItemId === id);
+  row?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
 }
 
 function onToggleSelectAll(e: Event) {
@@ -628,7 +546,11 @@ function onDocumentClick(e: MouseEvent) {
     return;
   }
 
-  if (target.closest("[data-validation-item]")) {
+  // Zooming or panning the image must not drop the text being compared.
+  if (
+    target.closest("[data-validation-item]") ||
+    target.closest("[data-validation-viewer]")
+  ) {
     return;
   }
 
@@ -637,16 +559,25 @@ function onDocumentClick(e: MouseEvent) {
   }
 }
 
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape" || !props.isOpen || props.isSubmitting) return;
+  // A dialog open on top (label styles) handles its own Escape.
+  if (document.querySelector("dialog[open]")) return;
+  emit("cancel");
+}
+
 let isListening = false;
 function attachGlobalListeners() {
   if (isListening || typeof window === "undefined") return;
   window.addEventListener("click", onDocumentClick, true);
+  window.addEventListener("keydown", onKeydown);
   isListening = true;
 }
 
 function removeGlobalListeners() {
   if (!isListening || typeof window === "undefined") return;
   window.removeEventListener("click", onDocumentClick, true);
+  window.removeEventListener("keydown", onKeydown);
   isListening = false;
 }
 
@@ -694,10 +625,6 @@ watch(
 
 onBeforeUnmount(() => {
   removeGlobalListeners();
-  if (activeResizeCleanup) {
-    activeResizeCleanup();
-    activeResizeCleanup = null;
-  }
   if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function" && localImageMap.value) {
     for (const imageUrl of Object.values(localImageMap.value)) {
       if (typeof imageUrl === "string" && imageUrl.startsWith("blob:")) {
@@ -718,5 +645,6 @@ defineExpose({
   allItems,
   highlightedId,
   focusItem,
+  focusItemById,
 });
 </script>

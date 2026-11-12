@@ -243,6 +243,7 @@ import ShapePickerModal from "../../components/import/ShapePickerModal.vue";
 import StartFromCasePanel from "../../components/dev/StartFromCasePanel.vue";
 import TextValidationModal from "../../components/import/TextValidationModal.vue";
 import { useProjectLabelStyles } from "../../composables/useProjectLabelStyles";
+import { useMapReferenceImage } from "../../composables/useMapReferenceImage";
 import {
   type TextValidationEntry,
   featureToValidationEntry,
@@ -263,6 +264,7 @@ const caseToComplete =
   isDevTest && typeof route.query.case === "string" ? route.query.case : null;
 
 const store = useImportSessionStore();
+const { saveReferenceImage } = useMapReferenceImage();
 const {
   customLabelStyles,
   loadCustomLabelStyles: fetchCustomStyles,
@@ -524,6 +526,7 @@ watch(
           );
 
           if (ocrFeatures.length > 0) {
+            void keepImportedImageAsReference();
             validationItems.value = ocrFeatures.map((f: Feature) => featureToValidationEntry(f, false));
             showValidationModal.value = true;
             return;
@@ -536,9 +539,29 @@ watch(
       }
     }
 
-    await router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
+    await router.push(importedProjectPath());
   },
 );
+
+// The imported image is deleted with the import once its features are saved.
+// Texts left to validate are located on that image, so it is kept as the map's
+// reference image: the validation can then be resumed later from the project.
+// Best effort — validating right now does not depend on it.
+async function keepImportedImageAsReference() {
+  if (!store.mapId || !store.file) return;
+  const result = await saveReferenceImage(store.mapId, store.file);
+  if (!result.success) {
+    console.warn("Could not keep the imported map as reference image:", result.error);
+  }
+}
+
+// Back to the project, opened on the map that was just imported.
+function importedProjectPath(): string {
+  if (!store.projectId) return "/tableau-de-bord";
+  return store.mapId
+    ? `/projet/${store.projectId}?carte=${store.mapId}`
+    : `/projet/${store.projectId}`;
+}
 
 async function onConfirmTextValidation(items: TextValidationEntry[]) {
   if (!store.projectId) {
@@ -593,7 +616,7 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
     }
 
     showValidationModal.value = false;
-    await router.push(`/projet/${store.projectId}`);
+    await router.push(importedProjectPath());
   } catch (err) {
     showAlert("error", "Erreur lors de l'enregistrement de la validation des textes");
     console.error("Validation error:", err);
@@ -604,7 +627,7 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
 
 function onCancelTextValidation() {
   showValidationModal.value = false;
-  router.push(store.projectId ? `/projet/${store.projectId}` : "/tableau-de-bord");
+  router.push(importedProjectPath());
 }
 
 

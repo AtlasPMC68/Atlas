@@ -1,6 +1,19 @@
 <template>
   <div class="relative h-full w-full z-0 bg-[#d4dadc]">
-    <div id="map" class="h-full w-full bg-[#d4dadc]"></div>
+    <!-- Hidden (not display:none, Leaflet still needs its size) until the first
+         framing, so the map doesn't flash the default location before jumping.
+         The class is toggled on a wrapper: Leaflet adds its own classes to #map
+         (leaflet-container, ...), and Vue would wipe them when re-rendering a
+         bound class there, which un-clips the canvas over the sidebar. -->
+    <div class="h-full w-full" :class="{ invisible: !isViewReady }">
+      <div id="map" class="h-full w-full bg-[#d4dadc]"></div>
+    </div>
+    <div
+      v-if="!isViewReady"
+      class="absolute inset-0 flex items-center justify-center"
+    >
+      <span class="loading loading-spinner loading-lg text-base-content/40"></span>
+    </div>
     <div
       v-if="pendingCity"
       class="city-name-input-container"
@@ -100,6 +113,21 @@ let vectorRenderer: L.Canvas | null = null;
 // don't destroy and re-create the layer the user is actively interacting with.
 let suppressNextPropsRender = false;
 let blockNextMapClick = false;
+// A vertex that snaps onto another element is released away from the cursor,
+// so the click that follows the drag lands on the map or on that other element
+// instead of the dragged handle. Left alone it changes the selection, which
+// ends edit mode in the middle of the edit. Clicks are ignored for a moment
+// after every edit gesture.
+const POST_EDIT_CLICK_GUARD_MS = 350;
+let ignoreClicksUntil = 0;
+
+function startPostEditClickGuard() {
+  ignoreClicksUntil = Date.now() + POST_EDIT_CLICK_GUARD_MS;
+}
+
+function isPostEditClick(): boolean {
+  return Date.now() < ignoreClicksUntil;
+}
 let labelVisibilityFrame: number | null = null;
 let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
 let selectedCityRing: L.Marker | null = null;
@@ -193,6 +221,7 @@ const featureLayerManager = {
 
     layer.on("click", () => {
       const pm = (map as MapWithPm)?.pm;
+      if (isPostEditClick()) return;
       // Don't steal clicks from active drawing tools
       if (drawing.activeDrawingMode.value !== null) return;
       if (pm?.globalRemovalModeEnabled?.()) return;
@@ -212,6 +241,7 @@ const featureLayerManager = {
 
     layer.on("dblclick", () => {
       const pm = (map as MapWithPm)?.pm;
+      if (isPostEditClick()) return;
       // Don't steal clicks from active drawing tools
       if (drawing.activeDrawingMode.value !== null) return;
       if (pm?.globalRemovalModeEnabled?.()) return;
@@ -278,6 +308,8 @@ const featureLayerManager = {
 
 function applyLayerUpdate(layer: L.Layer) {
   const runtimeLayer = layer as AtlasRuntimeLayer;
+  // Every sync event closes a mouse gesture (drag, vertex move, rotation).
+  startPostEditClickGuard();
 
   if (runtimeLayer.__atlasApplyingSync) return;
   runtimeLayer.__atlasApplyingSync = true;
@@ -330,6 +362,51 @@ function syncFeaturesFromMapLayers(): Feature[] {
   return Array.from(mergedById.values());
 }
 
+const isViewReady = ref(false);
+// Shows the map even if the parent never frames it (e.g. a failed load)
+const VIEW_READY_FALLBACK_MS = 5000;
+let viewReadyFallback: ReturnType<typeof setTimeout> | null = null;
+
+function revealMap() {
+  isViewReady.value = true;
+  if (viewReadyFallback) clearTimeout(viewReadyFallback);
+  viewReadyFallback = null;
+}
+
+// Frames the features currently drawn on the map (visibility and timeline
+// filters applied), or only those of `featureIds` when given. Keeps the
+// current view when nothing is drawn.
+function fitToVisibleFeatures(featureIds?: ReadonlySet<string>) {
+  if (!map) return;
+  revealMap();
+  const bounds = L.latLngBounds([]);
+  featureLayerManager.layers.forEach((layer, id) => {
+    if (featureIds && !featureIds.has(id)) return;
+    if (!map!.hasLayer(layer)) return;
+    extendBoundsWithLayer(bounds, layer);
+  });
+  if (!bounds.isValid()) return;
+  // maxZoom keeps a single city or label from zooming in to street level
+  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10, animate: false });
+}
+
+function extendBoundsWithLayer(bounds: L.LatLngBounds, layer: L.Layer) {
+  const located = layer as Partial<{
+    getBounds: () => L.LatLngBounds;
+    getLatLng: () => L.LatLng;
+    eachLayer: (fn: (child: L.Layer) => void) => void;
+  }>;
+  if (typeof located.getBounds === "function") {
+    const layerBounds = located.getBounds();
+    if (layerBounds.isValid()) bounds.extend(layerBounds);
+  } else if (typeof located.getLatLng === "function") {
+    bounds.extend(located.getLatLng());
+  } else if (typeof located.eachLayer === "function") {
+    // A city is a plain LayerGroup (point + label), which has no bounds of its own
+    located.eachLayer((child) => extendBoundsWithLayer(bounds, child));
+  }
+}
+
 function clearDraftLayers() {
   drawing.clearDrawnItems();
 }
@@ -342,6 +419,7 @@ defineExpose({
   syncFeaturesFromMapLayers,
   clearDraftLayers,
   resetSelection,
+  fitToVisibleFeatures,
 });
 
 // Tracks feature IDs that got `feature-updated` during the current cut cycle.
@@ -350,13 +428,38 @@ defineExpose({
 // latter, so we must detect them by checking which layers disappeared from the
 // map but were NOT updated.
 let cuttingUpdatedIds: Set<string> | null = null;
+// Feature IDs that were drawn on the map when the cut started. Hidden features
+// (visibility controls or timeline) are off the map too, but geoman never saw
+// them, so cut-complete must not mistake them for enclosed zones.
+let cuttingVisibleIds: Set<string> | null = null;
 
+// Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
+// PM on the inner L.Polygon sublayers and removes those, NOT the outer
+// container. map.hasLayer(container) therefore still returns true even
+// after geoman removed the enclosed zone. We must check the whole subtree.
+function isLayerOffMap(layer: L.Layer): boolean {
+  if (!map!.hasLayer(layer)) return true;
+  const asGroup = layer as unknown as Partial<L.LayerGroup>;
+  if (typeof asGroup.getLayers === "function") {
+    const children = asGroup.getLayers() as L.Layer[];
+    // All children gone (removed from group entirely, or none left on map)
+    if (children.length === 0) return true;
+    return children.every((child: L.Layer) => isLayerOffMap(child));
+  }
+  return false;
+}
 
 const drawing = useMapDrawing(
   (event, ...args) => {
     const current = localFeaturesSnapshot.value;
     if (event === "cut-started") {
       cuttingUpdatedIds = new Set<string>();
+      cuttingVisibleIds = new Set<string>();
+      if (map) {
+        featureLayerManager.layers.forEach((layer, id) => {
+          if (!isLayerOffMap(layer)) cuttingVisibleIds!.add(id);
+        });
+      }
       return;
     }
     if (event === "feature-created") {
@@ -391,38 +494,16 @@ const drawing = useMapDrawing(
       // Detect zones that geoman silently removed (fully enclosed by the cut
       // polygon). Geoman calls map.removeLayer() on them directly — pm:remove
       // never fires. They are identified as layers that are no longer on the map
-      // but were NOT processed by pm:cut (feature-updated).
-      //
-      // Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
-      // PM on the inner L.Polygon sublayers and removes those, NOT the outer
-      // container. map.hasLayer(container) therefore still returns true even
-      // after geoman removed the enclosed zone. We must check the children.
-      if (map && cuttingUpdatedIds !== null) {
-        const isRemovedFromMap = (layer: L.Layer): boolean => {
-          if (!map!.hasLayer(layer)) return true;
-
-          const asGroup = layer as unknown as Partial<L.LayerGroup>;
-          if (typeof asGroup.getLayers === "function") {
-            const children = asGroup.getLayers() as L.Layer[];
-            // A GeoJSON feature group may keep its outer container on the map
-            // while Geoman removes all nested polygon sublayers. We need to
-            // consider the whole subtree, not just the first level of children.
-            if (children.length === 0) return true;
-            return children.every((child: L.Layer) => {
-              if (!map!.hasLayer(child)) return true;
-              const childGroup = child as unknown as Partial<L.LayerGroup>;
-              if (typeof childGroup.getLayers === "function") {
-                return isRemovedFromMap(child);
-              }
-              return false;
-            });
-          }
-          return false;
-        };
-
+      // but were NOT processed by pm:cut (feature-updated). Only layers that
+      // were on the map when the cut started count: hidden ones were already off.
+      if (map && cuttingUpdatedIds !== null && cuttingVisibleIds !== null) {
         const removedIds: string[] = [];
         featureLayerManager.layers.forEach((layer, id) => {
-          if (isRemovedFromMap(layer) && !cuttingUpdatedIds!.has(id)) {
+          if (
+            cuttingVisibleIds!.has(id) &&
+            isLayerOffMap(layer) &&
+            !cuttingUpdatedIds!.has(id)
+          ) {
             removedIds.push(id);
           }
         });
@@ -437,6 +518,7 @@ const drawing = useMapDrawing(
         }
       }
       cuttingUpdatedIds = null;
+      cuttingVisibleIds = null;
       // Re-render so intersected zones get their updated geometry and the
       // enclosed zones (now removed from localFeaturesSnapshot) stay gone.
       renderAllFeatures();
@@ -982,6 +1064,7 @@ onMounted(() => {
     [52.9399, -73.5491],
     5,
   );
+  viewReadyFallback = setTimeout(revealMap, VIEW_READY_FALLBACK_MS);
   vectorRenderer = L.canvas({ padding: 0.5 });
   // Make all path layers (including geoman's temp drawing layers) use the
   // same canvas renderer. Without this, geoman creates a second <canvas>
@@ -1106,6 +1189,7 @@ onMounted(() => {
       blockNextMapClick = false;
       return;
     }
+    if (isPostEditClick()) return;
     if (shapeScaling.isTransforming?.()) {
       return;
     }
@@ -1158,6 +1242,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (viewReadyFallback) clearTimeout(viewReadyFallback);
   if (labelVisibilityFrame !== null) {
     cancelAnimationFrame(labelVisibilityFrame);
     labelVisibilityFrame = null;

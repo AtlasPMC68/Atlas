@@ -412,11 +412,9 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("province");
     await select.trigger("change");
 
-    const textInput = wrapper
-      .findAll("input")
-      .find((i: any) => i.element.value === "QUÉBEC" && i.attributes("style"));
-    expect(textInput?.element.value).toBe("QUÉBEC");
-    expect(textInput?.attributes("style")).toContain("font-size: 14px");
+    const textInput = wrapper.find('[data-testid="label-text-input"]');
+    expect((textInput.element as HTMLTextAreaElement).value).toBe("QUÉBEC");
+    expect(textInput.attributes("style")).toContain("font-size: 14px");
 
     // Click modifier button
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
@@ -582,11 +580,61 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await nameInput!.trigger("input");
 
     // The preview input should be updated
-    const previewInput = wrapper
-      .findAll("input")
-      .find((i: any) => i.attributes("style")?.includes("font-size"));
-    expect(previewInput).toBeDefined();
-    expect(previewInput!.element.value).toBe("Trois-Rivières");
+    const previewInput = wrapper.find('[data-testid="label-text-input"]');
+    expect(previewInput.attributes("style")).toContain("font-size");
+    expect((previewInput.element as HTMLTextAreaElement).value).toBe("Trois-Rivières");
+  });
+
+  it("keeps the opacity of a point between 0 and 1", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [textFeature],
+        featureVisibility: new Map([[textFeature.id, true]]),
+      },
+    });
+
+    await (wrapper.vm as any).showEditFeatureDialog(textFeature);
+
+    const opacityInput = wrapper.find('[data-testid="point-fill-opacity-input"]');
+    expect(opacityInput.attributes("min")).toBe("0");
+    expect(opacityInput.attributes("max")).toBe("1");
+
+    await opacityInput.setValue("7");
+    await opacityInput.trigger("change");
+    expect((opacityInput.element as HTMLInputElement).value).toBe("1");
+
+    // Saved without leaving the field: the stored value is clamped all the same.
+    await opacityInput.setValue("-3");
+    const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
+    await modifyBtn!.trigger("click");
+
+    const emittedFeature = wrapper.emitted("update-feature")![0][0] as Feature;
+    expect(emittedFeature.properties.fillOpacity).toBe(0);
+  });
+
+  it("colours and sizes the text of a point apart from its symbol, with line breaks", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        features: [textFeature],
+        featureVisibility: new Map([[textFeature.id, true]]),
+      },
+    });
+
+    await (wrapper.vm as any).showEditFeatureDialog(textFeature);
+
+    await wrapper.find('[data-testid="color-input"]').setValue("#ffee00");
+    await wrapper.find('[data-testid="text-color-input"]').setValue("#112233");
+    await wrapper.find('[data-testid="text-size-input"]').setValue("22");
+    await wrapper.find('[data-testid="label-text-input"]').setValue("Québec\nla capitale");
+
+    const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
+    await modifyBtn!.trigger("click");
+
+    const emittedFeature = wrapper.emitted("update-feature")![0][0] as Feature;
+    expect(emittedFeature.properties.colorRgb).toEqual([255, 238, 0]);
+    expect(emittedFeature.properties.textColorRgb).toEqual([17, 34, 51]);
+    expect(emittedFeature.properties.textSizePx).toBe(22);
+    expect(emittedFeature.properties.labelText).toBe("Québec\nla Capitale");
   });
 
   it("displays shape controls (opacity, stroke) when editing a non-text feature", async () => {

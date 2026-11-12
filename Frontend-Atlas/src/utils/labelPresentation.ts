@@ -29,6 +29,16 @@ export type CustomLabelStyle = LabelStyle;
 export type NewCustomLabelStyle = Omit<CustomLabelStyle, "id">;
 
 export const MAX_PREVIEW_FONT_SIZE_PX = 18;
+export const MIN_TEXT_SIZE_PX = 6;
+export const MAX_TEXT_SIZE_PX = 96;
+
+/** A usable label size from user input or stored data, or undefined when there is none. */
+export function normalizeTextSizePx(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const size = Number(value);
+  if (!Number.isFinite(size)) return undefined;
+  return Math.max(MIN_TEXT_SIZE_PX, Math.min(MAX_TEXT_SIZE_PX, Math.round(size)));
+}
 
 export function getCustomStyleObject(style: CustomLabelStyle): CSSProperties {
   const isBold = style.fontWeight === "bold" || Boolean(style.bold);
@@ -160,11 +170,16 @@ export function formatLabelHtml(formattedText: unknown): string {
   const text = String(formattedText).trim();
   if (!text) return "";
 
-  return text
-    .split("\n")
+  const lines = text.split("\n");
+  // Line breaks the author typed are the layout: only a single-line label is
+  // balanced over two lines automatically.
+  const hasAuthoredBreaks = lines.length > 1;
+
+  return lines
     .map((line) => {
       const trimmed = line.trim();
       if (!trimmed) return "";
+      if (hasAuthoredBreaks) return escapeHtml(trimmed);
       return splitBalancedLine(trimmed)
         .split("<br>")
         .map((segment) => escapeHtml(segment))
@@ -218,6 +233,8 @@ export function resolveLabelTypography(options: {
   wordType?: string | null;
   customLabelStyle?: CustomLabelStyle | Partial<LabelStyle> | null;
   color?: string | null;
+  /** Per-element size override; a custom style's own size still wins. */
+  sizePx?: number | null;
   defaultSizePx?: number;
 }): DerivedLabelTypography {
   const norm = normalizeWordType(options.wordType ?? undefined);
@@ -230,7 +247,12 @@ export function resolveLabelTypography(options: {
     ? custom.fontWeight === "bold" || Boolean(custom.bold)
     : true;
   const color = custom?.color || options.color || "#000000";
-  const sizePx = custom?.sizePx ?? taxonomy?.sizePx ?? options.defaultSizePx ?? 12;
+  const sizePx =
+    custom?.sizePx ??
+    options.sizePx ??
+    taxonomy?.sizePx ??
+    options.defaultSizePx ??
+    12;
 
   return {
     isUppercase,
@@ -269,8 +291,11 @@ export function getLabelPresentation(
     customText ??
     String(props.labelText ?? props.name ?? typedFeature.name ?? "");
 
+  // The text has its own colour when one was set; otherwise it follows the
+  // element colour, which is also the point symbol's fill.
   const colorCss =
     customStyle?.color ||
+    colorRgbToCss(props.textColorRgb) ||
     colorRgbToCss(props.colorRgb) ||
     (typeof props.color === "string" ? props.color : "#000000");
 
@@ -278,6 +303,7 @@ export function getLabelPresentation(
     wordType,
     customLabelStyle: customStyle as CustomLabelStyle,
     color: colorCss,
+    sizePx: normalizeTextSizePx(props.textSizePx),
   });
 
   const formattedText = customStyle

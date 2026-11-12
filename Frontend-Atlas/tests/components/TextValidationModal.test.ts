@@ -83,7 +83,7 @@ describe("TextValidationModal", () => {
 
   it("does not render when isOpen is false", () => {
     const wrapper = mountModal(testItems, false);
-    expect(wrapper.find(".fixed").exists()).toBe(false);
+    expect(wrapper.find('[data-testid="text-validation-modal"]').exists()).toBe(false);
   });
 
   it("does not render any temporary map container (map removed)", () => {
@@ -94,7 +94,7 @@ describe("TextValidationModal", () => {
 
   it("keeps the confirmation dialog open when all OCR texts have been removed", () => {
     const wrapper = mountModal([], true);
-    expect(wrapper.find(".fixed").exists()).toBe(true);
+    expect(wrapper.find('[data-testid="text-validation-modal"]').exists()).toBe(true);
     expect(wrapper.text()).toContain("Aucun texte");
     expect(findButtonByText(wrapper, "Confirmer et afficher sur la carte")).toBeDefined();
   });
@@ -109,8 +109,9 @@ describe("TextValidationModal", () => {
       props: { isOpen: true, initialItems: testItems, mapTitle: "1900" },
     });
 
-    expect(wrapper.find(".border-t").text()).toContain("1900");
-    expect(wrapper.find(".border-t").text()).not.toContain("Sélectionné(s) à conserver");
+    const footer = wrapper.find('[data-testid="text-validation-footer"]');
+    expect(footer.text()).toContain("1900");
+    expect(footer.text()).not.toContain("Sélectionné(s) à conserver");
   });
 
   it("renders the original image at the left when imageUrl is provided", () => {
@@ -184,8 +185,10 @@ describe("TextValidationModal", () => {
     expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
     expect((textInputs[1].element as HTMLInputElement).value).toBe("Rivière Sauvage");
     expect(wrapper.text()).toContain("Paris");
-    // Item 1 has a nearby place suggestion, so it should show the '!' badge
-    expect(wrapper.text()).toContain("!");
+    // Item 1 has a nearby place suggestion, offered as a one-click button
+    expect(wrapper.text()).toContain("Lieu suggéré");
+    // Item 2 was renamed, so what the OCR read stays visible
+    expect(wrapper.text()).toContain("Texte détecté : « Riv Sauvage »");
   });
 
   it("allows user to accept suggested city in 1 click and toggle back", async () => {

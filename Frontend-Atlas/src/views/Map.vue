@@ -46,7 +46,6 @@
             :features="features"
             :feature-visibility="combinedFeatureVisibility"
             :selected-year="selectedYear"
-            :map-periods="mapPeriods"
             :project-id="projectId || projectRouteId || ''"
             :can-undo="canUndo"
             :can-redo="canRedo"
@@ -141,7 +140,7 @@
   />
 </template>
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted, watch } from "vue";
+import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
@@ -161,14 +160,14 @@ import {
   snakeToCamel,
   toImageSrc,
 } from "../utils/utils";
-import { toYear } from "../utils/dateUtils";
+import { isPeriodActiveAt, toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { useProjectLabelStyles } from "../composables/useProjectLabelStyles";
 import { getOriginalMapImage } from "../composables/useMapImageCache";
 import keycloak from "../keycloak";
-import leafletImage from "leaflet-image";
 import L, { type Map as LeafletMap } from "leaflet";
+import { captureMapThumbnail } from "../utils/mapThumbnail";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
@@ -199,6 +198,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const IMPORTED_MAP_QUERY = "carte";
 const projectRouteId = computed(
   () => (route.params.projectId as string | undefined) ?? null,
 );
@@ -207,6 +207,7 @@ const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
   resetSelection: () => void;
+  fitToVisibleFeatures: (featureIds?: ReadonlySet<string>) => void;
 } | null>(null);
 const addMapDialogRef = ref<{
   open: () => void;
@@ -399,6 +400,19 @@ const timelineMarkerYears = computed(() => {
   return [...markers].sort((a, b) => a - b);
 });
 
+const periodStartYears = computed(
+  () => new Set(enrichedPeriods.value.map((p: SliderPeriod) => p.startYear)),
+);
+
+const periodStartDates = computed(
+  () =>
+    new Set(
+      enrichedPeriods.value
+        .map((p: SliderPeriod) => p.startDate)
+        .filter((date: string | null): date is string => Boolean(date)),
+    ),
+);
+
 const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
     if (!useTimelineFilter.value) return true;
@@ -410,16 +424,20 @@ const filteredFeatures = computed(() => {
     if (!period) return true;
 
     if (selectedExactDate.value && period.startDate && period.endDate) {
-      return (
-        period.startDate <= selectedExactDate.value &&
-        period.endDate >= selectedExactDate.value
+      return isPeriodActiveAt(
+        period.startDate,
+        period.endDate,
+        selectedExactDate.value,
+        periodStartDates.value,
       );
     }
 
     if (period.startYear == null || period.endYear == null) return true;
-    return (
-      period.startYear <= selectedYear.value &&
-      period.endYear >= selectedYear.value
+    return isPeriodActiveAt(
+      period.startYear,
+      period.endYear,
+      selectedYear.value,
+      periodStartYears.value,
     );
   });
 });
@@ -604,52 +622,21 @@ async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
   const uploadProjectId = resolvedProjectId ?? projectId.value;
   if (!uploadProjectId) return false;
 
-  await new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  );
+  const blob = await captureMapThumbnail(leafletMap.value as LeafletMap);
+  if (!blob) return false;
 
-  const mapToCapture = leafletMap.value as LeafletMap;
-  const originalEachLayer = mapToCapture.eachLayer;
+  const formData = new FormData();
+  formData.append("image", blob);
 
-  // Temporarily override eachLayer to hide DivIcon markers from leafletImage
-  // This avoids mutating Leaflet's internal layer states which causes zoom crashes 
-  // when combined with asynchronous Vue state updates and layer re-rendering.
-  mapToCapture.eachLayer = function (this: LeafletMap, fn: (layer: L.Layer) => void, context?: any) {
-    return originalEachLayer.call(this, (layer: L.Layer) => {
-      if (layer instanceof L.Marker && layer.options.icon instanceof L.DivIcon) {
-        return;
-      }
-      fn.call(context, layer);
-    }, context);
-  } as any;
-
-  return await new Promise<boolean>((resolve) => {
-    leafletImage(mapToCapture, async (err, canvas) => {
-      try {
-        if (err || !canvas) return resolve(false);
-
-        const blob = await new Promise<Blob | null>((r) =>
-          canvas.toBlob(r, "image/png"),
-        );
-        if (!blob) return resolve(false);
-
-        const formData = new FormData();
-        formData.append("image", blob);
-
-        const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!res.ok) {
-          console.error("Project thumbnail upload failed:", res.status);
-        }
-        resolve(res.ok);
-      } finally {
-        mapToCapture.eachLayer = originalEachLayer;
-      }
-    });
+  const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
+    method: "POST",
+    body: formData,
   });
+
+  if (!res.ok) {
+    console.error("Project thumbnail upload failed:", res.status);
+  }
+  return res.ok;
 }
 
 async function loadProjectIdForMap(): Promise<boolean> {
@@ -736,7 +723,7 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       features.value = nextFeatures;
       await onSaveMap(nextFeatures);
     }
-    showAlert("success", "Styles de libellé enregistrés dans ce projet.");
+    // persistCustomLabelStyles already confirmed the save to the user.
   } catch (error) {
     console.error("Failed to save project label styles:", error);
     showAlert(
@@ -1093,6 +1080,45 @@ async function loadInitialFeatures() {
   }
 }
 
+// Opens the map on the project's elements instead of a fixed location. Only
+// called when a project or map is opened, so saving never moves the view.
+async function frameVisibleFeatures() {
+  // Let MapGeoJSON render the freshly loaded features first
+  await nextTick();
+  mapGeoJsonRef.value?.fitToVisibleFeatures();
+}
+
+// Coming back from an import (?carte=<mapId>): moves the timeline onto the map
+// that was just extracted and frames it, rather than the whole project.
+async function frameImportedMap(): Promise<boolean> {
+  const importedMapId = route.query[IMPORTED_MAP_QUERY];
+  if (typeof importedMapId !== "string" || !importedMapId) return false;
+
+  const period = periodByMapId.value.get(importedMapId);
+  if (period) selectedYear.value = period.startYear;
+
+  const importedFeatureIds = new Set<string>(
+    features.value
+      .filter((feature: Feature) => feature.mapId === importedMapId)
+      .map((feature: Feature) => String(feature.id)),
+  );
+
+  // The marker is single-use: a reload should open on the whole project again.
+  const { [IMPORTED_MAP_QUERY]: _consumed, ...query } = route.query;
+  void _consumed;
+  await router.replace({ query });
+
+  if (importedFeatureIds.size === 0) return false;
+  await nextTick();
+  mapGeoJsonRef.value?.fitToVisibleFeatures(importedFeatureIds);
+  return true;
+}
+
+async function frameOpenedProject() {
+  if (await frameImportedMap()) return;
+  await frameVisibleFeatures();
+}
+
 async function loadCurrentMapInfo(): Promise<void> {
   try {
     const res = await apiFetch(`/projects/${projectId.value}`, {
@@ -1337,6 +1363,7 @@ onMounted(async () => {
   await loadCustomLabelStyles();
   await loadCurrentMapInfo();
   await loadInitialFeatures();
+  await frameOpenedProject();
 
   if (projectId.value) {
     const pendingEditsStr = localStorage.getItem(`pending_public_edits_${projectId.value}`);
@@ -1360,17 +1387,20 @@ onMounted(async () => {
       }
     }
 
-    await uploadMapThumbnail();
   }
 
   window.addEventListener("keydown", handleKeyboardShortcuts);
   window.addEventListener("click", onDocumentClick);
+
+  // Not awaited: the shortcuts above must not wait for the tiles to load.
+  if (projectId.value) void uploadMapThumbnail();
 });
 
 watch([projectRouteId], async () => {
   await resolveRouteContext();
   await loadProjectMapsForTimeline();
   await loadInitialFeatures();
+  await frameVisibleFeatures();
 });
 
 watch([timelineMinYear, timelineMaxYear], () => {
@@ -1406,6 +1436,7 @@ watch(
     }
 
     await loadInitialFeatures();
+    await frameVisibleFeatures();
   },
 );
 
@@ -1538,7 +1569,7 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       featuresToSave,
       pendingDeletions.value,
     );
-    showAlert("success", "Projet sauvegardée avec succès !");
+    showAlert("success", "Projet sauvegardé avec succès !");
   } catch (err) {
     showAlert("error", "Erreur lors de la sauvegarde des éléments.");
     throw new Error(
@@ -1550,48 +1581,3 @@ async function onSaveMap(featuresOverride?: Feature[]) {
 }
 </script>
 
-<style>
-.timeline-filter-toggle {
-  appearance: none;
-  width: 2.25rem;
-  height: 1.25rem;
-  border-radius: 9999px;
-  border: 1px solid var(--color-base-300);
-  background-color: var(--color-base-300);
-  position: relative;
-  cursor: pointer;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease;
-}
-
-.timeline-filter-toggle::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 9999px;
-  background-color: var(--color-primary-content);
-  transform: translate(0, -50%);
-  transition:
-    transform 150ms ease,
-    background-color 150ms ease;
-}
-
-.timeline-filter-toggle:checked {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.timeline-filter-toggle:checked::before {
-  background-color: var(--color-primary-content);
-  transform: translate(1rem, -50%);
-}
-
-.timeline-filter-toggle:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-</style>
