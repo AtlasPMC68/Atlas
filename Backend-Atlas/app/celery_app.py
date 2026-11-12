@@ -6,7 +6,7 @@ load_dotenv()
 
 
 def resolve_redis_url() -> str:
-    """Resolve the broker/backend URL from the environment used by the project and OCR workers."""
+    """Resolve the broker/backend URL from the environment used by the project workers."""
     return os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL") or "redis://redis:6379/0"
 
 
@@ -29,8 +29,6 @@ celery_app.conf.update(
     enable_utc=True,
     result_expires=3600,
     task_routes={
-        "app.tasks.run_map_ocr": {"queue": "maps_ocr"},
-        "florence.run_pipeline": {"queue": "florence"},
         "app.tasks.*": {"queue": "default"},
     },
 )

@@ -7,7 +7,7 @@ MAP_EXPECTED_TEXTS = {
 
     "Nouvelle-France1750": ["Québec", "Trois-Rivières", "Montréal", "Boston", "New York", 
                             "Philadelphie", "Baltimore", "Charleston", "Savannah", 
-                            "Baton Rouge", "Mobile", "Biloxi", "La Nouvelle-Orléans"],
+                            "Baton", "Rouge", "Mobile", "Biloxi", "La Nouvelle-Orléans"],
 
     "Progress_wehrmacht_lux_May_1940": ["Vianden", "Ettelbrück", "Larochette", "Echternach", "Mersch", "Luxemburg"],
 
@@ -15,15 +15,15 @@ MAP_EXPECTED_TEXTS = {
 
     "Quebec_1800":          ["Québec", "Montréal", "Boston", "New York"],
 
-    "Quebec_Traite1783":    ["Saint-Pierre", "Québec", "Montréal", "Boston", "New York", "La Nouvelle-Orléans"],
+    "Quebec_Traite1783":    ["Saint-Pierre", "Québec", "Montréal", "Boston", "New York", "La Nouvelle", "Orléans"],
 
     "Degrade_Afrique":      ["Dakar", "Abidjan", "Lomé", "Douala"],
 
     "Quebec_Cities_Only":    ["Montréal", "Québec", "Trois-Rivières", "Sherbrooke", "Saguenay", "Rimouski", "Sept-Îles", "Chibougamau", "Kuujjuaq"],
 }
 
-# Total raw number of text zones that Florence is expected to detect (before rejection)
-# Updated with actual detection counts returned by test_florence_raw_detection_count
+# Total raw number of text zones that the OCR is expected to detect (before rejection)
+# Updated with actual detection counts returned by test_ocr_raw_detection_count
 MAP_EXPECTED_ZONE_DETECTION_COUNTS = {
     "Quebec_Traite1783": 37,
     "Quebec_1800": 23,

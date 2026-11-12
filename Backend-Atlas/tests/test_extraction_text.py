@@ -27,7 +27,7 @@ RESET = "\033[0m"
 @pytest.fixture(autouse=True)
 def clean_log_format_for_extraction(request: pytest.FixtureRequest):
     """Format logs without module prefixes and set log level configured in pytest.ini."""
-    if request.node.name.startswith("test_florence_raw_detection_count"):
+    if request.node.name.startswith("test_ocr_raw_detection_count"):
         target_level = logging.WARNING
     else:
         show_info = request.config.getini("extraction_log_info")
@@ -255,7 +255,7 @@ _OCR_RESULT_CACHE: dict[Path, list[dict[str, Any]]] = {}
 
 
 def get_extracted_text_cached(image_path: Path) -> list[dict[str, Any]]:
-    """Execute Florence-2 OCR pipeline once per image and cache result across tests."""
+    """Execute the OCR pipeline once per image and cache result across tests."""
     if image_path not in _OCR_RESULT_CACHE:
         with open(image_path, "rb") as input_file:
             file_content = input_file.read()
@@ -274,11 +274,11 @@ def get_extracted_text_cached(image_path: Path) -> list[dict[str, Any]]:
     get_test_data(),
     ids=lambda val: val.name if isinstance(val, Path) else None,
 )
-def test_florence_raw_detection_count(
+def test_ocr_raw_detection_count(
     image_path: Path,
     expected_text: list[str],
 ) -> None:
-    """Test raw count of text zones detected by Florence-2 without evaluating textual accuracy."""
+    """Test raw count of text zones detected by the OCR without evaluating textual accuracy."""
     assert image_path.exists()
     expected_count = MAP_EXPECTED_ZONE_DETECTION_COUNTS.get(image_path.stem)
     if expected_count is None:
@@ -289,7 +289,7 @@ def test_florence_raw_detection_count(
 
     if actual_count != expected_count:
         error_msg = (
-            f"Text zones (Florence-2): {actual_count} detected vs {expected_count} expected in MAP_EXPECTED_DETECTION_COUNTS"
+            f"Text zones (OCR): {actual_count} detected vs {expected_count} expected in MAP_EXPECTED_DETECTION_COUNTS"
         )
         pytest.fail(error_msg, pytrace=False)
 

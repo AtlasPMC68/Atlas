@@ -77,7 +77,7 @@ services:
       timeout: 5s
       retries: 5
 
-  celery-worker: &celery-worker-base
+  celery-worker:
     build:
       context: ./Backend-Atlas
     container_name: atlas-celery-worker
@@ -107,33 +107,6 @@ services:
       redis:
         condition: service_healthy
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
-
-  celery-worker-ocr:
-    <<: *celery-worker-base
-    container_name: atlas-celery-worker-ocr
-    command: celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h
-
-  florence-worker:
-    build:
-      context: ./Backend-Atlas/ocr-florence
-      args:
-        UID: ${UID:-1000}
-    container_name: atlas-florence-worker
-    restart: unless-stopped
-    env_file:
-      # Team convention (Backend-Atlas/.env.dev) first, root .env (deploy.sh) overrides it.
-      # Both optional so CI and fresh clones work with only one of them.
-      - path: ./Backend-Atlas/.env.dev
-        required: false
-      - path: .env
-        required: false
-    environment:
-      SAVE_PREPROCESSED_IMAGES: "false"
-    volumes:
-      - ocr-data:/data
-      - ./Backend-Atlas/ocr-florence:/app/ocr-florence
-    depends_on:
-      - redis
 
   flower:
     build:
@@ -297,8 +270,6 @@ services:
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_started
-      florence-worker:
         condition: service_started
     volumes:
       - ./Backend-Atlas/app:/app/app
