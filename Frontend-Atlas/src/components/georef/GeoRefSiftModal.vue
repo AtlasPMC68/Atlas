@@ -31,17 +31,17 @@
         </span>
         <!-- Key to the markers drawn by both maps. -->
         <span class="flex items-center gap-1">
-          <span class="status status-lg bg-red-600" aria-hidden="true" /> courant
+          <span class="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-red-600 bg-red-600" aria-hidden="true" /> courant
         </span>
         <span class="flex items-center gap-1">
-          <span class="status status-lg bg-blue-200 ring-1 ring-blue-600" aria-hidden="true" />
+          <span class="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-primary-600 bg-base-100" aria-hidden="true" />
           à apparier
         </span>
         <span class="flex items-center gap-1">
-          <span class="status status-lg bg-blue-600" aria-hidden="true" /> apparié
+          <span class="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-primary-600 bg-primary-600" aria-hidden="true" /> apparié
         </span>
         <span v-if="allowCheckPoints" class="flex items-center gap-1">
-          <span class="status status-lg bg-green-600" aria-hidden="true" /> vérification
+          <span class="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-green-600 bg-green-600" aria-hidden="true" /> vérification
         </span>
       </div>
 
@@ -99,8 +99,8 @@
               @change="toggleCheck(m.index, ($event.target as HTMLInputElement).checked)"
             />
             <span
-              class="status"
-              :class="m.check ? 'bg-green-600' : 'bg-blue-600'"
+              class="h-2.5 w-2.5 shrink-0 rounded-full"
+              :class="m.check ? 'bg-green-600' : 'bg-primary-600'"
               aria-hidden="true"
             />
             #{{ m.index + 1 }} vérification

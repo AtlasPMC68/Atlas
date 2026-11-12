@@ -37,23 +37,65 @@ export type FeatureVisibilityGroup = {
 
 export type ShapeKind = "square" | "rectangle" | "circle" | "triangle";
 
+export enum ValidationStatus {
+  ACCEPTED = "accepted",
+  REJECTED = "rejected",
+  MANUAL_REVIEW = "manual_review",
+}
+
+export type ValidationStatusValue =
+  | ValidationStatus
+  | "accepted"
+  | "rejected"
+  | "manual_review";
+
+export interface SuggestedPlace {
+  name: string;
+  coordinates: Coordinate;
+  type?: string;
+  source?: "json" | "nearby" | string;
+}
+
 export interface FeatureProperties {
   name: string;
   isVisible?: boolean;
   labelText?: string;
   sizePx?: number;
+  rawType?: string;
   colorName?: string;
   colorRgb?: [number, number, number]; // RGB values [0-255, 0-255, 0-255]
+  // Label text colour, when it differs from colorRgb (the point symbol's fill).
+  textColorRgb?: [number, number, number];
+  // Label size override; the word type's (or custom style's) size applies without it.
+  textSizePx?: number;
   strokeColor?: [number, number, number];
   fillOpacity?: number;
   strokeOpacity?: number;
   strokeWidth?: number;
-  mapElementType: MapElementType;
+  mapElementType?: MapElementType;
   shapeKind?: ShapeKind;
   mimeType?: string;
   bounds?: [Coordinate, Coordinate];
   layer?: number;
   rotation?: number;
+  opacity?: number;
+  image?: string;
+  isOcrText?: boolean;
+  recognized?: boolean;
+  show?: boolean;
+  originalText?: string;
+  matchedCity?: string;
+  country?: string;
+  population?: number;
+  confidence?: number;
+  validationStatus?: ValidationStatus | `${ValidationStatus}`;
+  validation_status?: ValidationStatus | `${ValidationStatus}`;
+  suggestedPlace?: SuggestedPlace;
+  customLabelStyleId?: string | null;
+  customLabelStyle?: any;
+  customLabelStyleFallbackWordType?: string;
+  [key: string]: any;
+  fontStyle?: "normal" | "italic" |"uppercase"| string;
 }
 
 export type FeatureForSave = Omit<Feature, "mapId" | "createdAt" | "updatedAt">;

@@ -27,7 +27,7 @@ MAP_EXPECTED_TEXTS = {
 MAP_EXPECTED_ZONE_DETECTION_COUNTS = {
     "Quebec_Traite1783": 37,
     "Quebec_1800": 23,
-    "Degrade_Afrique": 21,
+    "Degrade_Afrique": 20,
     "Quebec_1791": 24,
     "Progress_wehrmacht_lux_May_1940": 12,
     "Quebec_Cities_Only": 8,

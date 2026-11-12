@@ -77,7 +77,7 @@
     <template #list-area>
       <div v-if="pickedShapes.length > 0" class="flex flex-col gap-2 min-h-0">
         <span class="text-sm font-medium">Formes sélectionnées :</span>
-        <div class="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1">
+        <div class="flex flex-col gap-2 max-h-[26rem] overflow-y-auto pr-1">
           <div
             v-for="(shape, index) in pickedShapes"
             :key="`row-${index}`"
@@ -114,10 +114,12 @@
         </div>
       </div>
 
-      <p v-else class="text-sm text-base-content/50 italic">
-        Aucune forme sélectionnée — cliquez sur la carte pour ajouter des
-        formes.
-      </p>
+      <div
+        v-else
+        class="p-4 bg-base-200/50 rounded-lg border border-dashed border-base-300 text-sm text-base-content/60 italic text-center"
+      >
+        Aucune forme sélectionnée — cliquez sur la carte pour ajouter des formes.
+      </div>
     </template>
   </BasePickerModal>
 </template>

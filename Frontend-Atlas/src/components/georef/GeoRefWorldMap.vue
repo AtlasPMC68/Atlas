@@ -49,6 +49,28 @@ let map: L.Map | null = null;
 let landLayer: L.GeoJSON | null = null;
 let markers: L.Layer[] = [];
 
+let framedBoundsKey = "";
+let resizeObserver: ResizeObserver | null = null;
+
+function boundsKey(bounds: WorldBounds | null): string {
+  return bounds ? [bounds.west, bounds.south, bounds.east, bounds.north].join(",") : "";
+}
+
+// Frames the zone chosen on the world, and keeps the user inside it: the zoom
+// cannot go below the level that shows the whole zone.
+function frameWorldBounds(bounds: WorldBounds | null): void {
+  if (!map || !bounds) return;
+  const { west, south, east, north } = bounds;
+  const b = L.latLngBounds([south, west], [north, east]);
+  if (!b.isValid()) return;
+  const padded = b.pad(0.05);
+  map.setMinZoom(0);
+  map.fitBounds(padded, { padding: [10, 10], animate: false });
+  map.setMaxBounds(padded);
+  map.setMinZoom(map.getZoom());
+  framedBoundsKey = boundsKey(bounds);
+}
+
 function clearMarkers(): void {
   if (!map || !markers.length) return;
   const currentMap = map;
@@ -184,24 +206,31 @@ async function initMap(): Promise<void> {
     console.error("Failed to load Natural Earth land basemap", e);
   }
 
-  if (props.worldBounds) {
-    const { west, south, east, north } = props.worldBounds;
-    const b = L.latLngBounds([south, west], [north, east]);
-    if (b.isValid()) {
-      const padded = b.pad(0.05);
-      map.fitBounds(padded, { padding: [10, 10] });
-      map.setMaxBounds(padded);
-    }
-  }
+  frameWorldBounds(props.worldBounds);
 
   renderPoints();
 }
 
 onMounted(async () => {
   await initMap();
+  // The map can be created before its modal has its final size; Leaflet then
+  // frames the zone for a tiny container and ends up zoomed far out.
+  if (typeof ResizeObserver === "undefined" || !mapContainer.value) return;
+  let lastSize = "";
+  resizeObserver = new ResizeObserver(() => {
+    if (!map || !mapContainer.value) return;
+    const size = `${mapContainer.value.clientWidth}x${mapContainer.value.clientHeight}`;
+    if (size === lastSize) return;
+    lastSize = size;
+    map.invalidateSize();
+    if (framedBoundsKey) frameWorldBounds(props.worldBounds);
+  });
+  resizeObserver.observe(mapContainer.value);
 });
 
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   if (map) {
     clearMarkers();
     if (landLayer) {
@@ -236,18 +265,12 @@ watch(
   { deep: true },
 );
 
+// The parent replaces the bounds object on every poll of the import (while the
+// text analysis runs), with the same values. Only a real change of zone
+// re-frames the map: otherwise the view the user zoomed into is thrown away
+// every second and a half.
 watch(
-  () => props.worldBounds,
-  (bounds: WorldBounds | null) => {
-    if (!map || !bounds) return;
-    const { west, south, east, north } = bounds;
-    const b = L.latLngBounds([south, west], [north, east]);
-    if (b.isValid()) {
-      const padded = b.pad(0.05);
-      map.fitBounds(padded, { padding: [10, 10] });
-      map.setMaxBounds(padded);
-    }
-  },
-  { deep: true },
+  () => boundsKey(props.worldBounds),
+  () => frameWorldBounds(props.worldBounds),
 );
 </script>
