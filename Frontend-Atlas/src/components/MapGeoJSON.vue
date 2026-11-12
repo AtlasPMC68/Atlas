@@ -40,7 +40,6 @@ import {
   ref,
   computed,
   nextTick,
-  toRef,
 } from "vue";
 import L from "leaflet";
 import "leaflet-geometryutil";
@@ -531,11 +530,11 @@ const drawing = useMapDrawing(
 const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
 const cityMode = useAddCityMode({
   getMap: () => map,
-  selectedYear: toRef(props, "selectedYear"),
   localFeaturesSnapshot,
   cityInput,
   onCreated: (next: any) => emit('draw-create', next),
   onAfterCreate: () => renderAllFeatures(),
+  getProjectId: () => props.projectId,
 });
 const { addCityMode, pendingCity, cityInputName } = cityMode;
 const cancelAddCity = cityMode.cancel;
