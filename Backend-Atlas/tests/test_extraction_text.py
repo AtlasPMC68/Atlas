@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from app.utils.cities_validation import match_ocr_label
+from app.utils.place_resolution import match_ocr_label
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 

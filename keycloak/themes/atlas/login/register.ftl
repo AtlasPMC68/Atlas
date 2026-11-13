@@ -11,7 +11,7 @@
     <#elseif section = "form">
 
         <h1 id="kc-page-title">
-            Create your account
+            ${msg("atlasRegisterTitle")}
         </h1>
 
         <form
@@ -113,7 +113,7 @@
         <a
             class="atlas-back"
             href="${url.loginUrl}">
-            ← Back to login
+            ${msg("atlasBackToLogin")}
         </a>
 
     </#if>

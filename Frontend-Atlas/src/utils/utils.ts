@@ -1,3 +1,5 @@
+import { synchronizeValidationState } from "./featureValidationState";
+
 // ---------- helpers ----------
 type IsTuple<T> = T extends readonly any[]
   ? number extends T["length"]
@@ -77,6 +79,10 @@ export function prepareFeaturesForSave(features: unknown[]): unknown[] {
     const { createdAt, updatedAt, ...next } = rawFeature;
     void createdAt;
     void updatedAt;
+
+    if (isRecord(next.properties)) {
+      next.properties = synchronizeValidationState(next.properties);
+    }
 
     return next;
   });

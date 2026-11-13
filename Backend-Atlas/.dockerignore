@@ -24,3 +24,6 @@ tests/assets/georef/test_cases/**/reference_debug/
 # Empty leftovers of volume mounts
 Backend-Atlas/
 app/tests/
+
+# Secrets never go in the image; compose passes them via env_file
+.env*

@@ -1,7 +1,7 @@
 <template>
   <div class="timeline-container">
     <div class="slider-wrap">
-      <div class="slider-axis">
+      <div ref="axisRef" class="slider-axis">
         <!-- Period tracks - update based on view mode -->
         <div class="period-tracks" :style="periodTracksStyle">
           <div
@@ -46,14 +46,20 @@
               >|</span
             >
           </div>
-          <div class="labels-row">
-            <span
-              v-for="tick in markerYears"
-              :key="`label-${tick}`"
-              class="tick-label"
-              :style="getYearMarkerStyle(tick)"
-              >{{ tick }}</span
+          <div class="labels-row" :style="{ height: `${yearLabelLaneCount}rem` }">
+            <button
+              v-for="label in yearLabels"
+              :key="`label-${label.year}`"
+              type="button"
+              class="tick-label tick-label-button"
+              :class="{ 'tick-label-active': label.year === internalYear }"
+              :style="label.style"
+              :title="`Aller à ${label.year}`"
+              :aria-pressed="label.year === internalYear"
+              @click="selectYear(label.year)"
             >
+              {{ label.year }}
+            </button>
           </div>
         </template>
 
@@ -94,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
 import type { DayTick, SliderPeriod } from "../typescript/map";
 
@@ -121,6 +127,60 @@ const markerYears = computed(() => {
   const merged = [...values, props.min, props.max];
   return [...new Set(merged)].sort((a, b) => a - b);
 });
+
+// Year labels closer than this would print over one another ("1899" and
+// "1900" read as "18990"), so the later one drops to the next lane.
+const YEAR_LABEL_MIN_GAP_PX = 36;
+const YEAR_LABEL_MAX_LANES = 3;
+const YEAR_LABEL_FALLBACK_AXIS_WIDTH_PX = 900;
+
+const axisRef = ref<HTMLElement | null>(null);
+const axisWidthPx = ref(YEAR_LABEL_FALLBACK_AXIS_WIDTH_PX);
+let axisResizeObserver: ResizeObserver | null = null;
+
+function measureAxis() {
+  const width = axisRef.value?.clientWidth ?? 0;
+  if (width > 0) axisWidthPx.value = width;
+}
+
+onMounted(() => {
+  measureAxis();
+  if (typeof ResizeObserver === "undefined" || !axisRef.value) return;
+  axisResizeObserver = new ResizeObserver(measureAxis);
+  axisResizeObserver.observe(axisRef.value);
+});
+
+onBeforeUnmount(() => {
+  axisResizeObserver?.disconnect();
+  axisResizeObserver = null;
+});
+
+const yearLabels = computed(() => {
+  const minGapPercent = (YEAR_LABEL_MIN_GAP_PX / axisWidthPx.value) * 100;
+  // Position of the last label placed on each lane.
+  const laneEnds: number[] = [];
+
+  return markerYears.value.map((year: number) => {
+    const percent = positionForYear(year);
+    let lane = laneEnds.findIndex((end: number) => percent - end >= minGapPercent);
+    if (lane === -1) {
+      lane =
+        laneEnds.length < YEAR_LABEL_MAX_LANES
+          ? laneEnds.length
+          : laneEnds.indexOf(Math.min(...laneEnds));
+    }
+    laneEnds[lane] = percent;
+    return {
+      year,
+      lane,
+      style: { ...markerStyleFromPercent(percent), top: `${lane}rem` },
+    };
+  });
+});
+
+const yearLabelLaneCount = computed(() =>
+  Math.max(1, ...yearLabels.value.map((label: { lane: number }) => label.lane + 1)),
+);
 
 const PERIOD_ROW_HEIGHT_REM = 0.35;
 const PERIOD_ROW_GAP_REM = 0.2;
@@ -485,6 +545,13 @@ watch(
     internalYear.value = snapToMarker(internalYear.value);
   },
 );
+
+// Two markers a year apart sit under the same pixel of the slider; their labels
+// are the reliable way to pick one.
+function selectYear(year: number) {
+  internalYear.value = year;
+  onSliderInput();
+}
 
 function onSliderInput() {
   yearTraversalDirection.value = internalYear.value >= lastYearSelection.value ? "forward" : "backward";

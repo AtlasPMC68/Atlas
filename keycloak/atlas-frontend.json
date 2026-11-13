@@ -9,18 +9,29 @@
   "implicitFlowEnabled": false,
   "directAccessGrantsEnabled": true,
 
-  "rootUrl": "http://localhost:3000",
-  "baseUrl": "http://localhost:3000",
+  "rootUrl": "http://localhost",
+  "baseUrl": "http://localhost",
 
-  "redirectUris": ["http://localhost:3000/*"],
+  "redirectUris": [
+    "http://localhost",
+    "http://localhost/*",
+    "http://localhost",
+    "http://localhost/*",
+    "https://localhost",
+    "https://localhost/*"
+  ],
 
-  "webOrigins": ["http://localhost:3000"],
+  "webOrigins": [
+    "http://localhost",
+    "http://localhost",
+    "https://localhost",
+    "+"
+  ],
 
   "attributes": {
     "pkce.code.challenge.method": "S256"
   },
 
   "defaultClientScopes": ["openid", "profile", "email", "roles"],
-
   "optionalClientScopes": ["address", "phone", "offline_access"]
 }

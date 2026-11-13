@@ -1,6 +1,7 @@
 # region Imports
 import logging
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 import json
 import base64
@@ -10,17 +11,18 @@ import numpy as np
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, Body
 from sqlalchemy import delete, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
-from app.models.map_import import MapImport
+from app.models.map_import import EXTRACTION_PENDING, MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
 from app.schemas.projectCreateRequest import ProjectCreateRequest
 from app.schemas.mapImportRequest import MapImportRequest
+from app.schemas.label_styles import LabelStylesRequest
 from app.services.maps import create_map_in_db
 from app.services.projects import (
     create_project_in_db,
@@ -111,6 +113,105 @@ async def delete_map(
     except Exception as e:
         logger.error(f"Error deleting map: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete map")
+
+
+@router.put("/{project_id}/maps/{map_id}")
+async def update_map_metadata(
+    project_id: UUID,
+    map_id: UUID,
+    request: MapImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not request.title.strip():
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    if request.start_date > request.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="start_date must be before or equal to end_date",
+        )
+
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await db.execute(
+        select(Map)
+        .join(Project, Map.project_id == Project.id)
+        .where(
+            Map.id == map_id,
+            Map.project_id == project_id,
+            Project.user_id == user_uuid,
+        )
+    )
+    map_obj = result.scalar_one_or_none()
+    if not map_obj:
+        raise HTTPException(status_code=404, detail="Map not found or access denied")
+
+    map_obj.title = request.title.strip()
+    map_obj.start_date = request.start_date
+    map_obj.end_date = request.end_date
+    map_obj.exact_date = request.exact_date
+    await db.commit()
+    return {"map_id": str(map_obj.id)}
+
+
+@router.get("/{project_id}/label-styles")
+async def get_project_label_styles(
+    project_id: UUID,
+    user_id: str | None = Depends(get_optional_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    conditions = Project.is_private.is_(False)
+    if user_id:
+        try:
+            user_uuid = UUID(user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid user")
+        conditions = (Project.user_id == user_uuid) | conditions
+
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            conditions,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+    return project.label_styles or []
+
+
+@router.put("/{project_id}/label-styles")
+async def update_project_label_styles(
+    project_id: UUID,
+    request: LabelStylesRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not request.unique_ids():
+        raise HTTPException(status_code=400, detail="Label style IDs must be unique")
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == user_uuid,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+    project.label_styles = [
+        style.model_dump(mode="json") for style in request.styles
+    ]
+    await db.commit()
+    return project.label_styles
 
 
 @router.post("/create")
@@ -338,6 +439,15 @@ async def get_extraction_results(
         )
 
 
+def _parse_entity_uuids(project_id: Any, user_id: Any) -> tuple[UUID, UUID]:
+    try:
+        project_uuid = project_id if isinstance(project_id, UUID) else UUID(str(project_id))
+        user_uuid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+        return project_uuid, user_uuid
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+
+
 @router.put("/{project_id}/features")
 async def update_features(
     project_id: str,
@@ -345,11 +455,7 @@ async def update_features(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    try:
-        project_uuid = UUID(project_id)
-        user_uuid = UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+    project_uuid, user_uuid = _parse_entity_uuids(project_id, user_id)
 
     project_result = await session.execute(
         select(Project.id).where(
@@ -382,6 +488,19 @@ async def update_features(
                     f"Feature id is not a valid UUID, creating a new row: {feature_id}"
                 )
 
+        raw_map_id = (
+            feature.get("map_id")
+            or feature.get("mapId")
+            or (feature.get("properties") or {}).get("map_id")
+            or (feature.get("properties") or {}).get("mapId")
+        )
+        feature_map_id = None
+        if raw_map_id:
+            try:
+                feature_map_id = UUID(str(raw_map_id))
+            except (ValueError, TypeError):
+                feature_map_id = None
+
         if db_feature:
             new_data = to_feature_collection(feature)
             old_data = normalize_feature_collection(db_feature.data)
@@ -389,6 +508,10 @@ async def update_features(
 
             if db_feature.project_id != project_uuid:
                 db_feature.project_id = project_uuid
+                changed = True
+
+            if db_feature.map_id != feature_map_id:
+                db_feature.map_id = feature_map_id
                 changed = True
 
             if old_data != new_data:
@@ -401,7 +524,7 @@ async def update_features(
         else:
             new_feature = Feature(
                 project_id=project_uuid,
-                map_id=None,
+                map_id=feature_map_id,
                 data=to_feature_collection(feature),
             )
             session.add(new_feature)
@@ -423,11 +546,7 @@ async def delete_features_bulk(
     user_id: str = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
 ):
-    try:
-        project_uuid = UUID(project_id)
-        user_uuid = UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid project_id or user")
+    project_uuid, user_uuid = _parse_entity_uuids(project_id, user_id)
 
     project_result = await session.execute(
         select(Project.id).where(
@@ -541,9 +660,15 @@ async def get_project_maps(
             status_code=404, detail="Project not found or access denied"
         )
 
+    active_imports = (
+        select(MapImport.map_id)
+        .where(MapImport.extraction_state.in_(EXTRACTION_PENDING))
+    )
     maps_result = await session.execute(
         select(Map)
+        .options(defer(Map.georef_inputs))
         .where(Map.project_id == project_uuid)
+        .where(Map.id.not_in(active_imports))
         .order_by(Map.start_date.asc(), Map.created_at.asc())
     )
     maps = maps_result.scalars().all()
