@@ -89,7 +89,7 @@ def test_resaving_identical_inputs_keeps_the_best_run(tmp_path, monkeypatch):
 def test_a_stored_check_point_that_is_also_fitted_is_refused(tmp_path, monkeypatch):
     import app.routers.dev_test as router
     import app.utils.dev_test as dev_test
-    from app.utils.auth import get_current_user_id
+    from app.utils.auth import get_current_user_id, require_admin_user
 
     maps_dir = tmp_path / "maps"
     maps_dir.mkdir()
@@ -121,6 +121,10 @@ def test_a_stored_check_point_that_is_also_fitted_is_refused(tmp_path, monkeypat
     app = FastAPI()
     app.include_router(router.router)
     app.dependency_overrides[get_current_user_id] = lambda: "dev"
+    app.dependency_overrides[require_admin_user] = lambda: {
+        "sub": "dev",
+        "roles": {"admin"},
+    }
     res = TestClient(app).get("/dev-test-api/test-cases/cp/case/inputs")
 
     assert res.status_code == 400

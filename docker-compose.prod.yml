@@ -85,6 +85,10 @@ services:
 
   keycloak:
     environment:
+      # No local-dev fallback on the server: refuse to start without real secrets
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set by deploy.sh}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?set by deploy.sh}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set by deploy.sh}
       KC_START_MODE: start
       KC_HOSTNAME: ${APP_BASE_URL}/auth
       KC_HOSTNAME_STRICT: "true"
@@ -101,10 +105,16 @@ services:
     logging: *default-logging
 
   db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set by deploy.sh}
     logging: *default-logging
 
   migrate:
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set by deploy.sh}
     logging: *default-logging
 
   keycloak-db:
+    environment:
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set by deploy.sh}
     logging: *default-logging

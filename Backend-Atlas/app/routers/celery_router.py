@@ -1,8 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from ..tasks import test_task
 from ..celery_app import celery_app
+from ..utils.auth import require_admin_user
 
-router = APIRouter(prefix="/test", tags=["Test Celery"])
+router = APIRouter(
+    prefix="/test",
+    tags=["Test Celery"],
+    dependencies=[Depends(require_admin_user)],
+)
 
 @router.post("/simple")
 async def test_simple_task(name: str = "World"):
@@ -43,7 +48,7 @@ async def get_task_status(task_id: str):
         response = {
             "task_id": task_id,
             "state": task.state,
-            "error": str(task.info)
+            "error": "Task failed"
         }
     
     return response

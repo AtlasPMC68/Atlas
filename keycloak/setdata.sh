@@ -36,7 +36,7 @@ echo "Setting Atlas login theme..."
   -s defaultLocale=fr
   
 # Update realm settings
-# REALM_SSL_REQUIRED is "external" on the server, "none" for plain-HTTP local dev
+# REALM_SSL_REQUIRED is "external" on the server "none" for plain-HTTP local dev
 echo "Updating realm settings..."
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
   -s registrationAllowed=true \
