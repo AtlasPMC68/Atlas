@@ -190,7 +190,7 @@ services:
   # Applies new SQL files from Backend-Atlas/db once each, then exits.
   # Backend and workers wait for it, so the schema is up to date before they start.
   migrate:
-    image: postgres:17.11-trixie
+    image: postgres:17-trixie
     restart: "no"
     command: ["sh", "/migrations/migrate.sh"]
     environment:
