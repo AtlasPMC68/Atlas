@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Credentials come from the container environment (see .env / docker-compose.yml)
-# TODO OWASP A07:2025 [ÉLEVÉE] - Vérifier que les identifiants administrateur sont fournis par des secrets de déploiement et faire tourner toute valeur exposée.
 echo "Configuring Keycloak..."
 # The port opens before the admin user is bootstrapped, so retry the login
 for attempt in $(seq 1 30); do
@@ -37,8 +36,7 @@ echo "Setting Atlas login theme..."
   -s defaultLocale=fr
   
 # Update realm settings
-# REALM_SSL_REQUIRED is "external" on the server, "none" for plain-HTTP local dev
-# TODO OWASP A04:2025 [ÉLEVÉE] - Vérifier que le realm impose TLS pour les communications d'authentification et de gestion hors environnement local.
+# REALM_SSL_REQUIRED is "external" on the server "none" for plain-HTTP local dev
 echo "Updating realm settings..."
 /opt/keycloak/bin/kcadm.sh update realms/atlas \
   -s registrationAllowed=true \

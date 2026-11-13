@@ -19,8 +19,7 @@ from .utils.dev_test_assets import GEOREF_ASSETS_DIR, ensure_georef_assets_dir
 # The dev-test tool: its API routes (run, edit and delete test cases) and its
 # static files. Off unless enabled: docker-compose.yml sets ENABLE_DEV_TOOLS=true
 # for local development, docker-compose.prod.yml sets it to false.
-# TODO OWASP A02:2025 [ÉLEVÉE] - Vérifier que les outils de développement sont désactivés par défaut et absents des déploiements de production.
-ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "true").strip().lower() in (
+ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "false").strip().lower() in (
     "1",
     "true",
     "yes",
