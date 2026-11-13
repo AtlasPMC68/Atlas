@@ -56,3 +56,7 @@ jobs:
         run: |
           docker compose up -d florence-worker
           docker compose run --rm -q test-backend pytest tests/ -m "integration"
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs --no-color migrate db
