@@ -20,7 +20,11 @@ TOLERANCE = 10.0
 
 
 def _snap(zone, coast, min_run=20.0, tolerance=TOLERANCE):
-    return snap_geometry_to_coastline_stretches(zone, CoastIndex.build(coast), tolerance, min_run, 45.0, 0.25)
+    # The production guard, so the folding test checks what ships.
+    return snap_geometry_to_coastline_stretches(
+        zone, CoastIndex.build(coast), tolerance, min_run, 45.0,
+        DEFAULT_GEOREF_CONFIG.coastline_snap_max_area_change,
+    )
 
 
 def _straight_coast():

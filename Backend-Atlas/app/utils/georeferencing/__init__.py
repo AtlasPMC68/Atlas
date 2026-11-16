@@ -61,7 +61,7 @@ from .projection import (
     reference_latitude,
     webmercator_meters_to_km,
 )
-from .records import GateCheck, RunRecord, record_signals
+from .records import GateCheck, RunRecord
 
 __all__ = [
     "AffineModel",
@@ -112,7 +112,6 @@ __all__ = [
     "ReferenceGrid",
     "ReferenceLayers",
     "RunRecord",
-    "record_signals",
     "select_control_points",
     "SOURCE_CITY",
     "SOURCE_SIFT",

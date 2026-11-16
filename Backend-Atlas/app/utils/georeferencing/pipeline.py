@@ -163,7 +163,9 @@ def georeference_features(
         if config.coast_bend_fallback_piecewise and refused and not use_piecewise:
             # The bend was to replace the piecewise step and could not, or had
             # nothing to bend to: the step and the second alignment instead,
-            # as before config v22.
+            # as before config v22. As ``align_after_piecewise`` does, an
+            # affine the piecewise step refused is still aligned when nothing
+            # aligned it before.
             with record.phase("bend_fallback_piecewise"):
                 model = _apply_piecewise_correction(
                     model,
@@ -173,7 +175,9 @@ def georeference_features(
                     image_size=image_size,
                     refit_base=base_is_gcp_affine,
                 )
-                if isinstance(model, PiecewiseAffineModel) and refine_piecewise is not None:
+                if refine_piecewise is not None and (
+                    isinstance(model, PiecewiseAffineModel) or base_is_gcp_affine
+                ):
                     model = refine_piecewise(model, record)
             record.set_errors(bendFallback={"applied": isinstance(model, PiecewiseAffineModel)})
 
@@ -189,7 +193,6 @@ def georeference_features(
         controlPoints=[cp.to_dict() for cp in control_points],
         controlPointCount=len(control_points),
         controlPointsBySource=count_by_source(control_points),
-        imageSize=[int(image_size[0]), int(image_size[1])],
         frameBounds=frame_bounds,
         referenceLatitude=ref_lat,
     )

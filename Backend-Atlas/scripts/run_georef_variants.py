@@ -383,7 +383,7 @@ def _select_variants(args: argparse.Namespace) -> List[Variant]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--stage", default="", help="Comma-separated stages: 1, 2, L, 3, S, R, E, N")
+    parser.add_argument("--stage", default="", help="Comma-separated stages: 1, 2, L, 3, E, N")
     parser.add_argument("--variants", default="", help="Comma-separated variant names")
     parser.add_argument("--test-id", default="", help="Only cases of these maps (comma-separated)")
     parser.add_argument("--case-id", default="", help="Only cases with these ids (comma-separated)")

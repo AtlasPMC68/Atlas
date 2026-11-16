@@ -380,6 +380,23 @@ points, median +0.04 km; `PROD`, 6 and 5, +0.01 km. Those maps draw their coasts
 and historical coasts are thicker, and because the synthetic corpus needs evidence that is
 right at every width; it costs ~0.3 s per aligned run.
 
+## 2026-10-31 to 2026-11-15 — The bend replaces the piecewise step (config v22–v24)
+
+Chosen on the synthetic corpus and confirmed on the real one
+([`georeferencing-synthetic.md`](georeferencing-synthetic.md) §4, §10.5–10.13):
+
+| Was (v21) | Now (v24) | Why |
+|---|---|---|
+| Align, piecewise, align again | Align, then bend to the coast; the piecewise step and the second alignment only where the bend refuses | Real snapped IoU 0.873 → 0.897, 9 cases better, none worse by more than 0.005; synthetic 0.712 → 0.768 |
+| Every vertex within 1.5% of the diagonal snapped to its nearest coast point | Only coastal stretches, onto the coast's vertices, within 3× the measured coast misfit (5 px floor) | The old snap moved inland borders onto the coast; on synthetic maps it cost more than 0.05 IoU on 24 of 196 cases, the new one on none |
+| — | The second alignment refused past a 2% pull off the clicks (v23) | One sheared front took a map from 20 to 94 km |
+| Snap area guard 25% (v22) | 60% (v24) | 25% left whole zones unsnapped where the snap was needed; +0.002 real, worse on none |
+| Fallback skipped aligning a refused piecewise model's affine | Aligns it, as `align_after_piecewise` always did (v24) | The fallback is v21's pipeline, this case included |
+
+Tried and dropped on the way: choosing the bend's stiffness per map, an inland correction after
+the bend, a per-map selector, and a quality estimator that ran on every import as an unread
+diagnostic (removed 2026-11-15). The research code is at the tag `archive/georef-synthetic`.
+
 ## Considered and set aside
 
 | Idea | Why not |

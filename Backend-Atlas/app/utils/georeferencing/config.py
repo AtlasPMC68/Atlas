@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass, replace
 from typing import Any, Dict, Tuple
 
-CONFIG_VERSION = "23"
+CONFIG_VERSION = "24"
 
 #: In increasing order of freedom, then ``auto``, which picks one per map.
 #: ``pipeline`` has to know how to build each; a test holds the two together.
@@ -69,10 +69,15 @@ class GeorefConfig:
     # the coast). Off: every vertex within the tolerance moves to its nearest
     # point. With both on, snapping costs more than 0.01 IoU on 2 of 196
     # synthetic cases and on no real one (old snapping: 53 and 4, §10.8).
+    # The area guard is what keeps a snap from fixing a shore placed far off:
+    # at 0.25 it left whole zones unsnapped where the old snapping gained up
+    # to 0.19. At 0.6 (config v24): +0.006 mean IoU on 196 synthetic cases
+    # (33 better, 6 worse by more than 0.01), +0.002 on the real corpus and
+    # worse on none; with no guard, a narrow zone folds again (§10.13).
     coastline_snap_stretches: bool = True
     coastline_snap_min_run_px: float = 20.0
     coastline_snap_max_angle_deg: float = 45.0
-    coastline_snap_max_area_change: float = 0.25
+    coastline_snap_max_area_change: float = 0.6
 
     # --- Land clipping (georeferencing.md section 6) -------------------------
     clip_to_land_mask: bool = True

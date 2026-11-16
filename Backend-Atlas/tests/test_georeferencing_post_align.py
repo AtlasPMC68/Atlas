@@ -264,6 +264,28 @@ class TestThroughThePipeline:
         assert errors["bendFallback"]["applied"] is True
         assert result.model.name == "piecewise_affine"
 
+    def test_the_fallback_aligns_the_gcp_affine_when_the_correction_is_refused(self):
+        """The fallback is production before config v22, this case included:
+        the bend and then the piecewise step refused, and nothing aligned the
+        GCP-only affine before, so the second alignment aligns it."""
+        cps = _control_points()
+        cps.append(cps[0])  # duplicate: the correction cannot be built
+        calls, refine = self._recording()
+
+        result = self._run(
+            refine,
+            control_points=cps,
+            transform_model="affine",
+            align_after_piecewise=False,
+            coast_bend=True,
+            coast_bend_fallback_piecewise=True,
+        )
+
+        errors = result.record.to_dict()["errors"]
+        assert errors["coastBend"]["applied"] is False
+        assert errors["piecewiseApplied"] is False
+        assert calls == ["affine"]
+
     def test_runs_only_in_the_bend_fallback_by_default(self):
         """W13 (config v22): the bend replaced the piecewise step and the
         alignment after it, which run only where the bend refuses."""

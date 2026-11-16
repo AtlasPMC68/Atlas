@@ -14,7 +14,8 @@ Keep this document true: when the code changes, change it here.
 of ×10, only on maps whose coastline the water picks identify, behind four lenient checks.
 Since config v22 (2026-10-31) the aligned affine is bent to the drawn coast, with the
 piecewise correction only where the bend refuses, and snapping only snaps the coast
-([§5.5](#55-the-bend-to-the-coast), [§6](#6-cleaning));
+([§5.5](#55-the-bend-to-the-coast), [§6](#6-cleaning)); config v24 (2026-11-15) is the
+current one;
 [§10](#10-before-the-pull-request) lists what remains.
 
 ---
@@ -313,7 +314,7 @@ Its checks are its own: `M` is kept only when it keeps the map's orientation, th
 chamfer does not get worse, and it pulls the map off the clicks by no more than
 `post_align_max_gcp_shift_ratio_of_diagonal` (2% of the diagonal, RMS, since config v23: the
 start sits on the clicks, so the first alignment's 5% would let a shear through,
-[synthetic §10.12](georeferencing-synthetic.md#1012-q6-and-the-second-alignments-guard-2026-11-01));
+[synthetic §10.12](georeferencing-synthetic.md#1012-the-second-alignments-guard-2026-11-01));
 otherwise `P` is used. **It does not go through §5.2's precondition or its water check.** It
 runs whenever the alignment evidence could be built, even when the first alignment was skipped
 or refused (the run record logs the pull as `postAlignment.gcpRmsPx` against `baseGcpRmsPx`).
@@ -339,9 +340,15 @@ It is refused, and the affine kept, when the correction would fold the map, move
 `coast_bend_max_ratio_of_diagonal` (10%) of the diagonal anywhere, or make the coastline
 chamfer worse, or when there is no coast to match or no alignment evidence at all. Where it
 is refused, `coast_bend_fallback_piecewise` (on) runs §5.3's piecewise correction and §5.4's
-alignment instead: the old pipeline, map by map. The run record has `coastBend` (applied or
-why not, the coast's share, the chamfer before and after, the largest correction) and
-`bendFallback`.
+alignment instead: the old pipeline, map by map. As in §5.4, when the piecewise correction is
+refused too and nothing aligned the map before, the control-point affine is aligned (config
+v24). A map with no coast in its frame is always placed this way. The run record has
+`coastBend` (applied or why not, the coast's share, the chamfer before and after, the largest
+correction) and `bendFallback`.
+
+The bend has no precondition of its own: it runs on whatever §5.2 left, the control-point
+affine included when the first alignment was skipped or refused by a check, and trusts the
+same evidence ([§9](#9-known-limitations)).
 
 Being smooth, the bend does not pass through the control points, and it spreads a control
 point's pull over about a sixth of the image. A badly placed point moves its whole region
@@ -362,7 +369,8 @@ settings: [georeferencing-synthetic.md §10.4–10.9](georeferencing-synthetic.m
    Earth coastline. With `coastline_snap_stretches` (on since config v22) only runs of
    consecutive boundary vertices near the coast and along it are snapped (ends leaving it at
    more than 45° trimmed, at least 20 px long), onto the coast's own vertices between them; a
-   polygon whose snap would change more than 25% of its area is left as it is. With
+   polygon whose snap would change more than 60% of its area (`coastline_snap_max_area_change`,
+   25% before config v24) is left as it is. With
    `coastline_snap_measured` (on) the tolerance is 3× how far the reference coast sits from
    the drawn edges under the applied transform (`snapMisfitPx` in the run record), at least
    `coastline_snap_min_px` (5 px) and at most 1.5% of the image diagonal; without alignment
@@ -393,7 +401,7 @@ settings: [georeferencing-synthetic.md §10.4–10.9](georeferencing-synthetic.m
 
 ## 8. Configuration and switches
 
-Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 22), so a run
+Every hyperparameter is a field of `GeorefConfig` (`config.py`, `CONFIG_VERSION` 24), so a run
 records exactly what it used and a variant is a set of overrides. **The file defaults are the
 production configuration**, and every container runs them: the app, the regression suite, the
 dev-test UI and the CLI. `ambient_georef_config()` lets a deployment override two of them
@@ -410,9 +418,9 @@ Current defaults, and where each stands:
 | `transform_model` | `affine` | The bend replaced the piecewise correction (config v22) |
 | `coast_bend` | on, ridge 3e-3, with `coast_bend_fallback_piecewise` | `C7` against v21's production: snapped IoU 0.894 against 0.876 on 18 real cases (9 better, none worse by more than 0.005), 0.768 against 0.712 on 196 synthetic ones; check points even once c0d9544d's wrong point is removed ([synthetic §10.6–10.9](georeferencing-synthetic.md#109-step-7-c7-on-the-real-corpus-and-production-2026-10-31)) |
 | Piecewise fallback | `local` at 0.175, then the second alignment | v21's production, where the bend refuses; 0.175 the most even of 0.1 / 0.175 / 0.25 |
-| `post_align_max_gcp_shift_ratio_of_diagonal` | 0.02 | The second alignment's pull off the clicks: at most 0.013 on 255 synthetic fallback runs and 6 px on the real corpus; the one front past it sheared a map from 20 to 94 km (config v23, [synthetic §10.12](georeferencing-synthetic.md#1012-q6-and-the-second-alignments-guard-2026-11-01)) |
+| `post_align_max_gcp_shift_ratio_of_diagonal` | 0.02 | The second alignment's pull off the clicks: at most 0.013 on 255 synthetic fallback runs and 6 px on the real corpus; the one front past it sheared a map from 20 to 94 km (config v23, [synthetic §10.12](georeferencing-synthetic.md#1012-the-second-alignments-guard-2026-11-01)) |
 | `align_after_piecewise` | off | Runs only in the fallback |
-| `snap_to_coastline` | on: stretches, measured, 5 px floor | Snapping costs more than 0.01 IoU on 2 of 196 synthetic cases and on no real one (old snapping: 53 and 4); the floor is in pixels, which is open |
+| `snap_to_coastline` | on: stretches, measured, 5 px floor, area guard 60% | Snapping costs more than 0.01 IoU on 2 of 196 synthetic cases and on no real one (old snapping: 53 and 4); the guard at 60% rather than 25% adds +0.006 synthetic and +0.002 real, worse on no real case (config v24, [synthetic §10.13](georeferencing-synthetic.md#1013-the-snap-area-guard-2026-11-15)); the floor is in pixels, which is open |
 | `clip_to_land_mask`, lake cut | on | Kept (production behaviour; expected zones are cut the same way when scored) |
 | Text fill | `palette` inpaint | Kept; `label` (worse on every case) and `telea` (consistently worse than `palette`) were removed |
 | `zone_gap_fill` | off | Off: worse in its current form |
@@ -456,18 +464,35 @@ Verified in the code. Ordered roughly by impact.
     pixel only: Canny marks one of the two pixels either side of the step, and a single edge
     is kept where it is, so the same map places ~0.7 px off. Sub-pixel edge positions would
     close it; under 1 km at the corpus's scales, it has not been worth it yet.
+11. **One wrong click moves its whole region** ([§5.5](#55-the-bend-to-the-coast)): the bend
+    spreads a control point's pull over about a sixth of the image, where the piecewise
+    correction kept it local. The pipeline trusts the clicks; no blind test found a wrong one
+    (the affine's leave-one-out flags good points as often).
+12. **The bend trusts evidence the first alignment refused** ([§5.5](#55-the-bend-to-the-coast)):
+    it runs after a skipped or refused first alignment, with only its own safeguards (no fold,
+    at most 10% of the diagonal, chamfer not worse). On synthetic maps that helps (18 of 196
+    cases, worst −0.006 IoU); the real corpus has no such case, and synthetic maps have no
+    labels, rivers or hatching in the sea to mislead it.
+13. **The snap's area guard is a trade-off** ([§6](#6-cleaning)): it cannot tell a narrow zone
+    folding onto the coast from a zone whose shore is placed far off, and leaves both
+    unsnapped past 60% of the zone's area. The old snapping gained up to 0.19 IoU on such zones
+    of the synthetic stress maps; with no guard, narrow zones fold.
 
 ---
 
 ## 10. Before the pull request
 
-Done: every container runs the production configuration (alignment on, ×10), so the
-regression suite measures what ships; rivers, the `label` text fill and unused switches are
-removed; the debug dumps are off by default. Still to settle before `georef-exp` is merged:
+Done: every container runs the production configuration, so the regression suite measures
+what ships; the debug dumps are off by default. On the real corpus config v24 places the
+zones at a snapped mean IoU of 0.899 against v21's 0.873: 10 of 18 cases better by more than
+0.005, none below v21 (2026-11-15).
+The research tooling behind it (the synthetic generator, its runners and analyses, the
+quality estimator) is not on `main`: it is at the git tag `archive/georef-synthetic`
+([georeferencing-synthetic.md](georeferencing-synthetic.md)). Still open:
 
-1. **The regression baselines.** Every case's `best` was recorded under the old defaults
-   (alignment off in the suite, ×1). Run the suite once and promote each case's run
-   (`scripts/force_promote_georef_best.py`), so `best` is the production number.
+1. **The regression baselines.** After a change to the defaults, run the suite and promote
+   each case's run (`scripts/force_promote_georef_best.py`), so `best` is the production
+   number.
 2. **The 2026-10-08 run** that chose the transform model and the second alignment
    ([§5.3](#53-transform-model), [§5.4](#54-alignment-after-the-piecewise-correction)) is
    not written up in [testing §8](georeferencing-testing.md#8-results) yet.
