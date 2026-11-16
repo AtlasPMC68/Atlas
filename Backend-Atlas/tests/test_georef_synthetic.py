@@ -294,33 +294,6 @@ def test_snapping_stretches_by_the_measured_misfit_leaves_an_exact_placement_as_
     assert metrics["snappedMeanIou"] > metrics["unsnappedMeanIou"] - 0.002
 
 
-def test_a_run_records_the_quality_inputs_and_scores_points(undeformed_case):
-    """The quality estimator's inputs (georeferencing-synthetic.md §4.3): the
-    layout and the affine's leave-one-out on every run, read into the run_
-    columns, and with ``points`` that many dense samples with what the run
-    knew there and their error."""
-    case, samples = undeformed_case
-    measured, record, _raw = run_case(case, DEFAULT_GEOREF_CONFIG, samples, points=40)
-    run = measured["run"]
-    assert 0.0 < run["hullShare"] <= 1.0
-    assert run["emptyRadiusRatio"] > 0.0
-    assert len(record["errors"]["affineLeaveOneOut"]["residualsPx"]) == run["controlPointCount"]
-    assert run["imageDiagonalPx"] > 0
-
-    rows = measured["points"]
-    assert len(rows) == 40
-    assert [r["pt_index"] for r in rows] == list(range(40))
-    first = rows[0]
-    assert first["pt_x"] == round(float(samples.px[0]), 2)
-    for key in ("pt_nearestPointRatio", "pt_pointsNearby", "pt_insideHull", "pt_shiftFromAffinePx",
-                "pt_coastDistanceRatio", "pt_nearbyLooPx", "gen_coastal", "m_errorKm", "m_errorPx"):
-        assert key in first, key
-    # Exact clicks on an undeformed map: placed to within a fraction of a pixel,
-    # and the coast is in the frame, so its distance is known.
-    assert max(r["m_errorPx"] for r in rows) < 1.0
-    assert all(r["pt_coastDistanceRatio"] is not None for r in rows)
-
-
 def test_check_points_are_placed_as_the_real_protocol_asks(undeformed_case):
     """Not a control point, not next to one, at most two outside the control
     points' hull, both kinds, clicked as the control points are."""
@@ -385,19 +358,16 @@ def test_layouts_follow_the_import_and_stay_in_their_area(undeformed_case):
             assert np.hypot(p["truePixel"][0] - params["centrePx"][0], p["truePixel"][1] - params["centrePx"][1]) <= radius + 0.01
 
 
-@pytest.mark.parametrize("inland", [False, True])
-def test_a_refused_bend_falls_back_to_the_piecewise_step(undeformed_case, inland):
+def test_a_refused_bend_falls_back_to_the_piecewise_step(undeformed_case):
     """The bend in place of the piecewise step, made to refuse (a cap of
     nothing): with the fallback the map is placed as PROD places it, the
-    piecewise step and the second alignment, and the inland correction does
-    not run on top."""
+    piecewise step and the second alignment."""
     case, samples = undeformed_case
     config = DEFAULT_GEOREF_CONFIG.with_overrides(
         transform_model="affine",
         align_after_piecewise=False,
         coast_bend=True,
         coast_bend_max_ratio_of_diagonal=1e-9,
-        coast_bend_inland=inland,
         coast_bend_fallback_piecewise=True,
     )
     _measured, record, _raw = run_case(case, config, samples)
@@ -405,7 +375,6 @@ def test_a_refused_bend_falls_back_to_the_piecewise_step(undeformed_case, inland
     assert errors["coastBend"]["applied"] is False
     assert errors["bendFallback"]["applied"] is True
     assert record["models"]["applied"]["name"] == "piecewise_affine"
-    assert "inlandCorrection" not in errors
 
 
 def test_protocol_layouts_spread_their_points_over_the_map(undeformed_case):

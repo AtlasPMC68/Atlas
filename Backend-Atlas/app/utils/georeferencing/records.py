@@ -160,11 +160,8 @@ def record_signals(record: Dict[str, Any]) -> Dict[str, Any]:
     evidence = inputs.get("userEvidence") or {}
     post = errors.get("postAlignment") or {}
     bend = errors.get("coastBend") or {}
-    inland = errors.get("inlandCorrection") or {}
     checks = errors.get("checkPoints") or {}
     by_source = inputs.get("controlPointsBySource") or {}
-    layout = inputs.get("controlPointLayout") or {}
-    loo = errors.get("affineLeaveOneOut") or {}
     image_size = inputs.get("imageSize") or []
     gcp_affine = (record.get("models") or {}).get("gcp_affine") or {}
     row: Dict[str, Any] = {
@@ -180,11 +177,7 @@ def record_signals(record: Dict[str, Any]) -> Dict[str, Any]:
         "coastBendCoastShare": bend.get("coastShare"),
         "coastBendChamferBeforePx": bend.get("chamferBeforePx"),
         "coastBendChamferAfterPx": bend.get("chamferAfterPx"),
-        "inlandApplied": inland.get("applied"),
         "bendFallbackApplied": (errors.get("bendFallback") or {}).get("applied"),
-        "inlandSkippedBecause": inland.get("skippedBecause"),
-        "inlandPoints": inland.get("inlandPoints"),
-        "inlandMaxShiftPx": inland.get("maxShiftPx"),
         "snapToleranceMeters": inputs.get("snapToleranceMeters"),
         "snapMisfitPx": inputs.get("snapMisfitPx"),
         "gcpRmseKm": errors.get("gcpRmseKm"),
@@ -192,13 +185,6 @@ def record_signals(record: Dict[str, Any]) -> Dict[str, Any]:
         "controlPointCount": inputs.get("controlPointCount"),
         "siftCount": by_source.get("sift"),
         "cityCount": by_source.get("city"),
-        "hullShare": layout.get("hullShare"),
-        "nearestGapMedianRatio": layout.get("nearestGapMedianRatio"),
-        "nearestGapMaxRatio": layout.get("nearestGapMaxRatio"),
-        "emptyRadiusRatio": layout.get("emptyRadiusRatio"),
-        "looAffineRmsPx": loo.get("rmsPx"),
-        "looAffineMaxPx": loo.get("maxPx"),
-        "looAffineMaxOverMedian": loo.get("maxOverMedian"),
         "imageDiagonalPx": round(math.hypot(*image_size), 1) if len(image_size) == 2 else None,
         "coastlineSamples": alignment.get("coastlineSamples"),
         "coastlineCoverage": (inputs.get("referenceCoverage") or {}).get("coastline"),
@@ -212,8 +198,6 @@ def record_signals(record: Dict[str, Any]) -> Dict[str, Any]:
         "inlierFraction": alignment.get("inlierFraction"),
         "correspondences": alignment.get("correspondences"),
         **{key: evidence.get(key) for key in _EVIDENCE_SIGNALS},
-        "predictedIou": (errors.get("predictedQuality") or {}).get("iou"),
-        "predictedMedianKm": (errors.get("predictedQuality") or {}).get("mapMedianKm"),
         "checkCount": checks.get("count"),
         "checkRmseKm": checks.get("rmseKm"),
         "checkRmseKmGcpAffine": (checks.get("byModel") or {}).get("gcp_affine"),

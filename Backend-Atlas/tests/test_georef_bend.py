@@ -1,8 +1,7 @@
 """The coast bend (app/utils/georeferencing/bend.py): its fit recovers a
 smooth correction, sees only the part across a coast, the bent model inverts
 and round-trips, the weighting gives the control points more say the more of
-them there are, the stage bends a drawn coast onto the reference, and the
-inland correction pulls only the control points far from the coast."""
+them there are, and the stage bends a drawn coast onto the reference."""
 
 from types import SimpleNamespace
 
@@ -14,11 +13,9 @@ from app.utils.georeferencing.align import CurveSamples, build_user_field
 from app.utils.georeferencing.bend import (
     BendBasis,
     CoastBendModel,
-    InlandCorrectionModel,
     across_observations,
     bend_to_coast,
     coast_share,
-    correct_inland,
     full_observations,
     solve_bend,
 )
@@ -131,32 +128,3 @@ def test_the_stage_bends_a_drawn_coast_onto_the_reference():
     _, y = bent(drawn[:, 0], drawn[:, 1])
     assert np.abs(y - 150.0).max() < 1.5
     assert np.abs(drawn[:, 1] - 150.0).max() > 7.0
-
-
-def test_the_inland_correction_pulls_only_the_points_far_from_the_coast():
-    """A coast along y = 150 on the left half; the identity model is 6 px off
-    at an inland point and 6 px off at one on the coast. Only the inland one
-    is corrected, most of the way, and the correction fades before the coast."""
-    line = np.column_stack((np.linspace(10, 200, 200), np.full(200, 150.0)))
-    context = SimpleNamespace(coast_samples=CurveSamples(xy=line, xy_normal=line + (0.0, 1.0)))
-    identity = AffineModel(matrix=np.eye(3))
-    clicked = np.array([[350.0, 40.0], [100.0, 152.0]])
-    true = clicked + (6.0, 4.0)
-    lon, lat = webmercator_arrays_to_lonlat(true[:, 0], true[:, 1])
-    points = [ControlPoint.sift(tuple(p), (a, b)) for p, a, b in zip(clicked, lon, lat)]
-    config = DEFAULT_GEOREF_CONFIG.with_overrides(coast_bend_inland=True)
-    record = RunRecord()
-
-    model = correct_inland(identity, points, context, SIZE, config, record)
-
-    stats = record.to_dict()["errors"]["inlandCorrection"]
-    assert stats["applied"] and stats["inlandPoints"] == 1, stats
-    X, Y = model(clicked[:, 0], clicked[:, 1])
-    moved = np.column_stack((X, Y)) - clicked
-    assert np.allclose(moved[0], (6.0, 4.0), atol=1.0)
-    assert np.linalg.norm(moved[1]) < 0.5
-    assert isinstance(model, InlandCorrectionModel)
-    again = deserialize_model(model.serialize())
-    qx, qy = again.inverse()(X, Y)
-    assert np.allclose(np.column_stack((qx, qy)), clicked, atol=1e-6)
-

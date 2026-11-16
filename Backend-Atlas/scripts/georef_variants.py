@@ -361,46 +361,17 @@ VARIANTS: Tuple[Variant, ...] = (
         "W7", "W", "W5 stiffer: ridge 3e-3.",
         {**_ALIGNED, "weight_curve": 10.0, "coast_bend": True, "coast_bend_ridge": 3e-3},
     ),
-    # W8 and W9 split the work: the bend takes the coast (W7), then a local
-    # correction the control points far from it (5% / 10% of the diagonal),
-    # what only the piecewise step followed on c0d9544d (§10.6). W10 takes
-    # every point, near the coast too.
-    Variant(
-        "W8", "W", "W7, then corrected at the control points far from the coast.",
-        {
-            **_ALIGNED, "weight_curve": 10.0, "coast_bend": True, "coast_bend_ridge": 3e-3,
-            "coast_bend_inland": True,
-        },
-    ),
-    Variant(
-        "W9", "W", "W8 with only the points twice as far from the coast.",
-        {
-            **_ALIGNED, "weight_curve": 10.0, "coast_bend": True, "coast_bend_ridge": 3e-3,
-            "coast_bend_inland": True, "coast_bend_inland_min_ratio_of_diagonal": 0.10,
-        },
-    ),
-    Variant(
-        "W10", "W", "W8 from every control point: the bend, then the local correction.",
-        {
-            **_ALIGNED, "weight_curve": 10.0, "coast_bend": True, "coast_bend_ridge": 3e-3,
-            "coast_bend_inland": True, "coast_bend_inland_min_ratio_of_diagonal": 0.0,
-        },
-    ),
-    # W11-W14: W7 and W8 on PROD's settings rather than A0's. A0's turn
-    # coastline snapping off, so W5-W10's shipped zones were never snapped
+    # W11 and W13: W7 on PROD's settings rather than A0's. A0's turn
+    # coastline snapping off, so W5 and W7's shipped zones were never snapped
     # while PROD's and W1's were (the runners now score every variant both
     # ways, §10.6, so W11 and W7 place the same zones). These keep PROD's
-    # piecewise reach too, which W13 and W14 fall back to where the bend
-    # refuses (§10.7).
+    # piecewise reach too, which W13 falls back to where the bend refuses
+    # (§10.7). The inland correction after the bend (W8-W10, W12, W14) tied
+    # or lost on both corpora and was removed.
     Variant("W11", "W", "PROD's settings, the bend in place of the piecewise step.", dict(_BEND_ALONE)),
-    Variant("W12", "W", "W11, then corrected at the control points far from the coast.", {**_BEND_ALONE, "coast_bend_inland": True}),
     Variant(
         "W13", "W", "W11, falling back to the piecewise step where the bend refuses.",
         {**_BEND_ALONE, "coast_bend_fallback_piecewise": True},
-    ),
-    Variant(
-        "W14", "W", "W12, falling back to the piecewise step where the bend refuses.",
-        {**_BEND_ALONE, "coast_bend_inland": True, "coast_bend_fallback_piecewise": True},
     ),
     # --- Stage C: the coastline snap (§10.8) ----------------------------------
     # The snap's tolerance, 1.5% of the diagonal, runs to tens of km and moves

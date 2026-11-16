@@ -384,12 +384,6 @@ settings: [georeferencing-synthetic.md §10.4–10.9](georeferencing-synthetic.m
   inputs, the models (`gcp_affine`, `aligned_affine`, `applied`), every gate, errors
   (`gcpRmseKm` with `gcpRmseKind`, per-source error, check points), per-phase timings, the
   config and any per-run switches.
-- **Predicted quality** (`errors.predictedQuality`, every run, imports included): the snapped
-  IoU the run expects of its zones, from the error the fitted estimator predicts inside each
-  one over its width (`quality.predict_quality`, models in `quality_model.json`;
-  georeferencing-synthetic.md §10.13). Blind: computed before the check points are measured.
-  An import logs it and returns it in the task result (`predicted_quality`); nothing stores it
-  with the map yet.
 - **Debug dumps** (`debug.py`) when `GEOREF_DEBUG=true` (off by default; set on
   `celery-worker` in `docker-compose.yml`): a folder of overlays and a `summary.txt` per
   import under `Backend-Atlas/debug_runs/` (newest 20 kept), or per case under
@@ -503,7 +497,6 @@ removed; the debug dumps are off by default. Still to settle before `georef-exp`
 | `pipeline.py` | transform → snap → clip → EPSG:4326 |
 | `snapping.py`, `cleaning.py` | the snap; the shared ocean + lake mask |
 | `records.py`, `diagnostics.py`, `debug.py`, `gcp_overlay.py` | run record; dev-tool diagnostics; debug dumps; control-point overlay |
-| `quality.py`, `quality_model.json` | the run's blind quality inputs, and the fitted models that predict its error and snapped IoU (§7) |
 | `checkpoints.py`, `requirements.py` | dev-test only: check points; what a case must have |
 
 Elsewhere: `app/utils/extraction_steps.py` (`extract_zone_colors`, `place_map`,

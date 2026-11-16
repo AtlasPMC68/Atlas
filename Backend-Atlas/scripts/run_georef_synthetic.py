@@ -21,10 +21,6 @@ Output, under ablations/synthetic-<date>-s<seed>/ (or --out):
     results.csv         one row per case x variant; columns id_, gen_ (what the
                         generator drew: never a selector feature), run_ (what the
                         run did and saw), m_ (the metrics)
-    points.csv          with --points N: N dense samples per case x variant, each
-                        with what the run knew there (pt_) and its error (m_),
-                        for the quality estimator (georeferencing-synthetic.md
-                        §4.3); also per run as cases/<case id>/<variant>/points.csv
     summary.md          per variant, by projection, family, level and bad point
     run.json            generator version, code fingerprint, arguments
 """
@@ -222,7 +218,6 @@ def process_map(
     out_dir: str,
     debug: bool,
     deformations: Sequence[str] = (),
-    points: int = 0,
 ) -> Tuple[List[Dict[str, Any]], str]:
     """Generate the map (or the twins in *deformations*), their layouts, and
     run every variant. Returns the rows and one console line per map."""
@@ -233,7 +228,7 @@ def process_map(
     rows: List[Dict[str, Any]] = []
     lines: List[str] = []
     for synthetic in maps:
-        map_rows, line = _process_one(synthetic, layouts, variant_names, out_dir, debug, points)
+        map_rows, line = _process_one(synthetic, layouts, variant_names, out_dir, debug)
         rows.extend(map_rows)
         lines.append(line)
     return rows, "\n".join(lines)
@@ -245,7 +240,6 @@ def _process_one(
     variant_names: Sequence[str],
     out_dir: str,
     debug: bool,
-    points: int = 0,
 ) -> Tuple[List[Dict[str, Any]], str]:
     started = time.perf_counter()
     seed, deformation = synthetic.seed, synthetic.deformation
@@ -280,17 +274,12 @@ def _process_one(
             row = {**_id_columns(seed, deformation, layout, name), **map_cols, **case_cols}
             try:
                 measured, record_dict, raw = run_case(
-                    case, config, samples, record=record, debug_dir=debug_dir, points=points
+                    case, config, samples, record=record, debug_dir=debug_dir
                 )
             except Exception as e:  # one bad run must not lose the others
                 rows.append({**row, "run_status": "error", "run_reason": f"{type(e).__name__}: {e}"})
                 _write_json(os.path.join(variant_dir, "error.json"), {"error": traceback.format_exc()})
                 continue
-            point_rows = measured.pop("points", None)
-            if point_rows:
-                ids = _id_columns(seed, deformation, layout, name)
-                os.makedirs(variant_dir, exist_ok=True)
-                write_results([{**ids, **r} for r in point_rows], os.path.join(variant_dir, "points.csv"))
             metrics = dict(measured["metrics"])
             metrics["denseMeanPx"] = round(metrics["denseMeanKm"] / synthetic.km_per_pixel, 3)
             row.update({"run_status": "ok"})
@@ -314,7 +303,7 @@ def _process_one(
 # Results and summary
 # --------------------------------------------------------------------------
 
-_PREFIX_ORDER = ("id_", "gen_", "run_", "pt_", "m_")
+_PREFIX_ORDER = ("id_", "gen_", "run_", "m_")
 
 
 def write_results(rows: List[Dict[str, Any]], path: str) -> None:
@@ -327,26 +316,8 @@ def write_results(rows: List[Dict[str, Any]], path: str) -> None:
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
-        for row in sorted(rows, key=lambda r: (r["id_case"], r["id_variant"], r.get("pt_index", 0))):
+        for row in sorted(rows, key=lambda r: (r["id_case"], r["id_variant"])):
             writer.writerow(row)
-
-
-def _join_points(rows: List[Dict[str, Any]], out_dir: str) -> None:
-    """The runs' points.csv files, this run's only, as one table."""
-    paths = [
-        os.path.join(out_dir, "cases", r["id_case"], r["id_variant"], "points.csv")
-        for r in rows
-        if r.get("run_status") == "ok"
-    ]
-    with open(os.path.join(out_dir, "points.csv"), "w", encoding="utf-8", newline="") as out:
-        header_written = False
-        for path in sorted(p for p in paths if os.path.exists(p)):
-            with open(path, encoding="utf-8", newline="") as f:
-                header = f.readline()
-                if not header_written:
-                    out.write(header)
-                    header_written = True
-                out.write(f.read())
 
 
 def _fmt(value: Optional[float], digits: int = 2) -> str:
@@ -491,10 +462,6 @@ def main() -> int:
     parser.add_argument("--debug", action="store_true", help="write alignment_debug/ per run")
     parser.add_argument("--workers", type=int, default=1, help="processes; a map's layouts stay in one")
     parser.add_argument("--out", help="output folder name under ablations/")
-    parser.add_argument(
-        "--points", type=int, default=0,
-        help="also write N dense samples per run with what the run knew there (points.csv)",
-    )
     args = parser.parse_args()
 
     variants = [v.strip() for v in args.variants.split(",") if v.strip()]
@@ -540,7 +507,7 @@ def main() -> int:
     if args.workers > 1:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             futures = [
-                pool.submit(process_map, s, ls, variants, out_dir, args.debug, deformations, args.points)
+                pool.submit(process_map, s, ls, variants, out_dir, args.debug, deformations)
                 for s, ls in tasks
             ]
             for future in as_completed(futures):
@@ -549,15 +516,13 @@ def main() -> int:
                 print(line, flush=True)
     else:
         for s, ls in tasks:
-            map_rows, line = process_map(s, ls, variants, out_dir, args.debug, deformations, args.points)
+            map_rows, line = process_map(s, ls, variants, out_dir, args.debug, deformations)
             rows.extend(map_rows)
             print(line, flush=True)
 
     header["seconds"] = round(time.perf_counter() - started, 1)
     write_results(rows, os.path.join(out_dir, "results.csv"))
     write_summary(rows, variants, os.path.join(out_dir, "summary.md"), header)
-    if args.points:
-        _join_points(rows, out_dir)
     _write_json(os.path.join(out_dir, "run.json"), header)
     print(f"{len(rows)} rows in {header['seconds']} s -> {os.path.join(out_dir, 'summary.md')}")
     return 0

@@ -31,7 +31,6 @@ from .projection import (
     webmercator_meters_to_km,
 )
 from .cleaning import land_mask_3857 as land_mask_3857_shared
-from .quality import affine_leave_one_out, control_point_layout
 from .records import RunRecord
 from .snapping import (
     CoastIndex,
@@ -190,15 +189,9 @@ def georeference_features(
         controlPoints=[cp.to_dict() for cp in control_points],
         controlPointCount=len(control_points),
         controlPointsBySource=count_by_source(control_points),
-        # How the points cover the image, and the affine's leave-one-out:
-        # inputs of the quality estimator (quality.py).
-        controlPointLayout=control_point_layout(control_points, image_size),
         imageSize=[int(image_size[0]), int(image_size[1])],
         frameBounds=frame_bounds,
         referenceLatitude=ref_lat,
-    )
-    record.set_errors(
-        affineLeaveOneOut=affine_leave_one_out(control_points, gcp_affine.meters_per_pixel)
     )
     # The model the features were actually placed with: the GCP affine, the
     # aligned affine, or either one under the piecewise correction.

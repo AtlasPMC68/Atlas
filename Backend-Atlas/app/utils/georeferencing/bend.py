@@ -42,10 +42,6 @@ CHUNK = 20_000
 CHECK_GRID = 64
 #: Reweighting passes per search: the robust weights from the fit just made.
 REWEIGHTS = 2
-#: The inland correction's smoothing, against its kernel's 1 at a point: a
-#: point alone is pulled ~90% of the way, two close ones that disagree
-#: split the difference instead of folding the map between them.
-INLAND_SMOOTHING = 0.1
 _IDENTITY = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
 
 
@@ -159,10 +155,9 @@ def solve_bend(
 
 
 class _PixelWarp:
-    """``base(w(p))`` for a smooth warp ``w`` of the pixels: what the coast
-    bend and the inland correction share. A subclass gives ``warp`` and its
-    Jacobian, and the fields ``base``, ``image_size``, ``n_points``,
-    ``residuals_3857`` and ``residuals_kind``."""
+    """``base(w(p))`` for a smooth warp ``w`` of the pixels. A subclass gives
+    ``warp`` and its Jacobian, and the fields ``base``, ``image_size``,
+    ``n_points``, ``residuals_3857`` and ``residuals_kind``."""
 
     def warp(self, p: np.ndarray) -> np.ndarray:
         raise NotImplementedError
@@ -293,75 +288,6 @@ class CoastBendModel(_PixelWarp):
         return model
 
 
-@dataclass
-class InlandCorrectionModel(_PixelWarp):
-    """Pixel -> EPSG:3857: ``base(p + d(p))``, ``d`` a Gaussian bump at each
-    control point far from the coast, pulling it toward where it was clicked
-    and fading out over ``radius``. The piecewise step's job, on what the coast
-    cannot show: the bend takes the coast, this the inland points it left."""
-
-    name = "inland_correction"
-
-    base: Any
-    image_size: Tuple[int, int]
-    centres: np.ndarray
-    weights: np.ndarray
-    radius: float
-    n_points: int = 0
-    residuals_3857: np.ndarray = field(default_factory=lambda: np.zeros(0))
-    residuals_kind: str = RESIDUAL_IN_SAMPLE
-
-    def __post_init__(self) -> None:
-        self.centres = np.asarray(self.centres, dtype=float).reshape(-1, 2)
-        self.weights = np.asarray(self.weights, dtype=float).reshape(-1, 2)
-
-    def _kernel(self, p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        delta = p[:, None, :] - self.centres[None, :, :]
-        return np.exp(-(delta**2).sum(axis=2) / (2.0 * self.radius**2)), delta
-
-    def shift(self, p: np.ndarray) -> np.ndarray:
-        """``d(p)``, in rows of at most ``CHUNK``."""
-        out = np.empty((len(p), 2))
-        for start in range(0, len(p), CHUNK):
-            k, _ = self._kernel(p[start : start + CHUNK])
-            out[start : start + CHUNK] = k @ self.weights
-        return out
-
-    def warp(self, p: np.ndarray) -> np.ndarray:
-        return p + self.shift(p)
-
-    def warp_jacobian(self, p: np.ndarray) -> np.ndarray:
-        k, delta = self._kernel(p)
-        # d/dp of k_j(p) w_j is -k_j (p - c_j) / r^2, outer product with w_j.
-        grad = -(k[:, :, None] * delta) / self.radius**2
-        return np.einsum("nkj,ki->nij", grad, self.weights) + np.eye(2)[None]
-
-    def serialize(self) -> Dict[str, Any]:
-        return {
-            **self._serialize_common(),
-            "centres": self.centres.tolist(),
-            "weights": self.weights.tolist(),
-            "radius": float(self.radius),
-        }
-
-    @classmethod
-    def deserialize(cls, payload: Dict[str, Any]) -> "InlandCorrectionModel":
-        from .piecewise import deserialize_model
-
-        if payload.get("name") != cls.name:
-            raise ValueError(f"Not an inland-correction payload: {payload.get('name')}")
-        model = cls(
-            base=deserialize_model(payload["base"]),
-            image_size=tuple(payload["imageSize"]),
-            centres=np.array(payload["centres"], dtype=float),
-            weights=np.array(payload["weights"], dtype=float),
-            radius=float(payload["radius"]),
-            n_points=int(payload.get("nPoints", 0)),
-        )
-        model._read_residuals(payload)
-        return model
-
-
 class _Unwarped:
     """EPSG:3857 -> pixel through a warped model."""
 
@@ -419,28 +345,12 @@ def bend_to_coast(
     image_size: Tuple[int, int],
     config: GeorefConfig,
     record: Optional[RunRecord] = None,
-) -> Union[Model, CoastBendModel, InlandCorrectionModel]:
+) -> Union[Model, CoastBendModel]:
     """Bend *model* to the drawn coast; *model* itself where a safeguard
-    refuses. Then, with ``coast_bend_inland``, correct it at the control points
-    far from the coast, bent or not, unless it was not bent and the pipeline
-    will fall back to the piecewise step (``coast_bend_fallback_piecewise``)."""
+    refuses (the pipeline then falls back to the piecewise step,
+    ``coast_bend_fallback_piecewise``)."""
 
     record = record or RunRecord()
-    bent = _bend(model, control_points, context, image_size, config, record)
-    refused = not (record.errors.get("coastBend") or {}).get("applied")
-    if config.coast_bend_inland and not (refused and config.coast_bend_fallback_piecewise):
-        bent = correct_inland(bent, control_points, context, image_size, config, record)
-    return bent
-
-
-def _bend(
-    model: Model,
-    control_points: Sequence[ControlPoint],
-    context: Any,
-    image_size: Tuple[int, int],
-    config: GeorefConfig,
-    record: RunRecord,
-) -> Union[Model, CoastBendModel]:
     stats: Dict[str, Any] = {"applied": False, "onModel": model.name}
     samples, user_field = context.coast_samples, context.user_field
     if len(samples) == 0 or not user_field.edge.any():
@@ -531,78 +441,4 @@ def _bend(
         record.set_errors(coastBend=stats)
         return bent
     record.set_errors(coastBend=stats)
-    return model
-
-
-def correct_inland(
-    model: Any,
-    control_points: Sequence[ControlPoint],
-    context: Any,
-    image_size: Tuple[int, int],
-    config: GeorefConfig,
-    record: Optional[RunRecord] = None,
-) -> Any:
-    """*model* pulled toward the control points at least
-    ``coast_bend_inland_min_ratio_of_diagonal`` from the reference coast, by a
-    Gaussian bump at each (``InlandCorrectionModel``); *model* itself where
-    there is none or a safeguard refuses. The distance is to the reference
-    coast as *model* draws it, not to the drawn edges, which hold the zones'
-    borders too."""
-
-    record = record or RunRecord()
-    w, h = image_size
-    diagonal = math.hypot(w, h)
-    stats: Dict[str, Any] = {"applied": False, "onModel": model.name}
-    if not control_points:
-        stats["skippedBecause"] = "no control points"
-        record.set_errors(inlandCorrection=stats)
-        return model
-
-    inverse = model.inverse()
-    samples = context.coast_samples
-    pixel = np.array([cp.pixel for cp in control_points], dtype=float)
-    if len(samples):
-        coast = np.column_stack(inverse(samples.xy[:, 0], samples.xy[:, 1]))
-        coast = coast[np.isfinite(coast).all(axis=1)]
-        distance = cKDTree(coast).query(pixel)[0] if len(coast) else np.full(len(pixel), np.inf)
-    else:
-        distance = np.full(len(pixel), np.inf)
-    inland = distance >= config.coast_bend_inland_min_ratio_of_diagonal * diagonal
-    stats.update(inlandPoints=int(inland.sum()), controlPoints=len(control_points))
-    if not inland.any():
-        stats["skippedBecause"] = "no control point far enough from the coast"
-        record.set_errors(inlandCorrection=stats)
-        return model
-
-    centres = pixel[inland]
-    merc = np.array([lonlat_to_webmercator(*cp.geo) for cp, keep in zip(control_points, inland) if keep], dtype=float)
-    # Where the point has to be drawn for *model* to put it where it was clicked.
-    needed = np.column_stack(inverse(merc[:, 0], merc[:, 1])) - centres
-    radius = config.coast_bend_inland_radius_ratio_of_diagonal * diagonal
-    gap = ((centres[:, None, :] - centres[None, :, :]) ** 2).sum(axis=2)
-    kernel = np.exp(-gap / (2.0 * radius**2))
-    weights = np.linalg.solve(kernel + INLAND_SMOOTHING * np.eye(len(centres)), needed)
-    corrected = InlandCorrectionModel(model, image_size, centres, weights, radius)
-
-    xs, ys = np.meshgrid(np.linspace(0, w, CHECK_GRID), np.linspace(0, h, CHECK_GRID))
-    grid = np.column_stack((xs.ravel(), ys.ravel()))
-    shift = np.linalg.norm(corrected.shift(grid), axis=1)
-    min_det = float(np.min(np.linalg.det(corrected.warp_jacobian(grid))))
-    cap = config.coast_bend_max_ratio_of_diagonal * diagonal
-    stats.update(
-        maxShiftPx=float(shift.max()),
-        rmsShiftPx=float(np.sqrt(np.mean(shift**2))),
-        largestNeededPx=float(np.linalg.norm(needed, axis=1).max()),
-        minJacobianDet=min_det,
-    )
-    if min_det <= 0:
-        stats["skippedBecause"] = "the correction folds the map"
-    elif shift.max() > cap:
-        stats["skippedBecause"] = f"the correction moves the map more than {cap:.0f} px"
-    else:
-        corrected.measure_against(control_points)
-        stats["applied"] = True
-        record.set_errors(inlandCorrection=stats)
-        return corrected
-    record.set_errors(inlandCorrection=stats)
     return model

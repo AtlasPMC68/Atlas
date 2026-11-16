@@ -456,8 +456,4 @@ def deserialize_model(payload: Dict[str, Any]):
         from .bend import CoastBendModel
 
         return CoastBendModel.deserialize(payload)
-    if payload.get("name") == "inland_correction":
-        from .bend import InlandCorrectionModel
-
-        return InlandCorrectionModel.deserialize(payload)
     return AffineModel.deserialize(payload)

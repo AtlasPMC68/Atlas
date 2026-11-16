@@ -15,7 +15,6 @@ from app.utils.georeferencing import (
     select_control_points,
 )
 from app.utils.georeferencing.checkpoints import measure_check_points
-from app.utils.georeferencing.quality import predict_quality
 from app.utils.georeferencing.requirements import MIN_CONTROL_POINTS
 from app.utils.imposed_colors import Picks
 
@@ -66,8 +65,9 @@ class MapPlacement:
     image_size: tuple
     config: GeorefConfig
     record: Optional[RunRecord] = None
-    #: The alignment evidence, kept when ``config.align_after_piecewise`` asks
-    #: for a second alignment (``post_align.AlignmentContext``).
+    #: The alignment evidence (``post_align.AlignmentContext``), kept for what
+    #: reads it after the first alignment: the bend to the coast, the second
+    #: alignment, the snap's measured tolerance.
     alignment_context: Optional[Any] = None
 
     def georeference(
@@ -138,24 +138,6 @@ class MapPlacement:
             coast_misfit_px=misfit,
             score_snapping=score_snapping and clean,
         )
-        if clean and result.record is not None and result.model is not None:
-            # What the run expects of itself, before the check points are
-            # measured: nothing it reads may know them.
-            try:
-                with result.record.phase("predict_quality"):
-                    predicted = predict_quality(
-                        result.record.to_dict(),
-                        pixel_feature_collections,
-                        self.control_points,
-                        result.model,
-                        result.baseline,
-                        self.image_size,
-                        context=self.alignment_context,
-                    )
-                result.record.set_errors(predictedQuality=predicted)
-            except Exception as e:  # a diagnostic must not fail the import
-                logger.warning(f"Quality prediction failed: {e}", exc_info=True)
-                result.record.set_errors(predictedQuality={"failed": f"{type(e).__name__}: {e}"})
         if check_points and result.record is not None:
             result.record.set_errors(
                 checkPoints=measure_check_points(

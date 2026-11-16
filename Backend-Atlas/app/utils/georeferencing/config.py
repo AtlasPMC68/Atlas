@@ -223,17 +223,9 @@ class GeorefConfig:
     coast_bend_search_radius_px: tuple = (40.0, 30.0, 22.0, 16.0, 12.0, 9.0, 7.0, 5.0)
     # Refused past this correction anywhere on the image.
     coast_bend_max_ratio_of_diagonal: float = 0.10
-    # After the bend, a local correction at the control points this far
-    # from the reference coast (share of the diagonal): what the coast
-    # cannot show and only the piecewise step followed (§10.6). Each
-    # point's pull fades out over the radius, the piecewise step's reach.
-    coast_bend_inland: bool = False
-    coast_bend_inland_min_ratio_of_diagonal: float = 0.05
-    coast_bend_inland_radius_ratio_of_diagonal: float = 0.15
     # Where the bend refuses and no piecewise step ran (``transform_model``
-    # affine), run it then, as PROD does: the piecewise step, then the
-    # second alignment. The inland correction is skipped, since the
-    # piecewise step pins every control point (§10.6).
+    # affine), run it then, as production did up to config v21: the
+    # piecewise step, then the second alignment (§10.6).
     coast_bend_fallback_piecewise: bool = True
 
     # Reference curve sampling. Coastline sets the transform first; lakes are
@@ -429,9 +421,6 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "coast_bend_coast_correlation_px",
             "coast_bend_search_radius_px",
             "coast_bend_max_ratio_of_diagonal",
-            "coast_bend_inland",
-            "coast_bend_inland_min_ratio_of_diagonal",
-            "coast_bend_inland_radius_ratio_of_diagonal",
             "coast_bend_fallback_piecewise",
             "curve_sample_spacing_px",
             "curve_max_samples",

@@ -13,6 +13,13 @@ quality estimator is next. How to run the tools: [`dev-test-tool.md`](dev-test-t
 How the pipeline works: [`georeferencing.md`](georeferencing.md). The real-corpus evidence:
 [`georeferencing-testing.md` §8](georeferencing-testing.md#8-results).
 
+**Removed (2026-11-15).** The quality estimator (§4.3, §10.10–10.15: `quality.py`,
+`quality_model.json`, `errors.predictedQuality`, the `--points` option, the `fit_georef_*`,
+`run_georef_quality_corpus` and `run_georef_add_point` scripts) and the inland correction after
+the bend (`coast_bend_inland`, variants `W8`–`W10`, `W12`, `W14`, §10.6) were removed: nothing
+used the first, and the second tied or lost. Their code is in commit `cc09864`; the results below
+are kept as they were.
+
 ---
 
 ## 1. Why a synthetic corpus
