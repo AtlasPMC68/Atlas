@@ -94,32 +94,33 @@
               :class="index === activeIndex ? 'bg-primary/15' : 'hover:bg-base-200'"
               @click="activate(index)"
             >
-              <!-- The same circle as on both maps: placed, or still to place. -->
+              <!-- Filled once placed, hollow while still to place. -->
               <span
-                class="status status-lg shrink-0"
-                :class="entry.image ? 'bg-blue-600' : 'bg-blue-200 ring-1 ring-blue-600'"
+                class="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-primary-600"
+                :class="entry.image ? 'bg-primary-600' : 'bg-base-100'"
                 aria-hidden="true"
               />
               <span class="flex-1 min-w-0 truncate">{{ entry.city.name }}</span>
               <span
-                class="text-xs"
-                :class="entry.image ? 'text-success' : 'text-base-content/60'"
+                class="badge badge-sm"
+                :class="entry.image ? 'badge-success badge-soft' : 'badge-ghost'"
               >
                 {{
                   entry.image
-                    ? "placée"
+                    ? "Placée"
                     : index === activeIndex
-                      ? "cliquez sur l'image"
-                      : "à placer"
+                      ? "Cliquez sur l'image"
+                      : "À placer"
                 }}
               </span>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs px-1"
+                class="btn btn-ghost btn-xs btn-square"
                 title="Retirer"
+                :aria-label="`Retirer ${entry.city.name}`"
                 @click.stop="remove(index)"
               >
-                ✕
+                <XMarkIcon class="h-4 w-4" />
               </button>
             </li>
           </ul>
@@ -190,6 +191,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { XMarkIcon } from "@heroicons/vue/24/outline";
 import GeoRefWorldMap from "./GeoRefWorldMap.vue";
 import GeoRefImageMap from "./GeoRefImageMap.vue";
 import { useCityCandidates } from "../../composables/useCityCandidates";

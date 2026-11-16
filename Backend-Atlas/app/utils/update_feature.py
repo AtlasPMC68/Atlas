@@ -1,6 +1,6 @@
 import base64
 from copy import deepcopy
-from app.models.features import Feature
+from app.models.features import Feature, ValidationStatus
 
 
 def normalize_feature_for_storage(feature: dict) -> dict:
@@ -14,6 +14,24 @@ def normalize_feature_for_storage(feature: dict) -> dict:
     properties = payload.get("properties")
     if not isinstance(properties, dict):
         properties = {}
+
+    raw_status = properties.get("validation_status") or properties.get("validationStatus")
+    if raw_status:
+        try:
+            status_val = ValidationStatus(str(raw_status).lower()).value
+        except ValueError:
+            status_val = str(raw_status)
+        properties["validation_status"] = status_val
+        properties["validationStatus"] = status_val
+        if status_val == ValidationStatus.ACCEPTED.value:
+            properties["show"] = True
+            properties["recognized"] = True
+        elif status_val in (
+            ValidationStatus.REJECTED.value,
+            ValidationStatus.MANUAL_REVIEW.value,
+        ):
+            properties["show"] = False
+            properties["recognized"] = False
 
     payload["properties"] = properties
     return payload
@@ -59,6 +77,15 @@ def serialize_db_feature(row: Feature) -> dict | None:
         feature["updated_at"] = row.updated_at.isoformat()
 
     props = feature.setdefault("properties", {})
+
+    raw_status = props.get("validation_status") or props.get("validationStatus")
+    if raw_status:
+        try:
+            status_val = ValidationStatus(str(raw_status).lower()).value
+        except ValueError:
+            status_val = str(raw_status)
+        props["validation_status"] = status_val
+        props["validationStatus"] = status_val
 
     if getattr(row, "image", None):
         image_bytes = bytes(row.image)

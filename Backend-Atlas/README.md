@@ -1,33 +1,69 @@
 # Backend - Maps Processing API
 
-## Installation
+## Installation & Local Setup
 
-1. Créer l'environnement virtuel :
+1. Create a virtual environment:
+   ```sh
    python -m venv .venv
+   ```
 
-2. Activer l'environnement :
-   .venv\Scripts\activate
+2. Activate the virtual environment:
+   - **Windows:**
+     ```powershell
+     .venv\Scripts\activate
+     ```
+   - **macOS / Linux:**
+     ```sh
+     source .venv/bin/activate
+     ```
 
-3. Installer les dépendances :
+3. Install dependencies:
+   ```sh
    pip install -r requirements.txt
+   ```
 
-4. uvicorn app.main:app --reload
+4. Start the development server:
+   ```sh
+   uvicorn app.main:app --reload
+   ```
 
-# Dans autre terminal :
+## Health Checks
 
+In another terminal, test the API status:
+
+```sh
 curl http://localhost:8000/ping
+```
+Expected response:
+```json
+"pong"
+```
 
-La reponse recue devrait etre "pong"
+### Database Connection Test
 
-# Test bd
-
+```sh
 curl http://localhost:8000/db-test
+```
+Expected response:
+```json
+{"db_status": "connected", "result": [1]}
+```
 
-La reponse reçu devrait être {"db_status":"connected","result":[1]}
+## Georeferencing Tests
 
-# Tests de géoréférencement
+The testing tool (regression and exploration) is described in [`dev-docs/dev-test-tool.md`](../dev-docs/dev-test-tool.md).
+To intentionally replace the best result (`best`) of a test case with its latest run (even if lower scoring), see section 5: `scripts/force_promote_georef_best.py`.
 
-L'outil de tests (régression et exploration) est décrit dans
-[`dev-docs/dev-test-tool.md`](../dev-docs/dev-test-tool.md). Pour remplacer volontairement
-le meilleur résultat (`best`) d'un cas par son dernier run, même moins bon, voir la
-section 5 : `scripts/force_promote_georef_best.py`.
+## Geographic Entities Dataset Generation
+
+To update or regenerate the offline gazetteer dataset (`app/data/geographic_entities.json`) using `geonamescache` and Natural Earth GeoJSON layers:
+
+- **Windows (PowerShell):**
+  ```powershell
+  Get-Content scripts\update_geographic_entities.py | docker exec -i atlas-backend python -
+  ```
+
+- **macOS / Linux:**
+  ```sh
+  docker exec -i atlas-backend python < scripts/update_geographic_entities.py
+  ```

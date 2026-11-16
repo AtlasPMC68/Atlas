@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-const props = defineProps({
+defineProps({
   imageFile: {
     type: File,
     required: true,

@@ -290,8 +290,14 @@ async function fetchMapsAndRender() {
         class="card bg-base-100 w-90 shadow-sm hover:shadow-xl transition-shadow cursor-pointer"
         @click="router.push(`/projet/${project.id}`)"
       >
-        <figure>
-          <img :src="toImageSrc(project.image)" class="w-full h-full" />
+        <!-- Fixed ratio: thumbnails are captured at whatever size the map had -->
+        <figure class="aspect-video bg-base-200">
+          <img
+            :src="toImageSrc(project.image)"
+            :alt="`Aperçu de ${project.title}`"
+            class="w-full h-full object-cover"
+            loading="lazy"
+          />
         </figure>
         <div class="card-body pb-0">
           <h2 class="card-title text-sm xl:text-lg">

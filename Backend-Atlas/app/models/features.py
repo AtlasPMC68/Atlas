@@ -1,7 +1,15 @@
+from enum import Enum
+import uuid
 from sqlalchemy import Column, DateTime, JSON, LargeBinary, func
 from sqlalchemy.dialects.postgresql import UUID
 from ..database.base import Base
-import uuid
+
+
+class ValidationStatus(str, Enum):
+    ACCEPTED = "accepted"
+    MANUAL_REVIEW = "manual_review"
+    REJECTED = "rejected"
+
 
 class Feature(Base):
     __tablename__ = "features"

@@ -61,7 +61,7 @@
         <a
             class="atlas-back"
             href="${client.baseUrl!'http://localhost:3000'}">
-            ← Back to Atlas
+            ${msg("atlasBackToAtlas")}
         </a>
 
     </#if>

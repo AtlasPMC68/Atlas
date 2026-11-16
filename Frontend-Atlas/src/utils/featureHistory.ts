@@ -1,37 +1,62 @@
 import { toRaw } from "vue";
-import type { Feature } from "../typescript/feature";
-import type {
-  FeatureHistoryStack,
-  FeatureSnapshot,
-} from "../typescript/feature";
+import type { Feature, FeatureSnapshot } from "../typescript/feature";
 
-// TODO: exclure ou normaliser les champs lourds comme image pour éviter les problèmes de performance et de taille de snapshot
-function toPlainFeatureSnapshot(features: Feature[]): FeatureSnapshot {
-  return JSON.parse(JSON.stringify(toRaw(features))) as FeatureSnapshot;
+/**
+ * Normalizes a feature for signature hashing without redundantly duplicating
+ * bulky image payloads (data URI, base64) that degrade memory and hashing speed.
+ */
+function normalizeFeatureForSignature(feature: Feature) {
+  const rawProps = (feature.properties || {}) as Record<string, any>;
+
+  let imageDesc = undefined;
+  if (typeof feature.image === "string") {
+    imageDesc = feature.image.length > 120 ? `[img:${feature.image.length}]` : feature.image;
+  }
+
+  let propImageDesc = undefined;
+  if (typeof rawProps.image === "string") {
+    propImageDesc = rawProps.image.length > 120 ? `[img:${rawProps.image.length}]` : rawProps.image;
+  }
+
+  return {
+    id: String(feature.id),
+    name: feature.name,
+    mapId: feature.mapId,
+    geometry: feature.geometry,
+    image: imageDesc,
+    properties: {
+      ...rawProps,
+      image: propImageDesc,
+    },
+  };
 }
 
 export function cloneFeatureSnapshot(features: Feature[]): FeatureSnapshot {
-  return toPlainFeatureSnapshot(features);
+  if (!features || !Array.isArray(features)) return [];
+  const raw = toRaw(features);
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(raw) as FeatureSnapshot;
+    } catch {
+      // Fallback in case raw contains non-cloneable values
+    }
+  }
+  return JSON.parse(JSON.stringify(raw)) as FeatureSnapshot;
 }
 
 export function buildFeatureSnapshotSignature(features: Feature[]): string {
-  const normalizedFeatures = toPlainFeatureSnapshot(features);
+  if (!features || !Array.isArray(features)) return "[]";
 
-  const sortedFeatures = [...normalizedFeatures].sort((a, b) =>
+  const sortedFeatures = [...features].sort((a, b) =>
     String(a.id).localeCompare(String(b.id)),
   );
 
-  return JSON.stringify(
-    sortedFeatures.map((feature) => ({
-      ...feature,
-      id: String(feature.id),
-    })),
-  );
+  return JSON.stringify(sortedFeatures.map(normalizeFeatureForSignature));
 }
 
-export function trimFeatureHistoryStack(
-  stack: FeatureHistoryStack,
+export function trimFeatureHistoryStack<T>(
+  stack: T[],
   limit: number,
-): FeatureHistoryStack {
-  return stack.slice(0, limit);
+): T[] {
+  return stack.slice(0, Math.max(1, limit));
 }

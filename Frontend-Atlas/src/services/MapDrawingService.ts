@@ -3,6 +3,7 @@ import L from "leaflet";
 import { featureToLayer, layerToFeature, isPointFeature } from "../utils/mapDrawingFeature";
 import type { Feature, PointFeature } from "../typescript/feature";
 import { drawingModes } from "../typescript/mapDrawing";
+import { formatWordText } from "../utils/wordStyles";
 import type {
   DrawingMode,
   EmitFn,
@@ -94,7 +95,8 @@ export class MapDrawingService {
 
     const rawText =
       textLayer.pm?.getText?.() ?? textLayer.options?.text ?? "";
-    const labelText = rawText.trim();
+    const trimmed = rawText.trim();
+    const labelText = formatWordText(trimmed, "city");
 
     if (!labelText) {
       return;
