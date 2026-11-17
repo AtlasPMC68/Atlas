@@ -3,7 +3,9 @@ import logging
 import os
 import re
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
+
+from celery import current_task
 
 from app.celery_app import celery_app
 
@@ -12,6 +14,17 @@ logger = logging.getLogger(__name__)
 OCR_INPUT_DIR = os.getenv("OCR_INPUT_DIR", "/data/ocr_input")
 OCR_OUTPUT_DIR = os.getenv("OCR_OUTPUT_DIR", "/data/ocr_result")
 OCR_PIPELINE_TIMEOUT_SECONDS = int(os.getenv("OCR_PIPELINE_TIMEOUT_SECONDS", "900"))
+
+
+class OcrPipelineError(RuntimeError):
+    """Florence failed or timed out: no text was read, which is not the same as a map without text."""
+
+
+def florence_task_id(ocr_task_id: str) -> str:
+    """Id of the Florence task started by an OCR task, so cancelling the import
+    can revoke it too. Revoking only the OCR task stops the wait, not Florence,
+    which then keeps the CPU busy until its time limit and delays the next import."""
+    return f"{ocr_task_id}-florence"
 
 # fmt: off
 MAP_IGNORED_WORDS = {
@@ -157,9 +170,12 @@ def _run_ocr_pipeline(
         immutable=True,
     ).set(queue="florence")
 
+    parent_id = getattr(current_task, "request", None) and current_task.request.id
+    florence_id = florence_task_id(parent_id) if parent_id else str(uuid4())
+
     try:
-        ocr_result = task_chain.apply_async()
-        logger.info(f"==> [OCR] Task launched for map {map_id}")
+        ocr_result = task_chain.apply_async(task_id=florence_id)
+        logger.info(f"==> [OCR] Task launched for map {map_id} (florence task {florence_id})")
         logger.info("==> [OCR] Florence-2 processing text detection and extraction...")
 
         try:
@@ -187,12 +203,25 @@ def _run_ocr_pipeline(
             with open(ocr_output_json_path, "r", encoding="utf-8") as florence_result_file:
                 florence_result = json.load(florence_result_file)
 
+            if florence_result.get("partial"):
+                logger.warning(
+                    f"==> [OCR] Florence hit its time limit for map {map_id}: "
+                    "keeping the text read before it, some labels may be missing"
+                )
             detections = florence_result.get("detections", [])
             return _build_extracted_text_from_detections(detections)
 
         except Exception as exc:
+            # Stop Florence too: otherwise it keeps working on a result nobody
+            # waits for. Harmless when it already finished.
+            try:
+                celery_app.control.revoke(florence_id, terminate=True)
+            except Exception as revoke_exc:
+                logger.warning(f"Could not revoke florence task {florence_id}: {revoke_exc}")
             logger.exception("OCR pipeline failed or timed out for map %s: %s", map_id, exc)
-            return []
+            # Raised, not returned as []: an empty list is saved as "done, no
+            # text", and the user cannot tell it from a map without labels.
+            raise OcrPipelineError(f"OCR failed or timed out: {exc}") from exc
     finally:
         for temp_path in (ocr_input_path, ocr_output_json_path):
             try:

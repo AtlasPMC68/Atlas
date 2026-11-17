@@ -136,3 +136,56 @@ class TestWaterEdgeFilter:
         assert not evidence.edges[:, 320:340].any(), "the river should be gone"
 
 
+class TestCoastLineCentre:
+    """A coast drawn as a line is evidence at the line's centre, whatever its
+    width; a coast drawn as a colour change stays where it is."""
+
+    SEA_EDGE = 120  # first column of the coast line, or of the land
+
+    @classmethod
+    def _coast(cls, width: int) -> np.ndarray:
+        image = np.full((HEIGHT, WIDTH, 3), (236, 226, 198), dtype=np.uint8)  # land
+        image[:, : cls.SEA_EDGE] = (40, 90, 200)  # sea, touching the border
+        image[:, cls.SEA_EDGE : cls.SEA_EDGE + width] = (40, 40, 60)
+        return image[:, :, ::-1].copy()  # BGR
+
+    @staticmethod
+    def _columns(evidence) -> np.ndarray:
+        # Away from the top and bottom, where the normal bends round the corner.
+        _, xs = np.nonzero(evidence.edges[30:-30])
+        return xs
+
+    # Not 1: an aliased 1 px line gives Canny one edge, not two flanks, so there
+    # is nothing to pair (anti-aliased, as the synthetic maps draw it, it gives two).
+    @pytest.mark.parametrize("width", [2, 3, 4, 5])
+    def test_a_drawn_line_is_found_at_its_centre(self, width):
+        evidence = build_user_evidence(
+            self._coast(width), water_click_positions=[(0.1, 0.5)], water_sampling_radii=[10]
+        )
+        centre = self.SEA_EDGE + (width - 1) / 2.0
+        xs = self._columns(evidence)
+        assert xs.size > 0
+        assert abs(float(np.mean(xs)) - centre) <= 0.5
+        assert evidence.stats["coastLinePairedFraction"] > 0.9
+
+    def test_without_the_pairing_a_thick_line_is_found_on_its_sea_side(self):
+        config = DEFAULT_GEOREF_CONFIG.with_overrides(coast_line_max_width_px=0)
+        evidence = build_user_evidence(
+            self._coast(4), water_click_positions=[(0.1, 0.5)], water_sampling_radii=[10],
+            config=config,
+        )
+        assert float(np.mean(self._columns(evidence))) < self.SEA_EDGE + 0.5
+
+    def test_a_colour_change_coast_is_kept_where_it_is(self):
+        evidence = build_user_evidence(
+            self._coast(0), water_click_positions=[(0.1, 0.5)], water_sampling_radii=[10]
+        )
+        xs = self._columns(evidence)
+        unpaired = build_user_evidence(
+            self._coast(0), water_click_positions=[(0.1, 0.5)], water_sampling_radii=[10],
+            config=DEFAULT_GEOREF_CONFIG.with_overrides(coast_line_max_width_px=0),
+        )
+        assert np.array_equal(evidence.edges, unpaired.edges)
+        assert abs(float(np.mean(xs)) - (self.SEA_EDGE - 0.5)) <= 1.0
+
+

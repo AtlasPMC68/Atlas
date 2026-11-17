@@ -214,12 +214,14 @@ class TestThroughThePipeline:
         }
 
     def _run(self, cps, zone, transform_model="piecewise_affine"):
-        # The unregularised model: these tests are about the correction itself.
+        # The unregularised model: these tests are about the correction itself,
+        # so no bend (and no bend fallback) either.
         config = DEFAULT_GEOREF_CONFIG.with_overrides(
             snap_to_coastline=False,
             clip_to_land_mask=False,
             transform_model=transform_model,
             piecewise_regularization="none",
+            coast_bend=False,
         )
         return georeference_features(
             [zone], cps, frame_bounds=self.FRAME, image_size=(600, 400), config=config
@@ -288,6 +290,7 @@ class TestAutoTransformModel:
             clip_to_land_mask=False,
             transform_model="auto",
             auto_piecewise_rmse_ratio_of_diagonal=ratio,
+            coast_bend=False,
         )
         return georeference_features(
             [self.ZONE],
@@ -298,8 +301,10 @@ class TestAutoTransformModel:
         )
 
     def test_is_an_option_not_the_default(self):
-        """B7b applies the correction on every map; ``auto`` stays selectable."""
-        assert DEFAULT_GEOREF_CONFIG.transform_model == "piecewise_affine"
+        """Since config v22 the piecewise correction runs only where the bend
+        refuses; ``auto`` stays selectable."""
+        assert DEFAULT_GEOREF_CONFIG.transform_model == "affine"
+        assert DEFAULT_GEOREF_CONFIG.coast_bend_fallback_piecewise is True
         assert "auto" in TRANSFORM_MODELS
 
     def test_keeps_the_affine_when_it_fits(self):

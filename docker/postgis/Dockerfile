@@ -2,8 +2,12 @@
 # postgis/postgis only publishes amd64 images, which don't run on the ARM64 VM.
 FROM postgres:17.11-trixie
 
+# postgresql-17 is upgraded alongside PostGIS: the repo's PostGIS is built against
+# the latest 17.x minor, and loading it into an older server fails with
+# "undefined symbol" (e.g. heap_datum_check on 17.11).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+       postgresql-17 \
        postgresql-17-postgis-3 \
        postgresql-17-postgis-3-scripts \
     && rm -rf /var/lib/apt/lists/*
