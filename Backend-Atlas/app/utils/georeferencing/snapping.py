@@ -4,9 +4,13 @@ import json
 import logging
 import math
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import List, Optional, Tuple
 
+import numpy as np
+import shapely
+from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Point, Polygon, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, unary_union
@@ -185,6 +189,252 @@ def snap_geometry_to_coastline(
 
     # Non-polygon geometries are left unchanged
     return geom, total_points, snapped_points
+
+
+# --- Snapping stretches (config ``coastline_snap_stretches``, §10.8) -----------
+
+#: Points against segments per block of the nearest-segment search.
+_NEAREST_BLOCK = 256
+
+#: The precision of the union a failed exact one falls back to, EPSG:3857 m.
+SNAP_GRID_M = 0.01
+
+
+@dataclass(frozen=True)
+class CoastIndex:
+    """The reference coastline as segments, each knowing its line and place on
+    it, so a snapped stretch can follow the coast's own vertices."""
+
+    a: np.ndarray  # (M, 2) segment starts
+    b: np.ndarray  # (M, 2) segment ends
+    line: np.ndarray  # (M,) the line each segment is on
+    index: np.ndarray  # (M,) the segment's place on its line
+    vertices: List[np.ndarray]  # each line's vertices, a ring's without the repeat
+    along: List[np.ndarray]  # distance along the line at each vertex, then the total
+    closed: np.ndarray  # (L,) whether each line is a ring
+
+    @classmethod
+    def build(cls, coastline: BaseGeometry) -> "CoastIndex":
+        a, b, line, index, vertices, along, closed = [], [], [], [], [], [], []
+        for part in shapely.get_parts(coastline):
+            if part.geom_type not in ("LineString", "LinearRing") or part.is_empty:
+                continue
+            xy = np.asarray(part.coords, dtype=float)[:, :2]
+            ring = len(xy) > 3 and np.allclose(xy[0], xy[-1])
+            v = xy[:-1] if ring else xy
+            if len(v) < 2:
+                continue
+            ends = np.vstack([v[1:], v[:1]]) if ring else v[1:]
+            starts = v[: len(ends)]
+            k = len(vertices)
+            a.append(starts)
+            b.append(ends)
+            line.append(np.full(len(ends), k))
+            index.append(np.arange(len(ends)))
+            vertices.append(v)
+            along.append(np.concatenate([[0.0], np.cumsum(np.hypot(*(ends - starts).T))]))
+            closed.append(ring)
+        if not vertices:
+            empty = np.zeros((0, 2))
+            return cls(empty, empty, np.zeros(0, int), np.zeros(0, int), [], [], np.zeros(0, bool))
+        return cls(
+            np.vstack(a), np.vstack(b), np.concatenate(line), np.concatenate(index),
+            vertices, along, np.array(closed),
+        )
+
+    def nearest(self, points: np.ndarray, reach: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """For each point, its nearest point on the coast, the distance to it,
+        the segment and the share along it; distance inf and segment -1 where
+        no segment is within *reach* of the points' bounding box."""
+        n = len(points)
+        q = points.copy()
+        d = np.full(n, np.inf)
+        seg = np.full(n, -1)
+        t = np.zeros(n)
+        lo, hi = points.min(0) - reach, points.max(0) + reach
+        box = (
+            (np.minimum(self.a, self.b) <= hi).all(1) & (np.maximum(self.a, self.b) >= lo).all(1)
+        )
+        cand = np.flatnonzero(box)
+        if cand.size == 0:
+            return q, d, seg, t
+        a, ab = self.a[cand], self.b[cand] - self.a[cand]
+        ab2 = np.maximum((ab * ab).sum(1), 1e-18)
+        for s in range(0, n, _NEAREST_BLOCK):
+            p = points[s : s + _NEAREST_BLOCK, None, :]
+            tt = np.clip(((p - a) * ab).sum(2) / ab2, 0.0, 1.0)
+            foot = a + tt[..., None] * ab
+            dist = np.hypot(*(p - foot).transpose(2, 0, 1))
+            k = dist.argmin(1)
+            rows = np.arange(len(k))
+            q[s : s + _NEAREST_BLOCK] = foot[rows, k]
+            d[s : s + _NEAREST_BLOCK] = dist[rows, k]
+            seg[s : s + _NEAREST_BLOCK] = cand[k]
+            t[s : s + _NEAREST_BLOCK] = tt[rows, k]
+        return q, d, seg, t
+
+    def between(self, si: int, ti: float, sj: int, tj: float, limit: float) -> List[Tuple[float, float]]:
+        """The coast's vertices from the point *ti* along segment *si* to the
+        point *tj* along *sj*, the shorter way along their line; none when
+        they are on different lines or that way is longer than *limit*."""
+        k = int(self.line[si])
+        if int(self.line[sj]) != k:
+            return []
+        v, L = self.vertices[k], self.along[k]
+        m, xi, xj = len(v), int(self.index[si]), int(self.index[sj])
+        pi = L[xi] + ti * (L[xi + 1] - L[xi])
+        pj = L[xj] + tj * (L[xj + 1] - L[xj])
+        total = L[-1]
+        ways = []  # (arc length, vertex indices)
+        if self.closed[k]:
+            ways.append(((pj - pi) % total, [(xi + 1 + c) % m for c in range((xj - xi) % m)]))
+            ways.append(((pi - pj) % total, [(xi - c) % m for c in range((xi - xj) % m)]))
+        elif pj >= pi:
+            ways.append((pj - pi, list(range(xi + 1, xj + 1))))
+        else:
+            ways.append((pi - pj, list(range(xi, xj, -1))))
+        arc, indices = min(ways, key=lambda w: w[0])
+        if arc > limit:
+            return []
+        return [(float(v[c, 0]), float(v[c, 1])) for c in indices]
+
+
+def _runs(mask: np.ndarray) -> List[np.ndarray]:
+    """The runs of True in a ring's *mask*, as vertex indices in ring order; a
+    run may wrap past the ring's start. All True is one run of every vertex."""
+    n = len(mask)
+    if mask.all():
+        return [np.arange(n)]
+    start = int(np.flatnonzero(~mask)[0])
+    order = (start + np.arange(n)) % n
+    runs, current = [], []
+    for i in order:
+        if mask[i]:
+            current.append(i)
+        elif current:
+            runs.append(np.array(current))
+            current = []
+    if current:
+        runs.append(np.array(current))
+    return runs
+
+
+def _snap_ring_stretches(
+    coords: List[Tuple[float, ...]],
+    coast: CoastIndex,
+    tolerance: float,
+    min_run: float,
+    min_cos: float,
+) -> Tuple[List[Tuple[float, float]], int, int]:
+    """One ring with its coastal stretches snapped (``snap_geometry_to_coastline_stretches``)."""
+    ring = np.asarray(coords, dtype=float)[:, :2]
+    if len(ring) > 1 and np.allclose(ring[0], ring[-1]):
+        ring = ring[:-1]
+    n = len(ring)
+    if n < 3:
+        return [tuple(map(float, p)) for p in coords], n, 0
+    q, d, seg, t = coast.nearest(ring, tolerance)
+    near = d <= tolerance
+    if not near.any():
+        return [tuple(map(float, p)) for p in coords], n, 0
+
+    # How parallel the boundary runs to the coast at each vertex.
+    heading = np.roll(ring, -1, 0) - np.roll(ring, 1, 0)
+    tangent = np.where(near[:, None], coast.b[seg] - coast.a[seg], 0.0)
+    norm = np.hypot(*heading.T) * np.hypot(*tangent.T)
+    cos = np.abs((heading * tangent).sum(1)) / np.maximum(norm, 1e-18)
+    step = np.hypot(*(np.roll(ring, -1, 0) - ring).T)  # vertex i to i + 1
+
+    whole = near.all()
+    snapped = np.zeros(n, dtype=bool)
+    for run in _runs(near):
+        if not whole:
+            # The ends where the boundary turns off the coast stay put.
+            lo, hi = 0, len(run)
+            while lo < hi and cos[run[lo]] < min_cos:
+                lo += 1
+            while hi > lo and cos[run[hi - 1]] < min_cos:
+                hi -= 1
+            run = run[lo:hi]
+            if len(run) < 2 or step[run[:-1]].sum() < min_run:
+                continue
+        snapped[run] = True
+
+    out: List[Tuple[float, float]] = []
+    for i in range(n):
+        j = (i + 1) % n
+        if not snapped[i]:
+            out.append((float(ring[i, 0]), float(ring[i, 1])))
+            continue
+        out.append((float(q[i, 0]), float(q[i, 1])))
+        if snapped[j]:
+            chord = float(np.hypot(*(q[j] - q[i])))
+            out.extend(coast.between(seg[i], t[i], seg[j], t[j], 4.0 * (chord + tolerance)))
+    out.append(out[0])
+    return out, n, int(snapped.sum())
+
+
+def snap_geometry_to_coastline_stretches(
+    geom: Optional[BaseGeometry],
+    coast: Optional[CoastIndex],
+    snap_tolerance: float,
+    min_run: float,
+    max_angle_deg: float,
+    max_area_change: float,
+) -> Tuple[Optional[BaseGeometry], int, int]:
+    """Snap only the stretches of each boundary that run along the coast.
+
+    A stretch is a run of consecutive vertices within *snap_tolerance* of the
+    coast, at least *min_run* long once its ends that leave the coast at more
+    than *max_angle_deg* are dropped. Its vertices move to their nearest
+    points on the coast, with the coast's own vertices between them, so a
+    border that only reaches the sea moves at most its end, and a snapped
+    shore follows the coast instead of cutting across its bends.
+
+    A polygon whose snap changes more than *max_area_change* of its area is
+    left as it was: snapping closes a strip along the shore, and a zone
+    narrower than the tolerance would otherwise have every vertex in reach
+    and fold onto the coast (§10.8). Counts as ``snap_geometry_to_coastline``."""
+    if coast is None or geom is None or geom.is_empty or len(coast.a) == 0:
+        return geom, 0, 0
+    min_cos = math.cos(math.radians(max_angle_deg))
+    total = snapped = 0
+    parts: List[Polygon] = []
+    for poly in collect_polygons(geom):
+        rings, moved = [], 0
+        for ring in [poly.exterior, *poly.interiors]:
+            coords, t, s = _snap_ring_stretches(list(ring.coords), coast, snap_tolerance, min_run, min_cos)
+            total += t
+            moved += s
+            rings.append(coords)
+        out = Polygon(rings[0], rings[1:])
+        if not out.is_valid:
+            out = shapely.make_valid(out)
+        kept = collect_polygons(out)
+        try:
+            change = (
+                shapely.union_all(kept).symmetric_difference(poly).area / poly.area
+                if kept and poly.area > 0
+                else math.inf
+            )
+        except GEOSException:
+            change = math.inf
+        if change > max_area_change:
+            parts.append(poly)
+            continue
+        parts.extend(kept)
+        snapped += moved
+    if not parts:
+        return geom, total, 0
+    if len(parts) == 1:
+        return parts[0], total, snapped
+    # Snapped neighbours of one zone can now overlap. Snapped onto the same
+    # coast, their edges can also cross at a hair's angle, which the exact
+    # overlay can fail on; rounded to a centimetre it does not.
+    try:
+        return shapely.union_all(parts), total, snapped
+    except GEOSException:
+        return shapely.union_all(shapely.make_valid(parts), grid_size=SNAP_GRID_M), total, snapped
 
 
 def estimate_pixel_extent_from_features(

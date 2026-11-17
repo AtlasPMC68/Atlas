@@ -9,6 +9,10 @@ from app.utils.ocr import preprocessing
 logger = logging.getLogger(__name__)
 
 
+class OcrPipelineError(RuntimeError):
+    """The OCR failed: no text was read, which is not the same as a map without text."""
+
+
 # fmt: off
 MAP_IGNORED_WORDS = {
     "n", "s", "e", "w", "o", "ne", "nw", "no", "se", "sw", "so",
@@ -124,7 +128,9 @@ def _run_ocr_pipeline(
         ocr_output = inference.run_pipeline(detector, recognizer, image)
     except Exception as exc:
         logger.exception("OCR pipeline failed for map %s: %s", map_id, exc)
-        return []
+        # Raised, not returned as []: an empty list is saved as "done, no
+        # text", and the user cannot tell it from a map without labels.
+        raise OcrPipelineError(f"OCR failed: {exc}") from exc
 
     logger.info(f"==> [OCR] Pipeline successfully completed for map {map_id} in {time.monotonic() - started:.1f}s!")
     return _build_extracted_text_from_detections(ocr_output.get("detections", []))
