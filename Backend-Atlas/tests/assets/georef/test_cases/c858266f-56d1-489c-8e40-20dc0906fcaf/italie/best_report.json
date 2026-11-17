@@ -1,7 +1,7 @@
 {
   "testId": "c858266f-56d1-489c-8e40-20dc0906fcaf",
   "testCaseId": "italie",
-  "evaluatedAt": "2026-11-01T01:29:18.823232Z",
+  "evaluatedAt": "2026-11-17T04:49:00.988490Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -16,19 +16,19 @@
           "area": 32.858699932433254
         },
         "bestMatch": {
-          "iou": 0.937270952957133,
-          "intersectionArea": 31.35784495980015,
-          "unionArea": 33.4565419539192,
-          "precision": 0.9812915296787067,
-          "recall": 0.9543239697334561,
-          "falseNegativeArea": 1.5008549726331264,
-          "falsePositiveArea": 0.5978420214858504,
+          "iou": 0.9372921814390298,
+          "intersectionArea": 31.359645936480604,
+          "unionArea": 33.457705673308794,
+          "precision": 0.9812568519184451,
+          "recall": 0.9543787794698169,
+          "falseNegativeArea": 1.4990539959526736,
+          "falsePositiveArea": 0.5990057408754439,
           "boundary": {
-            "meanKm": 53.477,
-            "p90Km": 307.352,
+            "meanKm": 53.432,
+            "p90Km": 307.277,
             "maxKm": 490.026,
-            "expectedToExtractedMeanKm": 3.603,
-            "extractedToExpectedMeanKm": 103.351,
+            "expectedToExtractedMeanKm": 3.602,
+            "extractedToExpectedMeanKm": 103.261,
             "expectedHoles": 0,
             "extractedHoles": 0
           },
@@ -36,25 +36,25 @@
             "index": 0,
             "id": null,
             "name": "Italie",
-            "area": 31.955686981286078
+            "area": 31.958651677356123
           },
           "matchedBy": "name"
         }
       }
     ],
     "mean": {
-      "meanIou": 0.937270952957133,
-      "meanPrecision": 0.9812915296787067,
-      "meanRecall": 0.9543239697334561,
-      "totalFalseNegativeArea": 1.5008549726331264,
-      "totalFalsePositiveArea": 0.5978420214858504,
-      "meanBoundaryKm": 53.477,
-      "meanBoundaryP90Km": 307.352,
+      "meanIou": 0.9372921814390298,
+      "meanPrecision": 0.9812568519184451,
+      "meanRecall": 0.9543787794698169,
+      "totalFalseNegativeArea": 1.4990539959526736,
+      "totalFalsePositiveArea": 0.5990057408754439,
+      "meanBoundaryKm": 53.432,
+      "meanBoundaryP90Km": 307.277,
       "maxBoundaryKm": 490.026,
       "zonesWithBoundary": 1,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.937270952957133,
+    "scoreUsed": 0.9372921814390298,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {

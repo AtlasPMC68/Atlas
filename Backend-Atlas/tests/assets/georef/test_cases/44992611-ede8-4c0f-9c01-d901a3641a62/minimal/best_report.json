@@ -1,7 +1,7 @@
 {
   "testId": "44992611-ede8-4c0f-9c01-d901a3641a62",
   "testCaseId": "minimal",
-  "evaluatedAt": "2026-11-01T01:25:53.620011Z",
+  "evaluatedAt": "2026-11-17T04:46:42.442653Z",
   "thresholds": {
     "minIou": null,
     "scoreKey": "metrics.mean.meanIou"
@@ -115,19 +115,19 @@
           "area": 37.09995664376098
         },
         "bestMatch": {
-          "iou": 0.8589855332586134,
-          "intersectionArea": 32.216859526593225,
-          "unionArea": 37.50570676595289,
-          "precision": 0.987562303366892,
-          "recall": 0.8683799777973882,
-          "falseNegativeArea": 4.883097117167741,
-          "falsePositiveArea": 0.405750122191867,
+          "iou": 0.929954398618322,
+          "intersectionArea": 35.12591652073814,
+          "unionArea": 37.77165479611302,
+          "precision": 0.9812362315621835,
+          "recall": 0.9467913091657261,
+          "falseNegativeArea": 1.9740401230228193,
+          "falsePositiveArea": 0.6716981523520197,
           "boundary": {
-            "meanKm": 46.836,
-            "p90Km": 79.478,
-            "maxKm": 1062.515,
-            "expectedToExtractedMeanKm": 62.005,
-            "extractedToExpectedMeanKm": 31.666,
+            "meanKm": 39.641,
+            "p90Km": 66.704,
+            "maxKm": 1007.336,
+            "expectedToExtractedMeanKm": 53.386,
+            "extractedToExpectedMeanKm": 25.895,
             "expectedHoles": 1,
             "extractedHoles": 1
           },
@@ -135,7 +135,7 @@
             "index": 3,
             "id": null,
             "name": "japan",
-            "area": 32.622609648785115
+            "area": 35.79761467309018
           },
           "matchedBy": "name"
         }
@@ -208,18 +208,18 @@
       }
     ],
     "mean": {
-      "meanIou": 0.8758606897233007,
-      "meanPrecision": 0.9494305606731327,
-      "meanRecall": 0.9211862647050526,
-      "totalFalseNegativeArea": 37.974570325836,
-      "totalFalsePositiveArea": 33.92590136278081,
-      "meanBoundaryKm": 123.839,
-      "meanBoundaryP90Km": 388.219,
+      "meanIou": 0.8876888339499187,
+      "meanPrecision": 0.948376215372348,
+      "meanRecall": 0.9342548199331088,
+      "totalFalseNegativeArea": 35.06551333169108,
+      "totalFalsePositiveArea": 34.191849392940966,
+      "meanBoundaryKm": 122.639,
+      "meanBoundaryP90Km": 386.09,
       "maxBoundaryKm": 2670.273,
       "zonesWithBoundary": 6,
       "zonesWithoutBoundary": 0
     },
-    "scoreUsed": 0.8758606897233007,
+    "scoreUsed": 0.8876888339499187,
     "scoreUsedKey": "mean.meanIou"
   },
   "nameMatching": {
