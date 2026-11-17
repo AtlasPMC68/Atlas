@@ -1,389 +1,84 @@
+<div align="center">
+
+<img src="Frontend-Atlas/public/favicon.svg" alt="Logo d'Atlas" width="72" height="72">
+
 # Atlas
 
-This is our PMC for university : Atlas
+**Créer, organiser et partager des cartes historiques pour l'enseignement de l'histoire et de la géographie.**
 
-## Git & Jira Naming Conventions
+[![CI](https://github.com/AtlasPMC68/Atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/AtlasPMC68/Atlas/actions/workflows/ci.yml)
+[![Licence : MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-To ensure clarity and traceability across branches and commits, all contributors must follow the naming conventions outlined below.
+[Fonctionnalités](#fonctionnalités) · [Démarrage rapide](#démarrage-rapide) · [Documentation](#documentation) · [Signaler un problème](#signaler-un-problème-ou-proposer-une-idée)
 
----
+<img src="docs/images/apercu-editeur.webp" alt="L'éditeur de carte d'Atlas : le Bas-Canada, le Haut-Canada et les territoires voisins en 1791, avec la légende, la liste des zones et la ligne du temps" width="900">
 
-### Branch Naming Convention
-
-All branches must follow the format:
-
-ATLAS-[issue-number]: [short-description]
-
-Where:
-
-- `ATLAS-` is the **Jira project key**
-- `<issue-number>` is the **Jira ticket number** (e.g., `123`)
-- `<short-description>` is a **1–3 word summary** of the purpose (lowercase, hyphen-separated)
-
-**Example**:
-ATLAS-123-add-login-feature
+</div>
 
 ---
 
-### Pull Request Message Convention
+Les enseignants d'histoire et de géographie ont souvent du mal à trouver des cartes adaptées à leurs cours : trop chargées, ou dessinées chacune à sa façon, elles se comparent mal entre elles.
 
-All pull request messages must follow this format:
+Atlas importe une carte existante (une image, une page de manuel numérisée), en extrait automatiquement les territoires, les formes et les noms de lieux, puis les replace sur une carte du monde commune. Les cartes de différentes époques peuvent ainsi être superposées, modifiées et comparées dans une même interface, puis partagées avec d'autres enseignants.
 
-ATLAS-[issue-number]: [type]-[short-description]
+## Fonctionnalités
 
-Where:
+- **Import de cartes.** Téléversez l'image d'une carte : un assistant vous guide pour indiquer la région du monde, la légende et quelques points de repère.
+- **Extraction automatique.** Atlas détecte les zones de couleur, les formes et les noms de lieux de la carte, et les transforme en éléments modifiables.
+- **Géoréférencement.** Les éléments extraits sont replacés à leur vraie position sur la carte du monde, en s'appuyant sur des points de repère et sur le tracé des côtes.
+- **Éditeur de carte.** Modifiez les zones, couleurs, contours et textes, ajoutez des formes, des flèches et des images, avec annuler / rétablir.
+- **Légende.** La légende se construit automatiquement à partir des zones visibles et de leurs couleurs.
+- **Ligne du temps.** Associez chaque carte à une période et suivez l'évolution des territoires d'une époque à l'autre.
+- **Projets.** Regroupez plusieurs cartes dans un projet, privé ou public.
+- **Explorer et partager.** Parcourez les projets publics de la communauté et enregistrez-en une copie pour l'adapter à vos cours.
+- **Comptes utilisateurs.** Inscription, connexion et mot de passe oublié, gérés par Keycloak.
 
-- `ATLAS-<issue-number>` refers to the corresponding Jira ticket (e.g., `ATLAS-123`)
-- `<type>` must be either:
-  - `feature`
-  - `bugfix`
-- `<short-description>` is a concise, lowercase, hyphen-separated summary (1–3 words)
+## Démarrage rapide
 
-**Examples**:
-ATLAS-123: feature-add-login
-ATLAS-210: bugfix-fix-auth-error
-
-### Additional Notes
-
-- Use the "Create branch" button directly in Jira when possible — it helps auto-fill the correct format.
-- Always open Pull Requests into the `dev` branch unless otherwise instructed.
-- Avoid pushing directly to `main` or `dev`.
-- Keep commit history clean and readable.
-- Local pushes to `main` are blocked by a Git hook to prevent accidental changes.  
-  Always work on feature branches and create a Pull Request to merge into `main`.
-
----
-
-### Running the Project with Docker Compose
-
-To run the project using Docker Compose, follow these steps:
-
-1. **Install Docker Desktop**
-   - Download and install Docker Desktop from [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/).
-   - Start Docker Desktop and wait until it is fully running (the whale icon should appear in your system tray).
-
-2. **Environment variables (optional):**
-   - `Backend-Atlas/.env.dev` is read as before. A root `.env` is optional locally: if it exists, its values override `.env.dev`.
-   - To create one: `cp .env.example .env`, then ask a teammate for the `VITE_CARTO_API_KEY`.
-   - Without a root `.env`, `docker-compose.yml` falls back to local defaults (`postgres`/`postgres`, Keycloak `admin`/`admin`).
-
-3. **Build and start the services:**
-
-   ```sh
-   docker compose up -d --build
-   ```
-
-   - The `migrate` service applies the database migrations first, then the backend and the workers start.
-   - Everything goes through Caddy on port 80:
-     - Frontend: http://localhost
-     - Backend API: http://localhost/api
-     - Keycloak: http://localhost/auth
-   - Flower (Celery Monitoring): http://localhost:5555, PostgreSQL: `localhost:5432`, Redis: `localhost:6379`. These only listen on `127.0.0.1`.
-
-4. **Test the backend:**
-
-   ```sh
-   curl http://localhost/api/ping
-   ```
-
-   - You should receive a response like `{ "message": "pong" }`.
-
-5. **Test the frontend:**
-   - Open your browser and go to [http://localhost](http://localhost)
-   - You should see the Atlas web application.
-
-6. **Test Celery and Redis:**
-
-   ```sh
-   curl -X POST "http://localhost/api/test/simple"
-   ```
-
-   - You should receive: `{"task_id": random Id,"status":"Task started","message":"Task launched for World"}`
-
-7. **Live Reload (Development):**
-   - **Backend:** With Docker volumes and live reload enabled, any changes you make to the backend code will automatically restart the server inside the container.
-   - **Frontend:** The frontend uses the Vite dev server with hot reload. Any changes to files will instantly reload the app in your browser.
-
-8. **Stopping the services:**
-
-   ```sh
-   docker compose down
-   ```
-
-   Do not add `-v`: it deletes the volumes, so the database and the Keycloak accounts.
-
----
-
-### Updating Geographic Entities Dataset
-
-The OCR place-name resolution pipeline uses an offline gazetteer dataset located at `Backend-Atlas/app/data/geographic_entities.json` (covering countries, continents, provinces, states, territories, lakes, rivers, seas, and oceans).
-
-If you need to regenerate or update this geographic dataset from sources (`geonamescache` and Natural Earth GeoJSON), run the script inside the running backend container:
-
-```sh
-# Option 1: On Windows (PowerShell)
-Get-Content Backend-Atlas\scripts\update_geographic_entities.py | docker exec -i atlas-backend python -
-
-# Option 2: Linux / macOS / Bash
-docker exec -i atlas-backend python < Backend-Atlas/scripts/update_geographic_entities.py
-
-# Option 3: Direct container execution (when scripts folder is mounted)
-docker exec atlas-backend python /app/scripts/update_geographic_entities.py
-```
-
-This script safely merges newly fetched features into the existing dataset using atomic file writes to prevent corruption.
-
----
-
-### Run Georef Evaluation Manually
-
-If you changed the georeferencing/extraction algorithm and want to re-run the georef evaluation locally without restarting the whole stack, you can run the dedicated georef pytest directly.
-
-**Option A — cross-platform script (Windows/macOS/Linux):**
-
-Run all georef cases:
-
-```sh
-python scripts/run_georef_tests.py
-```
-
-Run a single case (filters with pytest `-k`):
-
-```sh
-python scripts/run_georef_tests.py --test-id "<test_id>" --case-id "<case_id>"
-```
-
-Tip: if you prefer, you can also pass a raw pytest `-k` expression:
-
-```sh
-python scripts/run_georef_tests.py -k "<your expression>"
-```
-
-**Option B — Docker command (no script):**
-
-```sh
-docker compose run --rm test-backend pytest tests/test_georef_cases.py -v
-```
-
-Run a single case:
-
-```sh
-docker compose run --rm test-backend pytest tests/test_georef_cases.py -v -k "<test_id> and <case_id>"
-```
-
-**Option C — from inside an already running container:**
-
-If the backend container is already running (after `docker compose up`), you can execute pytest inside it:
-
-```sh
-docker compose exec backend pytest tests/test_georef_cases.py -v
-```
-
-How it works:
-
-- The script simply runs `docker compose run --rm test-backend pytest tests/test_georef_cases.py -v`.
-- If you pass `--test-id/--case-id` (or `-k`), it appends `-k "..."` to select a subset of cases.
-- It runs in an ephemeral container (`--rm`) and uses the same bind-mounted code as the rest of the dev stack.
-
----
-
-### Testing the project
-
-For this project, tests must be run inside Docker. This is the supported and reliable way to validate the backend and frontend.
-
-#### Start the project
-
-```sh
-# Start all services (Backend, Frontend, Workers, PostgreSQL, Redis)
-docker compose up -d
-
-# Check service health (everything goes through Caddy on port 80)
-curl http://localhost/api/ping
-```
-
-### Services
-
-- **Frontend**: http://localhost
-- **Backend API**: http://localhost/api
-- **Keycloak**: http://localhost/auth
-- **Celery Monitoring (Flower)**: http://localhost:5555
-- **PostgreSQL**: localhost:5432
-- **Redis**: localhost:6379
-
-Flower, PostgreSQL and Redis only listen on `127.0.0.1`, so they are not reachable from other machines.
-
----
-
-## Testing
-
-### To rebuild everything
-
-```sh
-docker compose down ; docker compose build --no-cache ; docker compose up -d
-
-```
-
-All tests must run inside Docker:
-
-```sh
-# Run all backend tests
-docker compose run --rm test-backend pytest -q
-```
-
-#### Run a specific test file
-
-```sh
-docker compose run --rm test-backend pytest tests/test_extraction_text.py -q
-```
-
-#### Run a test with more details
-
-```sh
-docker compose run --rm test-backend pytest tests/test_extraction_text.py -q -vv
-```
-
-#### Run the frontend tests
-
-```sh
-docker compose exec frontend npm run test -- --run
-```
-
-#### Important rule
-
-Do not run pytest directly on the local machine to validate this project. The correct workflow is to use Docker, where the project environment is configured correctly.
-
-This avoids Python dependency issues and broken imports that are unrelated to the code being tested.
-
----
-
-### Deploying to the server
-
-On the Ubuntu VM (ARM64, Docker installed):
-
-```sh
-git pull && ./deploy.sh
-```
-
-- The first run generates a root `.env` with random secrets (kept on the following runs, never committed), and asks for the Carto key and an email for the HTTPS certificate.
-- On the server, `.env` sets `COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml`, so every `docker compose` command uses the production settings.
-- The Keycloak admin console (`/auth/admin`) only answers the IPs in `ADMIN_ALLOWED_IPS` (in `.env`).
-- `deploy.sh` is for the server only: locally, use `docker compose up`.
-
-### Changing the database schema
-
-Schema changes are SQL files in `Backend-Atlas/db/`, applied automatically by the `migrate` service on every `docker compose up` (locally and on the server). Each file runs once, in filename order, and is recorded in the `schema_migrations` table. **Never drop the volume to change the schema.**
-
-To add a change:
-
-1. Create a new file with the next number, e.g. `Backend-Atlas/db/06_add_user_display_name.sql`
-2. Write the change, for example `ALTER TABLE users ADD COLUMN display_name TEXT;`
-3. Run `docker compose up -d` (or deploy): only the new file is applied
-
-Rules:
-
-- **Never edit a file that was already applied**: databases that ran it will not see the change (`migrate` prints a warning). Write a new file instead.
-- Each file runs in a transaction: if it fails, nothing from it is kept, the backend does not start, and `docker compose logs migrate` shows the error.
-
-### Rolling back a bad deploy
-
-Before starting the new version, `deploy.sh` dumps the database to `backups/atlas-<date>-<commit>.sql.gz` (the 7 latest are kept). The commit in the name is the code version that was running when the dump was taken.
-
-`deploy.sh` waits until every service is healthy. If one is not, it exits with an error, prints the service status and suggests `./rollback.sh`. Each successful deploy is recorded in `backups/last-good-commit`.
-
-**The new code is broken but the data is fine** (most cases): return to the last version that deployed successfully.
+**Prérequis :** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (ou Docker Engine avec Compose).
 
 ```bash
-./rollback.sh
-# once fixed on the branch: git checkout <branch> && git pull && ./deploy.sh
+git clone https://github.com/AtlasPMC68/Atlas.git
+cd Atlas
+docker compose up -d --build
 ```
 
-**A migration failed**: nothing to restore, it was rolled back. Fix the SQL file and redeploy.
+Le premier démarrage prend plusieurs minutes. Ouvrez ensuite **http://localhost**, puis créez un compte avec **S'inscrire**.
 
-**The new version damaged the data**: restore the dump taken just before it. Anything written since that dump is lost.
+Pour afficher les fonds de carte, ajoutez une clé API [CARTO](https://carto.com/) : `cp .env.example .env`, puis remplissez `VITE_CARTO_API_KEY`.
 
-```bash
-ls -1t backups/                  # newest first; pick the dump taken before the bad deploy
-docker compose stop backend celery-worker celery-worker-ocr
-git checkout <commit-from-the-dump-name>
-docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-gunzip -c backups/<dump>.sql.gz | docker compose exec -T db sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"'
-./deploy.sh
-```
+Les tests, les migrations de base de données et le reste du travail en local sont décrits dans le [guide de développement](docs/developpement.md).
 
-The dumps live on the same VM as the database: they protect against a bad deploy, not against losing the VM. Copy one elsewhere (`scp`) before risky changes.
+## Documentation
 
----
+| Document | Pour qui |
+|---|---|
+| [Guide d'utilisation](docs/guide-utilisateur/README.md) | Les enseignants et toute personne qui utilise Atlas |
+| [Guide de déploiement](docs/deploiement/README.md) | Mettre Atlas en ligne sur un serveur Oracle Cloud, le mettre à jour et le sauvegarder |
+| [Guide de développement](docs/developpement.md) | Faire tourner Atlas en local, lancer les tests, modifier la base de données |
+| [Architecture](docs/architecture.md) | Les services, le traitement d'une carte, l'organisation du code |
+| [Géoréférencement](dev-docs/georeferencing.md) (en anglais) | Le détail technique du placement des cartes |
 
-### CI/CD Pipeline & Tests
+## Technologies
 
-To ensure reliability and consistency across the project, a Continuous Integration (CI) pipeline is configured to automatically run tests on every pull request to main.
+| | |
+|---|---|
+| **Frontend** | Vue 3, TypeScript, Vite, Tailwind CSS, DaisyUI, Leaflet |
+| **Backend** | Python, FastAPI, SQLAlchemy, Celery, Redis |
+| **Traitement d'image et de texte** | OpenCV, scikit-image, Shapely, Florence-2 |
+| **Données et comptes** | PostgreSQL + PostGIS, Keycloak |
+| **Infrastructure** | Docker Compose, Caddy, GitHub Actions |
 
-### When Are Tests Run?
+## Signaler un problème ou proposer une idée
 
-**Tests are automatically triggered when:**
+Vous avez trouvé un bogue ou vous aimeriez une nouvelle fonctionnalité ? Ouvrez une [issue](https://github.com/AtlasPMC68/Atlas/issues/new/choose) en décrivant ce que vous faisiez, ce qui s'est passé et ce que vous attendiez.
 
-- You open a Pull Request targeting the main branch
-- You manually re-run GitHub Actions from the Actions tab
+Pour contribuer au code, lisez le [guide de contribution](CONTRIBUTING.md).
 
-### What Does the CI/CD Pipeline Do?
+## Contexte
 
-1. **Builds Docker images for frontend and backend**
+Atlas a été réalisé dans le cadre du projet majeur de conception (PMC) du baccalauréat en génie informatique de l'Université de Sherbrooke.
 
-2. **Runs unit and integration tests inside containers:**
-   - Backend: Python tests using pytest
-   - Frontend: TypeScript tests using vitest
+## Licence
 
-3. **Fails the PR if any test fails**
-
-**You will see the test results directly in the Pull Request interface on GitHub under the “Checks” tab.**
-✅ If all tests pass, your PR can be reviewed and merged
-❌ If a test fails, the PR is blocked until the issue is resolved
-
-### How to Add New Tests
-
-### Backend (Python – FastAPI)
-
-1. **Create a new test file in the Backend-Atlas/tests/ folder.**
-   Example: Backend-Atlas/tests/test_example.py
-
-2. **Use the pytest framework:**
-   def test_addition():
-   assert 2 + 2 == 4
-
-3. **Run locally inside the backend container:**
-   docker compose run backend pytest
-
-### Frontend (TypeScript – Vue + Vite + Vitest)
-
-1. **Create a new file like ComponentName.test.ts inside Frontend-Atlas/tests/**
-
-2. **Write your test using vitest:**
-   import { describe, it, expect } from 'vitest'
-
-   describe('math test', () => {
-   it('adds numbers correctly', () => {
-   expect(2 + 2).toBe(4)
-   })
-   })
-
-3. **Run locally inside the frontend container:**
-   docker compose run frontend npm run test
-
-### Make sure vitest is installed. It’s already configured in the Dockerfile.
-
-### Add Test-Only Dependencies
-
-**If you need new dev tools or testing libraries:**
-
-- Backend: add to requirements.txt
-- Frontend: add to package.json as devDependencies
-
-**Then rebuild containers:**
-docker compose build
-
-### Notes
-
-- The CI/CD configuration is managed in .github/workflows/ci.yml
-- Docker images used for testing are the same as in production to ensure reliability
-- Test feedback will show directly in your PR — no manual test launching needed
-
+Atlas est distribué sous la [licence MIT](LICENSE).
