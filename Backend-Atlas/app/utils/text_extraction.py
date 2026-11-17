@@ -8,6 +8,8 @@ from app.utils.ocr import preprocessing
 
 logger = logging.getLogger(__name__)
 
+# Any word length equal or less than this is ignored
+MAXIMAL_IGNORED_LENGTH = 1
 
 class OcrPipelineError(RuntimeError):
     """The OCR failed: no text was read, which is not the same as a map without text."""
@@ -27,16 +29,27 @@ _RE_LEGEND_OR_SCALE = re.compile(
 
 
 def should_ignore(text_val: str) -> bool:
-    clean = text_val.lower().strip(" .,;:!?()[]{}'\"")
+    """Ground rules that tell if a text box should be
+        ignored or not."""
 
+    # Remove trailing characters and normalize lowercase
+    clean: str = text_val.lower().strip(" .,;:!?()[]{}'\"")
+
+    # Ignore if word match any in the dictionary
+    if len(clean) <= MAXIMAL_IGNORED_LENGTH:
+        return True
+
+    # Remove words containing only numbers
     if clean in MAP_IGNORED_WORDS:
         return True
 
+    # Remove any digits
     if clean and all(c.isdigit() or c.isspace() or c in ".," for c in clean):
         return True
     if _RE_LEGEND_OR_SCALE.search(clean):
         return True
 
+    # Text boxes cannot have more than 5 words in them
     if len(clean.split()) > 5:
         return True
 
@@ -125,7 +138,7 @@ def _run_ocr_pipeline(
         from app.utils.ocr import inference
 
         detector, recognizer = inference.get_models()
-        ocr_output = inference.run_pipeline(detector, recognizer, image)
+        detections = inference.run_ocr(detector, recognizer, image)
     except Exception as exc:
         logger.exception("OCR pipeline failed for map %s: %s", map_id, exc)
         # Raised, not returned as []: an empty list is saved as "done, no
@@ -133,7 +146,7 @@ def _run_ocr_pipeline(
         raise OcrPipelineError(f"OCR failed: {exc}") from exc
 
     logger.info(f"==> [OCR] Pipeline successfully completed for map {map_id} in {time.monotonic() - started:.1f}s!")
-    return _build_extracted_text_from_detections(ocr_output.get("detections", []))
+    return _build_extracted_text_from_detections(detections)
 
 
 def extract_text(
@@ -144,18 +157,18 @@ def extract_text(
     if not image_bytes:
         return []
 
-    MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
-    if len(image_bytes) > MAX_FILE_SIZE_BYTES:
-        logger.warning(
-            f"Image for map {map_id} is too large ({len(image_bytes) / (1024 * 1024):.2f} MB). "
-            f"Rejected to prevent an OOM crash (25 MB limit)."
-        )
-        return []
-
     try:
         image = preprocessing.decode_image(image_bytes)
     except IOError as exc:
         logger.warning(f"Could not decode the image of map {map_id}: {exc}")
+        return []
+
+    if preprocessing.exceeds_max_side(image):
+        height, width = image.shape[:2]
+        logger.warning(
+            f"Image for map {map_id} is too large ({width}x{height} px). "
+            f"Rejected to prevent an OOM crash ({preprocessing.MAX_IMAGE_SIDE} px limit on the longest side)."
+        )
         return []
 
     logger.info(f"Starting OCR pipeline for map {map_id}")
@@ -164,5 +177,5 @@ def extract_text(
         map_id=map_id,
         image=image,
     )
-    logger.info(f"==> [OCR] PaddleOCR : {len(extracted_text)} zones de texte détectées pour {map_id}")
+    logger.debug(f"[OCR] PaddleOCR : {len(extracted_text)} text boxes detected for map {map_id}")
     return extracted_text
