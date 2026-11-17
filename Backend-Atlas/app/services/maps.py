@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.features import Feature
 from app.models.map import Map
@@ -56,14 +56,6 @@ async def delete_map_in_db(
     if not map_obj:
         return False
 
-    # features.map_id is ON DELETE CASCADE: detach first any feature of
-    # another project still pointing at this map (copies made before the
-    # PUT /features check existed), so deleting it doesn't wipe their data.
-    await db.execute(
-        update(Feature)
-        .where(Feature.map_id == map_id, Feature.project_id != project_id)
-        .values(map_id=None)
-    )
     await db.execute(
         delete(Feature).where(
             Feature.map_id == map_id, Feature.project_id == project_id
