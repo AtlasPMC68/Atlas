@@ -1237,6 +1237,51 @@ function onCreateProjectDialogClosed() {
   shouldSaveAfterCopy.value = false;
 }
 
+// The copy starts empty: give it its own maps (periods + dates) and point each
+// feature at the matching new map, otherwise the features keep the source
+// project's map ids and the copy has no timeline nor map groups.
+async function copyMapsIntoProject(
+  sourceProjectId: string,
+  targetProjectId: string,
+  featuresToCopy: Feature[],
+): Promise<Feature[]> {
+  const res = await apiFetch(
+    `/projects/${targetProjectId}/copy-maps-from/${sourceProjectId}`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${keycloak.token}` },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Error copying maps: ${res.status}`);
+  }
+
+  const data = (await res.json()) as { map_id_mapping?: Record<string, string> };
+  const mapping = data.map_id_mapping ?? {};
+
+  return featuresToCopy.map((feature: Feature) => {
+    const raw = feature as Feature & { map_id?: string; project_id?: string };
+    const props = { ...(feature.properties ?? {}) } as Record<string, unknown>;
+    const oldMapId = String(
+      raw.mapId ?? raw.map_id ?? props.mapId ?? props.map_id ?? "",
+    );
+    delete props.mapId;
+    delete props.map_id;
+
+    const { id, map_id, project_id, projectId: _projectId, ...rest } = raw as any;
+    void id;
+    void map_id;
+    void project_id;
+    void _projectId;
+
+    return {
+      ...rest,
+      mapId: mapping[oldMapId] ?? undefined,
+      properties: props,
+    } as Feature;
+  });
+}
+
 async function onProjectCreated(project: CreatedProjectRef | null) {
   if (!project?.id) {
     pendingCopiedFeatures.value = null;
@@ -1263,8 +1308,13 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
     isSaving.value = true;
 
     const targetProjectId = project.id;
+    const sourceProjectId = projectId.value;
 
-    await saveFeaturesToProject(targetProjectId, featuresToSave);
+    const copiedFeatures = sourceProjectId
+      ? await copyMapsIntoProject(sourceProjectId, targetProjectId, featuresToSave)
+      : featuresToSave;
+
+    await saveFeaturesToProject(targetProjectId, copiedFeatures);
 
     pendingCopiedFeatures.value = null;
     shouldSaveAfterCopy.value = false;
