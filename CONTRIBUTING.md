@@ -5,16 +5,13 @@ Merci de votre intérêt pour Atlas ! Toute contribution est la bienvenue : sign
 ## Signaler un problème
 
 1. Vérifiez dans les [issues](https://github.com/AtlasPMC68/Atlas/issues) que le problème n'a pas déjà été signalé.
-2. Sinon, [ouvrez une nouvelle issue](https://github.com/AtlasPMC68/Atlas/issues/new/choose) et décrivez :
-   - ce que vous faisiez (les étapes pour reproduire le problème) ;
-   - ce qui s'est passé, et ce que vous attendiez ;
-   - votre navigateur, et une capture d'écran si possible.
+2. Sinon, [ouvrez une nouvelle issue](https://github.com/AtlasPMC68/Atlas/issues/new/choose) et choisissez **Signaler un problème**. Le formulaire demande ce qui s'est passé et, si possible, une capture d'écran.
 
 Une carte qui donne un mauvais résultat d'extraction ou de placement est très utile : joignez l'image si vous pouvez la partager.
 
 ## Proposer une fonctionnalité
 
-Ouvrez une issue qui explique le besoin (ce que vous essayez de faire en classe, par exemple) avant la solution. C'est l'occasion d'en discuter avant que quelqu'un commence à coder.
+[Ouvrez une issue](https://github.com/AtlasPMC68/Atlas/issues/new/choose) et choisissez **Proposer une idée**. Expliquez le besoin (ce que vous essayez de faire en classe, par exemple) plutôt que la solution. C'est l'occasion d'en discuter avant que quelqu'un commence à coder.
 
 ## Contribuer au code
 

@@ -71,7 +71,13 @@ Les tests, les migrations de base de données et le reste du travail en local so
 
 ## Signaler un problème ou proposer une idée
 
-Vous avez trouvé un bogue ou vous aimeriez une nouvelle fonctionnalité ? Ouvrez une [issue](https://github.com/AtlasPMC68/Atlas/issues/new/choose) en décrivant ce que vous faisiez, ce qui s'est passé et ce que vous attendiez.
+Quelque chose ne fonctionne pas, ou vous avez une idée pour améliorer Atlas ? Écrivez-nous :
+
+1. Connectez-vous à GitHub (la [création d'un compte](https://github.com/signup) est gratuite).
+2. Cliquez sur **[Nouveau signalement](https://github.com/AtlasPMC68/Atlas/issues/new/choose)**.
+3. Choisissez **Signaler un problème** ou **Proposer une idée**, puis remplissez le court formulaire.
+
+Vous pouvez aussi consulter les [signalements existants](https://github.com/AtlasPMC68/Atlas/issues) : votre problème a peut-être déjà été signalé.
 
 Pour contribuer au code, lisez le [guide de contribution](CONTRIBUTING.md).
 

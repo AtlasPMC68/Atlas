@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Guide d'utilisation
+    url: https://github.com/AtlasPMC68/Atlas/tree/main/docs/guide-utilisateur
+    about: Une question sur la façon d'utiliser Atlas ? La réponse s'y trouve peut-être.

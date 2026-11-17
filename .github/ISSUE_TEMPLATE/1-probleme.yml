@@ -1,0 +1,24 @@
+name: Signaler un problème
+description: Quelque chose ne fonctionne pas comme prévu dans Atlas.
+title: "[Problème] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps de nous écrire ! Quelques phrases suffisent.
+
+  - type: textarea
+    id: probleme
+    attributes:
+      label: Que s'est-il passé ?
+      description: Décrivez ce que vous faisiez et ce qui n'a pas fonctionné.
+      placeholder: "Ex. : J'ai importé une carte du Québec en 1791, mais les zones sont apparues décalées vers l'ouest."
+    validations:
+      required: true
+
+  - type: textarea
+    id: images
+    attributes:
+      label: Captures d'écran ou carte utilisée (facultatif)
+      description: Glissez vos images dans cette case. Si le problème concerne une carte importée, l'image de la carte nous aide beaucoup.
