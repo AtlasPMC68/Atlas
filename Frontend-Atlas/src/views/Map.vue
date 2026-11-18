@@ -14,7 +14,7 @@
           :map-periods="mapPeriods"
           :custom-label-styles="customLabelStyles"
           :selected-feature-id="selectedFeatureId"
-          @select-feature="(id: string | null) => selectedFeatureId = id"
+          @select-feature="(id: string | null) => (selectedFeatureId = id)"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -50,7 +50,7 @@
             :can-undo="canUndo"
             :can-redo="canRedo"
             :selected-feature-id="selectedFeatureId"
-            @select-feature="(id: string | null) => selectedFeatureId = id"
+            @select-feature="(id: string | null) => (selectedFeatureId = id)"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
@@ -59,7 +59,10 @@
             @redo="onRedo"
             @edit-feature-request="onEditFeatureRequest"
           />
-          <div v-show="!showTextValidationModal" class="absolute bottom-4 left-4 z-[1001]">
+          <div
+            v-show="!showTextValidationModal"
+            class="absolute bottom-4 left-4 z-[1001]"
+          >
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
@@ -114,10 +117,7 @@
     @submit="createMapForProject"
   />
 
-  <EditMapPeriodDialog
-    ref="editMapPeriodDialogRef"
-    @save="saveMapPeriod"
-  />
+  <EditMapPeriodDialog ref="editMapPeriodDialogRef" @save="saveMapPeriod" />
 
   <CreateProjectDialog
     ref="createProjectDialogRef"
@@ -223,7 +223,9 @@ const addFeatureImageDialogRef = ref<{
   open: () => void;
   close: () => void;
 } | null>(null);
-const featureVisibilityControlsRef = ref<InstanceType<typeof FeatureVisibilityControls> | null>(null);
+const featureVisibilityControlsRef = ref<InstanceType<
+  typeof FeatureVisibilityControls
+> | null>(null);
 
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
@@ -243,14 +245,20 @@ let previousBodyUserSelect = "";
 
 function resizeSidebarBy(delta: number) {
   const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
-  sidebarWidth.value = Math.max(240, Math.min(maxWidth, sidebarWidth.value + delta));
+  sidebarWidth.value = Math.max(
+    240,
+    Math.min(maxWidth, sidebarWidth.value + delta),
+  );
 }
 
 function onSidebarResizeMove(event: MouseEvent) {
   const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
   sidebarWidth.value = Math.max(
     240,
-    Math.min(maxWidth, sidebarResizeStartWidth + event.clientX - sidebarResizeStartX),
+    Math.min(
+      maxWidth,
+      sidebarResizeStartWidth + event.clientX - sidebarResizeStartX,
+    ),
   );
 }
 
@@ -293,7 +301,9 @@ function pasteCopiedFeature() {
     (item: Feature) => String(item.id) === selectedFeatureId.value,
   );
   const refGeometry =
-    (selectedFeature && isCopyableFeature(selectedFeature) && selectedFeature.geometry) ||
+    (selectedFeature &&
+      isCopyableFeature(selectedFeature) &&
+      selectedFeature.geometry) ||
     source.geometry;
   const anchor = getGeometryAnchor(refGeometry);
   if (!anchor) return;
@@ -349,7 +359,9 @@ const {
 } = useProjectLabelStyles();
 
 const zoneFeatures = computed(() =>
-  filteredFeatures.value.filter((f: Feature) => f.properties?.mapElementType === "zone"),
+  filteredFeatures.value.filter(
+    (f: Feature) => f.properties?.mapElementType === "zone",
+  ),
 );
 
 const selectedYear = ref(-1);
@@ -444,9 +456,11 @@ const filteredFeatures = computed(() => {
 
 const combinedFeatureVisibility = computed(() => {
   const combined = new Map<string, boolean>();
-  
-  const visibleByTimeline = new Set(filteredFeatures.value.map((f: Feature) => String(f.id)));
-  
+
+  const visibleByTimeline = new Set(
+    filteredFeatures.value.map((f: Feature) => String(f.id)),
+  );
+
   features.value.forEach((feature: Feature) => {
     const id = String(feature.id);
 
@@ -458,10 +472,10 @@ const combinedFeatureVisibility = computed(() => {
 
     const explicitlyVisible = featureVisibility.value.get(id) ?? true;
     const isTimelineVisible = visibleByTimeline.has(id);
-    
+
     combined.set(id, explicitlyVisible && isTimelineVisible);
   });
-  
+
   return combined;
 });
 
@@ -495,7 +509,9 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
     reconcileVisibility(next);
 
     const currentUuidIds = new Set(
-      next.map((feature: Feature) => String(feature.id)).filter((id: string) => isUuid(id)),
+      next
+        .map((feature: Feature) => String(feature.id))
+        .filter((id: string) => isUuid(id)),
     );
 
     pendingDeletions.value = [...persistedFeatureIds.value].filter(
@@ -512,7 +528,9 @@ function applyFeatureSnapshot(next: Feature[], track = true) {
 }
 
 function commitFeatureSnapshot(next: Feature[], label?: string) {
-  applyFeatureSnapshot(featureHistoryService.commit(features.value, next, label));
+  applyFeatureSnapshot(
+    featureHistoryService.commit(features.value, next, label),
+  );
 }
 
 function resetMapSelection() {
@@ -686,20 +704,25 @@ async function loadCustomLabelStyles() {
 async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
   try {
     if (isSaving.value) {
-      throw new Error("Cannot update label styles while project features are saving");
+      throw new Error(
+        "Cannot update label styles while project features are saving",
+      );
     }
     const targetProjectId = await requireProjectId();
     await persistCustomLabelStyles(targetProjectId, styles);
 
     const effectiveStyles =
-      Array.isArray(customLabelStyles.value) && customLabelStyles.value.length > 0
+      Array.isArray(customLabelStyles.value) &&
+      customLabelStyles.value.length > 0
         ? customLabelStyles.value
         : styles;
     const stylesById = new Map<string, CustomLabelStyle>(
-      effectiveStyles.map((style: CustomLabelStyle): [string, CustomLabelStyle] => [
-        style.id,
-        style,
-      ]),
+      effectiveStyles.map(
+        (style: CustomLabelStyle): [string, CustomLabelStyle] => [
+          style.id,
+          style,
+        ],
+      ),
     );
     const nextFeatures = features.value.map((feature: Feature) => {
       const styleId = feature.properties.customLabelStyleId;
@@ -709,9 +732,7 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       return applyCustomLabelStyleToFeature(
         feature,
         style,
-        normalizeWordType(
-          feature.properties.customLabelStyleFallbackWordType,
-        ),
+        normalizeWordType(feature.properties.customLabelStyleFallbackWordType),
         feature.properties.name,
         feature.properties.labelText ?? feature.properties.name,
       );
@@ -806,7 +827,9 @@ async function onUpdateFeature(
   },
 ) {
   try {
-    const list = Array.isArray(updatedFeature) ? updatedFeature : [updatedFeature];
+    const list = Array.isArray(updatedFeature)
+      ? updatedFeature
+      : [updatedFeature];
     let nextFeatures = features.value;
     for (const f of list) {
       nextFeatures = upsertFeature(nextFeatures, f);
@@ -837,7 +860,9 @@ const validationMapTitle = computed(() => {
 
   const matchingFeature = features.value.find(
     (f: Feature) =>
-      String(f.mapId || (f as any).map_id || "").trim().toLowerCase() === mapIdStr &&
+      String(f.mapId || (f as any).map_id || "")
+        .trim()
+        .toLowerCase() === mapIdStr &&
       Boolean((f as any).mapTitle || (f.properties as any)?.mapTitle),
   );
   const customTitle =
@@ -859,7 +884,8 @@ function onOpenTextValidation(mapId: string | null) {
   // 2. If not found, look for an image feature belonging to this map in the project
   if (!img) {
     const imageFeature = features.value.find(
-      (f: Feature) => (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
+      (f: Feature) =>
+        (!mapId || f.mapId === mapId) && (f.image || f.properties?.image),
     );
     const rawImage = imageFeature?.image || imageFeature?.properties?.image;
     if (rawImage) {
@@ -869,7 +895,9 @@ function onOpenTextValidation(mapId: string | null) {
 
   validationImageUrl.value = img;
 
-  const targetFeatures = features.value.filter((f: Feature) => isUnrecognizedTextFeature(f, mapId));
+  const targetFeatures = features.value.filter((f: Feature) =>
+    isUnrecognizedTextFeature(f, mapId),
+  );
 
   if (targetFeatures.length === 0) {
     showAlert("error", "Aucun texte non reconnu trouvé pour cette carte.");
@@ -916,7 +944,10 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
     showAlert("success", "Textes validés et enregistrés sur la carte.");
   } catch (err) {
     console.error("Failed to save validated texts:", err);
-    showAlert("error", "Erreur lors de l'enregistrement de la validation des textes.");
+    showAlert(
+      "error",
+      "Erreur lors de l'enregistrement de la validation des textes.",
+    );
   } finally {
     isSavingTextValidation.value = false;
   }
@@ -1043,7 +1074,8 @@ function reconcileVisibility(list: Feature[]) {
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
-      const initialVisible = f.properties?.show !== false && (f.properties?.isVisible ?? true);
+      const initialVisible =
+        f.properties?.show !== false && (f.properties?.isVisible ?? true);
       next.set(id, initialVisible);
     }
   }
@@ -1256,28 +1288,24 @@ async function copyMapsIntoProject(
     throw new Error(`Error copying maps: ${res.status}`);
   }
 
-  const data = (await res.json()) as { map_id_mapping?: Record<string, string> };
-  const mapping = data.map_id_mapping ?? {};
+  const { mapIdMapping = {} } = snakeToCamel(await res.json()) as {
+    mapIdMapping?: Record<string, string>;
+  };
+  const toNewMapId = (oldMapId?: string | null) =>
+    oldMapId ? (mapIdMapping[oldMapId] ?? null) : null;
 
-  return featuresToCopy.map((feature: Feature) => {
-    const raw = feature as Feature & { map_id?: string; project_id?: string };
-    const props = { ...(feature.properties ?? {}) } as Record<string, unknown>;
-    const oldMapId = String(
-      raw.mapId ?? raw.map_id ?? props.mapId ?? props.map_id ?? "",
-    );
-    delete props.mapId;
-    delete props.map_id;
-
-    const { id, map_id, project_id, projectId: _projectId, ...rest } = raw as any;
+  // Drop id/projectId so the backend creates new rows in the copy.
+  return featuresToCopy.map(({ id, projectId, ...feature }: Feature) => {
     void id;
-    void map_id;
-    void project_id;
-    void _projectId;
-
+    void projectId;
+    const properties = { ...feature.properties };
+    if (properties.mapId) {
+      properties.mapId = toNewMapId(properties.mapId as string);
+    }
     return {
-      ...rest,
-      mapId: mapping[oldMapId] ?? undefined,
-      properties: props,
+      ...feature,
+      mapId: toNewMapId(feature.mapId),
+      properties,
     } as Feature;
   });
 }
@@ -1311,7 +1339,11 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
     const sourceProjectId = projectId.value;
 
     const copiedFeatures = sourceProjectId
-      ? await copyMapsIntoProject(sourceProjectId, targetProjectId, featuresToSave)
+      ? await copyMapsIntoProject(
+          sourceProjectId,
+          targetProjectId,
+          featuresToSave,
+        )
       : featuresToSave;
 
     await saveFeaturesToProject(targetProjectId, copiedFeatures);
@@ -1361,7 +1393,9 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     );
     if (selectedFeature) {
       e.preventDefault();
-      featureVisibilityControlsRef.value?.showDeleteFeatureDialog(selectedFeature);
+      featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
+        selectedFeature,
+      );
     }
     return;
   }
@@ -1416,13 +1450,15 @@ onMounted(async () => {
   await frameOpenedProject();
 
   if (projectId.value) {
-    const pendingEditsStr = localStorage.getItem(`pending_public_edits_${projectId.value}`);
+    const pendingEditsStr = localStorage.getItem(
+      `pending_public_edits_${projectId.value}`,
+    );
     if (pendingEditsStr) {
       try {
         const restoredFeatures = JSON.parse(pendingEditsStr);
         features.value = restoredFeatures;
         reconcileVisibility(restoredFeatures);
-        
+
         if (currentUser.value && keycloak.token) {
           pendingCopiedFeatures.value = [...restoredFeatures];
           shouldSaveAfterCopy.value = true;
@@ -1436,7 +1472,6 @@ onMounted(async () => {
         localStorage.removeItem(`pending_public_edits_${projectId.value}`);
       }
     }
-
   }
 
   window.addEventListener("keydown", handleKeyboardShortcuts);
@@ -1475,7 +1510,10 @@ watch(
 
 watch(
   () => route.params.mapId,
-  async (newMapId: string | string[] | undefined, oldMapId: string | string[] | undefined) => {
+  async (
+    newMapId: string | string[] | undefined,
+    oldMapId: string | string[] | undefined,
+  ) => {
     if (!newMapId || newMapId === oldMapId) return;
 
     featureVisibility.value = new Map();
@@ -1564,9 +1602,16 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       const syncedFeatures = featuresOverride
         ? undefined
         : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
-      const featuresToSave = featuresOverride ?? syncedFeatures ?? features.value;
-      localStorage.setItem(`pending_public_edits_${projectId.value}`, JSON.stringify(featuresToSave));
-      showAlert("success", "Veuillez vous connecter pour sauvegarder vos modifications. Vous serez redirigé...");
+      const featuresToSave =
+        featuresOverride ?? syncedFeatures ?? features.value;
+      localStorage.setItem(
+        `pending_public_edits_${projectId.value}`,
+        JSON.stringify(featuresToSave),
+      );
+      showAlert(
+        "success",
+        "Veuillez vous connecter pour sauvegarder vos modifications. Vous serez redirigé...",
+      );
       setTimeout(() => {
         keycloak.register({ redirectUri: window.location.href });
       }, 1500);
@@ -1577,7 +1622,9 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       ? undefined
       : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
     const featuresToSave = (
-      featuresOverride ?? syncedFeatures ?? features.value
+      featuresOverride ??
+      syncedFeatures ??
+      features.value
     ).map((feature: Feature) => ({
       ...feature,
       properties: {
@@ -1630,4 +1677,3 @@ async function onSaveMap(featuresOverride?: Feature[]) {
   }
 }
 </script>
-
