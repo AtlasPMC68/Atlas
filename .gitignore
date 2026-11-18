@@ -104,3 +104,6 @@ backups/
 
 # Local docker compose overrides (e.g. Florence thread count)
 docker-compose.override.yml
+
+# Local DB backups
+backup-*.sql.gz
