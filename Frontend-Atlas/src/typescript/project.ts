@@ -1,4 +1,5 @@
 import type { MapData } from "./map";
+import type { CreateProjectFormDraft } from "./editorDraft";
 
 export type CreatedProjectRef = Pick<MapData, "id">;
 
@@ -11,4 +12,6 @@ export type CreateProjectDialogPrefill = {
 export type CreateProjectDialogExposed = {
   open: (prefill?: CreateProjectDialogPrefill) => void;
   close: () => void;
+  getDraft: () => CreateProjectFormDraft | null;
+  restoreDraft: (draft: CreateProjectFormDraft) => void;
 };

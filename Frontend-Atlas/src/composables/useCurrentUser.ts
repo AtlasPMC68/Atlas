@@ -1,12 +1,20 @@
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import keycloak from "../keycloak";
 import { User } from "../typescript/user";
 import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
+import { sessionState } from "../services/authSession";
 
 const currentUser = ref<User | null>(null);
 const isLoading = ref(false);
 const error = ref<string | null>(null);
+
+watch(() => [sessionState.status, sessionState.subject], ([status, subject], previous) => {
+  if (status === "guest" || status === "reauth-required" || subject !== previous?.[1]) {
+    currentUser.value = null;
+    error.value = null;
+  }
+}, { flush: "sync" });
 
 export function useCurrentUser() {
   const fetchCurrentUser = async () => {
@@ -24,6 +32,7 @@ export function useCurrentUser() {
 
     try {
       const res = await apiFetch(`/me`, {
+        auth: "required",
         headers: { "Content-Type": "application/json" },
       });
 
@@ -54,7 +63,7 @@ export function useCurrentUser() {
   };
 
   const isAuthenticated = computed(
-    () => keycloak.authenticated && currentUser.value !== null,
+    () => sessionState.status === "authenticated" && currentUser.value !== null,
   );
 
   return {

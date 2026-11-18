@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col">
+  <div class="flex h-full min-h-0 flex-col" :inert="props.busy" :aria-busy="props.busy">
     <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5">
       <button
         v-for="group in featureGroups"
@@ -178,12 +178,12 @@
     </div>
   </div>
 
-  <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
+  <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit" @close="emit('draft-change')" @cancel="onEditCancel">
     <div class="modal-box flex flex-col gap-4">
       <h3 class="text-lg font-bold truncate">
         Modification de {{ featureToEdit.properties.name }}
       </h3>
-      <fieldset class="flex flex-col gap-2">
+      <fieldset class="flex flex-col gap-2" :disabled="isEditing || props.busy">
         <div class="flex flex-col gap-2">
           <label class="label">Nom de l'élément</label>
           <input
@@ -270,14 +270,14 @@
       <div class="modal-action">
         <button
           class="btn"
-          :disabled="isEditing"
+          :disabled="isEditing || props.busy"
           @click="editFeatureDialogRef?.close()"
         >
           Annuler
         </button>
         <button
           class="btn btn-primary"
-          :disabled="isEditing"
+          :disabled="isEditing || props.busy"
           @click="onEditFeature"
         >
           <span
@@ -289,7 +289,7 @@
       </div>
     </div>
     <form method="dialog" class="modal-backdrop">
-      <button :disabled="isEditing">close</button>
+      <button :disabled="isEditing || props.busy">close</button>
     </form>
   </dialog>
 
@@ -305,14 +305,14 @@
       <div class="modal-action">
         <button
           class="btn"
-          :disabled="isDeletingMap"
+          :disabled="isDeletingMap || props.busy"
           @click="deleteMapDialogRef?.close()"
         >
           Annuler
         </button>
         <button
           class="btn btn-error"
-          :disabled="isDeletingMap"
+          :disabled="isDeletingMap || props.busy"
           @click="onDeleteMap"
         >
           <span
@@ -324,7 +324,7 @@
       </div>
     </div>
     <form method="dialog" class="modal-backdrop">
-      <button :disabled="isDeletingMap">close</button>
+      <button :disabled="isDeletingMap || props.busy">close</button>
     </form>
   </dialog>
 
@@ -340,14 +340,14 @@
       <div class="modal-action">
         <button
           class="btn"
-          :disabled="isDeletingFeature"
+          :disabled="isDeletingFeature || props.busy"
           @click="deleteFeatureDialogRef?.close()"
         >
           Annuler
         </button>
         <button
           class="btn btn-error"
-          :disabled="isDeletingFeature"
+          :disabled="isDeletingFeature || props.busy"
           @click="onDeleteFeature"
         >
           <span
@@ -359,7 +359,7 @@
       </div>
     </div>
     <form method="dialog" class="modal-backdrop">
-      <button :disabled="isDeletingFeature">close</button>
+      <button :disabled="isDeletingFeature || props.busy">close</button>
     </form>
   </dialog>
 </template>
@@ -381,6 +381,7 @@ import type {
   FeatureVisibilityGroupType,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
+import type { FeatureEditFormDraft } from "../typescript/editorDraft";
 import { getMapElementType } from "../utils/featureHelpers";
 import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
@@ -391,6 +392,7 @@ const props = defineProps<{
   featureVisibility: Map<string, boolean>;
   mapPeriods?: MapPeriod[];
   isDevTestCreation?: boolean;
+  busy?: boolean;
 }>();
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
@@ -398,9 +400,9 @@ const featureToEditName = ref<string>("");
 const featureToEditLabelText = ref<string | undefined>(undefined);
 const featureToEditColor = ref<string | undefined>(undefined);
 const featureToEditStrokeColor = ref<string | undefined>(undefined);
-const featureToEditOpacity = ref<number | undefined>(undefined);
-const featureToEditStrokeOpacity = ref<number | undefined>(undefined);
-const featureToEditStrokeWidth = ref<number | undefined>(undefined);
+const featureToEditOpacity = ref<number | string | undefined>(undefined);
+const featureToEditStrokeOpacity = ref<number | string | undefined>(undefined);
+const featureToEditStrokeWidth = ref<number | string | undefined>(undefined);
 const isEditingLabel = computed(() => {
   if (!featureToEdit.value) return false;
   return getMapElementType(featureToEdit.value) === "label";
@@ -428,7 +430,51 @@ const emit = defineEmits([
   "delete-map",
   "add-map",
   "update-feature",
+  "draft-change",
 ]);
+
+watch(
+  [featureToEditName, featureToEditLabelText, featureToEditColor,
+    featureToEditStrokeColor, featureToEditOpacity, featureToEditStrokeOpacity,
+    featureToEditStrokeWidth],
+  () => {
+    if (editFeatureDialogRef.value?.open) emit("draft-change");
+  },
+);
+
+function getDraft(): FeatureEditFormDraft | null {
+  if (!editFeatureDialogRef.value?.open || !featureToEdit.value) return null;
+  return {
+    featureId: String(featureToEdit.value.id),
+    name: featureToEditName.value,
+    labelText: featureToEditLabelText.value,
+    color: featureToEditColor.value,
+    strokeColor: featureToEditStrokeColor.value,
+    opacity: featureToEditOpacity.value,
+    strokeOpacity: featureToEditStrokeOpacity.value,
+    strokeWidth: featureToEditStrokeWidth.value,
+  };
+}
+
+async function restoreDraft(draft: FeatureEditFormDraft) {
+  const feature = props.features.find((item) => String(item.id) === draft.featureId);
+  if (!feature) return;
+  featureToEdit.value = feature;
+  featureToEditName.value = draft.name;
+  featureToEditLabelText.value = draft.labelText;
+  featureToEditColor.value = draft.color;
+  featureToEditStrokeColor.value = draft.strokeColor;
+  featureToEditOpacity.value = draft.opacity;
+  featureToEditStrokeOpacity.value = draft.strokeOpacity;
+  featureToEditStrokeWidth.value = draft.strokeWidth;
+  await nextTick();
+  if (!editFeatureDialogRef.value?.open) editFeatureDialogRef.value?.showModal();
+  emit("draft-change");
+}
+
+function onEditCancel(event: Event) {
+  if (props.busy || isEditing.value) event.preventDefault();
+}
 
 const groupIcons: Record<FeatureVisibilityGroupType, Component> = {
   point: ChatBubbleLeftEllipsisIcon,
@@ -537,6 +583,7 @@ const featuresByMap = computed(() => {
 });
 
 function toggleMapGroup(mapId: string | null, visible: boolean) {
+  if (props.busy) return;
   const mapGroup = featuresByMap.value.find((g) => g.id === mapId);
   if (mapGroup) {
     mapGroup.features.forEach((feature) => {
@@ -554,6 +601,7 @@ function isMapGroupAnyVisible(mapId: string | null) {
 }
 
 function toggleActiveGroup(visible: boolean) {
+  if (props.busy) return;
   if (!activeGroup.value) return;
   activeGroup.value.features.forEach((feature) => {
     emit("toggle-feature", feature.id, visible);
@@ -584,6 +632,7 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
 }
 
 async function showEditFeatureDialog(feature: Feature) {
+  if (props.busy) return;
   featureToEdit.value = feature;
   featureToEditName.value = feature.properties.name;
   featureToEditLabelText.value = feature.properties.labelText;
@@ -597,10 +646,17 @@ async function showEditFeatureDialog(feature: Feature) {
 
   await nextTick();
   editFeatureDialogRef.value?.showModal();
+  emit("draft-change");
+}
+
+function numericInput(value: number | string | undefined): number | undefined {
+  if (value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function onEditFeature() {
-  if (!featureToEdit.value) return;
+  if (!featureToEdit.value || props.busy || isEditing.value) return;
   isEditing.value = true;
   const isLabel = isEditingLabel.value;
   const updatedFeature: Feature = {
@@ -611,9 +667,9 @@ async function onEditFeature() {
       labelText: featureToEditLabelText.value,
       colorRgb: hexToRgb(featureToEditColor.value),
       strokeColor: isLabel ? undefined : hexToRgb(featureToEditStrokeColor.value),
-      fillOpacity: isLabel ? undefined : featureToEditOpacity.value,
-      strokeOpacity: isLabel ? undefined : featureToEditStrokeOpacity.value,
-      strokeWidth: isLabel ? undefined : featureToEditStrokeWidth.value,
+      fillOpacity: isLabel ? undefined : numericInput(featureToEditOpacity.value),
+      strokeOpacity: isLabel ? undefined : numericInput(featureToEditStrokeOpacity.value),
+      strokeWidth: isLabel ? undefined : numericInput(featureToEditStrokeWidth.value),
     },
   };
 
@@ -633,19 +689,21 @@ async function onEditFeature() {
 }
 
 function toggleAll(visible: boolean) {
+  if (props.busy) return;
   props.features.forEach((feature) => {
     emit("toggle-feature", feature.id, visible);
   });
 }
 
 function showDeleteMapDialog(mapId: string, mapTitle: string) {
+  if (props.busy) return;
   mapToDeleteId.value = mapId;
   mapToDeleteTitle.value = mapTitle;
   deleteMapDialogRef.value?.showModal();
 }
 
 async function onDeleteMap() {
-  if (!mapToDeleteId.value) return;
+  if (!mapToDeleteId.value || props.busy || isDeletingMap.value) return;
   isDeletingMap.value = true;
   emit("delete-map", mapToDeleteId.value, {
     onSuccess: () => {
@@ -661,13 +719,14 @@ async function onDeleteMap() {
 }
 
 function showDeleteFeatureDialog(feature: Feature) {
+  if (props.busy) return;
   featureToDeleteId.value = feature.id as string;
   featureToDeleteName.value = feature.properties?.name || "Élément sans nom";
   deleteFeatureDialogRef.value?.showModal();
 }
 
 async function onDeleteFeature() {
-  if (!featureToDeleteId.value) return;
+  if (!featureToDeleteId.value || props.busy || isDeletingFeature.value) return;
   isDeletingFeature.value = true;
   emit("delete-feature", featureToDeleteId.value, {
     onSuccess: () => {
@@ -684,5 +743,7 @@ async function onDeleteFeature() {
 
 defineExpose({
   showEditFeatureDialog,
+  getDraft,
+  restoreDraft,
 });
 </script>

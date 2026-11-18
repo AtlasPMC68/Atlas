@@ -104,4 +104,20 @@ describe("usePolling", () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(tick).toHaveBeenCalledTimes(3);
   });
+
+  it("pauses background work without stopping the poller and resumes when allowed", async () => {
+    const tick = vi.fn();
+    let allowed = false;
+    const poller = usePolling(tick, 1000, () => allowed);
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(tick).not.toHaveBeenCalled();
+    expect(poller.isPolling.value).toBe(true);
+
+    allowed = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(tick).toHaveBeenCalledOnce();
+    poller.stop();
+  });
 });

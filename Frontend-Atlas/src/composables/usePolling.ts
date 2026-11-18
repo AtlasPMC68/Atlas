@@ -5,7 +5,11 @@ import { getCurrentInstance, onBeforeUnmount, ref } from "vue";
 // never overlaps the previous one, and the timer dies with the component --
 // a poller outliving its page is how a "cancelled" import used to redirect
 // the user anyway.
-export function usePolling(tick: () => Promise<void> | void, intervalMs: number) {
+export function usePolling(
+  tick: () => Promise<void> | void,
+  intervalMs: number,
+  canTick: () => boolean = () => true,
+) {
   const isPolling = ref(false);
   let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -13,7 +17,7 @@ export function usePolling(tick: () => Promise<void> | void, intervalMs: number)
     timer = setTimeout(async () => {
       if (!isPolling.value) return;
       try {
-        await tick();
+        if (canTick()) await tick();
       } finally {
         if (isPolling.value) schedule();
       }

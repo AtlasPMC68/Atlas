@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import {
   QuestionMarkCircleIcon,
   PaperAirplaneIcon,
@@ -7,12 +7,16 @@ import {
 import { camelToSnake, snakeToCamel } from "../utils/utils";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import type { CreatedProjectRef, CreateProjectDialogPrefill } from "../typescript/project";
+import type { CreateProjectFormDraft } from "../typescript/editorDraft";
 import { apiFetch } from "../utils/api";
+
+const props = defineProps<{ busy?: boolean }>();
 
 const emit = defineEmits<{
   (e: "created", project: CreatedProjectRef | null): void;
   (e: "error", message: string): void;
   (e: "closed"): void;
+  (e: "draft-change"): void;
 }>();
 
 const dialogRef = ref<HTMLDialogElement | null>(null);
@@ -24,6 +28,31 @@ const closeTriggeredByCreate = ref(false);
 
 const { currentUser, fetchCurrentUser, isLoading } = useCurrentUser();
 
+watch([newProjectTitle, newProjectDescription, newProjectIsPrivate], () => {
+  if (dialogRef.value?.open) emit("draft-change");
+});
+
+function getDraft(): CreateProjectFormDraft | null {
+  if (!dialogRef.value?.open) return null;
+  return {
+    title: newProjectTitle.value,
+    description: newProjectDescription.value,
+    isPrivate: newProjectIsPrivate.value,
+  };
+}
+
+function restoreDraft(draft: CreateProjectFormDraft) {
+  newProjectTitle.value = draft.title;
+  newProjectDescription.value = draft.description;
+  newProjectIsPrivate.value = draft.isPrivate;
+  if (!dialogRef.value?.open) dialogRef.value?.showModal();
+  emit("draft-change");
+}
+
+function onCancel(event: Event) {
+  if (props.busy || isCreating.value) event.preventDefault();
+}
+
 function open(prefill?: CreateProjectDialogPrefill) {
   newProjectTitle.value = prefill?.title;
   newProjectDescription.value = prefill?.description;
@@ -34,6 +63,7 @@ function open(prefill?: CreateProjectDialogPrefill) {
   }
 
   dialogRef.value?.showModal();
+  emit("draft-change");
 }
 
 function resetForm() {
@@ -63,6 +93,7 @@ function extractCreatedProject(payload: unknown): CreatedProjectRef | null {
 }
 
 async function createProject() {
+  if (props.busy || isCreating.value) return;
   if (!currentUser.value) {
     await fetchCurrentUser();
   }
@@ -81,6 +112,7 @@ async function createProject() {
 
   try {
     const res = await apiFetch("/projects/create", {
+      auth: "required",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
@@ -119,6 +151,7 @@ async function createProject() {
 
 function onDialogClose() {
   resetForm();
+  emit("draft-change");
 
   if (closeTriggeredByCreate.value) {
     closeTriggeredByCreate.value = false;
@@ -137,17 +170,19 @@ onMounted(() => {
 defineExpose({
   open,
   close: () => dialogRef.value?.close(),
+  getDraft,
+  restoreDraft,
 });
 </script>
 
 <template>
-  <dialog ref="dialogRef" class="modal" @close="onDialogClose">
+  <dialog ref="dialogRef" class="modal" @close="onDialogClose" @cancel="onCancel">
     <div class="modal-box p-0">
       <form @submit.prevent="createProject">
         <div class="card-body">
           <h3 class="text-lg font-bold">Créer une nouvelle carte</h3>
 
-          <fieldset class="fieldset" :disabled="isCreating">
+          <fieldset class="fieldset" :disabled="isCreating || busy">
             <label class="label">Titre</label>
             <input
               v-model="newProjectTitle"
@@ -195,7 +230,7 @@ defineExpose({
             <button
               type="button"
               class="btn btn-ghost"
-              :disabled="isCreating"
+              :disabled="isCreating || busy"
               @click="dialogRef?.close();"
             >
               Annuler
@@ -204,7 +239,7 @@ defineExpose({
             <button
               type="submit"
               class="btn btn-primary flex items-center gap-2"
-              :disabled="!newProjectTitle?.trim() || isCreating"
+              :disabled="!newProjectTitle?.trim() || isCreating || busy"
             >
               <span>Créer</span>
               <span
@@ -219,7 +254,7 @@ defineExpose({
     </div>
 
     <form method="dialog" class="modal-backdrop">
-      <button :disabled="isCreating">close</button>
+      <button :disabled="isCreating || busy">close</button>
     </form>
   </dialog>
 </template>

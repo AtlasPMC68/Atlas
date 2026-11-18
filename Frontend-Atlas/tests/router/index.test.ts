@@ -26,6 +26,7 @@ Object.defineProperty(window, "scrollTo", {
 
 import keycloak from "../../src/keycloak";
 import { router } from "../../src/router";
+import { registerAuthRedirectHandler, syncAuthenticatedSession } from "../../src/services/authSession";
 
 describe("router auth guard with Keycloak", () => {
   const targetUploadRoute =
@@ -33,7 +34,11 @@ describe("router auth guard with Keycloak", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.mocked(keycloak.updateToken).mockReset().mockResolvedValue(true);
 
+    keycloak.authenticated = true;
+    keycloak.token = "test-token";
+    syncAuthenticatedSession();
     keycloak.authenticated = false;
     keycloak.token = null;
 
@@ -60,5 +65,47 @@ describe("router auth guard with Keycloak", () => {
     await nextTick();
 
     expect(router.currentRoute.value.fullPath).toBe(targetUploadRoute);
+  });
+
+  it("keeps the current page after a transient refresh error without redirecting to login", async () => {
+    keycloak.authenticated = true;
+    keycloak.token = "old-token";
+    vi.mocked(keycloak.updateToken).mockRejectedValueOnce(new TypeError("Network unavailable"));
+
+    await router.push(targetUploadRoute);
+    await nextTick();
+
+    expect(router.currentRoute.value.fullPath).toBe("/");
+    expect(keycloak.login).not.toHaveBeenCalled();
+    expect(keycloak.token).toBe("old-token");
+  });
+
+  it("asks for login when Keycloak confirms that the session ended during refresh", async () => {
+    keycloak.authenticated = true;
+    keycloak.token = "old-token";
+    vi.mocked(keycloak.updateToken).mockImplementationOnce(async () => {
+      keycloak.authenticated = false;
+      keycloak.token = undefined;
+      throw new Error("Session expired");
+    });
+
+    await router.push(targetUploadRoute);
+    await nextTick();
+
+    expect(router.currentRoute.value.fullPath).toBe("/");
+    expect(keycloak.login).toHaveBeenCalledOnce();
+  });
+
+  it("blocks protected-route login when the current editor cannot preserve its draft", async () => {
+    const removeHandler = registerAuthRedirectHandler(async () => {
+      throw new Error("Stockage local indisponible");
+    });
+    try {
+      await router.push(targetUploadRoute);
+      expect(router.currentRoute.value.fullPath).toBe("/");
+      expect(keycloak.login).not.toHaveBeenCalled();
+    } finally {
+      removeHandler();
+    }
   });
 });

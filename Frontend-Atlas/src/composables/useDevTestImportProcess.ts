@@ -3,6 +3,7 @@ import { ref, type Ref } from "vue";
 import { snakeToCamel } from "../utils/utils";
 import { apiFetch } from "../utils/api";
 import { usePolling } from "./usePolling";
+import { canRunAuthenticatedBackgroundTask } from "../services/tokenRefresh";
 import type {
   ControlPointInput,
   ImposedColor,
@@ -74,7 +75,7 @@ export function useDevTestImportProcess() {
       isProcessing.value = false;
       error.value = err instanceof Error ? err.message : "Erreur lors du suivi";
     }
-  }, 1000);
+  }, 1000, canRunAuthenticatedBackgroundTask);
 
   // Saves the case's inputs and runs it on the test's stored map image.
   const startImport = async (

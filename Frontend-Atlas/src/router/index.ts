@@ -7,6 +7,8 @@ import About from "../views/About.vue";
 import Profile from "../views/Profile.vue";
 import Discover from "../views/Discover.vue";
 import keycloak from "../keycloak";
+import { getValidAccessToken } from "../services/tokenRefresh";
+import { isAuthRequiredError, reconnect, sessionState } from "../services/authSession";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { DEV_TOOLS_ENABLED } from "../utils/devTools";
 
@@ -95,29 +97,27 @@ router.beforeEach(async (to) => {
   await keycloakReady;
 
   if (!keycloak.authenticated) {
-    keycloak.login({
-      redirectUri: window.location.origin + to.fullPath,
-    });
+    if (sessionState.status === "unavailable") return false;
+    await reconnect({ redirectUri: window.location.origin + to.fullPath }).catch(() => {});
     return false;
   }
 
   try {
-    const refreshed = await keycloak.updateToken(30);
-    if (!refreshed && keycloak.isTokenExpired()) {
-      keycloak.login({
-        redirectUri: window.location.origin + to.fullPath,
-      });
+    const token = await getValidAccessToken();
+    if (!token) {
+      await reconnect({ redirectUri: window.location.origin + to.fullPath }).catch(() => {});
       return false;
     }
 
     const { fetchCurrentUser } = useCurrentUser();
-    await fetchCurrentUser();
-
-    return true;
+    const user = await fetchCurrentUser();
+    return !!user && sessionState.status === "authenticated";
   } catch (err) {
-    keycloak.login({
-      redirectUri: window.location.origin + to.fullPath,
-    });
+    // A network failure does not mean the SSO session has expired. Stay on
+    // the current page so retrying cannot destroy the user's local work.
+    if (!keycloak.authenticated || isAuthRequiredError(err)) {
+      await reconnect({ redirectUri: window.location.origin + to.fullPath }).catch(() => {});
+    }
     return false;
   }
 });

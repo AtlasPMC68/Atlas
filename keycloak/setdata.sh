@@ -29,7 +29,7 @@ echo "Updating realm settings..."
   -s loginWithEmailAllowed=true \
   -s resetPasswordAllowed=true \
   -s sslRequired=None \
-  -s accessTokenLifespan=3600 \
+  -s accessTokenLifespan=300 \
   -s ssoSessionMaxLifespan=86400 \
   -s ssoSessionIdleTimeout=3600 
 

@@ -200,6 +200,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useImportSessionStore, type ImportMode } from "../../stores/importSession";
 import { useDevTestCaseFlow } from "../../composables/useDevTestCaseFlow";
 import { usePolling } from "../../composables/usePolling";
+import { canRunAuthenticatedBackgroundTask } from "../../services/tokenRefresh";
 import { showAlert } from "../../composables/useAlert";
 import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../../utils/importSteps";
 import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
@@ -441,7 +442,7 @@ async function cancelExtraction() {
 }
 
 // Polled while OCR runs in the background or an extraction is on its way.
-const poller = usePolling(() => store.refresh(), 1500);
+const poller = usePolling(() => store.refresh(), 1500, canRunAuthenticatedBackgroundTask);
 
 watch(
   () => [store.phase, store.ocrState] as const,
