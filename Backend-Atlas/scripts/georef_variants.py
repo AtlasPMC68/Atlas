@@ -20,7 +20,23 @@ from typing import Any, Dict, Tuple
 # The defaults moved to B7b (config v19); every setting B7b changed is pinned
 # back here, so A0, B2, B5b and the rest still mean what they meant in the
 # runs that compared them.
+#
+# They moved again in config v22: the bend with the piecewise fallback, and
+# snapping that only snaps the coast. _SNAP21 and _PROD21 pin back what v22
+# changed, for the variants defined on the old defaults (the second
+# alignment's v23 guard is not pinned: it refused nothing on the corpus).
+_SNAP21: Dict[str, Any] = {
+    "coastline_snap_measured": False,
+    "coastline_snap_stretches": False,
+}
+_PROD21: Dict[str, Any] = {
+    **_SNAP21,
+    "transform_model": "piecewise_affine",
+    "align_after_piecewise": True,
+    "coast_bend": False,
+}
 _A0: Dict[str, Any] = {
+    **_SNAP21,
     "transform_model": "affine",
     "snap_to_coastline": False,
     "clip_to_land_mask": True,
@@ -28,6 +44,7 @@ _A0: Dict[str, Any] = {
     "piecewise_regularization": "none",
     "piecewise_influence_radius_ratio_of_diagonal": 0.15,
     "align_after_piecewise": False,
+    "coast_bend": False,
     "weight_curve": 1.0,
 }
 
@@ -179,10 +196,30 @@ VARIANTS: Tuple[Variant, ...] = (
         "B10", "2", "ICP only (no chamfer), coastline weighted x10.",
         {**_ALIGNED, "enable_chamfer": False, "weight_curve": 10.0},
     ),
+    # --- Stage L: the coast line's centre (config v21) -----------------------
+    # The evidence now sits at a drawn coast line's centre, not its sea-side
+    # flank; every aligned variant above runs with it. These run without it,
+    # to measure the fix (georeferencing-history.md, 2026-10-27).
+    Variant(
+        "L1", "L", "B5b on the sea-side flank only: the evidence before config v21.",
+        {**_ALIGNED, "weight_curve": 10.0, "coast_line_max_width_px": 0},
+    ),
+    Variant(
+        "L2", "L", "PROD on the sea-side flank only: the evidence before config v21.",
+        {**_PROD21, "coast_line_max_width_px": 0},
+    ),
+    Variant(
+        "L3", "L", "B5b keeping both flanks with a wider water margin, instead of their midpoint.",
+        {**_ALIGNED, "weight_curve": 10.0, "coast_line_max_width_px": 0, "edge_water_margin_px": 8},
+    ),
     # --- Stage 3: what the app runs ------------------------------------------
     # The file defaults are the production configuration (alignment on at
-    # x10, piecewise, snapping, inpaint), so PROD overrides nothing.
+    # x10, the bend with the piecewise fallback, snapping only the coast,
+    # inpaint), so PROD overrides nothing. Since config v22 it places the
+    # zones C7 placed; P21 is production before it (align, piecewise, align,
+    # the old snapping), what every "PROD" before v22 means.
     Variant("PROD", "3", "Where we are: the config the app runs.", {}),
+    Variant("P21", "3", "Production up to config v21: align, piecewise, align.", dict(_PROD21)),
     # --- Extraction, on the A0 transform -------------------------------------
     Variant("E2", "E", "Zone gap fill on.", {**_A0, "zone_gap_fill": True}),
     # --- Noise floor (Phase 4) -----------------------------------------------

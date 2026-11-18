@@ -60,6 +60,18 @@ def _through(inverse: "Model", samples: CurveSamples) -> CurveSamples:
     return CurveSamples(xy=np.column_stack([x, y]), xy_normal=np.column_stack([nx, ny]))
 
 
+def coast_misfit_px(model: Any, context: AlignmentContext) -> float:
+    """How far the reference coast sits from the drawn edges under *model*, in
+    pixels: the trimmed chamfer the alignment reads, through any model with an
+    inverse (the coastline snap's measured tolerance); NaN where it cannot be
+    seen."""
+    if len(context.coast_samples) == 0 or not context.user_field.edge.any():
+        return float("nan")
+    coast = _through(model.inverse(), context.coast_samples)
+    identity = AffineModel(matrix=np.eye(3), n_points=0)
+    return chamfer_residual_px(identity, coast, context.user_field)
+
+
 def compose(model: Model, front: AffineModel) -> Model:
     """``model(front(pixel))`` as one model of the same kind."""
 
@@ -126,19 +138,26 @@ def align_after_piecewise(
         correspondences=phase.detail.get("correspondences"),
         frontMatrix=front.matrix.tolist(),
     )
+    candidate = compose(model, front)
+    # How far each model puts the map off the clicks, in pixels.
+    pixel = np.array([cp.pixel for cp in control_points], float)
+    base_rms, candidate_rms = (
+        float(np.sqrt(np.mean((x - pixel[:, 0]) ** 2 + (y - pixel[:, 1]) ** 2)))
+        for x, y in (targets.T, candidate.inverse()(merc[:, 0], merc[:, 1]))
+    )
+    limit = config.post_align_max_gcp_shift_ratio_of_diagonal * float(
+        np.hypot(context.user_field.width, context.user_field.height)
+    )
+    stats.update(baseGcpRmsPx=base_rms, gcpRmsPx=candidate_rms, gcpShiftLimitPx=limit)
     if front.determinant <= 0:
         stats["skippedBecause"] = "the fit mirrored the map"
     elif not np.isfinite(after) or (np.isfinite(before) and after > before):
         stats["skippedBecause"] = "the coastline chamfer got worse"
+    elif not candidate_rms - base_rms <= limit:
+        stats["skippedBecause"] = "the fit pulled the map off the clicks"
     else:
-        model = compose(model, front)
+        model = candidate
         model.measure_against(control_points)
-        # How far the second fit pulled the map off the clicks, in pixels.
-        px, py = model.inverse()(merc[:, 0], merc[:, 1])
-        pixel = np.array([cp.pixel for cp in control_points], float)
         stats["applied"] = True
-        stats["gcpRmsPx"] = float(
-            np.sqrt(np.mean((px - pixel[:, 0]) ** 2 + (py - pixel[:, 1]) ** 2))
-        )
     record.set_errors(postAlignment=stats)
     return model

@@ -564,8 +564,14 @@ def evaluate_case_zones(
     zones: dict[str, Any],
     raw_zones: dict[str, Any] | None,
     min_iou: float | None = None,
+    unsnapped_zones: dict[str, Any] | None = None,
+    snapped_zones: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
-    """Both comparisons of a run. Returns ``(report, errors, raw_errors)``."""
+    """Both comparisons of a run. Returns ``(report, errors, raw_errors)``.
+
+    With *unsnapped_zones* and *snapped_zones* (the zones cleaned without and
+    with snapping, from the same transform), ``report["unsnapped"]`` and
+    ``report["snapped"]`` score them against the cleaned expected zones too."""
 
     report, errors = evaluate_zones(cleaned_expected, zones, test_id=test_id, test_case_id=test_case_id, min_iou=min_iou)
     raw_errors = None
@@ -578,6 +584,11 @@ def evaluate_case_zones(
             "metrics": raw_report["metrics"],
             "nameMatching": raw_report["nameMatching"],
         }
+    for key, cleaned in (("unsnapped", unsnapped_zones), ("snapped", snapped_zones)):
+        report[key] = None
+        if cleaned is not None and cleaned.get("features"):
+            scored, _ = evaluate_zones(cleaned_expected, cleaned, test_id=test_id, test_case_id=test_case_id)
+            report[key] = {"metrics": scored["metrics"]}
     return report, errors, raw_errors
 
 

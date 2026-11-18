@@ -129,6 +129,8 @@ services:
         required: false
     environment:
       SAVE_PREPROCESSED_IMAGES: "false"
+      # info: one line per Florence pass (tokens, seconds), so slowness shows up in the log.
+      LOG_LEVEL: ${FLORENCE_LOG_LEVEL:-info}
     volumes:
       - ocr-data:/data
       - ./Backend-Atlas/ocr-florence:/app/ocr-florence

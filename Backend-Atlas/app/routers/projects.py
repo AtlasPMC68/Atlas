@@ -23,7 +23,7 @@ from app.schemas.project import ProjectOut
 from app.schemas.projectCreateRequest import ProjectCreateRequest
 from app.schemas.mapImportRequest import MapImportRequest
 from app.schemas.label_styles import LabelStylesRequest
-from app.services.maps import create_map_in_db
+from app.services.maps import copy_maps_between_projects, create_map_in_db
 from app.services.projects import (
     create_project_in_db,
     delete_project_in_db,
@@ -87,6 +87,33 @@ async def create_map_for_project(
     except Exception as e:
         logger.error(f"Error creating map for project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create map")
+
+@router.post("/{project_id}/copy-maps-from/{source_project_id}")
+async def copy_maps_from_project(
+    project_id: UUID,
+    source_project_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Used when saving someone else's public map as a copy: the copy needs its
+    own maps (periods) so its features keep their dates and timeline."""
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    mapping = await copy_maps_between_projects(
+        db=db,
+        source_project_id=source_project_id,
+        target_project_id=project_id,
+        user_id=user_uuid,
+    )
+    if mapping is None:
+        raise HTTPException(
+            status_code=404, detail="Project not found or access denied"
+        )
+    return {"map_id_mapping": mapping}
+
 
 @router.delete("/{project_id}/maps/{map_id}")
 async def delete_map(
@@ -474,6 +501,13 @@ async def update_features(
     existing_rows = result.scalars().all()
     existing_by_id = {str(row.id): row for row in existing_rows}
 
+    # A feature may only point at a map of this same project; anything else
+    # (another user's map, a deleted map) is dropped to "no map".
+    project_maps_result = await session.execute(
+        select(Map.id).where(Map.project_id == project_uuid)
+    )
+    project_map_ids = set(project_maps_result.scalars().all())
+
     for feature in features:
         feature_id = feature.get("id")
         db_feature = None
@@ -500,6 +534,11 @@ async def update_features(
                 feature_map_id = UUID(str(raw_map_id))
             except (ValueError, TypeError):
                 feature_map_id = None
+        if feature_map_id is not None and feature_map_id not in project_map_ids:
+            logger.warning(
+                f"Feature map_id {feature_map_id} is not a map of project {project_uuid}, ignoring it"
+            )
+            feature_map_id = None
 
         if db_feature:
             new_data = to_feature_collection(feature)

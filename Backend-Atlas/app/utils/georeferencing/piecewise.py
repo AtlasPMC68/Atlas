@@ -452,4 +452,8 @@ def deserialize_model(payload: Dict[str, Any]):
     """Pick the right class from a stored payload's ``name``."""
     if payload.get("name") == PiecewiseAffineModel.name:
         return PiecewiseAffineModel.deserialize(payload)
+    if payload.get("name") == "coast_bend":
+        from .bend import CoastBendModel
+
+        return CoastBendModel.deserialize(payload)
     return AffineModel.deserialize(payload)

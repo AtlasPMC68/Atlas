@@ -7,6 +7,9 @@
 # and loading it into an older server fails (undefined symbol).
 FROM postgres:17-trixie
 
+# postgresql-17 is upgraded alongside PostGIS: the repo's PostGIS is built against
+# the latest 17.x minor, and loading it into an older server fails with
+# "undefined symbol" (e.g. heap_datum_check on 17.11).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        postgresql-17 \

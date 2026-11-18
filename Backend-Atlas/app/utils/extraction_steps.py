@@ -65,8 +65,9 @@ class MapPlacement:
     image_size: tuple
     config: GeorefConfig
     record: Optional[RunRecord] = None
-    #: The alignment evidence, kept when ``config.align_after_piecewise`` asks
-    #: for a second alignment (``post_align.AlignmentContext``).
+    #: The alignment evidence (``post_align.AlignmentContext``), kept for what
+    #: reads it after the first alignment: the bend to the coast, the second
+    #: alignment, the snap's measured tolerance.
     alignment_context: Optional[Any] = None
 
     def georeference(
@@ -74,6 +75,7 @@ class MapPlacement:
         pixel_feature_collections: list,
         check_points: Sequence[ControlPoint] = (),
         clean: bool = True,
+        score_snapping: bool = False,
     ) -> GeorefResult:
         """Pixel features -> EPSG:4326, through the aligned model when the
         alignment used the coastline.
@@ -85,6 +87,9 @@ class MapPlacement:
         ``clean=False`` skips the coastline snap and the land clip, for features
         that are not land zones (a shape drawn on the map can sit at sea). Such
         a call stays out of the run record, which describes the zones.
+
+        ``score_snapping`` (dev runners) also returns the zones cleaned without
+        and with snapping, whatever the config (``GeorefResult``).
         """
         alignment = self.alignment
         aligned_model = (
@@ -92,14 +97,24 @@ class MapPlacement:
             if alignment is not None and alignment.used_curve_evidence
             else None
         )
-        refine = None
+        refine = bend = misfit = None
         if self.alignment_context is not None:
-            from app.utils.georeferencing.post_align import align_after_piecewise
+            from app.utils.georeferencing.bend import bend_to_coast
+            from app.utils.georeferencing.post_align import (
+                align_after_piecewise,
+                coast_misfit_px,
+            )
 
             context, points, config = self.alignment_context, self.control_points, self.config
 
             def refine(model, record):
                 return align_after_piecewise(model, points, context, config, record)
+
+            def bend(model, record):
+                return bend_to_coast(model, points, context, self.image_size, config, record)
+
+            def misfit(model):
+                return coast_misfit_px(model, context)
 
         result = georeference_features(
             pixel_feature_collections,
@@ -119,6 +134,9 @@ class MapPlacement:
                 else None
             ),
             refine_piecewise=refine,
+            bend_to_coast=bend,
+            coast_misfit_px=misfit,
+            score_snapping=score_snapping and clean,
         )
         if check_points and result.record is not None:
             result.record.set_errors(
@@ -158,7 +176,11 @@ def place_map(
 
     alignment = None
     context = None
-    if config.enable_curve_alignment or config.align_after_piecewise:
+    # The evidence is also kept for the snap's measured tolerance.
+    keep_context = (
+        config.align_after_piecewise or config.coast_bend or config.coastline_snap_measured
+    )
+    if config.enable_curve_alignment or keep_context:
         # cv2 lives behind this import.
         from app.utils.georeferencing.runner import align_map, build_alignment_inputs
 
@@ -193,7 +215,7 @@ def place_map(
                 + (f" skipped={alignment.skipped}" if alignment.skipped else "")
                 + (f" failed={alignment.failed_checks}" if alignment.failed_checks else "")
             )
-        if config.align_after_piecewise and inputs is not None:
+        if keep_context and inputs is not None:
             from app.utils.georeferencing.post_align import build_alignment_context
 
             context = build_alignment_context(*inputs, config)
