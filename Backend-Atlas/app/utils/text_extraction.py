@@ -4,6 +4,7 @@ import time
 from typing import Any
 from uuid import UUID
 
+from app.utils.label_merging import merge_split_labels
 from app.utils.ocr import preprocessing
 
 logger = logging.getLogger(__name__)
@@ -99,10 +100,10 @@ def _detection_quad(detection):
         return None
 
 
-def _build_extracted_text_from_detections(
+def _filter_detections(
     detections: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Convert raw OCR detections to the expected text/bbox structure used by the tests."""
+    """Keep the OCR detections worth placing on the map, as {"text", "bbox", "mapElementType"} dicts."""
     extracted_text: list[dict[str, Any]] = []
     for detection in detections:
         if not isinstance(detection, dict):
@@ -146,7 +147,11 @@ def _run_ocr_pipeline(
         raise OcrPipelineError(f"OCR failed: {exc}") from exc
 
     logger.info(f"==> [OCR] Pipeline successfully completed for map {map_id} in {time.monotonic() - started:.1f}s!")
-    return _build_extracted_text_from_detections(detections)
+
+    # Join the boxes of labels split over several lines, then keep only the
+    # readings worth placing on the map (see should_ignore)
+    detections = merge_split_labels(detections)
+    return _filter_detections(detections)
 
 
 def extract_text(

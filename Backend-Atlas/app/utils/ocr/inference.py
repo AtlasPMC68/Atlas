@@ -122,8 +122,7 @@ def run_ocr(detector: TextDetection, recognizer: TextRecognition, original: np.n
     """
     Run the OCR pipeline on one RGB image.
 
-    Every detected box is returned, even those the recognizer could not read
-    (text ""): it is still text to erase from the map.
+    Boxes the recognizer could not read (text "") are dropped.
     """
     # Detect and read on the upscaled image: its crops read the letters at the box
     # edges better (scripts/ocr_compare_read_source.py)
@@ -134,4 +133,4 @@ def run_ocr(detector: TextDetection, recognizer: TextRecognition, original: np.n
 
     # Text boxes are returned in the coordinates of the original image
     quads = downscale_quads(upscaled_quads, scale_factor)
-    return [{"text": text, "score": score, "quad": quad} for quad, (text, score) in zip(quads, readings)]
+    return [{"text": text, "score": score, "quad": quad} for quad, (text, score) in zip(quads, readings) if text]
