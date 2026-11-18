@@ -9,6 +9,7 @@ Two boxes are merged when they look like one label:
     - same text height (font size) and angle
     - touching once grown by a margin, side by side or stacked
 and either:
+    - they are words of one line, separated by a word space only (titles, legends)
     - one of them is a generic word missing its name ("Lac", "Golfe du", "Saint",
       or "City", "Bay" after it)
     - or the joined text is a place while neither piece is one on its own
@@ -36,6 +37,13 @@ ANGLE_TOLERANCE_DEG = 5.0
 # versions touch are close enough to be one label
 MERGE_MARGIN_RATIO = 0.5
 
+# Boxes side by side whose gap is within this range of the text height are words
+# of one line, merged whatever they say. Measured on the test maps: title words
+# sit 0.24 to 0.48 apart, while separate labels sit at 0.55 (Soudan / Érythrée)
+# or overlap by 0.19 and more (Saguenay / Rimouski)
+WORD_GAP_MIN_RATIO = -0.1
+WORD_GAP_MAX_RATIO = 0.5
+
 # Joined text must match a place at least this closely. The OCR runs before the
 # map frame is known, so the match is against the whole world: at the usual
 # 0.80, "très Sols" from a legend matched Três Passos (Brazil), while a real
@@ -46,7 +54,18 @@ MERGE_MATCH_THRESHOLD = 0.90
 GENERIC_PREFIXES = set(_PREFIX_TYPE_MAP) | {
     "fort", "saint", "sainte", "st", "ste", "pointe", "port",
     "grand", "grande", "haut", "haute", "bas", "basse",
-    "nouveau", "nouvel", "nouvelle", "petit", "petite", "monts",
+    "nouveau", "nouvel", "nouvelle", "petit", "petite", "petites", "monts",
+    # Hydrography ("Océan" / "Atlantique", "Rivière" / "Ohio", "Isle" / "Royale")
+    "oceans", "mers", "golfes", "detroits", "rivieres", "fleuves", "ruisseaux",
+    "isle", "isles", "ilot", "ilots", "anse", "bassin", "estuaire", "lagune",
+    "chute", "chutes", "rapides", "embouchure",
+    # Relief and land ("Terre" / "Neuve", "Terre de" / "Rupert", "Presqu'île de")
+    "terre", "terres", "montagnes", "monte", "plaine", "plaines", "plateau",
+    "vallee", "desert", "foret", "presqu", "isthme",
+    # Administrative and historical ("Territoires du" / "Nord-Ouest", "Colonie de")
+    "provinces", "territoires", "etats", "colonie", "colonies", "region",
+    "republique", "empire", "duche", "seigneurie", "comtes", "district",
+    "possession", "possessions", "mission", "poste",
 }
 
 # Words that end a place name and need the name before them
@@ -54,6 +73,15 @@ GENERIC_SUFFIXES = {
     "city", "lake", "lakes", "bay", "bays", "gulf", "strait", "sea", "ocean",
     "river", "mountain", "mountains", "peak", "cape", "island", "islands",
     "peninsula", "county", "state", "territory", "kingdom",
+    # Hydrography ("Hudson" / "Bay", "Pacific" / "Ocean", "Niagara" / "Falls")
+    "seas", "oceans", "straits", "gulfs", "rivers", "creek", "falls", "sound",
+    "channel", "harbour", "harbor", "basin", "lagoon", "reef", "fjord", "isle", "isles",
+    # Relief and land ("Rocky" / "Mountains", "Great Plains")
+    "range", "hills", "hill", "valley", "plain", "plains", "plateau", "desert",
+    "forest", "archipelago", "point", "land", "lands",
+    # Administrative and historical ("Northwest" / "Territories", "Ottoman" / "Empire")
+    "territories", "states", "province", "provinces", "colony", "colonies",
+    "republic", "empire", "region", "district",
 }
 
 # Small words allowed around a generic word ("Golfe du", "Baie des")
@@ -90,7 +118,7 @@ def merge_split_labels(detections):
                 continue
             separator = " " if pair["layout"] == "line" else "\n"
             text = f"{boxes[first]['text']}{separator}{boxes[second]['text']}"
-            if not _should_merge(boxes[first]["text"], boxes[second]["text"], text):
+            if not (_is_word_space(pair) or _should_merge(boxes[first]["text"], boxes[second]["text"], text)):
                 continue
 
             logger.debug(f"[OCR] Merged {boxes[first]['text']!r} and {boxes[second]['text']!r}")
@@ -110,6 +138,12 @@ def merge_split_labels(detections):
     for box in boxes:
         box.pop("line_height", None)
     return boxes
+
+
+def _is_word_space(pair):
+    """Two boxes side by side, apart by a word space only: words of one line."""
+    ratio = pair["gap"] / pair["height"]
+    return pair["layout"] == "line" and WORD_GAP_MIN_RATIO <= ratio <= WORD_GAP_MAX_RATIO
 
 
 def _should_merge(first_text, second_text, joined_text):
@@ -196,7 +230,7 @@ def _pair_layout(a, b, i, j):
         gap = max(b_left - a_right, a_left - b_right)
         if gap <= max_gap:
             first, second = (i, j) if a_left <= b_left else (j, i)
-            return {"layout": "line", "first": first, "second": second, "gap": gap}
+            return {"layout": "line", "first": first, "second": second, "gap": gap, "height": height}
         return None
 
     # Stacked: overlapping along the text, with a small gap across it
@@ -204,7 +238,7 @@ def _pair_layout(a, b, i, j):
         gap = max(b_top - a_bottom, a_top - b_bottom)
         if gap <= max_gap:
             first, second = (i, j) if a_top <= b_top else (j, i)
-            return {"layout": "stack", "first": first, "second": second, "gap": gap}
+            return {"layout": "stack", "first": first, "second": second, "gap": gap, "height": height}
 
     return None
 

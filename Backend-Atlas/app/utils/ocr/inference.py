@@ -121,7 +121,6 @@ def _read_text_boxes(recognizer: TextRecognition, image: np.ndarray, quads: list
 def run_ocr(detector: TextDetection, recognizer: TextRecognition, original: np.ndarray) -> list:
     """
     Run the OCR pipeline on one RGB image.
-
     Boxes the recognizer could not read (text "") are dropped.
     """
     # Detect and read on the upscaled image: its crops read the letters at the box
