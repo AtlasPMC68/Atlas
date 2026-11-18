@@ -467,6 +467,8 @@ def test_update_features_supports_map_id_and_camelcase_mapId():
                 SimpleNamespace(scalar_one_or_none=lambda: SimpleNamespace(id=project_id)),
                 # Existing features lookup
                 SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+                # Project maps lookup
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [target_map_id])),
                 # Refreshed features lookup
                 SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: added_features)),
             ]
@@ -487,6 +489,47 @@ def test_update_features_supports_map_id_and_camelcase_mapId():
     assert isinstance(response, list)
     assert len(added_features) == 1
     assert added_features[0].map_id == target_map_id
+
+
+def test_update_features_ignores_map_id_from_another_project():
+    project_id = uuid4()
+    own_map_id = uuid4()
+    foreign_map_id = uuid4()
+
+    payload = [
+        {
+            "type": "Feature",
+            "map_id": str(foreign_map_id),
+            "geometry": {"type": "Point", "coordinates": [0, 0]},
+            "properties": {"name": "Foreign"},
+        }
+    ]
+
+    added_features = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: SimpleNamespace(id=project_id)),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [own_map_id])),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: added_features)),
+            ]
+        ),
+        add=lambda feat: added_features.append(feat),
+        commit=AsyncMock(),
+    )
+
+    asyncio.run(
+        projects_router.update_features(
+            project_id=project_id,
+            features=payload,
+            user_id=str(uuid4()),
+            session=session,
+        )
+    )
+
+    assert len(added_features) == 1
+    assert added_features[0].map_id is None
 
 
 
