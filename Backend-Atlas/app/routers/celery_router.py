@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from ..tasks import test_task
 from ..celery_app import celery_app
 from ..utils.auth import require_admin_user
+from ..utils.task_status import log_task_failure
 
 router = APIRouter(
     prefix="/test",
@@ -45,6 +46,7 @@ async def get_task_status(task_id: str):
             "result": task.result
         }
     else:  # FAILURE
+        log_task_failure(task_id, task.info)
         response = {
             "task_id": task_id,
             "state": task.state,

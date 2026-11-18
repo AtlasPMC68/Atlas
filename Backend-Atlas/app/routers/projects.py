@@ -36,6 +36,7 @@ from app.utils.update_feature import (
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 from app.utils.georeferencing import parse_frame_bounds_entry
+from app.utils.task_status import build_task_status, log_task_failure
 from app.utils.city_gazetteer import search_cities, warm_frame
 
 from ..celery_app import celery_app
@@ -416,33 +417,7 @@ async def get_processing_status(
 ):
     """Get the status of a background task."""
     await _get_owned_import(task_id, user_id, session)
-    task = celery_app.AsyncResult(task_id)
-    response = {"task_id": task_id, "state": task.state}
-
-    if task.state == "PENDING":
-        response["status"] = "Task is waiting to be processed"
-        response["progress_percentage"] = 0
-    elif task.state == "PROGRESS":
-        info = task.info if isinstance(task.info, dict) else {}
-        current = info.get("current", 0)
-        total = info.get("total", 1) or 1
-        response.update(
-            current=current,
-            total=total,
-            status=info.get("status", ""),
-            progress_percentage=round(current / total * 100, 2),
-        )
-    elif task.state == "SUCCESS":
-        response["result"] = task.result
-        response["progress_percentage"] = 100
-    elif task.state == "FAILURE":
-        response["error"] = "Task failed"
-        response["progress_percentage"] = 0
-    else:  # STARTED, RETRY, REVOKED
-        response["status"] = task.state
-        response["progress_percentage"] = 0
-
-    return response
+    return build_task_status(task_id)
 
 
 @router.get("/results/{task_id}")
@@ -458,6 +433,7 @@ async def get_extraction_results(
     if task.state == "SUCCESS":
         return {"task_id": task_id, "extracted_data": task.result}
     elif task.state == "FAILURE":
+        log_task_failure(task_id, task.info)
         raise HTTPException(status_code=500, detail="Task failed")
     else:
         raise HTTPException(

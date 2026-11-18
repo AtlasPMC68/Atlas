@@ -54,7 +54,7 @@ export function useDevTestImportProcess() {
   const poller = usePolling(async () => {
     if (!taskId) return;
     try {
-      const res = await apiFetch(`/projects/status/${taskId}`);
+      const res = await apiFetch(`/dev-test-api/status/${taskId}`);
       const data: StatusResponse = await res.json();
 
       progress.value = data.progress_percentage || 0;
