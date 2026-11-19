@@ -58,6 +58,7 @@
                   placeholder="Ex: 1850"
                   required
                   data-testid="duplicate-map-start-year"
+                  @input="onStartYearInput"
                 />
                 <input
                   v-else
@@ -66,6 +67,7 @@
                   class="input w-full"
                   required
                   data-testid="duplicate-map-start-date"
+                  @input="onStartDateInput"
                 />
               </div>
 
@@ -165,6 +167,18 @@ const startYear = ref<number | null>(null);
 const endYear = ref<number | null>(null);
 const usePreciseDates = ref(false);
 const error = ref("");
+
+function onStartYearInput() {
+  if (startYear.value !== null && startYear.value !== undefined) {
+    endYear.value = startYear.value;
+  }
+}
+
+function onStartDateInput() {
+  if (startDate.value) {
+    endDate.value = startDate.value;
+  }
+}
 
 function onSourceMapChange() {
   const source = props.mapPeriods.find((p) => p.id === selectedSourceMapId.value);

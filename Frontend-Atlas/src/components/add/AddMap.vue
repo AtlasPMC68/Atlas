@@ -26,6 +26,7 @@
                   class="input"
                   placeholder="Ex: 1850"
                   required
+                  @input="onStartYearInput"
                 />
                 <input
                   v-else
@@ -33,6 +34,7 @@
                   type="date"
                   class="input"
                   required
+                  @input="onStartDateInput"
                 />
               </div>
 
@@ -117,6 +119,18 @@ const endYear = ref<number | null>(null);
 const startDate = ref("");
 const endDate = ref("");
 const usePreciseDates = ref(false);
+
+function onStartYearInput() {
+  if (startYear.value !== null && startYear.value !== undefined) {
+    endYear.value = startYear.value;
+  }
+}
+
+function onStartDateInput() {
+  if (startDate.value) {
+    endDate.value = startDate.value;
+  }
+}
 
 function resetForm() {
   newMapTitle.value = "";

@@ -18,6 +18,7 @@
                 class="input input-bordered"
                 type="date"
                 required
+                @input="onStartDateInput"
               />
               <input
                 v-else
@@ -27,6 +28,7 @@
                 min="1"
                 max="9999"
                 required
+                @input="onStartYearInput"
               />
             </label>
             <label class="form-control">
@@ -92,6 +94,18 @@ const endYear = ref<number | null>(null);
 const exactDate = ref(false);
 const saving = ref(false);
 const errorMessage = ref("");
+
+function onStartYearInput() {
+  if (startYear.value !== null && startYear.value !== undefined) {
+    endYear.value = startYear.value;
+  }
+}
+
+function onStartDateInput() {
+  if (startDate.value) {
+    endDate.value = startDate.value;
+  }
+}
 
 const isValid = computed(() => {
   const start = exactDate.value

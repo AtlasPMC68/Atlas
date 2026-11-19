@@ -578,6 +578,7 @@
                 class="input input-sm w-full"
                 placeholder="Ex: 1600"
                 data-testid="feature-start-year-input"
+                @input="onFeatureStartYearInput"
               />
             </div>
             <div>
@@ -813,6 +814,12 @@ const editDraft = ref<FeatureEditSubmitPayload>({
   name: "",
   wordType: "city",
 });
+
+function onFeatureStartYearInput() {
+  if (editDraft.value.startYear !== null && editDraft.value.startYear !== undefined) {
+    editDraft.value.endYear = editDraft.value.startYear;
+  }
+}
 
 const isTextElement = computed(() => isTextFeature(featureToEdit.value));
 
