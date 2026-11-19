@@ -47,6 +47,34 @@ echo "Updating realm settings..."
   -s ssoSessionMaxLifespan=86400 \
   -s ssoSessionIdleTimeout=3600 
 
+# Realm role guarding the dev pages (/dev-test-api, /test), checked by the backend
+echo "Setting up realm role admin..."
+if /opt/keycloak/bin/kcadm.sh get roles/admin -r atlas >/dev/null 2>&1; then
+  echo "Role admin already exists"
+else
+  /opt/keycloak/bin/kcadm.sh create roles -r atlas -s name=admin -s 'description=Access to the dev pages'
+  echo "Role admin created"
+fi
+
+# Grant it to the accounts listed in ATLAS_ADMIN_USERS (space-separated usernames
+# or emails). Accounts come from registration, so one created after this script
+# ran gets the role on the next Keycloak restart.
+find_username() {
+  /opt/keycloak/bin/kcadm.sh get users -r atlas -q "$1=$2" -q exact=true --fields username \
+    | grep -oP '(?<="username" : ")[^"]*' | head -n 1
+}
+
+for admin_user in ${ATLAS_ADMIN_USERS:-}; do
+  ADMIN_USERNAME=$(find_username username "$admin_user")
+  [ -z "$ADMIN_USERNAME" ] && ADMIN_USERNAME=$(find_username email "$admin_user")
+  if [ -n "$ADMIN_USERNAME" ]; then
+    /opt/keycloak/bin/kcadm.sh add-roles -r atlas --uusername "$ADMIN_USERNAME" --rolename admin
+    echo "Role admin granted to $ADMIN_USERNAME"
+  else
+    echo "User $admin_user not found yet, role admin not granted"
+  fi
+done
+
 # Function to check if client exists
 client_exists() {
   local client_id=$1

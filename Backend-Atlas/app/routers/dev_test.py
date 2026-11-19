@@ -18,7 +18,8 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from app.utils.auth import get_current_user_id
+from app.utils.auth import get_current_user_id, require_admin_user
+from app.utils.task_status import build_task_status
 from ..tasks import (
     GEOREF_CONFIG,
     process_dev_test_extraction,
@@ -98,7 +99,11 @@ from app.utils.dev_test_evaluator import build_test_case_paths, error_overlay
 from app.utils.legend import legend_to_entry, parse_legend_entry
 ### ----------- IMPORTS ----------- ###
 
-router = APIRouter(prefix="/dev-test-api", tags=["Dev Test"])
+router = APIRouter(
+    prefix="/dev-test-api",
+    tags=["Dev Test"],
+    dependencies=[Depends(require_admin_user)],
+)
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +196,16 @@ async def save_and_run_dev_test_case(
 
     logger.info(f"[DEV-TEST] Started {task.id} for {safe_test_id}/{safe_test_case}")
     return {"task_id": task.id, "map_id": safe_test_id, "status": "processing_started"}
+
+
+@router.get("/status/{task_id}")
+async def get_dev_test_status(task_id: str):
+    """Progress of a dev-test run started by /upload.
+
+    A dev-test run has no MapImport row, so /projects/status cannot track it;
+    the router's admin role is what guards this one.
+    """
+    return build_task_status(task_id)
 
 
 @router.put("/georef_zones/{map_id}")

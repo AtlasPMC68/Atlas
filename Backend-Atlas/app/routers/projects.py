@@ -36,6 +36,7 @@ from app.utils.update_feature import (
 )
 from app.utils.sift_key_points_finder import find_coastline_keypoints
 from app.utils.georeferencing import parse_frame_bounds_entry
+from app.utils.task_status import build_task_status, log_task_failure
 from app.utils.city_gazetteer import search_cities, warm_frame
 
 from ..celery_app import celery_app
@@ -422,47 +423,58 @@ async def get_project(
     )
 
 
-@router.get("/status/{task_id}")
-async def get_processing_status(task_id: str):
-    """Get the status of a background task."""
-    task = celery_app.AsyncResult(task_id)
-    response = {"task_id": task_id, "state": task.state}
+async def _get_owned_import(
+    task_id: str,
+    user_id: str,
+    session: AsyncSession,
+) -> MapImport:
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user")
 
-    if task.state == "PENDING":
-        response["status"] = "Task is waiting to be processed"
-        response["progress_percentage"] = 0
-    elif task.state == "PROGRESS":
-        info = task.info if isinstance(task.info, dict) else {}
-        current = info.get("current", 0)
-        total = info.get("total", 1) or 1
-        response.update(
-            current=current,
-            total=total,
-            status=info.get("status", ""),
-            progress_percentage=round(current / total * 100, 2),
+    result = await session.execute(
+        select(MapImport)
+        .join(Map, MapImport.map_id == Map.id)
+        .join(Project, Map.project_id == Project.id)
+        .where(
+            (MapImport.extraction_task_id == task_id)
+            | (MapImport.ocr_task_id == task_id),
+            Project.user_id == user_uuid,
         )
-    elif task.state == "SUCCESS":
-        response["result"] = task.result
-        response["progress_percentage"] = 100
-    elif task.state == "FAILURE":
-        response["error"] = str(task.info)
-        response["progress_percentage"] = 0
-    else:  # STARTED, RETRY, REVOKED
-        response["status"] = task.state
-        response["progress_percentage"] = 0
+    )
+    import_row = result.scalar_one_or_none()
+    if import_row is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return import_row
 
-    return response
+
+@router.get("/status/{task_id}")
+async def get_processing_status(
+    task_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Get the status of a background task."""
+    await _get_owned_import(task_id, user_id, session)
+    return build_task_status(task_id)
 
 
 @router.get("/results/{task_id}")
-async def get_extraction_results(task_id: str):
+async def get_extraction_results(
+    task_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+):
     """Get extraction results only if completed"""
+    await _get_owned_import(task_id, user_id, session)
     task = celery_app.AsyncResult(task_id)
 
     if task.state == "SUCCESS":
         return {"task_id": task_id, "extracted_data": task.result}
     elif task.state == "FAILURE":
-        raise HTTPException(status_code=500, detail=f"Task failed: {task.info}")
+        log_task_failure(task_id, task.info)
+        raise HTTPException(status_code=500, detail="Task failed")
     else:
         raise HTTPException(
             status_code=202,
