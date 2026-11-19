@@ -36,7 +36,6 @@ from app.services.imports import (
 from app.tasks import process_map_extraction, run_map_ocr
 from app.utils.auth import get_current_user_id
 from app.utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZE
-from app.utils.text_extraction import florence_task_id
 # endregion
 
 logger = logging.getLogger(__name__)
@@ -430,9 +429,6 @@ async def abandon_import(
     row = await _require_import(session, map_id, for_update=True)
     if row.ocr_task_id and row.ocr_state != OCR_DONE:
         celery_app.control.revoke(row.ocr_task_id, terminate=True)
-        # The OCR task only waits on Florence: stop Florence as well, or it keeps
-        # the CPU for up to 15 minutes and the next import queues behind it.
-        celery_app.control.revoke(florence_task_id(row.ocr_task_id), terminate=True)
     if row.extraction_task_id and is_extraction_active(row):
         celery_app.control.revoke(row.extraction_task_id)
     await session.delete(row)
