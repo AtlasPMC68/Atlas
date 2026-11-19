@@ -1,5 +1,19 @@
-# Vue 3 + TypeScript + Vite
+# Frontend Atlas
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Application web d'Atlas : Vue 3, TypeScript, Vite, Tailwind CSS / DaisyUI et Leaflet.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+Le frontend se lance avec le reste d'Atlas, dans Docker : voir le [guide de développement](../docs/developpement.md). Le serveur Vite recharge la page dès qu'un fichier change.
+
+| Dossier | Contenu |
+|---|---|
+| [`src/views/`](src/views/) | Pages : accueil, mes projets, explorer, éditeur de carte, import |
+| [`src/components/`](src/components/) | Composants : import, géoréférencement, légende, ligne du temps |
+| [`src/router/`](src/router/) | Routes (en français) |
+| [`src/composables/`](src/composables/), [`src/stores/`](src/stores/) | État et logique partagés |
+| [`tests/`](tests/) | Tests Vitest |
+
+Lancer les tests :
+
+```bash
+docker compose exec frontend npm run test -- --run
+```
