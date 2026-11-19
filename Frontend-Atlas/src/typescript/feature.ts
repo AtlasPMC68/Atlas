@@ -91,6 +91,8 @@ export interface FeatureProperties {
   customLabelStyleId?: string | null;
   customLabelStyle?: any;
   customLabelStyleFallbackWordType?: string;
+  startYear?: number | null;
+  endYear?: number | null;
   [key: string]: any;
   fontStyle?: "normal" | "italic" |"uppercase"| string;
 }

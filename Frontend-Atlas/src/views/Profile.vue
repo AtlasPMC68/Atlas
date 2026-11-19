@@ -16,7 +16,9 @@ onMounted(async () => {
 });
 
 const logout = async () => {
-  await keycloak.logout();
+  await keycloak.logout({
+    redirectUri: window.location.origin,
+  });
 };
 </script>
 
@@ -90,8 +92,15 @@ const logout = async () => {
       </div>
     </div>
     <div v-else-if="isLoading" class="text-gray-500">Chargement du profil...</div>
-    <div v-else-if="error" class="text-red-600">
-      Impossible de charger le profil. Vérifiez que le serveur est disponible.
+    <div v-else-if="error" class="flex flex-col items-start gap-3 text-gray-600">
+      <p>Impossible de charger le profil. Vérifiez que le serveur est disponible.</p>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline text-gray-700"
+        @click="fetchCurrentUser"
+      >
+        Réessayer
+      </button>
     </div>
   </div>
 </template>

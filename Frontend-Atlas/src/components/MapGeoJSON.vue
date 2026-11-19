@@ -365,6 +365,7 @@ const isViewReady = ref(false);
 // Shows the map even if the parent never frames it (e.g. a failed load)
 const VIEW_READY_FALLBACK_MS = 5000;
 let viewReadyFallback: ReturnType<typeof setTimeout> | null = null;
+let containerResizeObserver: ResizeObserver | null = null;
 
 function revealMap() {
   isViewReady.value = true;
@@ -613,11 +614,23 @@ function buildLabelMarker(
     }),
   } as any);
 
+  const preventSelection = () => {
+    const el = marker.getElement();
+    if (el) {
+      el.addEventListener("selectstart", (e) => e.preventDefault());
+      el.addEventListener("mousedown", () => {
+        window.getSelection()?.removeAllRanges();
+      });
+    }
+  };
+
   marker.on("add", () => {
     applyLabelPresentationStyle(marker, presentation, feature.id);
+    preventSelection();
   });
   if (marker.getElement()) {
     applyLabelPresentationStyle(marker, presentation, feature.id);
+    preventSelection();
   }
 
   return marker;
@@ -646,6 +659,8 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         L.DomEvent.stopPropagation(e);
         if (!map) return;
         map.dragging.disable();
+        window.getSelection()?.removeAllRanges();
+        document.body.style.userSelect = 'none';
         
         const containerRect = map.getContainer().getBoundingClientRect();
         const point = map.latLngToContainerPoint(label.getLatLng());
@@ -672,6 +687,8 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         const onMouseUp = () => {
           document.removeEventListener('mousemove', onMouseMove);
           document.removeEventListener('mouseup', onMouseUp);
+          document.body.style.userSelect = '';
+          window.getSelection()?.removeAllRanges();
           map!.dragging.enable();
           
           if ((el as any).__currentRotation !== undefined) {
@@ -1086,8 +1103,17 @@ onMounted(() => {
   };
   map.whenReady(updateMinZoom);
   map.on('resize', updateMinZoom);
+  map.on("dragstart", () => window.getSelection()?.removeAllRanges());
   map.on("moveend", scheduleLabelVisibilityUpdate);
   map.on("zoomend", scheduleLabelVisibilityUpdate);
+
+  const mapContainer = map.getContainer();
+  if (typeof ResizeObserver !== "undefined" && mapContainer) {
+    containerResizeObserver = new ResizeObserver(() => {
+      map?.invalidateSize();
+    });
+    containerResizeObserver.observe(mapContainer);
+  }
 
   drawing.initializeDrawing(map);
   L.control.zoom({ position: "topleft" }).addTo(map);
@@ -1241,6 +1267,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  containerResizeObserver?.disconnect();
+  containerResizeObserver = null;
   if (viewReadyFallback) clearTimeout(viewReadyFallback);
   if (labelVisibilityFrame !== null) {
     cancelAnimationFrame(labelVisibilityFrame);

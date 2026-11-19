@@ -434,3 +434,33 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* Prevent accidental browser text selection during map text/marker dragging */
+.leaflet-container,
+.city-label-text,
+.label-wrapper,
+.label-content,
+.label-content * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
+
+/* Allow dialogs, modals and floating windows across the application to be resizable */
+.modal-box,
+dialog .modal-box {
+  resize: both;
+  overflow: auto;
+  min-width: 300px;
+  min-height: 180px;
+  width: min(32rem, 90vw);
+  max-width: 95vw;
+  max-height: 90vh;
+}
+
+.modal-box.max-w-xl { width: min(36rem, 92vw); }
+.modal-box.max-w-2xl { width: min(42rem, 94vw); }
+.modal-box.max-w-3xl { width: min(48rem, 95vw); }
+.modal-box.max-w-4xl { width: min(56rem, 95vw); }
+.modal-box.max-w-5xl { width: min(64rem, 95vw); }

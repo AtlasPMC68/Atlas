@@ -145,7 +145,7 @@ defineExpose({
     <div class="modal-box p-0">
       <form @submit.prevent="createProject">
         <div class="card-body">
-          <h3 class="text-lg font-bold">Créer une nouvelle carte</h3>
+          <h3 class="text-lg font-bold">Créer un nouveau projet</h3>
 
           <fieldset class="fieldset" :disabled="isCreating">
             <label class="label">Titre</label>

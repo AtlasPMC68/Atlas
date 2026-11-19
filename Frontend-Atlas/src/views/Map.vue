@@ -4,6 +4,7 @@
   >
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
+        v-show="isSidebarVisible"
         class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
         :style="{ width: `${sidebarWidth}px` }"
       >
@@ -28,6 +29,7 @@
         />
       </div>
       <div
+        v-show="isSidebarVisible"
         role="separator"
         aria-label="Redimensionner le panneau latéral"
         aria-orientation="vertical"
@@ -40,6 +42,32 @@
       />
       <div class="flex-1 min-h-0 flex flex-col">
         <div class="flex-1 relative min-h-0 h-full w-full bg-[#d4dadc]">
+          <!-- Presentation mode & View controls (Point 1) -->
+          <div class="absolute top-4 right-4 z-[1001] flex items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-sm bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md gap-1.5"
+              data-testid="toggle-sidebar-button"
+              :title="isSidebarVisible ? 'Masquer le panneau gauche (Mode présentation)' : 'Afficher le panneau gauche'"
+              @click="toggleSidebar"
+            >
+              <Bars3Icon v-if="!isSidebarVisible" class="w-4 h-4 text-primary" />
+              <ChevronLeftIcon v-else class="w-4 h-4" />
+              <span class="text-xs font-semibold">{{ isSidebarVisible ? 'Présentation' : 'Panneau' }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-circle bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md"
+              data-testid="toggle-fullscreen-button"
+              :title="isFullscreen ? 'Quitter le plein écran' : 'Plein écran'"
+              @click="toggleFullscreen"
+            >
+              <ArrowsPointingInIcon v-if="isFullscreen" class="w-4 h-4" />
+              <ArrowsPointingOutIcon v-else class="w-4 h-4" />
+            </button>
+          </div>
+
           <MapGeoJSON
             ref="mapGeoJsonRef"
             class="flex-1 min-h-0 w-full"
@@ -71,9 +99,55 @@
               @edit-feature="onEditFeatureRequest"
             />
           </div>
+
+          <!-- Floating button to restore timeline when hidden (Point 6) -->
+          <div
+            v-if="!isTimelineVisible"
+            class="absolute bottom-4 right-4 z-[1001] flex items-center gap-2"
+          >
+            <button
+              type="button"
+              class="btn btn-sm bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md gap-1.5"
+              data-testid="duplicate-map-button-floating"
+              title="Dupliquer entièrement une carte"
+              @click="openDuplicateMapDialog()"
+            >
+              <DocumentDuplicateIcon class="w-4 h-4 text-primary" />
+              <span class="text-xs font-semibold">Dupliquer une carte</span>
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-primary shadow-md gap-1.5"
+              data-testid="show-timeline-button"
+              title="Afficher l'échelle de temps"
+              @click="toggleTimeline"
+            >
+              <CalendarIcon class="w-4 h-4" />
+              <span class="text-xs font-semibold">Afficher l'échelle de temps</span>
+            </button>
+          </div>
         </div>
+
+        <!-- Horizontal resize handle for timeline (Point 7) -->
         <div
+          v-show="isTimelineVisible"
+          role="separator"
+          aria-label="Redimensionner l'échelle de temps"
+          aria-orientation="horizontal"
+          tabindex="0"
+          class="h-1.5 w-full shrink-0 cursor-row-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors"
+          data-testid="timeline-resize-handle"
+          @mousedown.prevent="startTimelineResize"
+          @keydown.up.prevent="resizeTimelineBy(10)"
+          @keydown.down.prevent="resizeTimelineBy(-10)"
+        />
+
+        <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
+        <div
+          v-show="isTimelineVisible"
           class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+          :style="timelineHeight ? { height: `${timelineHeight}px`, overflowY: 'auto' } : {}"
         >
           <div class="map-timeline-slider w-full min-w-0">
             <TimelineSlider
@@ -87,16 +161,44 @@
             />
           </div>
           <div
-            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
+            class="map-timeline-filter flex flex-row gap-3 items-center justify-between text-xs font-medium whitespace-nowrap"
           >
-            <span>Filtrer par date</span>
-            <input
-              v-model="useTimelineFilter"
-              type="checkbox"
-              aria-label="Filtrer par date"
-              role="switch"
-              class="timeline-filter-toggle"
-            />
+            <div class="flex items-center gap-3">
+              <div class="flex flex-row gap-1 items-center">
+                <span>Filtrer par date</span>
+                <input
+                  v-model="useTimelineFilter"
+                  type="checkbox"
+                  aria-label="Filtrer par date"
+                  role="switch"
+                  class="timeline-filter-toggle"
+                />
+              </div>
+
+              <!-- Point 5: Bouton en bas de l'interface permettant de dupliquer entièrement une carte -->
+              <button
+                type="button"
+                class="btn btn-outline btn-xs gap-1 font-semibold"
+                data-testid="duplicate-map-button"
+                title="Dupliquer entièrement une carte"
+                @click="openDuplicateMapDialog()"
+              >
+                <DocumentDuplicateIcon class="w-3.5 h-3.5 text-primary" />
+                <span>Dupliquer une carte</span>
+              </button>
+            </div>
+
+            <!-- Point 6: Masquer l'échelle de dates -->
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
+              data-testid="hide-timeline-button"
+              title="Masquer l'échelle de temps"
+              @click="toggleTimeline"
+            >
+              <EyeSlashIcon class="w-3.5 h-3.5" />
+              <span>Masquer l'échelle</span>
+            </button>
           </div>
         </div>
       </div>
@@ -115,6 +217,13 @@
     ref="addMapDialogRef"
     :is-creating-map="isCreatingMap"
     @submit="createMapForProject"
+  />
+
+  <DuplicateMapDialog
+    ref="duplicateMapDialogRef"
+    :map-periods="mapPeriods"
+    :is-duplicating="isDuplicatingMap"
+    @submit="onDuplicateMapSubmit"
   />
 
   <EditMapPeriodDialog ref="editMapPeriodDialogRef" @save="saveMapPeriod" />
@@ -144,6 +253,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
+import DuplicateMapDialog from "../components/add/DuplicateMapDialog.vue";
 import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
@@ -176,7 +286,17 @@ import {
   isCopyableFeature,
   getGeometryAnchor,
   cloneFeatureWithOffset,
+  getFeatureMapId,
 } from "../utils/featureHelpers";
+import {
+  Bars3Icon,
+  ChevronLeftIcon,
+  ArrowsPointingOutIcon,
+  ArrowsPointingInIcon,
+  EyeSlashIcon,
+  CalendarIcon,
+  DocumentDuplicateIcon,
+} from "@heroicons/vue/24/outline";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -213,6 +333,12 @@ const addMapDialogRef = ref<{
   open: () => void;
   close: () => void;
 } | null>(null);
+const duplicateMapDialogRef = ref<{
+  open: (preselectedMapId?: string) => void;
+  close: () => void;
+  setError: (msg: string) => void;
+} | null>(null);
+const isDuplicatingMap = ref(false);
 const editMapPeriodDialogRef = ref<{
   open: (period: MapPeriod) => void;
   close: () => void;
@@ -236,12 +362,104 @@ function selectFeature(id: string | null) {
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
 const copiedFeature = ref<Feature | null>(null);
+
+// Presentation mode & Visibility states (Points 1, 6)
+const isSidebarVisible = ref(true);
+const isFullscreen = ref(false);
+const isTimelineVisible = ref(true);
+
+// Panel resizing states (Point 7)
 const sidebarWidth = ref(350);
 let sidebarResizeStartX = 0;
 let sidebarResizeStartWidth = 0;
 let isResizingSidebar = false;
+
+const timelineHeight = ref<number | null>(null);
+let timelineResizeStartY = 0;
+let timelineResizeStartHeight = 0;
+let isResizingTimeline = false;
+
 let previousBodyCursor = "";
 let previousBodyUserSelect = "";
+
+function toggleSidebar() {
+  isSidebarVisible.value = !isSidebarVisible.value;
+  nextTick(() => {
+    leafletMap.value?.invalidateSize();
+  });
+}
+
+function toggleTimeline() {
+  isTimelineVisible.value = !isTimelineVisible.value;
+  nextTick(() => {
+    leafletMap.value?.invalidateSize();
+  });
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch((err) => {
+      console.error("Fullscreen error:", err);
+    });
+  } else {
+    document.exitFullscreen?.().catch((err) => {
+      console.error("Exit fullscreen error:", err);
+    });
+  }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = Boolean(document.fullscreenElement);
+  nextTick(() => {
+    leafletMap.value?.invalidateSize();
+  });
+}
+
+function resizeTimelineBy(delta: number) {
+  const el = document.querySelector(".map-timeline-toolbar") as HTMLElement | null;
+  const currentHeight = timelineHeight.value ?? el?.offsetHeight ?? 140;
+  const maxHeight = Math.min(350, Math.floor(window.innerHeight * 0.45));
+  timelineHeight.value = Math.max(
+    80,
+    Math.min(maxHeight, currentHeight + delta),
+  );
+  nextTick(() => leafletMap.value?.invalidateSize());
+}
+
+function onTimelineResizeMove(event: MouseEvent) {
+  const maxHeight = Math.min(350, Math.floor(window.innerHeight * 0.45));
+  const deltaY = timelineResizeStartY - event.clientY;
+  timelineHeight.value = Math.max(
+    80,
+    Math.min(maxHeight, timelineResizeStartHeight + deltaY),
+  );
+  leafletMap.value?.invalidateSize();
+}
+
+function stopTimelineResize() {
+  window.removeEventListener("mousemove", onTimelineResizeMove);
+  window.removeEventListener("mouseup", stopTimelineResize);
+  if (isResizingTimeline) {
+    document.body.style.cursor = previousBodyCursor;
+    document.body.style.userSelect = previousBodyUserSelect;
+    isResizingTimeline = false;
+    nextTick(() => leafletMap.value?.invalidateSize());
+  }
+}
+
+function startTimelineResize(event: MouseEvent) {
+  const el = document.querySelector(".map-timeline-toolbar") as HTMLElement | null;
+  timelineResizeStartY = event.clientY;
+  timelineResizeStartHeight = timelineHeight.value ?? el?.offsetHeight ?? 140;
+  timelineHeight.value = timelineResizeStartHeight;
+  previousBodyCursor = document.body.style.cursor;
+  previousBodyUserSelect = document.body.style.userSelect;
+  isResizingTimeline = true;
+  document.body.style.cursor = "row-resize";
+  document.body.style.userSelect = "none";
+  window.addEventListener("mousemove", onTimelineResizeMove);
+  window.addEventListener("mouseup", stopTimelineResize);
+}
 
 function resizeSidebarBy(delta: number) {
   const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
@@ -388,15 +606,48 @@ const periodByMapId = computed(
   () => new Map(enrichedPeriods.value.map((p: SliderPeriod) => [p.id, p])),
 );
 
+const standaloneFeatureYears = computed<number[]>(() => {
+  const years: number[] = [];
+  features.value.forEach((f: Feature) => {
+    if (!f.mapId) {
+      const sy =
+        f.properties?.startYear != null
+          ? Number(f.properties.startYear)
+          : f.properties?.startDate
+            ? toYear(f.properties.startDate)
+            : null;
+      const ey =
+        f.properties?.endYear != null
+          ? Number(f.properties.endYear)
+          : f.properties?.endDate
+            ? toYear(f.properties.endDate)
+            : null;
+      if (sy != null && !Number.isNaN(sy)) years.push(sy);
+      if (ey != null && !Number.isNaN(ey)) years.push(ey);
+    }
+  });
+  return years;
+});
+
+const allTimelineStartYears = computed(() => {
+  const years = enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
+  return [...years, ...standaloneFeatureYears.value];
+});
+
+const allTimelineEndYears = computed(() => {
+  const years = enrichedPeriods.value.map((p: SliderPeriod) => p.endYear);
+  return [...years, ...standaloneFeatureYears.value];
+});
+
 const timelineMinYear = computed(() =>
-  enrichedPeriods.value.length
-    ? Math.min(...enrichedPeriods.value.map((p: SliderPeriod) => p.startYear))
+  allTimelineStartYears.value.length
+    ? Math.min(...allTimelineStartYears.value)
     : 1400,
 );
 
 const timelineMaxYear = computed(() =>
-  enrichedPeriods.value.length
-    ? Math.max(...enrichedPeriods.value.map((p: SliderPeriod) => p.endYear))
+  allTimelineEndYears.value.length
+    ? Math.max(...allTimelineEndYears.value)
     : new Date().getFullYear(),
 );
 
@@ -409,12 +660,17 @@ const timelineMarkerYears = computed(() => {
     markers.add(p.startYear);
     markers.add(p.endYear);
   });
+  standaloneFeatureYears.value.forEach((y) => markers.add(y));
   return [...markers].sort((a, b) => a - b);
 });
 
-const periodStartYears = computed(
-  () => new Set(enrichedPeriods.value.map((p: SliderPeriod) => p.startYear)),
-);
+const periodStartYears = computed(() => {
+  const years = new Set(
+    enrichedPeriods.value.map((p: SliderPeriod) => p.startYear),
+  );
+  standaloneFeatureYears.value.forEach((y) => years.add(y));
+  return years;
+});
 
 const periodStartDates = computed(
   () =>
@@ -429,28 +685,67 @@ const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
     if (!useTimelineFilter.value) return true;
 
-    // Project-level features without a map are always visible in timeline mode.
-    if (!feature.mapId) return true;
+    // Feature associated with a map period
+    if (feature.mapId) {
+      const period = periodByMapId.value.get(feature.mapId);
+      if (!period) return true;
 
-    const period = periodByMapId.value.get(feature.mapId);
-    if (!period) return true;
+      if (selectedExactDate.value && period.startDate && period.endDate) {
+        return isPeriodActiveAt(
+          period.startDate,
+          period.endDate,
+          selectedExactDate.value,
+          periodStartDates.value,
+        );
+      }
 
-    if (selectedExactDate.value && period.startDate && period.endDate) {
+      if (period.startYear == null || period.endYear == null) return true;
       return isPeriodActiveAt(
-        period.startDate,
-        period.endDate,
-        selectedExactDate.value,
-        periodStartDates.value,
+        period.startYear,
+        period.endYear,
+        selectedYear.value,
+        periodStartYears.value,
       );
     }
 
-    if (period.startYear == null || period.endYear == null) return true;
-    return isPeriodActiveAt(
-      period.startYear,
-      period.endYear,
-      selectedYear.value,
-      periodStartYears.value,
-    );
+    // Feature without map: check if it has custom years or dates
+    const featStartYear =
+      feature.properties?.startYear != null
+        ? Number(feature.properties.startYear)
+        : feature.properties?.startDate
+          ? toYear(feature.properties.startDate)
+          : null;
+    const featEndYear =
+      feature.properties?.endYear != null
+        ? Number(feature.properties.endYear)
+        : feature.properties?.endDate
+          ? toYear(feature.properties.endDate)
+          : featStartYear;
+
+    if (
+      featStartYear != null &&
+      featEndYear != null &&
+      !Number.isNaN(featStartYear) &&
+      !Number.isNaN(featEndYear)
+    ) {
+      return isPeriodActiveAt(
+        featStartYear,
+        featEndYear,
+        selectedYear.value,
+        periodStartYears.value,
+      );
+    }
+    if (featStartYear != null && !Number.isNaN(featStartYear)) {
+      return isPeriodActiveAt(
+        featStartYear,
+        featStartYear,
+        selectedYear.value,
+        periodStartYears.value,
+      );
+    }
+
+    // Project-level features without a year are always visible in timeline mode.
+    return true;
   });
 });
 
@@ -800,9 +1095,24 @@ async function onDeleteMap(
       throw new Error(`Failed to delete map: ${res.status}`);
     }
 
-    const nextFeatures = features.value.filter(
-      (feature: Feature) => feature.mapId !== mapId,
+    const mapIdNorm = String(mapId).trim().toLowerCase();
+    mapPeriods.value = mapPeriods.value.filter(
+      (p: MapPeriod) => String(p.id).trim().toLowerCase() !== mapIdNorm,
     );
+
+    const nextFeatures = features.value.filter(
+      (feature: Feature) =>
+        String(getFeatureMapId(feature) ?? "").trim().toLowerCase() !== mapIdNorm,
+    );
+
+    if (
+      activeValidationMapId.value &&
+      String(activeValidationMapId.value).trim().toLowerCase() === mapIdNorm
+    ) {
+      activeValidationMapId.value = null;
+      showTextValidationModal.value = false;
+    }
+    selectedExactDate.value = null;
 
     if (trackingEnabled.value) {
       commitFeatureSnapshot(nextFeatures);
@@ -811,6 +1121,13 @@ async function onDeleteMap(
     }
 
     await loadProjectMapsForTimeline();
+
+    if (
+      timelineMarkerYears.value.length > 0 &&
+      !timelineMarkerYears.value.includes(selectedYear.value)
+    ) {
+      selectedYear.value = timelineMarkerYears.value[0];
+    }
 
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -1066,6 +1383,73 @@ async function createMapForProject(formPayload: {
     console.error("Failed to create map for project:", e);
   } finally {
     isCreatingMap.value = false;
+  }
+}
+
+function openDuplicateMapDialog(defaultSourceMapId?: string) {
+  const routeMapId = Array.isArray(route.params.mapId)
+    ? route.params.mapId[0]
+    : route.params.mapId;
+  const targetId =
+    defaultSourceMapId || routeMapId || mapPeriods.value[0]?.id || "";
+  duplicateMapDialogRef.value?.open(targetId);
+}
+
+async function onDuplicateMapSubmit(payload: {
+  sourceMapId: string;
+  newTitle: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
+  if (!projectId.value || !keycloak.token) return;
+  isDuplicatingMap.value = true;
+  try {
+    const res = await apiFetch(
+      `/projects/${projectId.value}/maps/${payload.sourceMapId}/duplicate`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(
+          camelToSnake({
+            newTitle: payload.newTitle.trim(),
+            startDate: payload.startDate,
+            endDate: payload.endDate,
+            exactDate: payload.exactDate,
+          }),
+        ),
+      },
+    );
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData?.detail || `Erreur serveur (${res.status})`);
+    }
+
+    duplicateMapDialogRef.value?.close();
+    showAlert("success", `Carte dupliquée avec succès : "${payload.newTitle}"`);
+
+    await loadProjectMapsForTimeline();
+    await loadInitialFeatures();
+
+    const yearMatch = payload.startDate.match(/^-?\d+/);
+    if (yearMatch) {
+      selectedYear.value = parseInt(yearMatch[0], 10);
+      if (payload.exactDate) {
+        selectedExactDate.value = payload.startDate;
+      }
+    }
+  } catch (error: any) {
+    console.error("Failed to duplicate map:", error);
+    duplicateMapDialogRef.value?.setError(
+      error?.message || "Erreur lors de la duplication de la carte.",
+    );
+    showAlert("error", "Erreur lors de la duplication de la carte.");
+  } finally {
+    isDuplicatingMap.value = false;
   }
 }
 
@@ -1476,6 +1860,7 @@ onMounted(async () => {
 
   window.addEventListener("keydown", handleKeyboardShortcuts);
   window.addEventListener("click", onDocumentClick);
+  document.addEventListener("fullscreenchange", onFullscreenChange);
 
   // Not awaited: the shortcuts above must not wait for the tiles to load.
   if (projectId.value) void uploadMapThumbnail();
@@ -1531,7 +1916,9 @@ watch(
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyboardShortcuts);
   window.removeEventListener("click", onDocumentClick);
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
   stopSidebarResize();
+  stopTimelineResize();
   clearAlert();
 });
 

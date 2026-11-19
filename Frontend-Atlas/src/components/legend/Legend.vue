@@ -1,5 +1,5 @@
 <template>
-  <div class="card bg-base-100 shadow-md p-3">
+  <div class="card bg-base-100 shadow-md p-3 resize overflow-auto min-w-[12rem] min-h-[5rem] max-w-md max-h-[60vh]">
     <div
       class="card-body p-0"
       @mousedown.stop

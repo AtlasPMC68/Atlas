@@ -142,6 +142,46 @@ async def delete_map(
         raise HTTPException(status_code=500, detail="Failed to delete map")
 
 
+@router.post("/{project_id}/maps/{map_id}/duplicate")
+async def duplicate_map_for_project(
+    project_id: UUID,
+    map_id: UUID,
+    request: MapImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    try:
+        if not request.title.strip():
+            raise HTTPException(status_code=400, detail="title must not be empty")
+        if request.start_date > request.end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="start_date must be before or equal to end_date",
+            )
+
+        from app.services.maps import duplicate_map_in_project
+        new_map_id = await duplicate_map_in_project(
+            db=db,
+            project_id=project_id,
+            source_map_id=map_id,
+            user_id=UUID(user_id),
+            new_title=request.title.strip(),
+            start_date=request.start_date,
+            end_date=request.end_date,
+            exact_date=request.exact_date,
+        )
+        if not new_map_id:
+            raise HTTPException(
+                status_code=404, detail="Map or project not found or access denied"
+            )
+        return {"map_id": str(new_map_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error duplicating map: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to duplicate map")
+
+
 @router.put("/{project_id}/maps/{map_id}")
 async def update_map_metadata(
     project_id: UUID,

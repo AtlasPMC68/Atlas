@@ -5,6 +5,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.features import Feature
 from app.models.map import Map
+from app.models.map_import import MapImport
 from app.models.project import Project
 
 
@@ -61,9 +62,77 @@ async def delete_map_in_db(
             Feature.map_id == map_id, Feature.project_id == project_id
         )
     )
+    await db.execute(delete(MapImport).where(MapImport.map_id == map_id))
     await db.execute(delete(Map).where(Map.id == map_id))
     await db.commit()
     return True
+
+
+async def duplicate_map_in_project(
+    db: AsyncSession,
+    project_id: UUID,
+    source_map_id: UUID,
+    user_id: UUID,
+    new_title: str,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    exact_date: bool = False,
+) -> UUID | None:
+    project_result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user_id)
+    )
+    project_obj = project_result.scalar_one_or_none()
+    if not project_obj:
+        return None
+
+    map_result = await db.execute(
+        select(Map).where(Map.id == source_map_id, Map.project_id == project_id)
+    )
+    source_map = map_result.scalar_one_or_none()
+    if not source_map:
+        return None
+
+    new_map = Map(
+        project_id=project_id,
+        title=new_title,
+        start_date=start_date or source_map.start_date,
+        end_date=end_date or source_map.end_date,
+        exact_date=exact_date,
+        georef_inputs=source_map.georef_inputs,
+        reference_image_path=source_map.reference_image_path,
+        reference_image_content_type=source_map.reference_image_content_type,
+    )
+    db.add(new_map)
+    await db.flush()
+
+    features_result = await db.execute(
+        select(Feature).where(
+            Feature.project_id == project_id,
+            Feature.map_id == source_map_id,
+        )
+    )
+    source_features = features_result.scalars().all()
+
+    for feat in source_features:
+        new_feat_data = dict(feat.data) if isinstance(feat.data, dict) else feat.data
+        if isinstance(new_feat_data, dict):
+            new_feat_data = dict(new_feat_data)
+            new_feat_data["mapId"] = str(new_map.id)
+            if "properties" in new_feat_data and isinstance(new_feat_data["properties"], dict):
+                new_feat_data["properties"] = dict(new_feat_data["properties"])
+                new_feat_data["properties"]["mapId"] = str(new_map.id)
+
+        new_feature = Feature(
+            project_id=project_id,
+            map_id=new_map.id,
+            data=new_feat_data,
+            image=feat.image,
+        )
+        db.add(new_feature)
+
+    await db.commit()
+    await db.refresh(new_map)
+    return new_map.id
 
 
 async def copy_maps_between_projects(

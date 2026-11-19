@@ -163,11 +163,17 @@
                       class="checkbox checkbox-xs checkbox-primary"
                     />
                     <span
-                      class="label-text text-sm truncate flex-1 select-none"
+                      class="label-text text-sm truncate flex-1 select-none flex items-center gap-1"
                       :title="feature.properties?.name || '! Nom manquant'"
                       @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
                     >
-                      {{ feature.properties?.name || "! Nom manquant" }}
+                      <span class="truncate">{{ feature.properties?.name || "! Nom manquant" }}</span>
+                      <span
+                        v-if="!feature.mapId && (feature.properties?.startYear != null || feature.properties?.endYear != null)"
+                        class="badge badge-ghost badge-xs font-normal opacity-70 shrink-0"
+                      >
+                        {{ feature.properties.startYear }}{{ feature.properties.endYear && feature.properties.endYear !== feature.properties.startYear ? ' - ' + feature.properties.endYear : '' }}
+                      </span>
                     </span>
                   </div>
                   <div class="flex items-center gap-0.5 shrink-0">
@@ -550,6 +556,45 @@
           </div>
           <span class="text-xs text-base-content/60 italic">
             Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
+          </span>
+        </div>
+
+        <!-- Années associées (sans carte) -->
+        <div
+          class="flex flex-col gap-2 pt-2 border-t border-base-200"
+          data-testid="feature-years-section"
+        >
+          <label class="label py-0 font-medium text-sm">
+            Période d'apparition (années sans carte) :
+          </label>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label py-0 text-xs text-base-content/70">Année de début</label>
+              <input
+                v-model.number="editDraft.startYear"
+                type="number"
+                min="1"
+                max="9999"
+                class="input input-sm w-full"
+                placeholder="Ex: 1600"
+                data-testid="feature-start-year-input"
+              />
+            </div>
+            <div>
+              <label class="label py-0 text-xs text-base-content/70">Année de fin</label>
+              <input
+                v-model.number="editDraft.endYear"
+                type="number"
+                min="1"
+                max="9999"
+                class="input input-sm w-full"
+                placeholder="Ex: 1650"
+                data-testid="feature-end-year-input"
+              />
+            </div>
+          </div>
+          <span class="text-xs text-base-content/60 italic">
+            Permet d'afficher cet élément à ces années sur la ligne du temps, même sans carte associée.
           </span>
         </div>
       </fieldset>
