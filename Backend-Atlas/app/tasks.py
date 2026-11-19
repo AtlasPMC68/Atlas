@@ -9,7 +9,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Sequence
 from uuid import UUID, uuid4
 
 import cv2
@@ -56,7 +56,11 @@ from app.utils.imposed_colors import (
     imposed_colors_to_config_entries,
     parse_imposed_colors_entries,
 )
-from app.utils.legend import legend_to_entry, polygon_center_in_legend
+from app.utils.legend import (
+    legend_to_entry,
+    polygon_center_in_ignored_areas,
+    polygon_center_in_legend,
+)
 from app.utils.shapes_extraction import extract_shapes_from_clicks
 from app.utils.text_extraction import extract_text, ocr_blocks_to_payload
 from app.utils.text_extraction import should_ignore
@@ -383,11 +387,12 @@ def _categorized_text_features_from_ocr(
     legend_bounds: Optional[dict],
     frame_bounds: Optional[dict],
     image_size: Optional[tuple[int, int]] = None,
+    ignored_areas: Optional[Sequence[dict]] = None,
 ) -> List[dict[str, Any]]:
     """Extract recognized places (cities or geographic entities) and unrecognized OCR text.
 
     Three possible cases:
-    Case 1: reject immediately if the text is empty, in the legend, or a junk token
+    Case 1: reject immediately if the text is empty, in the legend or ignored areas, or a junk token
         (keywords such as scale/legend, fewer than 2 characters, etc.).
     Case 2: OCR text is usable but not recognized by geonamescache or the geographic JSON
         -> kept for manual validation (show=False, recognized=False).
@@ -418,8 +423,10 @@ def _categorized_text_features_from_ocr(
         )
 
     for coords, text, prob in blocks:
-        # Case 1: reject immediately if the text is inside the legend.
+        # Case 1: reject immediately if the text is inside the legend or an ignored area.
         if polygon_center_in_legend(coords, legend_bounds):
+            continue
+        if polygon_center_in_ignored_areas(coords, ignored_areas):
             continue
 
         raw_text = str(text or "").strip()
@@ -528,7 +535,24 @@ def _categorized_text_features_from_ocr(
             else:
                 prior_centers.append(center)
             suggested_place = None
-            if has_place_coordinates and entity and entity.get("name"):
+            if (
+                has_place_coordinates
+                and entity
+                and entity.get("name")
+                and (
+                    not distance_requires_review
+                    or (
+                        target_pos is not None
+                        and haversine_distance_km(
+                            target_pos[0],
+                            target_pos[1],
+                            float(entity["lat"]),
+                            float(entity["lon"]),
+                        )
+                        <= MATCHING_CONFIG["suggestion_radius_km"]
+                    )
+                )
+            ):
                 raw_type = entity.get("type") or "city"
                 is_from_json = bool(raw_type and raw_type != "city")
                 suggested_place = {
@@ -729,6 +753,7 @@ def process_map_extraction(self, map_id: str):
                     inputs.legend_bounds,
                     inputs.frame_bounds,
                     image_size=img_size,
+                    ignored_areas=inputs.ignored_areas,
                 )
             )
         _raise_if_cancelled(map_id)
@@ -803,6 +828,7 @@ def process_map_extraction(self, map_id: str):
                 all_positions, all_names, all_radii, all_kinds
             ),
             legend=legend_to_entry(inputs.legend_bounds),
+            ignored_areas=inputs.ignored_areas or None,
         )
         saved = asyncio.run(
             _save_extraction(map_id, claimed.project_id, collections, georef_inputs)

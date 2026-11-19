@@ -1,5 +1,5 @@
 from datetime import date
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -117,6 +117,7 @@ async def duplicate_map_in_project(
         new_feat_data = dict(feat.data) if isinstance(feat.data, dict) else feat.data
         if isinstance(new_feat_data, dict):
             new_feat_data = dict(new_feat_data)
+            new_feat_data["id"] = str(uuid4())
             new_feat_data["mapId"] = str(new_map.id)
             if "properties" in new_feat_data and isinstance(new_feat_data["properties"], dict):
                 new_feat_data["properties"] = dict(new_feat_data["properties"])

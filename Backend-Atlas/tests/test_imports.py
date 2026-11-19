@@ -25,6 +25,8 @@ from app.utils.legend import (
     legend_to_entry,
     parse_legend_bounds,
     parse_legend_entry,
+    point_in_any_bounds,
+    polygon_center_in_ignored_areas,
 )
 
 FRAME = {"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0}
@@ -87,6 +89,116 @@ def test_colour_extraction_leaves_the_legend_out(tmp_path):
     zone = shape(geometry)
     assert zone.contains(Point(10, 10))
     assert not zone.contains(Point(42, 42))
+
+
+def test_ignored_areas_validation_and_merging():
+    """Ignored areas (exclusion zones) must be validated and stored independently."""
+    rect1 = {"x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0}
+    rect2 = {"x": 50.0, "y": 60.0, "width": 70.0, "height": 80.0}
+    inputs = apply_inputs_patch({}, {"ignoredAreas": [rect1, rect2]})
+    assert len(inputs["ignoredAreas"]) == 2
+    assert inputs["ignoredAreas"][0] == rect1
+    assert inputs["ignoredAreas"][1] == rect2
+
+    # exclusionZones is an alias
+    inputs_alias = apply_inputs_patch({}, {"exclusionZones": [rect1]})
+    assert inputs_alias["ignoredAreas"] == [rect1]
+
+    # Malformed entries are rejected
+    with pytest.raises(ValueError):
+        apply_inputs_patch({}, {"ignoredAreas": "not a list"})
+    with pytest.raises(ValueError):
+        apply_inputs_patch({}, {"ignoredAreas": [{"x": 10, "y": 20, "width": -5, "height": 10}]})
+
+
+def test_independent_legend_and_exclusion_zones():
+    """Legend and exclusion zones must remain fully independent when saving and updating."""
+    legend = {"x": 10.0, "y": 10.0, "width": 50.0, "height": 50.0}
+    rect1 = {"x": 100.0, "y": 100.0, "width": 30.0, "height": 30.0}
+
+    # 1. Save legend first
+    inputs = apply_inputs_patch({}, {"legend": legend_to_entry(legend)})
+    assert inputs["legend"] == {"present": True, "bounds": legend}
+    assert "ignoredAreas" not in inputs
+
+    # 2. Add exclusion zones - legend remains intact
+    inputs = apply_inputs_patch(inputs, {"ignoredAreas": [rect1]})
+    assert inputs["legend"] == {"present": True, "bounds": legend}
+    assert inputs["ignoredAreas"] == [rect1]
+
+    # 3. Update exclusion zones - legend remains intact
+    rect2 = {"x": 200.0, "y": 200.0, "width": 40.0, "height": 40.0}
+    inputs = apply_inputs_patch(inputs, {"ignoredAreas": [rect1, rect2]})
+    assert inputs["legend"] == {"present": True, "bounds": legend}
+    assert len(inputs["ignoredAreas"]) == 2
+
+    # 4. Modify legend (or set to no legend) - exclusion zones remain intact
+    inputs = apply_inputs_patch(inputs, {"legend": legend_to_entry(None)})
+    assert inputs["legend"] == {"present": False, "bounds": None}
+    assert len(inputs["ignoredAreas"]) == 2
+
+    # 5. Parsing preserves both
+    parsed = parse_import_inputs(inputs)
+    assert parsed.legend_answered is True
+    assert parsed.legend_bounds is None
+    assert len(parsed.ignored_areas) == 2
+
+
+def test_polygon_center_in_ignored_areas():
+    """Points inside exclusion zones are detected, while points outside are not."""
+    zones = [
+        {"x": 10.0, "y": 10.0, "width": 50.0, "height": 50.0},
+        {"x": 100.0, "y": 100.0, "width": 40.0, "height": 40.0},
+    ]
+    # Inside zone 1
+    assert polygon_center_in_ignored_areas([[20, 20], [30, 20], [30, 30], [20, 30]], zones) is True
+    # Inside zone 2
+    assert polygon_center_in_ignored_areas([[110, 110], [120, 110], [120, 120], [110, 120]], zones) is True
+    # Outside all zones
+    assert polygon_center_in_ignored_areas([[70, 70], [80, 70], [80, 80], [70, 80]], zones) is False
+    # None or empty zones
+    assert polygon_center_in_ignored_areas([[20, 20]], None) is False
+    assert polygon_center_in_ignored_areas([[20, 20]], []) is False
+
+
+def test_categorized_text_features_from_ocr_filters_ignored_areas(monkeypatch):
+    """OCR text within ignored areas (scale, compass, title) must be rejected."""
+    from app.tasks import _categorized_text_features_from_ocr
+
+    monkeypatch.setattr("app.tasks.match_ocr_label", lambda text, *args, **kwargs: None)
+
+    legend = {"x": 10.0, "y": 10.0, "width": 50.0, "height": 50.0}
+    scale_zone = {"x": 200.0, "y": 200.0, "width": 80.0, "height": 30.0}
+    compass_zone = {"x": 300.0, "y": 300.0, "width": 40.0, "height": 40.0}
+
+    # Blocks:
+    # 1: Inside legend -> rejected
+    # 2: Inside scale_zone (ignored area) -> rejected
+    # 3: Inside compass_zone (ignored area) -> rejected
+    # 4: Outside (geographical text) -> accepted as unrecognized feature for validation
+    blocks = [
+        [[[20, 20], [40, 20], [40, 30], [20, 30]], "LegendLabel", 0.99],
+        [[[220, 210], [250, 210], [250, 220], [220, 220]], "ScaleLabel", 0.95],
+        [[[310, 310], [330, 310], [330, 330], [310, 330]], "CompassLabel", 0.90],
+        [[[500, 500], [550, 500], [550, 520], [500, 520]], "UnkPlace", 0.88],
+    ]
+
+    frame = {"west": -75.0, "south": 45.0, "east": -70.0, "north": 50.0}
+    result = _categorized_text_features_from_ocr(
+        blocks,
+        legend_bounds=legend,
+        frame_bounds=frame,
+        image_size=(1000, 1000),
+        ignored_areas=[scale_zone, compass_zone],
+    )
+
+    # Only UnkPlace should survive (not legend, not scale, not compass)
+    names = [c["features"][0]["properties"]["name"] for c in result]
+    assert "UnkPlace" in names
+    assert "LegendLabel" not in names
+    assert "ScaleLabel" not in names
+    assert "CompassLabel" not in names
+    assert len(result) == 1
 
 
 # --- inputs -------------------------------------------------------------------

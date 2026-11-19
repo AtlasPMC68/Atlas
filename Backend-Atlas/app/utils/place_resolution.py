@@ -619,10 +619,8 @@ def resolve_place(
         return result
 
     blocked_candidate = None
-    if text.isupper():
-        first_exact, second_exact = _match_geo, _match_city
-    else:
-        first_exact, second_exact = _match_city, _match_geo
+    
+    first_exact, second_exact = _match_geo, _match_city
 
     hit1 = first_exact(fuzzy=False)
     if hit1 is _BLOCKED:
@@ -651,7 +649,7 @@ def resolve_place(
                 dist_geo = haversine_distance_km(target_pos[0], target_pos[1], float(valid_geo["lat"]), float(valid_geo["lon"]))
                 dist_city = haversine_distance_km(target_pos[0], target_pos[1], float(valid_city["lat"]), float(valid_city["lon"]))
                 return valid_geo if dist_geo <= dist_city else valid_city
-            return valid_geo if text.isupper() else valid_city
+            return valid_geo
 
         if valid_geo:
             return valid_geo

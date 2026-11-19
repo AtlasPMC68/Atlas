@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { onMounted } from "vue";
 import { MapIcon, UserCircleIcon } from "@heroicons/vue/24/outline";
 import keycloak from "../../keycloak";
 import { useCurrentUser } from "../../composables/useCurrentUser";

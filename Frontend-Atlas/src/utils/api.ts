@@ -1,5 +1,19 @@
 import keycloak from "../keycloak";
 
+let refreshPromise: Promise<boolean> | null = null;
+
+async function getOrRefreshKeycloakToken(minValidity: number): Promise<boolean> {
+  if (!keycloak.authenticated) return false;
+  if (!refreshPromise) {
+    refreshPromise = keycloak
+      .updateToken(minValidity)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 /**
  * Wrapper around fetch that automatically prepends VITE_API_URL and injects
  * the Keycloak Bearer token as an Authorization header. All other options
@@ -12,7 +26,7 @@ export async function apiFetch(
   // Try refreshing token before request if it's about to expire
   if (keycloak.authenticated) {
     try {
-      await keycloak.updateToken(30);
+      await getOrRefreshKeycloakToken(30);
     } catch {
       console.warn("Could not refresh token before API call; session may be expired.");
       (keycloak as any).authenticated = false;
@@ -33,7 +47,7 @@ export async function apiFetch(
   // If 401 Unauthorized, token was rejected by backend
   if (response.status === 401 && keycloak.authenticated) {
     try {
-      const refreshed = await keycloak.updateToken(-1);
+      const refreshed = await getOrRefreshKeycloakToken(-1);
       if (refreshed && keycloak.token) {
         // Retry request with newly refreshed token
         const retryHeaders = new Headers(options.headers);

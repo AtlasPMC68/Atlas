@@ -40,6 +40,14 @@
       <slot name="error-area"></slot>
 
       <div class="modal-action">
+        <button
+          v-if="showBack"
+          class="btn btn-outline"
+          type="button"
+          @click="emit('back')"
+        >
+          {{ backLabel }}
+        </button>
         <button class="btn btn-ghost" type="button" @click="requestClose">
           Annuler
         </button>
@@ -77,12 +85,16 @@ const props = withDefaults(
     isConfirmDisabled?: boolean;
     showSkip?: boolean;
     skipLabel?: string;
+    showBack?: boolean;
+    backLabel?: string;
   }>(),
   {
     isOpen: false,
     isConfirmDisabled: false,
     showSkip: false,
     skipLabel: "Sauter l'étape",
+    showBack: false,
+    backLabel: "Précédent",
   },
 );
 
@@ -91,6 +103,7 @@ const emit = defineEmits<{
   (e: "skip"): void;
   (e: "confirm"): void;
   (e: "opened"): void;
+  (e: "back"): void;
 }>();
 
 const modalRef = ref<HTMLDialogElement | null>(null);

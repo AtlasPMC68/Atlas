@@ -48,6 +48,20 @@
           </span>
         </div>
 
+        <!-- Exclusion zones -->
+        <div
+          v-for="(zone, index) in ignoredAreas"
+          :key="`ignored-${index}`"
+          class="absolute border-2 border-amber-500 border-dashed rounded-md bg-amber-500/10 pointer-events-none"
+          :style="rectStyle(zone)"
+        >
+          <span
+            class="absolute -top-5 left-0 whitespace-nowrap bg-white/95 text-amber-600 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shadow-sm"
+          >
+            Zone exclue {{ index + 1 }}
+          </span>
+        </div>
+
         <!-- SIFT control points: a numbered dot centred on each point -->
         <span
           v-for="(point, index) in siftPoints"
@@ -123,6 +137,7 @@ withDefaults(
     imageUrl: string;
     title?: string;
     legend?: LegendAnswer | null;
+    ignoredAreas?: LegendBounds[] | null;
     siftPoints?: ControlPointInput[];
     cityPoints?: ControlPointInput[];
     checkPoints?: ControlPointInput[];
@@ -132,6 +147,7 @@ withDefaults(
   {
     title: "",
     legend: null,
+    ignoredAreas: () => [],
     siftPoints: () => [],
     cityPoints: () => [],
     checkPoints: () => [],

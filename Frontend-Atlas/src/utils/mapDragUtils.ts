@@ -112,6 +112,8 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
     }
     if (typeof window !== "undefined") {
       window.addEventListener("selectstart", preventSelection);
+      window.addEventListener("pointerup", restoreTextSelection);
+      window.addEventListener("mouseup", restoreTextSelection);
     }
   };
 
@@ -120,6 +122,8 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
     isSelectSuppressed = false;
     if (typeof window !== "undefined") {
       window.removeEventListener("selectstart", preventSelection);
+      window.removeEventListener("pointerup", restoreTextSelection);
+      window.removeEventListener("mouseup", restoreTextSelection);
       window.getSelection()?.removeAllRanges();
     }
     if (typeof document !== "undefined" && document.body) {

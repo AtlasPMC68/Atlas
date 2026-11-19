@@ -150,7 +150,7 @@ const emit = defineEmits<{
     e: "submit",
     payload: {
       sourceMapId: string;
-      title: string;
+      newTitle: string;
       startDate: string;
       endDate: string;
       exactDate: boolean;
@@ -229,7 +229,7 @@ function handleSubmit() {
 
   emit("submit", {
     sourceMapId: selectedSourceMapId.value,
-    title: newTitle.value.trim(),
+    newTitle: newTitle.value.trim(),
     startDate: finalStart,
     endDate: finalEnd,
     exactDate: usePreciseDates.value,

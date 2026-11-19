@@ -42,8 +42,8 @@
       />
       <div class="flex-1 min-h-0 flex flex-col">
         <div class="flex-1 relative min-h-0 h-full w-full bg-[#d4dadc]">
-          <!-- Presentation mode & View controls (Point 1) -->
-          <div class="absolute top-4 right-4 z-[1001] flex items-center gap-2">
+          <!-- Presentation mode & View controls (Point 1) positioned on the left next to zoom -->
+          <div class="absolute top-20 left-2 z-[1001] flex items-center gap-2">
             <button
               type="button"
               class="btn btn-sm bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md gap-1.5"
@@ -53,7 +53,7 @@
             >
               <Bars3Icon v-if="!isSidebarVisible" class="w-4 h-4 text-primary" />
               <ChevronLeftIcon v-else class="w-4 h-4" />
-              <span class="text-xs font-semibold">{{ isSidebarVisible ? 'Présentation' : 'Panneau' }}</span>
+
             </button>
 
             <button
@@ -1124,6 +1124,7 @@ async function onDeleteMap(
 
     if (
       timelineMarkerYears.value.length > 0 &&
+      timelineMarkerYears.value[0] != null &&
       !timelineMarkerYears.value.includes(selectedYear.value)
     ) {
       selectedYear.value = timelineMarkerYears.value[0];
