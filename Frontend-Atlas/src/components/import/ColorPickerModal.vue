@@ -390,19 +390,17 @@ async function sampleAtEvent(event: MouseEvent) {
 
     const data: SampleColorResponse = await response.json();
 
-    const normalizedReturnedName = (data.name ?? "").trim().toLowerCase();
     const normalizedReturnedHex = (data.hex ?? "").trim().toLowerCase();
     // Scoped to the current kind on purpose: water and a zone fill are
     // routinely the same hue, which is the whole reason they are picked apart.
+    // Note: On ne compare QUE le code hexadécimal exact (#rrggbb), et NON le nom CSS approximatif
+    // (ex. 'darkolivegreen'), car deux teintes de vert distinctes peuvent avoir le même nom CSS proche.
     const alreadyPicked = pickedColors.value.some((c) => {
       if (c.kind !== pickKind.value) return false;
-      const normalizedExistingName = (c.name ?? "").trim().toLowerCase();
       const normalizedExistingHex = (c.hex ?? "").trim().toLowerCase();
       return (
-        (normalizedReturnedName.length > 0 &&
-          normalizedExistingName === normalizedReturnedName) ||
-        (normalizedReturnedHex.length > 0 &&
-          normalizedExistingHex === normalizedReturnedHex)
+        normalizedReturnedHex.length > 0 &&
+        normalizedExistingHex === normalizedReturnedHex
       );
     });
 

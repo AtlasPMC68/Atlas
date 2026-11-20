@@ -42,6 +42,9 @@ function computeEnrichedPeriods(
 function computeCustomFeatureYears(features: Feature[]): number[] {
   const years: number[] = [];
   features.forEach((f: Feature) => {
+    const mapId = getFeatureMapId(f);
+    if (mapId) return; // Seuls les éléments sans carte étendent l'échelle
+
     const sy =
       f.properties?.startYear != null
         ? Number(f.properties.startYear)
@@ -63,6 +66,9 @@ function computeCustomFeatureYears(features: Feature[]): number[] {
 function computeTimelineElementMarkers(features: Feature[]): TimelineElementMarker[] {
   const list: TimelineElementMarker[] = [];
   features.forEach((f: Feature) => {
+    const mapId = getFeatureMapId(f);
+    if (mapId) return; // Par défaut, ignorer les éléments qui appartiennent à une carte
+
     const sy =
       f.properties?.startYear != null
         ? Number(f.properties.startYear)
@@ -172,12 +178,12 @@ describe("Timeline filtering & empty map exclusion", () => {
     expect(enriched).toHaveLength(2);
   });
 
-  it("extracts custom element years even if associated with a map", () => {
-    const albertaFeature: Feature = {
+  it("extracts custom element markers ONLY for elements without a map", () => {
+    const albertaWithoutMap: Feature = {
       type: "Feature",
       id: "feat-alberta",
       projectId: "p1",
-      mapId: "q1",
+      mapId: null, // Pas de carte associée
       name: "ALBERTA",
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
@@ -190,10 +196,28 @@ describe("Timeline filtering & empty map exclusion", () => {
       },
     };
 
-    const customYears = computeCustomFeatureYears([featureOnQ1, albertaFeature]);
-    expect(customYears).toContain(1900);
+    const elementOnMapWithDate: Feature = {
+      type: "Feature",
+      id: "feat-on-map",
+      projectId: "p1",
+      mapId: "q1", // Appartient à une carte
+      name: "Ville Q1 datée",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Ville Q1 datée",
+        startYear: 1950,
+        endYear: 1950,
+      },
+    };
 
-    const markers = computeTimelineElementMarkers([featureOnQ1, albertaFeature]);
+    const customYears = computeCustomFeatureYears([featureOnQ1, albertaWithoutMap, elementOnMapWithDate]);
+    // Seul l'élément sans carte est inclus
+    expect(customYears).toContain(1900);
+    expect(customYears).not.toContain(1950);
+
+    const markers = computeTimelineElementMarkers([featureOnQ1, albertaWithoutMap, elementOnMapWithDate]);
     expect(markers).toHaveLength(1);
     expect(markers[0].name).toBe("ALBERTA");
     expect(markers[0].year).toBe(1900);

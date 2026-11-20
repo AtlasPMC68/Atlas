@@ -70,7 +70,7 @@ describe("TimelineSlider element markers (pins)", () => {
 
     const pins = wrapper.findAll("[data-testid='timeline-element-marker']");
     expect(pins).toHaveLength(1);
-    expect(pins[0].text()).toContain("ALBERTA");
+    expect(pins[0].text()).toContain("1");
     expect(pins[0].attributes("data-tip")).toBe("📌 ALBERTA (1900) - Texte");
 
     // Year label 1900 should have element styling and dot

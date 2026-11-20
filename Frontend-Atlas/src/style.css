@@ -70,15 +70,113 @@
 
 @layer components {
   .btn-secondary {
-    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-primary-500 shadow-sm hover:shadow-md;
+    @apply btn bg-white text-gray-700 border border-gray-400 hover:bg-gray-50 focus:ring-primary-500 shadow-sm hover:shadow-md;
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-shadow hover:shadow-md;
+    @apply bg-white rounded-xl shadow-sm border border-gray-300 p-6 transition-shadow hover:shadow-md;
   }
 
   .input {
-    @apply block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm;
+    @apply block w-full px-3 py-2 border border-gray-400 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm;
+  }
+
+  /* Titres de sections et libellés d'éditeur */
+  .section-title {
+    display: block;
+    padding: 0;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+    color: var(--color-base-content);
+  }
+
+  .field-label {
+    @apply block py-0 text-sm font-medium text-base-content opacity-70;
+  }
+
+  .field-hint {
+    @apply text-xs text-base-content opacity-60;
+  }
+
+  /* Blocs de section séparés */
+  .editor-section {
+    @apply flex flex-col gap-2.5 pt-2 border-t border-gray-300 min-w-0;
+  }
+
+  .editor-section-compact {
+    @apply flex flex-col gap-1.5 pt-1 border-t border-gray-300 min-w-0;
+  }
+
+  /* Cartes de réglages uniformes avec contour légèrement plus foncé */
+  .setting-card {
+    @apply flex items-center justify-between gap-2 border border-gray-400 rounded-lg px-3 py-2 bg-base-100 min-h-[50px] min-w-0 w-full;
+  }
+
+  .setting-preview-card {
+    @apply grid grid-cols-2 items-center border border-gray-400 rounded-lg bg-base-100 min-h-[50px] min-w-0 w-full overflow-hidden;
+  }
+
+  .setting-card-label {
+    @apply text-sm font-medium text-base-content opacity-80 truncate cursor-pointer min-w-0;
+  }
+
+  .setting-number-input {
+    @apply w-16 text-center text-sm font-semibold bg-base-200 rounded border border-gray-400 focus:outline-none shrink-0 py-1;
+  }
+
+  .setting-number-input:focus {
+    border-color: var(--color-primary);
+  }
+
+  /* Sélecteurs de couleur arrondis */
+  .setting-color-input {
+    @apply h-8 w-8 cursor-pointer rounded-lg border border-gray-400 bg-base-100 p-0.5 shrink-0 overflow-hidden;
+  }
+
+  .setting-color-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+    border-radius: 6px;
+  }
+
+  .setting-color-input::-webkit-color-swatch {
+    border: none;
+    border-radius: 6px;
+  }
+
+  /* Encadré dédié à l'aperçu */
+  .preview-frame {
+    @apply rounded-xl border-2 border-gray-300 bg-base-200 p-3 min-w-0 overflow-hidden;
+  }
+
+  .preview-box {
+    @apply h-full w-full flex items-center gap-2 px-3 rounded-lg bg-base-100 border border-gray-300 overflow-hidden;
+  }
+
+  /* Tooltip à fond blanc */
+  .tooltip-light::before {
+    @apply bg-base-100 text-base-content border border-gray-300 shadow-md;
+  }
+
+  .tooltip-light::after {
+    @apply border-t-base-100;
+  }
+
+  /* Boutons d'action */
+  .modal-secondary-btn {
+    @apply btn btn-outline border-gray-400 rounded-lg w-36 shrink-0 text-sm hover:bg-base-200 hover:text-base-content;
+  }
+
+  .modal-secondary-btn:hover {
+    border-color: var(--color-base-content);
+  }
+
+  .icon-action-btn {
+    @apply flex h-8 w-8 items-center justify-center rounded hover:bg-base-200;
+  }
+
+  .icon-action-btn-sm {
+    @apply flex h-7 w-7 items-center justify-center rounded hover:bg-base-200;
   }
 }
 
@@ -93,10 +191,8 @@
 }
 
 /* ── Leaflet Tile Seams / White Lines Fix ──────────────────────────────────── */
-/* Prevents white hairline seams/grid lines between tiles under fractional zoom,
-   browser zoom, and OS display scaling (e.g. 125%/150% on Windows). */
 .leaflet-container {
-  background-color: #d4dadc !important; /* Matches CARTO basemap ocean background */
+  background-color: #d4dadc !important;
 }
 
 #map {
@@ -105,7 +201,6 @@
 
 .leaflet-container img.leaflet-tile,
 .leaflet-tile {
-  /* Prevent additive color blending (plus-lighter in Leaflet 1.9.4) turning overlapping edges white */
   mix-blend-mode: normal !important;
   outline: 1px solid transparent;
 }
@@ -115,7 +210,6 @@
 }
 
 /* ── Shape scaling handles ─────────────────────────────────────────────────── */
-/* Size and cursor are set inline by ShapeScalingService (iconSize / el.style.cursor). */
 .shape-resize-handle {
   box-sizing: border-box;
   background: var(--shape-handle-bg);
@@ -145,7 +239,6 @@
   pointer-events: none;
 }
 
-/* Legacy single-handle used by the image overlay resize */
 .image-resize-handle {
   width: 12px !important;
   height: 12px !important;
@@ -382,8 +475,16 @@
 }
 
 .element-marker-pin.tooltip::before,
-.element-marker-pin.tooltip::after {
-  z-index: 2000 !important;
+.element-marker-pin.tooltip::after,
+.element-marker-pin::before,
+.element-marker-pin::after,
+.element-marker-range-track::before,
+.element-marker-range-track::after {
+  display: none !important;
+  content: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* Element markers on timeline */
@@ -404,13 +505,17 @@
   line-height: 1;
   z-index: 1005;
   outline: none;
-  transition: transform 0.15s ease;
+  transition: z-index 0.15s ease;
 }
 
 .element-marker-pin:hover,
 .element-marker-pin:focus-visible {
+  z-index: 2100;
+}
+
+.element-marker-pin:hover .element-marker-badge,
+.element-marker-pin:focus-visible .element-marker-badge {
   transform: translateY(-2px) scale(1.08);
-  z-index: 1010;
 }
 
 .element-marker-badge {
@@ -426,7 +531,7 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   border: 1.5px solid #ffffff;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .element-marker-active .element-marker-badge {
@@ -435,7 +540,6 @@
   box-shadow: 0 0 0 2px var(--color-primary);
 }
 
-/* Suggestion 1 : Badge violet/indigo pour les éléments multi-périodes */
 .element-marker-badge.element-marker-badge-range {
   background: #6366f1;
 }
@@ -446,7 +550,32 @@
   box-shadow: 0 0 0 2px var(--color-primary);
 }
 
-/* Suggestion 3 : Mini-segment coloré d'amplitude reliant le début et la fin */
+.element-marker-badge.element-marker-badge-multiple {
+  gap: 0.2rem;
+  padding: 0.12rem 0.45rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.element-marker-exclamation-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.3);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.element-marker-count {
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .element-marker-range-track {
   position: absolute;
   bottom: -2px;
@@ -548,7 +677,6 @@
   outline-offset: 2px;
 }
 
-/* Prevent accidental browser text selection during map text/marker dragging */
 .leaflet-container,
 .city-label-text,
 .label-wrapper,
@@ -559,4 +687,3 @@
   -ms-user-select: none !important;
   user-select: none !important;
 }
-

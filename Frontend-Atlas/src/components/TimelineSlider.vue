@@ -44,36 +44,128 @@
                 internalYear <= marker.maxEndYear,
             }"
             :style="marker.rangeStyle"
-            :title="marker.tooltip"
             @click="selectYear(marker.year)"
             @dblclick.stop="onMarkerDblClick(marker)"
           />
 
-          <button
+          <div
             v-for="marker in groupedElementMarkers"
             :key="`element-marker-${marker.year}`"
-            type="button"
-            class="element-marker-pin tooltip tooltip-top"
+            role="button"
+            tabindex="0"
+            class="element-marker-pin"
             :class="{
               'element-marker-active': marker.year === internalYear,
               'element-marker-is-range': marker.isRange,
             }"
             :style="marker.style"
             :data-tip="marker.tooltip"
-            :title="marker.tooltip"
             :aria-label="marker.tooltip"
             data-testid="timeline-element-marker"
             @click="selectYear(marker.year)"
             @dblclick.stop="onMarkerDblClick(marker)"
+            @mouseenter="onMarkerMouseEnter(marker.year)"
+            @mouseleave="onMarkerMouseLeave"
+            @keydown.enter="selectYear(marker.year)"
+            @keydown.space.prevent="selectYear(marker.year)"
           >
             <span
               class="element-marker-badge"
-              :class="{ 'element-marker-badge-range': marker.isRange }"
+              :class="{
+                'element-marker-badge-range': marker.isRange,
+                'element-marker-badge-single': marker.items.length === 1,
+                'element-marker-badge-multiple': marker.items.length > 1,
+              }"
             >
-              <span class="element-marker-icon">{{ marker.isRange ? '↔️' : '📌' }}</span>
-              <span class="element-marker-text">{{ marker.label }}</span>
+              <span class="element-marker-exclamation-icon">!</span>
+              <span class="element-marker-count">{{ marker.items.length }}</span>
+              <span class="sr-only">{{ marker.label }}</span>
             </span>
-          </button>
+
+            <!-- Popover élégant (fiche moderne agrandie avec séparation par carte) -->
+            <div
+              v-if="hoveredMarkerYear === marker.year"
+              class="element-marker-popover absolute bottom-full mb-2 bg-base-100 text-base-content shadow-2xl rounded-2xl border border-base-300 p-3.5 z-[2100] w-80 sm:w-96 min-w-[20rem] max-w-[28rem] pointer-events-auto text-left"
+              :style="getPopoverStyle(marker.year)"
+              @mouseenter="onMarkerMouseEnter(marker.year)"
+              @mouseleave="onMarkerMouseLeave"
+              @click.stop
+            >
+              <div class="flex items-center justify-between gap-2 pb-2 border-b border-base-200">
+                <div class="flex items-center gap-2 text-xs font-bold min-w-0 truncate">
+                  <span
+                    v-if="marker.items.length > 1"
+                    class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-warning/20 text-warning-content font-black text-xs leading-none shrink-0"
+                  >
+                    !
+                  </span>
+                  <span v-else class="text-sm">{{ marker.isRange ? '↔️' : '📌' }}</span>
+                  <span class="text-sm font-bold">{{ marker.items.length }} élément{{ marker.items.length > 1 ? 's' : '' }}</span>
+                  <span class="text-base-content/50 font-normal">({{ marker.year }}{{ marker.isRange && marker.maxEndYear ? ` - ${marker.maxEndYear}` : '' }})</span>
+                </div>
+                <span class="text-xs text-base-content/70 bg-base-200 px-2 py-0.5 rounded-md font-mono font-semibold shrink-0">
+                  {{ marker.year }}
+                </span>
+              </div>
+
+              <!-- Groupes d'éléments séparés par carte -->
+              <div class="flex flex-col gap-2.5 mt-2.5 max-h-72 overflow-y-auto pr-1">
+                <div
+                  v-for="mapGroup in getItemsByMap(marker.items)"
+                  :key="mapGroup.mapId || 'general'"
+                  class="flex flex-col gap-1 rounded-xl bg-base-200/50 p-2 border border-base-200"
+                >
+                  <!-- En-tête de la carte dans un encadré plus foncé (sans icône) -->
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-base-300/80 text-xs font-bold text-base-content shadow-xs">
+                    <span class="truncate">{{ mapGroup.mapTitle }}</span>
+                    <span class="badge badge-xs badge-neutral font-mono shrink-0">
+                      {{ mapGroup.items.length }}
+                    </span>
+                  </div>
+
+                  <!-- Liste des éléments de cette carte -->
+                  <div class="flex flex-col gap-1 pt-1">
+                    <div
+                      v-for="item in mapGroup.items"
+                      :key="item.id"
+                      class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-base-100 hover:bg-base-200/80 cursor-pointer transition-all group text-xs select-none border border-base-200/60 hover:border-primary/40 shadow-xs"
+                      @click.stop="onPopoverItemClick(item, marker.year)"
+                    >
+                      <div class="flex items-center gap-2 min-w-0 flex-1">
+                        <span
+                          class="w-2.5 h-2.5 rounded-full shrink-0 border border-black/15 shadow-xs"
+                          :style="{ backgroundColor: item.color || (marker.isRange ? '#6366f1' : '#f59e0b') }"
+                        />
+                        <span class="font-medium truncate text-base-content group-hover:text-primary transition-colors">
+                          {{ toNaturalCase(item.name) }}
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        <span class="text-[10px] font-semibold tracking-wide bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full">
+                          {{ formatElementType(item.type) }}
+                        </span>
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-xs btn-circle text-primary opacity-75 group-hover:opacity-100 hover:bg-primary/10"
+                          title="Modifier cet élément"
+                          @click.stop="onPopoverItemClick(item, marker.year)"
+                        >
+                          ✏️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bas de la fiche : message conservé sans le bouton bleu -->
+              <div class="mt-2.5 pt-2 border-t border-base-200 flex items-center justify-center text-xs text-center">
+                <span class="text-[11px] text-base-content/60 italic">
+                  {{ marker.items.length > 1 ? 'Cliquer sur un élément pour le modifier' : 'Cliquer pour modifier' }}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Year-level slider (hidden during zoom) -->
@@ -187,8 +279,96 @@ const props = defineProps<{
 
 const emit = defineEmits(["update:year", "exact-date-change", "edit-map", "edit-element"]);
 
+const hoveredMarkerYear = ref<number | null>(null);
+let popoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function onMarkerMouseEnter(year: number) {
+  if (popoverTimeout) clearTimeout(popoverTimeout);
+  hoveredMarkerYear.value = year;
+}
+
+function onMarkerMouseLeave() {
+  popoverTimeout = setTimeout(() => {
+    hoveredMarkerYear.value = null;
+  }, 180);
+}
+
+function onPopoverItemClick(item: TimelineElementMarker, year: number) {
+  selectYear(year);
+  emit("edit-element", item.id);
+  hoveredMarkerYear.value = null;
+}
+
+function toNaturalCase(str: string): string {
+  if (!str) return "";
+  const letters = str.replace(/[^a-zA-ZÀ-ÿ]/g, "");
+  if (letters.length > 0 && letters === letters.toUpperCase()) {
+    return str
+      .toLowerCase()
+      .split(/([\s\-_',]+)/)
+      .map((part) =>
+        part.length > 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part
+      )
+      .join("");
+  }
+  return str;
+}
+
+const ELEMENT_TYPE_TRANSLATIONS: Record<string, string> = {
+  label: "Texte",
+  text: "Texte",
+  texte: "Texte",
+  point: "Point",
+  zone: "Zone",
+  shape: "Forme",
+  forme: "Forme",
+  image: "Image",
+  polyline: "Tracé",
+  drawing: "Dessin",
+  dessin: "Dessin",
+  arrow: "Flèche",
+  fleche: "Flèche",
+};
+
+function formatElementType(type?: string | null): string {
+  if (!type) return "Texte";
+  const normalized = type.trim().toLowerCase();
+  return ELEMENT_TYPE_TRANSLATIONS[normalized] || (type.charAt(0).toUpperCase() + type.slice(1));
+}
+
+interface MarkerMapGroup {
+  mapId: string | null;
+  mapTitle: string;
+  items: TimelineElementMarker[];
+}
+
+function getItemsByMap(items: TimelineElementMarker[]): MarkerMapGroup[] {
+  const groups = new Map<string, MarkerMapGroup>();
+  for (const item of items) {
+    const key = item.mapId ? String(item.mapId) : "general";
+    const title = item.mapTitle || (item.mapId ? `Carte ${item.mapId}` : "Éléments généraux");
+    if (!groups.has(key)) {
+      groups.set(key, { mapId: item.mapId ?? null, mapTitle: title, items: [] });
+    }
+    groups.get(key)!.items.push(item);
+  }
+  return Array.from(groups.values());
+}
+
+function getPopoverStyle(year: number): Record<string, string> {
+  const percent = positionForYear(year);
+  if (percent < 18) {
+    return { left: "0%", transform: "translateX(0)" };
+  }
+  if (percent > 82) {
+    return { right: "0%", left: "auto", transform: "translateX(0)" };
+  }
+  return { left: "50%", transform: "translateX(-50%)" };
+}
+
 function onMarkerDblClick(marker: GroupedElementMarker) {
-  if (marker.items.length === 1) {
+  selectYear(marker.year);
+  if (marker.items.length > 0) {
     emit("edit-element", marker.items[0].id);
   }
 }

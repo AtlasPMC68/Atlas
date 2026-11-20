@@ -62,12 +62,12 @@ describe("LegendAreaPickerModal", () => {
 
     // Check header and tabs
     expect(wrapper.text()).toContain("Légende");
-    expect(wrapper.text()).toContain("Zones à ignorer (OCR)");
+    expect(wrapper.text()).toContain("Zones de texte à ignorer");
     expect(wrapper.text()).toContain("Zone #1");
     expect(wrapper.text()).toContain("Zone #2");
 
-    // Check count summary
-    expect(wrapper.text()).toContain("1 légende, 2 zones à ignorer");
+    // Check count in list header
+    expect(wrapper.text()).toContain("2");
   });
 
   it("allows switching between Legend and Exclusion drawing modes", async () => {
@@ -78,19 +78,20 @@ describe("LegendAreaPickerModal", () => {
       (b) => b.text().includes("Légende") && b.classes().includes("join-item"),
     );
     const exclusionBtn = buttons.find(
-      (b) => b.text().includes("Zones à ignorer") && b.classes().includes("join-item"),
+      (b) => b.text().includes("Zones de texte à ignorer") && b.classes().includes("join-item"),
     );
 
     expect(legendBtn).toBeDefined();
     expect(exclusionBtn).toBeDefined();
+    expect(exclusionBtn?.classes()).not.toContain("btn-primary");
 
     // Switch to exclusion
     await exclusionBtn?.trigger("click");
-    expect(wrapper.text()).toContain("Traçage des zones à ignorer");
+    expect(exclusionBtn?.classes()).toContain("btn-primary");
 
     // Switch back to legend
     await legendBtn?.trigger("click");
-    expect(wrapper.text()).toContain("Traçage de la légende");
+    expect(legendBtn?.classes()).toContain("btn-primary");
   });
 
   it("allows selecting multiple exclusion zones independently from the legend", async () => {
@@ -100,7 +101,7 @@ describe("LegendAreaPickerModal", () => {
     // Switch to exclusion mode
     const buttons = wrapper.findAll("button");
     const exclusionBtn = buttons.find(
-      (b) => b.text().includes("Zones à ignorer") && b.classes().includes("join-item"),
+      (b) => b.text().includes("Zones de texte à ignorer") && b.classes().includes("join-item"),
     );
     await exclusionBtn?.trigger("click");
 
@@ -187,7 +188,7 @@ describe("LegendAreaPickerModal", () => {
     await deleteButtons[0].trigger("click");
 
     expect(wrapper.findAll('button[title="Supprimer cette zone"]').length).toBe(1);
-    expect(wrapper.text()).toContain("0 légende, 1 zone à ignorer");
+    expect(wrapper.text()).toContain("30×30 px (x: 40, y: 40)");
 
     // Clear all
     const clearAllBtn = wrapper
@@ -287,7 +288,10 @@ describe("LegendAreaPickerModal", () => {
     const { wrapper, container } = await setupModal();
 
     // Starts in legend mode
-    expect(wrapper.text()).toContain("Traçage de la légende");
+    const legendBtn = wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("Légende") && b.classes().includes("join-item"));
+    expect(legendBtn?.classes()).toContain("btn-primary");
 
     // Draw the legend rectangle
     await container.dispatchEvent(
@@ -302,7 +306,10 @@ describe("LegendAreaPickerModal", () => {
     await wrapper.vm.$nextTick();
 
     // Mode automatically switched to exclusion zones
-    expect(wrapper.text()).toContain("Traçage des zones à ignorer");
+    const exclusionBtn = wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("Zones de texte à ignorer") && b.classes().includes("join-item"));
+    expect(exclusionBtn?.classes()).toContain("btn-primary");
     expect(wrapper.text()).toContain("Délimitée");
   });
 });

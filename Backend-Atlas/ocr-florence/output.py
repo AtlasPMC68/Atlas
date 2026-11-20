@@ -2,6 +2,7 @@ import copy
 import json
 import math
 import os
+import re
 
 # Pixel tolerance for merge rules
 ALIGN_TOLERANCE = 10
@@ -12,6 +13,65 @@ H_MERGE_GAP_MIN_PX = 5
 V_MERGE_GAP_RATIO = 0.5
 V_MERGE_GAP_MIN_PX = 5
 H_ROW_ALIGN_RATIO = 0.4
+
+_KNOWN_OCR_PREFIX_WORDS = {
+    "province",
+    "territoire",
+    "district",
+    "etat",
+    "ocean",
+    "mer",
+    "lac",
+    "fleuve",
+    "riviere",
+    "baie",
+    "golfe",
+    "detroit",
+    "ile",
+    "iles",
+    "saint",
+    "sainte",
+    "ste",
+    "st",
+    "cap",
+    "grand",
+    "grande",
+    "haut",
+    "haute",
+    "bas",
+    "basse",
+    "nouveau",
+    "nouvelle",
+    "mount",
+    "mt",
+    "fort",
+    "port",
+    "north",
+    "south",
+    "east",
+    "west",
+}
+_LINKING_PARTICLES = {"de", "du", "des", "d", "l", "del", "of", "da", "do"}
+
+
+def _has_ocr_prefix(text: str) -> bool:
+    """Check if a text block contains a prefix / hyphen requiring a following word."""
+    if not text:
+        return False
+    raw = str(text).strip()
+    if not raw:
+        return False
+    if raw.endswith(("-", "—", "–")):
+        return True
+    clean = re.sub(r"[^\w\s']", " ", raw.lower()).strip()
+    words = clean.split()
+    if not words:
+        return False
+    if words[-1] in _LINKING_PARTICLES:
+        return True
+    if words[0] in _KNOWN_OCR_PREFIX_WORDS:
+        return True
+    return False
 
 
 def _interval_gap(a1: int, a2: int, b1: int, b2: int) -> int:
@@ -205,34 +265,45 @@ def _get_merge_direction(det_a: dict, det_b: dict) -> str | None:
     angle_a = _quad_angle(det_a.get("quad"))
     angle_b = _quad_angle(det_b.get("quad"))
 
-    # Immediate rejection if angles or text size differ too much
+    # Immediate rejection if angles differ too much
     if abs(angle_a - angle_b) > ANGLE_TOLERANCE:
         return None
-    if abs(cmp_ah - cmp_bh) > HEIGHT_DELTA_TOLERANCE:
+
+    # Strict identical font size requirement
+    min_h = min(cmp_ah, cmp_bh)
+    max_h = max(cmp_ah, cmp_bh)
+    if min_h <= 0 or (max_h / min_h) > 1.18 or abs(cmp_ah - cmp_bh) > max(2.5, 0.15 * min_h):
         return None
 
-    # Calculate horizontal and vertical gaps between the boxes
-    x_gap = _interval_gap(ax1, ax2, bx1, bx2)
-    y_gap = _interval_gap(ay1, ay2, by1, by2)
-    max_h = max(cmp_ah, cmp_bh)
-    min_h = min(cmp_ah, cmp_bh)
+    # 1. Horizontal merge: Left block must have a prefix/hyphen, and right block must be immediately to the right
+    left, right = (det_a, det_b) if ax1 <= bx1 else (det_b, det_a)
+    lx1, ly1, lx2, ly2 = left.get("bbox_xyxy", [0, 0, 0, 0])
+    rx1, ry1, rx2, ry2 = right.get("bbox_xyxy", [0, 0, 0, 0])
+    left_text = str(left.get("text", "")).strip()
 
-    # Horizontal merge since it is more common
-    if x_gap <= max(max_h * H_MERGE_GAP_RATIO, H_MERGE_GAP_MIN_PX):
-        a_cy = (ay1 + ay2) / 2
-        b_cy = (by1 + by2) / 2
-        if abs(a_cy - b_cy) <= min_h * H_ROW_ALIGN_RATIO:
-            return "horizontal"
+    if _has_ocr_prefix(left_text):
+        x_gap = rx1 - lx2
+        if -0.15 * min_h <= x_gap <= max(6.0, 0.45 * min_h):
+            l_cy = (ly1 + ly2) / 2.0
+            r_cy = (ry1 + ry2) / 2.0
+            if abs(l_cy - r_cy) <= min_h * 0.25:
+                return "horizontal"
 
-    # Vertical merge
-    if y_gap <= max(max_h * V_MERGE_GAP_RATIO, V_MERGE_GAP_MIN_PX):
-        align_tol = max(ALIGN_TOLERANCE, int(min(cmp_aw, cmp_bw) * 0.08))
-        if abs(ax1 - bx1) <= align_tol:
-            return "vertical"
-        if abs(ax2 - bx2) <= align_tol:
-            return "vertical"
-        if abs((ax1 + ax2) / 2 - (bx1 + bx2) / 2) <= align_tol:
-            return "vertical"
+    # 2. Vertical merge: Top block must have a prefix/hyphen, and bottom block must be immediately underneath
+    top, bot = (det_a, det_b) if ay1 <= by1 else (det_b, det_a)
+    tx1, ty1, tx2, ty2 = top.get("bbox_xyxy", [0, 0, 0, 0])
+    bx1, by1, bx2, by2 = bot.get("bbox_xyxy", [0, 0, 0, 0])
+    top_text = str(top.get("text", "")).strip()
+
+    if _has_ocr_prefix(top_text):
+        y_gap = by1 - ty2
+        if -0.25 * min_h <= y_gap <= max(6.0, 0.6 * min_h):
+            h_overlap = min(tx2, bx2) - max(tx1, bx1)
+            min_w = min(tx2 - tx1, bx2 - bx1)
+            center_diff = abs((tx1 + tx2) / 2.0 - (bx1 + bx2) / 2.0)
+            left_diff = abs(tx1 - bx1)
+            if h_overlap >= 0.25 * min_w or center_diff <= max(8.0, 0.3 * min_w) or left_diff <= max(8.0, 0.25 * min_w):
+                return "vertical"
 
     return None
 
@@ -252,7 +323,10 @@ def _apply_merge(det_a: dict, det_b: dict, direction: str) -> dict:
 
     text_a = str(first.get("text", "")).strip()
     text_b = str(second.get("text", "")).strip()
-    merged_text = sep.join(filter(None, [text_a, text_b]))
+    if text_a.endswith(("-", "—", "–")):
+        merged_text = f"{text_a}{text_b}"
+    else:
+        merged_text = sep.join(filter(None, [text_a, text_b]))
     merged_quad = _merge_quads(first, second, direction)
     merged_bbox = quad_to_bbox_xyxy(merged_quad)
 

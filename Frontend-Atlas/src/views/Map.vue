@@ -79,6 +79,7 @@
             :can-redo="canRedo"
             :selected-feature-id="selectedFeatureId"
             @select-feature="(id: string | null) => (selectedFeatureId = id)"
+            @select-features="onSelectFeatures"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
@@ -332,6 +333,7 @@ const mapGeoJsonRef = ref<{
   clearDraftLayers: () => void;
   resetSelection: () => void;
   fitToVisibleFeatures: (featureIds?: ReadonlySet<string>) => void;
+  multiSelectedIds: { value: Set<string> };
 } | null>(null);
 const addMapDialogRef = ref<{
   open: () => void;
@@ -360,9 +362,55 @@ const featureVisibilityControlsRef = ref<InstanceType<
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
-function onEditElementFromTimeline(featureId: string) {
-  const feat = features.value.find((f: Feature) => String(f.id) === String(featureId));
+
+function onSelectFeatures(ids: string[]) {
+  multiSelectedFeatureIds.value = ids;
+  if (ids.length > 0) selectedFeatureId.value = null;
+}
+
+async function onDeleteSelectedFeatures() {
+  const idsToDelete = multiSelectedFeatureIds.value.length > 0
+    ? multiSelectedFeatureIds.value
+    : (selectedFeatureId.value ? [selectedFeatureId.value] : []);
+  if (idsToDelete.length === 0) return;
+  const idsSet = new Set(idsToDelete);
+  const nextFeatures = features.value.filter(
+    (f: Feature) => !idsSet.has(String(f.id))
+  );
+  multiSelectedFeatureIds.value = [];
+  selectedFeatureId.value = null;
+  if (trackingEnabled.value) {
+    commitFeatureSnapshot(nextFeatures);
+  } else {
+    applyFeatureSnapshot(nextFeatures, false);
+  }
+}
+
+function onSelectAll() {
+  const allIds = features.value
+    .filter((f: Feature) => {
+      const id = String(f.id);
+      return combinedFeatureVisibility.value.get(id) !== false;
+    })
+    .map((f: Feature) => String(f.id));
+  multiSelectedFeatureIds.value = allIds;
+  selectedFeatureId.value = null;
+}
+
+async function onEditElementFromTimeline(featureId: string) {
+  if (!isSidebarVisible.value) {
+    isSidebarVisible.value = true;
+    await nextTick();
+  }
+  const feat = features.value.find(
+    (f: Feature) =>
+      (f.id != null && String(f.id) === String(featureId)) ||
+      (f.properties?.id != null && String(f.properties.id) === String(featureId)) ||
+      (f.properties?.name != null && String(f.properties.name).toLowerCase() === String(featureId).toLowerCase()) ||
+      (f.properties?.labelText != null && String(f.properties.labelText).toLowerCase() === String(featureId).toLowerCase()),
+  );
   if (feat) {
+    selectedFeatureId.value = String(feat.id);
     onEditFeatureRequest(feat);
   }
 }
@@ -371,6 +419,8 @@ function selectFeature(id: string | null) {
 }
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
+// Set of IDs from box-selection (right-click drag)
+const multiSelectedFeatureIds = ref<string[]>([]);
 const copiedFeature = ref<Feature | null>(null);
 
 // Presentation mode & Visibility states (Points 1, 6)
@@ -644,6 +694,10 @@ const periodByMapId = computed(() => {
 const customFeatureYears = computed<number[]>(() => {
   const years: number[] = [];
   features.value.forEach((f: Feature) => {
+    // Par défaut, seuls les éléments n'appartenant à aucune carte étendent l'échelle de la timeline
+    const mapId = getFeatureMapId(f);
+    if (mapId) return;
+
     const sy =
       f.properties?.startYear != null
         ? Number(f.properties.startYear)
@@ -664,7 +718,13 @@ const customFeatureYears = computed<number[]>(() => {
 
 const timelineElementMarkers = computed<TimelineElementMarker[]>(() => {
   const list: TimelineElementMarker[] = [];
+
   features.value.forEach((f: Feature) => {
+    // Par défaut, ignorer les éléments qui appartiennent à une carte :
+    // afficher uniquement les éléments sans carte avec une date personnalisée
+    const mapId = getFeatureMapId(f);
+    if (mapId) return;
+
     const sy =
       f.properties?.startYear != null
         ? Number(f.properties.startYear)
@@ -679,12 +739,14 @@ const timelineElementMarkers = computed<TimelineElementMarker[]>(() => {
           : null;
     if (sy != null && !Number.isNaN(sy)) {
       list.push({
-        id: String(f.id),
+        id: String(f.id ?? f.properties?.id ?? f.properties?.name ?? f.properties?.labelText ?? ""),
         name: f.properties?.labelText || f.properties?.name || "Élément",
         year: sy,
         endYear: ey,
         type: f.properties?.mapElementType || (isTextFeature(f) ? "Texte" : "Élément"),
         color: f.properties?.colorHex || (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
+        mapId: null,
+        mapTitle: "Éléments généraux",
       });
     }
   });
@@ -747,7 +809,32 @@ const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
     if (!useTimelineFilter.value) return true;
 
-    // 1. Date personnalisée sur l'élément : prime toujours sur la période de la carte
+    const featureMapId = getFeatureMapId(feature);
+
+    // 1. Élément rattaché à une carte : suit la période de sa carte
+    if (featureMapId) {
+      const period = periodByMapId.value.get(featureMapId);
+      if (!period) return true;
+
+      if (selectedExactDate.value && period.startDate && period.endDate) {
+        return isPeriodActiveAt(
+          period.startDate,
+          period.endDate,
+          selectedExactDate.value,
+          periodStartDates.value,
+        );
+      }
+
+      if (period.startYear == null || period.endYear == null) return true;
+      return isPeriodActiveAt(
+        period.startYear,
+        period.endYear,
+        selectedYear.value,
+        periodStartYears.value,
+      );
+    }
+
+    // 2. Élément sans carte avec date personnalisée : suit sa propre période
     const featStartYear =
       feature.properties?.startYear != null
         ? Number(feature.properties.startYear)
@@ -785,30 +872,6 @@ const filteredFeatures = computed(() => {
       return isPeriodActiveAt(
         sy,
         ey,
-        selectedYear.value,
-        periodStartYears.value,
-      );
-    }
-
-    // 2. Élément rattaché à une période de carte (sans date propre sur l'élément)
-    const featureMapId = getFeatureMapId(feature);
-    if (featureMapId) {
-      const period = periodByMapId.value.get(featureMapId);
-      if (!period) return true;
-
-      if (selectedExactDate.value && period.startDate && period.endDate) {
-        return isPeriodActiveAt(
-          period.startDate,
-          period.endDate,
-          selectedExactDate.value,
-          periodStartDates.value,
-        );
-      }
-
-      if (period.startYear == null || period.endYear == null) return true;
-      return isPeriodActiveAt(
-        period.startYear,
-        period.endYear,
         selectedYear.value,
         periodStartYears.value,
       );
@@ -900,6 +963,56 @@ function commitFeatureSnapshot(next: Feature[], label?: string) {
 
 function resetMapSelection() {
   mapGeoJsonRef.value?.resetSelection();
+}
+
+/**
+ * Nudge selected feature(s) by (dx, dy) screen pixels.
+ */
+function nudgeSelectedFeatures(dx: number, dy: number) {
+  const idsToNudge = multiSelectedFeatureIds.value.length > 0
+    ? multiSelectedFeatureIds.value
+    : (selectedFeatureId.value ? [selectedFeatureId.value] : []);
+  if (idsToNudge.length === 0) return;
+
+  const mapContainer = document.getElementById('map') as (HTMLElement & { _leaflet_map?: L.Map }) | null;
+  const leafletMap = mapContainer?._leaflet_map;
+  if (!leafletMap) return;
+
+  const idsSet = new Set(idsToNudge);
+  const nextFeatures = features.value.map((f: Feature) => {
+    if (!idsSet.has(String(f.id))) return f;
+    return nudgeFeatureByPixels(f, leafletMap, dx, dy);
+  });
+  commitFeatureSnapshot(nextFeatures);
+}
+
+function nudgeFeatureByPixels(feature: Feature, leafletMap: L.Map, dx: number, dy: number): Feature {
+  if (!feature.geometry) return feature;
+
+  const shiftLatLng = (lat: number, lng: number): [number, number] => {
+    const pt = leafletMap.latLngToContainerPoint([lat, lng]);
+    const newPt = L.point(pt.x + dx, pt.y + dy);
+    const ll = leafletMap.containerPointToLatLng(newPt);
+    return [ll.lat, ll.lng];
+  };
+
+  const shiftCoords = (coords: unknown): unknown => {
+    if (!Array.isArray(coords)) return coords;
+    if (typeof coords[0] === 'number') {
+      // GeoJSON: [lng, lat]
+      const [sLat, sLng] = shiftLatLng(coords[1] as number, coords[0] as number);
+      return [sLng, sLat];
+    }
+    return coords.map(shiftCoords);
+  };
+
+  return {
+    ...feature,
+    geometry: {
+      ...feature.geometry,
+      coordinates: shiftCoords(feature.geometry.coordinates) as typeof feature.geometry.coordinates,
+    },
+  };
 }
 
 function onUndo() {
@@ -1820,6 +1933,24 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
 }
 
 const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+  const isMod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  // Ctrl+Z / Ctrl+Y are global — work even inside modals (but not text inputs)
+  if (!isEditableTarget(e.target)) {
+    if (isMod && !e.shiftKey && key === "z") {
+      e.preventDefault();
+      onUndo();
+      return;
+    }
+    if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
+      e.preventDefault();
+      onRedo();
+      return;
+    }
+  }
+
+  // Other shortcuts skip modals and text inputs
   if (
     showTextValidationModal.value ||
     document.querySelector("dialog[open]") ||
@@ -1827,9 +1958,6 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
   ) {
     return;
   }
-
-  const isMod = e.ctrlKey || e.metaKey;
-  const key = e.key.toLowerCase();
 
   if (isMod && key === "c" && copySelectedFeature()) {
     e.preventDefault();
@@ -1842,15 +1970,33 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  if (key === "delete" && selectedFeatureId.value) {
-    const selectedFeature = features.value.find(
-      (feature: Feature) => String(feature.id) === selectedFeatureId.value,
-    );
-    if (selectedFeature) {
+  // Ctrl+A — select all visible features
+  if (isMod && key === "a") {
+    e.preventDefault();
+    onSelectAll();
+    return;
+  }
+
+  // Delete / Backspace — delete selected feature(s)
+  if ((key === "delete" || key === "backspace") &&
+      (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)) {
+    // Multi-selection: delete directly without confirm dialog
+    if (multiSelectedFeatureIds.value.length > 1) {
       e.preventDefault();
-      featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
-        selectedFeature,
+      void onDeleteSelectedFeatures();
+      return;
+    }
+    // Single selection: show confirm dialog
+    if (selectedFeatureId.value) {
+      const selectedFeature = features.value.find(
+        (feature: Feature) => String(feature.id) === selectedFeatureId.value,
       );
+      if (selectedFeature) {
+        e.preventDefault();
+        featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
+          selectedFeature,
+        );
+      }
     }
     return;
   }
@@ -1861,15 +2007,19 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  if (isMod && !e.shiftKey && key === "z") {
+  // Arrow keys — nudge selected feature(s)
+  const NUDGE_PX = e.shiftKey ? 10 : 1;
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key) &&
+      (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)) {
     e.preventDefault();
-    onUndo();
+    // Convert pixel nudge to lat/lng offset via the Leaflet map
+    const mapEl = document.getElementById("map");
+    if (!mapEl) return;
+    // We'll emit the nudge; MapGeoJSON handles it
+    const dx = key === "arrowright" ? NUDGE_PX : key === "arrowleft" ? -NUDGE_PX : 0;
+    const dy = key === "arrowdown" ? NUDGE_PX : key === "arrowup" ? -NUDGE_PX : 0;
+    nudgeSelectedFeatures(dx, dy);
     return;
-  }
-
-  if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
-    e.preventDefault();
-    onRedo();
   }
 };
 

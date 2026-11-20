@@ -116,7 +116,7 @@
       :is-open="true"
       :image-url="store.previewUrl"
       :initial-bounds="store.inputs.legend?.present ? store.inputs.legend.bounds : null"
-      :initial-ignored-areas="store.inputs.ignoredAreas ?? []"
+      :initial-ignored-areas="store.inputs.ignoredAreas ?? EMPTY_BOUNDS"
       @close="openModal = null"
       @confirmed="onLegendConfirmed"
     />
@@ -254,6 +254,8 @@ import {
 } from "../../utils/textValidation";
 import { apiFetch } from "../../utils/api";
 import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../../utils/utils";
+
+const EMPTY_BOUNDS: LegendBounds[] = [];
 
 const route = useRoute();
 const router = useRouter();

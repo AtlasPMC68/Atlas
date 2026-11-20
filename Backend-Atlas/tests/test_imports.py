@@ -13,6 +13,7 @@ import pytest
 from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
+from app.models.features import Feature
 from app.models.map import Map
 from app.routers import imports as imports_router, projects as projects_router
 from app.schemas.mapImportRequest import MapImportRequest
@@ -801,6 +802,82 @@ def test_duplicate_map_in_project_service(tmp_path, monkeypatch):
     assert duplicated_feat.map_id == duplicated_map.id
     assert duplicated_feat.data["mapId"] == str(duplicated_map.id)
     assert duplicated_feat.data["properties"]["mapId"] == str(duplicated_map.id)
+
+
+def test_duplicate_map_in_project_feature_collection(tmp_path, monkeypatch):
+    from app.services.maps import duplicate_map_in_project
+    from app.models.project import Project
+
+    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+    user_id = uuid4()
+    project_id = uuid4()
+    source_map_id = uuid4()
+
+    project = Project(id=project_id, user_id=user_id)
+    source_map = Map(
+        id=source_map_id,
+        project_id=project_id,
+        title="Source",
+        start_date=date(1500, 1, 1),
+        end_date=date(1501, 1, 1),
+    )
+    source_feature = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=source_map_id,
+        data={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "id": str(uuid4()),
+                    "properties": {
+                        "name": "Zone 1",
+                        "mapElementType": "zone",
+                        "mapId": str(source_map_id),
+                        "startYear": 1500,
+                        "endYear": 1501,
+                    },
+                }
+            ],
+        },
+    )
+
+    added = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project),
+                SimpleNamespace(scalar_one_or_none=lambda: source_map),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [source_feature])),
+            ]
+        ),
+        add=lambda obj: added.append(obj),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    new_map_id = asyncio.run(
+        duplicate_map_in_project(
+            db=session,
+            project_id=project_id,
+            source_map_id=source_map_id,
+            user_id=user_id,
+            new_title="Carte Dupliquée",
+            start_date=date(1509, 1, 1),
+            end_date=date(1509, 1, 1),
+        )
+    )
+
+    assert new_map_id is not None
+    duplicated_feat = next(o for o in added if isinstance(o, Feature))
+    inner = duplicated_feat.data["features"][0]
+    assert inner["mapId"] == str(new_map_id)
+    assert inner["properties"]["mapId"] == str(new_map_id)
+    # Check that the dates adapted to the new map's period so elements are visible
+    assert inner["properties"]["startYear"] == 1509
+    assert inner["properties"]["endYear"] == 1509
 
 
 

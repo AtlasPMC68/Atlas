@@ -62,8 +62,12 @@ from app.utils.legend import (
     polygon_center_in_legend,
 )
 from app.utils.shapes_extraction import extract_shapes_from_clicks
-from app.utils.text_extraction import extract_text, ocr_blocks_to_payload
-from app.utils.text_extraction import should_ignore
+from app.utils.text_extraction import (
+    extract_text,
+    merge_multiline_ocr_blocks,
+    ocr_blocks_to_payload,
+    should_ignore,
+)
 from app.utils.dev_test_assets import TEST_CASES_DIR, GEOREF_ASSETS_DIR
 from app.utils.dev_test_pixel_zones import write_classified_image, write_pixel_zones
 from app.utils.dev_test import (
@@ -421,6 +425,8 @@ def _categorized_text_features_from_ocr(
             float(north) - (cy / h) * (float(north) - float(south)),
             float(west) + (cx / w) * (float(east) - float(west)),
         )
+
+    blocks = merge_multiline_ocr_blocks(blocks)
 
     for coords, text, prob in blocks:
         # Case 1: reject immediately if the text is inside the legend or an ignored area.

@@ -1,5 +1,6 @@
 import os
 import shutil
+from copy import deepcopy
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -95,6 +96,7 @@ async def duplicate_map_in_project(
         return None
 
     new_map = Map(
+        id=uuid4(),
         project_id=project_id,
         title=new_title,
         start_date=start_date or source_map.start_date,
@@ -129,15 +131,40 @@ async def duplicate_map_in_project(
     )
     source_features = features_result.scalars().all()
 
+    src_start_yr = source_map.start_date.year if source_map.start_date else None
+    src_end_yr = source_map.end_date.year if source_map.end_date else src_start_yr
+    new_start_yr = new_map.start_date.year if new_map.start_date else None
+    new_end_yr = new_map.end_date.year if new_map.end_date else new_start_yr
+
+    def _update_feature_dict(f_dict: dict) -> None:
+        f_dict["id"] = str(uuid4())
+        f_dict["mapId"] = str(new_map.id)
+        f_dict["map_id"] = str(new_map.id)
+        props = f_dict.setdefault("properties", {})
+        if isinstance(props, dict):
+            props["mapId"] = str(new_map.id)
+            props["map_id"] = str(new_map.id)
+            if src_start_yr is not None and new_start_yr is not None:
+                feat_sy = props.get("startYear")
+                feat_ey = props.get("endYear")
+                if feat_sy is not None and (feat_sy == src_start_yr or feat_sy == src_end_yr):
+                    props["startYear"] = new_start_yr
+                if feat_ey is not None and (feat_ey == src_end_yr or feat_ey == src_start_yr):
+                    props["endYear"] = new_end_yr
+
     for feat in source_features:
-        new_feat_data = dict(feat.data) if isinstance(feat.data, dict) else feat.data
+        new_feat_data = deepcopy(feat.data) if isinstance(feat.data, dict) else feat.data
         if isinstance(new_feat_data, dict):
-            new_feat_data = dict(new_feat_data)
             new_feat_data["id"] = str(uuid4())
             new_feat_data["mapId"] = str(new_map.id)
-            if "properties" in new_feat_data and isinstance(new_feat_data["properties"], dict):
-                new_feat_data["properties"] = dict(new_feat_data["properties"])
-                new_feat_data["properties"]["mapId"] = str(new_map.id)
+            new_feat_data["map_id"] = str(new_map.id)
+
+            if new_feat_data.get("type") == "FeatureCollection" and isinstance(new_feat_data.get("features"), list):
+                for inner in new_feat_data["features"]:
+                    if isinstance(inner, dict):
+                        _update_feature_dict(inner)
+            else:
+                _update_feature_dict(new_feat_data)
 
         new_feature = Feature(
             project_id=project_id,

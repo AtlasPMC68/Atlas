@@ -12,38 +12,25 @@
     <!-- Controls Area: Selection Mode Switcher -->
     <template #controls-area>
       <div class="flex items-center justify-between gap-3 flex-wrap">
-        <div class="flex items-center gap-3">
-          <div class="join">
-            <button
-              type="button"
-              class="btn btn-sm join-item"
-              :class="activeMode === 'legend' ? 'btn-primary' : 'btn-outline'"
-              @click="activeMode = 'legend'"
-            >
-              <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1" />
-              Légende
-              <span v-if="legendBounds" class="badge badge-xs ml-1">1</span>
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm join-item"
-              :class="activeMode === 'exclusion' ? 'btn-primary' : 'btn-outline'"
-              @click="activeMode = 'exclusion'"
-            >
-              <span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />
-              Zones à ignorer (OCR)
-              <span v-if="exclusionZones.length > 0" class="badge badge-xs ml-1">
-                {{ exclusionZones.length }}
-              </span>
-            </button>
-          </div>
-
-          <span class="text-xs text-base-content/60">
-            Mode actif :
-            <span class="font-medium text-base-content">
-              {{ activeMode === 'legend' ? 'Traçage de la légende' : 'Traçage des zones à ignorer' }}
-            </span>
-          </span>
+        <div class="join">
+          <button
+            type="button"
+            class="btn btn-sm join-item"
+            :class="activeMode === 'legend' ? 'btn-primary' : 'btn-outline'"
+            @click="activeMode = 'legend'"
+          >
+            <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1" />
+            Légende
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm join-item"
+            :class="activeMode === 'exclusion' ? 'btn-primary' : 'btn-outline'"
+            @click="activeMode = 'exclusion'"
+          >
+            <span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />
+            Zones de texte à ignorer
+          </button>
         </div>
       </div>
     </template>
@@ -51,16 +38,7 @@
     <!-- Image Area: Interactive canvas / viewer with persistent overlays -->
     <template #image-area>
       <div class="px-3 py-2 text-xs font-medium bg-base-200 border-b flex items-center justify-between">
-        <span class="flex items-center gap-1.5">
-          <span>Cliquez et glissez sur l'image pour tracer un rectangle</span>
-          <span class="text-base-content/50">•</span>
-          <span :class="activeMode === 'legend' ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'">
-            {{ activeMode === 'legend' ? 'Zone de légende' : 'Zone à ignorer' }}
-          </span>
-        </span>
-        <span class="text-base-content/60">
-          {{ legendBounds ? '1 légende' : '0 légende' }}, {{ exclusionZones.length }} zone{{ exclusionZones.length > 1 ? 's' : '' }} à ignorer
-        </span>
+        <span>Cliquez et glissez sur l'image pour tracer un rectangle</span>
       </div>
 
       <div
@@ -116,125 +94,129 @@
           "
           :style="currentDrawingStyle"
         >
-          <span
-            class="absolute -top-6 left-0 px-2 py-0.5 text-[10px] font-bold text-white rounded shadow whitespace-nowrap"
-            :class="activeMode === 'legend' ? 'bg-emerald-600' : 'bg-amber-600'"
-          >
-            {{ activeMode === 'legend' ? 'Nouvelle Légende...' : 'Nouvelle Zone...' }}
+        </div>
+      </div>
+    </template>
+
+<!-- List Area: Side-by-side management for legend and all ignored zones -->
+<template #list-area>
+  <div class="flex flex-col gap-4 p-3 bg-base-100 rounded-lg border border-base-200 h-full max-h-[30rem] overflow-y-auto">
+    <!-- Section 1: Legend -->
+    <div class="flex flex-col gap-2 pb-3 border-b border-base-200">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+          <h4 class="text-sm font-semibold text-base-content">Légende</h4>
+        </div>
+        <button
+          v-if="legendBounds"
+          type="button"
+          class="btn btn-ghost btn-xs text-error"
+          @click="clearLegend"
+        >
+          Supprimer
+        </button>
+      </div>
+
+      <div
+        v-if="legendBounds"
+        class="flex items-center justify-between p-2.5 bg-base-200 rounded-lg border border-base-300 text-xs"
+      >
+        <div class="flex flex-col gap-0.5">
+          <span class="font-semibold text-emerald-700 flex items-center gap-1">
+            <span>✓</span> Délimitée
+          </span>
+          <span class="font-mono text-base-content/60 text-[11px]">
+            {{ Math.round(legendBounds.width) }} × {{ Math.round(legendBounds.height) }} px (x: {{ Math.round(legendBounds.x) }}, y: {{ Math.round(legendBounds.y) }})
           </span>
         </div>
+        <button
+          type="button"
+          class="btn btn-xs btn-outline"
+          @click="activeMode = 'legend'"
+        >
+          Retracer
+        </button>
       </div>
-    </template>
 
-    <!-- List Area: Side-by-side management for legend and all ignored zones -->
-    <template #list-area>
-      <div class="flex flex-col gap-4 p-3 bg-base-100 rounded-lg border border-base-200 h-full max-h-[30rem] overflow-y-auto">
-        <!-- Section 1: Legend -->
-        <div class="flex flex-col gap-2 pb-3 border-b border-base-200">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-              <h4 class="text-sm font-semibold text-base-content">Légende</h4>
-            </div>
-            <button
-              v-if="legendBounds"
-              type="button"
-              class="btn btn-ghost btn-xs text-error"
-              @click="clearLegend"
-            >
-              Supprimer
-            </button>
-          </div>
+      <div
+        v-else
+        class="p-3 bg-base-200/50 border border-dashed border-base-300 rounded-lg text-xs text-base-content/60 text-center"
+      >
+        Aucune légende délimitée (optionnelle).
+      </div>
+    </div>
 
-          <div
-            v-if="legendBounds"
-            class="flex items-center justify-between p-2.5 bg-base-200 rounded-lg border border-base-300 text-xs"
-          >
-            <div class="flex flex-col gap-0.5">
-              <span class="font-semibold text-emerald-700 flex items-center gap-1">
-                <span>✓</span> Délimitée
-              </span>
-              <span class="font-mono text-base-content/60 text-[11px]">
-                {{ Math.round(legendBounds.width) }} × {{ Math.round(legendBounds.height) }} px (x: {{ Math.round(legendBounds.x) }}, y: {{ Math.round(legendBounds.y) }})
-              </span>
-            </div>
-            <button
-              type="button"
-              class="btn btn-xs btn-outline"
-              @click="activeMode = 'legend'"
-            >
-              Retracer
-            </button>
-          </div>
-
-          <div
-            v-else
-            class="p-3 bg-base-200/50 border border-dashed border-base-300 rounded-lg text-xs text-base-content/60 text-center"
-          >
-            Aucune légende délimitée (optionnelle).
-          </div>
-        </div>
-
-        <!-- Section 2: Ignored Areas (Exclusion zones) -->
-        <div class="flex flex-col flex-1 min-h-0 gap-2">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
-              <h4 class="text-sm font-semibold text-base-content">
-                Zones à ignorer (OCR)
-              </h4>
-              <span class="badge badge-sm badge-neutral">
-                {{ exclusionZones.length }}
-              </span>
-            </div>
-            <button
+    <!-- Section 2: Ignored Areas (Exclusion zones) -->
+    <div class="flex flex-col flex-1 min-h-0 gap-2">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex flex-col gap-0.5 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block shrink-0" />
+            <h4 class="text-sm font-semibold text-base-content">
+              Zones de texte à ignorer
+            </h4>
+            <span
               v-if="exclusionZones.length > 0"
-              type="button"
-              class="btn btn-ghost btn-xs text-error"
-              @click="clearAllExclusionZones"
+              class="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 text-xs font-semibold rounded-full bg-base-300 border border-base-content/20 text-base-content"
             >
-              Tout effacer
-            </button>
+              {{ exclusionZones.length }}
+            </span>
           </div>
+          <p class="text-xs text-base-content/60 pl-4">
+            Ex. : logo, titre, échelle du temps, boussole
+          </p>
+        </div>
+        <button
+          v-if="exclusionZones.length > 0"
+          type="button"
+          class="btn btn-ghost btn-xs text-error shrink-0"
+          @click="clearAllExclusionZones"
+        >
+          Tout effacer
+        </button>
+      </div>
 
-          <div
-            v-if="exclusionZones.length === 0"
-            class="p-3 bg-base-200/50 border border-dashed border-base-300 rounded-lg text-xs text-base-content/60 text-center"
+      <div
+        v-if="exclusionZones.length === 0"
+        class="p-3 bg-base-200/50 border border-dashed border-base-300 rounded-lg text-xs text-base-content/60 text-center"
+      >
+        Aucune zone d'exclusion tracée.
+      </div>
+
+      <div v-else class="flex flex-col gap-2 max-h-[16rem] overflow-y-auto pr-1">
+        <div
+          v-for="(zone, index) in exclusionZones"
+          :key="`list-zone-${index}`"
+          class="flex items-center justify-between p-2 rounded-lg bg-base-200 border border-base-300 text-xs hover:border-base-content/20 transition-colors"
+        >
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-base-content">Zone #{{ index + 1 }}</span>
+            <span class="font-mono text-base-content/70 text-[11px]">
+              {{ Math.round(zone.width) }}×{{ Math.round(zone.height) }} px
+              <span class="text-base-content/50 ml-1">(x: {{ Math.round(zone.x) }}, y: {{ Math.round(zone.y) }})</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-xs text-error hover:bg-error/10"
+            title="Supprimer cette zone"
+            aria-label="Supprimer cette zone"
+            @click="removeExclusionZone(index)"
           >
-            Aucune zone d'exclusion tracée.
-          </div>
-
-          <div v-else class="flex flex-col gap-2 max-h-[16rem] overflow-y-auto pr-1">
-            <div
-              v-for="(zone, index) in exclusionZones"
-              :key="`list-zone-${index}`"
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200 border border-base-300 text-xs hover:border-base-content/20 transition-colors"
-            >
-              <div class="flex items-center gap-2">
-                <span class="badge badge-sm badge-neutral font-semibold">Zone #{{ index + 1 }}</span>
-                <span class="font-mono text-base-content/70 text-[11px]">
-                  {{ Math.round(zone.width) }}×{{ Math.round(zone.height) }} px
-                  <span class="text-base-content/50 ml-1">(x: {{ Math.round(zone.x) }}, y: {{ Math.round(zone.y) }})</span>
-                </span>
-              </div>
-              <button
-                type="button"
-                class="btn btn-circle btn-ghost btn-xs text-error"
-                title="Supprimer cette zone"
-                @click="removeExclusionZone(index)"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
+            <TrashIcon class="w-4 h-4 text-error" />
+          </button>
         </div>
       </div>
-    </template>
-  </BasePickerModal>
+    </div>
+  </div>
+</template>
+</BasePickerModal>
 </template>
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
+import { TrashIcon } from "@heroicons/vue/24/outline";
 import BasePickerModal from "../import/BasePickerModal.vue";
 import type { LegendBounds } from "../../typescript/legend";
 import { containRect } from "../../utils/imageFit";
@@ -275,28 +257,16 @@ const isDrawing = ref<boolean>(false);
 const dragStart = ref<{ x: number; y: number } | null>(null);
 const currentDrawingBounds = ref<LegendBounds | null>(null);
 
-const legendBounds = ref<LegendBounds | null>(props.initialBounds);
+const legendBounds = ref<LegendBounds | null>(
+  props.initialBounds ? { ...props.initialBounds } : null,
+);
 const exclusionZones = ref<LegendBounds[]>(
   props.initialIgnoredAreas ? [...props.initialIgnoredAreas] : [],
 );
 
 watch(
-  () => props.initialBounds,
-  (value) => {
-    legendBounds.value = value ? { ...value } : null;
-  },
-);
-
-watch(
-  () => props.initialIgnoredAreas,
-  (value) => {
-    exclusionZones.value = value ? [...value] : [];
-  },
-);
-
-watch(
   () => props.isOpen,
-  (opened) => {
+  (opened: any) => {
     if (opened) {
       activeMode.value = props.initialBounds ? "exclusion" : "legend";
       legendBounds.value = props.initialBounds ? { ...props.initialBounds } : null;
@@ -354,10 +324,10 @@ const legendStyle = computed(() => getRectStyle(legendBounds.value));
 const currentDrawingStyle = computed(() => getRectStyle(currentDrawingBounds.value));
 
 const exclusionZoneStyles = computed(() => {
-  return exclusionZones.value.map((zone) => getRectStyle(zone));
+  return exclusionZones.value.map((zone: LegendBounds | null) => getRectStyle(zone));
 });
 
-const modalTitle = computed(() => "Légende et zones à ignorer");
+const modalTitle = computed(() => "Légende et zones de texte à ignorer");
 
 const modalDescription = computed(() =>
   "Délimitez la légende et tracez des zones d'exclusion pour masquer le texte inutile (titres, boussoles, encadrés).",
@@ -456,7 +426,7 @@ function onWindowMouseUp(): void {
         legendBounds.value = { ...currentDrawingBounds.value };
         activeMode.value = "exclusion";
       } else {
-        exclusionZones.value.push({ ...currentDrawingBounds.value });
+        exclusionZones.value = [...exclusionZones.value, { ...currentDrawingBounds.value }];
       }
     }
   }
