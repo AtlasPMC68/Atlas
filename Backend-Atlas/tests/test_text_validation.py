@@ -531,3 +531,100 @@ def test_feature_serialization_includes_both_validation_status_formats():
     assert serialized is not None
     assert serialized["properties"]["validation_status"] == ValidationStatus.ACCEPTED.value
     assert serialized["properties"]["validationStatus"] == ValidationStatus.ACCEPTED.value
+
+
+def test_merge_multiline_ocr_blocks():
+    from app.utils.text_extraction import merge_multiline_ocr_blocks
+
+    # Simulate OCR output splitting "Mer de" and "Baffin" vertically
+    # Line 1: "Mer de" at y: 100..120 (h=20), x: 200..280 (w=80)
+    # Line 2: "Baffin" at y: 125..145 (h=20), x: 210..270 (w=60) -> gap is 5px <= 1.2 * 20 (24px)
+    blocks = [
+        [[[200, 100], [280, 100], [280, 120], [200, 120]], "Mer de", 0.95],
+        [[[210, 125], [270, 125], [270, 145], [210, 145]], "Baffin", 0.90],
+        # Another independent block far away
+        [[[500, 500], [600, 500], [600, 520], [500, 520]], "Montréal", 0.98],
+    ]
+
+    merged = merge_multiline_ocr_blocks(blocks)
+    assert len(merged) == 2
+
+    # Verify "Mer de Baffin" is merged together in top-to-bottom reading order
+    merged_texts = [b[1] for b in merged]
+    assert "Mer de Baffin" in merged_texts
+    assert "Montréal" in merged_texts
+
+    merged_block = next(b for b in merged if b[1] == "Mer de Baffin")
+    coords = merged_block[0]
+    xs = [pt[0] for pt in coords]
+    ys = [pt[1] for pt in coords]
+    assert min(xs) == 200
+    assert max(xs) == 280
+    assert min(ys) == 100
+    assert max(ys) == 145
+
+
+def test_merge_multiline_ocr_blocks_does_not_merge_distant_blocks():
+    from app.utils.text_extraction import merge_multiline_ocr_blocks
+
+    # Two lines with gap > 1.2 * line height (e.g. h=20, gap=35 > 24)
+    blocks = [
+        [[[200, 100], [280, 100], [280, 120], [200, 120]], "Océan", 0.95],
+        [[[200, 155], [280, 155], [280, 175], [200, 175]], "Atlantique", 0.90],
+    ]
+    merged = merge_multiline_ocr_blocks(blocks)
+    assert len(merged) == 2
+    texts = [b[1] for b in merged]
+    assert "Océan" in texts
+    assert "Atlantique" in texts
+
+
+def test_merge_multiline_ocr_blocks_requires_prefix():
+    from app.utils.text_extraction import merge_multiline_ocr_blocks
+
+    # Two close lines WITHOUT a geographic prefix (e.g. "Boston" and "Québec")
+    # Even if they are vertically close, they MUST NOT be merged
+    blocks = [
+        [[[200, 100], [280, 100], [280, 120], [200, 120]], "Boston", 0.95],
+        [[[210, 125], [270, 125], [270, 145], [210, 145]], "Québec", 0.90],
+    ]
+    merged = merge_multiline_ocr_blocks(blocks)
+    assert len(merged) == 2
+    texts = [b[1] for b in merged]
+    assert "Boston" in texts
+    assert "Québec" in texts
+
+
+def test_merge_multiline_ocr_blocks_rejects_different_font_size():
+    from app.utils.text_extraction import merge_multiline_ocr_blocks
+
+    # "NOUVEAU-" with h=24 and "BRETON" with h=14 (different font size)
+    # Even if vertically or horizontally near, they MUST NOT be merged because font sizes differ
+    blocks = [
+        [[[200, 100], [290, 100], [290, 124], [200, 124]], "NOUVEAU-", 0.95],
+        [[[205, 128], [270, 128], [270, 142], [205, 142]], "BRETON", 0.90],
+    ]
+    merged = merge_multiline_ocr_blocks(blocks)
+    assert len(merged) == 2
+    texts = [b[1] for b in merged]
+    assert "NOUVEAU-" in texts
+    assert "BRETON" in texts
+
+
+def test_merge_multiline_ocr_blocks_hyphen_vertical_and_distant_horizontal():
+    from app.utils.text_extraction import merge_multiline_ocr_blocks
+
+    # Scenario matching user case:
+    # "NOUVEAU-" (h=20) at x:100..180, y:100..120
+    # "BRUNSWICK" (h=20) directly underneath at x:100..190, y:124..144
+    # "BRETON" (h=14) far across the map horizontally at x:300..360, y:102..116
+    blocks = [
+        [[[100, 100], [180, 100], [180, 120], [100, 120]], "NOUVEAU-", 0.95],
+        [[[100, 124], [190, 124], [190, 144], [100, 144]], "BRUNSWICK", 0.93],
+        [[[300, 102], [360, 102], [360, 116], [300, 116]], "BRETON", 0.90],
+    ]
+    merged = merge_multiline_ocr_blocks(blocks)
+    assert len(merged) == 2
+    texts = [b[1] for b in merged]
+    assert "NOUVEAU-BRUNSWICK" in texts
+    assert "BRETON" in texts

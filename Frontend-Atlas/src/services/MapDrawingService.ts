@@ -121,6 +121,12 @@ export class MapDrawingService {
         name: labelText,
         labelText,
         mapElementType: "label",
+        startYear:
+          feature.properties?.startYear ??
+          (typeof this.selectedYear === "number" && !Number.isNaN(this.selectedYear) ? this.selectedYear : undefined),
+        endYear:
+          feature.properties?.endYear ??
+          (typeof this.selectedYear === "number" && !Number.isNaN(this.selectedYear) ? this.selectedYear : undefined),
       },
     };
 

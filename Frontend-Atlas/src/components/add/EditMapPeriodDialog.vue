@@ -18,6 +18,7 @@
                 class="input input-bordered"
                 type="date"
                 required
+                @input="onStartDateInput"
               />
               <input
                 v-else
@@ -27,6 +28,7 @@
                 min="1"
                 max="9999"
                 required
+                @input="onStartYearInput"
               />
             </label>
             <label class="form-control">
@@ -76,7 +78,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { MapPeriod } from "../../typescript/map";
-import { toYear, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import { syncEndFromStart, toYear, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
 
 const emit = defineEmits<{
   save: [payload: { mapId: string; title: string; startDate: string; endDate: string; exactDate: boolean }];
@@ -92,6 +94,23 @@ const endYear = ref<number | null>(null);
 const exactDate = ref(false);
 const saving = ref(false);
 const errorMessage = ref("");
+
+let previousStartYear: number | null = null;
+let previousStartDate = "";
+
+function onStartYearInput() {
+  if (startYear.value !== null && startYear.value !== undefined) {
+    endYear.value = syncEndFromStart(startYear.value, endYear.value, previousStartYear);
+    previousStartYear = startYear.value;
+  }
+}
+
+function onStartDateInput() {
+  if (startDate.value) {
+    endDate.value = syncEndFromStart(startDate.value, endDate.value, previousStartDate);
+    previousStartDate = startDate.value;
+  }
+}
 
 const isValid = computed(() => {
   const start = exactDate.value

@@ -99,6 +99,10 @@ const emit = defineEmits<{
   (e: "redo"): void;
   (e: "edit-feature-request", feature: Feature): void;
   (e: "select-feature", featureId: string | null): void;
+  (e: "select-features", featureIds: string[]): void;
+  (e: "delete-selected"): void;
+  (e: "move-selected", dx: number, dy: number): void;
+  (e: "select-all"): void;
 }>();
 
 const previousFeatureIds = ref(new Set<FeatureId>());
@@ -112,6 +116,19 @@ let vectorRenderer: L.Canvas | null = null;
 // don't destroy and re-create the layer the user is actively interacting with.
 let suppressNextPropsRender = false;
 let blockNextMapClick = false;
+
+// ---- Right-click drag panning ----
+let isRightDragging = false;
+let didRightDrag = false;
+let lastRightPos = { x: 0, y: 0 };
+let rightDragCleanup: (() => void) | null = null;
+
+// ---- Right-click rectangle multi-selection ----
+let isRightSelectDragging = false;
+let rightSelectStart: L.LatLng | null = null;
+let rightSelectRect: L.Rectangle | null = null;
+// IDs of features currently selected via box-selection (multi-select)
+const multiSelectedIds = ref<Set<string>>(new Set<string>());
 // A vertex that snaps onto another element is released away from the cursor,
 // so the click that follows the drag lands on the map or on that other element
 // instead of the dragged handle. Left alone it changes the selection, which
@@ -365,6 +382,7 @@ const isViewReady = ref(false);
 // Shows the map even if the parent never frames it (e.g. a failed load)
 const VIEW_READY_FALLBACK_MS = 5000;
 let viewReadyFallback: ReturnType<typeof setTimeout> | null = null;
+let containerResizeObserver: ResizeObserver | null = null;
 
 function revealMap() {
   isViewReady.value = true;
@@ -419,6 +437,7 @@ defineExpose({
   clearDraftLayers,
   resetSelection,
   fitToVisibleFeatures,
+  multiSelectedIds,
 });
 
 // Tracks feature IDs that got `feature-updated` during the current cut cycle.
@@ -613,11 +632,23 @@ function buildLabelMarker(
     }),
   } as any);
 
+  const preventSelection = () => {
+    const el = marker.getElement();
+    if (el) {
+      el.addEventListener("selectstart", (e) => e.preventDefault());
+      el.addEventListener("mousedown", () => {
+        window.getSelection()?.removeAllRanges();
+      });
+    }
+  };
+
   marker.on("add", () => {
     applyLabelPresentationStyle(marker, presentation, feature.id);
+    preventSelection();
   });
   if (marker.getElement()) {
     applyLabelPresentationStyle(marker, presentation, feature.id);
+    preventSelection();
   }
 
   return marker;
@@ -646,6 +677,8 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         L.DomEvent.stopPropagation(e);
         if (!map) return;
         map.dragging.disable();
+        window.getSelection()?.removeAllRanges();
+        document.body.style.userSelect = 'none';
         
         const containerRect = map.getContainer().getBoundingClientRect();
         const point = map.latLngToContainerPoint(label.getLatLng());
@@ -672,6 +705,8 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         const onMouseUp = () => {
           document.removeEventListener('mousemove', onMouseMove);
           document.removeEventListener('mouseup', onMouseUp);
+          document.body.style.userSelect = '';
+          window.getSelection()?.removeAllRanges();
           map!.dragging.enable();
           
           if ((el as any).__currentRotation !== undefined) {
@@ -1086,13 +1121,121 @@ onMounted(() => {
   };
   map.whenReady(updateMinZoom);
   map.on('resize', updateMinZoom);
+  map.on("dragstart", () => window.getSelection()?.removeAllRanges());
   map.on("moveend", scheduleLabelVisibilityUpdate);
   map.on("zoomend", scheduleLabelVisibilityUpdate);
+
+  const mapContainer = map.getContainer();
+  if (typeof ResizeObserver !== "undefined" && mapContainer) {
+    containerResizeObserver = new ResizeObserver(() => {
+      map?.invalidateSize();
+    });
+    containerResizeObserver.observe(mapContainer);
+  }
 
   drawing.initializeDrawing(map);
   L.control.zoom({ position: "topleft" }).addTo(map);
   addUndoRedoControls(map);
   drawing.setToolbarMode("global");
+
+  // ---- Right-click drag = rectangle de sélection multiple ----
+  // Clic gauche = panoramique natif Leaflet (map.dragging, déjà actif)
+  const container = map.getContainer();
+
+  const onContainerMousedown = (e: MouseEvent) => {
+    if (e.button !== 2) return;
+    isRightSelectDragging = false;
+    rightSelectStart = null;
+    didRightDrag = false;
+    lastRightPos = { x: e.clientX, y: e.clientY };
+  };
+
+  const onWindowMousemoveRight = (e: MouseEvent) => {
+    if (!map) return;
+    if (!(e.buttons & 2)) return; // right button held
+
+    const dx = e.clientX - lastRightPos.x;
+    const dy = e.clientY - lastRightPos.y;
+    const totalMoved = Math.abs(dx) + Math.abs(dy);
+
+    if (!isRightSelectDragging && totalMoved > 4) {
+      // Start the selection rectangle
+      isRightSelectDragging = true;
+      didRightDrag = true;
+      const containerRect = container.getBoundingClientRect();
+      const point = L.point(lastRightPos.x - containerRect.left, lastRightPos.y - containerRect.top);
+      rightSelectStart = map.containerPointToLatLng(point);
+      if (!rightSelectRect) {
+        rightSelectRect = L.rectangle(L.latLngBounds(rightSelectStart, rightSelectStart), {
+          color: '#2563eb',
+          weight: 2,
+          fillColor: '#2563eb',
+          fillOpacity: 0.1,
+          dashArray: '5 4',
+        }).addTo(map);
+      }
+    }
+
+    if (isRightSelectDragging && rightSelectStart) {
+      const containerRect = container.getBoundingClientRect();
+      const point = L.point(e.clientX - containerRect.left, e.clientY - containerRect.top);
+      const currentLatLng = map.containerPointToLatLng(point);
+      const bounds = L.latLngBounds(rightSelectStart, currentLatLng);
+      rightSelectRect?.setBounds(bounds);
+    }
+  };
+
+  const onWindowMouseupRight = (e: MouseEvent) => {
+    if (e.button !== 2) return;
+    if (isRightSelectDragging && rightSelectRect && map) {
+      // Collect all features whose bounds intersect the rectangle
+      const selBounds = rightSelectRect.getBounds();
+      const selectedIds: string[] = [];
+      featureLayerManager.layers.forEach((layer, id) => {
+        if (!map!.hasLayer(layer)) return;
+        try {
+          const lBounds = (layer as any).getBounds?.();
+          if (lBounds && selBounds.intersects(lBounds)) {
+            selectedIds.push(id);
+          } else {
+            const latLng = (layer as any).getLatLng?.();
+            if (latLng && selBounds.contains(latLng)) {
+              selectedIds.push(id);
+            }
+          }
+        } catch {}
+      });
+      multiSelectedIds.value = new Set(selectedIds);
+      emit("select-features", selectedIds);
+    }
+    if (rightSelectRect && map) {
+      map.removeLayer(rightSelectRect);
+      rightSelectRect = null;
+    }
+    isRightSelectDragging = false;
+    rightSelectStart = null;
+  };
+
+  // Suppress context menu if we just completed a selection drag
+  const onContainerContextmenu = (e: MouseEvent) => {
+    if (didRightDrag) {
+      e.preventDefault();
+      didRightDrag = false;
+    }
+  };
+
+  container.addEventListener('mousedown', onContainerMousedown);
+  window.addEventListener('mousemove', onWindowMousemoveRight);
+  window.addEventListener('mouseup', onWindowMouseupRight);
+  container.addEventListener('contextmenu', onContainerContextmenu);
+
+  rightDragCleanup = () => {
+    container.removeEventListener('mousedown', onContainerMousedown);
+    window.removeEventListener('mousemove', onWindowMousemoveRight);
+    window.removeEventListener('mouseup', onWindowMouseupRight);
+    container.removeEventListener('contextmenu', onContainerContextmenu);
+    if (rightSelectRect && map) { map.removeLayer(rightSelectRect); rightSelectRect = null; }
+  };
   
   // pmIgnore values saved before edit/rotate mode is enabled, restored after.
   // This makes geoman only process the selected feature (O(1)) instead of every layer.
@@ -1207,8 +1350,17 @@ onMounted(() => {
   emit("map-ready", map);
   renderAllFeaturesSafely();
   escapeKeyHandler = (e: KeyboardEvent) => {
-    if (e.key !== "Escape" || !map) return;
+    if (!map) return;
     const pm = (map as MapWithPm).pm;
+
+    // Clear multi-select on Escape
+    if (e.key === "Escape" && multiSelectedIds.value.size > 0) {
+      multiSelectedIds.value = new Set();
+      emit("select-features", []);
+      return;
+    }
+
+    if (e.key !== "Escape") return;
     // Cancel city placement mode
     if (addCityMode.value) {
       cityMode.cancel();
@@ -1241,6 +1393,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  containerResizeObserver?.disconnect();
+  containerResizeObserver = null;
   if (viewReadyFallback) clearTimeout(viewReadyFallback);
   if (labelVisibilityFrame !== null) {
     cancelAnimationFrame(labelVisibilityFrame);
@@ -1250,6 +1404,8 @@ onBeforeUnmount(() => {
     document.removeEventListener("keydown", escapeKeyHandler);
     escapeKeyHandler = null;
   }
+  rightDragCleanup?.();
+  rightDragCleanup = null;
   selectedCityRing?.remove();
   pixelSpaceDragCleanup?.();
   imageOverlay.detach();

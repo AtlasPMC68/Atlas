@@ -16,14 +16,18 @@ from sqlalchemy.orm import Session, defer
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
-from app.models.map_import import EXTRACTION_PENDING, MapImport
+from app.models.map_import import EXTRACTION_FAILED, MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
 from app.schemas.projectCreateRequest import ProjectCreateRequest
 from app.schemas.mapImportRequest import MapImportRequest
 from app.schemas.label_styles import LabelStylesRequest
-from app.services.maps import copy_maps_between_projects, create_map_in_db
+from app.services.maps import (
+    copy_maps_between_projects,
+    create_map_in_db,
+    duplicate_map_in_project,
+)
 from app.services.projects import (
     create_project_in_db,
     delete_project_in_db,
@@ -141,6 +145,45 @@ async def delete_map(
     except Exception as e:
         logger.error(f"Error deleting map: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete map")
+
+
+@router.post("/{project_id}/maps/{map_id}/duplicate")
+async def duplicate_map_for_project(
+    project_id: UUID,
+    map_id: UUID,
+    request: MapImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_async_session),
+):
+    try:
+        if not request.title.strip():
+            raise HTTPException(status_code=400, detail="title must not be empty")
+        if request.start_date > request.end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="start_date must be before or equal to end_date",
+            )
+
+        new_map_id = await duplicate_map_in_project(
+            db=db,
+            project_id=project_id,
+            source_map_id=map_id,
+            user_id=UUID(user_id),
+            new_title=request.title.strip(),
+            start_date=request.start_date,
+            end_date=request.end_date,
+            exact_date=request.exact_date,
+        )
+        if not new_map_id:
+            raise HTTPException(
+                status_code=404, detail="Map or project not found or access denied"
+            )
+        return {"map_id": str(new_map_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error duplicating map: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to duplicate map")
 
 
 @router.put("/{project_id}/maps/{map_id}")
@@ -675,9 +718,12 @@ async def get_project_maps(
             status_code=404, detail="Project not found or access denied"
         )
 
+    # A map is considered active if an import is currently in progress (any non-failed import row)
+    # or if its extraction has not yet persisted features. Maps without features that have an active or incomplete
+    # import should not appear on the timeline.
     active_imports = (
         select(MapImport.map_id)
-        .where(MapImport.extraction_state.in_(EXTRACTION_PENDING))
+        .where(MapImport.extraction_state != EXTRACTION_FAILED)
     )
     maps_result = await session.execute(
         select(Map)

@@ -26,6 +26,7 @@
                   class="input"
                   placeholder="Ex: 1850"
                   required
+                  @input="onStartYearInput"
                 />
                 <input
                   v-else
@@ -33,6 +34,7 @@
                   type="date"
                   class="input"
                   required
+                  @input="onStartDateInput"
                 />
               </div>
 
@@ -93,7 +95,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import { syncEndFromStart, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
 
 type AddMapPayload = {
   title: string;
@@ -117,6 +119,23 @@ const endYear = ref<number | null>(null);
 const startDate = ref("");
 const endDate = ref("");
 const usePreciseDates = ref(false);
+
+let previousStartYear: number | null = null;
+let previousStartDate = "";
+
+function onStartYearInput() {
+  if (startYear.value !== null && startYear.value !== undefined) {
+    endYear.value = syncEndFromStart(startYear.value, endYear.value, previousStartYear);
+    previousStartYear = startYear.value;
+  }
+}
+
+function onStartDateInput() {
+  if (startDate.value) {
+    endDate.value = syncEndFromStart(startDate.value, endDate.value, previousStartDate);
+    previousStartDate = startDate.value;
+  }
+}
 
 function resetForm() {
   newMapTitle.value = "";

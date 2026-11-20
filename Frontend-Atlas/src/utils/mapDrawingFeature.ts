@@ -64,7 +64,7 @@ function getStableLayerFeatureId(layer: L.Layer): string {
 
 export function layerToFeature(
   layer: L.Layer,
-  _selectedYear: number,
+  selectedYear: number,
   currentProjectId: string,
 ): Feature | null {
   const layerWithFeature = layer as LayerWithFeatureRuntime;
@@ -185,6 +185,12 @@ export function layerToFeature(
       mapElementType: type,
       layer: baseFeature?.properties?.layer ?? getDefaultLayer(type),
       rotation,
+      startYear:
+        baseFeature?.properties?.startYear ??
+        (typeof selectedYear === "number" && !Number.isNaN(selectedYear) ? selectedYear : undefined),
+      endYear:
+        baseFeature?.properties?.endYear ??
+        (typeof selectedYear === "number" && !Number.isNaN(selectedYear) ? selectedYear : undefined),
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,

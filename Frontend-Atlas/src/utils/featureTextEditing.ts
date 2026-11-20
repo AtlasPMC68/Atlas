@@ -33,6 +33,8 @@ export interface FeatureEditSubmitPayload {
   customLabelStyleId?: string | null;
   customLabelStyle?: CustomLabelStyle | null;
   selectedMapIds?: string[];
+  startYear?: number | null;
+  endYear?: number | null;
 }
 
 export const MAX_STROKE_WIDTH_PX = 50;
@@ -166,6 +168,8 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
         normalizeOpacity(feature.properties.strokeOpacity) ??
         (elementType === "point" ? DEFAULT_POINT_STROKE_OPACITY : undefined),
       strokeWidth: normalizeStrokeWidth(feature.properties.strokeWidth),
+      startYear: feature.properties.startYear ?? null,
+      endYear: feature.properties.endYear ?? null,
     },
   };
 }
@@ -193,6 +197,8 @@ export function coerceEditedFeature(
         fillOpacity: normalizeOpacity(payload.fillOpacity),
         strokeOpacity: normalizeOpacity(payload.strokeOpacity),
         strokeWidth: normalizeStrokeWidth(payload.strokeWidth),
+        startYear: payload.startYear ?? null,
+        endYear: payload.endYear ?? null,
       },
     };
   }
@@ -217,6 +223,8 @@ export function coerceEditedFeature(
       properties: {
         ...custom.properties,
         mapId: chosenMapId,
+        startYear: payload.startYear ?? null,
+        endYear: payload.endYear ?? null,
       },
     };
   }
@@ -251,6 +259,8 @@ export function coerceEditedFeature(
       fillOpacity: isLabel ? undefined : normalizeOpacity(payload.fillOpacity),
       strokeOpacity: isLabel ? undefined : normalizeOpacity(payload.strokeOpacity),
       strokeWidth: isLabel ? undefined : normalizeStrokeWidth(payload.strokeWidth),
+      startYear: payload.startYear ?? null,
+      endYear: payload.endYear ?? null,
     },
   };
 }

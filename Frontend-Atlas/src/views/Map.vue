@@ -4,6 +4,7 @@
   >
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
+        v-show="isSidebarVisible"
         class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
         :style="{ width: `${sidebarWidth}px` }"
       >
@@ -28,6 +29,7 @@
         />
       </div>
       <div
+        v-show="isSidebarVisible"
         role="separator"
         aria-label="Redimensionner le panneau latéral"
         aria-orientation="vertical"
@@ -40,6 +42,31 @@
       />
       <div class="flex-1 min-h-0 flex flex-col">
         <div class="flex-1 relative min-h-0 h-full w-full bg-[#d4dadc]">
+          <!-- Presentation mode & View controls (Point 1) positioned on the left next to zoom -->
+          <div class="absolute top-20 left-2 z-[1001] flex items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-sm bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md gap-1.5"
+              data-testid="toggle-sidebar-button"
+              :title="isSidebarVisible ? 'Masquer le panneau gauche (Mode présentation)' : 'Afficher le panneau gauche'"
+              @click="toggleSidebar"
+            >
+              <Bars3Icon v-if="!isSidebarVisible" class="w-4 h-4 text-primary" />
+              <ChevronLeftIcon v-else class="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-circle bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md"
+              data-testid="toggle-fullscreen-button"
+              :title="isFullscreen ? 'Quitter le plein écran' : 'Plein écran'"
+              @click="toggleFullscreen"
+            >
+              <ArrowsPointingInIcon v-if="isFullscreen" class="w-4 h-4" />
+              <ArrowsPointingOutIcon v-else class="w-4 h-4" />
+            </button>
+          </div>
+
           <MapGeoJSON
             ref="mapGeoJsonRef"
             class="flex-1 min-h-0 w-full"
@@ -51,6 +78,7 @@
             :can-redo="canRedo"
             :selected-feature-id="selectedFeatureId"
             @select-feature="(id: string | null) => (selectedFeatureId = id)"
+            @select-features="onSelectFeatures"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
@@ -71,32 +99,147 @@
               @edit-feature="onEditFeatureRequest"
             />
           </div>
+
+          <!-- Floating button to restore timeline when hidden (Point 6) -->
+          <div
+            v-if="!isTimelineVisible"
+            class="absolute bottom-4 right-4 z-[1001] flex items-center gap-2"
+          >
+            <button
+              type="button"
+              class="btn btn-sm bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md gap-1.5"
+              data-testid="duplicate-map-button-floating"
+              title="Dupliquer entièrement une carte"
+              @click="openDuplicateMapDialog()"
+            >
+              <DocumentDuplicateIcon class="w-4 h-4 text-primary" />
+              <span class="text-xs font-semibold">Dupliquer une carte</span>
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-primary shadow-md gap-1.5"
+              data-testid="show-timeline-button"
+              title="Afficher l'échelle de temps"
+              @click="toggleTimeline"
+            >
+              <CalendarIcon class="w-4 h-4" />
+              <span class="text-xs font-semibold">Afficher l'échelle de temps</span>
+            </button>
+          </div>
         </div>
+
+        <!-- Horizontal resize handle for timeline (Point 7) -->
         <div
-          class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+          v-show="isTimelineVisible"
+          role="separator"
+          aria-label="Redimensionner l'échelle de temps"
+          aria-orientation="horizontal"
+          tabindex="0"
+          class="h-1.5 w-full shrink-0 cursor-row-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors"
+          data-testid="timeline-resize-handle"
+          @mousedown.prevent="startTimelineResize"
+          @keydown.up.prevent="resizeTimelineBy(10)"
+          @keydown.down.prevent="resizeTimelineBy(-10)"
+        />
+
+        <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
+        <div
+          v-show="isTimelineVisible"
+          class="map-timeline-toolbar relative z-[1002] flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+          :style="timelineHeight ? { height: `${timelineHeight}px` } : {}"
         >
           <div class="map-timeline-slider w-full min-w-0">
             <TimelineSlider
               v-model:year="selectedYear"
               @exact-date-change="onExactDateChange"
+              @edit-map="openEditMapDialog"
+              @edit-element="onEditElementFromTimeline"
               :min="timelineMinYear"
               :max="timelineMaxYear"
               :marker-years="timelineMarkerYears"
               :map-periods="enrichedPeriods"
+              :element-markers="timelineElementMarkers"
               :current-exact-date="selectedExactDate"
+              :filter-by-date="useTimelineFilter"
             />
           </div>
           <div
-            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
+            class="map-timeline-filter flex flex-row gap-3 items-center justify-between text-xs font-medium whitespace-nowrap"
           >
-            <span>Filtrer par date</span>
-            <input
-              v-model="useTimelineFilter"
-              type="checkbox"
-              aria-label="Filtrer par date"
-              role="switch"
-              class="timeline-filter-toggle"
-            />
+            <div class="flex items-center gap-2">
+              <div class="flex flex-row gap-1 items-center mr-1">
+                <span>Filtrer par date</span>
+                <input
+                  v-model="useTimelineFilter"
+                  type="checkbox"
+                  aria-label="Filtrer par date"
+                  role="switch"
+                  class="timeline-filter-toggle"
+                />
+              </div>
+
+              <!-- Step 5: Bottom interface button allowing to duplicate a map entirely -->
+              <button
+                type="button"
+                class="btn btn-outline btn-xs gap-1 font-semibold"
+                data-testid="duplicate-map-button"
+                title="Dupliquer entièrement une carte"
+                @click="openDuplicateMapDialog()"
+              >
+                <DocumentDuplicateIcon class="w-3.5 h-3.5 text-primary" />
+                <span>Dupliquer une carte</span>
+              </button>
+
+              <!-- Navigation rapide entre les cartes (précédente / suivante) -->
+              <div
+                v-if="sortedMapsForNavigation.length > 0"
+                class="inline-flex items-center rounded border border-base-300 bg-base-100 overflow-hidden"
+              >
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none border-r border-base-300"
+                  :disabled="!hasPrevMap"
+                  :title="
+                    prevMap
+                      ? `Carte précédente : ${prevMap.title} (${prevMap.startYear})`
+                      : 'Aucune carte précédente'
+                  "
+                  aria-label="Carte précédente"
+                  data-testid="prev-map-button"
+                  @click="goToPrevMap"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none"
+                  :disabled="!hasNextMap"
+                  :title="
+                    nextMap
+                      ? `Carte suivante : ${nextMap.title} (${nextMap.startYear})`
+                      : 'Aucune carte suivante'
+                  "
+                  aria-label="Carte suivante"
+                  data-testid="next-map-button"
+                  @click="goToNextMap"
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+
+            <!-- Step 6: Hide date slider -->
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
+              data-testid="hide-timeline-button"
+              title="Masquer l'échelle de temps"
+              @click="toggleTimeline"
+            >
+              <EyeSlashIcon class="w-3.5 h-3.5" />
+              <span>Masquer l'échelle</span>
+            </button>
           </div>
         </div>
       </div>
@@ -115,6 +258,13 @@
     ref="addMapDialogRef"
     :is-creating-map="isCreatingMap"
     @submit="createMapForProject"
+  />
+
+  <DuplicateMapDialog
+    ref="duplicateMapDialogRef"
+    :map-periods="mapPeriods"
+    :is-duplicating="isDuplicatingMap"
+    @submit="onDuplicateMapSubmit"
   />
 
   <EditMapPeriodDialog ref="editMapPeriodDialogRef" @save="saveMapPeriod" />
@@ -139,14 +289,17 @@
     @save-label-styles="saveCustomLabelStyles"
   />
 </template>
+
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
+import DuplicateMapDialog from "../components/add/DuplicateMapDialog.vue";
 import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
+import type { TimelineMarkerItem } from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
@@ -157,6 +310,7 @@ import {
   camelToSnake,
   isUuid,
   prepareFeaturesForSave,
+  rgbToHex,
   snakeToCamel,
   toImageSrc,
 } from "../utils/utils";
@@ -176,7 +330,17 @@ import {
   isCopyableFeature,
   getGeometryAnchor,
   cloneFeatureWithOffset,
+  getFeatureMapId,
 } from "../utils/featureHelpers";
+import {
+  Bars3Icon,
+  ChevronLeftIcon,
+  ArrowsPointingOutIcon,
+  ArrowsPointingInIcon,
+  EyeSlashIcon,
+  CalendarIcon,
+  DocumentDuplicateIcon,
+} from "@heroicons/vue/24/outline";
 import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
@@ -208,11 +372,18 @@ const mapGeoJsonRef = ref<{
   clearDraftLayers: () => void;
   resetSelection: () => void;
   fitToVisibleFeatures: (featureIds?: ReadonlySet<string>) => void;
+  multiSelectedIds: { value: Set<string> };
 } | null>(null);
 const addMapDialogRef = ref<{
   open: () => void;
   close: () => void;
 } | null>(null);
+const duplicateMapDialogRef = ref<{
+  open: (preselectedMapId?: string) => void;
+  close: () => void;
+  setError: (msg: string) => void;
+} | null>(null);
+const isDuplicatingMap = ref(false);
 const editMapPeriodDialogRef = ref<{
   open: (period: MapPeriod) => void;
   close: () => void;
@@ -227,21 +398,201 @@ const featureVisibilityControlsRef = ref<InstanceType<
   typeof FeatureVisibilityControls
 > | null>(null);
 
+function parseOptionalYear(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.trunc(num);
+}
+
+function getFeatureCustomYears(f: Feature): {
+  startYear: number | null;
+  endYear: number | null;
+} {
+  const startYear =
+    parseOptionalYear(f.properties?.startYear) ??
+    (f.properties?.startDate
+      ? parseOptionalYear(toYear(f.properties.startDate))
+      : null);
+  const endYear =
+    parseOptionalYear(f.properties?.endYear) ??
+    (f.properties?.endDate
+      ? parseOptionalYear(toYear(f.properties.endDate))
+      : null);
+
+  return { startYear, endYear };
+}
+
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
+
+function onSelectFeatures(ids: string[]) {
+  multiSelectedFeatureIds.value = ids;
+  if (ids.length > 0) selectedFeatureId.value = null;
+}
+
+async function onDeleteSelectedFeatures() {
+  const idsToDelete =
+    multiSelectedFeatureIds.value.length > 0
+      ? multiSelectedFeatureIds.value
+      : selectedFeatureId.value
+        ? [selectedFeatureId.value]
+        : [];
+  if (idsToDelete.length === 0) return;
+  const idsSet = new Set(idsToDelete);
+  const nextFeatures = features.value.filter(
+    (f: Feature) => !idsSet.has(String(f.id)),
+  );
+  multiSelectedFeatureIds.value = [];
+  selectedFeatureId.value = null;
+  if (trackingEnabled.value) {
+    commitFeatureSnapshot(nextFeatures);
+  } else {
+    applyFeatureSnapshot(nextFeatures, false);
+  }
+}
+
+function onSelectAll() {
+  const allIds = features.value
+    .filter((f: Feature) => {
+      const id = String(f.id);
+      return combinedFeatureVisibility.value.get(id) !== false;
+    })
+    .map((f: Feature) => String(f.id));
+  multiSelectedFeatureIds.value = allIds;
+  selectedFeatureId.value = null;
+}
+
+async function onEditElementFromTimeline(featureId: string) {
+  if (!isSidebarVisible.value) {
+    isSidebarVisible.value = true;
+    await nextTick();
+  }
+  const feat = features.value.find(
+    (f: Feature) =>
+      (f.id != null && String(f.id) === String(featureId)) ||
+      (f.properties?.id != null &&
+        String(f.properties.id) === String(featureId)) ||
+      (f.properties?.name != null &&
+        String(f.properties.name).toLowerCase() ===
+          String(featureId).toLowerCase()) ||
+      (f.properties?.labelText != null &&
+        String(f.properties.labelText).toLowerCase() ===
+          String(featureId).toLowerCase()),
+  );
+  if (feat) {
+    selectedFeatureId.value = String(feat.id);
+    onEditFeatureRequest(feat);
+  }
+}
+
 function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
 }
+
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
+const multiSelectedFeatureIds = ref<string[]>([]);
 const copiedFeature = ref<Feature | null>(null);
+
+// Presentation mode & Visibility states (Points 1, 6)
+const isSidebarVisible = ref(true);
+const isFullscreen = ref(false);
+const isTimelineVisible = ref(true);
+
+// Panel resizing states (Point 7)
 const sidebarWidth = ref(350);
 let sidebarResizeStartX = 0;
 let sidebarResizeStartWidth = 0;
 let isResizingSidebar = false;
+
+const timelineHeight = ref<number | null>(null);
+let timelineResizeStartY = 0;
+let timelineResizeStartHeight = 0;
+let isResizingTimeline = false;
+
 let previousBodyCursor = "";
 let previousBodyUserSelect = "";
+
+function toggleSidebar() {
+  isSidebarVisible.value = !isSidebarVisible.value;
+  nextTick(() => {
+    leafletMap.value?.invalidateSize();
+  });
+}
+
+function toggleTimeline() {
+  isTimelineVisible.value = !isTimelineVisible.value;
+  nextTick(() => {
+    leafletMap.value?.invalidateSize();
+  });
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch((err) => {
+      console.error("Fullscreen error:", err);
+    });
+  } else {
+    document.exitFullscreen?.().catch((err) => {
+      console.error("Exit fullscreen error:", err);
+    });
+  }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = Boolean(document.fullscreenElement);
+  nextTick(() => {
+    leafletMap.value?.invalidateSize();
+  });
+}
+
+function resizeTimelineBy(delta: number) {
+  const el = document.querySelector(".map-timeline-toolbar") as HTMLElement | null;
+  const currentHeight = timelineHeight.value ?? el?.offsetHeight ?? 140;
+  const maxHeight = Math.min(350, Math.floor(window.innerHeight * 0.45));
+  timelineHeight.value = Math.max(
+    80,
+    Math.min(maxHeight, currentHeight + delta),
+  );
+  nextTick(() => leafletMap.value?.invalidateSize());
+}
+
+function onTimelineResizeMove(event: MouseEvent) {
+  const maxHeight = Math.min(350, Math.floor(window.innerHeight * 0.45));
+  const deltaY = timelineResizeStartY - event.clientY;
+  timelineHeight.value = Math.max(
+    80,
+    Math.min(maxHeight, timelineResizeStartHeight + deltaY),
+  );
+  leafletMap.value?.invalidateSize();
+}
+
+function stopTimelineResize() {
+  window.removeEventListener("mousemove", onTimelineResizeMove);
+  window.removeEventListener("mouseup", stopTimelineResize);
+  if (isResizingTimeline) {
+    document.body.style.cursor = previousBodyCursor;
+    document.body.style.userSelect = previousBodyUserSelect;
+    isResizingTimeline = false;
+    nextTick(() => leafletMap.value?.invalidateSize());
+  }
+}
+
+function startTimelineResize(event: MouseEvent) {
+  const el = document.querySelector(".map-timeline-toolbar") as HTMLElement | null;
+  timelineResizeStartY = event.clientY;
+  timelineResizeStartHeight = timelineHeight.value ?? el?.offsetHeight ?? 140;
+  timelineHeight.value = timelineResizeStartHeight;
+  previousBodyCursor = document.body.style.cursor;
+  previousBodyUserSelect = document.body.style.userSelect;
+  isResizingTimeline = true;
+  document.body.style.cursor = "row-resize";
+  document.body.style.userSelect = "none";
+  window.addEventListener("mousemove", onTimelineResizeMove);
+  window.addEventListener("mouseup", stopTimelineResize);
+}
 
 function resizeSidebarBy(delta: number) {
   const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
@@ -343,7 +694,8 @@ function startSidebarResize(event: MouseEvent) {
   window.addEventListener("mousemove", onSidebarResizeMove);
   window.addEventListener("mouseup", stopSidebarResize);
 }
-const featureVisibility = ref<Map<string, boolean>>(new Map());
+
+const featureVisibility = ref>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
@@ -369,8 +721,20 @@ const selectedExactDate = ref<string | null>(null);
 const useTimelineFilter = ref(true);
 
 const enrichedPeriods = computed<SliderPeriod[]>(() => {
+  const mapIdsWithFeatures = new Set<string>();
+  for (const f of features.value) {
+    const mid = getFeatureMapId(f);
+    if (mid) mapIdsWithFeatures.add(mid.toLowerCase());
+  }
+
   const periods: SliderPeriod[] = [];
   for (const p of mapPeriods.value) {
+    if (
+      mapIdsWithFeatures.size > 0 &&
+      !mapIdsWithFeatures.has(String(p.id).trim().toLowerCase())
+    ) {
+      continue;
+    }
     const startYear = toYear(p.startDate);
     const endYear = toYear(p.endDate);
     if (startYear != null && endYear != null) {
@@ -384,19 +748,154 @@ const enrichedPeriods = computed<SliderPeriod[]>(() => {
   return periods;
 });
 
-const periodByMapId = computed(
-  () => new Map(enrichedPeriods.value.map((p: SliderPeriod) => [p.id, p])),
-);
+const sortedMapsForNavigation = computed<SliderPeriod[]>(() => {
+  return [...enrichedPeriods.value].sort(
+    (a: SliderPeriod, b: SliderPeriod) =>
+      a.startYear - b.startYear ||
+      a.endYear - b.endYear ||
+      String(a.id).localeCompare(String(b.id)),
+  );
+});
+
+const currentMapIndex = computed<number>(() => {
+  const list = sortedMapsForNavigation.value;
+  if (!list.length) return -1;
+
+  const y = selectedYear.value;
+  const coveringIdx = list.findIndex(
+    (p: SliderPeriod) => y >= p.startYear && y <= p.endYear,
+  );
+  if (coveringIdx !== -1) return coveringIdx;
+
+  let fallbackIdx = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].startYear <= y) fallbackIdx = i;
+  }
+  return fallbackIdx;
+});
+
+const prevMap = computed<SliderPeriod | null>(() => {
+  const idx = currentMapIndex.value;
+  return idx > 0 ? sortedMapsForNavigation.value[idx - 1] : null;
+});
+
+const nextMap = computed<SliderPeriod | null>(() => {
+  const idx = currentMapIndex.value;
+  const list = sortedMapsForNavigation.value;
+  return idx >= 0 && idx < list.length - 1 ? list[idx + 1] : null;
+});
+
+const hasPrevMap = computed<boolean>(() => prevMap.value != null);
+const hasNextMap = computed<boolean>(() => nextMap.value != null);
+
+function navigateToMap(target: SliderPeriod | null) {
+  if (!target) return;
+  selectedExactDate.value = null;
+  selectedYear.value = target.startYear;
+}
+
+function goToPrevMap() {
+  navigateToMap(prevMap.value);
+}
+
+function goToNextMap() {
+  navigateToMap(nextMap.value);
+}
+
+const periodByMapId = computed(() => {
+  const map = new Map<string, SliderPeriod>();
+  for (const p of mapPeriods.value) {
+    const startYear = toYear(p.startDate);
+    const endYear = toYear(p.endDate);
+    if (startYear != null && endYear != null) {
+      map.set(p.id, {
+        ...p,
+        startYear,
+        endYear,
+      });
+    }
+  }
+  return map;
+});
+
+const customFeatureYears = computed<number[]>(() => {
+  const years: number[] = [];
+  features.value.forEach((f: Feature) => {
+    const { startYear, endYear } = getFeatureCustomYears(f);
+    if (startYear != null) years.push(startYear);
+    if (endYear != null) years.push(endYear);
+  });
+  return years;
+});
+
+const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
+  const periodTitleById = new Map<string, string>(
+    mapPeriods.value.map((p: MapPeriod) => [
+      String(p.id).trim().toLowerCase(),
+      p.title,
+    ]),
+  );
+
+  const list: TimelineMarkerItem[] = [];
+
+  features.value.forEach((f: Feature) => {
+    const { startYear, endYear } = getFeatureCustomYears(f);
+    const effectiveStart = startYear ?? endYear;
+    if (effectiveStart == null) return;
+
+    const rawMapId = getFeatureMapId(f);
+    const normalizedMapId = rawMapId
+      ? String(rawMapId).trim().toLowerCase()
+      : null;
+    const mapTitle = normalizedMapId
+      ? periodTitleById.get(normalizedMapId) || "Carte associée"
+      : "Éléments généraux";
+
+    list.push({
+      id: String(
+        f.id ??
+          f.properties?.id ??
+          f.properties?.name ??
+          f.properties?.labelText ??
+          "",
+      ),
+      name: f.properties?.labelText || f.properties?.name || "Élément",
+      year: effectiveStart,
+      endYear: endYear ?? effectiveStart,
+      type:
+        f.properties?.mapElementType ||
+        (isTextFeature(f) ? "Texte" : "Élément"),
+      color:
+        f.properties?.colorHex ||
+        (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
+      mapId: rawMapId ?? null,
+      mapTitle,
+      isCustom: true,
+    });
+  });
+
+  return list;
+});
+
+const allTimelineStartYears = computed(() => {
+  const years = enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
+  return [...years, ...customFeatureYears.value];
+});
+
+const allTimelineEndYears = computed(() => {
+  const years = enrichedPeriods.value.map((p: SliderPeriod) => p.endYear);
+  return [...years, ...customFeatureYears.value];
+});
 
 const timelineMinYear = computed(() =>
-  enrichedPeriods.value.length
-    ? Math.min(...enrichedPeriods.value.map((p: SliderPeriod) => p.startYear))
+  allTimelineStartYears.value.length
+    ? Math.min(...allTimelineStartYears.value)
     : 1400,
 );
 
 const timelineMaxYear = computed(() =>
-  enrichedPeriods.value.length
-    ? Math.max(...enrichedPeriods.value.map((p: SliderPeriod) => p.endYear))
+  allTimelineEndYears.value.length
+    ? Math.max(...allTimelineEndYears.value)
     : new Date().getFullYear(),
 );
 
@@ -409,12 +908,17 @@ const timelineMarkerYears = computed(() => {
     markers.add(p.startYear);
     markers.add(p.endYear);
   });
+  customFeatureYears.value.forEach((y) => markers.add(y));
   return [...markers].sort((a, b) => a - b);
 });
 
-const periodStartYears = computed(
-  () => new Set(enrichedPeriods.value.map((p: SliderPeriod) => p.startYear)),
-);
+const periodStartYears = computed(() => {
+  const years = new Set(
+    enrichedPeriods.value.map((p: SliderPeriod) => p.startYear),
+  );
+  customFeatureYears.value.forEach((y) => years.add(y));
+  return years;
+});
 
 const periodStartDates = computed(
   () =>
@@ -429,28 +933,59 @@ const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
     if (!useTimelineFilter.value) return true;
 
-    // Project-level features without a map are always visible in timeline mode.
-    if (!feature.mapId) return true;
+    const { startYear: featStartYear, endYear: featEndYear } =
+      getFeatureCustomYears(feature);
+    const hasCustomYears = featStartYear != null || featEndYear != null;
 
-    const period = periodByMapId.value.get(feature.mapId);
-    if (!period) return true;
+    if (hasCustomYears) {
+      if (
+        selectedExactDate.value &&
+        feature.properties?.startDate &&
+        feature.properties?.endDate
+      ) {
+        return isPeriodActiveAt(
+          feature.properties.startDate,
+          feature.properties.endDate,
+          selectedExactDate.value,
+          periodStartDates.value,
+        );
+      }
 
-    if (selectedExactDate.value && period.startDate && period.endDate) {
+      const sy = featStartYear ?? (featEndYear as number);
+      const ey = featEndYear ?? sy;
+
       return isPeriodActiveAt(
-        period.startDate,
-        period.endDate,
-        selectedExactDate.value,
-        periodStartDates.value,
+        sy,
+        ey,
+        selectedYear.value,
+        periodStartYears.value,
       );
     }
 
-    if (period.startYear == null || period.endYear == null) return true;
-    return isPeriodActiveAt(
-      period.startYear,
-      period.endYear,
-      selectedYear.value,
-      periodStartYears.value,
-    );
+    const featureMapId = getFeatureMapId(feature);
+    if (featureMapId) {
+      const period = periodByMapId.value.get(featureMapId);
+      if (!period) return true;
+
+      if (selectedExactDate.value && period.startDate && period.endDate) {
+        return isPeriodActiveAt(
+          period.startDate,
+          period.endDate,
+          selectedExactDate.value,
+          periodStartDates.value,
+        );
+      }
+
+      if (period.startYear == null || period.endYear == null) return true;
+      return isPeriodActiveAt(
+        period.startYear,
+        period.endYear,
+        selectedYear.value,
+        periodStartYears.value,
+      );
+    }
+
+    return true;
   });
 });
 
@@ -464,7 +999,6 @@ const combinedFeatureVisibility = computed(() => {
   features.value.forEach((feature: Feature) => {
     const id = String(feature.id);
 
-    // Hide unvalidated or rejected OCR texts from the map
     if (!isVisibleInMainLayers(feature)) {
       combined.set(id, false);
       return;
@@ -537,6 +1071,67 @@ function resetMapSelection() {
   mapGeoJsonRef.value?.resetSelection();
 }
 
+function nudgeSelectedFeatures(dx: number, dy: number) {
+  const idsToNudge =
+    multiSelectedFeatureIds.value.length > 0
+      ? multiSelectedFeatureIds.value
+      : selectedFeatureId.value
+        ? [selectedFeatureId.value]
+        : [];
+  if (idsToNudge.length === 0) return;
+
+  const mapContainer = document.getElementById("map") as
+    | (HTMLElement & { _leaflet_map?: L.Map })
+    | null;
+  const leafletMap = mapContainer?._leaflet_map;
+  if (!leafletMap) return;
+
+  const idsSet = new Set(idsToNudge);
+  const nextFeatures = features.value.map((f: Feature) => {
+    if (!idsSet.has(String(f.id))) return f;
+    return nudgeFeatureByPixels(f, leafletMap, dx, dy);
+  });
+  commitFeatureSnapshot(nextFeatures);
+}
+
+function nudgeFeatureByPixels(
+  feature: Feature,
+  leafletMap: L.Map,
+  dx: number,
+  dy: number,
+): Feature {
+  if (!feature.geometry) return feature;
+
+  const shiftLatLng = (lat: number, lng: number): [number, number] => {
+    const pt = leafletMap.latLngToContainerPoint([lat, lng]);
+    const newPt = L.point(pt.x + dx, pt.y + dy);
+    const ll = leafletMap.containerPointToLatLng(newPt);
+    return [ll.lat, ll.lng];
+  };
+
+  const shiftCoords = (coords: unknown): unknown => {
+    if (!Array.isArray(coords)) return coords;
+    if (typeof coords[0] === "number") {
+      const [sLat, sLng] = shiftLatLng(
+        coords[1] as number,
+        coords[0] as number,
+      );
+      return [sLng, sLat];
+    }
+    return coords.map(shiftCoords);
+  };
+
+  return {
+    ...feature,
+    geometry: {
+      ...feature.geometry,
+      coordinates: shiftCoords(
+        feature.geometry.coordinates,
+      ) as typeof feature.geometry.coordinates,
+    },
+  };
+}
+
 function onUndo() {
   if (!canUndo.value) return;
   resetMapSelection();
@@ -561,7 +1156,7 @@ function getImageNaturalSize(
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      resolve({ width: 1, height: 1 }); // fallback: square, backend will recompute
+      resolve({ width: 1, height: 1 });
     };
     img.src = url;
   });
@@ -586,14 +1181,9 @@ async function onAddFeatureImage(file: File) {
     const formData = new FormData();
     formData.append("image", file);
 
-    // Spawn the image at the center of the user's current map view instead of [0,0].
-    // Use the same 16° height constant as the backend, preserving the image aspect ratio.
     if (leafletMap.value) {
       const LAT_SPAN = 16.0;
       const { width, height } = await getImageNaturalSize(file);
-      // Divide by cos(lat) to correct for Mercator: longitude degrees get physically
-      // shorter away from the equator, so we need more of them to cover the same
-      // screen width. Without this, images appear horizontally squished at high latitudes.
       const center = leafletMap.value.getCenter();
       const latRad = center.lat * (Math.PI / 180);
       const lngSpan = (LAT_SPAN * (width / height)) / Math.cos(latRad);
@@ -744,7 +1334,6 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       features.value = nextFeatures;
       await onSaveMap(nextFeatures);
     }
-    // persistCustomLabelStyles already confirmed the save to the user.
   } catch (error) {
     console.error("Failed to save project label styles:", error);
     showAlert(
@@ -800,9 +1389,26 @@ async function onDeleteMap(
       throw new Error(`Failed to delete map: ${res.status}`);
     }
 
-    const nextFeatures = features.value.filter(
-      (feature: Feature) => feature.mapId !== mapId,
+    const mapIdNorm = String(mapId).trim().toLowerCase();
+    mapPeriods.value = mapPeriods.value.filter(
+      (p: MapPeriod) => String(p.id).trim().toLowerCase() !== mapIdNorm,
     );
+
+    const nextFeatures = features.value.filter(
+      (feature: Feature) =>
+        String(getFeatureMapId(feature) ?? "")
+          .trim()
+          .toLowerCase() !== mapIdNorm,
+    );
+
+    if (
+      activeValidationMapId.value &&
+      String(activeValidationMapId.value).trim().toLowerCase() === mapIdNorm
+    ) {
+      activeValidationMapId.value = null;
+      showTextValidationModal.value = false;
+    }
+    selectedExactDate.value = null;
 
     if (trackingEnabled.value) {
       commitFeatureSnapshot(nextFeatures);
@@ -811,6 +1417,14 @@ async function onDeleteMap(
     }
 
     await loadProjectMapsForTimeline();
+
+    if (
+      timelineMarkerYears.value.length > 0 &&
+      timelineMarkerYears.value[0] != null &&
+      !timelineMarkerYears.value.includes(selectedYear.value)
+    ) {
+      selectedYear.value = timelineMarkerYears.value[0];
+    }
 
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -839,6 +1453,17 @@ async function onUpdateFeature(
         ? `Modification de ${list[0].name || "l'élément"}`
         : `Modification de ${list.length} éléments`;
     commitFeatureSnapshot(nextFeatures, label);
+
+    // Positionne immédiatement la timeline sur la nouvelle année personnalisée si présente
+    const firstCustomYears = list
+      .map((item) => getFeatureCustomYears(item))
+      .find((y) => y.startYear != null || y.endYear != null);
+    const targetYear = firstCustomYears?.startYear ?? firstCustomYears?.endYear;
+    if (targetYear != null) {
+      selectedExactDate.value = null;
+      selectedYear.value = targetYear;
+    }
+
     await onSaveMap(nextFeatures);
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -878,10 +1503,8 @@ const textValidationEntries = ref<TextValidationEntry[]>([]);
 function onOpenTextValidation(mapId: string | null) {
   activeValidationMapId.value = mapId;
 
-  // 1. Check in-memory cache from recent import session
   let img = getOriginalMapImage(mapId);
 
-  // 2. If not found, look for an image feature belonging to this map in the project
   if (!img) {
     const imageFeature = features.value.find(
       (f: Feature) =>
@@ -1069,6 +1692,73 @@ async function createMapForProject(formPayload: {
   }
 }
 
+function openDuplicateMapDialog(defaultSourceMapId?: string) {
+  const routeMapId = Array.isArray(route.params.mapId)
+    ? route.params.mapId[0]
+    : route.params.mapId;
+  const targetId =
+    defaultSourceMapId || routeMapId || mapPeriods.value[0]?.id || "";
+  duplicateMapDialogRef.value?.open(targetId);
+}
+
+async function onDuplicateMapSubmit(payload: {
+  sourceMapId: string;
+  newTitle: string;
+  startDate: string;
+  endDate: string;
+  exactDate: boolean;
+}) {
+  if (!projectId.value || !keycloak.token) return;
+  isDuplicatingMap.value = true;
+  try {
+    const res = await apiFetch(
+      `/projects/${projectId.value}/maps/${payload.sourceMapId}/duplicate`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+        body: JSON.stringify(
+          camelToSnake({
+            title: payload.newTitle.trim(),
+            startDate: payload.startDate,
+            endDate: payload.endDate,
+            exactDate: payload.exactDate,
+          }),
+        ),
+      },
+    );
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData?.detail || `Erreur serveur (${res.status})`);
+    }
+
+    duplicateMapDialogRef.value?.close();
+    showAlert("success", `Carte dupliquée avec succès : "${payload.newTitle}"`);
+
+    await loadProjectMapsForTimeline();
+    await loadInitialFeatures();
+
+    const yearMatch = payload.startDate.match(/^-?\d+/);
+    if (yearMatch) {
+      selectedYear.value = parseInt(yearMatch[0], 10);
+      if (payload.exactDate) {
+        selectedExactDate.value = payload.startDate;
+      }
+    }
+  } catch (error: any) {
+    console.error("Failed to duplicate map:", error);
+    duplicateMapDialogRef.value?.setError(
+      error?.message || "Erreur lors de la duplication de la carte.",
+    );
+    showAlert("error", "Erreur lors de la duplication de la carte.");
+  } finally {
+    isDuplicatingMap.value = false;
+  }
+}
+
 function reconcileVisibility(list: Feature[]) {
   const next = new Map<string, boolean>(featureVisibility.value);
   for (const f of list) {
@@ -1112,16 +1802,11 @@ async function loadInitialFeatures() {
   }
 }
 
-// Opens the map on the project's elements instead of a fixed location. Only
-// called when a project or map is opened, so saving never moves the view.
 async function frameVisibleFeatures() {
-  // Let MapGeoJSON render the freshly loaded features first
   await nextTick();
   mapGeoJsonRef.value?.fitToVisibleFeatures();
 }
 
-// Coming back from an import (?carte=<mapId>): moves the timeline onto the map
-// that was just extracted and frames it, rather than the whole project.
 async function frameImportedMap(): Promise<boolean> {
   const importedMapId = route.query[IMPORTED_MAP_QUERY];
   if (typeof importedMapId !== "string" || !importedMapId) return false;
@@ -1135,7 +1820,6 @@ async function frameImportedMap(): Promise<boolean> {
       .map((feature: Feature) => String(feature.id)),
   );
 
-  // The marker is single-use: a reload should open on the whole project again.
   const { [IMPORTED_MAP_QUERY]: _consumed, ...query } = route.query;
   void _consumed;
   await router.replace({ query });
@@ -1269,9 +1953,6 @@ function onCreateProjectDialogClosed() {
   shouldSaveAfterCopy.value = false;
 }
 
-// The copy starts empty: give it its own maps (periods + dates) and point each
-// feature at the matching new map, otherwise the features keep the source
-// project's map ids and the copy has no timeline nor map groups.
 async function copyMapsIntoProject(
   sourceProjectId: string,
   targetProjectId: string,
@@ -1294,7 +1975,6 @@ async function copyMapsIntoProject(
   const toNewMapId = (oldMapId?: string | null) =>
     oldMapId ? (mapIdMapping[oldMapId] ?? null) : null;
 
-  // Drop id/projectId so the backend creates new rows in the copy.
   return featuresToCopy.map(({ id, projectId, ...feature }: Feature) => {
     void id;
     void projectId;
@@ -1365,6 +2045,22 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
 }
 
 const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+  const isMod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  if (!isEditableTarget(e.target)) {
+    if (isMod && !e.shiftKey && key === "z") {
+      e.preventDefault();
+      onUndo();
+      return;
+    }
+    if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
+      e.preventDefault();
+      onRedo();
+      return;
+    }
+  }
+
   if (
     showTextValidationModal.value ||
     document.querySelector("dialog[open]") ||
@@ -1372,9 +2068,6 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
   ) {
     return;
   }
-
-  const isMod = e.ctrlKey || e.metaKey;
-  const key = e.key.toLowerCase();
 
   if (isMod && key === "c" && copySelectedFeature()) {
     e.preventDefault();
@@ -1387,15 +2080,31 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  if (key === "delete" && selectedFeatureId.value) {
-    const selectedFeature = features.value.find(
-      (feature: Feature) => String(feature.id) === selectedFeatureId.value,
-    );
-    if (selectedFeature) {
+  if (isMod && key === "a") {
+    e.preventDefault();
+    onSelectAll();
+    return;
+  }
+
+  if (
+    (key === "delete" || key === "backspace") &&
+    (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
+  ) {
+    if (multiSelectedFeatureIds.value.length > 1) {
       e.preventDefault();
-      featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
-        selectedFeature,
+      void onDeleteSelectedFeatures();
+      return;
+    }
+    if (selectedFeatureId.value) {
+      const selectedFeature = features.value.find(
+        (feature: Feature) => String(feature.id) === selectedFeatureId.value,
       );
+      if (selectedFeature) {
+        e.preventDefault();
+        featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
+          selectedFeature,
+        );
+      }
     }
     return;
   }
@@ -1406,15 +2115,20 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  if (isMod && !e.shiftKey && key === "z") {
+  const NUDGE_PX = e.shiftKey ? 10 : 1;
+  if (
+    ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key) &&
+    (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
+  ) {
     e.preventDefault();
-    onUndo();
+    const mapEl = document.getElementById("map");
+    if (!mapEl) return;
+    const dx =
+      key === "arrowright" ? NUDGE_PX : key === "arrowleft" ? -NUDGE_PX : 0;
+    const dy =
+      key === "arrowdown" ? NUDGE_PX : key === "arrowup" ? -NUDGE_PX : 0;
+    nudgeSelectedFeatures(dx, dy);
     return;
-  }
-
-  if ((isMod && key === "y") || (isMod && e.shiftKey && key === "z")) {
-    e.preventDefault();
-    onRedo();
   }
 };
 
@@ -1476,8 +2190,8 @@ onMounted(async () => {
 
   window.addEventListener("keydown", handleKeyboardShortcuts);
   window.addEventListener("click", onDocumentClick);
+  document.addEventListener("fullscreenchange", onFullscreenChange);
 
-  // Not awaited: the shortcuts above must not wait for the tiles to load.
   if (projectId.value) void uploadMapThumbnail();
 });
 
@@ -1531,7 +2245,9 @@ watch(
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyboardShortcuts);
   window.removeEventListener("click", onDocumentClick);
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
   stopSidebarResize();
+  stopTimelineResize();
   clearAlert();
 });
 

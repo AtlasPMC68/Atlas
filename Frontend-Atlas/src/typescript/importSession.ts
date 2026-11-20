@@ -1,5 +1,5 @@
 import type { ControlPointInput, ImposedColor, WorldBounds } from "./georef";
-import type { LegendAnswer } from "./legend";
+import type { LegendAnswer, LegendBounds } from "./legend";
 
 // The three top-level phases of an import.
 export type ImportPhase = "import" | "saisie" | "extraction";
@@ -20,6 +20,7 @@ export interface ImposedShape {
 export interface ImportInputs {
   frameBounds?: WorldBounds;
   legend?: LegendAnswer;
+  ignoredAreas?: LegendBounds[];
   controlPoints?: ControlPointInput[];
   // Dev-test only: held out of every fit, measured against the applied
   // transform (dev-docs/georeferencing-testing.md section 3).

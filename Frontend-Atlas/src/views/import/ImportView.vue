@@ -63,6 +63,7 @@
           :image-url="store.previewUrl"
           :title="store.mapTitle"
           :legend="store.inputs.legend"
+          :ignored-areas="store.inputs.ignoredAreas"
           :sift-points="siftPts"
           :city-points="cityPts"
           :check-points="checkPts"
@@ -115,9 +116,9 @@
       :is-open="true"
       :image-url="store.previewUrl"
       :initial-bounds="store.inputs.legend?.present ? store.inputs.legend.bounds : null"
+      :initial-ignored-areas="store.inputs.ignoredAreas ?? EMPTY_BOUNDS"
       @close="openModal = null"
-      @no-legend="save({ legend: { present: false, bounds: null } })"
-      @confirmed="(bounds) => save({ legend: { present: true, bounds } })"
+      @confirmed="onLegendConfirmed"
     />
 
     <GeoRefSiftModal
@@ -218,6 +219,7 @@ import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../
 import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
 import type { DevTestCaseInputsResponse } from "../../typescript/devTest";
 import type { Feature } from "../../typescript/feature";
+import type { LegendBounds } from "../../typescript/legend";
 import type { CustomLabelStyle } from "../../utils/labelPresentation";
 import type {
   ExtractionState,
@@ -252,6 +254,8 @@ import {
 } from "../../utils/textValidation";
 import { apiFetch } from "../../utils/api";
 import { camelToSnake, prepareFeaturesForSave, snakeToCamel } from "../../utils/utils";
+
+const EMPTY_BOUNDS: LegendBounds[] = [];
 
 const route = useRoute();
 const router = useRouter();
@@ -409,6 +413,27 @@ function onSiftConfirmed(points: ControlPointInput[], checks: ControlPointInput[
     controlPoints: [...points, ...cityPts.value],
     ...(isDevTest ? devTest.siftChecksPatch(checks) : {}),
   });
+}
+
+function onLegendConfirmed(
+  payload:
+    | { legend: LegendBounds | null; ignoredAreas: LegendBounds[] }
+    | LegendBounds,
+) {
+  if (payload && "ignoredAreas" in payload) {
+    save({
+      legend: payload.legend
+        ? { present: true, bounds: payload.legend }
+        : { present: false, bounds: null },
+      ignoredAreas: payload.ignoredAreas,
+    });
+  } else {
+    save({
+      legend: payload
+        ? { present: true, bounds: payload }
+        : { present: false, bounds: null },
+    });
+  }
 }
 
 async function save(patch: ImportInputsPatch) {

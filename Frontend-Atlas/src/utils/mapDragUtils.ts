@@ -92,6 +92,45 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
   };
 
   const handlers: Array<{ layer: L.Layer; type: string; fn: (e: unknown) => void }> = [];
+  let prevBodyUserSelect = "";
+  let prevBodyWebkitUserSelect = "";
+  let isSelectSuppressed = false;
+
+  const preventSelection = (e: Event) => {
+    e.preventDefault();
+  };
+
+  const suppressTextSelection = () => {
+    if (isSelectSuppressed) return;
+    isSelectSuppressed = true;
+    window.getSelection()?.removeAllRanges();
+    if (typeof document !== "undefined" && document.body) {
+      prevBodyUserSelect = document.body.style.userSelect;
+      prevBodyWebkitUserSelect = (document.body.style as any).webkitUserSelect ?? "";
+      document.body.style.userSelect = "none";
+      (document.body.style as any).webkitUserSelect = "none";
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("selectstart", preventSelection);
+      window.addEventListener("pointerup", restoreTextSelection);
+      window.addEventListener("mouseup", restoreTextSelection);
+    }
+  };
+
+  const restoreTextSelection = () => {
+    if (!isSelectSuppressed) return;
+    isSelectSuppressed = false;
+    if (typeof window !== "undefined") {
+      window.removeEventListener("selectstart", preventSelection);
+      window.removeEventListener("pointerup", restoreTextSelection);
+      window.removeEventListener("mouseup", restoreTextSelection);
+      window.getSelection()?.removeAllRanges();
+    }
+    if (typeof document !== "undefined" && document.body) {
+      document.body.style.userSelect = prevBodyUserSelect;
+      (document.body.style as any).webkitUserSelect = prevBodyWebkitUserSelect;
+    }
+  };
 
   forEachLeafLayer(featureLayer, (leaf) => {
     if ((leaf as { options?: { interactive?: boolean } }).options?.interactive === false) return;
@@ -99,9 +138,11 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
     // Capture the precise mouse pixel position at mousedown (before pm:dragstart fires).
     const onMouseDown = (e: L.LeafletMouseEvent) => {
       currentMousePx = map.latLngToContainerPoint(e.latlng);
+      suppressTextSelection();
     };
 
     const onDragStart = () => {
+      suppressTextSelection();
       const leafStates = new Map<L.Layer, unknown>();
       forEachLeafLayer(featureLayer, (sibling) => {
         if ((sibling as { options?: { interactive?: boolean } }).options?.interactive === false) return;
@@ -121,6 +162,7 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
 
     const onDragEnd = () => {
       map.off('mousemove', onMapMouseMove);
+      restoreTextSelection();
       dragState = null;
     };
 
@@ -138,6 +180,7 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
 
   return () => {
     map.off('mousemove', onMapMouseMove);
+    restoreTextSelection();
     handlers.forEach(({ layer, type, fn }) => layer.off(type, fn as (e: L.LeafletEvent) => void));
     dragState = null;
   };

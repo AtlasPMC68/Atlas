@@ -1,6 +1,7 @@
 """The legend helpers and the import inputs: validation, merging, readiness."""
 
 import asyncio
+from datetime import date
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -12,6 +13,7 @@ import pytest
 from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
+from app.models.features import Feature
 from app.models.map import Map
 from app.routers import imports as imports_router, projects as projects_router
 from app.schemas.mapImportRequest import MapImportRequest
@@ -25,6 +27,8 @@ from app.utils.legend import (
     legend_to_entry,
     parse_legend_bounds,
     parse_legend_entry,
+    point_in_any_bounds,
+    polygon_center_in_ignored_areas,
 )
 
 FRAME = {"west": -80.0, "south": 40.0, "east": -60.0, "north": 60.0}
@@ -87,6 +91,116 @@ def test_colour_extraction_leaves_the_legend_out(tmp_path):
     zone = shape(geometry)
     assert zone.contains(Point(10, 10))
     assert not zone.contains(Point(42, 42))
+
+
+def test_ignored_areas_validation_and_merging():
+    """Ignored areas (exclusion zones) must be validated and stored independently."""
+    rect1 = {"x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0}
+    rect2 = {"x": 50.0, "y": 60.0, "width": 70.0, "height": 80.0}
+    inputs = apply_inputs_patch({}, {"ignoredAreas": [rect1, rect2]})
+    assert len(inputs["ignoredAreas"]) == 2
+    assert inputs["ignoredAreas"][0] == rect1
+    assert inputs["ignoredAreas"][1] == rect2
+
+    # exclusionZones is an alias
+    inputs_alias = apply_inputs_patch({}, {"exclusionZones": [rect1]})
+    assert inputs_alias["ignoredAreas"] == [rect1]
+
+    # Malformed entries are rejected
+    with pytest.raises(ValueError):
+        apply_inputs_patch({}, {"ignoredAreas": "not a list"})
+    with pytest.raises(ValueError):
+        apply_inputs_patch({}, {"ignoredAreas": [{"x": 10, "y": 20, "width": -5, "height": 10}]})
+
+
+def test_independent_legend_and_exclusion_zones():
+    """Legend and exclusion zones must remain fully independent when saving and updating."""
+    legend = {"x": 10.0, "y": 10.0, "width": 50.0, "height": 50.0}
+    rect1 = {"x": 100.0, "y": 100.0, "width": 30.0, "height": 30.0}
+
+    # 1. Save legend first
+    inputs = apply_inputs_patch({}, {"legend": legend_to_entry(legend)})
+    assert inputs["legend"] == {"present": True, "bounds": legend}
+    assert "ignoredAreas" not in inputs
+
+    # 2. Add exclusion zones - legend remains intact
+    inputs = apply_inputs_patch(inputs, {"ignoredAreas": [rect1]})
+    assert inputs["legend"] == {"present": True, "bounds": legend}
+    assert inputs["ignoredAreas"] == [rect1]
+
+    # 3. Update exclusion zones - legend remains intact
+    rect2 = {"x": 200.0, "y": 200.0, "width": 40.0, "height": 40.0}
+    inputs = apply_inputs_patch(inputs, {"ignoredAreas": [rect1, rect2]})
+    assert inputs["legend"] == {"present": True, "bounds": legend}
+    assert len(inputs["ignoredAreas"]) == 2
+
+    # 4. Modify legend (or set to no legend) - exclusion zones remain intact
+    inputs = apply_inputs_patch(inputs, {"legend": legend_to_entry(None)})
+    assert inputs["legend"] == {"present": False, "bounds": None}
+    assert len(inputs["ignoredAreas"]) == 2
+
+    # 5. Parsing preserves both
+    parsed = parse_import_inputs(inputs)
+    assert parsed.legend_answered is True
+    assert parsed.legend_bounds is None
+    assert len(parsed.ignored_areas) == 2
+
+
+def test_polygon_center_in_ignored_areas():
+    """Points inside exclusion zones are detected, while points outside are not."""
+    zones = [
+        {"x": 10.0, "y": 10.0, "width": 50.0, "height": 50.0},
+        {"x": 100.0, "y": 100.0, "width": 40.0, "height": 40.0},
+    ]
+    # Inside zone 1
+    assert polygon_center_in_ignored_areas([[20, 20], [30, 20], [30, 30], [20, 30]], zones) is True
+    # Inside zone 2
+    assert polygon_center_in_ignored_areas([[110, 110], [120, 110], [120, 120], [110, 120]], zones) is True
+    # Outside all zones
+    assert polygon_center_in_ignored_areas([[70, 70], [80, 70], [80, 80], [70, 80]], zones) is False
+    # None or empty zones
+    assert polygon_center_in_ignored_areas([[20, 20]], None) is False
+    assert polygon_center_in_ignored_areas([[20, 20]], []) is False
+
+
+def test_categorized_text_features_from_ocr_filters_ignored_areas(monkeypatch):
+    """OCR text within ignored areas (scale, compass, title) must be rejected."""
+    from app.tasks import _categorized_text_features_from_ocr
+
+    monkeypatch.setattr("app.tasks.match_ocr_label", lambda text, *args, **kwargs: None)
+
+    legend = {"x": 10.0, "y": 10.0, "width": 50.0, "height": 50.0}
+    scale_zone = {"x": 200.0, "y": 200.0, "width": 80.0, "height": 30.0}
+    compass_zone = {"x": 300.0, "y": 300.0, "width": 40.0, "height": 40.0}
+
+    # Blocks:
+    # 1: Inside legend -> rejected
+    # 2: Inside scale_zone (ignored area) -> rejected
+    # 3: Inside compass_zone (ignored area) -> rejected
+    # 4: Outside (geographical text) -> accepted as unrecognized feature for validation
+    blocks = [
+        [[[20, 20], [40, 20], [40, 30], [20, 30]], "LegendLabel", 0.99],
+        [[[220, 210], [250, 210], [250, 220], [220, 220]], "ScaleLabel", 0.95],
+        [[[310, 310], [330, 310], [330, 330], [310, 330]], "CompassLabel", 0.90],
+        [[[500, 500], [550, 500], [550, 520], [500, 520]], "UnkPlace", 0.88],
+    ]
+
+    frame = {"west": -75.0, "south": 45.0, "east": -70.0, "north": 50.0}
+    result = _categorized_text_features_from_ocr(
+        blocks,
+        legend_bounds=legend,
+        frame_bounds=frame,
+        image_size=(1000, 1000),
+        ignored_areas=[scale_zone, compass_zone],
+    )
+
+    # Only UnkPlace should survive (not legend, not scale, not compass)
+    names = [c["features"][0]["properties"]["name"] for c in result]
+    assert "UnkPlace" in names
+    assert "LegendLabel" not in names
+    assert "ScaleLabel" not in names
+    assert "CompassLabel" not in names
+    assert len(result) == 1
 
 
 # --- inputs -------------------------------------------------------------------
@@ -530,6 +644,241 @@ def test_update_features_ignores_map_id_from_another_project():
 
     assert len(added_features) == 1
     assert added_features[0].map_id is None
+
+
+def test_duplicate_map_rejects_empty_title():
+    project_id = uuid4()
+    map_id = uuid4()
+    session = SimpleNamespace()
+    request = MapImportRequest(
+        title="   ",
+        start_date="1850-01-01",
+        end_date="1860-01-01",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.duplicate_map_for_project(
+                project_id,
+                map_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+    assert error.value.status_code == 400
+    assert "title must not be empty" in error.value.detail
+
+
+def test_duplicate_map_rejects_reversed_period():
+    project_id = uuid4()
+    map_id = uuid4()
+    session = SimpleNamespace()
+    request = MapImportRequest(
+        title="Carte Copie",
+        start_date="1870-01-01",
+        end_date="1850-01-01",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.duplicate_map_for_project(
+                project_id,
+                map_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+    assert error.value.status_code == 400
+    assert "start_date must be before or equal to end_date" in error.value.detail
+
+
+def test_duplicate_map_for_project_success(monkeypatch):
+    project_id = uuid4()
+    map_id = uuid4()
+    new_id = uuid4()
+    session = SimpleNamespace()
+    request = MapImportRequest(
+        title="Carte Copie",
+        start_date="1850-01-01",
+        end_date="1860-01-01",
+    )
+
+    duplicate_mock = AsyncMock(return_value=new_id)
+    monkeypatch.setattr("app.routers.projects.duplicate_map_in_project", duplicate_mock)
+
+    user_uuid = uuid4()
+    res = asyncio.run(
+        projects_router.duplicate_map_for_project(
+            project_id,
+            map_id,
+            request,
+            str(user_uuid),
+            session,
+        )
+    )
+    assert res == {"map_id": str(new_id)}
+    duplicate_mock.assert_awaited_once_with(
+        db=session,
+        project_id=project_id,
+        source_map_id=map_id,
+        user_id=user_uuid,
+        new_title="Carte Copie",
+        start_date=date(1850, 1, 1),
+        end_date=date(1860, 1, 1),
+        exact_date=False,
+    )
+
+
+def test_duplicate_map_in_project_service(tmp_path, monkeypatch):
+    from app.services.maps import duplicate_map_in_project
+    from app.models.project import Project
+
+    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+    user_id = uuid4()
+    project_id = uuid4()
+    source_map_id = uuid4()
+
+    # Create dummy source reference image
+    ref_dir = tmp_path / "reference_images"
+    ref_dir.mkdir(parents=True)
+    source_img = ref_dir / f"{source_map_id}.png"
+    source_img.write_bytes(b"PNG_DATA")
+
+    project = Project(id=project_id, user_id=user_id)
+    source_map = Map(
+        id=source_map_id,
+        project_id=project_id,
+        title="Source",
+        start_date=date(1800, 1, 1),
+        end_date=date(1850, 1, 1),
+        reference_image_path=f"reference_images/{source_map_id}.png",
+        reference_image_content_type="image/png",
+    )
+    source_feature = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=source_map_id,
+        data={"type": "Feature", "properties": {"name": "Ville", "mapId": str(source_map_id)}},
+    )
+
+    added = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project),
+                SimpleNamespace(scalar_one_or_none=lambda: source_map),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [source_feature])),
+            ]
+        ),
+        add=lambda obj: added.append(obj),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    new_map_id = asyncio.run(
+        duplicate_map_in_project(
+            db=session,
+            project_id=project_id,
+            source_map_id=source_map_id,
+            user_id=user_id,
+            new_title="Nouvelle Carte",
+        )
+    )
+
+    assert new_map_id is not None
+    duplicated_map = next(o for o in added if isinstance(o, Map))
+    assert duplicated_map.title == "Nouvelle Carte"
+    # Ensure independent image copy was created on disk
+    expected_new_img = ref_dir / f"{duplicated_map.id}.png"
+    assert expected_new_img.exists()
+    assert expected_new_img.read_bytes() == b"PNG_DATA"
+    assert duplicated_map.reference_image_path == f"reference_images/{duplicated_map.id}.png"
+
+    # Ensure feature was copied with new uuid and new mapId
+    duplicated_feat = next(o for o in added if isinstance(o, Feature))
+    assert duplicated_feat.map_id == duplicated_map.id
+    assert duplicated_feat.data["mapId"] == str(duplicated_map.id)
+    assert duplicated_feat.data["properties"]["mapId"] == str(duplicated_map.id)
+
+
+def test_duplicate_map_in_project_feature_collection(tmp_path, monkeypatch):
+    from app.services.maps import duplicate_map_in_project
+    from app.models.project import Project
+
+    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+    user_id = uuid4()
+    project_id = uuid4()
+    source_map_id = uuid4()
+
+    project = Project(id=project_id, user_id=user_id)
+    source_map = Map(
+        id=source_map_id,
+        project_id=project_id,
+        title="Source",
+        start_date=date(1500, 1, 1),
+        end_date=date(1501, 1, 1),
+    )
+    source_feature = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=source_map_id,
+        data={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "id": str(uuid4()),
+                    "properties": {
+                        "name": "Zone 1",
+                        "mapElementType": "zone",
+                        "mapId": str(source_map_id),
+                        "startYear": 1500,
+                        "endYear": 1501,
+                    },
+                }
+            ],
+        },
+    )
+
+    added = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project),
+                SimpleNamespace(scalar_one_or_none=lambda: source_map),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [source_feature])),
+            ]
+        ),
+        add=lambda obj: added.append(obj),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    new_map_id = asyncio.run(
+        duplicate_map_in_project(
+            db=session,
+            project_id=project_id,
+            source_map_id=source_map_id,
+            user_id=user_id,
+            new_title="Carte Dupliquée",
+            start_date=date(1509, 1, 1),
+            end_date=date(1509, 1, 1),
+        )
+    )
+
+    assert new_map_id is not None
+    duplicated_feat = next(o for o in added if isinstance(o, Feature))
+    inner = duplicated_feat.data["features"][0]
+    assert inner["mapId"] == str(new_map_id)
+    assert inner["properties"]["mapId"] == str(new_map_id)
+    # Check that the dates adapted to the new map's period so elements are visible
+    assert inner["properties"]["startYear"] == 1509
+    assert inner["properties"]["endYear"] == 1509
+
 
 
 

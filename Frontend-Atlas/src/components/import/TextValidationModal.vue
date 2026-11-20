@@ -9,7 +9,7 @@
     aria-labelledby="text-validation-title"
     data-testid="text-validation-modal"
   >
-    <div class="modal-box w-11/12 max-w-7xl h-[90vh] max-h-[90vh] flex flex-col gap-4">
+    <div class="modal-box w-11/12 max-w-[96vw] xl:max-w-[92vw] 2xl:max-w-[88vw] h-[95vh] max-h-[95vh] flex flex-col gap-4">
       <button
         type="button"
         class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
