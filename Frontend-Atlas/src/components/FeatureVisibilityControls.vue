@@ -328,6 +328,13 @@
                     </span>
                   </div>
                 </div>
+                <span
+                  v-if="isPreviewClamped"
+                  class="text-xs font-medium text-error"
+                  data-testid="preview-limit-notice"
+                >
+                  L'aperçu est plafonné pour tenir dans la fenêtre.
+                </span>
               </div>
             </div>
           </div>
@@ -351,7 +358,7 @@
                     v-for="style in availableCustomLabelStyles"
                     :key="style.id"
                     :value="`custom:${style.id}`"
-                    :style="getCustomStyleObject(style)"
+                    class="text-sm"
                   >
                     {{ style.name }}
                   </option>
@@ -359,7 +366,7 @@
                     v-for="(_, typeKey) in WORD_TYPE_STYLES"
                     :key="typeKey"
                     :value="typeKey"
-                    :style="getWordTypeOptionStyle(typeKey)"
+                    class="text-sm"
                   >
                     {{ getWordTypeOptionLabel(typeKey) }}
                   </option>
@@ -377,37 +384,50 @@
 
             <div
               v-if="!editDraft.customLabelStyleId"
-              class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full"
+              class="flex flex-col gap-1 w-full"
             >
-              <div class="setting-card">
-                <label class="setting-card-label" for="edit-feature-text-color">
-                  Couleur texte
-                </label>
-                <input
-                  id="edit-feature-text-color"
-                  v-model="editDraft.textColorHex"
-                  data-testid="text-color-input"
-                  type="color"
-                  class="setting-color-input"
-                />
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
+                <div class="setting-card">
+                  <label class="setting-card-label" for="edit-feature-text-color">
+                    Couleur texte
+                  </label>
+                  <input
+                    id="edit-feature-text-color"
+                    v-model="editDraft.textColorHex"
+                    data-testid="text-color-input"
+                    type="color"
+                    class="setting-color-input"
+                  />
+                </div>
+
+                <div
+                  class="setting-card"
+                  :class="{ 'border-error': isTextSizeOverMax }"
+                >
+                  <label class="setting-card-label" for="edit-feature-text-size">
+                    Taille (px)
+                  </label>
+                  <input
+                    id="edit-feature-text-size"
+                    v-model.number="editDraft.textSizePx"
+                    data-testid="text-size-input"
+                    type="number"
+                    :min="MIN_TEXT_SIZE_PX"
+                    :max="MAX_TEXT_SIZE_PX"
+                    step="1"
+                    class="setting-number-input"
+                    @change="onTextSizeChange"
+                  />
+                </div>
               </div>
 
-              <div class="setting-card">
-                <label class="setting-card-label" for="edit-feature-text-size">
-                  Taille (px)
-                </label>
-                <input
-                  id="edit-feature-text-size"
-                  v-model.number="editDraft.textSizePx"
-                  data-testid="text-size-input"
-                  type="number"
-                  :min="MIN_TEXT_SIZE_PX"
-                  :max="MAX_TEXT_SIZE_PX"
-                  step="1"
-                  class="setting-number-input"
-                  @change="editDraft.textSizePx = normalizeTextSizePx(editDraft.textSizePx) ?? defaultTextSizePx"
-                />
-              </div>
+              <span
+                v-if="isTextSizeOverMax"
+                class="text-xs font-medium text-error"
+                data-testid="text-size-max-warning"
+              >
+                La taille maximale autorisée est de {{ MAX_TEXT_SIZE_PX }} px (la valeur a été plafonnée).
+              </span>
             </div>
           </div>
 
@@ -801,10 +821,8 @@ import {
   MIN_TEXT_SIZE_PX,
   normalizeTextSizePx,
   MAX_PREVIEW_FONT_SIZE_PX,
-  getCustomStyleObject,
   getLabelStylePreviewCss,
   getWordTypeOptionLabel,
-  getWordTypeOptionStyle,
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import { getMapElementType } from "../utils/featureHelpers";
@@ -898,6 +916,26 @@ const editModalTitle = computed(() => {
   }
   return `Modification de la forme ${title}`;
 });
+
+const isTextSizeOverMax = computed(() => {
+  const num = Number(editDraft.value.textSizePx);
+  return Number.isFinite(num) && num > MAX_TEXT_SIZE_PX;
+});
+
+const isPreviewClamped = computed(() => {
+  if (!isTextElement.value) return false;
+  const rawSize = Number(editDraft.value.textSizePx);
+  const textContent = editDraft.value.labelText || editDraft.value.name || "";
+  return (
+    (Number.isFinite(rawSize) && rawSize > MAX_PREVIEW_FONT_SIZE_PX) ||
+    textContent.length > 24
+  );
+});
+
+function onTextSizeChange() {
+  editDraft.value.textSizePx =
+    normalizeTextSizePx(editDraft.value.textSizePx) ?? defaultTextSizePx.value;
+}
 
 const editTextStyle = computed<CSSProperties>(() => {
   if (!isTextElement.value) return {};

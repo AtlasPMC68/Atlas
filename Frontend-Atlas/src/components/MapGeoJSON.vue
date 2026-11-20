@@ -1152,14 +1152,14 @@ onMounted(() => {
 
   const onWindowMousemoveRight = (e: MouseEvent) => {
     if (!map) return;
-    if (!(e.buttons & 2)) return; // bouton droit tenu
+    if (!(e.buttons & 2)) return; // right button held
 
     const dx = e.clientX - lastRightPos.x;
     const dy = e.clientY - lastRightPos.y;
     const totalMoved = Math.abs(dx) + Math.abs(dy);
 
     if (!isRightSelectDragging && totalMoved > 4) {
-      // Démarrer le rectangle de sélection
+      // Start the selection rectangle
       isRightSelectDragging = true;
       didRightDrag = true;
       const containerRect = container.getBoundingClientRect();
@@ -1188,7 +1188,7 @@ onMounted(() => {
   const onWindowMouseupRight = (e: MouseEvent) => {
     if (e.button !== 2) return;
     if (isRightSelectDragging && rightSelectRect && map) {
-      // Collecter tous les features dont les bounds intersectent le rectangle
+      // Collect all features whose bounds intersect the rectangle
       const selBounds = rightSelectRect.getBounds();
       const selectedIds: string[] = [];
       featureLayerManager.layers.forEach((layer, id) => {
@@ -1216,7 +1216,7 @@ onMounted(() => {
     rightSelectStart = null;
   };
 
-  // Supprimer le menu contextuel si on vient de faire un drag de sélection
+  // Suppress context menu if we just completed a selection drag
   const onContainerContextmenu = (e: MouseEvent) => {
     if (didRightDrag) {
       e.preventDefault();

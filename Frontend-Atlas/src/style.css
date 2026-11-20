@@ -146,7 +146,7 @@
 
   /* Encadré dédié à l'aperçu */
   .preview-frame {
-    @apply rounded-xl border-2 border-gray-300 bg-base-200 p-3 min-w-0 overflow-hidden;
+    @apply rounded-xl border-2 border-gray-300 bg-gray-100 p-3 min-w-0 overflow-hidden;
   }
 
   .preview-box {
@@ -368,6 +368,7 @@
   border-bottom-right-radius: 4px !important;
 }
 
+/* ── Timeline ──────────────────────────────────────────────────────────────── */
 .timeline-container {
   position: relative;
   z-index: 1000;
@@ -444,7 +445,7 @@
 
 .period-tracks {
   position: relative;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.3rem;
   border-radius: 0.25rem;
   background: #ffffff;
   overflow: visible;
@@ -477,9 +478,7 @@
 .element-marker-pin.tooltip::before,
 .element-marker-pin.tooltip::after,
 .element-marker-pin::before,
-.element-marker-pin::after,
-.element-marker-range-track::before,
-.element-marker-range-track::after {
+.element-marker-pin::after {
   display: none !important;
   content: none !important;
   opacity: 0 !important;
@@ -490,8 +489,8 @@
 /* Element markers on timeline */
 .element-markers-row {
   position: relative;
-  height: 1.45rem;
-  margin-bottom: 0.15rem;
+  height: 1.25rem;
+  margin-bottom: 0.1rem;
   z-index: 1005;
 }
 
@@ -515,45 +514,36 @@
 
 .element-marker-pin:hover .element-marker-badge,
 .element-marker-pin:focus-visible .element-marker-badge {
-  transform: translateY(-2px) scale(1.08);
+  transform: translateY(-1px) scale(1.05);
 }
 
-.element-marker-badge {
+.element-marker-badge,
+.element-marker-badge.element-marker-badge-range {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.12rem 0.45rem;
-  font-size: 0.68rem;
-  font-weight: 600;
+  padding: 0.08rem 0.42rem;
+  font-size: 0.7rem;
+  font-weight: 700;
   border-radius: 9999px;
-  background: #f59e0b;
-  color: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  border: 1.5px solid #ffffff;
+  background: #ffffff;
+  color: #1e293b;
+  border: 1.5px solid #475569;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
   white-space: nowrap;
-  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.element-marker-active .element-marker-badge {
-  background: #d97706;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary);
-}
-
-.element-marker-badge.element-marker-badge-range {
-  background: #6366f1;
-}
-
+.element-marker-active .element-marker-badge,
 .element-marker-active .element-marker-badge.element-marker-badge-range {
-  background: #4f46e5;
+  background: #f1f5f9;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary);
+  color: var(--color-primary);
 }
 
 .element-marker-badge.element-marker-badge-multiple {
   gap: 0.2rem;
-  padding: 0.12rem 0.45rem;
-  font-weight: 700;
+  padding: 0.08rem 0.45rem;
   letter-spacing: 0.01em;
 }
 
@@ -561,39 +551,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 0.95rem;
-  height: 0.95rem;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.3);
-  font-size: 0.68rem;
+  color: #b91c1c;
+  font-size: 0.75rem;
   font-weight: 900;
   line-height: 1;
 }
 
 .element-marker-count {
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
-}
-
-.element-marker-range-track {
-  position: absolute;
-  bottom: -2px;
-  height: 4px;
-  background: linear-gradient(90deg, rgba(99, 102, 241, 0.9), rgba(139, 92, 246, 0.45));
-  border-radius: 9999px;
-  pointer-events: auto;
-  cursor: pointer;
-  z-index: 1004;
-  transition: all 0.15s ease;
-}
-
-.element-marker-range-track:hover,
-.element-marker-range-track.element-marker-range-active {
-  height: 6px;
-  bottom: -3px;
-  background: #6366f1;
-  box-shadow: 0 0 5px rgba(99, 102, 241, 0.7);
 }
 
 .element-marker-icon {
@@ -607,24 +574,54 @@
   white-space: nowrap;
 }
 
-.tick-label-element {
-  color: #d97706;
-  font-weight: 600;
-}
-
-.element-dot {
-  display: inline-block;
-  width: 0.35rem;
-  height: 0.35rem;
-  border-radius: 9999px;
-  background-color: #f59e0b;
-  margin-left: 0.15rem;
-  vertical-align: middle;
-}
-
 .timeline-year-range,
 .timeline-day-range {
   display: block;
+}
+
+/* Slider affiné */
+.timeline-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.3rem;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+
+.timeline-range--unfilled {
+  background: #e2e8f0;
+}
+
+.timeline-range--filled {
+  background: var(--color-primary);
+}
+
+.timeline-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2.5px solid var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.timeline-range::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+
+.timeline-range::-moz-range-thumb {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2.5px solid var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
 }
 
 .arrow-head {

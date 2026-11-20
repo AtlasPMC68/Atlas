@@ -8,7 +8,7 @@
           <p v-if="error" class="text-xs text-error font-medium">{{ error }}</p>
 
           <fieldset class="fieldset" :disabled="isDuplicating">
-            <!-- 1. Choisir la carte à dupliquer -->
+            <!-- 1. Choose map to duplicate -->
             <label class="label font-medium" for="duplicate-source-map">
               Carte à dupliquer
             </label>
@@ -30,7 +30,7 @@
               </option>
             </select>
 
-            <!-- 2. Définir le nom de la nouvelle carte -->
+            <!-- 2. Set new map title -->
             <label class="label font-medium" for="duplicate-map-title">
               Nom de la nouvelle carte
             </label>
@@ -44,7 +44,7 @@
               data-testid="duplicate-map-title-input"
             />
 
-            <!-- 3. Définir la date associée à la nouvelle carte -->
+            <!-- 3. Set date associated with the new map -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
               <div>
                 <label class="label font-medium">Date début</label>

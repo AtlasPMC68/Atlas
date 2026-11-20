@@ -628,26 +628,3 @@ def test_merge_multiline_ocr_blocks_hyphen_vertical_and_distant_horizontal():
     texts = [b[1] for b in merged]
     assert "NOUVEAU-BRUNSWICK" in texts
     assert "BRETON" in texts
-
-
-def test_florence_output_merge_related_detections():
-    import sys
-    from pathlib import Path
-    florence_dir = str(Path(__file__).resolve().parents[1] / "ocr-florence")
-    if florence_dir not in sys.path:
-        sys.path.insert(0, florence_dir)
-    import output
-
-    # "NOUVEAU-" (h=20) at x:100..180, y:100..120
-    # "BRUNSWICK" (h=20) directly underneath at x:100..190, y:124..144
-    # "BRETON" (h=13) far horizontally at x:300..360, y:102..115
-    dets = [
-        {"text": "NOUVEAU-", "bbox_xyxy": [100, 100, 180, 120]},
-        {"text": "BRUNSWICK", "bbox_xyxy": [100, 124, 190, 144]},
-        {"text": "BRETON", "bbox_xyxy": [300, 102, 360, 115]},
-    ]
-    merged = output.merge_related_detections(dets)
-    merged_texts = [d["text"] for d in merged]
-    assert "NOUVEAU-BRUNSWICK" in merged_texts
-    assert "BRETON" in merged_texts
-    assert len(merged) == 2

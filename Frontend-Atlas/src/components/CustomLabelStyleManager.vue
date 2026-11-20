@@ -75,7 +75,7 @@
           </div>
         </div>
 
-        <!-- Colonne milieu : Encadré dédié à l'aperçu (uniquement pour un style texte) -->
+        <!-- Middle column: Dedicated preview frame (text style only) -->
         <div
           class="flex flex-col gap-2.5 min-w-0 md:border-l md:border-r md:border-gray-300 md:px-3.5 md:py-0.5"
           data-testid="middle-style-preview"
@@ -96,7 +96,7 @@
           </div>
         </div>
 
-        <!-- Colonne droite : Uniquement les éléments de réglages -->
+        <!-- Right column: Settings elements only -->
         <form
           class="flex flex-col gap-3 min-w-0"
           @submit.prevent="submitDraft"
@@ -134,7 +134,7 @@
             />
           </div>
 
-          <!-- Taille & Couleur dans des cartes uniformes -->
+          <!-- Size & Color in uniform cards -->
           <div class="flex flex-col gap-1">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
               <div
@@ -216,7 +216,7 @@
             </div>
           </div>
 
-          <!-- Option d'association d'un point -->
+          <!-- Point association option -->
           <div class="editor-section-compact">
             <span class="field-label">Symbole sur la carte</span>
             <label
@@ -239,7 +239,7 @@
             </label>
           </div>
 
-          <!-- Réglages du point affichés lorsque "Ajouter un point" est actif -->
+          <!-- Point settings displayed when "Add a point" is active -->
           <div
             v-if="draft.hasPoint"
             class="editor-section"

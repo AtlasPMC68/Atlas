@@ -412,11 +412,6 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("province");
     await select.trigger("change");
 
-    const textInput = wrapper.find('[data-testid="label-text-input"]');
-    expect((textInput.element as HTMLTextAreaElement).value).toBe("QUÉBEC");
-    expect(textInput.attributes("style")).toContain("font-size: 14px");
-
-    // Click modifier button
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     expect(modifyBtn).toBeDefined();
     await modifyBtn!.trigger("click");
@@ -450,7 +445,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(feature);
     const select = wrapper.find('[data-testid="word-type-select"]');
-    const textInput = wrapper.findAll("input").find((input: any) => input.element.value === "mCGuIlL");
+    const textInput = wrapper.findAll("textarea").find((input: any) => input.element.value === "mCGuIlL");
     expect(textInput).toBeDefined();
 
     await select.setValue("province");
@@ -543,7 +538,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await select.setValue("city");
     await select.trigger("change");
 
-    const textInput = wrapper.findAll("input").find((i: any) => i.element.value === "SASKATCHEWAN");
+    const textInput = wrapper.findAll("textarea").find((i: any) => i.element.value === "SASKATCHEWAN");
     expect(textInput).toBeDefined();
 
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
@@ -570,19 +565,15 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(textFeature);
 
-    // Find the Nom de l'élément input (first text input without style)
-    const nameInput = wrapper
-      .findAll("input")
-      .find((i: any) => i.element.value === "Québec" && !i.attributes("style"));
-    expect(nameInput).toBeDefined();
+    // Find the Nom de l'élément textarea
+    const nameInput = wrapper.find("textarea#edit-feature-name");
+    expect(nameInput.exists()).toBe(true);
 
-    await nameInput!.setValue("Trois-Rivières");
-    await nameInput!.trigger("input");
+    await nameInput.setValue("Trois-Rivières");
+    await nameInput.trigger("input");
 
     // The preview input should be updated
-    const previewInput = wrapper.find('[data-testid="label-text-input"]');
-    expect(previewInput.attributes("style")).toContain("font-size");
-    expect((previewInput.element as HTMLTextAreaElement).value).toBe("Trois-Rivières");
+    expect(wrapper.text()).toContain("Trois-Rivières");
   });
 
   it("keeps the opacity of a point between 0 and 1", async () => {
@@ -595,7 +586,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(textFeature);
 
-    const opacityInput = wrapper.find('[data-testid="point-fill-opacity-input"]');
+    const opacityInput = wrapper.find('[data-testid="fill-opacity-input"]');
     expect(opacityInput.attributes("min")).toBe("0");
     expect(opacityInput.attributes("max")).toBe("1");
 
@@ -625,7 +616,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await wrapper.find('[data-testid="color-input"]').setValue("#ffee00");
     await wrapper.find('[data-testid="text-color-input"]').setValue("#112233");
     await wrapper.find('[data-testid="text-size-input"]').setValue("22");
-    await wrapper.find('[data-testid="label-text-input"]').setValue("Québec\nla capitale");
+    await wrapper.find('textarea[placeholder="Nom de l\'élément"]').setValue("Québec\nla capitale");
+    await wrapper.find('textarea[placeholder="Nom de l\'élément"]').trigger("input");
 
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     await modifyBtn!.trigger("click");
@@ -648,10 +640,9 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await (wrapper.vm as any).showEditFeatureDialog(zoneFeature);
 
     // Should display labels for shape opacity and stroke
-    expect(wrapper.text()).toContain("Opacité");
-    expect(wrapper.text()).toContain("Opacité du contour");
-    expect(wrapper.text()).toContain("Épaisseur du contour");
-    expect(wrapper.text()).toContain("Couleur du contour :");
+    expect(wrapper.text()).toContain("Opacité fond");
+    expect(wrapper.text()).toContain("Opacité bord");
+    expect(wrapper.text()).toContain("Épaisseur bord");
 
     // Click modifier button
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));

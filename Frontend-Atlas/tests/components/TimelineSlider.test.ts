@@ -71,7 +71,7 @@ describe("TimelineSlider element markers (pins)", () => {
     const pins = wrapper.findAll("[data-testid='timeline-element-marker']");
     expect(pins).toHaveLength(1);
     expect(pins[0].text()).toContain("1");
-    expect(pins[0].attributes("data-tip")).toBe("📌 ALBERTA (1900) - Texte");
+    expect(pins[0].attributes("data-tip")).toBe("ALBERTA (1900) - Texte");
 
     // Year label 1900 should have element styling and dot
     const label1900 = labelFor(wrapper, 1900);
@@ -89,7 +89,7 @@ describe("TimelineSlider element markers (pins)", () => {
     const pins = wrapper.findAll("[data-testid='timeline-element-marker']");
     expect(pins).toHaveLength(1);
     expect(pins[0].text()).toContain("2 éléments");
-    expect(pins[0].attributes("data-tip")).toContain("📌 2 éléments (1900) : ALBERTA, CALGARY");
+    expect(pins[0].attributes("data-tip")).toContain("2 éléments (1900) : ALBERTA, CALGARY");
   });
 
   it("clicking an element pin selects the year immediately", async () => {

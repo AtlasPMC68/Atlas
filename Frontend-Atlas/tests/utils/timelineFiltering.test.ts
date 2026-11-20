@@ -5,9 +5,34 @@ import { getFeatureMapId } from "../../src/utils/featureHelpers";
 import { toYear, isPeriodActiveAt } from "../../src/utils/dateUtils";
 import { isTextFeature } from "../../src/utils/wordStyles";
 
+type TimelineMarkerItem = TimelineElementMarker & {
+  isCustom?: boolean;
+};
+
 /**
  * Reusable helper functions mirroring the logic in Map.vue
  */
+function parseOptionalYear(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.trunc(num);
+}
+
+function getFeatureCustomYears(f: Feature): {
+  startYear: number | null;
+  endYear: number | null;
+} {
+  const startYear =
+    parseOptionalYear(f.properties?.startYear) ??
+    (f.properties?.startDate ? parseOptionalYear(toYear(f.properties.startDate)) : null);
+  const endYear =
+    parseOptionalYear(f.properties?.endYear) ??
+    (f.properties?.endDate ? parseOptionalYear(toYear(f.properties.endDate)) : null);
+
+  return { startYear, endYear };
+}
+
 function computeEnrichedPeriods(
   mapPeriods: MapPeriod[],
   features: Feature[],
@@ -42,55 +67,39 @@ function computeEnrichedPeriods(
 function computeCustomFeatureYears(features: Feature[]): number[] {
   const years: number[] = [];
   features.forEach((f: Feature) => {
-    const mapId = getFeatureMapId(f);
-    if (mapId) return; // Seuls les éléments sans carte étendent l'échelle
-
-    const sy =
-      f.properties?.startYear != null
-        ? Number(f.properties.startYear)
-        : f.properties?.startDate
-          ? toYear(f.properties.startDate)
-          : null;
-    const ey =
-      f.properties?.endYear != null
-        ? Number(f.properties.endYear)
-        : f.properties?.endDate
-          ? toYear(f.properties.endDate)
-          : null;
-    if (sy != null && !Number.isNaN(sy)) years.push(sy);
-    if (ey != null && !Number.isNaN(ey)) years.push(ey);
+    const { startYear, endYear } = getFeatureCustomYears(f);
+    if (startYear != null) years.push(startYear);
+    if (endYear != null) years.push(endYear);
   });
   return years;
 }
 
-function computeTimelineElementMarkers(features: Feature[]): TimelineElementMarker[] {
-  const list: TimelineElementMarker[] = [];
-  features.forEach((f: Feature) => {
-    const mapId = getFeatureMapId(f);
-    if (mapId) return; // Par défaut, ignorer les éléments qui appartiennent à une carte
+function computeTimelineElementMarkers(
+  features: Feature[],
+  mapPeriods: MapPeriod[] = [],
+): TimelineMarkerItem[] {
+  const periodTitleById = new Map<string, string>(
+    mapPeriods.map((p: MapPeriod) => [String(p.id), p.title]),
+  );
 
-    const sy =
-      f.properties?.startYear != null
-        ? Number(f.properties.startYear)
-        : f.properties?.startDate
-          ? toYear(f.properties.startDate)
-          : null;
-    const ey =
-      f.properties?.endYear != null
-        ? Number(f.properties.endYear)
-        : f.properties?.endDate
-          ? toYear(f.properties.endDate)
-          : null;
-    if (sy != null && !Number.isNaN(sy)) {
-      list.push({
-        id: String(f.id),
-        name: f.properties?.labelText || f.properties?.name || "Élément",
-        year: sy,
-        endYear: ey,
-        type: f.properties?.mapElementType || (isTextFeature(f) ? "Texte" : "Élément"),
-        color: f.properties?.colorHex,
-      });
-    }
+  const list: TimelineMarkerItem[] = [];
+  features.forEach((f: Feature) => {
+    const { startYear, endYear } = getFeatureCustomYears(f);
+    const effectiveStart = startYear ?? endYear;
+    if (effectiveStart == null) return;
+
+    const mapId = getFeatureMapId(f);
+    list.push({
+      id: String(f.id),
+      name: f.properties?.labelText || f.properties?.name || "Élément",
+      year: effectiveStart,
+      endYear: endYear ?? effectiveStart,
+      type: f.properties?.mapElementType || (isTextFeature(f) ? "Texte" : "Élément"),
+      color: f.properties?.colorHex,
+      mapId: mapId ?? null,
+      mapTitle: mapId ? periodTitleById.get(String(mapId)) : undefined,
+      isCustom: true,
+    });
   });
   return list;
 }
@@ -101,26 +110,12 @@ function isFeatureVisibleAtYear(
   periodByMapId: Map<string, SliderPeriod>,
   periodStartYears: Set<number>,
 ): boolean {
-  const featStartYear =
-    feature.properties?.startYear != null
-      ? Number(feature.properties.startYear)
-      : feature.properties?.startDate
-        ? toYear(feature.properties.startDate)
-        : null;
-  const featEndYear =
-    feature.properties?.endYear != null
-      ? Number(feature.properties.endYear)
-      : feature.properties?.endDate
-        ? toYear(feature.properties.endDate)
-        : featStartYear;
-
-  const hasCustomYears =
-    (featStartYear != null && !Number.isNaN(featStartYear)) ||
-    (featEndYear != null && !Number.isNaN(featEndYear));
+  const { startYear: featStartYear, endYear: featEndYear } = getFeatureCustomYears(feature);
+  const hasCustomYears = featStartYear != null || featEndYear != null;
 
   if (hasCustomYears) {
-    const sy = featStartYear != null && !Number.isNaN(featStartYear) ? featStartYear : (featEndYear as number);
-    const ey = featEndYear != null && !Number.isNaN(featEndYear) ? featEndYear : sy;
+    const sy = featStartYear ?? (featEndYear as number);
+    const ey = featEndYear ?? sy;
     return isPeriodActiveAt(sy, ey, selectedYear, periodStartYears);
   }
 
@@ -178,12 +173,12 @@ describe("Timeline filtering & empty map exclusion", () => {
     expect(enriched).toHaveLength(2);
   });
 
-  it("extracts custom element markers ONLY for elements without a map", () => {
+  it("extracts custom element markers for elements WITH or WITHOUT an associated map", () => {
     const albertaWithoutMap: Feature = {
       type: "Feature",
       id: "feat-alberta",
       projectId: "p1",
-      mapId: null, // Pas de carte associée
+      mapId: null,
       name: "ALBERTA",
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
@@ -200,28 +195,173 @@ describe("Timeline filtering & empty map exclusion", () => {
       type: "Feature",
       id: "feat-on-map",
       projectId: "p1",
-      mapId: "q1", // Appartient à une carte
-      name: "Ville Q1 datée",
+      mapId: "q1",
+      name: "Fort Sevens",
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
       geometry: { type: "Point", coordinates: [-71, 46] },
       properties: {
-        name: "Ville Q1 datée",
-        startYear: 1950,
-        endYear: 1950,
+        name: "Fort Sevens",
+        startYear: 1600,
+        endYear: 1600,
       },
     };
 
-    const customYears = computeCustomFeatureYears([featureOnQ1, albertaWithoutMap, elementOnMapWithDate]);
-    // Seul l'élément sans carte est inclus
+    const customYears = computeCustomFeatureYears([
+      featureOnQ1,
+      albertaWithoutMap,
+      elementOnMapWithDate,
+    ]);
     expect(customYears).toContain(1900);
-    expect(customYears).not.toContain(1950);
+    expect(customYears).toContain(1600);
 
-    const markers = computeTimelineElementMarkers([featureOnQ1, albertaWithoutMap, elementOnMapWithDate]);
-    expect(markers).toHaveLength(1);
-    expect(markers[0].name).toBe("ALBERTA");
-    expect(markers[0].year).toBe(1900);
-    expect(markers[0].type).toBe("label");
+    const markers = computeTimelineElementMarkers(
+      [featureOnQ1, albertaWithoutMap, elementOnMapWithDate],
+      [mapQ1, mapQ2],
+    );
+    expect(markers).toHaveLength(2);
+
+    const albertaMarker = markers.find((m) => m.id === "feat-alberta");
+    expect(albertaMarker).toMatchObject({
+      name: "ALBERTA",
+      year: 1900,
+      endYear: 1900,
+      type: "label",
+      mapId: null,
+      mapTitle: undefined,
+      isCustom: true,
+    });
+
+    const fortMarker = markers.find((m) => m.id === "feat-on-map");
+    expect(fortMarker).toMatchObject({
+      name: "Fort Sevens",
+      year: 1600,
+      endYear: 1600,
+      mapId: "q1",
+      mapTitle: "Carte q1",
+      isCustom: true,
+    });
+  });
+
+  it("removes elements from timeline when custom dates are cleared (null, empty string, or 0)", () => {
+    const clearedEmptyString: Feature = {
+      type: "Feature",
+      id: "feat-empty",
+      projectId: "p1",
+      mapId: null,
+      name: "PROVINCE DE QUÉBEC",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "PROVINCE DE QUÉBEC",
+        startYear: "" as unknown as number,
+        endYear: "" as unknown as number,
+      },
+    };
+
+    const clearedZero: Feature = {
+      type: "Feature",
+      id: "feat-zero",
+      projectId: "p1",
+      mapId: "q1",
+      name: "Élément remis à zéro",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Élément remis à zéro",
+        startYear: 0,
+        endYear: 0,
+      },
+    };
+
+    const clearedNull: Feature = {
+      type: "Feature",
+      id: "feat-null",
+      projectId: "p1",
+      mapId: "q1",
+      name: "Élément sans date",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Élément sans date",
+        startYear: null,
+        endYear: null,
+      },
+    };
+
+    const features = [clearedEmptyString, clearedZero, clearedNull];
+
+    expect(computeCustomFeatureYears(features)).toEqual([]);
+    expect(computeTimelineElementMarkers(features, [mapQ1])).toEqual([]);
+
+    // Visibility should fall back to map period (q1: 1500-1501) rather than year 0
+    const periodMap = new Map<string, SliderPeriod>([
+      ["q1", { ...mapQ1, startYear: 1500, endYear: 1501 }],
+    ]);
+    const periodStartYears = new Set([1500]);
+
+    expect(isFeatureVisibleAtYear(clearedZero, 1500, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(clearedZero, 1600, periodMap, periodStartYears)).toBe(false);
+    expect(isFeatureVisibleAtYear(clearedEmptyString, 1500, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(clearedEmptyString, 1800, periodMap, periodStartYears)).toBe(true);
+  });
+
+  it("supports custom multi-year ranges and endYear-only custom dates", () => {
+    const rangedFeature: Feature = {
+      type: "Feature",
+      id: "feat-range",
+      projectId: "p1",
+      mapId: "q1",
+      name: "Traité",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Traité",
+        startYear: 1600,
+        endYear: 1650,
+      },
+    };
+
+    const endYearOnlyFeature: Feature = {
+      type: "Feature",
+      id: "feat-end-only",
+      projectId: "p1",
+      mapId: null,
+      name: "Fin seule",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Fin seule",
+        startYear: null,
+        endYear: 1700,
+      },
+    };
+
+    const customYears = computeCustomFeatureYears([rangedFeature, endYearOnlyFeature]);
+    expect(customYears).toEqual([1600, 1650, 1700]);
+
+    const markers = computeTimelineElementMarkers([rangedFeature, endYearOnlyFeature], [mapQ1]);
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toMatchObject({
+      id: "feat-range",
+      year: 1600,
+      endYear: 1650,
+      mapId: "q1",
+      mapTitle: "Carte q1",
+      isCustom: true,
+    });
+    expect(markers[1]).toMatchObject({
+      id: "feat-end-only",
+      year: 1700,
+      endYear: 1700,
+      mapId: null,
+      isCustom: true,
+    });
   });
 
   it("gives priority to element custom years over map period", () => {

@@ -53,7 +53,6 @@
             >
               <Bars3Icon v-if="!isSidebarVisible" class="w-4 h-4 text-primary" />
               <ChevronLeftIcon v-else class="w-4 h-4" />
-
             </button>
 
             <button
@@ -162,13 +161,14 @@
               :map-periods="enrichedPeriods"
               :element-markers="timelineElementMarkers"
               :current-exact-date="selectedExactDate"
+              :filter-by-date="useTimelineFilter"
             />
           </div>
           <div
             class="map-timeline-filter flex flex-row gap-3 items-center justify-between text-xs font-medium whitespace-nowrap"
           >
-            <div class="flex items-center gap-3">
-              <div class="flex flex-row gap-1 items-center">
+            <div class="flex items-center gap-2">
+              <div class="flex flex-row gap-1 items-center mr-1">
                 <span>Filtrer par date</span>
                 <input
                   v-model="useTimelineFilter"
@@ -179,7 +179,7 @@
                 />
               </div>
 
-              <!-- Point 5: Bouton en bas de l'interface permettant de dupliquer entièrement une carte -->
+              <!-- Step 5: Bottom interface button allowing to duplicate a map entirely -->
               <button
                 type="button"
                 class="btn btn-outline btn-xs gap-1 font-semibold"
@@ -190,9 +190,46 @@
                 <DocumentDuplicateIcon class="w-3.5 h-3.5 text-primary" />
                 <span>Dupliquer une carte</span>
               </button>
+
+              <!-- Navigation rapide entre les cartes (précédente / suivante) -->
+              <div
+                v-if="sortedMapsForNavigation.length > 0"
+                class="inline-flex items-center rounded border border-base-300 bg-base-100 overflow-hidden"
+              >
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none border-r border-base-300"
+                  :disabled="!hasPrevMap"
+                  :title="
+                    prevMap
+                      ? `Carte précédente : ${prevMap.title} (${prevMap.startYear})`
+                      : 'Aucune carte précédente'
+                  "
+                  aria-label="Carte précédente"
+                  data-testid="prev-map-button"
+                  @click="goToPrevMap"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none"
+                  :disabled="!hasNextMap"
+                  :title="
+                    nextMap
+                      ? `Carte suivante : ${nextMap.title} (${nextMap.startYear})`
+                      : 'Aucune carte suivante'
+                  "
+                  aria-label="Carte suivante"
+                  data-testid="next-map-button"
+                  @click="goToNextMap"
+                >
+                  ›
+                </button>
+              </div>
             </div>
 
-            <!-- Point 6: Masquer l'échelle de dates -->
+            <!-- Step 6: Hide date slider -->
             <button
               type="button"
               class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
@@ -252,6 +289,7 @@
     @save-label-styles="saveCustomLabelStyles"
   />
 </template>
+
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -261,12 +299,13 @@ import DuplicateMapDialog from "../components/add/DuplicateMapDialog.vue";
 import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
 import TimelineSlider from "../components/TimelineSlider.vue";
+import type { TimelineMarkerItem } from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
 import type { CustomLabelStyle } from "../utils/labelPresentation";
-import type { SliderPeriod, TimelineElementMarker } from "../typescript/map";
+import type { SliderPeriod } from "../typescript/map";
 import {
   camelToSnake,
   isUuid,
@@ -359,6 +398,31 @@ const featureVisibilityControlsRef = ref<InstanceType<
   typeof FeatureVisibilityControls
 > | null>(null);
 
+function parseOptionalYear(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.trunc(num);
+}
+
+function getFeatureCustomYears(f: Feature): {
+  startYear: number | null;
+  endYear: number | null;
+} {
+  const startYear =
+    parseOptionalYear(f.properties?.startYear) ??
+    (f.properties?.startDate
+      ? parseOptionalYear(toYear(f.properties.startDate))
+      : null);
+  const endYear =
+    parseOptionalYear(f.properties?.endYear) ??
+    (f.properties?.endDate
+      ? parseOptionalYear(toYear(f.properties.endDate))
+      : null);
+
+  return { startYear, endYear };
+}
+
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
@@ -369,13 +433,16 @@ function onSelectFeatures(ids: string[]) {
 }
 
 async function onDeleteSelectedFeatures() {
-  const idsToDelete = multiSelectedFeatureIds.value.length > 0
-    ? multiSelectedFeatureIds.value
-    : (selectedFeatureId.value ? [selectedFeatureId.value] : []);
+  const idsToDelete =
+    multiSelectedFeatureIds.value.length > 0
+      ? multiSelectedFeatureIds.value
+      : selectedFeatureId.value
+        ? [selectedFeatureId.value]
+        : [];
   if (idsToDelete.length === 0) return;
   const idsSet = new Set(idsToDelete);
   const nextFeatures = features.value.filter(
-    (f: Feature) => !idsSet.has(String(f.id))
+    (f: Feature) => !idsSet.has(String(f.id)),
   );
   multiSelectedFeatureIds.value = [];
   selectedFeatureId.value = null;
@@ -405,21 +472,27 @@ async function onEditElementFromTimeline(featureId: string) {
   const feat = features.value.find(
     (f: Feature) =>
       (f.id != null && String(f.id) === String(featureId)) ||
-      (f.properties?.id != null && String(f.properties.id) === String(featureId)) ||
-      (f.properties?.name != null && String(f.properties.name).toLowerCase() === String(featureId).toLowerCase()) ||
-      (f.properties?.labelText != null && String(f.properties.labelText).toLowerCase() === String(featureId).toLowerCase()),
+      (f.properties?.id != null &&
+        String(f.properties.id) === String(featureId)) ||
+      (f.properties?.name != null &&
+        String(f.properties.name).toLowerCase() ===
+          String(featureId).toLowerCase()) ||
+      (f.properties?.labelText != null &&
+        String(f.properties.labelText).toLowerCase() ===
+          String(featureId).toLowerCase()),
   );
   if (feat) {
     selectedFeatureId.value = String(feat.id);
     onEditFeatureRequest(feat);
   }
 }
+
 function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
 }
+
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
-// Set of IDs from box-selection (right-click drag)
 const multiSelectedFeatureIds = ref<string[]>([]);
 const copiedFeature = ref<Feature | null>(null);
 
@@ -621,7 +694,8 @@ function startSidebarResize(event: MouseEvent) {
   window.addEventListener("mousemove", onSidebarResizeMove);
   window.addEventListener("mouseup", stopSidebarResize);
 }
-const featureVisibility = ref<Map<string, boolean>>(new Map());
+
+const featureVisibility = ref>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
@@ -655,7 +729,6 @@ const enrichedPeriods = computed<SliderPeriod[]>(() => {
 
   const periods: SliderPeriod[] = [];
   for (const p of mapPeriods.value) {
-    // Si des éléments existent dans le projet, n'afficher sur la timeline que les cartes ayant au moins un élément
     if (
       mapIdsWithFeatures.size > 0 &&
       !mapIdsWithFeatures.has(String(p.id).trim().toLowerCase())
@@ -674,6 +747,60 @@ const enrichedPeriods = computed<SliderPeriod[]>(() => {
   }
   return periods;
 });
+
+const sortedMapsForNavigation = computed<SliderPeriod[]>(() => {
+  return [...enrichedPeriods.value].sort(
+    (a: SliderPeriod, b: SliderPeriod) =>
+      a.startYear - b.startYear ||
+      a.endYear - b.endYear ||
+      String(a.id).localeCompare(String(b.id)),
+  );
+});
+
+const currentMapIndex = computed<number>(() => {
+  const list = sortedMapsForNavigation.value;
+  if (!list.length) return -1;
+
+  const y = selectedYear.value;
+  const coveringIdx = list.findIndex(
+    (p: SliderPeriod) => y >= p.startYear && y <= p.endYear,
+  );
+  if (coveringIdx !== -1) return coveringIdx;
+
+  let fallbackIdx = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].startYear <= y) fallbackIdx = i;
+  }
+  return fallbackIdx;
+});
+
+const prevMap = computed<SliderPeriod | null>(() => {
+  const idx = currentMapIndex.value;
+  return idx > 0 ? sortedMapsForNavigation.value[idx - 1] : null;
+});
+
+const nextMap = computed<SliderPeriod | null>(() => {
+  const idx = currentMapIndex.value;
+  const list = sortedMapsForNavigation.value;
+  return idx >= 0 && idx < list.length - 1 ? list[idx + 1] : null;
+});
+
+const hasPrevMap = computed<boolean>(() => prevMap.value != null);
+const hasNextMap = computed<boolean>(() => nextMap.value != null);
+
+function navigateToMap(target: SliderPeriod | null) {
+  if (!target) return;
+  selectedExactDate.value = null;
+  selectedYear.value = target.startYear;
+}
+
+function goToPrevMap() {
+  navigateToMap(prevMap.value);
+}
+
+function goToNextMap() {
+  navigateToMap(nextMap.value);
+}
 
 const periodByMapId = computed(() => {
   const map = new Map<string, SliderPeriod>();
@@ -694,62 +821,59 @@ const periodByMapId = computed(() => {
 const customFeatureYears = computed<number[]>(() => {
   const years: number[] = [];
   features.value.forEach((f: Feature) => {
-    // Par défaut, seuls les éléments n'appartenant à aucune carte étendent l'échelle de la timeline
-    const mapId = getFeatureMapId(f);
-    if (mapId) return;
-
-    const sy =
-      f.properties?.startYear != null
-        ? Number(f.properties.startYear)
-        : f.properties?.startDate
-          ? toYear(f.properties.startDate)
-          : null;
-    const ey =
-      f.properties?.endYear != null
-        ? Number(f.properties.endYear)
-        : f.properties?.endDate
-          ? toYear(f.properties.endDate)
-          : null;
-    if (sy != null && !Number.isNaN(sy)) years.push(sy);
-    if (ey != null && !Number.isNaN(ey)) years.push(ey);
+    const { startYear, endYear } = getFeatureCustomYears(f);
+    if (startYear != null) years.push(startYear);
+    if (endYear != null) years.push(endYear);
   });
   return years;
 });
 
-const timelineElementMarkers = computed<TimelineElementMarker[]>(() => {
-  const list: TimelineElementMarker[] = [];
+const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
+  const periodTitleById = new Map<string, string>(
+    mapPeriods.value.map((p: MapPeriod) => [
+      String(p.id).trim().toLowerCase(),
+      p.title,
+    ]),
+  );
+
+  const list: TimelineMarkerItem[] = [];
 
   features.value.forEach((f: Feature) => {
-    // Par défaut, ignorer les éléments qui appartiennent à une carte :
-    // afficher uniquement les éléments sans carte avec une date personnalisée
-    const mapId = getFeatureMapId(f);
-    if (mapId) return;
+    const { startYear, endYear } = getFeatureCustomYears(f);
+    const effectiveStart = startYear ?? endYear;
+    if (effectiveStart == null) return;
 
-    const sy =
-      f.properties?.startYear != null
-        ? Number(f.properties.startYear)
-        : f.properties?.startDate
-          ? toYear(f.properties.startDate)
-          : null;
-    const ey =
-      f.properties?.endYear != null
-        ? Number(f.properties.endYear)
-        : f.properties?.endDate
-          ? toYear(f.properties.endDate)
-          : null;
-    if (sy != null && !Number.isNaN(sy)) {
-      list.push({
-        id: String(f.id ?? f.properties?.id ?? f.properties?.name ?? f.properties?.labelText ?? ""),
-        name: f.properties?.labelText || f.properties?.name || "Élément",
-        year: sy,
-        endYear: ey,
-        type: f.properties?.mapElementType || (isTextFeature(f) ? "Texte" : "Élément"),
-        color: f.properties?.colorHex || (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
-        mapId: null,
-        mapTitle: "Éléments généraux",
-      });
-    }
+    const rawMapId = getFeatureMapId(f);
+    const normalizedMapId = rawMapId
+      ? String(rawMapId).trim().toLowerCase()
+      : null;
+    const mapTitle = normalizedMapId
+      ? periodTitleById.get(normalizedMapId) || "Carte associée"
+      : "Éléments généraux";
+
+    list.push({
+      id: String(
+        f.id ??
+          f.properties?.id ??
+          f.properties?.name ??
+          f.properties?.labelText ??
+          "",
+      ),
+      name: f.properties?.labelText || f.properties?.name || "Élément",
+      year: effectiveStart,
+      endYear: endYear ?? effectiveStart,
+      type:
+        f.properties?.mapElementType ||
+        (isTextFeature(f) ? "Texte" : "Élément"),
+      color:
+        f.properties?.colorHex ||
+        (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
+      mapId: rawMapId ?? null,
+      mapTitle,
+      isCustom: true,
+    });
   });
+
   return list;
 });
 
@@ -809,9 +933,36 @@ const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
     if (!useTimelineFilter.value) return true;
 
-    const featureMapId = getFeatureMapId(feature);
+    const { startYear: featStartYear, endYear: featEndYear } =
+      getFeatureCustomYears(feature);
+    const hasCustomYears = featStartYear != null || featEndYear != null;
 
-    // 1. Élément rattaché à une carte : suit la période de sa carte
+    if (hasCustomYears) {
+      if (
+        selectedExactDate.value &&
+        feature.properties?.startDate &&
+        feature.properties?.endDate
+      ) {
+        return isPeriodActiveAt(
+          feature.properties.startDate,
+          feature.properties.endDate,
+          selectedExactDate.value,
+          periodStartDates.value,
+        );
+      }
+
+      const sy = featStartYear ?? (featEndYear as number);
+      const ey = featEndYear ?? sy;
+
+      return isPeriodActiveAt(
+        sy,
+        ey,
+        selectedYear.value,
+        periodStartYears.value,
+      );
+    }
+
+    const featureMapId = getFeatureMapId(feature);
     if (featureMapId) {
       const period = periodByMapId.value.get(featureMapId);
       if (!period) return true;
@@ -834,50 +985,6 @@ const filteredFeatures = computed(() => {
       );
     }
 
-    // 2. Élément sans carte avec date personnalisée : suit sa propre période
-    const featStartYear =
-      feature.properties?.startYear != null
-        ? Number(feature.properties.startYear)
-        : feature.properties?.startDate
-          ? toYear(feature.properties.startDate)
-          : null;
-    const featEndYear =
-      feature.properties?.endYear != null
-        ? Number(feature.properties.endYear)
-        : feature.properties?.endDate
-          ? toYear(feature.properties.endDate)
-          : featStartYear;
-
-    const hasCustomYears =
-      (featStartYear != null && !Number.isNaN(featStartYear)) ||
-      (featEndYear != null && !Number.isNaN(featEndYear));
-
-    if (hasCustomYears) {
-      if (
-        selectedExactDate.value &&
-        feature.properties?.startDate &&
-        feature.properties?.endDate
-      ) {
-        return isPeriodActiveAt(
-          feature.properties.startDate,
-          feature.properties.endDate,
-          selectedExactDate.value,
-          periodStartDates.value,
-        );
-      }
-
-      const sy = featStartYear != null && !Number.isNaN(featStartYear) ? featStartYear : (featEndYear as number);
-      const ey = featEndYear != null && !Number.isNaN(featEndYear) ? featEndYear : sy;
-
-      return isPeriodActiveAt(
-        sy,
-        ey,
-        selectedYear.value,
-        periodStartYears.value,
-      );
-    }
-
-    // 3. Éléments sans carte et sans date : toujours visibles
     return true;
   });
 });
@@ -892,7 +999,6 @@ const combinedFeatureVisibility = computed(() => {
   features.value.forEach((feature: Feature) => {
     const id = String(feature.id);
 
-    // Hide unvalidated or rejected OCR texts from the map
     if (!isVisibleInMainLayers(feature)) {
       combined.set(id, false);
       return;
@@ -965,16 +1071,18 @@ function resetMapSelection() {
   mapGeoJsonRef.value?.resetSelection();
 }
 
-/**
- * Nudge selected feature(s) by (dx, dy) screen pixels.
- */
 function nudgeSelectedFeatures(dx: number, dy: number) {
-  const idsToNudge = multiSelectedFeatureIds.value.length > 0
-    ? multiSelectedFeatureIds.value
-    : (selectedFeatureId.value ? [selectedFeatureId.value] : []);
+  const idsToNudge =
+    multiSelectedFeatureIds.value.length > 0
+      ? multiSelectedFeatureIds.value
+      : selectedFeatureId.value
+        ? [selectedFeatureId.value]
+        : [];
   if (idsToNudge.length === 0) return;
 
-  const mapContainer = document.getElementById('map') as (HTMLElement & { _leaflet_map?: L.Map }) | null;
+  const mapContainer = document.getElementById("map") as
+    | (HTMLElement & { _leaflet_map?: L.Map })
+    | null;
   const leafletMap = mapContainer?._leaflet_map;
   if (!leafletMap) return;
 
@@ -986,7 +1094,12 @@ function nudgeSelectedFeatures(dx: number, dy: number) {
   commitFeatureSnapshot(nextFeatures);
 }
 
-function nudgeFeatureByPixels(feature: Feature, leafletMap: L.Map, dx: number, dy: number): Feature {
+function nudgeFeatureByPixels(
+  feature: Feature,
+  leafletMap: L.Map,
+  dx: number,
+  dy: number,
+): Feature {
   if (!feature.geometry) return feature;
 
   const shiftLatLng = (lat: number, lng: number): [number, number] => {
@@ -998,9 +1111,11 @@ function nudgeFeatureByPixels(feature: Feature, leafletMap: L.Map, dx: number, d
 
   const shiftCoords = (coords: unknown): unknown => {
     if (!Array.isArray(coords)) return coords;
-    if (typeof coords[0] === 'number') {
-      // GeoJSON: [lng, lat]
-      const [sLat, sLng] = shiftLatLng(coords[1] as number, coords[0] as number);
+    if (typeof coords[0] === "number") {
+      const [sLat, sLng] = shiftLatLng(
+        coords[1] as number,
+        coords[0] as number,
+      );
       return [sLng, sLat];
     }
     return coords.map(shiftCoords);
@@ -1010,7 +1125,9 @@ function nudgeFeatureByPixels(feature: Feature, leafletMap: L.Map, dx: number, d
     ...feature,
     geometry: {
       ...feature.geometry,
-      coordinates: shiftCoords(feature.geometry.coordinates) as typeof feature.geometry.coordinates,
+      coordinates: shiftCoords(
+        feature.geometry.coordinates,
+      ) as typeof feature.geometry.coordinates,
     },
   };
 }
@@ -1039,7 +1156,7 @@ function getImageNaturalSize(
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      resolve({ width: 1, height: 1 }); // fallback: square, backend will recompute
+      resolve({ width: 1, height: 1 });
     };
     img.src = url;
   });
@@ -1064,14 +1181,9 @@ async function onAddFeatureImage(file: File) {
     const formData = new FormData();
     formData.append("image", file);
 
-    // Spawn the image at the center of the user's current map view instead of [0,0].
-    // Use the same 16° height constant as the backend, preserving the image aspect ratio.
     if (leafletMap.value) {
       const LAT_SPAN = 16.0;
       const { width, height } = await getImageNaturalSize(file);
-      // Divide by cos(lat) to correct for Mercator: longitude degrees get physically
-      // shorter away from the equator, so we need more of them to cover the same
-      // screen width. Without this, images appear horizontally squished at high latitudes.
       const center = leafletMap.value.getCenter();
       const latRad = center.lat * (Math.PI / 180);
       const lngSpan = (LAT_SPAN * (width / height)) / Math.cos(latRad);
@@ -1222,7 +1334,6 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
       features.value = nextFeatures;
       await onSaveMap(nextFeatures);
     }
-    // persistCustomLabelStyles already confirmed the save to the user.
   } catch (error) {
     console.error("Failed to save project label styles:", error);
     showAlert(
@@ -1285,7 +1396,9 @@ async function onDeleteMap(
 
     const nextFeatures = features.value.filter(
       (feature: Feature) =>
-        String(getFeatureMapId(feature) ?? "").trim().toLowerCase() !== mapIdNorm,
+        String(getFeatureMapId(feature) ?? "")
+          .trim()
+          .toLowerCase() !== mapIdNorm,
     );
 
     if (
@@ -1340,6 +1453,17 @@ async function onUpdateFeature(
         ? `Modification de ${list[0].name || "l'élément"}`
         : `Modification de ${list.length} éléments`;
     commitFeatureSnapshot(nextFeatures, label);
+
+    // Positionne immédiatement la timeline sur la nouvelle année personnalisée si présente
+    const firstCustomYears = list
+      .map((item) => getFeatureCustomYears(item))
+      .find((y) => y.startYear != null || y.endYear != null);
+    const targetYear = firstCustomYears?.startYear ?? firstCustomYears?.endYear;
+    if (targetYear != null) {
+      selectedExactDate.value = null;
+      selectedYear.value = targetYear;
+    }
+
     await onSaveMap(nextFeatures);
     callbacks?.onSuccess?.();
   } catch (error) {
@@ -1379,10 +1503,8 @@ const textValidationEntries = ref<TextValidationEntry[]>([]);
 function onOpenTextValidation(mapId: string | null) {
   activeValidationMapId.value = mapId;
 
-  // 1. Check in-memory cache from recent import session
   let img = getOriginalMapImage(mapId);
 
-  // 2. If not found, look for an image feature belonging to this map in the project
   if (!img) {
     const imageFeature = features.value.find(
       (f: Feature) =>
@@ -1680,16 +1802,11 @@ async function loadInitialFeatures() {
   }
 }
 
-// Opens the map on the project's elements instead of a fixed location. Only
-// called when a project or map is opened, so saving never moves the view.
 async function frameVisibleFeatures() {
-  // Let MapGeoJSON render the freshly loaded features first
   await nextTick();
   mapGeoJsonRef.value?.fitToVisibleFeatures();
 }
 
-// Coming back from an import (?carte=<mapId>): moves the timeline onto the map
-// that was just extracted and frames it, rather than the whole project.
 async function frameImportedMap(): Promise<boolean> {
   const importedMapId = route.query[IMPORTED_MAP_QUERY];
   if (typeof importedMapId !== "string" || !importedMapId) return false;
@@ -1703,7 +1820,6 @@ async function frameImportedMap(): Promise<boolean> {
       .map((feature: Feature) => String(feature.id)),
   );
 
-  // The marker is single-use: a reload should open on the whole project again.
   const { [IMPORTED_MAP_QUERY]: _consumed, ...query } = route.query;
   void _consumed;
   await router.replace({ query });
@@ -1837,9 +1953,6 @@ function onCreateProjectDialogClosed() {
   shouldSaveAfterCopy.value = false;
 }
 
-// The copy starts empty: give it its own maps (periods + dates) and point each
-// feature at the matching new map, otherwise the features keep the source
-// project's map ids and the copy has no timeline nor map groups.
 async function copyMapsIntoProject(
   sourceProjectId: string,
   targetProjectId: string,
@@ -1862,7 +1975,6 @@ async function copyMapsIntoProject(
   const toNewMapId = (oldMapId?: string | null) =>
     oldMapId ? (mapIdMapping[oldMapId] ?? null) : null;
 
-  // Drop id/projectId so the backend creates new rows in the copy.
   return featuresToCopy.map(({ id, projectId, ...feature }: Feature) => {
     void id;
     void projectId;
@@ -1936,7 +2048,6 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
   const isMod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
 
-  // Ctrl+Z / Ctrl+Y are global — work even inside modals (but not text inputs)
   if (!isEditableTarget(e.target)) {
     if (isMod && !e.shiftKey && key === "z") {
       e.preventDefault();
@@ -1950,7 +2061,6 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     }
   }
 
-  // Other shortcuts skip modals and text inputs
   if (
     showTextValidationModal.value ||
     document.querySelector("dialog[open]") ||
@@ -1970,23 +2080,21 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  // Ctrl+A — select all visible features
   if (isMod && key === "a") {
     e.preventDefault();
     onSelectAll();
     return;
   }
 
-  // Delete / Backspace — delete selected feature(s)
-  if ((key === "delete" || key === "backspace") &&
-      (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)) {
-    // Multi-selection: delete directly without confirm dialog
+  if (
+    (key === "delete" || key === "backspace") &&
+    (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
+  ) {
     if (multiSelectedFeatureIds.value.length > 1) {
       e.preventDefault();
       void onDeleteSelectedFeatures();
       return;
     }
-    // Single selection: show confirm dialog
     if (selectedFeatureId.value) {
       const selectedFeature = features.value.find(
         (feature: Feature) => String(feature.id) === selectedFeatureId.value,
@@ -2007,17 +2115,18 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  // Arrow keys — nudge selected feature(s)
   const NUDGE_PX = e.shiftKey ? 10 : 1;
-  if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key) &&
-      (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)) {
+  if (
+    ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key) &&
+    (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
+  ) {
     e.preventDefault();
-    // Convert pixel nudge to lat/lng offset via the Leaflet map
     const mapEl = document.getElementById("map");
     if (!mapEl) return;
-    // We'll emit the nudge; MapGeoJSON handles it
-    const dx = key === "arrowright" ? NUDGE_PX : key === "arrowleft" ? -NUDGE_PX : 0;
-    const dy = key === "arrowdown" ? NUDGE_PX : key === "arrowup" ? -NUDGE_PX : 0;
+    const dx =
+      key === "arrowright" ? NUDGE_PX : key === "arrowleft" ? -NUDGE_PX : 0;
+    const dy =
+      key === "arrowdown" ? NUDGE_PX : key === "arrowup" ? -NUDGE_PX : 0;
     nudgeSelectedFeatures(dx, dy);
     return;
   }
@@ -2083,7 +2192,6 @@ onMounted(async () => {
   window.addEventListener("click", onDocumentClick);
   document.addEventListener("fullscreenchange", onFullscreenChange);
 
-  // Not awaited: the shortcuts above must not wait for the tiles to load.
   if (projectId.value) void uploadMapThumbnail();
 });
 
