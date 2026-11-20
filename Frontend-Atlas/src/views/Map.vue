@@ -157,6 +157,7 @@
               :max="timelineMaxYear"
               :marker-years="timelineMarkerYears"
               :map-periods="enrichedPeriods"
+              :element-markers="timelineElementMarkers"
               :current-exact-date="selectedExactDate"
             />
           </div>
@@ -262,7 +263,7 @@ import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
 import { MapPeriod, PERIOD_COLORS } from "../typescript/map";
 import type { CustomLabelStyle } from "../utils/labelPresentation";
-import type { SliderPeriod } from "../typescript/map";
+import type { SliderPeriod, TimelineElementMarker } from "../typescript/map";
 import {
   camelToSnake,
   isUuid,
@@ -587,8 +588,21 @@ const selectedExactDate = ref<string | null>(null);
 const useTimelineFilter = ref(true);
 
 const enrichedPeriods = computed<SliderPeriod[]>(() => {
+  const mapIdsWithFeatures = new Set<string>();
+  for (const f of features.value) {
+    const mid = getFeatureMapId(f);
+    if (mid) mapIdsWithFeatures.add(mid.toLowerCase());
+  }
+
   const periods: SliderPeriod[] = [];
   for (const p of mapPeriods.value) {
+    // Si des éléments existent dans le projet, n'afficher sur la timeline que les cartes ayant au moins un élément
+    if (
+      mapIdsWithFeatures.size > 0 &&
+      !mapIdsWithFeatures.has(String(p.id).trim().toLowerCase())
+    ) {
+      continue;
+    }
     const startYear = toYear(p.startDate);
     const endYear = toYear(p.endDate);
     if (startYear != null && endYear != null) {
@@ -602,41 +616,80 @@ const enrichedPeriods = computed<SliderPeriod[]>(() => {
   return periods;
 });
 
-const periodByMapId = computed(
-  () => new Map(enrichedPeriods.value.map((p: SliderPeriod) => [p.id, p])),
-);
+const periodByMapId = computed(() => {
+  const map = new Map<string, SliderPeriod>();
+  for (const p of mapPeriods.value) {
+    const startYear = toYear(p.startDate);
+    const endYear = toYear(p.endDate);
+    if (startYear != null && endYear != null) {
+      map.set(p.id, {
+        ...p,
+        startYear,
+        endYear,
+      });
+    }
+  }
+  return map;
+});
 
-const standaloneFeatureYears = computed<number[]>(() => {
+const customFeatureYears = computed<number[]>(() => {
   const years: number[] = [];
   features.value.forEach((f: Feature) => {
-    if (!f.mapId) {
-      const sy =
-        f.properties?.startYear != null
-          ? Number(f.properties.startYear)
-          : f.properties?.startDate
-            ? toYear(f.properties.startDate)
-            : null;
-      const ey =
-        f.properties?.endYear != null
-          ? Number(f.properties.endYear)
-          : f.properties?.endDate
-            ? toYear(f.properties.endDate)
-            : null;
-      if (sy != null && !Number.isNaN(sy)) years.push(sy);
-      if (ey != null && !Number.isNaN(ey)) years.push(ey);
-    }
+    const sy =
+      f.properties?.startYear != null
+        ? Number(f.properties.startYear)
+        : f.properties?.startDate
+          ? toYear(f.properties.startDate)
+          : null;
+    const ey =
+      f.properties?.endYear != null
+        ? Number(f.properties.endYear)
+        : f.properties?.endDate
+          ? toYear(f.properties.endDate)
+          : null;
+    if (sy != null && !Number.isNaN(sy)) years.push(sy);
+    if (ey != null && !Number.isNaN(ey)) years.push(ey);
   });
   return years;
 });
 
+const timelineElementMarkers = computed<TimelineElementMarker[]>(() => {
+  const list: TimelineElementMarker[] = [];
+  features.value.forEach((f: Feature) => {
+    const sy =
+      f.properties?.startYear != null
+        ? Number(f.properties.startYear)
+        : f.properties?.startDate
+          ? toYear(f.properties.startDate)
+          : null;
+    const ey =
+      f.properties?.endYear != null
+        ? Number(f.properties.endYear)
+        : f.properties?.endDate
+          ? toYear(f.properties.endDate)
+          : null;
+    if (sy != null && !Number.isNaN(sy)) {
+      list.push({
+        id: String(f.id),
+        name: f.properties?.labelText || f.properties?.name || "Élément",
+        year: sy,
+        endYear: ey,
+        type: f.properties?.mapElementType || (isTextFeature(f) ? "Texte" : "Élément"),
+        color: f.properties?.colorHex || (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
+      });
+    }
+  });
+  return list;
+});
+
 const allTimelineStartYears = computed(() => {
   const years = enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
-  return [...years, ...standaloneFeatureYears.value];
+  return [...years, ...customFeatureYears.value];
 });
 
 const allTimelineEndYears = computed(() => {
   const years = enrichedPeriods.value.map((p: SliderPeriod) => p.endYear);
-  return [...years, ...standaloneFeatureYears.value];
+  return [...years, ...customFeatureYears.value];
 });
 
 const timelineMinYear = computed(() =>
@@ -660,7 +713,7 @@ const timelineMarkerYears = computed(() => {
     markers.add(p.startYear);
     markers.add(p.endYear);
   });
-  standaloneFeatureYears.value.forEach((y) => markers.add(y));
+  customFeatureYears.value.forEach((y) => markers.add(y));
   return [...markers].sort((a, b) => a - b);
 });
 
@@ -668,7 +721,7 @@ const periodStartYears = computed(() => {
   const years = new Set(
     enrichedPeriods.value.map((p: SliderPeriod) => p.startYear),
   );
-  standaloneFeatureYears.value.forEach((y) => years.add(y));
+  customFeatureYears.value.forEach((y) => years.add(y));
   return years;
 });
 
@@ -685,9 +738,53 @@ const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
     if (!useTimelineFilter.value) return true;
 
-    // Feature associated with a map period
-    if (feature.mapId) {
-      const period = periodByMapId.value.get(feature.mapId);
+    // 1. Date personnalisée sur l'élément : prime toujours sur la période de la carte
+    const featStartYear =
+      feature.properties?.startYear != null
+        ? Number(feature.properties.startYear)
+        : feature.properties?.startDate
+          ? toYear(feature.properties.startDate)
+          : null;
+    const featEndYear =
+      feature.properties?.endYear != null
+        ? Number(feature.properties.endYear)
+        : feature.properties?.endDate
+          ? toYear(feature.properties.endDate)
+          : featStartYear;
+
+    const hasCustomYears =
+      (featStartYear != null && !Number.isNaN(featStartYear)) ||
+      (featEndYear != null && !Number.isNaN(featEndYear));
+
+    if (hasCustomYears) {
+      if (
+        selectedExactDate.value &&
+        feature.properties?.startDate &&
+        feature.properties?.endDate
+      ) {
+        return isPeriodActiveAt(
+          feature.properties.startDate,
+          feature.properties.endDate,
+          selectedExactDate.value,
+          periodStartDates.value,
+        );
+      }
+
+      const sy = featStartYear != null && !Number.isNaN(featStartYear) ? featStartYear : (featEndYear as number);
+      const ey = featEndYear != null && !Number.isNaN(featEndYear) ? featEndYear : sy;
+
+      return isPeriodActiveAt(
+        sy,
+        ey,
+        selectedYear.value,
+        periodStartYears.value,
+      );
+    }
+
+    // 2. Élément rattaché à une période de carte (sans date propre sur l'élément)
+    const featureMapId = getFeatureMapId(feature);
+    if (featureMapId) {
+      const period = periodByMapId.value.get(featureMapId);
       if (!period) return true;
 
       if (selectedExactDate.value && period.startDate && period.endDate) {
@@ -708,43 +805,7 @@ const filteredFeatures = computed(() => {
       );
     }
 
-    // Feature without map: check if it has custom years or dates
-    const featStartYear =
-      feature.properties?.startYear != null
-        ? Number(feature.properties.startYear)
-        : feature.properties?.startDate
-          ? toYear(feature.properties.startDate)
-          : null;
-    const featEndYear =
-      feature.properties?.endYear != null
-        ? Number(feature.properties.endYear)
-        : feature.properties?.endDate
-          ? toYear(feature.properties.endDate)
-          : featStartYear;
-
-    if (
-      featStartYear != null &&
-      featEndYear != null &&
-      !Number.isNaN(featStartYear) &&
-      !Number.isNaN(featEndYear)
-    ) {
-      return isPeriodActiveAt(
-        featStartYear,
-        featEndYear,
-        selectedYear.value,
-        periodStartYears.value,
-      );
-    }
-    if (featStartYear != null && !Number.isNaN(featStartYear)) {
-      return isPeriodActiveAt(
-        featStartYear,
-        featStartYear,
-        selectedYear.value,
-        periodStartYears.value,
-      );
-    }
-
-    // Project-level features without a year are always visible in timeline mode.
+    // 3. Éléments sans carte et sans date : toujours visibles
     return true;
   });
 });

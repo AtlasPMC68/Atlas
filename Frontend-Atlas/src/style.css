@@ -380,6 +380,80 @@
   color: #ffffff !important;
 }
 
+/* Element markers on timeline */
+.element-markers-row {
+  position: relative;
+  height: 1.45rem;
+  margin-bottom: 0.15rem;
+  z-index: 1005;
+}
+
+.element-marker-pin {
+  position: absolute;
+  top: 0;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  z-index: 1005;
+  outline: none;
+  transition: transform 0.15s ease;
+}
+
+.element-marker-pin:hover,
+.element-marker-pin:focus-visible {
+  transform: translateY(-2px) scale(1.08);
+  z-index: 1010;
+}
+
+.element-marker-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background: #f59e0b;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  border: 1.5px solid #ffffff;
+  white-space: nowrap;
+}
+
+.element-marker-active .element-marker-badge {
+  background: #d97706;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+.element-marker-icon {
+  font-size: 0.7rem;
+}
+
+.element-marker-text {
+  max-width: 6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tick-label-element {
+  color: #d97706;
+  font-weight: 600;
+}
+
+.element-dot {
+  display: inline-block;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background-color: #f59e0b;
+  margin-left: 0.15rem;
+  vertical-align: middle;
+}
+
 .timeline-year-range,
 .timeline-day-range {
   display: block;

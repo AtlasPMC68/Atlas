@@ -114,6 +114,7 @@ describe("LegendAreaPickerModal", () => {
     window.dispatchEvent(
       new MouseEvent("mouseup", { clientX: 300, clientY: 250 }),
     );
+    await wrapper.vm.$nextTick();
     expect(wrapper.text()).toContain("Zone #1");
 
     // 2. Draw compass exclusion zone (350, 50 -> 400, 100)
@@ -126,6 +127,7 @@ describe("LegendAreaPickerModal", () => {
     window.dispatchEvent(
       new MouseEvent("mouseup", { clientX: 400, clientY: 100 }),
     );
+    await wrapper.vm.$nextTick();
     expect(wrapper.text()).toContain("Zone #2");
 
     // 3. Draw title exclusion zone (100, 10 -> 400, 40)
@@ -138,6 +140,7 @@ describe("LegendAreaPickerModal", () => {
     window.dispatchEvent(
       new MouseEvent("mouseup", { clientX: 400, clientY: 40 }),
     );
+    await wrapper.vm.$nextTick();
     expect(wrapper.text()).toContain("Zone #3");
 
     // Confirm and verify payload contains both legend AND the 3 exclusion zones
@@ -242,6 +245,7 @@ describe("LegendAreaPickerModal", () => {
     window.dispatchEvent(
       new MouseEvent("mouseup", { clientX: -500, clientY: -300 }),
     );
+    await wrapper.vm.$nextTick();
 
     // Box was committed successfully (from 100,100 clamped to 0,0 -> 200x200 px)
     expect(wrapper.text()).toContain("Délimitée");
@@ -277,5 +281,28 @@ describe("LegendAreaPickerModal", () => {
     );
 
     expect(wrapper.text()).toContain("Aucune légende délimitée");
+  });
+
+  it("automatically switches to exclusion mode after tracing the legend", async () => {
+    const { wrapper, container } = await setupModal();
+
+    // Starts in legend mode
+    expect(wrapper.text()).toContain("Traçage de la légende");
+
+    // Draw the legend rectangle
+    await container.dispatchEvent(
+      new MouseEvent("mousedown", { clientX: 50, clientY: 50, button: 0 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", { clientX: 150, clientY: 120 }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", { clientX: 150, clientY: 120 }),
+    );
+    await wrapper.vm.$nextTick();
+
+    // Mode automatically switched to exclusion zones
+    expect(wrapper.text()).toContain("Traçage des zones à ignorer");
+    expect(wrapper.text()).toContain("Délimitée");
   });
 });

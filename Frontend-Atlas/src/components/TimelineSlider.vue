@@ -25,6 +25,32 @@
           </div>
         </div>
 
+        <!-- Element markers row (pins / puces d'éléments) - Year mode -->
+        <div
+          v-if="!isZoomMode && groupedElementMarkers.length > 0"
+          class="element-markers-row"
+          data-testid="timeline-element-markers-row"
+        >
+          <button
+            v-for="marker in groupedElementMarkers"
+            :key="`element-marker-${marker.year}`"
+            type="button"
+            class="element-marker-pin tooltip tooltip-top"
+            :class="{ 'element-marker-active': marker.year === internalYear }"
+            :style="marker.style"
+            :data-tip="marker.tooltip"
+            :title="marker.tooltip"
+            :aria-label="marker.tooltip"
+            data-testid="timeline-element-marker"
+            @click="selectYear(marker.year)"
+          >
+            <span class="element-marker-badge">
+              <span class="element-marker-icon">📌</span>
+              <span class="element-marker-text">{{ marker.label }}</span>
+            </span>
+          </button>
+        </div>
+
         <!-- Year-level slider (hidden during zoom) -->
         <template v-if="!isZoomMode">
           <input
@@ -52,13 +78,21 @@
               :key="`label-${label.year}`"
               type="button"
               class="tick-label tick-label-button"
-              :class="{ 'tick-label-active': label.year === internalYear }"
+              :class="{
+                'tick-label-active': label.year === internalYear,
+                'tick-label-element': elementYearsSet.has(label.year),
+              }"
               :style="label.style"
-              :title="`Aller à ${label.year}`"
+              :title="elementYearsSet.has(label.year) ? `Aller à ${label.year} (Éléments présents)` : `Aller à ${label.year}`"
               :aria-pressed="label.year === internalYear"
               @click="selectYear(label.year)"
             >
               {{ label.year }}
+              <span
+                v-if="elementYearsSet.has(label.year)"
+                class="element-dot"
+                title="Éléments présents"
+              ></span>
             </button>
           </div>
         </template>
@@ -102,7 +136,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
-import type { DayTick, SliderPeriod } from "../typescript/map";
+import type { DayTick, SliderPeriod, TimelineElementMarker } from "../typescript/map";
+
+export interface GroupedElementMarker {
+  year: number;
+  endYear?: number | null;
+  items: TimelineElementMarker[];
+  label: string;
+  tooltip: string;
+  style: Record<string, string>;
+}
 
 const props = defineProps<{
   year: number;
@@ -111,6 +154,7 @@ const props = defineProps<{
   markerYears?: number[];
   currentExactDate?: string | null;
   mapPeriods?: SliderPeriod[];
+  elementMarkers?: TimelineElementMarker[];
 }>();
 
 const emit = defineEmits(["update:year", "exact-date-change"]);
@@ -120,11 +164,56 @@ const dayZoomOffset = ref(0);
 const yearTraversalDirection = ref<"forward" | "backward">("forward");
 const lastYearSelection = ref(props.year || props.min);
 
+const elementYearsSet = computed(() => {
+  return new Set((props.elementMarkers ?? []).map((m: TimelineElementMarker) => m.year));
+});
+
+const groupedElementMarkers = computed<GroupedElementMarker[]>(() => {
+  if (isZoomMode.value || !props.elementMarkers || props.elementMarkers.length === 0) {
+    return [];
+  }
+  const map = new Map<number, TimelineElementMarker[]>();
+  for (const m of props.elementMarkers) {
+    if (m.year >= props.min && m.year <= props.max) {
+      if (!map.has(m.year)) map.set(m.year, []);
+      map.get(m.year)!.push(m);
+    }
+  }
+  const groups: GroupedElementMarker[] = [];
+  for (const [year, items] of map.entries()) {
+    const percent = positionForYear(year);
+    let tooltip: string;
+    if (items.length === 1) {
+      const item = items[0];
+      const periodStr =
+        item.endYear && item.endYear !== year
+          ? ` (${year} - ${item.endYear})`
+          : ` (${year})`;
+      tooltip = `📌 ${item.name}${periodStr} - ${item.type || "Texte"}`;
+    } else {
+      const names = items.map((i) => i.name).slice(0, 3).join(", ");
+      const extra = items.length > 3 ? ` et ${items.length - 3} autre(s)` : "";
+      tooltip = `📌 ${items.length} éléments (${year}) : ${names}${extra}`;
+    }
+    groups.push({
+      year,
+      items,
+      label: items.length === 1 ? items[0].name : `${items.length} éléments`,
+      tooltip,
+      style: markerStyleFromPercent(percent),
+    });
+  }
+  return groups.sort((a, b) => a.year - b.year);
+});
+
 const markerYears = computed(() => {
   const values = (props.markerYears ?? []).filter(
     (v: number) => Number.isFinite(v) && v >= props.min && v <= props.max,
   );
-  const merged = [...values, props.min, props.max];
+  const elementYears = (props.elementMarkers ?? [])
+    .map((m: TimelineElementMarker) => m.year)
+    .filter((v: number) => Number.isFinite(v) && v >= props.min && v <= props.max);
+  const merged = [...values, ...elementYears, props.min, props.max];
   return [...new Set(merged)].sort((a, b) => a - b);
 });
 

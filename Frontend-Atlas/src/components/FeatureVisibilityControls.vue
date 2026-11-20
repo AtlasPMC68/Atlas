@@ -169,7 +169,7 @@
                     >
                       <span class="truncate">{{ feature.properties?.name || "! Nom manquant" }}</span>
                       <span
-                        v-if="!feature.mapId && (feature.properties?.startYear != null || feature.properties?.endYear != null)"
+                        v-if="feature.properties?.startYear != null || feature.properties?.endYear != null"
                         class="badge badge-ghost badge-xs font-normal opacity-70 shrink-0"
                       >
                         {{ feature.properties.startYear }}{{ feature.properties.endYear && feature.properties.endYear !== feature.properties.startYear ? ' - ' + feature.properties.endYear : '' }}
@@ -260,15 +260,15 @@
 
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
     <div
-      class="modal-box flex flex-col gap-4"
-      :class="isEditingPoint ? 'max-w-3xl' : 'max-w-xl'"
+      class="modal-box flex flex-col gap-3 max-h-[75vh]"
+      :class="isEditingPoint ? 'max-w-3xl' : 'max-w-2xl'"
     >
       <h3 class="text-lg font-bold truncate">
         Modification de {{ featureToEdit.properties.name }}
       </h3>
       <fieldset class="flex flex-col gap-2">
-        <div class="flex flex-col gap-2">
-          <label class="label">Nom de l'élément</label>
+        <div class="flex flex-col gap-1">
+          <label class="label py-1 text-sm">Nom de l'élément</label>
           <input
             v-model="editDraft.name"
             type="text"
@@ -279,10 +279,10 @@
           />
         </div>
         <div
-          class="flex flex-col gap-2"
+          class="flex flex-col gap-1"
           v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
         >
-          <label class="label" for="edit-feature-label-text">Texte (Aperçu)</label>
+          <label class="label py-1 text-sm" for="edit-feature-label-text">Texte (Aperçu)</label>
           <textarea
             id="edit-feature-label-text"
             v-model="editDraft.labelText"
@@ -296,12 +296,12 @@
           </span>
         </div>
         <div
-          class="flex flex-col gap-2"
+          class="flex flex-col gap-1"
           v-if="isTextElement"
         >
           <!-- Le label reste au-dessus -->
           
-          <label class="label">Type de mot</label>
+          <label class="label py-1 text-sm">Type de mot</label>
           <!-- Conteneur flex horizontal obligatoire ici -->
           <div class="flex flex-row items-center gap-2 w-full">
             <select
@@ -343,7 +343,7 @@
           class="flex flex-wrap items-center gap-x-6 gap-y-2"
         >
           <div v-if="isEditingPoint" class="flex items-center gap-2">
-            <label class="label" for="edit-feature-text-color">Couleur du texte :</label>
+            <label class="label py-1 text-sm" for="edit-feature-text-color">Couleur du texte :</label>
             <input
               id="edit-feature-text-color"
               v-model="editDraft.textColorHex"
@@ -353,7 +353,7 @@
             />
           </div>
           <div class="flex items-center gap-2">
-            <label class="label" for="edit-feature-color">{{ colorLabel }}</label>
+            <label class="label py-1 text-sm" for="edit-feature-color">{{ colorLabel }}</label>
             <input
               id="edit-feature-color"
               v-model="editDraft.colorHex"
@@ -363,7 +363,7 @@
             />
           </div>
           <div v-if="isEditingPoint" class="flex items-center gap-2">
-            <label class="label" for="edit-feature-stroke-color">Couleur du contour :</label>
+            <label class="label py-1 text-sm" for="edit-feature-stroke-color">Couleur du contour :</label>
             <input
               id="edit-feature-stroke-color"
               v-model="editDraft.strokeColorHex"
@@ -373,7 +373,7 @@
             />
           </div>
           <div v-if="isTextElement" class="flex items-center gap-2">
-            <label class="label" for="edit-feature-text-size">Taille du texte :</label>
+            <label class="label py-1 text-sm" for="edit-feature-text-size">Taille du texte :</label>
             <input
               id="edit-feature-text-size"
               v-model.number="editDraft.textSizePx"
@@ -565,7 +565,7 @@
           data-testid="feature-years-section"
         >
           <label class="label py-0 font-medium text-sm">
-            Période d'apparition (années sans carte) :
+            Période d'apparition :
           </label>
           <div class="grid grid-cols-2 gap-3">
             <div>
@@ -595,11 +595,11 @@
             </div>
           </div>
           <span class="text-xs text-base-content/60 italic">
-            Permet d'afficher cet élément à ces années sur la ligne du temps, même sans carte associée.
+            Permet de définir des années d'apparition propres à cet élément sur la ligne du temps (prime sur la carte associée).
           </span>
         </div>
       </fieldset>
-      <div class="modal-action">
+      <div class="modal-action mt-2">
         <button
           class="btn"
           :disabled="isEditing"
