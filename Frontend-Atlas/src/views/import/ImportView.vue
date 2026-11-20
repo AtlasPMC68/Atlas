@@ -118,7 +118,6 @@
       :initial-bounds="store.inputs.legend?.present ? store.inputs.legend.bounds : null"
       :initial-ignored-areas="store.inputs.ignoredAreas ?? []"
       @close="openModal = null"
-      @no-legend="save({ legend: { present: false, bounds: null }, ignoredAreas: [] })"
       @confirmed="onLegendConfirmed"
     />
 

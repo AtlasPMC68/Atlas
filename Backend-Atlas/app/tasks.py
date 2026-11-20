@@ -535,24 +535,7 @@ def _categorized_text_features_from_ocr(
             else:
                 prior_centers.append(center)
             suggested_place = None
-            if (
-                has_place_coordinates
-                and entity
-                and entity.get("name")
-                and (
-                    not distance_requires_review
-                    or (
-                        target_pos is not None
-                        and haversine_distance_km(
-                            target_pos[0],
-                            target_pos[1],
-                            float(entity["lat"]),
-                            float(entity["lon"]),
-                        )
-                        <= MATCHING_CONFIG["suggestion_radius_km"]
-                    )
-                )
-            ):
+            if has_place_coordinates and entity and entity.get("name"):
                 raw_type = entity.get("type") or "city"
                 is_from_json = bool(raw_type and raw_type != "city")
                 suggested_place = {

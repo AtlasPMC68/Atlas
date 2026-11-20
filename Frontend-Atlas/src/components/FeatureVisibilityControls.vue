@@ -259,212 +259,131 @@
   </div>
 
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
-    <div
-      class="modal-box flex flex-col gap-3 max-h-[75vh]"
-      :class="isEditingPoint ? 'max-w-3xl' : 'max-w-2xl'"
-    >
+    <div class="modal-box w-11/12 max-w-4xl flex flex-col gap-4">
       <h3 class="text-lg font-bold truncate">
         Modification de {{ featureToEdit.properties.name }}
       </h3>
-      <fieldset class="flex flex-col gap-2">
-        <div class="flex flex-col gap-1">
-          <label class="label py-1 text-sm">Nom de l'élément</label>
-          <input
-            v-model="editDraft.name"
-            type="text"
-            class="input"
-            placeholder="Nom de l'élément"
-            required
-            @input="onNameInput"
-          />
-        </div>
-        <div
-          class="flex flex-col gap-1"
-          v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
-        >
-          <label class="label py-1 text-sm" for="edit-feature-label-text">Texte (Aperçu)</label>
-          <textarea
-            id="edit-feature-label-text"
-            v-model="editDraft.labelText"
-            data-testid="label-text-input"
-            class="textarea w-full leading-snug"
-            :rows="labelTextRows"
-            :style="editTextStyle"
-          ></textarea>
-          <span v-if="isTextElement" class="text-xs text-base-content/60">
-            Appuyez sur Entrée pour ajouter un saut de ligne.
-          </span>
-        </div>
-        <div
-          class="flex flex-col gap-1"
-          v-if="isTextElement"
-        >
-          <!-- Le label reste au-dessus -->
-          
-          <label class="label py-1 text-sm">Type de mot</label>
-          <!-- Conteneur flex horizontal obligatoire ici -->
-          <div class="flex flex-row items-center gap-2 w-full">
-            <select
-              v-model="editDraft.labelStyleSelection"
-              data-testid="word-type-select"
-              class="select select-bordered flex-1 min-w-0"
-              @change="onLabelStyleSelectionChange"
-            >
-              <option
-                v-for="style in availableCustomLabelStyles"
-                :key="style.id"
-                :value="`custom:${style.id}`"
-                :style="getCustomStyleObject(style)"
-              >
-                {{ style.name }}
-              </option>            
-              <option
-                v-for="(_, typeKey) in WORD_TYPE_STYLES"
-                :key="typeKey"
-                :value="typeKey"
-                :style="getWordTypeOptionStyle(typeKey)"
-              >
-                {{ getWordTypeOptionLabel(typeKey) }}
-              </option>
-            </select>
-            <button
-              type="button"
-              class="btn btn-outline border-base-300 rounded-lg shrink-0 hover:bg-base-200 hover:border-base-content/40 hover:text-base-content"
-              data-testid="manage-custom-label-styles"
-              @click="labelStyleManagerRef?.open()"
-            >
-              Personnaliser
-            </button>
+      <fieldset class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <!-- Colonne gauche : Nom, Type de mot & Styles -->
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="label py-0 text-sm font-medium">Nom de l'élément</label>
+            <input
+              v-model="editDraft.name"
+              type="text"
+              class="input w-full"
+              placeholder="Nom de l'élément"
+              required
+              @input="onNameInput"
+            />
           </div>
-        </div>
 
-        <div
-          v-if="!editDraft.customLabelStyleId"
-          class="flex flex-wrap items-center gap-x-6 gap-y-2"
-        >
-          <div v-if="isEditingPoint" class="flex items-center gap-2">
-            <label class="label py-1 text-sm" for="edit-feature-text-color">Couleur du texte :</label>
-            <input
-              id="edit-feature-text-color"
-              v-model="editDraft.textColorHex"
-              data-testid="text-color-input"
-              type="color"
-              class="h-9 w-8 cursor-pointer bg-base-100"
-            />
-          </div>
-          <div class="flex items-center gap-2">
-            <label class="label py-1 text-sm" for="edit-feature-color">{{ colorLabel }}</label>
-            <input
-              id="edit-feature-color"
-              v-model="editDraft.colorHex"
-              data-testid="color-input"
-              type="color"
-              class="h-9 w-8 cursor-pointer bg-base-100"
-            />
-          </div>
-          <div v-if="isEditingPoint" class="flex items-center gap-2">
-            <label class="label py-1 text-sm" for="edit-feature-stroke-color">Couleur du contour :</label>
-            <input
-              id="edit-feature-stroke-color"
-              v-model="editDraft.strokeColorHex"
-              data-testid="point-stroke-color-input"
-              type="color"
-              class="h-9 w-8 cursor-pointer bg-base-100"
-            />
-          </div>
-          <div v-if="isTextElement" class="flex items-center gap-2">
-            <label class="label py-1 text-sm" for="edit-feature-text-size">Taille du texte :</label>
-            <input
-              id="edit-feature-text-size"
-              v-model.number="editDraft.textSizePx"
-              data-testid="text-size-input"
-              type="number"
-              :min="MIN_TEXT_SIZE_PX"
-              :max="MAX_TEXT_SIZE_PX"
-              step="1"
-              class="input w-20"
-              @change="editDraft.textSizePx = normalizeTextSizePx(editDraft.textSizePx) ?? defaultTextSizePx"
-            />
-            <span class="text-xs text-base-content/60">px</span>
-          </div>
-        </div>
-
-        <!-- Controls for shapes / zones / polygons / lines / legend (non-text elements) -->
-        <div
-          v-if="!isTextElement"
-          class="flex flex-col gap-2"
-        >
-        <p
-          class="text-xs text-base-content/60 italic"
-        >
-          Les réglages suivants s'appliquent à la forme (zone, polygone, ligne) dessinée sur la carte.
-        </p>
-          <div class="flex gap-2">
-            <div class="flex flex-col gap-1 w-full">
-              <label class="label py-0 text-sm">Opacité du fond</label>
-              <input
-                v-model.number="editDraft.fillOpacity"
-                data-testid="fill-opacity-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                class="input"
-                @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
-              />
-            </div>
-            <div class="flex flex-col gap-1 w-full">
-              <label class="label py-0 text-sm">Opacité du contour</label>
-              <input
-                v-model.number="editDraft.strokeOpacity"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                class="input"
-                @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
-              />
+          <div
+            class="flex flex-col gap-1"
+            v-if="isTextElement"
+          >
+            <label class="label py-0 text-sm font-medium">Type de mot</label>
+            <!-- Conteneur flex horizontal obligatoire ici -->
+            <div class="flex flex-row items-center gap-2 w-full">
+              <select
+                v-model="editDraft.labelStyleSelection"
+                data-testid="word-type-select"
+                class="select select-bordered flex-1 min-w-0"
+                @change="onLabelStyleSelectionChange"
+              >
+                <option
+                  v-for="style in availableCustomLabelStyles"
+                  :key="style.id"
+                  :value="`custom:${style.id}`"
+                  :style="getCustomStyleObject(style)"
+                >
+                  {{ style.name }}
+                </option>            
+                <option
+                  v-for="(_, typeKey) in WORD_TYPE_STYLES"
+                  :key="typeKey"
+                  :value="typeKey"
+                  :style="getWordTypeOptionStyle(typeKey)"
+                >
+                  {{ getWordTypeOptionLabel(typeKey) }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="btn btn-outline border-base-300 rounded-lg shrink-0 hover:bg-base-200 hover:border-base-content/40 hover:text-base-content"
+                data-testid="manage-custom-label-styles"
+                @click="labelStyleManagerRef?.open()"
+              >
+                Personnaliser
+              </button>
             </div>
           </div>
-          <div class="flex flex-col gap-1 w-full">
-            <label class="label py-0 text-sm">Épaisseur du contour</label>
-            <input
-              v-model.number="editDraft.strokeWidth"
-              type="number"
-              min="0"
-              :max="MAX_STROKE_WIDTH_PX"
-              class="input"
-              @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
-            />
-          </div>
-          <div class="flex items-center gap-2 pt-1">
-            <label class="label py-0 text-sm">Couleur du contour :</label>
-            <input
-              v-model="editDraft.strokeColorHex"
-              type="color"
-              class="h-9 w-8 cursor-pointer bg-base-100"
-            />
-          </div>
-        </div>
 
-        <!-- Point symbol: its three numbers side by side, and a live preview
-             of the symbol with its text -->
-        <div
-          v-if="isEditingPoint"
-          class="grid grid-cols-1 sm:grid-cols-[1fr_13rem] gap-4 items-stretch"
-        >
-          <div class="flex flex-col gap-2">
-            <p class="text-xs opacity-60 italic">
-              Les réglages suivants s'appliquent au symbole du point qui représente
-              la ville sur la carte.
+          <div
+            v-if="!editDraft.customLabelStyleId"
+            class="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1"
+          >
+            <div v-if="isEditingPoint" class="flex items-center gap-2">
+              <label class="label py-0 text-sm" for="edit-feature-text-color">Couleur du texte :</label>
+              <input
+                id="edit-feature-text-color"
+                v-model="editDraft.textColorHex"
+                data-testid="text-color-input"
+                type="color"
+                class="h-9 w-8 cursor-pointer bg-base-100"
+              />
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="label py-0 text-sm" for="edit-feature-color">{{ colorLabel }}</label>
+              <input
+                id="edit-feature-color"
+                v-model="editDraft.colorHex"
+                data-testid="color-input"
+                type="color"
+                class="h-9 w-8 cursor-pointer bg-base-100"
+              />
+            </div>
+            <div v-if="isEditingPoint" class="flex items-center gap-2">
+              <label class="label py-0 text-sm" for="edit-feature-stroke-color">Couleur du contour :</label>
+              <input
+                id="edit-feature-stroke-color"
+                v-model="editDraft.strokeColorHex"
+                data-testid="point-stroke-color-input"
+                type="color"
+                class="h-9 w-8 cursor-pointer bg-base-100"
+              />
+            </div>
+            <div v-if="isTextElement" class="flex items-center gap-2">
+              <label class="label py-0 text-sm" for="edit-feature-text-size">Taille du texte :</label>
+              <input
+                id="edit-feature-text-size"
+                v-model.number="editDraft.textSizePx"
+                data-testid="text-size-input"
+                type="number"
+                :min="MIN_TEXT_SIZE_PX"
+                :max="MAX_TEXT_SIZE_PX"
+                step="1"
+                class="input w-20"
+                @change="editDraft.textSizePx = normalizeTextSizePx(editDraft.textSizePx) ?? defaultTextSizePx"
+              />
+              <span class="text-xs text-base-content/60">px</span>
+            </div>
+          </div>
+
+          <!-- Controls for shapes / zones / polygons / lines / legend (non-text elements) -->
+          <div
+            v-if="!isTextElement"
+            class="flex flex-col gap-2 pt-1 border-t border-base-200"
+          >
+            <p class="text-xs text-base-content/60 italic">
+              Les réglages suivants s'appliquent à la forme (zone, polygone, ligne) dessinée sur la carte.
             </p>
-            <div class="grid grid-cols-3 gap-3 items-end">
-              <div class="flex flex-col gap-1">
-                <label class="label py-0 text-sm" for="edit-point-fill-opacity">Opacité du fond</label>
+            <div class="flex gap-2">
+              <div class="flex flex-col gap-1 w-full">
+                <label class="label py-0 text-sm">Opacité du fond</label>
                 <input
-                  id="edit-point-fill-opacity"
                   v-model.number="editDraft.fillOpacity"
-                  data-testid="point-fill-opacity-input"
+                  data-testid="fill-opacity-input"
                   type="number"
                   step="0.1"
                   min="0"
@@ -473,12 +392,10 @@
                   @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
                 />
               </div>
-              <div class="flex flex-col gap-1">
-                <label class="label py-0 text-sm" for="edit-point-stroke-opacity">Opacité du contour</label>
+              <div class="flex flex-col gap-1 w-full">
+                <label class="label py-0 text-sm">Opacité du contour</label>
                 <input
-                  id="edit-point-stroke-opacity"
                   v-model.number="editDraft.strokeOpacity"
-                  data-testid="point-stroke-opacity-input"
                   type="number"
                   step="0.1"
                   min="0"
@@ -487,116 +404,198 @@
                   @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
                 />
               </div>
+            </div>
+            <div class="flex flex-col gap-1 w-full">
+              <label class="label py-0 text-sm">Épaisseur du contour</label>
+              <input
+                v-model.number="editDraft.strokeWidth"
+                type="number"
+                min="0"
+                :max="MAX_STROKE_WIDTH_PX"
+                class="input"
+                @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
+              />
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+              <label class="label py-0 text-sm">Couleur du contour :</label>
+              <input
+                v-model="editDraft.strokeColorHex"
+                type="color"
+                class="h-9 w-8 cursor-pointer bg-base-100"
+              />
+            </div>
+          </div>
+
+          <!-- Réglages du symbole du point -->
+          <div
+            v-if="isEditingPoint"
+            class="flex flex-col gap-2 pt-1 border-t border-base-200"
+          >
+            <p class="text-xs opacity-60 italic">
+              Les réglages suivants s'appliquent au symbole du point qui représente
+              la ville sur la carte.
+            </p>
+            <div class="grid grid-cols-3 gap-2 items-end">
               <div class="flex flex-col gap-1">
-                <label class="label py-0 text-sm" for="edit-point-stroke-width">Épaisseur du contour</label>
+                <label class="label py-0 text-xs" for="edit-point-fill-opacity">Opacité fond</label>
+                <input
+                  id="edit-point-fill-opacity"
+                  v-model.number="editDraft.fillOpacity"
+                  data-testid="point-fill-opacity-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  class="input input-sm"
+                  @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="label py-0 text-xs" for="edit-point-stroke-opacity">Opacité contour</label>
+                <input
+                  id="edit-point-stroke-opacity"
+                  v-model.number="editDraft.strokeOpacity"
+                  data-testid="point-stroke-opacity-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  class="input input-sm"
+                  @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="label py-0 text-xs" for="edit-point-stroke-width">Épaisseur</label>
                 <input
                   id="edit-point-stroke-width"
                   v-model.number="editDraft.strokeWidth"
                   type="number"
                   min="0"
                   :max="MAX_STROKE_WIDTH_PX"
-                  class="input"
+                  class="input input-sm"
                   @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
                 />
               </div>
             </div>
-          </div>
 
-          <div
-            class="flex flex-col rounded-lg border border-base-300 bg-base-200 p-3"
-            data-testid="point-preview-container"
-          >
-            <span class="text-xs opacity-60 font-medium">Aperçu</span>
-            <div class="flex flex-1 items-center justify-center gap-2 min-h-[70px] overflow-hidden">
-              <svg width="36" height="36" viewBox="0 0 36 36" class="shrink-0 overflow-visible">
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="10"
-                  :fill="pointPreviewFillColor"
-                  :fill-opacity="pointPreviewFillOpacity"
-                  :stroke="pointPreviewStrokeColor"
-                  :stroke-width="pointPreviewStrokeWidth"
-                  :stroke-opacity="pointPreviewStrokeOpacity"
-                />
-              </svg>
-              <span
-                class="whitespace-pre-line leading-tight"
-                :style="editTextStyle"
-                data-testid="point-preview-text"
-              >{{ editDraft.labelText || editDraft.name }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Map assignment: choose which map(s) the element belongs to -->
-        <div
-          v-if="props.mapPeriods && props.mapPeriods.length > 0"
-          class="flex flex-col gap-2 pt-2 border-t border-base-200"
-          data-testid="map-assignment-section"
-        >
-          <label class="label py-0 font-medium text-sm">
-            Cartes associées :
-          </label>
-          <div class="flex flex-col gap-1.5 max-h-40 overflow-y-auto border border-base-300 rounded-lg p-2 bg-base-100">
-            <label
-              v-for="period in props.mapPeriods"
-              :key="period.id"
-              class="flex items-center gap-2 cursor-pointer hover:bg-base-200/50 rounded px-1.5 py-1"
+            <!-- Aperçu du point -->
+            <div
+              class="flex flex-col rounded-lg border border-base-300 bg-base-200 p-2.5 mt-1"
+              data-testid="point-preview-container"
             >
-              <input
-                type="checkbox"
-                :value="period.id"
-                v-model="editDraft.selectedMapIds"
-                class="checkbox checkbox-xs checkbox-primary"
-                :data-testid="`map-checkbox-${period.id}`"
-              />
-              <span class="text-sm truncate">{{ period.title }}</span>
-            </label>
+              <span class="text-xs opacity-60 font-medium">Aperçu du point</span>
+              <div class="flex items-center justify-center gap-2 min-h-[50px] overflow-hidden">
+                <svg width="36" height="36" viewBox="0 0 36 36" class="shrink-0 overflow-visible">
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="10"
+                    :fill="pointPreviewFillColor"
+                    :fill-opacity="pointPreviewFillOpacity"
+                    :stroke="pointPreviewStrokeColor"
+                    :stroke-width="pointPreviewStrokeWidth"
+                    :stroke-opacity="pointPreviewStrokeOpacity"
+                  />
+                </svg>
+                <span
+                  class="whitespace-pre-line leading-tight"
+                  :style="editTextStyle"
+                  data-testid="point-preview-text"
+                >{{ editDraft.labelText || editDraft.name }}</span>
+              </div>
+            </div>
           </div>
-          <span class="text-xs text-base-content/60 italic">
-            Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
-          </span>
         </div>
 
-        <!-- Années associées (sans carte) -->
-        <div
-          class="flex flex-col gap-2 pt-2 border-t border-base-200"
-          data-testid="feature-years-section"
-        >
-          <label class="label py-0 font-medium text-sm">
-            Période d'apparition :
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="label py-0 text-xs text-base-content/70">Année de début</label>
-              <input
-                v-model.number="editDraft.startYear"
-                type="number"
-                min="1"
-                max="9999"
-                class="input input-sm w-full"
-                placeholder="Ex: 1600"
-                data-testid="feature-start-year-input"
-                @input="onFeatureStartYearInput"
-              />
-            </div>
-            <div>
-              <label class="label py-0 text-xs text-base-content/70">Année de fin</label>
-              <input
-                v-model.number="editDraft.endYear"
-                type="number"
-                min="1"
-                max="9999"
-                class="input input-sm w-full"
-                placeholder="Ex: 1650"
-                data-testid="feature-end-year-input"
-              />
-            </div>
+        <!-- Colonne droite : Aperçu, Cartes associées & Dates -->
+        <div class="flex flex-col gap-3">
+          <div
+            class="flex flex-col gap-1"
+            v-if="featureToEdit.properties.labelText !== undefined || isTextElement"
+          >
+            <label class="label py-0 text-sm font-medium" for="edit-feature-label-text">Texte (Aperçu)</label>
+            <textarea
+              id="edit-feature-label-text"
+              v-model="editDraft.labelText"
+              data-testid="label-text-input"
+              class="textarea w-full leading-snug"
+              :rows="labelTextRows"
+              :style="editTextStyle"
+            ></textarea>
+            <span v-if="isTextElement" class="text-xs text-base-content/60">
+              Appuyez sur Entrée pour ajouter un saut de ligne.
+            </span>
           </div>
-          <span class="text-xs text-base-content/60 italic">
-            Permet de définir des années d'apparition propres à cet élément sur la ligne du temps (prime sur la carte associée).
-          </span>
+
+          <!-- Map assignment: choose which map(s) the element belongs to -->
+          <div
+            v-if="props.mapPeriods && props.mapPeriods.length > 0"
+            class="flex flex-col gap-1.5 pt-1 border-t border-base-200"
+            data-testid="map-assignment-section"
+          >
+            <label class="label py-0 font-medium text-sm">
+              Cartes associées :
+            </label>
+            <div class="flex flex-col gap-1 max-h-32 overflow-y-auto border border-base-300 rounded-lg p-2 bg-base-100">
+              <label
+                v-for="period in props.mapPeriods"
+                :key="period.id"
+                class="flex items-center gap-2 cursor-pointer hover:bg-base-200/50 rounded px-1.5 py-0.5"
+              >
+                <input
+                  type="checkbox"
+                  :value="period.id"
+                  v-model="editDraft.selectedMapIds"
+                  class="checkbox checkbox-xs checkbox-primary"
+                  :data-testid="`map-checkbox-${period.id}`"
+                />
+                <span class="text-sm truncate">{{ period.title }}</span>
+              </label>
+            </div>
+            <span class="text-xs text-base-content/60 italic">
+              Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
+            </span>
+          </div>
+
+          <!-- Années associées (sans carte) -->
+          <div
+            class="flex flex-col gap-1.5 pt-1 border-t border-base-200"
+            data-testid="feature-years-section"
+          >
+            <label class="label py-0 font-medium text-sm">
+              Période d'apparition :
+            </label>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="label py-0 text-xs text-base-content/70">Année de début</label>
+                <input
+                  v-model.number="editDraft.startYear"
+                  type="number"
+                  min="1"
+                  max="9999"
+                  class="input input-sm w-full"
+                  placeholder="Ex: 1600"
+                  data-testid="feature-start-year-input"
+                  @input="onFeatureStartYearInput"
+                />
+              </div>
+              <div>
+                <label class="label py-0 text-xs text-base-content/70">Année de fin</label>
+                <input
+                  v-model.number="editDraft.endYear"
+                  type="number"
+                  min="1"
+                  max="9999"
+                  class="input input-sm w-full"
+                  placeholder="Ex: 1650"
+                  data-testid="feature-end-year-input"
+                />
+              </div>
+            </div>
+            <span class="text-xs text-base-content/60 italic">
+              Permet de définir des années d'apparition propres à cet élément sur la ligne du temps (prime sur la carte associée).
+            </span>
+          </div>
         </div>
       </fieldset>
       <div class="modal-action mt-2">

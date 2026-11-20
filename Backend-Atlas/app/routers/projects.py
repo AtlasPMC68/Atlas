@@ -16,14 +16,18 @@ from sqlalchemy.orm import Session, defer
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
-from app.models.map_import import EXTRACTION_FAILED, EXTRACTION_PENDING, MapImport
+from app.models.map_import import EXTRACTION_FAILED, MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
 from app.schemas.projectCreateRequest import ProjectCreateRequest
 from app.schemas.mapImportRequest import MapImportRequest
 from app.schemas.label_styles import LabelStylesRequest
-from app.services.maps import copy_maps_between_projects, create_map_in_db
+from app.services.maps import (
+    copy_maps_between_projects,
+    create_map_in_db,
+    duplicate_map_in_project,
+)
 from app.services.projects import (
     create_project_in_db,
     delete_project_in_db,
@@ -160,7 +164,6 @@ async def duplicate_map_for_project(
                 detail="start_date must be before or equal to end_date",
             )
 
-        from app.services.maps import duplicate_map_in_project
         new_map_id = await duplicate_map_in_project(
             db=db,
             project_id=project_id,

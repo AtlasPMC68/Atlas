@@ -187,10 +187,10 @@ export function layerToFeature(
       rotation,
       startYear:
         baseFeature?.properties?.startYear ??
-        (selectedYear > 0 ? selectedYear : undefined),
+        (typeof selectedYear === "number" && !Number.isNaN(selectedYear) ? selectedYear : undefined),
       endYear:
         baseFeature?.properties?.endYear ??
-        (selectedYear > 0 ? selectedYear : undefined),
+        (typeof selectedYear === "number" && !Number.isNaN(selectedYear) ? selectedYear : undefined),
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,

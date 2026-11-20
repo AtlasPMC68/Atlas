@@ -1,3 +1,5 @@
+import os
+import shutil
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -99,11 +101,25 @@ async def duplicate_map_in_project(
         end_date=end_date or source_map.end_date,
         exact_date=exact_date,
         georef_inputs=source_map.georef_inputs,
-        reference_image_path=source_map.reference_image_path,
         reference_image_content_type=source_map.reference_image_content_type,
     )
     db.add(new_map)
     await db.flush()
+
+    if source_map.reference_image_path:
+        media_root = os.getenv("MEDIA_ROOT", "/app/media")
+        source_abs = os.path.abspath(os.path.join(media_root, source_map.reference_image_path))
+        if os.path.isfile(source_abs):
+            ref_dir = os.path.join(media_root, "reference_images")
+            os.makedirs(ref_dir, exist_ok=True)
+            ext = os.path.splitext(source_map.reference_image_path)[1]
+            new_filename = f"{new_map.id}{ext}"
+            dest_abs = os.path.join(ref_dir, new_filename)
+            try:
+                shutil.copy2(source_abs, dest_abs)
+                new_map.reference_image_path = os.path.join("reference_images", new_filename)
+            except OSError:
+                new_map.reference_image_path = None
 
     features_result = await db.execute(
         select(Feature).where(

@@ -95,7 +95,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import { syncEndFromStart, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
 
 type AddMapPayload = {
   title: string;
@@ -120,15 +120,20 @@ const startDate = ref("");
 const endDate = ref("");
 const usePreciseDates = ref(false);
 
+let previousStartYear: number | null = null;
+let previousStartDate = "";
+
 function onStartYearInput() {
   if (startYear.value !== null && startYear.value !== undefined) {
-    endYear.value = startYear.value;
+    endYear.value = syncEndFromStart(startYear.value, endYear.value, previousStartYear);
+    previousStartYear = startYear.value;
   }
 }
 
 function onStartDateInput() {
   if (startDate.value) {
-    endDate.value = startDate.value;
+    endDate.value = syncEndFromStart(startDate.value, endDate.value, previousStartDate);
+    previousStartDate = startDate.value;
   }
 }
 

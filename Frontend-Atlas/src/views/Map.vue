@@ -146,13 +146,15 @@
         <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
         <div
           v-show="isTimelineVisible"
-          class="map-timeline-toolbar flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
-          :style="timelineHeight ? { height: `${timelineHeight}px`, overflowY: 'auto' } : {}"
+          class="map-timeline-toolbar relative z-[1002] flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+          :style="timelineHeight ? { height: `${timelineHeight}px` } : {}"
         >
           <div class="map-timeline-slider w-full min-w-0">
             <TimelineSlider
               v-model:year="selectedYear"
               @exact-date-change="onExactDateChange"
+              @edit-map="openEditMapDialog"
+              @edit-element="onEditElementFromTimeline"
               :min="timelineMinYear"
               :max="timelineMaxYear"
               :marker-years="timelineMarkerYears"
@@ -268,6 +270,7 @@ import {
   camelToSnake,
   isUuid,
   prepareFeaturesForSave,
+  rgbToHex,
   snakeToCamel,
   toImageSrc,
 } from "../utils/utils";
@@ -356,6 +359,12 @@ const featureVisibilityControlsRef = ref<InstanceType<
 
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
+}
+function onEditElementFromTimeline(featureId: string) {
+  const feat = features.value.find((f: Feature) => String(f.id) === String(featureId));
+  if (feat) {
+    onEditFeatureRequest(feat);
+  }
 }
 function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
@@ -1477,7 +1486,7 @@ async function onDuplicateMapSubmit(payload: {
         },
         body: JSON.stringify(
           camelToSnake({
-            newTitle: payload.newTitle.trim(),
+            title: payload.newTitle.trim(),
             startDate: payload.startDate,
             endDate: payload.endDate,
             exactDate: payload.exactDate,

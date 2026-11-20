@@ -1,7 +1,8 @@
-/** Parse a YYYY-MM-DD ISO string and return the year, or null if invalid. */
-export function toYear(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = /^(\d{4})-\d{2}-\d{2}(?:T.*)?$/.exec(value);
+/** Parse a YYYY or YYYY-MM-DD ISO string and return the year, or null if invalid. */
+export function toYear(value: string | number | null | undefined): number | null {
+  if (value == null) return null;
+  const str = String(value).trim();
+  const match = /^(\d{1,4})(?:-\d{2}-\d{2})?(?:T.*)?$/.exec(str);
   if (!match) return null;
   const year = Number(match[1]);
   return Number.isFinite(year) ? year : null;
@@ -57,4 +58,24 @@ export function isPeriodActiveAt<T extends number | string>(
   if (value < start || value > end) return false;
   if (value < end || start === end) return true;
   return !periodStarts.has(end);
+}
+
+/**
+ * Automatically synchronizes an end value from a start value,
+ * only if the current end value is empty/null or matches the previous start value.
+ */
+export function syncEndFromStart<T extends string | number | null | undefined>(
+  newStart: T,
+  currentEnd: T,
+  prevStart?: T,
+): T {
+  if (
+    currentEnd === null ||
+    currentEnd === undefined ||
+    currentEnd === "" ||
+    (prevStart !== undefined && currentEnd === prevStart)
+  ) {
+    return newStart;
+  }
+  return currentEnd;
 }

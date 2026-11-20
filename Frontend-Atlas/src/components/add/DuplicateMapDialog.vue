@@ -138,7 +138,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { MapPeriod } from "../../typescript/map";
-import { toYear, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import { syncEndFromStart, toYear, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
 
 const props = defineProps<{
   mapPeriods: MapPeriod[];
@@ -168,15 +168,20 @@ const endYear = ref<number | null>(null);
 const usePreciseDates = ref(false);
 const error = ref("");
 
+let previousStartYear: number | null = null;
+let previousStartDate = "";
+
 function onStartYearInput() {
   if (startYear.value !== null && startYear.value !== undefined) {
-    endYear.value = startYear.value;
+    endYear.value = syncEndFromStart(startYear.value, endYear.value, previousStartYear);
+    previousStartYear = startYear.value;
   }
 }
 
 function onStartDateInput() {
   if (startDate.value) {
-    endDate.value = startDate.value;
+    endDate.value = syncEndFromStart(startDate.value, endDate.value, previousStartDate);
+    previousStartDate = startDate.value;
   }
 }
 

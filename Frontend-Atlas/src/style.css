@@ -378,6 +378,12 @@
   background-color: #ffffff !important;
   border-color: #ffffff !important;
   color: #ffffff !important;
+  z-index: 2000 !important;
+}
+
+.element-marker-pin.tooltip::before,
+.element-marker-pin.tooltip::after {
+  z-index: 2000 !important;
 }
 
 /* Element markers on timeline */
@@ -420,12 +426,45 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   border: 1.5px solid #ffffff;
   white-space: nowrap;
+  transition: all 0.15s ease;
 }
 
 .element-marker-active .element-marker-badge {
   background: #d97706;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+/* Suggestion 1 : Badge violet/indigo pour les éléments multi-périodes */
+.element-marker-badge.element-marker-badge-range {
+  background: #6366f1;
+}
+
+.element-marker-active .element-marker-badge.element-marker-badge-range {
+  background: #4f46e5;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+/* Suggestion 3 : Mini-segment coloré d'amplitude reliant le début et la fin */
+.element-marker-range-track {
+  position: absolute;
+  bottom: -2px;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.9), rgba(139, 92, 246, 0.45));
+  border-radius: 9999px;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 1004;
+  transition: all 0.15s ease;
+}
+
+.element-marker-range-track:hover,
+.element-marker-range-track.element-marker-range-active {
+  height: 6px;
+  bottom: -3px;
+  background: #6366f1;
+  box-shadow: 0 0 5px rgba(99, 102, 241, 0.7);
 }
 
 .element-marker-icon {

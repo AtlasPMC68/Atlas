@@ -1,14 +1,20 @@
 import keycloak from "../keycloak";
 
 let refreshPromise: Promise<boolean> | null = null;
+let refreshPromiseMinValidity: number | null = null;
 
 async function getOrRefreshKeycloakToken(minValidity: number): Promise<boolean> {
   if (!keycloak.authenticated) return false;
+  if (minValidity < 0 && refreshPromiseMinValidity !== null && refreshPromiseMinValidity >= 0) {
+    refreshPromise = null;
+  }
   if (!refreshPromise) {
+    refreshPromiseMinValidity = minValidity;
     refreshPromise = keycloak
       .updateToken(minValidity)
       .finally(() => {
         refreshPromise = null;
+        refreshPromiseMinValidity = null;
       });
   }
   return refreshPromise;

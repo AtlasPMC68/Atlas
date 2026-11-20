@@ -123,10 +123,10 @@ export class MapDrawingService {
         mapElementType: "label",
         startYear:
           feature.properties?.startYear ??
-          (this.selectedYear > 0 ? this.selectedYear : undefined),
+          (typeof this.selectedYear === "number" && !Number.isNaN(this.selectedYear) ? this.selectedYear : undefined),
         endYear:
           feature.properties?.endYear ??
-          (this.selectedYear > 0 ? this.selectedYear : undefined),
+          (typeof this.selectedYear === "number" && !Number.isNaN(this.selectedYear) ? this.selectedYear : undefined),
       },
     };
 

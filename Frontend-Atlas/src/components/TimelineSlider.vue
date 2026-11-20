@@ -7,12 +7,13 @@
           <div
             v-for="period in displayedPeriods"
             :key="period.id"
-            class="period-track tooltip tooltip-top"
+            class="period-track tooltip tooltip-top cursor-pointer"
             :class="{ 'tooltip-open': hoveredPeriodId === period.id }"
             :style="isZoomMode ? getDayZoomPeriodStyle(period) : getPeriodStyle(period.startYear, period.endYear, period.color, period.row)"
             :data-tip="`${period.title} (${isZoomMode ? period.startDate : period.startYear} - ${isZoomMode ? period.endDate : period.endYear})`"
             @mouseenter="hoveredPeriodId = period.id"
             @mouseleave="hoveredPeriodId = null"
+            @dblclick.stop="emit('edit-map', period.id)"
           >
             <div
               class="tooltip-content pointer-events-auto rounded-box bg-base-100 px-3 py-2 text-xs text-base-content shadow-lg whitespace-nowrap"
@@ -31,21 +32,45 @@
           class="element-markers-row"
           data-testid="timeline-element-markers-row"
         >
+          <!-- Mini-segments colorés (Suggestion 3 : amplitude des éléments multi-périodes) -->
+          <div
+            v-for="marker in groupedElementMarkers.filter((m) => m.isRange && m.rangeStyle)"
+            :key="`element-range-${marker.year}-${marker.maxEndYear}`"
+            class="element-marker-range-track"
+            :class="{
+              'element-marker-range-active':
+                internalYear >= marker.year &&
+                marker.maxEndYear != null &&
+                internalYear <= marker.maxEndYear,
+            }"
+            :style="marker.rangeStyle"
+            :title="marker.tooltip"
+            @click="selectYear(marker.year)"
+            @dblclick.stop="onMarkerDblClick(marker)"
+          />
+
           <button
             v-for="marker in groupedElementMarkers"
             :key="`element-marker-${marker.year}`"
             type="button"
             class="element-marker-pin tooltip tooltip-top"
-            :class="{ 'element-marker-active': marker.year === internalYear }"
+            :class="{
+              'element-marker-active': marker.year === internalYear,
+              'element-marker-is-range': marker.isRange,
+            }"
             :style="marker.style"
             :data-tip="marker.tooltip"
             :title="marker.tooltip"
             :aria-label="marker.tooltip"
             data-testid="timeline-element-marker"
             @click="selectYear(marker.year)"
+            @dblclick.stop="onMarkerDblClick(marker)"
           >
-            <span class="element-marker-badge">
-              <span class="element-marker-icon">📌</span>
+            <span
+              class="element-marker-badge"
+              :class="{ 'element-marker-badge-range': marker.isRange }"
+            >
+              <span class="element-marker-icon">{{ marker.isRange ? '↔️' : '📌' }}</span>
               <span class="element-marker-text">{{ marker.label }}</span>
             </span>
           </button>
@@ -145,6 +170,9 @@ export interface GroupedElementMarker {
   label: string;
   tooltip: string;
   style: Record<string, string>;
+  isRange: boolean;
+  maxEndYear?: number | null;
+  rangeStyle?: Record<string, string>;
 }
 
 const props = defineProps<{
@@ -157,7 +185,13 @@ const props = defineProps<{
   elementMarkers?: TimelineElementMarker[];
 }>();
 
-const emit = defineEmits(["update:year", "exact-date-change"]);
+const emit = defineEmits(["update:year", "exact-date-change", "edit-map", "edit-element"]);
+
+function onMarkerDblClick(marker: GroupedElementMarker) {
+  if (marker.items.length === 1) {
+    emit("edit-element", marker.items[0].id);
+  }
+}
 const internalYear = ref(props.year || props.min);
 const hoveredPeriodId = ref<string | null>(null);
 const dayZoomOffset = ref(0);
@@ -182,25 +216,55 @@ const groupedElementMarkers = computed<GroupedElementMarker[]>(() => {
   const groups: GroupedElementMarker[] = [];
   for (const [year, items] of map.entries()) {
     const percent = positionForYear(year);
+    const hasRange = items.some(
+      (item) => item.endYear != null && item.endYear > year,
+    );
+    const maxEndYear = hasRange
+      ? Math.max(
+          ...items
+            .map((item) => (item.endYear != null && item.endYear > year ? item.endYear : year))
+            .filter(Boolean),
+        )
+      : null;
+
     let tooltip: string;
     if (items.length === 1) {
       const item = items[0];
-      const periodStr =
-        item.endYear && item.endYear !== year
-          ? ` (${year} - ${item.endYear})`
-          : ` (${year})`;
-      tooltip = `📌 ${item.name}${periodStr} - ${item.type || "Texte"}`;
+      const isRangeItem = item.endYear != null && item.endYear > year;
+      const periodStr = isRangeItem
+        ? ` (${year} - ${item.endYear})`
+        : ` (${year})`;
+      const icon = isRangeItem ? "↔️" : "📌";
+      tooltip = `${icon} ${item.name}${periodStr} - ${item.type || "Texte"}`;
     } else {
       const names = items.map((i) => i.name).slice(0, 3).join(", ");
       const extra = items.length > 3 ? ` et ${items.length - 3} autre(s)` : "";
-      tooltip = `📌 ${items.length} éléments (${year}) : ${names}${extra}`;
+      const icon = hasRange ? "↔️" : "📌";
+      const periodStr = hasRange ? ` (${year} - ${maxEndYear})` : ` (${year})`;
+      tooltip = `${icon} ${items.length} éléments${periodStr} : ${names}${extra}`;
     }
+
+    let rangeStyle: Record<string, string> | undefined = undefined;
+    if (hasRange && maxEndYear != null) {
+      const left = positionForYear(year);
+      const right = positionForYear(Math.min(props.max, maxEndYear));
+      const width = Math.max(0.8, right - left);
+      rangeStyle = {
+        left: `${left}%`,
+        width: `${width}%`,
+      };
+    }
+
     groups.push({
       year,
+      endYear: maxEndYear,
       items,
       label: items.length === 1 ? items[0].name : `${items.length} éléments`,
       tooltip,
       style: markerStyleFromPercent(percent),
+      isRange: hasRange,
+      maxEndYear,
+      rangeStyle,
     });
   }
   return groups.sort((a, b) => a.year - b.year);

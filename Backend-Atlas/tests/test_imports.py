@@ -1,6 +1,7 @@
 """The legend helpers and the import inputs: validation, merging, readiness."""
 
 import asyncio
+from datetime import date
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -642,6 +643,165 @@ def test_update_features_ignores_map_id_from_another_project():
 
     assert len(added_features) == 1
     assert added_features[0].map_id is None
+
+
+def test_duplicate_map_rejects_empty_title():
+    project_id = uuid4()
+    map_id = uuid4()
+    session = SimpleNamespace()
+    request = MapImportRequest(
+        title="   ",
+        start_date="1850-01-01",
+        end_date="1860-01-01",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.duplicate_map_for_project(
+                project_id,
+                map_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+    assert error.value.status_code == 400
+    assert "title must not be empty" in error.value.detail
+
+
+def test_duplicate_map_rejects_reversed_period():
+    project_id = uuid4()
+    map_id = uuid4()
+    session = SimpleNamespace()
+    request = MapImportRequest(
+        title="Carte Copie",
+        start_date="1870-01-01",
+        end_date="1850-01-01",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            projects_router.duplicate_map_for_project(
+                project_id,
+                map_id,
+                request,
+                str(uuid4()),
+                session,
+            )
+        )
+    assert error.value.status_code == 400
+    assert "start_date must be before or equal to end_date" in error.value.detail
+
+
+def test_duplicate_map_for_project_success(monkeypatch):
+    project_id = uuid4()
+    map_id = uuid4()
+    new_id = uuid4()
+    session = SimpleNamespace()
+    request = MapImportRequest(
+        title="Carte Copie",
+        start_date="1850-01-01",
+        end_date="1860-01-01",
+    )
+
+    duplicate_mock = AsyncMock(return_value=new_id)
+    monkeypatch.setattr("app.routers.projects.duplicate_map_in_project", duplicate_mock)
+
+    user_uuid = uuid4()
+    res = asyncio.run(
+        projects_router.duplicate_map_for_project(
+            project_id,
+            map_id,
+            request,
+            str(user_uuid),
+            session,
+        )
+    )
+    assert res == {"map_id": str(new_id)}
+    duplicate_mock.assert_awaited_once_with(
+        db=session,
+        project_id=project_id,
+        source_map_id=map_id,
+        user_id=user_uuid,
+        new_title="Carte Copie",
+        start_date=date(1850, 1, 1),
+        end_date=date(1860, 1, 1),
+        exact_date=False,
+    )
+
+
+def test_duplicate_map_in_project_service(tmp_path, monkeypatch):
+    from app.services.maps import duplicate_map_in_project
+    from app.models.project import Project
+
+    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+    user_id = uuid4()
+    project_id = uuid4()
+    source_map_id = uuid4()
+
+    # Create dummy source reference image
+    ref_dir = tmp_path / "reference_images"
+    ref_dir.mkdir(parents=True)
+    source_img = ref_dir / f"{source_map_id}.png"
+    source_img.write_bytes(b"PNG_DATA")
+
+    project = Project(id=project_id, user_id=user_id)
+    source_map = Map(
+        id=source_map_id,
+        project_id=project_id,
+        title="Source",
+        start_date=date(1800, 1, 1),
+        end_date=date(1850, 1, 1),
+        reference_image_path=f"reference_images/{source_map_id}.png",
+        reference_image_content_type="image/png",
+    )
+    source_feature = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=source_map_id,
+        data={"type": "Feature", "properties": {"name": "Ville", "mapId": str(source_map_id)}},
+    )
+
+    added = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project),
+                SimpleNamespace(scalar_one_or_none=lambda: source_map),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [source_feature])),
+            ]
+        ),
+        add=lambda obj: added.append(obj),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    new_map_id = asyncio.run(
+        duplicate_map_in_project(
+            db=session,
+            project_id=project_id,
+            source_map_id=source_map_id,
+            user_id=user_id,
+            new_title="Nouvelle Carte",
+        )
+    )
+
+    assert new_map_id is not None
+    duplicated_map = next(o for o in added if isinstance(o, Map))
+    assert duplicated_map.title == "Nouvelle Carte"
+    # Ensure independent image copy was created on disk
+    expected_new_img = ref_dir / f"{duplicated_map.id}.png"
+    assert expected_new_img.exists()
+    assert expected_new_img.read_bytes() == b"PNG_DATA"
+    assert duplicated_map.reference_image_path == f"reference_images/{duplicated_map.id}.png"
+
+    # Ensure feature was copied with new uuid and new mapId
+    duplicated_feat = next(o for o in added if isinstance(o, Feature))
+    assert duplicated_feat.map_id == duplicated_map.id
+    assert duplicated_feat.data["mapId"] == str(duplicated_map.id)
+    assert duplicated_feat.data["properties"]["mapId"] == str(duplicated_map.id)
+
 
 
 
