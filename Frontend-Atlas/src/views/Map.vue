@@ -22,6 +22,7 @@
           @delete-feature="onDeleteFeature"
           @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
+          @duplicate-map="() => openDuplicateMapDialog()"
           @edit-map="openEditMapDialog"
           @save-label-styles="saveCustomLabelStyles"
           @update-feature="onUpdateFeature"
@@ -46,7 +47,7 @@
           <div class="absolute top-20 left-2 z-[1001] flex items-center gap-2">
             <button
               type="button"
-              class="btn btn-sm bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md gap-1.5"
+              class="btn btn-sm bg-base-200/90 hover:bg-base-300 border border-base-300 shadow-md gap-1.5 text-base-content"
               data-testid="toggle-sidebar-button"
               :title="isSidebarVisible ? 'Masquer le panneau gauche (Mode présentation)' : 'Afficher le panneau gauche'"
               @click="toggleSidebar"
@@ -57,7 +58,7 @@
 
             <button
               type="button"
-              class="btn btn-sm btn-circle bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md"
+              class="btn btn-sm btn-circle bg-base-200/90 hover:bg-base-300 border border-base-300 shadow-md text-base-content"
               data-testid="toggle-fullscreen-button"
               :title="isFullscreen ? 'Quitter le plein écran' : 'Plein écran'"
               @click="toggleFullscreen"
@@ -105,16 +106,42 @@
             v-if="!isTimelineVisible"
             class="absolute bottom-4 right-4 z-[1001] flex items-center gap-2"
           >
-            <button
-              type="button"
-              class="btn btn-sm bg-base-100/90 hover:bg-base-100 border border-base-300 shadow-md gap-1.5"
-              data-testid="duplicate-map-button-floating"
-              title="Dupliquer entièrement une carte"
-              @click="openDuplicateMapDialog()"
+            <!-- Previous / Next milestone navigation controls when timeline is hidden -->
+            <div
+              v-if="sortedTimelineMilestones.length > 0"
+              class="inline-flex items-center rounded-lg border border-base-300 bg-base-100 shadow-md overflow-hidden"
             >
-              <DocumentDuplicateIcon class="w-4 h-4 text-primary" />
-              <span class="text-xs font-semibold">Dupliquer une carte</span>
-            </button>
+              <button
+                type="button"
+                class="px-2.5 py-1.5 text-base-content hover:bg-base-200 active:bg-base-300 disabled:opacity-30 disabled:pointer-events-none border-r border-base-300 transition-colors flex items-center justify-center"
+                :disabled="!hasPrevMilestone"
+                :title="
+                  prevMilestone
+                    ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
+                    : 'Aucun jalon précédent'
+                "
+                aria-label="Jalon précédent"
+                data-testid="prev-map-button-floating"
+                @click="goToPrevMilestone"
+              >
+                <ChevronLeftIcon class="w-4 h-4 stroke-[2.5]" />
+              </button>
+              <button
+                type="button"
+                class="px-2.5 py-1.5 text-base-content hover:bg-base-200 active:bg-base-300 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center"
+                :disabled="!hasNextMilestone"
+                :title="
+                  nextMilestone
+                    ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
+                    : 'Aucun jalon suivant'
+                "
+                aria-label="Jalon suivant"
+                data-testid="next-map-button-floating"
+                @click="goToNextMilestone"
+              >
+                <ChevronRightIcon class="w-4 h-4 stroke-[2.5]" />
+              </button>
+            </div>
 
             <button
               type="button"
@@ -123,7 +150,7 @@
               title="Afficher l'échelle de temps"
               @click="toggleTimeline"
             >
-              <CalendarIcon class="w-4 h-4" />
+              <EyeIcon class="w-4 h-4" />
               <span class="text-xs font-semibold">Afficher l'échelle de temps</span>
             </button>
           </div>
@@ -136,7 +163,7 @@
           aria-label="Redimensionner l'échelle de temps"
           aria-orientation="horizontal"
           tabindex="0"
-          class="h-1.5 w-full shrink-0 cursor-row-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors"
+          class="h-1.5 w-full shrink-0 cursor-row-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors z-[1002]"
           data-testid="timeline-resize-handle"
           @mousedown.prevent="startTimelineResize"
           @keydown.up.prevent="resizeTimelineBy(10)"
@@ -146,14 +173,21 @@
         <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
         <div
           v-show="isTimelineVisible"
-          class="map-timeline-toolbar relative z-[1002] flex flex-col bg-base-100 border-t border-base-300"
+          class="map-timeline-toolbar relative z-[2000] flex flex-col bg-base-100 border-t border-base-300"
           :style="timelineHeight ? { height: `${timelineHeight}px` } : {}"
         >
           <!-- Top bar with Filter Modes and Map Duplication -->
           <div
-            class="map-timeline-topbar shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100"
+            class="map-timeline-topbar shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 relative z-10"
           >
             <div class="flex items-center gap-2">
+              <span
+                v-if="currentMapTitle"
+                class="text-sm font-bold text-base-content select-none mr-2 truncate max-w-xs"
+                :title="currentMapTitle"
+              >
+                {{ currentMapTitle }}
+              </span>
               <span class="text-xs font-semibold text-base-content/80 select-none">
                 Filtrer par date :
               </span>
@@ -191,17 +225,42 @@
                 </button>
               </div>
 
-              <!-- Button allowing to duplicate a map entirely -->
-              <button
-                type="button"
-                class="btn btn-outline btn-xs gap-1 font-semibold"
-                data-testid="duplicate-map-button"
-                title="Dupliquer entièrement une carte"
-                @click="openDuplicateMapDialog()"
+              <!-- Previous / Next milestone navigation controls -->
+              <div
+                v-if="sortedTimelineMilestones.length > 0"
+                class="inline-flex items-center rounded border border-base-300 bg-base-200/90 overflow-hidden shadow-xs ml-1"
               >
-                <DocumentDuplicateIcon class="w-3.5 h-3.5 text-primary" />
-                <span>Dupliquer une carte</span>
-              </button>
+                <button
+                  type="button"
+                  class="px-2 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none border-r border-base-300 transition-colors flex items-center justify-center"
+                  :disabled="!hasPrevMilestone"
+                  :title="
+                    prevMilestone
+                      ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
+                      : 'Aucun jalon précédent'
+                  "
+                  aria-label="Jalon précédent"
+                  data-testid="prev-map-button"
+                  @click="goToPrevMilestone"
+                >
+                  <ChevronLeftIcon class="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
+                <button
+                  type="button"
+                  class="px-2 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center"
+                  :disabled="!hasNextMilestone"
+                  :title="
+                    nextMilestone
+                      ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
+                      : 'Aucun jalon suivant'
+                  "
+                  aria-label="Jalon suivant"
+                  data-testid="next-map-button"
+                  @click="goToNextMilestone"
+                >
+                  <ChevronRightIcon class="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
+              </div>
             </div>
 
             <!-- Hide date slider button -->
@@ -218,7 +277,7 @@
           </div>
 
           <!-- Middle scrollable area containing the timeline tracks, ticks, labels, and legend -->
-          <div class="map-timeline-slider flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-3 py-1">
+          <div class="map-timeline-slider flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-3 py-1 relative z-20">
             <TimelineSlider
               v-model:year="selectedYear"
               @exact-date-change="onExactDateChange"
@@ -232,52 +291,6 @@
               :current-exact-date="selectedExactDate"
               :mode="timelineMode"
             />
-          </div>
-
-          <!-- Bottom fixed footer: Previous / Next milestone navigation controls always visible on screen -->
-          <div
-            v-if="sortedTimelineMilestones.length > 0"
-            class="map-timeline-footer shrink-0 flex items-center justify-between px-3 py-1 border-t border-base-200 bg-base-100 text-xs"
-          >
-            <div class="inline-flex items-center rounded border border-base-300 bg-base-100 overflow-hidden shadow-sm">
-              <button
-                type="button"
-                class="px-2.5 py-0.5 text-xs font-semibold hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none border-r border-base-300"
-                :disabled="!hasPrevMilestone"
-                :title="
-                  prevMilestone
-                    ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
-                    : 'Aucun jalon précédent'
-                "
-                aria-label="Jalon précédent"
-                data-testid="prev-map-button"
-                @click="goToPrevMilestone"
-              >
-                ‹
-              </button>
-              <button
-                type="button"
-                class="px-2.5 py-0.5 text-xs font-semibold hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none"
-                :disabled="!hasNextMilestone"
-                :title="
-                  nextMilestone
-                    ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
-                    : 'Aucun jalon suivant'
-                "
-                aria-label="Jalon suivant"
-                data-testid="next-map-button"
-                @click="goToNextMilestone"
-              >
-                ›
-              </button>
-            </div>
-            <div class="text-[11px] text-base-content/60 truncate max-w-xs">
-              <span v-if="prevMilestone || nextMilestone">
-                {{ prevMilestone ? prevMilestone.label : '' }}
-                {{ prevMilestone && nextMilestone ? ' • ' : '' }}
-                {{ nextMilestone ? nextMilestone.label : '' }}
-              </span>
-            </div>
           </div>
         </div>
       </div>
@@ -373,8 +386,10 @@ import {
 import {
   Bars3Icon,
   ChevronLeftIcon,
+  ChevronRightIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
+  EyeIcon,
   EyeSlashIcon,
   CalendarIcon,
   DocumentDuplicateIcon,

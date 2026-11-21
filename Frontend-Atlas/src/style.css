@@ -371,8 +371,6 @@
 /* ── Timeline ──────────────────────────────────────────────────────────────── */
 .timeline-container {
   position: relative;
-  z-index: 1000;
-  isolation: isolate;
   display: flex;
   align-items: flex-start;
   gap: 1rem;

@@ -1,5 +1,8 @@
 <template>
-  <div class="card bg-base-100 shadow-md p-3 resize overflow-auto min-w-[12rem] min-h-[5rem] max-w-md max-h-[60vh]">
+  <div
+    class="card bg-base-100 shadow-md p-3 resize overflow-auto max-w-md max-h-[60vh]"
+    :class="isLegendVisible ? 'min-w-[12rem] min-h-[5rem]' : 'min-w-0 min-h-0 w-auto h-auto'"
+  >
     <div
       class="card-body p-0"
       @mousedown.stop
@@ -7,7 +10,7 @@
       @dblclick.stop
       @wheel.stop
     >
-      <h2 class="card-title m-0 px-1 pb-1 text-base flex items-center">
+      <h2 class="card-title m-0 px-1 text-base flex items-center" :class="{ 'pb-1': isLegendVisible }">
         Légende
         <button
           class="btn btn-ghost btn-xs ml-auto"

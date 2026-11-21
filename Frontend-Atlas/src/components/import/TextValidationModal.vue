@@ -321,8 +321,25 @@ function applyUpdatedCustomStylesToItems(styles: CustomLabelStyle[]) {
 }
 
 function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  const previousIds = new Set(localCustomStyles.value.map((s) => s.id));
   localCustomStyles.value = [...styles];
   applyUpdatedCustomStylesToItems(styles);
+
+  // If a new style was added and items are selected, automatically adopt it
+  const newlyCreatedStyle = styles.find((s) => !previousIds.has(s.id));
+  if (newlyCreatedStyle) {
+    for (const item of allItems.value) {
+      if (item.selected) {
+        item.labelStyleSelection = `custom:${newlyCreatedStyle.id}`;
+        item.customLabelStyleId = newlyCreatedStyle.id;
+        item.customLabelStyle = newlyCreatedStyle;
+        if (newlyCreatedStyle.textTransform === "uppercase" && item.text) {
+          item.text = item.text.toUpperCase();
+        }
+      }
+    }
+  }
+
   emit("save-label-styles", styles);
 }
 

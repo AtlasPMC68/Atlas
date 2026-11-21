@@ -20,19 +20,30 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-2 overflow-y-auto max-h-[460px] pr-1">
+          <div class="flex flex-col gap-2 overflow-y-auto max-h-[380px] pr-1">
             <div
-              v-for="style in draftStyles"
+              v-for="(style, index) in draftStyles"
               :key="style.id"
-              class="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 bg-base-100 transition-colors cursor-pointer"
+              class="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 bg-base-100 transition-colors cursor-pointer select-none"
               :class="
                 editingId === style.id
                   ? 'border-2 border-primary bg-primary/5 shadow-xs'
                   : 'border-gray-400 hover:border-base-content'
               "
+              :draggable="true"
+              @dragstart="onDragStart(index, $event)"
+              @dragover.prevent="onDragOver(index)"
+              @drop="onDrop(index)"
               @click="editStyle(style)"
             >
               <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span
+                  class="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 shrink-0 p-0.5"
+                  title="Glisser pour réordonner"
+                  @click.stop
+                >
+                  <Bars3Icon class="w-4 h-4" />
+                </span>
                 <span
                   v-if="hasStylePoint(style)"
                   class="inline-block h-2.5 w-2.5 rounded-full shrink-0 border border-base-content"
@@ -386,6 +397,7 @@ import {
   TrashIcon,
   ArrowPathIcon,
   PlusIcon,
+  Bars3Icon,
 } from "@heroicons/vue/24/outline";
 
 const MAX_CUSTOM_LABEL_SIZE_PX = 96;
@@ -412,6 +424,25 @@ const dialogRef = ref<HTMLDialogElement | null>(null);
 const draftStyles = ref<CustomLabelStyleExtended[]>([]);
 const editingId = ref<string | null>(null);
 const initialSnapshot = ref<CustomLabelStyleExtended | null>(null);
+const draggedIndex = ref<number | null>(null);
+
+function onDragStart(index: number, event: DragEvent) {
+  draggedIndex.value = index;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function onDragOver(index: number) {
+  if (draggedIndex.value === null || draggedIndex.value === index) return;
+  const item = draftStyles.value.splice(draggedIndex.value, 1)[0];
+  draftStyles.value.splice(index, 0, item);
+  draggedIndex.value = index;
+}
+
+function onDrop(index: number) {
+  draggedIndex.value = null;
+}
 
 const draft = ref({
   name: "",

@@ -2,6 +2,21 @@
   <div class="timeline-container">
     <div class="slider-wrap">
       <div ref="axisRef" class="slider-axis">
+        <!-- Légende discrète - En haut à gauche -->
+        <div
+          v-if="!isZoomMode && (displayedPeriods.length > 0 || groupedElementMarkers.length > 0)"
+          class="flex items-center justify-start gap-4 pb-1.5 text-[11px] text-base-content opacity-70 select-none"
+        >
+          <span v-if="displayedPeriods.length > 0" class="inline-flex items-center gap-1.5">
+            <span class="inline-block w-8 h-2 rounded-full bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-500 shadow-xs"></span>
+            <span>Cartes</span>
+          </span>
+          <span v-if="groupedElementMarkers.length > 0" class="inline-flex items-center gap-1.5">
+            <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-600 text-[10px] font-bold text-red-700 leading-none">!</span>
+            <span>Dates personnalisées</span>
+          </span>
+        </div>
+
         <!-- Period tracks - update based on view mode -->
         <div class="period-tracks" :style="periodTracksStyle">
           <div
@@ -226,21 +241,6 @@
             >
           </div>
         </template>
-
-        <!-- Légende discrète -->
-        <div
-          v-if="!isZoomMode && (displayedPeriods.length > 0 || groupedElementMarkers.length > 0)"
-          class="flex items-center justify-end gap-4 pt-1 text-[11px] text-base-content opacity-70 select-none"
-        >
-          <span v-if="displayedPeriods.length > 0" class="inline-flex items-center gap-1.5">
-            <span class="inline-block w-5 h-1.5 rounded-full bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-500"></span>
-            <span>Cartes</span>
-          </span>
-          <span v-if="groupedElementMarkers.length > 0" class="inline-flex items-center gap-1.5">
-            <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-600 text-[10px] font-bold text-red-700 leading-none">!</span>
-            <span>Dates personnalisées</span>
-          </span>
-        </div>
       </div>
     </div>
   </div>

@@ -213,13 +213,22 @@
     <div class="px-3 py-1.5 flex flex-col gap-1.5">
       <div class="divider m-0"></div>
       <template v-if="!props.isDevTestCreation">
-        <div class="flex gap-2 items-center">
+        <div class="flex flex-col gap-1.5">
           <button
-            class="btn btn-primary btn-sm flex-1 font-bold"
+            class="btn btn-primary btn-sm w-full font-bold"
             @click="$emit('add-map')"
           >
             <PlusIcon class="w-5 h-5" />
             Ajouter une carte
+          </button>
+          <button
+            class="btn btn-outline btn-primary btn-sm w-full font-bold"
+            data-testid="sidebar-duplicate-map-button"
+            title="Dupliquer entièrement une carte"
+            @click="$emit('duplicate-map')"
+          >
+            <DocumentDuplicateIcon class="w-4 h-4" />
+            Dupliquer une carte
           </button>
         </div>
 
@@ -358,6 +367,7 @@
                     v-for="style in availableCustomLabelStyles"
                     :key="style.id"
                     :value="`custom:${style.id}`"
+                    :style="getCustomStyleObject(style)"
                     class="text-sm"
                   >
                     {{ style.name }}
@@ -366,6 +376,7 @@
                     v-for="(_, typeKey) in WORD_TYPE_STYLES"
                     :key="typeKey"
                     :value="typeKey"
+                    :style="getWordTypeOptionStyle(typeKey)"
                     class="text-sm"
                   >
                     {{ getWordTypeOptionLabel(typeKey) }}
@@ -815,7 +826,7 @@ import {
   type FeatureVisibilityGroupType,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
-import type { CustomLabelStyle } from "../utils/labelPresentation";
+import type { CustomLabelStyle, LabelStyle } from "../utils/labelPresentation";
 import {
   MAX_TEXT_SIZE_PX,
   MIN_TEXT_SIZE_PX,
@@ -823,6 +834,8 @@ import {
   MAX_PREVIEW_FONT_SIZE_PX,
   getLabelStylePreviewCss,
   getWordTypeOptionLabel,
+  getWordTypeOptionStyle,
+  getCustomStyleObject,
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import { getMapElementType } from "../utils/featureHelpers";
@@ -851,7 +864,7 @@ import {
   type MapGroupItem,
 } from "../utils/featureGrouping";
 import { isUnrecognizedTextFeature } from "../utils/textValidation";
-import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
+import { FolderArrowDownIcon, PlusIcon, DocumentDuplicateIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 
@@ -1044,6 +1057,7 @@ const emit = defineEmits([
   "delete-feature",
   "delete-map",
   "add-map",
+  "duplicate-map",
   "update-feature",
   "validate-texts",
   "select-feature",
@@ -1072,8 +1086,20 @@ const availableCustomLabelStyles = computed(() => {
 });
 
 function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  const previousIds = new Set(localCustomStyles.value.map((s: LabelStyle) => s.id));
   localCustomStyles.value = [...styles];
-  if (editDraft.value.customLabelStyleId) {
+
+  // If a new style was created and saved, automatically select it for the current element
+  const newlyCreatedStyle = styles.find((s) => !previousIds.has(s.id));
+  if (newlyCreatedStyle) {
+    editDraft.value.labelStyleSelection = `custom:${newlyCreatedStyle.id}`;
+    editDraft.value.customLabelStyleId = newlyCreatedStyle.id;
+    editDraft.value.customLabelStyle = newlyCreatedStyle;
+    editDraft.value.colorHex = newlyCreatedStyle.color;
+    const baseText = editDraft.value.labelText || editDraft.value.name || "";
+    editDraft.value.labelText =
+      newlyCreatedStyle.textTransform === "uppercase" ? baseText.toUpperCase() : baseText;
+  } else if (editDraft.value.customLabelStyleId) {
     const updated = styles.find((s) => s.id === editDraft.value.customLabelStyleId);
     if (updated) {
       editDraft.value.customLabelStyle = updated;
