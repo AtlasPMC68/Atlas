@@ -146,28 +146,17 @@
         <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
         <div
           v-show="isTimelineVisible"
-          class="map-timeline-toolbar relative z-[1002] flex flex-col gap-1 px-3 py-1.5 bg-base-100 border-t border-base-300"
+          class="map-timeline-toolbar relative z-[1002] flex flex-col bg-base-100 border-t border-base-300"
           :style="timelineHeight ? { height: `${timelineHeight}px` } : {}"
         >
-          <div class="map-timeline-slider w-full min-w-0">
-            <TimelineSlider
-              v-model:year="selectedYear"
-              @exact-date-change="onExactDateChange"
-              @edit-map="openEditMapDialog"
-              @edit-element="onEditElementFromTimeline"
-              :min="timelineMinYear"
-              :max="timelineMaxYear"
-              :marker-years="timelineMarkerYears"
-              :map-periods="enrichedPeriods"
-              :element-markers="timelineElementMarkers"
-              :current-exact-date="selectedExactDate"
-              :mode="timelineMode"
-            />
-          </div>
+          <!-- Top bar with Filter Modes and Map Duplication -->
           <div
-            class="map-timeline-filter flex flex-row gap-3 items-center justify-between text-xs font-medium whitespace-nowrap"
+            class="map-timeline-topbar shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100"
           >
             <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-base-content/80 select-none">
+                Filtrer par date :
+              </span>
               <!-- 3 Timeline Modes: Spécifique | Cumulatif | Global -->
               <div class="join border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-sm mr-1">
                 <button
@@ -202,7 +191,7 @@
                 </button>
               </div>
 
-              <!-- Step 5: Bottom interface button allowing to duplicate a map entirely -->
+              <!-- Button allowing to duplicate a map entirely -->
               <button
                 type="button"
                 class="btn btn-outline btn-xs gap-1 font-semibold"
@@ -213,46 +202,9 @@
                 <DocumentDuplicateIcon class="w-3.5 h-3.5 text-primary" />
                 <span>Dupliquer une carte</span>
               </button>
-
-              <!-- Navigation rapide entre les jalons (cartes et éléments datés) -->
-              <div
-                v-if="sortedTimelineMilestones.length > 0"
-                class="inline-flex items-center rounded border border-base-300 bg-base-100 overflow-hidden"
-              >
-                <button
-                  type="button"
-                  class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none border-r border-base-300"
-                  :disabled="!hasPrevMilestone"
-                  :title="
-                    prevMilestone
-                      ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
-                      : 'Aucun jalon précédent'
-                  "
-                  aria-label="Jalon précédent"
-                  data-testid="prev-map-button"
-                  @click="goToPrevMilestone"
-                >
-                  ‹
-                </button>
-                <button
-                  type="button"
-                  class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none"
-                  :disabled="!hasNextMilestone"
-                  :title="
-                    nextMilestone
-                      ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
-                      : 'Aucun jalon suivant'
-                  "
-                  aria-label="Jalon suivant"
-                  data-testid="next-map-button"
-                  @click="goToNextMilestone"
-                >
-                  ›
-                </button>
-              </div>
             </div>
 
-            <!-- Step 6: Hide date slider -->
+            <!-- Hide date slider button -->
             <button
               type="button"
               class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
@@ -263,6 +215,69 @@
               <EyeSlashIcon class="w-3.5 h-3.5" />
               <span>Masquer l'échelle</span>
             </button>
+          </div>
+
+          <!-- Middle scrollable area containing the timeline tracks, ticks, labels, and legend -->
+          <div class="map-timeline-slider flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-3 py-1">
+            <TimelineSlider
+              v-model:year="selectedYear"
+              @exact-date-change="onExactDateChange"
+              @edit-map="openEditMapDialog"
+              @edit-element="onEditElementFromTimeline"
+              :min="timelineMinYear"
+              :max="timelineMaxYear"
+              :marker-years="timelineMarkerYears"
+              :map-periods="enrichedPeriods"
+              :element-markers="timelineElementMarkers"
+              :current-exact-date="selectedExactDate"
+              :mode="timelineMode"
+            />
+          </div>
+
+          <!-- Bottom fixed footer: Previous / Next milestone navigation controls always visible on screen -->
+          <div
+            v-if="sortedTimelineMilestones.length > 0"
+            class="map-timeline-footer shrink-0 flex items-center justify-between px-3 py-1 border-t border-base-200 bg-base-100 text-xs"
+          >
+            <div class="inline-flex items-center rounded border border-base-300 bg-base-100 overflow-hidden shadow-sm">
+              <button
+                type="button"
+                class="px-2.5 py-0.5 text-xs font-semibold hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none border-r border-base-300"
+                :disabled="!hasPrevMilestone"
+                :title="
+                  prevMilestone
+                    ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
+                    : 'Aucun jalon précédent'
+                "
+                aria-label="Jalon précédent"
+                data-testid="prev-map-button"
+                @click="goToPrevMilestone"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                class="px-2.5 py-0.5 text-xs font-semibold hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none"
+                :disabled="!hasNextMilestone"
+                :title="
+                  nextMilestone
+                    ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
+                    : 'Aucun jalon suivant'
+                "
+                aria-label="Jalon suivant"
+                data-testid="next-map-button"
+                @click="goToNextMilestone"
+              >
+                ›
+              </button>
+            </div>
+            <div class="text-[11px] text-base-content/60 truncate max-w-xs">
+              <span v-if="prevMilestone || nextMilestone">
+                {{ prevMilestone ? prevMilestone.label : '' }}
+                {{ prevMilestone && nextMilestone ? ' • ' : '' }}
+                {{ nextMilestone ? nextMilestone.label : '' }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -573,20 +588,20 @@ function onFullscreenChange() {
 
 function resizeTimelineBy(delta: number) {
   const el = document.querySelector(".map-timeline-toolbar") as HTMLElement | null;
-  const currentHeight = timelineHeight.value ?? el?.offsetHeight ?? 140;
-  const maxHeight = Math.min(350, Math.floor(window.innerHeight * 0.45));
+  const currentHeight = timelineHeight.value ?? el?.offsetHeight ?? 160;
+  const maxHeight = Math.min(450, Math.floor(window.innerHeight * 0.55));
   timelineHeight.value = Math.max(
-    80,
+    110,
     Math.min(maxHeight, currentHeight + delta),
   );
   nextTick(() => leafletMap.value?.invalidateSize());
 }
 
 function onTimelineResizeMove(event: MouseEvent) {
-  const maxHeight = Math.min(350, Math.floor(window.innerHeight * 0.45));
+  const maxHeight = Math.min(450, Math.floor(window.innerHeight * 0.55));
   const deltaY = timelineResizeStartY - event.clientY;
   timelineHeight.value = Math.max(
-    80,
+    110,
     Math.min(maxHeight, timelineResizeStartHeight + deltaY),
   );
   leafletMap.value?.invalidateSize();
@@ -758,7 +773,8 @@ const zoneFeatures = computed(() =>
 
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
-const useTimelineFilter = ref(true);
+export type TimelineFilterMode = "specific" | "cumulative" | "global";
+const timelineMode = ref<TimelineFilterMode>("specific");
 
 const enrichedPeriods = computed<SliderPeriod[]>(() => {
   const mapIdsWithFeatures = new Set<string>();
@@ -787,60 +803,6 @@ const enrichedPeriods = computed<SliderPeriod[]>(() => {
   }
   return periods;
 });
-
-const sortedMapsForNavigation = computed<SliderPeriod[]>(() => {
-  return [...enrichedPeriods.value].sort(
-    (a: SliderPeriod, b: SliderPeriod) =>
-      a.startYear - b.startYear ||
-      a.endYear - b.endYear ||
-      String(a.id).localeCompare(String(b.id)),
-  );
-});
-
-const currentMapIndex = computed<number>(() => {
-  const list = sortedMapsForNavigation.value;
-  if (!list.length) return -1;
-
-  const y = selectedYear.value;
-  const coveringIdx = list.findIndex(
-    (p: SliderPeriod) => y >= p.startYear && y <= p.endYear,
-  );
-  if (coveringIdx !== -1) return coveringIdx;
-
-  let fallbackIdx = 0;
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].startYear <= y) fallbackIdx = i;
-  }
-  return fallbackIdx;
-});
-
-const prevMap = computed<SliderPeriod | null>(() => {
-  const idx = currentMapIndex.value;
-  return idx > 0 ? sortedMapsForNavigation.value[idx - 1] : null;
-});
-
-const nextMap = computed<SliderPeriod | null>(() => {
-  const idx = currentMapIndex.value;
-  const list = sortedMapsForNavigation.value;
-  return idx >= 0 && idx < list.length - 1 ? list[idx + 1] : null;
-});
-
-const hasPrevMap = computed<boolean>(() => prevMap.value != null);
-const hasNextMap = computed<boolean>(() => nextMap.value != null);
-
-function navigateToMap(target: SliderPeriod | null) {
-  if (!target) return;
-  selectedExactDate.value = null;
-  selectedYear.value = target.startYear;
-}
-
-function goToPrevMap() {
-  navigateToMap(prevMap.value);
-}
-
-function goToNextMap() {
-  navigateToMap(nextMap.value);
-}
 
 const periodByMapId = computed(() => {
   const map = new Map<string, SliderPeriod>();
@@ -917,6 +879,73 @@ const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
   return list;
 });
 
+interface TimelineMilestone {
+  year: number;
+  label: string;
+  type: "map" | "element";
+  id?: string;
+}
+
+const sortedTimelineMilestones = computed<TimelineMilestone[]>(() => {
+  const list: TimelineMilestone[] = [];
+  const seen = new Set<string>();
+
+  for (const p of enrichedPeriods.value) {
+    const key = `map-${p.id}-${p.startYear}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      list.push({
+        year: p.startYear,
+        label: p.title || `Carte (${p.startYear})`,
+        type: "map",
+        id: String(p.id),
+      });
+    }
+  }
+
+  for (const item of timelineElementMarkers.value) {
+    const key = `element-${item.id}-${item.year}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      list.push({
+        year: item.year,
+        label: item.name || `Élément (${item.year})`,
+        type: "element",
+        id: String(item.id),
+      });
+    }
+  }
+
+  return list.sort((a, b) => a.year - b.year || (a.type === "map" ? -1 : 1));
+});
+
+const prevMilestone = computed<TimelineMilestone | null>(() => {
+  const currentY = selectedYear.value;
+  const earlier = sortedTimelineMilestones.value.filter((m) => m.year < currentY);
+  return earlier.length > 0 ? earlier[earlier.length - 1] : null;
+});
+
+const nextMilestone = computed<TimelineMilestone | null>(() => {
+  const currentY = selectedYear.value;
+  const later = sortedTimelineMilestones.value.filter((m) => m.year > currentY);
+  return later.length > 0 ? later[0] : null;
+});
+
+const hasPrevMilestone = computed<boolean>(() => prevMilestone.value != null);
+const hasNextMilestone = computed<boolean>(() => nextMilestone.value != null);
+
+function goToPrevMilestone() {
+  if (!prevMilestone.value) return;
+  selectedExactDate.value = null;
+  selectedYear.value = prevMilestone.value.year;
+}
+
+function goToNextMilestone() {
+  if (!nextMilestone.value) return;
+  selectedExactDate.value = null;
+  selectedYear.value = nextMilestone.value.year;
+}
+
 const allTimelineStartYears = computed(() => {
   const years = enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
   return [...years, ...customFeatureYears.value];
@@ -971,13 +1000,23 @@ const periodStartDates = computed(
 
 const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
-    if (!useTimelineFilter.value) return true;
+    // Global mode: all features visible without date filtering
+    if (timelineMode.value === "global") return true;
 
     const { startYear: featStartYear, endYear: featEndYear } =
       getFeatureCustomYears(feature);
     const hasCustomYears = featStartYear != null || featEndYear != null;
 
     if (hasCustomYears) {
+      const sy = featStartYear ?? (featEndYear as number);
+      const ey = featEndYear ?? sy;
+
+      // Cumulative mode: features that have appeared up to selectedYear
+      if (timelineMode.value === "cumulative") {
+        return sy <= selectedYear.value;
+      }
+
+      // Specific mode: active at selected date
       if (
         selectedExactDate.value &&
         feature.properties?.startDate &&
@@ -990,9 +1029,6 @@ const filteredFeatures = computed(() => {
           periodStartDates.value,
         );
       }
-
-      const sy = featStartYear ?? (featEndYear as number);
-      const ey = featEndYear ?? sy;
 
       return isPeriodActiveAt(
         sy,
@@ -1007,6 +1043,13 @@ const filteredFeatures = computed(() => {
       const period = periodByMapId.value.get(featureMapId);
       if (!period) return true;
 
+      // Cumulative mode: map period has started by selectedYear
+      if (timelineMode.value === "cumulative") {
+        if (period.startYear == null) return true;
+        return period.startYear <= selectedYear.value;
+      }
+
+      // Specific mode: active at selected date
       if (selectedExactDate.value && period.startDate && period.endDate) {
         return isPeriodActiveAt(
           period.startDate,
@@ -1675,6 +1718,55 @@ async function saveMapPeriod(payload: {
     if (!response.ok) {
       throw new Error(`Error updating map metadata: ${response.status}`);
     }
+
+    // 1. Immediately update mapPeriods in local state for instant reactivity
+    const pIndex = mapPeriods.value.findIndex((p: MapPeriod) => p.id === payload.mapId);
+    if (pIndex !== -1) {
+      mapPeriods.value[pIndex] = {
+        ...mapPeriods.value[pIndex],
+        title: payload.title,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        exactDate: payload.exactDate,
+      };
+      mapPeriods.value = [...mapPeriods.value];
+    }
+
+    // 2. Immediately update in-memory features associated with this map
+    const targetMapIdNorm = String(payload.mapId).trim().toLowerCase();
+    features.value = features.value.map((f: Feature) => {
+      const fMapId = getFeatureMapId(f);
+      if (fMapId && String(fMapId).trim().toLowerCase() === targetMapIdNorm) {
+        const updated = { ...f };
+        if ((updated as any).mapTitle) {
+          (updated as any).mapTitle = payload.title;
+        }
+        if (updated.properties) {
+          updated.properties = { ...updated.properties };
+          if (updated.properties.mapTitle) {
+            updated.properties.mapTitle = payload.title;
+          }
+        }
+        return updated;
+      }
+      return f;
+    });
+
+    // 3. Update current map title if it is the one displayed
+    const currentRouteMapId = Array.isArray(route.params.mapId)
+      ? route.params.mapId[0]
+      : route.params.mapId;
+    if (currentRouteMapId && String(currentRouteMapId).trim().toLowerCase() === targetMapIdNorm) {
+      currentMapTitle.value = payload.title;
+    }
+
+    // 4. Reposition timeline to the map's updated date
+    const newStartYear = toYear(payload.startDate);
+    if (newStartYear != null) {
+      selectedYear.value = newStartYear;
+      selectedExactDate.value = payload.exactDate ? payload.startDate : null;
+    }
+
     await loadProjectMapsForTimeline();
     editMapPeriodDialogRef.value?.close();
     showAlert("success", "Nom et période de la carte mis à jour.");
@@ -2256,10 +2348,19 @@ watch(
   (markers: number[]) => {
     if (!markers.length) return;
     if (!markers.includes(selectedYear.value)) {
-      selectedYear.value = markers[0];
+      // Find closest marker instead of resetting to markers[0]
+      let closest = markers[0];
+      let minDiff = Math.abs(selectedYear.value - closest);
+      for (let i = 1; i < markers.length; i++) {
+        const diff = Math.abs(selectedYear.value - markers[i]);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closest = markers[i];
+        }
+      }
+      selectedYear.value = closest;
     }
   },
-  { immediate: true },
 );
 
 watch(

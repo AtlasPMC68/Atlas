@@ -140,7 +140,45 @@ describe("TimelineSlider element markers (pins)", () => {
     expect(pin.classes()).toContain("element-marker-active");
   });
 
-  it("applies unfilled style when filterByDate is true, and filled style when false", () => {
+  it("applies correct track style and classes for specific, cumulative, and global modes", () => {
+    const wrapperSpecific = mount(TimelineSlider, {
+      props: {
+        year: 1700,
+        min: 1500,
+        max: 1900,
+        mode: "specific",
+      },
+    });
+    const sliderSpecific = wrapperSpecific.find("input[type='range']");
+    expect(sliderSpecific.classes()).toContain("timeline-range--specific");
+    expect(sliderSpecific.attributes("style")).toContain("background: rgb(226, 232, 240)");
+
+    const wrapperCumulative = mount(TimelineSlider, {
+      props: {
+        year: 1700,
+        min: 1500,
+        max: 1900,
+        mode: "cumulative",
+      },
+    });
+    const sliderCumulative = wrapperCumulative.find("input[type='range']");
+    expect(sliderCumulative.classes()).toContain("timeline-range--cumulative");
+    expect(sliderCumulative.attributes("style")).toContain("linear-gradient");
+
+    const wrapperGlobal = mount(TimelineSlider, {
+      props: {
+        year: 1700,
+        min: 1500,
+        max: 1900,
+        mode: "global",
+      },
+    });
+    const sliderGlobal = wrapperGlobal.find("input[type='range']");
+    expect(sliderGlobal.classes()).toContain("timeline-range--global");
+    expect(sliderGlobal.attributes("style")).toContain("background: var(--color-primary)");
+  });
+
+  it("falls back gracefully to filterByDate when mode is not provided", () => {
     const wrapperUnfilled = mount(TimelineSlider, {
       props: {
         year: 1700,
@@ -150,8 +188,7 @@ describe("TimelineSlider element markers (pins)", () => {
       },
     });
     const sliderUnfilled = wrapperUnfilled.find("input[type='range']");
-    expect(sliderUnfilled.classes()).toContain("timeline-range--unfilled");
-    expect(sliderUnfilled.classes()).not.toContain("timeline-range--filled");
+    expect(sliderUnfilled.classes()).toContain("timeline-range--specific");
 
     const wrapperFilled = mount(TimelineSlider, {
       props: {
@@ -162,7 +199,6 @@ describe("TimelineSlider element markers (pins)", () => {
       },
     });
     const sliderFilled = wrapperFilled.find("input[type='range']");
-    expect(sliderFilled.classes()).toContain("timeline-range--filled");
-    expect(sliderFilled.classes()).not.toContain("timeline-range--unfilled");
+    expect(sliderFilled.classes()).toContain("timeline-range--global");
   });
 });

@@ -109,13 +109,19 @@ function isFeatureVisibleAtYear(
   selectedYear: number,
   periodByMapId: Map<string, SliderPeriod>,
   periodStartYears: Set<number>,
+  mode: "specific" | "cumulative" | "global" = "specific",
 ): boolean {
+  if (mode === "global") return true;
+
   const { startYear: featStartYear, endYear: featEndYear } = getFeatureCustomYears(feature);
   const hasCustomYears = featStartYear != null || featEndYear != null;
 
   if (hasCustomYears) {
     const sy = featStartYear ?? (featEndYear as number);
     const ey = featEndYear ?? sy;
+    if (mode === "cumulative") {
+      return sy <= selectedYear;
+    }
     return isPeriodActiveAt(sy, ey, selectedYear, periodStartYears);
   }
 
@@ -123,6 +129,9 @@ function isFeatureVisibleAtYear(
   if (featureMapId) {
     const period = periodByMapId.get(featureMapId);
     if (!period || period.startYear == null || period.endYear == null) return true;
+    if (mode === "cumulative") {
+      return period.startYear <= selectedYear;
+    }
     return isPeriodActiveAt(period.startYear, period.endYear, selectedYear, periodStartYears);
   }
 
@@ -395,5 +404,59 @@ describe("Timeline filtering & empty map exclusion", () => {
     // Standard feature on q1 (no custom years) should be visible at 1500 and not at 1900
     expect(isFeatureVisibleAtYear(featureOnQ1, 1500, periodMap, periodStartYears)).toBe(true);
     expect(isFeatureVisibleAtYear(featureOnQ1, 1900, periodMap, periodStartYears)).toBe(false);
+  });
+
+  it("supports cumulative mode (features that appeared on or before selectedYear)", () => {
+    const alberta1900: Feature = {
+      type: "Feature",
+      id: "feat-alberta",
+      projectId: "p1",
+      mapId: "q1",
+      name: "ALBERTA",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-114, 53] },
+      properties: { name: "ALBERTA", startYear: 1900, endYear: 1900 },
+    };
+
+    const periodMap = new Map<string, SliderPeriod>([
+      ["q1", { ...mapQ1, startYear: 1500, endYear: 1501 }],
+    ]);
+    const periodStartYears = new Set([1500, 1900]);
+
+    // In cumulative mode at 1800:
+    // mapQ1 (1500) has appeared -> featureOnQ1 is visible
+    expect(isFeatureVisibleAtYear(featureOnQ1, 1800, periodMap, periodStartYears, "cumulative")).toBe(true);
+    // ALBERTA (1900) has not appeared yet -> false
+    expect(isFeatureVisibleAtYear(alberta1900, 1800, periodMap, periodStartYears, "cumulative")).toBe(false);
+
+    // In cumulative mode at 1900: both are visible
+    expect(isFeatureVisibleAtYear(featureOnQ1, 1900, periodMap, periodStartYears, "cumulative")).toBe(true);
+    expect(isFeatureVisibleAtYear(alberta1900, 1900, periodMap, periodStartYears, "cumulative")).toBe(true);
+
+    // Before 1500 (e.g. 1400): neither is visible
+    expect(isFeatureVisibleAtYear(featureOnQ1, 1400, periodMap, periodStartYears, "cumulative")).toBe(false);
+    expect(isFeatureVisibleAtYear(alberta1900, 1400, periodMap, periodStartYears, "cumulative")).toBe(false);
+  });
+
+  it("supports global mode (all features visible regardless of date)", () => {
+    const alberta1900: Feature = {
+      type: "Feature",
+      id: "feat-alberta",
+      projectId: "p1",
+      mapId: "q1",
+      name: "ALBERTA",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-114, 53] },
+      properties: { name: "ALBERTA", startYear: 1900, endYear: 1900 },
+    };
+    const periodMap = new Map<string, SliderPeriod>([
+      ["q1", { ...mapQ1, startYear: 1500, endYear: 1501 }],
+    ]);
+    const periodStartYears = new Set([1500, 1900]);
+
+    expect(isFeatureVisibleAtYear(featureOnQ1, 1000, periodMap, periodStartYears, "global")).toBe(true);
+    expect(isFeatureVisibleAtYear(alberta1900, 1000, periodMap, periodStartYears, "global")).toBe(true);
   });
 });

@@ -273,20 +273,51 @@ export function createFeaturesForSelectedMaps(
   baseEditedFeature: Feature,
   selectedMapIds?: string[],
 ): Feature[] {
-  if (!selectedMapIds || selectedMapIds.length <= 1) {
-    return [baseEditedFeature];
+  if (!selectedMapIds || selectedMapIds.length === 0) {
+    const unassigned: Feature = {
+      ...baseEditedFeature,
+      mapId: null,
+      properties: {
+        ...baseEditedFeature.properties,
+        mapId: null,
+      },
+    };
+    delete (unassigned as any).mapTitle;
+    if (unassigned.properties) {
+      delete (unassigned.properties as any).mapTitle;
+    }
+    return [unassigned];
   }
 
-  const results: Feature[] = [
-    {
+  if (selectedMapIds.length === 1) {
+    const updated: Feature = {
       ...baseEditedFeature,
       mapId: selectedMapIds[0],
       properties: {
         ...baseEditedFeature.properties,
         mapId: selectedMapIds[0],
       },
+    };
+    delete (updated as any).mapTitle;
+    if (updated.properties) {
+      delete (updated.properties as any).mapTitle;
+    }
+    return [updated];
+  }
+
+  const first: Feature = {
+    ...baseEditedFeature,
+    mapId: selectedMapIds[0],
+    properties: {
+      ...baseEditedFeature.properties,
+      mapId: selectedMapIds[0],
     },
-  ];
+  };
+  delete (first as any).mapTitle;
+  if (first.properties) {
+    delete (first.properties as any).mapTitle;
+  }
+  const results: Feature[] = [first];
 
   for (let i = 1; i < selectedMapIds.length; i++) {
     const targetMapId = selectedMapIds[i];
@@ -302,8 +333,10 @@ export function createFeaturesForSelectedMaps(
     }
     cloned.id = crypto.randomUUID();
     cloned.mapId = targetMapId;
+    delete (cloned as any).mapTitle;
     if (cloned.properties) {
-      cloned.properties.mapId = targetMapId;
+      cloned.properties = { ...cloned.properties, mapId: targetMapId };
+      delete (cloned.properties as any).mapTitle;
     }
     results.push(cloned);
   }

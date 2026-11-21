@@ -161,7 +161,8 @@
             v-model.number="internalYear"
             @input="onSliderInput"
             class="timeline-year-range timeline-range w-full"
-            :class="filterByDate ? 'timeline-range--unfilled' : 'timeline-range--filled'"
+            :class="`timeline-range--${currentMode}`"
+            :style="sliderTrackStyle"
           />
 
           <div class="ticks-row">
@@ -202,7 +203,8 @@
             v-model.number="dayZoomOffset"
             @input="onDayZoomInput"
             class="timeline-day-range timeline-range w-full"
-            :class="filterByDate ? 'timeline-range--unfilled' : 'timeline-range--filled'"
+            :class="`timeline-range--${currentMode}`"
+            :style="sliderTrackStyle"
           />
 
           <div class="ticks-row">
@@ -275,9 +277,18 @@ const props = defineProps<{
   mapPeriods?: SliderPeriod[];
   elementMarkers?: TimelineMarkerItem[];
   filterByDate?: boolean;
+  mode?: "specific" | "cumulative" | "global";
 }>();
 
 const emit = defineEmits(["update:year", "exact-date-change", "edit-map", "edit-element"]);
+
+const currentMode = computed<"specific" | "cumulative" | "global">(() => {
+  if (props.mode) return props.mode;
+  if (props.filterByDate !== undefined) {
+    return props.filterByDate ? "specific" : "global";
+  }
+  return "specific";
+});
 
 const hoveredMarkerYear = ref<number | null>(null);
 let popoverTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -386,6 +397,33 @@ const hoveredPeriodId = ref<string | null>(null);
 const dayZoomOffset = ref(0);
 const yearTraversalDirection = ref<"forward" | "backward">("forward");
 const lastYearSelection = ref(props.year || props.min);
+
+const sliderProgressPct = computed(() => {
+  const min = props.min;
+  const max = props.max;
+  if (max <= min) return 0;
+  const val = isZoomMode.value ? dayZoomOffset.value : internalYear.value;
+  const rangeMin = isZoomMode.value ? 0 : min;
+  const rangeMax = isZoomMode.value ? dayZoomSpanDays.value : max;
+  return Math.max(0, Math.min(100, ((val - rangeMin) / (rangeMax - rangeMin)) * 100));
+});
+
+const sliderTrackStyle = computed<Record<string, string>>(() => {
+  if (currentMode.value === "cumulative") {
+    const pct = sliderProgressPct.value;
+    return {
+      background: `linear-gradient(to right, var(--color-primary) 0%, var(--color-primary) ${pct}%, #e2e8f0 ${pct}%, #e2e8f0 100%)`,
+    };
+  }
+  if (currentMode.value === "global") {
+    return {
+      background: "var(--color-primary)",
+    };
+  }
+  return {
+    background: "#e2e8f0",
+  };
+});
 
 const validElementMarkers = computed(() =>
   (props.elementMarkers ?? []).filter(
@@ -779,13 +817,9 @@ function snapToMarker(value: number): number {
 }
 
 function markerStyleFromPercent(left: number) {
-  let transform = "translateX(-50%)";
-  if (left <= 0) transform = "translateX(0)";
-  if (left >= 100) transform = "translateX(-100%)";
-
   return {
-    left: `${left}%`,
-    transform,
+    left: `calc(0.425rem + (100% - 0.85rem) * ${left / 100})`,
+    transform: "translateX(-50%)",
   };
 }
 
@@ -894,8 +928,20 @@ watch(
   },
 );
 
+watch([() => props.min, () => props.max], () => {
+  const clamped = clampToRange(internalYear.value);
+  if (clamped !== internalYear.value) {
+    internalYear.value = clamped;
+    emit("update:year", clamped);
+  }
+});
+
 watch(markerYears, () => {
-  internalYear.value = snapToMarker(internalYear.value);
+  const nextSnapped = snapToMarker(internalYear.value);
+  if (nextSnapped !== internalYear.value) {
+    internalYear.value = nextSnapped;
+    emit("update:year", nextSnapped);
+  }
 });
 
 function selectYear(year: number) {
