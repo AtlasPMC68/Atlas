@@ -20,7 +20,7 @@
     </div>
 
     <!-- Liste des éléments avec contrôle de visibilité -->
-    <div class="px-2 flex flex-1 flex-col min-h-0">
+    <div class="px-1 flex flex-1 flex-col min-h-0">
       <div
         class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
       >
@@ -66,11 +66,11 @@
               :key="mapGroup.id ?? 'general'"
               class="flex flex-col gap-2"
             >
-              <div class="flex items-center justify-between rounded-lg px-2 py-1 bg-base-200/80 border border-base-300/70 group">
+              <div class="flex items-center justify-between rounded-lg px-2 py-1 bg-gray-100 hover:bg-gray-200/80 border border-gray-300 group transition-colors">
                 <div class="flex items-center gap-1.5 flex-1 min-w-0">
                   <button
                     type="button"
-                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:text-gray-800 hover:bg-base-300/60 transition-colors focus:outline-none"
+                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:text-gray-800 hover:bg-gray-300/60 transition-colors focus:outline-none"
                     @click="toggleMapCollapse(mapGroup.id)"
                     :title="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
                     :aria-label="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
@@ -97,7 +97,7 @@
                     <button
                       v-if="mapGroup.id !== null"
                       type="button"
-                      class="text-sm font-bold text-gray-800 truncate text-left hover:text-primary flex-1 min-w-0"
+                      class="text-sm font-bold text-gray-900 truncate text-left hover:text-primary flex-1 min-w-0"
                       :title="`Modifier ${mapGroup.title}`"
                       @click.stop="emit('edit-map', mapGroup.id)"
                     >
@@ -105,14 +105,14 @@
                     </button>
                     <span
                       v-else
-                      class="text-sm font-bold text-gray-800 truncate flex-1 min-w-0"
+                      class="text-sm font-bold text-gray-900 truncate flex-1 min-w-0"
                       title="Éléments qui appartiennent à toutes les cartes"
                     >
                       {{ mapGroup.title }}
                     </span>
                   </label>
                 </div>
-                <div class="flex items-center gap-1 shrink-0" v-if="mapGroup.id !== null">
+                <div class="flex items-center gap-0 shrink-0 ml-auto -mr-0.5" v-if="mapGroup.id !== null">
                   <button
                     type="button"
                     class="icon-action-btn"
@@ -138,7 +138,7 @@
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
                   :data-feature-item-id="String(feature.id)"
-                  class="flex w-full flex-row items-center justify-between gap-2 rounded px-1.5 py-1 transition-all cursor-pointer select-none"
+                  class="flex w-full flex-row items-center justify-between gap-1 rounded px-1.5 py-1 transition-all cursor-pointer select-none"
                   :class="[
                     selectedFeatureId === String(feature.id)
                       ? 'ring-2 ring-primary bg-primary/10 border border-primary font-semibold'
@@ -147,7 +147,14 @@
                   @click="onFeatureItemClick(feature)"
                   @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
                 >
-                  <div class="flex items-center gap-1 flex-1 min-w-0 py-0 pl-0">
+                  <div class="flex items-center gap-1.5 flex-1 min-w-0 py-0 pl-0">
+                    <span
+                      v-if="!feature.properties?.name?.trim()"
+                      class="text-error font-extrabold text-sm leading-none shrink-0"
+                      title="Nom manquant"
+                    >
+                      !
+                    </span>
                     <input
                       type="checkbox"
                       :checked="featureVisibility.get(feature.id) !== false"
@@ -159,14 +166,19 @@
                           ($event.target as HTMLInputElement).checked,
                         )
                       "
-                      class="checkbox checkbox-xs checkbox-primary"
+                      class="checkbox checkbox-xs checkbox-primary shrink-0"
                     />
                     <span
                       class="label-text text-sm truncate flex-1 select-none flex items-center gap-1"
-                      :title="feature.properties?.name || '! Nom manquant'"
+                      :title="feature.properties?.name?.trim() || 'Nom manquant'"
                       @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
                     >
-                      <span class="truncate">{{ feature.properties?.name || "! Nom manquant" }}</span>
+                      <span
+                        class="truncate"
+                        :class="!feature.properties?.name?.trim() ? 'text-error font-medium' : ''"
+                      >
+                        {{ feature.properties?.name?.trim() || "Nom manquant" }}
+                      </span>
                       <span
                         v-if="feature.properties?.startYear != null || feature.properties?.endYear != null"
                         class="badge badge-ghost badge-xs font-normal opacity-70 shrink-0"
@@ -175,7 +187,7 @@
                       </span>
                     </span>
                   </div>
-                  <div class="flex items-center gap-0.5 shrink-0">
+                  <div class="flex items-center gap-0 shrink-0 ml-auto -mr-1">
                     <button
                       type="button"
                       class="icon-action-btn-sm"
@@ -269,8 +281,11 @@
   <!-- Modale d'édition d'élément uniformisée -->
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
     <div class="modal-box w-11/12 max-w-6xl flex flex-col gap-4">
-      <h3 class="text-lg font-bold truncate" :title="editModalTitle">
-        {{ editModalTitle }}
+      <h3 class="text-lg font-bold truncate">
+        Modification de {{ editModalTypeLabel }}
+        <span :class="isEditNameMissing ? 'text-error font-medium' : ''">
+          {{ editModalNameText }}
+        </span>
       </h3>
 
       <fieldset class="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-6 items-start">
@@ -296,7 +311,8 @@
                     ref="labelTextareaRef"
                     v-model="editDraft.name"
                     rows="2"
-                    class="textarea textarea-bordered w-full bg-base-100 border-gray-400 text-sm leading-snug resize-y"
+                    class="textarea textarea-bordered w-full bg-base-100 text-sm leading-snug resize-y"
+                    :class="isEditNameMissing ? 'border-error ring-1 ring-error' : 'border-gray-400'"
                     placeholder="Nom de l'élément"
                     required
                     @input="onNameInput"
@@ -312,6 +328,7 @@
                   v-model="editDraft.name"
                   type="text"
                   class="input input-bordered w-full text-sm"
+                  :class="isEditNameMissing ? 'border-error ring-1 ring-error' : 'border-gray-400'"
                   placeholder="Nom de l'élément"
                   required
                   @input="onNameInput"
@@ -904,7 +921,7 @@ function resizeLabelTextarea() {
 const areAllMapsSelected = computed(() => {
   if (!props.mapPeriods || props.mapPeriods.length === 0) return false;
   const selected = editDraft.value.selectedMapIds ?? [];
-  return props.mapPeriods.every((p) => selected.includes(p.id));
+  return props.mapPeriods.every((p: { id: any; }) => selected.includes(p.id));
 });
 
 function toggleSelectAllMaps() {
@@ -912,7 +929,7 @@ function toggleSelectAllMaps() {
   if (areAllMapsSelected.value) {
     editDraft.value.selectedMapIds = [];
   } else {
-    editDraft.value.selectedMapIds = props.mapPeriods.map((p) => p.id);
+    editDraft.value.selectedMapIds = props.mapPeriods.map((p: { id: any; }) => p.id);
   }
 }
 
@@ -941,25 +958,26 @@ const isEditingPoint = computed(() => {
   return getMapElementType(featureToEdit.value) === "point";
 });
 
-const editModalTitle = computed(() => {
-  const title =
-    editDraft.value.name?.trim() ||
-    featureToEdit.value?.properties?.name ||
-    "élément sans nom";
+const isEditNameMissing = computed(() => {
+  return !editDraft.value.name?.trim();
+});
 
-  if (isTextElement.value) {
-    return `Modification du texte ${title}`;
-  }
-  if (isEditingPoint.value) {
-    return `Modification du point ${title}`;
-  }
+const editModalNameText = computed(() => {
+  return editDraft.value.name?.trim() || "Élément sans nom";
+});
+
+const editModalTypeLabel = computed(() => {
+  if (isTextElement.value) return "du texte";
+  if (isEditingPoint.value) return "du point";
   const elementType = featureToEdit.value
     ? getMapElementType(featureToEdit.value)
     : undefined;
-  if (elementType === "image") {
-    return `Modification de l'image ${title}`;
-  }
-  return `Modification de la forme ${title}`;
+  if (elementType === "image") return "de l'image";
+  return "de la forme";
+});
+
+const editModalTitle = computed(() => {
+  return `Modification ${editModalTypeLabel.value} ${editModalNameText.value}`;
 });
 
 const isTextSizeOverMax = computed(() => {

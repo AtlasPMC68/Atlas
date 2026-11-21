@@ -392,7 +392,7 @@ function revealMap() {
 // Frames the features currently drawn on the map (visibility and timeline
 // filters applied), or only those of `featureIds` when given. Keeps the
 // current view when nothing is drawn.
-function fitToVisibleFeatures(featureIds?: ReadonlySet<string>) {
+function fitToVisibleFeatures(featureIds?: ReadonlySet<string>, animate = false) {
   if (!map) return;
   revealMap();
   const bounds = L.latLngBounds([]);
@@ -403,7 +403,7 @@ function fitToVisibleFeatures(featureIds?: ReadonlySet<string>) {
   });
   if (!bounds.isValid()) return;
   // maxZoom keeps a single city or label from zooming in to street level
-  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10, animate: false });
+  map.fitBounds(bounds, { padding: [50, 50], maxZoom: 10, animate });
 }
 
 function extendBoundsWithLayer(bounds: L.LatLngBounds, layer: L.Layer) {

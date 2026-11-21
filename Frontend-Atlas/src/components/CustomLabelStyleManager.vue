@@ -375,7 +375,7 @@
           data-testid="save-custom-label-styles"
           @click="saveStyles"
         >
-          <span class="text-white">Enregistrer les styles</span>
+          <span class="text-white">Enregistrer</span>
         </button>
       </div>
     </div>
@@ -440,7 +440,7 @@ function onDragOver(index: number) {
   draggedIndex.value = index;
 }
 
-function onDrop(index: number) {
+function onDrop(_index: number) {
   draggedIndex.value = null;
 }
 

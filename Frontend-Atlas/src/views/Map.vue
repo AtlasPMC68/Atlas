@@ -5,7 +5,7 @@
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
         v-show="isSidebarVisible"
-        class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
+        class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 py-3 px-1.5 flex flex-col"
         :style="{ width: `${sidebarWidth}px` }"
       >
         <FeatureVisibilityControls
@@ -391,7 +391,7 @@ const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
   resetSelection: () => void;
-  fitToVisibleFeatures: (featureIds?: ReadonlySet<string>) => void;
+  fitToVisibleFeatures: (featureIds?: ReadonlySet<string>, animate?: boolean) => void;
   multiSelectedIds: { value: Set<string> };
 } | null>(null);
 const addMapDialogRef = ref<{
@@ -920,12 +920,18 @@ function goToPrevMilestone() {
   if (!prevMilestone.value) return;
   selectedExactDate.value = null;
   selectedYear.value = prevMilestone.value.year;
+  nextTick(() => {
+    mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+  });
 }
 
 function goToNextMilestone() {
   if (!nextMilestone.value) return;
   selectedExactDate.value = null;
   selectedYear.value = nextMilestone.value.year;
+  nextTick(() => {
+    mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+  });
 }
 
 const allTimelineStartYears = computed(() => {

@@ -112,7 +112,7 @@
             data-testid="timeline-element-marker"
             @click="selectYear(marker.year)"
             @dblclick.stop="onMarkerDblClick(marker)"
-            @mouseenter="onMarkerMouseEnter(marker.year)"
+            @mouseenter="onMarkerMouseEnter(marker.year, $event)"
             @mouseleave="onMarkerMouseLeave"
             @keydown.enter="selectYear(marker.year)"
             @keydown.space.prevent="selectYear(marker.year)"
@@ -139,7 +139,8 @@
             <!-- Standardized popover card (separated by map) -->
             <div
               v-if="hoveredMarkerYear === marker.year"
-              class="element-marker-popover absolute bottom-full mb-2 bg-base-100 text-base-content shadow-lg rounded-xl border border-gray-300 p-3 z-[2100] w-72 sm:w-80 pointer-events-auto text-left"
+              class="element-marker-popover absolute bg-base-100 text-base-content shadow-lg rounded-xl border border-gray-300 p-3 z-[2100] w-72 sm:w-80 pointer-events-auto text-left"
+              :class="popoverPlacement === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'"
               :style="getPopoverStyle(marker.year)"
               @mouseenter="onMarkerMouseEnter(marker.year)"
               @mouseleave="onMarkerMouseLeave"
@@ -340,14 +341,28 @@ const currentMode = computed<"specific" | "cumulative" | "global">(() => {
 });
 
 const hoveredMarkerYear = ref<number | null>(null);
+const popoverPlacement = ref<"top" | "bottom">("top");
 let popoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function isCustomItem(item: TimelineMarkerItem): boolean {
   return item.isCustom !== false;
 }
 
-function onMarkerMouseEnter(year: number) {
+function onMarkerMouseEnter(year: number, event?: MouseEvent) {
   if (popoverTimeout) clearTimeout(popoverTimeout);
+  
+  if (event?.currentTarget instanceof HTMLElement) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    // Le popover fait ~200px de haut. Si l'espace au-dessus du pin jusqu'au haut du viewport/conteneur est restreint, on ouvre vers le bas
+    if (rect.top < 220) {
+      popoverPlacement.value = "bottom";
+    } else {
+      popoverPlacement.value = "top";
+    }
+  } else {
+    popoverPlacement.value = "top";
+  }
+  
   hoveredMarkerYear.value = year;
 }
 
