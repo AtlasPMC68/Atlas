@@ -66,11 +66,11 @@
               :key="mapGroup.id ?? 'general'"
               class="flex flex-col gap-2"
             >
-              <div class="flex items-center justify-between rounded group">
-                <div class="flex items-center gap-1 flex-1 min-w-0">
+              <div class="flex items-center justify-between rounded-lg px-2 py-1 bg-base-200/80 border border-base-300/70 group">
+                <div class="flex items-center gap-1.5 flex-1 min-w-0">
                   <button
                     type="button"
-                    class="flex h-6 w-6 shrink-0 -ml-1.5 items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-base-200 transition-colors focus:outline-none"
+                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:text-gray-800 hover:bg-base-300/60 transition-colors focus:outline-none"
                     @click="toggleMapCollapse(mapGroup.id)"
                     :title="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
                     :aria-label="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
@@ -97,7 +97,7 @@
                     <button
                       v-if="mapGroup.id !== null"
                       type="button"
-                      class="text-sm font-semibold text-gray-700 truncate text-left hover:text-primary flex-1 min-w-0"
+                      class="text-sm font-bold text-gray-800 truncate text-left hover:text-primary flex-1 min-w-0"
                       :title="`Modifier ${mapGroup.title}`"
                       @click.stop="emit('edit-map', mapGroup.id)"
                     >
@@ -105,7 +105,7 @@
                     </button>
                     <span
                       v-else
-                      class="text-sm font-semibold text-gray-700 truncate flex-1 min-w-0"
+                      class="text-sm font-bold text-gray-800 truncate flex-1 min-w-0"
                       title="Éléments qui appartiennent à toutes les cartes"
                     >
                       {{ mapGroup.title }}
@@ -133,7 +133,7 @@
                   </button>
                 </div>
               </div>
-              <div v-if="!isMapCollapsed(mapGroup.id)" class="flex flex-col gap-2">
+              <div v-if="!isMapCollapsed(mapGroup.id)" class="flex flex-col gap-1 pl-6">
                 <div
                   v-for="feature in mapGroup.features"
                   :key="feature.id"
@@ -147,7 +147,7 @@
                   @click="onFeatureItemClick(feature)"
                   @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
                 >
-                  <div class="flex items-center gap-1 flex-1 min-w-0 py-0 pl-2">
+                  <div class="flex items-center gap-1 flex-1 min-w-0 py-0 pl-0">
                     <input
                       type="checkbox"
                       :checked="featureVisibility.get(feature.id) !== false"
@@ -594,9 +594,18 @@
             class="flex flex-col gap-1.5 min-w-0"
             data-testid="map-assignment-section"
           >
-            <label class="section-title">
-              Cartes associées
-            </label>
+            <div class="flex items-center justify-between">
+              <label class="section-title">
+                Cartes associées
+              </label>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10"
+                @click="toggleSelectAllMaps"
+              >
+                {{ areAllMapsSelected ? "Tout désélectionner" : "Tout sélectionner" }}
+              </button>
+            </div>
             <div class="flex flex-col gap-1 max-h-32 overflow-y-auto border border-gray-400 rounded-lg p-2 bg-base-100">
               <label
                 v-for="period in props.mapPeriods"
@@ -890,6 +899,21 @@ function resizeLabelTextarea() {
   if (!el) return;
   el.style.height = "auto";
   el.style.height = `${el.scrollHeight}px`;
+}
+
+const areAllMapsSelected = computed(() => {
+  if (!props.mapPeriods || props.mapPeriods.length === 0) return false;
+  const selected = editDraft.value.selectedMapIds ?? [];
+  return props.mapPeriods.every((p) => selected.includes(p.id));
+});
+
+function toggleSelectAllMaps() {
+  if (!props.mapPeriods) return;
+  if (areAllMapsSelected.value) {
+    editDraft.value.selectedMapIds = [];
+  } else {
+    editDraft.value.selectedMapIds = props.mapPeriods.map((p) => p.id);
+  }
 }
 
 let previousFeatureStartYear: number | null = null;

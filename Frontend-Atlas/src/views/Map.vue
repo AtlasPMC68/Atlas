@@ -178,108 +178,76 @@
         >
           <!-- Top bar with Filter Modes and Map Duplication -->
           <div
-            class="map-timeline-topbar shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 relative z-10"
+            class="map-timeline-topbar shrink-0 relative flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 z-10"
           >
-            <div class="flex items-center gap-2">
+            <!-- Left section: Nom du projet -->
+            <div class="flex items-center gap-2 min-w-0 pr-4">
               <span
                 v-if="currentMapTitle"
-                class="text-sm font-bold text-base-content select-none mr-2 truncate max-w-xs"
+                class="text-sm font-bold text-base-content select-none truncate max-w-xs md:max-w-sm"
                 :title="currentMapTitle"
               >
                 {{ currentMapTitle }}
               </span>
-              <span class="text-xs font-semibold text-base-content/80 select-none">
-                Filtrer par date :
-              </span>
-              <!-- 3 Timeline Modes: Spécifique | Cumulatif | Global -->
-              <div class="join border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-sm mr-1">
-                <button
-                  type="button"
-                  class="join-item btn btn-xs px-2.5 font-medium transition-colors"
-                  :class="timelineMode === 'specific' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
-                  data-testid="timeline-mode-specific"
-                  title="Afficher uniquement les cartes et éléments actifs à la date sélectionnée"
-                  @click="timelineMode = 'specific'"
-                >
-                  Spécifique
-                </button>
-                <button
-                  type="button"
-                  class="join-item btn btn-xs px-2.5 font-medium transition-colors"
-                  :class="timelineMode === 'cumulative' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
-                  data-testid="timeline-mode-cumulative"
-                  title="Afficher toutes les cartes et éléments apparus jusqu'à la date sélectionnée"
-                  @click="timelineMode = 'cumulative'"
-                >
-                  Cumulatif
-                </button>
-                <button
-                  type="button"
-                  class="join-item btn btn-xs px-2.5 font-medium transition-colors"
-                  :class="timelineMode === 'global' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
-                  data-testid="timeline-mode-global"
-                  title="Afficher l'ensemble du projet sans restriction de date"
-                  @click="timelineMode = 'global'"
-                >
-                  Global
-                </button>
-              </div>
-
-              <!-- Previous / Next milestone navigation controls -->
-              <div
-                v-if="sortedTimelineMilestones.length > 0"
-                class="inline-flex items-center rounded border border-base-300 bg-base-200/90 overflow-hidden shadow-xs ml-1"
-              >
-                <button
-                  type="button"
-                  class="px-2 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none border-r border-base-300 transition-colors flex items-center justify-center"
-                  :disabled="!hasPrevMilestone"
-                  :title="
-                    prevMilestone
-                      ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
-                      : 'Aucun jalon précédent'
-                  "
-                  aria-label="Jalon précédent"
-                  data-testid="prev-map-button"
-                  @click="goToPrevMilestone"
-                >
-                  <ChevronLeftIcon class="w-3.5 h-3.5 stroke-[2.5]" />
-                </button>
-                <button
-                  type="button"
-                  class="px-2 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center"
-                  :disabled="!hasNextMilestone"
-                  :title="
-                    nextMilestone
-                      ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
-                      : 'Aucun jalon suivant'
-                  "
-                  aria-label="Jalon suivant"
-                  data-testid="next-map-button"
-                  @click="goToNextMilestone"
-                >
-                  <ChevronRightIcon class="w-3.5 h-3.5 stroke-[2.5]" />
-                </button>
-              </div>
             </div>
 
-            <!-- Hide date slider button -->
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
-              data-testid="hide-timeline-button"
-              title="Masquer l'échelle de temps"
-              @click="toggleTimeline"
+            <!-- Center section: Flèches précédent / suivant parfaitement centrées sur toute la largeur -->
+            <div
+              v-if="sortedTimelineMilestones.length > 0"
+              class="absolute left-1/2 -translate-x-1/2 inline-flex items-center rounded border border-base-300 bg-base-200/90 overflow-hidden shadow-xs pointer-events-auto"
             >
-              <EyeSlashIcon class="w-3.5 h-3.5" />
-              <span>Masquer l'échelle</span>
-            </button>
+              <button
+                type="button"
+                class="px-2.5 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none border-r border-base-300 transition-colors flex items-center justify-center"
+                :disabled="!hasPrevMilestone"
+                :title="
+                  prevMilestone
+                    ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
+                    : 'Aucun jalon précédent'
+                "
+                aria-label="Jalon précédent"
+                data-testid="prev-map-button"
+                @click="goToPrevMilestone"
+              >
+                <ChevronLeftIcon class="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+              <button
+                type="button"
+                class="px-2.5 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center"
+                :disabled="!hasNextMilestone"
+                :title="
+                  nextMilestone
+                    ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
+                    : 'Aucun jalon suivant'
+                "
+                aria-label="Jalon suivant"
+                data-testid="next-map-button"
+                @click="goToNextMilestone"
+              >
+                <ChevronRightIcon class="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+            </div>
+
+            <!-- Right section: Masquer l'échelle -->
+            <div class="flex items-center gap-3 ml-auto">
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
+                data-testid="hide-timeline-button"
+                title="Masquer l'échelle de temps"
+                @click="toggleTimeline"
+              >
+                <EyeSlashIcon class="w-3.5 h-3.5" />
+                <span>Masquer l'échelle</span>
+              </button>
+            </div>
           </div>
 
           <!-- Middle scrollable area containing the timeline tracks, ticks, labels, and legend -->
           <div class="map-timeline-slider flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-3 py-1 relative z-20">
             <TimelineSlider
               v-model:year="selectedYear"
+              v-model:mode="timelineMode"
               @exact-date-change="onExactDateChange"
               @edit-map="openEditMapDialog"
               @edit-element="onEditElementFromTimeline"
@@ -289,7 +257,6 @@
               :map-periods="enrichedPeriods"
               :element-markers="timelineElementMarkers"
               :current-exact-date="selectedExactDate"
-              :mode="timelineMode"
             />
           </div>
         </div>

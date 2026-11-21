@@ -2,10 +2,10 @@
   <div class="timeline-container">
     <div class="slider-wrap">
       <div ref="axisRef" class="slider-axis">
-        <!-- Légende discrète - En haut à gauche -->
+        <!-- Légende discrète + Filtres par date -->
         <div
-          v-if="!isZoomMode && (displayedPeriods.length > 0 || groupedElementMarkers.length > 0)"
-          class="flex items-center justify-start gap-4 pb-1.5 text-[11px] text-base-content opacity-70 select-none"
+          v-if="!isZoomMode"
+          class="flex items-center justify-start gap-4 pb-1.5 text-[11px] text-base-content opacity-70 select-none flex-wrap"
         >
           <span v-if="displayedPeriods.length > 0" class="inline-flex items-center gap-1.5">
             <span class="inline-block w-8 h-2 rounded-full bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-500 shadow-xs"></span>
@@ -15,6 +15,45 @@
             <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-600 text-[10px] font-bold text-red-700 leading-none">!</span>
             <span>Dates personnalisées</span>
           </span>
+
+          <!-- 3 Boutons Filtrer par date placés à droite de Dates personnalisées -->
+          <div class="inline-flex items-center gap-2 ml-2 pl-2 border-l border-base-300">
+            <span class="text-xs font-semibold text-base-content/80 select-none">
+              Filtrer par date :
+            </span>
+            <div class="join border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-xs">
+              <button
+                type="button"
+                class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                :class="currentMode === 'specific' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
+                data-testid="timeline-mode-specific"
+                title="Afficher uniquement les cartes et éléments actifs à la date sélectionnée"
+                @click="setMode('specific')"
+              >
+                Spécifique
+              </button>
+              <button
+                type="button"
+                class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                :class="currentMode === 'cumulative' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
+                data-testid="timeline-mode-cumulative"
+                title="Afficher toutes les cartes et éléments apparus jusqu'à la date sélectionnée"
+                @click="setMode('cumulative')"
+              >
+                Cumulatif
+              </button>
+              <button
+                type="button"
+                class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                :class="currentMode === 'global' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
+                data-testid="timeline-mode-global"
+                title="Afficher l'ensemble du projet sans restriction de date"
+                @click="setMode('global')"
+              >
+                Global
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Period tracks - update based on view mode -->
@@ -280,7 +319,17 @@ const props = defineProps<{
   mode?: "specific" | "cumulative" | "global";
 }>();
 
-const emit = defineEmits(["update:year", "exact-date-change", "edit-map", "edit-element"]);
+const emit = defineEmits([
+  "update:year",
+  "update:mode",
+  "exact-date-change",
+  "edit-map",
+  "edit-element",
+]);
+
+function setMode(newMode: "specific" | "cumulative" | "global") {
+  emit("update:mode", newMode);
+}
 
 const currentMode = computed<"specific" | "cumulative" | "global">(() => {
   if (props.mode) return props.mode;

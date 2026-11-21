@@ -185,12 +185,8 @@ export function layerToFeature(
       mapElementType: type,
       layer: baseFeature?.properties?.layer ?? getDefaultLayer(type),
       rotation,
-      startYear:
-        baseFeature?.properties?.startYear ??
-        (typeof selectedYear === "number" && !Number.isNaN(selectedYear) ? selectedYear : undefined),
-      endYear:
-        baseFeature?.properties?.endYear ??
-        (typeof selectedYear === "number" && !Number.isNaN(selectedYear) ? selectedYear : undefined),
+      startYear: baseFeature?.properties?.startYear ?? null,
+      endYear: baseFeature?.properties?.endYear ?? null,
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,
