@@ -139,4 +139,30 @@ describe("TimelineSlider element markers (pins)", () => {
     expect(wrapper.emitted("update:year")?.at(-1)).toEqual([1900]);
     expect(pin.classes()).toContain("element-marker-active");
   });
+
+  it("applies unfilled style when filterByDate is true, and filled style when false", () => {
+    const wrapperUnfilled = mount(TimelineSlider, {
+      props: {
+        year: 1700,
+        min: 1500,
+        max: 1900,
+        filterByDate: true,
+      },
+    });
+    const sliderUnfilled = wrapperUnfilled.find("input[type='range']");
+    expect(sliderUnfilled.classes()).toContain("timeline-range--unfilled");
+    expect(sliderUnfilled.classes()).not.toContain("timeline-range--filled");
+
+    const wrapperFilled = mount(TimelineSlider, {
+      props: {
+        year: 1700,
+        min: 1500,
+        max: 1900,
+        filterByDate: false,
+      },
+    });
+    const sliderFilled = wrapperFilled.find("input[type='range']");
+    expect(sliderFilled.classes()).toContain("timeline-range--filled");
+    expect(sliderFilled.classes()).not.toContain("timeline-range--unfilled");
+  });
 });

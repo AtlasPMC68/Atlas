@@ -62,7 +62,8 @@
           :style="legendStyle"
         >
           <div
-            class="absolute -top-6 left-0 px-2 py-0.5 text-[11px] font-bold bg-emerald-600 text-white rounded shadow flex items-center gap-1 whitespace-nowrap"
+            class="absolute px-2 py-0.5 text-[11px] font-bold bg-emerald-600 text-white rounded shadow flex items-center gap-1 whitespace-nowrap"
+            :class="isNearTop(legendBounds) ? 'top-1 left-1' : '-top-6 left-0'"
           >
             <span>Légende</span>
           </div>
@@ -76,7 +77,8 @@
             :style="zone"
           >
             <div
-              class="absolute -top-6 left-0 px-2 py-0.5 text-[11px] font-bold bg-amber-600 text-white rounded shadow flex items-center gap-1 whitespace-nowrap"
+              class="absolute px-2 py-0.5 text-[11px] font-bold bg-amber-600 text-white rounded shadow flex items-center gap-1 whitespace-nowrap"
+              :class="isNearTop(exclusionZones[index]) ? 'top-1 left-1' : '-top-6 left-0'"
             >
               <span>Zone #{{ index + 1 }}</span>
             </div>
@@ -317,6 +319,13 @@ function getRectStyle(bounds: LegendBounds | null) {
     width: `${bounds.width * baseScale}px`,
     height: `${bounds.height * baseScale}px`,
   };
+}
+
+function isNearTop(bounds: LegendBounds | null): boolean {
+  if (!bounds || !displayRect.value) return false;
+  const { offsetY, baseScale } = displayRect.value;
+  const topPx = offsetY + bounds.y * baseScale;
+  return topPx < 26;
 }
 
 const legendStyle = computed(() => getRectStyle(legendBounds.value));

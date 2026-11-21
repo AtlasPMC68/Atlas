@@ -83,15 +83,15 @@
           <h4 class="section-title">Aperçu</h4>
           <div v-if="isTextStyleActive" class="preview-frame h-[132px]">
             <div
-              class="preview-box"
-              :style="{ ...previewStyle(currentLiveStyle, false), lineHeight: '1.15' }"
+              class="preview-box overflow-hidden max-w-full"
+              :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
             >
               <span
                 v-if="draft.hasPoint"
                 class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
                 :style="{ backgroundColor: draft.pointColor || draft.color || '#000000' }"
               ></span>
-              <span class="truncate">{{ draft.name.trim() || "Exemple de texte" }}</span>
+              <span class="truncate break-words min-w-0 max-w-full">{{ draft.name.trim() || "Exemple de texte" }}</span>
             </div>
           </div>
         </div>

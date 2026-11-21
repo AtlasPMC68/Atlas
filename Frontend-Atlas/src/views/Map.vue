@@ -161,22 +161,45 @@
               :map-periods="enrichedPeriods"
               :element-markers="timelineElementMarkers"
               :current-exact-date="selectedExactDate"
-              :filter-by-date="useTimelineFilter"
+              :mode="timelineMode"
             />
           </div>
           <div
             class="map-timeline-filter flex flex-row gap-3 items-center justify-between text-xs font-medium whitespace-nowrap"
           >
             <div class="flex items-center gap-2">
-              <div class="flex flex-row gap-1 items-center mr-1">
-                <span>Filtrer par date</span>
-                <input
-                  v-model="useTimelineFilter"
-                  type="checkbox"
-                  aria-label="Filtrer par date"
-                  role="switch"
-                  class="timeline-filter-toggle"
-                />
+              <!-- 3 Timeline Modes: Spécifique | Cumulatif | Global -->
+              <div class="join border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-sm mr-1">
+                <button
+                  type="button"
+                  class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                  :class="timelineMode === 'specific' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
+                  data-testid="timeline-mode-specific"
+                  title="Afficher uniquement les cartes et éléments actifs à la date sélectionnée"
+                  @click="timelineMode = 'specific'"
+                >
+                  Spécifique
+                </button>
+                <button
+                  type="button"
+                  class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                  :class="timelineMode === 'cumulative' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
+                  data-testid="timeline-mode-cumulative"
+                  title="Afficher toutes les cartes et éléments apparus jusqu'à la date sélectionnée"
+                  @click="timelineMode = 'cumulative'"
+                >
+                  Cumulatif
+                </button>
+                <button
+                  type="button"
+                  class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                  :class="timelineMode === 'global' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
+                  data-testid="timeline-mode-global"
+                  title="Afficher l'ensemble du projet sans restriction de date"
+                  @click="timelineMode = 'global'"
+                >
+                  Global
+                </button>
               </div>
 
               <!-- Step 5: Bottom interface button allowing to duplicate a map entirely -->
@@ -191,38 +214,38 @@
                 <span>Dupliquer une carte</span>
               </button>
 
-              <!-- Navigation rapide entre les cartes (précédente / suivante) -->
+              <!-- Navigation rapide entre les jalons (cartes et éléments datés) -->
               <div
-                v-if="sortedMapsForNavigation.length > 0"
+                v-if="sortedTimelineMilestones.length > 0"
                 class="inline-flex items-center rounded border border-base-300 bg-base-100 overflow-hidden"
               >
                 <button
                   type="button"
                   class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none border-r border-base-300"
-                  :disabled="!hasPrevMap"
+                  :disabled="!hasPrevMilestone"
                   :title="
-                    prevMap
-                      ? `Carte précédente : ${prevMap.title} (${prevMap.startYear})`
-                      : 'Aucune carte précédente'
+                    prevMilestone
+                      ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
+                      : 'Aucun jalon précédent'
                   "
-                  aria-label="Carte précédente"
+                  aria-label="Jalon précédent"
                   data-testid="prev-map-button"
-                  @click="goToPrevMap"
+                  @click="goToPrevMilestone"
                 >
                   ‹
                 </button>
                 <button
                   type="button"
                   class="px-2 py-0.5 text-xs hover:bg-base-200 disabled:opacity-40 disabled:pointer-events-none"
-                  :disabled="!hasNextMap"
+                  :disabled="!hasNextMilestone"
                   :title="
-                    nextMap
-                      ? `Carte suivante : ${nextMap.title} (${nextMap.startYear})`
-                      : 'Aucune carte suivante'
+                    nextMilestone
+                      ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
+                      : 'Aucun jalon suivant'
                   "
-                  aria-label="Carte suivante"
+                  aria-label="Jalon suivant"
                   data-testid="next-map-button"
-                  @click="goToNextMap"
+                  @click="goToNextMilestone"
                 >
                   ›
                 </button>
@@ -594,12 +617,23 @@ function startTimelineResize(event: MouseEvent) {
   window.addEventListener("mouseup", stopTimelineResize);
 }
 
+let sidebarResizeRaf: number | null = null;
+
+function requestMapInvalidateSize() {
+  if (sidebarResizeRaf !== null) return;
+  sidebarResizeRaf = window.requestAnimationFrame(() => {
+    sidebarResizeRaf = null;
+    leafletMap.value?.invalidateSize({ debounceMoveend: true });
+  });
+}
+
 function resizeSidebarBy(delta: number) {
   const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
   sidebarWidth.value = Math.max(
     240,
     Math.min(maxWidth, sidebarWidth.value + delta),
   );
+  nextTick(() => leafletMap.value?.invalidateSize());
 }
 
 function onSidebarResizeMove(event: MouseEvent) {
@@ -611,6 +645,7 @@ function onSidebarResizeMove(event: MouseEvent) {
       sidebarResizeStartWidth + event.clientX - sidebarResizeStartX,
     ),
   );
+  requestMapInvalidateSize();
 }
 
 function copySelectedFeature(): boolean {
@@ -680,6 +715,11 @@ function stopSidebarResize() {
     document.body.style.cursor = previousBodyCursor;
     document.body.style.userSelect = previousBodyUserSelect;
     isResizingSidebar = false;
+    if (sidebarResizeRaf !== null) {
+      window.cancelAnimationFrame(sidebarResizeRaf);
+      sidebarResizeRaf = null;
+    }
+    leafletMap.value?.invalidateSize();
   }
 }
 
