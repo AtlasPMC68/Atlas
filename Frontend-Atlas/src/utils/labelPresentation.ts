@@ -22,6 +22,12 @@ export interface LabelStyle {
   minZoom: number;
   mapElementType?: "point" | "label";
   isCustom?: boolean;
+  hasPoint?: boolean;
+  pointColor?: string;
+  pointStrokeColor?: string;
+  pointFillOpacity?: number;
+  pointStrokeOpacity?: number;
+  pointStrokeWidth?: number;
 }
 
 export type CustomLabelStyle = LabelStyle;

@@ -34,9 +34,7 @@ export async function apiFetch(
     try {
       await getOrRefreshKeycloakToken(30);
     } catch {
-      console.warn("Could not refresh token before API call; session may be expired.");
-      (keycloak as any).authenticated = false;
-      keycloak.clearToken();
+      console.warn("Could not proactively refresh token before API call; attempting request with existing token.");
     }
   }
 

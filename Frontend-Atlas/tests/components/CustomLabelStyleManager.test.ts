@@ -99,4 +99,33 @@ describe("CustomLabelStyleManager", () => {
       "Rivière (#ff0000, italique)",
     );
   });
+
+  it("toggles hasPoint and shows point customization controls", async () => {
+    const styles: CustomLabelStyle[] = [
+      {
+        id: "style-point",
+        name: "Capitale",
+        sizePx: 16,
+        fontStyle: "normal",
+        textTransform: "none",
+        color: "#000000",
+        priority: 40,
+        minZoom: 1,
+        hasPoint: false,
+      },
+    ];
+    const wrapper = mount(CustomLabelStyleManager, { props: { styles } });
+    (wrapper.vm as { open: () => void }).open();
+    await nextTick();
+
+    const pointCheckbox = wrapper.find('[data-testid="custom-style-has-point-checkbox"]');
+    expect(pointCheckbox.exists()).toBe(true);
+    expect((pointCheckbox.element as HTMLInputElement).checked).toBe(false);
+
+    await pointCheckbox.setValue(true);
+    await nextTick();
+
+    const pointSettings = wrapper.find('[data-testid="custom-style-point-settings"]');
+    expect(pointSettings.exists()).toBe(true);
+  });
 });

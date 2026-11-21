@@ -455,6 +455,54 @@ def test_update_map_metadata_rejects_non_owner():
     assert error.value.status_code == 404
 
 
+def test_update_project_label_styles_persists_point_options():
+    from app.models.project import Project
+    from app.schemas.label_styles import LabelStyle, LabelStylesRequest
+
+    project_id = uuid4()
+    user_id = uuid4()
+    mock_project = Project(id=project_id, user_id=user_id, label_styles=[])
+
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: mock_project)),
+        commit=AsyncMock(),
+    )
+    request = LabelStylesRequest(
+        styles=[
+            LabelStyle(
+                id="style-with-point",
+                name="Point Style",
+                size_px=14,
+                font_style="normal",
+                text_transform="none",
+                color="#000000",
+                has_point=True,
+                point_color="#ff5500",
+                point_stroke_color="#000000",
+                point_fill_opacity=0.8,
+                point_stroke_opacity=1.0,
+                point_stroke_width=2.0,
+            ),
+        ]
+    )
+
+    result = asyncio.run(
+        projects_router.update_project_label_styles(
+            project_id,
+            request,
+            str(user_id),
+            session,
+        )
+    )
+
+    session.commit.assert_awaited_once()
+    assert len(result) == 1
+    assert result[0]["id"] == "style-with-point"
+    assert result[0]["has_point"] is True
+    assert result[0]["point_color"] == "#ff5500"
+    assert result[0]["point_fill_opacity"] == 0.8
+
+
 def test_update_project_label_styles_rejects_duplicate_ids():
     from app.schemas.label_styles import LabelStyle, LabelStylesRequest
 

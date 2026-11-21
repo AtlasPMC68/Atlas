@@ -695,7 +695,7 @@ function startSidebarResize(event: MouseEvent) {
   window.addEventListener("mouseup", stopSidebarResize);
 }
 
-const featureVisibility = ref>(new Map());
+const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
@@ -1128,7 +1128,7 @@ function nudgeFeatureByPixels(
       coordinates: shiftCoords(
         feature.geometry.coordinates,
       ) as typeof feature.geometry.coordinates,
-    },
+    } as any,
   };
 }
 

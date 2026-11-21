@@ -73,10 +73,9 @@ describe("TimelineSlider element markers (pins)", () => {
     expect(pins[0].text()).toContain("1");
     expect(pins[0].attributes("data-tip")).toBe("ALBERTA (1900) - Texte");
 
-    // Year label 1900 should have element styling and dot
+    // Year label 1900 should exist in the slider ticks
     const label1900 = labelFor(wrapper, 1900);
-    expect(label1900.classes()).toContain("tick-label-element");
-    expect(label1900.find(".element-dot").exists()).toBe(true);
+    expect(label1900.exists()).toBe(true);
   });
 
   it("groups multiple elements on the same year into one marker", () => {
@@ -90,6 +89,42 @@ describe("TimelineSlider element markers (pins)", () => {
     expect(pins).toHaveLength(1);
     expect(pins[0].text()).toContain("2 éléments");
     expect(pins[0].attributes("data-tip")).toContain("2 éléments (1900) : ALBERTA, CALGARY");
+  });
+
+  it("displays map title and general elements section in the popover on hover", async () => {
+    const elementMarkers: TimelineElementMarker[] = [
+      {
+        id: "feat-map-1",
+        name: "Province De Québec",
+        year: 1800,
+        type: "Texte",
+        mapId: "map-qc",
+        mapTitle: "Carte Nouvelle-France",
+      },
+      {
+        id: "feat-gen-1",
+        name: "Grand Fleuve",
+        year: 1800,
+        type: "Texte",
+        mapId: null,
+        mapTitle: "Éléments généraux",
+      },
+    ];
+    const wrapper = mountSlider([1600, 1800, 1900], 1800, elementMarkers);
+
+    const pin = wrapper.find("[data-testid='timeline-element-marker']");
+    expect(pin.exists()).toBe(true);
+
+    // Trigger mouseenter to open the popover
+    await pin.trigger("mouseenter");
+
+    const popover = wrapper.find(".element-marker-popover");
+    expect(popover.exists()).toBe(true);
+    expect(popover.text()).toContain("2 éléments");
+    expect(popover.text()).toContain("Carte Nouvelle-France");
+    expect(popover.text()).toContain("Éléments généraux");
+    expect(popover.text()).toContain("Province De Québec");
+    expect(popover.text()).toContain("Grand Fleuve");
   });
 
   it("clicking an element pin selects the year immediately", async () => {

@@ -118,7 +118,6 @@ let suppressNextPropsRender = false;
 let blockNextMapClick = false;
 
 // ---- Right-click drag panning ----
-let isRightDragging = false;
 let didRightDrag = false;
 let lastRightPos = { x: 0, y: 0 };
 let rightDragCleanup: (() => void) | null = null;

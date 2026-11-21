@@ -23,14 +23,14 @@ describe("DuplicateMapDialog", () => {
       title: "Nouvelle-France",
       startDate: "1750-01-01",
       endDate: "1760-12-31",
-      exactDate: false,
+      exactDate: false
     },
     {
       id: "map-2",
       title: "Bas-Canada",
       startDate: "1791-05-10",
       endDate: "1840-02-15",
-      exactDate: true,
+      exactDate: true
     },
   ];
 
@@ -95,6 +95,48 @@ describe("DuplicateMapDialog", () => {
 
     await endYearInput.setValue(1700);
     await startYearInput.setValue(1750);
+    await wrapper.vm.$nextTick();
+
+    const submitBtn = wrapper.find("[data-testid='duplicate-map-submit-button']");
+    expect(submitBtn.attributes("disabled")).toBeDefined();
+  });
+
+  it("disables submit button when start year is after end year", async () => {
+    const wrapper = mount(DuplicateMapDialog, {
+      props: {
+        mapPeriods: samplePeriods,
+      },
+    });
+    const vm = wrapper.vm as any;
+    vm.open("map-1");
+    await wrapper.vm.$nextTick();
+
+    const startInput = wrapper.find("[data-testid='duplicate-map-start-year']");
+    const endInput = wrapper.find("[data-testid='duplicate-map-end-year']");
+
+    await startInput.setValue(1850);
+    await endInput.setValue(1800);
+    await wrapper.vm.$nextTick();
+
+    const submitBtn = wrapper.find("[data-testid='duplicate-map-submit-button']");
+    expect(submitBtn.attributes("disabled")).toBeDefined();
+  });
+
+  it("disables submit button when start year is after end year", async () => {
+    const wrapper = mount(DuplicateMapDialog, {
+      props: {
+        mapPeriods: samplePeriods,
+      },
+    });
+    const vm = wrapper.vm as any;
+    vm.open("map-1");
+    await wrapper.vm.$nextTick();
+
+    const startInput = wrapper.find("[data-testid='duplicate-map-start-year']");
+    const endInput = wrapper.find("[data-testid='duplicate-map-end-year']");
+
+    await startInput.setValue(1850);
+    await endInput.setValue(1800);
     await wrapper.vm.$nextTick();
 
     const submitBtn = wrapper.find("[data-testid='duplicate-map-submit-button']");

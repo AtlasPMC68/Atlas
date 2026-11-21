@@ -844,6 +844,7 @@ import {
   type FeatureEditSubmitPayload,
 } from "../utils/featureTextEditing";
 import { rgbToHex } from "../utils/utils";
+import { syncEndFromStart } from "../utils/dateUtils";
 import {
   groupFeaturesByType,
   groupFeaturesByMap,
@@ -878,9 +879,16 @@ function resizeLabelTextarea() {
   el.style.height = `${el.scrollHeight}px`;
 }
 
+let previousFeatureStartYear: number | null = null;
+
 function onFeatureStartYearInput() {
   if (editDraft.value.startYear !== null && editDraft.value.startYear !== undefined) {
-    editDraft.value.endYear = editDraft.value.startYear;
+    editDraft.value.endYear = syncEndFromStart(
+      editDraft.value.startYear,
+      editDraft.value.endYear,
+      previousFeatureStartYear,
+    );
+    previousFeatureStartYear = editDraft.value.startYear;
   }
 }
 
@@ -1278,6 +1286,7 @@ async function showEditFeatureDialog(feature: Feature) {
   const state = prepareFeatureForEdit(feature);
   featureToEdit.value = state.feature;
   editDraft.value = state.draft;
+  previousFeatureStartYear = editDraft.value.startYear ?? null;
 
   await nextTick();
   editFeatureDialogRef.value?.showModal();

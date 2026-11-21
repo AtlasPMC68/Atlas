@@ -97,10 +97,10 @@ import { MapIcon, UserCircleIcon } from "@heroicons/vue/24/outline";
 import keycloak from "../../keycloak";
 import { useCurrentUser } from "../../composables/useCurrentUser";
 
-const { currentUser, isAuthenticated, fetchCurrentUser } = useCurrentUser();
+const { isAuthenticated, fetchCurrentUser } = useCurrentUser();
 
 onMounted(() => {
-  if (keycloak.authenticated && !currentUser.value) {
+  if (keycloak.authenticated) {
     void fetchCurrentUser();
   }
 });

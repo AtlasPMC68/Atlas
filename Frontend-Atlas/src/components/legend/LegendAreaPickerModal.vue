@@ -239,7 +239,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "no-legend"): void;
   (
     e: "confirmed",
     payload: { legend: LegendBounds | null; ignoredAreas: LegendBounds[] },

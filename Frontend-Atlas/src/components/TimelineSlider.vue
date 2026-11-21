@@ -393,9 +393,6 @@ const validElementMarkers = computed(() =>
   ),
 );
 
-const elementYearsSet = computed(() => {
-  return new Set(validElementMarkers.value.map((m: TimelineMarkerItem) => m.year));
-});
 
 const groupedElementMarkers = computed<GroupedElementMarker[]>(() => {
   if (isZoomMode.value || validElementMarkers.value.length === 0) {

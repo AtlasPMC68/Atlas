@@ -135,6 +135,10 @@ async def duplicate_map_in_project(
     src_end_yr = source_map.end_date.year if source_map.end_date else src_start_yr
     new_start_yr = new_map.start_date.year if new_map.start_date else None
     new_end_yr = new_map.end_date.year if new_map.end_date else new_start_yr
+    src_start_date_str = source_map.start_date.isoformat() if source_map.start_date else None
+    src_end_date_str = source_map.end_date.isoformat() if source_map.end_date else src_start_date_str
+    new_start_date_str = new_map.start_date.isoformat() if new_map.start_date else None
+    new_end_date_str = new_map.end_date.isoformat() if new_map.end_date else new_start_date_str
 
     def _update_feature_dict(f_dict: dict) -> None:
         f_dict["id"] = str(uuid4())
@@ -147,19 +151,27 @@ async def duplicate_map_in_project(
             if src_start_yr is not None and new_start_yr is not None:
                 feat_sy = props.get("startYear")
                 feat_ey = props.get("endYear")
-                if feat_sy is not None and (feat_sy == src_start_yr or feat_sy == src_end_yr):
+                if feat_sy is not None and feat_sy == src_start_yr:
                     props["startYear"] = new_start_yr
-                if feat_ey is not None and (feat_ey == src_end_yr or feat_ey == src_start_yr):
+                elif feat_sy is not None and feat_sy == src_end_yr:
+                    props["startYear"] = new_end_yr
+                if feat_ey is not None and feat_ey == src_end_yr:
                     props["endYear"] = new_end_yr
+                elif feat_ey is not None and feat_ey == src_start_yr:
+                    props["endYear"] = new_start_yr
+            if src_start_date_str and new_start_date_str:
+                if props.get("startDate") == src_start_date_str:
+                    props["startDate"] = new_start_date_str
+                if props.get("endDate") == src_end_date_str:
+                    props["endDate"] = new_end_date_str
 
     for feat in source_features:
         new_feat_data = deepcopy(feat.data) if isinstance(feat.data, dict) else feat.data
         if isinstance(new_feat_data, dict):
-            new_feat_data["id"] = str(uuid4())
-            new_feat_data["mapId"] = str(new_map.id)
-            new_feat_data["map_id"] = str(new_map.id)
-
             if new_feat_data.get("type") == "FeatureCollection" and isinstance(new_feat_data.get("features"), list):
+                new_feat_data["id"] = str(uuid4())
+                new_feat_data["mapId"] = str(new_map.id)
+                new_feat_data["map_id"] = str(new_map.id)
                 for inner in new_feat_data["features"]:
                     if isinstance(inner, dict):
                         _update_feature_dict(inner)
