@@ -9,7 +9,11 @@ import wordTaxonomy from "../../../shared/word-taxonomy.json";
 
 export function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   const next = [...features];
-  const index = next.findIndex((f) => f.id === feature.id);
+  const targetId = String(feature.id ?? (feature as any).properties?.id ?? "");
+  const index = next.findIndex((f) => {
+    const fId = String(f.id ?? (f as any).properties?.id ?? "");
+    return Boolean(targetId) && fId === targetId;
+  });
   if (index >= 0) {
     next[index] = feature;
     return next;

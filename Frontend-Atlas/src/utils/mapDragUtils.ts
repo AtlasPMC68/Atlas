@@ -38,16 +38,16 @@ export function disablePerFeatureDrag(layer: L.Layer) {
  * Override geoman's lat/lng-delta drag with a pixel-space translation so that
  * shapes keep their on-screen appearance regardless of latitude.
  *
- * How it works:
- *  1. mousedown  → capture precise start mouse pixel position.
- *  2. pm:dragstart → snapshot every vertex in pixel coords.
- *  3. pm:drag    → geoman has already moved vertices using a lat/lng delta;
- *                  we immediately override with our own pixel-space result.
- *  4. pm:dragend → clean up.
+ * Supports single feature drag or co-dragging multiple selected layers.
  *
  * Returns a cleanup function to remove all listeners.
  */
-export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => void {
+export function enablePixelSpaceDrag(
+  map: L.Map,
+  featureLayer: L.Layer,
+  getCoDraggableLayers?: () => L.Layer[],
+  onCoDragEnd?: () => void,
+): () => void {
   // Track current mouse pixel position while the map mousemove listener is active.
   let currentMousePx: L.Point = L.point(0, 0);
   let dragState: {
@@ -144,16 +144,24 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
     const onDragStart = () => {
       suppressTextSelection();
       const leafStates = new Map<L.Layer, unknown>();
-      forEachLeafLayer(featureLayer, (sibling) => {
-        if ((sibling as { options?: { interactive?: boolean } }).options?.interactive === false) return;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const s = sibling as any;
-        if (typeof s.getLatLngs === 'function') {
-          leafStates.set(sibling, toPx(s.getLatLngs()));
-        } else if (typeof s.getLatLng === 'function') {
-          leafStates.set(sibling, toPx(s.getLatLng()));
-        }
+      const layersToCapture: L.Layer[] = [featureLayer];
+      if (getCoDraggableLayers) {
+        layersToCapture.push(...getCoDraggableLayers());
+      }
+
+      layersToCapture.forEach((parent) => {
+        forEachLeafLayer(parent, (sibling) => {
+          if ((sibling as { options?: { interactive?: boolean } }).options?.interactive === false) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const s = sibling as any;
+          if (typeof s.getLatLngs === 'function') {
+            leafStates.set(sibling, toPx(s.getLatLngs()));
+          } else if (typeof s.getLatLng === 'function') {
+            leafStates.set(sibling, toPx(s.getLatLng()));
+          }
+        });
       });
+
       dragState = { startMousePx: currentMousePx.clone(), leafStates };
       map.on('mousemove', onMapMouseMove);
     };
@@ -164,6 +172,9 @@ export function enablePixelSpaceDrag(map: L.Map, featureLayer: L.Layer): () => v
       map.off('mousemove', onMapMouseMove);
       restoreTextSelection();
       dragState = null;
+      if (onCoDragEnd) {
+        onCoDragEnd();
+      }
     };
 
     leaf.on('mousedown', onMouseDown as (e: L.LeafletEvent) => void);

@@ -172,11 +172,11 @@
   }
 
   .icon-action-btn {
-    @apply flex h-8 w-8 items-center justify-center rounded hover:bg-base-200;
+    @apply flex h-5 w-5 items-center justify-center rounded hover:bg-base-200;
   }
 
   .icon-action-btn-sm {
-    @apply flex h-7 w-7 items-center justify-center rounded hover:bg-base-200;
+    @apply flex h-5 w-5 items-center justify-center rounded hover:bg-base-200;
   }
 }
 
@@ -371,6 +371,7 @@
 /* ── Timeline ──────────────────────────────────────────────────────────────── */
 .timeline-container {
   position: relative;
+  overflow: visible;
   display: flex;
   align-items: flex-start;
   gap: 1rem;
@@ -384,6 +385,7 @@
 
 .slider-wrap {
   position: relative;
+  overflow: visible;
   z-index: 1000;
   flex: 1;
 }
@@ -450,6 +452,11 @@
   z-index: 1000;
 }
 
+.period-tracks:has(.period-track:hover),
+.period-tracks:hover {
+  z-index: 5000;
+}
+
 .period-track {
   position: absolute;
   border-radius: 999px;
@@ -459,8 +466,12 @@
   --tooltip-text-color: #111827;
 }
 
+.period-track:hover {
+  z-index: 5000;
+}
+
 .period-track .tooltip-content {
-  z-index: 2000;
+  z-index: 5000;
   background: #ffffff;
   color: #111827;
 }
@@ -470,7 +481,7 @@
   background-color: #ffffff !important;
   border-color: #ffffff !important;
   color: #ffffff !important;
-  z-index: 2000 !important;
+  z-index: 5000 !important;
 }
 
 .element-marker-pin.tooltip::before,
@@ -492,6 +503,11 @@
   z-index: 1005;
 }
 
+.element-markers-row:has(.element-marker-pin:hover),
+.element-markers-row:hover {
+  z-index: 5000;
+}
+
 .element-marker-pin {
   position: absolute;
   top: 0;
@@ -507,7 +523,7 @@
 
 .element-marker-pin:hover,
 .element-marker-pin:focus-visible {
-  z-index: 2100;
+  z-index: 5000;
 }
 
 .element-marker-pin:hover .element-marker-badge,

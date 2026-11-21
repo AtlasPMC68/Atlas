@@ -145,7 +145,7 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   return {
     feature,
     draft: {
-      name: feature.properties.name,
+      name: feature.properties?.name || feature.name || "",
       labelText: rawLabel,
       wordType,
       selectedMapIds: initialMapIds,
@@ -190,6 +190,7 @@ export function coerceEditedFeature(
       name: payload.name,
       properties: {
         ...originalFeature.properties,
+        labelText: payload.name,
         mapId: chosenMapId,
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),

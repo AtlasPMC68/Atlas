@@ -127,3 +127,23 @@ export function getLayerStrokeColor(layer: L.Layer): string | undefined {
   }
   return undefined;
 }
+
+export function getLayerPathOptions(layer: L.Layer): L.PathOptions | undefined {
+  if (layer instanceof L.LayerGroup) {
+    let opts: L.PathOptions | undefined;
+    layer.eachLayer((child) => {
+      opts ??= getLayerPathOptions(child);
+    });
+    return opts;
+  } else if (layer instanceof L.Path) {
+    return {
+      color: layer.options.color,
+      weight: layer.options.weight,
+      opacity: layer.options.opacity,
+      fillColor: layer.options.fillColor,
+      fillOpacity: layer.options.fillOpacity,
+      dashArray: layer.options.dashArray,
+    };
+  }
+  return undefined;
+}

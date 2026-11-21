@@ -25,6 +25,9 @@ export interface TimelineElementMarker {
   name: string;
   year: number;
   endYear?: number | null;
+  startYear?: number | null;
+  startDate?: string | null;
+  endDate?: string | null;
   type?: string;
   color?: string;
   mapId?: string | null;

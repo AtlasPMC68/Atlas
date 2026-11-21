@@ -116,26 +116,41 @@ function isFeatureVisibleAtYear(
   const { startYear: featStartYear, endYear: featEndYear } = getFeatureCustomYears(feature);
   const hasCustomYears = featStartYear != null || featEndYear != null;
 
+  let isCustomActive = false;
   if (hasCustomYears) {
     const sy = featStartYear ?? (featEndYear as number);
     const ey = featEndYear ?? sy;
     if (mode === "cumulative") {
-      return sy <= selectedYear;
+      isCustomActive = sy <= selectedYear;
+    } else {
+      isCustomActive = isPeriodActiveAt(sy, ey, selectedYear, periodStartYears);
     }
-    return isPeriodActiveAt(sy, ey, selectedYear, periodStartYears);
   }
 
   const featureMapId = getFeatureMapId(feature);
+  let isMapActive = false;
   if (featureMapId) {
-    const period = periodByMapId.get(featureMapId);
-    if (!period || period.startYear == null || period.endYear == null) return true;
-    if (mode === "cumulative") {
-      return period.startYear <= selectedYear;
+    const period =
+      periodByMapId.get(featureMapId) ??
+      periodByMapId.get(String(featureMapId).trim().toLowerCase());
+    if (!period || period.startYear == null || period.endYear == null) {
+      isMapActive = true;
+    } else if (mode === "cumulative") {
+      isMapActive = period.startYear <= selectedYear;
+    } else {
+      isMapActive = isPeriodActiveAt(period.startYear, period.endYear, selectedYear, periodStartYears);
     }
-    return isPeriodActiveAt(period.startYear, period.endYear, selectedYear, periodStartYears);
+  } else {
+    isMapActive = !hasCustomYears;
   }
 
-  return true;
+  if (hasCustomYears && featureMapId) {
+    return isCustomActive || isMapActive;
+  }
+  if (hasCustomYears) {
+    return isCustomActive;
+  }
+  return isMapActive;
 }
 
 describe("Timeline filtering & empty map exclusion", () => {
@@ -373,7 +388,7 @@ describe("Timeline filtering & empty map exclusion", () => {
     });
   });
 
-  it("gives priority to element custom years over map period", () => {
+  it("unions element custom years with map periods (rather than replacing them)", () => {
     const albertaFeature: Feature = {
       type: "Feature",
       id: "feat-alberta",
@@ -395,15 +410,100 @@ describe("Timeline filtering & empty map exclusion", () => {
     ]);
     const periodStartYears = new Set([1500, 1900]);
 
-    // ALBERTA should be visible at 1900
+    // ALBERTA should be visible at 1900 (custom date)
     expect(isFeatureVisibleAtYear(albertaFeature, 1900, periodMap, periodStartYears)).toBe(true);
 
-    // ALBERTA should NOT be visible at 1500 even though it's linked to map q1
-    expect(isFeatureVisibleAtYear(albertaFeature, 1500, periodMap, periodStartYears)).toBe(false);
+    // ALBERTA should also be visible at 1500 (union with associated map period 1500-1501)
+    expect(isFeatureVisibleAtYear(albertaFeature, 1500, periodMap, periodStartYears)).toBe(true);
+
+    // ALBERTA should NOT be visible at 1600 or 1800 (outside both periods)
+    expect(isFeatureVisibleAtYear(albertaFeature, 1600, periodMap, periodStartYears)).toBe(false);
+    expect(isFeatureVisibleAtYear(albertaFeature, 1800, periodMap, periodStartYears)).toBe(false);
 
     // Standard feature on q1 (no custom years) should be visible at 1500 and not at 1900
     expect(isFeatureVisibleAtYear(featureOnQ1, 1500, periodMap, periodStartYears)).toBe(true);
     expect(isFeatureVisibleAtYear(featureOnQ1, 1900, periodMap, periodStartYears)).toBe(false);
+  });
+
+  it("unions custom multi-year range with map period (1800-1850 map + 1800-2000 custom, or 1600-1601 map + 1800-2000 custom)", () => {
+    const map1800: SliderPeriod = {
+      id: "map-1800",
+      title: "Carte 1800-1850",
+      startDate: "1800",
+      endDate: "1850",
+      startYear: 1800,
+      endYear: 1850,
+      exactDate: false,
+      color: "#0ea5e9",
+    };
+    const map1600: SliderPeriod = {
+      id: "map-1600",
+      title: "Carte 1600-1601",
+      startDate: "1600",
+      endDate: "1601",
+      startYear: 1600,
+      endYear: 1601,
+      exactDate: false,
+      color: "#10b981",
+    };
+
+    const periodMap = new Map<string, SliderPeriod>([
+      ["map-1800", map1800],
+      ["map-1600", map1600],
+    ]);
+    const periodStartYears = new Set([1600, 1800]);
+
+    // Element on map 1800-1850 with custom range 1800-2000
+    const elemOn1800: Feature = {
+      type: "Feature",
+      id: "elem-1",
+      projectId: "p1",
+      mapId: "map-1800",
+      name: "Québec",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Québec",
+        startYear: 1800,
+        endYear: 2000,
+      },
+    };
+
+    // Visible throughout 1800-2000 without gap or duplicate
+    expect(isFeatureVisibleAtYear(elemOn1800, 1800, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1800, 1825, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1800, 1850, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1800, 1950, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1800, 2000, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1800, 1750, periodMap, periodStartYears)).toBe(false);
+    expect(isFeatureVisibleAtYear(elemOn1800, 2001, periodMap, periodStartYears)).toBe(false);
+
+    // Element on map 1600-1601 with custom range 1800-2000
+    const elemOn1600: Feature = {
+      type: "Feature",
+      id: "elem-2",
+      projectId: "p1",
+      mapId: "map-1600",
+      name: "Québec",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Québec",
+        startYear: 1800,
+        endYear: 2000,
+      },
+    };
+
+    // Visible in 1600-1601 (from map) and in 1800-2000 (from custom range)
+    expect(isFeatureVisibleAtYear(elemOn1600, 1600, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1600, 1601, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1600, 1700, periodMap, periodStartYears)).toBe(false);
+    expect(isFeatureVisibleAtYear(elemOn1600, 1800, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1600, 1900, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1600, 2000, periodMap, periodStartYears)).toBe(true);
+    expect(isFeatureVisibleAtYear(elemOn1600, 2050, periodMap, periodStartYears)).toBe(false);
   });
 
   it("supports cumulative mode (features that appeared on or before selectedYear)", () => {

@@ -58,6 +58,7 @@ import {
   bindRenderedFeatureEvents,
   applyStyleToLayer,
   getLayerStrokeColor,
+  getLayerPathOptions,
 } from "../utils/mapLayersFeature";
 import {
   forEachLeafLayer,
@@ -88,6 +89,7 @@ const props = defineProps<{
   canUndo: boolean;
   canRedo: boolean;
   selectedFeatureId?: string | null;
+  multiSelectedFeatureIds?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -103,6 +105,8 @@ const emit = defineEmits<{
   (e: "delete-selected"): void;
   (e: "move-selected", dx: number, dy: number): void;
   (e: "select-all"): void;
+  (e: "duplicate-feature", feature: Feature): void;
+  (e: "delete-feature", feature: Feature): void;
 }>();
 
 const previousFeatureIds = ref(new Set<FeatureId>());
@@ -146,6 +150,7 @@ function isPostEditClick(): boolean {
 let labelVisibilityFrame: number | null = null;
 let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
 let selectedCityRing: L.Marker | null = null;
+let selectedFeatureQuickActionsMarker: L.Marker | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
@@ -234,7 +239,10 @@ const featureLayerManager = {
     }
     this.layers.set(id, layer);
 
-    layer.on("click", () => {
+    const clickHandler = (e: L.LeafletMouseEvent) => {
+      if ((e as any)._featureClickHandled) return;
+      (e as any)._featureClickHandled = true;
+
       const pm = (map as MapWithPm)?.pm;
       if (isPostEditClick()) return;
       // Don't steal clicks from active drawing tools
@@ -246,15 +254,38 @@ const featureLayerManager = {
       blockNextMapClick = true;
       if (addCityMode.value) cityMode.cancel();
 
+      const orig = e.originalEvent;
+      const isToggle = Boolean(orig?.ctrlKey || orig?.metaKey || orig?.shiftKey);
+
+      if (isToggle) {
+        const currentList = props.multiSelectedFeatureIds ?? Array.from(multiSelectedIds.value);
+        const next = new Set<string>(currentList);
+        if (props.selectedFeatureId) {
+          next.add(props.selectedFeatureId);
+        }
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        emit("select-feature", null);
+        emit("select-features", Array.from(next));
+        return;
+      }
+
+      emit("select-features", []);
       const feature = props.features.find((f: Feature) => String(f.id) === id);
       if (feature) {
         handleLayerClick(feature);
       } else {
         emit("select-feature", id);
       }
-    });
+    };
 
-    layer.on("dblclick", () => {
+    const dblClickHandler = (e?: L.LeafletMouseEvent) => {
+      if (e && (e as any)._featureDblClickHandled) return;
+      if (e) (e as any)._featureDblClickHandled = true;
+
       const pm = (map as MapWithPm)?.pm;
       if (isPostEditClick()) return;
       // Don't steal clicks from active drawing tools
@@ -267,6 +298,13 @@ const featureLayerManager = {
       if (feature) {
         handleLayerDblClick(feature);
       }
+    };
+
+    layer.on("click", clickHandler);
+    layer.on("dblclick", dblClickHandler);
+    forEachLeafLayer(layer, (leaf) => {
+      leaf.on("click", clickHandler);
+      leaf.on("dblclick", dblClickHandler);
     });
 
     const isVisible = props.featureVisibility.get(id) ?? true;
@@ -428,7 +466,9 @@ function clearDraftLayers() {
 }
 
 function resetSelection() {
+  multiSelectedIds.value = new Set();
   emit("select-feature", null);
+  emit("select-features", []);
 }
 
 defineExpose({
@@ -624,12 +664,54 @@ function buildLabelMarker(
         <div class="label-wrapper">
           <div class="label-content"${presentation.styleAttribute}>${presentation.html}</div>
           <div class="label-anchor rotate-handle"></div>
+          <div class="label-quick-actions">
+            <button class="label-action-btn action-duplicate" title="Dupliquer" type="button">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+              </svg>
+            </button>
+            <button class="label-action-btn action-delete" title="Supprimer" type="button">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+              </svg>
+            </button>
+          </div>
         </div>
       `,
       iconSize: null as any,
       iconAnchor: iconAnchor ? (iconAnchor as any) : undefined,
     }),
   } as any);
+
+  const bindQuickActionButtons = () => {
+    const el = marker.getElement();
+    if (!el) return;
+    const dupBtn = el.querySelector<HTMLElement>(".action-duplicate");
+    if (dupBtn && !(dupBtn as any).__bound) {
+      (dupBtn as any).__bound = true;
+      dupBtn.addEventListener("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        e.preventDefault();
+        emit("duplicate-feature", feature);
+      });
+      dupBtn.addEventListener("mousedown", (e) => {
+        L.DomEvent.stopPropagation(e);
+      });
+    }
+
+    const delBtn = el.querySelector<HTMLElement>(".action-delete");
+    if (delBtn && !(delBtn as any).__bound) {
+      (delBtn as any).__bound = true;
+      delBtn.addEventListener("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        e.preventDefault();
+        emit("delete-feature", feature);
+      });
+      delBtn.addEventListener("mousedown", (e) => {
+        L.DomEvent.stopPropagation(e);
+      });
+    }
+  };
 
   const preventSelection = () => {
     const el = marker.getElement();
@@ -644,10 +726,12 @@ function buildLabelMarker(
   marker.on("add", () => {
     applyLabelPresentationStyle(marker, presentation, feature.id);
     preventSelection();
+    bindQuickActionButtons();
   });
   if (marker.getElement()) {
     applyLabelPresentationStyle(marker, presentation, feature.id);
     preventSelection();
+    bindQuickActionButtons();
   }
 
   return marker;
@@ -1137,21 +1221,30 @@ onMounted(() => {
   addUndoRedoControls(map);
   drawing.setToolbarMode("global");
 
-  // ---- Right-click drag = rectangle de sélection multiple ----
-  // Clic gauche = panoramique natif Leaflet (map.dragging, déjà actif)
+  // ---- Box selection (rectangle) ----
+  // Shift + Left-click drag OR Right-click drag
   const container = map.getContainer();
+  let activeBoxButton: number | null = null;
 
   const onContainerMousedown = (e: MouseEvent) => {
-    if (e.button !== 2) return;
+    const isShiftLeft = e.button === 0 && e.shiftKey;
+    const isRight = e.button === 2;
+    if (!isShiftLeft && !isRight) return;
+
+    activeBoxButton = e.button;
     isRightSelectDragging = false;
     rightSelectStart = null;
     didRightDrag = false;
     lastRightPos = { x: e.clientX, y: e.clientY };
+    if (isShiftLeft) {
+      map?.dragging.disable();
+    }
   };
 
   const onWindowMousemoveRight = (e: MouseEvent) => {
-    if (!map) return;
-    if (!(e.buttons & 2)) return; // right button held
+    if (!map || activeBoxButton === null) return;
+    const buttonMask = activeBoxButton === 2 ? 2 : 1;
+    if (!(e.buttons & buttonMask)) return;
 
     const dx = e.clientX - lastRightPos.x;
     const dy = e.clientY - lastRightPos.y;
@@ -1161,6 +1254,7 @@ onMounted(() => {
       // Start the selection rectangle
       isRightSelectDragging = true;
       didRightDrag = true;
+      map.dragging.disable();
       const containerRect = container.getBoundingClientRect();
       const point = L.point(lastRightPos.x - containerRect.left, lastRightPos.y - containerRect.top);
       rightSelectStart = map.containerPointToLatLng(point);
@@ -1169,7 +1263,7 @@ onMounted(() => {
           color: '#2563eb',
           weight: 2,
           fillColor: '#2563eb',
-          fillOpacity: 0.1,
+          fillOpacity: 0.12,
           dashArray: '5 4',
         }).addTo(map);
       }
@@ -1185,7 +1279,9 @@ onMounted(() => {
   };
 
   const onWindowMouseupRight = (e: MouseEvent) => {
-    if (e.button !== 2) return;
+    if (activeBoxButton !== null && e.button !== activeBoxButton) return;
+    map?.dragging.enable();
+
     if (isRightSelectDragging && rightSelectRect && map) {
       // Collect all features whose bounds intersect the rectangle
       const selBounds = rightSelectRect.getBounds();
@@ -1205,6 +1301,7 @@ onMounted(() => {
         } catch {}
       });
       multiSelectedIds.value = new Set(selectedIds);
+      emit("select-feature", null);
       emit("select-features", selectedIds);
     }
     if (rightSelectRect && map) {
@@ -1213,6 +1310,7 @@ onMounted(() => {
     }
     isRightSelectDragging = false;
     rightSelectStart = null;
+    activeBoxButton = null;
   };
 
   // Suppress context menu if we just completed a selection drag
@@ -1405,7 +1503,10 @@ onBeforeUnmount(() => {
   }
   rightDragCleanup?.();
   rightDragCleanup = null;
+  clearMultiSelectStylesAndDrag();
   selectedCityRing?.remove();
+  selectedFeatureQuickActionsMarker?.remove();
+  selectedFeatureQuickActionsMarker = null;
   pixelSpaceDragCleanup?.();
   imageOverlay.detach();
   shapeScaling.detach();
@@ -1452,10 +1553,14 @@ watch(
 localFeaturesSnapshot.value = [...props.features];
 
 watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
-  // Always remove the city selection ring on any selection change
+  // Always remove the city selection ring and floating quick actions on any selection change
   if (selectedCityRing) {
     selectedCityRing.remove();
     selectedCityRing = null;
+  }
+  if (selectedFeatureQuickActionsMarker) {
+    selectedFeatureQuickActionsMarker.remove();
+    selectedFeatureQuickActionsMarker = null;
   }
 
   // Restore the original stroke color on the previously selected layer
@@ -1480,18 +1585,20 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
 
   if (id != null) {
     const layer = featureLayerManager.layers.get(String(id));
-    const selectedFeature = localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === id);
+    const selectedFeature = props.features.find((f: Feature) => String(f.id) === String(id)) ||
+      localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === String(id));
     const elementType = selectedFeature ? getMapElementType(selectedFeature) : null;
+    const isTextOrPoint = elementType === "point" || elementType === "label" || selectedFeature?.geometry?.type === "Point";
+
     if (layer instanceof L.ImageOverlay) {
       drawing.setToolbarMode("label");
       layer.getElement()?.classList.add("image-overlay-selected");
-    } else if (layer && elementType === "point") {
-      // Cities: enable label toolbar (rotate, remove) and show selection ring
+    } else if (layer && isTextOrPoint) {
+      // Texts / Cities / Labels: enable label toolbar and show selection highlight
       drawing.setToolbarMode("label");
       enablePerFeatureDrag(layer);
-      
-      // Find the circleMarker inside the layerGroup to get its latlng,
-      // and the Marker to add the label-selected class.
+      pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
+
       let cityLatLng: L.LatLng | null = null;
       let cityLabel: L.Marker | null = null;
       forEachLeafLayer(layer, (leaf) => {
@@ -1502,16 +1609,30 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
           cityLabel = leaf as L.Marker;
         }
       });
-      
+
+      if (!cityLabel && layer instanceof L.Marker && !(layer instanceof L.CircleMarker)) {
+        cityLabel = layer;
+      }
+
       if (cityLabel) {
-        const el = (cityLabel as any).getElement();
+        const el = (cityLabel as any).getElement?.();
         el?.classList.add("label-selected");
         const pm = (map as MapWithPm)?.pm;
         if (pm?.globalRotateModeEnabled?.()) {
           el?.classList.add("label-rotate-mode");
         }
       }
-      
+
+      // Also ensure DOM element has .label-selected directly
+      const domLabel = document.querySelector(`.city-label-text[data-feature-id="${id}"]`);
+      if (domLabel) {
+        domLabel.classList.add("label-selected");
+        const pm = (map as MapWithPm)?.pm;
+        if (pm?.globalRotateModeEnabled?.()) {
+          domLabel.classList.add("label-rotate-mode");
+        }
+      }
+
       if (cityLatLng && map) {
         selectedCityRing = L.marker(cityLatLng, {
           icon: L.divIcon({
@@ -1523,23 +1644,17 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
           zIndexOffset: 1000,
         }).addTo(map);
       }
-    } else if (layer && elementType === "label") {
-      drawing.setToolbarMode("label");
-      enablePerFeatureDrag(layer);
-      pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
-      const el = (layer as any).getElement();
-      el?.classList.add("label-selected");
-      const pm = (map as MapWithPm)?.pm;
-      if (pm?.globalRotateModeEnabled?.()) {
-        el?.classList.add("label-rotate-mode");
-      }
     } else if (layer) {
       drawing.setToolbarMode("feature");
       enablePerFeatureDrag(layer);
       pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
-      const originalColor = getLayerStrokeColor(layer);
-      selectedLayerOriginalStyle = originalColor !== undefined ? { color: originalColor } : undefined;
-      applyStyleToLayer(layer, { color: "#000000" });
+      const originalOpts = getLayerPathOptions(layer);
+      selectedLayerOriginalStyle = originalOpts;
+      applyStyleToLayer(layer, {
+        color: "#2563eb",
+        weight: Math.max(Number(originalOpts?.weight) || 2, 3),
+        opacity: 1,
+      });
     } else {
       drawing.setToolbarMode("global");
     }
@@ -1552,6 +1667,73 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
     } else if (isScalableFeature(selectedFeature)) {
       shapeScaling.attach(id);
     }
+
+    if (layer && !isTextOrPoint && selectedFeature) {
+      const bounds = (layer as any)?.getBounds?.();
+      if (bounds && map && (!bounds.isValid || bounds.isValid())) {
+        const topRight = bounds.getNorthEast();
+        selectedFeatureQuickActionsMarker = L.marker(topRight, {
+          icon: L.divIcon({
+            className: "feature-floating-actions-container",
+            html: `
+              <div class="label-quick-actions is-floating">
+                <button class="label-action-btn action-duplicate" title="Dupliquer" type="button">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+                  </svg>
+                </button>
+                <button class="label-action-btn action-delete" title="Supprimer" type="button">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                  </svg>
+                </button>
+              </div>
+            `,
+            iconSize: [52, 24],
+            iconAnchor: [-8, 12],
+          }),
+          interactive: true,
+          zIndexOffset: 1200,
+        }).addTo(map);
+
+        const el = selectedFeatureQuickActionsMarker.getElement();
+        if (el) {
+          el.querySelector(".action-duplicate")?.addEventListener("click", (e) => {
+            L.DomEvent.stopPropagation(e);
+            e.preventDefault();
+            emit("duplicate-feature", selectedFeature);
+          });
+          el.querySelector(".action-duplicate")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
+          el.querySelector(".action-delete")?.addEventListener("click", (e) => {
+            L.DomEvent.stopPropagation(e);
+            e.preventDefault();
+            emit("delete-feature", selectedFeature);
+          });
+          el.querySelector(".action-delete")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
+        }
+      }
+    }
+
+    // Smoothly pan map to feature if outside visible map bounds
+    if (map) {
+      let centerLatLng: L.LatLng | null = null;
+      if (layer && typeof (layer as any).getLatLng === "function") {
+        centerLatLng = (layer as any).getLatLng();
+      } else if (layer && typeof (layer as any).getBounds === "function") {
+        const b = (layer as any).getBounds();
+        if (b && (!b.isValid || b.isValid())) {
+          centerLatLng = b.getCenter();
+        }
+      } else if (selectedFeature?.geometry?.type === "Point") {
+        const [lng, lat] = selectedFeature.geometry.coordinates as [number, number];
+        centerLatLng = L.latLng(lat, lng);
+      }
+      if (centerLatLng && !map.getBounds().contains(centerLatLng)) {
+        map.panTo(centerLatLng, { animate: true, duration: 0.5 });
+      }
+    }
+
+    updateLabelVisibility();
   } else {
     // Disable any active per-feature edit/rotate mode so geoman stops
     // intercepting canvas clicks and restorePmIgnore() fires via the
@@ -1566,6 +1748,70 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
   }
   updateLabelVisibility();
 });
+
+const multiSelectOriginalStyles = new Map<L.Layer, L.PathOptions>();
+const multiDragCleanups: Array<() => void> = [];
+
+function clearMultiSelectStylesAndDrag() {
+  multiDragCleanups.forEach((cleanup) => cleanup());
+  multiDragCleanups.length = 0;
+
+  multiSelectOriginalStyles.forEach((origStyle, layer) => {
+    applyStyleToLayer(layer, origStyle);
+    disablePerFeatureDrag(layer);
+  });
+  multiSelectOriginalStyles.clear();
+
+  document.querySelectorAll('.multi-selected-label').forEach((el) => {
+    el.classList.remove('multi-selected-label');
+  });
+}
+
+function updateMultiSelection(ids: string[]) {
+  clearMultiSelectStylesAndDrag();
+  if (!map || ids.length === 0) return;
+
+  const validLayers = ids
+    .map((id) => featureLayerManager.layers.get(id))
+    .filter((l): l is L.Layer => Boolean(l && map?.hasLayer(l)));
+
+  if (validLayers.length === 0) return;
+
+  validLayers.forEach((layer) => {
+    const origColor = getLayerStrokeColor(layer);
+    if (origColor !== undefined) {
+      multiSelectOriginalStyles.set(layer, { color: origColor, dashArray: "" });
+      applyStyleToLayer(layer, { color: "#2563eb", dashArray: "4 4" });
+    }
+    forEachLeafLayer(layer, (leaf) => {
+      if (leaf instanceof L.Marker && !(leaf instanceof L.CircleMarker)) {
+        const el = (leaf as any).getElement?.();
+        el?.classList.add("multi-selected-label");
+      }
+    });
+
+    enablePerFeatureDrag(layer);
+    const coLayers = validLayers.filter((l) => l !== layer);
+    const cleanup = enablePixelSpaceDrag(map!, layer, () => coLayers, handleMultiDragEnd);
+    multiDragCleanups.push(cleanup);
+  });
+}
+
+function handleMultiDragEnd() {
+  const next = syncFeaturesFromMapLayers();
+  localFeaturesSnapshot.value = next;
+  suppressNextPropsRender = true;
+  emit("draw-update", next);
+}
+
+watch(
+  () => props.multiSelectedFeatureIds,
+  (newIds) => {
+    multiSelectedIds.value = new Set(newIds ?? []);
+    updateMultiSelection(newIds ?? []);
+  },
+  { deep: true, immediate: true },
+);
 
 watch(
   () => props.featureVisibility,
@@ -1638,6 +1884,79 @@ watch(
   outline: 2px solid #2563eb;
   background-color: rgba(37, 99, 235, 0.08);
   border-radius: 4px;
+}
+
+.multi-selected-label .label-wrapper,
+.city-label-text.multi-selected-label .label-wrapper {
+  outline: 2px dashed #2563eb;
+  background-color: rgba(37, 99, 235, 0.08);
+  border-radius: 4px;
+}
+
+.label-quick-actions {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
+  margin-left: 6px;
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  z-index: 1005;
+}
+
+.label-selected .label-quick-actions,
+.label-quick-actions.is-floating {
+  display: flex !important;
+}
+
+.feature-floating-actions-container {
+  overflow: visible !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.label-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.label-action-btn:hover {
+  transform: scale(1.12);
+}
+
+.label-action-btn.action-duplicate {
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.label-action-btn.action-duplicate:hover {
+  background-color: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.label-action-btn.action-delete {
+  border-color: #fecaca;
+  color: #ef4444;
+}
+
+.label-action-btn.action-delete:hover {
+  background-color: #fef2f2;
+  border-color: #dc2626;
+  color: #b91c1c;
 }
 
 .label-rotate-mode .label-anchor,

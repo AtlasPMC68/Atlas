@@ -15,7 +15,7 @@
           :map-periods="mapPeriods"
           :custom-label-styles="customLabelStyles"
           :selected-feature-id="selectedFeatureId"
-          @select-feature="(id: string | null) => (selectedFeatureId = id)"
+          @select-feature="selectFeature"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -78,8 +78,11 @@
             :can-undo="canUndo"
             :can-redo="canRedo"
             :selected-feature-id="selectedFeatureId"
-            @select-feature="(id: string | null) => (selectedFeatureId = id)"
+            :multi-selected-feature-ids="multiSelectedFeatureIds"
+            @select-feature="selectFeature"
             @select-features="onSelectFeatures"
+            @duplicate-feature="duplicateFeature"
+            @delete-feature="onDirectDeleteFeature"
             @draw-create="handleDrawChange"
             @draw-update="handleDrawChange"
             @draw-delete="handleDrawChange"
@@ -173,12 +176,12 @@
         <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
         <div
           v-show="isTimelineVisible"
-          class="map-timeline-toolbar relative z-[2000] flex flex-col bg-base-100 border-t border-base-300"
+          class="map-timeline-toolbar relative z-[2000] flex flex-col bg-base-100 border-t border-base-300 overflow-visible"
           :style="timelineHeight ? { height: `${timelineHeight}px` } : {}"
         >
           <!-- Top bar with Filter Modes and Map Duplication -->
           <div
-            class="map-timeline-topbar shrink-0 relative flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 z-10"
+            class="map-timeline-topbar shrink-0 relative flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 z-0"
           >
             <!-- Left section: Nom du projet -->
             <div class="flex items-center gap-2 min-w-0 pr-4">
@@ -244,13 +247,15 @@
           </div>
 
           <!-- Middle scrollable area containing the timeline tracks, ticks, labels, and legend -->
-          <div class="map-timeline-slider flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-3 py-1 relative z-20">
+          <div class="map-timeline-slider flex-1 min-h-0 w-full overflow-visible px-3 pt-3 pb-1 relative z-20">
             <TimelineSlider
               v-model:year="selectedYear"
               v-model:mode="timelineMode"
               @exact-date-change="onExactDateChange"
+              @select-date="onTimelineDateSelect"
               @edit-map="openEditMapDialog"
               @edit-element="onEditElementFromTimeline"
+              @select-element="onSelectElementFromTimeline"
               :min="timelineMinYear"
               :max="timelineMaxYear"
               :marker-years="timelineMarkerYears"
@@ -484,6 +489,28 @@ function onSelectAll() {
   selectedFeatureId.value = null;
 }
 
+async function onSelectElementFromTimeline(featureId: string) {
+  if (!isSidebarVisible.value) {
+    isSidebarVisible.value = true;
+    await nextTick();
+  }
+  const feat = features.value.find(
+    (f: Feature) =>
+      (f.id != null && String(f.id) === String(featureId)) ||
+      (f.properties?.name != null &&
+        String(f.properties.name).toLowerCase() ===
+          String(featureId).toLowerCase()) ||
+      (f.properties?.labelText != null &&
+        String(f.properties.labelText).toLowerCase() ===
+          String(featureId).toLowerCase()),
+  );
+  if (feat) {
+    selectFeature(String(feat.id));
+  } else {
+    selectFeature(featureId);
+  }
+}
+
 async function onEditElementFromTimeline(featureId: string) {
   if (!isSidebarVisible.value) {
     isSidebarVisible.value = true;
@@ -509,12 +536,16 @@ async function onEditElementFromTimeline(featureId: string) {
 
 function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
+  if (id) {
+    multiSelectedFeatureIds.value = [];
+  }
 }
 
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
 const multiSelectedFeatureIds = ref<string[]>([]);
 const copiedFeature = ref<Feature | null>(null);
+const copiedFeatures = ref<Feature[]>([]);
 
 // Presentation mode & Visibility states (Points 1, 6)
 const isSidebarVisible = ref(true);
@@ -646,63 +677,99 @@ function onSidebarResizeMove(event: MouseEvent) {
 }
 
 function copySelectedFeature(): boolean {
-  const feature = features.value.find(
-    (item: Feature) => String(item.id) === selectedFeatureId.value,
-  );
-  if (!isCopyableFeature(feature)) {
-    return false;
-  }
+  const ids =
+    multiSelectedFeatureIds.value.length > 0
+      ? multiSelectedFeatureIds.value
+      : selectedFeatureId.value
+        ? [selectedFeatureId.value]
+        : [];
+  if (ids.length === 0) return false;
 
-  copiedFeature.value = feature;
-  const label =
-    feature.properties?.labelText || feature.properties?.name || feature.name;
-  if (label && navigator.clipboard?.writeText) {
-    void navigator.clipboard.writeText(label).catch((error: unknown) => {
-      console.error("Could not copy feature label to clipboard:", error);
-      if (isTextFeature(feature)) {
-        showAlert(
-          "error",
-          "Le texte est copié dans Atlas, mais pas dans le presse-papiers système.",
-        );
-      }
-    });
-  } else if (isTextFeature(feature)) {
-    showAlert(
-      "error",
-      "Le navigateur ne permet pas de copier le texte dans le presse-papiers système.",
-    );
+  const validFeatures = features.value.filter(
+    (f: Feature) => ids.includes(String(f.id)) && isCopyableFeature(f) && f.geometry,
+  );
+  if (validFeatures.length === 0) return false;
+
+  copiedFeatures.value = validFeatures;
+  copiedFeature.value = validFeatures[0];
+
+  if (validFeatures.length === 1) {
+    const feature = validFeatures[0];
+    const label =
+      feature.properties?.labelText || feature.properties?.name || feature.name;
+    if (label && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(label).catch((error: unknown) => {
+        console.error("Could not copy feature label to clipboard:", error);
+      });
+    }
   }
   return true;
 }
 
 function pasteCopiedFeature() {
-  const source = copiedFeature.value;
+  const sources =
+    copiedFeatures.value.length > 0
+      ? copiedFeatures.value
+      : copiedFeature.value
+        ? [copiedFeature.value]
+        : [];
   const map = leafletMap.value;
-  if (!source || !map || !source.geometry) return;
+  if (sources.length === 0 || !map) return;
 
-  const selectedFeature = features.value.find(
-    (item: Feature) => String(item.id) === selectedFeatureId.value,
+  const centerPoint = map.getSize().divideBy(2);
+  const targetPoint = L.point(centerPoint.x + 24, centerPoint.y + 24);
+  const c1 = map.containerPointToLatLng(centerPoint);
+  const c2 = map.containerPointToLatLng(targetPoint);
+  const deltaLat = c2.lat - c1.lat;
+  const deltaLng = c2.lng - c1.lng;
+
+  const pastedFeatures: Feature[] = [];
+  const newIds: string[] = [];
+
+  sources.forEach((source) => {
+    if (!source.geometry) return;
+    const pasted = cloneFeatureWithOffset(source, deltaLng, deltaLat);
+    pastedFeatures.push(pasted);
+    newIds.push(String(pasted.id));
+  });
+
+  if (pastedFeatures.length === 0) return;
+
+  commitFeatureSnapshot([...features.value, ...pastedFeatures]);
+
+  if (pastedFeatures.length === 1) {
+    selectedFeatureId.value = newIds[0];
+    multiSelectedFeatureIds.value = [];
+  } else {
+    selectedFeatureId.value = null;
+    multiSelectedFeatureIds.value = newIds;
+  }
+}
+
+function duplicateFeature(feature: Feature) {
+  const map = leafletMap.value;
+  if (!map || !feature.geometry) return;
+
+  const centerPoint = map.getSize().divideBy(2);
+  const targetPoint = L.point(centerPoint.x + 24, centerPoint.y + 24);
+  const c1 = map.containerPointToLatLng(centerPoint);
+  const c2 = map.containerPointToLatLng(targetPoint);
+  const deltaLat = c2.lat - c1.lat;
+  const deltaLng = c2.lng - c1.lng;
+
+  const pasted = cloneFeatureWithOffset(feature, deltaLng, deltaLat);
+  commitFeatureSnapshot([...features.value, pasted]);
+  selectedFeatureId.value = String(pasted.id);
+  multiSelectedFeatureIds.value = [];
+}
+
+function onDirectDeleteFeature(feature: Feature) {
+  const next = features.value.filter(
+    (f) => String(f.id) !== String(feature.id),
   );
-  const refGeometry =
-    (selectedFeature &&
-      isCopyableFeature(selectedFeature) &&
-      selectedFeature.geometry) ||
-    source.geometry;
-  const anchor = getGeometryAnchor(refGeometry);
-  if (!anchor) return;
-
-  const [lng, lat] = anchor;
-  const screenPosition = map
-    .latLngToContainerPoint(L.latLng(lat, lng))
-    .add(L.point(24, -24));
-  const pastedPosition = map.containerPointToLatLng(screenPosition);
-  const deltaLat = pastedPosition.lat - lat;
-  const deltaLng = pastedPosition.lng - lng;
-
-  const pastedFeature = cloneFeatureWithOffset(source, deltaLng, deltaLat);
-
-  commitFeatureSnapshot([...features.value, pastedFeature]);
-  selectedFeatureId.value = pastedFeature.id;
+  selectedFeatureId.value = null;
+  multiSelectedFeatureIds.value = [];
+  commitFeatureSnapshot(next);
 }
 
 function stopSidebarResize() {
@@ -792,11 +859,13 @@ const periodByMapId = computed(() => {
     const startYear = toYear(p.startDate);
     const endYear = toYear(p.endDate);
     if (startYear != null && endYear != null) {
-      map.set(p.id, {
+      const enriched: SliderPeriod = {
         ...p,
         startYear,
         endYear,
-      });
+      };
+      map.set(p.id, enriched);
+      map.set(String(p.id).trim().toLowerCase(), enriched);
     }
   }
   return map;
@@ -835,6 +904,12 @@ const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
       ? periodTitleById.get(normalizedMapId) || "Carte associée"
       : "Éléments généraux";
 
+    const effectiveName =
+      f.properties?.name?.trim() ||
+      f.name?.trim() ||
+      f.properties?.labelText?.trim() ||
+      "Élément";
+
     list.push({
       id: String(
         f.id ??
@@ -843,9 +918,10 @@ const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
           f.properties?.labelText ??
           "",
       ),
-      name: f.properties?.labelText || f.properties?.name || "Élément",
+      name: effectiveName,
       year: effectiveStart,
-      endYear: endYear ?? effectiveStart,
+      startYear: startYear != null ? startYear : effectiveStart,
+      endYear: endYear != null ? endYear : null,
       type:
         f.properties?.mapElementType ||
         (isTextFeature(f) ? "Texte" : "Élément"),
@@ -934,6 +1010,22 @@ function goToNextMilestone() {
   });
 }
 
+function onTimelineDateSelect() {
+  nextTick(() => {
+    mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+  });
+}
+
+// Automatically adjusts map focus/zoom to visible features when date, exact date, or filter mode changes
+watch(
+  [selectedYear, selectedExactDate, timelineMode],
+  async () => {
+    await nextTick();
+    mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+  },
+  { flush: "post" },
+);
+
 const allTimelineStartYears = computed(() => {
   const years = enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
   return [...years, ...customFeatureYears.value];
@@ -973,18 +1065,25 @@ const periodStartYears = computed(() => {
   const years = new Set(
     enrichedPeriods.value.map((p: SliderPeriod) => p.startYear),
   );
-  customFeatureYears.value.forEach((y) => years.add(y));
+  features.value.forEach((f: Feature) => {
+    const { startYear, endYear } = getFeatureCustomYears(f);
+    const effectiveStart = startYear ?? endYear;
+    if (effectiveStart != null) years.add(effectiveStart);
+  });
   return years;
 });
 
-const periodStartDates = computed(
-  () =>
-    new Set(
-      enrichedPeriods.value
-        .map((p: SliderPeriod) => p.startDate)
-        .filter((date: string | null): date is string => Boolean(date)),
-    ),
-);
+const periodStartDates = computed(() => {
+  const dates = new Set<string>(
+    enrichedPeriods.value
+      .map((p: SliderPeriod) => p.startDate)
+      .filter((date: string | null): date is string => Boolean(date)),
+  );
+  features.value.forEach((f: Feature) => {
+    if (f.properties?.startDate) dates.add(f.properties.startDate);
+  });
+  return dates;
+});
 
 const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {
@@ -995,68 +1094,82 @@ const filteredFeatures = computed(() => {
       getFeatureCustomYears(feature);
     const hasCustomYears = featStartYear != null || featEndYear != null;
 
+    let isCustomActive = false;
     if (hasCustomYears) {
       const sy = featStartYear ?? (featEndYear as number);
       const ey = featEndYear ?? sy;
 
       // Cumulative mode: features that have appeared up to selectedYear
       if (timelineMode.value === "cumulative") {
-        return sy <= selectedYear.value;
-      }
-
-      // Specific mode: active at selected date
-      if (
+        isCustomActive = sy <= selectedYear.value;
+      } else if (
         selectedExactDate.value &&
         feature.properties?.startDate &&
         feature.properties?.endDate
       ) {
-        return isPeriodActiveAt(
+        // Specific mode: active at selected date
+        isCustomActive = isPeriodActiveAt(
           feature.properties.startDate,
           feature.properties.endDate,
           selectedExactDate.value,
           periodStartDates.value,
         );
+      } else {
+        isCustomActive = isPeriodActiveAt(
+          sy,
+          ey,
+          selectedYear.value,
+          periodStartYears.value,
+        );
       }
-
-      return isPeriodActiveAt(
-        sy,
-        ey,
-        selectedYear.value,
-        periodStartYears.value,
-      );
     }
 
     const featureMapId = getFeatureMapId(feature);
+    let isMapActive = false;
     if (featureMapId) {
-      const period = periodByMapId.value.get(featureMapId);
-      if (!period) return true;
+      const normalizedMapId = String(featureMapId).trim().toLowerCase();
+      const period =
+        periodByMapId.value.get(featureMapId) ??
+        periodByMapId.value.get(normalizedMapId);
 
-      // Cumulative mode: map period has started by selectedYear
-      if (timelineMode.value === "cumulative") {
-        if (period.startYear == null) return true;
-        return period.startYear <= selectedYear.value;
-      }
-
-      // Specific mode: active at selected date
-      if (selectedExactDate.value && period.startDate && period.endDate) {
-        return isPeriodActiveAt(
+      if (!period) {
+        isMapActive = true;
+      } else if (timelineMode.value === "cumulative") {
+        isMapActive =
+          period.startYear == null || period.startYear <= selectedYear.value;
+      } else if (
+        selectedExactDate.value &&
+        period.startDate &&
+        period.endDate
+      ) {
+        isMapActive = isPeriodActiveAt(
           period.startDate,
           period.endDate,
           selectedExactDate.value,
           periodStartDates.value,
         );
+      } else if (period.startYear == null || period.endYear == null) {
+        isMapActive = true;
+      } else {
+        isMapActive = isPeriodActiveAt(
+          period.startYear,
+          period.endYear,
+          selectedYear.value,
+          periodStartYears.value,
+        );
       }
-
-      if (period.startYear == null || period.endYear == null) return true;
-      return isPeriodActiveAt(
-        period.startYear,
-        period.endYear,
-        selectedYear.value,
-        periodStartYears.value,
-      );
+    } else {
+      isMapActive = !hasCustomYears;
     }
 
-    return true;
+    // Custom years add to associated map periods (union of periods)
+    if (hasCustomYears && featureMapId) {
+      return isCustomActive || isMapActive;
+    }
+    if (hasCustomYears) {
+      return isCustomActive;
+    }
+    return isMapActive;
   });
 });
 
@@ -2194,7 +2307,7 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  if (isMod && key === "v" && copiedFeature.value) {
+  if (isMod && key === "v" && (copiedFeatures.value.length > 0 || copiedFeature.value)) {
     e.preventDefault();
     pasteCopiedFeature();
     return;
@@ -2204,6 +2317,15 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     e.preventDefault();
     onSelectAll();
     return;
+  }
+
+  if (key === "escape") {
+    if (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0) {
+      e.preventDefault();
+      selectedFeatureId.value = null;
+      multiSelectedFeatureIds.value = [];
+      return;
+    }
   }
 
   if (
@@ -2269,8 +2391,9 @@ function onDocumentClick(e: MouseEvent) {
   ) {
     return;
   }
-  if (selectedFeatureId.value) {
+  if (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0) {
     selectedFeatureId.value = null;
+    multiSelectedFeatureIds.value = [];
   }
 }
 

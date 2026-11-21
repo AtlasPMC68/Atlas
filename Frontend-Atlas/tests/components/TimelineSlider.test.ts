@@ -44,7 +44,35 @@ describe("TimelineSlider year labels", () => {
     const wrapper = mountSlider([1700, 1800, 1899, 1900, 1925]);
     await labelFor(wrapper, 1900).trigger("click");
     expect(wrapper.emitted("update:year")?.at(-1)).toEqual([1900]);
+    expect(wrapper.emitted("select-date")?.at(-1)).toEqual([1900]);
     expect(labelFor(wrapper, 1900).classes()).toContain("tick-label-active");
+  });
+
+  it("emits select-date when clicking on a period track", async () => {
+    const wrapper = mount(TimelineSlider, {
+      props: {
+        year: 1600,
+        min: 1500,
+        max: 1900,
+        periods: [
+          {
+            id: "p1",
+            title: "Carte 1",
+            startDate: "1800",
+            endDate: "1850",
+            startYear: 1800,
+            endYear: 1850,
+            exactDate: false,
+            color: "#0ea5e9",
+          },
+        ],
+      },
+    });
+    const track = wrapper.find(".period-track");
+    expect(track.exists()).toBe(true);
+    await track.trigger("click");
+    expect(wrapper.emitted("update:year")?.at(-1)).toEqual([1800]);
+    expect(wrapper.emitted("select-date")?.at(-1)).toEqual([1800]);
   });
 });
 

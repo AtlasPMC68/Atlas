@@ -112,24 +112,24 @@
                     </span>
                   </label>
                 </div>
-                <div class="flex items-center gap-0 shrink-0 ml-auto -mr-0.5" v-if="mapGroup.id !== null">
+                <div class="flex items-center gap-0.5 shrink-0 ml-auto -mr-1.5" v-if="mapGroup.id !== null">
                   <button
                     type="button"
-                    class="icon-action-btn"
+                    class="icon-action-btn-sm"
                     :aria-label="`Modifier le nom et la période de ${mapGroup.title}`"
                     title="Modifier le nom et la période"
                     @click.stop="emit('edit-map', mapGroup.id)"
                   >
-                    <PencilSquareIcon class="w-5 h-5 text-gray-500 hover:text-primary" />
+                    <PencilSquareIcon class="w-3.5 h-3.5 text-gray-500 hover:text-primary" />
                   </button>
                   <button
                     type="button"
-                    class="icon-action-btn"
+                    class="icon-action-btn-sm"
                     @click="showDeleteMapDialog(mapGroup.id, mapGroup.title)"
                     title="Supprimer la carte"
                     aria-label="Supprimer la carte"
                   >
-                    <TrashIcon class="w-5 h-5 text-red-500 hover:text-red-800" />
+                    <TrashIcon class="w-3.5 h-3.5 text-red-500 hover:text-red-800" />
                   </button>
                 </div>
               </div>
@@ -140,7 +140,7 @@
                   :data-feature-item-id="String(feature.id)"
                   class="flex w-full flex-row items-center justify-between gap-1 rounded px-1.5 py-1 transition-all cursor-pointer select-none"
                   :class="[
-                    selectedFeatureId === String(feature.id)
+                    String(selectedFeatureId ?? '') === String(feature.id)
                       ? 'ring-2 ring-primary bg-primary/10 border border-primary font-semibold'
                       : 'hover:bg-base-200/60'
                   ]"
@@ -169,25 +169,25 @@
                       class="checkbox checkbox-xs checkbox-primary shrink-0"
                     />
                     <span
-                      class="label-text text-sm truncate flex-1 select-none flex items-center gap-1"
+                      class="label-text text-sm truncate flex-1 min-w-0 select-none"
                       :title="feature.properties?.name?.trim() || 'Nom manquant'"
                       @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
                     >
                       <span
-                        class="truncate"
+                        class="truncate block"
                         :class="!feature.properties?.name?.trim() ? 'text-error font-medium' : ''"
                       >
                         {{ feature.properties?.name?.trim() || "Nom manquant" }}
                       </span>
-                      <span
-                        v-if="feature.properties?.startYear != null || feature.properties?.endYear != null"
-                        class="badge badge-ghost badge-xs font-normal opacity-70 shrink-0"
-                      >
-                        {{ feature.properties.startYear }}{{ feature.properties.endYear && feature.properties.endYear !== feature.properties.startYear ? ' - ' + feature.properties.endYear : '' }}
-                      </span>
+                    </span>
+                    <span
+                      v-if="feature.properties?.startYear != null || feature.properties?.endYear != null"
+                      class="badge badge-ghost badge-xs font-normal opacity-70 shrink-0 ml-auto"
+                    >
+                      {{ feature.properties.startYear }}{{ feature.properties.endYear && feature.properties.endYear !== feature.properties.startYear ? ' - ' + feature.properties.endYear : '' }}
                     </span>
                   </div>
-                  <div class="flex items-center gap-0 shrink-0 ml-auto -mr-1">
+                  <div class="flex items-center gap-0.5 shrink-0 ml-auto -mr-1">
                     <button
                       type="button"
                       class="icon-action-btn-sm"
@@ -196,7 +196,7 @@
                       aria-label="Modifier l'élément"
                     >
                       <PencilSquareIcon
-                        class="w-4 h-4 text-gray-500 hover:text-gray-800"
+                        class="w-3.5 h-3.5 text-gray-500 hover:text-gray-800"
                       />
                     </button>
                     <button
@@ -207,7 +207,7 @@
                       aria-label="Supprimer l'élément"
                     >
                       <TrashIcon
-                        class="w-4 h-4 text-red-500 hover:text-red-800"
+                        class="w-3.5 h-3.5 text-red-500 hover:text-red-800"
                       />
                     </button>
                   </div>
@@ -282,7 +282,7 @@
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
     <div class="modal-box w-11/12 max-w-6xl flex flex-col gap-4">
       <h3 class="text-lg font-bold truncate">
-        Modification de {{ editModalTypeLabel }}
+        Modification {{ editModalTypeLabel }}
         <span :class="isEditNameMissing ? 'text-error font-medium' : ''">
           {{ editModalNameText }}
         </span>
@@ -654,7 +654,7 @@
               </label>
               <div
                 class="tooltip tooltip-light tooltip-bottom md:tooltip-left cursor-pointer"
-                data-tip="Permet de définir des années d'apparition propres à cet élément sur la ligne du temps (prioritaire sur la carte associée)."
+                data-tip="Permet d'ajouter des années d'apparition propres à cet élément sur la ligne du temps (en plus des années des cartes associées)."
               >
                 <div class="w-4 h-4 rounded-full bg-base-300 text-base-content opacity-80 flex items-center justify-center text-[10px] font-bold hover:bg-primary hover:text-primary-content transition-colors">
                   !
@@ -864,7 +864,7 @@ import {
   getCustomStyleObject,
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
-import { getMapElementType } from "../utils/featureHelpers";
+import { getFeatureMapId, getMapElementType } from "../utils/featureHelpers";
 import {
   WORD_TYPE_STYLES,
   WORD_TYPE_TAXONOMY,
@@ -1220,18 +1220,21 @@ watch(
     activeGroupType.value = group.type;
     await nextTick();
 
+    const featMapId = getFeatureMapId(feature);
     const mapGroup = groupFeaturesByMap(group.features, props.mapPeriods).find(
-      (item: MapGroupItem) => String(item.id ?? "") === String(feature.mapId ?? ""),
+      (item: MapGroupItem) => String(item.id ?? "") === String(featMapId ?? ""),
     );
     if (mapGroup) {
       collapsedMaps.value[`${group.type}_${mapGroup.id ?? "general"}`] = false;
     }
 
     await nextTick();
-    const el = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-feature-item-id]"),
-    ).find((item) => item.dataset.featureItemId === newId);
-    el?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    requestAnimationFrame(() => {
+      const el = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-feature-item-id]"),
+      ).find((item) => String(item.dataset.featureItemId) === String(newId));
+      el?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    });
   },
 );
 
