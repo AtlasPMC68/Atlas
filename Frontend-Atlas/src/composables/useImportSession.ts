@@ -1,6 +1,7 @@
 // composables/useImportSession.ts
 // The /imports API: one row per map while its import is in progress.
-import { apiErrorMessage, apiFetch } from "../utils/api";
+import { apiErrorMessage, apiFetch, type ApiRequestOptions } from "../utils/api";
+import { isAuthRequiredError } from "../services/authSession";
 import type {
   ApiResult,
   ImportInputsPatch,
@@ -9,7 +10,7 @@ import type {
 
 async function sessionRequest(
   path: string,
-  init: RequestInit,
+  init: ApiRequestOptions,
   fallback: string,
 ): Promise<ApiResult<ImportSessionResponse>> {
   try {
@@ -26,6 +27,7 @@ async function sessionRequest(
     return {
       success: false,
       error: err instanceof Error ? err.message : fallback,
+      ...(isAuthRequiredError(err) ? { authRequired: true } : {}),
     };
   }
 }
@@ -38,7 +40,7 @@ export function useImportSession() {
     formData.append("file", file);
     return sessionRequest(
       "/imports",
-      { method: "POST", body: formData },
+      { method: "POST", body: formData, auth: "required" },
       "Erreur lors de l'envoi de la carte",
     );
   };
@@ -78,6 +80,7 @@ export function useImportSession() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
+        auth: "required",
       },
       "Erreur lors de l'enregistrement",
     );
@@ -85,20 +88,23 @@ export function useImportSession() {
   const startExtraction = (mapId: string) =>
     sessionRequest(
       `/imports/${mapId}/extract`,
-      { method: "POST" },
+      { method: "POST", auth: "required" },
       "Erreur lors du lancement de l'extraction",
     );
 
   const cancelExtraction = (mapId: string) =>
     sessionRequest(
       `/imports/${mapId}/cancel`,
-      { method: "POST" },
+      { method: "POST", auth: "required" },
       "Erreur lors de l'annulation",
     );
 
   const abandonImport = async (mapId: string): Promise<ApiResult<null>> => {
     try {
-      const response = await apiFetch(`/imports/${mapId}`, { method: "DELETE" });
+      const response = await apiFetch(`/imports/${mapId}`, {
+        method: "DELETE",
+        auth: "required",
+      });
       if (!response.ok) {
         return {
           success: false,
@@ -111,6 +117,7 @@ export function useImportSession() {
       return {
         success: false,
         error: err instanceof Error ? err.message : "Erreur inattendue",
+        ...(isAuthRequiredError(err) ? { authRequired: true } : {}),
       };
     }
   };

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useImportSession } from "../../src/composables/useImportSession";
 import { usePolling } from "../../src/composables/usePolling";
 import { apiFetch } from "../../src/utils/api";
+import { AuthRequiredError } from "../../src/services/authSession";
 
 // Only the network call is faked; the error-message helper is the real one.
 vi.mock("../../src/utils/api", async (importOriginal) => ({
@@ -84,6 +85,22 @@ describe("useImportSession", () => {
       "/imports/map-1/extract",
       "/imports/map-1/cancel",
     ]);
+  });
+
+  it("requires a session for every write and reports a lost one", async () => {
+    mockedApiFetch.mockRejectedValue(new AuthRequiredError());
+    const api = useImportSession();
+
+    const results = await Promise.all([
+      api.saveInputs("map-1", { colors: [] }),
+      api.startExtraction("map-1"),
+      api.cancelExtraction("map-1"),
+      api.abandonImport("map-1"),
+      api.createImport("map-1", new File(["x"], "map.png")),
+    ]);
+
+    for (const res of results) expect(res).toMatchObject({ success: false, authRequired: true });
+    for (const [, init] of mockedApiFetch.mock.calls) expect(init?.auth).toBe("required");
   });
 });
 
