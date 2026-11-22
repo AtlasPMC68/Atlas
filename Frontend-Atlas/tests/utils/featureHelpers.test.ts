@@ -169,19 +169,41 @@ describe("featureHelpers - copy / paste functionality", () => {
   });
 
   describe("cloneFeatureWithOffset", () => {
-    it("creates a new feature with new ID and translated geometry", () => {
+    it("creates a new feature with new ID, empty name, no custom dates, and translated geometry", () => {
       const newId = "new-uuid-999";
       const now = "2026-05-01T12:00:00Z";
-      const clone = cloneFeatureWithOffset(zoneFeature, 0.5, 1.0, newId, now);
+      const sourceWithDates: Feature = {
+        ...zoneFeature,
+        properties: {
+          ...zoneFeature.properties,
+          startYear: 1608,
+          endYear: 1650,
+          startDate: "1608-01-01",
+          endDate: "1650-12-31",
+          exactDate: true,
+        },
+      };
+      const clone = cloneFeatureWithOffset(sourceWithDates, 0.5, 1.0, newId, now);
 
       expect(clone.id).toBe(newId);
       expect(clone.createdAt).toBe(now);
       expect(clone.updatedAt).toBe(now);
-      expect(clone.name).toBe("Zone 1");
+      // No default name
+      expect(clone.name).toBe("");
+      expect(clone.properties.name).toBe("");
+      // Preserves element type
+      expect(clone.properties.mapElementType).toBe("zone");
+      // Preserves styles
       expect(clone.properties.colorRgb).toEqual([255, 0, 0]);
-      // Zones must always be added to general elements (mapId: null)
+      // No associated map
       expect(clone.mapId).toBeNull();
       expect(clone.properties.mapId).toBeNull();
+      // No custom dates
+      expect(clone.properties.startYear).toBeNull();
+      expect(clone.properties.endYear).toBeNull();
+      expect(clone.properties.startDate).toBeNull();
+      expect(clone.properties.endDate).toBeNull();
+      expect(clone.properties.exactDate).toBe(false);
 
       if (clone.geometry.type === "Polygon") {
         expect(clone.geometry.coordinates[0][0][0]).toBeCloseTo(-70.5);
@@ -189,10 +211,13 @@ describe("featureHelpers - copy / paste functionality", () => {
       }
     });
 
-    it("translates properties.bounds for image features", () => {
+    it("translates properties.bounds for image features while preserving image type and clearing mapId", () => {
       const clone = cloneFeatureWithOffset(imageFeature, 0.5, 1.0, "new-img", "2026-05-01T12:00:00Z");
 
       expect(clone.image).toBe("data:image/png;base64,abc");
+      expect(clone.properties.mapElementType).toBe("image");
+      expect(clone.mapId).toBeNull();
+      expect(clone.name).toBe("");
       expect(clone.properties.bounds).toBeDefined();
       const bounds = clone.properties.bounds!;
       // south, west
@@ -203,7 +228,36 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(bounds[1][1]).toBeCloseTo(-69.5); // -70.0 + 0.5
     });
 
-    it("assigns mapId: null to cloned zones to add them to general elements, while preserving mapId for others", () => {
+    it("preserves label/text element type with empty labelText and mapId null", () => {
+      const textFeature: Feature = {
+        id: "text-1",
+        type: "Feature",
+        name: "Nouvelle-France",
+        mapId: "map-123",
+        geometry: {
+          type: "Point",
+          coordinates: [-71.2, 46.8],
+        },
+        properties: {
+          name: "Nouvelle-France",
+          labelText: "Nouvelle-France",
+          mapElementType: "label",
+          sizePx: 16,
+          colorRgb: [0, 0, 0],
+        },
+      };
+
+      const clonedText = cloneFeatureWithOffset(textFeature, 0.1, 0.1);
+      expect(clonedText.name).toBe("");
+      expect(clonedText.properties.name).toBe("");
+      expect(clonedText.properties.labelText).toBe("");
+      expect(clonedText.properties.mapElementType).toBe("label");
+      expect(clonedText.properties.sizePx).toBe(16);
+      expect(clonedText.mapId).toBeNull();
+      expect(clonedText.properties.mapId).toBeNull();
+    });
+
+    it("assigns mapId: null to all cloned elements (zones, lines, shapes)", () => {
       const sourceZoneWithMap: Feature = {
         ...zoneFeature,
         mapId: "map-quebec-1900",
@@ -224,7 +278,9 @@ describe("featureHelpers - copy / paste functionality", () => {
         mapId: "map-quebec-1900",
       };
       const clonedLine = cloneFeatureWithOffset(sourceLineWithMap, 0.1, 0.1);
-      expect(clonedLine.mapId).toBe("map-quebec-1900");
+      expect(clonedLine.mapId).toBeNull();
+      expect(clonedLine.properties.mapId).toBeNull();
+      expect(clonedLine.properties.mapElementType).toBe("polyline");
     });
   });
 });

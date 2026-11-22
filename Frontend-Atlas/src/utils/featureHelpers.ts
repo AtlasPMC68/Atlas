@@ -271,43 +271,49 @@ export function cloneFeatureWithOffset(
   }
 
   const newGeometry = offsetGeometry(source.geometry, deltaLng, deltaLat);
-  const label =
-    source.properties?.labelText || source.properties?.name || source.name;
 
-  const isZone =
-    getMapElementType(source) === "zone" ||
-    source.properties?.mapElementType === "zone";
+  // Preserve the exact element type
+  const targetType =
+    getMapElementType(source) ||
+    source.properties?.mapElementType ||
+    (source.geometry?.type === "Point" ? "point" : "shape");
 
-  const targetMapId = isZone ? null : (source.mapId ?? null);
+  // Clear map association (becomes general project element)
+  clonedProps.mapId = null;
+  clonedProps.map_id = null;
+  delete clonedProps.mapTitle;
 
-  if (isZone) {
-    clonedProps.mapId = null;
-    clonedProps.map_id = null;
-    delete clonedProps.mapTitle;
-  }
+  // Clear custom dates
+  clonedProps.startYear = null;
+  clonedProps.endYear = null;
+  clonedProps.startDate = null;
+  clonedProps.endDate = null;
+  clonedProps.exactDate = false;
 
-  const isText = source.geometry?.type === "Point";
-  if (!isText) {
+  // Clear default name
+  clonedProps.name = "";
+  if (targetType === "label") {
+    clonedProps.labelText = "";
+  } else {
     delete clonedProps.labelText;
     delete clonedProps.wordType;
     delete clonedProps.rawType;
-    if (clonedProps.mapElementType === "point" || clonedProps.mapElementType === "label") {
-      clonedProps.mapElementType = isZone ? "zone" : "shape";
-    }
   }
+
+  clonedProps.mapElementType = targetType;
 
   return {
     ...source,
     id: newId,
-    mapId: targetMapId,
-    ...(isZone ? { map_id: null } : {}),
-    name: label,
+    mapId: null,
+    ...(("map_id" in source || "map_id" in clonedProps) ? { map_id: null } : {}),
+    name: "",
     geometry: newGeometry,
     properties: {
       ...clonedProps,
-      name: label,
-      ...(isText && source.properties?.labelText ? { labelText: label } : {}),
-      mapElementType: getMapElementType({ geometry: newGeometry, properties: clonedProps }) || (isZone ? "zone" : "shape"),
+      name: "",
+      mapElementType: targetType,
+      ...(targetType === "label" ? { labelText: "" } : {}),
     },
     createdAt: now,
     updatedAt: now,

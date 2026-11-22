@@ -6,6 +6,7 @@ import type {
   MapElementType,
   PolygonGeometry,
   PointFeature,
+  ShapeKind,
 } from "../typescript/feature";
 import type { LayerWithFeatureRuntime } from "../typescript/mapLayers";
 import type { TextMarkerLayer } from "../typescript/mapDrawing";
@@ -27,14 +28,30 @@ export function circleToPolygon(
   steps: number = 128,
 ): PolygonGeometry {
   const coords: Coordinate[] = [];
-  const radiusLat = radiusMeters / 111320;
-  const radiusLng =
-    radiusMeters / (111320 * Math.cos((center.lat * Math.PI) / 180));
+  const R = 6378137; // Earth radius in meters (WGS84 / Web Mercator EPSG:3857)
+
+  // Clamp latitude to standard Mercator limits to prevent infinity near the poles
+  const latDeg = Math.max(-85.05112878, Math.min(85.05112878, center.lat));
+  const latRad = (latDeg * Math.PI) / 180;
+
+  // Center projected in EPSG:3857 (meters)
+  const xCenter = (center.lng * Math.PI * R) / 180;
+  const yCenter = R * Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+
+  // Scale factor at latitude phi is 1 / cos(phi) in Web Mercator.
+  // Converting ground radius to projected Mercator meters ensures a perfectly symmetrical circle on-screen.
+  const rProjected = radiusMeters / Math.cos(latRad);
 
   for (let i = 0; i < steps; i++) {
     const angle = (i / steps) * 2 * Math.PI;
-    const lat = center.lat + radiusLat * Math.sin(angle);
-    const lng = center.lng + radiusLng * Math.cos(angle);
+    const x = xCenter + rProjected * Math.cos(angle);
+    const y = yCenter + rProjected * Math.sin(angle);
+
+    // Unproject back to [lng, lat]
+    const lng = (x / R) * (180 / Math.PI);
+    const lat =
+      ((2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * 180) / Math.PI;
+
     coords.push([lng, lat]);
   }
 
@@ -74,6 +91,7 @@ export function layerToFeature(
 
   let geometry: Feature["geometry"] | null = null;
   let inferredType: MapElementType = "zone";
+  let shapeKind: ShapeKind | undefined = baseFeature?.properties?.shapeKind;
   let labelText = undefined;
   let sizePx = undefined;
   let rotation = baseFeature?.properties?.rotation;
@@ -117,6 +135,7 @@ export function layerToFeature(
     geometry = circleToPolygon(center, radius);
 
     inferredType = "shape";
+    shapeKind = "circle";
   } else if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
     const latlngs = layer.getLatLngs();
     geometry = {
@@ -183,6 +202,7 @@ export function layerToFeature(
       strokeOpacity:
         baseFeature?.properties?.strokeOpacity ?? (type === "point" ? 1 : 0.5),
       mapElementType: type,
+      shapeKind: baseFeature?.properties?.shapeKind ?? shapeKind,
       layer: baseFeature?.properties?.layer ?? getDefaultLayer(type),
       rotation,
       startYear: baseFeature?.properties?.startYear ?? null,
