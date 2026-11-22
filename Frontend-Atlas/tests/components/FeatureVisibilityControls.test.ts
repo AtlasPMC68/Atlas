@@ -778,7 +778,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(emitted.properties.mapElementType).toBe("zone");
     });
 
-    it("assigns feature across multiple maps with same ID when multiple map checkboxes are checked", async () => {
+    it("clones feature across multiple maps when multiple map checkboxes are checked", async () => {
       const wrapper = mount(FeatureVisibilityControls, {
         props: {
           features: [generalTextFeature],
@@ -799,10 +799,12 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
-      const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
-      expect(emitted.id).toBe(generalTextFeature.id);
-      expect(emitted.mapIds).toEqual(["map-1", "map-2"]);
-      expect(emitted.mapId).toBe("map-1");
+      const emitted = wrapper.emitted("update-feature")![0][0] as Feature[];
+      expect(Array.isArray(emitted)).toBe(true);
+      expect(emitted).toHaveLength(2);
+      expect(emitted[0].mapId).toBe("map-1");
+      expect(emitted[1].mapId).toBe("map-2");
+      expect(emitted[0].id).not.toBe(emitted[1].id);
     });
 
     it("unassigns an element to become general (null mapId) when all map checkboxes are unchecked", async () => {
@@ -909,10 +911,10 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await item1.trigger("click");
       expect(wrapper.emitted("select-feature")?.[0]).toEqual(["feat-1"]);
 
-      // 2. Click item3 with Ctrl key -> toggles individual element into multi-selection
+      // 2. Click item3 with Ctrl key -> continuous range selection
       await item3.trigger("click", { ctrlKey: true });
       expect(wrapper.emitted("select-features")).toBeDefined();
-      expect(wrapper.emitted("select-features")?.at(-1)).toEqual([["feat-1", "feat-3"]]);
+      expect(wrapper.emitted("select-features")?.[0]).toEqual([["feat-1", "feat-2", "feat-3"]]);
     });
 
     it("selects continuous range with Shift+click in the sidebar list", async () => {
@@ -936,7 +938,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       // 2. Click item3 with Shift key -> continuous range selection
       await item3.trigger("click", { shiftKey: true });
       expect(wrapper.emitted("select-features")).toBeDefined();
-      expect(wrapper.emitted("select-features")?.at(-1)).toEqual([["feat-1", "feat-2", "feat-3"]]);
+      expect(wrapper.emitted("select-features")?.[0]).toEqual([["feat-1", "feat-2", "feat-3"]]);
     });
 
     it("deletes all multi-selected elements together when trash is clicked on any of them", async () => {
@@ -972,45 +974,49 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     });
 
     it("displays shared badge and offers 'Retirer de cette carte' when feature belongs to multiple maps", async () => {
-      const multiMapFeature: Feature = {
+      const multiMapFeat: Feature = {
         ...florideFeature,
-        id: "feat-shared",
-        name: "Fleuve Saint-Laurent",
+        id: "feat-multi",
+        name: "FLORIDE",
+        mapId: "map-1",
         mapIds: ["map-1", "map-2"],
         properties: {
           ...florideFeature.properties,
-          name: "Fleuve Saint-Laurent",
+          name: "FLORIDE",
+          mapId: "map-1",
           mapIds: ["map-1", "map-2"],
         },
       };
 
       const wrapper = mount(FeatureVisibilityControls, {
         props: {
-          features: [multiMapFeature],
-          featureVisibility: new Map([["feat-shared", true]]),
+          features: [multiMapFeat],
+          featureVisibility: new Map([["feat-multi", true]]),
+          mapPeriods: [
+            { id: "map-1", title: "Carte 1", startDate: "1600", endDate: "1700" },
+            { id: "map-2", title: "Carte 2", startDate: "1700", endDate: "1800" },
+          ],
           activeMapId: "map-1",
         },
       });
 
-      // Shows badge "2 cartes"
+      // Verify the badge "2 cartes" is visible in the list item
       expect(wrapper.text()).toContain("2 cartes");
 
       // Open delete dialog
-      const item = wrapper.find('[data-feature-item-id="feat-shared"]');
-      const trashBtn = item.find('button[title="Supprimer l\'élément"]');
-      await trashBtn.trigger("click");
+      await (wrapper.vm as any).showDeleteFeatureDialog(multiMapFeat);
 
-      // Shows remove-from-map button
-      const removeBtn = wrapper.find('[data-testid="remove-from-map-feature-btn"]');
+      // Verify "Retirer de cette carte" button exists
+      const removeBtn = wrapper.find('[data-testid="remove-from-map-btn"]');
       expect(removeBtn.exists()).toBe(true);
       expect(removeBtn.text()).toContain("Retirer de cette carte");
 
+      // Clicking remove updates the feature to keep only map-2
       await removeBtn.trigger("click");
-
       expect(wrapper.emitted("update-feature")).toBeDefined();
-      const updated = wrapper.emitted("update-feature")?.[0][0] as Feature;
-      expect(updated.mapIds).toEqual(["map-2"]);
-      expect(updated.mapId).toBe("map-2");
+      const emitted = wrapper.emitted("update-feature")?.[0][0] as Feature;
+      expect(emitted.mapId).toBe("map-2");
+      expect(emitted.mapIds).toEqual(["map-2"]);
     });
   });
 });

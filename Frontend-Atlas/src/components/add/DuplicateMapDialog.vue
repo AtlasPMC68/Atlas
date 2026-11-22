@@ -1,6 +1,6 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-    <div class="modal-box p-0">
+    <div class="modal-box max-w-xl p-0">
       <form @submit.prevent="handleSubmit">
         <div class="card-body">
           <h3 class="text-lg font-bold">Dupliquer une carte</h3>
@@ -52,7 +52,7 @@
                   v-if="!usePreciseDates"
                   v-model.number="startYear"
                   type="number"
-                  min="1"
+                  min="-9999"
                   max="9999"
                   class="input w-full"
                   placeholder="Ex: 1850"
@@ -77,7 +77,7 @@
                   v-if="!usePreciseDates"
                   v-model.number="endYear"
                   type="number"
-                  min="1"
+                  min="-9999"
                   max="9999"
                   class="input w-full"
                   placeholder="Ex: 1900"
@@ -130,7 +130,7 @@
       </form>
     </div>
     <form method="dialog" class="modal-backdrop">
-      <button :disabled="isDuplicating" @click="close">close</button>
+      <button :disabled="isDuplicating" @click="close">fermer</button>
     </form>
   </dialog>
 </template>

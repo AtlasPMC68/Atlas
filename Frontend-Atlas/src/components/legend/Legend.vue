@@ -10,8 +10,16 @@
       @dblclick.stop
       @wheel.stop
     >
-      <h2 class="card-title m-0 px-1 text-base flex items-center pb-1">
+      <h2 class="card-title m-0 px-1 text-base flex items-center" :class="{ 'pb-1': isLegendVisible }">
         Légende
+        <button
+          class="btn btn-ghost btn-xs ml-auto"
+          @click="toggleLegend"
+          :title="isLegendVisible ? 'Masquer la légende' : 'Afficher la légende'"
+        >
+          <EyeIcon v-if="isLegendVisible" class="w-4 h-4" />
+          <EyeSlashIcon v-else class="w-4 h-4" />
+        </button>
       </h2>
       <template v-if="isLegendVisible">
         <p v-if="visibleZoneFeatures.length === 0" class="text-xs text-base-content/60 px-1 py-1">
@@ -27,7 +35,7 @@
             class="flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer border transition-all select-none"
             :class="[
               isFeatureSelected(feature.id)
-                ? 'border-primary ring-1 ring-inset ring-primary bg-primary/10 font-semibold'
+                ? 'border-primary ring-1 ring-primary bg-primary/10 font-semibold'
                 : 'border-transparent hover:bg-base-200/60',
             ]"
             @click="onFeatureClick(feature, $event)"
@@ -52,7 +60,7 @@
               class="text-sm leading-tight truncate min-w-0 flex-1"
               :title="feature.properties?.name || '! Nom manquant'"
             >
-              {{ feature.properties?.name || "Nom manquant" }}
+              {{ feature.properties?.name || "! Nom manquant" }}
             </span>
           </li>
         </ul>
@@ -65,9 +73,12 @@
 import { computed, ref, watch } from "vue";
 import type { Feature } from "../../typescript/feature";
 import { rgbToRgba } from "../../utils/utils";
+import { EyeIcon, EyeSlashIcon } from "@heroicons/vue/24/outline";
 import { createFeatureDoubleClickHandler } from "../../utils/featureInteraction";
 import {
   getContinuousRangeSelection,
+  isRangeSelectModifier,
+  isToggleSelectModifier,
 } from "../../utils/selectionUtils";
 
 const props = withDefaults(
@@ -83,7 +94,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (event: "select-feature", featureId: string | null): void;
+  (event: "select-feature", featureId: string): void;
   (event: "select-features", featureIds: string[]): void;
   (event: "edit-feature", feature: Feature): void;
 }>();
@@ -117,35 +128,39 @@ const { handleClick: onFeatureClick, handleDblClick: onFeatureDblClick } =
       if (feature.id == null) return;
       const featureId = String(feature.id);
       const mouseEv = event as MouseEvent | undefined;
-      const isCtrl = Boolean(mouseEv?.ctrlKey || mouseEv?.metaKey);
-      const isShift = Boolean(mouseEv?.shiftKey);
 
-      if (isCtrl) {
+      if (isToggleSelectModifier(mouseEv)) {
         const currentList = props.multiSelectedFeatureIds ?? [];
         const next = new Set<string>(currentList);
-        if (props.selectedFeatureId) next.add(String(props.selectedFeatureId));
+        if (props.selectedFeatureId) {
+          next.add(props.selectedFeatureId);
+        }
         if (next.has(featureId)) {
           next.delete(featureId);
         } else {
           next.add(featureId);
         }
         lastSelectedAnchorId.value = featureId;
-        emit("select-feature", null);
+        emit("select-feature", null as any);
         emit("select-features", Array.from(next));
         return;
       }
 
-      if (isShift) {
+      if (isRangeSelectModifier(mouseEv)) {
         const orderedIds = visibleZoneFeatures.value.map((f: Feature) => String(f.id));
+        const anchorId =
+          props.selectedFeatureId ||
+          lastSelectedAnchorId.value ||
+          (props.multiSelectedFeatureIds?.[0] ?? null);
         const range = getContinuousRangeSelection(
           orderedIds,
-          lastSelectedAnchorId.value,
+          anchorId,
           featureId,
         );
-        if (range.length > 1) {
-          emit("select-features", range);
-          return;
-        }
+        lastSelectedAnchorId.value = anchorId || featureId;
+        emit("select-feature", null as any);
+        emit("select-features", range);
+        return;
       }
 
       lastSelectedAnchorId.value = featureId;
@@ -161,6 +176,10 @@ const { handleClick: onFeatureClick, handleDblClick: onFeatureDblClick } =
     },
     getId: (feature: Feature) => feature.id ?? feature.properties?.name,
   });
+
+function toggleLegend() {
+  isLegendVisible.value = !isLegendVisible.value;
+}
 
 const visibleZoneFeatures = computed(() =>
   props.zoneFeatures.filter((feature: Feature) => {

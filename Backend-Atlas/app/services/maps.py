@@ -122,6 +122,7 @@ async def duplicate_map_in_project(
                 new_map.reference_image_path = os.path.join("reference_images", new_filename)
             except OSError:
                 new_map.reference_image_path = None
+                new_map.reference_image_content_type = None
 
     features_result = await db.execute(
         select(Feature).where(
@@ -144,10 +145,18 @@ async def duplicate_map_in_project(
         f_dict["id"] = str(uuid4())
         f_dict["mapId"] = str(new_map.id)
         f_dict["map_id"] = str(new_map.id)
+        if "mapIds" in f_dict:
+            f_dict["mapIds"] = [str(new_map.id)]
+        if "mapTitle" in f_dict:
+            f_dict["mapTitle"] = new_title
         props = f_dict.setdefault("properties", {})
         if isinstance(props, dict):
             props["mapId"] = str(new_map.id)
             props["map_id"] = str(new_map.id)
+            if "mapIds" in props:
+                props["mapIds"] = [str(new_map.id)]
+            if "mapTitle" in props:
+                props["mapTitle"] = new_title
             if src_start_yr is not None and new_start_yr is not None:
                 feat_sy = props.get("startYear")
                 feat_ey = props.get("endYear")

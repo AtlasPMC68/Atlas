@@ -848,7 +848,7 @@ function duplicateFeature(feature: Feature) {
 }
 
 function onDirectDeleteFeature(feature: Feature) {
-  onDeleteFeature(String(feature.id));
+  featureVisibilityControlsRef.value?.showDeleteFeatureDialog(feature);
 }
 
 function stopSidebarResize() {
@@ -984,13 +984,6 @@ const customFeatureYears = computed<number[]>(() => {
 });
 
 const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
-  const periodTitleById = new Map<string, string>(
-    mapPeriods.value.map((p: MapPeriod) => [
-      String(p.id).trim().toLowerCase(),
-      p.title,
-    ]),
-  );
-
   const list: TimelineMarkerItem[] = [];
 
   features.value.forEach((f: Feature) => {
@@ -1408,16 +1401,13 @@ function nudgeSelectedFeatures(dx: number, dy: number) {
         : [];
   if (idsToNudge.length === 0) return;
 
-  const mapContainer = document.getElementById("map") as
-    | (HTMLElement & { _leaflet_map?: L.Map })
-    | null;
-  const leafletMap = mapContainer?._leaflet_map;
-  if (!leafletMap) return;
+  const currentMap = leafletMap.value;
+  if (!currentMap) return;
 
   const idsSet = new Set(idsToNudge);
   const nextFeatures = features.value.map((f: Feature) => {
     if (!idsSet.has(String(f.id))) return f;
-    return nudgeFeatureByPixels(f, leafletMap, dx, dy);
+    return nudgeFeatureByPixels(f, currentMap, dx, dy);
   });
   commitFeatureSnapshot(nextFeatures);
 }
@@ -2140,9 +2130,7 @@ async function onDuplicateMapSubmit(payload: {
     const yearMatch = payload.startDate.match(/^-?\d+/);
     if (yearMatch) {
       selectedYear.value = parseInt(yearMatch[0], 10);
-      if (payload.exactDate) {
-        selectedExactDate.value = payload.startDate;
-      }
+      selectedExactDate.value = payload.exactDate ? payload.startDate : null;
     }
   } catch (error: any) {
     console.error("Failed to duplicate map:", error);
@@ -2495,21 +2483,20 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     (key === "delete" || key === "backspace") &&
     (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
   ) {
-    if (multiSelectedFeatureIds.value.length > 1) {
-      e.preventDefault();
-      void onDeleteSelectedFeatures();
-      return;
-    }
-    if (selectedFeatureId.value) {
-      const selectedFeature = features.value.find(
-        (feature: Feature) => String(feature.id) === selectedFeatureId.value,
+    e.preventDefault();
+    const ids =
+      multiSelectedFeatureIds.value.length > 0
+        ? multiSelectedFeatureIds.value
+        : selectedFeatureId.value
+          ? [selectedFeatureId.value]
+          : [];
+    const targetFeatures = features.value.filter((f: Feature) =>
+      ids.includes(String(f.id)),
+    );
+    if (targetFeatures.length > 0) {
+      featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
+        targetFeatures.length === 1 ? targetFeatures[0] : targetFeatures,
       );
-      if (selectedFeature) {
-        e.preventDefault();
-        featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
-          selectedFeature,
-        );
-      }
     }
     return;
   }
@@ -2526,8 +2513,7 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
   ) {
     e.preventDefault();
-    const mapEl = document.getElementById("map");
-    if (!mapEl) return;
+    if (!leafletMap.value) return;
     const dx =
       key === "arrowright" ? NUDGE_PX : key === "arrowleft" ? -NUDGE_PX : 0;
     const dy =

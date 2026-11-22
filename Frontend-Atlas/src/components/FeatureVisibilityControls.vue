@@ -141,7 +141,7 @@
                   class="flex w-full flex-row items-center justify-between gap-1 rounded-lg px-2 py-1 transition-all cursor-pointer select-none"
                   :class="[
                     isFeatureSelected(feature.id)
-                      ? 'app-feature-selected border-2 border-primary-600 bg-primary-50/90 font-semibold shadow-sm'
+                      ? 'border-2 border-primary bg-primary/10 font-semibold shadow-sm'
                       : 'border-2 border-transparent hover:bg-base-200/60'
                   ]"
                   @click="onFeatureItemClick(feature, $event)"
@@ -230,7 +230,7 @@
     </div>
 
     <div class="px-3 py-1.5 flex flex-col gap-1.5">
-      <div class="divider m-0" v-if="!props.isDevTestCreation"></div>
+      <div class="divider m-0"></div>
       <template v-if="!props.isDevTestCreation">
         <div class="flex flex-col gap-1.5">
           <button
@@ -624,7 +624,8 @@
               </label>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10"
+                class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="hasCustomDate"
                 @click="toggleSelectAllMaps"
               >
                 {{ areAllMapsSelected ? "Tout désélectionner" : "Tout sélectionner" }}
@@ -641,7 +642,8 @@
               <label
                 v-for="period in props.mapPeriods"
                 :key="period.id"
-                class="flex items-center gap-2 cursor-pointer hover:bg-base-200/50 rounded px-1.5 py-0.5"
+                class="flex items-center gap-2 rounded px-1.5 py-0.5"
+                :class="hasCustomDate ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-base-200/50'"
               >
                 <input
                   type="checkbox"
@@ -649,13 +651,19 @@
                   v-model="editDraft.selectedMapIds"
                   class="checkbox checkbox-xs checkbox-primary"
                   :data-testid="`map-checkbox-${period.id}`"
-                  @change="onMapCheckboxChange"
+                  :disabled="hasCustomDate"
                 />
                 <span class="text-sm truncate">{{ period.title }}</span>
               </label>
             </div>
-            <span class="field-hint">
-              Si aucune carte n'est sélectionnée ou si une date personnalisée est active, l'élément reste dans « Éléments généraux ».
+            <span
+              v-if="hasCustomDate"
+              class="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded px-2 py-1 mt-1"
+            >
+              Période personnalisée active : aucune carte ne peut être associée. Effacez les dates pour sélectionner une carte.
+            </span>
+            <span v-else class="field-hint">
+              Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
             </span>
           </div>
 
@@ -669,18 +677,12 @@
               </label>
               <div
                 class="tooltip tooltip-light tooltip-bottom md:tooltip-left cursor-pointer"
-                data-tip="Définir une période personnalisée détache l'élément des cartes pour lui donner sa propre chronologie indépendante."
+                data-tip="Définit une période d'apparition propre à cet élément sur la ligne du temps (élément général sans carte associée)."
               >
                 <div class="w-4 h-4 rounded-full bg-base-300 text-base-content opacity-80 flex items-center justify-center text-[10px] font-bold hover:bg-primary hover:text-primary-content transition-colors">
                   !
                 </div>
               </div>
-            </div>
-            <div
-              v-if="editDraft.startYear != null || editDraft.endYear != null"
-              class="text-xs text-warning py-1 flex items-center gap-1"
-            >
-              <span>Une période personnalisée détache l'élément de toutes ses cartes associées.</span>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
@@ -783,23 +785,29 @@
 
   <!-- Delete feature confirmation dialog -->
   <dialog ref="deleteFeatureDialogRef" class="modal">
-    <div class="modal-box">
-      <h3 class="text-lg font-bold">
-        {{ hasMultiMapFeatureToDelete ? "Supprimer ou retirer de la carte" : "Supprimer l'élément" }}
+    <div class="modal-box max-w-md">
+      <h3 class="text-lg font-bold flex items-center gap-2">
+        <ExclamationTriangleIcon v-if="hasMultiMapFeatureToDelete" class="w-5 h-5 text-warning shrink-0" />
+        {{ hasMultiMapFeatureToDelete ? "Élément partagé sur plusieurs cartes" : "Supprimer l'élément" }}
       </h3>
-      <p class="py-3 text-sm">
+
+      <div v-if="hasMultiMapFeatureToDelete" class="py-3 flex flex-col gap-2">
+        <p class="text-sm">
+          <span class="font-semibold">{{ featureToDeleteName }}</span> est présent sur <span class="font-bold">{{ sharedMapCount }} cartes</span> ({{ sharedMapNames }}).
+        </p>
+        <p class="text-xs text-base-content/70">
+          Souhaitez-vous uniquement le <strong>retirer de la carte actuelle</strong> (il restera visible sur les autres cartes) ou le <strong>supprimer définitivement du projet</strong> ?
+        </p>
+      </div>
+      <p v-else class="py-4 text-sm">
         Êtes-vous sûr de vouloir supprimer
         <span class="font-semibold">{{ featureToDeleteName }}</span> ?
+        Cette action est irréversible.
       </p>
-      <div v-if="hasMultiMapFeatureToDelete" class="alert alert-warning py-2 px-3 text-xs rounded-lg flex items-start gap-2 mb-3">
-        <InformationCircleIcon class="w-4 h-4 shrink-0 mt-0.5 text-warning" />
-        <span>
-          Cet élément est associé à plusieurs cartes. Vous pouvez choisir de le retirer uniquement de la carte active, ou de le supprimer définitivement de tout le projet.
-        </span>
-      </div>
+
       <div class="modal-action flex-wrap gap-2">
         <button
-          class="btn btn-sm"
+          class="btn btn-ghost"
           :disabled="isDeletingFeature"
           @click="deleteFeatureDialogRef?.close()"
         >
@@ -807,15 +815,17 @@
         </button>
         <button
           v-if="hasMultiMapFeatureToDelete && targetMapIdToRemove"
-          class="btn btn-sm btn-outline btn-warning"
-          data-testid="remove-from-map-feature-btn"
+          class="btn btn-primary"
+          data-testid="remove-from-map-btn"
           :disabled="isDeletingFeature"
           @click="onRemoveFromCurrentMap"
         >
-          Retirer de cette carte
+          <span v-if="isDeletingFeature" class="loading loading-spinner loading-xs"></span>
+          <span v-else>Retirer de cette carte</span>
         </button>
         <button
-          class="btn btn-sm btn-error"
+          class="btn btn-error"
+          :class="{ 'btn-outline': hasMultiMapFeatureToDelete }"
           data-testid="confirm-delete-feature-btn"
           :disabled="isDeletingFeature"
           @click="onDeleteFeature"
@@ -825,7 +835,7 @@
             class="loading loading-spinner loading-xs"
           ></span>
           <span v-else class="text-white">
-            {{ hasMultiMapFeatureToDelete ? "Supprimer définitivement" : "Supprimer" }}
+            {{ hasMultiMapFeatureToDelete ? "Supprimer de toutes les cartes" : "Supprimer" }}
           </span>
         </button>
       </div>
@@ -881,6 +891,7 @@ import {
   ChatBubbleLeftEllipsisIcon,
   ChevronDownIcon,
   DocumentCheckIcon,
+  ExclamationTriangleIcon,
   InformationCircleIcon,
   MapIcon,
   PencilSquareIcon,
@@ -971,29 +982,23 @@ const areAllMapsSelected = computed(() => {
   return props.mapPeriods.every((p: { id: any; }) => selected.includes(p.id));
 });
 
+const hasCustomDate = computed(() => {
+  return editDraft.value.startYear != null || editDraft.value.endYear != null;
+});
+
 function toggleSelectAllMaps() {
-  if (!props.mapPeriods) return;
+  if (!props.mapPeriods || hasCustomDate.value) return;
   if (areAllMapsSelected.value) {
     editDraft.value.selectedMapIds = [];
   } else {
     editDraft.value.selectedMapIds = props.mapPeriods.map((p: { id: any; }) => p.id);
-    editDraft.value.startYear = null;
-    editDraft.value.endYear = null;
-  }
-}
-
-function onMapCheckboxChange() {
-  if (editDraft.value.selectedMapIds && editDraft.value.selectedMapIds.length > 0) {
-    editDraft.value.startYear = null;
-    editDraft.value.endYear = null;
-    previousFeatureStartYear = null;
   }
 }
 
 let previousFeatureStartYear: number | null = null;
 
 function onFeatureStartYearInput() {
-  if (editDraft.value.startYear !== null && editDraft.value.startYear !== undefined && editDraft.value.startYear !== ("" as any)) {
+  if (editDraft.value.startYear !== null && editDraft.value.startYear !== undefined) {
     editDraft.value.endYear = syncEndFromStart(
       editDraft.value.startYear,
       editDraft.value.endYear,
@@ -1001,34 +1006,16 @@ function onFeatureStartYearInput() {
     );
     previousFeatureStartYear = editDraft.value.startYear;
   }
-  const hasCustom =
-    (editDraft.value.startYear != null && editDraft.value.startYear !== ("" as any)) ||
-    (editDraft.value.endYear != null && editDraft.value.endYear !== ("" as any));
-  if (hasCustom) {
+  if (hasCustomDate.value) {
     editDraft.value.selectedMapIds = [];
   }
 }
 
 function onFeatureEndYearInput() {
-  const hasCustom =
-    (editDraft.value.startYear != null && editDraft.value.startYear !== ("" as any)) ||
-    (editDraft.value.endYear != null && editDraft.value.endYear !== ("" as any));
-  if (hasCustom) {
+  if (hasCustomDate.value) {
     editDraft.value.selectedMapIds = [];
   }
 }
-
-watch(
-  () => [editDraft.value.startYear, editDraft.value.endYear],
-  ([newStart, newEnd]) => {
-    const hasCustom =
-      (newStart != null && newStart !== ("" as any)) ||
-      (newEnd != null && newEnd !== ("" as any));
-    if (hasCustom && editDraft.value.selectedMapIds && editDraft.value.selectedMapIds.length > 0) {
-      editDraft.value.selectedMapIds = [];
-    }
-  },
-);
 
 const isTextElement = computed(() => isTextFeature(featureToEdit.value));
 
@@ -1438,12 +1425,6 @@ async function showEditFeatureDialog(feature: Feature) {
   const state = prepareFeatureForEdit(feature);
   featureToEdit.value = state.feature;
   editDraft.value = state.draft;
-  const hasCustom =
-    (editDraft.value.startYear != null && editDraft.value.startYear !== ("" as any)) ||
-    (editDraft.value.endYear != null && editDraft.value.endYear !== ("" as any));
-  if (hasCustom) {
-    editDraft.value.selectedMapIds = [];
-  }
   previousFeatureStartYear = editDraft.value.startYear ?? null;
 
   await nextTick();
@@ -1608,6 +1589,22 @@ const targetMapIdToRemove = computed(() => {
   if (props.activeMapId) return props.activeMapId;
   const first = featuresToDelete.value[0];
   return first ? getFeatureMapId(first) : null;
+});
+
+const sharedMapCount = computed(() => {
+  const first = featuresToDelete.value[0];
+  return first ? getFeatureMapIds(first).length : 0;
+});
+
+const sharedMapNames = computed(() => {
+  const first = featuresToDelete.value[0];
+  if (!first) return "";
+  const ids = new Set(getFeatureMapIds(first));
+  if (!props.mapPeriods) return `${ids.size} cartes`;
+  const names = props.mapPeriods
+    .filter((p) => ids.has(p.id))
+    .map((p) => p.title);
+  return names.join(", ") || `${ids.size} cartes`;
 });
 
 function showDeleteFeatureDialog(featureOrFeatures: Feature | Feature[]) {

@@ -43,9 +43,39 @@ export function getContinuousRangeSelection(
 }
 
 /**
- * Checks whether an event has Ctrl, Meta (Cmd on Mac), or Shift modifier active.
+ * Checks whether an event has Shift modifier active (range selection).
  */
 export function isRangeSelectModifier(
+  event:
+    | MouseEvent
+    | KeyboardEvent
+    | { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }
+    | null
+    | undefined,
+): boolean {
+  if (!event) return false;
+  return Boolean(event.shiftKey);
+}
+
+/**
+ * Checks whether an event has Ctrl or Meta (Cmd on Mac) modifier active (toggle selection).
+ */
+export function isToggleSelectModifier(
+  event:
+    | MouseEvent
+    | KeyboardEvent
+    | { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }
+    | null
+    | undefined,
+): boolean {
+  if (!event) return false;
+  return Boolean(event.ctrlKey || event.metaKey);
+}
+
+/**
+ * Checks whether an event has any multi-select modifier active (Ctrl, Cmd or Shift).
+ */
+export function isMultiSelectModifier(
   event:
     | MouseEvent
     | KeyboardEvent
@@ -58,32 +88,22 @@ export function isRangeSelectModifier(
 }
 
 /**
- * Deduplicates features by their unique ID and identical geometry/type
- * to prevent duplicate Leaflet layer instantiations and visual stacking artifacts.
+ * Deduplicates features by their unique ID to prevent duplicate Leaflet layer
+ * instantiations and visual stacking artifacts. Never drops features solely
+ * based on identical coordinates (e.g. across multiple maps or coincident points).
  */
-export function deduplicateFeatures<T extends { id?: string | number; geometry?: any; properties?: any }>(
+export function deduplicateFeatures<T extends { id?: string | number; properties?: any }>(
   features: T[],
 ): T[] {
   const seenIds = new Set<string>();
-  const seenGeometries = new Set<string>();
   const result: T[] = [];
 
   for (const f of features) {
-    const fid = f.id != null ? String(f.id).trim() : "";
-    if (fid && seenIds.has(fid)) {
-      continue;
-    }
-
-    if (f.geometry && f.geometry.type && f.geometry.coordinates) {
-      const type = f.properties?.mapElementType || f.geometry.type;
-      const geoKey = `${type}:${f.geometry.type}:${JSON.stringify(f.geometry.coordinates)}`;
-      if (seenGeometries.has(geoKey)) {
+    const fid = f.id != null ? String(f.id).trim() : (f.properties?.id != null ? String(f.properties.id).trim() : "");
+    if (fid) {
+      if (seenIds.has(fid)) {
         continue;
       }
-      seenGeometries.add(geoKey);
-    }
-
-    if (fid) {
       seenIds.add(fid);
     }
     result.push(f);

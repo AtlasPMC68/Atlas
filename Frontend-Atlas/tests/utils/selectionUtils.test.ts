@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   getContinuousRangeSelection,
   isRangeSelectModifier,
+  isToggleSelectModifier,
+  isMultiSelectModifier,
   deduplicateFeatures,
 } from "../../src/utils/selectionUtils";
 
@@ -62,24 +64,26 @@ describe("selectionUtils - getContinuousRangeSelection", () => {
   });
 });
 
-describe("selectionUtils - isRangeSelectModifier", () => {
-  it("returns true for ctrlKey", () => {
-    expect(isRangeSelectModifier({ ctrlKey: true })).toBe(true);
-  });
-
-  it("returns true for metaKey (Mac Cmd)", () => {
-    expect(isRangeSelectModifier({ metaKey: true })).toBe(true);
-  });
-
-  it("returns true for shiftKey", () => {
+describe("selectionUtils - modifier helpers", () => {
+  it("isRangeSelectModifier checks Shift key only", () => {
     expect(isRangeSelectModifier({ shiftKey: true })).toBe(true);
+    expect(isRangeSelectModifier({ ctrlKey: true })).toBe(false);
+    expect(isRangeSelectModifier({ metaKey: true })).toBe(false);
+    expect(isRangeSelectModifier(null)).toBe(false);
   });
 
-  it("returns false when no modifier is pressed or event is null/undefined", () => {
-    expect(isRangeSelectModifier(null)).toBe(false);
-    expect(isRangeSelectModifier(undefined)).toBe(false);
-    expect(isRangeSelectModifier({})).toBe(false);
-    expect(isRangeSelectModifier({ ctrlKey: false, metaKey: false, shiftKey: false })).toBe(false);
+  it("isToggleSelectModifier checks Ctrl and Meta keys", () => {
+    expect(isToggleSelectModifier({ ctrlKey: true })).toBe(true);
+    expect(isToggleSelectModifier({ metaKey: true })).toBe(true);
+    expect(isToggleSelectModifier({ shiftKey: true })).toBe(false);
+    expect(isToggleSelectModifier(null)).toBe(false);
+  });
+
+  it("isMultiSelectModifier checks any modifier", () => {
+    expect(isMultiSelectModifier({ ctrlKey: true })).toBe(true);
+    expect(isMultiSelectModifier({ metaKey: true })).toBe(true);
+    expect(isMultiSelectModifier({ shiftKey: true })).toBe(true);
+    expect(isMultiSelectModifier({})).toBe(false);
   });
 });
 
@@ -95,23 +99,24 @@ describe("selectionUtils - deduplicateFeatures", () => {
     expect(res.map((f) => f.id)).toEqual(["feat-1", "feat-2"]);
   });
 
-  it("deduplicates features with identical geometry and mapElementType", () => {
+  it("preserves distinct features even if they share identical geometry or coordinates", () => {
     const list = [
       { id: "f1", geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 1], [0, 1], [0, 0]]] }, properties: { mapElementType: "zone" } },
       { id: "f2", geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 1], [0, 1], [0, 0]]] }, properties: { mapElementType: "zone" } },
       { id: "f3", geometry: { type: "Polygon", coordinates: [[[5, 5], [6, 6], [5, 6], [5, 5]]] }, properties: { mapElementType: "zone" } },
     ];
     const res = deduplicateFeatures(list);
-    expect(res).toHaveLength(2);
-    expect(res.map((f) => f.id)).toEqual(["f1", "f3"]);
+    expect(res).toHaveLength(3);
+    expect(res.map((f) => f.id)).toEqual(["f1", "f2", "f3"]);
   });
 
-  it("preserves distinct features with different coordinates or IDs", () => {
+  it("supports ID located in properties if direct ID is omitted", () => {
     const list = [
-      { id: "f1", geometry: { type: "Point", coordinates: [1, 1] } },
-      { id: "f2", geometry: { type: "Point", coordinates: [2, 2] } },
-      { id: "f3", geometry: { type: "Point", coordinates: [3, 3] } },
+      { properties: { id: "p-1" } },
+      { properties: { id: "p-1" } },
+      { properties: { id: "p-2" } },
     ];
-    expect(deduplicateFeatures(list)).toHaveLength(3);
+    const res = deduplicateFeatures(list);
+    expect(res).toHaveLength(2);
   });
 });

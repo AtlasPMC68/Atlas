@@ -171,10 +171,7 @@
     border-color: var(--color-base-content);
   }
 
-  .icon-action-btn {
-    @apply flex h-5 w-5 items-center justify-center rounded hover:bg-base-200;
-  }
-
+  .icon-action-btn,
   .icon-action-btn-sm {
     @apply flex h-5 w-5 items-center justify-center rounded hover:bg-base-200;
   }

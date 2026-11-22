@@ -71,10 +71,12 @@ import { createCartoTileLayer } from "../utils/basemap";
 import {
   getLabelPresentation,
   type LabelPresentationModel,
+  type CustomLabelStyle,
 } from "../utils/labelPresentation";
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
 import {
   getContinuousRangeSelection,
+  deduplicateFeatures,
 } from "../utils/selectionUtils";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import type {
@@ -156,6 +158,7 @@ let selectedCityRing: L.Marker | null = null;
 let selectedFeatureQuickActionsMarker: L.Marker | null = null;
 let quickActionsCleanup: (() => void) | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
+let containerClickListener: ((e: MouseEvent) => void) | null = null;
 let lastMapAnchorId: string | null = null;
 
 function removeAllFloatingActionMarkers() {
@@ -376,6 +379,8 @@ const featureLayerManager = {
         const next = new Set<string>(currentList);
         if (props.selectedFeatureId) {
           next.add(props.selectedFeatureId);
+        } else if (lastMapAnchorId) {
+          next.add(lastMapAnchorId);
         }
         if (next.has(id)) {
           next.delete(id);
@@ -975,17 +980,25 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
   const coord: L.LatLngTuple = [lat, lng];
 
   if (presentation.mapElementType === "point") {
-    const fillColor = colorRgbToCss(feature.properties.colorRgb) || "#000000";
-    const strokeColor = colorRgbToCss(feature.properties.strokeColor) || fillColor;
+    const customStyle = feature.properties?.customLabelStyle as (CustomLabelStyle | undefined);
+    const customPointColor = customStyle?.pointColor || (customStyle?.hasPoint ? customStyle.color : undefined);
+    const fillColor =
+      customPointColor ||
+      colorRgbToCss(feature.properties.colorRgb) ||
+      "#000000";
+    const strokeColor =
+      customStyle?.pointStrokeColor ||
+      colorRgbToCss(feature.properties.strokeColor) ||
+      fillColor;
 
     const point = L.circleMarker(coord, {
       renderer: vectorRenderer ?? undefined,
       radius: 6,
       fillColor: fillColor,
       color: strokeColor,
-      weight: feature.properties.strokeWidth ?? 1,
-      opacity: feature.properties.strokeOpacity ?? 1,
-      fillOpacity: feature.properties.fillOpacity ?? 0.5,
+      weight: customStyle?.pointStrokeWidth ?? feature.properties.strokeWidth ?? 1,
+      opacity: customStyle?.pointStrokeOpacity ?? feature.properties.strokeOpacity ?? 1,
+      fillOpacity: customStyle?.pointFillOpacity ?? feature.properties.fillOpacity ?? 0.5,
     });
 
     const label = buildLabelMarker(feature, presentation, [-8, 15]);
@@ -1244,7 +1257,7 @@ function renderAllFeaturesSafely() {
 function renderAllFeatures() {
   if (!map) return;
 
-  const currentFeatures = props.features;
+  const currentFeatures = deduplicateFeatures(props.features);
   const currentIds = new Set(currentFeatures.map((f: Feature) => String(f.id)));
   const previousIds = previousFeatureIds.value;
 
@@ -1596,7 +1609,7 @@ onMounted(() => {
     resetSelection();
   });
 
-  map.getContainer().addEventListener("click", (e: MouseEvent) => {
+  containerClickListener = (e: MouseEvent) => {
     if ((e as any).__atlasFeatureClicked) return;
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -1610,7 +1623,8 @@ onMounted(() => {
     ) {
       resetSelection();
     }
-  });
+  };
+  map.getContainer().addEventListener("click", containerClickListener);
 
   L.control
     .scale({ position: "bottomright", metric: true, imperial: false })
@@ -1685,6 +1699,14 @@ onBeforeUnmount(() => {
   pixelSpaceDragCleanup?.();
   imageOverlay.detach();
   shapeScaling.detach();
+  if (containerClickListener && map) {
+    try {
+      map.getContainer()?.removeEventListener("click", containerClickListener);
+    } catch {
+      // ignore
+    }
+    containerClickListener = null;
+  }
   if (map) {
     featureLayerManager.clearAllFeatures();
     map.remove();
@@ -1909,7 +1931,10 @@ function applySelectionEffects(id: string) {
       bounds.extend([lat, lng]);
     }
     if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 12, animate: true });
+      // For text and point features, apply a maxZoom ceiling of 7 so the user retains
+      // a readable regional visual context around the label rather than zooming in to street level.
+      const focusMaxZoom = isTextOrPoint ? 7 : 10;
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: focusMaxZoom, animate: true });
     }
   }
 

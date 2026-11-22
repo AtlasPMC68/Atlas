@@ -498,7 +498,7 @@ function getItemsByMap(items: TimelineMarkerItem[]): MarkerMapGroup[] {
       item.isCustom === true ||
       item.startYear != null ||
       item.endYear != null;
-    const effectiveMapId = isCustom ? null : item.mapId;
+    const effectiveMapId = isCustom ? null : (item.mapId ?? null);
     const key = effectiveMapId ? String(effectiveMapId) : "general";
     const title = effectiveMapId
       ? (item.mapTitle || `Carte ${effectiveMapId}`)

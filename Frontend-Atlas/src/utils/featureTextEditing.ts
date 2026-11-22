@@ -1,6 +1,6 @@
 import type { Feature } from "../typescript/feature";
 import { normalizeTextSizePx, type CustomLabelStyle } from "./labelPresentation";
-import { getFeatureMapIds, getMapElementType, hasFeatureCustomDate } from "./featureHelpers";
+import { getFeatureMapIds, getMapElementType } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {
   applyWordStyleToFeature,
@@ -69,12 +69,12 @@ export function applyCustomLabelStyleToFeature(
   name?: string,
   labelText?: string,
 ): Feature {
-  const resolvedName: string =
+  const resolvedName =
     name && name.trim().length > 0
       ? name
       : (feature.properties.name && feature.properties.name.trim().length > 0
         ? feature.properties.name
-        : (labelText ?? feature.properties.labelText ?? feature.name ?? ""));
+        : (labelText ?? feature.properties.labelText ?? ""));
   const resolvedLabelText =
     labelText ?? feature.properties.labelText ?? resolvedName;
   const formattedText =
@@ -155,9 +155,7 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
 
   const hasCustomYears =
-    hasFeatureCustomDate(feature) ||
-    feature.properties?.startYear != null ||
-    feature.properties?.endYear != null;
+    feature.properties?.startYear != null || feature.properties?.endYear != null;
   const initialMapIds = hasCustomYears ? [] : getFeatureMapIds(feature);
   const colorHex =
     rgbToHex(feature.properties.colorRgb) ??
@@ -199,9 +197,7 @@ export function coerceEditedFeature(
   originalFeature: Feature,
   payload: FeatureEditSubmitPayload,
 ): Feature {
-  const hasCustomDate =
-    (payload.startYear != null && payload.startYear !== ("" as any)) ||
-    (payload.endYear != null && payload.endYear !== ("" as any));
+  const hasCustomDate = payload.startYear != null || payload.endYear != null;
   const chosenMapIds = hasCustomDate
     ? []
     : (payload.selectedMapIds && payload.selectedMapIds.length > 0
@@ -214,9 +210,6 @@ export function coerceEditedFeature(
     delete cleanedProps.labelText;
     delete cleanedProps.wordType;
     delete cleanedProps.rawType;
-    if (hasCustomDate) {
-      delete cleanedProps.mapTitle;
-    }
     if (cleanedProps.mapElementType === "point" || cleanedProps.mapElementType === "label") {
       cleanedProps.mapElementType = "shape";
     }
@@ -230,7 +223,7 @@ export function coerceEditedFeature(
         ...cleanedProps,
         mapId: chosenMapId,
         mapIds: chosenMapIds,
-        mapTitle: hasCustomDate ? null : cleanedProps.mapTitle,
+        mapTitle: hasCustomDate ? null : (cleanedProps.mapTitle ?? null),
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),
         strokeColor: hexToRgb(payload.strokeColorHex),
@@ -258,19 +251,15 @@ export function coerceEditedFeature(
       payload.name,
       payload.labelText ?? payload.name,
     );
-    const cleanedCustomProps = { ...custom.properties };
-    if (hasCustomDate) {
-      delete cleanedCustomProps.mapTitle;
-    }
     return {
       ...custom,
       mapId: chosenMapId,
       mapIds: chosenMapIds,
       properties: {
-        ...cleanedCustomProps,
+        ...custom.properties,
         mapId: chosenMapId,
         mapIds: chosenMapIds,
-        mapTitle: hasCustomDate ? null : cleanedCustomProps.mapTitle,
+        mapTitle: hasCustomDate ? null : (custom.properties.mapTitle ?? null),
         startYear: payload.startYear ?? null,
         endYear: payload.endYear ?? null,
       },
@@ -291,20 +280,15 @@ export function coerceEditedFeature(
       ? textSizePx
       : undefined;
 
-  const cleanedStyledProps = { ...styledFeature.properties };
-  if (hasCustomDate) {
-    delete cleanedStyledProps.mapTitle;
-  }
-
   return {
     ...styledFeature,
     mapId: chosenMapId,
     mapIds: chosenMapIds,
     properties: {
-      ...cleanedStyledProps,
+      ...styledFeature.properties,
       mapId: chosenMapId,
       mapIds: chosenMapIds,
-      mapTitle: hasCustomDate ? null : cleanedStyledProps.mapTitle,
+      mapTitle: hasCustomDate ? null : (styledFeature.properties.mapTitle ?? null),
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
@@ -322,48 +306,57 @@ export function coerceEditedFeature(
 }
 
 /**
- * When multiple maps are selected, associates the selected maps on the same
- * feature without duplicating IDs.
+ * Associates the edited feature with the chosen maps on the same feature entity
+ * without creating duplicate IDs.
  */
 export function createFeaturesForSelectedMaps(
   baseEditedFeature: Feature,
   selectedMapIds?: string[],
 ): Feature[] {
-  const hasCustom =
-    hasFeatureCustomDate(baseEditedFeature) ||
+  const hasCustomDate =
     baseEditedFeature.properties?.startYear != null ||
     baseEditedFeature.properties?.endYear != null;
 
-  if (hasCustom || !selectedMapIds || selectedMapIds.length <= 1) {
-    if (hasCustom) {
-      const cleaned = { ...baseEditedFeature.properties };
-      delete cleaned.mapTitle;
-      return [
-        {
-          ...baseEditedFeature,
+  if (hasCustomDate) {
+    return [
+      {
+        ...baseEditedFeature,
+        mapId: null,
+        mapIds: [],
+        properties: {
+          ...baseEditedFeature.properties,
           mapId: null,
           mapIds: [],
-          properties: {
-            ...cleaned,
-            mapId: null,
-            mapIds: [],
-            mapTitle: null,
-          },
+          mapTitle: null,
         },
-      ];
-    }
+      },
+    ];
+  }
+
+  if (!selectedMapIds || selectedMapIds.length === 0) {
     return [baseEditedFeature];
   }
+  if (
+    selectedMapIds.length === 1 &&
+    selectedMapIds[0] === baseEditedFeature.mapId &&
+    (!baseEditedFeature.mapIds ||
+      (baseEditedFeature.mapIds.length === 1 && baseEditedFeature.mapIds[0] === selectedMapIds[0]))
+  ) {
+    return [baseEditedFeature];
+  }
+
+  const chosenMapIds = [...selectedMapIds];
+  const chosenMapId = chosenMapIds.length > 0 ? chosenMapIds[0] : null;
 
   return [
     {
       ...baseEditedFeature,
-      mapId: selectedMapIds[0],
-      mapIds: selectedMapIds,
+      mapId: chosenMapId,
+      mapIds: chosenMapIds,
       properties: {
         ...baseEditedFeature.properties,
-        mapId: selectedMapIds[0],
-        mapIds: selectedMapIds,
+        mapId: chosenMapId,
+        mapIds: chosenMapIds,
       },
     },
   ];
