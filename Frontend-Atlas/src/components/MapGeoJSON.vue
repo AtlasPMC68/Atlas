@@ -151,7 +151,53 @@ let labelVisibilityFrame: number | null = null;
 let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
 let selectedCityRing: L.Marker | null = null;
 let selectedFeatureQuickActionsMarker: L.Marker | null = null;
+let quickActionsCleanup: (() => void) | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
+
+function getLayerTopRightLatLng(layer: L.Layer, currentMap: L.Map): L.LatLng | null {
+  let maxX = -Infinity;
+  let minY = Infinity;
+
+  const traverse = (coords: any) => {
+    if (coords instanceof L.LatLng) {
+      const pt = currentMap.latLngToContainerPoint(coords);
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+    } else if (Array.isArray(coords)) {
+      for (let i = 0; i < coords.length; i++) {
+        traverse(coords[i]);
+      }
+    }
+  };
+
+  const s = layer as any;
+  if (typeof s.getLatLngs === "function") {
+    traverse(s.getLatLngs());
+  } else if (typeof s.getLatLng === "function") {
+    traverse(s.getLatLng());
+  } else if (typeof s.getBounds === "function") {
+    const b = s.getBounds();
+    if (b && (!b.isValid || b.isValid())) {
+      const corners = [b.getNorthWest(), b.getNorthEast(), b.getSouthEast(), b.getSouthWest()];
+      corners.forEach((c) => {
+        const pt = currentMap.latLngToContainerPoint(c);
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+      });
+    }
+  }
+
+  if (!isFinite(maxX) || !isFinite(minY)) return null;
+  return currentMap.containerPointToLatLng(L.point(maxX, minY));
+}
+
+function updateQuickActionsPosition(layer: L.Layer) {
+  if (!selectedFeatureQuickActionsMarker || !map) return;
+  const ne = getLayerTopRightLatLng(layer, map);
+  if (ne) {
+    selectedFeatureQuickActionsMarker.setLatLng(ne);
+  }
+}
 let escapeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 const selectedFeatureId = computed(() => props.selectedFeatureId ?? null);
@@ -1504,6 +1550,8 @@ onBeforeUnmount(() => {
   rightDragCleanup?.();
   rightDragCleanup = null;
   clearMultiSelectStylesAndDrag();
+  quickActionsCleanup?.();
+  quickActionsCleanup = null;
   selectedCityRing?.remove();
   selectedFeatureQuickActionsMarker?.remove();
   selectedFeatureQuickActionsMarker = null;
@@ -1553,6 +1601,8 @@ watch(
 localFeaturesSnapshot.value = [...props.features];
 
 watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
+  quickActionsCleanup?.();
+  quickActionsCleanup = null;
   // Always remove the city selection ring and floating quick actions on any selection change
   if (selectedCityRing) {
     selectedCityRing.remove();
@@ -1668,10 +1718,9 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
       shapeScaling.attach(id);
     }
 
-    if (layer && !isTextOrPoint && selectedFeature) {
-      const bounds = (layer as any)?.getBounds?.();
-      if (bounds && map && (!bounds.isValid || bounds.isValid())) {
-        const topRight = bounds.getNorthEast();
+    if (layer && !isTextOrPoint && selectedFeature && map) {
+      const topRight = getLayerTopRightLatLng(layer, map);
+      if (topRight) {
         selectedFeatureQuickActionsMarker = L.marker(topRight, {
           icon: L.divIcon({
             className: "feature-floating-actions-container",
@@ -1689,12 +1738,27 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
                 </button>
               </div>
             `,
-            iconSize: [52, 24],
-            iconAnchor: [-8, 12],
+            iconSize: [47, 22],
+            iconAnchor: [-8, 0],
           }),
           interactive: true,
           zIndexOffset: 1200,
         }).addTo(map);
+
+        const onPosChange = () => updateQuickActionsPosition(layer);
+        map.on("zoom", onPosChange);
+        map.on("viewreset", onPosChange);
+        map.on("move", onPosChange);
+        (layer as any).on?.("pm:drag", onPosChange);
+        (layer as any).on?.("pm:dragend", onPosChange);
+
+        quickActionsCleanup = () => {
+          map?.off("zoom", onPosChange);
+          map?.off("viewreset", onPosChange);
+          map?.off("move", onPosChange);
+          (layer as any).off?.("pm:drag", onPosChange);
+          (layer as any).off?.("pm:dragend", onPosChange);
+        };
 
         const el = selectedFeatureQuickActionsMarker.getElement();
         if (el) {
@@ -1906,9 +1970,17 @@ watch(
   z-index: 1005;
 }
 
-.label-selected .label-quick-actions,
+.label-selected .label-quick-actions {
+  display: flex !important;
+}
+
 .label-quick-actions.is-floating {
   display: flex !important;
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  margin: 0 !important;
 }
 
 .feature-floating-actions-container {

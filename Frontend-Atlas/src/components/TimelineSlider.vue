@@ -104,7 +104,7 @@
             tabindex="0"
             class="element-marker-pin"
             :class="{
-              'element-marker-active': marker.items.some((i: { year: any; }) => i.year === internalYear) || marker.year === internalYear,
+              'element-marker-active': marker.items.some((i) => i.year === internalYear) || marker.year === internalYear,
               'element-marker-is-range': marker.isRange,
             }"
             :style="marker.style"
