@@ -87,7 +87,7 @@ describe("TextValidationModal", () => {
   });
 
   it("does not render any temporary map container (map removed)", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.find('[data-testid="map-container"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Positionnement géographique");
   });
@@ -100,7 +100,7 @@ describe("TextValidationModal", () => {
   });
 
   it("renders the header when isOpen is true", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.text()).toContain("Validation des textes non reconnus");
   });
 
@@ -115,7 +115,7 @@ describe("TextValidationModal", () => {
   });
 
   it("renders the original image at the left when imageUrl is provided", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true);
     expect(wrapper.text()).toContain("Image de référence");
     const img = wrapper.find("img");
     expect(img.exists()).toBe(true);
@@ -147,7 +147,7 @@ describe("TextValidationModal", () => {
       configurable: true,
       value: vi.fn(),
     });
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const input = wrapper.find('input[type="file"]');
     const file = new File(["image"], "reference.png", { type: "image/png" });
     Object.defineProperty(input.element, "files", { value: [file], configurable: true });
@@ -173,13 +173,13 @@ describe("TextValidationModal", () => {
   });
 
   it("renders the Non localisés header with item count", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.text()).toContain("Non localisés");
     expect(wrapper.text()).toContain("2");
   });
 
   it("shows non-localized items with text inputs, action buttons, and suggestion indicator", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const textInputs = wrapper.findAll('input[type="text"]');
     expect(textInputs.length).toBe(2);
     expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
@@ -192,7 +192,7 @@ describe("TextValidationModal", () => {
   });
 
   it("allows user to accept suggested city in 1 click and toggle back", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
 
     // Check suggestion button for the item that has a nearby place suggestion
     const suggestionBtn = wrapper
@@ -247,7 +247,7 @@ describe("TextValidationModal", () => {
   });
 
   it("allows editing text and emits confirm with all items", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
 
     const textInputs = wrapper.findAll('input[type="text"]');
     await textInputs[0].setValue("Traité de 1783");
@@ -266,7 +266,7 @@ describe("TextValidationModal", () => {
   });
 
   it("allows selecting all, deselecting all, and toggling individual items via checkboxes", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
     expect(selectAllCheckbox.exists()).toBe(true);
 
@@ -289,7 +289,7 @@ describe("TextValidationModal", () => {
   });
 
   it("deletes item completely from list when trash icon is clicked", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.text()).toContain("2 / 2 conservé(s)");
 
     const trashButtons = wrapper.findAll('button[title="Supprimer ce texte de la carte"]');
@@ -404,7 +404,7 @@ describe("TextValidationModal", () => {
   });
 
   it("emits confirmed items with selected: false when deselecting all", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
 
     // Deselect all
     const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
@@ -423,7 +423,7 @@ describe("TextValidationModal", () => {
   });
 
   it("emits cancel when Passer button is clicked", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const cancelBtn = findButtonByText(wrapper, "Passer", true);
     expect(cancelBtn).toBeDefined();
     await cancelBtn!.trigger("click");

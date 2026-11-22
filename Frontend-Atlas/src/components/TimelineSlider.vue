@@ -17,37 +17,37 @@
           </span>
 
           <!-- 3 Boutons Filtrer par date placés à droite de Dates personnalisées -->
-          <div class="inline-flex items-center gap-2 ml-2 pl-2 border-l border-base-300">
+          <div class="inline-flex items-center gap-2 ml-2 pl-2 border-l border-base-300 relative z-[7000] pointer-events-auto">
             <span class="text-xs font-semibold text-base-content/80 select-none">
               Filtrer par date :
             </span>
-            <div class="join border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-xs">
+            <div class="join border border-base-300 rounded-lg overflow-visible bg-base-100 shadow-xs relative z-[7000]">
               <button
                 type="button"
-                class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                class="join-item btn btn-xs px-2.5 font-medium transition-colors rounded-none rounded-l-lg border-0"
                 :class="currentMode === 'specific' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
                 data-testid="timeline-mode-specific"
-                title="Afficher uniquement les cartes et éléments actifs à la date sélectionnée"
+                title="Uniquement les cartes de la période sélectionnée"
                 @click="setMode('specific')"
               >
                 Spécifique
               </button>
               <button
                 type="button"
-                class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                class="join-item btn btn-xs px-2.5 font-medium transition-colors rounded-none border-0"
                 :class="currentMode === 'cumulative' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
                 data-testid="timeline-mode-cumulative"
-                title="Afficher toutes les cartes et éléments apparus jusqu'à la date sélectionnée"
+                title="Toutes les cartes jusqu'à la date choisie (historique cumulé)"
                 @click="setMode('cumulative')"
               >
                 Cumulatif
               </button>
               <button
                 type="button"
-                class="join-item btn btn-xs px-2.5 font-medium transition-colors"
+                class="join-item btn btn-xs px-2.5 font-medium transition-colors rounded-none rounded-r-lg border-0"
                 :class="currentMode === 'global' ? 'btn-primary' : 'btn-ghost text-base-content/70 hover:text-base-content'"
                 data-testid="timeline-mode-global"
-                title="Afficher l'ensemble du projet sans restriction de date"
+                title="Toutes les cartes, sans filtre de date"
                 @click="setMode('global')"
               >
                 Global
@@ -61,26 +61,23 @@
           <div
             v-for="period in displayedPeriods"
             :key="period.id"
-            class="period-track tooltip tooltip-top cursor-pointer"
-            :class="{ 'tooltip-open': hoveredPeriodId === period.id }"
+            class="period-track cursor-pointer"
             :style="
               isZoomMode
                 ? getDayZoomPeriodStyle(period)
                 : getPeriodStyle(period.startYear, period.endYear, period.color, period.row)
             "
-            :data-tip="`${period.title} (${isZoomMode ? period.startDate : period.startYear} - ${isZoomMode ? period.endDate : period.endYear})`"
             @click="selectYear(period.startYear)"
             @mouseenter="hoveredPeriodId = period.id"
             @mouseleave="hoveredPeriodId = null"
             @dblclick.stop="emit('edit-map', period.id)"
           >
             <div
-              class="tooltip-content pointer-events-auto rounded-xl border border-gray-300 bg-base-100 px-3 py-2 text-xs text-base-content shadow-lg whitespace-nowrap"
-              @mouseenter="hoveredPeriodId = period.id"
-              @mouseleave="hoveredPeriodId = null"
+              v-if="hoveredPeriodId === period.id"
+              class="period-track-popover absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 pointer-events-none rounded-xl border border-gray-300 bg-base-100 px-3 py-1.5 text-xs text-base-content shadow-lg whitespace-nowrap z-[6000]"
             >
-              <div class="font-semibold">{{ period.title }}</div>
-              <div class="text-base-content opacity-70">
+              <div class="font-semibold text-center">{{ period.title }}</div>
+              <div class="text-base-content opacity-70 text-center">
                 {{
                   isZoomMode
                     ? `${period.startDate} - ${period.endDate}`
@@ -104,19 +101,20 @@
             tabindex="0"
             class="element-marker-pin"
             :class="{
-              'element-marker-active': marker.items.some((i) => i.year === internalYear) || marker.year === internalYear,
+              'element-marker-active': marker.items.some((i: TimelineMarkerItem) => i.year === internalYear) || marker.year === internalYear,
+              'element-marker-selected': isMarkerSelected(marker),
               'element-marker-is-range': marker.isRange,
             }"
             :style="marker.style"
             :data-tip="marker.tooltip"
             :aria-label="marker.tooltip"
             data-testid="timeline-element-marker"
-            @click="selectYear(marker.year)"
+            @click="onMarkerClick(marker)"
             @dblclick.stop="onMarkerDblClick(marker)"
             @mouseenter="onMarkerMouseEnter(marker.year)"
             @mouseleave="onMarkerMouseLeave"
-            @keydown.enter="selectYear(marker.year)"
-            @keydown.space.prevent="selectYear(marker.year)"
+            @keydown.enter="onMarkerClick(marker)"
+            @keydown.space.prevent="onMarkerClick(marker)"
           >
             <span
               class="element-marker-badge"
@@ -124,6 +122,7 @@
                 'element-marker-badge-range': marker.isRange,
                 'element-marker-badge-single': marker.items.length === 1,
                 'element-marker-badge-multiple': marker.items.length > 1,
+                'element-marker-badge-selected': isMarkerSelected(marker),
               }"
             >
               <span
@@ -157,25 +156,30 @@
                 </span>
               </div>
 
-              <div class="flex flex-col gap-2 mt-2 max-h-64 overflow-y-auto overflow-x-hidden">
+              <div class="flex flex-col gap-2 mt-2 max-h-64 overflow-y-auto overflow-x-hidden p-1 -m-1">
                 <div
                   v-for="mapGroup in getItemsByMap(marker.items)"
                   :key="mapGroup.mapId || 'general'"
                   class="flex flex-col"
                 >
-                  <div class="flex items-center justify-between py-1 text-[11px] font-semibold uppercase tracking-wide text-base-content opacity-50">
+                  <div class="flex items-center justify-between py-1 text-[11px] font-semibold uppercase tracking-wide text-base-content opacity-50 px-1">
                     <span class="truncate">{{ mapGroup.mapTitle }}</span>
                     <span class="font-mono">{{ mapGroup.items.length }}</span>
                   </div>
 
-                  <div class="flex flex-col divide-y divide-gray-200">
+                  <div class="flex flex-col gap-1">
                     <div
                       v-for="item in mapGroup.items"
                       :key="item.id"
                       role="button"
                       tabindex="0"
-                      class="flex items-center justify-between gap-2 py-2 px-1.5 rounded-lg hover:bg-gray-100 text-left transition-colors group w-full cursor-pointer select-none"
-                      @click.stop="onPopoverItemClick(item, marker.year)"
+                      class="flex items-center justify-between gap-2 py-2 px-2 rounded-lg hover:bg-gray-100 text-left transition-colors group w-full cursor-pointer select-none"
+                      :class="[
+                        isItemSelected(item.id)
+                          ? 'app-feature-selected border-2 border-primary-600 bg-primary-50/90 font-semibold shadow-sm'
+                          : 'border border-transparent'
+                      ]"
+                      @click.stop="onPopoverItemClick(item, marker.year, $event)"
                       @dblclick.stop="onPopoverItemEdit(item, marker.year)"
                       @keydown.enter.stop="onPopoverItemEdit(item, marker.year)"
                     >
@@ -337,6 +341,8 @@ const props = defineProps<{
   elementMarkers?: TimelineMarkerItem[];
   filterByDate?: boolean;
   mode?: "specific" | "cumulative" | "global";
+  selectedFeatureId?: string | null;
+  multiSelectedFeatureIds?: string[];
 }>();
 
 const emit = defineEmits([
@@ -346,6 +352,7 @@ const emit = defineEmits([
   "edit-map",
   "edit-element",
   "select-element",
+  "select-elements",
   "select-date",
 ]);
 
@@ -386,8 +393,33 @@ function onMarkerMouseLeave() {
   }, 180);
 }
 
-function onPopoverItemClick(item: TimelineMarkerItem, year: number) {
+function isItemSelected(id?: string | number | null): boolean {
+  if (id == null) return false;
+  const strId = String(id);
+  if (props.selectedFeatureId && String(props.selectedFeatureId) === strId) return true;
+  if (props.multiSelectedFeatureIds?.some((i: string) => String(i) === strId)) return true;
+  return false;
+}
+
+function isMarkerSelected(marker: { items: Array<{ id?: string | number | null }> }): boolean {
+  return marker.items.some((i: { id?: string | number | null }) => isItemSelected(i.id));
+}
+
+function onPopoverItemClick(item: TimelineMarkerItem, year: number, event?: MouseEvent) {
   selectYear(year);
+  const isCtrl = Boolean(event?.ctrlKey || event?.metaKey);
+  if (isCtrl) {
+    const current = new Set(props.multiSelectedFeatureIds ?? []);
+    if (props.selectedFeatureId) current.add(String(props.selectedFeatureId));
+    const targetId = String(item.id);
+    if (current.has(targetId)) {
+      current.delete(targetId);
+    } else {
+      current.add(targetId);
+    }
+    emit("select-elements", Array.from(current));
+    return;
+  }
   emit("select-element", item.id);
   hoveredMarkerYear.value = null;
 }
@@ -462,11 +494,17 @@ interface MarkerMapGroup {
 function getItemsByMap(items: TimelineMarkerItem[]): MarkerMapGroup[] {
   const groups = new Map<string, MarkerMapGroup>();
   for (const item of items) {
-    const key = item.mapId ? String(item.mapId) : "general";
-    const title =
-      item.mapTitle || (item.mapId ? `Carte ${item.mapId}` : "Éléments généraux");
+    const isCustom =
+      item.isCustom === true ||
+      item.startYear != null ||
+      item.endYear != null;
+    const effectiveMapId = isCustom ? null : item.mapId;
+    const key = effectiveMapId ? String(effectiveMapId) : "general";
+    const title = effectiveMapId
+      ? (item.mapTitle || `Carte ${effectiveMapId}`)
+      : "Éléments généraux";
     if (!groups.has(key)) {
-      groups.set(key, { mapId: item.mapId ?? null, mapTitle: title, items: [] });
+      groups.set(key, { mapId: effectiveMapId, mapTitle: title, items: [] });
     }
     groups.get(key)!.items.push(item);
   }
@@ -482,6 +520,15 @@ function getPopoverStyle(year: number): Record<string, string> {
     return { right: "0%", left: "auto", transform: "translateX(0)" };
   }
   return { left: "50%", transform: "translateX(-50%)" };
+}
+
+function onMarkerClick(marker: GroupedElementMarker) {
+  selectYear(marker.year);
+  if (marker.items.length === 1) {
+    emit("select-element", marker.items[0].id);
+  } else {
+    hoveredMarkerYear.value = marker.year;
+  }
 }
 
 function onMarkerDblClick(marker: GroupedElementMarker) {

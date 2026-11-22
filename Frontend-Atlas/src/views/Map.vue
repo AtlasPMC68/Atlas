@@ -15,7 +15,10 @@
           :map-periods="mapPeriods"
           :custom-label-styles="customLabelStyles"
           :selected-feature-id="selectedFeatureId"
+          :multi-selected-feature-ids="multiSelectedFeatureIds"
+          :active-map-id="activeMapPeriod?.id ?? null"
           @select-feature="selectFeature"
+          @select-features="onSelectFeatures"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
           @save-map="onSaveMap"
@@ -92,14 +95,16 @@
             @edit-feature-request="onEditFeatureRequest"
           />
           <div
-            v-show="!showTextValidationModal"
+            v-show="!showTextValidationModal && isLegendVisible"
             class="absolute bottom-4 left-4 z-[1001]"
           >
             <Legend
               :zone-features="zoneFeatures"
               :feature-visibility="featureVisibility"
               :selected-feature-id="selectedFeatureId"
+              :multi-selected-feature-ids="multiSelectedFeatureIds"
               @select-feature="selectFeature"
+              @select-features="onSelectFeatures"
               @edit-feature="onEditFeatureRequest"
             />
           </div>
@@ -150,11 +155,11 @@
               type="button"
               class="btn btn-sm btn-primary shadow-md gap-1.5"
               data-testid="show-timeline-button"
-              title="Afficher l'échelle de temps"
+              title="Afficher la ligne du temps"
               @click="toggleTimeline"
             >
               <EyeIcon class="w-4 h-4" />
-              <span class="text-xs font-semibold">Afficher l'échelle de temps</span>
+              <span class="text-xs font-semibold">Afficher la ligne du temps</span>
             </button>
           </div>
         </div>
@@ -231,17 +236,28 @@
               </button>
             </div>
 
-            <!-- Right section: Masquer l'échelle -->
+            <!-- Right section: Masquer la légende & Masquer la ligne du temps -->
             <div class="flex items-center gap-3 ml-auto">
               <button
                 type="button"
                 class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
+                data-testid="hide-legend-button"
+                :title="isLegendVisible ? 'Masquer la légende' : 'Afficher la légende'"
+                @click="toggleLegend"
+              >
+                <EyeSlashIcon v-if="isLegendVisible" class="w-3.5 h-3.5" />
+                <EyeIcon v-else class="w-3.5 h-3.5" />
+                <span>{{ isLegendVisible ? "Masquer la légende" : "Afficher la légende" }}</span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
                 data-testid="hide-timeline-button"
-                title="Masquer l'échelle de temps"
+                title="Masquer la ligne du temps"
                 @click="toggleTimeline"
               >
                 <EyeSlashIcon class="w-3.5 h-3.5" />
-                <span>Masquer l'échelle</span>
+                <span>Masquer la ligne du temps</span>
               </button>
             </div>
           </div>
@@ -251,11 +267,14 @@
             <TimelineSlider
               v-model:year="selectedYear"
               v-model:mode="timelineMode"
+              :selected-feature-id="selectedFeatureId"
+              :multi-selected-feature-ids="multiSelectedFeatureIds"
               @exact-date-change="onExactDateChange"
               @select-date="onTimelineDateSelect"
               @edit-map="openEditMapDialog"
               @edit-element="onEditElementFromTimeline"
               @select-element="onSelectElementFromTimeline"
+              @select-elements="onSelectFeatures"
               :min="timelineMinYear"
               :max="timelineMaxYear"
               :marker-years="timelineMarkerYears"
@@ -353,6 +372,7 @@ import {
   isCopyableFeature,
   cloneFeatureWithOffset,
   getFeatureMapId,
+  getFeatureMapIds,
 } from "../utils/featureHelpers";
 import {
   Bars3Icon,
@@ -540,8 +560,26 @@ function selectFeature(id: string | null) {
     if (feat) {
       const { startYear, endYear } = getFeatureCustomYears(feat);
       const featMapId = getFeatureMapId(feat);
-      const period = featMapId
-        ? (periodByMapId.value.get(featMapId) ?? periodByMapId.value.get(String(featMapId).trim().toLowerCase()))
+      const featMapTitle =
+        ("mapTitle" in feat ? (feat as { mapTitle?: string }).mapTitle : undefined) ||
+        feat.properties?.mapTitle;
+
+      const featMapKey = featMapId ?? featMapTitle;
+      const featMapKeyNorm = featMapKey ? String(featMapKey).trim().toLowerCase() : null;
+
+      const period = featMapKeyNorm
+        ? (periodByMapId.value.get(featMapKeyNorm) ??
+           periodByMapId.value.get(featMapKey!) ??
+           enrichedPeriods.value.find(
+             (p) =>
+               String(p.id).trim().toLowerCase() === featMapKeyNorm ||
+               p.title?.trim().toLowerCase() === featMapKeyNorm,
+           ) ??
+           mapPeriods.value.find(
+             (p) =>
+               String(p.id).trim().toLowerCase() === featMapKeyNorm ||
+               p.title?.trim().toLowerCase() === featMapKeyNorm,
+           ))
         : null;
 
       let targetYear: number | null = startYear ?? endYear;
@@ -550,14 +588,11 @@ function selectFeature(id: string | null) {
         : null;
 
       if (targetYear == null && period) {
-        targetYear = period.startYear ?? null;
-        targetExactDate = (period.exactDate && period.startDate) ? period.startDate : null;
+        targetYear = (period as any).startYear ?? toYear(period.startDate);
+        targetExactDate = ((period as any).exactDate && period.startDate) ? period.startDate : null;
       }
 
-      // Check if feature is visible in the current timeline view
-      const isVisibleNow = filteredFeatures.value.some((f: Feature) => String(f.id) === String(id));
-
-      if ((!isVisibleNow || (timelineMode.value === "specific" && targetYear != null && targetYear !== selectedYear.value)) && targetYear != null) {
+      if (timelineMode.value !== "global" && targetYear != null && targetYear !== selectedYear.value) {
         selectedYear.value = targetYear;
         if (targetExactDate) {
           selectedExactDate.value = targetExactDate;
@@ -568,6 +603,18 @@ function selectFeature(id: string | null) {
 
       if (period?.title) {
         currentMapTitle.value = period.title;
+      } else if (targetYear != null) {
+        const matchingPeriod = enrichedPeriods.value.find((p) =>
+          p.startYear != null && p.endYear != null && isPeriodActiveAt(
+            p.startYear,
+            p.endYear,
+            targetYear!,
+            periodStartYears.value,
+          )
+        );
+        if (matchingPeriod?.title) {
+          currentMapTitle.value = matchingPeriod.title;
+        }
       }
     }
   }
@@ -583,6 +630,7 @@ const copiedFeatures = ref<Feature[]>([]);
 const isSidebarVisible = ref(true);
 const isFullscreen = ref(false);
 const isTimelineVisible = ref(true);
+const isLegendVisible = ref(true);
 
 // Panel resizing states (Point 7)
 const sidebarWidth = ref(350);
@@ -610,6 +658,10 @@ function toggleTimeline() {
   nextTick(() => {
     leafletMap.value?.invalidateSize();
   });
+}
+
+function toggleLegend() {
+  isLegendVisible.value = !isLegendVisible.value;
 }
 
 function toggleFullscreen() {
@@ -796,12 +848,7 @@ function duplicateFeature(feature: Feature) {
 }
 
 function onDirectDeleteFeature(feature: Feature) {
-  const next = features.value.filter(
-    (f) => String(f.id) !== String(feature.id),
-  );
-  selectedFeatureId.value = null;
-  multiSelectedFeatureIds.value = [];
-  commitFeatureSnapshot(next);
+  onDeleteFeature(String(feature.id));
 }
 
 function stopSidebarResize() {
@@ -855,20 +902,39 @@ const zoneFeatures = computed(() =>
 const selectedYear = ref(-1);
 const selectedExactDate = ref<string | null>(null);
 export type TimelineFilterMode = "specific" | "cumulative" | "global";
-const timelineMode = ref<TimelineFilterMode>("specific");
+const storedTimelineMode = typeof window !== "undefined" ? localStorage.getItem("atlas_timeline_filter_mode") : null;
+const timelineMode = ref<TimelineFilterMode>(
+  storedTimelineMode === "specific" || storedTimelineMode === "cumulative" || storedTimelineMode === "global"
+    ? storedTimelineMode
+    : "specific",
+);
+watch(timelineMode, (mode) => {
+  try {
+    localStorage.setItem("atlas_timeline_filter_mode", mode);
+  } catch {
+    // Ignore storage errors in restricted contexts
+  }
+});
 
 const enrichedPeriods = computed<SliderPeriod[]>(() => {
   const mapIdsWithFeatures = new Set<string>();
   for (const f of features.value) {
     const mid = getFeatureMapId(f);
     if (mid) mapIdsWithFeatures.add(mid.toLowerCase());
+    const mapTitle =
+      ("mapTitle" in f ? (f as { mapTitle?: string }).mapTitle : undefined) ||
+      f.properties?.mapTitle;
+    if (mapTitle) mapIdsWithFeatures.add(String(mapTitle).trim().toLowerCase());
   }
 
   const periods: SliderPeriod[] = [];
   for (const p of mapPeriods.value) {
+    const pIdNorm = String(p.id).trim().toLowerCase();
+    const pTitleNorm = p.title ? p.title.trim().toLowerCase() : "";
     if (
       mapIdsWithFeatures.size > 0 &&
-      !mapIdsWithFeatures.has(String(p.id).trim().toLowerCase())
+      !mapIdsWithFeatures.has(pIdNorm) &&
+      (!pTitleNorm || !mapIdsWithFeatures.has(pTitleNorm))
     ) {
       continue;
     }
@@ -898,6 +964,10 @@ const periodByMapId = computed(() => {
       };
       map.set(p.id, enriched);
       map.set(String(p.id).trim().toLowerCase(), enriched);
+      if (p.title) {
+        map.set(p.title, enriched);
+        map.set(p.title.trim().toLowerCase(), enriched);
+      }
     }
   }
   return map;
@@ -928,14 +998,6 @@ const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
     const effectiveStart = startYear ?? endYear;
     if (effectiveStart == null) return;
 
-    const rawMapId = getFeatureMapId(f);
-    const normalizedMapId = rawMapId
-      ? String(rawMapId).trim().toLowerCase()
-      : null;
-    const mapTitle = normalizedMapId
-      ? periodTitleById.get(normalizedMapId) || "Carte associée"
-      : "Éléments généraux";
-
     const rawName =
       f.properties?.name?.trim() ||
       f.name?.trim() ||
@@ -962,8 +1024,8 @@ const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
       color:
         f.properties?.colorHex ||
         (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
-      mapId: rawMapId ?? null,
-      mapTitle,
+      mapId: null,
+      mapTitle: "Éléments généraux",
       isCustom: true,
     });
   });
@@ -1055,7 +1117,9 @@ watch(
   [selectedYear, selectedExactDate, timelineMode],
   async () => {
     await nextTick();
-    mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+    if (!selectedFeatureId.value) {
+      mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+    }
   },
   { flush: "post" },
 );
@@ -1192,55 +1256,64 @@ const filteredFeatures = computed(() => {
       }
     }
 
-    const featureMapId = getFeatureMapId(feature);
-    let isMapActive = false;
-    if (featureMapId) {
-      const normalizedMapId = String(featureMapId).trim().toLowerCase();
-      const period =
-        periodByMapId.value.get(featureMapId) ??
-        periodByMapId.value.get(normalizedMapId);
-
-      if (!period) {
-        isMapActive = true;
-      } else if (timelineMode.value === "cumulative") {
-        isMapActive =
-          period.startYear == null || period.startYear <= selectedYear.value;
-      } else if (
-        selectedExactDate.value &&
-        period.startDate &&
-        period.endDate
-      ) {
-        isMapActive = isPeriodActiveAt(
-          period.startDate,
-          period.endDate,
-          selectedExactDate.value,
-          periodStartDates.value,
-        );
-      } else if (period.startYear == null || period.endYear == null) {
-        isMapActive = true;
-      } else {
-        isMapActive = isPeriodActiveAt(
-          period.startYear,
-          period.endYear,
-          selectedYear.value,
-          periodStartYears.value,
-        );
-      }
-    } else {
-      isMapActive = !hasCustomYears;
-    }
-
-    // Custom years add to associated map periods (union of periods)
-    if (hasCustomYears && featureMapId) {
-      if (timelineMode.value === "cumulative") {
-        return isCustomActive;
-      }
-      return isCustomActive || isMapActive;
-    }
+    // Custom date: detached from any map; visibility determined solely by custom period
     if (hasCustomYears) {
       return isCustomActive;
     }
-    return isMapActive;
+
+    const featureMapIds = getFeatureMapIds(feature);
+    const featureMapTitle =
+      ("mapTitle" in feature ? (feature as { mapTitle?: string }).mapTitle : undefined) ||
+      feature.properties?.mapTitle;
+    const targetMapKeys =
+      featureMapIds.length > 0
+        ? featureMapIds
+        : featureMapTitle
+          ? [featureMapTitle]
+          : [];
+
+    if (targetMapKeys.length > 0) {
+      return targetMapKeys.some((effectiveMapKey) => {
+        const normalizedMapId = String(effectiveMapKey).trim().toLowerCase();
+        const period =
+          periodByMapId.value.get(effectiveMapKey) ??
+          periodByMapId.value.get(normalizedMapId) ??
+          enrichedPeriods.value.find(
+            (p) =>
+              String(p.id).trim().toLowerCase() === normalizedMapId ||
+              p.title?.trim().toLowerCase() === normalizedMapId,
+          );
+
+        if (!period) return true;
+        if (timelineMode.value === "cumulative") {
+          return (
+            period.startYear == null || period.startYear <= selectedYear.value
+          );
+        } else if (
+          selectedExactDate.value &&
+          period.startDate &&
+          period.endDate
+        ) {
+          return isPeriodActiveAt(
+            period.startDate,
+            period.endDate,
+            selectedExactDate.value,
+            periodStartDates.value,
+          );
+        } else if (period.startYear == null || period.endYear == null) {
+          return true;
+        } else {
+          return isPeriodActiveAt(
+            period.startYear,
+            period.endYear,
+            selectedYear.value,
+            periodStartYears.value,
+          );
+        }
+      });
+    }
+
+    return true;
   });
 });
 
@@ -1599,16 +1672,35 @@ async function saveCustomLabelStyles(styles: CustomLabelStyle[]) {
 }
 
 async function onDeleteFeature(
-  featureId: string,
+  featureIdOrIds: string | string[],
   callbacks?: {
     onSuccess?: () => void;
     onError?: (message?: string) => void;
   },
 ) {
   try {
+    let idsToDelete: string[] = [];
+    if (Array.isArray(featureIdOrIds)) {
+      idsToDelete = featureIdOrIds.map(String);
+    } else {
+      const fid = String(featureIdOrIds);
+      if (
+        multiSelectedFeatureIds.value.length > 0 &&
+        multiSelectedFeatureIds.value.some((id) => String(id) === fid)
+      ) {
+        idsToDelete = multiSelectedFeatureIds.value.map(String);
+      } else {
+        idsToDelete = [fid];
+      }
+    }
+
+    const idsSet = new Set(idsToDelete);
     const nextFeatures = features.value.filter(
-      (feature: Feature) => feature.id !== featureId,
+      (feature: Feature) => !idsSet.has(String(feature.id)),
     );
+
+    selectedFeatureId.value = null;
+    multiSelectedFeatureIds.value = [];
 
     if (trackingEnabled.value) {
       commitFeatureSnapshot(nextFeatures);
@@ -2457,6 +2549,11 @@ function onDocumentClick(e: MouseEvent) {
     target.closest(".leaflet-container") ||
     target.closest(".city-label-text") ||
     target.closest("[data-testid='feature-visibility-controls']") ||
+    target.closest(".sidebar-wrapper") ||
+    target.closest(".map-timeline-container") ||
+    target.closest(".timeline-container") ||
+    target.closest(".element-marker-pin") ||
+    target.closest(".element-marker-popover") ||
     target.closest(".modal") ||
     target.closest("dialog")
   ) {

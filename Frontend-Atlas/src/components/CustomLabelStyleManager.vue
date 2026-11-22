@@ -20,17 +20,18 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-2 overflow-y-auto max-h-[380px] pr-1">
+          <div class="flex flex-col gap-2 overflow-y-auto max-h-[380px] p-1 -m-1">
             <div
               v-for="(style, index) in draftStyles"
               :key="style.id"
               class="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 bg-base-100 transition-colors cursor-pointer select-none"
               :class="
                 editingId === style.id
-                  ? 'border-2 border-primary bg-primary/5 shadow-xs'
-                  : 'border-gray-400 hover:border-base-content'
+                  ? 'border-2 border-blue-600 ring-2 ring-inset ring-blue-500/20 bg-blue-50/50 shadow-xs'
+                  : 'border-gray-300 hover:border-base-content/40'
               "
               :draggable="true"
+              :aria-label="`Modifier le style ${style.name}`"
               @dragstart="onDragStart(index, $event)"
               @dragover.prevent="onDragOver(index)"
               @drop="onDrop(index)"
@@ -59,16 +60,6 @@
               </div>
 
               <div class="flex shrink-0 items-center gap-0.5">
-                <button
-                  type="button"
-                  class="icon-action-btn-sm"
-                  :aria-label="`Modifier le style ${style.name}`"
-                  @click.stop="editStyle(style)"
-                >
-                  <PencilSquareIcon
-                    class="w-4 h-4 text-gray-500 hover:text-gray-800"
-                  />
-                </button>
                 <button
                   type="button"
                   class="icon-action-btn-sm text-error hover:bg-error/10"
@@ -327,7 +318,7 @@
 
               <div class="setting-card">
                 <label class="setting-card-label" for="custom-style-point-stroke-opacity">
-                  Opacité bord
+                  Opacité contour
                 </label>
                 <input
                   id="custom-style-point-stroke-opacity"
@@ -344,7 +335,7 @@
 
               <div class="setting-card">
                 <label class="setting-card-label" for="custom-style-point-stroke-width">
-                  Épaisseur bord
+                  Épaisseur contour
                 </label>
                 <input
                   id="custom-style-point-stroke-width"
@@ -393,7 +384,6 @@ import type {
 } from "../utils/labelPresentation";
 import { getLabelStylePreviewCss } from "../utils/labelPresentation";
 import {
-  PencilSquareIcon,
   TrashIcon,
   ArrowPathIcon,
   PlusIcon,
@@ -505,6 +495,7 @@ const currentLiveStyle = computed<CustomLabelStyleExtended>(() => ({
   priority: 30,
   minZoom: 1,
   hasPoint: draft.value.hasPoint,
+  mapElementType: draft.value.hasPoint ? "point" : "label",
   pointColor: draft.value.pointColor || draft.value.color || "#000000",
   pointStrokeColor: draft.value.pointStrokeColor || draft.value.pointColor || "#000000",
   pointFillOpacity: clampOpacity(draft.value.pointFillOpacity, 0.5),
@@ -668,6 +659,7 @@ function toStyleDraft(
     priority: 30,
     minZoom: 1,
     hasPoint: draft.value.hasPoint,
+    mapElementType: draft.value.hasPoint ? "point" : "label",
     pointColor: draft.value.pointColor || draft.value.color || "#000000",
     pointStrokeColor: draft.value.pointStrokeColor || draft.value.pointColor || "#000000",
     pointFillOpacity: clampOpacity(draft.value.pointFillOpacity, 0.5),

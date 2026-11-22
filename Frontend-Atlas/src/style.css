@@ -449,39 +449,28 @@
   border-radius: 0.25rem;
   background: #ffffff;
   overflow: visible;
-  z-index: 1000;
+  z-index: 10;
 }
 
 .period-tracks:has(.period-track:hover),
 .period-tracks:hover {
-  z-index: 5000;
+  z-index: 20;
 }
 
 .period-track {
   position: absolute;
   border-radius: 999px;
   opacity: 0.95;
-  z-index: 1000;
-  --tooltip-color: #ffffff;
-  --tooltip-text-color: #111827;
+  z-index: 10;
 }
 
 .period-track:hover {
-  z-index: 5000;
+  z-index: 20;
 }
 
-.period-track .tooltip-content {
-  z-index: 5000;
-  background: #ffffff;
-  color: #111827;
-}
-
-.period-track.tooltip::before,
-.period-track.tooltip::after {
-  background-color: #ffffff !important;
-  border-color: #ffffff !important;
-  color: #ffffff !important;
-  z-index: 5000 !important;
+.period-track .period-track-popover {
+  pointer-events: none !important;
+  z-index: 6000;
 }
 
 .element-marker-pin.tooltip::before,
@@ -553,6 +542,26 @@
   background: #f1f5f9;
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.element-marker-pin.element-marker-selected {
+  z-index: 5500;
+}
+
+.element-marker-selected .element-marker-badge,
+.element-marker-badge-selected {
+  background: rgba(37, 99, 235, 0.15) !important;
+  border-color: #2563eb !important;
+  color: #2563eb !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35), 0 2px 4px rgba(37, 99, 235, 0.2) !important;
+  transform: translateY(-2px) scale(1.1);
+  z-index: 5500;
+}
+
+/* Unified selected feature style across the application (sidebar list, popover, map) */
+.app-feature-selected {
+  border: 2px solid #2563eb !important;
+  background-color: rgba(37, 99, 235, 0.08) !important;
 }
 
 .element-marker-badge.element-marker-badge-multiple {

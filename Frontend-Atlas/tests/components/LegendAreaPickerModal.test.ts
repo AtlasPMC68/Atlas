@@ -62,7 +62,7 @@ describe("LegendAreaPickerModal", () => {
 
     // Check header and tabs
     expect(wrapper.text()).toContain("Légende");
-    expect(wrapper.text()).toContain("Zones de texte à ignorer");
+    expect(wrapper.text()).toContain("Zones à ignorer");
     expect(wrapper.text()).toContain("Zone #1");
     expect(wrapper.text()).toContain("Zone #2");
 
@@ -78,7 +78,7 @@ describe("LegendAreaPickerModal", () => {
       (b) => b.text().includes("Légende") && b.classes().includes("join-item"),
     );
     const exclusionBtn = buttons.find(
-      (b) => b.text().includes("Zones de texte à ignorer") && b.classes().includes("join-item"),
+      (b) => b.text().includes("Zones à ignorer") && b.classes().includes("join-item"),
     );
 
     expect(legendBtn).toBeDefined();
@@ -101,7 +101,7 @@ describe("LegendAreaPickerModal", () => {
     // Switch to exclusion mode
     const buttons = wrapper.findAll("button");
     const exclusionBtn = buttons.find(
-      (b) => b.text().includes("Zones de texte à ignorer") && b.classes().includes("join-item"),
+      (b) => b.text().includes("Zones à ignorer") && b.classes().includes("join-item"),
     );
     await exclusionBtn?.trigger("click");
 
@@ -308,7 +308,7 @@ describe("LegendAreaPickerModal", () => {
     // Mode automatically switched to exclusion zones
     const exclusionBtn = wrapper
       .findAll("button")
-      .find((b) => b.text().includes("Zones de texte à ignorer") && b.classes().includes("join-item"));
+      .find((b) => b.text().includes("Zones à ignorer") && b.classes().includes("join-item"));
     expect(exclusionBtn?.classes()).toContain("btn-primary");
     expect(wrapper.text()).toContain("Délimitée");
   });

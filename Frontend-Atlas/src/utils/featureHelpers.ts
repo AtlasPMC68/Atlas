@@ -38,7 +38,7 @@ export function getMapElementType(
     if (rawMapElementType === "zone" || rawMapElementType === "shape") {
       return rawMapElementType;
     }
-    return properties?.shapeKind ? "shape" : "shape";
+    return "shape";
   }
 
   // Geometry constraints: LineStrings can ONLY be polyline or arrow
@@ -47,6 +47,16 @@ export function getMapElementType(
       return rawMapElementType;
     }
     return "polyline";
+  }
+
+  const customLabelStyle = properties?.customLabelStyle as Record<string, unknown> | undefined;
+  if (customLabelStyle) {
+    if (customLabelStyle.hasPoint === true || customLabelStyle.mapElementType === "point") {
+      return "point";
+    }
+    if (customLabelStyle.hasPoint === false || customLabelStyle.mapElementType === "label") {
+      return "label";
+    }
   }
 
   const rawWordType = String(properties?.rawType || properties?.type || "")
@@ -106,6 +116,44 @@ export function colorRgbToCss(rgb: unknown): string | null {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
+export function hasFeatureCustomDate(
+  feature: Feature | Record<string, unknown> | null | undefined,
+): boolean {
+  if (!feature) return false;
+  const props =
+    "properties" in feature && (feature as Feature).properties
+      ? (feature as Feature).properties
+      : (feature as Record<string, unknown>);
+
+  const hasValidNum = (val: unknown): boolean => {
+    if (val === null || val === undefined || val === "") return false;
+    const num = Number(val);
+    return Number.isFinite(num) && num > 0;
+  };
+
+  const hasValidDateStr = (val: unknown): boolean => {
+    if (typeof val !== "string") return false;
+    const trimmed = val.trim();
+    if (!trimmed) return false;
+    const yearMatch = trimmed.match(/^(\d{1,4})/);
+    return Boolean(yearMatch && Number(yearMatch[1]) > 0);
+  };
+
+  if (hasValidNum(props?.startYear) || hasValidNum(props?.endYear)) return true;
+  if (hasValidNum(props?.start_year) || hasValidNum(props?.end_year)) return true;
+  if (hasValidDateStr(props?.startDate) || hasValidDateStr(props?.endDate)) return true;
+  if (hasValidDateStr(props?.start_date) || hasValidDateStr(props?.end_date)) return true;
+
+  if ("properties" in feature) {
+    const direct = feature as Record<string, unknown>;
+    if (hasValidNum(direct.startYear) || hasValidNum(direct.endYear)) return true;
+    if (hasValidNum(direct.start_year) || hasValidNum(direct.end_year)) return true;
+    if (hasValidDateStr(direct.startDate) || hasValidDateStr(direct.endDate)) return true;
+  }
+
+  return false;
+}
+
 /**
  * Safely extracts the mapId from a feature or its properties (supporting both camelCase and snake_case).
  */
@@ -113,14 +161,45 @@ export function getFeatureMapId(
   feature: Feature | Record<string, unknown> | null | undefined,
 ): string | null {
   if (!feature) return null;
+  const props = "properties" in feature ? (feature as Feature).properties : undefined;
   const directMapId = "mapId" in feature ? (feature as Feature).mapId : undefined;
   const snakeMapId = "map_id" in feature ? (feature as { map_id?: string | null }).map_id : undefined;
-  const props = "properties" in feature ? (feature as Feature).properties : undefined;
   const propCamelMapId = props?.mapId;
   const propSnakeMapId = props ? (props as Record<string, unknown>).map_id : undefined;
 
   const rawMapId = directMapId ?? snakeMapId ?? propCamelMapId ?? propSnakeMapId ?? null;
   return rawMapId ? String(rawMapId).trim() : null;
+}
+
+/**
+ * Safely extracts all associated map IDs from a feature or its properties as an array of strings.
+ */
+export function getFeatureMapIds(
+  feature: Feature | Record<string, unknown> | null | undefined,
+): string[] {
+  if (!feature) return [];
+  const props = "properties" in feature ? (feature as Feature).properties : undefined;
+  const directMapIds =
+    "mapIds" in feature && Array.isArray((feature as any).mapIds)
+      ? (feature as any).mapIds
+      : undefined;
+  const propMapIds =
+    props && Array.isArray((props as any).mapIds)
+      ? (props as any).mapIds
+      : undefined;
+  const idsList = directMapIds ?? propMapIds;
+  if (idsList && idsList.length > 0) {
+    return Array.from(
+      new Set(
+        idsList
+          .map(String)
+          .map((s: string) => s.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+  const single = getFeatureMapId(feature);
+  return single ? [single] : [];
 }
 
 export function getDefaultLayer(type: MapElementType | string | null): number {
@@ -281,6 +360,7 @@ export function cloneFeatureWithOffset(
   // Clear map association (becomes general project element)
   clonedProps.mapId = null;
   clonedProps.map_id = null;
+  clonedProps.mapIds = [];
   delete clonedProps.mapTitle;
 
   // Clear custom dates
@@ -306,6 +386,7 @@ export function cloneFeatureWithOffset(
     ...source,
     id: newId,
     mapId: null,
+    mapIds: [],
     ...(("map_id" in source || "map_id" in clonedProps) ? { map_id: null } : {}),
     name: "",
     geometry: newGeometry,

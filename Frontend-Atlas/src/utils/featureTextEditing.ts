@@ -1,6 +1,6 @@
 import type { Feature } from "../typescript/feature";
 import { normalizeTextSizePx, type CustomLabelStyle } from "./labelPresentation";
-import { getFeatureMapId, getMapElementType } from "./featureHelpers";
+import { getFeatureMapIds, getMapElementType, hasFeatureCustomDate } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {
   applyWordStyleToFeature,
@@ -65,27 +65,45 @@ export function getDefaultTextSizePx(wordType: string | undefined): number {
 export function applyCustomLabelStyleToFeature(
   feature: Feature,
   style: CustomLabelStyle,
-  wordType: WordType,
-  name: string,
-  labelText: string,
+  wordType: WordType = "city",
+  name?: string,
+  labelText?: string,
 ): Feature {
+  const resolvedName: string =
+    name && name.trim().length > 0
+      ? name
+      : (feature.properties.name && feature.properties.name.trim().length > 0
+        ? feature.properties.name
+        : (labelText ?? feature.properties.labelText ?? feature.name ?? ""));
+  const resolvedLabelText =
+    labelText ?? feature.properties.labelText ?? resolvedName;
   const formattedText =
-    style.textTransform === "uppercase" ? labelText.toUpperCase() : labelText;
+    style.textTransform === "uppercase"
+      ? (resolvedLabelText || "").toUpperCase()
+      : (resolvedLabelText || "");
   const styledFeature = applyWordStyleToFeature(
     feature,
     wordType,
-    name,
+    resolvedName,
     formattedText,
   );
   const isBold = Boolean(style.bold || style.fontWeight === "bold");
   const targetElementType =
-    style.mapElementType ?? styledFeature.properties.mapElementType ?? "point";
+    style.mapElementType === "point" || style.hasPoint === true
+      ? "point"
+      : style.mapElementType === "label" || style.hasPoint === false
+        ? "label"
+        : (styledFeature.properties.mapElementType ?? "point");
+
+  const pointColor = style.pointColor || style.color;
+  const pointStroke = style.pointStrokeColor || pointColor;
+
   return {
     ...styledFeature,
-    name,
+    name: resolvedName,
     properties: {
       ...styledFeature.properties,
-      name,
+      name: resolvedName,
       labelText: formattedText,
       mapElementType: targetElementType,
       rawType: "custom",
@@ -97,11 +115,11 @@ export function applyCustomLabelStyleToFeature(
       fontStyle: style.fontStyle || "normal",
       fontWeight: isBold ? "bold" : "normal",
       bold: isBold,
-      colorRgb: hexToRgb(style.color),
-      strokeColor: targetElementType === "label" ? undefined : styledFeature.properties.strokeColor,
-      fillOpacity: targetElementType === "label" ? undefined : styledFeature.properties.fillOpacity,
-      strokeOpacity: targetElementType === "label" ? undefined : styledFeature.properties.strokeOpacity,
-      strokeWidth: targetElementType === "label" ? undefined : styledFeature.properties.strokeWidth,
+      colorRgb: targetElementType === "point" ? hexToRgb(pointColor) : hexToRgb(style.color),
+      strokeColor: targetElementType === "point" ? hexToRgb(pointStroke) : undefined,
+      fillOpacity: targetElementType === "point" ? (style.pointFillOpacity ?? 0.5) : undefined,
+      strokeOpacity: targetElementType === "point" ? (style.pointStrokeOpacity ?? 1) : undefined,
+      strokeWidth: targetElementType === "point" ? (style.pointStrokeWidth ?? 1) : undefined,
     },
   };
 }
@@ -136,8 +154,11 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   const rawLabel =
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
 
-  const mapId = getFeatureMapId(feature);
-  const initialMapIds = mapId ? [mapId] : [];
+  const hasCustomYears =
+    hasFeatureCustomDate(feature) ||
+    feature.properties?.startYear != null ||
+    feature.properties?.endYear != null;
+  const initialMapIds = hasCustomYears ? [] : getFeatureMapIds(feature);
   const colorHex =
     rgbToHex(feature.properties.colorRgb) ??
     (elementType === "label" || elementType === "point" ? "#000000" : undefined);
@@ -178,16 +199,24 @@ export function coerceEditedFeature(
   originalFeature: Feature,
   payload: FeatureEditSubmitPayload,
 ): Feature {
-  const chosenMapId =
-    payload.selectedMapIds && payload.selectedMapIds.length > 0
-      ? payload.selectedMapIds[0]
-      : null;
+  const hasCustomDate =
+    (payload.startYear != null && payload.startYear !== ("" as any)) ||
+    (payload.endYear != null && payload.endYear !== ("" as any));
+  const chosenMapIds = hasCustomDate
+    ? []
+    : (payload.selectedMapIds && payload.selectedMapIds.length > 0
+        ? [...payload.selectedMapIds]
+        : []);
+  const chosenMapId = chosenMapIds.length > 0 ? chosenMapIds[0] : null;
 
   if (!isTextFeature(originalFeature)) {
     const cleanedProps = { ...originalFeature.properties };
     delete cleanedProps.labelText;
     delete cleanedProps.wordType;
     delete cleanedProps.rawType;
+    if (hasCustomDate) {
+      delete cleanedProps.mapTitle;
+    }
     if (cleanedProps.mapElementType === "point" || cleanedProps.mapElementType === "label") {
       cleanedProps.mapElementType = "shape";
     }
@@ -195,10 +224,13 @@ export function coerceEditedFeature(
     return {
       ...originalFeature,
       mapId: chosenMapId,
+      mapIds: chosenMapIds,
       name: payload.name,
       properties: {
         ...cleanedProps,
         mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        mapTitle: hasCustomDate ? null : cleanedProps.mapTitle,
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),
         strokeColor: hexToRgb(payload.strokeColorHex),
@@ -226,12 +258,19 @@ export function coerceEditedFeature(
       payload.name,
       payload.labelText ?? payload.name,
     );
+    const cleanedCustomProps = { ...custom.properties };
+    if (hasCustomDate) {
+      delete cleanedCustomProps.mapTitle;
+    }
     return {
       ...custom,
       mapId: chosenMapId,
+      mapIds: chosenMapIds,
       properties: {
-        ...custom.properties,
+        ...cleanedCustomProps,
         mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        mapTitle: hasCustomDate ? null : cleanedCustomProps.mapTitle,
         startYear: payload.startYear ?? null,
         endYear: payload.endYear ?? null,
       },
@@ -252,12 +291,20 @@ export function coerceEditedFeature(
       ? textSizePx
       : undefined;
 
+  const cleanedStyledProps = { ...styledFeature.properties };
+  if (hasCustomDate) {
+    delete cleanedStyledProps.mapTitle;
+  }
+
   return {
     ...styledFeature,
     mapId: chosenMapId,
+    mapIds: chosenMapIds,
     properties: {
-      ...styledFeature.properties,
+      ...cleanedStyledProps,
       mapId: chosenMapId,
+      mapIds: chosenMapIds,
+      mapTitle: hasCustomDate ? null : cleanedStyledProps.mapTitle,
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
@@ -275,51 +322,51 @@ export function coerceEditedFeature(
 }
 
 /**
- * When multiple maps are selected, clones the feature for each additional map
- * with a new unique ID and the respective mapId.
+ * When multiple maps are selected, associates the selected maps on the same
+ * feature without duplicating IDs.
  */
 export function createFeaturesForSelectedMaps(
   baseEditedFeature: Feature,
   selectedMapIds?: string[],
 ): Feature[] {
-  if (!selectedMapIds || selectedMapIds.length <= 1) {
+  const hasCustom =
+    hasFeatureCustomDate(baseEditedFeature) ||
+    baseEditedFeature.properties?.startYear != null ||
+    baseEditedFeature.properties?.endYear != null;
+
+  if (hasCustom || !selectedMapIds || selectedMapIds.length <= 1) {
+    if (hasCustom) {
+      const cleaned = { ...baseEditedFeature.properties };
+      delete cleaned.mapTitle;
+      return [
+        {
+          ...baseEditedFeature,
+          mapId: null,
+          mapIds: [],
+          properties: {
+            ...cleaned,
+            mapId: null,
+            mapIds: [],
+            mapTitle: null,
+          },
+        },
+      ];
+    }
     return [baseEditedFeature];
   }
 
-  const results: Feature[] = [
+  return [
     {
       ...baseEditedFeature,
       mapId: selectedMapIds[0],
+      mapIds: selectedMapIds,
       properties: {
         ...baseEditedFeature.properties,
         mapId: selectedMapIds[0],
+        mapIds: selectedMapIds,
       },
     },
   ];
-
-  for (let i = 1; i < selectedMapIds.length; i++) {
-    const targetMapId = selectedMapIds[i];
-    let cloned: Feature;
-    if (typeof structuredClone === "function") {
-      try {
-        cloned = structuredClone(baseEditedFeature);
-      } catch {
-        cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
-      }
-    } else {
-      cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
-    }
-    cloned.id = crypto.randomUUID();
-    cloned.mapId = targetMapId;
-    delete (cloned as any).mapTitle;
-    if (cloned.properties) {
-      cloned.properties = { ...cloned.properties, mapId: targetMapId };
-      delete (cloned.properties as any).mapTitle;
-    }
-    results.push(cloned);
-  }
-
-  return results;
 }
 
 export function getWordTypePreviewStyle(

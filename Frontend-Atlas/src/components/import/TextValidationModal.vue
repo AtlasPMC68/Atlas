@@ -35,6 +35,7 @@
           <ValidationImageViewer
             :display-image-url="displayImageUrl"
             :is-updating-reference-image="isUpdatingReferenceImage"
+            :is-newly-chosen="isNewlyChosen"
             :regions="textRegions"
             :highlighted-id="highlightedId"
             @select-image="onLocalImageSelected"
@@ -345,10 +346,17 @@ function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
 
 const localImageMap = ref<Record<string, string>>({});
 const removedImageMap = ref<Record<string, boolean>>({});
+const existingReferenceImageFound = ref<Record<string, boolean>>({});
 const loadedReferenceImageMap = new Set<string>();
 const { fetchReferenceImage, saveReferenceImage, deleteReferenceImage } =
   useMapReferenceImage();
 const isUpdatingReferenceImage = ref(false);
+
+const isNewlyChosen = computed(() => {
+  const currentKey = props.mapId ?? "_default";
+  const hasExisting = Boolean(props.imageUrl || existingReferenceImageFound.value[currentKey]);
+  return !hasExisting && Boolean(localImageMap.value[currentKey]);
+});
 
 const displayImageUrl = computed(() => {
   const currentKey = props.mapId ?? "_default";
@@ -632,6 +640,10 @@ watch(
 
     loadedReferenceImageMap.add(mapId);
     if (result.success) {
+      existingReferenceImageFound.value = {
+        ...existingReferenceImageFound.value,
+        [mapId]: true,
+      };
       localImageMap.value = { ...localImageMap.value, [mapId]: result.data };
     } else if (result.status !== 404) {
       showAlert("error", result.error);

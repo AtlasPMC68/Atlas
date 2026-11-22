@@ -641,8 +641,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     // Should display labels for shape opacity and stroke
     expect(wrapper.text()).toContain("Opacité fond");
-    expect(wrapper.text()).toContain("Opacité bord");
-    expect(wrapper.text()).toContain("Épaisseur bord");
+    expect(wrapper.text()).toContain("Opacité contour");
+    expect(wrapper.text()).toContain("Épaisseur contour");
 
     // Click modifier button
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
@@ -778,7 +778,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(emitted.properties.mapElementType).toBe("zone");
     });
 
-    it("clones feature across multiple maps when multiple map checkboxes are checked", async () => {
+    it("assigns feature across multiple maps with same ID when multiple map checkboxes are checked", async () => {
       const wrapper = mount(FeatureVisibilityControls, {
         props: {
           features: [generalTextFeature],
@@ -799,12 +799,10 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
-      const emitted = wrapper.emitted("update-feature")![0][0] as Feature[];
-      expect(Array.isArray(emitted)).toBe(true);
-      expect(emitted).toHaveLength(2);
-      expect(emitted[0].mapId).toBe("map-1");
-      expect(emitted[1].mapId).toBe("map-2");
-      expect(emitted[0].id).not.toBe(emitted[1].id);
+      const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
+      expect(emitted.id).toBe(generalTextFeature.id);
+      expect(emitted.mapIds).toEqual(["map-1", "map-2"]);
+      expect(emitted.mapId).toBe("map-1");
     });
 
     it("unassigns an element to become general (null mapId) when all map checkboxes are unchecked", async () => {
@@ -888,6 +886,131 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await item.trigger("dblclick");
       expect(wrapper.emitted("select-feature")?.[1]).toEqual(["feat-floride-1"]);
       expect(showModalSpy).toHaveBeenCalled();
+    });
+
+    it("selects continuous range with Ctrl+click in the sidebar list", async () => {
+      const feat1: Feature = { ...florideFeature, id: "feat-1", name: "F1", properties: { ...florideFeature.properties, name: "F1" } };
+      const feat2: Feature = { ...florideFeature, id: "feat-2", name: "F2", properties: { ...florideFeature.properties, name: "F2" } };
+      const feat3: Feature = { ...florideFeature, id: "feat-3", name: "F3", properties: { ...florideFeature.properties, name: "F3" } };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [feat1, feat2, feat3],
+          featureVisibility: new Map([["feat-1", true], ["feat-2", true], ["feat-3", true]]),
+        },
+      });
+
+      const item1 = wrapper.find('[data-feature-item-id="feat-1"]');
+      const item3 = wrapper.find('[data-feature-item-id="feat-3"]');
+      expect(item1.exists()).toBe(true);
+      expect(item3.exists()).toBe(true);
+
+      // 1. Click item1 normally (sets anchor)
+      await item1.trigger("click");
+      expect(wrapper.emitted("select-feature")?.[0]).toEqual(["feat-1"]);
+
+      // 2. Click item3 with Ctrl key -> toggles individual element into multi-selection
+      await item3.trigger("click", { ctrlKey: true });
+      expect(wrapper.emitted("select-features")).toBeDefined();
+      expect(wrapper.emitted("select-features")?.at(-1)).toEqual([["feat-1", "feat-3"]]);
+    });
+
+    it("selects continuous range with Shift+click in the sidebar list", async () => {
+      const feat1: Feature = { ...florideFeature, id: "feat-1", name: "F1", properties: { ...florideFeature.properties, name: "F1" } };
+      const feat2: Feature = { ...florideFeature, id: "feat-2", name: "F2", properties: { ...florideFeature.properties, name: "F2" } };
+      const feat3: Feature = { ...florideFeature, id: "feat-3", name: "F3", properties: { ...florideFeature.properties, name: "F3" } };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [feat1, feat2, feat3],
+          featureVisibility: new Map([["feat-1", true], ["feat-2", true], ["feat-3", true]]),
+        },
+      });
+
+      const item1 = wrapper.find('[data-feature-item-id="feat-1"]');
+      const item3 = wrapper.find('[data-feature-item-id="feat-3"]');
+
+      // 1. Click item1 normally (sets anchor)
+      await item1.trigger("click");
+
+      // 2. Click item3 with Shift key -> continuous range selection
+      await item3.trigger("click", { shiftKey: true });
+      expect(wrapper.emitted("select-features")).toBeDefined();
+      expect(wrapper.emitted("select-features")?.at(-1)).toEqual([["feat-1", "feat-2", "feat-3"]]);
+    });
+
+    it("deletes all multi-selected elements together when trash is clicked on any of them", async () => {
+      const feat1: Feature = { ...florideFeature, id: "feat-1", name: "F1", properties: { ...florideFeature.properties, name: "F1" } };
+      const feat2: Feature = { ...florideFeature, id: "feat-2", name: "F2", properties: { ...florideFeature.properties, name: "F2" } };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [feat1, feat2],
+          featureVisibility: new Map([["feat-1", true], ["feat-2", true]]),
+          multiSelectedFeatureIds: ["feat-1", "feat-2"],
+        },
+      });
+
+      // Find trash button for feat-1
+      const item1 = wrapper.find('[data-feature-item-id="feat-1"]');
+      const trashBtn = item1.find('button[title="Supprimer l\'élément"]');
+      expect(trashBtn.exists()).toBe(true);
+
+      await trashBtn.trigger("click");
+
+      // Verify confirmation dialog text shows count of selected elements
+      expect(wrapper.text()).toContain("2 éléments sélectionnés");
+
+      // Click confirm delete in dialog
+      const confirmDeleteBtn = wrapper.find('[data-testid="confirm-delete-feature-btn"]');
+      expect(confirmDeleteBtn.exists()).toBe(true);
+      await confirmDeleteBtn.trigger("click");
+
+      // Emitted delete-feature contains all selected feature IDs
+      expect(wrapper.emitted("delete-feature")).toBeDefined();
+      expect(wrapper.emitted("delete-feature")?.[0][0]).toEqual(["feat-1", "feat-2"]);
+    });
+
+    it("displays shared badge and offers 'Retirer de cette carte' when feature belongs to multiple maps", async () => {
+      const multiMapFeature: Feature = {
+        ...florideFeature,
+        id: "feat-shared",
+        name: "Fleuve Saint-Laurent",
+        mapIds: ["map-1", "map-2"],
+        properties: {
+          ...florideFeature.properties,
+          name: "Fleuve Saint-Laurent",
+          mapIds: ["map-1", "map-2"],
+        },
+      };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [multiMapFeature],
+          featureVisibility: new Map([["feat-shared", true]]),
+          activeMapId: "map-1",
+        },
+      });
+
+      // Shows badge "2 cartes"
+      expect(wrapper.text()).toContain("2 cartes");
+
+      // Open delete dialog
+      const item = wrapper.find('[data-feature-item-id="feat-shared"]');
+      const trashBtn = item.find('button[title="Supprimer l\'élément"]');
+      await trashBtn.trigger("click");
+
+      // Shows remove-from-map button
+      const removeBtn = wrapper.find('[data-testid="remove-from-map-feature-btn"]');
+      expect(removeBtn.exists()).toBe(true);
+      expect(removeBtn.text()).toContain("Retirer de cette carte");
+
+      await removeBtn.trigger("click");
+
+      expect(wrapper.emitted("update-feature")).toBeDefined();
+      const updated = wrapper.emitted("update-feature")?.[0][0] as Feature;
+      expect(updated.mapIds).toEqual(["map-2"]);
+      expect(updated.mapId).toBe("map-2");
     });
   });
 });

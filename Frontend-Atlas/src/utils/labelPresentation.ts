@@ -318,7 +318,10 @@ export function getLabelPresentation(
       : rawText
     : formatWordText(rawText, wordType, typo.textTransform);
   const html = formatLabelHtml(formattedText);
-  const mapElementType = customStyle?.mapElementType ?? taxonomy.mapElementType;
+  const mapElementType =
+    customStyle?.mapElementType ??
+    (customStyle?.hasPoint ? "point" : undefined) ??
+    taxonomy.mapElementType;
 
   const inlineStyles: string[] = [];
   if (typo.isItalic) inlineStyles.push("font-style: italic");
@@ -363,6 +366,12 @@ function parseCustomStyle(value: unknown): {
   priority: number;
   minZoom: number;
   mapElementType?: "point" | "label";
+  hasPoint?: boolean;
+  pointColor?: string;
+  pointStrokeColor?: string;
+  pointFillOpacity?: number;
+  pointStrokeOpacity?: number;
+  pointStrokeWidth?: number;
 } | null {
   if (!value || typeof value !== "object") return null;
   const style = value as Record<string, unknown>;
@@ -380,10 +389,15 @@ function parseCustomStyle(value: unknown): {
     style.fontWeight === "bold" ||
     Boolean(style.bold) ||
     (style.fontWeight !== "normal" && style.bold === true);
+  const hasPoint = Boolean(style.hasPoint);
   const mapElementType =
     style.mapElementType === "point" || style.mapElementType === "label"
       ? style.mapElementType
-      : undefined;
+      : hasPoint
+        ? "point"
+        : style.hasPoint === false
+          ? "label"
+          : undefined;
   return {
     id: typeof style.id === "string" ? style.id : undefined,
     name: typeof style.name === "string" ? style.name : undefined,
@@ -395,5 +409,11 @@ function parseCustomStyle(value: unknown): {
     priority: typeof style.priority === "number" ? style.priority : 30,
     minZoom: typeof style.minZoom === "number" ? style.minZoom : 1,
     mapElementType,
+    hasPoint,
+    pointColor: typeof style.pointColor === "string" ? style.pointColor : undefined,
+    pointStrokeColor: typeof style.pointStrokeColor === "string" ? style.pointStrokeColor : undefined,
+    pointFillOpacity: typeof style.pointFillOpacity === "number" ? style.pointFillOpacity : undefined,
+    pointStrokeOpacity: typeof style.pointStrokeOpacity === "number" ? style.pointStrokeOpacity : undefined,
+    pointStrokeWidth: typeof style.pointStrokeWidth === "number" ? style.pointStrokeWidth : undefined,
   };
 }

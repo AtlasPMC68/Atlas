@@ -29,7 +29,7 @@
             @click="activeMode = 'exclusion'"
           >
             <span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />
-            Zones de texte à ignorer
+            Zones à ignorer
           </button>
         </div>
       </div>
@@ -156,7 +156,7 @@
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block shrink-0" />
             <h4 class="text-sm font-semibold text-base-content">
-              Zones de texte à ignorer
+              Zones à ignorer
             </h4>
             <span
               v-if="exclusionZones.length > 0"
@@ -166,7 +166,7 @@
             </span>
           </div>
           <p class="text-xs text-base-content/60 pl-4">
-            Ex. : logo, titre, échelle du temps, boussole
+            Ex. : mini-cartes, logos, boussoles, textes inutiles
           </p>
         </div>
         <button
@@ -335,10 +335,10 @@ const exclusionZoneStyles = computed(() => {
   return exclusionZones.value.map((zone: LegendBounds | null) => getRectStyle(zone));
 });
 
-const modalTitle = computed(() => "Légende et zones de texte à ignorer");
+const modalTitle = computed(() => "Légende et zones à ignorer");
 
 const modalDescription = computed(() =>
-  "Délimitez la légende et tracez des zones d'exclusion pour masquer le texte inutile (titres, boussoles, encadrés).",
+  "Délimitez la légende et tracez des zones d'exclusion pour masquer les éléments à ignorer (mini-cartes, boussoles, logos, encadrés).",
 );
 
 const modalConfirmLabel = computed(() => {

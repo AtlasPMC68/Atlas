@@ -155,6 +155,32 @@ describe("TimelineSlider element markers (pins)", () => {
     expect(popover.text()).toContain("Grand Fleuve");
   });
 
+  it("forces grouping under 'Éléments généraux' in popover when item has custom dates or isCustom, ignoring residual mapId/mapTitle", async () => {
+    const elementMarkers: TimelineElementMarker[] = [
+      {
+        id: "feat-custom-1",
+        name: "lightseagreen",
+        year: 1650,
+        startYear: 1650,
+        endYear: 1650,
+        type: "zone",
+        mapId: "map-2",
+        mapTitle: "CARTE2 ON EFFACE IDIA",
+        isCustom: true,
+      },
+    ];
+
+    const wrapper = mountSlider([1600, 1650, 1700], 1650, elementMarkers);
+    const pin = wrapper.find("[data-testid='timeline-element-marker']");
+    await pin.trigger("mouseenter");
+
+    const popover = wrapper.find(".element-marker-popover");
+    expect(popover.exists()).toBe(true);
+    expect(popover.text()).toContain("Éléments généraux");
+    expect(popover.text()).not.toContain("CARTE2 ON EFFACE IDIA");
+    expect(popover.text()).toContain("Lightseagreen");
+  });
+
   it("clicking an element pin selects the year immediately", async () => {
     const elementMarkers: TimelineElementMarker[] = [
       { id: "feat-1", name: "ALBERTA", year: 1900, type: "Texte" },
@@ -228,5 +254,36 @@ describe("TimelineSlider element markers (pins)", () => {
     });
     const sliderFilled = wrapperFilled.find("input[type='range']");
     expect(sliderFilled.classes()).toContain("timeline-range--global");
+  });
+
+  it("highlights marker pin with selected class when selectedFeatureId matches an item", () => {
+    const wrapper = mount(TimelineSlider, {
+      props: {
+        year: 1700,
+        min: 1500,
+        max: 1900,
+        elementMarkers: [
+          {
+            id: "feat-1",
+            name: "Québec",
+            year: 1608,
+            type: "point",
+          },
+          {
+            id: "feat-2",
+            name: "Montréal",
+            year: 1642,
+            type: "point",
+          },
+        ],
+        selectedFeatureId: "feat-1",
+      },
+    });
+
+    const pins = wrapper.findAll(".element-marker-pin");
+    expect(pins).toHaveLength(2);
+    expect(pins[0].classes()).toContain("element-marker-selected");
+    expect(pins[0].find(".element-marker-badge").classes()).toContain("element-marker-badge-selected");
+    expect(pins[1].classes()).not.toContain("element-marker-selected");
   });
 });

@@ -43,4 +43,15 @@ describe("Legend interactions", () => {
     expect(wrapper.emitted("select-feature")?.[1]).toEqual(["zone-1"]);
     expect(wrapper.emitted("edit-feature")?.[0]).toEqual([zone]);
   });
+
+  it("does not render an eye toggle button in the legend title", () => {
+    const wrapper = mount(Legend, {
+      props: {
+        zoneFeatures: [zone],
+        featureVisibility: new Map(),
+      },
+    });
+
+    expect(wrapper.find("h2 button").exists()).toBe(false);
+  });
 });

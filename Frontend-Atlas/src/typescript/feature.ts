@@ -5,6 +5,7 @@ export interface Feature {
   id: string;
   projectId: string;
   mapId?: string | null;
+  mapIds?: string[];
   geometry: Geometry;
   properties: FeatureProperties;
   createdAt: string;
@@ -54,7 +55,9 @@ export interface SuggestedPlace {
 }
 
 export interface FeatureProperties {
-  name: string;
+  name?: string;
+  mapId?: string | null;
+  mapIds?: string[];
   isVisible?: boolean;
   show?: boolean; // set by the backend extraction (tasks.py); false hides the feature initially
   labelText?: string;

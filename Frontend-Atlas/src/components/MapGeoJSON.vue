@@ -73,6 +73,9 @@ import {
   type LabelPresentationModel,
 } from "../utils/labelPresentation";
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
+import {
+  getContinuousRangeSelection,
+} from "../utils/selectionUtils";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import type {
   Feature,
@@ -148,11 +151,69 @@ function isPostEditClick(): boolean {
   return Date.now() < ignoreClicksUntil;
 }
 let labelVisibilityFrame: number | null = null;
-let selectedLayerOriginalStyle: L.PathOptions | undefined = undefined;
+const selectedLayersOriginalStyles = new Map<L.Layer, L.PathOptions>();
 let selectedCityRing: L.Marker | null = null;
 let selectedFeatureQuickActionsMarker: L.Marker | null = null;
 let quickActionsCleanup: (() => void) | null = null;
 let pixelSpaceDragCleanup: (() => void) | null = null;
+let lastMapAnchorId: string | null = null;
+
+function removeAllFloatingActionMarkers() {
+  quickActionsCleanup?.();
+  quickActionsCleanup = null;
+  if (selectedFeatureQuickActionsMarker) {
+    selectedFeatureQuickActionsMarker.remove();
+    selectedFeatureQuickActionsMarker = null;
+  }
+  if (map) {
+    map.eachLayer((l) => {
+      if ((l as any).options?.icon?.options?.className === "feature-floating-actions-container") {
+        map?.removeLayer(l);
+      }
+    });
+  }
+  document.querySelectorAll(".feature-floating-actions-container").forEach((el) => el.remove());
+}
+
+function removeAllCityRings() {
+  if (selectedCityRing) {
+    selectedCityRing.remove();
+    selectedCityRing = null;
+  }
+  if (map) {
+    map.eachLayer((l) => {
+      if ((l as any).options?.icon?.options?.className === "city-selection-ring") {
+        map?.removeLayer(l);
+      }
+    });
+  }
+  document.querySelectorAll(".city-selection-ring").forEach((el) => el.remove());
+}
+
+function clearAllLabelSelections() {
+  document.querySelectorAll(".label-selected").forEach((el) => {
+    el.classList.remove("label-selected");
+    el.classList.remove("label-rotate-mode");
+  });
+  document.querySelectorAll(".multi-selected-label").forEach((el) => {
+    el.classList.remove("multi-selected-label");
+  });
+  document.querySelectorAll(".image-overlay-selected").forEach((el) => {
+    el.classList.remove("image-overlay-selected");
+  });
+}
+
+function clearAllSelectionStyles() {
+  selectedLayersOriginalStyles.forEach((origStyle, l) => {
+    try {
+      applyStyleToLayer(l, origStyle);
+      disablePerFeatureDrag(l);
+    } catch {
+      // ignore
+    }
+  });
+  selectedLayersOriginalStyles.clear();
+}
 
 function getLayerTopRightLatLng(layer: L.Layer, currentMap: L.Map): L.LatLng | null {
   let maxX = -Infinity;
@@ -296,16 +357,21 @@ const featureLayerManager = {
       // Don't steal clicks from active drawing tools
       if (drawing.activeDrawingMode.value !== null) return;
       if (pm?.globalRemovalModeEnabled?.()) return;
-      // In canvas mode, Leaflet fires the layer click AND the map click as two
-      // separate events from the same mouse event. Without this flag, the map
-      // click handler would immediately deselect what we just selected.
-      blockNextMapClick = true;
-      if (addCityMode.value) cityMode.cancel();
 
       const orig = e.originalEvent;
-      const isToggle = Boolean(orig?.ctrlKey || orig?.metaKey || orig?.shiftKey);
+      if (orig) {
+        (orig as any).__atlasFeatureClicked = true;
+      }
+      blockNextMapClick = true;
+      setTimeout(() => {
+        blockNextMapClick = false;
+      }, 100);
+      if (addCityMode.value) cityMode.cancel();
 
-      if (isToggle) {
+      const isCtrl = Boolean(orig?.ctrlKey || orig?.metaKey);
+      const isShift = Boolean(orig?.shiftKey);
+
+      if (isCtrl) {
         const currentList = props.multiSelectedFeatureIds ?? Array.from(multiSelectedIds.value);
         const next = new Set<string>(currentList);
         if (props.selectedFeatureId) {
@@ -316,11 +382,27 @@ const featureLayerManager = {
         } else {
           next.add(id);
         }
+        lastMapAnchorId = id;
         emit("select-feature", null);
         emit("select-features", Array.from(next));
         return;
       }
 
+      if (isShift) {
+        const orderedIds = props.features.map((f: Feature) => String(f.id));
+        const anchorId =
+          props.selectedFeatureId ||
+          lastMapAnchorId ||
+          (props.multiSelectedFeatureIds?.[0] ?? null);
+        const range = getContinuousRangeSelection(orderedIds, anchorId, id);
+
+        lastMapAnchorId = anchorId || id;
+        emit("select-feature", null);
+        emit("select-features", range);
+        return;
+      }
+
+      lastMapAnchorId = id;
       emit("select-features", []);
       const feature = props.features.find((f: Feature) => String(f.id) === id);
       if (feature) {
@@ -339,7 +421,14 @@ const featureLayerManager = {
       // Don't steal clicks from active drawing tools
       if (drawing.activeDrawingMode.value !== null) return;
       if (pm?.globalRemovalModeEnabled?.()) return;
+
+      if (e?.originalEvent) {
+        (e.originalEvent as any).__atlasFeatureClicked = true;
+      }
       blockNextMapClick = true;
+      setTimeout(() => {
+        blockNextMapClick = false;
+      }, 100);
       if (addCityMode.value) cityMode.cancel();
 
       const feature = props.features.find((f: Feature) => String(f.id) === id);
@@ -514,9 +603,28 @@ function clearDraftLayers() {
 }
 
 function resetSelection() {
+  lastMapAnchorId = null;
   multiSelectedIds.value = new Set();
+
+  removeAllFloatingActionMarkers();
+  removeAllCityRings();
+  clearAllLabelSelections();
+  clearAllSelectionStyles();
+  clearMultiSelectStylesAndDrag();
+
+  shapeScaling.detach();
+  imageOverlay.detach();
+  pixelSpaceDragCleanup?.();
+  pixelSpaceDragCleanup = null;
+
+  const pm = (map as MapWithPm)?.pm;
+  if (pm?.globalEditModeEnabled?.()) pm.disableGlobalEditMode?.();
+  if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
+  drawing.setToolbarMode("global");
+
   emit("select-feature", null);
   emit("select-features", []);
+  updateLabelVisibility();
 }
 
 defineExpose({
@@ -1472,6 +1580,7 @@ onMounted(() => {
   });
 
   map.on("click", (e: L.LeafletMouseEvent) => {
+    if ((e.originalEvent as any)?.__atlasFeatureClicked) return;
     if (blockNextMapClick) {
       blockNextMapClick = false;
       return;
@@ -1485,6 +1594,22 @@ onMounted(() => {
       return;
     }
     resetSelection();
+  });
+
+  map.getContainer().addEventListener("click", (e: MouseEvent) => {
+    if ((e as any).__atlasFeatureClicked) return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (
+      target.classList.contains("leaflet-container") ||
+      target.classList.contains("leaflet-pane") ||
+      target.classList.contains("leaflet-tile-pane") ||
+      target.classList.contains("leaflet-tile") ||
+      target.tagName === "CANVAS" ||
+      target.tagName === "svg"
+    ) {
+      resetSelection();
+    }
   });
 
   L.control
@@ -1602,25 +1727,15 @@ watch(
 
 localFeaturesSnapshot.value = [...props.features];
 
-watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
-  quickActionsCleanup?.();
-  quickActionsCleanup = null;
-  // Always remove the city selection ring and floating quick actions on any selection change
-  if (selectedCityRing) {
-    selectedCityRing.remove();
-    selectedCityRing = null;
-  }
-  if (selectedFeatureQuickActionsMarker) {
-    selectedFeatureQuickActionsMarker.remove();
-    selectedFeatureQuickActionsMarker = null;
-  }
+function clearSelection(oldId?: string | null) {
+  removeAllFloatingActionMarkers();
+  removeAllCityRings();
+  clearAllLabelSelections();
+  clearAllSelectionStyles();
+  clearMultiSelectStylesAndDrag();
 
   // Restore the original stroke color on the previously selected layer
   if (oldId != null) {
-    document.querySelectorAll('.label-selected').forEach(el => {
-      el.classList.remove('label-selected');
-      el.classList.remove('label-rotate-mode');
-    });
     const oldLayer = featureLayerManager.layers.get(String(oldId));
     if (oldLayer instanceof L.ImageOverlay) {
       oldLayer.getElement()?.classList.remove("image-overlay-selected");
@@ -1628,178 +1743,185 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
       disablePerFeatureDrag(oldLayer);
       pixelSpaceDragCleanup?.();
       pixelSpaceDragCleanup = null;
-      if (selectedLayerOriginalStyle !== undefined) {
-        applyStyleToLayer(oldLayer, selectedLayerOriginalStyle);
+    }
+  }
+}
+
+function applySelectionEffects(id: string) {
+  removeAllFloatingActionMarkers();
+  removeAllCityRings();
+  clearAllLabelSelections();
+  clearAllSelectionStyles();
+
+  const layer = featureLayerManager.layers.get(String(id));
+  const selectedFeature = props.features.find((f: Feature) => String(f.id) === String(id)) ||
+    localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === String(id));
+  const elementType = selectedFeature ? getMapElementType(selectedFeature) : null;
+  const isTextOrPoint = elementType === "point" || elementType === "label" || selectedFeature?.geometry?.type === "Point";
+
+  if (layer instanceof L.ImageOverlay) {
+    drawing.setToolbarMode("label");
+    layer.getElement()?.classList.add("image-overlay-selected");
+  } else if (layer && isTextOrPoint) {
+    // Texts / Cities / Labels: enable label toolbar and show selection highlight
+    drawing.setToolbarMode("label");
+    enablePerFeatureDrag(layer);
+    pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
+
+    let cityLatLng: L.LatLng | null = null;
+    let cityLabel: L.Marker | null = null;
+    forEachLeafLayer(layer, (leaf) => {
+      if (!cityLatLng && leaf instanceof L.CircleMarker) {
+        cityLatLng = (leaf as L.CircleMarker).getLatLng();
+      }
+      if (!cityLabel && leaf instanceof L.Marker && !(leaf instanceof L.CircleMarker)) {
+        cityLabel = leaf as L.Marker;
+      }
+    });
+
+    if (!cityLabel && layer instanceof L.Marker && !(layer instanceof L.CircleMarker)) {
+      cityLabel = layer;
+    }
+
+    if (cityLabel) {
+      const el = (cityLabel as any).getElement?.();
+      el?.classList.add("label-selected");
+      const pm = (map as MapWithPm)?.pm;
+      if (pm?.globalRotateModeEnabled?.()) {
+        el?.classList.add("label-rotate-mode");
       }
     }
-    selectedLayerOriginalStyle = undefined;
+
+    // Also ensure DOM element has .label-selected directly
+    const domLabel = document.querySelector(`.city-label-text[data-feature-id="${id}"]`);
+    if (domLabel) {
+      domLabel.classList.add("label-selected");
+      const pm = (map as MapWithPm)?.pm;
+      if (pm?.globalRotateModeEnabled?.()) {
+        domLabel.classList.add("label-rotate-mode");
+      }
+    }
+
+    if (cityLatLng && map) {
+      selectedCityRing = L.marker(cityLatLng, {
+        icon: L.divIcon({
+          className: "city-selection-ring",
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        }),
+        interactive: false,
+        zIndexOffset: 1000,
+      }).addTo(map);
+    }
+  } else if (layer) {
+    drawing.setToolbarMode("feature");
+    enablePerFeatureDrag(layer);
+    pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
+    const originalOpts = getLayerPathOptions(layer) ?? {};
+    if (!selectedLayersOriginalStyles.has(layer)) {
+      selectedLayersOriginalStyles.set(layer, originalOpts);
+    }
+    applyStyleToLayer(layer, {
+      color: "#2563eb",
+      weight: Math.max(Number(originalOpts?.weight) || 2, 3),
+      opacity: 1,
+    });
+  } else {
+    drawing.setToolbarMode("global");
   }
 
+  // Attach/detach image overlay move+resize interaction
+  imageOverlay.detach();
+  shapeScaling.detach();
+  if (selectedFeature && getMapElementType(selectedFeature) === "image") {
+    imageOverlay.attach(id);
+  } else if (isScalableFeature(selectedFeature)) {
+    shapeScaling.attach(id);
+  }
+
+  if (layer && !isTextOrPoint && selectedFeature && map) {
+    const topRight = getLayerTopRightLatLng(layer, map);
+    if (topRight) {
+      selectedFeatureQuickActionsMarker = L.marker(topRight, {
+        icon: L.divIcon({
+          className: "feature-floating-actions-container",
+          html: `
+            <div class="label-quick-actions is-floating">
+              <button class="label-action-btn action-duplicate" title="Dupliquer" type="button">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+                </svg>
+              </button>
+              <button class="label-action-btn action-delete" title="Supprimer" type="button">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+              </button>
+            </div>
+          `,
+          iconSize: [47, 22],
+          iconAnchor: [-8, 0],
+        }),
+        interactive: true,
+        zIndexOffset: 1200,
+      }).addTo(map);
+
+      const onPosChange = () => updateQuickActionsPosition(layer);
+      map.on("zoom", onPosChange);
+      map.on("viewreset", onPosChange);
+      map.on("move", onPosChange);
+      (layer as any).on?.("pm:drag", onPosChange);
+      (layer as any).on?.("pm:dragend", onPosChange);
+
+      quickActionsCleanup = () => {
+        map?.off("zoom", onPosChange);
+        map?.off("viewreset", onPosChange);
+        map?.off("move", onPosChange);
+        (layer as any).off?.("pm:drag", onPosChange);
+        (layer as any).off?.("pm:dragend", onPosChange);
+      };
+
+      const el = selectedFeatureQuickActionsMarker.getElement();
+      if (el) {
+        el.querySelector(".action-duplicate")?.addEventListener("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          e.preventDefault();
+          emit("duplicate-feature", selectedFeature);
+        });
+        el.querySelector(".action-duplicate")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
+        el.querySelector(".action-delete")?.addEventListener("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          e.preventDefault();
+          emit("delete-feature", selectedFeature);
+        });
+        el.querySelector(".action-delete")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
+      }
+    }
+  }
+
+  // Smoothly pan/zoom map to focus on the selected feature
+  if (map) {
+    const bounds = L.latLngBounds([]);
+    if (layer) {
+      extendBoundsWithLayer(bounds, layer);
+    } else if (selectedFeature?.geometry?.type === "Point") {
+      const [lng, lat] = selectedFeature.geometry.coordinates as [number, number];
+      bounds.extend([lat, lng]);
+    }
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 12, animate: true });
+    }
+  }
+
+  updateLabelVisibility();
+}
+
+watch(selectedFeatureId, async (id: string | null, oldId: string | null) => {
+  clearSelection(oldId);
+
   if (id != null) {
-    const layer = featureLayerManager.layers.get(String(id));
-    const selectedFeature = props.features.find((f: Feature) => String(f.id) === String(id)) ||
-      localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === String(id));
-    const elementType = selectedFeature ? getMapElementType(selectedFeature) : null;
-    const isTextOrPoint = elementType === "point" || elementType === "label" || selectedFeature?.geometry?.type === "Point";
-
-    if (layer instanceof L.ImageOverlay) {
-      drawing.setToolbarMode("label");
-      layer.getElement()?.classList.add("image-overlay-selected");
-    } else if (layer && isTextOrPoint) {
-      // Texts / Cities / Labels: enable label toolbar and show selection highlight
-      drawing.setToolbarMode("label");
-      enablePerFeatureDrag(layer);
-      pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
-
-      let cityLatLng: L.LatLng | null = null;
-      let cityLabel: L.Marker | null = null;
-      forEachLeafLayer(layer, (leaf) => {
-        if (!cityLatLng && leaf instanceof L.CircleMarker) {
-          cityLatLng = (leaf as L.CircleMarker).getLatLng();
-        }
-        if (!cityLabel && leaf instanceof L.Marker && !(leaf instanceof L.CircleMarker)) {
-          cityLabel = leaf as L.Marker;
-        }
-      });
-
-      if (!cityLabel && layer instanceof L.Marker && !(layer instanceof L.CircleMarker)) {
-        cityLabel = layer;
-      }
-
-      if (cityLabel) {
-        const el = (cityLabel as any).getElement?.();
-        el?.classList.add("label-selected");
-        const pm = (map as MapWithPm)?.pm;
-        if (pm?.globalRotateModeEnabled?.()) {
-          el?.classList.add("label-rotate-mode");
-        }
-      }
-
-      // Also ensure DOM element has .label-selected directly
-      const domLabel = document.querySelector(`.city-label-text[data-feature-id="${id}"]`);
-      if (domLabel) {
-        domLabel.classList.add("label-selected");
-        const pm = (map as MapWithPm)?.pm;
-        if (pm?.globalRotateModeEnabled?.()) {
-          domLabel.classList.add("label-rotate-mode");
-        }
-      }
-
-      if (cityLatLng && map) {
-        selectedCityRing = L.marker(cityLatLng, {
-          icon: L.divIcon({
-            className: "city-selection-ring",
-            iconSize: [22, 22],
-            iconAnchor: [11, 11],
-          }),
-          interactive: false,
-          zIndexOffset: 1000,
-        }).addTo(map);
-      }
-    } else if (layer) {
-      drawing.setToolbarMode("feature");
-      enablePerFeatureDrag(layer);
-      pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
-      const originalOpts = getLayerPathOptions(layer);
-      selectedLayerOriginalStyle = originalOpts;
-      applyStyleToLayer(layer, {
-        color: "#2563eb",
-        weight: Math.max(Number(originalOpts?.weight) || 2, 3),
-        opacity: 1,
-      });
-    } else {
-      drawing.setToolbarMode("global");
-    }
-
-    // Attach/detach image overlay move+resize interaction
-    imageOverlay.detach();
-    shapeScaling.detach();
-    if (selectedFeature && getMapElementType(selectedFeature) === "image") {
-      imageOverlay.attach(id);
-    } else if (isScalableFeature(selectedFeature)) {
-      shapeScaling.attach(id);
-    }
-
-    if (layer && !isTextOrPoint && selectedFeature && map) {
-      const topRight = getLayerTopRightLatLng(layer, map);
-      if (topRight) {
-        selectedFeatureQuickActionsMarker = L.marker(topRight, {
-          icon: L.divIcon({
-            className: "feature-floating-actions-container",
-            html: `
-              <div class="label-quick-actions is-floating">
-                <button class="label-action-btn action-duplicate" title="Dupliquer" type="button">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
-                  </svg>
-                </button>
-                <button class="label-action-btn action-delete" title="Supprimer" type="button">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                  </svg>
-                </button>
-              </div>
-            `,
-            iconSize: [47, 22],
-            iconAnchor: [-8, 0],
-          }),
-          interactive: true,
-          zIndexOffset: 1200,
-        }).addTo(map);
-
-        const onPosChange = () => updateQuickActionsPosition(layer);
-        map.on("zoom", onPosChange);
-        map.on("viewreset", onPosChange);
-        map.on("move", onPosChange);
-        (layer as any).on?.("pm:drag", onPosChange);
-        (layer as any).on?.("pm:dragend", onPosChange);
-
-        quickActionsCleanup = () => {
-          map?.off("zoom", onPosChange);
-          map?.off("viewreset", onPosChange);
-          map?.off("move", onPosChange);
-          (layer as any).off?.("pm:drag", onPosChange);
-          (layer as any).off?.("pm:dragend", onPosChange);
-        };
-
-        const el = selectedFeatureQuickActionsMarker.getElement();
-        if (el) {
-          el.querySelector(".action-duplicate")?.addEventListener("click", (e) => {
-            L.DomEvent.stopPropagation(e);
-            e.preventDefault();
-            emit("duplicate-feature", selectedFeature);
-          });
-          el.querySelector(".action-duplicate")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
-          el.querySelector(".action-delete")?.addEventListener("click", (e) => {
-            L.DomEvent.stopPropagation(e);
-            e.preventDefault();
-            emit("delete-feature", selectedFeature);
-          });
-          el.querySelector(".action-delete")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
-        }
-      }
-    }
-
-    // Smoothly pan map to feature if outside visible map bounds
-    if (map) {
-      let centerLatLng: L.LatLng | null = null;
-      if (layer && typeof (layer as any).getLatLng === "function") {
-        centerLatLng = (layer as any).getLatLng();
-      } else if (layer && typeof (layer as any).getBounds === "function") {
-        const b = (layer as any).getBounds();
-        if (b && (!b.isValid || b.isValid())) {
-          centerLatLng = b.getCenter();
-        }
-      } else if (selectedFeature?.geometry?.type === "Point") {
-        const [lng, lat] = selectedFeature.geometry.coordinates as [number, number];
-        centerLatLng = L.latLng(lat, lng);
-      }
-      if (centerLatLng && !map.getBounds().contains(centerLatLng)) {
-        map.panTo(centerLatLng, { animate: true, duration: 0.5 });
-      }
-    }
-
-    updateLabelVisibility();
+    await nextTick();
+    applySelectionEffects(id);
   } else {
     // Disable any active per-feature edit/rotate mode so geoman stops
     // intercepting canvas clicks and restorePmIgnore() fires via the
@@ -1810,7 +1932,10 @@ watch(selectedFeatureId, (id: string | null, oldId: string | null) => {
     drawing.setToolbarMode("global");
     imageOverlay.detach();
     shapeScaling.detach();
-    document.querySelectorAll('.label-selected').forEach((el: Element) => el.classList.remove('label-selected'));
+    removeAllFloatingActionMarkers();
+    removeAllCityRings();
+    clearAllLabelSelections();
+    clearAllSelectionStyles();
   }
   updateLabelVisibility();
 });
@@ -1882,11 +2007,24 @@ watch(
 watch(
   () => props.featureVisibility,
   (newVisibility: Map<string, boolean>) => {
+    if (!newVisibility) return;
     newVisibility.forEach((visible: boolean, featureId: string) => {
       featureLayerManager.toggleFeature(featureId, visible);
     });
+    featureLayerManager.layers.forEach((_layer, featureId) => {
+      if (!newVisibility.has(featureId)) {
+        featureLayerManager.toggleFeature(featureId, false);
+      }
+    });
+    if (selectedFeatureId.value && newVisibility.get(selectedFeatureId.value) !== false) {
+      nextTick(() => {
+        if (selectedFeatureId.value) {
+          applySelectionEffects(selectedFeatureId.value);
+        }
+      });
+    }
   },
-  { deep: true },
+  { deep: true, immediate: true },
 );
 
 watch(

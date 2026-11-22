@@ -4,6 +4,9 @@ import {
   getGeometryAnchor,
   offsetGeometry,
   cloneFeatureWithOffset,
+  hasFeatureCustomDate,
+  getFeatureMapId,
+  getFeatureMapIds,
 } from "../../src/utils/featureHelpers";
 import type { Feature } from "../../src/typescript/feature";
 
@@ -281,6 +284,72 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(clonedLine.mapId).toBeNull();
       expect(clonedLine.properties.mapId).toBeNull();
       expect(clonedLine.properties.mapElementType).toBe("polyline");
+    });
+    it("clears mapIds array when source feature belongs to multiple maps", () => {
+      const multiMapFeature: Feature = {
+        ...zoneFeature,
+        mapId: "map-1",
+        mapIds: ["map-1", "map-2", "map-3"],
+        properties: {
+          ...zoneFeature.properties,
+          mapId: "map-1",
+          mapIds: ["map-1", "map-2", "map-3"],
+        },
+      };
+
+      const cloned = cloneFeatureWithOffset(multiMapFeature, 0.1, 0.1);
+      expect(cloned.mapId).toBeNull();
+      expect(cloned.properties.mapId).toBeNull();
+      expect(cloned.properties.mapIds).toEqual([]);
+    });
+  });
+
+  describe("hasFeatureCustomDate, getFeatureMapId and getFeatureMapIds", () => {
+    it("identifies custom date when startYear or endYear is present", () => {
+      const feat: Feature = {
+        ...textFeature,
+        properties: {
+          ...textFeature.properties,
+          startYear: 1678,
+          endYear: 1678,
+          mapId: "carte-2",
+        },
+      };
+      expect(hasFeatureCustomDate(feat)).toBe(true);
+      expect(getFeatureMapId(feat)).toBe("carte-2");
+      expect(getFeatureMapIds(feat)).toEqual(["carte-2"]);
+    });
+
+    it("identifies custom date when startDate or endDate string is present", () => {
+      const feat: Feature = {
+        ...zoneFeature,
+        mapId: "carte-2",
+        properties: {
+          ...zoneFeature.properties,
+          startDate: "1650-01-01",
+          mapId: "carte-2",
+          mapTitle: "Carte 2",
+        },
+      };
+      expect(hasFeatureCustomDate(feat)).toBe(true);
+      expect(getFeatureMapId(feat)).toBe("carte-2");
+      expect(getFeatureMapIds(feat)).toEqual(["carte-2"]);
+    });
+
+    it("returns correct mapId and mapIds when feature has NO custom date", () => {
+      const feat: Feature = {
+        ...zoneFeature,
+        mapId: "carte-1",
+        mapIds: ["carte-1", "carte-2"],
+        properties: {
+          ...zoneFeature.properties,
+          mapId: "carte-1",
+          mapIds: ["carte-1", "carte-2"],
+        },
+      };
+      expect(hasFeatureCustomDate(feat)).toBe(false);
+      expect(getFeatureMapId(feat)).toBe("carte-1");
+      expect(getFeatureMapIds(feat)).toEqual(["carte-1", "carte-2"]);
     });
   });
 });

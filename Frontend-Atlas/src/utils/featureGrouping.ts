@@ -4,7 +4,7 @@ import {
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import { isVisibleInMainLayers } from "./featureValidationState";
-import { getFeatureMapId, getMapElementType } from "./featureHelpers";
+import { getFeatureMapIds, getMapElementType } from "./featureHelpers";
 
 export { isVisibleInMainLayers } from "./featureValidationState";
 
@@ -64,28 +64,31 @@ export function groupFeaturesByMap(
     : null;
 
   features.forEach((feature: Feature) => {
-    const mapId = getFeatureMapId(feature);
-    if (!mapGroups.has(mapId)) {
-      let title = "Éléments généraux";
-      let startDate: string | null = null;
-      if (mapId && periodByNormalizedId) {
-        const period = periodByNormalizedId.get(mapId.toLowerCase());
-        if (period) {
-          title = period.title;
-          startDate = period.startDate;
+    const rawIds = getFeatureMapIds(feature);
+    const targetMapIds = rawIds.length > 0 ? rawIds : [null];
+    for (const mapId of targetMapIds) {
+      if (!mapGroups.has(mapId)) {
+        let title = "Éléments généraux";
+        let startDate: string | null = null;
+        if (mapId && periodByNormalizedId) {
+          const period = periodByNormalizedId.get(mapId.toLowerCase());
+          if (period) {
+            title = period.title;
+            startDate = period.startDate;
+          }
         }
-      }
-      if (title === "Éléments généraux" && mapId) {
-        const customTitle =
-          ("mapTitle" in feature ? (feature as { mapTitle?: string }).mapTitle : undefined) ||
-          feature.properties?.mapTitle;
-        if (customTitle) {
-          title = customTitle;
+        if (title === "Éléments généraux" && mapId) {
+          const customTitle =
+            ("mapTitle" in feature ? (feature as { mapTitle?: string }).mapTitle : undefined) ||
+            feature.properties?.mapTitle;
+          if (customTitle) {
+            title = customTitle;
+          }
         }
+        mapGroups.set(mapId, { id: mapId, title, startDate, features: [] });
       }
-      mapGroups.set(mapId, { id: mapId, title, startDate, features: [] });
+      mapGroups.get(mapId)!.features.push(feature);
     }
-    mapGroups.get(mapId)!.features.push(feature);
   });
 
   const groups = Array.from(mapGroups.values());
