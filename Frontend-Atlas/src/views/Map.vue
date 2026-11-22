@@ -535,6 +535,41 @@ function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
   if (id) {
     multiSelectedFeatureIds.value = [];
+
+    const feat = features.value.find((f: Feature) => String(f.id) === String(id));
+    if (feat) {
+      const { startYear, endYear } = getFeatureCustomYears(feat);
+      const featMapId = getFeatureMapId(feat);
+      const period = featMapId
+        ? (periodByMapId.value.get(featMapId) ?? periodByMapId.value.get(String(featMapId).trim().toLowerCase()))
+        : null;
+
+      let targetYear: number | null = startYear ?? endYear;
+      let targetExactDate: string | null = (feat.properties?.exactDate && feat.properties?.startDate)
+        ? feat.properties.startDate
+        : null;
+
+      if (targetYear == null && period) {
+        targetYear = period.startYear ?? null;
+        targetExactDate = (period.exactDate && period.startDate) ? period.startDate : null;
+      }
+
+      // Check if feature is visible in the current timeline view
+      const isVisibleNow = filteredFeatures.value.some((f: Feature) => String(f.id) === String(id));
+
+      if ((!isVisibleNow || (timelineMode.value === "specific" && targetYear != null && targetYear !== selectedYear.value)) && targetYear != null) {
+        selectedYear.value = targetYear;
+        if (targetExactDate) {
+          selectedExactDate.value = targetExactDate;
+        } else {
+          selectedExactDate.value = null;
+        }
+      }
+
+      if (period?.title) {
+        currentMapTitle.value = period.title;
+      }
+    }
   }
 }
 
@@ -1083,6 +1118,40 @@ const periodStartDates = computed(() => {
   });
   return dates;
 });
+
+const activeMapPeriod = computed<SliderPeriod | null>(() => {
+  if (selectedYear.value == null || selectedYear.value < 0) return null;
+  if (selectedExactDate.value) {
+    const match = enrichedPeriods.value.find((p) =>
+      p.startDate && p.endDate && isPeriodActiveAt(
+        p.startDate,
+        p.endDate,
+        selectedExactDate.value!,
+        periodStartDates.value,
+      ),
+    );
+    if (match) return match;
+  }
+  const match = enrichedPeriods.value.find((p) =>
+    p.startYear != null && p.endYear != null && isPeriodActiveAt(
+      p.startYear,
+      p.endYear,
+      selectedYear.value,
+      periodStartYears.value,
+    ),
+  );
+  return match ?? null;
+});
+
+watch(
+  activeMapPeriod,
+  (newPeriod) => {
+    if (newPeriod?.title) {
+      currentMapTitle.value = newPeriod.title;
+    }
+  },
+  { immediate: true },
+);
 
 const filteredFeatures = computed(() => {
   return features.value.filter((feature: Feature) => {

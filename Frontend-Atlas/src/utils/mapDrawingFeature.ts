@@ -24,7 +24,7 @@ export function isPointFeature(feature: Feature): feature is PointFeature {
 export function circleToPolygon(
   center: L.LatLng,
   radiusMeters: number,
-  steps: number = 32,
+  steps: number = 128,
 ): PolygonGeometry {
   const coords: Coordinate[] = [];
   const radiusLat = radiusMeters / 111320;

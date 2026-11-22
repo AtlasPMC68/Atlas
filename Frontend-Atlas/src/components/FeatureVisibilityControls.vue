@@ -1229,7 +1229,7 @@ watch(
       const el = Array.from(
         document.querySelectorAll<HTMLElement>("[data-feature-item-id]"),
       ).find((item) => String(item.dataset.featureItemId) === String(newId));
-      el?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+      el?.scrollIntoView?.({ block: "center", behavior: "smooth" });
     });
   },
 );

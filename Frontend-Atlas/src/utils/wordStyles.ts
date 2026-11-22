@@ -136,6 +136,10 @@ export function isTextFeature(
   feature?: Feature | Record<string, unknown> | null,
 ): boolean {
   if (!feature) return false;
+  const geomType = (feature as Feature).geometry?.type;
+  if (geomType && geomType !== "Point") {
+    return false;
+  }
   const props = (feature.properties || {}) as Record<string, unknown>;
   const elemType = getMapElementType(feature as Feature);
   return (
@@ -144,7 +148,7 @@ export function isTextFeature(
     Boolean(props.isOcrText) ||
     props.labelText !== undefined ||
     props.rawType !== undefined ||
-    (feature as Feature).geometry?.type === "Point"
+    geomType === "Point"
   );
 }
 

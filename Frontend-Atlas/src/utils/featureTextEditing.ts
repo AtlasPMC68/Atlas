@@ -184,13 +184,20 @@ export function coerceEditedFeature(
       : null;
 
   if (!isTextFeature(originalFeature)) {
+    const cleanedProps = { ...originalFeature.properties };
+    delete cleanedProps.labelText;
+    delete cleanedProps.wordType;
+    delete cleanedProps.rawType;
+    if (cleanedProps.mapElementType === "point" || cleanedProps.mapElementType === "label") {
+      cleanedProps.mapElementType = "shape";
+    }
+
     return {
       ...originalFeature,
       mapId: chosenMapId,
       name: payload.name,
       properties: {
-        ...originalFeature.properties,
-        labelText: payload.name,
+        ...cleanedProps,
         mapId: chosenMapId,
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),
@@ -200,6 +207,7 @@ export function coerceEditedFeature(
         strokeWidth: normalizeStrokeWidth(payload.strokeWidth),
         startYear: payload.startYear ?? null,
         endYear: payload.endYear ?? null,
+        mapElementType: cleanedProps.mapElementType || "shape",
       },
     };
   }

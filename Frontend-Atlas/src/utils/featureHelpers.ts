@@ -32,6 +32,23 @@ export function getMapElementType(
 
   const geometry = hasProperties ? featureOrProperties.geometry : undefined;
   const rawMapElementType = properties?.mapElementType;
+
+  // Geometry constraints: Polygons can ONLY be zone or shape, NEVER point or label
+  if (geometry?.type === "Polygon" || geometry?.type === "MultiPolygon") {
+    if (rawMapElementType === "zone" || rawMapElementType === "shape") {
+      return rawMapElementType;
+    }
+    return properties?.shapeKind ? "shape" : "shape";
+  }
+
+  // Geometry constraints: LineStrings can ONLY be polyline or arrow
+  if (geometry?.type === "LineString") {
+    if (rawMapElementType === "polyline" || rawMapElementType === "arrow") {
+      return rawMapElementType;
+    }
+    return "polyline";
+  }
+
   const rawWordType = String(properties?.rawType || properties?.type || "")
     .toLowerCase();
   const isTextElement =
@@ -269,6 +286,16 @@ export function cloneFeatureWithOffset(
     delete clonedProps.mapTitle;
   }
 
+  const isText = source.geometry?.type === "Point";
+  if (!isText) {
+    delete clonedProps.labelText;
+    delete clonedProps.wordType;
+    delete clonedProps.rawType;
+    if (clonedProps.mapElementType === "point" || clonedProps.mapElementType === "label") {
+      clonedProps.mapElementType = isZone ? "zone" : "shape";
+    }
+  }
+
   return {
     ...source,
     id: newId,
@@ -279,7 +306,8 @@ export function cloneFeatureWithOffset(
     properties: {
       ...clonedProps,
       name: label,
-      ...(source.properties?.labelText ? { labelText: label } : {}),
+      ...(isText && source.properties?.labelText ? { labelText: label } : {}),
+      mapElementType: getMapElementType({ geometry: newGeometry, properties: clonedProps }) || (isZone ? "zone" : "shape"),
     },
     createdAt: now,
     updatedAt: now,
