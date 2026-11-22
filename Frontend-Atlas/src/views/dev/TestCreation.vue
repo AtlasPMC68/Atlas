@@ -141,6 +141,7 @@ async function createTest() {
     const res = await apiFetch(
       "/dev-test-api/tests/upload",
       {
+        auth: "required",
         method: "POST",
         body: formData,
       },

@@ -1,8 +1,12 @@
 import type { Feature } from "./feature";
+import type { FeatureEditSubmitPayload } from "../utils/featureTextEditing";
 
 export interface FeatureEditFormDraft {
   featureId: string;
   name: string;
+  // Complete form state, including text styling and map assignments. The flat
+  // fields below remain readable for drafts written by earlier versions.
+  draft?: FeatureEditSubmitPayload;
   labelText?: string;
   color?: string;
   strokeColor?: string;

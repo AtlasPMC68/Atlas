@@ -1149,6 +1149,7 @@ async function showOverlayImage(path: string): Promise<string | null> {
   try {
     const res = await apiFetch(
       `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/${path}`,
+      { auth: "required" },
     );
     if (!res.ok) throw new Error(`Image indisponible (${res.status})`);
     closeOverlay();
@@ -1212,6 +1213,7 @@ async function loadPixelZones() {
   try {
     const res = await apiFetch(
       `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/pixel-zones`,
+      { auth: "required" },
     );
     if (res.status === 404) {
       // Runs from before the snapshot existed: a re-run produces it.
@@ -1280,6 +1282,7 @@ async function loadControlPoints() {
   try {
     const res = await apiFetch(
       `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/control-points`,
+      { auth: "required" },
     );
     if (!res.ok) throw new Error(String(res.status));
     const data = await res.json();
@@ -1555,7 +1558,7 @@ const visibleParamGroups = computed(() => {
 async function loadGeorefConfig() {
   configLoadError.value = null;
   try {
-    const res = await apiFetch("/dev-test-api/georef-config");
+    const res = await apiFetch("/dev-test-api/georef-config", { auth: "required" });
     if (!res.ok) throw new Error(`Configuration indisponible (${res.status})`);
     configDesc.value = (await res.json()) as GeorefConfigDescription;
   } catch (err) {
@@ -1817,6 +1820,7 @@ async function rerunCase() {
     const res = await apiFetch(
       `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/run-evaluate?${params}`,
       {
+        auth: "required",
         method: "POST",
         headers: {
           ...(overrideCount > 0 ? { "Content-Type": "application/json" } : {}),
@@ -1988,6 +1992,7 @@ async function loadExpected() {
   // before cleaning, the zones as drawn.
   const res = await apiFetch(
     `/dev-test-api/georef_zones/${testId.value}?cleaned=${stage.value === "cleaned"}`,
+    { auth: "required" },
   );
 
   if (!res.ok) {
@@ -2038,7 +2043,7 @@ async function loadExtracted() {
 
 async function loadErrors() {
   if (!errorsUrl.value) return;
-  const res = await apiFetch(errorsUrl.value);
+  const res = await apiFetch(errorsUrl.value, { auth: "required" });
   if (!res.ok) {
     errorFeatures.value = [];
     return;
@@ -2051,6 +2056,7 @@ async function loadLatestReport() {
   if (!testId.value || !testCaseId.value) return;
   const res = await apiFetch(
     `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/report`,
+    { auth: "required" },
   );
   if (!res.ok) {
     latestReport.value = null;
@@ -2063,6 +2069,7 @@ async function loadCaseState() {
   if (!testId.value || !testCaseId.value) return;
   const res = await apiFetch(
     `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/state`,
+    { auth: "required" },
   );
   if (!res.ok) {
     caseState.value = null;
@@ -2084,6 +2091,7 @@ async function loadBestReport() {
   if (!testId.value || !testCaseId.value) return;
   const res = await apiFetch(
     `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/best-report`,
+    { auth: "required" },
   );
   if (!res.ok) {
     bestReport.value = null;
@@ -2148,8 +2156,13 @@ watch(mode, async () => {
 });
 
 watch(stage, async () => {
-  await Promise.all([loadExpected(), loadExtracted(), loadErrors()]);
-  rebuildVisibility();
+  loadError.value = null;
+  try {
+    await Promise.all([loadExpected(), loadExtracted(), loadErrors()]);
+    rebuildVisibility();
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : "Erreur lors du chargement";
+  }
 });
 
 watch(

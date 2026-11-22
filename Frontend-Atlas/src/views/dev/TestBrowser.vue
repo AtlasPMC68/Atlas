@@ -23,7 +23,7 @@ async function loadTests() {
   isLoading.value = true;
   loadError.value = null;
   try {
-    const res = await apiFetch("/dev-test-api/tests");
+    const res = await apiFetch("/dev-test-api/tests", { auth: "required" });
     if (!res.ok) {
       throw new Error(`Erreur lors du chargement des tests (${res.status})`);
     }
@@ -55,6 +55,7 @@ async function deleteTest(test: DevTestSummary) {
     const res = await apiFetch(
       `/dev-test-api/tests/${test.mapId}`,
       {
+        auth: "required",
         method: "DELETE",
       },
     );

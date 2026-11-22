@@ -5,7 +5,7 @@ import type { ApiResult } from "../typescript/importSession";
 // The stored test cases of a dev-test map.
 export function useDevTestCases() {
   async function listCases(testId: string): Promise<ApiResult<string[]>> {
-    const res = await apiFetch(`/dev-test-api/test-cases/${encodeURIComponent(testId)}`);
+    const res = await apiFetch(`/dev-test-api/test-cases/${encodeURIComponent(testId)}`, { auth: "required" });
     if (!res.ok) {
       return { success: false, error: await apiErrorMessage(res, "Cas indisponibles"), status: res.status };
     }
@@ -22,6 +22,7 @@ export function useDevTestCases() {
   ): Promise<ApiResult<DevTestCaseInputsResponse>> {
     const res = await apiFetch(
       `/dev-test-api/test-cases/${encodeURIComponent(testId)}/${encodeURIComponent(caseId)}/inputs`,
+      { auth: "required" },
     );
     if (!res.ok) {
       return { success: false, error: await apiErrorMessage(res, "Cas introuvable"), status: res.status };

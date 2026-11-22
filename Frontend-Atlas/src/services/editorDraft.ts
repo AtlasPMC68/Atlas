@@ -54,7 +54,8 @@ function isForms(value: unknown): value is EditorFormDrafts {
     typeof edit.name !== "string" || !isOptionalString(edit.labelText) ||
     !isOptionalString(edit.color) || !isOptionalString(edit.strokeColor) ||
     !isOptionalNumericInput(edit.opacity) || !isOptionalNumericInput(edit.strokeOpacity) ||
-    !isOptionalNumericInput(edit.strokeWidth))) return false;
+    !isOptionalNumericInput(edit.strokeWidth) ||
+    !isFeatureEditPayload(edit.draft))) return false;
 
   const map = value.addMap;
   if (map !== undefined && (!isRecord(map) || typeof map.title !== "string" ||
@@ -71,6 +72,28 @@ function isForms(value: unknown): value is EditorFormDrafts {
   return project === undefined || (isRecord(project) &&
     isOptionalString(project.title) && isOptionalString(project.description) &&
     typeof project.isPrivate === "boolean");
+}
+
+function isFeatureEditPayload(value: unknown): boolean {
+  // Absent in older drafts, whose flat form fields are validated above.
+  if (value === undefined) return true;
+  if (!isRecord(value) || typeof value.name !== "string" ||
+    typeof value.wordType !== "string" ||
+    !["labelText", "colorHex", "textColorHex", "strokeColorHex", "labelStyleSelection"]
+      .every((field) => isOptionalString(value[field])) ||
+    !["textSizePx", "fillOpacity", "strokeOpacity", "strokeWidth"]
+      .every((field) => isOptionalNumericInput(value[field])) ||
+    !(value.customLabelStyleId === null || isOptionalString(value.customLabelStyleId)) ||
+    !(value.selectedMapIds === undefined || (Array.isArray(value.selectedMapIds) &&
+      value.selectedMapIds.every((id) => typeof id === "string")))) return false;
+  const style = value.customLabelStyle;
+  return style === undefined || style === null || (isRecord(style) &&
+    typeof style.id === "string" && typeof style.name === "string" &&
+    ["sizePx", "priority", "minZoom"].every((field) =>
+      typeof style[field] === "number" && Number.isFinite(style[field])) &&
+    ["normal", "italic"].includes(String(style.fontStyle)) &&
+    ["none", "uppercase"].includes(String(style.textTransform)) &&
+    isOptionalString(style.color));
 }
 
 function isScope(value: unknown): value is EditorDraftScope {

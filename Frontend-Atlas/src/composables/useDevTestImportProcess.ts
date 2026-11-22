@@ -55,7 +55,7 @@ export function useDevTestImportProcess() {
   const poller = usePolling(async () => {
     if (!taskId) return;
     try {
-      const res = await apiFetch(`/dev-test-api/status/${taskId}`);
+      const res = await apiFetch(`/dev-test-api/status/${taskId}`, { auth: "required" });
       const data: StatusResponse = await res.json();
 
       progress.value = data.progress_percentage || 0;
@@ -133,6 +133,7 @@ export function useDevTestImportProcess() {
 
     try {
       const response = await apiFetch("/dev-test-api/upload", {
+        auth: "required",
         method: "POST",
         body: formData,
       });
@@ -172,6 +173,7 @@ export function useDevTestImportProcess() {
   const warmTextRegions = async (testId: string) => {
     try {
       await apiFetch(`/dev-test-api/tests/${testId}/warm-text-regions`, {
+        auth: "required",
         method: "POST",
       });
     } catch (err) {

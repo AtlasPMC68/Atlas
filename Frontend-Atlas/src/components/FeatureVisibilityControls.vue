@@ -252,7 +252,13 @@
     </div>
   </div>
 
-  <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
+  <dialog
+    ref="editFeatureDialogRef"
+    class="modal"
+    v-if="featureToEdit"
+    @close="emit('draft-change')"
+    @cancel="onEditCancel"
+  >
     <div
       class="modal-box flex flex-col gap-4"
       :class="isEditingPoint ? 'max-w-3xl' : 'max-w-xl'"
@@ -713,6 +719,7 @@ import {
   type FeatureVisibilityGroupType,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
+import type { FeatureEditFormDraft } from "../typescript/editorDraft";
 import type { CustomLabelStyle } from "../utils/labelPresentation";
 import {
   MAX_TEXT_SIZE_PX,
@@ -754,14 +761,15 @@ import { FolderArrowDownIcon, PlusIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   features: Feature[];
   featureVisibility: Map<string, boolean>;
   mapPeriods?: MapPeriod[];
   isDevTestCreation?: boolean;
   selectedFeatureId?: string | null;
   customLabelStyles?: CustomLabelStyle[];
-}>();
+  busy?: boolean;
+}>(), { busy: false });
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
 const featureToEdit = ref<Feature | undefined>(undefined);
 const editDraft = ref<FeatureEditSubmitPayload>({
@@ -872,7 +880,12 @@ const emit = defineEmits([
   "select-feature",
   "edit-map",
   "save-label-styles",
+  "draft-change",
 ]);
+
+watch(editDraft, () => {
+  if (editFeatureDialogRef.value?.open) emit("draft-change");
+}, { deep: true, flush: "sync" });
 
 const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
 
@@ -895,6 +908,7 @@ const availableCustomLabelStyles = computed(() => {
 });
 
 function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  if (props.busy) return;
   localCustomStyles.value = [...styles];
   if (editDraft.value.customLabelStyleId) {
     const updated = styles.find((s) => s.id === editDraft.value.customLabelStyleId);
@@ -992,6 +1006,7 @@ watch(
 );
 
 function openMapSelectionOrValidate() {
+  if (props.busy) return;
   if (validationFeaturesByMap.value.length > 1) {
     selectMapValidationDialogRef.value?.showModal?.();
   } else {
@@ -1000,6 +1015,7 @@ function openMapSelectionOrValidate() {
 }
 
 function confirmMapValidation(mapId: string | null) {
+  if (props.busy) return;
   selectMapValidationDialogRef.value?.close?.();
   emit("validate-texts", mapId);
 }
@@ -1060,6 +1076,7 @@ const validationFeaturesByMap = computed(() =>
 );
 
 function toggleMapGroup(mapId: string | null, visible: boolean) {
+  if (props.busy) return;
   const mapGroup = featuresByMap.value.find((g: MapGroupItem) => g.id === mapId);
   if (mapGroup) {
     mapGroup.features.forEach((feature: Feature) => {
@@ -1108,12 +1125,61 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
 }
 
 async function showEditFeatureDialog(feature: Feature) {
+  if (props.busy) return;
   const state = prepareFeatureForEdit(feature);
   featureToEdit.value = state.feature;
   editDraft.value = state.draft;
 
   await nextTick();
-  editFeatureDialogRef.value?.showModal();
+  if (!editFeatureDialogRef.value?.open) editFeatureDialogRef.value?.showModal();
+  emit("draft-change");
+}
+
+function cloneEditDraft(value: FeatureEditSubmitPayload): FeatureEditSubmitPayload {
+  return {
+    ...value,
+    selectedMapIds: value.selectedMapIds ? [...value.selectedMapIds] : undefined,
+    customLabelStyle: value.customLabelStyle ? { ...value.customLabelStyle } : value.customLabelStyle,
+  };
+}
+
+function getDraft(): FeatureEditFormDraft | null {
+  if (!editFeatureDialogRef.value?.open || !featureToEdit.value) return null;
+  return {
+    featureId: String(featureToEdit.value.id),
+    name: editDraft.value.name,
+    draft: cloneEditDraft(editDraft.value),
+  };
+}
+
+async function restoreDraft(saved: FeatureEditFormDraft): Promise<void> {
+  const feature = props.features.find((item) => String(item.id) === saved.featureId);
+  if (!feature) throw new Error("L’élément du formulaire à récupérer est introuvable.");
+  const state = prepareFeatureForEdit(feature);
+  featureToEdit.value = state.feature;
+  editDraft.value = saved.draft ? cloneEditDraft(saved.draft) : {
+    ...state.draft,
+    name: saved.name,
+    labelText: saved.labelText ?? state.draft.labelText,
+    colorHex: saved.color ?? state.draft.colorHex,
+    strokeColorHex: saved.strokeColor ?? state.draft.strokeColorHex,
+    fillOpacity: saved.opacity !== undefined ? normalizeOpacity(saved.opacity) : state.draft.fillOpacity,
+    strokeOpacity: saved.strokeOpacity !== undefined ? normalizeOpacity(saved.strokeOpacity) : state.draft.strokeOpacity,
+    strokeWidth: saved.strokeWidth !== undefined ? normalizeStrokeWidth(saved.strokeWidth) : state.draft.strokeWidth,
+  };
+  await nextTick();
+  if (!editFeatureDialogRef.value?.open) editFeatureDialogRef.value?.showModal();
+  emit("draft-change");
+}
+
+function onEditCancel(event: Event) {
+  if (props.busy || isEditing.value) event.preventDefault();
+}
+
+function closeEditFeatureDialog(): void {
+  editFeatureDialogRef.value?.close();
+  featureToEdit.value = undefined;
+  emit("draft-change");
 }
 
 const { handleClick: onFeatureItemClick, handleDblClick: onFeatureItemDblClick } =
@@ -1161,6 +1227,7 @@ async function onEditFeature() {
 }
 
 function toggleAll(visible: boolean) {
+  if (props.busy) return;
   props.features.forEach((feature: Feature) => {
     emit("toggle-feature", feature.id, visible);
   });
@@ -1213,7 +1280,10 @@ async function onDeleteFeature() {
 }
 
 defineExpose({
+  getDraft,
+  restoreDraft,
   showEditFeatureDialog,
+  closeEditFeatureDialog,
   showDeleteFeatureDialog,
   isMapCollapsed,
   toggleMapCollapse,

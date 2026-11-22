@@ -47,6 +47,7 @@ export function useProjectLabelStyles() {
     isSavingStyles.value = true;
     try {
       const response = await apiFetch(`/projects/${projectId}/label-styles`, {
+        auth: "required",
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(camelToSnake({ styles })),
