@@ -161,7 +161,12 @@
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+} from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
 import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
@@ -183,6 +188,7 @@ import {
 import { isPeriodActiveAt, toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { useEditorDraft } from "../composables/useEditorDraft";
 import { useProjectLabelStyles } from "../composables/useProjectLabelStyles";
 import { getOriginalMapImage } from "../composables/useMapImageCache";
 import keycloak from "../keycloak";
@@ -191,6 +197,10 @@ import { captureMapThumbnail } from "../utils/mapThumbnail";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
+import { sessionState } from "../services/authSession";
+import { haveSameEditorFeatures } from "../services/editorDraft";
+import { cloneFeatureSnapshot } from "../utils/featureHistory";
+import type { EditorDraft, EditorFormDrafts } from "../typescript/editorDraft";
 import {
   upsertFeature,
   isCopyableFeature,

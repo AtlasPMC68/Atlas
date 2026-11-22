@@ -6,6 +6,12 @@ import "leaflet/dist/leaflet.css";
 import "./style.css";
 import "./utils/basemap";
 import keycloak from "./keycloak";
+import { startTokenRefresh } from "./services/tokenRefresh";
+import {
+  initializeAuthSession,
+  reportInitializationFailure,
+  syncAuthenticatedSession,
+} from "./services/authSession";
 
 const app = createApp(App);
 app.use(createPinia());
