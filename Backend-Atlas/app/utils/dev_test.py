@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from asyncio import to_thread
 
 from app.celery_app import celery_app
@@ -69,7 +69,7 @@ def write_test_config(
         "testId": parent_test_id,
         "testCase": test_case_name or test_case_id,
         "testCaseId": test_case_id,
-        "updatedAt": datetime.utcnow().isoformat() + "Z",
+        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "kind": kind,
         "georef": {
             "controlPoints": [cp.to_dict() for cp in control_points],
@@ -256,7 +256,7 @@ def upload_dev_test(
     entry = metadata.get(map_id, {}) if isinstance(metadata, dict) else {}
     entry["name"] = name
     entry["kind"] = resolved_kind
-    entry.setdefault("createdAt", datetime.utcnow().isoformat() + "Z")
+    entry.setdefault("createdAt", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     metadata[map_id] = entry
     _write_tests_metadata(metadata)
 
@@ -434,8 +434,7 @@ def force_promote_latest_to_best(
         report = json.load(f)
     if report.get("testId") != test_id or report.get("testCaseId") != test_case_id:
         raise ValueError(
-            f"{paths.report_path} belongs to "
-            f"{report.get('testId')}/{report.get('testCaseId')}, not {label}"
+            f"{paths.report_path} belongs to " f"{report.get('testId')}/{report.get('testCaseId')}, not {label}"
         )
 
     record_path = os.path.join(paths.case_dir, RUN_RECORD_FILENAME)

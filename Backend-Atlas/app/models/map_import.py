@@ -24,6 +24,13 @@ EXTRACTION_ACTIVE = (
     EXTRACTION_CANCELLING,
 )
 
+#: States in which extraction is pending or running in the background before features exist.
+EXTRACTION_PENDING = (
+    EXTRACTION_QUEUED,
+    EXTRACTION_RUNNING,
+    EXTRACTION_CANCELLING,
+)
+
 
 class MapImport(Base):
     """An import in progress. Deleted once its features are saved."""

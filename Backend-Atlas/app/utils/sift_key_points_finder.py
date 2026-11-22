@@ -1,7 +1,19 @@
-import cv2  
-import numpy as np
 import os
-import json
+from typing import List, Optional, Tuple
+
+import cv2
+import numpy as np
+import shapely
+from shapely.geometry import LineString, Point
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import nearest_points
+
+from app.utils.georeferencing.reference import (
+    COASTLINE_FILE,
+    LAKES_FILE,
+    ReferenceGrid,
+    load_reference_linework,
+)
 
 NUMBER_OF_KEYPOINTS = 15
 
@@ -29,6 +41,18 @@ LAKE = "lake"
 # on a dense raster. Candidates are taken strongest-first, so what is dropped
 # is the weak tail.
 MAX_CANDIDATES = 5000
+
+# The coastline is drawn this wide. SIFT may only place keypoints under the
+# Canny outline of that line, widened by this kernel to cover the whole line:
+# unwidened, the mask is the 1 px outline of a 3 px line, and SIFT, which puts a
+# keypoint at the centre of what it finds, lost ~98% of its detections (on 52
+# synthetic frames: median 10 per frame instead of ~460, 20 frames under 6).
+LINE_WIDTH_PX = 3
+MASK_DILATION_PX = 5
+
+# OpenCV draws with sub-pixel coordinates in 1/16 px.
+_SUBPIXEL_BITS = 4
+_SUBPIXEL = 1 << _SUBPIXEL_BITS
 
 DEBUG = False
 
@@ -79,15 +103,18 @@ def select_spread_keypoints(
 
 
 def detect_sift_candidates(gray_image: np.ndarray, apply_edge_detection: bool = True):
-    """Every SIFT keypoint on the render's edges, away from its borders."""
+    """Every SIFT keypoint on the render's lines, away from its borders."""
     height, width = gray_image.shape
     border_margin = BORDER_MARGIN_RATIO * float(np.hypot(width, height))
 
     if apply_edge_detection:
         # Apply blur to reduce noise before edge detection
         blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
-        # Create edge mask
-        edges = cv2.Canny(blurred, 75, 175)
+        # The Canny outline of the drawn line, widened to cover the whole line
+        # (see MASK_DILATION_PX).
+        edges = cv2.dilate(
+            cv2.Canny(blurred, 75, 175), np.ones((MASK_DILATION_PX, MASK_DILATION_PX), np.uint8)
+        )
     else:
         edges = None
 
@@ -102,46 +129,60 @@ def detect_sift_candidates(gray_image: np.ndarray, apply_edge_detection: bool = 
     ]
 
 
-def draw_geojson_features(img: np.ndarray, geojson_path: str, bounds: dict, width: int, height: int):
-    """Draw GeoJSON features (coastlines, lakes, etc.) onto an image."""
-    with open(geojson_path, 'r', encoding='utf-8') as f:
-        geojson_data = json.load(f)
-    
-    features = geojson_data.get('features', [])
-    for feature in features:
-        geometry = feature.get('geometry', {})
-        coords = geometry.get('coordinates', [])
-        geom_type = geometry.get('type')
-        
-        if geom_type == 'LineString':
-            draw_coastline(img, coords, bounds, width, height)
-        elif geom_type == 'MultiLineString':
-            for line in coords:
-                draw_coastline(img, line, bounds, width, height)
-        elif geom_type == 'Polygon':
-            # For polygons (like lakes), draw the outer ring
-            if len(coords) > 0:
-                draw_coastline(img, coords[0], bounds, width, height)
-        elif geom_type == 'MultiPolygon':
-            # For multi-polygons, draw all outer rings
-            for polygon in coords:
-                if len(polygon) > 0:
-                    draw_coastline(img, polygon[0], bounds, width, height)
+def render_linework(geom: Optional[BaseGeometry], grid: ReferenceGrid) -> Tuple[np.ndarray, BaseGeometry]:
+    """The layer drawn over the framing box, and the same lines in render pixels.
+
+    Lines are clipped to the box, never joined across a gap: dropping the
+    vertices outside the box would draw a straight line from where a coast
+    leaves the frame to where it comes back, and farthest-point sampling picks
+    exactly such isolated, invented lines.
+    """
+    render = np.zeros((grid.height, grid.width), dtype=np.uint8)
+    lines: List[LineString] = []
+    if geom is not None and not geom.is_empty:
+        for clip_box, lon_shift in grid.clip_boxes():
+            clipped = shapely.clip_by_rect(geom, *clip_box.bounds)
+            for part in shapely.get_parts(shapely.get_parts(clipped)):
+                if part.geom_type != "LineString" or len(part.coords) < 2:
+                    continue
+                coords = np.asarray(part.coords, dtype=float)
+                px, py = grid.to_pixel(coords[:, 0] + lon_shift, coords[:, 1])
+                points = np.column_stack((px, py))
+                cv2.polylines(
+                    render,
+                    [np.round(points * _SUBPIXEL).astype(np.int32)],
+                    False,
+                    255,
+                    LINE_WIDTH_PX,
+                    cv2.LINE_AA,
+                    shift=_SUBPIXEL_BITS,
+                )
+                lines.append(LineString(points))
+    return render, shapely.MultiLineString(lines)
+
+
+def snap_to_lines(point: Tuple[float, float], lines: BaseGeometry) -> Tuple[float, float]:
+    """The nearest point on *lines*. A keypoint sits somewhere on the drawn
+    line, up to half its width off the curve, and its lon/lat becomes the
+    control point's true position: 1.5 px is ~6 km on a 40 degree frame."""
+    if lines.is_empty:
+        return point
+    snapped = nearest_points(lines, Point(point))[0]
+    return float(snapped.x), float(snapped.y)
 
 
 def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768):
     """Suggest SIFT keypoints for the user to match, inside geographic bounds."""
-    
-    geojson_dir = os.path.join(os.path.dirname(__file__), "..", "geojson")
+
+    grid = ReferenceGrid.from_bounds(bounds, width, height)
     diagonal = float(np.hypot(width, height))
 
     renders = {}
+    lines = {}
     candidates = {}
-    for feature, filename in ((COASTLINE, "ne_coastline.geojson"), (LAKE, "ne_50m_lakes.geojson")):
-        render = np.zeros((height, width), dtype=np.uint8)
-        draw_geojson_features(render, os.path.join(geojson_dir, filename), bounds, width, height)
-        renders[feature] = render
-        candidates[feature] = detect_sift_candidates(render, apply_edge_detection=True)
+    for feature, filename in ((COASTLINE, COASTLINE_FILE), (LAKE, LAKES_FILE)):
+        renders[feature], lines[feature] = render_linework(load_reference_linework(filename), grid)
+        candidates[feature] = detect_sift_candidates(renders[feature], apply_edge_detection=True)
 
     selected = select_spread_keypoints(
         candidates[COASTLINE],
@@ -152,17 +193,15 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
     )
     used_lakes = any(feature == LAKE for _, feature in selected)
 
-    # Convert to lat/lon
     keypoints = []
     for i, (kp, feature) in enumerate(selected):
-        px, py = kp.pt
-        lon = bounds['west'] + (px / width) * (bounds['east'] - bounds['west'])
-        lat = bounds['north'] - (py / height) * (bounds['north'] - bounds['south'])
+        px, py = snap_to_lines(kp.pt, lines[feature])
+        lon, lat = grid.to_lonlat(px, py)
 
         keypoints.append({
             "id": i + 1,
-            "pixel": {"x": float(px), "y": float(py)},
-            "geo": {"lat": lat, "lng": lon},
+            "pixel": {"x": px, "y": py},
+            "geo": {"lat": float(lat), "lng": float(lon)},
             "response": float(kp.response),
             "feature": feature,
         })
@@ -171,28 +210,12 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
         output_dir = os.path.join(os.path.dirname(__file__), "extracted_texts")
         os.makedirs(output_dir, exist_ok=True)
         img_vis = cv2.cvtColor(np.maximum(renders[COASTLINE], renders[LAKE]), cv2.COLOR_GRAY2BGR)
-        for i, (kp, feature) in enumerate(selected):
-            x, y = int(kp.pt[0]), int(kp.pt[1])
-            colour = (0, 255, 0) if feature == COASTLINE else (255, 160, 0)
+        for i, point in enumerate(keypoints):
+            x, y = int(point["pixel"]["x"]), int(point["pixel"]["y"])
+            colour = (0, 255, 0) if point["feature"] == COASTLINE else (255, 160, 0)
             cv2.circle(img_vis, (x, y), 15, colour, 2)
             cv2.circle(img_vis, (x, y), 3, (0, 0, 255), -1)
             cv2.putText(img_vis, str(i + 1), (x + 20, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
         cv2.imwrite(os.path.join(output_dir, "sift_keypoints.png"), img_vis)
 
     return {"keypoints": keypoints, "total": len(keypoints), "used_lakes": used_lakes}
-
-
-def draw_coastline(img, coords, bounds, width, height):
-    points = []
-    for lon, lat in coords:
-        if not (bounds['west'] <= lon <= bounds['east'] and bounds['south'] <= lat <= bounds['north']):
-            continue
-        
-        px = int((lon - bounds['west']) / (bounds['east'] - bounds['west']) * width)
-        py = int((bounds['north'] - lat) / (bounds['north'] - bounds['south']) * height)
-        px = max(0, min(width - 1, px))
-        py = max(0, min(height - 1, py))
-        points.append([px, py])
-    
-    if len(points) > 1:
-        cv2.polylines(img, [np.array(points, dtype=np.int32)], False, 255, 3, cv2.LINE_AA)

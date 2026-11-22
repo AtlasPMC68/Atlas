@@ -1,10 +1,12 @@
 import os
 import gc
 import logging
+import time
 
 import torch
 import preprocessing as preprocess
 import output as out
+from celery.exceptions import SoftTimeLimitExceeded
 from PIL import Image
 from transformers import AutoModelForCausalLM, AutoProcessor, PreTrainedModel, ProcessorMixin
 from transformers.utils import logging as hf_transformers_logging
@@ -51,12 +53,22 @@ def initialize_model() -> tuple[PreTrainedModel, ProcessorMixin, dict]:
 
 
 def run_inference(
-    model: PreTrainedModel, processor: ProcessorMixin, image: Image.Image, task_prompt: str, config: dict
+    model: PreTrainedModel,
+    processor: ProcessorMixin,
+    image: Image.Image,
+    task_prompt: str,
+    config: dict,
+    label: str = "pass",
 ) -> dict:
-    """Run Florence inference for one task prompt and return structured output."""
+    """Run Florence inference for one task prompt and return structured output.
+
+    Logs one line per pass (size, tokens, seconds) so a slow pass is visible in
+    the worker log instead of only surfacing as a time limit 15 minutes later.
+    """
 
     inputs = processor(text=task_prompt, images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(config["torch_dtype"])
+    started = time.perf_counter()
 
     try:
         with torch.inference_mode():
@@ -70,6 +82,18 @@ def run_inference(
             )
         generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
         generated_text = generated_text.replace("</s>", "").replace("<s>", "")
+        elapsed = time.perf_counter() - started
+        n_tokens = generated_ids.shape[1]
+        logger.info(
+            f"[florence] {label}: {image.width}x{image.height}px, {n_tokens} tokens in {elapsed:.1f}s "
+            f"({1000 * elapsed / max(n_tokens, 1):.0f} ms/token, {torch.get_num_threads()} threads)"
+            + (" - hit max_new_tokens" if n_tokens >= config["max_new_tokens"] else "")
+        )
+    except SoftTimeLimitExceeded:
+        # Celery's soft limit is an Exception: let it reach run_pipeline, which
+        # keeps the passes already done, instead of swallowing it here and
+        # running on until the hard limit kills the worker with nothing saved.
+        raise
     except IndexError as e:
         logger.warning(f"Florence-2 generation failed with IndexError (likely coordinate hallucination): {e}")
         return {}
@@ -199,8 +223,11 @@ def run_pipeline(model: PreTrainedModel, processor: ProcessorMixin, image_path: 
         preprocessed.save(prep_path)
 
     all_detections = []
+    partial = False
+    pipeline_started = time.perf_counter()
 
-    result = run_inference(model, processor, preprocessed, OCR_TASK, config)
+    # No except here: a soft limit during the first pass leaves nothing to keep.
+    result = run_inference(model, processor, preprocessed, OCR_TASK, config, label="full image")
     ocr_data = result.get(OCR_TASK, {})
     for quad, text in zip(ocr_data.get("quad_boxes", []), ocr_data.get("labels", [])):
         all_detections.append({"text": text, "bbox_xyxy": out.quad_to_bbox_xyxy(quad), "quad": quad})
@@ -222,9 +249,20 @@ def run_pipeline(model: PreTrainedModel, processor: ProcessorMixin, image_path: 
         w, h = preprocessed.width, preprocessed.height
         tiles = _generate_tiles(w, h, tile_grid, overlap_pct=0.10)
 
-        for x1, y1, x2, y2 in tiles:
+        for index, (x1, y1, x2, y2) in enumerate(tiles, start=1):
             tile_img = preprocessed.crop((x1, y1, x2, y2))
-            tile_result = run_inference(model, processor, tile_img, OCR_TASK, config)
+            try:
+                tile_result = run_inference(
+                    model, processor, tile_img, OCR_TASK, config,
+                    label=f"tile {index}/{len(tiles)} ({tile_grid}x{tile_grid})",
+                )
+            except SoftTimeLimitExceeded:
+                logger.warning(
+                    f"[florence] Soft time limit reached at tile {index}/{len(tiles)}: "
+                    f"saving the {len(all_detections)} detections found so far"
+                )
+                partial = True
+                break
             t_data = tile_result.get(OCR_TASK, {})
 
             for quad, text in zip(t_data.get("quad_boxes", []), t_data.get("labels", [])):
@@ -248,7 +286,12 @@ def run_pipeline(model: PreTrainedModel, processor: ProcessorMixin, image_path: 
     orig_width = int(preprocessed.width / scale_factor)
     orig_height = int(preprocessed.height / scale_factor)
 
+    logger.info(
+        f"[florence] Done: {len(all_detections)} detections in {time.perf_counter() - pipeline_started:.1f}s "
+        f"({longest_side}px, tiling {tile_grid or 'none'}{', PARTIAL' if partial else ''})"
+    )
     return {
         "image_size": {"width": orig_width, "height": orig_height},
         "detections": all_detections,
+        "partial": partial,
     }

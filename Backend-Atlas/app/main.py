@@ -17,10 +17,9 @@ from .routers import user
 from .utils.dev_test_assets import GEOREF_ASSETS_DIR, ensure_georef_assets_dir
 
 # The dev-test tool: its API routes (run, edit and delete test cases) and its
-# static files. On by default for now, for local development.
-# TODO: default this to "false" before deploying anywhere, so production does
-# not expose the dev-test routes; set ENABLE_DEV_TOOLS=true locally instead.
-ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "true").strip().lower() in (
+# static files. Off unless enabled: docker-compose.yml sets ENABLE_DEV_TOOLS=true
+# for local development, docker-compose.prod.yml sets it to false.
+ENABLE_DEV_TOOLS = os.getenv("ENABLE_DEV_TOOLS", "false").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -39,9 +38,13 @@ app.include_router(auth.router)
 app.include_router(user.router)
 if ENABLE_DEV_TOOLS:
     app.include_router(dev_test.router)
+
+cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost,https://localhost,http://localhost:3000,http://localhost:5173")
+allow_origins = [origin.strip() for origin in cors_origins_raw.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

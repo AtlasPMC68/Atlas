@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { useImportSession } from "../composables/useImportSession";
 import { useSiftPoints } from "../composables/useSiftPoints";
 import { useDevTestCases } from "../composables/useDevTestCases";
+import { cacheOriginalMapImage } from "../composables/useMapImageCache";
 import { applyInputsPatch, pickCaseInputs, type CasePart } from "../utils/importSteps";
 import type { DevTestCaseInputsResponse, EditedDevTestCase } from "../typescript/devTest";
 import type { CoastlineKeypoint, WorldBounds } from "../typescript/georef";
@@ -71,6 +72,9 @@ export const useImportSessionStore = defineStore("importSession", {
       if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
       this.file = file;
       this.previewUrl = file ? URL.createObjectURL(file) : "";
+      if (this.mapId && this.previewUrl) {
+        cacheOriginalMapImage(this.mapId, this.previewUrl);
+      }
     },
 
     applySession(session: ImportSessionResponse) {
@@ -163,6 +167,9 @@ export const useImportSessionStore = defineStore("importSession", {
     // Confirms the map. In user mode it is uploaded and OCR starts.
     async confirmMap(): Promise<boolean> {
       if (!this.file) return false;
+      if (this.mapId && this.previewUrl) {
+        cacheOriginalMapImage(this.mapId, this.previewUrl);
+      }
       if (this.mode === "user") {
         this.isSaving = true;
         const res = await useImportSession().createImport(this.mapId, this.file);

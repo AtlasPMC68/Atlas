@@ -34,6 +34,8 @@
         >
           +
         </button>
+        <!-- Extra header actions specific to one viewer (e.g. replace the image) -->
+        <slot name="actions"></slot>
       </div>
     </div>
     <slot></slot>

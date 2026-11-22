@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS "projects" (
   "title" TEXT NOT NULL,
   "description" TEXT,
   "is_private" BOOLEAN DEFAULT TRUE,
+  "label_styles" JSONB NOT NULL DEFAULT '[]'::jsonb,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())
 );
@@ -25,6 +26,8 @@ CREATE TABLE IF NOT EXISTS "maps" (
   "start_date" DATE,
   "end_date" DATE,
   "exact_date" BOOLEAN NOT NULL DEFAULT FALSE,
+  "reference_image_path" TEXT,
+  "reference_image_content_type" TEXT,
   "created_at" TIMESTAMP DEFAULT (now()),
   "updated_at" TIMESTAMP DEFAULT (now())
 );

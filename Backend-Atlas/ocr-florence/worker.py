@@ -39,7 +39,7 @@ def run_florence(image_path: str, output_path: str) -> None:
         image_path: Path of the map image to process, on the shared ocr-data volume.
         output_path: Json path where the text and textbox combinations are output, on a shared volume
     """
-    logger.debug(f"Received Florence OCR task to process image: {image_path}")
+    logger.info(f"[florence] Received OCR task for {os.path.basename(image_path)}")
 
     model, processor, config = get_florence_model()
     result = inference.run_pipeline(model, processor, image_path, config)

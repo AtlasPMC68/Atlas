@@ -28,6 +28,7 @@ env/
 
 # Environment variables
 .env*
+!.env.example
 
 # IDE
 .vscode/
@@ -97,3 +98,12 @@ Backend-Atlas/tests/assets/georef/derived/**/.ocr.lock
 
 # Per-run georeferencing debug dumps (GEOREF_DEBUG=true)
 Backend-Atlas/debug_runs/
+
+# Database dumps made by deploy.sh
+backups/
+
+# Local docker compose overrides (e.g. Florence thread count)
+docker-compose.override.yml
+
+# Local DB backups
+backup-*.sql.gz
