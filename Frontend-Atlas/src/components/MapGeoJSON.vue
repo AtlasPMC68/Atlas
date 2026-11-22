@@ -170,22 +170,24 @@ function getLayerTopRightLatLng(layer: L.Layer, currentMap: L.Map): L.LatLng | n
     }
   };
 
-  const s = layer as any;
-  if (typeof s.getLatLngs === "function") {
-    traverse(s.getLatLngs());
-  } else if (typeof s.getLatLng === "function") {
-    traverse(s.getLatLng());
-  } else if (typeof s.getBounds === "function") {
-    const b = s.getBounds();
-    if (b && (!b.isValid || b.isValid())) {
-      const corners = [b.getNorthWest(), b.getNorthEast(), b.getSouthEast(), b.getSouthWest()];
-      corners.forEach((c) => {
-        const pt = currentMap.latLngToContainerPoint(c);
-        if (pt.x > maxX) maxX = pt.x;
-        if (pt.y < minY) minY = pt.y;
-      });
+  forEachLeafLayer(layer, (leaf) => {
+    const s = leaf as any;
+    if (typeof s.getLatLngs === "function") {
+      traverse(s.getLatLngs());
+    } else if (typeof s.getBounds === "function") {
+      const b = s.getBounds();
+      if (b && (!b.isValid || b.isValid())) {
+        const corners = [b.getNorthWest(), b.getNorthEast(), b.getSouthEast(), b.getSouthWest()];
+        corners.forEach((c) => {
+          const pt = currentMap.latLngToContainerPoint(c);
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+        });
+      }
+    } else if (typeof s.getLatLng === "function") {
+      traverse(s.getLatLng());
     }
-  }
+  });
 
   if (!isFinite(maxX) || !isFinite(minY)) return null;
   return currentMap.containerPointToLatLng(L.point(maxX, minY));

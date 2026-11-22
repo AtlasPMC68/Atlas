@@ -901,11 +901,12 @@ const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
       ? periodTitleById.get(normalizedMapId) || "Carte associée"
       : "Éléments généraux";
 
-    const effectiveName =
+    const rawName =
       f.properties?.name?.trim() ||
       f.name?.trim() ||
-      f.properties?.labelText?.trim() ||
-      "Élément";
+      f.properties?.labelText?.trim();
+    const hasName = Boolean(rawName);
+    const effectiveName = hasName && rawName ? rawName : "Nom manquant";
 
     list.push({
       id: String(
@@ -916,6 +917,7 @@ const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
           "",
       ),
       name: effectiveName,
+      isNameMissing: !hasName,
       year: effectiveStart,
       startYear: startYear != null ? startYear : effectiveStart,
       endYear: endYear != null ? endYear : null,

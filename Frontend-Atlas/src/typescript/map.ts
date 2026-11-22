@@ -32,6 +32,7 @@ export interface TimelineElementMarker {
   color?: string;
   mapId?: string | null;
   mapTitle?: string | null;
+  isNameMissing?: boolean;
 }
 
 export interface MapData {

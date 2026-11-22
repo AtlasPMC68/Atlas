@@ -88,10 +88,15 @@ function computeTimelineElementMarkers(
     const effectiveStart = startYear ?? endYear;
     if (effectiveStart == null) return;
 
+    const rawName = f.properties?.labelText?.trim() || f.properties?.name?.trim();
+    const hasName = Boolean(rawName);
+    const effectiveName = hasName && rawName ? rawName : "Nom manquant";
+
     const mapId = getFeatureMapId(f);
     list.push({
       id: String(f.id),
-      name: f.properties?.labelText || f.properties?.name || "Élément",
+      name: effectiveName,
+      isNameMissing: !hasName,
       year: effectiveStart,
       endYear: endYear ?? effectiveStart,
       type: f.properties?.mapElementType || (isTextFeature(f) ? "Texte" : "Élément"),

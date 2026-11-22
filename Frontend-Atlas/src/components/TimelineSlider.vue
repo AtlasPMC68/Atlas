@@ -181,14 +181,17 @@
                     >
                       <div class="flex items-center gap-1.5 min-w-0 flex-1">
                         <span
-                          v-if="isCustomItem(item)"
+                          v-if="isItemNameMissing(item)"
                           class="text-error font-bold text-xs leading-none shrink-0"
-                          title="Date personnalisée"
+                          title="Nom manquant"
                         >
                           !
                         </span>
-                        <span class="text-xs font-medium text-base-content group-hover:text-primary truncate">
-                          {{ toNaturalCase(item.name) }}
+                        <span
+                          class="text-xs font-medium truncate"
+                          :class="isItemNameMissing(item) ? 'text-error font-medium' : 'text-base-content group-hover:text-primary'"
+                        >
+                          {{ isItemNameMissing(item) ? "Nom manquant" : toNaturalCase(item.name) }}
                         </span>
                       </div>
                       <div class="flex items-center gap-1.5 shrink-0 text-[11px] text-base-content opacity-60">
@@ -363,6 +366,13 @@ let popoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function isCustomItem(item: TimelineMarkerItem): boolean {
   return item.isCustom !== false;
+}
+
+function isItemNameMissing(item: TimelineMarkerItem): boolean {
+  if (item.isNameMissing) return true;
+  if (!item.name || !item.name.trim()) return true;
+  const lower = item.name.trim().toLowerCase();
+  return lower === "nom manquant" || lower === "élément" || lower === "element";
 }
 
 function onMarkerMouseEnter(year: number) {
