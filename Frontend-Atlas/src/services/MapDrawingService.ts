@@ -8,6 +8,7 @@ import {
 import type { Feature, PointFeature } from "../typescript/feature";
 import { drawingModes } from "../typescript/mapDrawing";
 import { formatWordText } from "../utils/wordStyles";
+import { anchorMarkerLimitToCursor } from "../utils/geomanMarkerLimit";
 import type {
   DrawingMode,
   EmitFn,
@@ -199,6 +200,7 @@ export class MapDrawingService {
     mapWithPm.pm.setGlobalOptions?.({
       limitMarkersToCount: EDIT_MARKERS_LIMIT,
     });
+    anchorMarkerLimitToCursor(map);
 
     // 'fr' locale is missing drawTextButton — merge it in by passing 'fr' as both lang and fallback
     mapWithPm.pm.setLang?.(
