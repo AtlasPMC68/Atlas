@@ -1810,7 +1810,7 @@ watch(
     multiSelectedIds.value = new Set(newIds ?? []);
     updateMultiSelection(newIds ?? []);
   },
-  { deep: true, immediate: true },
+  { immediate: true },
 );
 
 watch(

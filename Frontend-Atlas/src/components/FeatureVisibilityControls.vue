@@ -129,7 +129,7 @@
                     title="Supprimer la carte"
                     aria-label="Supprimer la carte"
                   >
-                    <TrashIcon class="w-3.5 h-3.5 text-red-500 hover:text-red-800" />
+                    <TrashIcon class="w-3.5 h-3.5 text-error hover:text-error/80" />
                   </button>
                 </div>
               </div>
@@ -974,10 +974,6 @@ const editModalTypeLabel = computed(() => {
     : undefined;
   if (elementType === "image") return "de l'image";
   return "de la forme";
-});
-
-const editModalTitle = computed(() => {
-  return `Modification ${editModalTypeLabel.value} ${editModalNameText.value}`;
 });
 
 const isTextSizeOverMax = computed(() => {

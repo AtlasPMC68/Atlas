@@ -64,7 +64,7 @@ function getStableLayerFeatureId(layer: L.Layer): string {
 
 export function layerToFeature(
   layer: L.Layer,
-  selectedYear: number,
+  _selectedYear: number,
   currentProjectId: string,
 ): Feature | null {
   const layerWithFeature = layer as LayerWithFeatureRuntime;

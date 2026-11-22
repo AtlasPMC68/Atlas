@@ -104,7 +104,7 @@
             tabindex="0"
             class="element-marker-pin"
             :class="{
-              'element-marker-active': marker.items.some((i) => i.year === internalYear) || marker.year === internalYear,
+              'element-marker-active': marker.items.some((i: { year: any; }) => i.year === internalYear) || marker.year === internalYear,
               'element-marker-is-range': marker.isRange,
             }"
             :style="marker.style"
@@ -643,10 +643,13 @@ const markerYears = computed(() => {
   const values = (props.markerYears ?? []).filter(
     (v: number) => Number.isFinite(v) && v >= props.min && v <= props.max,
   );
+  const periodYears = (props.mapPeriods ?? [])
+    .flatMap((p: SliderPeriod) => [p.startYear, p.endYear])
+    .filter((v: number) => Number.isFinite(v) && v >= props.min && v <= props.max);
   const elementYears = validElementMarkers.value
     .map((m: TimelineMarkerItem) => m.year)
     .filter((v: number) => Number.isFinite(v) && v >= props.min && v <= props.max);
-  const merged = [...values, ...elementYears, props.min, props.max];
+  const merged = [...values, ...periodYears, ...elementYears, props.min, props.max];
   return [...new Set(merged)].sort((a, b) => a - b);
 });
 
@@ -718,7 +721,7 @@ const yearLabels = computed<YearLabelItem[]>(() => {
     startYear: number;
     endYear: number;
     years: number[];
-  }[] = markerYears.value.map((y) => ({
+  }[] = markerYears.value.map((y: number) => ({
     startYear: y,
     endYear: y,
     years: [y],

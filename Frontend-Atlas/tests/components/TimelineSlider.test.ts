@@ -36,8 +36,8 @@ describe("TimelineSlider year labels", () => {
   it("moves a year that would overlap the previous one to the next line", () => {
     const wrapper = mountSlider([1700, 1800, 1899, 1900, 1925]);
     expect(labelFor(wrapper, 1899).attributes("style")).toContain("top: 0rem");
-    expect(labelFor(wrapper, 1900).attributes("style")).toContain("top: 1rem");
-    expect(wrapper.find(".labels-row").attributes("style")).toContain("height: 2rem");
+    expect(labelFor(wrapper, 1900).attributes("style")).toContain("top: 1.05rem");
+    expect(wrapper.find(".labels-row").attributes("style")).toContain("height: 2.2rem");
   });
 
   it("selects a year from its label", async () => {
@@ -54,7 +54,7 @@ describe("TimelineSlider year labels", () => {
         year: 1600,
         min: 1500,
         max: 1900,
-        periods: [
+        mapPeriods: [
           {
             id: "p1",
             title: "Carte 1",

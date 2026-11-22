@@ -351,7 +351,6 @@ import { FeatureHistoryService } from "../services/FeatureHistoryService";
 import {
   upsertFeature,
   isCopyableFeature,
-  getGeometryAnchor,
   cloneFeatureWithOffset,
   getFeatureMapId,
 } from "../utils/featureHelpers";
@@ -363,8 +362,6 @@ import {
   ArrowsPointingInIcon,
   EyeIcon,
   EyeSlashIcon,
-  CalendarIcon,
-  DocumentDuplicateIcon,
 } from "@heroicons/vue/24/outline";
 import type {
   CreatedProjectRef,
@@ -1164,6 +1161,9 @@ const filteredFeatures = computed(() => {
 
     // Custom years add to associated map periods (union of periods)
     if (hasCustomYears && featureMapId) {
+      if (timelineMode.value === "cumulative") {
+        return isCustomActive;
+      }
       return isCustomActive || isMapActive;
     }
     if (hasCustomYears) {

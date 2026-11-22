@@ -145,6 +145,9 @@ function isFeatureVisibleAtYear(
   }
 
   if (hasCustomYears && featureMapId) {
+    if (mode === "cumulative") {
+      return isCustomActive;
+    }
     return isCustomActive || isMapActive;
   }
   if (hasCustomYears) {
