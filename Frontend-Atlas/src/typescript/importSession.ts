@@ -78,4 +78,6 @@ export interface StepState {
 
 export type ApiResult<T> =
   | { success: true; data: T }
-  | { success: false; error: string; status?: number };
+  // authRequired: the session was lost; nothing was written and the caller
+  // keeps its state while the session banner offers to reconnect.
+  | { success: false; error: string; status?: number; authRequired?: boolean };

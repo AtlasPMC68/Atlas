@@ -193,6 +193,7 @@
     />
 
     <TextValidationModal
+      ref="textValidationRef"
       :is-open="showValidationModal"
       :map-id="store.mapId"
       :image-url="store.previewUrl"
@@ -208,12 +209,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useImportSessionStore, type ImportMode } from "../../stores/importSession";
 import { useDevTestCaseFlow } from "../../composables/useDevTestCaseFlow";
 import { usePolling } from "../../composables/usePolling";
 import { canRunAuthenticatedBackgroundTask } from "../../services/tokenRefresh";
+import {
+  isAuthRequiredError,
+  registerAuthRedirectHandler,
+  sessionState,
+} from "../../services/authSession";
+import { takeImportResume, writeImportResume } from "../../services/importResume";
 import { showAlert } from "../../composables/useAlert";
 import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../../utils/importSteps";
 import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
@@ -293,6 +300,14 @@ const showValidationModal = ref(false);
 const isSubmittingValidation = ref(false);
 const validationItems = ref<TextValidationEntry[]>([]);
 const loadedProjectFeatures = ref<Feature[]>([]);
+const textValidationRef = ref<InstanceType<typeof TextValidationModal> | null>(null);
+
+// apiFetch flags the session as lost before throwing AuthRequiredError. Nothing
+// was written then: dialogs stay open and nothing is cleared, while the session
+// banner offers to reconnect.
+function sessionLost(): boolean {
+  return sessionState.status === "reauth-required";
+}
 
 interface PendingConfirm {
   title: string;
@@ -332,6 +347,8 @@ function askChangeMap() {
     confirmLabel: "Changer de carte",
     action: async () => {
       if (!(await store.abandon())) {
+        // Session lost: nothing was abandoned and the import is kept as it is.
+        if (sessionLost()) return;
         showAlert("error", store.error ?? "Impossible d'abandonner l'importation");
       }
     },
@@ -363,6 +380,8 @@ function askAbandon() {
     action: async () => {
       const projectId = store.projectId ?? route.query.projectId;
       if (!(await store.abandon())) {
+        // Session lost: nothing was abandoned and the import is kept as it is.
+        if (sessionLost()) return;
         showAlert("error", store.error ?? "Impossible d'abandonner l'importation");
         return;
       }
@@ -413,19 +432,26 @@ function onSiftConfirmed(points: ControlPointInput[], checks: ControlPointInput[
 }
 
 async function save(patch: ImportInputsPatch) {
-  openModal.value = null;
-  if (!(await store.saveInputs(patch))) {
-    showAlert("error", store.error ?? "Erreur lors de l'enregistrement");
+  if (await store.saveInputs(patch)) {
+    openModal.value = null;
+    return;
   }
+  // Session lost: the step stays open with what was entered, and the store
+  // keeps the patch to save it again after reconnecting.
+  if (sessionLost()) return;
+  openModal.value = null;
+  showAlert("error", store.error ?? "Erreur lors de l'enregistrement");
 }
 
 async function onZoneConfirmed(selection: WorldAreaSelection) {
-  openModal.value = null;
   worldAreaZoom.value = selection.zoom;
   if (!(await store.confirmZone(selection.bounds))) {
+    if (sessionLost()) return;
+    openModal.value = null;
     showAlert("error", store.error ?? "Impossible d'enregistrer la zone");
     return;
   }
+  openModal.value = null;
   // Points kept from before the box existed may fall outside it. The box is
   // the extent of every reference layer, so it should enclose them.
   const bounds = store.inputs.frameBounds;
@@ -565,6 +591,7 @@ function importedProjectPath(): string {
 }
 
 async function onConfirmTextValidation(items: TextValidationEntry[]) {
+  if (isSubmittingValidation.value) return;
   if (!store.projectId) {
     await router.push("/tableau-de-bord");
     return;
@@ -593,6 +620,7 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
       .map((feature: Feature) => applyValidationToFeature(feature, itemsMap.get(feature.id)!));
     if (featuresToUpdate.length > 0) {
       const response = await apiFetch(`/projects/${store.projectId}/features`, {
+        auth: "required",
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -607,6 +635,7 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
     const removedIds = [...openedIds].filter((id: string) => !submittedIds.has(id));
     if (removedIds.length > 0) {
       const response = await apiFetch(`/projects/${store.projectId}/features`, {
+        auth: "required",
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(removedIds),
@@ -619,6 +648,9 @@ async function onConfirmTextValidation(items: TextValidationEntry[]) {
     showValidationModal.value = false;
     await router.push(importedProjectPath());
   } catch (err) {
+    // Session lost: the modal stays open with every decision; the banner offers
+    // to reconnect and the decisions are kept across it.
+    if (isAuthRequiredError(err)) return;
     showAlert("error", "Erreur lors de l'enregistrement de la validation des textes");
     console.error("Validation error:", err);
   } finally {
@@ -632,10 +664,61 @@ function onCancelTextValidation() {
 }
 
 
+// Before leaving for the login page, keep what only this tab holds: a step
+// confirmed while the session was lost and the text validation being reviewed.
+// Steps confirmed earlier are already on the backend and come back on reload.
+const unregisterAuthRedirect = isDevTest
+  ? () => {}
+  : registerAuthRedirectHandler(async () => {
+      const validation = showValidationModal.value
+        ? (textValidationRef.value?.allItems ?? validationItems.value)
+        : null;
+      if (!store.unsavedInputs && !validation) return undefined;
+      writeImportResume({
+        mapId: store.mapId,
+        projectId: store.projectId,
+        subject: sessionState.subject,
+        inputs: store.unsavedInputs,
+        validation: validation ? JSON.parse(JSON.stringify(validation)) : null,
+      });
+      return undefined;
+    });
+onBeforeUnmount(unregisterAuthRedirect);
+
+// Back from the login page: the kept step is saved once (the user had already
+// confirmed it) and the text validation reopens as it was left.
+async function resumeAfterReconnect() {
+  if (isDevTest) return;
+  const result = takeImportResume(store.mapId, sessionState.subject);
+  if (result.kind === "other-account") {
+    showAlert(
+      "error",
+      "Des modifications de cette importation attendent la reconnexion avec le compte utilisé avant l'interruption.",
+      8000,
+    );
+    return;
+  }
+  if (result.kind !== "resume") return;
+  const { resume } = result;
+  if (resume.inputs && store.phase === "saisie") {
+    if (await store.saveInputs(resume.inputs)) {
+      showAlert("success", "L'étape confirmée avant la reconnexion a été enregistrée.");
+    } else if (!sessionLost()) {
+      showAlert("error", store.error ?? "Erreur lors de l'enregistrement");
+    }
+  }
+  if (resume.validation && resume.projectId) {
+    store.projectId ??= resume.projectId;
+    validationItems.value = resume.validation;
+    showValidationModal.value = true;
+  }
+}
+
 onMounted(async () => {
   if (caseToComplete) await store.openDevTestCase(caseToComplete);
   else await store.restore();
   if (store.error) showAlert("error", store.error);
+  await resumeAfterReconnect();
   try {
     await loadCustomLabelStyles();
   } catch (error) {

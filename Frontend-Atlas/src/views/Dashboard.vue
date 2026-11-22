@@ -14,6 +14,7 @@ import {
 import type { MapData } from "../typescript/map";
 import { camelToSnake, snakeToCamel, toImageSrc } from "../utils/utils";
 import { apiFetch } from "../utils/api";
+import { isAuthRequiredError } from "../services/authSession";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { TrashIcon } from "@heroicons/vue/24/solid";
 import { clearAlert, showAlert } from "../composables/useAlert";
@@ -98,7 +99,12 @@ const filteredProjects = computed(() => {
 
 onMounted(async () => {
   await fetchCurrentUser();
-  await fetchMapsAndRender();
+  try {
+    await fetchMapsAndRender();
+  } catch (err) {
+    // A lost session is reported by the session banner.
+    if (!isAuthRequiredError(err)) showAlert("error", "Erreur lors du chargement des projets.");
+  }
 });
 
 onUnmounted(() => {
@@ -134,6 +140,7 @@ async function saveProject() {
   isEditing.value = true;
   try {
     const res = await apiFetch(`/projects/${projectToEdit.value.id}`, {
+      auth: "required",
       headers: { "Content-Type": "application/json" },
       method: "PUT",
       body: JSON.stringify(
@@ -155,9 +162,12 @@ async function saveProject() {
     editProjectDescription.value = undefined;
     editProjectIsPrivate.value = true;
     editProjectDialogRef.value?.close();
-    await fetchMapsAndRender();
     showAlert("success", "Projet modifié avec succès !");
+    await fetchMapsAndRender().catch(() => {});
   } catch (err) {
+    // Session lost: the dialog stays open with the edits; the banner offers
+    // to reconnect.
+    if (isAuthRequiredError(err)) return;
     showAlert("error", "Erreur lors de la modification du projet.");
   } finally {
     isEditing.value = false;
@@ -169,6 +179,7 @@ async function executeDelete() {
   isDeleting.value = true;
   try {
     const res = await apiFetch(`/projects/${projectToDelete.value.id}`, {
+      auth: "required",
       method: "DELETE",
     });
     if (!res.ok) {
@@ -176,9 +187,11 @@ async function executeDelete() {
     }
     deleteConfirmDialogRef.value?.close();
     projectToDelete.value = null;
-    await fetchMapsAndRender();
     showAlert("success", "Projet supprimé avec succès !");
+    await fetchMapsAndRender().catch(() => {});
   } catch (err) {
+    // Session lost: nothing was deleted and the confirmation stays open.
+    if (isAuthRequiredError(err)) return;
     showAlert("error", "Erreur lors de la suppression du projet.");
   } finally {
     isDeleting.value = false;
@@ -192,6 +205,7 @@ async function fetchMapsAndRender() {
 
   try {
     const res = await apiFetch(`/projects?user_id=${currentUser.value.id}`, {
+      auth: "required",
       headers: { "Content-Type": "application/json" },
     });
 
@@ -213,6 +227,7 @@ async function fetchMapsAndRender() {
       image: map.image,
     }));
   } catch (err) {
+    if (isAuthRequiredError(err)) throw err;
     throw new Error("Error while fetching the projects:" + err);
   }
 }

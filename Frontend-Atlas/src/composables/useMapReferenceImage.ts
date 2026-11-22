@@ -1,4 +1,5 @@
 import { apiErrorMessage, apiFetch } from "../utils/api";
+import { isAuthRequiredError } from "../services/authSession";
 import type { ApiResult } from "../typescript/importSession";
 
 export function useMapReferenceImage() {
@@ -33,6 +34,7 @@ export function useMapReferenceImage() {
       const response = await apiFetch(`/imports/${mapId}/reference-image`, {
         method: "PUT",
         body: formData,
+        auth: "required",
       });
       if (!response.ok) {
         return {
@@ -46,6 +48,7 @@ export function useMapReferenceImage() {
       return {
         success: false,
         error: err instanceof Error ? err.message : "Erreur lors de l'enregistrement de l'image",
+        ...(isAuthRequiredError(err) ? { authRequired: true } : {}),
       };
     }
   };
@@ -56,6 +59,7 @@ export function useMapReferenceImage() {
     try {
       const response = await apiFetch(`/imports/${mapId}/reference-image`, {
         method: "DELETE",
+        auth: "required",
       });
       if (!response.ok) {
         return {
@@ -69,6 +73,7 @@ export function useMapReferenceImage() {
       return {
         success: false,
         error: err instanceof Error ? err.message : "Erreur lors de la suppression de l'image",
+        ...(isAuthRequiredError(err) ? { authRequired: true } : {}),
       };
     }
   };
