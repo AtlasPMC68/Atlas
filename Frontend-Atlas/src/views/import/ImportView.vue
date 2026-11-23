@@ -10,8 +10,14 @@
     <div v-else-if="store.phase === 'import'" class="flex-1 overflow-y-auto p-6">
       <div class="max-w-4xl mx-auto">
         <div class="mb-6">
-          <h1 class="text-3xl font-bold text-base-content mb-2">
+          <h1 class="text-3xl font-bold text-base-content mb-2 flex items-center gap-3">
             Importer une carte
+            <GuideLink
+              v-if="!isDevTest"
+              guide="importation"
+              :page="IMPORT_GUIDE_PAGES.upload"
+              tooltip-position="right"
+            />
             <span v-if="isDevTest" class="ml-2 text-sm font-normal text-base-content/60">
               test: {{ mapId }}
             </span>
@@ -215,6 +221,8 @@ import { useImportSessionStore, type ImportMode } from "../../stores/importSessi
 import { useDevTestCaseFlow } from "../../composables/useDevTestCaseFlow";
 import { usePolling } from "../../composables/usePolling";
 import { showAlert } from "../../composables/useAlert";
+import GuideLink from "../../components/GuideLink.vue";
+import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 import { cityPoints, siftPoints, zoneRedoResetsPoints, type CasePart } from "../../utils/importSteps";
 import type { ControlPointInput, WorldAreaSelection, WorldBounds } from "../../typescript/georef";
 import type { DevTestCaseInputsResponse } from "../../typescript/devTest";

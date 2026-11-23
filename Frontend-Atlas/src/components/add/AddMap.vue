@@ -1,6 +1,6 @@
 <template>
   <dialog ref="addMapDialogRef" class="modal">
-    <div class="modal-box p-0 relative">
+    <div class="modal-box p-0 relative overflow-visible">
       <button
         type="button"
         class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
@@ -12,7 +12,10 @@
 
       <form @submit.prevent="createMapForProject">
         <div class="card-body">
-          <h3 class="text-xl font-bold pr-10">Ajouter une carte au projet</h3>
+          <h3 class="text-xl font-bold pr-10 flex items-center gap-2">
+            Ajouter une carte au projet
+            <GuideLink guide="importation" :page="IMPORT_GUIDE_PAGES.addMap" tooltip-position="right" />
+          </h3>
 
           <fieldset class="fieldset" :disabled="isCreatingMap">
             <label class="label">Nom de la carte</label>
@@ -105,6 +108,8 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { syncEndFromStart, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import GuideLink from "../GuideLink.vue";
+import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 
 type AddMapPayload = {
   title: string;

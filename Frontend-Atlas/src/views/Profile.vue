@@ -4,6 +4,8 @@ import { useRouter } from "vue-router";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import keycloak from "../keycloak";
 import { DEV_TOOLS_ENABLED } from "../utils/devTools";
+import { DocumentTextIcon } from "@heroicons/vue/24/outline";
+import { GUIDE_LIST } from "../utils/guides";
 
 const router = useRouter();
 const showTests = DEV_TOOLS_ENABLED;
@@ -102,5 +104,42 @@ const logout = async () => {
         Réessayer
       </button>
     </div>
+
+    <section
+      class="mt-8 bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden"
+      data-testid="profile-guides"
+    >
+      <div class="px-6 pt-6 pb-2">
+        <h2 class="text-xl font-semibold text-gray-900">Guides d'utilisation</h2>
+        <p class="mt-1 text-sm text-gray-500">
+          Consultez ou téléchargez les guides d'Atlas en format PDF.
+        </p>
+      </div>
+      <ul class="divide-y divide-gray-200">
+        <li
+          v-for="guide in GUIDE_LIST"
+          :key="guide.id"
+          class="px-6 py-4 flex items-center gap-4"
+        >
+          <div
+            class="w-10 h-10 shrink-0 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600"
+          >
+            <DocumentTextIcon class="w-6 h-6" />
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium text-gray-900">{{ guide.title }}</p>
+            <p class="text-sm text-gray-500">{{ guide.description }}</p>
+          </div>
+          <a
+            :href="guide.url"
+            target="_blank"
+            rel="noopener"
+            class="btn btn-sm btn-outline btn-primary shrink-0"
+          >
+            Ouvrir
+          </a>
+        </li>
+      </ul>
+    </section>
   </div>
 </template>

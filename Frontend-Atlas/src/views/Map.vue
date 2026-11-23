@@ -285,6 +285,22 @@
               :current-exact-date="selectedExactDate"
             />
           </div>
+          <div
+            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
+          >
+            <span>Filtrer par date</span>
+            <input
+              v-model="useTimelineFilter"
+              type="checkbox"
+              aria-label="Filtrer par date"
+              role="switch"
+              class="timeline-filter-toggle"
+            />
+            <span class="ml-auto inline-flex items-center gap-1 text-base-content/60">
+              Guide du projet
+              <GuideLink guide="projet" tooltip-position="left" />
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -367,6 +383,7 @@ import keycloak from "../keycloak";
 import L, { type Map as LeafletMap } from "leaflet";
 import { captureMapThumbnail } from "../utils/mapThumbnail";
 import Alert from "../components/Alert.vue";
+import GuideLink from "../components/GuideLink.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
 import {
