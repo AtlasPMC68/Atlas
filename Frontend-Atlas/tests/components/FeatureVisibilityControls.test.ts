@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mount } from "@vue/test-utils";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
+import { mount, type VueWrapper } from "@vue/test-utils";
 import FeatureVisibilityControls from "../../src/components/FeatureVisibilityControls.vue";
 import type { Feature } from "../../src/typescript/feature";
 import type { MapPeriod } from "../../src/typescript/map";
+import type { CustomLabelStyle } from "../../src/utils/labelPresentation";
 
 // Mock alert
 vi.mock("../../src/composables/useAlert", () => ({
@@ -310,6 +311,149 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
 
     // Accepted text should now be listed in the page
     expect(wrapper.text()).toContain("Fort moose");
+  });
+});
+
+describe("FeatureVisibilityControls - edit recovery", () => {
+  const wrappers: VueWrapper[] = [];
+  const feature: Feature = {
+    type: "Feature", id: "draft-feature", projectId: "project", mapId: "map-1",
+    name: "Québec", geometry: { type: "Point", coordinates: [-71, 46] },
+    properties: { name: "Québec", labelText: "Québec", rawType: "city", mapElementType: "point" },
+    createdAt: "2026-01-01", updatedAt: "2026-01-01",
+  };
+  const mapPeriods: MapPeriod[] = ["map-1", "map-2"].map((id) => ({
+    id, title: id, startDate: "1900-01-01", endDate: "1910-01-01",
+    exactDate: false, color: "#112233",
+  }));
+
+  beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+      this.open = true;
+    });
+    HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    });
+  });
+
+  afterEach(() => {
+    wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
+  });
+
+  function mountEditor(item = feature, options: { busy?: boolean; customLabelStyles?: CustomLabelStyle[] } = {}) {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: { features: [item], featureVisibility: new Map([[item.id, true]]), mapPeriods, ...options },
+    });
+    wrappers.push(wrapper);
+    return wrapper;
+  }
+
+  it("captures an independent snapshot and restores unfinished text, symbol and map-assignment fields", async () => {
+    const original = mountEditor();
+    expect(original.vm.getDraft()).toBeNull();
+    await original.vm.showEditFeatureDialog(feature);
+    await original.get('dialog input[type="text"]').setValue("Capitale");
+    await original.get('[data-testid="label-text-input"]').setValue("Québec\nCapitale");
+    await original.get('[data-testid="color-input"]').setValue("#ffee00");
+    await original.get('[data-testid="text-color-input"]').setValue("#112233");
+    await original.get('[data-testid="text-size-input"]').setValue("24");
+    await original.get('[data-testid="point-fill-opacity-input"]').setValue("0.4");
+    await original.get('#edit-point-stroke-opacity').setValue("0.7");
+    await original.get('#edit-point-stroke-width').setValue("3");
+    await original.get('[data-testid="map-checkbox-map-2"]').setValue(true);
+    const saved = original.vm.getDraft()!;
+    expect(saved.draft).toMatchObject({
+      name: "Capitale", labelText: "Québec\nCapitale", wordType: "city",
+      colorHex: "#ffee00", textColorHex: "#112233", textSizePx: 24,
+      fillOpacity: 0.4, strokeOpacity: 0.7, strokeWidth: 3,
+      selectedMapIds: ["map-1", "map-2"],
+    });
+    expect(original.emitted("draft-change")!.length).toBeGreaterThan(1);
+    const detached = original.vm.getDraft()!;
+    detached.draft!.selectedMapIds!.push("not-in-the-form");
+    expect(original.vm.getDraft()!.draft!.selectedMapIds).toEqual(["map-1", "map-2"]);
+
+    const countBeforeClose = original.emitted("draft-change")!.length;
+    (original.get('dialog[open]').element as HTMLDialogElement).close();
+    expect(original.vm.getDraft()).toBeNull();
+    expect(original.emitted("draft-change")!.length).toBe(countBeforeClose + 1);
+
+    // Recovery is programmatic and must work while the parent locks user input.
+    const recovered = mountEditor(feature, { busy: true });
+    await recovered.vm.restoreDraft(saved);
+    expect(recovered.vm.getDraft()).toEqual(saved);
+    expect((recovered.get('[data-testid="label-text-input"]').element as HTMLTextAreaElement).value).toBe("Québec\nCapitale");
+    expect((recovered.get('[data-testid="map-checkbox-map-2"]').element as HTMLInputElement).checked).toBe(true);
+    expect(recovered.get('fieldset').attributes("disabled")).toBeDefined();
+  });
+
+  it("preserves custom label style selection and snapshots its style values", async () => {
+    const style: CustomLabelStyle = {
+      id: "historical", name: "Historique", sizePx: 18, fontStyle: "italic",
+      textTransform: "uppercase", color: "#445566", priority: 1, minZoom: 2,
+    };
+    const original = mountEditor(feature, { customLabelStyles: [style] });
+    await original.vm.showEditFeatureDialog(feature);
+    await original.get('[data-testid="word-type-select"]').setValue("custom:historical");
+    const saved = original.vm.getDraft()!;
+    expect(saved.draft).toMatchObject({
+      labelStyleSelection: "custom:historical", customLabelStyleId: "historical",
+      customLabelStyle: style,
+    });
+    const detached = original.vm.getDraft()!;
+    detached.draft!.customLabelStyle!.color = "#000000";
+    expect(original.vm.getDraft()!.draft!.customLabelStyle!.color).toBe("#445566");
+    const recovered = mountEditor(feature, { customLabelStyles: [style] });
+    await recovered.vm.restoreDraft(saved);
+    expect(recovered.vm.getDraft()).toEqual(saved);
+    expect((recovered.get('[data-testid="word-type-select"]').element as HTMLSelectElement).value).toBe("custom:historical");
+  });
+
+  it("restores shape opacity and stroke fields, including legacy flat drafts", async () => {
+    const zone: Feature = {
+      ...feature, id: "zone-draft", name: "Zone",
+      geometry: { type: "Polygon", coordinates: [[[-71, 46], [-70, 46], [-70, 47], [-71, 46]]] },
+      properties: { name: "Zone", mapElementType: "zone" },
+    };
+    const original = mountEditor(zone);
+    await original.vm.restoreDraft({
+      featureId: zone.id, name: "Zone modifiée", color: "#778899",
+      strokeColor: "#112233", opacity: "0.3", strokeOpacity: "0.8", strokeWidth: "4",
+    });
+    const saved = original.vm.getDraft()!;
+    expect(saved.draft).toMatchObject({
+      name: "Zone modifiée", colorHex: "#778899", strokeColorHex: "#112233",
+      fillOpacity: 0.3, strokeOpacity: 0.8, strokeWidth: 4,
+    });
+    const recovered = mountEditor(zone);
+    await recovered.vm.restoreDraft(saved);
+    expect(recovered.vm.getDraft()).toEqual(saved);
+    expect((recovered.get('[data-testid="fill-opacity-input"]').element as HTMLInputElement).value).toBe("0.3");
+    await expect(recovered.vm.restoreDraft({ featureId: "missing", name: "Deleted" })).rejects.toThrow("introuvable");
+  });
+
+  it("blocks user mutations and cancelling an open edit while busy", async () => {
+    const wrapper = mountEditor();
+    expect(wrapper.props("busy")).toBe(false);
+    await wrapper.vm.showEditFeatureDialog(feature);
+    const saved = wrapper.vm.getDraft();
+    await wrapper.setProps({ busy: true });
+    const dialog = wrapper.get('dialog[open]');
+    const cancel = new Event("cancel", { cancelable: true });
+    dialog.element.dispatchEvent(cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    const modify = dialog.findAll("button").find((button) => button.text() === "Modifier")!;
+    expect(modify.attributes("disabled")).toBeDefined();
+    await modify.trigger("click");
+    const hideAll = wrapper.findAll("button").find((button) => button.text() === "Tout masquer")!;
+    await hideAll.trigger("click");
+    await wrapper.vm.showEditFeatureDialog({ ...feature, properties: { ...feature.properties, name: "Ignored" } });
+    expect(wrapper.vm.getDraft()).toEqual(saved);
+    expect(wrapper.emitted("update-feature")).toBeUndefined();
+    expect(wrapper.emitted("toggle-feature")).toBeUndefined();
+    wrapper.vm.closeEditFeatureDialog();
+    expect(wrapper.vm.getDraft()).toBeNull();
   });
 });
 

@@ -80,7 +80,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { MapIcon, UserCircleIcon } from "@heroicons/vue/24/outline";
-import keycloak from "../../keycloak";
+import { reconnect, registerAccount, sessionState } from "../../services/authSession";
 
 const isDropdownOpen = ref(false);
 
@@ -101,18 +101,15 @@ const closeDropdown = () => {
 };
 
 const isAuthenticated = computed(() => {
-  return keycloak.authenticated;
+  return sessionState.status === "authenticated" ||
+    (sessionState.status === "unavailable" && !!sessionState.subject);
 });
 
 const login = () => {
-  (keycloak as any).loginToAtlas({
-    redirectUri: window.location.origin,
-  });
+  void reconnect().catch(() => {});
 };
 
 const register = () => {
-  keycloak.register({
-    redirectUri: window.location.origin,
-  });
+  void registerAccount().catch(() => {});
 };
 </script>

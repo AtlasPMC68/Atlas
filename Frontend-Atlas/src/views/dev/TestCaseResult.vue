@@ -927,7 +927,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import FeatureVisibilityControls from "../../components/FeatureVisibilityControls.vue";
 import MapTestGeoJSON from "../../components/dev/MapTestGeoJSON.vue";
-import keycloak from "../../keycloak";
+import { apiFetch } from "../../utils/api";
 import { zoneFillColor } from "../../typescript/zoneColors";
 import { slugifyTestCase } from "../../utils/devTestSlug";
 
@@ -1147,9 +1147,9 @@ const overlayAlt = ref("Points de contrôle");
 async function showOverlayImage(path: string): Promise<string | null> {
   overlayLoading.value = true;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/${path}`,
-      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    const res = await apiFetch(
+      `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/${path}`,
+      { auth: "required" },
     );
     if (!res.ok) throw new Error(`Image indisponible (${res.status})`);
     closeOverlay();
@@ -1211,9 +1211,9 @@ async function loadPixelZones() {
   if (!testId.value || !testCaseId.value) return;
   pixelZonesError.value = null;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/pixel-zones`,
-      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    const res = await apiFetch(
+      `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/pixel-zones`,
+      { auth: "required" },
     );
     if (res.status === 404) {
       // Runs from before the snapshot existed: a re-run produces it.
@@ -1280,9 +1280,9 @@ function togglePoint(index: number) {
 async function loadControlPoints() {
   if (!testId.value || !testCaseId.value) return;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/control-points`,
-      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    const res = await apiFetch(
+      `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/control-points`,
+      { auth: "required" },
     );
     if (!res.ok) throw new Error(String(res.status));
     const data = await res.json();
@@ -1558,10 +1558,7 @@ const visibleParamGroups = computed(() => {
 async function loadGeorefConfig() {
   configLoadError.value = null;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/georef-config`,
-      { headers: { Authorization: `Bearer ${keycloak.token}` } },
-    );
+    const res = await apiFetch("/dev-test-api/georef-config", { auth: "required" });
     if (!res.ok) throw new Error(`Configuration indisponible (${res.status})`);
     configDesc.value = (await res.json()) as GeorefConfigDescription;
   } catch (err) {
@@ -1647,7 +1644,7 @@ const extractedUrl = computed(() => caseFile("zones", "zones_raw"));
 const errorsUrl = computed(() => {
   if (!testId.value || !testCaseId.value) return "";
   const params = new URLSearchParams({ run: mode.value, stage: stage.value });
-  return `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/errors?${params}&v=${cacheBuster.value}`;
+  return `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/errors?${params}&v=${cacheBuster.value}`;
 });
 
 const allFeatures = computed(() => {
@@ -1820,12 +1817,12 @@ async function rerunCase() {
   const overrideCount = Object.keys(overrides).length;
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/run-evaluate?${params}`,
+    const res = await apiFetch(
+      `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/run-evaluate?${params}`,
       {
+        auth: "required",
         method: "POST",
         headers: {
-          Authorization: `Bearer ${keycloak.token}`,
           ...(overrideCount > 0 ? { "Content-Type": "application/json" } : {}),
         },
         body: overrideCount > 0 ? JSON.stringify(overrides) : undefined,
@@ -1993,9 +1990,9 @@ async function loadExpected() {
 
   // After cleaning, the expected zones cut like the output (ocean, lakes);
   // before cleaning, the zones as drawn.
-  const res = await fetch(
-    `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${testId.value}?cleaned=${stage.value === "cleaned"}`,
-    { headers: { Authorization: `Bearer ${keycloak.token}` } },
+  const res = await apiFetch(
+    `/dev-test-api/georef_zones/${testId.value}?cleaned=${stage.value === "cleaned"}`,
+    { auth: "required" },
   );
 
   if (!res.ok) {
@@ -2046,9 +2043,7 @@ async function loadExtracted() {
 
 async function loadErrors() {
   if (!errorsUrl.value) return;
-  const res = await fetch(errorsUrl.value, {
-    headers: { Authorization: `Bearer ${keycloak.token}` },
-  });
+  const res = await apiFetch(errorsUrl.value, { auth: "required" });
   if (!res.ok) {
     errorFeatures.value = [];
     return;
@@ -2059,9 +2054,9 @@ async function loadErrors() {
 
 async function loadLatestReport() {
   if (!testId.value || !testCaseId.value) return;
-  const res = await fetch(
-    `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/report`,
-    { headers: { Authorization: `Bearer ${keycloak.token}` } },
+  const res = await apiFetch(
+    `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/report`,
+    { auth: "required" },
   );
   if (!res.ok) {
     latestReport.value = null;
@@ -2072,9 +2067,9 @@ async function loadLatestReport() {
 
 async function loadCaseState() {
   if (!testId.value || !testCaseId.value) return;
-  const res = await fetch(
-    `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/state`,
-    { headers: { Authorization: `Bearer ${keycloak.token}` } },
+  const res = await apiFetch(
+    `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/state`,
+    { auth: "required" },
   );
   if (!res.ok) {
     caseState.value = null;
@@ -2094,9 +2089,9 @@ async function loadRunRecord() {
 
 async function loadBestReport() {
   if (!testId.value || !testCaseId.value) return;
-  const res = await fetch(
-    `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/best-report`,
-    { headers: { Authorization: `Bearer ${keycloak.token}` } },
+  const res = await apiFetch(
+    `/dev-test-api/test-cases/${testId.value}/${testCaseId.value}/best-report`,
+    { auth: "required" },
   );
   if (!res.ok) {
     bestReport.value = null;
@@ -2161,8 +2156,13 @@ watch(mode, async () => {
 });
 
 watch(stage, async () => {
-  await Promise.all([loadExpected(), loadExtracted(), loadErrors()]);
-  rebuildVisibility();
+  loadError.value = null;
+  try {
+    await Promise.all([loadExpected(), loadExtracted(), loadErrors()]);
+    rebuildVisibility();
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : "Erreur lors du chargement";
+  }
 });
 
 watch(

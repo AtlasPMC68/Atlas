@@ -5,7 +5,7 @@ import type { ApiResult } from "../typescript/importSession";
 // The administrative borders the dev-test zone editor loads expected zones from.
 export function useBorders() {
   async function listCountries(): Promise<ApiResult<BorderCountry[]>> {
-    const res = await apiFetch("/dev-test-api/borders");
+    const res = await apiFetch("/dev-test-api/borders", { auth: "required" });
     if (!res.ok) {
       return { success: false, error: await apiErrorMessage(res, "Frontières indisponibles") };
     }
@@ -13,7 +13,7 @@ export function useBorders() {
   }
 
   async function listRegions(countryCode: string): Promise<ApiResult<BorderRegion[]>> {
-    const res = await apiFetch(`/dev-test-api/borders/${encodeURIComponent(countryCode)}/regions`);
+    const res = await apiFetch(`/dev-test-api/borders/${encodeURIComponent(countryCode)}/regions`, { auth: "required" });
     if (!res.ok) {
       return { success: false, error: await apiErrorMessage(res, "Régions indisponibles") };
     }
@@ -26,6 +26,7 @@ export function useBorders() {
     regionIds: string[] | null,
   ): Promise<ApiResult<LoadedBorderZone>> {
     const res = await apiFetch("/dev-test-api/borders/zone", {
+      auth: "required",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ country: countryCode, regions: regionIds }),

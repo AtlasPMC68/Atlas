@@ -379,9 +379,12 @@ async function sampleAtEvent(event: MouseEvent) {
     formData.append("y", String(pos.normalized.y));
     formData.append("radius", String(sampleRadiusPx.value));
 
+    // A lost session raises AuthRequiredError: the picked colours are kept and
+    // the error below is shown while the session banner offers to reconnect.
     const response = await apiFetch("/projects/sample-color", {
       method: "POST",
       body: formData,
+      auth: "required",
     });
 
     if (!response.ok) {

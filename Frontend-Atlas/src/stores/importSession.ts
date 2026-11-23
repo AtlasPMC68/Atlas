@@ -17,6 +17,18 @@ import type {
 
 export type ImportMode = "user" | "dev-test";
 
+// What is left to save once `saved` reached the backend.
+function withoutSavedKeys(
+  unsaved: ImportInputsPatch | null,
+  saved: ImportInputsPatch,
+): ImportInputsPatch | null {
+  if (!unsaved) return null;
+  const rest = Object.fromEntries(
+    Object.entries(unsaved).filter(([key]) => !(key in saved)),
+  ) as ImportInputsPatch;
+  return Object.keys(rest).length > 0 ? rest : null;
+}
+
 const IDLE_EXTRACTION: ExtractionStatus = {
   state: "idle",
   taskId: null,
@@ -53,6 +65,9 @@ export const useImportSessionStore = defineStore("importSession", {
     isLoading: false,
     isSaving: false,
     error: null as string | null,
+    // A step the user confirmed while the session was lost: nothing reached the
+    // backend, so it is kept here (and across a reconnection) to be saved again.
+    unsavedInputs: null as ImportInputsPatch | null,
   }),
 
   getters: {
@@ -207,8 +222,10 @@ export const useImportSessionStore = defineStore("importSession", {
       this.isSaving = false;
       if (!res.success) {
         this.error = res.error;
+        if (res.authRequired) this.unsavedInputs = { ...this.unsavedInputs, ...patch };
         return false;
       }
+      this.unsavedInputs = withoutSavedKeys(this.unsavedInputs, patch);
       this.applySession(res.data);
       return true;
     },

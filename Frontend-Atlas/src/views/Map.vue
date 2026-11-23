@@ -2,7 +2,23 @@
   <div
     class="h-screen-minus-header w-full bg-base-100 flex flex-col overflow-hidden"
   >
-    <div class="flex flex-1 min-h-0 overflow-hidden">
+    <div v-if="draft.error.value" role="alert" class="bg-amber-100 p-3 text-sm text-amber-950">
+      {{ draft.error.value }}
+    </div>
+    <div v-else-if="draft.dirty.value && draft.savedAt.value" role="status" class="bg-slate-100 px-3 py-1 text-xs">
+      Brouillon conservé sur cet appareil. Les modifications ne sont pas toutes enregistrées sur le serveur.
+    </div>
+    <div v-for="candidate in draft.candidates.value" :key="candidate.id" class="flex items-center gap-3 bg-blue-50 p-3 text-sm">
+      <span>Un brouillon du {{ new Date(candidate.updatedAt).toLocaleString('fr-CA') }} est disponible.</span>
+      <button class="btn btn-sm" :disabled="editorLocked" @click="restoreDraft(candidate)">Récupérer</button>
+      <button class="btn btn-sm btn-ghost" :disabled="editorLocked" @click="discardDraft(candidate)">Supprimer ce brouillon</button>
+    </div>
+    <div v-if="recoveryConflict" role="alert" class="bg-amber-100 p-3 text-sm text-amber-950">
+      Le contenu enregistré a changé ou le résultat d’une sauvegarde est incertain. Votre brouillon est conservé ; la carte existante ne sera pas remplacée automatiquement.
+      <button class="btn btn-sm ml-3" :disabled="editorLocked" @click="saveAsCopy">Créer une copie du brouillon</button>
+    </div>
+    <div v-if="editorLocked" role="status" class="px-3 py-1 text-sm">{{ redirecting ? 'Préparation de la reconnexion…' : 'Enregistrement en cours…' }}</div>
+    <div class="flex flex-1 min-h-0 overflow-hidden" :inert="editorLocked || undefined">
       <div
         class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 p-3 flex flex-col"
         :style="{ width: `${sidebarWidth}px` }"
@@ -14,6 +30,8 @@
           :map-periods="mapPeriods"
           :custom-label-styles="customLabelStyles"
           :selected-feature-id="selectedFeatureId"
+          :busy="editorLocked"
+          @draft-change="onDraftChanged"
           @select-feature="(id: string | null) => (selectedFeatureId = id)"
           @toggle-feature="toggleFeatureVisibility"
           @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
@@ -107,13 +125,15 @@
 
   <AddImageDialog
     ref="addFeatureImageDialogRef"
-    :is-adding="isAdding"
+    :is-adding="isAdding || editorLocked"
+    @draft-change="onDraftChanged"
     @submit="onAddFeatureImage"
   />
 
   <AddMapDialog
     ref="addMapDialogRef"
-    :is-creating-map="isCreatingMap"
+    :is-creating-map="isCreatingMap || editorLocked"
+    @draft-change="onDraftChanged"
     @submit="createMapForProject"
   />
 
@@ -121,6 +141,8 @@
 
   <CreateProjectDialog
     ref="createProjectDialogRef"
+    :busy="editorLocked"
+    @draft-change="onDraftChanged"
     @created="onProjectCreated"
     @error="onCreateProjectError"
     @closed="onCreateProjectDialogClosed"
@@ -141,7 +163,12 @@
 </template>
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+} from "vue-router";
 import AddImageDialog from "../components/add/AddImage.vue";
 import AddMapDialog from "../components/add/AddMap.vue";
 import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
@@ -163,6 +190,7 @@ import {
 import { isPeriodActiveAt, toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { useEditorDraft } from "../composables/useEditorDraft";
 import { useProjectLabelStyles } from "../composables/useProjectLabelStyles";
 import { getOriginalMapImage } from "../composables/useMapImageCache";
 import keycloak from "../keycloak";
@@ -171,6 +199,16 @@ import { captureMapThumbnail } from "../utils/mapThumbnail";
 import Alert from "../components/Alert.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
+import {
+  AuthRequiredError,
+  isAuthRequiredError,
+  reconnect,
+  registerAuthRedirectHandler,
+  sessionState,
+} from "../services/authSession";
+import { haveSameEditorFeatures } from "../services/editorDraft";
+import { cloneFeatureSnapshot } from "../utils/featureHistory";
+import type { EditorDraft, EditorFormDrafts } from "../typescript/editorDraft";
 import {
   upsertFeature,
   isCopyableFeature,
@@ -209,20 +247,14 @@ const mapGeoJsonRef = ref<{
   resetSelection: () => void;
   fitToVisibleFeatures: (featureIds?: ReadonlySet<string>) => void;
 } | null>(null);
-const addMapDialogRef = ref<{
-  open: () => void;
-  close: () => void;
-} | null>(null);
+const addMapDialogRef = ref<InstanceType<typeof AddMapDialog> | null>(null);
 const editMapPeriodDialogRef = ref<{
   open: (period: MapPeriod) => void;
   close: () => void;
   setSaving: (value: boolean) => void;
   setError: (message: string) => void;
 } | null>(null);
-const addFeatureImageDialogRef = ref<{
-  open: () => void;
-  close: () => void;
-} | null>(null);
+const addFeatureImageDialogRef = ref<InstanceType<typeof AddImageDialog> | null>(null);
 const featureVisibilityControlsRef = ref<InstanceType<
   typeof FeatureVisibilityControls
 > | null>(null);
@@ -347,7 +379,18 @@ const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
-const { currentUser, fetchCurrentUser } = useCurrentUser();
+const redirecting = ref(false);
+const isLoadingEditor = ref(true);
+const editorLocked = computed(() => isSaving.value || redirecting.value || isLoadingEditor.value);
+const serverFeatures = ref<Feature[]>([]);
+const serverLoaded = ref(false);
+const recoveryConflict = ref(false);
+const savePhase = ref<EditorDraft["savePhase"]>("idle");
+const saveTargetProjectId = ref<string>();
+let restoring = false;
+let unregisterAuthRedirect: (() => void) | undefined;
+let disposed = false;
+const { fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
 const isAdding = ref(false);
 const isCreatingMap = ref(false);
@@ -495,6 +538,163 @@ const canUndo = featureHistoryService.canUndo;
 const canRedo = featureHistoryService.canRedo;
 const trackingEnabled = featureHistoryService.trackingEnabled;
 
+function captureForms(): EditorFormDrafts {
+  return {
+    featureEdit: featureVisibilityControlsRef.value?.getDraft() ?? undefined,
+    addMap: addMapDialogRef.value?.getDraft() ?? undefined,
+    addImage: addFeatureImageDialogRef.value?.getDraft() ?? undefined,
+    createProject: createProjectDialogRef.value?.getDraft() ?? undefined,
+  };
+}
+
+function snapshotFeatures(): Feature[] {
+  const list = mapGeoJsonRef.value?.syncFeaturesFromMapLayers() ?? features.value;
+  return cloneFeatureSnapshot(list.map((feature) => ({
+    ...feature,
+    properties: { ...feature.properties, isVisible: featureVisibility.value.get(feature.id) ?? feature.properties.isVisible ?? true },
+  })));
+}
+
+const draft = useEditorDraft({
+  subject: () => sessionState.subject,
+  capture: () => ({
+    features: cloneFeatureSnapshot(features.value),
+    visibility: [...featureVisibility.value.entries()],
+    persistedFeatureIds: [...persistedFeatureIds.value],
+    pendingDeletions: [...pendingDeletions.value],
+    baseFeatures: cloneFeatureSnapshot(serverFeatures.value),
+    forms: captureForms(), savePhase: savePhase.value,
+    targetProjectId: saveTargetProjectId.value,
+  }),
+});
+
+function onDraftChanged() {
+  if (restoring || editorLocked.value) return;
+  if (savePhase.value === "delete-pending") savePhase.value = "idle";
+  draft.markChanged();
+}
+
+watch([features, featureVisibility, pendingDeletions], onDraftChanged, { deep: true, flush: "sync" });
+
+async function readServerFeatures(targetProjectId: string, auth: "required" | "optional" = "required"): Promise<Feature[]> {
+  const response = await apiFetch(`/projects/${targetProjectId}/features`, { auth });
+  if (!response.ok) throw new Error("Impossible de vérifier les changements déjà enregistrés.");
+  return snakeToCamel(await response.json()) as Feature[];
+}
+
+async function checkServerBase(targetProjectId: string): Promise<boolean> {
+  if (!serverLoaded.value || (saveTargetProjectId.value && saveTargetProjectId.value !== targetProjectId)) {
+    recoveryConflict.value = true;
+    return false;
+  }
+  const current = await readServerFeatures(targetProjectId);
+  const deletions = new Set(pendingDeletions.value);
+  const comparable = (list: Feature[]) => savePhase.value === "delete-pending"
+    ? list.filter((feature) => !deletions.has(String(feature.id))) : list;
+  recoveryConflict.value = !haveSameEditorFeatures(comparable(current), comparable(serverFeatures.value));
+  if (!recoveryConflict.value) {
+    serverFeatures.value = cloneFeatureSnapshot(current);
+    serverLoaded.value = true;
+    if (savePhase.value === "put-pending") savePhase.value = "idle";
+  }
+  return !recoveryConflict.value;
+}
+
+async function restoreDraft(saved: EditorDraft, resumeSave = false) {
+  if (editorLocked.value || !projectId.value) return;
+  if (saved.projectId !== projectId.value) return;
+  if (saved.subject !== null && saved.subject !== sessionState.subject) return;
+  restoring = true;
+  isLoadingEditor.value = true;
+  try {
+    // Refresh immediately before recovery, including for guests viewing public maps.
+    let currentServer: Feature[] = [];
+    try {
+      currentServer = await readServerFeatures(projectId.value, "optional");
+      serverLoaded.value = true;
+    } catch {
+      serverLoaded.value = false;
+    }
+    features.value = featureHistoryService.reset(saved.features);
+    featureVisibility.value = new Map(saved.visibility);
+    pendingDeletions.value = [...saved.pendingDeletions];
+    persistedFeatureIds.value = new Set(saved.persistedFeatureIds);
+    serverFeatures.value = cloneFeatureSnapshot(saved.baseFeatures);
+    savePhase.value = saved.savePhase;
+    saveTargetProjectId.value = saved.targetProjectId;
+    const deleted = new Set(saved.pendingDeletions);
+    const comparable = (list: Feature[]) => saved.savePhase === "delete-pending"
+      ? list.filter((feature) => !deleted.has(String(feature.id))) : list;
+    recoveryConflict.value = !serverLoaded.value ||
+      (!!saved.targetProjectId && saved.targetProjectId !== projectId.value) ||
+      !haveSameEditorFeatures(comparable(currentServer), comparable(saved.baseFeatures));
+    await nextTick();
+    if (saved.forms.featureEdit) await featureVisibilityControlsRef.value?.restoreDraft(saved.forms.featureEdit);
+    if (saved.forms.addMap) addMapDialogRef.value?.restoreDraft(saved.forms.addMap);
+    if (saved.forms.addImage) addFeatureImageDialogRef.value?.restoreDraft(saved.forms.addImage);
+    if (saved.forms.createProject) {
+      pendingCopiedFeatures.value = cloneFeatureSnapshot(saved.features);
+      shouldSaveAfterCopy.value = true;
+      createProjectDialogRef.value?.restoreDraft(saved.forms.createProject);
+    }
+    await draft.adopt(saved);
+  } catch (error) {
+    showAlert("error", error instanceof Error ? error.message : "La récupération a échoué. Le brouillon a été conservé.");
+    return;
+  } finally {
+    restoring = false;
+    isLoadingEditor.value = false;
+  }
+  if (resumeSave && !saved.forms.createProject && !recoveryConflict.value && sessionState.status === "authenticated") {
+    await onSaveMap(undefined, true);
+  } else {
+    showAlert("success", "Brouillon récupéré. Vos modifications sont disponibles dans l’éditeur.");
+  }
+}
+
+async function discardDraft(saved: EditorDraft) {
+  if (!window.confirm("Supprimer définitivement ce brouillon local ?")) return;
+  try { await draft.discardCandidate(saved); }
+  catch { showAlert("error", "Impossible de supprimer le brouillon."); }
+}
+
+async function protectEditorBeforeLeave() {
+  if (editorLocked.value) return false;
+  try {
+    if (draft.dirty.value) features.value = snapshotFeatures();
+    await draft.flush();
+    return true;
+  }
+  catch { return false; }
+}
+onBeforeRouteLeave(protectEditorBeforeLeave);
+onBeforeRouteUpdate(async (to, from) => to.params.projectId === from.params.projectId || await protectEditorBeforeLeave());
+
+const beforeUnload = (event: BeforeUnloadEvent) => {
+  if (!draft.dirty.value || redirecting.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+};
+
+async function preserveBeforeAuthRedirect(intent: "resume" | "save") {
+  if (editorLocked.value) throw new Error("Patientez jusqu’à la fin de l’opération avant de vous reconnecter.");
+  redirecting.value = true;
+  try {
+    await nextTick();
+    features.value = snapshotFeatures();
+    await draft.prepareRedirect(intent);
+    return window.location.origin + route.fullPath;
+  } catch (error) {
+    redirecting.value = false;
+    throw error;
+  }
+}
+
+// A failed SDK redirect must unlock the editor and restore the unload warning.
+watch(() => sessionState.redirectError, (error) => {
+  if (error) redirecting.value = false;
+});
+
 function handleDrawChange(updatedFeatures: Feature[]) {
   if (trackingEnabled.value) {
     commitFeatureSnapshot(updatedFeatures);
@@ -568,11 +768,8 @@ function getImageNaturalSize(
 }
 
 async function onAddFeatureImage(file: File) {
-  if (!keycloak.token) {
-    addFeatureImageDialogRef.value?.close();
-    return;
-  }
-
+  // No silent token check here: closing the dialog would drop the selected
+  // file. apiFetch reports a lost session and the dialog stays open.
   if (!projectId.value) {
     const resolved = await resolveRouteContext();
     if (!resolved || !projectId.value) {
@@ -605,8 +802,8 @@ async function onAddFeatureImage(file: File) {
     }
 
     const res = await apiFetch(`/projects/${projectId.value}/features/image`, {
+      auth: "required",
       method: "POST",
-      headers: { Authorization: `Bearer ${keycloak.token}` },
       body: formData,
     });
 
@@ -618,6 +815,9 @@ async function onAddFeatureImage(file: File) {
     addFeatureImageDialogRef.value?.close();
   } catch (e) {
     console.error("Upload image failed:", e);
+    showAlert("error", isAuthRequiredError(e)
+      ? "Votre session a expiré. Reconnectez-vous : l’image sélectionnée est conservée."
+      : "Impossible d’ajouter l’image. Réessayez.");
   } finally {
     isAdding.value = false;
   }
@@ -647,6 +847,7 @@ async function uploadMapThumbnail(targetProjectId?: string): Promise<boolean> {
   formData.append("image", blob);
 
   const res = await apiFetch(`/projects/${uploadProjectId}/thumbnail`, {
+    auth: "required",
     method: "POST",
     body: formData,
   });
@@ -792,8 +993,8 @@ async function onDeleteMap(
     }
 
     const res = await apiFetch(`/projects/${projectId.value}/maps/${mapId}`, {
+      auth: "required",
       method: "DELETE",
-      headers: { Authorization: `Bearer ${keycloak.token}` },
     });
 
     if (!res.ok) {
@@ -839,8 +1040,8 @@ async function onUpdateFeature(
         ? `Modification de ${list[0].name || "l'élément"}`
         : `Modification de ${list.length} éléments`;
     commitFeatureSnapshot(nextFeatures, label);
-    await onSaveMap(nextFeatures);
-    callbacks?.onSuccess?.();
+    if (await onSaveMap(nextFeatures)) callbacks?.onSuccess?.();
+    else callbacks?.onError?.("Les modifications restent dans le brouillon. La sauvegarde n’est pas terminée.");
   } catch (error) {
     console.error("Failed to update feature:", error);
     callbacks?.onError?.("Erreur lors de la mise à jour de l'élément.");
@@ -939,7 +1140,7 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
 
     featureVisibility.value = new Map(featureVisibility.value);
     commitFeatureSnapshot(nextFeatures, "Validation des textes");
-    await onSaveMap(nextFeatures);
+    if (!(await onSaveMap(nextFeatures))) return;
     showTextValidationModal.value = false;
     showAlert("success", "Textes validés et enregistrés sur la carte.");
   } catch (err) {
@@ -997,6 +1198,7 @@ async function saveMapPeriod(payload: {
     const response = await apiFetch(
       `/projects/${targetProjectId}/maps/${payload.mapId}`,
       {
+        auth: "required",
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -1032,7 +1234,6 @@ async function createMapForProject(formPayload: {
   endDate: string;
   exactDate: boolean;
 }) {
-  if (!keycloak.token) return;
   const targetProjectId = projectId.value;
 
   if (!targetProjectId || !formPayload.title.trim()) {
@@ -1043,6 +1244,7 @@ async function createMapForProject(formPayload: {
   isCreatingMap.value = true;
   try {
     const res = await apiFetch(`/projects/${targetProjectId}/maps`, {
+      auth: "required",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
@@ -1064,6 +1266,10 @@ async function createMapForProject(formPayload: {
     router.push(`/televersement/${payload.mapId}?projectId=${targetProjectId}`);
   } catch (e) {
     console.error("Failed to create map for project:", e);
+    // The dialog stays open, and its fields are part of the local draft.
+    showAlert("error", isAuthRequiredError(e)
+      ? "Votre session a expiré. Reconnectez-vous : le formulaire est conservé."
+      : "Impossible de créer la carte. Réessayez.");
   } finally {
     isCreatingMap.value = false;
   }
@@ -1087,17 +1293,23 @@ function reconcileVisibility(list: Feature[]) {
 }
 
 async function loadInitialFeatures() {
+  serverLoaded.value = false;
   if (!projectId.value) {
     features.value = [];
     featureVisibility.value = new Map();
+    serverFeatures.value = [];
     return;
   }
 
+  const wasRestoring = restoring;
+  restoring = true;
   try {
     const res = await apiFetch(`/projects/${projectId.value}/features`);
     if (!res.ok) throw new Error("Failed to fetch features");
 
     const allFeatures = snakeToCamel(await res.json()) as Feature[];
+    serverFeatures.value = cloneFeatureSnapshot(allFeatures);
+    serverLoaded.value = true;
 
     persistedFeatureIds.value = new Set(
       allFeatures
@@ -1109,6 +1321,8 @@ async function loadInitialFeatures() {
   } catch (e) {
     console.error("Failed to load initial map features:", e);
     showAlert("error", "Erreur lors du chargement des éléments de la carte.");
+  } finally {
+    restoring = wasRestoring;
   }
 }
 
@@ -1202,61 +1416,20 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-async function isProjectOwner(
-  targetProjectId: string,
-): Promise<boolean | null> {
-  if (!targetProjectId) {
-    showAlert(
-      "error",
-      "Impossible de vérifier la propriété, l'identifiant du projet est invalide.",
-    );
-    return null;
-  }
+async function isProjectOwner(targetProjectId: string): Promise<boolean> {
+  const res = await apiFetch(`/projects/is-owner/${targetProjectId}`, { auth: "required" });
+  if (!res.ok) throw new Error("Impossible de vérifier la propriété du projet. Réessayez dans un instant.");
+  return (await res.json()) === true;
+}
 
-  if (!keycloak.token) {
-    showAlert(
-      "error",
-      "Impossible de vérifier la propriété du projet, le jeton d'authentification est invalide.",
-    );
-    return null;
-  }
-
-  try {
-    const res = await apiFetch(`/projects/is-owner/${targetProjectId}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${keycloak.token}`,
-      },
-    });
-
-    if (!res.ok) {
-      console.error(`Error checking project owner: ${res.status}`);
-
-      if (res.status === 401 || res.status === 403) {
-        showAlert(
-          "error",
-          "Votre session a expiré. Veuillez vous reconnecter.",
-        );
-        void keycloak.login({ redirectUri: window.location.href });
-        return null;
-      }
-
-      showAlert(
-        "error",
-        "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
-      );
-      return null;
-    }
-
-    const data = (await res.json()) as boolean;
-    return data === true;
-  } catch (err) {
-    console.error("Error checking project owner:", err);
-    showAlert(
-      "error",
-      "Impossible de vérifier la propriété du projet. Réessaie dans un instant.",
-    );
-    return null;
+async function saveAsCopy() {
+  if (editorLocked.value) return;
+  pendingCopiedFeatures.value = snapshotFeatures();
+  shouldSaveAfterCopy.value = true;
+  await openCreateCopyDialog();
+  onDraftChanged();
+  if (!keycloak.authenticated || sessionState.status === "reauth-required") {
+    await reconnect().catch(() => {});
   }
 }
 
@@ -1280,8 +1453,8 @@ async function copyMapsIntoProject(
   const res = await apiFetch(
     `/projects/${targetProjectId}/copy-maps-from/${sourceProjectId}`,
     {
+      auth: "required",
       method: "POST",
-      headers: { Authorization: `Bearer ${keycloak.token}` },
     },
   );
   if (!res.ok) {
@@ -1337,6 +1510,9 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
 
     const targetProjectId = project.id;
     const sourceProjectId = projectId.value;
+    saveTargetProjectId.value = targetProjectId;
+    savePhase.value = "put-pending";
+    await draft.flush(null, true);
 
     const copiedFeatures = sourceProjectId
       ? await copyMapsIntoProject(
@@ -1351,6 +1527,7 @@ async function onProjectCreated(project: CreatedProjectRef | null) {
     pendingCopiedFeatures.value = null;
     shouldSaveAfterCopy.value = false;
 
+    isSaving.value = false;
     await router.push(`/projet/${project.id}`);
     showAlert("success", "Une copie de la carte a été créée.");
   } catch (err) {
@@ -1440,53 +1617,72 @@ function onDocumentClick(e: MouseEvent) {
   }
 }
 
-onMounted(async () => {
-  await fetchCurrentUser();
-  await resolveRouteContext();
-  await loadProjectMapsForTimeline();
-  await loadCustomLabelStyles();
-  await loadCurrentMapInfo();
-  await loadInitialFeatures();
-  await frameOpenedProject();
-
-  if (projectId.value) {
-    const pendingEditsStr = localStorage.getItem(
-      `pending_public_edits_${projectId.value}`,
-    );
-    if (pendingEditsStr) {
-      try {
-        const restoredFeatures = JSON.parse(pendingEditsStr);
-        features.value = restoredFeatures;
-        reconcileVisibility(restoredFeatures);
-
-        if (currentUser.value && keycloak.token) {
-          pendingCopiedFeatures.value = [...restoredFeatures];
-          shouldSaveAfterCopy.value = true;
-          setTimeout(async () => {
-            await openCreateCopyDialog();
-          }, 500);
-          localStorage.removeItem(`pending_public_edits_${projectId.value}`);
-        }
-      } catch (e) {
-        console.error("Failed to restore pending edits:", e);
-        localStorage.removeItem(`pending_public_edits_${projectId.value}`);
+async function initializeEditor() {
+  isLoadingEditor.value = true;
+  restoring = true;
+  let resume: EditorDraft | null = null;
+  try {
+    featureVisibilityControlsRef.value?.closeEditFeatureDialog?.();
+    addMapDialogRef.value?.close();
+    addFeatureImageDialogRef.value?.close();
+    createProjectDialogRef.value?.close();
+    features.value = featureHistoryService.reset([]);
+    featureVisibility.value = new Map();
+    pendingDeletions.value = [];
+    persistedFeatureIds.value = new Set();
+    serverFeatures.value = [];
+    serverLoaded.value = false;
+    recoveryConflict.value = false;
+    savePhase.value = "idle";
+    saveTargetProjectId.value = undefined;
+    selectedFeatureId.value = null;
+    copiedFeature.value = null;
+    pendingCopiedFeatures.value = null;
+    shouldSaveAfterCopy.value = false;
+    await resolveRouteContext();
+    await fetchCurrentUser();
+    await Promise.all([
+      loadProjectMapsForTimeline(), loadCustomLabelStyles(), loadCurrentMapInfo(), loadInitialFeatures(),
+    ]);
+    if (disposed || !projectId.value) return;
+    await draft.initialize(projectId.value);
+    resume = await draft.takeResume();
+  } catch (error) {
+    showAlert("error", error instanceof Error ? error.message : "Impossible de charger le projet.");
+  } finally {
+    restoring = false;
+    isLoadingEditor.value = false;
+  }
+  if (disposed) return;
+  if (resume) await restoreDraft(resume, resume.intent === "save");
+  else if (draft.candidates.value.length === 0 && projectId.value) {
+    // Migrate the old guest-save format only after durable storage succeeds.
+    const legacyKey = `pending_public_edits_${projectId.value}`;
+    try {
+      const raw = localStorage.getItem(legacyKey);
+      if (raw) {
+        features.value = JSON.parse(raw) as Feature[];
+        reconcileVisibility(features.value);
+        draft.markChanged();
+        await draft.flush();
+        localStorage.removeItem(legacyKey);
       }
+    } catch {
+      showAlert("error", "Les anciennes modifications sont conservées, mais leur récupération a échoué.");
     }
   }
+  await frameOpenedProject();
+}
 
+onMounted(async () => {
   window.addEventListener("keydown", handleKeyboardShortcuts);
   window.addEventListener("click", onDocumentClick);
-
-  // Not awaited: the shortcuts above must not wait for the tiles to load.
-  if (projectId.value) void uploadMapThumbnail();
+  window.addEventListener("beforeunload", beforeUnload);
+  unregisterAuthRedirect = registerAuthRedirectHandler(preserveBeforeAuthRedirect);
+  await initializeEditor();
 });
 
-watch([projectRouteId], async () => {
-  await resolveRouteContext();
-  await loadProjectMapsForTimeline();
-  await loadInitialFeatures();
-  await frameVisibleFeatures();
-});
+watch(projectRouteId, initializeEditor);
 
 watch([timelineMinYear, timelineMaxYear], () => {
   if (selectedYear.value < timelineMinYear.value) {
@@ -1529,8 +1725,11 @@ watch(
 );
 
 onUnmounted(() => {
+  disposed = true;
+  unregisterAuthRedirect?.();
   window.removeEventListener("keydown", handleKeyboardShortcuts);
   window.removeEventListener("click", onDocumentClick);
+  window.removeEventListener("beforeunload", beforeUnload);
   stopSidebarResize();
   clearAlert();
 });
@@ -1540,140 +1739,109 @@ async function saveFeaturesToProject(
   featuresToSave: Feature[],
   deletionIds: string[] = [],
 ): Promise<void> {
-  const payload = camelToSnake(prepareFeaturesForSave(featuresToSave));
-
-  const response = await apiFetch(`/projects/${targetProjectId}/features`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${keycloak.token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error saving features: ${response.status}`);
-  }
-
   const pendingDeleteSet = new Set(deletionIds);
-  const savedFeatures = (
-    snakeToCamel(await response.json()) as Feature[]
-  ).filter((feature) => !pendingDeleteSet.has(String(feature.id)));
-  features.value = savedFeatures;
-  reconcileVisibility(savedFeatures);
+  const savingCurrentProject = projectId.value === targetProjectId;
+  const resumeDelete = savePhase.value === "delete-pending" && saveTargetProjectId.value === targetProjectId;
+  saveTargetProjectId.value = targetProjectId;
+
+  if (!resumeDelete) {
+    // Persist the phase before sending: losing a response must never blindly
+    // replay the creation of new feature IDs after reconnecting.
+    savePhase.value = "put-pending";
+    await draft.flush(null, true);
+    const response = await apiFetch(`/projects/${targetProjectId}/features`, {
+      auth: "required",
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(camelToSnake(prepareFeaturesForSave(featuresToSave))),
+    });
+    if (!response.ok) throw new Error(`Erreur de sauvegarde : ${response.status}`);
+    const saved = snakeToCamel(await response.json()) as Feature[];
+    if (savingCurrentProject) {
+      serverFeatures.value = cloneFeatureSnapshot(saved);
+      serverLoaded.value = true;
+      features.value = saved.filter((feature) => !pendingDeleteSet.has(String(feature.id)));
+      persistedFeatureIds.value = new Set(saved.map((feature) => String(feature.id)));
+      reconcileVisibility(features.value);
+    }
+    savePhase.value = deletionIds.length ? "delete-pending" : "idle";
+    await draft.flush(null, true);
+  }
 
   if (deletionIds.length > 0) {
     const bulkDeleteResponse = await apiFetch(
       `/projects/${targetProjectId}/features`,
       {
+        auth: "required",
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(deletionIds),
       },
     );
 
     if (!bulkDeleteResponse.ok) {
-      console.error(
-        `Failed to bulk delete features: ${bulkDeleteResponse.status}`,
-      );
+      throw new Error(`La suppression a échoué (${bulkDeleteResponse.status}). Le brouillon est conservé.`);
     }
   }
-
-  pendingDeletions.value = [];
-
-  mapGeoJsonRef.value?.clearDraftLayers();
-  await uploadMapThumbnail(targetProjectId);
-
-  if (projectId.value === targetProjectId) {
-    await loadInitialFeatures();
+  if (savingCurrentProject) {
+    serverFeatures.value = serverFeatures.value.filter((feature) => !pendingDeleteSet.has(String(feature.id)));
+    persistedFeatureIds.value = new Set(serverFeatures.value.map((feature) => String(feature.id)));
   }
+  pendingDeletions.value = [];
+  savePhase.value = "idle";
+  saveTargetProjectId.value = undefined;
+  recoveryConflict.value = false;
+  await nextTick();
+  await draft.complete(Object.values(captureForms()).some(Boolean));
+  mapGeoJsonRef.value?.clearDraftLayers();
+  // A thumbnail failure must not turn a committed save into an uncertain one.
+  void uploadMapThumbnail(targetProjectId).catch((error) => console.error("Thumbnail update failed:", error));
 }
 
-async function onSaveMap(featuresOverride?: Feature[]) {
-  if (isSaving.value) return;
+async function onSaveMap(featuresOverride?: Feature[], resumeSave = false): Promise<boolean> {
+  if (editorLocked.value) return false;
+  restoring = true;
+  features.value = featuresOverride ? cloneFeatureSnapshot(featuresOverride) : snapshotFeatures();
+  reconcileVisibility(features.value);
+  restoring = false;
+  draft.markChanged();
   isSaving.value = true;
   mapGeoJsonRef.value?.resetSelection();
-
+  let needsLogin = false;
   try {
-    if (!currentUser.value || !keycloak.token) {
-      const syncedFeatures = featuresOverride
-        ? undefined
-        : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
-      const featuresToSave =
-        featuresOverride ?? syncedFeatures ?? features.value;
-      localStorage.setItem(
-        `pending_public_edits_${projectId.value}`,
-        JSON.stringify(featuresToSave),
-      );
-      showAlert(
-        "success",
-        "Veuillez vous connecter pour sauvegarder vos modifications. Vous serez redirigé...",
-      );
-      setTimeout(() => {
-        keycloak.register({ redirectUri: window.location.href });
-      }, 1500);
-      return;
+    await draft.flush(null, true);
+    if (!keycloak.authenticated || !keycloak.token || sessionState.status === "reauth-required") {
+      throw new AuthRequiredError();
     }
-
-    const syncedFeatures = featuresOverride
-      ? undefined
-      : mapGeoJsonRef.value?.syncFeaturesFromMapLayers();
-    const featuresToSave = (
-      featuresOverride ??
-      syncedFeatures ??
-      features.value
-    ).map((feature: Feature) => ({
-      ...feature,
-      properties: {
-        ...feature.properties,
-        isVisible:
-          featureVisibility.value.get(feature.id) ??
-          feature.properties?.isVisible ??
-          true,
-      },
-    }));
-
-    if (syncedFeatures) {
-      features.value = syncedFeatures;
-      reconcileVisibility(syncedFeatures);
-    }
-
     const targetProjectId = await requireProjectId();
-
-    if (!targetProjectId) {
-      showAlert("error", "Projet introuvable.");
-      return;
-    }
-
     const isOwner = await isProjectOwner(targetProjectId);
-
-    if (isOwner === null) {
-      return;
-    }
-
     if (!isOwner) {
-      pendingCopiedFeatures.value = [...featuresToSave];
+      pendingCopiedFeatures.value = cloneFeatureSnapshot(features.value);
       shouldSaveAfterCopy.value = true;
       await openCreateCopyDialog();
-      return;
+      await draft.flush(null, true);
+      return false;
     }
-
+    if (recoveryConflict.value || !(await checkServerBase(targetProjectId))) {
+      showAlert("error", "Le contenu du serveur a changé. Votre brouillon est conservé ; créez une copie pour garder vos modifications.");
+      return false;
+    }
     await saveFeaturesToProject(
       targetProjectId,
-      featuresToSave,
+      features.value,
       pendingDeletions.value,
     );
     showAlert("success", "Projet sauvegardé avec succès !");
+    return true;
   } catch (err) {
-    showAlert("error", "Erreur lors de la sauvegarde des éléments.");
-    throw new Error(
-      `Error while saving features: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    needsLogin = isAuthRequiredError(err) && !resumeSave;
+    showAlert("error", err instanceof Error ? err.message : "La sauvegarde a échoué. Le brouillon est conservé.");
   } finally {
     isSaving.value = false;
   }
+  // Release the save lock before the preservation hook runs. A resumed save
+  // never redirects again automatically if the new session is also rejected.
+  if (needsLogin) await reconnect({ intent: "save" }).catch(() => {});
+  return false;
 }
 </script>

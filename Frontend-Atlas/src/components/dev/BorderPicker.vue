@@ -307,10 +307,15 @@ function toggleGroup(group: RegionGroup, checked: boolean) {
 async function loadCountries() {
   isLoadingCountries.value = true;
   error.value = null;
-  const res = await borders.listCountries();
-  if (res.success) countries.value = res.data;
-  else error.value = res.error;
-  isLoadingCountries.value = false;
+  try {
+    const res = await borders.listCountries();
+    if (res.success) countries.value = res.data;
+    else error.value = res.error;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "Frontières indisponibles";
+  } finally {
+    isLoadingCountries.value = false;
+  }
 }
 
 watch(countryCode, async (code) => {
@@ -320,20 +325,30 @@ watch(countryCode, async (code) => {
   if (!code || !country.value?.regionCount) return;
   isLoadingRegions.value = true;
   error.value = null;
-  const res = await borders.listRegions(code);
-  if (res.success) regions.value = res.data;
-  else error.value = res.error;
-  isLoadingRegions.value = false;
+  try {
+    const res = await borders.listRegions(code);
+    if (res.success) regions.value = res.data;
+    else error.value = res.error;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "Régions indisponibles";
+  } finally {
+    isLoadingRegions.value = false;
+  }
 });
 
 async function loadZone(regionIds: string[] | null) {
   if (!countryCode.value) return;
   isLoadingZone.value = true;
   error.value = null;
-  const res = await borders.loadZone(countryCode.value, regionIds);
-  if (res.success) emit("loaded", res.data);
-  else error.value = res.error;
-  isLoadingZone.value = false;
+  try {
+    const res = await borders.loadZone(countryCode.value, regionIds);
+    if (res.success) emit("loaded", res.data);
+    else error.value = res.error;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "Zone indisponible";
+  } finally {
+    isLoadingZone.value = false;
+  }
 }
 
 onMounted(loadCountries);

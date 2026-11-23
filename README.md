@@ -78,7 +78,7 @@ To run the project using Docker Compose, follow these steps:
      - Frontend: http://localhost
      - Backend API: http://localhost/api
      - Keycloak: http://localhost/auth
-   - Flower (Celery Monitoring): http://localhost:5555, PostgreSQL: `localhost:5432`, Redis: `localhost:6379`. These only listen on `127.0.0.1`.
+   - Flower (Celery Monitoring): http://localhost:5555, PostgreSQL: `localhost:5433`, Redis: `localhost:6379`. These only listen on `127.0.0.1`.
 
 4. **Test the backend:**
 
@@ -207,7 +207,7 @@ curl http://localhost/api/ping
 - **Backend API**: http://localhost/api
 - **Keycloak**: http://localhost/auth
 - **Celery Monitoring (Flower)**: http://localhost:5555
-- **PostgreSQL**: localhost:5432
+- **PostgreSQL**: localhost:5433 (host port; containers use `db:5432`)
 - **Redis**: localhost:6379
 
 Flower, PostgreSQL and Redis only listen on `127.0.0.1`, so they are not reachable from other machines.

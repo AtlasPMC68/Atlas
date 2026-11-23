@@ -2,7 +2,7 @@
 import { onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useCurrentUser } from "../composables/useCurrentUser";
-import keycloak from "../keycloak";
+import { logoutFromAtlas } from "../services/authSession";
 import { DEV_TOOLS_ENABLED } from "../utils/devTools";
 
 const router = useRouter();
@@ -16,7 +16,7 @@ onMounted(async () => {
 });
 
 const logout = async () => {
-  await keycloak.logout();
+  await logoutFromAtlas().catch(() => {});
 };
 </script>
 

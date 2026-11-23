@@ -1,5 +1,5 @@
 <template>
-  <dialog ref="addMapDialogRef" class="modal">
+  <dialog ref="addMapDialogRef" class="modal" @close="emit('draft-change')" @cancel="onCancel">
     <div class="modal-box p-0">
       <form @submit.prevent="createMapForProject">
         <div class="card-body">
@@ -56,6 +56,7 @@
               v-model="usePreciseDates"
               type="checkbox"
               class="checkbox checkbox-sm"
+              :disabled="isCreatingMap"
             />
             <span>Utiliser la date exacte</span>
           </label>
@@ -92,8 +93,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import type { AddMapFormDraft } from "../../typescript/editorDraft";
 
 type AddMapPayload = {
   title: string;
@@ -102,21 +104,53 @@ type AddMapPayload = {
   exactDate: boolean;
 };
 
-defineProps<{
+const props = defineProps<{
   isCreatingMap: boolean;
 }>();
 
 const emit = defineEmits<{
   submit: [payload: AddMapPayload];
+  "draft-change": [];
 }>();
 
 const addMapDialogRef = ref<HTMLDialogElement | null>(null);
 const newMapTitle = ref("");
-const startYear = ref<number | null>(null);
-const endYear = ref<number | null>(null);
+const startYear = ref<number | string | null>(null);
+const endYear = ref<number | string | null>(null);
 const startDate = ref("");
 const endDate = ref("");
 const usePreciseDates = ref(false);
+
+watch([newMapTitle, startYear, endYear, startDate, endDate, usePreciseDates], () => {
+  if (addMapDialogRef.value?.open) emit("draft-change");
+});
+
+function getDraft(): AddMapFormDraft | null {
+  if (!addMapDialogRef.value?.open) return null;
+  return {
+    title: newMapTitle.value,
+    startYear: startYear.value,
+    endYear: endYear.value,
+    startDate: startDate.value,
+    endDate: endDate.value,
+    usePreciseDates: usePreciseDates.value,
+  };
+}
+
+function restoreDraft(draft: AddMapFormDraft) {
+  newMapTitle.value = draft.title;
+  startYear.value = draft.startYear;
+  endYear.value = draft.endYear;
+  startDate.value = draft.startDate;
+  endDate.value = draft.endDate;
+  usePreciseDates.value = draft.usePreciseDates;
+  if (!addMapDialogRef.value?.open) addMapDialogRef.value?.showModal();
+  emit("draft-change");
+}
+
+function onCancel(event: Event) {
+  if (props.isCreatingMap) event.preventDefault();
+}
 
 function resetForm() {
   newMapTitle.value = "";
@@ -130,6 +164,7 @@ function resetForm() {
 function open() {
   resetForm();
   addMapDialogRef.value?.showModal();
+  emit("draft-change");
 }
 
 function close() {
@@ -144,7 +179,7 @@ function getStartDateForImport(): string | null {
     return startDate.value;
   }
 
-  if (!startYear.value || startYear.value < 1 || startYear.value > 9999) {
+  if (typeof startYear.value !== "number" || startYear.value < 1 || startYear.value > 9999) {
     return null;
   }
   return yearToIsoStart(startYear.value);
@@ -158,7 +193,7 @@ function getEndDateForImport(): string | null {
     return endDate.value;
   }
 
-  if (!endYear.value || endYear.value < 1 || endYear.value > 9999) {
+  if (typeof endYear.value !== "number" || endYear.value < 1 || endYear.value > 9999) {
     return null;
   }
   return yearToIsoEnd(endYear.value);
@@ -172,6 +207,7 @@ function hasValidImportDates(): boolean {
 }
 
 function createMapForProject() {
+  if (props.isCreatingMap) return;
   if (!newMapTitle.value.trim() || !hasValidImportDates()) return;
 
   const start = getStartDateForImport();
@@ -189,5 +225,7 @@ function createMapForProject() {
 defineExpose({
   open,
   close,
+  getDraft,
+  restoreDraft,
 });
 </script>

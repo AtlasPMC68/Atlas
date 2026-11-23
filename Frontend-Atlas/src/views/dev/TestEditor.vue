@@ -172,7 +172,7 @@ import type { Feature } from "../../typescript/feature";
 import type { LoadedBorderZone, ZoneGeometry } from "../../typescript/devTest";
 import { useDevTestCases } from "../../composables/useDevTestCases";
 import { showAlert } from "../../composables/useAlert";
-import keycloak from "../../keycloak";
+import { apiFetch } from "../../utils/api";
 
 const route = useRoute();
 const router = useRouter();
@@ -227,11 +227,11 @@ async function deleteTestCase(testCase: string) {
   deletingTestCase.value = testCase;
   testCaseError.value = null;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${mapId.value}/${encodeURIComponent(testCase)}`,
+    const res = await apiFetch(
+      `/dev-test-api/test-cases/${mapId.value}/${encodeURIComponent(testCase)}`,
       {
+        auth: "required",
         method: "DELETE",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
       },
     );
 
@@ -251,9 +251,7 @@ async function deleteTestCase(testCase: string) {
 
 async function loadTestKind(currentMapId: string) {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`, {
-      headers: { Authorization: `Bearer ${keycloak.token}` },
-    });
+    const res = await apiFetch("/dev-test-api/tests", { auth: "required" });
     if (!res.ok) return;
     const data = await res.json();
     const entry = Array.isArray(data)
@@ -267,9 +265,9 @@ async function loadTestKind(currentMapId: string) {
 
 async function loadTestZones(currentMapId: string) {
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${currentMapId}`,
-      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    const res = await apiFetch(
+      `/dev-test-api/georef_zones/${currentMapId}`,
+      { auth: "required" },
     );
     if (!res.ok) {
       // For a brand-new test map, it's normal to have no zones yet.
@@ -410,13 +408,13 @@ async function persistZonesToBackend() {
   };
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${mapId.value}`,
+    const res = await apiFetch(
+      `/dev-test-api/georef_zones/${mapId.value}`,
       {
+        auth: "required",
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
         },
         body: JSON.stringify(payload),
       },
@@ -521,15 +519,17 @@ async function saveCreatedZone() {
     },
   } as any;
 
-  features.value = [...features.value, feature];
+  const previousFeatures = features.value;
+  features.value = [...previousFeatures, feature];
 
   try {
     await persistZonesToBackend();
   } catch (err) {
     console.error("Error saving created zone:", err);
-    if (mapId.value) {
-      await loadTestZones(mapId.value);
-    }
+    features.value = previousFeatures;
+    showAlert("error", err instanceof Error ? err.message : "Impossible d'enregistrer la zone.");
+    // Keep the pending geometry and name so a failed request can be retried.
+    return;
   }
 
   isCreateMode.value = false;
