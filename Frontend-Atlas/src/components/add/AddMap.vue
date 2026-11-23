@@ -1,6 +1,6 @@
 <template>
   <dialog ref="addMapDialogRef" class="modal">
-    <div class="modal-box p-0">
+    <div class="modal-box p-0 overflow-visible">
       <form @submit.prevent="createMapForProject">
         <div class="card-body">
           <h3 class="text-lg font-bold flex items-center gap-2">
