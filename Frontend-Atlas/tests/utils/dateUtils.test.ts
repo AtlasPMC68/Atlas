@@ -33,6 +33,14 @@ describe("dateUtils", () => {
       expect(toYear("1750-01-01T00:00:00Z")).toBe(1750);
       expect(toYear("2026-05-15T14:30:00.000Z")).toBe(2026);
     });
+
+    it("parses year 0 and negative years (BCE)", () => {
+      expect(toYear(0)).toBe(0);
+      expect(toYear("0")).toBe(0);
+      expect(toYear("-44")).toBe(-44);
+      expect(toYear("-500")).toBe(-500);
+      expect(toYear("-44-03-15")).toBe(-44);
+    });
   });
 
   describe("parseIsoDateUtc", () => {

@@ -290,4 +290,29 @@ describe("TimelineSlider element markers (pins)", () => {
     expect(pins[0].find(".element-marker-badge").classes()).toContain("element-marker-badge-selected");
     expect(pins[1].classes()).not.toContain("element-marker-selected");
   });
+
+  it("selects element on single click and edits element on double click in marker popover", async () => {
+    const elementMarkers: TimelineElementMarker[] = [
+      { id: "feat-pop-1", name: "Québec", year: 1700, type: "zone" },
+    ];
+    const wrapper = mountSlider([1600, 1700, 1800], 1700, elementMarkers);
+
+    const pin = wrapper.find("[data-testid='timeline-element-marker']");
+    await pin.trigger("mouseenter");
+
+    const popover = wrapper.find(".element-marker-popover");
+    expect(popover.exists()).toBe(true);
+
+    const item = popover.find("[role='button']");
+    expect(item.exists()).toBe(true);
+
+    // 1 click -> selects element, does not emit edit-element
+    await item.trigger("click");
+    expect(wrapper.emitted("select-element")?.[0]).toEqual(["feat-pop-1"]);
+    expect(wrapper.emitted("edit-element")).toBeUndefined();
+
+    // 2 clicks (double click) -> emits edit-element
+    await item.trigger("dblclick");
+    expect(wrapper.emitted("edit-element")?.[0]).toEqual(["feat-pop-1"]);
+  });
 });

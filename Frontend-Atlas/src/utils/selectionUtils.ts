@@ -111,3 +111,51 @@ export function deduplicateFeatures<T extends { id?: string | number; properties
 
   return result;
 }
+
+/**
+ * Checks whether a Leaflet layer (Marker, Path, Polygon, Polyline, or LayerGroup/FeatureGroup)
+ * intersects with or is contained inside the given bounding box.
+ * Recursively inspects child layers in L.LayerGroup to properly select points, cities and labels.
+ */
+export function doesLayerIntersectBounds(
+  layer: any,
+  selBounds: { intersects?: (b: any) => boolean; contains?: (latlng: any) => boolean } | null | undefined,
+): boolean {
+  if (!layer || !selBounds) return false;
+
+  // 1. Direct getBounds (e.g. Polygon, Polyline, FeatureGroup)
+  try {
+    if (typeof layer.getBounds === "function") {
+      const b = layer.getBounds();
+      if (b && typeof selBounds.intersects === "function" && selBounds.intersects(b)) {
+        return true;
+      }
+    }
+  } catch {}
+
+  // 2. Direct getLatLng (e.g. Marker, CircleMarker)
+  try {
+    if (typeof layer.getLatLng === "function") {
+      const latLng = layer.getLatLng();
+      if (latLng && typeof selBounds.contains === "function" && selBounds.contains(latLng)) {
+        return true;
+      }
+    }
+  } catch {}
+
+  // 3. LayerGroup / FeatureGroup child inspection (recursively check children)
+  try {
+    if (typeof layer.getLayers === "function") {
+      const children = layer.getLayers();
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          if (doesLayerIntersectBounds(child, selBounds)) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return false;
+}

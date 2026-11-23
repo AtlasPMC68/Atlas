@@ -415,7 +415,10 @@ const mapGeoJsonRef = ref<{
   syncFeaturesFromMapLayers: () => Feature[];
   clearDraftLayers: () => void;
   resetSelection: () => void;
-  fitToVisibleFeatures: (featureIds?: ReadonlySet<string>, animate?: boolean) => void;
+  fitToVisibleFeatures: (
+    featureIds?: ReadonlySet<string> | string[] | Set<string>,
+    animate?: boolean,
+  ) => void;
   multiSelectedIds: { value: Set<string> };
 } | null>(null);
 const addMapDialogRef = ref<{
@@ -445,7 +448,7 @@ const featureVisibilityControlsRef = ref<InstanceType<
 function parseOptionalYear(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return null;
+  if (!Number.isFinite(num)) return null;
   return Math.trunc(num);
 }
 
@@ -476,7 +479,7 @@ function onSelectFeatures(ids: string[]) {
   if (ids.length > 0) {
     selectedFeatureId.value = null;
     nextTick(() => {
-      mapGeoJsonRef.value?.fitToFeatures?.(ids, true);
+      mapGeoJsonRef.value?.fitToVisibleFeatures?.(ids, true);
     });
   }
 }
@@ -542,7 +545,7 @@ function selectFeature(id: string | null) {
   if (id) {
     multiSelectedFeatureIds.value = [];
     nextTick(() => {
-      mapGeoJsonRef.value?.fitToFeatures?.([id], true);
+      mapGeoJsonRef.value?.fitToVisibleFeatures?.([id], true);
     });
 
     const feat = features.value.find((f: Feature) => String(f.id) === String(id));
@@ -779,6 +782,17 @@ function copySelectedFeature(): boolean {
   return true;
 }
 
+function getCenterOffsetDelta(map: L.Map, offsetPx = 24): { deltaLng: number; deltaLat: number } {
+  const centerPoint = map.getSize().divideBy(2);
+  const targetPoint = L.point(centerPoint.x + offsetPx, centerPoint.y + offsetPx);
+  const c1 = map.containerPointToLatLng(centerPoint);
+  const c2 = map.containerPointToLatLng(targetPoint);
+  return {
+    deltaLat: c2.lat - c1.lat,
+    deltaLng: c2.lng - c1.lng,
+  };
+}
+
 function pasteCopiedFeature() {
   const sources =
     copiedFeatures.value.length > 0
@@ -789,12 +803,7 @@ function pasteCopiedFeature() {
   const map = leafletMap.value;
   if (sources.length === 0 || !map) return;
 
-  const centerPoint = map.getSize().divideBy(2);
-  const targetPoint = L.point(centerPoint.x + 24, centerPoint.y + 24);
-  const c1 = map.containerPointToLatLng(centerPoint);
-  const c2 = map.containerPointToLatLng(targetPoint);
-  const deltaLat = c2.lat - c1.lat;
-  const deltaLng = c2.lng - c1.lng;
+  const { deltaLat, deltaLng } = getCenterOffsetDelta(map);
 
   const pastedFeatures: Feature[] = [];
   const newIds: string[] = [];
@@ -823,12 +832,7 @@ function duplicateFeature(feature: Feature) {
   const map = leafletMap.value;
   if (!map || !feature.geometry) return;
 
-  const centerPoint = map.getSize().divideBy(2);
-  const targetPoint = L.point(centerPoint.x + 24, centerPoint.y + 24);
-  const c1 = map.containerPointToLatLng(centerPoint);
-  const c2 = map.containerPointToLatLng(targetPoint);
-  const deltaLat = c2.lat - c1.lat;
-  const deltaLng = c2.lng - c1.lng;
+  const { deltaLat, deltaLng } = getCenterOffsetDelta(map);
 
   const pasted = cloneFeatureWithOffset(feature, deltaLng, deltaLat);
   commitFeatureSnapshot([...features.value, pasted]);
@@ -1720,12 +1724,32 @@ async function onDeleteMap(
       (p: MapPeriod) => String(p.id).trim().toLowerCase() !== mapIdNorm,
     );
 
-    const nextFeatures = features.value.filter(
-      (feature: Feature) =>
-        String(getFeatureMapId(feature) ?? "")
-          .trim()
-          .toLowerCase() !== mapIdNorm,
-    );
+    const nextFeatures: Feature[] = [];
+    for (const feature of features.value) {
+      const existingMapIds = getFeatureMapIds(feature);
+      if (existingMapIds.some((id) => id.trim().toLowerCase() === mapIdNorm)) {
+        const remainingMapIds = existingMapIds.filter(
+          (id) => id.trim().toLowerCase() !== mapIdNorm,
+        );
+        if (remainingMapIds.length > 0) {
+          const newPrimaryMapId = remainingMapIds[0];
+          nextFeatures.push({
+            ...feature,
+            mapId: newPrimaryMapId,
+            mapIds: remainingMapIds,
+            map_id: newPrimaryMapId,
+            properties: {
+              ...feature.properties,
+              mapId: newPrimaryMapId,
+              mapIds: remainingMapIds,
+              map_id: newPrimaryMapId,
+            },
+          });
+        }
+      } else {
+        nextFeatures.push(feature);
+      }
+    }
 
     if (
       activeValidationMapId.value &&
@@ -1931,7 +1955,7 @@ function selectMap(mapId: string) {
   if (!period) return;
 
   if (timelineMode.value === "global") {
-    timelineMode.value = "period";
+    timelineMode.value = "specific";
   }
 
   const targetYear = (period as any).startYear ?? toYear(period.startDate);

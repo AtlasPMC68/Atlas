@@ -77,6 +77,7 @@ import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService"
 import {
   getContinuousRangeSelection,
   deduplicateFeatures,
+  doesLayerIntersectBounds,
 } from "../utils/selectionUtils";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import type {
@@ -361,9 +362,11 @@ const featureLayerManager = {
       if (drawing.activeDrawingMode.value !== null) return;
       if (pm?.globalRemovalModeEnabled?.()) return;
 
-      const orig = e.originalEvent;
+      const orig = e.originalEvent as any;
       if (orig) {
-        (orig as any).__atlasFeatureClicked = true;
+        if (orig._atlasFeatureClickProcessed) return;
+        orig._atlasFeatureClickProcessed = true;
+        orig.__atlasFeatureClicked = true;
       }
       blockNextMapClick = true;
       setTimeout(() => {
@@ -427,8 +430,11 @@ const featureLayerManager = {
       if (drawing.activeDrawingMode.value !== null) return;
       if (pm?.globalRemovalModeEnabled?.()) return;
 
-      if (e?.originalEvent) {
-        (e.originalEvent as any).__atlasFeatureClicked = true;
+      const orig = e?.originalEvent as any;
+      if (orig) {
+        if (orig._atlasFeatureDblClickProcessed) return;
+        orig._atlasFeatureDblClickProcessed = true;
+        orig.__atlasFeatureClicked = true;
       }
       blockNextMapClick = true;
       setTimeout(() => {
@@ -570,19 +576,81 @@ function revealMap() {
 }
 
 // Frames the features currently drawn on the map (visibility and timeline
-// filters applied), or only those of `featureIds` when given. Keeps the
-// current view when nothing is drawn.
-function fitToVisibleFeatures(featureIds?: ReadonlySet<string>, animate = false) {
+// filters applied), or targets `featureIds` with smart framing when given.
+function fitToVisibleFeatures(
+  featureIds?: ReadonlySet<string> | string[] | Set<string>,
+  animate = false,
+) {
   if (!map) return;
   revealMap();
+
+  const idArray = featureIds
+    ? Array.from(featureIds instanceof Set ? featureIds : featureIds)
+    : [];
+
+  // When specific feature IDs are requested, apply smart framing/zoom
+  if (idArray.length > 0) {
+    const bounds = L.latLngBounds([]);
+
+    idArray.forEach((id) => {
+      const layer = featureLayerManager.layers.get(id);
+      if (layer) {
+        extendBoundsWithLayer(bounds, layer);
+      }
+      const feat = (props.features ?? []).find(
+        (f: Feature) => String(f.id) === String(id),
+      );
+      if (feat?.geometry) {
+        extendBoundsWithGeometry(bounds, feat.geometry);
+      }
+    });
+
+    if (!bounds.isValid()) return;
+
+    const currentViewBounds = map.getBounds();
+    const currentZoom = map.getZoom();
+
+    // Global map zoom level
+    const overviewBounds = getMapOverviewBounds();
+    let mapLevelZoom = currentZoom;
+    if (overviewBounds.isValid()) {
+      try {
+        const calculatedZoom = map.getBoundsZoom(overviewBounds, false, L.point(50, 50));
+        if (Number.isFinite(calculatedZoom)) {
+          mapLevelZoom = Math.min(calculatedZoom, 6);
+        }
+      } catch {
+        // ignore
+      }
+    } else {
+      mapLevelZoom = Math.min(currentZoom, 5);
+    }
+
+    const isInsideFieldOfView =
+      currentViewBounds.contains(bounds.getCenter()) || currentViewBounds.intersects(bounds);
+
+    if (isInsideFieldOfView) {
+      if (!currentViewBounds.pad(-0.05).contains(bounds)) {
+        map.panTo(bounds.getCenter(), { animate });
+      }
+      return;
+    }
+
+    if (idArray.length > 1) {
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: mapLevelZoom, animate });
+    } else {
+      map.setView(bounds.getCenter(), mapLevelZoom, { animate });
+    }
+    return;
+  }
+
+  // When no IDs are specified, frame all features currently drawn on the map
   const bounds = L.latLngBounds([]);
-  featureLayerManager.layers.forEach((layer, id) => {
-    if (featureIds && !featureIds.has(id)) return;
+  featureLayerManager.layers.forEach((layer) => {
     if (!map!.hasLayer(layer)) return;
     extendBoundsWithLayer(bounds, layer);
   });
   if (!bounds.isValid()) return;
-  // maxZoom keeps a single city or label from zooming in to street level
   map.fitBounds(bounds, { padding: [50, 50], maxZoom: 10, animate });
 }
 
@@ -645,70 +713,6 @@ function getMapOverviewBounds(): L.LatLngBounds {
   return bounds;
 }
 
-function fitToFeatures(ids: string[] | Set<string>, animate = true) {
-  if (!map) return;
-  const idArray = Array.from(ids instanceof Set ? ids : (ids ?? []));
-  if (idArray.length === 0) return;
-
-  const bounds = L.latLngBounds([]);
-
-  idArray.forEach((id) => {
-    const layer = featureLayerManager.layers.get(id);
-    if (layer) {
-      extendBoundsWithLayer(bounds, layer);
-    }
-    const feat = (props.features ?? []).find(
-      (f: Feature) => String(f.id) === String(id),
-    );
-    if (feat?.geometry) {
-      extendBoundsWithGeometry(bounds, feat.geometry);
-    }
-  });
-
-  if (!bounds.isValid()) return;
-
-  const currentViewBounds = map.getBounds();
-  const currentZoom = map.getZoom();
-
-  // Niveau de zoom global de la carte
-  const overviewBounds = getMapOverviewBounds();
-  let mapLevelZoom = currentZoom;
-  if (overviewBounds.isValid()) {
-    try {
-      const calculatedZoom = map.getBoundsZoom(overviewBounds, false, L.point(50, 50));
-      if (Number.isFinite(calculatedZoom)) {
-        mapLevelZoom = Math.min(calculatedZoom, 6);
-      }
-    } catch {
-      // ignore
-    }
-  } else {
-    mapLevelZoom = Math.min(currentZoom, 5);
-  }
-
-  // Règle fixe :
-  // 1) Si l'élément est dans le champ de vision actuel :
-  //    Le zoom RESTE au même niveau que l'actuel (aucun zoom de trop proche).
-  // 2) Sinon :
-  //    Le zoom est au niveau global de la carte (mapLevelZoom).
-  const isInsideFieldOfView =
-    currentViewBounds.contains(bounds.getCenter()) || currentViewBounds.intersects(bounds);
-
-  if (isInsideFieldOfView) {
-    if (!currentViewBounds.pad(-0.05).contains(bounds)) {
-      map.panTo(bounds.getCenter(), { animate });
-    }
-    return;
-  }
-
-  // Hors du champ de vision : vue positionnée au niveau de la carte
-  if (idArray.length > 1) {
-    map.fitBounds(bounds, { padding: [80, 80], maxZoom: mapLevelZoom, animate });
-  } else {
-    map.setView(bounds.getCenter(), mapLevelZoom, { animate });
-  }
-}
-
 function clearDraftLayers() {
   drawing.clearDrawnItems();
 }
@@ -743,7 +747,6 @@ defineExpose({
   clearDraftLayers,
   resetSelection,
   fitToVisibleFeatures,
-  fitToFeatures,
   multiSelectedIds,
 });
 
@@ -920,6 +923,53 @@ function applyLabelPresentationStyle(
   }
 }
 
+function getActionButtonsHtml(): string {
+  return `
+    <button class="label-action-btn action-duplicate" title="Dupliquer" type="button">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+      </svg>
+    </button>
+    <button class="label-action-btn action-delete" title="Supprimer" type="button">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+      </svg>
+    </button>
+  `;
+}
+
+function bindActionButtons(
+  containerEl: HTMLElement,
+  onDuplicate: () => void,
+  onDelete: () => void,
+): void {
+  const dupBtn = containerEl.querySelector<HTMLElement>(".action-duplicate");
+  if (dupBtn && !(dupBtn as any).__bound) {
+    (dupBtn as any).__bound = true;
+    dupBtn.addEventListener("click", (e) => {
+      L.DomEvent.stopPropagation(e as unknown as Event);
+      e.preventDefault();
+      onDuplicate();
+    });
+    dupBtn.addEventListener("mousedown", (e) => {
+      L.DomEvent.stopPropagation(e as unknown as Event);
+    });
+  }
+
+  const delBtn = containerEl.querySelector<HTMLElement>(".action-delete");
+  if (delBtn && !(delBtn as any).__bound) {
+    (delBtn as any).__bound = true;
+    delBtn.addEventListener("click", (e) => {
+      L.DomEvent.stopPropagation(e as unknown as Event);
+      e.preventDefault();
+      onDelete();
+    });
+    delBtn.addEventListener("mousedown", (e) => {
+      L.DomEvent.stopPropagation(e as unknown as Event);
+    });
+  }
+}
+
 function buildLabelMarker(
   feature: Feature,
   presentation: LabelPresentationModel,
@@ -937,16 +987,7 @@ function buildLabelMarker(
           <div class="label-content"${presentation.styleAttribute}>${presentation.html}</div>
           <div class="label-anchor rotate-handle"></div>
           <div class="label-quick-actions">
-            <button class="label-action-btn action-duplicate" title="Dupliquer" type="button">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
-              </svg>
-            </button>
-            <button class="label-action-btn action-delete" title="Supprimer" type="button">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
-                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-              </svg>
-            </button>
+            ${getActionButtonsHtml()}
           </div>
         </div>
       `,
@@ -958,31 +999,11 @@ function buildLabelMarker(
   const bindQuickActionButtons = () => {
     const el = marker.getElement();
     if (!el) return;
-    const dupBtn = el.querySelector<HTMLElement>(".action-duplicate");
-    if (dupBtn && !(dupBtn as any).__bound) {
-      (dupBtn as any).__bound = true;
-      dupBtn.addEventListener("click", (e) => {
-        L.DomEvent.stopPropagation(e as unknown as Event);
-        e.preventDefault();
-        emit("duplicate-feature", feature);
-      });
-      dupBtn.addEventListener("mousedown", (e) => {
-        L.DomEvent.stopPropagation(e as unknown as Event);
-      });
-    }
-
-    const delBtn = el.querySelector<HTMLElement>(".action-delete");
-    if (delBtn && !(delBtn as any).__bound) {
-      (delBtn as any).__bound = true;
-      delBtn.addEventListener("click", (e) => {
-        L.DomEvent.stopPropagation(e as unknown as Event);
-        e.preventDefault();
-        emit("delete-feature", feature);
-      });
-      delBtn.addEventListener("mousedown", (e) => {
-        L.DomEvent.stopPropagation(e as unknown as Event);
-      });
-    }
+    bindActionButtons(
+      el,
+      () => emit("duplicate-feature", feature),
+      () => emit("delete-feature", feature),
+    );
   };
 
   const preventSelection = () => {
@@ -1125,14 +1146,6 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
 
     const layerGroup = L.layerGroup([point, label]);
 
-    // Forward clicks and double-clicks from the inner point to the layerGroup
-    point.on("click", (e: L.LeafletEvent) => {
-      layerGroup.fire("click", e);
-    });
-    point.on("dblclick", (e: L.LeafletEvent) => {
-      layerGroup.fire("dblclick", e);
-    });
-
     point.on("pm:drag", () => {
       label.setLatLng(point.getLatLng());
       if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
@@ -1140,13 +1153,6 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
     point.on("pm:dragend", () => {
       label.setLatLng(point.getLatLng());
       if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
-    });
-
-    label.on("click", (e: L.LeafletEvent) => {
-      layerGroup.fire("click", e);
-    });
-    label.on("dblclick", (e: L.LeafletEvent) => {
-      layerGroup.fire("dblclick", e);
     });
 
     attachFeatureToLayer(label, feature);
@@ -1568,14 +1574,8 @@ onMounted(() => {
       featureLayerManager.layers.forEach((layer, id) => {
         if (!map!.hasLayer(layer)) return;
         try {
-          const lBounds = (layer as any).getBounds?.();
-          if (lBounds && selBounds.intersects(lBounds)) {
+          if (doesLayerIntersectBounds(layer, selBounds)) {
             selectedIds.push(id);
-          } else {
-            const latLng = (layer as any).getLatLng?.();
-            if (latLng && selBounds.contains(latLng)) {
-              selectedIds.push(id);
-            }
           }
         } catch {}
       });
@@ -1987,16 +1987,7 @@ function applySelectionEffects(id: string) {
           className: "feature-floating-actions-container",
           html: `
             <div class="label-quick-actions is-floating">
-              <button class="label-action-btn action-duplicate" title="Dupliquer" type="button">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
-                </svg>
-              </button>
-              <button class="label-action-btn action-delete" title="Supprimer" type="button">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="13" height="13">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                </svg>
-              </button>
+              ${getActionButtonsHtml()}
             </div>
           `,
           iconSize: [47, 22],
@@ -2023,25 +2014,18 @@ function applySelectionEffects(id: string) {
 
       const el = selectedFeatureQuickActionsMarker.getElement();
       if (el) {
-        el.querySelector(".action-duplicate")?.addEventListener("click", (e) => {
-          L.DomEvent.stopPropagation(e as unknown as Event);
-          e.preventDefault();
-          emit("duplicate-feature", selectedFeature);
-        });
-        el.querySelector(".action-duplicate")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e as unknown as Event));
-        el.querySelector(".action-delete")?.addEventListener("click", (e) => {
-          L.DomEvent.stopPropagation(e as unknown as Event);
-          e.preventDefault();
-          emit("delete-feature", selectedFeature);
-        });
-        el.querySelector(".action-delete")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e as unknown as Event));
+        bindActionButtons(
+          el,
+          () => emit("duplicate-feature", selectedFeature),
+          () => emit("delete-feature", selectedFeature),
+        );
       }
     }
   }
 
   // Smoothly pan/zoom map to focus on the selected feature
   if (map) {
-    fitToFeatures([id], true);
+    fitToVisibleFeatures([id], true);
   }
 
   updateLabelVisibility();
@@ -2093,7 +2077,7 @@ function updateMultiSelection(ids: string[]) {
   clearMultiSelectStylesAndDrag();
   if (!map || ids.length === 0) return;
 
-  fitToFeatures(ids, true);
+  fitToVisibleFeatures(ids, true);
 
   const validLayers = ids
     .map((id) => featureLayerManager.layers.get(id))

@@ -2,7 +2,7 @@
 export function toYear(value: string | number | null | undefined): number | null {
   if (value == null) return null;
   const str = String(value).trim();
-  const match = /^(\d{1,4})(?:-\d{2}-\d{2})?(?:T.*)?$/.exec(str);
+  const match = /^(-?\d{1,6})(?:-\d{2}-\d{2})?(?:T.*)?$/.exec(str);
   if (!match) return null;
   const year = Number(match[1]);
   return Number.isFinite(year) ? year : null;

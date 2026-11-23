@@ -12,14 +12,6 @@
     >
       <h2 class="card-title m-0 px-1 text-base flex items-center" :class="{ 'pb-1': isLegendVisible }">
         Légende
-        <button
-          class="btn btn-ghost btn-xs ml-auto"
-          @click="toggleLegend"
-          :title="isLegendVisible ? 'Masquer la légende' : 'Afficher la légende'"
-        >
-          <EyeIcon v-if="isLegendVisible" class="w-4 h-4" />
-          <EyeSlashIcon v-else class="w-4 h-4" />
-        </button>
       </h2>
       <template v-if="isLegendVisible">
         <p v-if="visibleZoneFeatures.length === 0" class="text-xs text-base-content/60 px-1 py-1">

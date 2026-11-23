@@ -60,11 +60,41 @@ async def delete_map_in_db(
     if not map_obj:
         return False
 
-    await db.execute(
-        delete(Feature).where(
+    features_result = await db.execute(
+        select(Feature).where(
             Feature.map_id == map_id, Feature.project_id == project_id
         )
     )
+    map_features = features_result.scalars().all()
+    map_id_str = str(map_id)
+
+    for feat in map_features:
+        other_map_ids: list[str] = []
+        if isinstance(feat.data, dict):
+            features_list = feat.data.get("features", [])
+            if isinstance(features_list, list) and features_list:
+                inner_props = (features_list[0] or {}).get("properties") or {}
+                raw_map_ids = inner_props.get("mapIds") or (feat.data.get("mapIds") or [])
+                if isinstance(raw_map_ids, list):
+                    other_map_ids = [str(m) for m in raw_map_ids if str(m) != map_id_str]
+
+        if other_map_ids:
+            try:
+                next_map_uuid = UUID(other_map_ids[0])
+                feat.map_id = next_map_uuid
+                feat.data["mapId"] = other_map_ids[0]
+                feat.data["map_id"] = other_map_ids[0]
+                feat.data["mapIds"] = other_map_ids
+                if isinstance(feat.data.get("features"), list) and feat.data["features"]:
+                    props = feat.data["features"][0].setdefault("properties", {})
+                    props["mapIds"] = other_map_ids
+                    props["mapId"] = other_map_ids[0]
+                    props["map_id"] = other_map_ids[0]
+            except Exception:
+                await db.delete(feat)
+        else:
+            await db.delete(feat)
+
     await db.execute(delete(MapImport).where(MapImport.map_id == map_id))
     await db.execute(delete(Map).where(Map.id == map_id))
     await db.commit()
@@ -158,16 +188,43 @@ async def duplicate_map_in_project(
             if "mapTitle" in props:
                 props["mapTitle"] = new_title
             if src_start_yr is not None and new_start_yr is not None:
+                src_duration = (
+                    (src_end_yr - src_start_yr)
+                    if (src_end_yr is not None and src_end_yr > src_start_yr)
+                    else 0
+                )
+                new_duration = (
+                    (new_end_yr - new_start_yr)
+                    if (new_end_yr is not None and new_end_yr > new_start_yr)
+                    else 0
+                )
+
+                def _adapt_year(yr: int | float | None) -> int | None:
+                    if yr is None:
+                        return None
+                    try:
+                        yr_num = int(yr)
+                    except (ValueError, TypeError):
+                        return yr
+                    if src_duration == 0 or yr_num == src_start_yr:
+                        return new_start_yr
+                    if src_end_yr is not None and yr_num == src_end_yr:
+                        return new_end_yr
+                    # Relative position inside source map period
+                    if src_end_yr is not None and src_start_yr <= yr_num <= src_end_yr:
+                        ratio = (yr_num - src_start_yr) / src_duration
+                        adapted = round(new_start_yr + ratio * new_duration)
+                        return max(new_start_yr, min(new_end_yr, adapted))
+                    else:
+                        year_offset = new_start_yr - src_start_yr
+                        return yr_num + year_offset
+
                 feat_sy = props.get("startYear")
                 feat_ey = props.get("endYear")
-                if feat_sy is not None and feat_sy == src_start_yr:
-                    props["startYear"] = new_start_yr
-                elif feat_sy is not None and feat_sy == src_end_yr:
-                    props["startYear"] = new_end_yr
-                if feat_ey is not None and feat_ey == src_end_yr:
-                    props["endYear"] = new_end_yr
-                elif feat_ey is not None and feat_ey == src_start_yr:
-                    props["endYear"] = new_start_yr
+                if feat_sy is not None:
+                    props["startYear"] = _adapt_year(feat_sy)
+                if feat_ey is not None:
+                    props["endYear"] = _adapt_year(feat_ey)
             if src_start_date_str and new_start_date_str:
                 if props.get("startDate") == src_start_date_str:
                     props["startDate"] = new_start_date_str

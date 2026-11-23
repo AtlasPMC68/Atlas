@@ -1,9 +1,18 @@
 <template>
   <dialog ref="addMapDialogRef" class="modal">
-    <div class="modal-box p-0">
+    <div class="modal-box p-0 relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        :disabled="isCreatingMap"
+        @click="addMapDialogRef?.close()"
+      >
+        ✕
+      </button>
+
       <form @submit.prevent="createMapForProject">
         <div class="card-body">
-          <h3 class="text-lg font-bold">Ajouter une carte au projet</h3>
+          <h3 class="text-xl font-bold pr-10">Ajouter une carte au projet</h3>
 
           <fieldset class="fieldset" :disabled="isCreatingMap">
             <label class="label">Nom de la carte</label>
@@ -61,10 +70,10 @@
             />
             <span>Utiliser la date exacte</span>
           </label>
-          <div class="flex justify-end gap-2 mt-6">
+          <div class="modal-action mt-6 flex justify-end gap-2">
             <button
               type="button"
-              class="btn btn-ghost"
+              class="modal-secondary-btn w-32"
               :disabled="isCreatingMap"
               @click="addMapDialogRef?.close()"
             >
@@ -72,7 +81,7 @@
             </button>
             <button
               type="submit"
-              class="btn btn-primary"
+              class="btn btn-primary rounded-lg min-w-32"
               :disabled="
                 !newMapTitle.trim() || !hasValidImportDates() || isCreatingMap
               "
@@ -81,7 +90,7 @@
                 v-if="isCreatingMap"
                 class="loading loading-spinner loading-xs"
               ></span>
-              <span v-else>Créer et importer</span>
+              <span v-else class="text-white">Créer et importer</span>
             </button>
           </div>
         </div>

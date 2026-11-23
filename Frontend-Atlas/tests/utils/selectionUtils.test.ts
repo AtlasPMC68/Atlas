@@ -5,6 +5,7 @@ import {
   isToggleSelectModifier,
   isMultiSelectModifier,
   deduplicateFeatures,
+  doesLayerIntersectBounds,
 } from "../../src/utils/selectionUtils";
 
 describe("selectionUtils - getContinuousRangeSelection", () => {
@@ -118,5 +119,93 @@ describe("selectionUtils - deduplicateFeatures", () => {
     ];
     const res = deduplicateFeatures(list);
     expect(res).toHaveLength(2);
+  });
+});
+
+describe("selectionUtils - doesLayerIntersectBounds", () => {
+  // Mock bounding box with contains and intersects methods
+  const mockBounds = {
+    contains: (latLng: { lat: number; lng: number }) => {
+      return latLng.lat >= 45 && latLng.lat <= 50 && latLng.lng >= -75 && latLng.lng <= -70;
+    },
+    intersects: (otherBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }) => {
+      const noOverlap =
+        otherBounds.maxLat < 45 ||
+        otherBounds.minLat > 50 ||
+        otherBounds.maxLng < -75 ||
+        otherBounds.minLng > -70;
+      return !noOverlap;
+    },
+  };
+
+  it("returns false for null or undefined layer or bounds", () => {
+    expect(doesLayerIntersectBounds(null, mockBounds)).toBe(false);
+    expect(doesLayerIntersectBounds(undefined, mockBounds)).toBe(false);
+    expect(doesLayerIntersectBounds({}, null)).toBe(false);
+    expect(doesLayerIntersectBounds({}, undefined)).toBe(false);
+  });
+
+  it("detects points/markers inside selection bounds via getLatLng", () => {
+    const insideMarker = {
+      getLatLng: () => ({ lat: 46.8, lng: -71.2 }),
+    };
+    const outsideMarker = {
+      getLatLng: () => ({ lat: 20.0, lng: 10.0 }),
+    };
+
+    expect(doesLayerIntersectBounds(insideMarker, mockBounds)).toBe(true);
+    expect(doesLayerIntersectBounds(outsideMarker, mockBounds)).toBe(false);
+  });
+
+  it("detects paths/shapes via getBounds", () => {
+    const intersectingShape = {
+      getBounds: () => ({ minLat: 46.0, maxLat: 48.0, minLng: -72.0, maxLng: -71.0 }),
+    };
+    const nonIntersectingShape = {
+      getBounds: () => ({ minLat: 10.0, maxLat: 15.0, minLng: 0.0, maxLng: 5.0 }),
+    };
+
+    expect(doesLayerIntersectBounds(intersectingShape, mockBounds)).toBe(true);
+    expect(doesLayerIntersectBounds(nonIntersectingShape, mockBounds)).toBe(false);
+  });
+
+  it("recursively inspects L.LayerGroup (points and cities with labels)", () => {
+    const groupWithInsideMarker = {
+      getLayers: () => [
+        { getLatLng: () => ({ lat: 10.0, lng: 10.0 }) }, // outside
+        { getLatLng: () => ({ lat: 46.8, lng: -71.2 }) }, // inside!
+      ],
+    };
+    const groupWithOnlyOutsideMarkers = {
+      getLayers: () => [
+        { getLatLng: () => ({ lat: 10.0, lng: 10.0 }) },
+        { getLatLng: () => ({ lat: 20.0, lng: 20.0 }) },
+      ],
+    };
+    const emptyGroup = {
+      getLayers: () => [],
+    };
+
+    expect(doesLayerIntersectBounds(groupWithInsideMarker, mockBounds)).toBe(true);
+    expect(doesLayerIntersectBounds(groupWithOnlyOutsideMarkers, mockBounds)).toBe(false);
+    expect(doesLayerIntersectBounds(emptyGroup, mockBounds)).toBe(false);
+  });
+
+  it("supports deeply nested LayerGroups", () => {
+    const nestedGroup = {
+      getLayers: () => [
+        {
+          getLayers: () => [
+            {
+              getLayers: () => [
+                { getLatLng: () => ({ lat: 47.0, lng: -72.0 }) },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(doesLayerIntersectBounds(nestedGroup, mockBounds)).toBe(true);
   });
 });

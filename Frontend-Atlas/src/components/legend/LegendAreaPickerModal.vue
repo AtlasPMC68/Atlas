@@ -217,7 +217,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { TrashIcon } from "@heroicons/vue/24/outline";
 import BasePickerModal from "../import/BasePickerModal.vue";
 import type { LegendBounds } from "../../typescript/legend";
@@ -265,6 +265,30 @@ const exclusionZones = ref<LegendBounds[]>(
   props.initialIgnoredAreas ? [...props.initialIgnoredAreas] : [],
 );
 
+function checkImageLoaded(): void {
+  if (imageEl.value && imageEl.value.complete && imageEl.value.naturalWidth > 0) {
+    imageNaturalWidth.value = imageEl.value.naturalWidth;
+    imageNaturalHeight.value = imageEl.value.naturalHeight;
+  }
+}
+
+function onImageLoad(): void {
+  checkImageLoaded();
+}
+
+onMounted(() => {
+  checkImageLoaded();
+});
+
+watch(
+  () => props.imageUrl,
+  () => {
+    nextTick(() => {
+      checkImageLoaded();
+    });
+  },
+);
+
 watch(
   () => props.isOpen,
   (opened: any) => {
@@ -277,6 +301,9 @@ watch(
       isDrawing.value = false;
       dragStart.value = null;
       currentDrawingBounds.value = null;
+      nextTick(() => {
+        checkImageLoaded();
+      });
     }
   },
   { immediate: true },
@@ -352,12 +379,6 @@ const modalConfirmLabel = computed(() => {
   }
   return `Confirmer (${parts.join(", ")})`;
 });
-
-function onImageLoad(): void {
-  if (!imageEl.value) return;
-  imageNaturalWidth.value = imageEl.value.naturalWidth || 0;
-  imageNaturalHeight.value = imageEl.value.naturalHeight || 0;
-}
 
 function getImageClampedPoint(
   event: MouseEvent,

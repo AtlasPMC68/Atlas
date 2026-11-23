@@ -179,4 +179,88 @@ describe("DeleteFeatureDialog", () => {
       mapIdsToRemove: ["map-1", "map-2"],
     });
   });
+
+  it("disables remove-from-map button when no maps are selected", async () => {
+    const wrapper = mount(DeleteFeatureDialog, {
+      props: {
+        features: [sharedFeature],
+        mapPeriods: [map1, map2],
+        activeMapId: "map-1",
+      },
+    });
+
+    wrapper.vm.open(sharedFeature);
+    await wrapper.vm.$nextTick();
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]');
+    // Uncheck map-1
+    await checkboxes[0].setValue(false);
+
+    const removeBtn = wrapper.find('[data-testid="remove-from-map-btn"]');
+    expect((removeBtn.element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("toggles all maps when clicking select-all / unselect-all button", async () => {
+    const wrapper = mount(DeleteFeatureDialog, {
+      props: {
+        features: [sharedFeature],
+        mapPeriods: [map1, map2],
+        activeMapId: "map-1",
+      },
+    });
+
+    wrapper.vm.open(sharedFeature);
+    await wrapper.vm.$nextTick();
+
+    // Initially map-1 is checked, so not all maps are selected ("Tout cocher")
+    const toggleBtn = wrapper.find("button.btn-ghost.btn-xs");
+    expect(toggleBtn.text()).toBe("Tout cocher");
+
+    await toggleBtn.trigger("click");
+    expect(toggleBtn.text()).toBe("Tout décocher");
+
+    // Click again to uncheck all
+    await toggleBtn.trigger("click");
+    expect(toggleBtn.text()).toBe("Tout cocher");
+
+    const removeBtn = wrapper.find('[data-testid="remove-from-map-btn"]');
+    expect((removeBtn.element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("handles batch opening with mixed shared and single-map features", async () => {
+    const wrapper = mount(DeleteFeatureDialog, {
+      props: {
+        features: [sharedFeature, singleFeature],
+        mapPeriods: [map1, map2],
+        activeMapId: "map-1",
+      },
+    });
+
+    wrapper.vm.open([sharedFeature, singleFeature]);
+    await wrapper.vm.$nextTick();
+
+    // Since sharedFeature belongs to 2 maps, multi-map view is shown
+    expect(wrapper.text()).toContain("Élément partagé sur plusieurs cartes");
+    expect(wrapper.text()).toContain("2 éléments");
+  });
+
+  it("does not pre-select maps if activeMapId is not in the feature mapIds", async () => {
+    const wrapper = mount(DeleteFeatureDialog, {
+      props: {
+        features: [sharedFeature],
+        mapPeriods: [map1, map2],
+        activeMapId: "other-map",
+      },
+    });
+
+    wrapper.vm.open(sharedFeature);
+    await wrapper.vm.$nextTick();
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]');
+    expect((checkboxes[0].element as HTMLInputElement).checked).toBe(false);
+    expect((checkboxes[1].element as HTMLInputElement).checked).toBe(false);
+
+    const removeBtn = wrapper.find('[data-testid="remove-from-map-btn"]');
+    expect((removeBtn.element as HTMLButtonElement).disabled).toBe(true);
+  });
 });

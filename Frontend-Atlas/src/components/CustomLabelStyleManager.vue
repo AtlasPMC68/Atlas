@@ -1,7 +1,15 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-    <div class="modal-box w-11/12 max-w-7xl max-h-[90vh] md:h-[680px] flex flex-col gap-4">
-      <h3 class="text-lg font-bold shrink-0">Modification des styles de libellé</h3>
+    <div class="modal-box w-11/12 max-w-7xl max-h-[90vh] md:h-[680px] flex flex-col gap-4 relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        @click="dialogRef?.close()"
+      >
+        ✕
+      </button>
+
+      <h3 class="text-xl font-bold shrink-0 pr-10">Modification des styles de libellé</h3>
 
       <div class="grid grid-cols-1 md:grid-cols-[1fr_0.75fr_1.45fr] gap-5 items-start min-h-0 flex-1 overflow-y-auto pr-1">
         <!-- Colonne gauche : Liste des styles personnalisés -->

@@ -128,15 +128,15 @@ export function hasFeatureCustomDate(
   const hasValidNum = (val: unknown): boolean => {
     if (val === null || val === undefined || val === "") return false;
     const num = Number(val);
-    return Number.isFinite(num) && num > 0;
+    return Number.isFinite(num);
   };
 
   const hasValidDateStr = (val: unknown): boolean => {
     if (typeof val !== "string") return false;
     const trimmed = val.trim();
     if (!trimmed) return false;
-    const yearMatch = trimmed.match(/^(\d{1,4})/);
-    return Boolean(yearMatch && Number(yearMatch[1]) > 0);
+    const yearMatch = trimmed.match(/^(-?\d{1,6})/);
+    return Boolean(yearMatch && Number.isFinite(Number(yearMatch[1])));
   };
 
   if (hasValidNum(props?.startYear) || hasValidNum(props?.endYear)) return true;

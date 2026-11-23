@@ -928,5 +928,115 @@ def test_duplicate_map_in_project_feature_collection(tmp_path, monkeypatch):
     assert inner["properties"]["endYear"] == 1509
 
 
+def test_duplicate_map_adapts_relative_feature_years():
+    """Features with internal/relative years within a period must scale proportionally."""
+    from app.services.maps import duplicate_map_in_project
+    from app.models.project import Project
+
+    project_id = uuid4()
+    user_id = uuid4()
+    source_map_id = uuid4()
+
+    project = Project(id=project_id, user_id=user_id, title="Test Project")
+    source_map = Map(
+        id=source_map_id,
+        project_id=project_id,
+        title="Source Map",
+        start_date=date(1600, 1, 1),
+        end_date=date(1700, 1, 1),
+    )
+    source_feature = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=source_map_id,
+        data={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "id": str(uuid4()),
+                    "properties": {
+                        "name": "Bataille des Plaines",
+                        "mapElementType": "point",
+                        "mapId": str(source_map_id),
+                        "startYear": 1620,
+                        "endYear": 1650,
+                    },
+                }
+            ],
+        },
+    )
+
+    added = []
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project),
+                SimpleNamespace(scalar_one_or_none=lambda: source_map),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [source_feature])),
+            ]
+        ),
+        add=lambda obj: added.append(obj),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    # 1. Duplication to a shifted period of identical length (1800-1900)
+    new_map_id = asyncio.run(
+        duplicate_map_in_project(
+            db=session,
+            project_id=project_id,
+            source_map_id=source_map_id,
+            user_id=user_id,
+            new_title="Carte Dupliquée Décalée",
+            start_date=date(1800, 1, 1),
+            end_date=date(1900, 1, 1),
+        )
+    )
+
+    assert new_map_id is not None
+    duplicated_feat = next(o for o in added if isinstance(o, Feature))
+    inner = duplicated_feat.data["features"][0]
+    assert inner["properties"]["startYear"] == 1820
+    assert inner["properties"]["endYear"] == 1850
+
+    # 2. Duplication to a scaled period of 50 years (1800-1850)
+    added2 = []
+    session2 = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: project),
+                SimpleNamespace(scalar_one_or_none=lambda: source_map),
+                SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [source_feature])),
+            ]
+        ),
+        add=lambda obj: added2.append(obj),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    new_map_id2 = asyncio.run(
+        duplicate_map_in_project(
+            db=session2,
+            project_id=project_id,
+            source_map_id=source_map_id,
+            user_id=user_id,
+            new_title="Carte Dupliquée Echelle",
+            start_date=date(1800, 1, 1),
+            end_date=date(1850, 1, 1),
+        )
+    )
+
+    assert new_map_id2 is not None
+    duplicated_feat2 = next(o for o in added2 if isinstance(o, Feature))
+    inner2 = duplicated_feat2.data["features"][0]
+    # Ratio 20% of 50 = 10 -> 1810; Ratio 50% of 50 = 25 -> 1825
+    assert inner2["properties"]["startYear"] == 1810
+    assert inner2["properties"]["endYear"] == 1825
+
+
+
 
 

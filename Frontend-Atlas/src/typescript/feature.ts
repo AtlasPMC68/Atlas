@@ -5,6 +5,7 @@ export interface Feature {
   id: string;
   projectId: string;
   mapId?: string | null;
+  map_id?: string | null;
   mapIds?: string[];
   geometry: Geometry;
   properties: FeatureProperties;

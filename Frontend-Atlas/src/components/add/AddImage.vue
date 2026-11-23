@@ -1,7 +1,16 @@
 <template>
   <dialog ref="addFeatureImageDialogRef" class="modal">
-    <div class="modal-box">
-      <h3 class="text-lg font-bold mb-4">Ajouter une image</h3>
+    <div class="modal-box relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        :disabled="isAdding"
+        @click="onCloseAddFeatureImageDialog"
+      >
+        ✕
+      </button>
+
+      <h3 class="text-xl font-bold mb-4 pr-10">Ajouter une image</h3>
 
       <fieldset class="fieldset">
         <input
@@ -11,18 +20,20 @@
           accept="image/*"
           @change="onFileChange"
         />
-        <label class="label">Taille maximale de 10MB</label>
+        <span class="text-xs text-base-content/60 mt-1">Taille maximale : 10 Mo</span>
       </fieldset>
-      <div class="modal-action">
+      <div class="modal-action mt-6 flex justify-end gap-2">
         <button
-          class="btn"
+          type="button"
+          class="modal-secondary-btn w-32"
           :disabled="isAdding"
           @click="onCloseAddFeatureImageDialog"
         >
           Annuler
         </button>
         <button
-          class="btn btn-primary"
+          type="button"
+          class="btn btn-primary rounded-lg w-32"
           :disabled="isAdding || !selectedFile"
           @click="onAddFeatureImage"
         >

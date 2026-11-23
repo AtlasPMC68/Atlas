@@ -172,7 +172,7 @@ describe("featureHelpers - copy / paste functionality", () => {
   });
 
   describe("cloneFeatureWithOffset", () => {
-    it("creates a new feature with new ID, empty name, no custom dates, and translated geometry", () => {
+    it("creates a new feature with new ID, preserved name, no custom dates, and translated geometry", () => {
       const newId = "new-uuid-999";
       const now = "2026-05-01T12:00:00Z";
       const sourceWithDates: Feature = {
@@ -191,9 +191,9 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(clone.id).toBe(newId);
       expect(clone.createdAt).toBe(now);
       expect(clone.updatedAt).toBe(now);
-      // No default name
-      expect(clone.name).toBe("");
-      expect(clone.properties.name).toBe("");
+      // Preserved name
+      expect(clone.name).toBe("Zone 1");
+      expect(clone.properties.name).toBe("Zone 1");
       // Preserves element type
       expect(clone.properties.mapElementType).toBe("zone");
       // Preserves styles
@@ -220,7 +220,7 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(clone.image).toBe("data:image/png;base64,abc");
       expect(clone.properties.mapElementType).toBe("image");
       expect(clone.mapId).toBeNull();
-      expect(clone.name).toBe("");
+      expect(clone.name).toBe("carte.png");
       expect(clone.properties.bounds).toBeDefined();
       const bounds = clone.properties.bounds!;
       // south, west
@@ -350,6 +350,36 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(hasFeatureCustomDate(feat)).toBe(false);
       expect(getFeatureMapId(feat)).toBe("carte-1");
       expect(getFeatureMapIds(feat)).toEqual(["carte-1", "carte-2"]);
+    });
+
+    it("identifies custom date for year 0 and negative BCE years", () => {
+      const featYear0: Feature = {
+        ...textFeature,
+        properties: {
+          ...textFeature.properties,
+          startYear: 0,
+        },
+      };
+      expect(hasFeatureCustomDate(featYear0)).toBe(true);
+
+      const featNegativeYear: Feature = {
+        ...textFeature,
+        properties: {
+          ...textFeature.properties,
+          startYear: -500,
+          endYear: -450,
+        },
+      };
+      expect(hasFeatureCustomDate(featNegativeYear)).toBe(true);
+
+      const featNegativeDateStr: Feature = {
+        ...textFeature,
+        properties: {
+          ...textFeature.properties,
+          startDate: "-44-03-15",
+        },
+      };
+      expect(hasFeatureCustomDate(featNegativeDateStr)).toBe(true);
     });
   });
 });

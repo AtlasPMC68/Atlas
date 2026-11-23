@@ -1,19 +1,19 @@
 <template>
   <dialog ref="modalRef" class="modal" @close="onDialogClose">
     <div
-      class="modal-box w-full flex flex-col gap-4"
+      class="modal-box w-full flex flex-col gap-4 relative"
       :class="$slots['list-area'] ? 'max-w-6xl' : 'max-w-5xl'"
     >
       <form method="dialog">
         <button
           value="cancel"
-          class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+          class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
         >
           ✕
         </button>
       </form>
 
-      <h2 class="text-xl font-semibold">{{ title }}</h2>
+      <h3 class="text-xl font-bold pr-10">{{ title }}</h3>
 
       <p class="text-sm text-base-content/70">
         {{ description }}
@@ -39,21 +39,21 @@
 
       <slot name="error-area"></slot>
 
-      <div class="modal-action">
+      <div class="modal-action mt-6 flex justify-end gap-2">
         <button
           v-if="showBack"
-          class="btn btn-outline"
+          class="btn btn-outline rounded-lg"
           type="button"
           @click="emit('back')"
         >
           {{ backLabel }}
         </button>
-        <button class="btn btn-ghost" type="button" @click="requestClose">
+        <button class="modal-secondary-btn w-32" type="button" @click="requestClose">
           Annuler
         </button>
         <button
           v-if="showSkip"
-          class="btn btn-outline"
+          class="btn btn-outline rounded-lg"
           type="button"
           @click="onSkip"
         >

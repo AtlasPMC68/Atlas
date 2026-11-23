@@ -432,7 +432,6 @@ function onPopoverItemClick(item: TimelineMarkerItem, year: number, event?: Mous
     return;
   }
   emit("select-element", item.id);
-  hoveredMarkerYear.value = null;
 }
 
 function onPopoverItemEdit(item: TimelineMarkerItem, year: number) {
@@ -584,7 +583,7 @@ const sliderTrackStyle = computed<Record<string, string>>(() => {
 
 const validElementMarkers = computed(() =>
   (props.elementMarkers ?? []).filter(
-    (m: TimelineMarkerItem) => Number.isFinite(m.year) && m.year > 0,
+    (m: TimelineMarkerItem) => Number.isFinite(m.year),
   ),
 );
 

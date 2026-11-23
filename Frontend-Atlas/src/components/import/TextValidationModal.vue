@@ -9,10 +9,10 @@
     aria-labelledby="text-validation-title"
     data-testid="text-validation-modal"
   >
-    <div class="modal-box w-11/12 max-w-[96vw] xl:max-w-[92vw] 2xl:max-w-[88vw] h-[95vh] max-h-[95vh] flex flex-col gap-4">
+    <div class="modal-box w-11/12 max-w-[96vw] xl:max-w-[92vw] 2xl:max-w-[88vw] h-[95vh] max-h-[95vh] flex flex-col gap-4 relative">
       <button
         type="button"
-        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
         aria-label="Fermer"
         :disabled="isSubmitting"
         @click="emit('cancel')"
@@ -20,7 +20,7 @@
         ✕
       </button>
 
-      <h2 id="text-validation-title" class="text-xl font-semibold">
+      <h2 id="text-validation-title" class="text-xl font-bold pr-10">
         Validation des textes non reconnus
       </h2>
 
@@ -200,7 +200,7 @@
         <div class="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            class="btn btn-ghost"
+            class="modal-secondary-btn w-32"
             :disabled="isSubmitting"
             @click="emit('cancel')"
           >
@@ -208,7 +208,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-primary"
+            class="btn btn-primary rounded-lg"
             :disabled="isSubmitting"
             @click="onConfirm"
           >

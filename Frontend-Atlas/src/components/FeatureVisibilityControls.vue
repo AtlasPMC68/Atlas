@@ -179,7 +179,6 @@
                     <span
                       class="label-text text-sm truncate flex-1 min-w-0 select-none"
                       :title="feature.properties?.name?.trim() || 'Nom manquant'"
-                      @dblclick.prevent.stop="onFeatureItemDblClick(feature)"
                     >
                       <span
                         class="truncate block"
@@ -758,23 +757,34 @@
 
   <!-- Delete map confirmation dialog -->
   <dialog ref="deleteMapDialogRef" class="modal">
-    <div class="modal-box">
-      <h3 class="text-lg font-bold">Supprimer la carte</h3>
+    <div class="modal-box relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        :disabled="isDeletingMap"
+        @click="deleteMapDialogRef?.close()"
+      >
+        ✕
+      </button>
+
+      <h3 class="text-xl font-bold pr-10">Supprimer la carte</h3>
       <p class="py-4">
         Êtes-vous sûr de vouloir supprimer la carte
         <span class="font-semibold">{{ mapToDeleteTitle }}</span> ainsi que tous ses éléments ?
         Cette action est irréversible.
       </p>
-      <div class="modal-action">
+      <div class="modal-action mt-6 flex justify-end gap-2">
         <button
-          class="btn"
+          type="button"
+          class="modal-secondary-btn w-32"
           :disabled="isDeletingMap"
           @click="deleteMapDialogRef?.close()"
         >
           Annuler
         </button>
         <button
-          class="btn btn-error"
+          type="button"
+          class="btn btn-error rounded-lg w-32 text-white"
           :disabled="isDeletingMap"
           @click="onDeleteMap"
         >
@@ -782,7 +792,7 @@
             v-if="isDeletingMap"
             class="loading loading-spinner loading-xs"
           ></span>
-          <span v-else class="text-white">Supprimer</span>
+          <span v-else>Supprimer</span>
         </button>
       </div>
     </div>
@@ -804,30 +814,43 @@
 
   <!-- Map selection dialog for text validation -->
   <dialog ref="selectMapValidationDialogRef" data-testid="select-map-validation-dialog" class="modal z-[2500]">
-    <div class="modal-box max-w-sm">
-      <h3 class="text-lg font-bold flex items-center gap-2">
+    <div class="modal-box w-11/12 max-w-lg md:max-w-xl relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        @click="selectMapValidationDialogRef?.close()"
+      >
+        ✕
+      </button>
+
+      <h3 class="text-xl font-bold flex items-center gap-2 pr-10">
         <DocumentCheckIcon class="w-5 h-5 text-primary-600" />
-        Choisir la carte à examiner
+        Choisir la carte
       </h3>
       <p class="text-sm text-base-content opacity-70 mt-1 mb-4">
         Sélectionnez la carte dont vous souhaitez examiner et valider les textes rejetés :
       </p>
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-2.5 max-h-80 overflow-y-auto pr-1">
         <button
           v-for="group in validationFeaturesByMap"
           :key="group.id ?? 'general'"
           type="button"
-          class="btn btn-outline btn-sm justify-between text-left"
+          class="btn btn-outline h-auto py-2.5 px-4 justify-between items-center text-left gap-3 w-full group hover:border-primary transition-colors"
+          :title="group.title"
           @click="confirmMapValidation(group.id)"
         >
-          <span class="font-medium truncate">{{ group.title }}</span>
-          <span class="text-xs font-normal opacity-60">Ouvrir →</span>
+          <span class="font-medium truncate flex-1 min-w-0" :title="group.title">
+            {{ group.title }}
+          </span>
+          <span class="text-xs font-semibold opacity-60 group-hover:opacity-100 group-hover:text-primary shrink-0 whitespace-nowrap flex items-center gap-1">
+            Ouvrir →
+          </span>
         </button>
       </div>
-      <div class="modal-action mt-4">
+      <div class="modal-action mt-6 flex justify-end">
         <button
           type="button"
-          class="btn"
+          class="modal-secondary-btn w-32"
           @click="selectMapValidationDialogRef?.close()"
         >
           Annuler
@@ -1592,10 +1615,13 @@ async function onRemoveFromMapsConfirmed(payload: { featureIds: string[]; mapIds
       ...feat,
       mapId: newMainMapId,
       mapIds: nextMapIds,
+      map_id: newMainMapId,
       properties: {
         ...feat.properties,
         mapId: newMainMapId,
         mapIds: nextMapIds,
+        map_id: newMainMapId,
+        mapTitle: newMainMapId === null ? null : (feat.properties?.mapTitle ?? null),
       },
     };
     updatedList.push(updated);

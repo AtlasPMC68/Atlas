@@ -65,8 +65,13 @@ export function createFeatureDoubleClickHandler<T = Feature>(
     const id = getId(item);
     const now = Date.now();
 
+    // Guard against echo/duplicate click events from bubbling or parent group layers (< 80ms)
+    if (id != null && lastClickId === id && now - lastClickTime < 80) {
+      return;
+    }
+
     if (id != null && lastClickId === id && now - lastClickTime <= thresholdMs) {
-      // Consecutive clicks on the same item within threshold -> trigger double-click/edit
+      // Consecutive clicks on the same item within threshold (80ms - thresholdMs) -> trigger double-click/edit
       handleEdit(item, event);
     } else {
       lastClickTime = now;
