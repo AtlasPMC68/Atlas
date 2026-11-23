@@ -158,14 +158,8 @@ def test_categorized_text_features_only_accepts_nearby_fuzzy_place(monkeypatch):
         image_size=(1000, 1000),
     )[0]["features"][0]
     assert distant["properties"]["recognized"] is False
-    assert distant["properties"]["validationStatus"] == "manual_review"
     assert distant["properties"]["name"] == "Pariss"
-    assert distant["properties"]["suggestedPlace"] == {
-        "name": "Paris",
-        "coordinates": [2.3488, 48.85341],
-        "type": "city",
-        "source": "geonames",
-    }
+    assert distant["properties"]["suggestedPlace"] is None
 
 
 def test_categorized_text_features_ignores_numeric_and_scale_labels():

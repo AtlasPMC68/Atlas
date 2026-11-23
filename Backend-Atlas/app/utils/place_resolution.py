@@ -355,12 +355,34 @@ def find_geo_entity(
         if close:
             candidates: List[Dict[str, Any]] = []
             seen_candidates: Set[Tuple[Any, Any, Any, Any]] = set()
+            q_toks = [t for t in norm.split() if len(t) >= 3 and t not in _IGNORABLE_TOKENS]
             for key in close:
+                # Token guardrail on fuzzy geographic entity matches
+                if q_toks:
+                    k_toks = [t for t in key.split() if len(t) >= 3 and t not in _IGNORABLE_TOKENS]
+                    if k_toks:
+                        # Query tokens must match candidate tokens
+                        if not all(
+                            max((difflib.SequenceMatcher(None, q, k).ratio() for k in k_toks), default=0.0) >= cutoff
+                            for q in q_toks
+                        ):
+                            continue
+                        # Candidate tokens must match query tokens (bidirectional)
+                        if not all(
+                            max((difflib.SequenceMatcher(None, k, q).ratio() for q in q_toks), default=0.0) >= cutoff
+                            for k in k_toks
+                        ):
+                            continue
+                    else:
+                        continue
+
                 for ent in _GEO_INDEX.get(key, []):
                     ekey = (ent.get("type"), ent.get("name"), ent.get("lat"), ent.get("lon"))
                     if ekey not in seen_candidates:
                         seen_candidates.add(ekey)
                         candidates.append(ent)
+            if not candidates:
+                return None
             return resolve_best_candidate(candidates, target_pos=target_pos, bounds=bounds, query=text)
 
     return None
@@ -380,6 +402,8 @@ _GENERIC_ADMIN_TERMS: Set[str] = {
     "city", "ville", "town", "township", "village", "county", "comte", "comté",
     "municipality", "municipalite", "municipalité", "borough",
 }
+
+_IGNORABLE_TOKENS: Set[str] = _GENERIC_ADMIN_TERMS | set(_PREFIX_TYPE_MAP.keys())
 
 _CITY_BASE_EXCEPTIONS: Set[str] = {
     "quebec", "mexico", "panama", "guatemala", "luxembourg", "vatican",
@@ -710,6 +734,22 @@ def resolve_place(
 
         valid_geo = geo_f if (geo_f and geo_f is not _BLOCKED) else None
         valid_city = city_f if (city_f and city_f is not _BLOCKED) else None
+
+        # Filter by max_fuzzy_distance_km when target_pos is provided
+        if target_pos is not None:
+            max_dist = MATCHING_CONFIG["max_fuzzy_distance_km"]
+            if valid_city and valid_city.get("lat") is not None and valid_city.get("lon") is not None:
+                d_city = haversine_distance_km(target_pos[0], target_pos[1], float(valid_city["lat"]), float(valid_city["lon"]))
+                if d_city > max_dist:
+                    valid_city = None
+            if valid_geo and valid_geo.get("lat") is not None and valid_geo.get("lon") is not None:
+                d_geo = haversine_distance_km(target_pos[0], target_pos[1], float(valid_geo["lat"]), float(valid_geo["lon"]))
+                is_large_entity = valid_geo.get("type") in {
+                    "ocean", "sea", "bay", "gulf", "continent", "country", "province", "state", "territory", "river", "fleuve"
+                }
+                geo_max_dist = max_dist * 4 if is_large_entity else max_dist
+                if d_geo > geo_max_dist:
+                    valid_geo = None
 
         if valid_geo and valid_city:
             if target_pos is not None and valid_geo.get("lat") is not None and valid_city.get("lat") is not None:

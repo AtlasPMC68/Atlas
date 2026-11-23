@@ -127,10 +127,10 @@
             >
               <span
                 v-if="marker.hasCustomItem"
-                class="element-marker-exclamation-icon"
+                class="w-1.5 h-1.5 rounded-full bg-info shrink-0"
                 title="Élément avec date personnalisée"
               >
-                !
+                *
               </span>
               <span class="element-marker-count">{{ marker.items.length }}</span>
               <span class="sr-only">{{ marker.label }}</span>
