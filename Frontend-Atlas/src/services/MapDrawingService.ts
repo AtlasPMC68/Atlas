@@ -1,9 +1,14 @@
 import { ref } from "vue";
 import L from "leaflet";
-import { featureToLayer, layerToFeature, isPointFeature } from "../utils/mapDrawingFeature";
+import {
+  featureToLayer,
+  layerToFeature,
+  isPointFeature,
+} from "../utils/mapDrawingFeature";
 import type { Feature, PointFeature } from "../typescript/feature";
 import { drawingModes } from "../typescript/mapDrawing";
 import { formatWordText } from "../utils/wordStyles";
+import { anchorMarkerLimitToCursor } from "../utils/geomanMarkerLimit";
 import type {
   DrawingMode,
   EmitFn,
@@ -19,6 +24,7 @@ import type {
 
 const freehandControlName = "drawFreehand";
 const addCityControlName = "addCity";
+const EDIT_MARKERS_LIMIT = 40;
 const removalSelectionStyle: L.PathOptions = {
   color: "#ef4444",
   weight: 2,
@@ -56,7 +62,7 @@ export class MapDrawingService {
   constructor(
     private emit: EmitFn,
     private getProjectId: () => string,
-  ) { }
+  ) {}
 
   private finalizedTextLayers = new WeakSet<L.Layer>();
 
@@ -83,18 +89,18 @@ export class MapDrawingService {
       return;
     }
 
-    const textLayer = layer as L.Marker & FeatureBearingLayer & {
-      options?: L.MarkerOptions & {
-        text?: string;
-        textMarker?: boolean;
+    const textLayer = layer as L.Marker &
+      FeatureBearingLayer & {
+        options?: L.MarkerOptions & {
+          text?: string;
+          textMarker?: boolean;
+        };
+        pm?: {
+          getText?: () => string;
+        };
       };
-      pm?: {
-        getText?: () => string;
-      };
-    };
 
-    const rawText =
-      textLayer.pm?.getText?.() ?? textLayer.options?.text ?? "";
+    const rawText = textLayer.pm?.getText?.() ?? textLayer.options?.text ?? "";
     const trimmed = rawText.trim();
     const labelText = formatWordText(trimmed, "city");
 
@@ -188,8 +194,22 @@ export class MapDrawingService {
       removalMode: true,
     });
 
+    // Geoman creates one DOM marker per vertex (plus one per segment) in edit
+    // mode, which freezes the map on dense zones. Only show the handles
+    // closest to the cursor; they follow it as it moves.
+    mapWithPm.pm.setGlobalOptions?.({
+      limitMarkersToCount: EDIT_MARKERS_LIMIT,
+    });
+    anchorMarkerLimitToCursor(map);
+
     // 'fr' locale is missing drawTextButton — merge it in by passing 'fr' as both lang and fallback
-    mapWithPm.pm.setLang?.('fr', { buttonTitles: { drawTextButton: 'Insérer du texte' } } as unknown as Record<string, unknown>, 'fr');
+    mapWithPm.pm.setLang?.(
+      "fr",
+      {
+        buttonTitles: { drawTextButton: "Insérer du texte" },
+      } as unknown as Record<string, unknown>,
+      "fr",
+    );
     this.addFreehandButton(map);
     this.addCityButton(map);
     this.setupDrawingListeners(map);
@@ -213,7 +233,7 @@ export class MapDrawingService {
       disableOtherButtons: true,
       disableByOtherButtons: true,
       actions: ["cancel"],
-      onClick: () => { },
+      onClick: () => {},
       afterClick: (
         _event: unknown,
         context: { button: { toggled: () => boolean } },
@@ -247,8 +267,8 @@ export class MapDrawingService {
       disableOtherButtons: true,
       disableByOtherButtons: true,
       actions: ["cancel"],
-      onClick: () => { },
-      afterClick: () => { },
+      onClick: () => {},
+      afterClick: () => {},
     });
 
     toolbar.changeControlOrder?.();
@@ -412,7 +432,10 @@ export class MapDrawingService {
     if (this.fallbackRemovalSelectionEnabled) return;
 
     const onMouseDown = (e: L.LeafletMouseEvent) => {
-      if (!e.originalEvent?.shiftKey || !(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
+      if (
+        !e.originalEvent?.shiftKey ||
+        !(map as MapWithPm).pm?.globalRemovalModeEnabled?.()
+      ) {
         return;
       }
 
@@ -562,16 +585,25 @@ export class MapDrawingService {
       updatedFeature.name = sourceLayer.feature.name;
       updatedFeature.createdAt = sourceLayer.feature.createdAt;
       updatedFeature.updatedAt = new Date().toISOString();
-      updatedFeature.properties.fillOpacity = sourceLayer.feature.properties.fillOpacity;
+      updatedFeature.properties.fillOpacity =
+        sourceLayer.feature.properties.fillOpacity;
       updatedFeature.properties.name = sourceLayer.feature.properties.name;
-      updatedFeature.properties.labelText = sourceLayer.feature.properties.labelText;
-      updatedFeature.properties.colorName = sourceLayer.feature.properties.colorName;
-      updatedFeature.properties.colorRgb = sourceLayer.feature.properties.colorRgb;
-      updatedFeature.properties.strokeColor = sourceLayer.feature.properties.strokeColor;
-      updatedFeature.properties.strokeWidth = sourceLayer.feature.properties.strokeWidth;
-      updatedFeature.properties.strokeOpacity = sourceLayer.feature.properties.strokeOpacity;
-      updatedFeature.properties.mapElementType = sourceLayer.feature.properties.mapElementType;
-      updatedFeature.properties.shapeKind = sourceLayer.feature.properties.shapeKind;
+      updatedFeature.properties.labelText =
+        sourceLayer.feature.properties.labelText;
+      updatedFeature.properties.colorName =
+        sourceLayer.feature.properties.colorName;
+      updatedFeature.properties.colorRgb =
+        sourceLayer.feature.properties.colorRgb;
+      updatedFeature.properties.strokeColor =
+        sourceLayer.feature.properties.strokeColor;
+      updatedFeature.properties.strokeWidth =
+        sourceLayer.feature.properties.strokeWidth;
+      updatedFeature.properties.strokeOpacity =
+        sourceLayer.feature.properties.strokeOpacity;
+      updatedFeature.properties.mapElementType =
+        sourceLayer.feature.properties.mapElementType;
+      updatedFeature.properties.shapeKind =
+        sourceLayer.feature.properties.shapeKind;
 
       resultLayer.feature = updatedFeature;
       this.emit("feature-updated", updatedFeature);

@@ -72,6 +72,7 @@ export type PmMapDrawingTool = {
   disableGlobalRemovalMode?: () => void;
   enableGlobalLassoMode?: (options: Record<string, unknown>) => void;
   disableGlobalLassoMode?: () => void;
+  setGlobalOptions?: (options: Record<string, unknown>) => void;
   setLang?: (lang: string, translations?: Record<string, unknown>, fallbackLang?: string) => void;
   enableGlobalRotateMode?: () => void;
   Toolbar?: PmToolbar;
